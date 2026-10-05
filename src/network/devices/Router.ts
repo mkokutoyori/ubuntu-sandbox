@@ -74,6 +74,7 @@ import { Port, LOOPBACK_MTU, LOOPBACK_BW_KBPS, LOOPBACK_DELAY_US } from '../hard
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { TcpStack, type TcpSocket } from '../tcp/TcpStack';
+import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
 import type { TcpStream, TcpDialFailure } from '../tcp/types';
 import { isDialFailure } from '../tcp/types';
 import { stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
@@ -594,6 +595,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           topic: 'host.icmp.unreachable',
           payload: icmpv6UnreachablePayload(this.routerRef(), ipv6, icmpv6),
         });
+        deliverIcmpv6ErrorToTcp(this.tcpv2, ipv6, icmpv6);
       },
       getDhcpv6Server: () => this.dhcpv6Server,
       getDhcpv6ServerPool: (iface) => this.dhcpv6InterfacePools.get(iface),
@@ -2810,6 +2812,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           topic: 'host.icmp.unreachable',
           payload: icmpUnreachablePayload(this.routerRef(), ipPkt, icmp),
         });
+        deliverIcmpv4ErrorToTcp(this.tcpv2, ipPkt, icmp);
       }
 
       if (icmp.icmpType === 'echo-request') {

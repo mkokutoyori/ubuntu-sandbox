@@ -155,6 +155,10 @@ export function seqLt(a: number, b: number): boolean {
   return ((a - b) >>> 0) > 0x7fffffff;
 }
 
+export function seqWithin(first: number, value: number, last: number): boolean {
+  return ((value - first) >>> 0) <= ((last - first) >>> 0);
+}
+
 export function computeTcpChecksum(
   seg: TcpSegment, srcIp: string, dstIp: string,
 ): number {

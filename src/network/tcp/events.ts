@@ -75,7 +75,7 @@ export interface TcpListenerChangedPayload extends TcpDeviceRef {
 export type TcpDropReason =
   | 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled'
   | 'bad-checksum' | 'no-ephemeral' | 'addr-in-use' | 'listen-ignores-segment'
-  | 'non-unicast-destination' | 'invalid-source';
+  | 'non-unicast-destination' | 'invalid-source' | 'icmp-out-of-window';
 
 export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   sourceIp: string;
