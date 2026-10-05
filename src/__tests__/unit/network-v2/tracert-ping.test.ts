@@ -1970,13 +1970,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
   describe('Section 6: Security Privilege Boundaries, Cable Drops & Failure Edge Cases', () => {
     it('251. should restrict flood ping option on Linux to root user (-f)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
-      const output = await pc.executeCommand('su user -c "ping -f 127.0.0.1"');
+      const output = await pc.executeCommand('ping -f 127.0.0.1');
       expect(output).toContain('ping: cannot flood; minimal interval allowed for user is 2ms');
     });
 
     it('252. lets a user go down to -i 0.1: iputils 20221126 only refuses under 2 ms', async () => {
       const pc = new LinuxPC('PC', 0, 0);
-      const output = await pc.executeCommand('su user -c "ping -c 2 -i 0.1 127.0.0.1"');
+      const output = await pc.executeCommand('ping -c 2 -i 0.1 127.0.0.1');
       expect(output).toMatch(/2 packets transmitted, 2 received, 0% packet loss/);
     });
 
