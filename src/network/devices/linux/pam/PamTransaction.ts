@@ -1,5 +1,6 @@
 import { dispatchChain } from './PamDispatch';
 import {
+  PAM_LIBRARY_NAME,
   PamHandle,
   type PamChoice,
   type PamConversationFlow,
@@ -46,7 +47,7 @@ export class PamTransaction<H extends PamHost = PamHost> {
     if (this.loaded === null) {
       this.loaded = loadPamStacks(this.service, this.files);
       for (const message of this.loaded.diagnostics) {
-        this.host.log({ priority: 'err', module: 'libpam', service: this.service, choice: null, message });
+        this.host.log({ priority: 'err', module: PAM_LIBRARY_NAME, service: this.service, choice: null, message });
       }
     }
     return this.loaded;
@@ -55,6 +56,10 @@ export class PamTransaction<H extends PamHost = PamHost> {
   private *dispatch(choice: PamChoice, type: PamModuleType, flags: number): PamConversationFlow<number> {
     const loaded = this.stacks();
     return yield* dispatchChain(this.handle, this.registry, loaded.stacks[type], choice, flags);
+  }
+
+  end(): void {
+    this.handle.releaseData();
   }
 
   *authenticate(flags = 0): PamConversationFlow<number> {
