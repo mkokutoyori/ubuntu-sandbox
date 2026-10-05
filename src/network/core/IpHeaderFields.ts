@@ -99,6 +99,46 @@ export const DSCP_CODEPOINTS = {
   af31: 26, af32: 28, af33: 30, af41: 34, af42: 36, af43: 38, ef: 46,
 } as const satisfies Readonly<Record<string, number>>;
 
+export class EcnCodepoint {
+  static readonly MASK = 0b11;
+  static readonly NOT_ECT = new EcnCodepoint(0b00);
+  static readonly ECT_1 = new EcnCodepoint(0b01);
+  static readonly ECT_0 = new EcnCodepoint(0b10);
+  static readonly CE = new EcnCodepoint(0b11);
+  readonly bits: number;
+
+  private constructor(bits: number) {
+    this.bits = bits;
+  }
+
+  static of(bits: number): EcnCodepoint {
+    if (!Number.isInteger(bits) || bits < 0 || bits > EcnCodepoint.MASK) {
+      throw new RangeError(`Invalid ECN codepoint ${bits}: must be an integer in 0–${EcnCodepoint.MASK}`);
+    }
+    return [EcnCodepoint.NOT_ECT, EcnCodepoint.ECT_1, EcnCodepoint.ECT_0, EcnCodepoint.CE][bits];
+  }
+
+  static ofField(field: number): EcnCodepoint {
+    return EcnCodepoint.of(field & EcnCodepoint.MASK);
+  }
+
+  get capable(): boolean {
+    return this !== EcnCodepoint.NOT_ECT;
+  }
+
+  get congestionExperienced(): boolean {
+    return this === EcnCodepoint.CE;
+  }
+
+  equals(other: EcnCodepoint): boolean {
+    return this.bits === other.bits;
+  }
+
+  toString(): string {
+    return ['Not-ECT', 'ECT(1)', 'ECT(0)', 'CE'][this.bits];
+  }
+}
+
 export class DiffServField {
   static readonly MAX = 255;
   static readonly DSCP_SHIFT = 2;
@@ -128,6 +168,14 @@ export class DiffServField {
 
   get dscp(): number {
     return this.value >>> DiffServField.DSCP_SHIFT;
+  }
+
+  get ecn(): EcnCodepoint {
+    return EcnCodepoint.ofField(this.value);
+  }
+
+  withEcn(ecn: EcnCodepoint): DiffServField {
+    return new DiffServField((this.value & ~EcnCodepoint.MASK) | ecn.bits);
   }
 
   equals(other: DiffServField): boolean {

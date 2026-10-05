@@ -11,6 +11,7 @@ import {
   icmpTypeNumber,
   icmpv6TypeNumber,
   verifyIPv4Checksum,
+  MACAddress,
   type EthernetFrame,
   type IPv4Packet,
   type IPv6Packet,
@@ -64,6 +65,8 @@ export interface CaptureFrame {
   ttl?: number;
   ipId?: number;
   ipTos?: number;
+  ipTrafficClass?: number;
+  ipFlowLabel?: number;
   ipProtocol?: number;
   ipTotalLength?: number;
   ipHeaderLen?: number;
@@ -450,6 +453,8 @@ export function decodeEthernetFrame(
     base.srcIp = ip6.sourceIP.toString();
     base.dstIp = ip6.destinationIP.toString();
     base.ttl = ip6.hopLimit;
+    base.ipTrafficClass = ip6.trafficClass;
+    base.ipFlowLabel = ip6.flowLabel;
     base.ipProtocol = ip6.nextHeader;
     base.ipTotalLength = ip6.payloadLength + 40;
     base.ipHeaderLen = 40;
@@ -613,14 +618,24 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
   base.l4 = 'other';
 }
 
+const LOOPBACK_MAC = new MACAddress('00:00:00:00:00:00');
+
 export function makeTcpFrame(
   pkt: {
     at: Date; srcIp: string; srcPort: number; dstIp: string; dstPort: number;
     flags: string; seq: number; ack: number; length: number;
     payload?: Uint8Array;
+    packet?: IPv4Packet | IPv6Packet;
   },
   iface: string,
 ): CaptureFrame {
+  if (pkt.packet) {
+    return decodeEthernetFrame({
+      srcMAC: LOOPBACK_MAC, dstMAC: LOOPBACK_MAC,
+      etherType: pkt.packet.type === 'ipv6' ? ETHERTYPE_IPV6 : ETHERTYPE_IPV4,
+      payload: pkt.packet,
+    } as EthernetFrame, iface, 'in', pkt.at);
+  }
   const f = pkt.flags;
   const flags = {
     syn: f.includes('S'),

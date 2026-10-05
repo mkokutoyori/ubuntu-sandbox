@@ -64,6 +64,7 @@ import {
 } from './linux/http/nginx/NginxFiles';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
+import { ecnPolicyOfSetting, type TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
@@ -259,6 +260,10 @@ export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   protected readonly defaultTTL = 64;
   protected override get udpDiscoversPathMtu(): boolean { return true; }
+  private tcpEcnSetting = 2;
+  private tcpEcnFallbackSetting = 1;
+  protected override get tcpEcnPolicy(): TcpEcnPolicy { return ecnPolicyOfSetting(this.tcpEcnSetting); }
+  protected override get tcpEcnFallsBack(): boolean { return this.tcpEcnFallbackSetting !== 0; }
 
   /** Active profile — describes the "flavor" of this Linux machine. */
   public readonly profile: LinuxProfile;
@@ -362,6 +367,10 @@ export abstract class LinuxMachine extends EndHost
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`, 0o644);
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
       () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`, 0o644);
+    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_ecn',
+      () => `${this.tcpEcnSetting}\n`, 0o644);
+    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_ecn_fallback',
+      () => `${this.tcpEcnFallbackSetting}\n`, 0o644);
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
       () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`, 0o644);
     this.executor.setSessionTable(this.sessionTable);
@@ -4022,6 +4031,12 @@ export abstract class LinuxMachine extends EndHost
       },
       setIpForward: (enabled: boolean): void => {
         this.ipForwardEnabled = enabled;
+      },
+      setTcpEcn: (setting: number): void => {
+        this.tcpEcnSetting = setting;
+      },
+      setTcpEcnFallback: (setting: number): void => {
+        this.tcpEcnFallbackSetting = setting;
       },
       isIpForwardEnabled: (): boolean => {
         return this.ipForwardEnabled;
