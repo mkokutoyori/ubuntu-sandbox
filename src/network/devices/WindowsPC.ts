@@ -1995,6 +1995,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** `net session` — inbound SMB sessions from other computers connected to shares on THIS device. */
   private cmdNetSession(args: string[]): string {
+    if (!this.userMgr.isCurrentUserAdmin()) return 'System error 5 has occurred.\n\nAccess is denied.';
     if (args.some(a => a.toLowerCase() === '/delete')) {
       const target = args.find(a => a.startsWith('\\\\'));
       const before = this.smbSessions.list();
@@ -3966,6 +3967,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private buildSystemContext(): WinSys.WinSystemContext {
     return {
       hostname: this.hostname,
+      isAdmin: this.userMgr.isCurrentUserAdmin(),
       os: this.getIdentity().os,
       bootedAt: () => this.getLifecycle().bootedAt() ?? null,
       hardware: this.hardware,

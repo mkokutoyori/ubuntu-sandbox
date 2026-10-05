@@ -45,6 +45,7 @@ describe('Scénario 9 — panne du contrôleur de domaine DC01', () => {
     poste.configureInterface('eth0', new IPAddress('192.168.10.50'), new SubnetMask('255.255.255.0'));
 
     dc01.setCurrentUser('Administrator');
+    poste.setCurrentUser('Administrator');
     await psOn(dc01,
       'Install-ADDSForest -DomainName mandeng.lan -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd!" -AsPlainText -Force) -Force');
 

@@ -1653,19 +1653,34 @@ function toGroupInfo(g: import('@/network/devices/windows/WindowsUserManager').W
 class WindowsRegistryAdapter implements IRegistryProvider {
   // Held at provider-construction time so the interpreter and the legacy
   // executor can share the same in-memory hive (see WindowsPSProviders ctor).
-  constructor(private readonly reg: PSRegistryProvider) {}
+  constructor(
+    private readonly reg: PSRegistryProvider,
+    private readonly mayWriteMachineHive: () => boolean,
+  ) {}
+
+  private refused(cmdlet: string, path: string, mustExist: boolean): string | null {
+    if (!this.reg.targetsMachineHive(path) || this.mayWriteMachineHive()) return null;
+    if (mustExist && !this.reg.testPath(path)) return null;
+    return `${cmdlet} : Requested registry access is not allowed.`;
+  }
 
   testPath(path: string): boolean              { return this.reg.testPath(path); }
   getItem(path: string): string                 { return this.reg.getItem(path); }
   getChildItem(path: string): string            { return this.reg.getChildItem(path); }
-  newItem(path: string, force: boolean): string { return this.reg.newItem(path, force); }
-  removeItem(path: string, recurse: boolean): string { return this.reg.removeItem(path, recurse); }
+  newItem(path: string, force: boolean): string {
+    return this.refused('New-Item', path, false) ?? this.reg.newItem(path, force);
+  }
+  removeItem(path: string, recurse: boolean): string {
+    return this.refused('Remove-Item', path, true) ?? this.reg.removeItem(path, recurse);
+  }
   getItemProperty(path: string, name?: string): string { return this.reg.getItemProperty(path, name); }
   getItemPropertyValues(path: string) { return this.reg.getItemPropertyValues(path); }
   setItemProperty(path: string, name: string, value: string | number): string {
-    return this.reg.setItemProperty(path, name, value);
+    return this.refused('Set-ItemProperty', path, true) ?? this.reg.setItemProperty(path, name, value);
   }
-  removeItemProperty(path: string, name: string): string { return this.reg.removeItemProperty(path, name); }
+  removeItemProperty(path: string, name: string): string {
+    return this.refused('Remove-ItemProperty', path, true) ?? this.reg.removeItemProperty(path, name);
+  }
   getPSDrive(): string                           { return this.reg.getPSDrive(); }
 }
 
@@ -3824,7 +3839,7 @@ export function createWindowsPSProviders(
       advance: (ms) => (pc as unknown as { advanceTime: (ms: number) => void }).advanceTime(ms),
     }),
     users:          new WindowsUserAdapter(pc),
-    registry:       new WindowsRegistryAdapter(reg),
+    registry:       new WindowsRegistryAdapter(reg, () => pc.getUserManager().isCurrentUserAdmin()),
     eventLog:       new WindowsEventLogAdapter(log, pc),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(pc, vpn),

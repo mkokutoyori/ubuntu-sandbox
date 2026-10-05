@@ -59,6 +59,9 @@ export class NewObjectCmdlet implements ICmdlet {
       Object.defineProperty(s, 'Count', { get: () => items.length, enumerable: false, configurable: true });
       return s as unknown as PSValue;
     }
+    if (tname.includes('windowsprincipal')) {
+      return ctx.runtime.psCast(newObjectCtorArgs(ctx)[0] ?? null, 'security.principal.windowsprincipal');
+    }
     if (tname.includes('pscredential')) {
       const args = newObjectCtorArgs(ctx);
       const secret = args[1] as { SecureString?: unknown } | undefined;

@@ -482,6 +482,10 @@ export class PSRegistryProvider {
     return lines.join('\n');
   }
 
+  targetsMachineHive(path: string): boolean {
+    return parseRegistryPath(path)?.hive === 'HKLM';
+  }
+
   newItem(path: string, force: boolean): string {
     const parsed = parseRegistryPath(path);
     if (!parsed) return `New-Item : The path '${path}' is not a valid registry path.`;
