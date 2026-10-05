@@ -712,6 +712,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       },
       sendIpv6FrameNdpAware: (iface: string, pkt: IPv6Packet, nextHopIP: IPv6Address) =>
         this.ipv6Engine.sendFrameNdpAware(iface, pkt, nextHopIP),
+      defaultTtl: (family: string) => family === 'ipv6' ? undefined : this.defaultTTL,
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus(),
       () => this.getRouterScheduler());

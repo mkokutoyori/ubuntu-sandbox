@@ -14,6 +14,7 @@ import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
 import { PortNumber, PORT_ANY } from '@/network/core/ports/PortNumber';
 import type { PortBindingPolicy } from '@/network/core/ports/PortBindingPolicy';
 import { PROHIBITED_UNREACH_CODES } from '@/network/core/IcmpErrors';
+import { DiffServField, type TimeToLive } from '@/network/core/IpHeaderFields';
 
 /**
  * Ce qu'une sonde apatride a vu revenir. `rst-window` distingue un RST a
@@ -133,7 +134,8 @@ function emptyProbeDetail(reply: StatelessProbeReply): StatelessProbeDetail {
 }
 
 import {
-  connectedPrefixesOfPort, isUnicastDestination, type ConnectedIpv4Prefix,
+  connectedPrefixesOfPort, isDirectedBroadcast, isUnicastDestination, martianSource,
+  type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
 import {
   RttEstimator, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS, TCP_R1_RETRANSMITS, TCP_DATA_R2_MS, TCP_SYN_R2_MS,
@@ -207,6 +209,7 @@ export interface TcpHost {
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
   adviseNegative?(nextHopIp: string): void;
+  defaultTtl?(family: IpFamily): number | undefined;
 }
 
 export interface TcpAcceptHandler {
@@ -231,6 +234,8 @@ export interface TcpConnectOptions {
   onOpen?: TcpOpenHandler;
   onData?: TcpDataHandler;
   onClose?: TcpCloseHandler;
+  ttl?: TimeToLive;
+  diffServ?: DiffServField;
 }
 
 export interface TcpListenOptions {
@@ -245,6 +250,8 @@ export interface TcpListenOptions {
   ownerUid?: number;
   receiveWindow?: number;
   maxSegmentSize?: number;
+  ttl?: TimeToLive;
+  diffServ?: DiffServField;
 }
 
 export class TcpSocket {
@@ -254,6 +261,8 @@ export class TcpSocket {
   localPort: number;
   remotePort: number;
   state: TcpState = 'closed';
+  ttl: TimeToLive | null = null;
+  diffServ: DiffServField = DiffServField.DEFAULT;
   sendNext = 0;
   sendUnacked = 0;
   recvNext = 0;
@@ -422,6 +431,9 @@ export class TcpSocket {
    */
   setNoDelay(enabled: boolean): void { this.stack._setNoDelay(this, enabled); }
 
+  setTtl(ttl: TimeToLive | null): void { this.ttl = ttl; }
+  setDiffServ(field: DiffServField): void { this.diffServ = field; }
+
   /**
    * Enable RFC 9293 §3.8.4 (SO_KEEPALIVE) idle-probe monitoring: after
    * `idleMs` with no segment received from the peer, send a probe every
@@ -547,6 +559,8 @@ export class TcpListener {
     readonly identity: ListenerIdentity = {},
     readonly receiveWindow: number = TCP_DEFAULT_WINDOW,
     readonly maxSegmentSize: number = Number.MAX_SAFE_INTEGER,
+    readonly ttl: TimeToLive | null = null,
+    readonly diffServ: DiffServField = DiffServField.DEFAULT,
   ) {}
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
@@ -583,6 +597,7 @@ export class TcpStack {
   }
 
   private readonly challengeAcks = new AckThrottle();
+  private readonly incarnationFloors = new Map<string, number>();
   private readonly isn = new IsnGenerator();
   private readonly timers = new TimerSet(() => this.getScheduler());
 
@@ -651,7 +666,7 @@ export class TcpStack {
     }
     const listener = new TcpListener(
       localIp, boundPort, opts.onAccept, opts.identity ?? {},
-      opts.receiveWindow, opts.maxSegmentSize);
+      opts.receiveWindow, opts.maxSegmentSize, opts.ttl ?? null, opts.diffServ ?? DiffServField.DEFAULT);
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
@@ -757,6 +772,8 @@ export class TcpStack {
     if (opts.onOpen) socket.onOpen(opts.onOpen);
     if (opts.onData) socket.onData(opts.onData);
     if (opts.onClose) socket.onClose(opts.onClose);
+    socket.ttl = opts.ttl ?? null;
+    socket.diffServ = opts.diffServ ?? DiffServField.DEFAULT;
     socket.passive = false;
     socket.mss = mssForMtu(socket.family, this.egressMtu(egress));
     socket.sendNext = this.initialSequence(socket);
@@ -1077,6 +1094,11 @@ export class TcpStack {
     if (ipPkt.protocol !== IP_PROTO_TCP) return false;
     const seg = ipPkt.payload as TcpSegment | undefined;
     if (!seg || seg.type !== 'tcp') return false;
+    const refusal = this.wireRefusal4(srcIp, ipPkt.destinationIP);
+    if (refusal !== null) {
+      this.dropped(srcIp.toString(), seg.sourcePort, refusal);
+      return true;
+    }
     return this.handleSegment(
       srcIp.toString(), ipPkt.destinationIP.toString(), seg, receivedIpHeaderOf(ipPkt));
   }
@@ -1086,7 +1108,22 @@ export class TcpStack {
     if (ipv6.nextHeader !== IP_PROTO_TCP) return false;
     const seg = ipv6.payload as TcpSegment | undefined;
     if (!seg || seg.type !== 'tcp') return false;
+    if (ipv6.destinationIP.isMulticast()) {
+      this.dropped(srcIp.toString(), seg.sourcePort, 'non-unicast-destination');
+      return true;
+    }
+    if (srcIp.isUnspecified() || srcIp.isMulticast() || srcIp.isLoopback()) {
+      this.dropped(srcIp.toString(), seg.sourcePort, 'invalid-source');
+      return true;
+    }
     return this.handleSegment(srcIp.toString(), ipv6.destinationIP.toString(), seg);
+  }
+
+  private wireRefusal4(source: IPAddress, destination: IPAddress): TcpDropReason | null {
+    const prefixes = this.connectedPrefixes();
+    if (!isUnicastDestination(destination, prefixes)) return 'non-unicast-destination';
+    if (martianSource(source) !== null || isDirectedBroadcast(source, prefixes)) return 'invalid-source';
+    return null;
   }
 
   private handleSegment(
@@ -1113,7 +1150,7 @@ export class TcpStack {
 
     const socketKey = makeSocketKey(dstIp, seg.destinationPort, senderIp, seg.sourcePort);
     const existing = this.sockets.get(socketKey);
-    if (existing) {
+    if (existing && !this.yieldsToNewIncarnation(existing, seg)) {
       this._processSegment(existing, seg, payloadSize);
       return true;
     }
@@ -1128,6 +1165,8 @@ export class TcpStack {
       socket.passive = true;
       socket.pendingListener = listener;
       socket.windowSize = listener.receiveWindow;
+      socket.ttl = listener.ttl;
+      socket.diffServ = listener.diffServ;
       const announcedMss = Math.min(
         mssForMtu(socket.family, this.egressMtu(this.resolveEgress(senderIp))), listener.maxSegmentSize);
       socket.recvNext = (seg.sequence + 1) >>> 0;
@@ -1518,8 +1557,21 @@ export class TcpStack {
   }
 
   private initialSequence(socket: TcpSocket): number {
-    return this.isn.next(
+    const generated = this.isn.next(
       this.getScheduler().now(), socket.localIp, socket.localPort, socket.remoteIp, socket.remotePort);
+    const floor = this.incarnationFloors.get(socket.key());
+    if (floor === undefined) return generated;
+    this.incarnationFloors.delete(socket.key());
+    return seqLt(generated, floor) ? floor : generated;
+  }
+
+  private yieldsToNewIncarnation(socket: TcpSocket, seg: TcpSegment): boolean {
+    if (socket.state !== 'time-wait' || !seg.flags.syn || seg.flags.ack || seg.flags.rst) return false;
+    if (!seqLt(socket.recvNext, seg.sequence)) return false;
+    if (!this.findListener(socket.localIp, socket.localPort)) return false;
+    this.incarnationFloors.set(socket.key(), socket.sendNext);
+    this._teardown(socket, 'fin');
+    return true;
   }
 
   private acknowledgesOurSyn(socket: TcpSocket, ack: number): boolean {
@@ -2146,7 +2198,9 @@ export class TcpStack {
     };
     const source = sourceAddressOf(socket, egress.srcIp);
     seg.checksum = computeTcpChecksum(seg, source, socket.remoteIp);
-    this.shipSegment(egress, source, socket.remoteIp, seg);
+    this.shipSegment(egress, source, socket.remoteIp, seg, {
+      ttl: socket.ttl?.value, tos: socket.diffServ.value,
+    });
     return sentTsVal;
   }
 
@@ -2370,9 +2424,10 @@ export class TcpStack {
   ): void {
     const family = ipFamilyOf(dstIp);
     const local = this.isLocalDestination(dstIp, family);
+    const ttl = shape?.ttl ?? this.defaultTtl(family);
     const l3Packet = family === 'ipv6'
-      ? this.buildIpv6Segment(srcIp, dstIp, seg, shape?.ttl)
-      : this.buildIpv4Segment(srcIp, dstIp, seg, shape?.ttl, shape?.fragmentMtu, shape);
+      ? this.buildIpv6Segment(srcIp, dstIp, seg, ttl, shape?.tos)
+      : this.buildIpv4Segment(srcIp, dstIp, seg, ttl, shape?.fragmentMtu, shape);
     this.getBus().publish({
       topic: 'tcp.segment.sent',
       payload: {
@@ -2416,8 +2471,12 @@ export class TcpStack {
     }
   }
 
+  private defaultTtl(family: IpFamily): number {
+    return this.host.defaultTtl?.(family) ?? TCP_DEFAULT_TTL;
+  }
+
   private buildIpv4Segment(
-    srcIp: string, dstIp: string, seg: TcpSegment, ttl = TCP_DEFAULT_TTL,
+    srcIp: string, dstIp: string, seg: TcpSegment, ttl: number,
     fragmentMtu?: number, shape?: ScanProbeShape,
   ): IPv4Packet {
     const tcpHeaderBytes = seg.dataOffset * 4;
@@ -2436,14 +2495,17 @@ export class TcpStack {
   }
 
   private buildIpv6Segment(
-    srcIp: string, dstIp: string, seg: TcpSegment, hopLimit = TCP_DEFAULT_TTL,
+    srcIp: string, dstIp: string, seg: TcpSegment, hopLimit: number, trafficClass = 0,
   ): IPv6Packet {
     const tcpHeaderBytes = seg.dataOffset * 4;
     const payloadLength = tcpHeaderBytes + payloadBytes(seg.payload).length;
-    return createIPv6Packet(
-      new IPv6Address(srcIp), new IPv6Address(dstIp), IP_PROTO_TCP, hopLimit,
-      seg, payloadLength,
-    );
+    return {
+      ...createIPv6Packet(
+        new IPv6Address(srcIp), new IPv6Address(dstIp), IP_PROTO_TCP, hopLimit,
+        seg, payloadLength,
+      ),
+      trafficClass,
+    };
   }
 
   private findListener(dstIp: string, port: number): import('./TcpStack').TcpListener | undefined {

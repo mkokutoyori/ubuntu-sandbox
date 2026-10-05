@@ -1,4 +1,6 @@
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import type { EndHost } from '@/network/devices/EndHost';
 import { Cable } from '@/network/hardware/Cable';
 import { Port } from '@/network/hardware/Port';
 import { EventBus } from '@/events/EventBus';
@@ -60,7 +62,7 @@ export interface PeerSegment {
 }
 
 export interface ScriptedPeer {
-  readonly dut: LinuxPC;
+  readonly dut: EndHost;
   readonly bus: EventBus;
   readonly clock: VirtualTimeScheduler;
   readonly frames: EthernetFrame[];
@@ -75,14 +77,14 @@ export interface ScriptedPeer {
   advance(ms: number): void;
 }
 
-export function scriptedPeer(): ScriptedPeer {
+export function scriptedPeer(platform: 'linux' | 'windows' = 'linux'): ScriptedPeer {
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
   Logger.reset();
   const bus = new EventBus();
   const clock = new VirtualTimeScheduler();
-  const dut = new LinuxPC('DUT');
+  const dut = platform === 'windows' ? new WindowsPC('windows-pc', 'DUT') : new LinuxPC('DUT');
   dut.setEventBus(bus);
   dut.powerOn();
   dut.setScheduler(clock);
