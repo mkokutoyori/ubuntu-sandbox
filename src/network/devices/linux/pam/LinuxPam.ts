@@ -6,7 +6,8 @@ import { LinuxPamFiles } from './LinuxPamFiles';
 import { createLinuxPamModules } from './LinuxPamModules';
 import { formatPamLogLine, type PamLogEntry } from './PamHandle';
 import type { KeyringTable } from '../kernel/KeyringTable';
-import { defaultRlimits } from './PamRlimitDefaults';
+import { localTimeIn } from './PamLocalTime';
+import { defaultCapabilities, defaultRlimits } from './PamRlimitDefaults';
 import type { LinuxPamHost, PamCaller, PamLoginEntry, PamRlimit, PamRlimitResource } from './PamLinuxHost';
 import { PamTransaction } from './PamTransaction';
 
@@ -17,6 +18,9 @@ export interface LinuxPamDeps {
   readonly clock: () => number;
   readonly logins: () => readonly PamLoginEntry[];
   readonly auditdRunning: () => boolean;
+  readonly hostname: () => string;
+  readonly timezone: () => string;
+  readonly resolveHost: (name: string) => readonly string[];
   readonly keyrings: KeyringTable;
   readonly updateMotd?: () => string | null;
   readonly processLimits?: (uid: number) => ReadonlyMap<PamRlimitResource, PamRlimit>;
@@ -43,6 +47,11 @@ export class LinuxPam {
     this.accounts = new LinuxPamAccounts(deps.users, (path) => deps.vfs.readFile(path), this.files);
   }
 
+  private supplementaryGroupsOf(uid: number): number[] {
+    const entry = this.deps.users.getUserByUid(uid);
+    return entry === undefined ? [] : this.deps.users.getUserGroups(entry.username).map((group) => group.gid);
+  }
+
   begin(service: string, options: PamTransactionOptions): PamTransaction<LinuxPamHost> {
     const identity = options.identity ?? { tag: service };
     const pid = identity.pid ?? this.nextPid++;
@@ -55,6 +64,9 @@ export class LinuxPam {
       caller: options.caller,
       logins: this.deps.logins,
       auditdRunning: this.deps.auditdRunning,
+      hostname: this.deps.hostname,
+      localTime: (epochMs) => localTimeIn(this.deps.timezone(), epochMs),
+      resolveHost: this.deps.resolveHost,
       updateMotd: this.deps.updateMotd ?? null,
       keyrings: {
         userSessionKeyring: (uid) => this.deps.keyrings.userSessionKeyring(uid).id,
@@ -63,6 +75,8 @@ export class LinuxPam {
         revoke: (id, asUid) => this.deps.keyrings.revoke(id, asUid),
       },
       process: {
+        capabilities: defaultCapabilities(),
+        supplementaryGroups: this.supplementaryGroupsOf(options.caller.uid),
         sessionKeyring: this.deps.keyrings.userSessionKeyring(options.caller.uid).id,
         umask: 0o022,
         priority: 0,

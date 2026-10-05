@@ -83,7 +83,27 @@ export interface PamKeyrings {
   revoke(id: number, asUid: number): boolean;
 }
 
+export const CAPABILITY_NAMES: readonly string[] = [
+  'cap_chown', 'cap_dac_override', 'cap_dac_read_search', 'cap_fowner', 'cap_fsetid', 'cap_kill',
+  'cap_setgid', 'cap_setuid', 'cap_setpcap', 'cap_linux_immutable', 'cap_net_bind_service',
+  'cap_net_broadcast', 'cap_net_admin', 'cap_net_raw', 'cap_ipc_lock', 'cap_ipc_owner',
+  'cap_sys_module', 'cap_sys_rawio', 'cap_sys_chroot', 'cap_sys_ptrace', 'cap_sys_pacct',
+  'cap_sys_admin', 'cap_sys_boot', 'cap_sys_nice', 'cap_sys_resource', 'cap_sys_time',
+  'cap_sys_tty_config', 'cap_mknod', 'cap_lease', 'cap_audit_write', 'cap_audit_control',
+  'cap_setfcap', 'cap_mac_override', 'cap_mac_admin', 'cap_syslog', 'cap_wake_alarm',
+  'cap_block_suspend', 'cap_audit_read', 'cap_perfmon', 'cap_bpf', 'cap_checkpoint_restore',
+];
+
+export interface PamCapabilityState {
+  inheritable: Set<string>;
+  ambient: Set<string>;
+  bounding: Set<string>;
+  keepCaps: boolean;
+}
+
 export interface PamProcessState {
+  capabilities: PamCapabilityState;
+  supplementaryGroups: number[];
   sessionKeyring: number | null;
   umask: number;
   priority: number;
@@ -95,10 +115,24 @@ export interface PamLoginEntry {
   readonly user: string;
 }
 
+export interface PamLocalTime {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+  readonly weekday: number;
+  readonly hour: number;
+  readonly minute: number;
+  readonly second: number;
+  readonly abbreviation: string;
+}
+
 export interface LinuxPamHost extends PamHost {
   readonly process: PamProcessState;
   readonly logins: () => readonly PamLoginEntry[];
   readonly auditdRunning: () => boolean;
+  readonly hostname: () => string;
+  readonly localTime: (epochMs: number) => PamLocalTime;
+  readonly resolveHost: (name: string) => readonly string[];
   readonly keyrings: PamKeyrings;
   readonly updateMotd: (() => string | null) | null;
   readonly accounts: PamAccountsPort;

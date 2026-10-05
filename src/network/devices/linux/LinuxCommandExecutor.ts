@@ -673,6 +673,9 @@ export class LinuxCommandExecutor {
       clock: () => Date.now(),
       logins: () => this.sessionTable?.list().map((session) => ({ user: session.user })) ?? [],
       auditdRunning: () => this.auditDaemon?.running ?? false,
+      hostname: () => kernelHostname(this.vfs),
+      timezone: () => (this.vfs.readFile('/etc/timezone') ?? 'UTC').trim(),
+      resolveHost: (name) => this.resolveHostAddresses(name),
       keyrings: this.keyrings,
       processLimits: (uid) => new Map([
         ['nofile', { soft: this.processMgr.nofileLimit(uid), hard: this.processMgr.nofileHardLimit(uid) }],
@@ -2005,6 +2008,17 @@ export class LinuxCommandExecutor {
       resolveName: (name: string): string | null =>
         IPAddress.isValid(name) ? null : this.resolveHostIpv4(name),
     };
+  }
+
+  resolveHostAddresses(name: string): string[] {
+    const found: string[] = [];
+    for (const family of [2, 10] as const) {
+      const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, family));
+      if (r.status === 'SUCCESS' && r.entry) {
+        for (const h of r.entry) if (h.addressFamily === family) found.push(h.address);
+      }
+    }
+    return found;
   }
 
   resolveHostIpv4(name: string): string | null {

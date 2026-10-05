@@ -4,7 +4,8 @@ import type {
 } from '@/network/devices/linux/pam/PamLinuxHost';
 import { formatPamLogLine, type PamConversationRequest, type PamLogEntry, type PamReply } from '@/network/devices/linux/pam/PamHandle';
 import { KeyringTable } from '@/network/devices/linux/kernel/KeyringTable';
-import { defaultRlimits } from '@/network/devices/linux/pam/PamRlimitDefaults';
+import { localTimeIn } from '@/network/devices/linux/pam/PamLocalTime';
+import { defaultCapabilities, defaultRlimits } from '@/network/devices/linux/pam/PamRlimitDefaults';
 import { PamTransaction, runPamSync } from '@/network/devices/linux/pam/PamTransaction';
 
 export const DAY_MS = 86_400_000;
@@ -41,13 +42,16 @@ export class PamLab {
   readonly passwords = new Map<string, string>();
   readonly history = new Map<string, string[]>();
   auditd = false;
+  hostName = 'lab';
+  timezone = 'UTC';
+  readonly hostTable = new Map<string, string[]>();
   readonly modes = new Map<string, number>();
   readonly times = new Map<string, { access: number; modify: number }>();
   readonly loginList: PamLoginEntry[] = [];
   readonly keyringTable = new KeyringTable();
   updateMotdOutput: string | null = null;
   motdUpdates = 0;
-  readonly process: PamProcessState = { sessionKeyring: this.keyringTable.userSessionKeyring(0).id, umask: 0o022, priority: 0, loginUid: null, limits: defaultRlimits() };
+  readonly process: PamProcessState = { capabilities: defaultCapabilities(), supplementaryGroups: [], sessionKeyring: this.keyringTable.userSessionKeyring(0).id, umask: 0o022, priority: 0, loginUid: null, limits: defaultRlimits() };
   now: number;
   private readonly users = new Map<string, LabUser>();
   private readonly groups: LabGroup[];
@@ -85,6 +89,9 @@ export class PamLab {
     process: this.process,
     logins: () => this.loginList,
     auditdRunning: () => this.auditd,
+    hostname: () => this.hostName,
+    localTime: (epochMs) => localTimeIn(this.timezone, epochMs),
+    resolveHost: (name) => this.hostTable.get(name) ?? [],
     updateMotd: () => { this.motdUpdates++; return this.updateMotdOutput; },
     keyrings: {
       userSessionKeyring: (uid) => this.keyringTable.userSessionKeyring(uid).id,

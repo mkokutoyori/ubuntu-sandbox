@@ -1,4 +1,4 @@
-import type { PamRlimit, PamRlimitResource } from './PamLinuxHost';
+import { CAPABILITY_NAMES, type PamCapabilityState, type PamRlimit, type PamRlimitResource } from './PamLinuxHost';
 
 const UNLIMITED = Number.POSITIVE_INFINITY;
 
@@ -23,4 +23,8 @@ const DEFAULTS: ReadonlyArray<readonly [PamRlimitResource, PamRlimit]> = [
 
 export function defaultRlimits(overrides: ReadonlyMap<PamRlimitResource, PamRlimit> = new Map()): Map<PamRlimitResource, PamRlimit> {
   return new Map(DEFAULTS.map(([resource, limit]) => [resource, { ...(overrides.get(resource) ?? limit) }]));
+}
+
+export function defaultCapabilities(): PamCapabilityState {
+  return { inheritable: new Set(), ambient: new Set(), bounding: new Set(CAPABILITY_NAMES), keepCaps: false };
 }
