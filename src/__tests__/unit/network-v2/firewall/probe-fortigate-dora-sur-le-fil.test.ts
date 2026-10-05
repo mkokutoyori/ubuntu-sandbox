@@ -158,14 +158,25 @@ describe('a FortiGate that serves a directly attached client', () => {
     }
   });
 
-  it('copies the broadcast flag of the client into its reply (RFC 2131 table 3)', async () => {
+  it('copies a clear broadcast flag of the client into its reply (RFC 2131 table 3)', async () => {
     const { pc, seen } = await directLab();
     await pc.executeCommand('dhclient -v eth0');
     const discover = seen.find(frame => frame.kind === 'DHCPDISCOVER')!;
     const offer = seen.find(frame => frame.kind === 'DHCPOFFER')!;
 
+    expect(discover.dhcp.flags).toBe(0);
+    expect(offer.dhcp.flags).toBe(0);
+  });
+
+  it('copies a set broadcast flag of the client into its reply (RFC 2131 table 3)', async () => {
+    const { pc, seen } = await directLab();
+    pc.getDHCPClient().setBroadcastFlag(true);
+    await pc.executeCommand('dhclient -v eth0');
+    const discover = seen.find(frame => frame.kind === 'DHCPDISCOVER')!;
+    const offer = seen.find(frame => frame.kind === 'DHCPOFFER')!;
+
     expect(discover.dhcp.flags).toBe(0x8000);
-    expect(offer.dhcp.flags).toBe(discover.dhcp.flags);
+    expect(offer.dhcp.flags).toBe(0x8000);
   });
 
   it('a refused renewal is answered by a NAK sent to the broadcast address', async () => {

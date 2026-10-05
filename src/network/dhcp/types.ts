@@ -108,6 +108,8 @@ export interface DHCPDiscoverParams {
   clientIdentifier: string;
   /** Option 60: Vendor Class Identifier */
   vendorClass?: string;
+  /** RFC 2131 §4.1 BROADCAST flag: ask the server to answer by broadcast. */
+  broadcast?: boolean;
   relayInformation?: DhcpRelayInformation;
   /** Option 55: Parameter Request List (option codes client wants) */
   parameterRequestList: number[];
@@ -157,6 +159,8 @@ export interface DHCPRequestParams {
   clientIdentifier: string;
   /** Option 60: Vendor Class Identifier */
   vendorClass?: string;
+  /** RFC 2131 §4.1 BROADCAST flag: ask the server to answer by broadcast. */
+  broadcast?: boolean;
   relayInformation?: DhcpRelayInformation;
   requestState?: 'selecting' | 'init-reboot' | 'renewing';
   hardwareAddress?: string;

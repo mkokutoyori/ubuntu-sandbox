@@ -168,11 +168,12 @@ export class DHCPClient implements IProtocolEngine {
     this.forwardRegistrationPolicy = policy;
   }
 
-  private clientIdentity(): { hostName?: string; clientFqdn?: { flags: number; name: string } } {
+  private clientIdentity(): { broadcast: boolean; hostName?: string; clientFqdn?: { flags: number; name: string } } {
+    const broadcast = this.broadcastFlag;
     const name = (this.hostnameProvider?.() ?? this.hostname).trim();
-    if (!name) return {};
+    if (!name) return { broadcast };
     const serverDoesForward = !(this.forwardRegistrationPolicy?.() ?? false);
-    return { hostName: name, clientFqdn: { flags: serverDoesForward ? 0x01 : 0x00, name } };
+    return { broadcast, hostName: name, clientFqdn: { flags: serverDoesForward ? 0x01 : 0x00, name } };
   }
 
   private attachActors(): void {
@@ -319,6 +320,10 @@ export class DHCPClient implements IProtocolEngine {
   private vendorClass: string | null = null;
 
   setVendorClass(value: string | null): void { this.vendorClass = value; }
+
+  private broadcastFlag = true;
+
+  setBroadcastFlag(value: boolean): void { this.broadcastFlag = value; }
 
   private readonly identifierOverrides = new Map<string, string>();
   private readonly renewTimeOverrides = new Map<string, number>();

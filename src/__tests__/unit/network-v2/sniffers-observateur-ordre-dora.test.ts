@@ -9,6 +9,10 @@
  *
  * Avant le correctif : les 2 cas d'ordre tombent ; les temoins « les quatre messages sont
  * vus » passent avant comme apres.
+ *
+ * Le client pose le drapeau BROADCAST : un client qui le laisse a zero (dhclient) recoit
+ * l'Offer et l'ACK en unicast, que le commutateur ne livre qu'a son port — un tiers n'en
+ * voit que le Discover et le Request, comme sur un vrai commutateur.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -34,6 +38,7 @@ beforeEach(() => {
 async function segment() {
   const srv = new LinuxServer('linux-server', 'SRV');
   const client = new LinuxPC('linux-pc', 'C1');
+  client.getDHCPClient().setBroadcastFlag(true);
   const sw = new GenericSwitch('switch-generic', 'SW');
   new Cable('a').connect(srv.getPorts()[0], sw.getPorts()[0]);
   new Cable('b').connect(client.getPorts()[0], sw.getPorts()[1]);

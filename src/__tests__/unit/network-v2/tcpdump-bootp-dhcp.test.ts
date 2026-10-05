@@ -9,6 +9,9 @@
  * « nom (code) » ; « (0x%04x) » apres Flags seulement avec -vv. -q garde « UDP, length N ».
  * Non porte : la variante CMU du champ vendeur ; le DHCPv6 (546/547) n'est pas decode.
  *
+ * Le client est dhclient, drapeau BROADCAST a zero : les reponses sont unicast vers l'adresse
+ * proposee, et tcpdump, sur le poste du client, les decode sous « 192.168.1.1.67 > 192.168.1.1xx.68 ».
+ *
  * Avant le correctif (git stash des sources) : chaque trame s'affichait « UDP, length N » ;
  * les cas de decodage tombent. Le temoin « quatre trames DORA » et le cas -q passent avant
  * comme apres.
@@ -64,7 +67,7 @@ describe('tcpdump -nn sur le port 67/68', () => {
 
   it('Offer et ACK : BOOTP/DHCP, Reply', async () => {
     const { text } = await capture();
-    expect(text).toMatch(/192\.168\.1\.1\.67 > 255\.255\.255\.255\.68: BOOTP\/DHCP, Reply, length \d+/);
+    expect(text).toMatch(/192\.168\.1\.1\.67 > 192\.168\.1\.1\d\d\.68: BOOTP\/DHCP, Reply, length \d+/);
   });
 
   it('rien n est plus affiche comme UDP, length', async () => {

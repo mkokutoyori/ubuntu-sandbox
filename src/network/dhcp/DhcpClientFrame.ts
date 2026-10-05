@@ -1,10 +1,10 @@
 import {
-  ETHERTYPE_IPV4, IPAddress, MACAddress,
-  type EthernetFrame, type IPv4Packet,
+  ETHERTYPE_IPV4, IP_PROTO_UDP, IPAddress, MACAddress,
+  type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../core/types';
 import { DHCP_CLIENT_PORT, DHCP_SERVER_PORT } from '../core/WellKnownPorts';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
-import { DHCP_WIRE_BYTES, type DHCPPacket } from './DHCPPacket';
+import { DHCP_WIRE_BYTES, DHCPPacket } from './DHCPPacket';
 import type { DhcpUnicastTarget } from './types';
 
 export interface DhcpClientAddressing {
@@ -39,4 +39,13 @@ export function dhcpClientFrame(
     etherType: ETHERTYPE_IPV4,
     payload: dhcpClientPacket(pkt, target),
   };
+}
+
+export function isDhcpReplyFor(packet: IPv4Packet, clientMac: MACAddress): boolean {
+  if (packet.protocol !== IP_PROTO_UDP) return false;
+  const udp = packet.payload as UDPPacket | undefined;
+  if (udp?.type !== 'udp' || udp.destinationPort !== DHCP_CLIENT_PORT) return false;
+  const message = udp.payload;
+  return message instanceof DHCPPacket && message.op === 2
+    && message.chaddr.toLowerCase() === clientMac.toString().toLowerCase();
 }

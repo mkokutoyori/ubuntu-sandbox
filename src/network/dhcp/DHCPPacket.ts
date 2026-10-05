@@ -220,11 +220,11 @@ export class DHCPPacket implements NetworkPdu {
 
   // ─── Factory Methods ──────────────────────────────────────────
 
-  static createDiscover(mac: string, xid: number): DHCPPacket {
+  static createDiscover(mac: string, xid: number, broadcast = true): DHCPPacket {
     const pkt = new DHCPPacket();
     pkt.op = 1;
     pkt.xid = xid;
-    pkt.flags = 0x8000; // Broadcast
+    pkt.flags = broadcast ? 0x8000 : 0;
     pkt.chaddr = mac.toUpperCase();
     pkt.setOption(DHCP_OPTION.MESSAGE_TYPE, 1); // DHCPDISCOVER
     return pkt;
@@ -274,11 +274,12 @@ export class DHCPPacket implements NetworkPdu {
   static createRequest(
     mac: string, xid: number,
     requestedIP: string, serverIP: string,
+    broadcast = true,
   ): DHCPPacket {
     const pkt = new DHCPPacket();
     pkt.op = 1;
     pkt.xid = xid;
-    pkt.flags = 0x8000;
+    pkt.flags = broadcast ? 0x8000 : 0;
     pkt.chaddr = mac.toUpperCase();
     pkt.setOption(DHCP_OPTION.MESSAGE_TYPE, 3); // DHCPREQUEST
     pkt.setOption(DHCP_OPTION.REQUESTED_IP, requestedIP);
