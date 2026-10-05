@@ -557,7 +557,7 @@ export class BatchInterpreter {
       const script = this.resolveBatchFile(firstWord);
       if (script !== null) return this.invokeScript(script, parseArguments(command).slice(1), frame, run, false);
     }
-    const outcome: CommandOutcome = await this.host.runCommand(command, stdin);
+    const outcome: CommandOutcome = await this.host.runCommand(command, stdin, frame.batch);
     if (outcome.notRecognized === true) {
       const script = this.resolveBatchFile(firstWord);
       if (script !== null) return this.invokeScript(script, parseArguments(command).slice(1), frame, run, false);

@@ -1,5 +1,6 @@
 import type { WinFileCommandContext } from './WinFileCommands';
-import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import { askLine } from './WinCommandInput';
+import { hasWildcard, nameMatcher, splitFileSpec } from './WinPathSpec';
 
 export const COMP_HELP = [
   'Compares the contents of two files or sets of files byte by byte.',
@@ -101,32 +102,24 @@ function directoryOf(spec: string): { directory: string; pattern: string } {
 }
 
 function expand(ctx: WinFileCommandContext, spec: string): string[] {
-  const absolute = ctx.fs.normalizePath(spec, ctx.cwd);
-  if (ctx.fs.isDirectory(absolute)) return ctx.fs.listDirectory(absolute).filter(item => item.entry.type === 'file').map(item => `${spec.replace(/\\$/, '')}\\${item.name}`);
-  const { directory, pattern } = directoryOf(spec);
-  if (!/[*?]/.test(pattern)) return [spec];
-  const matcher = wildcardToRegex(pattern);
-  return ctx.fs.listDirectory(ctx.fs.normalizePath(directory === '' ? '.' : directory, ctx.cwd))
-    .filter(item => item.entry.type === 'file' && matcher.test(item.name))
-    .map(item => `${directory}${item.name}`);
+  const split = splitFileSpec(ctx.fs, ctx.cwd, spec);
+  if (split === null || (split.pattern !== null && !hasWildcard(split.pattern))) return [spec];
+  const matches = nameMatcher(split.pattern);
+  const prefix = split.pattern === null ? `${spec.replace(/\\$/, '')}\\` : directoryOf(spec).directory;
+  return ctx.fs.listDirectory(split.directory)
+    .filter(item => item.entry.type === 'file' && matches(item.name))
+    .map(item => `${prefix}${item.name}`);
 }
 
 function pairsOf(ctx: WinFileCommandContext, first: string, second: string): Array<[string, string]> {
   const left = expand(ctx, first);
-  const secondIsSet = /[*?]/.test(directoryOf(second).pattern) || ctx.fs.isDirectory(ctx.fs.normalizePath(second, ctx.cwd));
+  const secondIsSet = hasWildcard(directoryOf(second).pattern) || ctx.fs.isDirectory(ctx.fs.normalizePath(second, ctx.cwd));
   if (!secondIsSet) return left.map(name => [name, second]);
   const right = expand(ctx, second);
   if (right.length > 0 && left.length > 0 && ctx.fs.isDirectory(ctx.fs.normalizePath(second, ctx.cwd))) {
     return left.map(name => [name, `${second.replace(/\\$/, '')}\\${directoryOf(name).pattern}`]);
   }
   return left.map((name, index): [string, string] => [name, right[index] ?? second]);
-}
-
-async function prompt(ctx: WinFileCommandContext, output: string[], text: string): Promise<string | null> {
-  const preceding = output.length > 0 ? output.splice(0).join('\n') : undefined;
-  const asked = await ctx.ask(text, preceding);
-  if (!asked.flushed) output.push(...(preceding === undefined ? [] : [preceding]), text);
-  return asked.answer;
 }
 
 export async function cmdComp(ctx: WinFileCommandContext, args: string[]): Promise<string> {
@@ -146,11 +139,11 @@ export async function cmdComp(ctx: WinFileCommandContext, args: string[]): Promi
   let activeOptions = options;
   for (;;) {
     if (first === undefined || second === undefined) {
-      const asked = await prompt(ctx, output, 'Name of first file to compare: ');
+      const asked = await askLine(ctx, output, 'Name of first file to compare: ');
       if (asked === null || asked.trim() === '') break;
       first = asked.trim();
-      second = ((await prompt(ctx, output, 'Name of second file to compare: ')) ?? '').trim();
-      const extra = (await prompt(ctx, output, 'Option(s): ')) ?? '';
+      second = ((await askLine(ctx, output, 'Name of second file to compare: ')) ?? '').trim();
+      const extra = (await askLine(ctx, output, 'Option(s): ')) ?? '';
       activeOptions = parseOptions(extra.split(/\s+/).filter(token => token !== '')).options;
     }
     const pairs = pairsOf(ctx, first!, second!);
@@ -165,7 +158,7 @@ export async function cmdComp(ctx: WinFileCommandContext, args: string[]): Promi
       exitCode = Math.max(exitCode, outcome.exitCode);
     }
     output.push('');
-    const answer = await prompt(ctx, output, MORE_FILES);
+    const answer = await askLine(ctx, output, MORE_FILES);
     if (answer === null || !/^y/i.test(answer.trim())) break;
     first = undefined;
     second = undefined;
