@@ -258,6 +258,7 @@ function readUpstreamAnswer(
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   protected readonly defaultTTL = 64;
+  protected override get udpDiscoversPathMtu(): boolean { return true; }
 
   /** Active profile — describes the "flavor" of this Linux machine. */
   public readonly profile: LinuxProfile;

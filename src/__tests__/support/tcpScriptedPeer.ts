@@ -67,8 +67,10 @@ export interface ScriptedPeer {
   readonly clock: VirtualTimeScheduler;
   readonly frames: EthernetFrame[];
   readonly replies: TcpSegment[];
+  readonly icmpReplies: ICMPPacket[];
   readonly ports: { dut: number; peer: number };
   send(spec: PeerSegment): void;
+  sendIpv4(packet: IPv4Packet): void;
   sendIcmpError(icmpType: ICMPType, code: number, offending: TcpSegment): void;
   respond(handler: ((segment: TcpSegment) => void) | null): void;
   take(): TcpSegment[];
@@ -98,11 +100,13 @@ export function scriptedPeer(platform: 'linux' | 'windows' = 'linux'): ScriptedP
 
   const frames: EthernetFrame[] = [];
   const replies: TcpSegment[] = [];
+  const icmpReplies: ICMPPacket[] = [];
   let responder: ((segment: TcpSegment) => void) | null = null;
   port.onFrame((_name, frame) => {
     frames.push(frame);
     if (frame.etherType !== ETHERTYPE_IPV4) return;
     const packet = frame.payload as IPv4Packet;
+    if (packet.protocol === IP_PROTO_ICMP) icmpReplies.push(packet.payload as ICMPPacket);
     if (packet.protocol !== IP_PROTO_TCP) return;
     const segment = packet.payload as TcpSegment;
     replies.push(segment);
@@ -154,11 +158,11 @@ export function scriptedPeer(platform: 'linux' | 'windows' = 'linux'): ScriptedP
   };
 
   return {
-    dut, bus, clock, frames, replies, ports, send, sendIcmpError,
+    dut, bus, clock, frames, replies, icmpReplies, ports, send, sendIpv4: emit, sendIcmpError,
     respond: (handler) => { responder = handler; },
     take: () => replies.splice(0, replies.length),
     last: () => replies[replies.length - 1],
-    clear: () => { replies.length = 0; },
+    clear: () => { replies.length = 0; icmpReplies.length = 0; },
     advance: (ms) => clock.advance(ms),
   };
 }

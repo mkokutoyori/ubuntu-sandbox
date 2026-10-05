@@ -134,8 +134,7 @@ function emptyProbeDetail(reply: StatelessProbeReply): StatelessProbeDetail {
 }
 
 import {
-  connectedPrefixesOfPort, isDirectedBroadcast, isUnicastDestination, martianSource,
-  type ConnectedIpv4Prefix,
+  connectedPrefixesOfPort, invalidSourceFor, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
 import {
   RttEstimator, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS, TCP_R1_RETRANSMITS, TCP_DATA_R2_MS, TCP_SYN_R2_MS,
@@ -1122,7 +1121,8 @@ export class TcpStack {
   private wireRefusal4(source: IPAddress, destination: IPAddress): TcpDropReason | null {
     const prefixes = this.connectedPrefixes();
     if (!isUnicastDestination(destination, prefixes)) return 'non-unicast-destination';
-    if (martianSource(source) !== null || isDirectedBroadcast(source, prefixes)) return 'invalid-source';
+    if (invalidSourceFor(source, destination, prefixes) !== null) return 'invalid-source';
+    if (this.isLocalDestination(source.toString(), 'ipv4')) return 'invalid-source';
     return null;
   }
 
