@@ -27,6 +27,7 @@
  *   4. Egress: strip or add 802.1Q tag based on egress port mode
  */
 
+import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { Equipment } from '../equipment/Equipment';
 import { DeviceClockStore } from '../core/time/DeviceClock';
 import {
@@ -58,7 +59,8 @@ import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServe
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
 import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
-import { SshHostKey } from '../protocols/ssh/SshHostKey';
+import { SshHostKey, type SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
+import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
 import type { TelnetVtyShell } from '../protocols/telnet/ITelnetServerContext';
@@ -81,7 +83,7 @@ import { UDP_PORT_HSRP } from '../hsrp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
 import { FhrpRepository } from './inspection/config/FhrpRepository';
 import { UDP_PORT_GLBP } from '../glbp/types';
-import { IP_PROTO_UDP, createIPv4Packet } from '../core/types';
+import { IP_PROTO_UDP } from '../core/types';
 import type { UDPPacket } from '../core/types';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
@@ -556,6 +558,7 @@ export abstract class Switch extends Equipment {
       .map((l) => l.ip).filter((ip): ip is IPAddress => ip !== undefined),
     deviceId: this.id,
     getHostname: () => this.getHostname(),
+    bus: () => this.getBus(),
     getBridgeMac: () => this.getBridgeMac(),
     egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
     vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
@@ -2922,11 +2925,21 @@ export abstract class Switch extends Equipment {
     };
   }
 
-  private _sshHostKeyCache: SshHostKey | null = null;
+  private _sshHostKeyCache: { readonly tag: string; readonly key: SshHostKey } | null = null;
+
+  protected sshHostKeySpec(): { algorithm: SshKeyAlgorithm; bits?: number } {
+    return { algorithm: 'ssh-ed25519' };
+  }
+
+  protected sshTransportPolicy(): SshTransportPolicy { return {}; }
 
   private sshHostKey(): SshHostKey {
-    if (!this._sshHostKeyCache) this._sshHostKeyCache = SshHostKey.generate(this.getHostname());
-    return this._sshHostKeyCache;
+    const spec = this.sshHostKeySpec();
+    const tag = `${spec.algorithm}:${spec.bits ?? ''}:${this.getHostname()}`;
+    if (this._sshHostKeyCache?.tag !== tag) {
+      this._sshHostKeyCache = { tag, key: SshHostKey.generate(this.getHostname(), spec.algorithm, spec.bits) };
+    }
+    return this._sshHostKeyCache.key;
   }
 
   private _keypairService: KeypairService | null = null;
@@ -2947,6 +2960,7 @@ export abstract class Switch extends Equipment {
   protected sshPublicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
   protected sshForcedCommand(_user: string): string | null { return null; }
   protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
+  protected sshServerIdentification(): string { return SSH_SERVER_IDENTIFICATION; }
 
   _refreshSshAvailability(): void { this.syncManagementListeners(); }
 
@@ -3033,6 +3047,11 @@ export abstract class Switch extends Equipment {
       execTarget: () => this as unknown as SshExecTarget,
       execIdleTimeoutMs: () => null,
       banner: () => this.getBanner('login') || null,
+      identification: () => this.sshServerIdentification(),
+      transportPolicy: () => this.sshTransportPolicy(),
+      transportEstablished: (ip, algorithms) => this.getSshSessionRegistry().noteTransport(ip, {
+        chiffrement: algorithms.encryptionClientToServer, hmac: algorithms.macClientToServer ?? 'none',
+      }),
       motd: () => this.getBanner('motd') || undefined,
       isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
       recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),

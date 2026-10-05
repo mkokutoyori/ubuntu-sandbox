@@ -1,12 +1,14 @@
 import { IP_PROTO_ICMP, type ICMPPacket, type IPv4Packet } from '../../../core/types';
 import { buildEchoRequest, echoReplyOf, ECHO_DATA_BYTES } from '../../../icmp/IcmpEcho';
-import type { FirewallPingDeps } from './FirewallPing';
+import { hostAddressOf, type FirewallPingDeps } from './FirewallPing';
 
 export const TRACEROUTE_MAX_HOPS = 32;
 export const TRACEROUTE_PROBES = 3;
 
-export function tracerouteHeader(target: string, maxHops: number, bytes: number): string {
-  return `traceroute to ${target} (${target}), ${maxHops} hops max, ${bytes} byte packets`;
+export function tracerouteHeader(
+  target: string, maxHops: number, bytes: number, address: string = target,
+): string {
+  return `traceroute to ${target} (${address}), ${maxHops} hops max, ${bytes} byte packets`;
 }
 
 export function tracerouteHopLine(
@@ -24,6 +26,7 @@ interface HopAwaited {
 
 export interface FirewallTracerouteDeps {
   resolve: FirewallPingDeps['resolve'];
+  resolveName: FirewallPingDeps['resolveName'];
   send(iface: string, packet: IPv4Packet, gateway: string | undefined): void;
 }
 
@@ -56,10 +59,11 @@ export class FirewallTraceroute {
   }
 
   run(target: string, maxHops = TRACEROUTE_MAX_HOPS): string {
-    const egress = this.deps.resolve(target);
-    if (!egress) return 'traceroute: unknown host';
+    const address = hostAddressOf(target, this.deps);
+    const egress = address === null ? null : this.deps.resolve(address);
+    if (address === null || !egress) return 'traceroute: unknown host';
 
-    const lines = [tracerouteHeader(target, maxHops, 84)];
+    const lines = [tracerouteHeader(target, maxHops, 84, address)];
 
     for (let ttl = 1; ttl <= maxHops; ttl++) {
       const hop: HopAwaited = { arrived: false };
@@ -68,7 +72,7 @@ export class FirewallTraceroute {
 
       for (let probe = 0; probe < TRACEROUTE_PROBES; probe++) {
         const request = buildEchoRequest(
-          egress.source, target, this.identifier++, ttl, ECHO_DATA_BYTES, ttl);
+          egress.source, address, this.identifier++, ttl, ECHO_DATA_BYTES, ttl);
         this.deps.send(egress.iface, request, egress.gateway);
         seen.push(hop.from === undefined ? '*' : '0.0 ms');
       }

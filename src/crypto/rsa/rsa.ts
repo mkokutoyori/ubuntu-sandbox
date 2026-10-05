@@ -27,7 +27,7 @@
  * précisé la taille prennent la petite.
  */
 
-import { md5, sha1, sha256 } from '@/crypto/hash';
+import { md5, sha1, sha256, sha512 } from '@/crypto/hash';
 import { bytesToHex, hexToBytes } from '@/crypto/encoding';
 
 /** Voir l'en-tête : mesuré, pas choisi par confort. */
@@ -222,7 +222,12 @@ const SHA256_DIGEST_INFO_PREFIX = Uint8Array.from([
   0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20,
 ]);
 
-export type RsaSignatureHash = 'sha1' | 'sha256' | 'md5sha1';
+export type RsaSignatureHash = 'sha1' | 'sha256' | 'sha512' | 'md5sha1';
+
+const SHA512_DIGEST_INFO_PREFIX = Uint8Array.from([
+  0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65,
+  0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40,
+]);
 
 const SHA1_DIGEST_INFO_PREFIX = Uint8Array.from([
   0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14,
@@ -235,8 +240,9 @@ function digestInfoOf(message: Uint8Array, hash: RsaSignatureHash): Uint8Array {
     raw.set(sha1(message), 16);
     return raw;
   }
-  const prefix = hash === 'sha1' ? SHA1_DIGEST_INFO_PREFIX : SHA256_DIGEST_INFO_PREFIX;
-  const digest = hash === 'sha1' ? sha1(message) : sha256(message);
+  const prefix = hash === 'sha1' ? SHA1_DIGEST_INFO_PREFIX
+    : hash === 'sha512' ? SHA512_DIGEST_INFO_PREFIX : SHA256_DIGEST_INFO_PREFIX;
+  const digest = hash === 'sha1' ? sha1(message) : hash === 'sha512' ? sha512(message) : sha256(message);
   const t = new Uint8Array(prefix.length + digest.length);
   t.set(prefix, 0);
   t.set(digest, prefix.length);

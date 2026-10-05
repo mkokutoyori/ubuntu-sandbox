@@ -44,6 +44,7 @@ export interface SftpSessionDeps {
   readonly knownHostsPath: string;
   readonly interactionHandler: ISshInteractionHandler;
   readonly homeDirectory: string;
+  readonly clientIdentification?: string;
 }
 
 export class SftpSession {
@@ -64,6 +65,7 @@ export class SftpSession {
       localGid: deps.localGid,
       knownHostsPath: deps.knownHostsPath,
       interactionHandler: deps.interactionHandler,
+      ...(deps.clientIdentification ? { clientIdentification: deps.clientIdentification } : {}),
     });
   }
 

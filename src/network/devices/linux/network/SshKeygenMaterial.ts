@@ -199,10 +199,10 @@ function pairFor(key: SshPrivateKey, random: RandomBytes): KeygenPair {
 }
 
 export function keygenDeterministicPair(
-  algorithm: string, seed: string, comment: string,
+  algorithm: string, seed: string, comment: string, bits?: number,
 ): KeygenPair {
   const random = deterministicBytes(seed);
-  return pairFor(generateKey(algorithm, comment, keygenBits(algorithm), random), random);
+  return pairFor(generateKey(algorithm, comment, keygenBits(algorithm, bits), random), random);
 }
 
 export function keygenPair(algorithm: string, comment: string, bits?: number): KeygenPair {
@@ -256,8 +256,14 @@ export function keygenPublicOf(material: string): string | null {
 const ALGORITHM_LABELS: Readonly<Record<string, string>> = {
   'ssh-ed25519': 'ED25519',
   'ssh-rsa': 'RSA',
+  'rsa-sha2-256': 'RSA',
+  'rsa-sha2-512': 'RSA',
   'ecdsa-sha2-nistp256': 'ECDSA',
 };
+
+export function sshKeyTypeLabel(algorithm: string): string {
+  return ALGORITHM_LABELS[algorithm] ?? algorithm.toUpperCase();
+}
 
 export interface KeygenKeyFacts {
   readonly label: string;
@@ -281,7 +287,7 @@ export function keygenKeyFacts(publicLine: string): KeygenKeyFacts {
   const tokens = publicLine.trim().split(/\s+/);
   const algorithm = tokens[0] ?? '';
   return {
-    label: ALGORITHM_LABELS[algorithm] ?? algorithm.toUpperCase(),
+    label: sshKeyTypeLabel(algorithm),
     bits: publicKeyBits(algorithm, tokens[1] ?? ''),
     comment: tokens.slice(2).join(' '),
   };

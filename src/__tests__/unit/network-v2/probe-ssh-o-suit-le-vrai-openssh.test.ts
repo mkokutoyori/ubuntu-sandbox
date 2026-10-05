@@ -202,7 +202,7 @@ describe('the three ways to write an option mean the same thing', () => {
   it('StrictHostKeyChecking=no adds the unknown host and says so', async () => {
     const shown = await firstContact('-o StrictHostKeyChecking=no');
 
-    expect(shown).toEqual(["Warning: Permanently added '10.0.0.2' (ssh-ed25519) to the list of known hosts."]);
+    expect(shown).toEqual(["Warning: Permanently added '10.0.0.2' (ED25519) to the list of known hosts."]);
   });
 
   it('the first value of a keyword wins', async () => {

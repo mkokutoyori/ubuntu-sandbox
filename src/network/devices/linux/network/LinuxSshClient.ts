@@ -31,6 +31,7 @@ import type { AccountLifecycleVerdict, AuthMethodType } from '@/network/protocol
 import {
   OPENSSH_DEFAULT_IDENTITY_FILES,
   OPENSSH_USERAUTH_METHODS,
+  sshClientAlgorithms,
   sshClientAuthentication,
   type SshClientAuthentication,
 } from '@/network/protocols/ssh/SshConnectOptions';
@@ -43,6 +44,7 @@ import { fmtHumanDate } from '../LinuxLogManager';
 import type { LinuxMachine } from '../../LinuxMachine';
 import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
 import { SshConfig } from '../../../protocols/ssh/SshConfig';
+import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
@@ -590,6 +592,7 @@ export interface WireExecTarget {
   command: string;
   strict: 'yes' | 'no' | 'accept-new';
   authentication: SshClientAuthentication;
+  algorithms: SshAlgorithmPreferences;
 }
 
 export function wireExecTarget(
@@ -618,6 +621,7 @@ export function wireExecTarget(
     command: joinRemoteCommand(positional.slice(1)),
     strict: asked === 'yes' || asked === 'no' ? asked : 'accept-new',
     authentication: sshClientAuthentication(sshOptionValues(flags)),
+    algorithms: sshClientAlgorithms(sshOptionValues(flags)),
   };
 }
 

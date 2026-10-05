@@ -1,0 +1,34 @@
+export const SSH_MSG_DISCONNECT = 1;
+export const SSH_MSG_IGNORE = 2;
+export const SSH_MSG_UNIMPLEMENTED = 3;
+export const SSH_MSG_DEBUG = 4;
+export const SSH_MSG_SERVICE_REQUEST = 5;
+export const SSH_MSG_SERVICE_ACCEPT = 6;
+export const SSH_MSG_EXT_INFO = 7;
+export const SSH_MSG_KEXINIT = 20;
+export const SSH_MSG_NEWKEYS = 21;
+export const SSH_MSG_KEXDH_INIT = 30;
+export const SSH_MSG_KEXDH_REPLY = 31;
+export const SSH_MSG_KEX_DH_GEX_GROUP = 31;
+export const SSH_MSG_KEX_DH_GEX_INIT = 32;
+export const SSH_MSG_KEX_DH_GEX_REPLY = 33;
+export const SSH_MSG_KEX_DH_GEX_REQUEST = 34;
+export const SSH_MSG_USERAUTH_REQUEST = 50;
+export const SSH_MSG_USERAUTH_FAILURE = 51;
+export const SSH_MSG_USERAUTH_SUCCESS = 52;
+export const SSH_MSG_USERAUTH_BANNER = 53;
+export const SSH_MSG_USERAUTH_PK_OK = 60;
+export const SSH_MSG_USERAUTH_INFO_REQUEST = 60;
+export const SSH_MSG_USERAUTH_INFO_RESPONSE = 61;
+export const SSH_MSG_LOCAL_LEGACY_FRAME = 192;
+
+export const SSH_DISCONNECT_PROTOCOL_ERROR = 2;
+export const SSH_DISCONNECT_KEY_EXCHANGE_FAILED = 3;
+export const SSH_DISCONNECT_SERVICE_NOT_AVAILABLE = 7;
+export const SSH_DISCONNECT_PROTOCOL_VERSION_NOT_SUPPORTED = 8;
+export const SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE = 9;
+export const SSH_DISCONNECT_BY_APPLICATION = 11;
+export const SSH_DISCONNECT_TOO_MANY_CONNECTIONS = 12;
+
+export const SSH_USERAUTH_SERVICE = 'ssh-userauth';
+export const SSH_CONNECTION_SERVICE = 'ssh-connection';

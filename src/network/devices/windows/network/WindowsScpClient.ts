@@ -1,4 +1,5 @@
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SSH_WINDOWS_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -56,6 +57,7 @@ export async function runWindowsScpClient(opts: WindowsScpClientOpts): Promise<W
     knownHostsPath: `${opts.sourceHome}\\.ssh\\known_hosts`,
     interactionHandler: new SilentSshInteractionHandler(opts.password ?? ''),
     homeDirectory: opts.sourceHome,
+    clientIdentification: SSH_WINDOWS_IDENTIFICATION,
   });
 
   const banner = await sftp.connect(`${remoteUser}@${remoteHost}`, {

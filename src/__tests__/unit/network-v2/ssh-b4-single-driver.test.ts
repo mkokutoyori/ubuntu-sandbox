@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { IOS_LEGACY_SSH_PREFERENCES } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -65,7 +66,7 @@ async function shellTo(pc: LinuxPC, ip: string, user: string, password: string):
     interactionHandler: new SilentSshInteractionHandler(),
   } as never);
   const opts = SshConnectOptionsBuilder.create()
-    .host(ip).user(user).password(password).strictHostKeyChecking('no').build();
+    .host(ip).user(user).password(password).strictHostKeyChecking('no').algorithms(IOS_LEGACY_SSH_PREFERENCES).build();
   const connected = await session.connect(opts);
   if (!isOk(connected)) throw new Error('connect failed: ' + JSON.stringify((connected as { error: unknown }).error));
   const channel = session.openShellChannel();

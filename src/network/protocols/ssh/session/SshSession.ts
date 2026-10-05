@@ -8,6 +8,14 @@
  * Reference: DESIGN-SSH-SFTP.md section 6.
  */
 
+import {
+  decodeUserauthBanner, decodeUserauthFailure, decodeUserauthInfoRequest, encodeUserauthInfoResponse,
+  encodeUserauthRequest, type UserauthMethodRequest,
+} from '../auth/UserauthMessages';
+import {
+  SSH_MSG_USERAUTH_BANNER, SSH_MSG_USERAUTH_FAILURE, SSH_MSG_USERAUTH_INFO_REQUEST, SSH_MSG_USERAUTH_PK_OK,
+  SSH_MSG_USERAUTH_SUCCESS,
+} from '../transport/SshMessageNumbers';
 import type { ISshLocalFs } from '../ISshLocalFs';
 import type {
   TcpStream as TcpConnection,
@@ -26,7 +34,7 @@ import {
 import { SshKeyPair } from '../SshKeyPair';
 import { signUserauth, userauthSignatureAlgorithm, userauthSignedData } from '../auth/UserauthSignature';
 import {
-  keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob,
+  keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob, sshKeyTypeLabel,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import type {
@@ -56,9 +64,11 @@ import {
   verifyingHostKey,
 } from './SshSessionState';
 import {
-  SshRecordLayer, sealedStream, generateEphemeralScalar,
-  ephemeralPublicKey, sharedSecretFrom, exchangeHash,
-} from '../transport/SshRecordLayer';
+  SshTransport, legacyFrameStream, type SshAlgorithmPreferences, type SshTransportFailure,
+} from '../transport/SshTransport';
+import { SshConfig } from '../SshConfig';
+import { resolveAlgorithmDirectives } from '../transport/SshAlgorithms';
+import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 
 export interface SshSessionDeps {
   readonly tcpConnector: TcpConnector;
@@ -69,28 +79,19 @@ export interface SshSessionDeps {
   readonly knownHostsPath: string;
   readonly credentialless?: boolean;
   readonly interactionHandler: ISshInteractionHandler;
+  readonly clientIdentification?: string;
+  readonly clientExtInfo?: boolean;
 }
 
-interface ServerBanner {
-  readonly hostKey: { algorithm: string; publicKey: string };
-  readonly serverVersion: string;
-  readonly preAuthBanner?: string;
-}
 
 
 export const SSH_PASSWORD_PROMPTS = OPENSSH_CLIENT_AUTHENTICATION.passwordPrompts;
 
-const SSH_CLIENT_IDENTIFICATION = 'SSH-2.0-Sandbox';
 
 export class SshSession implements ISshSession {
   private _state: SshSessionState = idle();
   private conn: TcpConnection | null = null;
-  private readonly records = new SshRecordLayer();
   private sessionId: Uint8Array | null = null;
-
-  revealWireRecord(frame: string): string | null {
-    return this.records.reveal(frame);
-  }
 
   private channelManager = new SshChannelManager();
   private knownHosts: SshKnownHosts;
@@ -102,6 +103,17 @@ export class SshSession implements ISshSession {
       deps.localUid,
       deps.localGid,
     );
+  }
+
+  private clientAlgorithms(opts: SshConnectOptions): { algorithms?: SshAlgorithmPreferences } {
+    const configPath = this.deps.knownHostsPath.replace(/known_hosts$/, 'config');
+    const raw = this.deps.vfs.readFile(configPath);
+    const entry = raw === null ? null : SshConfig.parse(raw).resolve(opts.host);
+    const configured = entry === null ? {} : resolveAlgorithmDirectives({
+      kex: entry.kexAlgorithms, hostKey: entry.hostKeyAlgorithms, ciphers: entry.ciphers, macs: entry.macs,
+    });
+    const merged = { ...configured, ...opts.algorithms };
+    return Object.keys(merged).length === 0 ? {} : { algorithms: merged };
   }
 
   get state(): SshSessionState {
@@ -133,24 +145,29 @@ export class SshSession implements ISshSession {
       });
     }
     dialed.setNoDelay?.(true);
-    const records = this.records;
-    const conn = sealedStream(dialed, records);
+    const transport = new SshTransport(dialed, {
+      role: 'client',
+      identification: this.deps.clientIdentification ?? SSH_SERVER_IDENTIFICATION,
+      ...this.clientAlgorithms(opts),
+      ...(this.deps.clientExtInfo === undefined ? {} : { extInfo: this.deps.clientExtInfo }),
+    });
+    const established = await transport.established;
+    if ('kind' in established) {
+      this.transition(disconnected('key exchange failed'));
+      dialed.close();
+      return err({
+        kind: 'KEX_FAILED', host: opts.host, port: opts.port,
+        message: kexFailureMessage(established, opts.host, opts.port),
+      });
+    }
+    this.sessionId = established.sessionId;
+    const conn = legacyFrameStream(transport, dialed);
     this.conn = conn;
 
-    const banner = await this.exchangeBanner(conn, records);
-    if (!banner.ok) {
-      this.transition(disconnected('protocol error'));
-      conn.close();
-      this.conn = null;
-      return propagateErr(banner);
-    }
-    if (banner.value.preAuthBanner) {
-      this.deps.interactionHandler.showInfo(banner.value.preAuthBanner);
-    }
     const hostKey = SshHostKey.fromFiles(
-      banner.value.hostKey.publicKey,
+      bytesToBase64(established.hostKeyBlob),
       '',
-      banner.value.hostKey.algorithm as 'ssh-ed25519',
+      sshPublicKeyFromBlob(established.hostKeyBlob)!.algorithm,
     );
 
     const verifyResult = await this.doHostKeyCheck(opts.host, hostKey, opts);
@@ -162,7 +179,7 @@ export class SshSession implements ISshSession {
     }
 
     this.transition(authenticating(opts.user, opts.host, 3));
-    const authResult = await this.doAuthenticate(opts.user, conn, opts);
+    const authResult = await this.doAuthenticate(opts.user, transport, opts);
     if (!authResult.ok) {
       this.transition(disconnected('authentication failed'));
       conn.close();
@@ -237,6 +254,7 @@ export class SshSession implements ISshSession {
     const conn = this.conn;
     if (!conn || !this.isConnected) return Promise.resolve(err({ kind: 'NOT_AUTHENTICATED' }));
     const dataHandlers: Array<(data: string) => void> = [];
+    const unread: string[] = [];
     const closeHandlers: Array<(reason: string) => void> = [];
     let open = true;
     const finish = (reason: string): void => {
@@ -259,6 +277,7 @@ export class SshSession implements ISshSession {
       },
       onData: (handler) => {
         dataHandlers.push(handler);
+        for (const data of unread.splice(0)) handler(data);
         return () => { dataHandlers.splice(dataHandlers.indexOf(handler), 1); };
       },
       onClose: (handler) => {
@@ -270,7 +289,9 @@ export class SshSession implements ISshSession {
       let parsed: { op?: string; ok?: boolean; reason?: string; data?: string };
       try { parsed = JSON.parse(frame) as typeof parsed; } catch { return; }
       if (parsed.op === 'tcpip_data') {
-        for (const handler of [...dataHandlers]) handler(String(parsed.data ?? ''));
+        const data = String(parsed.data ?? '');
+        if (dataHandlers.length === 0) unread.push(data);
+        for (const handler of [...dataHandlers]) handler(data);
       } else if (parsed.op === 'tcpip_eof') {
         finish('fin');
       } else if (parsed.op === 'direct_tcpip_reply' && settle) {
@@ -313,51 +334,6 @@ export class SshSession implements ISshSession {
     this._state = next;
   }
 
-  private async exchangeBanner(
-    conn: TcpConnection,
-    records: SshRecordLayer,
-  ): Promise<Result<ServerBanner>> {
-    let banner: (ServerBanner & { kexPublicKey?: string }) | null = null;
-    const off = conn.onData((data) => {
-      try {
-        const parsed = JSON.parse(data) as Partial<ServerBanner & { kexPublicKey?: string }>;
-        if (parsed.hostKey && parsed.serverVersion) {
-          banner = parsed as ServerBanner & { kexPublicKey?: string };
-        }
-      } catch {
-        /* ignore non-JSON banner traffic */
-      }
-    });
-    const scalar = generateEphemeralScalar();
-    const clientEphemeral = ephemeralPublicKey(scalar);
-    conn.write(JSON.stringify({
-      op: 'hello',
-      clientVersion: SSH_CLIENT_IDENTIFICATION,
-      kexPublicKey: clientEphemeral,
-    }));
-    off();
-    if (!banner) {
-      return err({ kind: 'IO_ERROR', message: 'no server banner' });
-    }
-    const received: ServerBanner & { kexPublicKey?: string } = banner;
-    const peerKey = received.kexPublicKey;
-    if (peerKey) {
-      const secret = sharedSecretFrom(scalar, peerKey);
-      if (secret) {
-        records.install(secret, 'client');
-        this.sessionId = exchangeHash({
-          clientVersion: SSH_CLIENT_IDENTIFICATION,
-          serverVersion: received.serverVersion,
-          hostKeyBlob: received.hostKey.publicKey,
-          clientEphemeral,
-          serverEphemeral: peerKey,
-          sharedSecret: secret,
-        });
-      }
-    }
-    return ok(received);
-  }
-
   private async doHostKeyCheck(
     host: string,
     key: SshHostKey,
@@ -376,7 +352,7 @@ export class SshSession implements ISshSession {
       case 'accept_and_save':
         this.knownHosts.addHost(host, key, { hashed: opts.hashKnownHosts });
         this.deps.interactionHandler.showInfo(
-          `Warning: Permanently added '${host}' (${key.algorithm}) to the list of known hosts.`,
+          `Warning: Permanently added '${host}' (${sshKeyTypeLabel(key.algorithm)}) to the list of known hosts.`,
         );
         return ok(undefined);
 
@@ -386,6 +362,7 @@ export class SshSession implements ISshSession {
           await this.deps.interactionHandler.promptHostKeyConfirmation(
             host,
             decision.fingerprint,
+            sshKeyTypeLabel(key.algorithm),
           );
         switch (reply.kind) {
           case 'yes':
@@ -424,7 +401,7 @@ export class SshSession implements ISshSession {
 
   private async doAuthenticate(
     user: string,
-    conn: TcpConnection,
+    transport: SshTransport,
     opts: SshConnectOptions,
   ): Promise<Result<void>> {
     const handler = this.deps.interactionHandler;
@@ -435,8 +412,8 @@ export class SshSession implements ISshSession {
       return opts.password !== undefined ? Promise.resolve(opts.password) : ask();
     };
     let closed = false;
-    const offClosed = conn.onClose?.(() => { closed = true; });
-    const outcome = await runUserauth(this.userauthTransport(conn, user, () => closed), {
+    const offClosed = transport.onClose(() => { closed = true; });
+    const outcome = await runUserauth(this.userauthTransport(transport, user, () => closed), {
       authentication: opts.authentication,
       identities: this.userauthIdentities(opts, user),
       interactive: this.deps.credentialless !== true,
@@ -492,7 +469,8 @@ export class SshSession implements ISshSession {
     return bytesToBase64(signUserauth(key, userauthSignedData(this.sessionId, user, algorithm, blob)));
   }
 
-  private userauthTransport(conn: TcpConnection, user: string, closed: () => boolean): UserauthTransport {
+  private userauthTransport(transport: SshTransport, user: string, closed: () => boolean): UserauthTransport {
+    const handler = this.deps.interactionHandler;
     return {
       request: (method, fields, onInfoRequest) => new Promise<UserauthReply>((resolve) => {
         if (closed()) {
@@ -503,35 +481,51 @@ export class SshSession implements ISshSession {
         const finish = (reply: UserauthReply): void => {
           if (settled) return;
           settled = true;
-          offData();
-          offClose?.();
+          offMessage();
+          offClose();
           resolve(reply);
         };
-        const offData = conn.onData((data) => {
-          let parsed: {
-            op?: string; ok?: boolean; pk_ok?: boolean; methods?: string; disconnect?: string;
-            name?: string; instruction?: string; prompts?: UserauthPrompt[];
-          };
-          try { parsed = JSON.parse(data) as typeof parsed; } catch { return; }
-          if (parsed.op === 'auth_info_request') {
-            const request: UserauthInfoRequest = {
-              name: parsed.name ?? '', instruction: parsed.instruction ?? '', prompts: parsed.prompts ?? [],
-            };
+        const offMessage = transport.onMessage((payload) => {
+          const type = payload[0];
+          if (type === SSH_MSG_USERAUTH_BANNER) {
+            const text = decodeUserauthBanner(payload);
+            if (text) handler.showInfo(text.replace(/\r?\n$/, ''));
+          } else if (type === SSH_MSG_USERAUTH_SUCCESS) {
+            finish({ kind: 'success' });
+          } else if (type === SSH_MSG_USERAUTH_FAILURE) {
+            finish({ kind: 'failure', methods: decodeUserauthFailure(payload)?.methods ?? '' });
+          } else if (type === SSH_MSG_USERAUTH_PK_OK && method === 'publickey') {
+            finish({ kind: 'pk_ok' });
+          } else if (type === SSH_MSG_USERAUTH_INFO_REQUEST && method === 'keyboard-interactive') {
+            const request = decodeUserauthInfoRequest(payload);
+            if (request === null) return;
             void Promise.resolve(onInfoRequest?.(request) ?? null).then((responses) => {
-              if (!settled) conn.write(JSON.stringify({ op: 'auth_info_response', responses: responses ?? [] }));
+              if (!settled) transport.send(encodeUserauthInfoResponse(responses ?? []));
             });
-            return;
           }
-          if (typeof parsed.disconnect === 'string') finish({ kind: 'disconnect', reason: parsed.disconnect });
-          else if (parsed.pk_ok === true) finish({ kind: 'pk_ok' });
-          else if (parsed.ok === true) finish({ kind: 'success' });
-          else if (parsed.ok === false) finish({ kind: 'failure', methods: parsed.methods ?? '' });
         });
-        const offClose = conn.onClose?.(() => finish({ kind: 'closed' }));
-        conn.write(JSON.stringify({ op: 'auth', method, user, ...fields }));
+        const offClose = transport.onClose(() => {
+          const received = transport.peerDisconnect;
+          finish(received ? { kind: 'disconnect', reason: received.description } : { kind: 'closed' });
+        });
+        transport.send(encodeUserauthRequest(user, userauthMethodRequest(method, fields)));
       }),
     };
   }
+}
+
+function userauthMethodRequest(method: string, fields: Readonly<Record<string, unknown>>): UserauthMethodRequest {
+  if (method === 'password') return { method, password: String(fields.password ?? '') };
+  if (method === 'keyboard-interactive') return { method, submethods: String(fields.devices ?? '') };
+  if (method === 'publickey') {
+    return {
+      method,
+      algorithm: String(fields.algorithm ?? ''),
+      publicKeyBlob: base64ToBytes(String(fields.publicKey ?? '')),
+      ...(typeof fields.signature === 'string' ? { signature: base64ToBytes(fields.signature) } : {}),
+    };
+  }
+  return { method };
 }
 
 function userauthFailureLines(
@@ -544,4 +538,19 @@ function userauthFailureLines(
 
 export function receivedDisconnectLines(host: string, port: number, reason: string): string {
   return `Received disconnect from ${host} port ${port}:2: ${reason}\nDisconnected from ${host} port ${port}`;
+}
+
+function kexFailureMessage(failure: SshTransportFailure, host: string, port: number): string {
+  if (failure.kind === 'negotiation') return `Unable to negotiate with ${host} port ${port}: ${failure.message}`;
+  if (failure.kind === 'disconnect') {
+    return `Received disconnect from ${host} port ${port}:${failure.disconnect?.reason ?? 0}: ${failure.message}\n`
+      + `Disconnected from ${host} port ${port}`;
+  }
+  if (failure.kind === 'closed') {
+    return failure.identified
+      ? `Connection closed by ${host} port ${port}`
+      : `kex_exchange_identification: Connection closed by remote host\nConnection closed by ${host} port ${port}`;
+  }
+  const fatal = `ssh_dispatch_run_fatal: Connection to ${host} port ${port}: ${failure.message}`;
+  return failure.log ? `${failure.log}\n${fatal}` : fatal;
 }

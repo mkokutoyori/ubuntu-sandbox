@@ -1517,15 +1517,21 @@ export class WindowsTerminalSession extends TerminalSession {
     if (!this.activeSubShell) return false;
 
     if (e.key === 'Enter') {
-      const line = this._inputBuf;
+      const typed = this._inputBuf;
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.subShellSavedInput = '';
-      this.addEchoLine(this.activeSubShell.getPrompt(), line);
+      this.addEchoLine(this.activeSubShell.getPrompt(), typed);
 
       // Push non-empty lines to sub-shell history
-      if (line.trim()) {
-        this.subShellHistory = [...this.subShellHistory.slice(-199), line];
+      if (typed.trim()) {
+        this.subShellHistory = [...this.subShellHistory.slice(-199), typed];
+      }
+
+      const line = this.activeSubShell.collectLine ? this.activeSubShell.collectLine(typed) : typed;
+      if (line === null) {
+        this.notify();
+        return true;
       }
 
       // Native commands (ping/tracert/pathping/netstat) stream identically

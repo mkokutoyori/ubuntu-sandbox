@@ -157,6 +157,15 @@ export class DnsCache {
     this.servfail.set(keyOf(qname, qtype), { expiresAtMs: this.now() + bounded * 1000 });
   }
 
+  forget(name: string): void {
+    const prefix = `${name.toLowerCase().replace(/\.$/, '')}|`;
+    for (const store of [this.positive, this.negative, this.servfail]) {
+      for (const key of [...store.keys()]) {
+        if (key.startsWith(prefix)) store.delete(key);
+      }
+    }
+  }
+
   flush(): void {
     this.positive.clear();
     this.negative.clear();

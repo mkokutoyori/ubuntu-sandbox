@@ -152,7 +152,8 @@ import { SslDeepInspection } from './inspection/SslDeepInspection';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
-import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
+import { FirewallPing, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
+import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import { PingOptions } from './diag/PingOptions';
 import { AdminSessionTable } from './mgmt/AdminSessionTable';
 import { FortiGuardDatabases } from './mgmt/FortiGuardDatabases';
@@ -312,12 +313,13 @@ export class Firewall extends Equipment {
 
   getDhcp6(): FirewallDhcp6 { return this.dhcp6; }
 
-  private readonly traceroute6 = new FirewallTraceroute6(() => this.ipv6.dataPlane());
+  private readonly traceroute6 = new FirewallTraceroute6(
+    () => this.ipv6.dataPlane(), (name) => this.resolveHostName6(name));
 
   runTraceroute6(target: string): string { return this.traceroute6.run(target); }
 
   private readonly ping6 = new FirewallPing6(
-    () => this.ipv6.dataPlane(), () => this.ping6Options);
+    () => this.ipv6.dataPlane(), (name) => this.resolveHostName6(name), () => this.ping6Options);
 
   private readonly ipv6Routes = new Map<string, string>();
   private readonly revisions: RevisionStore;
@@ -369,7 +371,7 @@ export class Firewall extends Equipment {
   private readonly serverPools = new Map<string, RealServerPool>();
   private readonly poolMonitors = new Map<string, string[]>();
   private readonly ldbMonitors = new LdbMonitorTable({
-    ping: async (address) => this.ping.begin(address)?.step(1) !== null,
+    ping: async (address) => this.answersEcho(address),
     tcp: async (address, port) => {
       const destination = parseDialAddress(address);
       if (!destination || !PortNumber.isValid(port)) return false;
@@ -827,6 +829,7 @@ export class Firewall extends Equipment {
 
   private readonly ping = new FirewallPing({
     resolve: (destination) => this.resolveEgress(destination),
+    resolveName: (name) => this.resolveHostName(name),
     send: (iface, packet, gateway) => {
       this.liveState.countEchoSent();
       this.forward(iface, packet, gateway);
@@ -844,6 +847,11 @@ export class Firewall extends Equipment {
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
 
   beginPing(target: string) { return this.ping.begin(target); }
+
+  private answersEcho(address: string): boolean {
+    const run = this.ping.begin(address);
+    return !isPingRefusal(run) && run.step(1) !== null;
+  }
 
   pingRepeatCount(): number { return this.ping.defaultCount(); }
 
@@ -901,6 +909,14 @@ export class Firewall extends Equipment {
     return { iface: egress.iface, gateway: egress.nextHop, source };
   }
 
+  private resolveHostName(name: string): string | null {
+    return this.dnsClient.resolve(name).find(isValidIPv4) ?? null;
+  }
+
+  private resolveHostName6(name: string): string | null {
+    return this.dnsClient.resolve(name, 'ipv6').find(isValidIPv6) ?? null;
+  }
+
   private rememberUnroutable(destination: string): void {
     const context = makePacketContext({
       ingressPort: 'local',
@@ -920,6 +936,7 @@ export class Firewall extends Equipment {
 
   private readonly traceroute = new FirewallTraceroute({
     resolve: (destination) => this.resolveEgress(destination),
+    resolveName: (name) => this.resolveHostName(name),
     send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
   });
 
@@ -931,6 +948,8 @@ export class Firewall extends Equipment {
       destinationPort: DNS_PORT, sourcePort, payload,
       payloadBytes: payload.length,
     }),
+    now: () => this.getSystemClockMs(),
+    learnedServers: () => this.dhcp.learnedDnsServers(),
   });
 
   getDnsClient(): FirewallDnsClient { return this.dnsClient; }
@@ -2362,7 +2381,7 @@ export class Firewall extends Equipment {
 
   linkMonitorStatuses(): readonly LinkMonitorStatus[] {
     return this.linkMonitors.evaluate(
-      (server) => this.ping.begin(server)?.step(1) !== null);
+      (server) => this.answersEcho(server));
   }
 
   getFragmentReassembly(): FragmentReassembly { return this.fragments; }

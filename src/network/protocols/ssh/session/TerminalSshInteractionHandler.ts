@@ -39,11 +39,12 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
   async promptHostKeyConfirmation(
     host: string,
     fingerprint: string,
+    keyType: string,
   ): Promise<HostKeyResponse> {
     this.io.writeLine(
       `The authenticity of host '${host}' can't be established.`,
     );
-    this.io.writeLine(`ED25519 key fingerprint is ${fingerprint}.`);
+    this.io.writeLine(`${keyType} key fingerprint is ${fingerprint}.`);
     this.io.writeLine(
       `This key is not known by any other names.`,
     );

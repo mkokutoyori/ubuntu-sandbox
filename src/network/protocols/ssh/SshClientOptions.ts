@@ -1,5 +1,6 @@
 import { splitShellWords } from '@/bash/runtime/ShellWords';
 import type { SshClientKeyword } from './SshClientKeywords';
+import { algorithmDirectiveIsValid, algorithmKeyword, type AlgorithmKeyword } from './transport/SshAlgorithms';
 
 const OPTION_ALIASES: Readonly<Record<string, string>> = {
   challengeresponseauthentication: 'kbdinteractiveauthentication',
@@ -48,6 +49,13 @@ export function everySshOption(optionValues: readonly string[], keyword: string)
   return values;
 }
 
+const BAD_ALGORITHM_SPEC: Readonly<Record<AlgorithmKeyword, string>> = {
+  ciphers: 'Bad SSH2 cipher spec',
+  macs: 'Bad SSH2 MAC spec',
+  kexalgorithms: 'Bad SSH2 KexAlgorithms',
+  hostkeyalgorithms: 'Bad key types',
+};
+
 export function sshOptionRefusal(raw: string, keywords: readonly SshClientKeyword[]): string | null {
   const line = raw.trim();
   if (line === '') return null;
@@ -60,6 +68,10 @@ export function sshOptionRefusal(raw: string, keywords: readonly SshClientKeywor
   const known = keywords.find(entry => entry.name.toLowerCase() === keyword);
   if (known === undefined) return `command-line: line 0: Bad configuration option: ${keyword}`;
   if (known.refusal !== undefined) return known.refusal;
+  const algorithms = algorithmKeyword(known.name);
+  if (algorithms !== null && !algorithmDirectiveIsValid(algorithms, rest)) {
+    return `command-line line 0: ${BAD_ALGORITHM_SPEC[algorithms]} '${rest}'.`;
+  }
   if (known.values === undefined) return null;
 
   const [argument, ...extra] = splitShellWords(rest).words;

@@ -89,6 +89,7 @@
  * pas `initialMotd()' : il n'y a pas de second cumul de ce cote.
  */
 
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -123,6 +124,7 @@ async function routerLab(): Promise<LinuxPC> {
     'crypto key generate rsa modulus 2048', 'end',
   ]) await r.executeCommand(l);
   await settle();
+  allowLegacyIosSsh(pc);
   return pc;
 }
 
@@ -139,6 +141,7 @@ async function switchLab(): Promise<LinuxPC> {
     'crypto key generate rsa modulus 2048', 'end',
   ]) await sw.executeCommand(l);
   await settle();
+  allowLegacyIosSsh(pc);
   return pc;
 }
 

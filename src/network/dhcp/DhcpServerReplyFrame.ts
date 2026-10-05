@@ -4,16 +4,14 @@ import {
 import { DHCP_CLIENT_PORT, DHCP_SERVER_PORT } from '../core/WellKnownPorts';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 import { DHCP_WIRE_BYTES, type DHCPPacket } from './DHCPPacket';
-import type { DhcpReplyRoute } from './DhcpServerExchange';
+import type { DhcpDirectRoute } from './DhcpServerExchange';
 
 export interface DhcpLinkDestination {
   readonly address: IPAddress;
   readonly mac: MACAddress;
 }
 
-export function dhcpLinkDestination(
-  route: Exclude<DhcpReplyRoute, { readonly kind: 'relay' }>, clientMac: string,
-): DhcpLinkDestination {
+export function dhcpLinkDestination(route: DhcpDirectRoute, clientMac: string): DhcpLinkDestination {
   if (route.kind === 'broadcast') {
     return { address: new IPAddress('255.255.255.255'), mac: MACAddress.broadcast() };
   }

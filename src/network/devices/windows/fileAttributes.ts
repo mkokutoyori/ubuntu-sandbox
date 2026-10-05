@@ -1,11 +1,13 @@
 export const FILE_ATTRIBUTE_NAMES = [
   'archive', 'hidden', 'system', 'readonly', 'directory', 'normal',
+  'reparsepoint', 'offline', 'notcontentindexed',
 ] as const;
 
 export type FileAttributeName = typeof FILE_ATTRIBUTE_NAMES[number];
 
 const DIR_LETTERS: Record<string, FileAttributeName> = {
   d: 'directory', h: 'hidden', s: 'system', r: 'readonly', a: 'archive',
+  l: 'reparsepoint', o: 'offline', i: 'notcontentindexed',
 };
 
 export interface AttributeSelection {

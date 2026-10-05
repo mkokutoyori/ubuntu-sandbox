@@ -210,7 +210,6 @@ import { nssCaptureNames } from './linux/network/tcpdump/NssCaptureNames';
 import { splitShellWords } from '@/bash/runtime/ShellWords';
 import { LINUX_ICMP_ERROR_QUOTE, type IcmpErrorQuote } from '../core/IcmpErrors';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
-import { SSH_SERVER_IDENTIFICATION_LINE } from '@/network/protocols/ssh/serverIdentification';
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
 import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 import { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
@@ -362,8 +361,8 @@ export abstract class LinuxMachine extends EndHost
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
       () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`, 0o644);
     this.executor.setSessionTable(this.sessionTable);
-    this.executor.setSshHostKeyProbe((ip, port) =>
-      probeSshHostKey(this.tcpv2.connect(ip, port)));
+    this.executor.setSshHostKeyProbe((ip, port, hostKeyAlgorithms) =>
+      probeSshHostKey(this.tcpv2.connect(ip, port) as unknown as TcpStream | null, hostKeyAlgorithms));
     // Un montage réseau tient tant que son serveur est là. Aucun protocole
     // NFS n'est implémenté ; ce qui décide, c'est le fait physique que le
     // simulateur connaît vraiment — la machine est-elle encore atteignable
@@ -1805,7 +1804,6 @@ export abstract class LinuxMachine extends EndHost
    * créé en IPv6 l'erreur même que ce chantier corrige.
    */
   private static readonly SSHD_PID = 985;
-  private static readonly SSHD_BANNER = SSH_SERVER_IDENTIFICATION_LINE;
   private static readonly SSHD_ADDRESSES = ['0.0.0.0', '::'] as const;
 
   /**
@@ -1832,11 +1830,7 @@ export abstract class LinuxMachine extends EndHost
       for (const addr of LinuxMachine.SSHD_ADDRESSES) {
         try {
           stack.listen(port, {
-            identity: {
-              pid,
-              processName: 'sshd',
-              banner: LinuxMachine.SSHD_BANNER,
-            },
+            identity: { pid, processName: 'sshd' },
             onAccept: (socket) => {
               stack.setSocketOwner(socket, pid);
               this.sshAcceptedSockets.set(socket.remoteIp, socket);

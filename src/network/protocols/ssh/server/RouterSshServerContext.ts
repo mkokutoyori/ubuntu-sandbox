@@ -31,6 +31,7 @@
  * channel_opened, …) lights up regardless of vendor.
  */
 
+import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { RouterSftpFileSystem, type RouterSftpSource } from '../sftp/RouterSftpFileSystem';
@@ -41,7 +42,9 @@ import {
   type ILinuxShell,
   type ISshServerContext,
   type SshServerConfig,
+  type SshTransportPolicy,
 } from './ISshServerContext';
+import type { NegotiatedAlgorithms } from '../transport/SshKexInit';
 import type { ISshServerEventBus } from './SshServerEvent';
 import type { SshExecTarget } from './SshExecTarget';
 
@@ -70,6 +73,9 @@ export interface RouterSshServerDeps {
   events?: ISshServerEventBus;
   /** Optional banner text printed before authentication. */
   banner?(): string | null;
+  identification?(): string;
+  transportPolicy?(): SshTransportPolicy;
+  transportEstablished?(clientIp: string, algorithms: NegotiatedAlgorithms): void;
   /** Optional motd text printed after authentication. */
   motd?(): string;
   /** Optional record-login callback when a session is established. */
@@ -163,6 +169,18 @@ export class RouterSshServerContext implements ISshServerContext {
         };
       },
     };
+  }
+
+  serverIdentification(): string {
+    return this.deps.identification?.() ?? SSH_SERVER_IDENTIFICATION;
+  }
+
+  transportPolicy(): SshTransportPolicy {
+    return this.deps.transportPolicy?.() ?? {};
+  }
+
+  transportEstablished(clientIp: string, algorithms: NegotiatedAlgorithms): void {
+    this.deps.transportEstablished?.(clientIp, algorithms);
   }
 
   getBanner(): string | null {

@@ -1,14 +1,3 @@
-/**
- * Windows DIR command — lists files and directories.
- *
- * Behavior (matching real Windows 10/11):
- *   dir              → list current directory
- *   dir <path>       → list specified directory
- *   dir /w           → wide format
- *   dir /s           → recursive listing
- *   dir /s /b        → bare recursive listing (paths only)
- */
-
 import type { WinFileCommandContext } from './WinFileCommands';
 import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
 import {
@@ -16,7 +5,72 @@ import {
   type AttributeSelection,
 } from './fileAttributes';
 
-type DirListing = ReturnType<WinFileCommandContext['fs']['listDirectory']>;
+type SortKey = 'name' | 'extension' | 'group' | 'size' | 'date';
+
+interface SortTerm {
+  readonly key: SortKey;
+  readonly descending: boolean;
+}
+
+type TimeField = 'written' | 'created';
+
+interface DirOptions {
+  wide: boolean;
+  columnMajor: boolean;
+  recursive: boolean;
+  bare: boolean;
+  lowercase: boolean;
+  thousands: boolean;
+  selection: AttributeSelection | null;
+  sort: SortTerm[];
+  timeField: TimeField;
+}
+
+interface Row {
+  readonly name: string;
+  readonly isDirectory: boolean;
+  readonly size: number;
+  readonly written: Date;
+  readonly created: Date;
+  readonly attributes: ReadonlySet<string>;
+}
+
+interface Block {
+  readonly path: string;
+  readonly rows: Row[];
+}
+
+interface Target {
+  readonly directory: string;
+  readonly pattern: string | null;
+}
+
+const NO_ATTRIBUTES: ReadonlySet<string> = new Set();
+const ORDER_LETTERS: Record<string, SortKey> = {
+  n: 'name', e: 'extension', g: 'group', s: 'size', d: 'date',
+};
+const DEFAULT_ORDER: SortTerm[] = [
+  { key: 'group', descending: false },
+  { key: 'name', descending: false },
+];
+const DIRECTORY_MARKER = '    <DIR>          ';
+const SIZE_FIELD_WIDTH = 18;
+const WIDE_COLUMNS = 4;
+const WIDE_COLUMN_WIDTH = 20;
+
+const LETTER_FLAGS: Record<string, (options: DirOptions) => void> = {
+  w: options => { options.wide = true; },
+  d: options => { options.wide = true; options.columnMajor = true; },
+  s: options => { options.recursive = true; },
+  b: options => { options.bare = true; },
+  l: options => { options.lowercase = true; },
+  c: options => { options.thousands = true; },
+  p: () => undefined,
+  n: () => undefined,
+  q: () => undefined,
+  x: () => undefined,
+  '4': () => undefined,
+};
 
 export function volumeHeading(ctx: WinFileCommandContext, letter: string): string {
   const label = ctx.fs.getVolumeLabel(letter);
@@ -25,288 +79,190 @@ export function volumeHeading(ctx: WinFileCommandContext, letter: string): strin
     : ` Volume in drive ${letter} has no label.`;
 }
 
-function keepVisible(entries: DirListing, selection: AttributeSelection | null): DirListing {
-  if (selection === null) {
-    return entries.filter(e => isDefaultVisible(e.entry.attributes)) as DirListing;
-  }
-  return entries.filter(
-    e => selectionAccepts(selection, e.entry.attributes, e.entry.type === 'directory')) as DirListing;
+export function groupDigits(value: number, thousands = true): string {
+  return thousands ? value.toLocaleString('en-US') : String(value);
 }
 
-export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
-  const flags = new Set<string>();
+export function fileSummaryLine(count: number, bytes: number, thousands = true): string {
+  return `${String(count).padStart(16)} File(s) ${groupDigits(bytes, thousands).padStart(14)} bytes`;
+}
+
+export function dirSummaryLine(count: number, freeBytes: number, thousands = true): string {
+  return `${String(count).padStart(16)} Dir(s) ${groupDigits(freeBytes, thousands).padStart(15)} bytes free`;
+}
+
+const invalidSwitch = (text: string): string => `Invalid switch - "${text}".`;
+
+function parseOrder(spec: string): SortTerm[] | null {
+  if (spec === '') return DEFAULT_ORDER;
+  const terms: SortTerm[] = [];
+  let descending = false;
+  for (const letter of spec) {
+    if (letter === '-') { descending = true; continue; }
+    const key = ORDER_LETTERS[letter];
+    if (key === undefined) return null;
+    terms.push({ key, descending });
+    descending = false;
+  }
+  return terms;
+}
+
+function applySwitch(options: DirOptions, text: string): string | null {
+  const lower = text.toLowerCase();
+  const head = lower[0] ?? '';
+  const rest = lower.slice(1);
+  const argument = rest.replace(/^:/, '');
+
+  if (lower === '-c') { options.thousands = false; return null; }
+  if (head === 'a') {
+    if (argument === '') { options.selection = { required: [], forbidden: [] }; return null; }
+    const selection = parseDirAttributeSpec(argument);
+    if (selection === null) return invalidSwitch(text);
+    options.selection = selection;
+    return null;
+  }
+  if (head === 'o') {
+    const terms = parseOrder(argument);
+    if (terms === null) return invalidSwitch(text);
+    options.sort = terms;
+    return null;
+  }
+  if (head === 't') {
+    if (argument === 'c') options.timeField = 'created';
+    else if (argument === 'w' || argument === 'a') options.timeField = 'written';
+    else return invalidSwitch(text);
+    return null;
+  }
+  const flag = rest === '' ? LETTER_FLAGS[head] : undefined;
+  if (flag === undefined) return invalidSwitch(text);
+  flag(options);
+  return null;
+}
+
+function parseArguments(args: readonly string[]): { options: DirOptions; positionals: string[] } | string {
+  const options: DirOptions = {
+    wide: false, columnMajor: false, recursive: false, bare: false, lowercase: false,
+    thousands: true, selection: null, sort: [], timeField: 'written',
+  };
   const positionals: string[] = [];
-  let selection: AttributeSelection | null = null;
-
+  const switches: string[] = [];
   for (const arg of args) {
-    const lower = arg.toLowerCase();
-    if (lower === '/w') flags.add('wide');
-    else if (lower === '/s') flags.add('recursive');
-    else if (lower === '/b') flags.add('bare');
-    else if (lower === '/?') return dirHelp();
-    // `/a` shows all attributes, `/a:<spec>` filters; `/o:<spec>` sorts.
-    // The simulator does not store dates per attribute filter, so we accept
-    // these flags as no-ops rather than failing with "File Not Found".
-    else if (lower === '/a' || lower.startsWith('/a:')) {
-      const spec = lower.slice(2).replace(/^:/, '');
-      if (spec === '') { selection = { required: [], forbidden: [] }; continue; }
-      const parsed = parseDirAttributeSpec(spec);
-      if (parsed === null) return `Invalid switch - "${spec}".`;
-      selection = parsed;
-    }
-    else if (lower === '/o' || lower.startsWith('/o:') || lower.startsWith('/od')) flags.add('sort');
-    else if (lower.startsWith('/')) continue;
-    else positionals.push(arg);
+    if (!arg.startsWith('/')) { positionals.push(arg); continue; }
+    switches.push(...arg.slice(1).split('/'));
   }
-
-  // First positional = directory (may be omitted), second = wildcard.
-  // `dir C:\CohFs *.txt` → dir=C:\CohFs, pattern=*.txt.
-  let targetPath: string | null = positionals[0] ?? null;
-  if (positionals.length >= 2 && /[*?]/.test(positionals[1])) {
-    targetPath = positionals[0];
+  if (switches.includes('?')) return dirHelp();
+  for (const text of switches) {
+    const refusal = applySwitch(options, text);
+    if (refusal !== null) return refusal;
   }
-
-  // Split a `<dir> <pattern>` form: real cmd accepts both
-  // `dir C:\CohFs *.txt` (two args) and `dir C:\CohFs\*.txt` (one path).
-  let wildcard: string | null = null;
-  if (positionals.length >= 2 && /[*?]/.test(positionals[positionals.length - 1])) {
-    wildcard = positionals[positionals.length - 1];
-  } else if (targetPath && /[*?]/.test(targetPath)) {
-    const sep = Math.max(targetPath.lastIndexOf('\\'), targetPath.lastIndexOf('/'));
-    wildcard = targetPath.slice(sep + 1);
-    targetPath = sep >= 0 ? targetPath.slice(0, sep + 1) : ctx.cwd;
-  }
-
-  const absPath = targetPath
-    ? ctx.fs.normalizePath(targetPath, ctx.cwd)
-    : ctx.cwd;
-
-  // `dir <file>` is valid on real Windows: list the file as a one-row entry
-  // inside its parent directory. Only return "File Not Found" when nothing
-  // at that path exists.
-  if (!ctx.fs.isDirectory(absPath)) {
-    if (!ctx.fs.exists(absPath)) return 'File Not Found';
-    return dirSingleFile(ctx, absPath);
-  }
-  if (wildcard) {
-    return dirWildcard(ctx, absPath, wildcard, selection);
-  }
-
-  // `/b` — bare format: names only, no header / summary / . / .. .
-  // Equivalent in meaning to PowerShell `Get-ChildItem -Name`.
-  if (flags.has('bare')) {
-    return dirBare(ctx, absPath, flags.has('recursive'), selection);
-  }
-
-  if (flags.has('recursive')) {
-    return dirRecursive(ctx, absPath, flags, selection);
-  }
-
-  return dirSingle(ctx, absPath, flags, selection);
+  return { options, positionals };
 }
 
-/**
- * `dir /b` — one name per line, no decoration. `dir /s /b` lists full
- * absolute paths recursively. Sort order matches the normal listing
- * (directories then files, each alphabetical) so it stays coherent
- * with `Get-ChildItem -Name`.
- */
-function dirBare(
-  ctx: WinFileCommandContext, absPath: string, recursive: boolean,
-  selection: AttributeSelection | null,
-): string {
-  const out: string[] = [];
-  const walk = (dir: string, prefix: string) => {
-    const entries = keepVisible(ctx.fs.listDirectory(dir), selection);
-    for (const { name, entry } of entries) {
-      out.push(recursive ? `${dir}\\${name}` : (prefix ? `${prefix}\\${name}` : name));
-      if (recursive && entry.type === 'directory') {
-        walk(`${dir}\\${name}`, '');
-      }
+const hasWildcard = (text: string): boolean => /[*?]/.test(text);
+const isVolumeRoot = (path: string): boolean => /^[A-Za-z]:\\?$/.test(path);
+const joinPath = (directory: string, name: string): string =>
+  directory.endsWith('\\') ? `${directory}${name}` : `${directory}\\${name}`;
+
+function resolveTarget(ctx: WinFileCommandContext, positionals: readonly string[]): Target | null {
+  const spec = positionals[0];
+  if (spec === undefined) return { directory: ctx.cwd, pattern: null };
+
+  const second = positionals[1];
+  if (second !== undefined && hasWildcard(second) && !hasWildcard(spec)) {
+    const directory = ctx.fs.normalizePath(spec, ctx.cwd);
+    return ctx.fs.isDirectory(directory) ? { directory, pattern: second } : null;
+  }
+
+  if (hasWildcard(spec)) {
+    const separator = Math.max(spec.lastIndexOf('\\'), spec.lastIndexOf('/'));
+    const directory = separator >= 0 ? ctx.fs.normalizePath(spec.slice(0, separator + 1), ctx.cwd) : ctx.cwd;
+    return ctx.fs.isDirectory(directory) ? { directory, pattern: spec.slice(separator + 1) } : null;
+  }
+
+  const absolute = ctx.fs.normalizePath(spec, ctx.cwd);
+  if (ctx.fs.isDirectory(absolute)) return { directory: absolute, pattern: null };
+  const lastSeparator = absolute.lastIndexOf('\\');
+  const parent = lastSeparator <= 2 ? absolute.slice(0, lastSeparator + 1) : absolute.slice(0, lastSeparator);
+  if (!ctx.fs.isDirectory(parent)) return null;
+  return { directory: parent, pattern: absolute.slice(lastSeparator + 1) };
+}
+
+function nameMatcher(pattern: string | null): (name: string) => boolean {
+  if (pattern === null || pattern === '*' || pattern === '*.*') return () => true;
+  const expression = wildcardToRegex(pattern);
+  return name => expression.test(name);
+}
+
+function dotRows(ctx: WinFileCommandContext, directory: string): Row[] {
+  const own = ctx.fs.resolve(directory);
+  const parentPath = directory.slice(0, directory.lastIndexOf('\\'));
+  const parent = ctx.fs.resolve(isVolumeRoot(parentPath) ? `${parentPath.slice(0, 2)}\\` : parentPath) ?? own;
+  const now = new Date();
+  return [
+    { name: '.', isDirectory: true, size: 0, written: own?.mtime ?? now, created: own?.ctime ?? now, attributes: NO_ATTRIBUTES },
+    { name: '..', isDirectory: true, size: 0, written: parent?.mtime ?? now, created: parent?.ctime ?? now, attributes: NO_ATTRIBUTES },
+  ];
+}
+
+function extensionOf(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot < 0 ? '' : name.slice(dot + 1).toLowerCase();
+}
+
+function timeOf(row: Row, field: TimeField): number {
+  return (field === 'created' ? row.created : row.written).getTime();
+}
+
+function compareBy(key: SortKey, a: Row, b: Row, field: TimeField): number {
+  switch (key) {
+    case 'name': return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    case 'extension': return extensionOf(a.name).localeCompare(extensionOf(b.name));
+    case 'group': return Number(!a.isDirectory) - Number(!b.isDirectory);
+    case 'size': return a.size - b.size;
+    case 'date': return timeOf(a, field) - timeOf(b, field);
+  }
+}
+
+function ordered(rows: Row[], options: DirOptions): Row[] {
+  if (options.sort.length === 0) return rows;
+  return [...rows].sort((a, b) => {
+    for (const { key, descending } of options.sort) {
+      const difference = compareBy(key, a, b, options.timeField);
+      if (difference !== 0) return descending ? -difference : difference;
+    }
+    return 0;
+  });
+}
+
+function accepts(row: Row, selection: AttributeSelection | null): boolean {
+  return selection === null
+    ? isDefaultVisible(row.attributes)
+    : selectionAccepts(selection, row.attributes, row.isDirectory);
+}
+
+function collect(ctx: WinFileCommandContext, target: Target, options: DirOptions): Block[] {
+  const matches = nameMatcher(target.pattern);
+  const blocks: Block[] = [];
+  const walk = (directory: string): void => {
+    const listing = ctx.fs.listDirectory(directory);
+    const candidates: Row[] = options.bare || isVolumeRoot(directory) ? [] : dotRows(ctx, directory);
+    for (const { name, entry } of listing) {
+      candidates.push({
+        name, isDirectory: entry.type === 'directory', size: entry.size,
+        written: entry.mtime, created: entry.ctime, attributes: entry.attributes,
+      });
+    }
+    const rows = candidates.filter(row => matches(row.name) && accepts(row, options.selection));
+    if (rows.length > 0) blocks.push({ path: directory, rows: ordered(rows, options) });
+    if (!options.recursive) return;
+    for (const { name, entry } of listing) {
+      if (entry.type !== 'directory') continue;
+      if (options.selection === null && !isDefaultVisible(entry.attributes)) continue;
+      walk(joinPath(directory, name));
     }
   };
-  walk(absPath, '');
-  // Real cmd prints nothing (and sets errorlevel) when the dir is empty.
-  return out.join('\n');
-}
-
-function dirWildcard(
-  ctx: WinFileCommandContext, absPath: string, pattern: string,
-  selection: AttributeSelection | null,
-): string {
-  const re = wildcardToRegex(pattern);
-  const entries = keepVisible(ctx.fs.listDirectory(absPath), selection).filter(e => re.test(e.name));
-  if (entries.length === 0) return 'File Not Found';
-  const lines: string[] = [];
-  lines.push(volumeHeading(ctx, absPath[0]));
-  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
-  lines.push('');
-  lines.push(` Directory of ${absPath}`);
-  lines.push('');
-  let fileCount = 0;
-  let fileBytes = 0;
-  let dirCount  = 0;
-  for (const { name, entry } of entries) {
-    const date = formatDate(entry.mtime);
-    if (entry.type === 'directory') {
-      lines.push(`${date}    <DIR>          ${name}`);
-      dirCount++;
-    } else {
-      const sizeStr = entry.size.toLocaleString('en-US').padStart(14, ' ');
-      lines.push(`${date} ${sizeStr} ${name}`);
-      fileCount++;
-      fileBytes += entry.size;
-    }
-  }
-  lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
-  lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
-  return lines.join('\n');
-}
-
-function dirSingleFile(ctx: WinFileCommandContext, absPath: string): string {
-  const lastSep = absPath.lastIndexOf('\\');
-  const parent  = lastSep > 1 ? absPath.slice(0, lastSep) : absPath.slice(0, lastSep + 1);
-  const leaf    = absPath.slice(lastSep + 1);
-  const entries = ctx.fs.listDirectory(parent);
-  const hit = entries.find(e => e.name.toLowerCase() === leaf.toLowerCase());
-  if (!hit) return 'File Not Found';
-  const lines: string[] = [];
-  lines.push(volumeHeading(ctx, absPath[0]));
-  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
-  lines.push('');
-  lines.push(` Directory of ${parent}`);
-  lines.push('');
-  const date = formatDate(hit.entry.mtime);
-  const sizeStr = hit.entry.size.toLocaleString('en-US').padStart(14, ' ');
-  lines.push(`${date} ${sizeStr} ${hit.name}`);
-  lines.push(`               1 File(s) ${hit.entry.size.toLocaleString('en-US')} bytes`);
-  lines.push(`               0 Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
-  return lines.join('\n');
-}
-
-function dirSingle(
-  ctx: WinFileCommandContext, absPath: string, flags: Set<string>,
-  selection: AttributeSelection | null,
-): string {
-  const entries = keepVisible(ctx.fs.listDirectory(absPath), selection);
-  const lines: string[] = [];
-
-  // Volume header
-  lines.push(volumeHeading(ctx, absPath[0]));
-  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
-  lines.push('');
-  lines.push(` Directory of ${absPath}`);
-  lines.push('');
-
-  if (flags.has('wide')) {
-    return dirWide(ctx, absPath, entries, lines);
-  }
-
-  // Add . and .. entries
-  const parentPath = absPath.substring(0, absPath.lastIndexOf('\\'));
-  const dotDate = formatDate(new Date());
-  lines.push(`${dotDate}    <DIR>          .`);
-  lines.push(`${dotDate}    <DIR>          ..`);
-
-  let fileCount = 0;
-  let fileBytes = 0;
-  let dirCount = 2; // . and ..
-
-  for (const { name, entry } of entries) {
-    const date = formatDate(entry.mtime);
-    if (entry.type === 'directory') {
-      lines.push(`${date}    <DIR>          ${name}`);
-      dirCount++;
-    } else {
-      const sizeStr = entry.size.toLocaleString('en-US').padStart(14, ' ');
-      lines.push(`${date} ${sizeStr} ${name}`);
-      fileCount++;
-      fileBytes += entry.size;
-    }
-  }
-
-  lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
-  lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
-  return lines.join('\n');
-}
-
-function dirWide(
-  ctx: WinFileCommandContext,
-  absPath: string,
-  entries: { name: string; entry: any }[],
-  lines: string[]
-): string {
-  // Wide format: [DirName] or filename, columns
-  const items: string[] = ['.', '..'];
-  for (const { name, entry } of entries) {
-    items.push(entry.type === 'directory' ? `[${name}]` : name);
-  }
-
-  const colWidth = 20;
-  const cols = 4;
-  for (let i = 0; i < items.length; i += cols) {
-    const row = items.slice(i, i + cols).map(s => s.padEnd(colWidth)).join('');
-    lines.push(row);
-  }
-
-  let fileCount = 0, fileBytes = 0, dirCount = 2;
-  for (const { entry } of entries) {
-    if (entry.type === 'directory') dirCount++;
-    else { fileCount++; fileBytes += entry.size; }
-  }
-  lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
-  lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
-  return lines.join('\n');
-}
-
-function dirRecursive(
-  ctx: WinFileCommandContext, absPath: string, flags: Set<string>,
-  selection: AttributeSelection | null,
-): string {
-  const allDirs = ctx.fs.listDirectoryRecursive(absPath);
-  const lines: string[] = [];
-
-  // Volume header
-  lines.push(volumeHeading(ctx, absPath[0]));
-  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
-  lines.push('');
-
-  let totalFiles = 0, totalBytes = 0, totalDirs = 0;
-
-  for (const { path, entries } of allDirs) {
-    lines.push(` Directory of ${path}`);
-    lines.push('');
-
-    const dotDate = formatDate(new Date());
-    lines.push(`${dotDate}    <DIR>          .`);
-    lines.push(`${dotDate}    <DIR>          ..`);
-
-    let fileCount = 0, fileBytes = 0, dirCount = 2;
-    for (const { name, entry } of keepVisible(entries, selection)) {
-      const date = formatDate(entry.mtime);
-      if (entry.type === 'directory') {
-        lines.push(`${date}    <DIR>          ${name}`);
-        dirCount++;
-      } else {
-        const sizeStr = entry.size.toLocaleString('en-US').padStart(14, ' ');
-        lines.push(`${date} ${sizeStr} ${name}`);
-        fileCount++;
-        fileBytes += entry.size;
-      }
-    }
-    lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
-    lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
-    lines.push('');
-
-    totalFiles += fileCount;
-    totalBytes += fileBytes;
-    totalDirs += dirCount;
-  }
-
-  lines.push(`     Total Files Listed:`);
-  lines.push(`               ${totalFiles} File(s) ${totalBytes.toLocaleString('en-US')} bytes`);
-  lines.push(`               ${totalDirs} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
-  return lines.join('\n');
+  walk(target.directory);
+  return blocks;
 }
 
 function formatDate(d: Date): string {
@@ -320,14 +276,145 @@ function formatDate(d: Date): string {
   return `${mm}/${dd}/${yyyy}  ${String(hh).padStart(2, '0')}:${min} ${ampm}`;
 }
 
+const shown = (text: string, options: DirOptions): string => (options.lowercase ? text.toLowerCase() : text);
+
+function rowLine(row: Row, options: DirOptions): string {
+  const date = formatDate(options.timeField === 'created' ? row.created : row.written);
+  const name = shown(row.name, options);
+  return row.isDirectory
+    ? `${date}${DIRECTORY_MARKER}${name}`
+    : `${date}${groupDigits(row.size, options.thousands).padStart(SIZE_FIELD_WIDTH)} ${name}`;
+}
+
+function wideLines(rows: readonly Row[], options: DirOptions): string[] {
+  const cells = rows.map(row => {
+    const name = shown(row.name, options);
+    return row.isDirectory ? `[${name}]` : name;
+  });
+  const height = Math.ceil(cells.length / WIDE_COLUMNS);
+  const lines: string[] = [];
+  for (let line = 0; line < height; line++) {
+    const picked: string[] = [];
+    for (let column = 0; column < WIDE_COLUMNS; column++) {
+      const index = options.columnMajor ? column * height + line : line * WIDE_COLUMNS + column;
+      if (index < cells.length) picked.push(cells[index].padEnd(WIDE_COLUMN_WIDTH));
+    }
+    lines.push(picked.join('').trimEnd());
+  }
+  return lines;
+}
+
+function tally(rows: readonly Row[]): { files: number; bytes: number; directories: number } {
+  let files = 0;
+  let bytes = 0;
+  let directories = 0;
+  for (const row of rows) {
+    if (row.isDirectory) directories++;
+    else { files++; bytes += row.size; }
+  }
+  return { files, bytes, directories };
+}
+
+function renderBare(blocks: readonly Block[], options: DirOptions): string {
+  const lines: string[] = [];
+  for (const block of blocks) {
+    for (const row of block.rows) {
+      lines.push(shown(options.recursive ? joinPath(block.path, row.name) : row.name, options));
+    }
+  }
+  return lines.join('\n');
+}
+
+function renderFull(ctx: WinFileCommandContext, blocks: readonly Block[], start: string, options: DirOptions): string {
+  const drive = start[0];
+  const free = ctx.fs.getFreeDiskSpace(drive);
+  const lines: string[] = [
+    volumeHeading(ctx, drive),
+    ` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(drive)}`,
+    '',
+  ];
+  let totalFiles = 0;
+  let totalBytes = 0;
+  let totalDirectories = 0;
+  for (const block of blocks) {
+    const { files, bytes, directories } = tally(block.rows);
+    lines.push(` Directory of ${block.path}`, '');
+    if (options.wide) lines.push(...wideLines(block.rows, options));
+    else lines.push(...block.rows.map(row => rowLine(row, options)));
+    lines.push(fileSummaryLine(files, bytes, options.thousands));
+    if (options.recursive) lines.push('');
+    else lines.push(dirSummaryLine(directories, free, options.thousands));
+    totalFiles += files;
+    totalBytes += bytes;
+    totalDirectories += directories;
+  }
+  if (options.recursive) {
+    lines.push(
+      '     Total Files Listed:',
+      fileSummaryLine(totalFiles, totalBytes, options.thousands),
+      dirSummaryLine(totalDirectories, free, options.thousands),
+    );
+  }
+  return lines.join('\n');
+}
+
+export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
+  const parsed = parseArguments(args);
+  if (typeof parsed === 'string') return parsed;
+  const { options, positionals } = parsed;
+
+  const target = resolveTarget(ctx, positionals);
+  if (target === null) return 'File Not Found';
+
+  const blocks = collect(ctx, target, options);
+  if (blocks.length === 0) {
+    const emptyRoot = target.pattern === null && !options.recursive && isVolumeRoot(target.directory)
+      && options.selection === null;
+    if (!emptyRoot) return 'File Not Found';
+    blocks.push({ path: target.directory, rows: [] });
+  }
+
+  return options.bare
+    ? renderBare(blocks, options)
+    : renderFull(ctx, blocks, target.directory, options);
+}
+
 function dirHelp(): string {
   return [
     'Displays a list of files and subdirectories in a directory.',
     '',
-    'DIR [drive:][path][filename] [/W] [/S] [/B]',
+    'DIR [drive:][path][filename] [/A[[:]attributes]] [/B] [/C] [/D] [/L] [/N]',
+    '  [/O[[:]sortorder]] [/P] [/Q] [/S] [/T[[:]timefield]] [/W] [/X] [/4]',
     '',
-    '  /W   Uses wide list format.',
-    '  /S   Displays files in specified directory and all subdirectories.',
-    '  /B   Uses bare format (no heading information or summary).',
+    '  [drive:][path][filename]',
+    '              Specifies drive, directory, and/or files to list.',
+    '',
+    '  /A          Displays files with specified attributes.',
+    '  attributes   D  Directories                R  Read-only files',
+    '               H  Hidden files               A  Files ready for archiving',
+    '               S  System files               I  Not content indexed files',
+    '               L  Reparse Points             O  Offline files',
+    '               -  Prefix meaning not',
+    '  /B          Uses bare format (no heading information or summary).',
+    '  /C          Display the thousand separator in file sizes.  This is the',
+    '              default.  Use /-C to disable display of separator.',
+    '  /D          Same as wide but files are list sorted by column.',
+    '  /L          Uses lowercase.',
+    '  /N          New long list format where filenames are on the far right.',
+    '  /O          List by files in sorted order.',
+    '  sortorder    N  By name (alphabetic)       S  By size (smallest first)',
+    '               E  By extension (alphabetic)  D  By date/time (oldest first)',
+    '               G  Group directories first    -  Prefix to reverse order',
+    '  /P          Pauses after each screenful of information.',
+    '  /Q          Display the owner of the file.',
+    '  /S          Displays files in specified directory and all subdirectories.',
+    '  /T          Controls which time field displayed or used for sorting',
+    '  timefield   C  Creation',
+    '              A  Last Access',
+    '              W  Last Written',
+    '  /W          Uses wide list format.',
+    '  /X          This displays the short names generated for non-8dot3 file',
+    '              names.',
+    '  /4          Displays four-digit years',
   ].join('\n');
 }

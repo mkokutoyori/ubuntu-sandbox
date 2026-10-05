@@ -16,7 +16,7 @@
  *   Ubuntu 22.04.4 LTS
  *   Last login: … from 10.0.0.1
  *   CUSTOM MOTD LINE                      <- la banniere du client
- *   Warning: Permanently added '10.0.0.2' (ssh-ed25519) …
+ *   Warning: Permanently added '10.0.0.2' (ED25519) …
  *   CUSTOM MOTD LINE                      <- le prefixe du relais
  *   alice@srv:~$ whoami
  *

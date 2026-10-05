@@ -12,6 +12,9 @@ import type { TCPPacket } from '@/network/core/types';
 
 export class MockTcpConnection {
   private readonly dataHandlers: Array<(data: string) => void> = [];
+  private readonly unread: string[] = [];
+  private readonly closeHandlers: Array<(reason: string) => void> = [];
+  private closed = false;
   private seqNum: number;
   private ackNum = 0;
 
@@ -59,16 +62,36 @@ export class MockTcpConnection {
 
   onData(handler: (data: string) => void): () => void {
     this.dataHandlers.push(handler);
+    for (const data of this.unread.splice(0)) handler(data);
     return () => {
       const idx = this.dataHandlers.indexOf(handler);
       if (idx !== -1) this.dataHandlers.splice(idx, 1);
     };
   }
 
+  onClose(handler: (reason: string) => void): () => void {
+    this.closeHandlers.push(handler);
+    if (this.closed) handler('fin');
+    return () => {
+      const idx = this.closeHandlers.indexOf(handler);
+      if (idx !== -1) this.closeHandlers.splice(idx, 1);
+    };
+  }
+
+  receiveClose(): void {
+    if (this.closed) return;
+    this.closed = true;
+    for (const h of [...this.closeHandlers]) h('fin');
+  }
+
   /** Called by the test harness's own in-memory wiring when the "peer" sends data. */
   receiveData(data: string, remoteSeq?: number): void {
     if (remoteSeq !== undefined) {
       this.ackNum = remoteSeq + data.length;
+    }
+    if (this.dataHandlers.length === 0) {
+      this.unread.push(data);
+      return;
     }
     for (const h of [...this.dataHandlers]) h(data);
   }

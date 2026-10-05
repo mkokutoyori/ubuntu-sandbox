@@ -125,7 +125,7 @@ import { DHCPClient } from '../dhcp/DHCPClient';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
 import { addressAnswersOnLink } from '../arp/AddressProbe';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
-import { dhcpClientFrame } from '../dhcp/DhcpClientFrame';
+import { dhcpClientFrame, isDhcpReplyFor } from '../dhcp/DhcpClientFrame';
 import type { DhcpUnicastTarget } from '../dhcp/types';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import {
@@ -1113,6 +1113,7 @@ export abstract class EndHost extends Equipment {
         this.onDhcpLeaseReleased(iface);
       },
     );
+    this.dhcpClient.setBroadcastFlag(false);
     this.dhcpClient.setLinkLocalAutoconfiguration(() => this.linkLocalAutoconfigurationEnabled());
     this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setHostnameProvider(() => this.getHostname());
@@ -2621,6 +2622,10 @@ export abstract class EndHost extends Equipment {
     if (!port) return;
 
     const isForUs = this.isLocalDestination(portName, ipPkt.destinationIP);
+    if (!isForUs && isDhcpReplyFor(ipPkt, port.getMAC())) {
+      this.deliverUDP(portName, ipPkt, true, srcMac);
+      return;
+    }
     // Also accept if destination is the broadcast for our subnet, or the
     // limited broadcast 255.255.255.255 — RFC 1122 §3.3.6 requires accepting
     // it even on an unconfigured interface (DHCP clients depend on this).

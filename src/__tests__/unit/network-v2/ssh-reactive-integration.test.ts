@@ -82,9 +82,11 @@ function linkPair(handler: SshServerHandler): MockTcpConnection {
   const bridge: { server: MockTcpConnection | null } = { server: null };
   const client = new MockTcpConnection(LOCAL_IP, 49000, REMOTE_IP, 22, 100, (seg) => {
     if (seg.payload != null && bridge.server) bridge.server.receiveData(String(seg.payload));
+    if (seg.flags.fin) bridge.server?.receiveClose();
   });
   const server = new MockTcpConnection(REMOTE_IP, 22, LOCAL_IP, 49000, 200, (seg) => {
     if (seg.payload != null) client.receiveData(String(seg.payload));
+    if (seg.flags.fin) client.receiveClose();
   });
   bridge.server = server;
   handler.register(server, LOCAL_IP);

@@ -141,7 +141,7 @@ import {
 } from '@/network/protocols/ssh/SshAgentCommands';
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
-import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
+import type { HostKeyProbeResult } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { runTruncate } from './commands/fs/Truncate';
 import { runDd } from './commands/fs/Dd';
 import { runFallocate } from './commands/fs/Fallocate';
@@ -163,6 +163,7 @@ import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem'
 import { SshSession } from '../../protocols/ssh/session/SshSession';
 import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
 import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
+import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
 import { sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
 import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
 import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
@@ -377,6 +378,8 @@ function transferAuthority(
   }
   return null;
 }
+
+type SshHostKeyProbe = (ip: string, port: number, hostKeyAlgorithms: readonly string[]) => HostKeyProbeResult | null;
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -1659,18 +1662,22 @@ export class LinuxCommandExecutor {
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
-    authentication?: SshClientAuthentication,
-  ): Promise<{ session: SshSession | null; authRefused: boolean; denial?: string; notices: string[] }> {
+    authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences,
+  ): Promise<{
+    session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
+  }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
     const outcome = await connectWireSsh(
-      this.wireSshClient(), { host, user, port, password, identities, strict, authentication },
+      this.wireSshClient(), { host, user, port, password, identities, strict, authentication, algorithms },
       ((h, p) => connector(h, p)) as unknown as TcpConnector);
     const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
     const denial = authRefused ? outcome.warnings.at(-1) : undefined;
+    const keyExchangeFailure = outcome.failure?.kind === 'KEX_FAILED' ? outcome.failure.message : undefined;
     return {
       session: outcome.session,
       authRefused,
+      ...(keyExchangeFailure !== undefined ? { keyExchangeFailure } : {}),
       ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
     };
@@ -1736,9 +1743,13 @@ export class LinuxCommandExecutor {
       : await wireReachOutcomeRetransmitting(this.localDevice, target.host, target.port);
     const wire = reach === 'open' && target !== null
       ? await this.connectWireSsh(
-        target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication)
+        target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication,
+        target.algorithms)
       : { session: null, authRefused: false, notices: [] as string[] };
     const session = wire.session;
+    if (!session && 'keyExchangeFailure' in wire && wire.keyExchangeFailure !== undefined) {
+      return { output: wire.keyExchangeFailure, exitCode: 255 };
+    }
     if (!session) {
       return this.finishSshClientResult(
         runSshClient({
@@ -1794,7 +1805,6 @@ export class LinuxCommandExecutor {
         { ip: result.connection.localIp, port: srcPort },
         { ip: result.connection.peerIp, port: result.connection.peerPort },
       );
-      this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
       if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
     }
     if (result.droppedSyn) {
@@ -2050,14 +2060,6 @@ export class LinuxCommandExecutor {
     return server?.sshClientPort?.(localIp);
   }
 
-  /**
-   * `captureTcpHandshake` only writes into the calling machine's own
-   * `captureLog` — unlike `emitSshWire`'s `publishWireSegment` calls, it
-   * isn't routed through `CaptureRouter` to the peer, so a tcpdump running
-   * on the remote end never sees the SYN/SYN-ACK/ACK. Mirror it onto the
-   * peer's own captureLog too, the same way `Nc.ts` already does for its
-   * TCP banner grab.
-   */
   private mirrorSshHandshakeCapture(
     src: { ip: string; port: number },
     dst: { ip: string; port: number },
@@ -2066,26 +2068,6 @@ export class LinuxCommandExecutor {
     const remoteCap = (this.sshPeerDevice(dst.ip) as unknown as
       { executor?: { captureLog?: PacketCaptureLog } } | undefined)?.executor?.captureLog;
     if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
-  }
-
-  private emitSshWire(srcIp: string, srcPort: number, dstIp: string, dstPort: number): void {
-    ensureCaptureRouterInstalled();
-    const enc = new TextEncoder();
-    publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: enc.encode('SSH-2.0-OpenSSH_8.9 LinuxSimulator\r\n') });
-    publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 1, ack: 35, payload: enc.encode('SSH-2.0-OpenSSH_8.9 Client\r\n') });
-    const kex = new Uint8Array(384);
-    for (let i = 0; i < kex.length; i++) kex[i] = Math.floor(Math.random() * 256);
-    publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 30, ack: 35, payload: kex });
-    publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 35, ack: 30 + kex.length, payload: kex });
-    const stdin = this._scenarioStdin ?? '';
-    let seq = 30 + kex.length;
-    for (const line of stdin.split('\n')) {
-      void line;
-      const cipher = new Uint8Array(64 + Math.floor(Math.random() * 64));
-      for (let i = 0; i < cipher.length; i++) cipher[i] = Math.floor(Math.random() * 256);
-      publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq, ack: 35, payload: cipher });
-      seq += cipher.length;
-    }
   }
 
   private async openWireTelnetSession(
@@ -2146,12 +2128,18 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
-    return runSshKeyscanCommand(args, {
+  private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
+    const { output, stderr, exitCode } = runSshKeyscanCommand(args, {
       resolve: (target: string) =>
         findHostByAddress(target, undefined, this.localDevice as never)?.ip ?? null,
-      probe: (ip: string, port: number) => this.sshHostKeyProbe?.(ip, port) ?? null,
+      probe: (ip, port, hostKeyAlgorithms) => this.sshHostKeyProbe?.(ip, port, hostKeyAlgorithms) ?? null,
+      readFile: (path) => {
+        const absolute = this.vfs.normalizePath(path, this.cwd);
+        return this.vfs.exists(absolute) ? this.vfs.readFile(absolute) : null;
+      },
+      stdin,
     });
+    return { output, exitCode, ...(stderr === '' ? {} : { stderr }) };
   }
 
   private keygenHost(): SshKeygenHost {
@@ -2481,8 +2469,8 @@ export class LinuxCommandExecutor {
   setLocalDevice(device: object): void { this.localDevice = device; }
   getLocalDevice(): object | null { return this.localDevice; }
 
-  private sshHostKeyProbe: ((ip: string, port: number) => ProbedHostKey | null) | null = null;
-  setSshHostKeyProbe(probe: (ip: string, port: number) => ProbedHostKey | null): void {
+  private sshHostKeyProbe: SshHostKeyProbe | null = null;
+  setSshHostKeyProbe(probe: SshHostKeyProbe): void {
     this.sshHostKeyProbe = probe;
   }
 
@@ -5615,7 +5603,7 @@ export class LinuxCommandExecutor {
         return this.handleSshAdd(args);
       case 'ssh-agent':
         return runSshAgentCommand(args, this.agentHost());
-      case 'ssh-keyscan': return this.runSshKeyscan(args);
+      case 'ssh-keyscan': return this.runSshKeyscan(args, stdin);
       case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
       case 'ssh-copy-id': return this.runSshCopyId(args);
       case 'xargs': {

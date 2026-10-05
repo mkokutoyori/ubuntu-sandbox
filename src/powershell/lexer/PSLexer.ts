@@ -25,6 +25,7 @@ export class PSLexer {
   private pos: number = 0;
   private line: number = 1;
   private column: number = 1;
+  private continuedToEnd = false;
 
   // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -32,11 +33,14 @@ export class PSLexer {
    * Tokenize a full PowerShell input string.
    * Comments are stripped. Returns a token array always ending with EOF.
    */
+  get endsInLineContinuation(): boolean { return this.continuedToEnd; }
+
   tokenize(input: string): PSToken[] {
     this.input = input;
     this.pos = 0;
     this.line = 1;
     this.column = 1;
+    this.continuedToEnd = false;
 
     const tokens: PSToken[] = [];
 
@@ -44,6 +48,7 @@ export class PSLexer {
       this.skipSpacesAndTabs();
       if (this.eof()) break;
 
+      this.continuedToEnd = false;
       const tok = this.scanToken();
       if (tok !== null) tokens.push(tok);
     }
@@ -139,6 +144,7 @@ export class PSLexer {
     this.advance();
     if (this.ch() === '\r') this.advance();
     this.advance();
+    this.continuedToEnd = this.eof();
   }
 
   private eof(): boolean { return this.pos >= this.input.length; }
@@ -806,15 +812,15 @@ export class PSLexer {
       // Stop at whitespace
       if (c === ' ' || c === '\t' || c === '\n') break;
 
-      // Stop at operator starts (but allow inside word chars)
-      if (this.isWordStopChar(c)) break;
-
       // Allow backtick-escaping of the next char (line continuation / escape)
       if (c === '`' && !this.eof()) {
         this.advance();
         if (!this.eof()) { value += this.ch(); this.advance(); }
         continue;
       }
+
+      // Stop at operator starts (but allow inside word chars)
+      if (this.isWordStopChar(c)) break;
 
       value += c;
       this.advance();

@@ -1,10 +1,16 @@
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import { SSH_DEFAULTS, type SshConfig } from '../../router/security/CiscoSecurityConfig';
+import {
+  IOS_ALGORITHM_VALUES, iosSshDefaults, type IosSshAlgorithmFamily,
+} from '../../router/security/CiscoSshAlgorithms';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
+import type { CiscoSoftwareIdentity } from './CiscoPlatform';
 
 export interface IpSshHost {
   sshConfig(): SshConfig;
   hasRsaKeys(): boolean;
+  software(): CiscoSoftwareIdentity;
 }
 
 export const SSH_TIMEOUT_RANGE: readonly [number, number] = [1, 120];
@@ -42,24 +48,56 @@ const TAILLE_DH: ArgumentSpec = {
   ],
 };
 
-const FAMILLE_ALGO: ArgumentSpec = {
-  name: 'famille', type: 'ENUM', description: 'Algorithm family to restrict',
-  values: [
-    { keyword: 'encryption', description: 'Encryption algorithms' },
-    { keyword: 'kex', description: 'Key exchange algorithms' },
-    { keyword: 'mac', description: 'Message authentication code algorithms' },
-  ],
+type CoteSsh = 'server' | 'client';
+
+const LISTES_PAR_COTE: Readonly<Record<CoteSsh, Partial<Record<IosSshAlgorithmFamily, keyof SshConfig>>>> = {
+  server: {
+    mac: 'macAlgorithms', encryption: 'encryptionAlgorithms', kex: 'kexAlgorithms', hostkey: 'hostKeyAlgorithms',
+  },
+  client: { mac: 'clientMacAlgorithms', encryption: 'clientEncryptionAlgorithms' },
 };
 
-const LISTE_ALGO: ArgumentSpec = {
+const FAMILLES_PAR_COTE: Readonly<Record<CoteSsh, readonly IosSshAlgorithmFamily[]>> = {
+  server: ['encryption', 'hostkey', 'kex', 'mac'],
+  client: ['encryption', 'mac'],
+};
+
+const DESCRIPTION_FAMILLE: Readonly<Record<IosSshAlgorithmFamily, string>> = {
+  encryption: 'Encryption algorithms',
+  hostkey: 'Host key algorithms',
+  kex: 'Key exchange algorithms',
+  mac: 'Message authentication code algorithms',
+};
+
+const LISTE_FAMILLE = (famille: IosSshAlgorithmFamily): ArgumentSpec => ({
   name: 'liste', type: 'REST', description: 'Ordered list of algorithms',
-};
+  values: IOS_ALGORITHM_VALUES[famille].map((keyword) => ({ keyword, description: keyword })),
+});
 
-const LISTES_PAR_FAMILLE: Readonly<Record<string, keyof SshConfig>> = {
-  mac: 'macAlgorithms',
-  encryption: 'encryptionAlgorithms',
-  kex: 'kexAlgorithms',
-};
+function listeSaisie(famille: IosSshAlgorithmFamily, saisie: string): string[] {
+  const noms = saisie.trim().split(/\s+/).filter(Boolean);
+  const inconnu = noms.find((nom) => !IOS_ALGORITHM_VALUES[famille].includes(nom));
+  if (inconnu !== undefined) throw new CliInvalidInput({ token: inconnu });
+  return noms.filter((nom, i) => noms.indexOf(nom) === i);
+}
+
+function reglerListe(ssh: SshConfig, cote: CoteSsh, famille: IosSshAlgorithmFamily, liste: string[]): void {
+  (ssh as unknown as Record<string, string[]>)[LISTES_PAR_COTE[cote][famille]!] = liste;
+}
+
+function listeEffective(host: IpSshHost, cote: CoteSsh, famille: IosSshAlgorithmFamily): readonly string[] {
+  const configuree = (host.sshConfig() as unknown as Record<string, string[]>)[LISTES_PAR_COTE[cote][famille]!];
+  return configuree.length > 0 ? configuree : iosSshDefaults(host.software())[famille];
+}
+
+function retirerDeLaListe(
+  host: IpSshHost, cote: CoteSsh, famille: IosSshAlgorithmFamily, retires: readonly string[],
+): string {
+  const restant = listeEffective(host, cote, famille).filter((nom) => !retires.includes(nom));
+  if (restant.length === 0) return `% SSH command rejected: All ${famille} algorithms cannot be disabled`;
+  reglerListe(host.sshConfig(), cote, famille, restant);
+  return '';
+}
 
 export function ipSshSpecs(ctx: () => IpSshHost): CommandSpec[] {
   const specs: CommandSpec[] = [];
@@ -126,20 +164,19 @@ export function ipSshSpecs(ctx: () => IpSshHost): CommandSpec[] {
       () => { ctx().sshConfig().loggingEvents = true; return ''; },
       () => { ctx().sshConfig().loggingEvents = false; return ''; }),
 
-    spec('server-algorithm',
-      ['ip', 'ssh', 'server', 'algorithm', FAMILLE_ALGO, LISTE_ALGO],
-      'SSH server options',
+    ...(['server', 'client'] as const).flatMap((cote) => FAMILLES_PAR_COTE[cote].map((famille) => spec(
+      `${cote}-algorithm-${famille}`,
+      ['ip', 'ssh', cote, 'algorithm', famille, LISTE_FAMILLE(famille)],
+      DESCRIPTION_FAMILLE[famille],
       (_session, args) => {
-        const champ = LISTES_PAR_FAMILLE[args.famille];
-        (ctx().sshConfig() as unknown as Record<string, string[]>)[champ] =
-          args.liste.trim().split(/\s+/).filter(Boolean);
+        reglerListe(ctx().sshConfig(), cote, famille, listeSaisie(famille, args.liste));
         return '';
       },
       (_session, args) => {
-        const champ = LISTES_PAR_FAMILLE[args.famille];
-        (ctx().sshConfig() as unknown as Record<string, string[]>)[champ] = [];
-        return '';
-      }),
+        const retires = listeSaisie(famille, args.liste ?? '');
+        if (retires.length === 0) { reglerListe(ctx().sshConfig(), cote, famille, []); return ''; }
+        return retirerDeLaListe(ctx(), cote, famille, retires);
+      }))),
 
     spec('scp-server', ['ip', 'scp', 'server', 'enable'], 'Enable the SCP server',
       () => { ctx().sshConfig().scpServerEnabled = true; return ''; },

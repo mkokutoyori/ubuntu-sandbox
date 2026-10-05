@@ -54,7 +54,7 @@ describe('TCP options (PRD-TCP.md P6)', () => {
   it('negotiates MSS down to whichever side offers the smaller value', () => {
     const { cli, srv } = buildPair();
     let serverSocket: TcpSocket | null = null;
-    srv.getTcpStack().listen(7400, { onAccept: (s) => { serverSocket = s; s.mss = 500; } });
+    srv.getTcpStack().listen(7400, { maxSegmentSize: 500, onAccept: (s) => { serverSocket = s; } });
     const clientSocket = cli.getTcpStack().connect('10.0.0.2', 7400)!;
 
     expect(serverSocket).not.toBeNull();
@@ -116,7 +116,7 @@ describe('TCP options (PRD-TCP.md P6)', () => {
     expect(clientSocket.rtt.hasMeasurement()).toBe(true);
   });
 
-  it('PAWS: drops an out-of-order segment whose timestamp is older than the highest already seen (RFC 7323 §5)', () => {
+  it('PAWS: drops a segment whose timestamp is older than TS.Recent, which only an in-sequence segment advances (RFC 7323 §5.3)', () => {
     const { cli, srv } = buildPair();
     let serverSocket: TcpSocket | null = null;
     srv.getTcpStack().listen(7404, { onAccept: (s) => { serverSocket = s; } });
@@ -145,13 +145,11 @@ describe('TCP options (PRD-TCP.md P6)', () => {
       srv.getTcpStack().handleIp('eth0', new IPAddress('10.0.0.1'), pkt);
     }
 
-    // Genuinely out-of-order with a fresh timestamp — buffered normally.
-    inject(sSocket.recvNext + 10, 999_999, 'FRESH');
-    expect(sSocket.reassemblyBuffer.length).toBe(1);
+    inject(sSocket.recvNext, 999_999, 'FRESH');
+    inject(sSocket.recvNext + 10, 1, 'STALE');
+    expect(sSocket.reassemblyBuffer.length).toBe(0);
 
-    // Another out-of-order segment, but its timestamp predates the one
-    // already recorded from this peer — PAWS must drop it, not buffer it.
-    inject(sSocket.recvNext + 20, 1, 'STALE');
+    inject(sSocket.recvNext + 10, 1_000_000, 'LATER');
     expect(sSocket.reassemblyBuffer.length).toBe(1);
   });
 });

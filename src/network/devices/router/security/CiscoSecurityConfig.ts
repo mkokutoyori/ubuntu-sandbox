@@ -150,7 +150,8 @@ export interface AaaLegacyServerHost {
 export const SSH_DEFAULTS = Object.freeze({
   version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false,
   macAlgorithms: [] as string[], encryptionAlgorithms: [] as string[],
-  kexAlgorithms: [] as string[], scpServerEnabled: false,
+  kexAlgorithms: [] as string[], hostKeyAlgorithms: [] as string[],
+  clientEncryptionAlgorithms: [] as string[], clientMacAlgorithms: [] as string[], scpServerEnabled: false,
 });
 
 export interface SshConfig {
@@ -160,18 +161,12 @@ export interface SshConfig {
   sourceInterface?: string;
   dhMinBits: number;
   loggingEvents: boolean;
-  /**
-   * Les listes d'algorithmes de `ip ssh server algorithm {mac|encryption
-   * |kex}`. Vides = « les valeurs par defaut », ce qu'IOS n'ecrit pas.
-   *
-   * Ce simulateur ne NEGOCIE pas ces algorithmes — sa pile choisit les
-   * siens — mais une commande de durcissement qui disparait de la
-   * configuration est pire qu'une commande refusee : au rechargement
-   * d'une topologie le durcissement n'est plus la et rien ne le dit.
-   */
   macAlgorithms: string[];
   encryptionAlgorithms: string[];
   kexAlgorithms: string[];
+  hostKeyAlgorithms: string[];
+  clientEncryptionAlgorithms: string[];
+  clientMacAlgorithms: string[];
   scpServerEnabled: boolean;
 }
 
@@ -615,6 +610,15 @@ export class CiscoSecurityConfig {
     }
     if (this.ssh.kexAlgorithms.length) {
       lines.push(`ip ssh server algorithm kex ${this.ssh.kexAlgorithms.join(' ')}`);
+    }
+    if (this.ssh.hostKeyAlgorithms.length) {
+      lines.push(`ip ssh server algorithm hostkey ${this.ssh.hostKeyAlgorithms.join(' ')}`);
+    }
+    if (this.ssh.clientMacAlgorithms.length) {
+      lines.push(`ip ssh client algorithm mac ${this.ssh.clientMacAlgorithms.join(' ')}`);
+    }
+    if (this.ssh.clientEncryptionAlgorithms.length) {
+      lines.push(`ip ssh client algorithm encryption ${this.ssh.clientEncryptionAlgorithms.join(' ')}`);
     }
     if (this.ssh.scpServerEnabled) lines.push('ip scp server enable');
     for (const k of this.cryptoKeys) {

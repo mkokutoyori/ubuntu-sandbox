@@ -1,4 +1,5 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPAddress, type MACAddress } from '../core/types';
+import { SSH_HUAWEI_VRP_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { selectBundleMember, DEFAULT_LOAD_BALANCE, type LoadBalanceMethod } from '@/network/lacp/loadBalance';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
@@ -306,6 +307,8 @@ export class HuaweiSwitch extends Switch {
   override hasSshHostKeys(): boolean {
     return this.getKeypairService().list().length > 0;
   }
+
+  protected override sshServerIdentification(): string { return SSH_HUAWEI_VRP_IDENTIFICATION; }
 
   protected override sshServerTurnedOn(): boolean {
     return this.getManagementService().getSsh().enabled;

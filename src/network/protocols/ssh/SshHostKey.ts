@@ -23,9 +23,10 @@ export class SshHostKey {
   static generate(
     hostname: string,
     algorithm: SshKeyAlgorithm = 'ssh-ed25519',
+    bits?: number,
   ): SshHostKey {
-    const seed = `${algorithm}:${hostname}`;
-    const pair = keygenDeterministicPair(algorithm, seed, `root@${hostname}`);
+    const seed = bits === undefined ? `${algorithm}:${hostname}` : `${algorithm}:${bits}:${hostname}`;
+    const pair = keygenDeterministicPair(algorithm, seed, `root@${hostname}`, bits);
     return new SshHostKey(algorithm, pair.pub.split(/\s+/)[1], pair.priv);
   }
 

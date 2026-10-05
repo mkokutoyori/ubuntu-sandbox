@@ -38,6 +38,7 @@ export interface ISshInteractionHandler {
   promptHostKeyConfirmation(
     host: string,
     fingerprint: string,
+    keyType: string,
   ): Promise<HostKeyResponse>;
   promptPassword(user: string, host: string): Promise<string>;
   promptKeyboardInteractive?(prompt: string, echo: boolean): Promise<string>;

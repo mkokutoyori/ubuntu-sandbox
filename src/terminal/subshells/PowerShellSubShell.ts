@@ -17,6 +17,7 @@ import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
 import { NativeCommandNeedsAsync, translateNativeAnswer, nativeLineFor } from '@/powershell/nativeAsync';
 import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
+import { powershellInputIsIncomplete } from '@/powershell/lexer/PSInputCompleteness';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -45,12 +46,15 @@ const DEVICE_ONLY_COMMANDS = new Set([
   'ping', 'tracert',
 ]);
 
+const CONTINUATION_PROMPT = '>> ';
+
 export class PowerShellSubShell implements ISubShell {
   readonly kind = 'powershell';
   readonly connection = 'subshell' as const;
   private interp: PSInterpreter;
   private device: Equipment;
   private commandHistory: string[] = [];
+  private pendingLines: string[] = [];
   /**
    * Owning terminal's cmd.exe shell session. When set, every command
    * dispatched through this sub-shell runs inside a session swap-window so
@@ -109,6 +113,7 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   getPrompt(): string {
+    if (this.pendingLines.length > 0) return CONTINUATION_PROMPT;
     const cwd = this.session?.cwd ?? (this.device as unknown as { getCwd(): string }).getCwd();
     return `${this.promptPrefix}PS ${cwd}> `;
   }
@@ -130,11 +135,26 @@ export class PowerShellSubShell implements ISubShell {
     return fs.exists(fs.normalizePath(path, device.getCwd()));
   }
 
+  awaitsMoreInput(): boolean { return this.pendingLines.length > 0; }
+
+  collectLine(line: string): string | null {
+    const typed = line.replace(/\r?\n$/, '');
+    if (this.pendingLines.length === 0 && !powershellInputIsIncomplete(typed)) return typed;
+    this.pendingLines.push(typed);
+    const joined = this.pendingLines.join('\n');
+    if (powershellInputIsIncomplete(joined)) return null;
+    this.pendingLines = [];
+    return joined;
+  }
+
   handleKey(e: KeyEvent): boolean {
     // Ctrl+D → ignored in PowerShell (not a Unix shell)
     if (e.key === 'd' && e.ctrlKey) return true;
     // Ctrl+C → cancel current input (handled at session level)
-    if (e.key === 'c' && e.ctrlKey) return true;
+    if (e.key === 'c' && e.ctrlKey) {
+      this.pendingLines = [];
+      return true;
+    }
     // All other keys go to the view's text input
     return false;
   }
@@ -145,7 +165,10 @@ export class PowerShellSubShell implements ISubShell {
   private _broker: import('@/shell/input').InputBroker | null = null;
 
   async processLine(line: string): Promise<SubShellResult> {
-    const trimmed = line.trim();
+    const command = this.collectLine(line);
+    if (command === null) return { output: [], exit: false, prompt: this.getPrompt() };
+    const trimmed = command.trim();
+    const afterFinalBacktick = /`\s+$/.test(command) ? command.slice(command.trimEnd().length) : '';
 
     if (trimmed.toLowerCase() === 'exit') {
       return { output: [], exit: true, prompt: this.getPrompt() };
@@ -198,7 +221,7 @@ export class PowerShellSubShell implements ISubShell {
     // attached. Inside the window, `device.getCwd()` and any
     // `device.executeCmdCommand(...)` delegation observe THIS terminal's
     // cwd / env (terminal_gap.md §7.x).
-    const dispatch = async (): Promise<string | null> => this.dispatchCommand(effective);
+    const dispatch = async (): Promise<string | null> => this.dispatchCommand(effective + afterFinalBacktick);
 
     const result = (this.session && this.device instanceof WindowsPC)
       ? await this.device.runInSession(this.session, dispatch)

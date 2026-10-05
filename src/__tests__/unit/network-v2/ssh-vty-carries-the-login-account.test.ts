@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { IOS_LEGACY_SSH_PREFERENCES } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -40,6 +41,7 @@ async function promptAfterLogin(
 ): Promise<string> {
   const outcome = await openWireSshShell({
     device: pc, localUser: 'root', user, host, port: 22, io: silentIo(), password,
+    algorithms: IOS_LEGACY_SSH_PREFERENCES,
   });
   expect(outcome.kind, `login as ${user}@${host} must succeed for this to mean anything`).toBe('connected');
   if (outcome.kind !== 'connected') throw new Error('unreachable');

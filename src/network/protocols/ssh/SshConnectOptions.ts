@@ -7,6 +7,8 @@
 
 import type { AuthMethodType } from './auth/ISshAuthMethod';
 import { firstSshOption, sshFlag } from './SshClientOptions';
+import { resolveAlgorithmDirectives } from './transport/SshAlgorithms';
+import type { SshAlgorithmPreferences } from './transport/SshTransport';
 
 export type StrictHostKeyChecking = 'yes' | 'no' | 'accept-new';
 
@@ -52,6 +54,15 @@ export function sshClientAuthentication(optionValues: readonly string[]): SshCli
   });
 }
 
+export function sshClientAlgorithms(optionValues: readonly string[]): SshAlgorithmPreferences {
+  return resolveAlgorithmDirectives({
+    kex: firstSshOption(optionValues, 'kexalgorithms'),
+    hostKey: firstSshOption(optionValues, 'hostkeyalgorithms'),
+    ciphers: firstSshOption(optionValues, 'ciphers'),
+    macs: firstSshOption(optionValues, 'macs'),
+  });
+}
+
 export interface SshConnectOptions {
   readonly host: string;
   readonly port: number;
@@ -70,6 +81,7 @@ export interface SshConnectOptions {
    */
   readonly requestTty?: 'yes' | 'no' | 'force';
   readonly authentication: SshClientAuthentication;
+  readonly algorithms?: SshAlgorithmPreferences;
 }
 
 export class SshConnectOptionsBuilder {
@@ -83,6 +95,7 @@ export class SshConnectOptionsBuilder {
   private _hashKnownHosts?: boolean;
   private _requestTty?: 'yes' | 'no' | 'force';
   private _authentication: SshClientAuthentication = OPENSSH_CLIENT_AUTHENTICATION;
+  private _algorithms?: SshAlgorithmPreferences;
 
   static create(): SshConnectOptionsBuilder {
     return new SshConnectOptionsBuilder();
@@ -138,6 +151,11 @@ export class SshConnectOptionsBuilder {
     return this;
   }
 
+  algorithms(preferences: SshAlgorithmPreferences): this {
+    this._algorithms = preferences;
+    return this;
+  }
+
   build(): SshConnectOptions {
     if (!this._host) throw new Error('SshConnectOptions: host is required');
     if (!this._user) throw new Error('SshConnectOptions: user is required');
@@ -152,6 +170,7 @@ export class SshConnectOptionsBuilder {
       hashKnownHosts: this._hashKnownHosts,
       requestTty: this._requestTty,
       authentication: this._authentication,
+      algorithms: this._algorithms,
     });
   }
 }
