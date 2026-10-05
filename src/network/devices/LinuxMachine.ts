@@ -64,7 +64,9 @@ import {
 } from './linux/http/nginx/NginxFiles';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
-import { ecnPolicyOfSetting, type TcpEcnPolicy } from '../tcp/TcpEcn';
+import type { TcpEcnPolicy } from '../tcp/TcpEcn';
+import type { TcpOptionPolicy } from '../tcp/TcpStack';
+import { LinuxIpv4Settings, LINUX_IPV4_KNOBS } from './linux/LinuxIpv4Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
@@ -258,12 +260,14 @@ function readUpstreamAnswer(
 
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
-  protected readonly defaultTTL = 64;
+  private readonly ipv4Settings = new LinuxIpv4Settings();
+  protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
+  protected override get defaultHopLimit(): number { return 64; }
   protected override get udpDiscoversPathMtu(): boolean { return true; }
-  private tcpEcnSetting = 2;
-  private tcpEcnFallbackSetting = 1;
-  protected override get tcpEcnPolicy(): TcpEcnPolicy { return ecnPolicyOfSetting(this.tcpEcnSetting); }
-  protected override get tcpEcnFallsBack(): boolean { return this.tcpEcnFallbackSetting !== 0; }
+  protected override get tcpEcnPolicy(): TcpEcnPolicy { return this.ipv4Settings.ecnPolicy; }
+  protected override get tcpEcnFallsBack(): boolean { return this.ipv4Settings.ecnFallsBack; }
+  protected override get tcpOptionPolicy(): TcpOptionPolicy { return this.ipv4Settings.optionPolicy; }
+  protected override get tcpRestartsAfterIdle(): boolean { return this.ipv4Settings.restartsAfterIdle; }
 
   /** Active profile — describes the "flavor" of this Linux machine. */
   public readonly profile: LinuxProfile;
@@ -367,10 +371,10 @@ export abstract class LinuxMachine extends EndHost
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`, 0o644);
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
       () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`, 0o644);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_ecn',
-      () => `${this.tcpEcnSetting}\n`, 0o644);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_ecn_fallback',
-      () => `${this.tcpEcnFallbackSetting}\n`, 0o644);
+    for (const knob of LINUX_IPV4_KNOBS) {
+      this.executor.vfs.registerGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
+        () => `${this.ipv4Settings.get(knob.name)}\n`, 0o644);
+    }
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
       () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`, 0o644);
     this.executor.setSessionTable(this.sessionTable);
@@ -4051,12 +4055,7 @@ export abstract class LinuxMachine extends EndHost
       setIpForward: (enabled: boolean): void => {
         this.ipForwardEnabled = enabled;
       },
-      setTcpEcn: (setting: number): void => {
-        this.tcpEcnSetting = setting;
-      },
-      setTcpEcnFallback: (setting: number): void => {
-        this.tcpEcnFallbackSetting = setting;
-      },
+      ipv4Settings: this.ipv4Settings,
       isIpForwardEnabled: (): boolean => {
         return this.ipForwardEnabled;
       },

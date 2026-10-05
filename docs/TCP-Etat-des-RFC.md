@@ -158,10 +158,14 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
 
 ## Plateformes
 
-- **Linux** (`LinuxPC`, `LinuxServer`) : TTL 64 ; ECN en mode 2 (accepte, ne demande pas),
-  `net.ipv4.tcp_ecn` et `net.ipv4.tcp_ecn_fallback` lisibles et inscriptibles dans `/proc/sys/net/ipv4/`
-  et par `sysctl` ; `nc -M`, `-m`, `-T`, `-N`, `-s` agissent sur la prise ; `tcpdump` sur `lo` décode le
-  vrai paquet comme sur le fil, `tcpdump -v` imprime l'en-tête IPv6.
+- **Linux** (`LinuxPC`, `LinuxServer`) : TTL 64 par défaut (`net.ipv4.ip_default_ttl`, 1 à 255) ; ECN en
+  mode 2 (accepte, ne demande pas) ; `net.ipv4.tcp_ecn`, `tcp_ecn_fallback`, `tcp_sack`, `tcp_timestamps`,
+  `tcp_window_scaling`, `tcp_slow_start_after_idle` et `ip_default_ttl` lisibles dans `/proc/sys/net/ipv4/`
+  et par `sysctl`, inscriptibles par `sysctl -w`, et évalués : le SYN ne propose que les options permises,
+  un SYN-ACK et une ouverture active ne retiennent que ce qui est permis des deux côtés, une connexion
+  inactive ne repart de la fenêtre initiale que si `tcp_slow_start_after_idle` est non nul ; `nc -M`, `-m`,
+  `-T`, `-N`, `-s` agissent sur la prise ; `tcpdump` sur `lo` décode le vrai paquet comme sur le fil,
+  `tcpdump -v` imprime l'en-tête IPv6.
 - **Windows** : TTL 128 ; n'envoie ni n'accepte ECN (configuration par défaut) ; aucune commande
   `netsh int tcp` ni `Set-NetTCPSetting` n'existe (ni leur sortie, qu'on ne peut pas sourcer d'ici).
 - **Routeurs** : la pile de gestion (BGP, SSH, telnet) est la même ; elle ne négocie pas ECN ; elle reçoit
@@ -185,11 +189,13 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   pas l'en-tête IP extérieur) ; le tunnel GRE des routeurs n'a pas de plan de données ; les mots de
   `netem` qui exigent un vrai délai (`reorder`, `rate`, `slot`, gigue, distributions, `loss state`,
   `gemodel`, `duplicate`, `corrupt`, `limit`) restent acceptés sans effet, comme avant.
-- **Réglages du noyau.** Parmi les `net.ipv4.tcp_*`, `sysctl` ne connaît que `tcp_ecn` et
-  `tcp_ecn_fallback` (évalués par la pile) et `tcp_tw_reuse`, que la `SocketTable` lit au `bind` et qui
-  s'affiche `0` là où le noyau 5.15 annonce `2` (`ip-sysctl.rst`, lu). `tcp_syn_retries`, `tcp_retries1`
-  et `tcp_retries2`, `tcp_keepalive_*`, `tcp_fin_timeout`, `tcp_sack`, `tcp_timestamps`,
-  `tcp_window_scaling`, `tcp_congestion_control` et `ip_default_ttl` répondent `cannot stat
+- **Réglages du noyau.** Parmi les `net.ipv4.tcp_*`, `sysctl` connaît `tcp_ecn`, `tcp_ecn_fallback`,
+  `tcp_sack`, `tcp_timestamps`, `tcp_window_scaling` et `tcp_slow_start_after_idle` (des octets, 0 à 255,
+  que la pile évalue ; `ip_default_ttl` est un octet de 1 à 255) et `tcp_tw_reuse`, que la `SocketTable`
+  lit au `bind` et qui s'affiche `0` là où le noyau 5.15 annonce `2` (`ip-sysctl.rst`, lu). Les valeurs 1
+  et 2 de `tcp_timestamps` activent toutes deux l'option : le noyau les distingue par un décalage
+  aléatoire de l'horloge par connexion, que le simulateur n'a pas. `tcp_syn_retries`, `tcp_retries1` et
+  `tcp_retries2`, `tcp_keepalive_*`, `tcp_fin_timeout` et `tcp_congestion_control` répondent `cannot stat
   /proc/sys/net/ipv4/…` (mesuré) ; les valeurs de la pile sont des constantes ou des réglages de prise.
 - **Source route.** Voir MUST-51 à MUST-53 ci-dessus.
 - **TCP_INFO.** `ss -i` n'imprime ni `ecn`, ni `ecnseen`, ni la fenêtre de congestion.

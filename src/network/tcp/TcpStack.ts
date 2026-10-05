@@ -201,6 +201,14 @@ export function segmentPayloadSize(seg: TcpSegment): number {
   return isStreamPayload(seg.payload) ? seg.payload.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
 }
 
+export interface TcpOptionPolicy {
+  readonly sack: boolean;
+  readonly timestamps: boolean;
+  readonly windowScaling: boolean;
+}
+
+const ALL_TCP_OPTIONS: TcpOptionPolicy = { sack: true, timestamps: true, windowScaling: true };
+
 export interface TcpHost {
   readonly id: string;
   readonly name: string;
@@ -223,6 +231,8 @@ export interface TcpHost {
   pathMtu?(remoteIp: string, linkMtu: number): number;
   ecnPolicy?(): TcpEcnPolicy;
   ecnFallback?(): boolean;
+  optionPolicy?(): TcpOptionPolicy;
+  restartsAfterIdle?(): boolean;
 }
 
 interface SegmentArrival {
@@ -899,9 +909,12 @@ export class TcpStack {
     socket.sendNext = (socket.sendNext + 1) >>> 0;
     // PRD-TCP.md P6 — offer our real capabilities on the SYN itself; the
     // peer's SYN-ACK tells us which ones it actually supports.
+    const offered = this.optionPolicy();
     const synOptions = encodeOptions({
-      mss: socket.mss, windowScale: socket.windowScale, sackPermitted: true,
-      timestamp: { tsVal: Math.floor(this.getScheduler().now()), tsEcr: 0 },
+      mss: socket.mss,
+      ...(offered.windowScaling ? { windowScale: socket.windowScale } : {}),
+      sackPermitted: offered.sack,
+      ...(offered.timestamps ? { timestamp: { tsVal: Math.floor(this.getScheduler().now()), tsEcr: 0 } } : {}),
     });
     this.transmitTracked(socket, flags, synSeq, 0, undefined, 1, synOptions);
     return socket;
@@ -1327,11 +1340,12 @@ export class TcpStack {
       socket.sendUnacked = socket.sendNext;
       // PRD-TCP.md P6 — negotiate against whatever the peer's SYN offered.
       const peerOpts = interpretOptions(seg.options);
+      const accepted = this.optionPolicy();
       socket.mss = Math.min(announcedMss, peerOpts.mss ?? defaultSendMss(socket.family));
-      socket.peerWindowScale = peerOpts.windowScale ?? null;
+      socket.peerWindowScale = accepted.windowScaling ? peerOpts.windowScale ?? null : null;
       this.reportWindowScaleClamp(socket, seg);
-      socket.sackEnabled = peerOpts.sackPermitted === true;
-      if (peerOpts.timestamp) {
+      socket.sackEnabled = accepted.sack && peerOpts.sackPermitted === true;
+      if (accepted.timestamps && peerOpts.timestamp) {
         socket.timestampsEnabled = true;
         socket.peerLastTsVal = peerOpts.timestamp.tsVal;
         socket.peerTsRecentAtMs = this.getScheduler().now();
@@ -1611,6 +1625,7 @@ export class TcpStack {
    */
   private restartAfterIdle(socket: TcpSocket, inFlight: number): void {
     if (inFlight > 0 || socket.lastDataSentAtMs === null) return;
+    if (this.host.restartsAfterIdle?.() === false) return;
     if (this.getScheduler().now() - socket.lastDataSentAtMs > socket.rtt.currentRto()) {
       socket.cc.restartAfterIdle();
     }
@@ -1773,6 +1788,10 @@ export class TcpStack {
     }
   }
 
+  private optionPolicy(): TcpOptionPolicy {
+    return this.host.optionPolicy?.() ?? ALL_TCP_OPTIONS;
+  }
+
   private ecnPolicy(): TcpEcnPolicy {
     return this.host.ecnPolicy?.() ?? 'off';
   }
@@ -1857,12 +1876,13 @@ export class TcpStack {
     socket.maxPeerWindow = Math.max(socket.maxPeerWindow, socket.peerWindow);
     socket.sendWl1 = seg.sequence;
     socket.sendWl2 = seg.acknowledgement;
+    const negotiable = this.optionPolicy();
     socket.mss = Math.min(socket.mss, options.mss ?? defaultSendMss(socket.family));
-    socket.peerWindowScale = options.windowScale ?? null;
+    socket.peerWindowScale = negotiable.windowScaling ? options.windowScale ?? null : null;
     this.reportWindowScaleClamp(socket, seg);
-    socket.sackEnabled = options.sackPermitted === true;
-    socket.timestampsEnabled = options.timestamp !== undefined;
-    if (options.timestamp) {
+    socket.sackEnabled = negotiable.sack && options.sackPermitted === true;
+    socket.timestampsEnabled = negotiable.timestamps && options.timestamp !== undefined;
+    if (socket.timestampsEnabled && options.timestamp) {
       socket.peerLastTsVal = options.timestamp.tsVal;
       socket.peerTsRecentAtMs = this.getScheduler().now();
     }

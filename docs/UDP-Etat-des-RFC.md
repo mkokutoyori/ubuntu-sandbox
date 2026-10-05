@@ -64,7 +64,8 @@ le source (`raw.githubusercontent.com`). Windows : la documentation de Microsoft
 ## Plateformes
 
 - **Linux** : prises, `ss -lun`, `/proc/net/udp`, `/proc/net/udplite`, `/proc/net/snmp` (les lignes `Udp:`
-  et `UdpLite:` lisent les compteurs réels), `nc -u`, UDP-Lite.
+  et `UdpLite:` lisent les compteurs réels), `nc -u`, UDP-Lite ; le TTL d'un datagramme sans `-M` est
+  `net.ipv4.ip_default_ttl` (64 par défaut).
 - **Windows** : `netstat` dit d'UDP ce qu'UDP est ; pas d'UDP-Lite ; DF seulement sur demande.
 - **Routeurs et commutateurs** : la branche UDP du plan de contrôle (RIP, NTP, syslog, DHCP, BFD,
   SNMP…) passe par la même table de ports (`UdpPortTable`) et la même validation ; un port que le plan

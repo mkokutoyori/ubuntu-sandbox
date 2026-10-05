@@ -14,6 +14,7 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { LINUX_IPV4_KNOBS } from '../../LinuxIpv4Settings';
 
 const PROC_SYS = '/proc/sys';
 const DEFAULT_PRELOAD = '/etc/sysctl.conf';
@@ -194,18 +195,11 @@ function sysctlWriter(key: string): SysctlWriter | null {
       host?.setIgnoresBroadcastEcho?.(value === '1');
     };
   }
-  if (key === 'net.ipv4.tcp_ecn') {
+  const knob = key.startsWith('net.ipv4.') ? LINUX_IPV4_KNOBS.find((candidate) => `net.ipv4.${candidate.name}` === key) : undefined;
+  if (knob !== undefined) {
     return (ctx, value) => {
       const setting = unsignedByte(value);
-      if (setting === null) return false;
-      ctx.net.setTcpEcn(setting);
-    };
-  }
-  if (key === 'net.ipv4.tcp_ecn_fallback') {
-    return (ctx, value) => {
-      const setting = unsignedByte(value);
-      if (setting === null) return false;
-      ctx.net.setTcpEcnFallback(setting);
+      return setting !== null && ctx.net.ipv4Settings.set(knob.name, setting);
     };
   }
   if (key === 'net.ipv4.tcp_tw_reuse') {
