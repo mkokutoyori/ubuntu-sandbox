@@ -1,31 +1,39 @@
-/**
- * SshShellChannel — interactive shell channel.
- *
- * Wire protocol (simulator):
- *   client → server  { op: 'shell_open',  channelId }
- *   server → client  { ok: true, channelId }
- *   client → server  { op: 'shell_input', channelId, data: '<line>' }
- *   server → client  { stdout, stderr, exitCode }
- *   client → server  { op: 'shell_close', channelId }
- *   client → server  { op: 'editor_open', channelId, data: '<cmdline>' }
- *   client → server  { op: 'editor_key',  channelId, key }
- *   server → client  { op: 'editor_view', channelId, view }
- *   client → server  { op: 'editor_close', channelId }
- *
- * Real OpenSSH uses an arbitrary byte stream; the simulator slices on
- * line boundaries because every shell call is line-oriented. The
- * server allocates one persistent `ShellSession` per channelId so cwd
- * / env / shell history survive across calls.
- *
- * Reference: DESIGN-SSH-SFTP.md section 7 ; analysis doc §5 P4.
- */
-
-import type { TcpStream as TcpConnection } from '@/network/tcp/types';
+import { bytesToUtf8 } from '@/crypto/encoding';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import type { ConnectionChannel, SshConnection } from '../connection/SshConnection';
+import {
+  COMPLETE_REQUEST, COMPLETE_RESULT_REQUEST, EDITOR_REQUEST, EDITOR_VIEW_REQUEST, LINE_RESULT_REQUEST,
+  SHELL_INFO_REQUEST, STREAM_BEGIN_REQUEST, TTY_OP_ECHO, encodeTerminalModes,
+  type EditorAction, type LineResultPayload, type ShellInfoPayload,
+} from '../connection/SandboxExtensions';
+import {
+  decodeStringPayload, encodePtyRequest, encodeStringPayload, encodeWindowChange,
+} from '../connection/ChannelPayloads';
 import { AbstractSshChannel } from './AbstractSshChannel';
-import { isConnectionControlFrame } from './ConnectionControlFrame';
 import type { ExecResult, ISshShellChannel } from './ISshChannel';
+
+const TERMINAL_TYPE = 'xterm';
+const DEFAULT_COLUMNS = 80;
+const DEFAULT_ROWS = 24;
+
+interface PendingLine {
+  readonly resolve: (result: ExecResult) => void;
+  chunks: Uint8Array[];
+  streaming: boolean;
+}
+
+function joinBytes(chunks: readonly Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+const lineFeeds = (text: string): string => text.replace(/\r\n/g, '\n');
 
 export class SshShellChannel
   extends AbstractSshChannel
@@ -33,75 +41,60 @@ export class SshShellChannel
 {
   readonly type = 'shell' as const;
 
+  private channel: ConnectionChannel | null = null;
   private dataHandlers: Array<(d: string) => void> = [];
-  private offConn: (() => void) | null = null;
-  private offConnClose: (() => void) | null = null;
-  /** True while closing because the peer hung up — nothing to write back. */
-  private peerClosed = false;
-  private cols = 80;
-  private rows = 24;
-  private pendingLine: ((r: ExecResult) => void) | null = null;
+  private cols = DEFAULT_COLUMNS;
+  private rows = DEFAULT_ROWS;
+  private pendingLine: PendingLine | null = null;
   private pendingComplete: ((c: string[]) => void) | null = null;
   private pendingEditor: ((v: EditorView | null) => void) | null = null;
   private inlineHelp = false;
   private openingPrompt: string | null = null;
   private openingMotd: string | null = null;
   private posix = true;
+  private bannerBytesLeft = 0;
 
-  /** True when the remote treats `?` as a help key (network CLI). */
+  constructor(private readonly connection: SshConnection, channelId: number) {
+    super(channelId, 'shell');
+  }
+
   supportsInlineHelp(): boolean { return this.inlineHelp; }
 
-  /**
-   * The prompt the remote published when the channel opened, before any
-   * line ran. Null when it published none.
-   */
   initialPrompt(): string | null { return this.openingPrompt; }
 
   initialMotd(): string | null { return this.openingMotd; }
 
-  /**
-   * True when the remote is a POSIX shell — Ctrl+D is EOF and `clear`
-   * wipes the screen. False for cmd.exe and vendor CLIs.
-   */
   isPosixShell(): boolean { return this.posix; }
 
-  constructor(conn: TcpConnection, channelId: number) {
-    super(conn, channelId, 'shell');
-  }
-
   protected handleOpen(): void {
-    this.offConn = this.conn.onData((data) => this.onWire(data));
-    // The server hangs the line up on its own (a VTY `exec-timeout`, an
-    // administrative disconnect): the socket dies under us with nothing
-    // typed, so the channel has to hear it from the transport rather than
-    // from a reply it will never get. Only a real FIN counts — a yanked
-    // cable resets the socket without the peer ever saying goodbye, and
-    // ssh learns about that on its next write, not before.
-    this.offConnClose = this.conn.onClose?.((reason) => {
-      if (reason !== 'fin') return;
-      this.peerClosed = true;
-      this.close();
-    }) ?? null;
-    // Announce the channel to the server so it can spin up the
-    // persistent shell session.
-    this.conn.write(
-      JSON.stringify({ op: 'shell_open', channelId: this.channelId }),
-    );
+    const channel = this.connection.beginOpen('session');
+    this.channel = channel;
+    channel.onData((data) => this.receiveData(data));
+    channel.onRequest((request) => this.receiveRequest(request.name, request.payload, request.reply));
+    channel.onClose(() => {
+      this.channel = null;
+      if (channel.transportLost) this.lose();
+      else this.close();
+    });
+    channel.whenOpened((failure) => {
+      if (failure !== null) {
+        this.close();
+        return;
+      }
+      void channel.request('pty-req', encodePtyRequest({
+        term: TERMINAL_TYPE, columns: this.cols, rows: this.rows, pixelWidth: 0, pixelHeight: 0,
+        modes: encodeTerminalModes(new Map([[TTY_OP_ECHO, 0]])),
+      }), true);
+      void channel.request('shell', undefined, true);
+    });
   }
 
   protected handleClose(): void {
-    if (this.offConn && !this.peerClosed) {
-      try {
-        this.conn.write(
-          JSON.stringify({ op: 'shell_close', channelId: this.channelId }),
-        );
-      } catch { /* socket already gone */ }
-    }
-    this.offConn?.();
-    this.offConn = null;
-    this.offConnClose?.();
-    this.offConnClose = null;
+    this.channel?.close();
     this.dataHandlers = [];
+    const waiting = this.pendingLine;
+    this.pendingLine = null;
+    waiting?.resolve({ stdout: '', stderr: 'channel closed', exitCode: 255 });
   }
 
   send(data: string): void {
@@ -117,181 +110,155 @@ export class SshShellChannel
   }
 
   runLine(line: string): Promise<ExecResult> {
-    if (!this._isOpen) {
+    if (!this._isOpen || this.channel === null) {
       return Promise.resolve({ stdout: '', stderr: 'channel closed', exitCode: 255 });
     }
+    const channel = this.channel;
     return new Promise<ExecResult>((resolve) => {
-      this.pendingLine = resolve;
-      this.conn.write(
-        JSON.stringify({
-          op: 'shell_input',
-          channelId: this.channelId,
-          data: line,
-        }),
-      );
+      this.pendingLine = { resolve, chunks: [], streaming: false };
+      channel.write(`${line}\n`);
     });
   }
 
   provideInput(value: string): Promise<ExecResult> {
-    if (!this._isOpen) {
-      return Promise.resolve({ stdout: '', stderr: 'channel closed', exitCode: 255 });
-    }
-    return new Promise<ExecResult>((resolve) => {
-      this.pendingLine = resolve;
-      this.conn.write(
-        JSON.stringify({ op: 'shell_input_value', channelId: this.channelId, data: value }),
-      );
-    });
+    return this.runLine(value);
   }
 
   complete(line: string): Promise<string[]> {
-    if (!this._isOpen) return Promise.resolve([]);
+    if (!this._isOpen || this.channel === null) return Promise.resolve([]);
+    const channel = this.channel;
     return new Promise<string[]>((resolve) => {
       this.pendingComplete = resolve;
-      this.conn.write(
-        JSON.stringify({ op: 'shell_complete', channelId: this.channelId, data: line }),
-      );
+      void channel.request(COMPLETE_REQUEST, encodeStringPayload(line), false);
     });
   }
 
   openEditor(commandLine: string): Promise<EditorView | null> {
-    if (!this._isOpen) return Promise.resolve(null);
-    return new Promise<EditorView | null>((resolve) => {
-      this.pendingEditor = resolve;
-      this.conn.write(
-        JSON.stringify({ op: 'editor_open', channelId: this.channelId, data: commandLine }),
-      );
-    });
+    return this.editorExchange({ action: 'open', commandLine });
   }
 
   sendEditorKey(key: EditorKeyInput): Promise<EditorView | null> {
-    if (!this._isOpen) return Promise.resolve(null);
-    return new Promise<EditorView | null>((resolve) => {
-      this.pendingEditor = resolve;
-      this.conn.write(
-        JSON.stringify({ op: 'editor_key', channelId: this.channelId, key }),
-      );
-    });
+    return this.editorExchange({ action: 'key', key });
   }
 
   pasteIntoEditor(text: string): Promise<EditorView | null> {
-    if (!this._isOpen) return Promise.resolve(null);
-    return new Promise<EditorView | null>((resolve) => {
-      this.pendingEditor = resolve;
-      this.conn.write(
-        JSON.stringify({ op: 'editor_paste', channelId: this.channelId, data: text }),
-      );
-    });
+    return this.editorExchange({ action: 'paste', text });
   }
 
   moveEditorCursor(offset: number): Promise<EditorView | null> {
-    if (!this._isOpen) return Promise.resolve(null);
-    return new Promise<EditorView | null>((resolve) => {
-      this.pendingEditor = resolve;
-      this.conn.write(
-        JSON.stringify({ op: 'editor_cursor', channelId: this.channelId, offset }),
-      );
-    });
+    return this.editorExchange({ action: 'cursor', offset });
   }
 
   closeEditor(): void {
-    if (!this._isOpen) return;
-    this.conn.write(JSON.stringify({ op: 'editor_close', channelId: this.channelId }));
+    if (!this._isOpen || this.channel === null) return;
+    void this.channel.request(EDITOR_REQUEST, encodeStringPayload(JSON.stringify({ action: 'close' })), false);
   }
 
   resize(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
-    if (this._isOpen) {
-      this.conn.write(
-        JSON.stringify({ op: 'shell_resize', cols, rows, channelId: this.channelId }),
-      );
+    if (this._isOpen && this.channel !== null) {
+      void this.channel.request('window-change', encodeWindowChange({
+        columns: cols, rows, pixelWidth: 0, pixelHeight: 0,
+      }), false);
     }
   }
 
   sendSignal(signal: 'SIGINT'): void {
-    if (!this._isOpen) return;
-    this.conn.write(
-      JSON.stringify({ op: 'shell_signal', channelId: this.channelId, signal }),
-    );
+    if (!this._isOpen || this.channel === null) return;
+    void this.channel.request('signal', encodeStringPayload(signal === 'SIGINT' ? 'INT' : signal), false);
   }
 
   getDimensions(): { cols: number; rows: number } {
     return { cols: this.cols, rows: this.rows };
   }
 
-  // ─── private ────────────────────────────────────────────────────
+  private editorExchange(action: EditorAction): Promise<EditorView | null> {
+    if (!this._isOpen || this.channel === null) return Promise.resolve(null);
+    const channel = this.channel;
+    return new Promise<EditorView | null>((resolve) => {
+      this.pendingEditor = resolve;
+      void channel.request(EDITOR_REQUEST, encodeStringPayload(JSON.stringify(action)), false);
+    });
+  }
 
-  private onWire(raw: string): void {
-    let parsed: Record<string, unknown> | null = null;
-    try {
-      parsed = JSON.parse(raw) as Record<string, unknown>;
-    } catch {
-      // Pass non-JSON traffic to data subscribers unchanged.
-      for (const h of this.dataHandlers) h(raw);
-      return;
+  private emit(text: string): void {
+    if (text === '') return;
+    for (const handler of [...this.dataHandlers]) handler(text);
+  }
+
+  private receiveData(data: Uint8Array): void {
+    let bytes = data;
+    if (this.bannerBytesLeft > 0) {
+      const skipped = Math.min(this.bannerBytesLeft, bytes.length);
+      this.bannerBytesLeft -= skipped;
+      bytes = bytes.subarray(skipped);
+      if (bytes.length === 0) return;
     }
-    // Traffic tagged for a different channel on this same connection (e.g.
-    // another shell channel, or a keepalive with no channelId at all —
-    // those fall through unfiltered below, same as before).
-    if (parsed.channelId !== undefined && parsed.channelId !== this.channelId) {
-      return;
+    const pending = this.pendingLine;
+    if (pending === null) {
+      this.emit(lineFeeds(bytesToUtf8(bytes)));
+    } else if (pending.streaming) {
+      this.emit(lineFeeds(bytesToUtf8(bytes)).replace(/\n$/, ''));
+    } else {
+      pending.chunks.push(bytes);
     }
-    if (parsed.ok === true) {
-      // shell_open / shell_close ack — surface nothing to onData, but
-      // record the capabilities the server advertised on open.
-      if (typeof parsed.inlineHelp === 'boolean') this.inlineHelp = parsed.inlineHelp;
-      if (typeof parsed.prompt === 'string') this.openingPrompt = parsed.prompt;
-      if (typeof parsed.motd === 'string') this.openingMotd = parsed.motd;
-      if (typeof parsed.posixShell === 'boolean') this.posix = parsed.posixShell;
-      return;
+  }
+
+  private receiveRequest(name: string, payload: Uint8Array, reply: (success: boolean) => void): void {
+    const text = decodeStringPayload(payload);
+    switch (name) {
+      case SHELL_INFO_REQUEST: {
+        const info = JSON.parse(text ?? '{}') as ShellInfoPayload;
+        this.inlineHelp = info.inlineHelp === true;
+        this.openingPrompt = info.prompt;
+        this.openingMotd = info.motd;
+        this.posix = info.posixShell !== false;
+        this.bannerBytesLeft = info.bannerBytes;
+        return;
+      }
+      case STREAM_BEGIN_REQUEST:
+        if (this.pendingLine !== null) this.pendingLine.streaming = true;
+        return;
+      case LINE_RESULT_REQUEST:
+        this.finishLine(JSON.parse(text ?? '{}') as LineResultPayload);
+        return;
+      case COMPLETE_RESULT_REQUEST: {
+        const parsed = JSON.parse(text ?? '[]') as unknown[];
+        this.pendingComplete?.(parsed.filter((c): c is string => typeof c === 'string'));
+        this.pendingComplete = null;
+        return;
+      }
+      case EDITOR_VIEW_REQUEST: {
+        const parsed = JSON.parse(text ?? '{}') as { view?: EditorView | null };
+        this.pendingEditor?.(parsed.view ?? null);
+        this.pendingEditor = null;
+        return;
+      }
+      case 'exit-status':
+      case 'exit-signal':
+        return;
+      default:
+        reply(false);
     }
-    if (isConnectionControlFrame(parsed)) return;
-    if (parsed.op === 'shell_complete_result') {
-      const candidates = Array.isArray(parsed.candidates)
-        ? (parsed.candidates as unknown[]).filter((c): c is string => typeof c === 'string')
-        : [];
-      this.pendingComplete?.(candidates);
-      this.pendingComplete = null;
-      return;
-    }
-    if (parsed.op === 'editor_view') {
-      const view = (parsed.view ?? null) as EditorView | null;
-      this.pendingEditor?.(view);
-      this.pendingEditor = null;
-      return;
-    }
-    if (parsed.op === 'shell_output') {
-      // A line of output pushed while a real-time job (e.g. `ping`) is
-      // still running server-side — runLine()'s promise stays pending
-      // until the matching stdout/stderr/exitCode reply arrives below.
-      const chunk = typeof parsed.chunk === 'string' ? parsed.chunk : '';
-      if (chunk) for (const h of this.dataHandlers) h(chunk);
-      return;
-    }
-    if (
-      typeof parsed.stdout === 'string' ||
-      typeof parsed.stderr === 'string' ||
-      typeof parsed.exitCode === 'number'
-    ) {
-      const result: ExecResult = {
-        stdout: typeof parsed.stdout === 'string' ? parsed.stdout : '',
-        stderr: typeof parsed.stderr === 'string' ? parsed.stderr : '',
-        exitCode:
-          typeof parsed.exitCode === 'number' ? parsed.exitCode : 0,
-        prompt: typeof parsed.prompt === 'string' ? parsed.prompt : undefined,
-        nested: parsed.nested === true,
-        clearScreen: parsed.clearScreen === true,
-        pendingInput: (parsed.pendingInput ?? undefined) as ExecResult['pendingInput'],
-        sessionEnded: parsed.sessionEnded === true,
-      };
-      this.pendingLine?.(result);
-      this.pendingLine = null;
-      const merged = (result.stdout ?? '') + (result.stderr ?? '');
-      if (merged) for (const h of this.dataHandlers) h(merged);
-      return;
-    }
-    // Any other JSON payload: pass through verbatim for advanced consumers.
-    for (const h of this.dataHandlers) h(raw);
+  }
+
+  private finishLine(summary: LineResultPayload): void {
+    const pending = this.pendingLine;
+    this.pendingLine = null;
+    if (pending === null) return;
+    const bytes = joinBytes(pending.chunks);
+    const stdout = lineFeeds(bytesToUtf8(bytes.subarray(0, summary.stdoutBytes)));
+    const stderr = lineFeeds(bytesToUtf8(bytes.subarray(summary.stdoutBytes, summary.stdoutBytes + summary.stderrBytes)));
+    const result: ExecResult = {
+      stdout, stderr, exitCode: summary.exitCode,
+      prompt: summary.prompt ?? undefined,
+      nested: summary.nested,
+      clearScreen: summary.clearScreen,
+      pendingInput: summary.pendingInput ?? undefined,
+      sessionEnded: summary.sessionEnded,
+    };
+    pending.resolve(result);
+    this.emit(stdout + stderr);
   }
 }

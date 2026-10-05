@@ -180,6 +180,10 @@ export class WindowsPowerShellShell extends AbstractShell {
     return this.subShell.getCompletions?.(line) ?? [];
   }
 
+  completionStart(line: string): number | null {
+    return this.subShell.completionStart?.(line) ?? null;
+  }
+
   protected override onDispose(): void {
     this.subShell.dispose();
     if (this.windowsSession && this.ownsSession

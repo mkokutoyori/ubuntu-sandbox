@@ -1811,7 +1811,7 @@ export abstract class LinuxMachine extends EndHost
    * portait une copie ecrite en dur, si bien que `ss -tlnp` annoncait
    * un pid que ni `ps` ni `systemctl status ssh` ne connaissaient.
    */
-  private sshdPid(): number {
+  sshdPid(): number {
     return this.executor.processMgr.list({ comm: 'sshd' })[0]?.pid ?? LinuxMachine.SSHD_PID;
   }
 

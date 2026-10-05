@@ -94,7 +94,7 @@ describe('SFTP observability — events.ts (PRD-FTP-SFTP.md §2.1.18/P17)', () =
 
   it('emits sftp.transfer.progress with the real byte count on WRITE', () => {
     const { session, events } = buildSession();
-    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'uploaded.txt', pflags: 0x02, attrs: {} });
+    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'uploaded.txt', pflags: 0x1a, attrs: {} });
     const handle = (openReply as { handle: string }).handle;
     const data = new Uint8Array([1, 2, 3, 4, 5]);
     session.handle({ type: 'WRITE', requestId: 2, handle, offset: 0, data });

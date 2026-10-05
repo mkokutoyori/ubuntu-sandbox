@@ -307,6 +307,10 @@ export class SshInteractiveSubShell implements ISubShell {
     if (this.onRemoteHangup) {
       this.channel.onClose(() => {
         if (this.closing) return;
+        if (this.inFlight) {
+          this.hungUpDuringCommand = true;
+          return;
+        }
         this.closing = true;
         this.onRemoteHangup?.(`Connection to ${this.remoteHost} closed.`);
       });
@@ -315,6 +319,8 @@ export class SshInteractiveSubShell implements ISubShell {
 
   /** Set once this session is on its way out, whichever side started it. */
   private closing = false;
+
+  private hungUpDuringCommand = false;
 
   getPrompt(): string {
     if (this.nestedHop) return this.nestedHop.getPrompt();
@@ -569,7 +575,7 @@ export class SshInteractiveSubShell implements ISubShell {
     // has to survive regardless of how the caller consumes output.
     const output = onProgress ? [] : (collected.length ? collected : ['']);
 
-    if (this.serverEndedSession) {
+    if (this.serverEndedSession || this.hungUpDuringCommand) {
       this.closing = true;
       this.session.disconnect();
       return {

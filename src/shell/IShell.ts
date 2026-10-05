@@ -136,6 +136,8 @@ export interface IShell extends IShellBase {
   /** Tab-completion candidates for the current line (full token form). */
   getCompletions(line: string): readonly string[];
 
+  completionStart?(line: string): number | null;
+
   /** Lifecycle hook — called when the shell becomes the active stack frame. */
   activate(): void;
 

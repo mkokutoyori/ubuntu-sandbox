@@ -102,7 +102,7 @@ describe('Read-Host nested in Install-ADDSForest', () => {
       + '-SafeModeAdministratorPassword (Read-Host -AsSecureString "Entrez le mot de passe DSRM") -Force');
     await new Promise(r => setTimeout(r, 5));
     expect(h.modes[0]).toBe('password');
-    expect(h.prompts[0]).toBe('Entrez le mot de passe DSRM');
+    expect(h.prompts[0]).toBe('Entrez le mot de passe DSRM: ');
     h.pump('DSRM@Google2025!');
     const out = (await p).output.join('\n');
     expect(out).not.toMatch(/not recognized/i);

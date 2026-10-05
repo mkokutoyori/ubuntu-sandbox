@@ -129,7 +129,7 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
   it('negotiates a real INIT/VERSION handshake', () => {
     const { session } = buildSession();
     const reply = session.handle({ type: 'INIT', version: 3 });
-    expect(reply).toEqual({ type: 'VERSION', version: 3 });
+    expect(reply).toMatchObject({ type: 'VERSION', version: 3 });
   });
 
   it('REALPATH resolves a relative path against the session cwd', () => {

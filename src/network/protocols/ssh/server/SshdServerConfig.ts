@@ -494,6 +494,21 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     return allowed !== 'no' && allowed !== 'remote' && this.permitOpenAllows(destHost, destPort);
   }
 
+  permitsRemoteForward(ctx: { user: string; groups?: readonly string[]; host?: string; address?: string }): boolean {
+    const allowed = this.effectiveFor(ctx).allowTcpForwarding;
+    return allowed !== 'no' && allowed !== 'local';
+  }
+
+  remoteForwardBindAddress(
+    ctx: { user: string; groups?: readonly string[]; host?: string; address?: string }, requested: string,
+  ): string {
+    const mode = this.effectiveFor(ctx).gatewayPorts;
+    const wildcard = requested === '' || requested === '*' || requested === '0.0.0.0';
+    if (mode === 'no') return '127.0.0.1';
+    if (mode === 'yes' || wildcard) return '0.0.0.0';
+    return requested === 'localhost' ? '127.0.0.1' : requested;
+  }
+
   private matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {
     for (const c of criteria) {
       switch (c.keyword) {

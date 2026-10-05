@@ -126,14 +126,18 @@ describe('les forwards d’une session ssh interactive relaient de vrais octets'
     expect(repondu.join(''), 'et sa réponse est revenue au client').toContain('ECHO:PING');
   }, 60_000);
 
-  it("-L : le témoin — sans service en face, la connexion n’est pas établie", async () => {
+  it("-L : le témoin — sans service en face, le serveur refuse le canal et la connexion locale est refermée", async () => {
     const { client } = lab();
-    await sshWith(client, `-L 15001:${SRV}:9999`);
+    const term = await sshWith(client, `-L 15001:${SRV}:9999`);
 
     const sock = await connected(client, '127.0.0.1', 15001);
-    // Sans ce cas, « ça relaie » ne dirait pas que le relais VÉRIFIE
-    // l'autre bout : un pont qui accepte tout aurait passé le premier.
+    const repondu: string[] = [];
+    sock.onData((d) => repondu.push(d));
+    sock.send('PING');
+    for (let i = 0; i < 60 && sock.state === 'established'; i++) await tick();
     expect(sock.state).not.toBe('established');
+    expect(repondu).toEqual([]);
+    expect(term.lines.map((l) => l.text).join('\n')).toContain('channel 0: open failed: connect failed: Connection refused');
   }, 60_000);
 
   it('-R : le port ouvert sur le SERVEUR est composé depuis le client', async () => {

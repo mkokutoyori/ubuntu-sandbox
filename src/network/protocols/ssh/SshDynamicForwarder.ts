@@ -3,8 +3,8 @@
  *
  * Opens a TCP listener on `socksPort` on the local device. Each
  * accepted connection runs through a minimal SOCKS5 handshake to
- * extract the target host/port, which the SSH server then dials on the
- * user's behalf — the two sockets are piped both ways (`forwardRelay.ts`).
+ * extract the target host/port, which is requested from the SSH server in a
+ * `direct-tcpip` channel (RFC 4254 §7.2) and piped both ways.
  *
  * Supported SOCKS surface (pedagogical subset):
  *   - Version negotiation: `05 NM METHODS` → `05 00` (no-auth).
@@ -21,8 +21,7 @@
 import { forwardFailureOf, type ForwardOpening } from './ForwardOpening';
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { EndHost } from '@/network/devices/EndHost';
-import type { SshSession } from './session/SshSession';
-import { dialThroughTunnel, pipeSockets } from './forwardRelay';
+import { joinWhenReady, type TunnelOpener } from './forwardRelay';
 
 export interface DynamicForwardSpec {
   /** Port the SOCKS listener binds to on the local device. */
@@ -44,13 +43,8 @@ export class SshDynamicForwarder {
 
   constructor(
     private readonly localDevice: EndHost,
-    private readonly session: SshSession | null,
+    private readonly tunnel: TunnelOpener | null,
     private readonly spec: DynamicForwardSpec,
-    /**
-     * The tunnel's OTHER end — the SSH server, which dials whatever the
-     * SOCKS request names on the user's behalf.
-     */
-    private readonly dialDevice: EndHost | null = null,
   ) {}
 
   getSpec(): DynamicForwardSpec {
@@ -121,29 +115,26 @@ export class SshDynamicForwarder {
           return;
         }
         this.lastConnectTarget = target;
-        // The reply reports the far leg, so it is written after the dial:
-        // REP=0x05 (connection refused) when there is nothing to dial from
-        // or the server cannot open a socket to the target.
-        const remote = dialThroughTunnel(
-          this.dialDevice,
-          target.host,
-          target.port,
-        );
-        if (!remote) {
+        if (this.tunnel === null) {
           conn.write('\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00');
           conn.close();
           return;
         }
-        // Reply succeeded, atyp=IPv4, BND.ADDR=0.0.0.0, BND.PORT=0.
-        conn.write('\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00');
         phase = 'bridging';
-        pipeSockets(conn, remote);
+        void this.tunnel(target.host, target.port).then((remote) => {
+          if (remote === null) {
+            conn.write('\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00');
+            conn.close();
+            return;
+          }
+          conn.write('\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00');
+          joinWhenReady(conn, Promise.resolve(remote));
+        });
         return;
       }
       // Bridging is handled by startBridge's installed handlers.
     });
   }
-
 }
 
 /**

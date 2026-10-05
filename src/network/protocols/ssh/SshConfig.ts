@@ -21,6 +21,7 @@ export interface SshHostEntry {
   readonly kexAlgorithms?: string;
   readonly hostKeyAlgorithms?: string;
   readonly ciphers?: string;
+  readonly rekeyLimit?: string;
   readonly macs?: string;
 }
 
@@ -92,6 +93,7 @@ function buildEntry(host: string, raw: Record<string, string>): SshHostEntry {
     kexAlgorithms: raw.kexalgorithms,
     hostKeyAlgorithms: raw.hostkeyalgorithms,
     ciphers: raw.ciphers,
+    rekeyLimit: raw.rekeylimit,
     macs: raw.macs,
   });
 }

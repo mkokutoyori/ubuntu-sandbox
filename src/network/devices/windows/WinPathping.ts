@@ -1,4 +1,5 @@
 import { IPAddress } from '../../core/types';
+import type { EndHost, PingResult, TracerouteHopResult } from '../EndHost';
 
 export const PATHPING_HELP = `
 Usage: pathping [-g host-list] [-h maximum_hops] [-i address] [-n]
@@ -120,4 +121,95 @@ export function formatPathpingTrailer(): string {
 
 export function pathpingDurationSeconds(p: ParsedWinPathping, hopCount: number): number {
   return Math.max(1, Math.round((p.queriesPerHop * p.periodMs * hopCount) / 1000));
+}
+
+export interface PathpingIo {
+  line(text: string): void;
+  error(text: string): void;
+  cancelled(): boolean;
+  delay(milliseconds: number): Promise<void>;
+}
+
+export type PathpingDevice = Pick<EndHost, 'tracerouteStreamInSession' | 'pingStreamInSession' | 'getEgressIPFor' | 'getHostname'>;
+
+export async function runPathping(device: PathpingDevice, parsed: ParsedWinPathping, io: PathpingIo): Promise<void> {
+  const discovered: TracerouteHopResult[] = [];
+  let resolvedTarget: IPAddress | null = null;
+  const outcome = await device.tracerouteStreamInSession(parsed.targetStr, {
+    maxHops: parsed.maxHops,
+    probesPerHop: 1,
+    timeoutMs: parsed.timeoutMs,
+    onResolved: (ip, hostname) => {
+      resolvedTarget = ip;
+      for (const line of formatPathpingHeader(ip, parsed.maxHops, hostname)) io.line(line);
+    },
+    onHop: hop => { discovered.push(hop); },
+    shouldStop: () => io.cancelled(),
+  });
+  if (io.cancelled()) return;
+  if (!outcome.resolved || !resolvedTarget) {
+    io.error(`Unable to resolve target system name ${parsed.targetStr}.`);
+    return;
+  }
+
+  const sourceIp = device.getEgressIPFor(resolvedTarget)?.toString();
+  const rows: PathpingStatsRow[] = [{
+    hop: 0,
+    ip: sourceIp ?? '0.0.0.0',
+    hostname: parsed.noResolve ? undefined : device.getHostname(),
+    rttMs: undefined,
+    sourceLost: 0,
+    sourceSent: 0,
+    nodeLost: 0,
+    linkLost: 0,
+  }];
+  let hopNumber = 0;
+  for (const hop of discovered) {
+    hopNumber++;
+    if (!hop.ip) continue;
+    io.line(formatPathpingDiscoveryHop(hopNumber, hop.ip));
+    rows.push({
+      hop: hopNumber, ip: hop.ip, hostname: undefined, rttMs: undefined,
+      sourceLost: 0, sourceSent: 0, nodeLost: 0, linkLost: 0,
+    });
+  }
+  if (rows.length <= 1) {
+    io.error(`Unable to resolve target system name ${parsed.targetStr}.`);
+    return;
+  }
+
+  for (const line of formatPathpingComputing(pathpingDurationSeconds(parsed, rows.length - 1))) io.line(line);
+
+  for (let index = 1; index < rows.length; index++) {
+    if (io.cancelled()) return;
+    const row = rows[index];
+    const rtts: number[] = [];
+    const results: PingResult[] = [];
+    await device.pingStreamInSession(row.ip, {
+      count: parsed.queriesPerHop,
+      timeoutMs: parsed.timeoutMs,
+      intervalMs: parsed.periodMs,
+      onResult: result => { results.push(result); if (result.success) rtts.push(result.rttMs); },
+      shouldStop: () => io.cancelled(),
+      sleep: milliseconds => io.delay(milliseconds),
+    });
+    row.sourceSent = results.length;
+    row.sourceLost = results.filter(result => !result.success).length;
+    if (rtts.length > 0) row.rttMs = rtts.reduce((total, value) => total + value, 0) / rtts.length;
+  }
+  if (io.cancelled()) return;
+
+  for (let index = 1; index < rows.length; index++) {
+    const previous = rows[index - 1];
+    const current = rows[index];
+    const previousRate = previous.sourceSent > 0 ? previous.sourceLost / previous.sourceSent : 0;
+    const currentRate = current.sourceSent > 0 ? current.sourceLost / current.sourceSent : 0;
+    current.linkLost = Math.round(Math.max(0, currentRate - previousRate) * current.sourceSent);
+  }
+
+  io.line('');
+  for (const line of formatPathpingTableHeader()) io.line(line);
+  for (const line of formatPathpingTable(rows, parsed.queriesPerHop)) io.line(line);
+  io.line('');
+  io.line(formatPathpingTrailer());
 }

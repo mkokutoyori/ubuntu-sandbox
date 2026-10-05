@@ -248,6 +248,13 @@ export function cmdTime(_args: string[], timezone = 'UTC'): string {
   return `${h12}:${min} ${tt}`;
 }
 
+export function clockTimeWithCentiseconds(timezone = 'UTC', atMs = Date.now()): string {
+  const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
+  const local = partsAt(zone, atMs);
+  const centiseconds = String(Math.floor((atMs % 1000) / 10)).padStart(2, '0');
+  return `${String(local.hour).padStart(2, ' ')}:${String(local.minute).padStart(2, '0')}:${String(local.second).padStart(2, '0')}.${centiseconds}`;
+}
+
 // ─── start / setx ────────────────────────────────────────────────────
 
 /**

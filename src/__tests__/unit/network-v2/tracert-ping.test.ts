@@ -586,7 +586,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('67. should support hostname resolutions of Windows PCs explicitly', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo 10.0.1.10 linux-host >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
       const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping linux-host'));
       expect(output).toContain('10.0.1.10');
     });
@@ -707,7 +707,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('84. should support resolving host names via IPv4 specifically using -4', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo 10.0.1.10 linux-host >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
       const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -4 linux-host'));
       expect(output).toContain('10.0.1.10');
     });
@@ -1328,7 +1328,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('170. should support hostname resolutions of Windows PCs explicitly inside tracert', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo 10.0.1.10 linux-host >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
       const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert linux-host'));
       expect(output).toContain('10.0.1.10');
     });
@@ -1427,7 +1427,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('182. should support displaying hostname aliases inside intermediate hops lists on Windows if mapped', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo "10.0.2.1 lan-gateway" >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo 10.0.2.1 lan-gateway >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
       const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toContain('lan-gateway');
     });

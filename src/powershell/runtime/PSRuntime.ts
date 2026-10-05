@@ -570,8 +570,18 @@ export class PSRuntime {
       case 'firewallProfile':
         return (this.providers.network?.getFirewallProfiles() ?? []).map(p => p.name);
       case 'path':
+      case 'directory':
         return [];
     }
+  }
+
+  getPositionalValueKind(command: string): ParameterValueKind | null {
+    const declared = this.registry.resolve(command.toLowerCase())?.parameterValues;
+    if (!declared) return null;
+    for (const [name, kind] of Object.entries(declared)) {
+      if (name.toLowerCase() === 'path' || name.toLowerCase() === 'filepath') return kind;
+    }
+    return null;
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
