@@ -27,9 +27,9 @@
  *   cette verification ;
  * - RFC 5227 §2.1.1 : la sonde ARP porte l'adresse d'emetteur 0.0.0.0, et
  *   un hote qui la recoit ne la met pas dans son cache ;
- * - RFC 2131 §3.2 et §4.3.2 : un client en INIT-REBOOT redemande son
- *   ancienne adresse ; le serveur repond DHCPNAK si elle n'est pas sur le
- *   bon reseau.
+ * - RFC 2131 §4.4.5 : en REBINDING, apres T2, le client diffuse sa requete
+ *   a tout serveur ; un DHCPNAK le ramene a INIT, et le serveur le repond
+ *   quand l'adresse n'est pas sur son reseau.
  *
  * Trouve en chemin, et ferme :
  * - le client DHCP partage comptait un NAK et publiait
@@ -62,7 +62,7 @@
  * non specifiee dans le cache voisin se mesurent contre un serveur qui ne
  * sonde pas, dans dhcp-ping-before-offer.test.ts.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
@@ -73,7 +73,15 @@ import type { SnmpMessage } from '@/network/snmp/types';
 import { DHCPClient } from '@/network/dhcp/DHCPClient';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
 import { EventBus } from '@/events/EventBus';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { declineOnTheWire } from '../_helpers/dhcpDeclineOnTheWire';
+
+let clock: VirtualTimeScheduler;
+
+beforeEach(() => {
+  clock = new VirtualTimeScheduler();
+  __setDefaultScheduler(clock);
+});
 
 interface Shell { executeCommand(command: string): Promise<string> }
 
@@ -201,7 +209,7 @@ describe('a FortiGate reports its DHCP service with fgTrapDhcp', () => {
 });
 
 describe('a FortiGate DHCP client interface reports the NAK it receives', () => {
-  it('an interface moved to another network asks for its old address, is refused, and reports receivedNAK', async () => {
+  it('an interface moved to another network rebinds its old address, is refused, and reports receivedNAK', async () => {
     const { firewall, traps } = await managedFirewall();
     const upstream = new CiscoRouter('R1', 200, 0);
     new Cable('fgt-r1').connect(firewall.getPort('port3')!, upstream.getPort('GigabitEthernet0/0')!);
@@ -217,7 +225,8 @@ describe('a FortiGate DHCP client interface reports the NAK it receives', () => 
       'interface GigabitEthernet0/0', 'ip address 198.51.100.1 255.255.255.0', 'exit',
       'ip dhcp excluded-address 198.51.100.1 198.51.100.99',
       'ip dhcp pool WAN2', 'network 198.51.100.0 255.255.255.0', 'default-router 198.51.100.1', 'end']);
-    await firewall.executeCommand('execute interface dhcpclient-renew port3');
+    clock.advance(24 * 3600 * 1000);
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     const reported = dhcpTraps(traps);
     expect(reported.map(trapType)).toEqual([3]);

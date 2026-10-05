@@ -975,104 +975,130 @@ export class DHCPClient implements IProtocolEngine {
 
   // ─── Lease Timers ─────────────────────────────────────────────────
 
+  renewLease(iface: string): void {
+    const state = this.ifaceStates.get(iface);
+    if (state?.lease && state.state === 'BOUND') this.renewFromServer(iface, state, 'manual');
+  }
+
+  private renewFromServer(iface: string, state: DHCPClientIfaceState, cause: string): void {
+    const lease = state.lease;
+    if (!lease) return;
+    const mac = this.getMACForIface(iface);
+    const clientIdentifier = this.buildClientIdentifier(mac, iface);
+    const oldState = state.state as string;
+    state.state = 'RENEWING';
+    this.emitStateChange(iface, oldState, 'RENEWING', cause);
+    this.getBus().publish({
+      topic: 'dhcp.lease.renewing',
+      payload: { ...this.deviceRef(), iface, ip: lease.ipAddress },
+    });
+    state.logs.push(`RENEWING - ${cause}, sending DHCPREQUEST to server`);
+    state.logs.push(`DHCPREQUEST for ${lease.ipAddress} to ${lease.serverIdentifier}`);
+
+    for (const channel of this.channelsFor(iface)) {
+      if (channel.serverIP !== null && channel.serverIP !== lease.serverIdentifier) continue;
+      const result = channel.processRequestWithNak({
+        clientMAC: mac,
+        xid: state.xid,
+        requestedIP: lease.ipAddress,
+        currentAddress: lease.ipAddress,
+        unicastTo: { ip: lease.serverIdentifier, mac: lease.serverMac },
+        clientIdentifier,
+        vendorClass: this.vendorClass ?? undefined,
+        ...this.clientIdentity(),
+      });
+      if (result?.xid !== state.xid) continue;
+      if (result.type === 'NAK') {
+        this.recordNak(iface, result.serverIdentifier, result.message);
+        this.abandonLease(iface);
+        this.requestLease(iface, {});
+        return;
+      }
+      const ackResult = ackOf(result);
+      if (!ackResult) continue;
+      this.adoptRenewal(iface, state, ackResult, 'RENEWING', 'ACK-renew', 'DHCPACK - lease renewed');
+      return;
+    }
+  }
+
+  private adoptRenewal(
+    iface: string,
+    state: DHCPClientIfaceState,
+    ackResult: NonNullable<ReturnType<typeof ackOf>>,
+    from: string,
+    cause: string,
+    log: string,
+  ): void {
+    const lease = state.lease;
+    if (!lease) return;
+    state.state = 'BOUND';
+    this.emitStateChange(iface, from, 'BOUND', cause);
+    lease.leaseStart = ackResult.binding.leaseStart;
+    lease.expiration = ackResult.binding.leaseExpiration;
+    lease.leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
+    if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
+    if (ackResult.rebindingTime !== undefined) lease.rebindingTime = ackResult.rebindingTime;
+    lease.serverIdentifier = ackResult.serverIdentifier;
+    lease.serverMac = ackResult.serverMac ?? lease.serverMac;
+    state.logs.push(log);
+    this.recordServerObservation?.(iface, ackResult.serverIdentifier, lease.serverMac);
+    this.setupLeaseTimers(iface, state);
+  }
+
+  private rebindWithAnyServer(iface: string, state: DHCPClientIfaceState): void {
+    const lease = state.lease;
+    if (!lease) return;
+    const mac = this.getMACForIface(iface);
+    const clientIdentifier = this.buildClientIdentifier(mac, iface);
+    const previous = state.state as string;
+    state.state = 'REBINDING';
+    this.emitStateChange(iface, previous, 'REBINDING', 'T2');
+    this.getBus().publish({
+      topic: 'dhcp.lease.rebinding',
+      payload: { ...this.deviceRef(), iface, ip: lease.ipAddress },
+    });
+    state.logs.push('REBINDING - T2 expired, broadcast DHCPREQUEST');
+    state.logs.push(`DHCPREQUEST for ${lease.ipAddress} broadcast`);
+
+    for (const channel of this.channelsFor(iface)) {
+      const result = channel.processRequestWithNak({
+        clientMAC: mac,
+        xid: state.xid,
+        requestedIP: lease.ipAddress,
+        currentAddress: lease.ipAddress,
+        clientIdentifier,
+        vendorClass: this.vendorClass ?? undefined,
+        ...this.clientIdentity(),
+      });
+      if (result?.xid !== state.xid) continue;
+      if (result.type === 'NAK') {
+        this.recordNak(iface, result.serverIdentifier, result.message);
+        this.abandonLease(iface);
+        this.requestLease(iface, {});
+        return;
+      }
+      const ackResult = ackOf(result);
+      if (!ackResult) continue;
+      this.adoptRenewal(iface, state, ackResult, 'REBINDING', 'ACK-rebind', 'DHCPACK - lease rebound');
+      return;
+    }
+  }
+
   private setupLeaseTimers(iface: string, state: DHCPClientIfaceState): void {
     if (!state.lease) return;
 
     this.clearTimers(state);
 
     const lease = state.lease;
-    const mac = this.getMACForIface(iface);
-    const clientIdentifier = this.buildClientIdentifier(mac, iface);
 
     // T1: Renewal (unicast to original server)
     state.renewalTimer = this.timers.setTimeout(() => {
-      if (state.state === 'BOUND') {
-        const oldS = state.state as string;
-        state.state = 'RENEWING';
-        this.emitStateChange(iface, oldS, 'RENEWING', 'T1');
-        this.getBus().publish({
-          topic: 'dhcp.lease.renewing',
-          payload: { ...this.deviceRef(), iface, ip: lease.ipAddress },
-        });
-        state.logs.push('RENEWING - T1 expired, sending DHCPREQUEST to server');
-        state.logs.push(`DHCPREQUEST for ${lease.ipAddress} to ${lease.serverIdentifier}`);
-
-        // Try to renew with original server (unicast on the wire)
-        for (const channel of this.channelsFor(iface)) {
-          if (channel.serverIP === null || channel.serverIP === lease.serverIdentifier) {
-            const ackResult = channel.processRequest({
-              clientMAC: mac,
-              xid: state.xid,
-              requestedIP: lease.ipAddress,
-              currentAddress: lease.ipAddress,
-              unicastTo: { ip: lease.serverIdentifier, mac: lease.serverMac },
-              // No serverIdentifier in RENEWING (unicast, RFC 2131 §4.3.2)
-              clientIdentifier,
-              vendorClass: this.vendorClass ?? undefined,
-              ...this.clientIdentity(),
-            });
-            if (ackResult && ackResult.xid === state.xid) {
-              const oldS2 = state.state as string;
-              state.state = 'BOUND';
-              this.emitStateChange(iface, oldS2, 'BOUND', 'ACK-renew');
-              lease.leaseStart = ackResult.binding.leaseStart;
-              lease.expiration = ackResult.binding.leaseExpiration;
-              lease.leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
-              if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
-              if (ackResult.rebindingTime !== undefined) lease.rebindingTime = ackResult.rebindingTime;
-              lease.serverMac = ackResult.serverMac ?? lease.serverMac;
-              state.logs.push(`DHCPACK - lease renewed`);
-              this.recordServerObservation?.(iface, ackResult.serverIdentifier, lease.serverMac);
-              // BUG FIX: Restart timers after successful renewal
-              this.setupLeaseTimers(iface, state);
-              return;
-            }
-          }
-        }
-      }
+      if (state.state === 'BOUND') this.renewFromServer(iface, state, 'T1');
     }, lease.renewalTime * 1000);
 
     // T2: Rebinding (broadcast to any server)
     state.rebindingTimer = this.timers.setTimeout(() => {
-      if (state.state === 'RENEWING' || state.state === 'BOUND') {
-        const oldS = state.state as string;
-        state.state = 'REBINDING';
-        this.emitStateChange(iface, oldS, 'REBINDING', 'T2');
-        this.getBus().publish({
-          topic: 'dhcp.lease.rebinding',
-          payload: { ...this.deviceRef(), iface, ip: lease.ipAddress },
-        });
-        state.logs.push('REBINDING - T2 expired, broadcast DHCPREQUEST');
-        state.logs.push(`DHCPREQUEST for ${lease.ipAddress} broadcast`);
-
-        // Try any server (broadcast on the wire)
-        for (const channel of this.channelsFor(iface)) {
-          const ackResult = channel.processRequest({
-            clientMAC: mac,
-            xid: state.xid,
-            requestedIP: lease.ipAddress,
-            currentAddress: lease.ipAddress,
-            clientIdentifier,
-            vendorClass: this.vendorClass ?? undefined,
-            ...this.clientIdentity(),
-          });
-          if (ackResult && ackResult.xid === state.xid) {
-            const oldS2 = state.state as string;
-            state.state = 'BOUND';
-            this.emitStateChange(iface, oldS2, 'BOUND', 'ACK-rebind');
-            lease.leaseStart = ackResult.binding.leaseStart;
-            lease.expiration = ackResult.binding.leaseExpiration;
-            if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
-            if (ackResult.rebindingTime !== undefined) lease.rebindingTime = ackResult.rebindingTime;
-            lease.serverIdentifier = ackResult.serverIdentifier;
-            lease.serverMac = ackResult.serverMac ?? null;
-            state.logs.push(`DHCPACK - lease rebound`);
-            this.recordServerObservation?.(iface, ackResult.serverIdentifier, lease.serverMac);
-            this.setupLeaseTimers(iface, state);
-            return;
-          }
-        }
-      }
+      if (state.state === 'RENEWING' || state.state === 'BOUND') this.rebindWithAnyServer(iface, state);
     }, lease.rebindingTime * 1000);
 
     // Expiration

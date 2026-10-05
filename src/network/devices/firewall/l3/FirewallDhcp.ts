@@ -204,7 +204,9 @@ export class FirewallDhcp {
   private readonly clientInterfaces = new Map<string, DhcpClientRoute>();
 
   acquireLease(iface: string): string {
-    return this.client.requestLease(iface, {});
+    if (this.client.getState(iface).lease === null) return this.client.requestLease(iface, {});
+    this.client.renewLease(iface);
+    return '';
   }
 
   startClient(iface: string): void {

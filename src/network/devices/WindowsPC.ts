@@ -72,7 +72,7 @@ import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
 import { runWindowsScpClient } from './windows/network/WindowsScpClient';
-import { splitCmdArgs } from './windows/cmdline';
+import { splitCmdArgs, separateCommandWord } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
@@ -222,7 +222,7 @@ import * as WinSys from './windows/WinSystemCommands';
 import { formatLocalTime } from './linux/system/SystemInfo';
 import { windowsZoneNameAt } from '../core/time/WindowsTimeZones';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
-import { cmdDir } from './windows/WinDir';
+import { cmdDir, fileSummaryLine } from './windows/WinDir';
 import { cmdFsutil } from './windows/Fsutil';
 import type { WmiHost } from './windows/WmiClasses';
 import { applyFindstr } from './windows/textFilters';
@@ -2134,8 +2134,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         if (e.isDirectory) { lines.push(`    <DIR>          ${e.name}`); dirCount++; }
         else { lines.push(`${String(e.size).padStart(14)} ${e.name}`); fileCount++; totalBytes += e.size; }
       }
-      lines.push(`               ${fileCount} File(s) ${totalBytes.toLocaleString('en-US')} bytes`);
-      lines.push(`               ${dirCount} Dir(s)`);
+      lines.push(fileSummaryLine(fileCount, totalBytes));
+      lines.push(`${String(dirCount).padStart(16)} Dir(s)`);
       return lines.join('\n');
     }
 
@@ -3496,7 +3496,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   // ─── Command Parsing ──────────────────────────────────────────────
 
   private parseCommandLine(line: string): string[] {
-    return splitCmdArgs(line);
+    return separateCommandWord(splitCmdArgs(line));
   }
 
   private expandEnvVars(text: string): string {
