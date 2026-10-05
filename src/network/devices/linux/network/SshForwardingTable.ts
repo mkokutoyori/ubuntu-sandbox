@@ -1,138 +1,88 @@
-/**
- * SshForwardingTable — the active SSH port-forwards owned by one machine,
- * kept coherent with that machine's kernel socket table.
- *
- * `-L` / `-D` listeners live on the SSH *client* host; `-R` listeners
- * live on the *server* host. Either way the owning machine gains a
- * LISTEN entry in its {@link SocketTable}, so `ss -tln` / `netstat -tln`
- * report the tunnel — exactly as OpenSSH's forwarders do on a real host.
- *
- * The table is the single owner of the forwarding sockets: it binds them
- * on {@link open} and releases them on {@link close} / {@link clear},
- * so the socket view never drifts from the set of live forwards.
- *
- * For `-L`/`-R`, `open()`'s `dialStack` also wires a real relay (not `-D`,
- * which has no fixed destination) — see `relay()`.
- */
-
 import type { SocketTable } from '../../../core/SocketTable';
-import type { TcpStack, TcpSocket } from '../../../tcp/TcpStack';
+import type { TcpStack } from '../../../tcp/TcpStack';
 import type { SshPortForward } from './SshPortForward';
-import { forwardFailureOf, type ForwardOpening } from '../../../protocols/ssh/ForwardOpening';
+import type { SshSession } from '../../../protocols/ssh/session/SshSession';
+import { SshLocalForwarder } from '../../../protocols/ssh/SshLocalForwarder';
+import { SshDynamicForwarder } from '../../../protocols/ssh/SshDynamicForwarder';
+import { SshRemoteForwarder } from '../../../protocols/ssh/SshRemoteForwarder';
+import { tunnelThroughSession } from '../../../protocols/ssh/forwardRelay';
+import type { ForwardOpening } from '../../../protocols/ssh/ForwardOpening';
+
+interface LiveForward {
+  readonly fwd: SshPortForward;
+  readonly session: SshSession;
+  readonly stop: () => void;
+}
 
 export class SshForwardingTable {
-  /** Forwards currently live on this machine, in insertion order. */
-  private readonly active: SshPortForward[] = [];
-  /**
-   * For each listen port, the IP of the SSH server that terminates the
-   * tunnel. Lets non-SSH clients (e.g. `nc`) that hit the local listener
-   * be re-sourced from that server's vantage point — modelling the fact
-   * that the tunnel's outbound connection to `(destHost, destPort)` is
-   * actually opened by the sshd process, NOT by the local kernel.
-   */
-  private readonly origins = new Map<number, string>();
+  private readonly active: LiveForward[] = [];
 
   constructor(
     private readonly sockets: SocketTable,
     private readonly ownTcpStack?: TcpStack,
   ) {}
 
-  /**
-   * Open a forward on this machine: record it and bind its listening
-   * socket. `processName` is `ssh` for client-side (`-L`/`-D`) listeners
-   * and `sshd` for server-side (`-R`) ones.
-   */
-  open(
-    fwd: SshPortForward, pid: number, processName: string, dialStack?: TcpStack, ownerUid?: number,
+  openLocal(
+    fwd: SshPortForward, session: SshSession, pid: number, ownerUid?: number,
   ): ForwardOpening {
-    if (this.sockets.isPortBound(fwd.listenPort, 'tcp')) {
-      const ownedByForward = this.active.some(
-        (f) => f.listenPort === fwd.listenPort,
-      );
-      if (ownedByForward) {
-        this.active.push(fwd);
-        return 'opened';
-      }
-      return 'address-in-use';
-    }
-    try {
-      this.sockets.bind('tcp', fwd.bindAddress, fwd.listenPort, pid, processName, undefined, { ownerUid });
-    } catch (error) {
-      return forwardFailureOf(error);
-    }
-    this.active.push(fwd);
-    if (this.ownTcpStack && dialStack && fwd.destHost && fwd.destPort !== null) {
-      try {
-        this.ownTcpStack.listen(
-          fwd.listenPort,
-          { onAccept: (accepted) => this.relay(dialStack, fwd, accepted) },
-          fwd.bindAddress,
-        );
-      } catch { /* already listening */ }
-    }
-    return 'opened';
+    if (this.ownTcpStack === undefined || this.sockets.isPortBound(fwd.listenPort, 'tcp')) return 'address-in-use';
+    const host = { getTcpStack: () => this.ownTcpStack! };
+    const tunnel = tunnelThroughSession(session);
+    const identity = { pid, processName: 'ssh' };
+    const forwarder = fwd.kind === 'dynamic'
+      ? new SshDynamicForwarder(host, tunnel, {
+        socksPort: fwd.listenPort, bindAddress: fwd.bindAddress, sshHost: '',
+      }, { identity })
+      : new SshLocalForwarder(host, tunnel, {
+        localPort: fwd.listenPort, remoteHost: fwd.destHost!, remotePort: fwd.destPort!, sshHost: '',
+      }, { bindAddress: fwd.bindAddress, identity });
+    const opening = forwarder.register(ownerUid);
+    if (opening === 'opened') this.active.push({ fwd, session, stop: () => forwarder.dispose() });
+    return opening;
   }
 
-  /** Bridge one accepted connection to a fresh one dialed from the tunnel's other end. */
-  private relay(dialStack: TcpStack, fwd: SshPortForward, accepted: TcpSocket): void {
-    const upstream = dialStack.connect(fwd.destHost!, fwd.destPort!, {
-      onData: (data) => accepted.send(data),
-      onClose: () => accepted.close(),
-    });
-    if (!upstream) {
-      accepted.close();
-      return;
-    }
-    accepted.onData((data) => upstream.send(data));
-    accepted.onClose(() => upstream.close());
-  }
-
-  /** Tear a forward down by its listen port — drops the listening socket. */
-  close(listenPort: number): boolean {
-    const idx = this.active.findIndex((f) => f.listenPort === listenPort);
-    if (idx === -1) return false;
-    const fwd = this.active[idx];
-    this.active.splice(idx, 1);
-    // Only release the socket once the last forward on that port is gone.
-    if (!this.active.some((f) => f.listenPort === listenPort)) {
-      this.sockets.unbind('tcp', fwd.bindAddress, fwd.listenPort);
-      this.ownTcpStack?.closeListener(fwd.listenPort, fwd.bindAddress);
-      this.origins.delete(listenPort);
-    }
+  openRemote(
+    fwd: SshPortForward, session: SshSession, clientHost: { getTcpStack(): TcpStack },
+    resolveHost: (name: string) => string | null,
+  ): boolean {
+    const forwarder = new SshRemoteForwarder(session, clientHost, {
+      remotePort: fwd.listenPort, localHost: fwd.destHost!, localPort: fwd.destPort!, sshHost: '',
+      bindAddress: fwd.bindAddress,
+    }, resolveHost);
+    if (forwarder.registerNow() !== true) return false;
+    this.active.push({ fwd, session, stop: () => forwarder.dispose() });
     return true;
   }
 
-  /** A snapshot of every forward currently active on this machine. */
+  close(listenPort: number): boolean {
+    const index = this.active.findIndex((live) => live.fwd.listenPort === listenPort);
+    if (index === -1) return false;
+    const [live] = this.active.splice(index, 1);
+    live.stop();
+    this.releaseIfUnused(live.session);
+    return true;
+  }
+
+  holds(session: SshSession): boolean {
+    return this.active.some((live) => live.session === session);
+  }
+
   list(): readonly SshPortForward[] {
-    return [...this.active];
+    return this.active.map((live) => live.fwd);
   }
 
-  /** Whether a forward is listening on the given port. */
   has(listenPort: number): boolean {
-    return this.active.some((f) => f.listenPort === listenPort);
+    return this.active.some((live) => live.fwd.listenPort === listenPort);
   }
 
-  /** Drop every forward and release every listening socket (host power-off). */
   clear(): void {
-    for (const fwd of this.active) {
-      this.sockets.unbind('tcp', fwd.bindAddress, fwd.listenPort);
-      this.ownTcpStack?.closeListener(fwd.listenPort, fwd.bindAddress);
+    for (const live of this.active.splice(0)) {
+      live.stop();
+      live.session.disconnect();
     }
-    this.active.length = 0;
-    this.origins.clear();
   }
 
-  /**
-   * Tag an active client-side forward with the IP of the SSH server that
-   * carries it. The forward must already be {@link open}ed.
-   */
-  setOrigin(listenPort: number, sshHostIp: string): void {
-    if (!this.has(listenPort)) return;
-    this.origins.set(listenPort, sshHostIp);
-  }
-
-  /** The IP of the SSH server tunnelling traffic for `listenPort`, if any. */
-  getOrigin(listenPort: number): string | null {
-    return this.origins.get(listenPort) ?? null;
+  private releaseIfUnused(session: SshSession): void {
+    if (!this.active.some((live) => live.session === session)) session.disconnect();
   }
 }

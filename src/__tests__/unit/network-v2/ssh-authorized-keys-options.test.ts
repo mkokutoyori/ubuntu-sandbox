@@ -1,3 +1,4 @@
+import { reachedThrough } from './sshForwardLab';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -125,10 +126,10 @@ describe('SSH server — authorized_keys per-key options', () => {
     await srv.executeCommand('systemctl reload ssh');
     await installKeyAndAuthorize(pc, srv, 'no-port-forwarding');
 
-    const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:80 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).toMatch(/administratively prohibited/i);
+    const outcome = await reachedThrough(
+      pc, srv, 'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:8080 -N alice@10.0.0.2',
+      'client', 9000);
+    expect(outcome).toEqual({ reached: false, replies: [] });
   });
 
   it('environment="K=V" exposes K to the remote exec env', async () => {
@@ -151,10 +152,10 @@ describe('SSH server — authorized_keys per-key options', () => {
     await srv.executeCommand('systemctl reload ssh');
     await installKeyAndAuthorize(pc, srv, 'restrict');
 
-    const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:80 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).toMatch(/administratively prohibited/i);
+    const outcome = await reachedThrough(
+      pc, srv, 'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:8080 -N alice@10.0.0.2',
+      'client', 9000);
+    expect(outcome).toEqual({ reached: false, replies: [] });
   });
 
   it('GatewayPorts=no silently rebinds a wildcard -R listener to loopback', async () => {

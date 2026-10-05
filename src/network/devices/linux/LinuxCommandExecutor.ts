@@ -3,6 +3,9 @@
  */
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
+import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { bytesToBase64 } from '@/crypto/encoding';
 import { sshUnreachableReason, relayScriptedShell } from '@/terminal/ssh/wireSshLogin';
 import type { TcpWireOutcome } from '../../tcp/types';
 import { LinuxUserManager } from './LinuxUserManager';
@@ -1761,7 +1764,7 @@ export class LinuxCommandExecutor {
     const settled = !linuxPeer && target !== null && target.command
       ? await this.relayOverWire(session, target.command)
       : null;
-    const interactif = target !== null && !target.command;
+    const interactif = target !== null && !target.command && !target.holdOnly;
     const relayedShell = interactif
       ? await this.relayShellOverWire(
         session, offeredPassword === undefined && stdinPwd ? 1 : 0, !linuxPeer)
@@ -1771,8 +1774,14 @@ export class LinuxCommandExecutor {
         ...opts,
         wireAuthenticated: true,
         wireOutcome: reach,
+        wirePeerIp: this.machineAnswering(session) ?? undefined,
         wireNotices: interactif ? wire.notices : undefined,
         shellRelay: () => relayedShell,
+        forwardingSession: {
+          session,
+          clientHost: this.localDevice as unknown as { getTcpStack(): TcpStack },
+          resolveHost: (name) => this.resolveHostIpv4(name),
+        },
         execRelay: (command) => {
           if (settled && target !== null && command === target.command) return settled;
           const channel = session.openExecChannel(command);
@@ -1785,8 +1794,19 @@ export class LinuxCommandExecutor {
         },
       }), true);
     } finally {
-      session.disconnect();
+      if (!this.forwarding?.holds(session)) session.disconnect();
     }
+  }
+
+  private machineAnswering(session: SshSession): string | null {
+    const blob = session.serverHostKeyBlob;
+    if (blob === null) return null;
+    const wanted = bytesToBase64(blob);
+    for (const equipment of EquipmentRegistry.getInstance().getAll()) {
+      const context = (equipment as { getSshServerContext?: () => { hostKey?: { publicKey: string } } }).getSshServerContext?.();
+      if (context?.hostKey?.publicKey === wanted) return firstConfiguredIp(equipment);
+    }
+    return null;
   }
 
   private finishSshClientResult(

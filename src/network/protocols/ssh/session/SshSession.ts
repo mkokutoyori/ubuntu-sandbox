@@ -113,6 +113,7 @@ export class SshSession implements ISshSession {
   private readonly remoteForwardAcceptors = new Map<number, (connection: ForwardedConnection) => void>();
   private connection: SshConnection | null = null;
   private sessionId: Uint8Array | null = null;
+  private hostKeyBlob: Uint8Array | null = null;
 
   private channelManager = new SshChannelManager();
   private knownHosts: SshKnownHosts;
@@ -143,6 +144,10 @@ export class SshSession implements ISshSession {
 
   get state(): SshSessionState {
     return this._state;
+  }
+
+  get serverHostKeyBlob(): Uint8Array | null {
+    return this.hostKeyBlob;
   }
 
   get isConnected(): boolean {
@@ -186,6 +191,7 @@ export class SshSession implements ISshSession {
       });
     }
     this.sessionId = established.sessionId;
+    this.hostKeyBlob = established.hostKeyBlob;
     const conn = transportLink(transport, dialed);
     this.conn = conn;
     this.connection = new SshConnection(transport);
@@ -285,18 +291,30 @@ export class SshSession implements ISshSession {
     );
   }
 
-  async requestRemoteForward(
+  requestRemoteForwardNow(
+    bindAddress: string, port: number, accept: (connection: ForwardedConnection) => void,
+    onResult: (result: Result<number>) => void,
+  ): void {
+    const connection = this.connection;
+    if (!connection || !this.isConnected) {
+      onResult(err({ kind: 'NOT_AUTHENTICATED' }));
+      return;
+    }
+    connection.sendGlobalRequest('tcpip-forward', encodeTcpipForward({ address: bindAddress, port }), (success, reply) => {
+      if (!success) {
+        onResult(err({ kind: 'CHANNEL_ERROR', channelId: 0, message: 'remote port forwarding failed' }));
+        return;
+      }
+      const bound = port === 0 ? decodeBoundPort(reply) ?? port : port;
+      this.remoteForwardAcceptors.set(bound, accept);
+      onResult(ok(bound));
+    });
+  }
+
+  requestRemoteForward(
     bindAddress: string, port: number, accept: (connection: ForwardedConnection) => void,
   ): Promise<Result<number>> {
-    const connection = this.connection;
-    if (!connection || !this.isConnected) return err({ kind: 'NOT_AUTHENTICATED' });
-    const reply = await connection.globalRequest('tcpip-forward', encodeTcpipForward({ address: bindAddress, port }), true);
-    if (reply === null) {
-      return err({ kind: 'CHANNEL_ERROR', channelId: 0, message: 'remote port forwarding failed' });
-    }
-    const bound = port === 0 ? decodeBoundPort(reply) ?? port : port;
-    this.remoteForwardAcceptors.set(bound, accept);
-    return ok(bound);
+    return new Promise((resolve) => this.requestRemoteForwardNow(bindAddress, port, accept, resolve));
   }
 
   async cancelRemoteForward(bindAddress: string, port: number): Promise<void> {

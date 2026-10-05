@@ -18,9 +18,8 @@
  *            SSH-IMPLEMENTATION-ANALYSIS.md §5 P6 (suite).
  */
 
-import { forwardFailureOf, type ForwardOpening } from './ForwardOpening';
+import { forwardBindIp, forwardFailureOf, type ForwardHost, type ForwardListenOptions, type ForwardOpening } from './ForwardOpening';
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
-import type { EndHost } from '@/network/devices/EndHost';
 import { joinWhenReady, type TunnelOpener } from './forwardRelay';
 
 export interface DynamicForwardSpec {
@@ -42,9 +41,10 @@ export class SshDynamicForwarder {
   private lastConnectTarget: ConnectTarget | null = null;
 
   constructor(
-    private readonly localDevice: EndHost,
+    private readonly localDevice: ForwardHost,
     private readonly tunnel: TunnelOpener | null,
     private readonly spec: DynamicForwardSpec,
+    private readonly listenOptions: ForwardListenOptions = {},
   ) {}
 
   getSpec(): DynamicForwardSpec {
@@ -65,7 +65,8 @@ export class SshDynamicForwarder {
       this.localDevice.getTcpStack().listen(this.spec.socksPort, {
         onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
         ownerUid,
-      });
+        identity: this.listenOptions.identity,
+      }, forwardBindIp(this.spec.bindAddress));
     } catch (error) {
       return forwardFailureOf(error);
     }
@@ -79,7 +80,7 @@ export class SshDynamicForwarder {
    */
   dispose(): void {
     if (!this.registered) return;
-    this.localDevice.getTcpStack().closeListener(this.spec.socksPort);
+    this.localDevice.getTcpStack().closeListener(this.spec.socksPort, forwardBindIp(this.spec.bindAddress));
     this.registered = false;
   }
 

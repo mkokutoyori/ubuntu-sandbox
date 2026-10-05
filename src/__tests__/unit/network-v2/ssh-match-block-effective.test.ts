@@ -1,3 +1,4 @@
+import { reachedThrough } from './sshForwardLab';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -47,10 +48,8 @@ describe('SSH server — Match block applies to forwarding directives', () => {
       'Match User alice\n' +
       '    AllowTcpForwarding no\n');
 
-    const out = await pc.executeCommand(
-      'ssh -L 9100:127.0.0.1:80 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).toMatch(/administratively prohibited/i);
+    const outcome = await reachedThrough(pc, srv, 'ssh -L 9100:127.0.0.1:8080 -N alice@10.0.0.2', 'client', 9100);
+    expect(outcome).toEqual({ reached: false, replies: [] });
   });
 
   it('same config still allows bob (no match)', async () => {
@@ -61,10 +60,8 @@ describe('SSH server — Match block applies to forwarding directives', () => {
       'Match User alice\n' +
       '    AllowTcpForwarding no\n');
 
-    const out = await pc.executeCommand(
-      'ssh -L 9101:127.0.0.1:80 -N bob@10.0.0.2', 'admin\n',
-    );
-    expect(out).not.toMatch(/administratively prohibited/i);
+    const outcome = await reachedThrough(pc, srv, 'ssh -L 9101:127.0.0.1:8080 -N bob@10.0.0.2', 'client', 9101);
+    expect(outcome).toEqual({ reached: true, replies: ['ECHO:probe'] });
   });
 
   it('Match User alice + AllowAgentForwarding no suppresses SSH_AUTH_SOCK for alice', async () => {
