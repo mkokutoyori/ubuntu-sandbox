@@ -281,3 +281,38 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     algorithms: sshClientAlgorithms(optionValues),
   };
 }
+
+export interface ParsedSshLine {
+  readonly user: string | null;
+  readonly host: string;
+  readonly port: number;
+  readonly command: string | null;
+  readonly quiet: boolean;
+  readonly algorithms: SshAlgorithmPreferences;
+  readonly strict: StrictHostKeyChecking | undefined;
+}
+
+export function parseSshCommandLine(line: string): ParsedSshLine | null {
+  const trimmed = line.trim();
+  if (!/^ssh(\s|$)/.test(trimmed)) return null;
+  const tokens = trimmed.split(/\s+/).slice(1);
+
+  const login = tokens.indexOf('-l');
+  const loginName = login >= 0 ? tokens[login + 1] ?? null : null;
+  const args = login >= 0 ? [...tokens.slice(0, login), ...tokens.slice(login + 2)] : tokens;
+
+  const parsed = parseSshArgs(args);
+  if (parsed === null) return { user: null, host: '', port: 22, command: null, quiet: false, algorithms: {}, strict: undefined };
+  const at = parsed.userAtHost.indexOf('@');
+  const host = at >= 0 ? parsed.userAtHost.slice(at + 1) : parsed.userAtHost;
+  if (!/^[A-Za-z0-9._-]+$/.test(host)) return null;
+  return {
+    user: at >= 0 ? parsed.userAtHost.slice(0, at) : loginName,
+    host,
+    port: parsed.port,
+    command: parsed.command,
+    quiet: args.slice(0, args.indexOf(parsed.userAtHost)).includes('-q'),
+    algorithms: parsed.algorithms,
+    strict: parsed.strict,
+  };
+}

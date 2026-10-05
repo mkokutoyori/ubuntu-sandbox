@@ -8,13 +8,14 @@
  * `onNewAck`/`onDuplicateAck`/`onRtoTimeout` and reads `cwnd`.
  *
  * This targets RFC 5681's real *algorithm*, not byte-exact parity with a
- * modern Linux/BSD stack (no CUBIC/BBR, no ECN) — consistent with every
+ * modern Linux/BSD stack (no CUBIC/BBR) — consistent with every
  * other PRD in this repo's "real protocol, not bit-exact" stance.
  */
 
-/** RFC 5681 §3.1 — IW = min(4×MSS, max(2×MSS, 4380 bytes)). */
 export function initialCongestionWindow(mss: number): number {
-  return Math.min(4 * mss, Math.max(2 * mss, 4380));
+  if (mss > 2190) return 2 * mss;
+  if (mss > 1095) return 3 * mss;
+  return 4 * mss;
 }
 
 export class TcpCongestionControl {
@@ -22,9 +23,31 @@ export class TcpCongestionControl {
   ssthresh: number = Number.MAX_SAFE_INTEGER;
   private dupAckCount = 0;
   private inFastRecovery = false;
+  private inflatesOnDuplicates = false;
 
-  constructor(private readonly mss: number) {
+  constructor(private mss: number) {
     this.cwnd = initialCongestionWindow(mss);
+  }
+
+  initialize(mss: number, handshakeLost = false): void {
+    this.mss = mss;
+    this.cwnd = handshakeLost ? mss : initialCongestionWindow(mss);
+    this.ssthresh = Number.MAX_SAFE_INTEGER;
+    this.dupAckCount = 0;
+    this.inFastRecovery = false;
+    this.inflatesOnDuplicates = false;
+  }
+
+  get duplicateAcks(): number { return this.dupAckCount; }
+
+  restartAfterIdle(): void {
+    this.cwnd = Math.min(this.cwnd, initialCongestionWindow(this.mss));
+  }
+
+  setSegmentSize(mss: number): void {
+    if (mss >= this.mss) return;
+    this.cwnd = Math.max(mss, Math.floor((this.cwnd * mss) / this.mss));
+    this.mss = mss;
   }
 
   get phase(): 'slow-start' | 'congestion-avoidance' | 'fast-recovery' {
@@ -39,12 +62,7 @@ export class TcpCongestionControl {
    * standard "increase by 1 MSS per RTT" approximation, byte-counted).
    */
   onNewAck(ackedBytes: number): void {
-    if (this.inFastRecovery) {
-      // RFC 5681 §3.2 (NewReno-less variant): a new ACK ends fast
-      // recovery — deflate straight back to ssthresh.
-      this.cwnd = this.ssthresh;
-      this.inFastRecovery = false;
-    }
+    this.leaveFastRecovery();
     this.dupAckCount = 0;
     if (this.cwnd < this.ssthresh) {
       this.cwnd += Math.min(ackedBytes, this.mss);
@@ -53,23 +71,43 @@ export class TcpCongestionControl {
     }
   }
 
-  /**
-   * A duplicate ACK arrived (same ack number as before, no new data).
-   * Returns true exactly when this is the 3rd one — the caller should
-   * fast-retransmit the oldest unacked segment right now, without
-   * waiting for the RTO timer (RFC 5681 §3.2).
-   */
-  onDuplicateAck(flightSizeBytes: number): boolean {
-    if (this.inFastRecovery) {
-      this.cwnd += this.mss; // further inflation while recovering
-      return false;
-    }
-    this.dupAckCount++;
-    if (this.dupAckCount < 3) return false;
+  noteDuplicateAck(): number {
+    this.dupAckCount += 1;
+    return this.dupAckCount;
+  }
+
+  resetDuplicateAcks(): void {
+    this.dupAckCount = 0;
+  }
+
+  enterFastRecovery(flightSizeBytes: number, inflate: boolean): void {
     this.ssthresh = Math.max(Math.floor(flightSizeBytes / 2), 2 * this.mss);
-    this.cwnd = this.ssthresh + 3 * this.mss;
+    this.cwnd = inflate ? this.ssthresh + 3 * this.mss : this.ssthresh;
     this.inFastRecovery = true;
-    return true;
+    this.inflatesOnDuplicates = inflate;
+  }
+
+  onRecoveryDuplicateAck(): void {
+    if (this.inFastRecovery && this.inflatesOnDuplicates) this.cwnd += this.mss;
+  }
+
+  onPartialAck(ackedBytes: number): void {
+    if (!this.inFastRecovery || !this.inflatesOnDuplicates) return;
+    this.cwnd = Math.max(0, this.cwnd - ackedBytes);
+    if (ackedBytes >= this.mss) this.cwnd += this.mss;
+  }
+
+  leaveFastRecovery(): void {
+    if (!this.inFastRecovery) return;
+    this.cwnd = this.ssthresh;
+    this.inFastRecovery = false;
+    this.inflatesOnDuplicates = false;
+  }
+
+  onCongestionEcho(): void {
+    this.ssthresh = Math.max(Math.floor(this.cwnd / 2), 2 * this.mss);
+    this.cwnd = Math.min(this.cwnd, this.ssthresh);
+    this.dupAckCount = 0;
   }
 
   /** RFC 5681 §3.1 — an RTO fired: collapse to slow start from scratch. */
@@ -77,6 +115,7 @@ export class TcpCongestionControl {
     this.ssthresh = Math.max(Math.floor(flightSizeBytes / 2), 2 * this.mss);
     this.cwnd = this.mss;
     this.inFastRecovery = false;
+    this.inflatesOnDuplicates = false;
     this.dupAckCount = 0;
   }
 }

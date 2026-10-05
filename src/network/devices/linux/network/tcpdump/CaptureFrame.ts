@@ -11,6 +11,7 @@ import {
   icmpTypeNumber,
   icmpv6TypeNumber,
   verifyIPv4Checksum,
+  MACAddress,
   type EthernetFrame,
   type IPv4Packet,
   type IPv6Packet,
@@ -18,6 +19,7 @@ import {
   type ICMPPacket,
   type ICMPv6Packet,
   type UDPPacket,
+  type UDPLitePacket,
 } from '@/network/core/types';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
@@ -63,6 +65,8 @@ export interface CaptureFrame {
   ttl?: number;
   ipId?: number;
   ipTos?: number;
+  ipTrafficClass?: number;
+  ipFlowLabel?: number;
   ipProtocol?: number;
   ipTotalLength?: number;
   ipHeaderLen?: number;
@@ -276,11 +280,20 @@ function synthUdpBytes(udp: UDPPacket): number[] {
   ];
 }
 
+function synthUdpLiteBytes(udp: UDPLitePacket): number[] {
+  return [
+    ...u16(udp.sourcePort), ...u16(udp.destinationPort),
+    ...u16(udp.checksumCoverage), ...u16(udp.checksum & 0xffff),
+    ...(appPayloadBytes(udp.payload) ?? []),
+  ];
+}
+
 function synthL4Bytes(pkt: IPv4Packet): number[] {
   const payload = pkt.payload as { type?: string };
   if (payload?.type === 'icmp') return synthIcmpBytes(pkt.payload as ICMPPacket);
   if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
   if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket);
+  if (payload?.type === 'udplite') return synthUdpLiteBytes(pkt.payload as UDPLitePacket);
   return [];
 }
 
@@ -320,6 +333,7 @@ function synthL4BytesV6(pkt: IPv6Packet): number[] {
   if (payload?.type === 'icmpv6') return synthIcmpv6Bytes(pkt.payload as ICMPv6Packet);
   if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
   if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket);
+  if (payload?.type === 'udplite') return synthUdpLiteBytes(pkt.payload as UDPLitePacket);
   return [];
 }
 
@@ -439,6 +453,8 @@ export function decodeEthernetFrame(
     base.srcIp = ip6.sourceIP.toString();
     base.dstIp = ip6.destinationIP.toString();
     base.ttl = ip6.hopLimit;
+    base.ipTrafficClass = ip6.trafficClass;
+    base.ipFlowLabel = ip6.flowLabel;
     base.ipProtocol = ip6.nextHeader;
     base.ipTotalLength = ip6.payloadLength + 40;
     base.ipHeaderLen = 40;
@@ -602,14 +618,24 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
   base.l4 = 'other';
 }
 
+const LOOPBACK_MAC = new MACAddress('00:00:00:00:00:00');
+
 export function makeTcpFrame(
   pkt: {
     at: Date; srcIp: string; srcPort: number; dstIp: string; dstPort: number;
     flags: string; seq: number; ack: number; length: number;
     payload?: Uint8Array;
+    packet?: IPv4Packet | IPv6Packet;
   },
   iface: string,
 ): CaptureFrame {
+  if (pkt.packet) {
+    return decodeEthernetFrame({
+      srcMAC: LOOPBACK_MAC, dstMAC: LOOPBACK_MAC,
+      etherType: pkt.packet.type === 'ipv6' ? ETHERTYPE_IPV6 : ETHERTYPE_IPV4,
+      payload: pkt.packet,
+    } as EthernetFrame, iface, 'in', pkt.at);
+  }
   const f = pkt.flags;
   const flags = {
     syn: f.includes('S'),

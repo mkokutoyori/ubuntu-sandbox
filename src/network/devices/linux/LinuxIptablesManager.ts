@@ -16,7 +16,10 @@
  */
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
-import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
+import {
+  IPAddress, IPv6Address, SubnetMask,
+  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
+} from '../../core/types';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -154,7 +157,16 @@ export interface NatResult {
 }
 
 const VALID_TABLES = new Set<string>(['filter', 'nat', 'mangle', 'raw']);
-const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'icmpv6', 'ipv6-icmp', 'all']);
+const PROTOCOL_NUMBERS: Readonly<Record<string, number>> = {
+  tcp: IP_PROTO_TCP, udp: IP_PROTO_UDP, icmp: IP_PROTO_ICMP,
+  icmpv6: IP_PROTO_ICMPV6, 'ipv6-icmp': IP_PROTO_ICMPV6, udplite: IP_PROTO_UDPLITE,
+};
+
+function protocolNumberOf(text: string): number | null {
+  if (Object.prototype.hasOwnProperty.call(PROTOCOL_NUMBERS, text)) return PROTOCOL_NUMBERS[text];
+  if (/^\d+$/.test(text) && Number(text) <= 255) return Number(text);
+  return null;
+}
 const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
 const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN', 'MARK', 'NOTRACK']);
 
@@ -520,11 +532,7 @@ export class LinuxIptablesManager {
   private ruleMatchesPacket(rule: IptablesRule, pkt: PacketInfo): boolean {
     // Protocol check
     if (rule.protocol && rule.protocol !== 'all') {
-      const protoNum = rule.protocol === 'tcp' ? 6 : rule.protocol === 'udp' ? 17
-        : rule.protocol === 'icmp' ? 1
-        : (rule.protocol === 'icmpv6' || rule.protocol === 'ipv6-icmp') ? 58
-        : -1;
-      const matches = pkt.protocol === protoNum;
+      const matches = pkt.protocol === (protocolNumberOf(rule.protocol) ?? -1);
       if (rule.negProtocol ? matches : !matches) return false;
     }
 
@@ -1478,7 +1486,7 @@ export class LinuxIptablesManager {
           if (i >= args.length) return 'iptables: option "-p" requires an argument';
           if (isNeg) rule.negProtocol = true;
           rule.protocol = args[i];
-          if (rule.protocol !== 'all' && !VALID_PROTOCOLS.has(rule.protocol)) {
+          if (rule.protocol !== 'all' && protocolNumberOf(rule.protocol) === null) {
             return `iptables v1.8.7 (nf_tables): unknown protocol "${rule.protocol}"`;
           }
           break;

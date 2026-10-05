@@ -219,7 +219,7 @@ describe('CMD: fc command', () => {
 describe('CMD: xcopy command', () => {
   it('should copy a single file', async () => {
     const pc = await createPCWithFiles();
-    const output = await pc.executeCommand('xcopy test.txt xcopy_dest.txt');
+    const output = await pc.executeCommand('xcopy test.txt xcopy_dest.txt', 'f');
     expect(output).toContain('1 File(s) copied');
   });
 
@@ -238,8 +238,14 @@ describe('CMD: xcopy command', () => {
 
   it('should return error for insufficient args', async () => {
     const pc = await createPCWithFiles();
-    const output = await pc.executeCommand('xcopy test.txt');
+    const output = await pc.executeCommand('xcopy');
     expect(output).toContain('Invalid number');
+  });
+
+  it('should refuse to copy a file onto itself when the destination defaults to the current directory', async () => {
+    const pc = await createPCWithFiles();
+    const output = await pc.executeCommand('xcopy test.txt');
+    expect(output).toBe('File cannot be copied onto itself\n0 File(s) copied');
   });
 });
 

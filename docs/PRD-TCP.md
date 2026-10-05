@@ -1,5 +1,7 @@
 # PRD — Limites du protocole TCP actuellement implémenté (`src/network/tcp/TcpStack.ts`)
 
+> Document historique : il décrit la pile du 6 juillet. La plupart des limites relevées ici (RTO, contrôle de flux, congestion, options, keep-alive, urgent, RFC 5961) sont fermées ; l'état à jour, exigence par exigence, est dans [`TCP-Etat-des-RFC.md`](TCP-Etat-des-RFC.md).
+
 **Version** : 1.0
 **Date** : 2026-07-06
 **Projet** : Ubuntu Sandbox — simulateur réseau navigateur

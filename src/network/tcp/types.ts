@@ -59,6 +59,12 @@ export type TcpOption =
 
 export type TcpCloseReason = 'fin' | 'rst' | 'timeout' | 'shutdown';
 
+export type TcpUserCallResult = 'ok' | 'closing' | 'no-connection';
+
+export type TcpErrorReport =
+  | { source: 'icmp'; icmpType: string; code: number; from: string }
+  | { source: 'retransmission'; attempts: number; sequence: number };
+
 /**
  * Minimal bidirectional-stream shape SSH/SFTP/SMB/WinRM code depends on —
  * migrated here from the now-deleted `core/TcpConnection.ts` ghost class
@@ -130,6 +136,7 @@ export interface UnackedSegment {
    */
   lastSentTsVal?: number;
   lastSentAtMs?: number;
+  windowProbe?: boolean;
 }
 
 export const TCP_DEFAULT_MSS = 1460;
@@ -146,6 +153,10 @@ export const TCP_TIME_WAIT_MS = 2 * TCP_MSL_MS;
 /** True when `a` precedes `b` in 32-bit sequence space (mod 2³²). */
 export function seqLt(a: number, b: number): boolean {
   return ((a - b) >>> 0) > 0x7fffffff;
+}
+
+export function seqWithin(first: number, value: number, last: number): boolean {
+  return ((value - first) >>> 0) <= ((last - first) >>> 0);
 }
 
 export function computeTcpChecksum(
@@ -189,8 +200,8 @@ export function flagsString(f: TcpFlags): string {
   return parts.join('|') || '(none)';
 }
 
-export function nextIsn(): number {
-  return ((Date.now() & 0xffffffff) ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+export function randomSequenceNumber(): number {
+  return Math.floor(Math.random() * 0x100000000) >>> 0;
 }
 
 export function makeSocketKey(localIp: string, localPort: number, remoteIp: string, remotePort: number): string {

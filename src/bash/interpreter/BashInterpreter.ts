@@ -32,6 +32,7 @@ import {
   ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
 import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
+import { RedirectWriteError } from './RedirectWriteError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
@@ -916,6 +917,7 @@ export class BashInterpreter {
       yield* this.applyRedirections(
         node.redirections, capturedOutput,
         explicitStderr !== null ? capturedStderr : undefined,
+        cmdName,
       );
     }
 
@@ -1082,6 +1084,7 @@ export class BashInterpreter {
     redirections: Redirection[],
     capturedOutput: string,
     capturedStderr?: string,
+    command?: string,
   ): Effects<void> {
     if (!this.io) {
       if (capturedOutput) this.output.push(capturedOutput);
@@ -1093,7 +1096,7 @@ export class BashInterpreter {
     // each to its own redirection target (or the terminal) independently —
     // no exit-code heuristic needed.
     if (capturedStderr !== undefined) {
-      yield* this.applyRedirectionsExplicit(redirections, capturedOutput, capturedStderr);
+      yield* this.applyRedirectionsExplicit(redirections, capturedOutput, capturedStderr, command);
       return;
     }
 
@@ -1144,7 +1147,7 @@ export class BashInterpreter {
         }
       } catch (e) {
         // Permission denied, Is a directory, etc.
-        if (e instanceof Error) this.output.push(e.message + '\n');
+        if (e instanceof Error) this.output.push(this.redirectFailureText(e, command) + '\n');
         this.env.lastExitCode = 1;
         return;
       }
@@ -1201,6 +1204,7 @@ export class BashInterpreter {
     redirections: Redirection[],
     stdout: string,
     stderr: string,
+    command?: string,
   ): Effects<void> {
     if (!this.io) {
       if (stdout) this.output.push(stdout);
@@ -1243,12 +1247,18 @@ export class BashInterpreter {
         opened.add(sink.path);
         return true;
       } catch (e) {
-        if (e instanceof Error) this.output.push(e.message + '\n');
+        if (e instanceof Error) this.output.push(this.redirectFailureText(e, command) + '\n');
         this.env.lastExitCode = 1;
         return false;
       }
     };
     if (deliver(stdout, fd1)) deliver(stderr, fd2);
+  }
+
+  private redirectFailureText(error: Error, command: string | undefined): string {
+    if (!(error instanceof RedirectWriteError)) return error.message;
+    if (command === undefined) return `bash: write error: ${error.reason}`;
+    return `${isBuiltin(command) ? 'bash: ' : ''}${command}: write error: ${error.reason}`;
   }
 
   // ─── If ───────────────────────────────────────────────────────

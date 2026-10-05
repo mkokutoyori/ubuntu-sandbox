@@ -252,6 +252,7 @@ describe('TCP delayed ACK (RFC 5681 §4.2)', () => {
     const { client, server, bus, cable } = buildPair();
     server.getTcpStack().listen(7607, { onAccept: () => {} });
     const socket = client.getTcpStack().connect(SERVER_IP, 7607)!;
+    socket.send('w');
     const wire = wireTrace(bus);
 
     let transmits = 0;

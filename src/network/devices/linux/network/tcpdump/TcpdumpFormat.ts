@@ -3,7 +3,8 @@ import { icmpTimeExceededPhrase, icmpUnreachablePhrase } from '@/network/core/Ic
 import type { CaptureFrame } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
 import { decodeOptions } from '@/network/tcp/TcpOptionsCodec';
-import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
+import { EcnCodepoint } from '@/network/core/IpHeaderFields';
+import { IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
 
 export interface AddressNames {
   host(ip: string): string;
@@ -385,7 +386,7 @@ function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | nu
  * `proto TCP (6)` bien que son en-tete de transport soit ailleurs.
  */
 const IP_PROTO_NAMES: Readonly<Record<number, string>> = {
-  [IP_PROTO_ICMP]: 'ICMP', [IP_PROTO_TCP]: 'TCP', [IP_PROTO_UDP]: 'UDP',
+  [IP_PROTO_ICMP]: 'ICMP', [IP_PROTO_TCP]: 'TCP', [IP_PROTO_UDP]: 'UDP', [IP_PROTO_ICMPV6]: 'ICMPv6',
 };
 
 function ipProtoName(frame: CaptureFrame): string {
@@ -421,11 +422,10 @@ function ipChecksumSuffix(frame: CaptureFrame, opt: TcpdumpOptions): string {
   return `, bad ip cksum 0x${hex}!`;
 }
 
-const ECN_SUFFIX: readonly string[] = ['', ',ECT(1)', ',ECT(0)', ',CE'];
-
 function tosToken(frame: CaptureFrame): string {
   const tos = frame.ipTos ?? 0;
-  return `tos 0x${tos.toString(16)}${ECN_SUFFIX[tos & 0x03]}`;
+  const ecn = EcnCodepoint.ofField(tos);
+  return `tos 0x${tos.toString(16)}${ecn.capable ? `,${ecn}` : ''}`;
 }
 
 function ipLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
@@ -448,7 +448,20 @@ function ip6Line(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderS
   const withPort = !trunc && (frame.l4 === 'tcp' || frame.l4 === 'udp');
   const src = endpoint(state, frame.srcIp, withPort ? frame.srcPort : undefined, transportOf(frame.l4));
   const dst = endpoint(state, frame.dstIp, withPort ? frame.dstPort : undefined, transportOf(frame.l4));
-  return `IP6 ${src} > ${dst}: ${trunc ?? l4Detail(frame, opt, state)}`;
+  const header = opt.verbose > 0 ? `${ip6VerboseHeader(frame)} ` : '';
+  return `IP6 ${header}${src} > ${dst}: ${trunc ?? l4Detail(frame, opt, state)}`;
+}
+
+function ip6VerboseHeader(frame: CaptureFrame): string {
+  const trafficClass = frame.ipTrafficClass ?? 0;
+  const flowLabel = frame.ipFlowLabel ?? 0;
+  const fields = [
+    ...(trafficClass === 0 ? [] : [`class 0x${trafficClass.toString(16).padStart(2, '0')}`]),
+    ...(flowLabel === 0 ? [] : [`flowlabel 0x${flowLabel.toString(16).padStart(5, '0')}`]),
+    `hlim ${frame.ttl ?? 0}`,
+    `next-header ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}) payload length: ${(frame.ipTotalLength ?? 40) - 40}`,
+  ];
+  return `(${fields.join(', ')})`;
 }
 
 function etherTypeOf(frame: CaptureFrame): { name: string; hex: string; value: number } {

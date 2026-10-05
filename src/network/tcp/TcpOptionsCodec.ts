@@ -11,7 +11,9 @@
  * count so a `dataOffset` value on the wire remains meaningful for any
  * tooling that inspects it (e.g. a future `tcpdump`-style formatter).
  */
-import type { TcpOption } from './types';
+import { TCP_MIN_MSS, type TcpOption } from './types';
+
+export const TCP_MAX_WINDOW_SCALE = 14;
 
 export interface TcpOptionsSet {
   mss?: number;
@@ -34,6 +36,7 @@ export function encodeOptions(opts: TcpOptionsSet): TcpOption[] {
 export function decodeOptions(options: readonly TcpOption[]): TcpOptionsSet {
   const out: TcpOptionsSet = {};
   for (const opt of options) {
+    if (opt.kind === 'end') break;
     switch (opt.kind) {
       case 'mss': out.mss = opt.value; break;
       case 'window-scale': out.windowScale = opt.shift; break;
@@ -44,6 +47,16 @@ export function decodeOptions(options: readonly TcpOption[]): TcpOptionsSet {
     }
   }
   return out;
+}
+
+export function interpretOptions(options: readonly TcpOption[]): TcpOptionsSet {
+  const { mss, windowScale, ...rest } = decodeOptions(options);
+  const interpreted: TcpOptionsSet = rest;
+  if (mss !== undefined && mss > 0) interpreted.mss = Math.max(TCP_MIN_MSS, mss);
+  if (windowScale !== undefined && Number.isInteger(windowScale) && windowScale >= 0) {
+    interpreted.windowScale = Math.min(windowScale, TCP_MAX_WINDOW_SCALE);
+  }
+  return interpreted;
 }
 
 /** Real per-option byte cost (kind+length+data, padded to 4 bytes with NOPs), rounded up to whole 32-bit words and added to the fixed 5-word (20-byte) header. */

@@ -23,7 +23,7 @@ export interface GrePacketDecapsulatedPayload extends GreDeviceRef {
 export interface GrePacketDroppedPayload extends GreDeviceRef {
   sourceIp: string;
   destinationIp: string;
-  reason: 'no-tunnel' | 'key-mismatch' | 'no-source-ip' | 'no-egress' | 'disabled' | 'tunnel-down' | 'checksum-mismatch' | 'out-of-order';
+  reason: 'no-tunnel' | 'key-mismatch' | 'no-source-ip' | 'no-egress' | 'disabled' | 'tunnel-down' | 'checksum-mismatch' | 'out-of-order' | 'ecn-violation';
 }
 
 export interface GreTunnelChangedPayload extends GreDeviceRef {

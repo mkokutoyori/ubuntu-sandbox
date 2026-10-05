@@ -8,6 +8,8 @@
  * so a long-lived host does not grow without limit.
  */
 
+import type { IPv4Packet, IPv6Packet } from '@/network/core/types';
+
 /** One captured TCP segment, in the shape `tcpdump` prints. */
 export interface CapturedPacket {
   readonly at: Date;
@@ -28,6 +30,8 @@ export interface CapturedPacket {
    * being shown on whichever interface is being watched.
    */
   readonly iface?: string;
+  /** The IP packet itself, when the segment never crossed a wire (loopback). */
+  readonly packet?: IPv4Packet | IPv6Packet;
 }
 
 export class PacketCaptureLog {

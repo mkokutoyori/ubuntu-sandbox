@@ -10,7 +10,7 @@ export interface WindowsBatchDevice {
   environment(): Map<string, string>;
   setVariable(name: string, value: string): void;
   removeVariable(name: string): void;
-  runSimple(line: string, stdin?: string): Promise<{ output: string; exitCode: number | null }>;
+  runSimple(line: string, stdin?: string, inScript?: boolean): Promise<{ output: string; exitCode: number | null }>;
   timeZone(): string;
   readInputLine?(prompt: string): Promise<string | null>;
   inputIsInteractive?(): boolean;
@@ -57,8 +57,8 @@ export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
     formattedDate: () => cmdDate([], device.timeZone()),
     formattedTime: () => clockTimeWithCentiseconds(device.timeZone()),
     random: () => Math.floor(Math.random() * 32768),
-    async runCommand(line, stdin): Promise<CommandOutcome> {
-      const { output, exitCode } = await device.runSimple(line, stdin);
+    async runCommand(line, stdin, inScript): Promise<CommandOutcome> {
+      const { output, exitCode } = await device.runSimple(line, stdin, inScript);
       return {
         output,
         exitCode: exitCode ?? commandExitCode(output),

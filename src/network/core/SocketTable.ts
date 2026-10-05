@@ -16,7 +16,7 @@ import { EPHEMERAL_PORT_MIN, EPHEMERAL_PORT_MAX } from './WellKnownPorts';
 import { allocateEphemeralPort } from '../layers/transport/EphemeralPorts';
 import type { PortBindingPolicy } from './ports/PortBindingPolicy';
 
-export type SocketProtocol = 'tcp' | 'udp';
+export type SocketProtocol = 'tcp' | 'udp' | 'udplite';
 
 /** TCP connection state machine values (RFC 793) */
 export type SocketState =
@@ -419,7 +419,8 @@ export class SocketTable {
    */
   allocateEphemeralPort(): number {
     return allocateEphemeralPort(this.ephemeralMin, this.ephemeralMax,
-      (port) => this.isPortBound(port, 'tcp') || this.isPortBound(port, 'udp'));
+      (port) => this.isPortBound(port, 'tcp') || this.isPortBound(port, 'udp')
+        || this.isPortBound(port, 'udplite'));
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────

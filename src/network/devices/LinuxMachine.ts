@@ -24,12 +24,13 @@
 
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { PortNumber } from '../core/ports/PortNumber';
+import type { SocketProtocol } from '../core/SocketTable';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
@@ -63,6 +64,9 @@ import {
 } from './linux/http/nginx/NginxFiles';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
+import type { TcpEcnPolicy } from '../tcp/TcpEcn';
+import type { TcpOptionPolicy } from '../tcp/TcpStack';
+import { LinuxIpv4Settings, LINUX_IPV4_KNOBS } from './linux/LinuxIpv4Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
@@ -122,6 +126,7 @@ import {
 import { DnsService } from './linux/LinuxDnsService';
 import { Bind9Service } from './linux/bind9/Bind9Service';
 import { attachOrderedCapture } from '../hardware/PortTap';
+import { settleOrderedDeliveries } from '../hardware/FrameLineage';
 import { LinuxDhcpdService } from './linux/dhcp/LinuxDhcpdService';
 import { LinuxDhcpd6Service } from './linux/dhcp/LinuxDhcpd6Service';
 import { seedDhcpdFiles } from './linux/dhcp/DhcpdFiles';
@@ -255,7 +260,14 @@ function readUpstreamAnswer(
 
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
-  protected readonly defaultTTL = 64;
+  private readonly ipv4Settings = new LinuxIpv4Settings();
+  protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
+  protected override get defaultHopLimit(): number { return 64; }
+  protected override get udpDiscoversPathMtu(): boolean { return true; }
+  protected override get tcpEcnPolicy(): TcpEcnPolicy { return this.ipv4Settings.ecnPolicy; }
+  protected override get tcpEcnFallsBack(): boolean { return this.ipv4Settings.ecnFallsBack; }
+  protected override get tcpOptionPolicy(): TcpOptionPolicy { return this.ipv4Settings.optionPolicy; }
+  protected override get tcpRestartsAfterIdle(): boolean { return this.ipv4Settings.restartsAfterIdle; }
 
   /** Active profile — describes the "flavor" of this Linux machine. */
   public readonly profile: LinuxProfile;
@@ -338,6 +350,7 @@ export abstract class LinuxMachine extends EndHost
     // ServicePortProjection created in attachEventBus needs the table.
     this.socketTable.setEphemeralRange(32768, 60999);
     this.tcpv2.setEphemeralRange(32768, 60999);
+    this.enableUdpLite();
     this.initDefaultSockets(profile.isServer);
     this.executor.setLocalDevice(this);
     this.executor.bindKernelHostname({
@@ -350,16 +363,39 @@ export abstract class LinuxMachine extends EndHost
     this.socketTable.setDescriptorGuard((pid) =>
       this.executor.processMgr.canOpenDescriptor(pid, this.executor.descriptorSourcesFor(pid)));
     this.executor.vfs.mkdirp('/proc/sys/net/ipv4', 0o755, 0, 0);
-    this.executor.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', '32768\t60999\n', 0, 0, 0o022);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/ip_forward',
-      () => `${this.ipForwardEnabled ? 1 : 0}\n`, 0o644);
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_local_port_range',
+      () => {
+        const { min, max } = this.tcpv2.getEphemeralRange();
+        return `${min}\t${max}\n`;
+      },
+      (text) => this.applyLocalPortRange(text));
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_forward',
+      () => `${this.ipForwardEnabled ? 1 : 0}\n`,
+      (text) => {
+        this.ipForwardEnabled = text.trim() === '1';
+        return true;
+      });
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
-      () => `${this.portBindingPolicy.unprivilegedPortStart}\n`, 0o644);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
-      () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`, 0o644);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
-      () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`, 0o644);
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
+      () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,
+      (text) => this.executor.applyUnprivilegedPortStart(Number(text.trim())));
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
+      () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`,
+      (text) => {
+        this.socketTable.setTcpTwReuse(text.trim() === '1');
+        return true;
+      });
+    for (const knob of LINUX_IPV4_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
+        () => `${this.ipv4Settings.get(knob.name)}\n`,
+        (text) => this.ipv4Settings.write(knob.name, text));
+    }
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
+      () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`,
+      (text) => {
+        this.setIgnoresBroadcastEcho(text.trim() === '1');
+        return true;
+      });
     this.executor.setSessionTable(this.sessionTable);
     this.executor.setSshHostKeyProbe((ip, port, hostKeyAlgorithms) =>
       probeSshHostKey(this.tcpv2.connect(ip, port) as unknown as TcpStream | null, hostKeyAlgorithms));
@@ -830,7 +866,7 @@ export abstract class LinuxMachine extends EndHost
    */
   override tcpExchange(
     targetIP: IPAddress | IPv6Address, port: number, payload: string,
-    options: { sourcePort?: PortNumber; sourceIP?: IPAddress } = {},
+    options: TcpExchangeSocketOptions = {},
   ): { outcome: TcpWireOutcome; received: string } {
     const exchange = super.tcpExchange(targetIP, port, payload, options);
     return { ...exchange, outcome: this.failedNeighbourIsHostUnreachable(targetIP, exchange.outcome) };
@@ -1956,7 +1992,7 @@ export abstract class LinuxMachine extends EndHost
       const payload = e.payload as { pid: number; comm: string };
       const { pid, comm } = payload;
       const stack = this.getTcpStack();
-      const toUnbind: Array<{ protocol: 'tcp' | 'udp'; localAddress: string; localPort: number; state: string }> = [];
+      const toUnbind: Array<{ protocol: SocketProtocol; localAddress: string; localPort: number; state: string }> = [];
       for (const sock of this.socketTable.getAll()) {
         const matchesByPid = sock.pid === pid;
         const matchesByName = comm && sock.pid === undefined && sock.processName === comm;
@@ -2583,6 +2619,15 @@ export abstract class LinuxMachine extends EndHost
 
   setKernelHostname(hostname: string): void {
     super.setHostname(hostname);
+  }
+
+  private applyLocalPortRange(text: string): boolean {
+    const parts = text.split(/\s+/).filter(Boolean);
+    const min = Number(parts[0]);
+    const max = Number(parts[1] ?? parts[0]);
+    if (!this.executor.acceptsEphemeralRange(min, max)) return false;
+    this.executor.applyEphemeralRange(min, max);
+    return true;
   }
 
   override powerOn(): void {
@@ -3372,6 +3417,7 @@ export abstract class LinuxMachine extends EndHost
    */
   async executeCommand(command: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
+    settleOrderedDeliveries();
     if (stdin !== undefined) {
       this.executor._scenarioStdin = stdin;
     }
@@ -3980,6 +4026,7 @@ export abstract class LinuxMachine extends EndHost
       },
       canTraceTo: (target: IPAddress, socket: TraceSocketOptions): boolean => this.canTraceTo(target, socket),
       isLocalAddress: (ip: IPAddress): boolean => this.isLocalAddress(ip),
+      isLocalAddress6: (ip: IPv6Address): boolean => this.isLocalAddress6(ip),
       sendUdpProbe: (
         target: IPAddress, destinationPort: number, sourcePort: number,
         options: {

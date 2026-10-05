@@ -282,6 +282,12 @@ export interface CableFrameDeliveredPayload extends CableRef {
   frame: EthernetFrame;
 }
 
+export interface CableFrameMarkedPayload extends CableRef {
+  from: PortRef;
+  to: PortRef;
+  frame: EthernetFrame;
+}
+
 export interface CableFrameLostPayload extends CableRef {
   reason: 'simulated-loss' | 'cable-down' | 'no-peer' | 'l2-loop-suppressed' | 'fcs-corrupted';
 }
@@ -339,6 +345,7 @@ export type DomainEvent =
   | { topic: 'cable.frame.dispatched'; payload: CableFrameDispatchedPayload }
   | { topic: 'cable.frame.delivered'; payload: CableFrameDeliveredPayload }
   | { topic: 'cable.frame.lost'; payload: CableFrameLostPayload }
+  | { topic: 'cable.frame.marked'; payload: CableFrameMarkedPayload }
   // OSPF (sub-union, see src/network/ospf/events.ts)
   | OspfDomainEvent
   // IPSec (sub-union, see src/network/ipsec/events.ts)

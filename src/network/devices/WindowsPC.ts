@@ -22,6 +22,7 @@ import {
 } from './windows/WindowsNicTeam';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
+import type { SocketProtocol } from '../core/SocketTable';
 import { MACAddress } from '../core/types';
 import { toDisplayName, adapterIfIndex, LOOPBACK_IFINDEX } from './windows/WindowsInterfaceNaming';
 import { interfaceGuidFor } from './host/hardware/HardwareIdentity';
@@ -83,6 +84,8 @@ import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProvid
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
+import { cmdCopy, cmdMove } from './windows/WinCopy';
+import { cmdXcopy } from './windows/WinXcopy';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
 import { LlmnrAgent } from '../llmnr/LlmnrAgent';
@@ -247,10 +250,10 @@ import {
   rulesApplyTo,
 } from './windows/netFirewallProfile';
 import {
-  cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
+  cmdCd, cmdMkdir, cmdRmdir, cmdType,
   cmdRen, cmdDel, cmdTree, cmdTasklist, cmdNetstat,
   cmdAttrib, cmdFind, cmdFindstr, cmdMore, cmdFc,
-  cmdXcopy, cmdSort,
+  cmdSort,
 } from './windows/WinFileCommands';
 
 /**
@@ -804,7 +807,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const payload = e.payload as { pid: number; name: string };
       const { pid, name } = payload;
       const stack = this.getTcpStack();
-      const toUnbind: Array<{ protocol: 'tcp' | 'udp'; localAddress: string; localPort: number; state: string }> = [];
+      const toUnbind: Array<{ protocol: SocketProtocol; localAddress: string; localPort: number; state: string }> = [];
       for (const sock of this.socketTable.getAll()) {
         const matchesByPid = sock.pid === pid;
         const matchesByName = name && sock.processName === name;
@@ -2460,6 +2463,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     shell: (() => { output: string; exitCode: number } | null) | undefined;
     authRefused: boolean;
     deniedMethods?: string;
+    negotiationFailure?: string;
     close: () => void;
   } | null> {
     const outcome = await openWireSshConnection({
@@ -2472,9 +2476,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       password,
       credentialless: password === undefined,
       identityFiles: target.identities,
+      algorithms: target.algorithms,
     });
     if (outcome.kind === 'auth-failed' && password !== undefined) {
       return { exec: undefined, shell: undefined, authRefused: true, deniedMethods: outcome.methods, close: () => undefined };
+    }
+    if (outcome.kind === 'rejected' && outcome.message.startsWith('Unable to negotiate')) {
+      return { exec: undefined, shell: undefined, authRefused: false, negotiationFailure: outcome.message, close: () => undefined };
     }
     if (outcome.kind !== 'connected') return null;
     const { session } = outcome;
@@ -2511,6 +2519,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       ? undefined
       : await wireReachOutcomeRetransmitting(this, target.host, target.port);
     const wire = target && reach === 'open' ? await this.openWireSsh(target, password) : null;
+    if (wire?.negotiationFailure !== undefined) return wire.negotiationFailure;
     return runWindowsSshClient({
       args,
       wireOutcome: reach,
@@ -3107,6 +3116,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private batch: BatchInterpreter | null = null;
   private commandExitStatus: number | null = null;
+  private runningInScript = false;
 
   getBatchInterpreter(): BatchInterpreter { return this.batchInterpreter(); }
 
@@ -3119,9 +3129,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         environment: () => this.getEnvVars(),
         setVariable: (name, value) => this.setEnvVar(name, value),
         removeVariable: name => this.removeEnvVar(name),
-        runSimple: async (line, stdin) => {
+        runSimple: async (line, stdin, inScript) => {
           this.commandExitStatus = null;
+          this.runningInScript = inScript === true;
           const output = await this.executeSimpleCommand(line, stdin);
+          this.runningInScript = false;
           return { output, exitCode: this.commandExitStatus };
         },
         timeZone: () => this.identity.timezone,
@@ -3542,6 +3554,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       hostname: this.hostname,
       env: this.getEnvVars(),
       setExitCode: (code: number) => { this.commandExitStatus = code; },
+      inScript: this.runningInScript,
       ask: async (prompt: string, preceding?: string) => ({
         answer: await this.readCommandInput(prompt, preceding),
         flushed: this._activeShellSession?.inputReader != null,

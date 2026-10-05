@@ -176,13 +176,13 @@ describe('Scénario 16 — DSCP à travers un vrai tunnel IPsec (2 routeurs, 2 P
     expect(sa.pktsEncaps).toBe(before);
   });
 
-  it('ECN bit CE est propagé de l\'externe vers l\'interne au décap (RFC 6040)', async () => {
+  it('un CE interne part ECT(0) sur l\'en-tête externe (RFC 6040 §4.1)', async () => {
     const lab = await establishTunnel();
     const eng1 = getEngine(lab.r1);
     const cfg = eng1.getSADscpConfigForPeer('10.0.12.2')!;
     expect(cfg.ecnEnabled).toBe(true);
     const outer = eng1.computeOuterTosForPeer('10.0.12.2', withDscp(0, DSCP.EF) | 0b11);
-    expect(ecnOf(outer!)).toBe(0b11);
+    expect(ecnOf(outer!)).toBe(0b10);
   });
 
   it('un flux best-effort (CS0) coexiste avec un flux VoIP (EF) sans confusion sur R1', async () => {

@@ -76,6 +76,7 @@ import { KernelModuleTable } from './kernel/KernelModuleTable';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
+import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
@@ -2157,8 +2158,8 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
-    const { output, stderr, exitCode } = runSshKeyscanCommand(args, {
+  private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const { output, stderr, exitCode, lines } = runSshKeyscanCommand(args, {
       resolve: (target: string) =>
         findHostByAddress(target, undefined, this.localDevice as never)?.ip ?? null,
       probe: (ip, port, hostKeyAlgorithms) => this.sshHostKeyProbe?.(ip, port, hostKeyAlgorithms) ?? null,
@@ -2168,7 +2169,7 @@ export class LinuxCommandExecutor {
       },
       stdin,
     });
-    return { output, exitCode, ...(stderr === '' ? {} : { stderr }) };
+    return { output, exitCode, ...(stderr === '' ? {} : { stderr, interleaved: lines.map((line) => line.text).join('\n') }) };
   }
 
   private keygenHost(): SshKeygenHost {
@@ -2524,7 +2525,6 @@ export class LinuxCommandExecutor {
   applyEphemeralRange(min: number, max: number): void {
     this.socketTable?.setEphemeralRange(min, max);
     this.setStackEphemeralRangeFn?.(min, max);
-    this.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', `${min}\t${max}\n`, 0, 0, 0o022);
   }
 
   private ephemeralPoolFreeChecker: (() => boolean) | null = null;
@@ -4393,9 +4393,10 @@ export class LinuxCommandExecutor {
             throw new Error(`bash: ${path}: Permission denied`);
           }
         }
-        this.vfs.writeFile(
+        const written = this.vfs.writeFile(
           absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append,
           undefined, false);
+        if (!written && existing?.writer !== undefined) throw new RedirectWriteError('Invalid argument');
         this.auditRules.onAccessIndirect(absPath, 'w', 'openat', this.snapshotActor());
       },
       readFile: (path: string) => {

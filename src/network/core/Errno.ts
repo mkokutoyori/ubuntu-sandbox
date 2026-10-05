@@ -1,15 +1,17 @@
 export type Errno =
-  | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'ECONNREFUSED' | 'EHOSTDOWN'
-  | 'EHOSTUNREACH' | 'EMSGSIZE' | 'ENETUNREACH' | 'ENONET' | 'ENOPROTOOPT'
+  | 'EACCES' | 'EADDRINUSE' | 'EADDRNOTAVAIL' | 'EAFNOSUPPORT' | 'ECONNREFUSED' | 'EHOSTDOWN'
+  | 'EHOSTUNREACH' | 'EINVAL' | 'EMSGSIZE' | 'ENETUNREACH' | 'ENONET' | 'ENOPROTOOPT'
   | 'EOPNOTSUPP' | 'EPROTO' | 'ETIMEDOUT';
 
 const LINUX_ERRNO: Readonly<Record<Errno, { number: number; text: string }>> = {
   EACCES: { number: 13, text: 'Permission denied' },
   EADDRINUSE: { number: 98, text: 'Address already in use' },
   EADDRNOTAVAIL: { number: 99, text: 'Cannot assign requested address' },
+  EAFNOSUPPORT: { number: 97, text: 'Address family not supported by protocol' },
   ECONNREFUSED: { number: 111, text: 'Connection refused' },
   EHOSTDOWN: { number: 112, text: 'Host is down' },
   EHOSTUNREACH: { number: 113, text: 'No route to host' },
+  EINVAL: { number: 22, text: 'Invalid argument' },
   EMSGSIZE: { number: 90, text: 'Message too long' },
   ENETUNREACH: { number: 101, text: 'Network is unreachable' },
   ENONET: { number: 64, text: 'Machine is not on the network' },

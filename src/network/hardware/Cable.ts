@@ -19,6 +19,7 @@
 import { EthernetFrame } from '../core/types';
 import { Logger } from '../core/Logger';
 import { Port } from './Port';
+import { markCongestionExperienced, netemIsActive, type NetemSpec } from './Netem';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export type CableType = 'cat5e' | 'cat6' | 'cat6a' | 'fiber-single' | 'fiber-multi' | 'crossover' | 'serial';
@@ -49,6 +50,7 @@ export interface CableStats {
   framesTransmitted: number;
   framesLost: number;
   framesCorrupted: number;
+  framesMarked: number;
 }
 
 export interface CableInfo {
@@ -101,7 +103,8 @@ export class Cable {
    *  on the hot data-plane path; only the one consumer that reports a
    *  wall-clock-shaped number to the user (ping's RTT) adds it in. */
   private artificialDelayMs: number = 0;
-  private stats: CableStats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0 };
+  private stats: CableStats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0, framesMarked: 0 };
+  private readonly egressNetem = new Map<Port, NetemSpec>();
 
   /** Reactive bus override (Phase 3 — defaults to singleton). */
   private busOverride: IEventBus | null = null;
@@ -151,6 +154,51 @@ export class Cable {
   /** `tc qdisc ... netem delay` — see the field's own doc comment. */
   getArtificialDelayMs(): number { return this.artificialDelayMs; }
   setArtificialDelayMs(ms: number): void { this.artificialDelayMs = Math.max(0, ms); }
+
+  getEgressNetem(fromPort: Port): NetemSpec | undefined { return this.egressNetem.get(fromPort); }
+
+  setEgressNetem(fromPort: Port, spec: NetemSpec | null): void {
+    if (spec === null) this.egressNetem.delete(fromPort);
+    else this.egressNetem.set(fromPort, spec);
+  }
+
+  applyEgressNetem(frame: EthernetFrame, fromPort: Port): EthernetFrame | null {
+    const netem = this.egressNetem.get(fromPort);
+    if (netem === undefined || netem.lossRate <= 0) return frame;
+    const targetPort = fromPort === this.portA ? this.portB : this.portA;
+    if (!this.isUp || targetPort === null) return frame;
+    if (this.rng() >= netem.lossRate) return frame;
+    const marked = netem.ecn ? markCongestionExperienced(frame) : null;
+    if (marked === null) {
+      this.stats.framesLost++;
+      Logger.debug(this.id, 'cable:loss', `Cable ${this.id}: frame lost (netem loss on ${fromPort.getName()})`);
+      this.getBus().publish({
+        topic: 'cable.frame.lost',
+        payload: { cableId: this.id, reason: 'simulated-loss' },
+      });
+      return null;
+    }
+    this.stats.framesMarked++;
+    this.getBus().publish({
+      topic: 'cable.frame.marked',
+      payload: {
+        cableId: this.id, from: this.portRefOf(fromPort), to: this.portRefOf(targetPort), frame: marked,
+      },
+    });
+    return marked;
+  }
+
+  roundTripDelayMs(fromPort: Port): number {
+    const toPort = fromPort === this.portA ? this.portB : this.portA;
+    return this.artificialDelayMs
+      + (this.egressNetem.get(fromPort)?.delayMs ?? 0)
+      + (toPort === null ? 0 : this.egressNetem.get(toPort)?.delayMs ?? 0);
+  }
+
+  isDegraded(): boolean {
+    return this.packetLossRate > 0 || this.artificialDelayMs > 0
+      || [...this.egressNetem.values()].some((spec) => netemIsActive(spec));
+  }
 
   // ─── Port Connections ──────────────────────────────────────────
 
@@ -309,7 +357,7 @@ export class Cable {
   getStats(): Readonly<CableStats> { return { ...this.stats }; }
 
   resetStats(): void {
-    this.stats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0 };
+    this.stats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0, framesMarked: 0 };
   }
 
   // ─── Link State ────────────────────────────────────────────────
