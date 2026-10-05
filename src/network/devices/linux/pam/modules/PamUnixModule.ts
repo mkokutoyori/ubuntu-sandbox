@@ -95,7 +95,7 @@ function verifyUser(pamh: PamHandle<LinuxPamHost>, name: string): { code: number
 function passwordHash(pamh: PamHandle<LinuxPamHost>, name: string): string | null {
   const user = pamh.host.accounts.findUser(name);
   if (user === null) return null;
-  return user.shadow?.hash ?? '';
+  return user.shadow?.hash ?? 'x';
 }
 
 function blankPassword(pamh: PamHandle<LinuxPamHost>, control: UnixControl, name: string): boolean {

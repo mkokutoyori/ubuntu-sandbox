@@ -23,6 +23,7 @@ import type { LoginDefs } from './LoginDefs';
 import type { UseraddDefaults } from './UseraddDefaults';
 import type { PasswordPolicy } from '../policy/PasswordPolicy';
 import type { PasswordQualityPolicy } from '../policy/PasswordQualityPolicy';
+import { UBUNTU_PAM_FILES } from '../../pam/UbuntuPamFiles';
 import type { AccountLockoutPolicy } from '../policy/AccountLockoutPolicy';
 import { IAM_PATHS, ACCOUNT_DB_BACKUPS } from './IamPaths';
 
@@ -128,6 +129,7 @@ export class IamFilesystem {
       renderCommonPassword(policy.quality),
       0o644,
     );
+    for (const file of UBUNTU_PAM_FILES) this.writeIfAbsent(file.path, file.content, file.mode);
   }
 
   /**

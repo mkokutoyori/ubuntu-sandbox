@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import type { LinuxPam } from './linux/pam/LinuxPam';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
@@ -1562,6 +1563,10 @@ export abstract class LinuxMachine extends EndHost
   nginxService: LinuxNginxService | null = null;
   nfsService: LinuxNfsService | null = null;
   vsftpdService: LinuxVsftpdService | null = null;
+
+  getPam(): LinuxPam {
+    return this.executor.pam;
+  }
 
   /** L'agent NTP de cette machine — le MÊME moteur que Cisco et Huawei. */
   private _ntpAgent: NtpAgent | null = null;

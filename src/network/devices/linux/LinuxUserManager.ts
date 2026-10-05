@@ -951,6 +951,12 @@ export class LinuxUserManager {
     return correct;
   }
 
+  passwordMatches(username: string, password: string): boolean {
+    this.reloadIfChanged();
+    const stored = this.passwords.get(username);
+    return stored !== undefined && stored === password;
+  }
+
   /** `faillock --reset` — clear an account's consecutive-failure tally. */
   resetFaillock(username: string): string {
     const account = this.users.get(username);
