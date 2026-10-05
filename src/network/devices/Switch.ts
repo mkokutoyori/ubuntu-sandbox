@@ -2933,6 +2933,8 @@ export abstract class Switch extends Equipment {
 
   protected sshTransportPolicy(): SshTransportPolicy { return {}; }
 
+  protected sshConfiguredTransport(): { chiffrement: string; hmac: string } | null { return null; }
+
   private sshHostKey(): SshHostKey {
     const spec = this.sshHostKeySpec();
     const tag = `${spec.algorithm}:${spec.bits ?? ''}:${this.getHostname()}`;
@@ -3783,6 +3785,7 @@ export abstract class Switch extends Equipment {
     if (!this._credentialStore) {
       this._sshSessionRegistry = new SshSessionRegistry({
         deviceId: this.id, bus: this.getBus(),
+        configuredTransport: () => this.sshConfiguredTransport(),
       });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._sshHost = new CrossVendorSshHost({

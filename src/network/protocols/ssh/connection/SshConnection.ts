@@ -336,10 +336,10 @@ export class ConnectionChannel {
     return this.lostWithTransport;
   }
 
-  abort(): void {
+  abort(lostWithTransport = true): void {
     if (this.released) return;
     this.released = true;
-    this.lostWithTransport = true;
+    this.lostWithTransport = lostWithTransport;
     this.receivedClose = true;
     this.sentClose = true;
     for (const handler of [...this.closeHandlers]) handler();
@@ -362,7 +362,7 @@ export class SshConnection {
     this.windowSize = options.windowSize ?? DEFAULT_CHANNEL_WINDOW;
     this.maxPacket = options.maxPacket ?? DEFAULT_CHANNEL_PACKET_SIZE;
     this.detach = transport.onMessage((payload) => this.receive(payload));
-    transport.onClose(() => this.abortAll());
+    transport.onClose((reason) => this.abortAll(transport.peerDisconnect !== null || reason === 'fin'));
   }
 
   get channelCount(): number {
@@ -444,11 +444,11 @@ export class SshConnection {
     this.channels.delete(localId);
   }
 
-  private abortAll(): void {
+  private abortAll(peerClosedCleanly: boolean): void {
     this.disposed = true;
     for (const channel of [...this.channels.values()]) {
       if (channel.isOpening) channel.failed(new SshOpenFailure(SSH_OPEN_CONNECT_FAILED, 'connection closed'));
-      else channel.abort();
+      else channel.abort(!peerClosedCleanly);
     }
     this.channels.clear();
     this.opening.clear();

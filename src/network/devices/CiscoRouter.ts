@@ -9,7 +9,7 @@
 
 import { ciscoSshIdentification } from '@/network/protocols/ssh/serverIdentification';
 import { C2900_SOFTWARE, ciscoSoftwareDescriptor, type CiscoSoftwareIdentity } from './shells/cisco/CiscoPlatform';
-import { iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
+import { effectiveIosSshAlgorithms, iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
 import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
 import type { SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
 import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
@@ -496,6 +496,13 @@ export class CiscoRouter extends Router {
 
   protected override sshTransportPolicy(): SshTransportPolicy {
     return iosSshTransportPolicy(getSecurityConfig(this).ssh, C2900_SOFTWARE);
+  }
+
+  protected override sshConfiguredTransport(): { chiffrement: string; hmac: string } | null {
+    const ssh = getSecurityConfig(this).ssh;
+    if (ssh.encryptionAlgorithms.length === 0 && ssh.macAlgorithms.length === 0) return null;
+    const effective = effectiveIosSshAlgorithms(ssh, C2900_SOFTWARE);
+    return { chiffrement: effective.encryption[0], hmac: effective.mac[0] };
   }
 
   protected override sshHostKeySpec(): { algorithm: SshKeyAlgorithm; bits?: number } {

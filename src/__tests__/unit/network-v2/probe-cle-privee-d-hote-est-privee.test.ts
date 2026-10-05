@@ -28,6 +28,7 @@
  * disque est inchangee par ce lot — les germes restent deterministes, donc
  * aucun `known_hosts` existant n'est invalide.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -53,7 +54,9 @@ function blobDe(ligne: string): string {
 
 async function labo(): Promise<{ win: WindowsPC; srv: LinuxServer }> {
   const win = new WindowsPC('windows-pc', 'WIN1', 0, 0);
+  allowLegacyIosSsh(win);
   const srv = new LinuxServer('linux-server', 'SRV1');
+  allowLegacyIosSsh(srv);
   const sw = new GenericSwitch('switch-generic', 'SW1', 8, 0, 0);
   [win, srv].forEach((d, i) => {
     d.powerOn();
@@ -100,7 +103,7 @@ describe('la privee d un hote est privee, et `ssh-keygen -y` la relit', () => {
   it('TEMOIN : la publique offerte sur le fil reste celle du disque', async () => {
     const { win, srv } = await labo();
     const surDisque = blobDe(await srv.executeCommand(`sudo cat ${CLE_LINUX}.pub`));
-    const surLeFil = await win.executeCommand('ssh-keyscan 10.0.0.2');
+    const surLeFil = (await win.executeCommand('ssh-keyscan 10.0.0.2')).split('\n').filter((ligne) => !ligne.startsWith('#')).join('\n');
     expect(blobDe(surLeFil.trim().split(/\s+/).slice(1).join(' '))).toBe(surDisque);
   });
 });

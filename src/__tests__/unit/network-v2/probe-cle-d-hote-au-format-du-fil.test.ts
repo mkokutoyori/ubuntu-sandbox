@@ -38,6 +38,7 @@
  *     Il reste utile : il interdit que la correction ne rattrape qu'une
  *     des deux vues.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -59,8 +60,12 @@ beforeEach(() => {
 
 const PREFIXE_ED25519 = 'AAAAC3NzaC1lZDI1NTE5AAAAI';
 
+function sansCommentaires(sortie: string): string {
+  return sortie.split('\n').filter((ligne) => !ligne.startsWith('#')).join('\n');
+}
+
 function blobDe(ligne: string): string {
-  const champs = ligne.trim().split(/\s+/);
+  const champs = sansCommentaires(ligne).trim().split(/\s+/);
   return champs[champs.length - 1].includes('@') ? champs[champs.length - 2] : champs[champs.length - 1];
 }
 
@@ -70,8 +75,11 @@ function estUneCleDuFil(blob: string): boolean {
 
 async function labo(): Promise<{ win: WindowsPC; pc: LinuxPC; srv: LinuxServer }> {
   const win = new WindowsPC('windows-pc', 'WIN1', 0, 0);
+  allowLegacyIosSsh(win);
   const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
+  allowLegacyIosSsh(pc);
   const srv = new LinuxServer('linux-server', 'SRV1');
+  allowLegacyIosSsh(srv);
   const sw = new GenericSwitch('switch-generic', 'SW1', 8, 0, 0);
   [win, pc, srv].forEach((d, i) => {
     d.powerOn();

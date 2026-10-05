@@ -49,6 +49,7 @@
  * application réelle (throttling) reste un gap documenté, seul son
  * affichage dans `show login` est couvert ici.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -124,7 +125,9 @@ const CISCO_IP = '10.0.0.6';
 
 async function buildSshLab(): Promise<{ pc: LinuxPC; pc2: LinuxPC; cisco: CiscoRouter }> {
   const pc = new LinuxPC('linux-pc', 'attacker', 0, 0);
+  allowLegacyIosSsh(pc);
   const pc2 = new LinuxPC('linux-pc', 'whitelisted', 0, 0);
+  allowLegacyIosSsh(pc2);
   const cisco = new CiscoRouter('ciscoR', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);

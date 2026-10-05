@@ -19,7 +19,7 @@ import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConver
 import { Switch, STPPortState, type SwitchportMode } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor, type CiscoSoftwareIdentity } from './shells/cisco/CiscoPlatform';
-import { iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
+import { effectiveIosSshAlgorithms, iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
 import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
 import type { SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
 import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
@@ -484,6 +484,13 @@ export class CiscoSwitch extends Switch {
 
   protected override sshTransportPolicy(): SshTransportPolicy {
     return iosSshTransportPolicy(getSecurityConfig(this).ssh, C3560_SOFTWARE);
+  }
+
+  protected override sshConfiguredTransport(): { chiffrement: string; hmac: string } | null {
+    const ssh = getSecurityConfig(this).ssh;
+    if (ssh.encryptionAlgorithms.length === 0 && ssh.macAlgorithms.length === 0) return null;
+    const effective = effectiveIosSshAlgorithms(ssh, C3560_SOFTWARE);
+    return { chiffrement: effective.encryption[0], hmac: effective.mac[0] };
   }
 
   protected override sshHostKeySpec(): { algorithm: SshKeyAlgorithm; bits?: number } {

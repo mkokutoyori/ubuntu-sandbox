@@ -35,6 +35,7 @@
  *     cas voisin (« le retour d'un flux SORTI passe ») qui le prouve.
  */
 
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -76,10 +77,14 @@ async function laboratoire() {
   const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
   const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
   const pcLnx = new LinuxPC('linux-pc', 'PC-LNX');
+  allowLegacyIosSsh(pcLnx);
   const pcWin = new WindowsPC('windows-pc', 'PC-WIN');
+  allowLegacyIosSsh(pcWin);
   const pcAdmin = new LinuxPC('linux-pc', 'PC-ADMIN');
+  allowLegacyIosSsh(pcAdmin);
   const srvLnx = new LinuxServer('linux-server', 'SRV-LNX');
   const srvWin = new WindowsPC('windows-pc', 'SRV-WIN');
+  allowLegacyIosSsh(srvWin);
   for (const d of [r1, sw1, sw2, pcLnx, pcWin, pcAdmin, srvLnx, srvWin]) d.powerOn();
 
   new Cable('c1').connect(pcLnx.getPorts()[0], sw1.getPorts()[1]);
