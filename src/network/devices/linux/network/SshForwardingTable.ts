@@ -9,7 +9,7 @@ import { tunnelThroughSession } from '../../../protocols/ssh/forwardRelay';
 import type { ForwardOpening } from '../../../protocols/ssh/ForwardOpening';
 
 interface LiveForward {
-  readonly fwd: SshPortForward;
+  readonly fwd: SshPortForward | null;
   readonly session: SshSession;
   readonly stop: () => void;
 }
@@ -55,7 +55,7 @@ export class SshForwardingTable {
   }
 
   close(listenPort: number): boolean {
-    const index = this.active.findIndex((live) => live.fwd.listenPort === listenPort);
+    const index = this.active.findIndex((live) => live.fwd?.listenPort === listenPort);
     if (index === -1) return false;
     const [live] = this.active.splice(index, 1);
     live.stop();
@@ -67,12 +67,16 @@ export class SshForwardingTable {
     return this.active.some((live) => live.session === session);
   }
 
+  holdOpen(session: SshSession): void {
+    if (!this.holds(session)) this.active.push({ fwd: null, session, stop: () => {} });
+  }
+
   list(): readonly SshPortForward[] {
-    return this.active.map((live) => live.fwd);
+    return this.active.flatMap((live) => (live.fwd === null ? [] : [live.fwd]));
   }
 
   has(listenPort: number): boolean {
-    return this.active.some((live) => live.fwd.listenPort === listenPort);
+    return this.active.some((live) => live.fwd?.listenPort === listenPort);
   }
 
   clear(): void {

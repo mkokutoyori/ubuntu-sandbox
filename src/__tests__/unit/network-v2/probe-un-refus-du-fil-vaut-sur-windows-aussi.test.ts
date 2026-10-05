@@ -46,6 +46,7 @@
  *     comme une victoire.
  */
 
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -82,7 +83,9 @@ const transcript = (s: TerminalSession): string => s.lines.map(l => l.text).join
 async function lab(allowed: string): Promise<{ win: WindowsPC; lin: LinuxPC }> {
   EquipmentRegistry.resetInstance();
   const win = new WindowsPC('windows-pc', 'win', 0, 0);
+  allowLegacyIosSsh(win);
   const lin = new LinuxPC('linux-pc', 'lin', 0, 0);
+  allowLegacyIosSsh(lin);
   const r1 = new CiscoRouter('R1', 0, 0);
   const sw = new CiscoSwitch('switch-cisco', 'SW', 24, 0, 0);
   [win, lin, r1].forEach(d => d.powerOn());

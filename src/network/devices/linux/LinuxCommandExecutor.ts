@@ -1794,6 +1794,7 @@ export class LinuxCommandExecutor {
         },
       }), true);
     } finally {
+      if (target?.holdOnly === true) this.forwarding?.holdOpen(session);
       if (!this.forwarding?.holds(session)) session.disconnect();
     }
   }

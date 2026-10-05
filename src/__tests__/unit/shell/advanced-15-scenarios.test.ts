@@ -8,6 +8,7 @@
  * Failure tail printing helps diagnosis when something regresses.
  */
 
+import { allowLegacyIosSsh } from '../network-v2/iosLegacySsh';
 import { describe, expect, test } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -121,9 +122,14 @@ async function buildLan() {
   reinstallDefaultShells();
 
   const linuxA = new LinuxPC('linux-pc', 'linuxA', 0, 0);
+
+  allowLegacyIosSsh(linuxA, 'alice', 'root', 'user');
   const linuxSrv = new LinuxServer('linux-server', 'linuxSrv', 0, 0);
+  allowLegacyIosSsh(linuxSrv, 'alice', 'root', 'user');
   const winA = new WindowsPC('windows-pc', 'winA', 0, 0);
+  allowLegacyIosSsh(winA, 'alice', 'root', 'user');
   const winB = new WindowsPC('windows-pc', 'winB', 0, 0);
+  allowLegacyIosSsh(winB, 'alice', 'root', 'user');
   const cisco = new CiscoRouter('cisco', 0, 0);
   const huawei = new HuaweiRouter('huawei', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw', 16, 0, 0);

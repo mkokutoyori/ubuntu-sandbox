@@ -58,6 +58,7 @@
  * ne se contourne pas. Les cinq autres passent des deux cotes.
  */
 
+import { logSshdVerbosely } from './sshdVerboseLog';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -86,6 +87,7 @@ async function lab(): Promise<{ pc: LinuxPC; srv: LinuxServer }> {
   pc.getPort('eth0')!.configureIP(new IPAddress(CLIENT_IP), mask);
   srv.getPort('eth0')!.configureIP(new IPAddress(SERVER_IP), mask);
   await srv.executeCommand('sudo systemctl start ssh');
+  await logSshdVerbosely(srv);
   await srv.executeCommand('sudo useradd -m alice');
   await srv.executeCommand('echo "alice:secret123" | sudo chpasswd');
   return { pc, srv };

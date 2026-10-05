@@ -1223,6 +1223,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected sshTransportPolicy(): SshTransportPolicy { return {}; }
 
+  protected sshConfiguredTransport(): { chiffrement: string; hmac: string } | null { return null; }
+
   private sshHostKey(): SshHostKey {
     const spec = this.sshHostKeySpec();
     const tag = `${spec.algorithm}:${spec.bits ?? ''}:${this.hostname}`;
@@ -5102,6 +5104,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         deviceId: this.id,
         bus: this.getBus(),
         capacity: () => this.vtyLineConfig.lineCapacity(),
+        configuredTransport: () => this.sshConfiguredTransport(),
       });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._credentialStore.liveSessionCount = (user) =>

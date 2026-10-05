@@ -23,6 +23,10 @@ import type {
   SshServerEvent,
 } from '../server/SshServerEvent';
 
+import type { SshdLogLevel } from '@/network/protocols/ssh/server/SshdServerConfig';
+
+const VERBOSE_LEVELS: ReadonlySet<SshdLogLevel> = new Set(['VERBOSE', 'DEBUG', 'DEBUG1', 'DEBUG2', 'DEBUG3']);
+
 const AUTH_LOG_PATH = '/var/log/auth.log';
 const LOG_DIR = '/var/log';
 
@@ -47,6 +51,7 @@ export interface SshSysloggerOptions {
    * and systemd-journald both see every authpriv message.
    */
   readonly logMgr?: LinuxLogManager;
+  readonly logLevel?: () => SshdLogLevel;
 }
 
 /**
@@ -63,6 +68,7 @@ export class SshSyslogger {
   private openSessionUser: string | null = null;
   private uidLookup: ((user: string) => number) | null = null;
   private readonly logMgr: LinuxLogManager | null;
+  private readonly logLevel: () => SshdLogLevel;
   private readonly unsubscribe: () => void;
 
   constructor(
@@ -75,6 +81,7 @@ export class SshSyslogger {
     this.port = opts.port ?? 22;
     this.clock = opts.clock ?? (() => new Date());
     this.logMgr = opts.logMgr ?? null;
+    this.logLevel = opts.logLevel ?? (() => 'INFO');
     this.unsubscribe = bus.on('*', (e) => this.handle(e));
   }
 
@@ -86,6 +93,10 @@ export class SshSyslogger {
   // ─── private ───────────────────────────────────────────────────────
 
   private handle(event: SshServerEvent): void {
+    if (event.kind === 'client_disconnected') {
+      for (const line of this.disconnectLines(event)) this.append(line);
+      return;
+    }
     const message = this.format(event);
     if (!message) return;
     this.append(message);
@@ -98,7 +109,8 @@ export class SshSyslogger {
   private format(event: SshServerEvent): string | null {
     switch (event.kind) {
       case 'client_connected':
-        return `Connection from ${event.ip} port ${event.port ?? this.port} on ${hostnameOf(this.hostnameSource)} port ${this.port}`;
+        if (!VERBOSE_LEVELS.has(this.logLevel())) return null;
+        return `Connection from ${event.ip} port ${event.port ?? this.port} on ${hostnameOf(this.hostnameSource)} port ${this.port} rdomain ""`;
 
       case 'auth_success': {
         this.pendingSessionUser = event.user;
@@ -152,24 +164,8 @@ export class SshSyslogger {
       case 'auth_throttled':
         return `Refusing connection from ${event.ip}: ${event.failuresInWindow} authentication failures in ${event.windowSeconds}s window`;
 
-      case 'client_disconnected': {
-        const port = event.port ?? this.port;
-        if (this.openSessionUser === event.user) {
-          this.openSessionUser = null;
-          this.append(`pam_unix(sshd:session): session closed for user ${event.user}`);
-        }
-        if (event.authenticated) {
-          return `Disconnected from user ${event.user} ${event.ip} port ${port}`;
-        }
-        if (event.beforeIdentification) {
-          this.append('error: kex_exchange_identification: Connection closed by remote host');
-          return `Connection closed by ${event.ip} port ${port}`;
-        }
-        const qui = event.user
-          ? `${event.validUser === false ? 'invalid user' : 'authenticating user'} ${event.user} `
-          : '';
-        return `Connection closed by ${qui}${event.ip} port ${port} [preauth]`;
-      }
+      case 'client_disconnected':
+        return null;
 
       case 'channel_opened':
         if (event.channelType === 'sftp') {
@@ -187,6 +183,37 @@ export class SshSyslogger {
       default:
         return null;
     }
+  }
+
+  private disconnectLines(event: Extract<SshServerEvent, { kind: 'client_disconnected' }>): string[] {
+    const port = event.port ?? this.port;
+    const lines: string[] = [];
+    const received = event.receivedDisconnect;
+    const preauth = event.authenticated ? '' : ' [preauth]';
+    if (received) {
+      lines.push(`Received disconnect from ${event.ip} port ${port}:${received.code}: ${received.description}${preauth}`);
+    }
+    if (event.authenticated) {
+      lines.push(`Disconnected from user ${event.user} ${event.ip} port ${port}`);
+    } else if (event.beforeIdentification) {
+      lines.push('error: kex_exchange_identification: Connection closed by remote host');
+      lines.push(`Connection closed by ${event.ip} port ${port}`);
+    } else if (received) {
+      const who = event.user
+        ? `${event.validUser === false ? 'invalid user' : 'authenticating user'} ${event.user} `
+        : '';
+      lines.push(`Disconnected from ${who}${event.ip} port ${port}${preauth}`);
+    } else {
+      const who = event.user
+        ? `${event.validUser === false ? 'invalid user' : 'authenticating user'} ${event.user} `
+        : '';
+      lines.push(`Connection closed by ${who}${event.ip} port ${port} [preauth]`);
+    }
+    if (this.openSessionUser === event.user) {
+      this.openSessionUser = null;
+      lines.push(`pam_unix(sshd:session): session closed for user ${event.user}`);
+    }
+    return lines;
   }
 
   setUidLookup(lookup: (user: string) => number): void { this.uidLookup = lookup; }

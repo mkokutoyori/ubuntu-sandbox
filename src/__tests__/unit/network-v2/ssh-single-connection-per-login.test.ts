@@ -1,3 +1,4 @@
+import { logSshdVerbosely } from './sshdVerboseLog';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -64,6 +65,7 @@ async function labFor(clientKind: ClientKind): Promise<Lab> {
   const srv = new LinuxServer('linux-server', 'SRV1');
   srv.getPorts()[0].configureIP(new IPAddress('10.0.80.9'), MASK);
   new Cable('cs').connect(srv.getPorts()[0], sw.getPorts()[0]);
+  await logSshdVerbosely(srv);
 
   let term: TerminalSession;
   if (clientKind === 'linux') {

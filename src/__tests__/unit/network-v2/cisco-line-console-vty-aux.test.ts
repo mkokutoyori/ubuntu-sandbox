@@ -50,6 +50,7 @@
  * mécanisme d'exec-timeout nulle part dans la couche terminal, `show
  * line` totalement statique.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -159,6 +160,7 @@ const CISCO_IP = '10.0.0.6';
 
 async function buildSshLab(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
   const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+  allowLegacyIosSsh(pc, 'alice', 'root', 'user');
   const cisco = new CiscoRouter('ciscoR', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);

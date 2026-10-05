@@ -73,6 +73,7 @@
  *    d'ici — les deux domaines de documentation Huawei sont bloques par
  *    le mandataire de sortie — donc rien n'est invente de ce cote.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -103,6 +104,7 @@ async function laboratoire(
   const r1 = new CiscoRouter('R1');
   const ar1 = new HuaweiRouter('AR1');
   const poste = new LinuxPC('linux-pc', 'PC', 0, 0);
+  allowLegacyIosSsh(poste);
   const sw = new GenericSwitch('switch-generic', 'SW1', 8, 0, 0);
   new Cable('c1').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPorts()[0]);
   new Cable('c2').connect(poste.getPort('eth0')!, sw.getPorts()[1]);

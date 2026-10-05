@@ -10,6 +10,7 @@
  * bash de collecte de diagnostic — écrit sur disque et exécuté — qui
  * interroge le routeur en SSH et produit un dossier consolidé.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -29,6 +30,7 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
     EquipmentRegistry.resetInstance();
     rtr = new CiscoRouter('RTR-MANDENG-01');
     admin = new LinuxPC('linux-pc', 'poste-admin', 0, 0);
+    allowLegacyIosSsh(admin);
     rtr.powerOn();
     admin.powerOn();
 

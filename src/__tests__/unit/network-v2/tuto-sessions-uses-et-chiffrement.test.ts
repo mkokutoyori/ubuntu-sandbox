@@ -29,6 +29,7 @@
  *    qu'un vrai serveur retient quand le client offre tout. Il n'y a
  *    pas d'intersection a calculer parce qu'aucun client n'offre rien.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';

@@ -108,6 +108,7 @@ export class SshServerHandler {
     this.eventBus.emit({
       kind: 'client_connected',
       ip: clientIp,
+      port: this.ctx.clientPort?.(clientIp),
       timestamp: Date.now(),
     });
     // Reactive guard: throttled IPs are dropped at connect time. The bus
@@ -274,7 +275,8 @@ export class SshServerHandler {
     conn.onClose((reason) => {
       pendingInfoResponse?.(null);
       pendingInfoResponse = null;
-      if (userCtx) recordLogoutOnce(userCtx.username);
+      const closedUser = userCtx?.username ?? null;
+      if (closedUser !== null) recordLogoutOnce(closedUser);
       timers.clearAll();
       idleTimer = null;
       decPreauth();
@@ -288,9 +290,13 @@ export class SshServerHandler {
         port: this.ctx.clientPort?.(clientIp),
         authenticated: userCtx !== null,
         ...(transport.peerIdentification === null ? { beforeIdentification: true } : {}),
+        ...(transport.peerDisconnect !== null
+          ? { receivedDisconnect: { code: transport.peerDisconnect.reason, description: transport.peerDisconnect.description } }
+          : {}),
         reason: reason === 'rst' ? 'reset' : 'closed',
         timestamp: Date.now(),
       });
+      if (closedUser !== null) this.ctx.connectionClosed?.(closedUser, clientIp);
       userCtx = null;
     });
 

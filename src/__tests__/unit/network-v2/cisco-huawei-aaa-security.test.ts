@@ -1,4 +1,5 @@
 import { describe, beforeEach, expect, test } from 'vitest';
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -24,6 +25,7 @@ interface Lab {
 async function buildLab(): Promise<Lab> {
   EquipmentRegistry.getInstance().clear();
   const linux1 = new LinuxPC('linux-pc', 'linux1', 0, 0);
+  allowLegacyIosSsh(linux1);
   const ciscoR1 = new CiscoRouter('ciscoR1', 0, 0);
   const hwR1 = new HuaweiRouter('hwR1', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'core-sw', 8, 0, 0);

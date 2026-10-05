@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -40,6 +41,7 @@ beforeEach(() => {
 describe('Action-driven flow (bug #1: alias should not bypass sudo password)', () => {
   it('triggers the sudo password prompt when sudo is invoked via an alias', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
+    allowLegacyIosSsh(pc);
     const session = new LinuxTerminalSession('term-alias', pc);
 
     await typeCommand(session, "alias please='sudo'");
@@ -51,6 +53,7 @@ describe('Action-driven flow (bug #1: alias should not bypass sudo password)', (
 
   it('still triggers the sudo password prompt when typed directly', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
+    allowLegacyIosSsh(pc);
     const session = new LinuxTerminalSession('term-direct', pc);
 
     await typeCommand(session, 'sudo su');
@@ -59,6 +62,7 @@ describe('Action-driven flow (bug #1: alias should not bypass sudo password)', (
 
   it('triggers the passwd flow when invoked via an alias', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
+    allowLegacyIosSsh(pc);
     const session = new LinuxTerminalSession('term-passwd', pc);
     await typeCommand(session, "alias chpw='passwd'");
     await typeCommand(session, 'chpw');
@@ -67,6 +71,7 @@ describe('Action-driven flow (bug #1: alias should not bypass sudo password)', (
 
   it('routes aliased ssh through the ssh entry, not generic exec', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
+    allowLegacyIosSsh(pc);
     const session = new LinuxTerminalSession('term-myssh', pc);
     await typeCommand(session, "alias myssh='ssh'");
     await typeCommand(session, 'myssh notahost@10.0.0.99');
@@ -79,6 +84,7 @@ describe('Action-driven flow (bug #1: alias should not bypass sudo password)', (
 
   it('resolves chained aliases before flow dispatch', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
+    allowLegacyIosSsh(pc);
     const session = new LinuxTerminalSession('term-chain', pc);
 
     await typeCommand(session, "alias please='sudo'");
@@ -91,18 +97,21 @@ describe('Action-driven flow (bug #1: alias should not bypass sudo password)', (
 describe('PowerShell shim (bug #2: bare-arg powershell)', () => {
   it('evaluates `powershell <expression>` without requiring -Command', async () => {
     const pc = new WindowsPC('windows-pc', 'WIN1');
+    allowLegacyIosSsh(pc);
     const out = await pc.executeCmdCommand('powershell $x = 42; $x');
     expect(out.trim()).toBe('42');
   });
 
   it('keeps explicit -Command form working', async () => {
     const pc = new WindowsPC('windows-pc', 'WIN1');
+    allowLegacyIosSsh(pc);
     const out = await pc.executeCmdCommand('powershell -Command "$x = 7; $x"');
     expect(out.trim()).toBe('7');
   });
 
   it('does not return the Usage banner for `powershell gcm`', async () => {
     const pc = new WindowsPC('windows-pc', 'WIN1');
+    allowLegacyIosSsh(pc);
     const out = await pc.executeCmdCommand('powershell gcm');
     expect(out).not.toMatch(/Usage:/);
   });
@@ -111,6 +120,7 @@ describe('PowerShell shim (bug #2: bare-arg powershell)', () => {
 async function buildMixedLan(): Promise<{ linux1: LinuxPC; ciscoR1: CiscoRouter; hwR1: HuaweiRouter; }> {
   EquipmentRegistry.getInstance().clear();
   const linux1 = new LinuxPC('linux-pc', 'linux1', 0, 0);
+  allowLegacyIosSsh(linux1);
   const ciscoR1 = new CiscoRouter('ciscoR1', 0, 0);
   const hwR1 = new HuaweiRouter('hwR1', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'core-sw', 8, 0, 0);

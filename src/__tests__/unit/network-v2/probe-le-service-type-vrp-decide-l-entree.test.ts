@@ -37,6 +37,7 @@
  * deux — la restriction ne devient pas un refus general — et un compte
  * IOS entre partout.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
@@ -89,6 +90,7 @@ const SERVERS = [
 async function routerLab(serviceType: string | null): Promise<Lab> {
   const device = new HuaweiRouter('AR1');
   const host = new LinuxPC('linux-pc', 'PC', 0, 0);
+  allowLegacyIosSsh(host);
   const sw = new GenericSwitch('switch-generic', 'SW', 4, 0, 0);
   new Cable('c1').connect(device.getPort('GE0/0/0')!, sw.getPorts()[0]);
   new Cable('c2').connect(host.getPort('eth0')!, sw.getPorts()[1]);
@@ -105,6 +107,7 @@ async function routerLab(serviceType: string | null): Promise<Lab> {
 async function switchLab(serviceType: string | null): Promise<Lab> {
   const device = new HuaweiSwitch('switch-huawei', 'HW2', 8, 0, 0);
   const host = new LinuxPC('linux-pc', 'P4');
+  allowLegacyIosSsh(host);
   host.getPort('eth0')!.configureIP(new IPAddress('10.0.3.10'), new SubnetMask('255.255.255.0'));
   new Cable('c4').connect(host.getPort('eth0')!, device.getPorts()[0]);
   for (const c of [
@@ -119,6 +122,7 @@ async function switchLab(serviceType: string | null): Promise<Lab> {
 async function ciscoLab(): Promise<Lab> {
   const device = new CiscoRouter('R1', 0, 0);
   const host = new LinuxPC('linux-pc', 'PC', 0, 0);
+  allowLegacyIosSsh(host);
   const sw = new GenericSwitch('switch-generic', 'SW', 4, 0, 0);
   new Cable('c1').connect(device.getPorts()[0], sw.getPorts()[0]);
   new Cable('c2').connect(host.getPort('eth0')!, sw.getPorts()[1]);

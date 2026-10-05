@@ -75,6 +75,7 @@ export interface SshSessionRegistryOptions {
   capacity?: () => number;
   historyLimit?: number;
   now?: () => number;
+  configuredTransport?: () => { chiffrement: string; hmac: string } | null;
 }
 
 interface MutableSession {
@@ -108,6 +109,7 @@ export class SshSessionRegistry {
   private readonly capacity: (() => number) | null;
   private readonly historyLimit: number;
   private readonly now: () => number;
+  private readonly configuredTransport: () => { chiffrement: string; hmac: string } | null;
   private readonly negotiated = new Map<string, { chiffrement: string; hmac: string }>();
   private readonly subs: Unsubscribe[] = [];
 
@@ -123,6 +125,7 @@ export class SshSessionRegistry {
     this.capacity = opts.capacity ?? null;
     this.historyLimit = opts.historyLimit ?? 256;
     this.now = opts.now ?? Date.now;
+    this.configuredTransport = opts.configuredTransport ?? (() => null);
     this.subs.push(this.bus.subscribe('router.aaa.account.login.success', this.onLoginSuccess));
     this.subs.push(this.bus.subscribe('router.ssh.session.closed', this.onSessionClosed));
   }
@@ -208,7 +211,7 @@ export class SshSessionRegistry {
   }): SshSessionRecord | null {
     const transport = input.transport ?? transportDepuisSource(input.fromIp, input.localPort);
     const kind = LIGNE_DE[transport];
-    const algos = this.negotiated.get(input.fromIp) ?? { chiffrement: 'aes256-ctr', hmac: 'hmac-sha2-256' };
+    const algos = this.negotiated.get(input.fromIp) ?? this.configuredTransport() ?? { chiffrement: 'aes256-ctr', hmac: 'hmac-sha2-256' };
     const slot = this.allocateLine(kind);
     if (!slot) return null;
     const at = input.at ?? this.now();

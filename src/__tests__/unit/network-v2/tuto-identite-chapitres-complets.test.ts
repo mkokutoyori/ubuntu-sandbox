@@ -53,6 +53,7 @@
  *    une grande partie de la suite ; ce qui a été refermé est le cas où
  *    un secret EST offert et se trouve faux.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -589,6 +590,7 @@ describe('Ch.7.5 — SSH entrant, et le niveau du compte y tient', () => {
     const r = new CiscoRouter('R1', 0, 0);
     r.powerOn();
     const pc = new LinuxPC('linux-pc', 'PC1');
+    allowLegacyIosSsh(pc);
     pc.configureInterface('eth0', new IPAddress('192.168.1.55'), new SubnetMask('255.255.255.0'));
     for (const c of ['enable', 'configure terminal',
       'hostname SW-BANQUE-01', 'ip domain-name ma-banque.cm',
