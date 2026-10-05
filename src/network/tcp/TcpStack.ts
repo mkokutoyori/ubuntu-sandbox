@@ -145,6 +145,7 @@ import {
   encodeOptions, decodeOptions, interpretOptions, optionsDataOffset, TCP_MAX_WINDOW_SCALE, type TcpOptionsSet,
 } from './TcpOptionsCodec';
 import { ReassemblyQueue } from './ReassemblyQueue';
+import { SackScoreboard } from './SackScoreboard';
 import type { TcpDropReason } from './events';
 import { AckThrottle } from './AckThrottle';
 import { IsnGenerator } from './IsnGenerator';
@@ -161,6 +162,8 @@ const TCP_MAX_RECEIVE_WINDOW = 2 ** 30;
 const TCP_INVALID_ACK_RATELIMIT_MS = 500;
 const TCP_TS_RECENT_VALID_MS = 24 * 24 * 60 * 60 * 1000;
 const TCP_SWS_OVERRIDE_MS = 500;
+const TCP_LIMITED_TRANSMIT_ACKS = 2;
+const TCP_LIMITED_TRANSMIT_SLACK_SEGMENTS = 2;
 import {
   IPAddress,
   IPv6Address,
@@ -274,6 +277,8 @@ export class TcpSocket {
   rcvEdge: number | null = null;
   swsHeld = false;
   swsOverride = false;
+  limitedTransmitCredits = 0;
+  limitedTransmitBytes = 0;
   mss = TCP_DEFAULT_MSS;
   passive = false;
   closed = false;
@@ -340,6 +345,8 @@ export class TcpSocket {
 
   /** RFC 5681 congestion control (PRD-TCP.md P5) — slow start/congestion avoidance/fast recovery. */
   readonly cc: TcpCongestionControl = new TcpCongestionControl(this.mss);
+  readonly sackScoreboard = new SackScoreboard();
+  lastDataSentAtMs: number | null = null;
 
   /** Our own advertised window-scale shift (PRD-TCP.md P6, RFC 7323 §2.2) — always offered on SYN. */
   readonly windowScale = TCP_WINDOW_SCALE_SHIFT;
@@ -1046,7 +1053,10 @@ export class TcpStack {
       // segment chunked at an *earlier*, larger MSS (before a previous
       // bounce corrected it) can still be individually oversized even
       // though the running `socket.mss` value is already correct.
-      if (newMss < socket.mss) socket.mss = newMss;
+      if (newMss < socket.mss) {
+        socket.cc.setSegmentSize(newMss);
+        socket.mss = newMss;
+      }
       this.resegmentAndRetransmit(socket, origSequence);
       return;
     }
@@ -1372,6 +1382,11 @@ export class TcpStack {
    * chunk if only part of it fits. Whatever doesn't fit stays queued in
    * order until a future ACK/window-update frees enough room.
    */
+  private limitedTransmit(socket: TcpSocket): void {
+    socket.limitedTransmitCredits++;
+    this.flushSendBacklog(socket);
+  }
+
   private flushSendBacklog(socket: TcpSocket, overrideNagle = false): void {
     // Reentrant call (see `flushingBacklog`'s doc comment): the outer
     // invocation's `while` loop will pick up the freed window on its very
@@ -1386,7 +1401,14 @@ export class TcpStack {
       while (socket.sendBacklog.length > 0) {
         const inFlight = (socket.sendNext - socket.sendUnacked) >>> 0;
         const windowRoom = socket.peerWindow > inFlight ? socket.peerWindow - inFlight : 0;
-        const congestionRoom = socket.cc.cwnd > inFlight ? socket.cc.cwnd - inFlight : 0;
+        let congestionRoom = socket.cc.cwnd > inFlight ? socket.cc.cwnd - inFlight : 0;
+        let spendsCredit = false;
+        if (congestionRoom === 0 && socket.limitedTransmitCredits > 0) {
+          const segment = this.sendMss(socket);
+          const limit = socket.cc.cwnd + TCP_LIMITED_TRANSMIT_SLACK_SEGMENTS * segment;
+          congestionRoom = limit > inFlight ? Math.min(segment, limit - inFlight) : 0;
+          spendsCredit = congestionRoom > 0;
+        }
         const available = Math.min(windowRoom, congestionRoom);
         if (available === 0) break;
         const next = socket.sendBacklog[0];
@@ -1405,12 +1427,18 @@ export class TcpStack {
         const flags = noFlags(); flags.ack = true;
         if (next.psh && remainder.length === 0) flags.psh = true;
         const seq = socket.sendNext;
+        this.restartAfterIdle(socket, inFlight);
         socket.sendNext = (seq + chunk.length) >>> 0;
         this.transmitTracked(socket, flags, seq, socket.recvNext, chunk, chunk.length);
         if (chunk.length === 0) break; // nothing consumed (zero window) — avoid spinning forever
+        if (spendsCredit) {
+          socket.limitedTransmitCredits--;
+          socket.limitedTransmitBytes += chunk.length;
+        }
       }
     } finally {
       socket.flushingBacklog = false;
+      socket.limitedTransmitCredits = 0;
     }
     this.maybeArmPersistTimer(socket);
     const closePending = socket.closeAfterFlush
@@ -1439,6 +1467,13 @@ export class TcpStack {
    * exempt: there is nothing to coalesce it with, and holding it would
    * simply lose the marker.
    */
+  private restartAfterIdle(socket: TcpSocket, inFlight: number): void {
+    if (inFlight > 0 || socket.lastDataSentAtMs === null) return;
+    if (this.getScheduler().now() - socket.lastDataSentAtMs > socket.rtt.currentRto()) {
+      socket.cc.restartAfterIdle();
+    }
+  }
+
   private holdsForSillyWindow(socket: TcpSocket, windowRoom: number, congestionRoom: number): boolean {
     if (socket.swsOverride || windowRoom >= congestionRoom) return false;
     let queued = 0;
@@ -1691,7 +1726,7 @@ export class TcpStack {
     const synRetransmitted = (socket.unackedQueue[0]?.retransmitCount ?? 0) > 0;
     this.pruneUnackedQueue(socket, seg.acknowledgement, options.timestamp?.tsEcr);
     if (synRetransmitted) socket.rtt.holdAtLeast(TCP_RTO_AFTER_SYN_RETRANSMIT_MS);
-    socket.cc.initialize(socket.mss);
+    socket.cc.initialize(socket.mss, synRetransmitted);
     this._transition(socket, 'established');
     this.sendAckNow(socket);
     this.emitOpened(socket);
@@ -1800,14 +1835,27 @@ export class TcpStack {
       this.sendChallengeAck(socket);
       return false;
     }
-    const isDuplicateAck = payloadSize === 0 && !seg.flags.fin
-      && ack === socket.sendUnacked && socket.unackedQueue.length > 0;
+    const learnedSack = options.sackBlocks !== undefined
+      && socket.sackScoreboard.record(options.sackBlocks, socket.sendUnacked, socket.sendNext);
+    const isDuplicateAck = payloadSize === 0 && !seg.flags.fin && !seg.flags.syn
+      && ack === socket.sendUnacked && socket.unackedQueue.length > 0
+      && this.decodeWindowField(socket, seg) === socket.peerWindow;
     if (isDuplicateAck) {
-      const flightSize = (socket.sendNext - socket.sendUnacked) >>> 0;
-      if (socket.cc.onDuplicateAck(flightSize)) this.fastRetransmit(socket);
+      const flightSize = ((socket.sendNext - socket.sendUnacked) - socket.limitedTransmitBytes) >>> 0;
+      if (socket.cc.onDuplicateAck(flightSize)) {
+        socket.limitedTransmitBytes = 0;
+        this.fastRetransmit(socket);
+      }
+      else if (socket.cc.duplicateAcks <= TCP_LIMITED_TRANSMIT_ACKS && (!socket.sackEnabled || learnedSack)) {
+        this.limitedTransmit(socket);
+      }
     } else {
       const ackedBytes = this.pruneUnackedQueue(socket, ack, options.timestamp?.tsEcr);
-      if (ackedBytes > 0) socket.cc.onNewAck(ackedBytes);
+      if (ackedBytes > 0) {
+        socket.cc.onNewAck(ackedBytes);
+        socket.limitedTransmitBytes = 0;
+        socket.sackScoreboard.advance(socket.sendUnacked);
+      }
     }
     this.updateSendWindow(socket, seg);
     this.flushSendBacklog(socket);
@@ -1838,7 +1886,7 @@ export class TcpStack {
     socket.maxPeerWindow = Math.max(socket.maxPeerWindow, socket.peerWindow);
     socket.sendWl1 = seg.sequence;
     socket.sendWl2 = seg.acknowledgement;
-    socket.cc.initialize(socket.mss);
+    socket.cc.initialize(socket.mss, synAckRetransmitted);
     this._transition(socket, 'established');
     this.emitOpened(socket);
     this.completePassiveOpen(socket);
@@ -2222,6 +2270,7 @@ export class TcpStack {
     if (!egress) { this.dropped(socket.remoteIp, socket.remotePort, 'no-egress'); return undefined; }
     if (flags.ack && ackNum === socket.recvNext) this.forgetOwedAck(socket);
     if (flags.ack) socket.lastAckSent = ackNum;
+    if (segmentPayloadSize({ payload } as TcpSegment) > 0) socket.lastDataSentAtMs = this.getScheduler().now();
     const options = [...extraOptions];
     let sentTsVal: number | undefined;
     if (socket.timestampsEnabled) {
@@ -2459,6 +2508,8 @@ export class TcpStack {
     this.reportRetransmissionTrouble(socket, head);
     // RFC 5681 §3.1 — a real timeout means slow start starts over.
     socket.cc.onRtoTimeout((socket.sendNext - socket.sendUnacked) >>> 0);
+    socket.sackScoreboard.clear();
+    socket.limitedTransmitBytes = 0;
     const rtoMs = socket.rtt.backoff();
     this.getBus().publish({
       topic: 'tcp.retransmit',
