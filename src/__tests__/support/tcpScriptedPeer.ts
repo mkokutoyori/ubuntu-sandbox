@@ -17,7 +17,7 @@ import { optionsDataOffset } from '@/network/tcp/TcpOptionsCodec';
 import { payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import type { TcpSocket } from '@/network/tcp/TcpStack';
+import type { TcpSocket, TcpListenOptions, TcpConnectOptions } from '@/network/tcp/TcpStack';
 
 export const DUT_ADDRESS = '10.0.0.1';
 export const PEER_ADDRESS = '10.0.0.2';
@@ -177,9 +177,12 @@ export interface OpenConnection {
 
 export function openPassive(
   peer: ScriptedPeer, synOptions: TcpOption[] = [], peerIsn = PEER_ISN, window = 65535,
+  listenOptions: Omit<TcpListenOptions, 'onAccept'> = {},
 ): OpenConnection {
   const accepted: TcpSocket[] = [];
-  peer.dut.getTcpStack().listen(peer.ports.dut, { onAccept: (socket) => { accepted.push(socket); } });
+  peer.dut.getTcpStack().listen(peer.ports.dut, {
+    ...listenOptions, onAccept: (socket) => { accepted.push(socket); },
+  });
   peer.send({ flags: 'S', sequence: peerIsn, options: synOptions, window });
   const synAck = peer.last()!;
   peer.send({ flags: 'A', sequence: peerIsn + 1, acknowledgement: synAck.sequence + 1, window });
@@ -189,8 +192,9 @@ export function openPassive(
 
 export function openActive(
   peer: ScriptedPeer, synAckOptions: TcpOption[] = [], peerIsn = PEER_ISN, window = 65535,
+  connectOptions: TcpConnectOptions = {},
 ): OpenConnection {
-  const socket = peer.dut.getTcpStack().connect(PEER_ADDRESS, peer.ports.peer)!;
+  const socket = peer.dut.getTcpStack().connect(PEER_ADDRESS, peer.ports.peer, connectOptions)!;
   const syn = peer.last()!;
   peer.ports.dut = syn.sourcePort;
   peer.send({
