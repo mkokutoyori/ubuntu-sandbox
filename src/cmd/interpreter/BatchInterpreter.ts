@@ -628,13 +628,15 @@ export class BatchInterpreter {
     const letters = [...choices.toUpperCase()];
     const prompt = `${message === '' ? '' : `${message} `}${hidden ? '' : `[${letters.join(',')}]?`}`;
     let picked = fallback;
+    let readFromUser = false;
     if (picked === undefined && this.host.readInputLine) {
       picked = ((await this.host.readInputLine(prompt)) ?? '').toUpperCase();
+      readFromUser = this.host.inputIsInteractive?.() === true;
     }
     const index = picked === undefined ? -1 : letters.indexOf(picked.charAt(0));
-    if (index < 0) return { lines: [prompt], exitCode: 255 };
+    if (index < 0) return { lines: readFromUser ? [] : [prompt], exitCode: 255 };
     this.errorLevel = index + 1;
-    return { lines: [`${prompt}${letters[index]}`], exitCode: index + 1 };
+    return { lines: readFromUser ? [] : [`${prompt}${letters[index]}`], exitCode: index + 1 };
   }
 
   private async cmdBuiltin(rest: string): Promise<Produced> {

@@ -10,10 +10,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { AD_NULL_GUID } from '@/network/devices/windows/server/ad/AdTypes';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { md5Hex } from '@/crypto/hash/md5';
-import { sha1Hex } from '@/crypto/hash/sha1';
-import { sha256Hex } from '@/crypto/hash/sha256';
-import { sha512Hex } from '@/crypto/hash/sha512';
+import { fileDigestHex, fileDigestName } from '@/crypto/hash';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { wildcardToRegex, wildcardMatches, hasWildcard } from '@/powershell/runtime/PSWildcard';
 import { parseAttributeNames, isDefaultVisible } from '@/network/devices/windows/fileAttributes';
@@ -1294,12 +1291,7 @@ export class SetAclCmdlet implements ICmdlet {
   }
 }
 
-const FILE_HASH_ALGORITHMS: Record<string, (s: string) => string> = {
-  MD5: md5Hex,
-  SHA1: sha1Hex,
-  SHA256: sha256Hex,
-  SHA512: sha512Hex,
-};
+const FILE_HASH_ALGORITHMS: ReadonlySet<string> = new Set(['MD5', 'SHA1', 'SHA256', 'SHA384', 'SHA512']);
 
 export class GetFileHashCmdlet implements ICmdlet {
   readonly name = 'get-filehash';
@@ -1311,9 +1303,9 @@ export class GetFileHashCmdlet implements ICmdlet {
     const path = pathArgOf(ctx);
     if (!path) { ctx.emitError("Get-FileHash : Cannot bind argument to parameter 'Path' because it is an empty string."); return null; }
     const algorithm = psValueToString(ctx.named['algorithm'] ?? 'SHA256').toUpperCase();
-    const hashFn = FILE_HASH_ALGORITHMS[algorithm];
-    if (!hashFn) {
-      ctx.emitError(`Get-FileHash : Cannot validate argument on parameter 'Algorithm'. The argument "${algorithm}" does not belong to the set "MD5,SHA1,SHA256,SHA512".`);
+    const digest = FILE_HASH_ALGORITHMS.has(algorithm) ? fileDigestName(algorithm) : null;
+    if (digest === null) {
+      ctx.emitError(`Get-FileHash : Cannot validate argument on parameter 'Algorithm'. The argument "${algorithm}" does not belong to the set "MD5,SHA1,SHA256,SHA384,SHA512".`);
       return null;
     }
     const fs = ctx.providers.filesystem;
@@ -1327,7 +1319,7 @@ export class GetFileHashCmdlet implements ICmdlet {
     catch { ctx.emitError(`Get-FileHash : Could not find file '${path}'.`); return null; }
     return {
       Algorithm: algorithm,
-      Hash: hashFn(content).toUpperCase(),
+      Hash: fileDigestHex(digest, content).toUpperCase(),
       Path: path,
     } as Record<string, PSValue>;
   }

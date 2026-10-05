@@ -1290,7 +1290,9 @@ describe('§17 — Banner, MOTD and last-login per platform', () => {
     {
       name: 'Windows: LegalNoticeText reaches the SSH client',
       setup: async (l) => {
+        l.win1.setCurrentUser('Administrator');
         await l.win1.executeCommand('reg add "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v LegalNoticeText /d "WIN BANNER" /f');
+        l.win1.setCurrentUser('User');
       },
       on: l => l.linux1, cmd: 'ssh User@10.0.0.4',
       contains: ['WIN BANNER'],

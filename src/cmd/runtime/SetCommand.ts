@@ -51,11 +51,12 @@ export async function executeSet(
     const equals = definition.indexOf('=');
     if (equals < 0) return { output: SYNTAX_ERROR, exitCode: 1 };
     const name = definition.slice(0, equals).trim();
-    const answer = host.readInputLine ? await host.readInputLine(definition.slice(equals + 1)) : null;
-    if (answer === null) return { output: '', exitCode: 1 };
-    if (answer === '') host.env.unset(name);
-    else host.env.set(name, answer);
-    return { output: '', exitCode: 0 };
+    const prompt = definition.slice(equals + 1);
+    const answer = host.readInputLine ? await host.readInputLine(prompt) : null;
+    const shown = host.inputIsInteractive?.() === false ? prompt : '';
+    if (answer === null || answer === '') return { output: shown, exitCode: 1 };
+    host.env.set(name, answer);
+    return { output: shown, exitCode: 0 };
   }
 
   if (text.startsWith('"')) {

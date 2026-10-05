@@ -46,11 +46,3 @@ export function cmdCertreq(ctx: CertReqContext, args: string[]): string {
   ctx.certStore.add(res.certificate!, res.privateKey!);
   return `CertReq: Certificate Retrieved\nSerial Number: ${res.certificate!.serialNumber}\nSubject: ${res.certificate!.subject}\nIssuer: ${res.certificate!.issuer}`;
 }
-
-/** `certutil -submit -template <name> -subject <CN=...>` — same semantics as `certreq -submit`, matching real Windows offering both tools for the same operation. */
-export function cmdCertutil(ctx: CertReqContext, args: string[]): string {
-  if (args[0]?.toLowerCase() !== '-submit') {
-    return 'CertUtil usage: CertUtil [-submit] -template <template> -subject <subject>';
-  }
-  return cmdCertreq(ctx, args);
-}
