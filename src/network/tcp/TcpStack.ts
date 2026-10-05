@@ -2402,7 +2402,8 @@ export class TcpStack {
   _receiveSpaceFreed(socket: TcpSocket): void {
     if (socket.closed || socket.rcvEdge === null) return;
     if (socket.state !== 'established' && socket.state !== 'fin-wait-1' && socket.state !== 'fin-wait-2') return;
-    if (this.offeredWindow(socket) > this.heldWindow(socket)) this.sendAckNow(socket);
+    const growth = this.offeredWindow(socket) - this.heldWindow(socket);
+    if (growth > 0 && growth >= this.windowUpdateThreshold(socket)) this.sendAckNow(socket);
   }
 
   private decodeWindowField(socket: TcpSocket, seg: TcpSegment): number {
