@@ -46,9 +46,11 @@ describe('PasswordQualityPolicy — evaluation', () => {
   });
 
   it('counts per-class credits towards the required length', () => {
-    // 7 chars + 4 class credits (one each) = 11 credited ≥ 8 → length ok.
-    const result = PasswordQualityPolicy.defaults().evaluate('aB3!cdz');
-    expect(result.violated(PasswordQualityRule.MinLength)).toBe(false);
+    // libpwquality's defaults grant no credit (dcredit = ucredit = lcredit = ocredit = 0):
+    // 7 chars < minlen 8. With one credit per class, 7 + 4 = 11 credited ≥ 8 → length ok.
+    expect(PasswordQualityPolicy.defaults().evaluate('aB3!cdz').violated(PasswordQualityRule.MinLength)).toBe(true);
+    const credited = new PasswordQualityPolicy({ digitCredit: 1, uppercaseCredit: 1, lowercaseCredit: 1, otherCredit: 1 });
+    expect(credited.evaluate('aB3!cdz').violated(PasswordQualityRule.MinLength)).toBe(false);
   });
 
   it('treats a negative credit as a class minimum', () => {
@@ -85,7 +87,7 @@ describe('PasswordQualityPolicy — evaluation', () => {
     const result = PasswordQualityPolicy.defaults().evaluate('Abcdef1!xy', {
       oldPassword: 'Abcdef1!xy',
     });
-    expect(result.violated(PasswordQualityRule.TooSimilar)).toBe(true);
+    expect(result.violated(PasswordQualityRule.SamePassword)).toBe(true);
   });
 
   it('rejects a password containing the user name', () => {
@@ -95,11 +97,17 @@ describe('PasswordQualityPolicy — evaluation', () => {
     expect(result.violated(PasswordQualityRule.ContainsUsername)).toBe(true);
   });
 
-  it('rejects a password containing a word from the GECOS field', () => {
+  it('rejects a password containing a word from the GECOS field (libpwquality splits on spaces only, so `Carpenter,Room` is one word)', () => {
     const result = PasswordQualityPolicy.defaults().evaluate('Carpenter1!', {
-      gecos: 'John Carpenter,Room 4',
+      username: 'jc',
+      gecos: 'John Carpenter',
     });
     expect(result.violated(PasswordQualityRule.ContainsGecos)).toBe(true);
+    const attached = PasswordQualityPolicy.defaults().evaluate('Carpenter1!', {
+      username: 'jc',
+      gecos: 'John Carpenter,Room 4',
+    });
+    expect(attached.violated(PasswordQualityRule.ContainsGecos)).toBe(false);
   });
 
   it('rejects a dictionary word', () => {
@@ -139,7 +147,7 @@ describe('PasswordQualityPolicy — rendering & overrides', () => {
   it('renders the canonical pwquality.conf directives', () => {
     const content = PasswordQualityPolicy.defaults().render();
     expect(content).toContain('minlen = 8');
-    expect(content).toContain('dcredit = 1');
+    expect(content).toContain('dcredit = 0');
     expect(content).toContain('enforcing = 1');
     expect(content).toContain('retry = 3');
   });

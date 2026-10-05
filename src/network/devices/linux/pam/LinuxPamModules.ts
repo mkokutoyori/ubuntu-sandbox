@@ -6,6 +6,7 @@ import { pamLimitsModule } from './modules/PamLimitsModule';
 import { pamListfileModule, pamSucceedIfModule, pamWheelModule } from './modules/PamAccessControlModules';
 import { pamDenyModule, pamNologinModule, pamPermitModule, pamRootokModule } from './modules/PamTrivialModules';
 import { pamFaildelayModule, pamLoginuidModule, pamShellsModule, pamUmaskModule } from './modules/PamSessionModules';
+import { pamPwqualityModule } from './modules/PamPwqualityModule';
 import { pamUnixModule } from './modules/PamUnixModule';
 
 export function createLinuxPamModules(): PamModuleRegistry<LinuxPamHost> {
@@ -21,6 +22,7 @@ export function createLinuxPamModules(): PamModuleRegistry<LinuxPamHost> {
     .register('pam_listfile', pamListfileModule)
     .register('pam_env', pamEnvModule)
     .register('pam_limits', pamLimitsModule)
+    .register('pam_pwquality', pamPwqualityModule)
     .register('pam_umask', pamUmaskModule)
     .register('pam_loginuid', pamLoginuidModule)
     .register('pam_shells', pamShellsModule)
