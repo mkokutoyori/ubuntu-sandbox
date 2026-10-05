@@ -212,6 +212,17 @@ export class DHCPPacket implements NetworkPdu {
     this.options.delete(code);
   }
 
+  orderOptions(order: readonly number[]): void {
+    const ordered = new Map<number, unknown>();
+    for (const code of order) {
+      if (this.options.has(code)) ordered.set(code, this.options.get(code));
+    }
+    for (const [code, value] of this.options) {
+      if (!ordered.has(code)) ordered.set(code, value);
+    }
+    this.options = ordered;
+  }
+
   /** Get DHCP message type name from Option 53 */
   getMessageType(): DHCPMessageType | undefined {
     const code = this.options.get(DHCP_OPTION.MESSAGE_TYPE) as number | undefined;
@@ -598,6 +609,15 @@ export class DHCPPacket implements NetworkPdu {
         for (let i = 0; i < text.length; i++) buf[offset++] = text.charCodeAt(i) & 0xff;
         break;
       }
+      case DHCP_OPTION.CLIENT_FQDN: {
+        const fqdn = value as { flags: number; name: string; rcode1?: number; rcode2?: number };
+        buf[offset++] = fqdn.name.length + 3;
+        buf[offset++] = fqdn.flags & 0xff;
+        buf[offset++] = (fqdn.rcode1 ?? 0) & 0xff;
+        buf[offset++] = (fqdn.rcode2 ?? 0) & 0xff;
+        for (let i = 0; i < fqdn.name.length; i++) buf[offset++] = fqdn.name.charCodeAt(i) & 0xff;
+        break;
+      }
       case DHCP_OPTION.RELAY_AGENT_INFORMATION: {
         const information = value as { circuitId?: string; remoteId?: string };
         const body: number[] = [];
@@ -727,6 +747,12 @@ export class DHCPPacket implements NetworkPdu {
         let text = '';
         for (let i = 0; i < data.length; i++) text += String.fromCharCode(data[i]);
         return text;
+      }
+
+      case DHCP_OPTION.CLIENT_FQDN: {
+        let name = '';
+        for (let i = 3; i < data.length; i++) name += String.fromCharCode(data[i]);
+        return { flags: data[0] ?? 0, rcode1: data[1] ?? 0, rcode2: data[2] ?? 0, name };
       }
 
       case DHCP_OPTION.RELAY_AGENT_INFORMATION: {

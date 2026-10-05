@@ -106,11 +106,15 @@ describe('dhclient sur une machine que personne ne sert', () => {
   });
 
   it('Windows prend une adresse APIPA, et le registre peut la lui retirer', async () => {
-    const avec = new WindowsPC('windows-pc', 'WINA');
+    const onQuietLink = (pc: WindowsPC): WindowsPC => {
+      new Cable(`quiet-${pc.getHostname()}`).connect(pc.getPorts()[0], new LinuxPC('linux-pc', `Q-${pc.getHostname()}`).getPort('eth0')!);
+      return pc;
+    };
+    const avec = onQuietLink(new WindowsPC('windows-pc', 'WINA'));
     await avec.executeCommand('ipconfig /renew');
     expect(await avec.executeCommand('ipconfig')).toContain('169.254.');
 
-    const sans = new WindowsPC('windows-pc', 'WINB');
+    const sans = onQuietLink(new WindowsPC('windows-pc', 'WINB'));
     sans.setCurrentUser('Administrator');
     await sans.executeCommand(
       'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters" /v IPAutoconfigurationEnabled /t REG_DWORD /d 0 /f');

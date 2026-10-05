@@ -171,7 +171,7 @@ import {
 } from '../snmp/mibs/DhcpServerMib';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute } from '../dhcp/DhcpServerExchange';
-import { dhcpLinkDestination } from '../dhcp/DhcpServerReplyFrame';
+import { dhcpLinkDestination, dhcpServerReplyFrame } from '../dhcp/DhcpServerReplyFrame';
 import type { DHCPDiscoverParams, DHCPOfferResult, DHCPSnoopingConfig, DhcpUnicastTarget } from '../dhcp/types';
 import { dhcpClientAddressing } from '../dhcp/DhcpClientFrame';
 import { createDefaultSnoopingConfig } from '../dhcp/types';
@@ -4344,17 +4344,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const port = this.ports.get(portName);
     const srcIp = port?.getIPAddress();
     if (!port || !srcIp) return;
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: 67,
-      destinationPort: dstPort,
-      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: pkt,
-    };
-    const ipPkt = createIPv4Packet(srcIp, dstIp, IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES);
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC: dstMac,
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    });
+    this.sendFrame(portName, dhcpServerReplyFrame(
+      pkt, srcIp, port.getMAC(), { address: dstIp, mac: dstMac }, { ttl: this.defaultTTL }, dstPort));
   }
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }

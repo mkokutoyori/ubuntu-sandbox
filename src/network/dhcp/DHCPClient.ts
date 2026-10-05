@@ -27,6 +27,7 @@ import {
   DHCPClientState, DHCPClientIfaceState, DHCPClientLease,
   DHCPOfferResult, DHCPAckResult, DHCPRequestWithNakResult,
   ackOf, createDefaultClientState,
+  type DhcpClientPersonality,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { type IEventBus } from '@/events/EventBus';
@@ -79,6 +80,21 @@ const DEFAULT_PARAMETER_REQUEST_LIST = [
   58,  // Renewal (T1) Time Value
   59,  // Rebinding (T2) Time Value
 ];
+
+const xidText = (xid: number): string => `(xid=0x${xid.toString(16)})`;
+
+function dhclientBanner(iface: string, mac: string): string[] {
+  return [
+    'Internet Systems Consortium DHCP Client 4.4.1',
+    'Copyright 2004-2018 Internet Systems Consortium.',
+    'All rights reserved.',
+    'For info, please visit https://www.isc.org/software/dhcp/',
+    '',
+    `Listening on LPF/${iface}/${mac}`,
+    `Sending on   LPF/${iface}/${mac}`,
+    'Sending on   Socket/fallback',
+  ];
+}
 
 export class DHCPClient implements IProtocolEngine {
   /** Per-interface DHCP state */
@@ -168,12 +184,28 @@ export class DHCPClient implements IProtocolEngine {
     this.forwardRegistrationPolicy = policy;
   }
 
-  private clientIdentity(): { broadcast: boolean; hostName?: string; clientFqdn?: { flags: number; name: string } } {
+  private personality: DhcpClientPersonality = {
+    alwaysSendsClientIdentifier: false, parameterRequestList: DEFAULT_PARAMETER_REQUEST_LIST,
+    sendsFqdn: true, optionOrder: [],
+  };
+
+  setPersonality(personality: DhcpClientPersonality): void { this.personality = personality; }
+
+  private clientIdentity(): {
+    broadcast: boolean; hostName?: string; clientFqdn?: { flags: number; name: string };
+    parameterRequestList: readonly number[]; optionOrder: readonly number[];
+    alwaysSendClientIdentifier: boolean;
+  } {
     const broadcast = this.broadcastFlag;
+    const { parameterRequestList, optionOrder } = this.personality;
+    const alwaysSendClientIdentifier = this.personality.alwaysSendsClientIdentifier;
     const name = (this.hostnameProvider?.() ?? this.hostname).trim();
-    if (!name) return { broadcast };
+    if (!name) return { broadcast, parameterRequestList, optionOrder, alwaysSendClientIdentifier };
     const serverDoesForward = !(this.forwardRegistrationPolicy?.() ?? false);
-    return { broadcast, hostName: name, clientFqdn: { flags: serverDoesForward ? 0x01 : 0x00, name } };
+    return {
+      broadcast, hostName: name, parameterRequestList, optionOrder, alwaysSendClientIdentifier,
+      ...(this.personality.sendsFqdn ? { clientFqdn: { flags: serverDoesForward ? 0x01 : 0x00, name } } : {}),
+    };
   }
 
   private attachActors(): void {
@@ -380,13 +412,8 @@ export class DHCPClient implements IProtocolEngine {
     // Log INIT
     state.logs.push(`INIT state - starting DHCP on ${iface}`);
     if (verbose) {
-      if (!options.fromInitReboot) {
-        lines.push(`Internet Systems Consortium DHCP Client 4.4.1`);
-        lines.push(`Listening on LPF/${iface}/${mac}`);
-        lines.push(`Sending on   LPF/${iface}/${mac}`);
-      }
-      lines.push(`DHCPDISCOVER on ${iface} to 255.255.255.255 port 67 interval 3`);
-      lines.push(`INIT state`);
+      if (!options.fromInitReboot) lines.push(...dhclientBanner(iface, mac));
+      lines.push(`DHCPDISCOVER on ${iface} to 255.255.255.255 port 67 interval 3 ${xidText(state.xid)}`);
     }
 
     const channels = this.channelsFor(iface);
@@ -415,7 +442,6 @@ export class DHCPClient implements IProtocolEngine {
         clientIdentifier,
         vendorClass: this.vendorClass ?? undefined,
         ...this.clientIdentity(),
-        parameterRequestList: DEFAULT_PARAMETER_REQUEST_LIST,
       });
       if (result) {
         // XID validation (RFC 2131 §3.1): response xid must match our xid
@@ -482,7 +508,7 @@ export class DHCPClient implements IProtocolEngine {
       const reason = replyResult.message ? ` (${replyResult.message})` : '';
       state.logs.push(`DHCPNAK from ${offer.serverIdentifier}${reason} - restarting`);
       if (verbose) {
-        lines.push(`DHCPREQUEST of ${offer.ip} on ${iface} to 255.255.255.255 port 67`);
+        lines.push(`DHCPREQUEST for ${offer.ip} on ${iface} to 255.255.255.255 port 67 ${xidText(state.xid)}`);
         lines.push(`DHCPNAK from ${offer.serverIdentifier}${reason} (${iface})`);
         lines.push(`DHCPDISCOVER on ${iface} - restarting`);
       }
@@ -492,7 +518,7 @@ export class DHCPClient implements IProtocolEngine {
       this.emitStateChange(iface, 'REQUESTING', 'INIT', 'TIMEOUT');
       state.state = 'INIT';
       state.logs.push(`no DHCPACK from ${offer.serverIdentifier} - restarting`);
-      if (verbose) lines.push(`DHCPREQUEST of ${offer.ip} on ${iface} to 255.255.255.255 port 67`);
+      if (verbose) lines.push(`DHCPREQUEST for ${offer.ip} on ${iface} to 255.255.255.255 port 67 ${xidText(state.xid)}`);
       return lines.join('\n');
     }
     this.acksReceived++;
@@ -533,8 +559,8 @@ export class DHCPClient implements IProtocolEngine {
       this.emitStateChange(iface, 'REQUESTING', 'INIT', 'DECLINE');
       state.state = 'INIT';
       if (verbose) {
-        lines.push(`DHCPREQUEST of ${ackResult.binding.ipAddress} on ${iface} to 255.255.255.255 port 67`);
-        lines.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${offer.serverIdentifier}`);
+        lines.push(`DHCPREQUEST for ${ackResult.binding.ipAddress} on ${iface} to 255.255.255.255 port 67 ${xidText(state.xid)}`);
+        lines.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${offer.serverIdentifier} ${xidText(state.xid)}`);
         lines.push(`ARP probe: ${ackResult.binding.ipAddress} is already in use — DHCPDECLINE sent`);
       }
       return lines.join('\n');
@@ -587,8 +613,8 @@ export class DHCPClient implements IProtocolEngine {
     this.recordServerObservation?.(iface, ackResult.serverIdentifier, serverMac);
 
     if (verbose) {
-      lines.push(`DHCPREQUEST of ${ackResult.binding.ipAddress} on ${iface} to 255.255.255.255 port 67`);
-      lines.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${ackResult.serverIdentifier}`);
+      lines.push(`DHCPREQUEST for ${ackResult.binding.ipAddress} on ${iface} to 255.255.255.255 port 67 ${xidText(state.xid)}`);
+      lines.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${ackResult.serverIdentifier} ${xidText(state.xid)}`);
       lines.push(`bound to ${ackResult.binding.ipAddress} -- renewal in ${lease.renewalTime} seconds.`);
     }
 
@@ -690,11 +716,8 @@ export class DHCPClient implements IProtocolEngine {
 
     state.logs.push(`INIT-REBOOT state - reusing lease ${lastLease.ipAddress} on ${iface}`);
     if (verbose) {
-      lines.push(`Internet Systems Consortium DHCP Client 4.4.1`);
-      lines.push(`Listening on LPF/${iface}/${mac}`);
-      lines.push(`Sending on   LPF/${iface}/${mac}`);
-      lines.push(`INIT-REBOOT state`);
-      lines.push(`DHCPREQUEST for ${lastLease.ipAddress} on ${iface} to 255.255.255.255 port 67`);
+      lines.push(...dhclientBanner(iface, mac));
+      lines.push(`DHCPREQUEST for ${lastLease.ipAddress} on ${iface} to 255.255.255.255 port 67 ${xidText(state.xid)}`);
     }
 
     // Send broadcast REQUEST without server identifier (RFC 2131 §3.2)
@@ -794,7 +817,7 @@ export class DHCPClient implements IProtocolEngine {
     state.logs.push(`bound to ${ackResult.binding.ipAddress} (INIT-REBOOT)`);
 
     if (verbose) {
-      lines.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${ackResult.serverIdentifier}`);
+      lines.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${ackResult.serverIdentifier} ${xidText(state.xid)}`);
       lines.push(`bound to ${ackResult.binding.ipAddress} -- renewal in ${lease.renewalTime} seconds.`);
     }
 
@@ -808,7 +831,7 @@ export class DHCPClient implements IProtocolEngine {
    * Release current lease on an interface.
    * RFC 2131 §3.4: Client sends DHCPRELEASE with ciaddr and server identifier.
    */
-  releaseLease(iface: string): string {
+  releaseLease(iface: string, verbose = false): string {
     const state = this.ifaceStates.get(iface);
     if (!state || !state.lease) {
       // Still valid - just go to INIT
@@ -821,12 +844,14 @@ export class DHCPClient implements IProtocolEngine {
     const mac = this.getMACForIface(iface);
     const clientIdentifier = this.buildClientIdentifier(mac, iface);
     const lease = state.lease;
+    const releaseXid = Math.floor(Math.random() * 0xFFFFFFFF);
 
     // RFC-compliant RELEASE to the grantor (RFC 2131 §3.4).
     for (const channel of this.channelsFor(iface)) {
       if (channel.serverIP === null || channel.serverIP === lease.serverIdentifier) {
         channel.processRelease({
           clientMAC: mac,
+          xid: releaseXid,
           clientIP: lease.ipAddress,
           serverIdentifier: lease.serverIdentifier,
           unicastTo: { ip: lease.serverIdentifier, mac: lease.serverMac },
@@ -841,7 +866,11 @@ export class DHCPClient implements IProtocolEngine {
     this.abandonLease(iface);
     state.logs.push(`released ${oldIP} on ${iface}`);
 
-    return `released ${oldIP}`;
+    if (!verbose) return '';
+    return [
+      ...dhclientBanner(iface, mac),
+      `DHCPRELEASE of ${oldIP} on ${iface} to ${lease.serverIdentifier} port 67 ${xidText(releaseXid)}`,
+    ].join('\n');
   }
 
   abandonLease(iface: string): void {

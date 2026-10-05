@@ -135,7 +135,8 @@ import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
 import { addressAnswersOnLink } from '../arp/AddressProbe';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import { dhcpClientFrame, isDhcpReplyFor } from '../dhcp/DhcpClientFrame';
-import type { DhcpUnicastTarget } from '../dhcp/types';
+import type { DhcpIpEmission, DhcpUnicastTarget } from '../dhcp/types';
+import { ISC_DHCLIENT_PERSONALITY } from '../dhcp/DhcpClientPersonality';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import {
   DHCPv6Packet, DHCPV6_OPTION, DHCPV6_STATUS, DHCPV6_IRT_DEFAULT, DHCPV6_IRT_INFINITY, DHCPV6_IRT_MINIMUM,
@@ -1188,6 +1189,7 @@ export abstract class EndHost extends Equipment {
       },
     );
     this.dhcpClient.setBroadcastFlag(false);
+    this.dhcpClient.setPersonality(ISC_DHCLIENT_PERSONALITY);
     this.dhcpClient.setLinkLocalAutoconfiguration(() => this.linkLocalAutoconfigurationEnabled());
     this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setHostnameProvider(() => this.getHostname());
@@ -1288,8 +1290,10 @@ export abstract class EndHost extends Equipment {
   private sendWireDhcpFrame(iface: string, pkt: DHCPPacket, target?: DhcpUnicastTarget): void {
     const port = this.ports.get(iface);
     if (!port) return;
-    this.sendFrame(iface, dhcpClientFrame(pkt, port.getMAC(), target));
+    this.sendFrame(iface, dhcpClientFrame(pkt, port.getMAC(), target, this.dhcpIpEmission()));
   }
+
+  protected dhcpIpEmission(): DhcpIpEmission { return { ttl: this.defaultTTL }; }
 
   protected onDhcpLeaseReleased(_iface: string): void {}
 

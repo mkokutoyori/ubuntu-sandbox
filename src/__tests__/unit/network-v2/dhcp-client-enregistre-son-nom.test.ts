@@ -123,17 +123,24 @@ describe('le client Windows enregistre son propre nom', () => {
 });
 
 describe('le client Linux laisse faire le serveur', () => {
-  it('TEMOIN — il annonce S=1', async () => {
+  it('TEMOIN — dhclient ne demande rien : pas d option 81', async () => {
     const { lnx } = await labo();
     await lnx.executeCommand('dhclient eth0');
     const client = lnx.getDHCPClient() as unknown as {
       clientIdentity(): { clientFqdn?: { flags: number } };
     };
-    expect(client.clientIdentity().clientFqdn?.flags).toBe(0x01);
+    expect(client.clientIdentity().clientFqdn).toBeUndefined();
   });
 
-  it('et c est le SERVEUR qui pose son A', async () => {
+  it('par defaut le serveur ne l enregistre PAS : il ne demande rien et n a que son nom', async () => {
     const { lnx, sh } = await labo();
+    await lnx.executeCommand('dhclient eth0');
+    expect((await zone(sh)).toLowerCase()).not.toContain('pc-lnx');
+  });
+
+  it('et c est le SERVEUR qui pose son A, des qu on le regle pour les clients qui ne demandent rien', async () => {
+    const { lnx, sh } = await labo();
+    await run(sh, 'Set-DhcpServerv4DnsSetting -UpdateDnsRRForOlderClients $true');
     await lnx.executeCommand('dhclient eth0');
     const records = await zone(sh);
     expect(records.toLowerCase()).toContain('pc-lnx');
@@ -142,7 +149,7 @@ describe('le client Linux laisse faire le serveur', () => {
 
   it('donc `DynamicUpdates Never` le laisse SANS nom', async () => {
     const { lnx, sh } = await labo();
-    await run(sh, 'Set-DhcpServerv4DnsSetting -DynamicUpdates Never');
+    await run(sh, 'Set-DhcpServerv4DnsSetting -UpdateDnsRRForOlderClients $true -DynamicUpdates Never');
     await lnx.executeCommand('dhclient eth0');
     expect((await zone(sh)).toLowerCase()).not.toContain('pc-lnx');
   });

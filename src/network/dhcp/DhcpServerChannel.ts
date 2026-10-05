@@ -102,6 +102,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
     if (params.hostName) discover.setOption(DHCP_OPTION.HOST_NAME, params.hostName);
     applyClientIdentity(discover, params);
     if (params.clientFqdn) discover.setOption(DHCP_OPTION.CLIENT_FQDN, params.clientFqdn);
+    applyParameterRequest(discover, params);
     const entry = this.exchange(discover, ['DHCPOFFER'], params.xid, params.clientMAC);
     if (!entry) return null;
     const offer = entry.pkt;
@@ -154,6 +155,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
     if (params.hostName) request.setOption(DHCP_OPTION.HOST_NAME, params.hostName);
     applyClientIdentity(request, params);
     if (params.clientFqdn) request.setOption(DHCP_OPTION.CLIENT_FQDN, params.clientFqdn);
+    applyParameterRequest(request, params);
 
     const entry = this.exchange(request, ['DHCPACK', 'DHCPNAK'], params.xid, params.clientMAC, params.unicastTo);
     if (!entry) return null;
@@ -212,18 +214,32 @@ export class WireDhcpChannel implements DhcpServerChannel {
   }
 
   processRelease(params: DHCPReleaseParams): void {
-    const xid = Math.floor(Math.random() * 0xFFFFFFFF);
+    const xid = params.xid ?? Math.floor(Math.random() * 0xFFFFFFFF);
     const pkt = DHCPPacket.createRelease(
       params.clientMAC, xid, params.clientIP, params.serverIdentifier ?? '0.0.0.0');
+    applyClientIdentity(pkt, params);
+    pkt.orderOptions([DHCP_OPTION.MESSAGE_TYPE, DHCP_OPTION.CLIENT_IDENTIFIER, DHCP_OPTION.SERVER_IDENTIFIER]);
     this.sendFrame(this.iface, pkt, params.unicastTo);
   }
 }
 
 function applyClientIdentity(
   packet: DHCPPacket,
-  params: { clientMAC: string; clientIdentifier: string; vendorClass?: string },
+  params: { clientMAC: string; clientIdentifier: string; vendorClass?: string; alwaysSendClientIdentifier?: boolean },
 ): void {
   const implied = `01${params.clientMAC.replace(/:/g, '').toLowerCase()}`;
-  if (params.clientIdentifier !== implied) packet.setOption(DHCP_OPTION.CLIENT_IDENTIFIER, params.clientIdentifier);
+  if (params.alwaysSendClientIdentifier === true || params.clientIdentifier !== implied) {
+    packet.setOption(DHCP_OPTION.CLIENT_IDENTIFIER, params.clientIdentifier);
+  }
   if (params.vendorClass) packet.setOption(DHCP_OPTION.VENDOR_CLASS, params.vendorClass);
+}
+
+function applyParameterRequest(
+  packet: DHCPPacket,
+  params: { parameterRequestList?: readonly number[]; optionOrder?: readonly number[] },
+): void {
+  if (params.parameterRequestList !== undefined && params.parameterRequestList.length > 0) {
+    packet.setOption(DHCP_OPTION.PARAMETER_REQUEST_LIST, [...params.parameterRequestList]);
+  }
+  if (params.optionOrder !== undefined) packet.orderOptions(params.optionOrder);
 }

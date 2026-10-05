@@ -23,6 +23,7 @@ import { DhcpBulkLeasequeryService } from '@/network/dhcp/DhcpBulkLeasequery';
 import { DHCPPacket, DHCP_OPTION, DHCP_WIRE_BYTES } from '@/network/dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute } from '@/network/dhcp/DhcpServerExchange';
 import { dhcpLinkDestination, dhcpServerReplyFrame, type DhcpLinkDestination } from '@/network/dhcp/DhcpServerReplyFrame';
+import { WINDOWS_DHCP_EMISSION } from '@/network/dhcp/DhcpIpEmission';
 import type { DHCPBinding } from '@/network/dhcp/types';
 import type { DhcidRecordData } from '@/network/dns/wire/ResourceRecord';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -37,6 +38,8 @@ import {
   type FailoverBinding, type FailoverConfig, type FailoverInfo, type FailoverRole, type FailoverScopeData,
 } from '@/network/dhcp/failover/types';
 import { IPAddress, SubnetMask, type UDPPacket } from '@/network/core/types';
+
+const WIRED_SCOPE_LEASE_SECONDS = 8 * 86400;
 
 export interface DhcpOpResult { ok: boolean; message: string }
 
@@ -597,7 +600,7 @@ export class WindowsDhcpServerRole {
     const port = this.host.getPorts().find(p => p.getName() === inPort);
     const srcIp = port?.getIPAddress();
     if (!port || !srcIp) return;
-    this.host.sendFrame(inPort, dhcpServerReplyFrame(reply, srcIp, port.getMAC(), to));
+    this.host.sendFrame(inPort, dhcpServerReplyFrame(reply, srcIp, port.getMAC(), to, WINDOWS_DHCP_EMISSION));
   }
 
   // ─── Scopes (Add-DhcpServerv4Scope / Get-DhcpServerv4Scope) ─────────
@@ -610,7 +613,7 @@ export class WindowsDhcpServerRole {
     const network = new IPAddress(startRange).networkAddress(mask).toString();
     this.engine.createPool(name);
     this.engine.configurePoolNetwork(name, network, subnetMask);
-    if (leaseDurationSeconds) this.engine.configurePoolLease(name, leaseDurationSeconds);
+    this.engine.configurePoolLease(name, leaseDurationSeconds || WIRED_SCOPE_LEASE_SECONDS);
     this.scopeRanges.set(name, { start: startRange, end: endRange });
     this.scopeState.set(name, true);
     this.excludeOutsideRange(name, network, mask, startRange, endRange);

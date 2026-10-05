@@ -84,13 +84,13 @@ describe('ipconfig — options réels sur un LAN complet', () => {
       // eth1 sans câble réseau : renew dessus ne doit jamais toucher eth0.
       const out = await pc1.executeCommand('ipconfig /renew "Ethernet 1"');
       expect(out).toContain('Ethernet 1');
-      expect(out).not.toMatch(/DHCP ACK received/);
+      expect(out).not.toMatch(/IPv4 Address/);
     });
 
     it('/renew sans argument renouvelle tous les adaptateurs connectés au LAN', async () => {
       const { pc1 } = await buildLan();
       const out = await pc1.executeCommand('ipconfig /renew');
-      expect(out).toMatch(/DHCP ACK received/);
+      expect(out).toMatch(/IPv4 Address[ .]*: 192\.168\.1\.\d+/);
       const after = await pc1.executeCommand('ipconfig');
       expect(after).toMatch(/IPv4 Address/);
     });
@@ -99,12 +99,12 @@ describe('ipconfig — options réels sur un LAN complet', () => {
       const { pc1 } = await buildLan();
       await pc1.executeCommand('ipconfig /renew');
       const releaseOut = await pc1.executeCommand('ipconfig /release "Ethernet 0"');
-      expect(releaseOut).toMatch(/successfully released/);
+      expect(releaseOut).not.toMatch(/IPv4 Address/);
       const afterRelease = await pc1.executeCommand('ipconfig');
       expect(afterRelease).toMatch(/Media disconnected/);
 
       const renewOut = await pc1.executeCommand('ipconfig /renew "Ethernet 0"');
-      expect(renewOut).toMatch(/DHCP ACK received/);
+      expect(renewOut).toMatch(/IPv4 Address[ .]*: 192\.168\.1\.\d+/);
       const afterRenew = await pc1.executeCommand('ipconfig');
       expect(afterRenew).toMatch(/IPv4 Address[ .]*: 192\.168\.1\.\d+/);
     });
@@ -121,7 +121,7 @@ describe('ipconfig — options réels sur un LAN complet', () => {
     it('un joker (*) sur /renew cible tous les adaptateurs dont le nom correspond', async () => {
       const { pc1 } = await buildLan();
       const out = await pc1.executeCommand('ipconfig /renew "Ethernet *"');
-      expect(out).toMatch(/DHCP ACK received/);
+      expect(out).toMatch(/IPv4 Address[ .]*: 192\.168\.1\.\d+/);
     });
   });
 

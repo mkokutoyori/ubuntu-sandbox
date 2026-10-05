@@ -4,6 +4,7 @@ import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
 import { dhcpLinkDestination, dhcpServerReplyFrame, type DhcpLinkDestination } from '../../../dhcp/DhcpServerReplyFrame';
+import { ISC_DHCP_EMISSION } from '../../../dhcp/DhcpIpEmission';
 import { IPAddress, SubnetMask, type UDPPacket } from '../../../core/types';
 import {
   parseDhcpdConf, parseDhcpdInterfaces, mergedOptions,
@@ -335,7 +336,7 @@ export class LinuxDhcpdService {
     const port = this.host.getPorts().find(entry => entry.getName() === inPort);
     const srcIp = port?.getIPAddress();
     if (!port || !srcIp) return;
-    this.host.sendFrame(inPort, dhcpServerReplyFrame(reply, srcIp, port.getMAC(), to));
+    this.host.sendFrame(inPort, dhcpServerReplyFrame(reply, srcIp, port.getMAC(), to, ISC_DHCP_EMISSION));
   }
 
   version(): string { return DHCPD_VERSION; }

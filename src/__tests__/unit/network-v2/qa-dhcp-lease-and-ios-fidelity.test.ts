@@ -86,7 +86,8 @@ describe('a Windows client and its default gateway', () => {
     await win.executeCommand('ipconfig /release');
 
     const out = await win.executeCommand('ipconfig /renew');
-    expect(out).toMatch(/autoconfiguration IP address 169\.254\./);
+    expect(out).toMatch(/unable to contact your DHCP server/);
+    expect(await win.executeCommand('ipconfig')).toMatch(/169\.254\./);
     expect(
       win.getDefaultGatewayString(),
       'a link-local host has no route off the link — it cannot keep a gateway',

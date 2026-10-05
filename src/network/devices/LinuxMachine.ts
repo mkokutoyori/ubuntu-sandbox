@@ -192,6 +192,8 @@ import { holdsCapability } from './linux/iam/capabilities/LinuxCapabilities';
 import { buildIpCtx } from './linux/commands/net/Ip';
 import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
+import type { DhcpIpEmission } from '../dhcp/types';
+import { ISC_DHCP_EMISSION } from '../dhcp/DhcpIpEmission';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
@@ -266,6 +268,7 @@ export abstract class LinuxMachine extends EndHost
   private readonly ipv4Settings = new LinuxIpv4Settings();
   protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
   getKernelIpFacts(): KernelIpFacts { return this.ipv4Settings.kernelIpFacts(this.ipForwardEnabled); }
+  protected override dhcpIpEmission(): DhcpIpEmission { return ISC_DHCP_EMISSION; }
   protected override get defaultHopLimit(): number { return 64; }
   protected override get udpDiscoversPathMtu(): boolean { return true; }
   protected override get tcpEcnPolicy(): TcpEcnPolicy { return this.ipv4Settings.ecnPolicy; }

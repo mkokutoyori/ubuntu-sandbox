@@ -22,6 +22,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, IPAddress, SubnetMask } from '@/network/core/types';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
+import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
@@ -189,6 +190,7 @@ describe('Scénario 4 — collecte de configuration réseau', () => {
     // DHCP activé mais aucun serveur joignable → repli APIPA (RFC 3927).
     const win = new WindowsPC('windows-pc', 'ISOPC');
     win.setCurrentUser('Administrator');
+    new Cable('quiet-link').connect(win.getPorts()[0], new LinuxPC('linux-pc', 'QUIET').getPort('eth0')!);
 
     await win.executeCommand('ipconfig /renew');
     const ps = psShell(win);

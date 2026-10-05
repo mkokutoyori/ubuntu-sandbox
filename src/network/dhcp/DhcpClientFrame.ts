@@ -5,7 +5,7 @@ import {
 import { DHCP_CLIENT_PORT, DHCP_SERVER_PORT } from '../core/WellKnownPorts';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 import { DHCP_WIRE_BYTES, DHCPPacket } from './DHCPPacket';
-import type { DhcpUnicastTarget } from './types';
+import type { DhcpIpEmission, DhcpUnicastTarget } from './types';
 
 export interface DhcpClientAddressing {
   readonly source: IPAddress;
@@ -21,23 +21,28 @@ export function dhcpClientAddressing(pkt: DHCPPacket, target?: DhcpUnicastTarget
   };
 }
 
-export function dhcpClientPacket(pkt: DHCPPacket, target?: DhcpUnicastTarget): IPv4Packet {
+export function dhcpClientPacket(
+  pkt: DHCPPacket, target?: DhcpUnicastTarget, emission: DhcpIpEmission = {},
+): IPv4Packet {
   const addressing = dhcpClientAddressing(pkt, target);
   return buildUdpOverIpv4(addressing.source, {
     destination: addressing.destination,
     sourcePort: DHCP_CLIENT_PORT, destinationPort: DHCP_SERVER_PORT,
     payload: pkt, payloadBytes: DHCP_WIRE_BYTES,
+    dontFragment: false,
+    ...(emission.ttl === undefined ? {} : { ttl: emission.ttl }),
+    ...(emission.tos === undefined ? {} : { tos: emission.tos }),
   });
 }
 
 export function dhcpClientFrame(
-  pkt: DHCPPacket, sourceMac: MACAddress, target?: DhcpUnicastTarget,
+  pkt: DHCPPacket, sourceMac: MACAddress, target?: DhcpUnicastTarget, emission: DhcpIpEmission = {},
 ): EthernetFrame {
   return {
     srcMAC: sourceMac,
     dstMAC: dhcpClientAddressing(pkt, target).destinationMac ?? MACAddress.broadcast(),
     etherType: ETHERTYPE_IPV4,
-    payload: dhcpClientPacket(pkt, target),
+    payload: dhcpClientPacket(pkt, target, emission),
   };
 }
 

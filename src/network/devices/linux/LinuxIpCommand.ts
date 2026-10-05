@@ -1322,19 +1322,19 @@ function ipRouteShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
     // the kernel sets on it — that is what tells an operator the route
     // exists but nothing can leave through it.
     const dead = route.linkdown ? ' linkdown' : '';
+    const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
     if (route.type === 'default') {
       const proto = route.isDHCP ? 'dhcp' : 'static';
-      const metricStr = route.metric > 0 ? ` metric ${route.metric}` : '';
       lines.push(`default via ${c.inet(`${route.nextHop} `)}dev ${dev(route)}proto ${proto}${metricStr}${dead}`);
     } else if (route.type === 'connected') {
       const srcStr = route.srcIp ? ` src ${c.inet(String(route.srcIp))}` : '';
-      lines.push(`${reseau(route)}dev ${dev(route)}proto kernel scope link${srcStr} metric ${route.metric}${dead}`);
+      lines.push(`${reseau(route)}dev ${dev(route)}proto kernel scope link${srcStr}${metricStr}${dead}`);
     } else if (route.nextHop) {
       // static via a gateway
-      lines.push(`${reseau(route)}via ${c.inet(`${route.nextHop} `)}dev ${dev(route)}proto static metric ${route.metric}${dead}`);
+      lines.push(`${reseau(route)}via ${c.inet(`${route.nextHop} `)}dev ${dev(route)}proto static${metricStr}${dead}`);
     } else {
       // static on-link (dev route, no gateway)
-      lines.push(`${reseau(route)}dev ${dev(route)}proto static scope link metric ${route.metric}${dead}`);
+      lines.push(`${reseau(route)}dev ${dev(route)}proto static scope link${metricStr}${dead}`);
     }
   }
 

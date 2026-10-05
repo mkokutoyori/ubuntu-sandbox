@@ -14,6 +14,7 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { WINDOWS_DHCP_CLIENT_PERSONALITY } from '../dhcp/DhcpClientPersonality';
 import { EndHost, type TracerouteHopResult } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { NicTeam, TeamMember, TeamNic } from './windows/WindowsNicTeam';
@@ -480,6 +481,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.hostModel = 'strong';
     this.dhcpClient.setVendorClass('MSFT 5.0');
     this.dhcpClient.setBroadcastFlag(true);
+    this.dhcpClient.setPersonality(WINDOWS_DHCP_CLIENT_PERSONALITY);
     this.dhcpClient.setAddressConflictChecker((iface, ip) => this.addressAnsweredOnLink(iface, ip));
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
@@ -3681,6 +3683,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       getDHCPState: (ifName: string) => this.dhcpClient.getState(ifName),
       releaseLease: (ifName: string) => this.dhcpClient.releaseLease(ifName),
       requestLease: (ifName: string, opts: any) => this.dhcpClient.requestLease(ifName, opts),
+      renewLease: (ifName: string) => this.dhcpClient.renewLease(ifName),
       autoDiscoverDHCPServers: () => this.autoDiscoverDHCPServers(),
 
       addDHCPEvent: (type: string, message: string) => this.addDHCPEvent(type, message),

@@ -135,6 +135,7 @@ export interface WinCommandContext {
   getDHCPState(ifName: string): any;
   releaseLease(ifName: string): string;
   requestLease(ifName: string, opts: any): string;
+  renewLease(ifName: string): void;
   autoDiscoverDHCPServers(): void;
 
   // DHCP event log
