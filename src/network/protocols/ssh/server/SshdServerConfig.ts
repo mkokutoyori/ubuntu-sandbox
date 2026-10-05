@@ -346,7 +346,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       printLastLog: true,
       useDns: false,
       useLogin: false,
-      usePam: true,
+      usePam: false,
       permitUserEnvironment: false,
       strictModes: true,
       compression: 'delayed',
@@ -407,6 +407,8 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   withPrintMotd(v: boolean): SshdServerConfig { return this.mutate({ printMotd: v }); }
   withUseDns(v: boolean): SshdServerConfig { return this.mutate({ useDns: v }); }
   withUsePam(v: boolean): SshdServerConfig { return this.mutate({ usePam: v }); }
+
+  get showsMotd(): boolean { return this.printMotd || this.usePam; }
   withStrictModes(v: boolean): SshdServerConfig { return this.mutate({ strictModes: v }); }
   withCompression(v: SshdCompression): SshdServerConfig { return this.mutate({ compression: v }); }
   withLogLevel(v: SshdLogLevel): SshdServerConfig { return this.mutate({ logLevel: v }); }

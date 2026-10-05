@@ -2,6 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -1902,7 +1903,7 @@ export class LinuxCommandExecutor {
   private readChrootDirectory(device: unknown, user: string, sourceIp: string | null): string | null {
     const remoteVfs = (device as { executor?: { vfs?: { readFile: (p: string) => string | null } } }).executor?.vfs;
     if (!remoteVfs) return null;
-    const raw = remoteVfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const raw = readSshdConfig(remoteVfs);
     if (!raw) return null;
     const userMgr = (device as { executor?: { userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } }).executor?.userMgr;
     const groups = (userMgr?.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);

@@ -180,10 +180,10 @@ describe('Scénario 9 — /etc/ssh/sshd_config : filetype, substitutions, valida
     exCommand(vim, 'set filetype?');
     expect(vim.message).toBe('filetype=sshconfig');
 
-    exCommand(vim, '%s/^Port.*/Port 2222/');
-    exCommand(vim, '%s/^PermitRootLogin.*/PermitRootLogin prohibit-password/');
-    exCommand(vim, '%s/^PasswordAuthentication.*/PasswordAuthentication no/');
-    exCommand(vim, '%s/^LogLevel.*/LogLevel VERBOSE/');
+    exCommand(vim, '%s/^#Port.*/Port 2222/');
+    exCommand(vim, '%s/^#PermitRootLogin.*/PermitRootLogin prohibit-password/');
+    exCommand(vim, '%s/^#PasswordAuthentication.*/PasswordAuthentication no/');
+    exCommand(vim, '%s/^#LogLevel.*/LogLevel VERBOSE/');
 
     expect(vim.content).toContain('Port 2222');
     expect(vim.content).toContain('PermitRootLogin prohibit-password');
@@ -216,7 +216,7 @@ describe('Scénario 9 — /etc/ssh/sshd_config : filetype, substitutions, valida
     const original = fsCtx.readFile('/etc/ssh/sshd_config')!;
 
     const vim = new VimEngine(fsCtx, '/etc/ssh/sshd_config', original, false, 'vim', 'root');
-    exCommand(vim, '%s/^Port.*/Port 999999/');
+    exCommand(vim, '%s/^#Port.*/Port 999999/');
     exCommand(vim, 'w');
 
     exCommand(vim, '!sshd -t -f %');

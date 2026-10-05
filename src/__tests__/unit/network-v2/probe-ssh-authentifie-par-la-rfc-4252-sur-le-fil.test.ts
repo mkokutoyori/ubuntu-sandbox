@@ -248,7 +248,7 @@ describe('le serveur authentifie en messages RFC 4252', () => {
 
   it('trois echecs avec MaxAuthTries 3 ferment avec « Too many authentication failures »', async () => {
     const { client, server } = await lab();
-    await server.executeCommand("sudo sed -i 's/^MaxAuthTries 6/MaxAuthTries 3/' /etc/ssh/sshd_config");
+    await server.executeCommand("sudo sed -i 's/^#MaxAuthTries 6/MaxAuthTries 3/' /etc/ssh/sshd_config");
     await server.executeCommand('sudo systemctl reload ssh');
     const wire = await open(client);
     for (let i = 0; i < 3; i++) {
@@ -260,7 +260,7 @@ describe('le serveur authentifie en messages RFC 4252', () => {
 
   it('une tentative `none` initiale ne compte pas dans MaxAuthTries', async () => {
     const { client, server } = await lab();
-    await server.executeCommand("sudo sed -i 's/^MaxAuthTries 6/MaxAuthTries 2/' /etc/ssh/sshd_config");
+    await server.executeCommand("sudo sed -i 's/^#MaxAuthTries 6/MaxAuthTries 2/' /etc/ssh/sshd_config");
     await server.executeCommand('sudo systemctl reload ssh');
     const wire = await open(client);
     await wire.send(encodeUserauthRequest('alice', { method: 'none' }));

@@ -50,7 +50,7 @@ describe('§Q — SshdServerConfig immutable directive value object', () => {
     expect(cfg.printLastLog).toBe(true);
     expect(cfg.useDns).toBe(false);
     expect(cfg.useLogin).toBe(false);
-    expect(cfg.usePam).toBe(true);
+    expect(cfg.usePam).toBe(false);
     expect(cfg.permitUserEnvironment).toBe(false);
     expect(cfg.strictModes).toBe(true);
     expect(cfg.compression).toBe('delayed');

@@ -2,6 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { validateSshdConfig } from '@/network/protocols/ssh/server/SshSshdConfig';
 import { SshdServerConfig } from '@/network/protocols/ssh/server/SshdServerConfig';
+import { readSshdConfig } from '@/network/protocols/ssh/server/SshdConfigText';
 
 /**
  * `sshd -t [-f FILE]` / `sshd -T` — configuration self-test and effective-
@@ -42,7 +43,7 @@ function sshdRun(ctx: LinuxCommandContext, args: string[]): { output: string; ex
     const verdict = validateSshdConfig(raw, absPath);
     if (!verdict.ok) return { output: verdict.errors.join('\n'), exitCode: 1 };
     if (testOnly) return { output: '', exitCode: 0 };
-    const cfg = SshdServerConfig.parse(raw);
+    const cfg = SshdServerConfig.parse(readSshdConfig(ctx.executor.vfs, absPath));
     const lines = [
       `port ${cfg.ports[0] ?? 22}`,
       `permitrootlogin ${cfg.permitRootLogin}`,
@@ -52,6 +53,8 @@ function sshdRun(ctx: LinuxCommandContext, args: string[]): { output: string; ex
       `maxauthtries ${cfg.maxAuthTries}`,
       `maxsessions ${cfg.maxSessions}`,
       `x11forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
+      `usepam ${cfg.usePam ? 'yes' : 'no'}`,
+      `printmotd ${cfg.printMotd ? 'yes' : 'no'}`,
       `permitemptypasswords ${cfg.permitEmptyPasswords ? 'yes' : 'no'}`,
       `allowtcpforwarding ${cfg.allowTcpForwarding}`,
       `clientaliveinterval ${cfg.clientAliveIntervalSeconds}`,

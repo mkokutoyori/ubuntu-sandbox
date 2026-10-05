@@ -16,6 +16,7 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
+import { readSshdConfig } from '../../../protocols/ssh/server/SshdConfigText';
 import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
 import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
@@ -224,7 +225,7 @@ function effectiveSshdView(
   sourceHost?: string,
 ): import('../../../protocols/ssh/server/SshdServerConfig').SshdEffectiveView | null {
   const machine = machineRef as { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } };
-  const raw = machine.executor?.vfs?.readFile('/etc/ssh/sshd_config') ?? '';
+  const raw = machine.executor?.vfs ? readSshdConfig(machine.executor.vfs) : '';
   if (!raw) return null;
   const cfg = SshdServerConfig.parse(raw);
   const groups = (machine.executor?.userMgr?.getUserGroups?.(user) ?? []).map(g => g.name);
@@ -232,9 +233,9 @@ function effectiveSshdView(
 }
 
 function remoteSshdConfig(machine: LinuxMachine): SshdServerConfig {
-  const raw = (machine as LinuxMachine & {
+  const raw = readSshdConfig((machine as LinuxMachine & {
     executor: { vfs: { readFile: (p: string) => string | null } };
-  }).executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  }).executor.vfs);
   return SshdServerConfig.parse(raw);
 }
 
@@ -274,14 +275,14 @@ function deniedLine(user: string, host: string, methods: readonly string[] | str
 
 /** Read a single sshd_config directive's first value (lower-cased). */
 function readRemoteSshdDirective(exec: RemoteExecLike, name: string): string | null {
-  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const raw = readSshdConfig(exec.vfs);
   const m = new RegExp(`^\\s*${name}\\s+(\\S+)`, 'im').exec(raw);
   return m ? m[1].toLowerCase() : null;
 }
 
 /** Case-preserving variant — for directives whose value is a path. */
 function readRemoteSshdDirectiveRaw(exec: RemoteExecLike, name: string): string | null {
-  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const raw = readSshdConfig(exec.vfs);
   const m = new RegExp(`^\\s*${name}\\s+(\\S+)`, 'im').exec(raw);
   return m ? m[1] : null;
 }
@@ -559,7 +560,7 @@ function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
 }
 
 function serverAcceptEnvPatterns(exec: RemoteExecLike): string[] {
-  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const raw = readSshdConfig(exec.vfs);
   const cfg = SshdServerConfig.parse(raw);
   return [...DEFAULT_ENV_PATTERNS, ...cfg.acceptEnv];
 }
@@ -1369,7 +1370,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return { output: clientHeader, exitCode: 0, connection };
   }
 
-  const printMotd     = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintMotd')    !== 'no' : true;
+  const printMotd     = remoteExec ? SshdServerConfig.parse(readSshdConfig(remoteExec.vfs)).showsMotd : true;
   const printLastLog  = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintLastLog') !== 'no' : true;
   const lines: string[] = [];
   if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));

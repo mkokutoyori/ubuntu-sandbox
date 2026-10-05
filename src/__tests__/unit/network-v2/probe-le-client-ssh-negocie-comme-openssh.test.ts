@@ -82,9 +82,9 @@ async function buildLab(sshd: { password?: 'yes' | 'no'; kbd?: 'yes' | 'no'; max
   await server.executeCommand('sudo useradd -m -s /bin/bash alice');
   await server.executeCommand('echo "alice:s3cret" | sudo chpasswd');
   const edits: string[] = [];
-  if (sshd.password) edits.push(`s/^PasswordAuthentication.*/PasswordAuthentication ${sshd.password}/`);
-  if (sshd.kbd) edits.push(`s/^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication ${sshd.kbd}/`);
-  if (sshd.maxAuthTries) edits.push(`s/^MaxAuthTries.*/MaxAuthTries ${sshd.maxAuthTries}/`);
+  if (sshd.password) edits.push(`s/^#\\?PasswordAuthentication.*/PasswordAuthentication ${sshd.password}/`);
+  if (sshd.kbd) edits.push(`s/^#\\?KbdInteractiveAuthentication.*/KbdInteractiveAuthentication ${sshd.kbd}/`);
+  if (sshd.maxAuthTries) edits.push(`s/^#\\?MaxAuthTries.*/MaxAuthTries ${sshd.maxAuthTries}/`);
   for (const edit of edits) await server.executeCommand(`sudo sed -i '${edit}' /etc/ssh/sshd_config`);
   await server.executeCommand('sudo systemctl restart ssh');
   await client.executeCommand(`ping -c 1 ${SERVER}`);

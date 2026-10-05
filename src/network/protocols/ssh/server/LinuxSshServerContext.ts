@@ -8,6 +8,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { readSshdConfig } from './SshdConfigText';
+import { UBUNTU_2204_SSHD_CONFIG } from './UbuntuSshdConfigFile';
 import { hostnameOf, type HostnameSource } from '@/network/devices/linux/KernelHostname';
 import { bashPromptParts, formatBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
@@ -29,9 +31,7 @@ import {
   type SshServerConfig,
 } from './ISshServerContext';
 import {
-  DEFAULT_SSHD_CONFIG,
   parseSshdConfig,
-  serializeSshdConfig,
   type SshdConfig,
 } from './SshSshdConfig';
 import {
@@ -79,6 +79,7 @@ const DEFAULT_FAIL2BAN_JAIL_LOCAL =
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
 const ETC_SSH_DIR = '/etc/ssh';
+const SSHD_CONFIG_DROP_IN_DIR = '/etc/ssh/sshd_config.d';
 
 interface LastLoginEntry {
   user: string;
@@ -276,7 +277,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     // second writer here (it would double every row).
     this.utmpProjection = null;
 
-    this.rawConfig = this.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+    this.rawConfig = readSshdConfig(this.vfs);
   }
 
   /** Tell SshServerHandler whether the source IP is currently rate-limited. */
@@ -618,7 +619,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getMotd(): string {
-    if (!this.effectiveSshdServerConfig().printMotd) return '';
+    if (!this.effectiveSshdServerConfig().showsMotd) return '';
     const motd = this.vfs.readFile('/etc/motd');
     return motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`;
   }
@@ -748,6 +749,9 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (!this.vfs.exists(ETC_SSH_DIR)) {
       this.vfs.mkdirp(ETC_SSH_DIR, 0o755, 0, 0);
     }
+    if (!this.vfs.exists(SSHD_CONFIG_DROP_IN_DIR)) {
+      this.vfs.mkdirp(SSHD_CONFIG_DROP_IN_DIR, 0o755, 0, 0);
+    }
   }
 
   /**
@@ -808,17 +812,10 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   private loadOrGenerateSshdConfig(): SshdConfig {
-    const existing = this.vfs.readFile(SSHD_CONFIG_PATH);
-    if (existing) return parseSshdConfig(existing);
-    this.vfs.writeFile(
-      SSHD_CONFIG_PATH,
-      serializeSshdConfig(DEFAULT_SSHD_CONFIG),
-      0,
-      0,
-      0o022,
-    );
+    if (this.vfs.readFile(SSHD_CONFIG_PATH)) return parseSshdConfig(readSshdConfig(this.vfs));
+    this.vfs.writeFile(SSHD_CONFIG_PATH, UBUNTU_2204_SSHD_CONFIG, 0, 0, 0o022);
     this.vfs.chmod(SSHD_CONFIG_PATH, 0o644);
-    return DEFAULT_SSHD_CONFIG;
+    return parseSshdConfig(readSshdConfig(this.vfs));
   }
 
   private buildAuthContext(): ISshAuthContext {

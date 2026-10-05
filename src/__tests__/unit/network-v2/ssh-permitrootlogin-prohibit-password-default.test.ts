@@ -40,7 +40,8 @@ async function buildLab(): Promise<{ pc: LinuxPC; srv: LinuxServer }> {
 describe('PermitRootLogin prohibit-password by default', () => {
   it('the image writes the OpenSSH default', async () => {
     const { srv } = await buildLab();
-    expect(await srv.executeCommand('grep -i "^PermitRootLogin" /etc/ssh/sshd_config')).toMatch(/^PermitRootLogin prohibit-password$/m);
+    expect(await srv.executeCommand('grep "PermitRootLogin" /etc/ssh/sshd_config')).toMatch(/^#PermitRootLogin prohibit-password$/m);
+    expect(await srv.executeCommand('sshd -T')).toMatch(/^permitrootlogin prohibit-password$/m);
   });
 
   it('root logs in with a key on the direct path', async () => {
@@ -61,14 +62,14 @@ describe('PermitRootLogin prohibit-password by default', () => {
 
   it('PermitRootLogin no refuses root even with a key', async () => {
     const { pc, srv } = await buildLab();
-    await taper(srv as unknown as Cli, ["sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config", 'grep -q "^PermitRootLogin no" /etc/ssh/sshd_config || echo "PermitRootLogin no" >> /etc/ssh/sshd_config', 'systemctl restart ssh']);
+    await taper(srv as unknown as Cli, ["sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config", 'grep -q "^PermitRootLogin no" /etc/ssh/sshd_config || echo "PermitRootLogin no" >> /etc/ssh/sshd_config', 'systemctl restart ssh']);
     expect(await pc.executeCommand('ssh -o PasswordAuthentication=no root@10.0.0.5 whoami')).not.toMatch(/^root$/m);
   });
 
   it('forced-commands-only admits root only with a command= key, on both paths', async () => {
     const { pc, srv } = await buildLab();
     await taper(srv as unknown as Cli, [
-      "sed -i 's/^PermitRootLogin.*/PermitRootLogin forced-commands-only/' /etc/ssh/sshd_config", 'systemctl restart ssh',
+      "sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin forced-commands-only/' /etc/ssh/sshd_config", 'systemctl restart ssh',
     ]);
     const plain = 'ssh -o PasswordAuthentication=no root@10.0.0.5 whoami';
     const wire = 'ssh -o PasswordAuthentication=no -J root@10.0.0.5 root@10.0.0.5 whoami';

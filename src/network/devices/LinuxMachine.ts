@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
@@ -1821,7 +1822,7 @@ export abstract class LinuxMachine extends EndHost
   private readonly _sshdActivePorts = new Set<number>();
 
   private sshdPortsFromConfig(): number[] {
-    const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const raw = readSshdConfig(this.executor.vfs);
     const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim))
       .map((m) => Number(m[1]))
       .filter((n) => Number.isFinite(n) && n > 0 && n < 65536);
@@ -2276,7 +2277,7 @@ export abstract class LinuxMachine extends EndHost
           this.recordSshLogin(u, fromIp, fromHost, accepted, method as 'password' | 'publickey'),
       });
     }
-    const config = SshdServerConfig.parse(this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '');
+    const config = SshdServerConfig.parse(readSshdConfig(this.executor.vfs));
     if (!this._sshHost) {
       this._sshHost = new CrossVendorSshHost({
         deviceId: this.id,
@@ -2332,7 +2333,7 @@ export abstract class LinuxMachine extends EndHost
     readonly maxAuthTries: number;
     readonly permitEmptyPasswords: boolean;
   } {
-    const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const raw = readSshdConfig(this.executor.vfs);
     const directive = (n: string): string | null => {
       const m = new RegExp(`^\\s*${n}\\s+(\\S+)`, 'im').exec(raw);
       return m ? m[1].toLowerCase() : null;
