@@ -22,6 +22,7 @@ import {
 } from './windows/WindowsNicTeam';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
+import type { SocketProtocol } from '../core/SocketTable';
 import { MACAddress } from '../core/types';
 import { toDisplayName, adapterIfIndex, LOOPBACK_IFINDEX } from './windows/WindowsInterfaceNaming';
 import { interfaceGuidFor } from './host/hardware/HardwareIdentity';
@@ -795,7 +796,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const payload = e.payload as { pid: number; name: string };
       const { pid, name } = payload;
       const stack = this.getTcpStack();
-      const toUnbind: Array<{ protocol: 'tcp' | 'udp'; localAddress: string; localPort: number; state: string }> = [];
+      const toUnbind: Array<{ protocol: SocketProtocol; localAddress: string; localPort: number; state: string }> = [];
       for (const sock of this.socketTable.getAll()) {
         const matchesByPid = sock.pid === pid;
         const matchesByName = name && sock.processName === name;

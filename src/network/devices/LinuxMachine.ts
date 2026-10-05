@@ -30,6 +30,7 @@ import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { PortNumber } from '../core/ports/PortNumber';
+import type { SocketProtocol } from '../core/SocketTable';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
@@ -341,6 +342,7 @@ export abstract class LinuxMachine extends EndHost
     // ServicePortProjection created in attachEventBus needs the table.
     this.socketTable.setEphemeralRange(32768, 60999);
     this.tcpv2.setEphemeralRange(32768, 60999);
+    this.enableUdpLite();
     this.initDefaultSockets(profile.isServer);
     this.executor.setLocalDevice(this);
     this.executor.bindKernelHostname({
@@ -1964,7 +1966,7 @@ export abstract class LinuxMachine extends EndHost
       const payload = e.payload as { pid: number; comm: string };
       const { pid, comm } = payload;
       const stack = this.getTcpStack();
-      const toUnbind: Array<{ protocol: 'tcp' | 'udp'; localAddress: string; localPort: number; state: string }> = [];
+      const toUnbind: Array<{ protocol: SocketProtocol; localAddress: string; localPort: number; state: string }> = [];
       for (const sock of this.socketTable.getAll()) {
         const matchesByPid = sock.pid === pid;
         const matchesByName = comm && sock.pid === undefined && sock.processName === comm;

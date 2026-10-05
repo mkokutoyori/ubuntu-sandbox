@@ -21,6 +21,7 @@ export const PORT_PATHS = {
   services: '/etc/services',
   procNetTcp: '/proc/net/tcp',
   procNetUdp: '/proc/net/udp',
+  procNetUdpLite: '/proc/net/udplite',
   procNetSnmp: '/proc/net/snmp',
   procNetDir: '/proc/net',
 } as const;
@@ -54,6 +55,9 @@ export class PortsFilesystem {
     );
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdp, () =>
       renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'udp')),
+    );
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdpLite, () =>
+      renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'udplite')),
     );
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetSnmp, () =>
       renderProcNetSnmp(snmpSnapshot(socketTable, counters?.())),
@@ -89,9 +93,9 @@ export function renderProcNetSnmp(snapshot: SnmpSnapshot): string {
     'Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors',
     `Tcp: 1 200 120000 -1 ${c.tcpActiveOpens} ${c.tcpPassiveOpens} ${c.tcpAttemptFails} ${c.tcpEstabResets} ${snapshot.currEstab} ${c.tcpInSegs} ${c.tcpOutSegs} ${c.tcpRetransSegs} ${c.tcpInErrs} ${c.tcpOutRsts} 0`,
     'Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
-    `Udp: ${c.udpInDatagrams} ${c.udpNoPorts} ${c.udpInErrors} ${c.udpOutDatagrams} 0 0 0 0`,
+    `Udp: ${c.udpInDatagrams} ${c.udpNoPorts} ${c.udpInErrors} ${c.udpOutDatagrams} 0 0 ${c.udpInCsumErrors} 0`,
     'UdpLite: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
-    'UdpLite: 0 0 0 0 0 0 0 0',
+    `UdpLite: ${c.udpLiteInDatagrams} ${c.udpLiteNoPorts} ${c.udpLiteInErrors} ${c.udpLiteOutDatagrams} 0 0 ${c.udpLiteInCsumErrors} 0`,
     '',
   ].join('\n');
 }
