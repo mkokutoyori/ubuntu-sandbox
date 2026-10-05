@@ -401,7 +401,7 @@ describe('Scénario 9 — le terminal interactif, pas seulement le canal brut', 
     const term = new LinuxTerminalSession('t1', poste);
     await term.init?.();
     allowLegacyIosSsh(poste);
-    term.setInput('ssh admin@10.0.4.2');
+    term.setInput('ssh -o StrictHostKeyChecking=accept-new admin@10.0.4.2');
     term.handleKey(touche('Enter'));
     for (let i = 0; i < 40 && term.currentInputMode.type !== 'password'; i++) await pause(25);
     term.setPasswordBuf('adminpw');

@@ -1817,7 +1817,7 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
-      cmd: 'ssh bob@10.0.0.2 "ls /"',
+      cmd: 'ssh -o StrictHostKeyChecking=accept-new bob@10.0.0.2 "ls /"',
       contains: [/This service allows sftp connections only|Permission denied/i],
       excludes: [/^bin$|^etc$/m],
     },
@@ -1885,7 +1885,7 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
-      cmd: 'ssh alice@10.0.0.2 "ls /"',
+      cmd: 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 "ls /"',
       contains: [/This service allows sftp connections only|Permission denied/i],
     },
   ];

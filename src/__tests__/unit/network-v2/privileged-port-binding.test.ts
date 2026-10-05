@@ -136,7 +136,7 @@ describe('the terminal ssh — same kernel, same OpenSSH lines', () => {
     const session = new LinuxTerminalSession('t', pc);
     const key = (k: string) => ({ key: k, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
     const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
-    session.setInput('ssh -L 80:10.0.0.2:22 -R 80:10.0.0.1:22 -L 8022:10.0.0.2:22 alice@10.0.0.2');
+    session.setInput('ssh -o StrictHostKeyChecking=accept-new -L 80:10.0.0.2:22 -R 80:10.0.0.1:22 -L 8022:10.0.0.2:22 alice@10.0.0.2');
     session.handleKey(key('Enter'));
     await settle();
     session.setPasswordBuf('secret');

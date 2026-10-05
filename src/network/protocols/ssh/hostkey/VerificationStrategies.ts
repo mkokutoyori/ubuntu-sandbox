@@ -13,7 +13,7 @@ import {
   buildHostKeyChangedWarning,
 } from './IHostKeyVerificationStrategy';
 
-export class StrictVerificationStrategy implements IHostKeyVerificationStrategy {
+export class AskVerificationStrategy implements IHostKeyVerificationStrategy {
   verify(
     host: string,
     key: SshHostKey,
@@ -27,6 +27,19 @@ export class StrictVerificationStrategy implements IHostKeyVerificationStrategy 
         host,
       };
     }
+    if (known.matches(key)) return { action: 'accept_silent' };
+    return rejectChangedKey(host, known, key);
+  }
+}
+
+export class StrictVerificationStrategy implements IHostKeyVerificationStrategy {
+  verify(
+    host: string,
+    key: SshHostKey,
+    store: KnownHostsStore,
+  ): VerificationDecision {
+    const known = store.get(host);
+    if (!known) return { action: 'refuse_unknown', host };
     if (known.matches(key)) return { action: 'accept_silent' };
     return rejectChangedKey(host, known, key);
   }
@@ -63,6 +76,8 @@ export function createVerificationStrategy(
   switch (mode) {
     case 'yes':
       return new StrictVerificationStrategy();
+    case 'ask':
+      return new AskVerificationStrategy();
     case 'no':
       return new NoVerificationStrategy();
     case 'accept-new':

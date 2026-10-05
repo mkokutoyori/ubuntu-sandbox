@@ -42,7 +42,7 @@ async function sshedIn(): Promise<LinuxTerminalSession> {
 
   const term = new LinuxTerminalSession('t1', client);
   await term.init?.();
-  term.setInput(`ssh alice@${SERVER_IP}`);
+  term.setInput(`ssh -o StrictHostKeyChecking=accept-new alice@${SERVER_IP}`);
   term.handleKey(key('Enter'));
   for (let i = 0; i < 20 && term.currentInputMode.type !== 'password'; i++) await wait(25);
   term.setPasswordBuf('alice');

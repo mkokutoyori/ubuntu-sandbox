@@ -178,7 +178,7 @@ describe('Cross-equipment interactive SSH (bug #3)', () => {
     const { linux1 } = await buildMixedLan();
     const session = new LinuxTerminalSession('term-cisco-ssh', linux1);
 
-    await typeCommand(session, 'ssh admin@10.0.0.6');
+    await typeCommand(session, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6');
     await flush(40);
     if (session.currentInputMode.type === 'password') {
       session.setPasswordBuf('Admin@123');
@@ -194,7 +194,7 @@ describe('Cross-equipment interactive SSH (bug #3)', () => {
     const { linux1 } = await buildMixedLan();
     const session = new LinuxTerminalSession('term-hw-ssh', linux1);
 
-    await typeCommand(session, 'ssh admin@10.0.0.8');
+    await typeCommand(session, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.8');
     if (session.currentInputMode.type === 'password') {
       session.setPasswordBuf('Admin@123');
       session.handleKey(key('Enter'));

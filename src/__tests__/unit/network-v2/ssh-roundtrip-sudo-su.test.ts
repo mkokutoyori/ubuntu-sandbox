@@ -82,7 +82,7 @@ describe('sudo su still works after an SSH round trip (user report)', () => {
   it('sudo su still works after ssh to Windows and back out with exit', async () => {
     const term = await lab();
 
-    await typeAtRoot(term, 'ssh Administrator@10.0.40.4');
+    await typeAtRoot(term, 'ssh -o StrictHostKeyChecking=accept-new Administrator@10.0.40.4');
     await answerPassword(term, 'admin');
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
 
@@ -98,11 +98,11 @@ describe('sudo su still works after an SSH round trip (user report)', () => {
   it('sudo su works on a Linux box reached THROUGH a Windows hop', async () => {
     const term = await lab();
 
-    await typeAtRoot(term, 'ssh Administrator@10.0.40.4');
+    await typeAtRoot(term, 'ssh -o StrictHostKeyChecking=accept-new Administrator@10.0.40.4');
     await answerPassword(term, 'admin');
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
 
-    await type(term, 'ssh user@10.0.40.2');
+    await type(term, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.40.2');
     await answerPassword(term, 'admin');
     expect(term.getPrompt(), 'second hop should land on the Linux box').toMatch(/@PC2/);
 

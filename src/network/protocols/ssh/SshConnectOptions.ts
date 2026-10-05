@@ -11,7 +11,15 @@ import { resolveAlgorithmDirectives } from './transport/SshAlgorithms';
 import { parseRekeyLimit } from './transport/RekeyLimit';
 import type { SshAlgorithmPreferences } from './transport/SshTransport';
 
-export type StrictHostKeyChecking = 'yes' | 'no' | 'accept-new';
+export type StrictHostKeyChecking = 'yes' | 'no' | 'accept-new' | 'ask';
+
+const STRICT_HOST_KEY_CHECKING_WORDS: Readonly<Record<string, StrictHostKeyChecking>> = {
+  yes: 'yes', true: 'yes', no: 'no', false: 'no', off: 'no', ask: 'ask', 'accept-new': 'accept-new',
+};
+
+export function parseStrictHostKeyChecking(value: string | null | undefined): StrictHostKeyChecking | undefined {
+  return value === undefined || value === null ? undefined : STRICT_HOST_KEY_CHECKING_WORDS[value.trim().toLowerCase()];
+}
 
 export const OPENSSH_USERAUTH_METHODS: readonly AuthMethodType[] = ['publickey', 'keyboard-interactive', 'password'];
 
@@ -94,7 +102,7 @@ export class SshConnectOptionsBuilder {
   private _user?: string;
   private _port = 22;
   private _identityFiles: string[] = [];
-  private _strict: StrictHostKeyChecking = 'yes';
+  private _strict: StrictHostKeyChecking = 'ask';
   private _timeoutMs = 30_000;
   private _password?: string;
   private _hashKnownHosts?: boolean;

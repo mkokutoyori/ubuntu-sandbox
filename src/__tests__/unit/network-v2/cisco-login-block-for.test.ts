@@ -169,7 +169,7 @@ function launchOpts(pc: LinuxPC, sourceIp: string): SshLaunchOptions {
  */
 async function sshAttempt(term: LinuxTerminalSession, host: string, password: string): Promise<void> {
   if (term.currentInputMode.type !== 'password') {
-    await type(term, `ssh admin@${host}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new admin@${host}`);
     // The connection now goes through a real TCP/SshSession handshake
     // (SYN/SYN-ACK/ACK, hello, auth) instead of a synchronous local
     // check, so the password prompt (or an immediate refusal) can take
@@ -294,7 +294,7 @@ describe('§B — 5e échec SSH déclenche le blocage immédiat et ferme la conn
       await sshAttempt(term, CISCO_IP, 'WrongPassword');
     }
 
-    const attempt = await tryInterpretSshLaunch(`ssh admin@${CISCO_IP}`, launchOpts(pc, '10.0.0.1'));
+    const attempt = await tryInterpretSshLaunch(`ssh -o StrictHostKeyChecking=accept-new admin@${CISCO_IP}`, launchOpts(pc, '10.0.0.1'));
     expect(attempt?.kind).toBe('error');
     // The router's real SshServerHandler now accepts the TCP connection
     // (isClientBlocked fires at the application layer, not at the SYN)
@@ -327,7 +327,7 @@ describe("§C — login quiet-mode access-class : whitelist fonctionnelle pendan
     for (let i = 0; i < 3; i++) await sshAttempt(term, CISCO_IP, 'WrongPassword');
     expect(cisco.getLoginBlocker()?.isBlocked()).toBe(true);
 
-    const attempt = await tryInterpretSshLaunch(`ssh admin@${CISCO_IP}`, launchOpts(pc, '10.0.0.1'));
+    const attempt = await tryInterpretSshLaunch(`ssh -o StrictHostKeyChecking=accept-new admin@${CISCO_IP}`, launchOpts(pc, '10.0.0.1'));
     expect(attempt?.kind).toBe('error');
   });
 
@@ -338,7 +338,7 @@ describe("§C — login quiet-mode access-class : whitelist fonctionnelle pendan
     for (let i = 0; i < 3; i++) await sshAttempt(attacker, CISCO_IP, 'WrongPassword');
     expect(cisco.getLoginBlocker()?.isBlocked()).toBe(true);
 
-    const attempt = await tryInterpretSshLaunch(`ssh admin@${CISCO_IP}`, launchOpts(pc2, '10.0.0.99'));
+    const attempt = await tryInterpretSshLaunch(`ssh -o StrictHostKeyChecking=accept-new admin@${CISCO_IP}`, launchOpts(pc2, '10.0.0.99'));
     expect(attempt?.kind).not.toBe('error');
   });
 
@@ -416,7 +416,7 @@ describe('§F — le quiet-mode expire après blockSeconds et le comportement re
     await new Promise((res) => setTimeout(res, 2300));
     expect(cisco.getLoginBlocker()?.isBlocked()).toBe(false);
 
-    const attempt = await tryInterpretSshLaunch(`ssh admin@${CISCO_IP}`, launchOpts(pc, '10.0.0.1'));
+    const attempt = await tryInterpretSshLaunch(`ssh -o StrictHostKeyChecking=accept-new admin@${CISCO_IP}`, launchOpts(pc, '10.0.0.1'));
     expect(attempt?.kind).not.toBe('error');
   }, 10000);
 });

@@ -100,7 +100,7 @@ async function completed(term: LinuxTerminalSession, text: string): Promise<{ in
 describe('a keyword the client does not know is refused', () => {
   it('the message names the keyword in lower case and the command exits 255', async () => {
     const { pc1 } = await lab();
-    const out = await pc1.executeCommand('ssh -o Foo=bar user@10.0.0.2; echo $?');
+    const out = await pc1.executeCommand('ssh -o StrictHostKeyChecking=accept-new -o Foo=bar user@10.0.0.2; echo $?');
 
     expect(out.split('\n')).toEqual(['command-line: line 0: Bad configuration option: foo', '255']);
   });
@@ -119,7 +119,7 @@ describe('a keyword the client does not know is refused', () => {
 
   it('a known keyword written in any case is not refused — WITNESS', async () => {
     const { pc1 } = await lab();
-    const out = await pc1.executeCommand('ssh -o compression=yes -o BATCHMODE=yes user@10.0.0.2 true');
+    const out = await pc1.executeCommand('ssh -o StrictHostKeyChecking=accept-new -o compression=yes -o BATCHMODE=yes user@10.0.0.2 true');
 
     expect(out).not.toContain('Bad configuration option');
   });
@@ -180,7 +180,7 @@ describe('the release decides which keywords exist', () => {
 describe('the three ways to write an option mean the same thing', () => {
   async function firstContact(spelling: string): Promise<string[]> {
     const { linuxTerm } = await lab();
-    return typed(linuxTerm, `ssh ${spelling} user@10.0.0.2`);
+    return typed(linuxTerm, `ssh -o StrictHostKeyChecking=accept-new ${spelling} user@10.0.0.2`);
   }
 
   it('-o Key=value, -o "Key value" and -oKey=value give the same transcript', async () => {
@@ -224,7 +224,7 @@ describe('Tab completes the keywords the client knows', () => {
     const { linuxTerm } = await lab();
 
     expect((await completed(linuxTerm, 'ssh -o Pro')).input).toBe('ssh -o Proxy');
-    const listed = await completed(linuxTerm, 'ssh -o Proxy');
+    const listed = await completed(linuxTerm, 'ssh -o StrictHostKeyChecking=accept-new -o Proxy');
     expect(listed.suggestions).toEqual(['ProxyCommand=', 'ProxyJump=', 'ProxyUseFdpass=']);
   });
 

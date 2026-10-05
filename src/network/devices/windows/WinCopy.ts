@@ -10,31 +10,35 @@ const END_OF_FILE = String.fromCharCode(0x1a);
 const countLine = (count: number, verb: 'copied' | 'moved', noun = 'file(s)'): string =>
   `${String(count).padStart(9)} ${noun} ${verb}.`;
 
+const copyQuestion = (target: string): string => `Overwrite ${target}? (Yes/No/All): `;
+
 export interface TransferSource {
   readonly display: string;
   readonly absolute: string;
   readonly isDirectory: boolean;
 }
 
-type OverwriteFlag = 'y' | '-y' | null;
+export type OverwriteFlag = 'y' | '-y' | null;
 
-function overwritesSilently(ctx: WinFileCommandContext, flag: OverwriteFlag): boolean {
+export function overwritesSilently(
+  ctx: WinFileCommandContext, flag: OverwriteFlag, scriptDefault: boolean,
+): boolean {
   if (flag === 'y') return true;
   if (flag === '-y') return false;
   const preset = (ctx.env.get('COPYCMD') ?? '').toLowerCase();
   if (preset.includes('/-y')) return false;
   if (preset.includes('/y')) return true;
-  return ctx.inScript;
+  return scriptDefault && ctx.inScript;
 }
 
 export function overwriteGate(
-  ctx: WinFileCommandContext, output: string[], silent: boolean,
+  ctx: WinFileCommandContext, output: string[], silent: boolean, question: (target: string) => string,
 ): (target: string) => Promise<boolean> {
   let all = silent;
   return async target => {
     if (all) return true;
     for (;;) {
-      const answer = await askLine(ctx, output, `Overwrite ${target}? (Yes/No/All): `);
+      const answer = await askLine(ctx, output, question(target));
       if (answer === null) return false;
       const letter = answer.trim().toLowerCase()[0];
       if (letter === 'y') return true;
@@ -141,8 +145,8 @@ export async function cmdCopy(ctx: WinFileCommandContext, args: string[]): Promi
     return PATH_NOT_FOUND;
   }
 
-  const silent = overwritesSilently(ctx, parsed.overwrite);
-  const gate = overwriteGate(ctx, output, silent);
+  const silent = overwritesSilently(ctx, parsed.overwrite, true);
+  const gate = overwriteGate(ctx, output, silent, copyQuestion);
   const concatenating = sourceSpecs.length > 1 || (sources.length > 1 && !destinationIsDirectory);
   const listing = concatenating || hasWildcard(sourceSpecs[0]) || sources.length > 1;
   let copied = 0;
@@ -253,7 +257,7 @@ export async function cmdMove(ctx: WinFileCommandContext, args: string[]): Promi
     return 'Cannot move multiple files to a single file.\n' + countLine(0, 'moved');
   }
 
-  const gate = overwriteGate(ctx, output, overwritesSilently(ctx, parsed.overwrite));
+  const gate = overwriteGate(ctx, output, overwritesSilently(ctx, parsed.overwrite, true), copyQuestion);
   const listing = sources.length > 1 || hasWildcard(sourceList);
   let files = 0;
   let directories = 0;

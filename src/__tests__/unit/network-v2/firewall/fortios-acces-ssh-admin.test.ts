@@ -149,7 +149,7 @@ describe('le pare-feu heberge un vrai serveur SSH', () => {
     await host.init?.();
 
     const frames = await countDispatchedFrames(
-      () => sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123'));
+      () => sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123'));
 
     expect(frames).toBeGreaterThan(0);
     expect(landedOnFirewall(host)).toBe(true);
@@ -160,7 +160,7 @@ describe('le pare-feu heberge un vrai serveur SSH', () => {
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
 
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'MAUVAIS');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'MAUVAIS');
 
     expect(landedOnFirewall(host)).toBe(false);
     expect(transcript(host)).toMatch(/Permission denied/);
@@ -170,7 +170,7 @@ describe('le pare-feu heberge un vrai serveur SSH', () => {
     const { poste } = await laboratoire();
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 
     await typeLine(host, 'get system status');
 
@@ -181,7 +181,7 @@ describe('le pare-feu heberge un vrai serveur SSH', () => {
     const { poste } = await laboratoire();
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 
     await typeLine(host, 'config system global');
 
@@ -193,7 +193,7 @@ describe('le pare-feu heberge un vrai serveur SSH', () => {
     const { fw, poste } = await laboratoire();
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
     await typeLine(host, 'config system global');
 
     expect(fw.getShell().getPrompt()).toMatch(/FGT\s*#/);
@@ -207,7 +207,7 @@ describe('`allowaccess` est une vraie porte', () => {
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
 
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 
     expect(landedOnFirewall(host)).toBe(false);
     expect(transcript(host)).not.toMatch(/password/i);
@@ -217,7 +217,7 @@ describe('`allowaccess` est une vraie porte', () => {
     const { sh, poste } = await laboratoire('ping');
     const refuse = new LinuxTerminalSession('h', poste);
     await refuse.init?.();
-    await sshLogin(refuse, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(refuse, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
     expect(landedOnFirewall(refuse)).toBe(false);
 
     run(sh, 'config system interface', 'edit "port1"',
@@ -225,7 +225,7 @@ describe('`allowaccess` est une vraie porte', () => {
 
     const host = new LinuxTerminalSession('h2', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
     expect(landedOnFirewall(host)).toBe(true);
   });
 
@@ -236,7 +236,7 @@ describe('`allowaccess` est une vraie porte', () => {
 
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 
     expect(landedOnFirewall(host)).toBe(false);
   });
@@ -263,7 +263,7 @@ describe('`config system global` gouverne la porte', () => {
 
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh -p 2222 admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new -p 2222 admin@192.168.1.1', 'Secret123');
 
     expect(landedOnFirewall(host)).toBe(true);
   });
@@ -274,7 +274,7 @@ describe('`config system global` gouverne la porte', () => {
 
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 
     expect(landedOnFirewall(host)).toBe(false);
   });
@@ -325,7 +325,7 @@ describe('`trusthost` refuse a la connexion', () => {
 
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 
     expect(landedOnFirewall(host)).toBe(false);
   });
@@ -337,7 +337,7 @@ describe('`trusthost` refuse a la connexion', () => {
 
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 
     expect(landedOnFirewall(host)).toBe(true);
   });

@@ -60,7 +60,7 @@ import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import type { ISshSession } from '@/network/protocols/ssh/session/ISshSession';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
-import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
+import { SshConnectOptionsBuilder, type StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
 import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { isOk } from '@/network/protocols/ssh/Result';
@@ -541,7 +541,7 @@ export class SshInteractiveSubShell implements ISubShell {
     const nested = this.remoteDevice ? parseSshCommandLine(trimmed) : null;
     if (nested !== null && nested.host !== '') {
       return this.startNestedHop(
-        nested.user ?? this.remoteUser, nested.host, nested.command, nested.port, nested.algorithms);
+        nested.user ?? this.remoteUser, nested.host, nested.command, nested.port, nested.algorithms, nested.strict);
     }
 
     const collected: string[] = [];
@@ -715,7 +715,7 @@ export class SshInteractiveSubShell implements ISubShell {
    */
   private async startNestedHop(
     targetUser: string, targetHost: string, execCommand: string | null = null,
-    port = 22, algorithms: SshAlgorithmPreferences = {},
+    port = 22, algorithms: SshAlgorithmPreferences = {}, strict: StrictHostKeyChecking = 'ask',
   ): Promise<SubShellResult> {
     const dev = this.remoteDevice as unknown as {
       tcpConnect: (host: string, port: number) => Promise<unknown>;
@@ -741,7 +741,7 @@ export class SshInteractiveSubShell implements ISubShell {
     });
     const opts = SshConnectOptionsBuilder.create()
       .host(targetHost).user(targetUser).port(port)
-      .strictHostKeyChecking('accept-new')
+      .strictHostKeyChecking(strict)
       .algorithms(algorithms)
       .build();
 

@@ -20,7 +20,7 @@ import { opensshIdentificationFor } from '@/network/protocols/ssh/serverIdentifi
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpConnector } from '@/network/tcp/types';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
-import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
+import { SshConnectOptionsBuilder, type StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
 import { sshClientProfileOf } from '@/network/protocols/ssh/SshClientProfile';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
@@ -99,7 +99,7 @@ export interface WireSshLoginRequest {
    * is the same either way, only the keyboard route differs.
    */
   readonly password?: string;
-  readonly strict?: 'yes' | 'no' | 'accept-new';
+  readonly strict?: StrictHostKeyChecking;
   readonly identityFiles?: readonly string[];
   readonly credentialless?: boolean;
   readonly algorithms?: SshAlgorithmPreferences;

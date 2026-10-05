@@ -163,7 +163,7 @@ describe('PowerShell, whose ssh goes through the shell launcher', () => {
   it('enters the router once the legacy algorithms are asked for', async () => {
     const { win } = await lab();
     const terminal = await powershell(win);
-    await typeInside(terminal, `ssh ${LEGACY} admin@${ROUTER}`);
+    await typeInside(terminal, `ssh ${LEGACY} -o StrictHostKeyChecking=accept-new admin@${ROUTER}`);
     await answerPassword(terminal, SECRET);
 
     expect(terminal.foreground.getPrompt()).toMatch(/^R1[>#]/);
@@ -213,7 +213,7 @@ describe('the second hop of an SSH session', () => {
   it('reads -o and enters the router instead of taking -o for the host name', async () => {
     const { win } = await lab();
     const terminal = await insideServer(win);
-    await typeInside(terminal, `ssh ${LEGACY} admin@${ROUTER}`);
+    await typeInside(terminal, `ssh ${LEGACY} -o StrictHostKeyChecking=accept-new admin@${ROUTER}`);
     await answerPassword(terminal, SECRET);
 
     expect(transcript(terminal)).not.toContain('connect to host -o');

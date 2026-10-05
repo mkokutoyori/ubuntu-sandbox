@@ -193,7 +193,7 @@ describe('SSH UI — basic password authentication flow', () => {
   });
 
   it('switches to password input mode after typing `ssh user@host`', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
 
     const mode = session.currentInputMode;
@@ -204,7 +204,7 @@ describe('SSH UI — basic password authentication flow', () => {
   });
 
   it('completes a full login with the correct password', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -214,7 +214,7 @@ describe('SSH UI — basic password authentication flow', () => {
   });
 
   it('refuses login with a wrong password (after the 3 retries)', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await typeWrongPasswordUntil(session, 'wrong', () =>
       hasLine(session, /Permission denied/),
     );
@@ -231,7 +231,7 @@ describe('SSH UI — basic password authentication flow', () => {
     // fire without the test waiting on real wall-clock time.
     const scheduler = new VirtualTimeScheduler();
     lan.pc1.setScheduler(scheduler);
-    await typeNormal(session, `ssh user@99.99.99.99`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@99.99.99.99`);
     scheduler.advance(worstCaseRetransmitWindowMs() + 1000);
     // Unreachable target — connect fails at TCP level before the auth phase,
     // so the password prompt never opens. Just wait for the error line.
@@ -243,7 +243,7 @@ describe('SSH UI — basic password authentication flow', () => {
   });
 
   it('returns to local prompt after exit', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -257,7 +257,7 @@ describe('SSH UI — basic password authentication flow', () => {
   });
 
   it('runs remote commands after login (whoami, hostname)', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -274,7 +274,7 @@ describe('SSH UI — basic password authentication flow', () => {
   });
 
   it('updates the prompt to the remote machine after connecting', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -294,7 +294,7 @@ describe('SSH UI — one-shot exec (ssh user@host command)', () => {
   });
 
   it('runs the remote command and returns to local prompt (no sub-shell)', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP} hostname`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP} hostname`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     // `hostname` reads /etc/hostname which the LinuxPC profile seeds as
@@ -306,7 +306,7 @@ describe('SSH UI — one-shot exec (ssh user@host command)', () => {
   });
 
   it('reports stderr lines from a failing remote command', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP} cat /nonexistent`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP} cat /nonexistent`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     // Wait until the prompt mode has cleared (= connect/exec/disconnect cycle done).
@@ -328,7 +328,7 @@ describe('SSH UI — clearing the screen inside an SSH session', () => {
   beforeEach(async () => {
     lan = await buildLan();
     session = new LinuxTerminalSession('term-1', lan.pc1);
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -362,10 +362,10 @@ describe('SSH UI — strict host key checking interactive prompt', () => {
     session = new LinuxTerminalSession('term-1', lan.pc1);
   });
 
-  it('prompts the user for `yes` when StrictHostKeyChecking=yes and the host is unknown', async () => {
+  it('prompts the user for `yes` when StrictHostKeyChecking=ask and the host is unknown', async () => {
     await typeNormal(
       session,
-      `ssh -o StrictHostKeyChecking=yes user@${PC2_IP}`,
+      `ssh -o StrictHostKeyChecking=ask user@${PC2_IP}`,
     );
     await waitFor(
       () =>
@@ -386,10 +386,24 @@ describe('SSH UI — strict host key checking interactive prompt', () => {
     expect(session.currentInputMode.type).toBe('password');
   });
 
+  it('prompts by default, because OpenSSH\'s default is `ask`', async () => {
+    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await waitFor(() => session.currentInputMode.type === 'interactive-text');
+    expect(hasLine(session, /authenticity of host '10\.0\.0\.2'/)).toBe(true);
+  });
+
+  it('refuses an unknown host without asking when StrictHostKeyChecking=yes', async () => {
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=yes user@${PC2_IP}`);
+    await waitFor(() => hasLine(session, /Host key verification failed/));
+    expect(hasLine(session, /No ED25519 host key is known for 10\.0\.0\.2 and you have requested strict checking\./)).toBe(true);
+    expect(hasLine(session, /authenticity of host/)).toBe(false);
+    expect(session.isInsideSshSession).toBe(false);
+  });
+
   it('rejects the connection when the user answers `no` to the host-key prompt', async () => {
     await typeNormal(
       session,
-      `ssh -o StrictHostKeyChecking=yes user@${PC2_IP}`,
+      `ssh -o StrictHostKeyChecking=ask user@${PC2_IP}`,
     );
     await waitFor(
       () => session.currentInputMode.type === 'interactive-text',
@@ -412,7 +426,7 @@ describe('SSH UI — Ctrl+C and Ctrl+D inside SSH session', () => {
   });
 
   it('Ctrl+C during the password prompt cancels the connection', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
 
     session.handleKey(key('c', { ctrlKey: true }));
@@ -434,7 +448,7 @@ describe('SSH UI — history and prompt rendering inside the remote session', ()
   });
 
   it('updates the prompt path after a `cd` on the remote', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -452,7 +466,7 @@ describe('SSH UI — history and prompt rendering inside the remote session', ()
   it('preserves bash history across the SSH lifecycle (local before, remote during, local after)', async () => {
     await typeNormal(session, 'echo local-pre');
     await flush();
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -485,7 +499,7 @@ describe('SSH UI — multi-host scenarios', () => {
 
   it('can connect to PC2, exit, then connect to PC3', async () => {
     // PC2
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -496,7 +510,7 @@ describe('SSH UI — multi-host scenarios', () => {
     expect(session.getPrompt()).toContain('PC1');
 
     // PC3
-    await typeNormal(session, `ssh user@${PC3_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC3_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -505,7 +519,7 @@ describe('SSH UI — multi-host scenarios', () => {
 
   it('persists known_hosts so the second connection to PC2 does not prompt with -o StrictHostKeyChecking=yes', async () => {
     // First connection (accept-new — silent persist)
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -548,7 +562,7 @@ describe('SSH UI — public-key auth path (no password prompted)', () => {
     pc2Vfs.chmod('/home/user/.ssh/authorized_keys', 0o600);
 
     // 3. Connect — no password prompt should appear.
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.isInsideSshSession, 3000);
 
     expect(session.isInsideSshSession).toBe(true);
@@ -568,7 +582,7 @@ describe('SSH UI — input routing precedence', () => {
   });
 
   it('SSH-IO key handler takes precedence over the flow engine and sub-shell handlers', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
 
     // No active sub-shell, no flow — only pendingSshIO should be awaiting.
@@ -594,7 +608,7 @@ describe('SSH UI — auth.log produced by the server side during a UI login', ()
   });
 
   it('records "Accepted password for user" on PC2 after a successful UI login', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'password');
     await typePassword(session, 'admin');
     await waitFor(() => session.isInsideSshSession);
@@ -604,7 +618,7 @@ describe('SSH UI — auth.log produced by the server side during a UI login', ()
   });
 
   it('records "Failed password" on PC2 after a wrong-password UI login', async () => {
-    await typeNormal(session, `ssh user@${PC2_IP}`);
+    await typeNormal(session, `ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     await typeWrongPasswordUntil(session, 'wrong', () =>
       hasLine(session, /Permission denied/),
     );

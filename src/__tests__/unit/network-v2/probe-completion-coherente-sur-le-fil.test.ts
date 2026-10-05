@@ -199,7 +199,7 @@ describe('the firewall answers the same Tab, console or SSH', () => {
     const { win } = await lab();
     const host = new WindowsTerminalSession('w', win);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
     const after = await tabOn(host, 'get sys int');
     expect(after.buffer).toBe('get system interface ');
   }, 30000);
@@ -208,7 +208,7 @@ describe('the firewall answers the same Tab, console or SSH', () => {
     const { linux } = await lab();
     const host = new LinuxTerminalSession('h', linux);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
     const after = await tabOn(host, 'get sys int');
     expect(after.buffer).toBe('get system interface ');
   }, 30000);
@@ -219,7 +219,7 @@ describe('what the fix must not disturb', () => {
     const { linux } = await lab();
     const host = new LinuxTerminalSession('h2', linux);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.20', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.20', 'Secret123');
     const after = await tabOn(host, 'ls /tmp/zzuniqueremot');
     expect(after.buffer).toBe('ls /tmp/zzuniqueremote/');
   }, 30000);
@@ -228,7 +228,7 @@ describe('what the fix must not disturb', () => {
     const { win } = await lab();
     const host = new WindowsTerminalSession('w3', win);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.20', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.20', 'Secret123');
     const after = await tabOn(host, 'ls /tmp/zzuniqueremot');
     expect(after.buffer).toBe('ls /tmp/zzuniqueremote/');
   }, 30000);
@@ -239,7 +239,7 @@ describe('the same rule holds for every vendor CLI, not just this one', () => {
     const { linux } = await lab();
     const host = new LinuxTerminalSession('h3', linux);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.30', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.30', 'Secret123');
     const after = await tabOn(host, 'show ip int');
     expect(after.buffer.startsWith('show ip int')).toBe(true);
     expect(after.buffer).not.toContain('show ip int show');

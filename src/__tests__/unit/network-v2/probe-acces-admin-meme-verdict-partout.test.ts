@@ -147,7 +147,7 @@ async function landsOnFirewallFromLinux(allowOnPort2: string, target: string): P
   const { linux } = await lab(allowOnPort2);
   const host = new LinuxTerminalSession('l', linux);
   await host.init?.();
-  await sshLogin(host, `ssh admin@${target}`, 'Secret123');
+  await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${target}`, 'Secret123');
   return host.foreground.getPrompt().includes('FW1');
 }
 
@@ -155,7 +155,7 @@ async function landsOnFirewallFromWindows(allowOnPort2: string, target: string):
   const { windows } = await lab(allowOnPort2);
   const host = new WindowsTerminalSession('w', windows);
   await host.init?.();
-  await sshLogin(host, `ssh admin@${target}`, 'Secret123');
+  await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${target}`, 'Secret123');
   return host.foreground.getPrompt().includes('FW1');
 }
 

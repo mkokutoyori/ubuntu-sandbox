@@ -277,7 +277,7 @@ describe('Scénario 3 — ordre réel des bannières via SSH entrant', () => {
   }
 
   async function sshLogin(term: LinuxTerminalSession, host: string, password: string): Promise<void> {
-    await type(term, `ssh admin@${host}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new admin@${host}`);
     if (term.currentInputMode.type === 'password') await submitPassword(term, password);
   }
 

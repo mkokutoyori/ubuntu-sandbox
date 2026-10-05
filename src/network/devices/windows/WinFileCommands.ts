@@ -34,6 +34,7 @@ export interface WinFileCommandContext {
   setCwd(path: string): void;
   setExitCode(code: number): void;
   readonly inScript: boolean;
+  readonly timezone: string;
   ask(prompt: string, preceding?: string): Promise<{ answer: string | null; flushed: boolean }>;
 }
 
@@ -534,57 +535,6 @@ export function cmdFc(ctx: WinFileCommandContext, args: string[]): string {
 }
 
 // ─── xcopy ────────────────────────────────────────────────────────
-
-export function cmdXcopy(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length < 2) return 'Invalid number of parameters';
-
-  let recursive = false;
-  const pathParts: string[] = [];
-
-  for (const arg of args) {
-    const lower = arg.toLowerCase();
-    if (lower === '/s') { recursive = true; continue; }
-    if (lower === '/e') { recursive = true; continue; }
-    if (lower === '/y' || lower === '/i' || lower === '/q' || lower === '/h') continue;
-    pathParts.push(arg);
-  }
-
-  if (pathParts.length < 2) return 'Invalid number of parameters';
-
-  const srcPath = ctx.fs.normalizePath(pathParts[0], ctx.cwd);
-  const destPath = ctx.fs.normalizePath(pathParts[1], ctx.cwd);
-
-  if (!ctx.fs.exists(srcPath)) return `File not found - ${pathParts[0]}`;
-
-  if (ctx.fs.isFile(srcPath)) {
-    const result = ctx.fs.copyFile(srcPath, destPath);
-    if (!result.ok) return result.error!;
-    return '1 File(s) copied';
-  }
-
-  if (!ctx.fs.isDirectory(srcPath)) return `File not found - ${pathParts[0]}`;
-
-  ctx.fs.mkdirp(destPath);
-  const count = xcopyDir(ctx, srcPath, destPath, recursive);
-  return `${count} File(s) copied`;
-}
-
-function xcopyDir(ctx: WinFileCommandContext, src: string, dest: string, recursive: boolean): number {
-  const entries = ctx.fs.listDirectory(src);
-  let count = 0;
-  for (const { name, entry } of entries) {
-    const srcChild = src + '\\' + name;
-    const destChild = dest + '\\' + name;
-    if (entry.type === 'file') {
-      ctx.fs.copyFile(srcChild, destChild);
-      count++;
-    } else if (entry.type === 'directory' && recursive) {
-      ctx.fs.mkdirp(destChild);
-      count += xcopyDir(ctx, srcChild, destChild, recursive);
-    }
-  }
-  return count;
-}
 
 // ─── sort ─────────────────────────────────────────────────────────
 
