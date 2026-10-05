@@ -59,8 +59,7 @@ import {
   type ScriptedPeer, type OpenConnection,
 } from '../../support/tcpScriptedPeer';
 import { TCP_TIME_WAIT_MS, type TcpSegment } from '@/network/tcp/types';
-import { TCP_INITIAL_RTO_MS } from '@/network/tcp/RttEstimator';
-import { TCP_DELAYED_ACK_MS, type TcpSocket } from '@/network/tcp/TcpStack';
+import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
@@ -321,7 +320,7 @@ describe('SEND after CLOSE is refused, not swallowed (RFC 9293 §3.10.2)', () =>
     peer.send({
       flags: 'A', sequence: PEER_ISN + 1, acknowledgement: connection.socket.sendUnacked, window: 65535,
     });
-    peer.advance(TCP_DELAYED_ACK_MS);
+    peer.advance(100);
     const wire = peer.take();
     const text = wire.map((s) => String(s.payload ?? '')).join('');
     expect(text).toBe(first);
@@ -363,7 +362,7 @@ describe('CLOSE in a closing state continues the close, it does not destroy it (
     expect(connection.socket.close()).toBe('closing');
     expect(finsOf(peer.take())).toBe(0);
     expect(connection.socket.state).toBe('fin-wait-1');
-    peer.advance(TCP_INITIAL_RTO_MS);
+    peer.advance(250);
     const again = peer.take().filter((s) => s.flags.fin);
     expect(again.length).toBe(1);
     expect(again[0].sequence).toBe(first[0].sequence);
@@ -375,7 +374,7 @@ describe('CLOSE in a closing state continues the close, it does not destroy it (
     const fin = peer.take().find((s) => s.flags.fin)!;
     expect(connection.socket.close()).toBe('closing');
     expect(connection.socket.state).toBe('last-ack');
-    peer.advance(TCP_INITIAL_RTO_MS);
+    peer.advance(250);
     const again = peer.take().filter((s) => s.flags.fin);
     expect(again.length).toBe(1);
     expect(again[0].sequence).toBe(fin.sequence);

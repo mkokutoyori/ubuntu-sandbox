@@ -15,6 +15,7 @@
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { SocketTable, SocketEntry, SocketState } from '../../../core/SocketTable';
 import { newProtocolCounters, type ProtocolCounters } from '../../../layers/internet/ProtocolCounters';
+import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts } from '../LinuxIpv4Settings';
 
 /** Canonical filesystem locations the port subsystem maintains. */
 export const PORT_PATHS = {
@@ -48,7 +49,9 @@ export class PortsFilesystem {
    * Register `/proc/net/tcp` and `/proc/net/udp` as generated files: their
    * content is produced from the socket table on every read.
    */
-  registerProcNet(socketTable: SocketTable, counters?: () => ProtocolCounters): void {
+  registerProcNet(
+    socketTable: SocketTable, counters?: () => ProtocolCounters, kernel?: () => KernelIpFacts,
+  ): void {
     this.vfs.mkdirp(PORT_PATHS.procNetDir, 0o555, 0, 0);
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetTcp, () =>
       renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'tcp')),
@@ -60,7 +63,7 @@ export class PortsFilesystem {
       renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'udplite')),
     );
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetSnmp, () =>
-      renderProcNetSnmp(snmpSnapshot(socketTable, counters?.())),
+      renderProcNetSnmp(linuxSnmpSnapshot(socketTable, counters?.(), kernel?.())),
     );
   }
 }
@@ -68,6 +71,16 @@ export class PortsFilesystem {
 export interface SnmpSnapshot {
   counters: ProtocolCounters;
   currEstab: number;
+}
+
+export interface LinuxSnmpSnapshot extends SnmpSnapshot {
+  kernel: KernelIpFacts;
+}
+
+export function linuxSnmpSnapshot(
+  socketTable: SocketTable | null | undefined, counters?: ProtocolCounters, kernel?: KernelIpFacts,
+): LinuxSnmpSnapshot {
+  return { ...snmpSnapshot(socketTable, counters), kernel: kernel ?? STANDALONE_KERNEL_IP_FACTS };
 }
 
 export function snmpSnapshot(
@@ -81,17 +94,18 @@ export function snmpSnapshot(
 }
 
 /** Render `/proc/net/snmp` — the per-protocol counter blocks (header/value pairs). */
-export function renderProcNetSnmp(snapshot: SnmpSnapshot): string {
+export function renderProcNetSnmp(snapshot: LinuxSnmpSnapshot): string {
   const c = snapshot.counters;
+  const k = snapshot.kernel;
   return [
     'Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates',
-    `Ip: 1 64 ${c.ipInReceives} ${c.ipInHdrErrors} ${c.ipInAddrErrors} ${c.ipForwDatagrams} ${c.ipInUnknownProtos} ${c.ipInDiscards} ${c.ipInDelivers} ${c.ipOutRequests} ${c.ipOutDiscards} ${c.ipOutNoRoutes} 0 ${c.ipReasmReqds} ${c.ipReasmOKs} ${c.ipReasmFails} ${c.ipFragOKs} ${c.ipFragFails} ${c.ipFragCreates}`,
+    `Ip: ${k.forwarding ? 1 : 2} ${k.defaultTtl} ${c.ipInReceives} ${c.ipInHdrErrors} ${c.ipInAddrErrors} ${c.ipForwDatagrams} ${c.ipInUnknownProtos} ${c.ipInDiscards} ${c.ipInDelivers} ${c.ipOutRequests} ${c.ipOutDiscards} ${c.ipOutNoRoutes} 0 ${c.ipReasmReqds} ${c.ipReasmOKs} ${c.ipReasmFails} ${c.ipFragOKs} ${c.ipFragFails} ${c.ipFragCreates}`,
     'Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps',
     `Icmp: ${c.icmpInMsgs} ${c.icmpInErrors} 0 ${c.icmpInDestUnreachs} ${c.icmpInTimeExcds} 0 0 ${c.icmpInRedirects} ${c.icmpInEchos} ${c.icmpInEchoReps} 0 0 0 0 ${c.icmpOutMsgs} ${c.icmpOutErrors} ${c.icmpOutDestUnreachs} ${c.icmpOutTimeExcds} 0 0 ${c.icmpOutRedirects} ${c.icmpOutEchos} ${c.icmpOutEchoReps} 0 0 0 0`,
     'IcmpMsg: InType8 OutType0',
     `IcmpMsg: ${c.icmpInEchos} ${c.icmpOutEchoReps}`,
     'Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors',
-    `Tcp: 1 200 120000 -1 ${c.tcpActiveOpens} ${c.tcpPassiveOpens} ${c.tcpAttemptFails} ${c.tcpEstabResets} ${snapshot.currEstab} ${c.tcpInSegs} ${c.tcpOutSegs} ${c.tcpRetransSegs} ${c.tcpInErrs} ${c.tcpOutRsts} 0`,
+    `Tcp: 1 ${k.rtoMinMs} ${k.rtoMaxMs} -1 ${c.tcpActiveOpens} ${c.tcpPassiveOpens} ${c.tcpAttemptFails} ${c.tcpEstabResets} ${snapshot.currEstab} ${c.tcpInSegs} ${c.tcpOutSegs} ${c.tcpRetransSegs} ${c.tcpInErrs} ${c.tcpOutRsts} 0`,
     'Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
     `Udp: ${c.udpInDatagrams} ${c.udpNoPorts} ${c.udpInErrors} ${c.udpOutDatagrams} 0 0 ${c.udpInCsumErrors} 0`,
     'UdpLite: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',

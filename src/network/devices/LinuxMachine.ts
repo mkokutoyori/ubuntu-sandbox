@@ -69,7 +69,7 @@ import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
 import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
-import { LinuxIpv4Settings, LINUX_IPV4_KNOBS } from './linux/LinuxIpv4Settings';
+import { LinuxIpv4Settings, LINUX_IPV4_KNOBS, type KernelIpFacts } from './linux/LinuxIpv4Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
@@ -265,6 +265,7 @@ export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   private readonly ipv4Settings = new LinuxIpv4Settings();
   protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
+  getKernelIpFacts(): KernelIpFacts { return this.ipv4Settings.kernelIpFacts(this.ipForwardEnabled); }
   protected override get defaultHopLimit(): number { return 64; }
   protected override get udpDiscoversPathMtu(): boolean { return true; }
   protected override get tcpEcnPolicy(): TcpEcnPolicy { return this.ipv4Settings.ecnPolicy; }

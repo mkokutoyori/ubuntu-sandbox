@@ -51,8 +51,7 @@
  * socket orphelin : `close()` n'y est que l'envoi du FIN) et tcp_fin_timeout (idem :
  * FIN-WAIT-2 n'a pas de minuterie), tcp_keepalive_time/intvl/probes (aucune
  * application du depot n'active SO_KEEPALIVE), la reduction de
- * tcp_synack_retries quand la file des embryons se remplit, le plancher de RTO de
- * 200 ms de Linux (la pile garde la seconde de la RFC 6298 §2.4) ; Windows
+ * tcp_synack_retries quand la file des embryons se remplit ; Windows
  * garde les seuils de la RFC faute de pouvoir sourcer les siens.
  *
  * Discrimination (fichier copie sur le commit precedent, avec le seul fichier
@@ -298,13 +297,13 @@ describe('the delivery problem is reported to the application once tcp_retries1 
     expect(reports.length).toBe(1);
   });
 
-  it('tcp_retries1=5 waits 12.6 seconds: the report comes with the retransmission that follows, at 15 s', async () => {
+  it('tcp_retries1=5 waits 12.6 seconds, which the sixth timeout reaches exactly', async () => {
     const peer = scriptedPeer();
     await write(peer, 'tcp_retries1', 5);
     const connection = openPassive(peer);
     const reports = reportsOf(connection.socket);
     connection.socket.send('hello');
-    peer.advance(14_900);
+    peer.advance(12_500);
     expect(reports.length).toBe(0);
     peer.advance(200);
     expect(reports.length).toBe(1);

@@ -62,6 +62,10 @@
  * premiere ecriture de la file de reception, ou la lecture qui vidait la file
  * annoncait n'importe quelle augmentation : `nc -zv` vers sshd laissait une
  * trame de plus sur le fil.
+ *
+ * Le cas de la fenetre nulle sondee tourne sur une machine Windows, qui garde
+ * l'arrondi d'une seconde de la RFC : une machine Linux repart a 200 ms et
+ * sonde plus d'une fois en une seconde (`probe-linux-tcp-rto-floor`).
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -214,7 +218,7 @@ describe('a sender survives a window that shrinks (RFC 9293 §3.8.6, MUST-34, SH
   });
 
   it('WITNESS: a zero window is probed, and the answer to the probe reveals the reopening', () => {
-    const peer = scriptedPeer();
+    const peer = scriptedPeer('windows');
     const connection = openActive(peer, [{ kind: 'mss', value: MSS }]);
     peer.send({
       flags: 'A', sequence: connection.peerIsn + 1, acknowledgement: connection.dutIsn + 1, window: 0,

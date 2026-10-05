@@ -332,6 +332,7 @@ describe('an ECN-capable sender marks new data only (RFC 3168 §6.1.2, §6.1.4, 
     const peer = scriptedPeer();
     const connection = negotiatedPassive(peer);
     connection.socket.write('hello');
+    acknowledge(peer, connection, 5);
     peerData(peer, connection, 0, 100);
     peer.advance(300);
     connection.socket.close();
@@ -350,7 +351,7 @@ describe('an ECN-capable sender marks new data only (RFC 3168 §6.1.2, §6.1.4, 
     const first = dataSegments(peer)[0];
     expect(peer.ecnOf(first)).toBe(EcnCodepoint.ECT_0);
     peer.clear();
-    peer.advance(1500);
+    peer.advance(250);
     const again = dataSegments(peer);
     expect(again).toHaveLength(1);
     expect(again[0].sequence).toBe(first.sequence);
@@ -362,7 +363,7 @@ describe('an ECN-capable sender marks new data only (RFC 3168 §6.1.2, §6.1.4, 
     const connection = openPassive(peer, MSS_OFFER, PEER_ISN, 0, {}, 'SEC');
     connection.socket.write('hello');
     expect(dataSegments(peer)).toHaveLength(0);
-    peer.advance(1500);
+    peer.advance(250);
     const probe = dataSegments(peer);
     expect(probe).toHaveLength(1);
     expect(sizeOf(probe[0])).toBe(1);
@@ -504,7 +505,7 @@ describe('an ECN-capable sender answers ECE as to a loss, once per window (RFC 3
     acknowledge(peer, connection, sentSoFar(connection) - 7 * MSS, 'AE');
     expect(connection.socket.cc.cwnd).toBe(4 * MSS);
     peer.clear();
-    peer.advance(1500);
+    peer.advance(250);
     const again = dataSegments(peer);
     expect(again).toHaveLength(1);
     expect(again[0].flags.cwr).toBe(false);

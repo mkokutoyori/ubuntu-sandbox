@@ -138,9 +138,7 @@ function emptyProbeDetail(reply: StatelessProbeReply): StatelessProbeDetail {
 import {
   connectedPrefixesOfPort, invalidSourceFor, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
-import {
-  RttEstimator, TCP_INITIAL_RTO_MS, TCP_RTO_AFTER_SYN_RETRANSMIT_MS,
-} from './RttEstimator';
+import { RttEstimator, TCP_RTO_AFTER_SYN_RETRANSMIT_MS } from './RttEstimator';
 import {
   RFC_RETRY_POLICY, giveUpDeadlineMs, giveUpReached, type TcpGiveUp, type TcpRetryPolicy,
 } from './TcpRetryPolicy';
@@ -462,7 +460,7 @@ export class TcpSocket {
     this.remotePort = remotePort;
     this.family = ipFamilyOf(remoteIp);
     const policy = stack._retryPolicy();
-    this.rtt = new RttEstimator(policy.initialRtoMs, policy.maxRtoMs);
+    this.rtt = new RttEstimator(policy.initialRtoMs, policy.maxRtoMs, policy.rtoFloor);
   }
 
   send(data: unknown): TcpUserCallResult { return this.stack._sendData(this, data); }
@@ -1676,7 +1674,7 @@ export class TcpStack {
     }
     socket.persistBackoffMs = socket.persistBackoffMs > 0
       ? Math.min(socket.persistBackoffMs * 2, this._retryPolicy().maxRtoMs)
-      : TCP_INITIAL_RTO_MS;
+      : socket.rtt.currentRto();
     socket.persistTimer = this.timers.setTimeout(() => this.onPersistFired(socket), socket.persistBackoffMs);
   }
 
