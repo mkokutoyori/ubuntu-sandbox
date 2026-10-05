@@ -66,6 +66,7 @@ import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
+import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import { LinuxIpv4Settings, LINUX_IPV4_KNOBS } from './linux/LinuxIpv4Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
@@ -268,6 +269,7 @@ export abstract class LinuxMachine extends EndHost
   protected override get tcpEcnFallsBack(): boolean { return this.ipv4Settings.ecnFallsBack; }
   protected override get tcpOptionPolicy(): TcpOptionPolicy { return this.ipv4Settings.optionPolicy; }
   protected override get tcpRestartsAfterIdle(): boolean { return this.ipv4Settings.restartsAfterIdle; }
+  protected override get tcpRetryPolicy(): TcpRetryPolicy { return this.ipv4Settings.retryPolicy; }
 
   /** Active profile — describes the "flavor" of this Linux machine. */
   public readonly profile: LinuxProfile;

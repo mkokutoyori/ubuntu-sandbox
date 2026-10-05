@@ -55,6 +55,11 @@
  * inatteignable, la NON-REGRESSION de l'hote inatteignable, la NON-REGRESSION
  * du sondage de fenetre nulle (MUST-37 tenait deja) et le TEMOIN d'une
  * connexion dont les donnees sont acquittees.
+ *
+ * Les trois cas de seuils (R2 des donnees, R2 du SYN, R1) tournent sur un hote
+ * Windows depuis que le noyau Linux a les siens (127 s pour un SYN, 924,6 s pour
+ * des donnees, 3 s pour R1 : probe-linux-tcp-retries-sysctl) : l'hote qui ne
+ * declare aucun seuil garde ceux de la RFC, et c'est eux que ces cas mesurent.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -71,14 +76,14 @@ function reportsOf(socket: TcpSocket): Reported[] {
   return reports;
 }
 
-function established(): { peer: ScriptedPeer; socket: TcpSocket } {
-  const peer = scriptedPeer();
+function established(platform: 'linux' | 'windows' = 'linux'): { peer: ScriptedPeer; socket: TcpSocket } {
+  const peer = scriptedPeer(platform);
   const connection = openPassive(peer);
   return { peer, socket: connection.socket };
 }
 
-function withUnackedData(): { peer: ScriptedPeer; socket: TcpSocket } {
-  const lab = established();
+function withUnackedData(platform: 'linux' | 'windows' = 'linux'): { peer: ScriptedPeer; socket: TcpSocket } {
+  const lab = established(platform);
   lab.socket.send('hello');
   return lab;
 }
@@ -127,7 +132,7 @@ describe('an ICMP error reaches a connection by what it says (RFC 9293 §3.9.2.4
 
 describe('retransmission gives up on thresholds measured in time (RFC 9293 §3.8.3)', () => {
   it('data: the connection survives 99 seconds of silence and is gone after 100 (R2, SHLD-11)', () => {
-    const { peer, socket } = withUnackedData();
+    const { peer, socket } = withUnackedData('windows');
     peer.advance(99_000);
     expect(socket.state).toBe('established');
     peer.advance(2_000);
@@ -136,7 +141,7 @@ describe('retransmission gives up on thresholds measured in time (RFC 9293 §3.8
   });
 
   it('SYN: an unanswered connection attempt lasts at least three minutes (MUST-23)', () => {
-    const peer = scriptedPeer();
+    const peer = scriptedPeer('windows');
     const socket = peer.dut.getTcpStack().connect(PEER_ADDRESS, peer.ports.peer)!;
     peer.advance(179_000);
     expect(socket.state).toBe('syn-sent');
@@ -161,7 +166,7 @@ describe('retransmission gives up on thresholds measured in time (RFC 9293 §3.8
   });
 
   it('R1: the application hears of the delivery problem after three retransmissions, once (SHLD-9, SHLD-10)', () => {
-    const { peer, socket } = withUnackedData();
+    const { peer, socket } = withUnackedData('windows');
     const reports = reportsOf(socket);
     peer.advance(6_000);
     expect(reports.filter((r) => r.source === 'retransmission').length).toBe(0);

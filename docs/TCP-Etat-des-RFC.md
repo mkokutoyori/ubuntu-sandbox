@@ -29,7 +29,7 @@ Linux : le noyau 5.15 d'Ubuntu 22.04, que `uname -r` annonce, lu dans le source
 | 6582 | NewReno | Fait pour un pair sans SACK : un ACK partiel retransmet le premier segment non acquitté, dégonfle la fenêtre de ce qu'il acquitte et rend un segment, la reprise reste ouverte jusqu'à l'ACK du point de reprise, qui ramène la fenêtre à ssthresh ; après une expiration le point de reprise interdit une nouvelle retransmission rapide jusqu'à son acquittement | `probe-tcp-loss-recovery` |
 | 6675 | Reprise sur pertes par SACK | Fait : `IsLost`, `SetPipe`, `NextSeg` (règles 1, 3 et 4), entrée en reprise au troisième doublon ou dès que la tête est déclarée perdue, ssthresh = cwnd = FlightSize / 2 sans gonflement, boucle (C) avant l'envoi des données neuves, sortie sur l'ACK du point de reprise, reprise après expiration (trous rapportés remplis, point de reprise préservé). Choix : la copie de secours de la règle 4 ne renvoie pas un segment déjà retransmis | `probe-tcp-loss-recovery` |
 | 5961 | Attaques en aveugle | Fait : RST accepté seulement à `RCV.NXT`, ACK de défi sinon, SYN en état synchronisé, ACK hors de l'intervalle admissible écarté, ACK de défi limités à 10 par 5 s, segment ancien sans effet sur la fenêtre d'émission | `probe-rst-hors-fenetre-est-ignore`, `probe-tcp-rfc5961-challenge-acks`, `probe-rst-emis-porte-le-bon-numero` |
-| 6298 | Temporisateur de retransmission | Fait : SRTT et RTTVAR de la première mesure puis des suivantes, plancher d'une seconde, doublement à chaque retransmission, minuterie redémarrée par un ACK qui acquitte du neuf, Karn (`RttEstimator`, RTTM de la RFC 7323 §4.3 le contourne), RTO ramené à 3 s après un SYN retransmis (§5.7) | `probe-tcp-rfc9293-requirements`, `probe-tcp-error-reports-and-retransmission-limits`, `tcp-retransmission` |
+| 6298 | Temporisateur de retransmission | Fait : SRTT et RTTVAR de la première mesure puis des suivantes, plancher d'une seconde, doublement à chaque retransmission jusqu'à 60 s (120 s sur une machine Linux), minuterie redémarrée par un ACK qui acquitte du neuf, Karn (`RttEstimator`, RTTM de la RFC 7323 §4.3 le contourne), RTO ramené à 3 s après un SYN retransmis (§5.7) | `probe-tcp-rfc9293-requirements`, `probe-tcp-error-reports-and-retransmission-limits`, `tcp-retransmission` |
 | 6528 | Numéro de séquence initial | Fait : horloge de 4 µs (M) + HMAC-SHA256 du quadruplet sous une clé de 128 bits tirée à la création de la pile (F) | `probe-tcp-initial-sequence-numbers` |
 | 7323 | Extensions haute performance | Fait : échelle de fenêtre (valeur supérieure à 14 ramenée à 14), Timestamps sur tout segment non-RST, PAWS, RTTM. Non fait : l'abandon d'un segment sans option Timestamps quand les horodatages sont négociés (SHOULD ; Linux l'accepte, FreeBSD l'abandonne, aucune capture ne tranche) | `tcp-options`, `probe-tcp-option-robustness` |
 | 8311 | Assouplissements de l'ECN | Pas une autorité ici : il ouvre des expériences (ECT sur SYN, ACK purs, retransmissions) que ni la RFC 3168 ni Linux ne font. La pile suit la RFC 3168 | `probe-tcp-explicit-congestion-notification` |
@@ -127,8 +127,8 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
 | Exigence | État | Preuve |
 |---|---|---|
 | MUST-20 avis négatif à IP à R1, fermeture à R2, MUST-21 R2 réglable par l'application, SHLD-9 l'application est prévenue entre R1 et R2, MUST-22 même mécanisme pour les SYN | Fait : `onErrorReport`, `setUserTimeout` (`Infinity` pour ne jamais renoncer), `adviseNegative` (nouvelle requête ARP du prochain saut) | `probe-tcp-error-reports-and-retransmission-limits` |
-| SHLD-10 R1 d'au moins trois retransmissions, SHLD-11 R2 d'au moins 100 s | Fait : 100 s pour les données, depuis la première émission du segment le plus ancien | `probe-tcp-error-reports-and-retransmission-limits` |
-| MUST-23 R2 d'au moins 3 minutes pour un SYN | Fait : 180 s. Linux fait 6 retransmissions (`tcp_syn_retries`, environ 127 s) ; la RFC gouverne | `probe-tcp-error-reports-and-retransmission-limits`, `ssh-refus-contre-silence` |
+| SHLD-10 R1 d'au moins trois retransmissions, SHLD-11 R2 d'au moins 100 s | Fait : un hôte sans seuils propres a trois retransmissions pour R1 et 100 s pour les données, depuis la première émission du segment le plus ancien ; une machine Linux suit `tcp_retries1` (3, soit 3 s) et `tcp_retries2` (15, soit 924,6 s ; 8 donne les 102,2 s que la RFC 1122 demande) | `probe-tcp-error-reports-and-retransmission-limits`, `probe-linux-tcp-retries-sysctl` |
+| MUST-23 R2 d'au moins 3 minutes pour un SYN | Fait : 180 s pour un hôte sans seuils propres. Une machine Linux suit `tcp_syn_retries` : 6 par défaut, soit 127 s, sous les trois minutes de la RFC, comme le vrai noyau, qui n'y arrive qu'à partir de 7 (247 s) ; la mesure du noyau gouverne sur une machine Linux | `probe-tcp-error-reports-and-retransmission-limits`, `probe-linux-tcp-retries-sysctl`, `ssh-refus-contre-silence` |
 | MUST-24 à MUST-29, SHLD-12 keep-alive : demandé par l'application (`enableKeepAlive`), éteint par défaut, jamais avant la fin de l'inactivité, durée et intervalle fournis par l'application, tolérant aux ACK perdus, sonde sans donnée à SND.NXT − 1 | Fait ; l'API n'a pas de durée par défaut (MUST-28) : une connexion non armée n'émet rien, même après des heures | `probe-tcp-rfc9293-requirements`, `tcp-keepalive-abort` |
 | MAY-5 émettre des keep-alive | Fait | `tcp-keepalive-abort` |
 | MAY-6 octet de remplissage dans la sonde | Non retenu (Linux n'en met pas) | |
@@ -160,13 +160,15 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
 
 - **Linux** (`LinuxPC`, `LinuxServer`) : TTL 64 par défaut (`net.ipv4.ip_default_ttl`, 1 à 255) ; ECN en
   mode 2 (accepte, ne demande pas) ; `net.ipv4.tcp_ecn`, `tcp_ecn_fallback`, `tcp_sack`, `tcp_timestamps`,
-  `tcp_window_scaling`, `tcp_slow_start_after_idle` et `ip_default_ttl` lisibles dans `/proc/sys/net/ipv4/`
+  `tcp_window_scaling`, `tcp_slow_start_after_idle`, `tcp_syn_retries`, `tcp_synack_retries`, `tcp_retries1`,
+  `tcp_retries2` et `ip_default_ttl` lisibles dans `/proc/sys/net/ipv4/`
   et par `sysctl`, inscriptibles par `sysctl -w` comme par une redirection vers `/proc/sys` (un seul
   magasin ; une valeur que le noyau refuserait l'est avec les mots de bash), et évalués : le SYN ne propose
   que les options permises, un SYN-ACK et une ouverture active ne retiennent que ce qui est permis des deux
   côtés, une connexion inactive ne repart de la fenêtre initiale que si `tcp_slow_start_after_idle` est non
   nul ; `nc -M`, `-m`, `-T`, `-N`, `-s` agissent sur la prise ; `tcpdump` sur `lo` décode le vrai paquet
-  comme sur le fil, `tcpdump -v` imprime l'en-tête IPv6.
+  comme sur le fil, `tcpdump -v` imprime l'en-tête IPv6. TCP y renonce comme le noyau 5.15 : sept SYN et
+  l'abandon à 127 s, un SYN-ACK abandonné à 63 s, des données à 924,6 s, R1 à 3 s, plafond du RTO à 120 s.
 - **Windows** : TTL 128 ; n'envoie ni n'accepte ECN (configuration par défaut) ; aucune commande
   `netsh int tcp` ni `Set-NetTCPSetting` n'existe (ni leur sortie, qu'on ne peut pas sourcer d'ici).
 - **Routeurs** : la pile de gestion (BGP, SSH, telnet) est la même ; elle ne négocie pas ECN ; elle reçoit
@@ -191,13 +193,17 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   `netem` qui exigent un vrai délai (`reorder`, `rate`, `slot`, gigue, distributions, `loss state`,
   `gemodel`, `duplicate`, `corrupt`, `limit`) restent acceptés sans effet, comme avant.
 - **Réglages du noyau.** Parmi les `net.ipv4.tcp_*`, `sysctl` connaît `tcp_ecn`, `tcp_ecn_fallback`,
-  `tcp_sack`, `tcp_timestamps`, `tcp_window_scaling` et `tcp_slow_start_after_idle` (des octets, 0 à 255,
-  que la pile évalue ; `ip_default_ttl` est un octet de 1 à 255) et `tcp_tw_reuse`, que la `SocketTable`
-  lit au `bind` et qui s'affiche `0` là où le noyau 5.15 annonce `2` (`ip-sysctl.rst`, lu). Les valeurs 1
-  et 2 de `tcp_timestamps` activent toutes deux l'option : le noyau les distingue par un décalage
-  aléatoire de l'horloge par connexion, que le simulateur n'a pas. `tcp_syn_retries`, `tcp_retries1` et
-  `tcp_retries2`, `tcp_keepalive_*`, `tcp_fin_timeout` et `tcp_congestion_control` répondent `cannot stat
-  /proc/sys/net/ipv4/…` (mesuré) ; les valeurs de la pile sont des constantes ou des réglages de prise.
+  `tcp_sack`, `tcp_timestamps`, `tcp_window_scaling`, `tcp_slow_start_after_idle` (des octets, 0 à 255, que
+  la pile évalue ; `ip_default_ttl` est un octet de 1 à 255), `tcp_syn_retries` (1 à 127),
+  `tcp_synack_retries`, `tcp_retries1` et `tcp_retries2` (des octets) et `tcp_tw_reuse`, que la
+  `SocketTable` lit au `bind` et qui s'affiche `0` là où le noyau 5.15 annonce `2` (`ip-sysctl.rst`, lu).
+  Les valeurs 1 et 2 de `tcp_timestamps` activent toutes deux l'option : le noyau les distingue par un
+  décalage aléatoire de l'horloge par connexion, que le simulateur n'a pas. `tcp_fin_timeout` et
+  `tcp_orphan_retries` répondent `cannot stat /proc/sys/net/ipv4/…` : la pile n'a pas de socket orphelin
+  (`close()` n'y est que l'envoi du FIN). Il en va de même de `tcp_keepalive_*` (aucune application du dépôt
+  n'active SO_KEEPALIVE) et de `tcp_congestion_control`. Le plancher de RTO de Linux (200 ms) n'est pas
+  reproduit : la pile garde la seconde de la RFC 6298 §2.4, et la durée de `tcp_retries2` se mesure
+  pourtant comme le noyau la mesure (un RTO de 200 ms de base).
 - **Source route.** Voir MUST-51 à MUST-53 ci-dessus.
 - **TCP_INFO.** `ss -i` n'imprime ni `ecn`, ni `ecnseen`, ni la fenêtre de congestion.
 - **Anciens documents.** `docs/PRD-TCP.md` décrit l'état du 6 juillet ; ses lacunes (absence de RTO, de
