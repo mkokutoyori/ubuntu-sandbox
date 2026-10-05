@@ -78,7 +78,7 @@ describe('TCP flow control (PRD-TCP.md P3)', () => {
     for (const size of dataSizes) expect(size).toBeLessThanOrEqual(10 * 128);
   });
 
-  it('a zero window blocks all new sends until a persist probe reveals it has reopened', () => {
+  it('a zero window blocks all new sends until the receiver announces it has reopened', () => {
     const { cli, srv, scheduler } = buildPair();
     let serverSocket: TcpSocket | null = null;
     const received: string[] = [];
@@ -97,7 +97,6 @@ describe('TCP flow control (PRD-TCP.md P3)', () => {
     expect(clientSocket.sendBacklog.length).toBeGreaterThan(0);
     expect(clientSocket.persistTimer).not.toBeNull();
 
-    // The peer reopens its window; only a persist probe will reveal this.
     serverSocket!.windowSize = 100 * 128;
     scheduler.advance(TCP_INITIAL_RTO_MS + 10);
 
