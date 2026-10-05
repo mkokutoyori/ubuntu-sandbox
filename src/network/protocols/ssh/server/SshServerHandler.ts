@@ -17,7 +17,7 @@ import {
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler } from '@/events/Scheduler';
-import type { AccountLifecycleVerdict, KeyboardInteractiveChallenge } from '../auth/ISshAuthMethod';
+import type { AccountLifecycleVerdict, KeyboardInteractiveChallenge, SshPeer } from '../auth/ISshAuthMethod';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';
 import { SftpWireSession } from '../sftp/SftpWireSession';
 import { ScpServerSession, parseScpServerCommand, type ScpServerCommand } from '../scp/ScpServerSession';
@@ -276,6 +276,7 @@ export class SshServerHandler {
       pendingInfoResponse?.(null);
       pendingInfoResponse = null;
       const closedUser = userCtx?.username ?? null;
+      const closedPort = this.ctx.clientPort?.(clientIp);
       if (closedUser !== null) recordLogoutOnce(closedUser);
       timers.clearAll();
       idleTimer = null;
@@ -297,6 +298,7 @@ export class SshServerHandler {
         timestamp: Date.now(),
       });
       if (closedUser !== null) this.ctx.connectionClosed?.(closedUser, clientIp);
+      this.ctx.connectionEnded?.(clientIp, closedPort);
       userCtx = null;
     });
 
@@ -546,6 +548,7 @@ export class SshServerHandler {
       void this.handleAuth(userauthPayload(request), clientIp, askKeyboardInteractive, authRequests === 1, sessionId)
         .then((result) => {
           if (!transport.isOpen) return;
+          if ('banner' in result && result.banner !== undefined) transport.send(encodeUserauthBanner(result.banner));
           if ('pkOk' in result && 'publicKeyBlob' in request) {
             transport.send(encodeUserauthPkOk(request.algorithm, request.publicKeyBlob));
             return;
@@ -581,18 +584,19 @@ export class SshServerHandler {
     firstRequest: boolean,
     sessionId: Uint8Array | null,
   ): Promise<
-    | { ok: false }
+    | { ok: false; banner?: string }
     | { ok: false; pkOk: true }
     | { ok: true; userCtx: SshUserContext; keyOptions: AuthorizedKeyOptions | null }
   > {
     const user = (payload.user as string | undefined) ?? '';
+    const peer: SshPeer = { ip: clientIp, port: this.ctx.clientPort?.(clientIp) };
     const credentialless = payload.method === 'none';
     if (credentialless && this.ctx.buildUserContext(user) !== null
       && !(this.ctx.auth.acceptsWithoutCredential?.(user) ?? false)) return { ok: false };
     let password = (payload.password as string | undefined) ?? '';
     let responses: readonly string[] | null = null;
     const challenge = payload.method === 'keyboard-interactive'
-      ? this.ctx.auth.keyboardInteractive?.() ?? null
+      ? this.ctx.auth.keyboardInteractive?.(peer) ?? null
       : null;
     if (payload.method === 'keyboard-interactive') {
       if (!challenge) return { ok: false };
@@ -646,9 +650,9 @@ export class SshServerHandler {
           timestamp: Date.now(),
         });
       }
-      // We still consult the auth context so the throttler counts the
-      // failure and the response timing matches a real bad password attempt.
-      // (Real sshd does the same for the same reason: side-channel hardening.)
+      if (passwordBacked && !credentialless && !challenge) {
+        await this.ctx.auth.rejectInvalidUser?.(user, password, peer);
+      }
       this.eventBus.emit({
         kind: 'auth_failure',
         port: this.ctx.clientPort?.(clientIp),
@@ -689,7 +693,7 @@ export class SshServerHandler {
     } else if (method === 'password') {
       success = this.ctx.config.passwordAuthentication && (
         this.ctx.auth.checkPasswordAsync
-          ? await this.ctx.auth.checkPasswordAsync(user, password)
+          ? await this.ctx.auth.checkPasswordAsync(user, password, peer)
           : this.ctx.auth.checkPassword(user, password)
       );
     } else if (method === 'publickey') {
@@ -724,21 +728,21 @@ export class SshServerHandler {
     }
 
     const lifecycle: AccountLifecycleVerdict =
-      this.ctx.auth.checkAccountLifecycle?.(user) ?? { ok: true };
+      this.ctx.auth.checkAccountLifecycle?.(user, peer) ?? { ok: true };
     if (!lifecycle.ok) {
       this.eventBus.emit({
         kind: 'auth_failure',
-        port: this.ctx.clientPort?.(clientIp),
+        port: peer.port,
         user,
-        reason: lifecycle.kind === 'account-expired' ? 'account_expired' : 'password_expired',
+        reason: lifecycle.kind === 'account-expired' ? 'account_expired'
+          : lifecycle.kind === 'pam-denied' ? 'pam_account_denied' : 'password_expired',
         ip: clientIp,
         method,
+        ...('detail' in lifecycle && lifecycle.detail !== undefined ? { detail: lifecycle.detail } : {}),
       });
-      if (lifecycle.kind === 'password-expired') {
-        this.eventBus.emit({ kind: 'auth_account_phase', user, ip: clientIp });
-      }
       this.ctx.recordAuthFailure?.(user, clientIp, lifecycle.kind);
-      return { ok: false };
+      const banner = lifecycle.messages?.join('') ?? '';
+      return banner === '' ? { ok: false } : { ok: false, banner };
     }
 
     this.eventBus.emit({

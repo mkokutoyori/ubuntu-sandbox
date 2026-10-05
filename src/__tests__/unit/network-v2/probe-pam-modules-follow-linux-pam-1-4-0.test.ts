@@ -113,6 +113,7 @@ describe('pam_unix authentication', () => {
     const lab = new PamLab({ users: [ALICE] });
     expect(raw('auth', 'pam_unix.so', lab, { user: 'ghost', answers: ['x'] }).code).toBe(PamReturn.USER_UNKNOWN);
     expect(lab.messages()).toContain('pam_unix(svc:auth): check pass; user unknown');
+    expect(lab.messages()).toContain('pam_unix(svc:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.0.1 ');
     expect(raw('auth', 'pam_unix.so', lab, { user: '-rf', answers: ['x'] }).code).toBe(PamReturn.USER_UNKNOWN);
     expect(lab.messages()).toContain('pam_unix(svc:auth): bad username [-rf]');
   });

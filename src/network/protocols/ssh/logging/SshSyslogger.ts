@@ -100,6 +100,9 @@ export class SshSyslogger {
     const message = this.format(event);
     if (!message) return;
     this.append(message);
+    if (event.kind === 'auth_failure' && (event.reason === 'account_expired' || event.reason === 'pam_account_denied')) {
+      this.append(`fatal: Access denied for user ${event.user} by PAM account configuration [preauth]`);
+    }
   }
 
   /**
@@ -121,19 +124,17 @@ export class SshSyslogger {
       }
 
       case 'auth_failure': {
-        if (event.reason === 'account_expired') {
-          return `pam_unix(sshd:account): account ${event.user} has expired (account expired)`;
+        if (event.reason === 'account_expired' || event.reason === 'pam_account_denied') {
+          return `error: PAM: ${event.detail ?? 'Authentication failure'} for ${event.user} from ${event.ip}`;
         }
-        if (event.reason === 'password_expired') {
-          return `pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=${event.ip} user=${event.user}`;
-        }
+        if (event.reason === 'password_expired') return null;
         const method = event.method ?? 'unknown';
         const qualite = event.validUser === false ? 'invalid user ' : '';
         return `Failed ${method} for ${qualite}${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
       }
 
       case 'auth_account_phase':
-        return `pam_unix(sshd:account): expired password for user ${event.user}`;
+        return null;
 
       case 'auth_invalid_user':
         return `Invalid user ${event.user} from ${event.ip} port ${event.port ?? this.port}`;

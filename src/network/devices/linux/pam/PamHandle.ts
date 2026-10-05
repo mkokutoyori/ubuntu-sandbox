@@ -74,6 +74,7 @@ export class PamHandle<H extends PamHost = PamHost> {
   authtokVerified = false;
   readonly environment = new Map<string, string>();
   readonly failDelay = { set: false, delayUs: 0 };
+  readonly moduleResults: Array<{ module: string; code: number }> = [];
   private readonly dataEntries = new Map<string, { value: unknown; cleanup: PamDataCleanup | null }>();
   choice: PamChoice | null = null;
   currentModule: string | null = null;

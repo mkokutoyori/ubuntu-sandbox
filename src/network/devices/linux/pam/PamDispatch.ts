@@ -78,6 +78,7 @@ export function* dispatchChain<H extends PamHost>(
         pamh.choice = choice;
         const outcome = fn(pamh, flags, handler.args);
         retval = typeof outcome === 'number' ? outcome : yield* outcome;
+        pamh.moduleResults.push({ module: handler.module ?? '', code: retval });
         pamh.currentModule = null;
         pamh.currentHandler = null;
         pamh.currentArgs = [];

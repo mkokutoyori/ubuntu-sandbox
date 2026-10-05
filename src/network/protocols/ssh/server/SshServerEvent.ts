@@ -46,6 +46,7 @@ export type AuthFailureReason =
   | 'throttled'
   | 'account_expired'
   | 'password_expired'
+  | 'pam_account_denied'
   | 'unknown';
 
 export type SshServerEvent =
@@ -70,6 +71,7 @@ export type SshServerEvent =
       port?: number;
       fromHost?: string;
       validUser?: boolean;
+      detail?: string;
       timestamp?: number;
     }
   | {

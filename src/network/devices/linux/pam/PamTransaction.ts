@@ -70,6 +70,7 @@ export class PamTransaction<H extends PamHost = PamHost> {
 
   private *dispatch(choice: PamChoice, type: PamModuleType, flags: number): PamConversationFlow<number> {
     const loaded = this.stacks();
+    this.handle.moduleResults.length = 0;
     return yield* dispatchChain(this.handle, this.registry, loaded.stacks[type], choice, flags);
   }
 

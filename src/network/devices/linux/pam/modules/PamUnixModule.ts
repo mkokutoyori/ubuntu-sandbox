@@ -131,9 +131,13 @@ function verifyPassword(pamh: PamHandle<LinuxPamHost>, control: UnixControl, nam
   const hash = passwordHash(pamh, name);
   const dataName = `${FAIL_PREFIX}${name}`;
   let retval: number;
+  let reportedUser = name;
   if (hash === null) {
     if (control.audit) pamh.syslog('notice', `check pass; user (${name}) unknown`);
-    else pamh.syslog('notice', 'check pass; user unknown');
+    else {
+      reportedUser = '';
+      pamh.syslog('notice', 'check pass; user unknown');
+    }
     retval = PamReturn.USER_UNKNOWN;
   } else if (hash === '') {
     retval = control.nullok ? PamReturn.SUCCESS : PamReturn.AUTH_ERR;
@@ -148,7 +152,7 @@ function verifyPassword(pamh: PamHandle<LinuxPamHost>, control: UnixControl, nam
   }
   const previous = pamh.getData<FailedAuth | null>(dataName) ?? null;
   const caller = pamh.host.caller;
-  const failure: FailedAuth = { user: name, loginName: caller.loginName, uid: caller.uid, euid: caller.euid, count: 1 };
+  const failure: FailedAuth = { user: reportedUser, loginName: caller.loginName, uid: caller.uid, euid: caller.euid, count: 1 };
   if (previous !== null) {
     failure.count = previous.count + 1;
     if (failure.count >= MAX_RETRIES) retval = PamReturn.MAXTRIES;

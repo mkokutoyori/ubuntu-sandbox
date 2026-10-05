@@ -16,7 +16,7 @@ import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSyste
 import type { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import type { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
-import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
+import type { AuthMethodType, ISshAuthContext, SshPeer } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
 import type { SftpAccountNames } from '../sftp/SftpWireSession';
@@ -39,6 +39,7 @@ import {
   type ISshServerEventBus,
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
+import { SshdPam } from './SshdPam';
 import { SshdServerConfig } from './SshdServerConfig';
 import type {
   DirectTcpipOutcome, DirectTcpipRequest, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
@@ -818,14 +819,43 @@ export class LinuxSshServerContext implements ISshServerContext {
     return parseSshdConfig(readSshdConfig(this.vfs));
   }
 
+  private pamAuth: SshdPam | null = null;
+
+  private sshdPam(): SshdPam | null {
+    if (this.executor === null || !this.effectiveSshdServerConfig().usePam) return null;
+    this.pamAuth ??= new SshdPam(
+      this.executor.pam,
+      () => ({ tag: 'sshd', pid: (this.device as { sshdPid?: () => number } | null)?.sshdPid?.(), unit: 'ssh' }),
+      () => this.permitEmptyPasswords(),
+      (user) => this.userManager.getUser(user) !== undefined,
+      () => this.rootMayLogIn('password'),
+    );
+    return this.pamAuth;
+  }
+
+  connectionEnded(fromIp: string, port: number | undefined): void {
+    this.pamAuth?.end({ ip: fromIp, port });
+  }
+
   private buildAuthContext(): ISshAuthContext {
     let attemptsLeft = this.config.maxAuthTries;
+    const passwordAttempt = (user: string, password: string, peer: SshPeer | undefined): boolean => {
+      attemptsLeft = Math.max(0, attemptsLeft - 1);
+      if (!this.userAllowed(user, 'password')) return false;
+      if (!this.config.passwordAuthentication) return false;
+      const pam = this.sshdPam();
+      if (pam === null) return this.userManager.checkPassword(user, password);
+      if (!pam.isPasswordAuthenticationOpen(peer)) return false;
+      return pam.authenticatePassword(user, password, peer);
+    };
     return {
-      checkPassword: (user, password) => {
-        attemptsLeft = Math.max(0, attemptsLeft - 1);
-        if (!this.userAllowed(user, 'password')) return false;
-        if (!this.config.passwordAuthentication) return false;
-        return this.userManager.checkPassword(user, password);
+      checkPassword: (user, password) => passwordAttempt(user, password, undefined),
+      checkPasswordAsync: async (user, password, peer) => passwordAttempt(user, password, peer),
+      rejectInvalidUser: async (user, password, peer) => {
+        const pam = this.sshdPam();
+        if (pam !== null && this.config.passwordAuthentication && pam.isPasswordAuthenticationOpen(peer)) {
+          pam.rejectInvalidUser(user, password, peer);
+        }
       },
       checkPublicKey: (user, publicKey) => this.admittedKey(user, publicKey, { ip: '' }) !== null,
       acceptsWithoutCredential: () => false,
@@ -837,8 +867,10 @@ export class LinuxSshServerContext implements ISshServerContext {
         if (this.config.kbdInteractiveAuthentication) methods.push('keyboard-interactive');
         return methods;
       },
-      keyboardInteractive: () => {
+      keyboardInteractive: (peer) => {
         if (!this.config.kbdInteractiveAuthentication || !this.effectiveSshdServerConfig().usePam) return null;
+        const pam = this.sshdPam();
+        if (pam !== null) return pam.challenge(peer, (user) => this.userAllowed(user, 'password'));
         return {
           device: 'pam',
           name: '',
@@ -848,7 +880,7 @@ export class LinuxSshServerContext implements ISshServerContext {
             && this.userManager.checkPassword(user, responses[0] ?? ''),
         };
       },
-      checkAccountLifecycle: (user) => this.userManager.accountLifecycleGate(user),
+      checkAccountLifecycle: (user, peer) => this.sshdPam()?.account(user, peer) ?? this.userManager.accountLifecycleGate(user),
     };
   }
 
