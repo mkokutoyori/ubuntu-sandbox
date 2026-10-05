@@ -25,6 +25,7 @@ export interface SshKeyscanOutcome {
 
 const OPTSTRING = 'cDHv46p:T:t:f:';
 const DEFAULT_PORT = 22;
+const MAXIMUM_CONNECTIONS = 256;
 
 const USAGE = [
   'usage: ssh-keyscan [-46cDHv] [-f file] [-p port] [-T timeout] [-t type]',
@@ -200,6 +201,12 @@ export function runSshKeyscanCommand(
     }
   };
 
+  interface Connection {
+    readonly name: string;
+    readonly outputName: string;
+    readonly result: HostKeyProbeResult;
+  }
+  const connections: Connection[] = [];
   for (const target of targets) {
     const [nameList, ...rest] = target.trim().split(/[ \t]+/);
     const outputName = rest.length > 0 ? rest.join(' ') : nameList;
@@ -213,12 +220,20 @@ export function runSshKeyscanCommand(
         }
         const result = host.probe(ip, port, getCert ? [] : type.proposal);
         if (result === null) continue;
-        if (result.serverIdentification !== null) {
-          stderr(`${printSshfp ? ';' : '#'} ${name}:${port} ${result.serverIdentification}`);
-        }
-        if (result.hostKey !== null) printKey(outputName, result.hostKey);
+        connections.push({ name, outputName, result });
         break;
       }
+    }
+  }
+  for (let first = 0; first < connections.length; first += MAXIMUM_CONNECTIONS) {
+    const wave = connections.slice(first, first + MAXIMUM_CONNECTIONS);
+    for (const { name, result } of wave) {
+      if (result.serverIdentification !== null) {
+        stderr(`${printSshfp ? ';' : '#'} ${name}:${port} ${result.serverIdentification}`);
+      }
+    }
+    for (const { outputName, result } of wave) {
+      if (result.hostKey !== null) printKey(outputName, result.hostKey);
     }
   }
   return finish(foundOne ? 0 : 1);
