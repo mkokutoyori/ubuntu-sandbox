@@ -6719,8 +6719,8 @@ export class LinuxCommandExecutor {
 
   // ─── Improved command handlers ────────────────────────────────────
 
-  beginPasswordChange(target: string, elevated: boolean): PamDialogue {
-    const caller = { uid: elevated ? 0 : this.userMgr.currentUid, euid: 0, loginName: this.loginName() };
+  beginPasswordChange(target: string, invoker: { uid: number; name: string }): PamDialogue {
+    const caller = { uid: invoker.uid, euid: 0, loginName: invoker.name };
     const pid = this.logMgr.allocatePid();
     return new PamServiceSession(this.pam, 'passwd', { caller, identity: { tag: 'passwd', pid } }, { user: target }).changeAuthtok();
   }
@@ -6730,7 +6730,7 @@ export class LinuxCommandExecutor {
     if (!this.userMgr.getUser(target)) return { output: `passwd: user '${target}' does not exist`, exitCode: 1 };
     const lines = (input ?? '').replace(/\n$/, '').split('\n');
     const answers = input === undefined || input === '' ? [] : lines;
-    const dialogue = this.beginPasswordChange(target, false);
+    const dialogue = this.beginPasswordChange(target, { uid: this.userMgr.currentUid, name: this.loginName() });
     let output = '';
     const flush = (): void => { for (const notice of dialogue.takeNotices()) output += `${notice}\n`; };
     flush();

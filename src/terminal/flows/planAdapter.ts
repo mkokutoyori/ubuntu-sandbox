@@ -61,7 +61,7 @@ export function toInteractiveSteps(plan: CommandInteractionPlan): InteractiveSte
         break;
       }
       case 'output':
-        out.push({ type: 'output', outputLines: [...step.lines] });
+        out.push({ type: 'output', get outputLines(): string[] { return [...step.lines]; } });
         break;
       case 'text':
         out.push({

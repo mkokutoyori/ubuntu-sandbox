@@ -36,12 +36,17 @@ export interface LinuxPlannerDevice {
   checkPassword?(user: string, password: string): boolean;
   authenticateSudo?(user: string, password: string): boolean;
   abandonSudoAuthentication?(attempts: number, commandLine: string): void;
-  beginPasswordChange?(target: string, elevated: boolean): PamDialogue;
+  beginPasswordChange?(target: string, invoker: PasswordInvoker): PamDialogue;
   setUserGecos?(
     user: string, fullName: string, room: string,
     workPhone: string, homePhone: string, other: string,
   ): void;
   userExists?(user: string): boolean;
+}
+
+export interface PasswordInvoker {
+  uid: number;
+  name: string;
 }
 
 export interface LinuxPlanContext {
@@ -113,23 +118,18 @@ function suPasswordStep(): InteractionStep {
 
 let passwordChangeCounter = 0;
 
-function passwordChangeSteps(device: LinuxPlannerDevice, target: string, elevated: boolean): InteractionStep[] {
+function passwordChangeSteps(device: LinuxPlannerDevice, target: string, invoker: PasswordInvoker): InteractionStep[] {
   const ask = `password-change-${passwordChangeCounter++}`;
   const done = `${ask}-done`;
   let dialogue: PamDialogue | null = null;
   const current = (): PamDialogue => {
-    dialogue ??= device.beginPasswordChange!(target, elevated);
+    dialogue ??= device.beginPasswordChange!(target, invoker);
     return dialogue;
   };
+  const pending = (): string[] => current().takeNotices();
   return [
+    { kind: 'output', get lines(): string[] { return pending(); } },
     { kind: 'label', name: ask },
-    {
-      kind: 'run',
-      run: async (rt) => {
-        const notices = current().takeNotices();
-        if (notices.length > 0) rt.output(notices.join('\n'));
-      },
-    },
     { kind: 'branch', to: () => (current().finished ? done : null) },
     {
       kind: 'password',
@@ -139,15 +139,19 @@ function passwordChangeSteps(device: LinuxPlannerDevice, target: string, elevate
         return { valid: true };
       },
     },
+    { kind: 'output', get lines(): string[] { return pending(); } },
     { kind: 'branch', to: () => ask },
     { kind: 'label', name: done },
     {
-      kind: 'run',
-      run: async (rt) => {
+      kind: 'output',
+      get lines(): string[] {
         const code = current().code;
-        rt.output(code === PamReturn.SUCCESS
-          ? 'passwd: password updated successfully'
-          : `passwd: ${pamStrError(code)}\npasswd: password unchanged`);
+        return [
+          ...pending(),
+          ...(code === PamReturn.SUCCESS
+            ? ['passwd: password updated successfully']
+            : [`passwd: ${pamStrError(code)}`, 'passwd: password unchanged']),
+        ];
       },
     },
   ];
@@ -202,8 +206,9 @@ function userCreationTail(
   targetUser: string,
   withPassword: boolean,
   withGecos: boolean,
+  invoker: PasswordInvoker,
 ): InteractionStep[] {
-  const passwordSteps: InteractionStep[] = withPassword ? passwordChangeSteps(device, targetUser, false) : [];
+  const passwordSteps: InteractionStep[] = withPassword ? passwordChangeSteps(device, targetUser, invoker) : [];
   const chfnSteps = withGecos ? gecosSteps(device, targetUser) : [];
   return [...passwordSteps, ...chfnSteps];
 }
@@ -230,7 +235,7 @@ function sudoPlan(
   }
 
   if (subCmd === 'passwd' && subParts.length === 1) {
-    return { steps: [sudoStep, ...passwordChangeSteps(device, 'root', true)] };
+    return { steps: [sudoStep, ...passwordChangeSteps(device, 'root', { uid: 0, name: currentUser })] };
   }
 
   // sudo passwd <user> — change another user's password.
@@ -239,7 +244,7 @@ function sudoPlan(
     return {
       steps: [
         sudoStep,
-        ...passwordChangeSteps(device, targetUser, true),
+        ...passwordChangeSteps(device, targetUser, { uid: 0, name: currentUser }),
       ],
     };
   }
@@ -262,7 +267,7 @@ function sudoPlan(
       steps: [
         sudoStep,
         executeCommandStep(fullCommand),
-        ...userCreationTail(device, req.name!, withPassword, withGecos),
+        ...userCreationTail(device, req.name!, withPassword, withGecos, { uid: 0, name: currentUser }),
       ],
     };
   }
@@ -283,15 +288,14 @@ function suPlan(parts: string[]): CommandInteractionPlan {
 function passwdPlan(
   device: LinuxPlannerDevice,
   parts: string[],
-  currentUser: string,
-  isRoot: boolean,
+  invoker: PasswordInvoker,
 ): CommandInteractionPlan | null {
   if (parts.length === 1) {
-    return { steps: passwordChangeSteps(device, currentUser, false) };
+    return { steps: passwordChangeSteps(device, invoker.name, invoker) };
   }
 
-  if (parts.length >= 2 && !parts[1].startsWith('-') && isRoot) {
-    return { steps: passwordChangeSteps(device, parts[parts.length - 1], false) };
+  if (parts.length >= 2 && !parts[1].startsWith('-') && invoker.uid === 0) {
+    return { steps: passwordChangeSteps(device, parts[parts.length - 1], invoker) };
   }
 
   return null;
@@ -300,6 +304,7 @@ function passwdPlan(
 function rootAdduserPlan(
   device: LinuxPlannerDevice,
   fullCommand: string,
+  currentUser: string,
 ): CommandInteractionPlan | null {
   const req = parseAdduserArgs(tokenize(fullCommand).slice(1));
   if (req.mode !== 'create-user' || !req.name || req.system) return null;
@@ -312,7 +317,7 @@ function rootAdduserPlan(
   return {
     steps: [
       executeCommandStep(fullCommand),
-      ...userCreationTail(device, req.name, withPassword, withGecos),
+      ...userCreationTail(device, req.name, withPassword, withGecos, { uid: 0, name: currentUser }),
     ],
   };
 }
@@ -349,11 +354,11 @@ export function buildLinuxInteractionPlan(
   }
 
   if (parts[0] === 'passwd') {
-    return passwdPlan(device, parts, ctx.currentUser, isRoot);
+    return passwdPlan(device, parts, { uid: ctx.currentUid, name: ctx.currentUser });
   }
 
   if (parts[0] === 'adduser' && parts.length >= 2 && isRoot) {
-    return rootAdduserPlan(device, trimmed);
+    return rootAdduserPlan(device, trimmed, ctx.currentUser);
   }
 
   // `useradd` is intentionally absent — non-interactive on real systems.

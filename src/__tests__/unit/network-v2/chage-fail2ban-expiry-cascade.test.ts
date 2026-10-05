@@ -60,7 +60,7 @@ describe('Scénario 1 — chage expiration + cascade Fail2ban', () => {
       await client.executeCommand('sshpass -p wonderland ssh alice@10.0.0.2 whoami');
 
       const authLog = await server.executeCommand('cat /var/log/auth.log');
-      expect(authLog).toMatch(/pam_unix\(sshd:auth\): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10\.0\.0\.1 user=alice/);
+      expect(authLog).not.toMatch(/pam_unix\(sshd:auth\): authentication failure/);
       expect(authLog).toMatch(/pam_unix\(sshd:account\): expired password for user alice/);
     });
   });

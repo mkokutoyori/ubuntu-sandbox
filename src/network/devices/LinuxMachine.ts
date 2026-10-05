@@ -4670,8 +4670,8 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other);
   }
   canSudo(): boolean { return this.executor.canSudo(); }
-  beginPasswordChange(target: string, elevated: boolean): PamDialogue {
-    return this.executor.beginPasswordChange(target, elevated);
+  beginPasswordChange(target: string, invoker: { uid: number; name: string }): PamDialogue {
+    return this.executor.beginPasswordChange(target, invoker);
   }
   authenticateSudo(user: string, password: string): boolean {
     return this.executor.authenticateSudo(user, password);
