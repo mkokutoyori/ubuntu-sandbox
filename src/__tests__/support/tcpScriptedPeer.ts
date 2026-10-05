@@ -18,6 +18,7 @@ import { optionsDataOffset } from '@/network/tcp/TcpOptionsCodec';
 import { payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { EcnCodepoint } from '@/network/core/IpHeaderFields';
 import type { TcpSocket, TcpListenOptions, TcpConnectOptions } from '@/network/tcp/TcpStack';
 
 export const DUT_ADDRESS = '10.0.0.1';
@@ -64,6 +65,7 @@ export interface PeerSegment {
   sourceAddress?: string;
   destinationAddress?: string;
   ttl?: number;
+  ecn?: EcnCodepoint;
 }
 
 export interface ScriptedPeer {
@@ -85,6 +87,7 @@ export interface ScriptedPeer {
   sendIcmpv6ErrorQuoting(icmpType: ICMPv6Type, code: number, invoking: IPv6Packet, mtu?: number): void;
   udpDatagrams(): IPv6Packet[];
   respond(handler: ((segment: TcpSegment) => void) | null): void;
+  ecnOf(segment: TcpSegment): EcnCodepoint;
   take(): TcpSegment[];
   last(): TcpSegment | undefined;
   clear(): void;
@@ -125,6 +128,7 @@ export function scriptedPeer(
   const icmpReplies: ICMPPacket[] = [];
   const icmpv6Replies: ICMPv6Packet[] = [];
   let responder: ((segment: TcpSegment) => void) | null = null;
+  const ecnOfReply = new WeakMap<TcpSegment, EcnCodepoint>();
   port.onFrame((_name, frame) => {
     frames.push(frame);
     if (frame.etherType === ETHERTYPE_IPV6) {
@@ -132,6 +136,7 @@ export function scriptedPeer(
       if (packet.nextHeader === IP_PROTO_ICMPV6) icmpv6Replies.push(packet.payload as ICMPv6Packet);
       if (packet.nextHeader !== IP_PROTO_TCP) return;
       const segment = packet.payload as TcpSegment;
+      ecnOfReply.set(segment, EcnCodepoint.ofField(packet.trafficClass));
       replies.push(segment);
       responder?.(segment);
       return;
@@ -141,6 +146,7 @@ export function scriptedPeer(
     if (packet.protocol === IP_PROTO_ICMP) icmpReplies.push(packet.payload as ICMPPacket);
     if (packet.protocol !== IP_PROTO_TCP) return;
     const segment = packet.payload as TcpSegment;
+    ecnOfReply.set(segment, EcnCodepoint.ofField(packet.tos));
     replies.push(segment);
     responder?.(segment);
   });
@@ -175,13 +181,18 @@ export function scriptedPeer(
     const destination = spec.destinationAddress ?? addresses.dut;
     seg.checksum = computeTcpChecksum(seg, source, destination);
     const size = seg.dataOffset * 4 + payloadBytes(seg.payload).length;
+    const ecn = spec.ecn ?? EcnCodepoint.NOT_ECT;
     if (family === 'ipv6') {
-      emit6(createIPv6Packet(
-        new IPv6Address(source), new IPv6Address(destination), IP_PROTO_TCP, spec.ttl ?? 64, seg, size));
+      emit6({
+        ...createIPv6Packet(
+          new IPv6Address(source), new IPv6Address(destination), IP_PROTO_TCP, spec.ttl ?? 64, seg, size),
+        trafficClass: ecn.bits,
+      });
       return;
     }
     emit(createIPv4Packet(
-      new IPAddress(source), new IPAddress(destination), IP_PROTO_TCP, spec.ttl ?? 64, seg, size));
+      new IPAddress(source), new IPAddress(destination), IP_PROTO_TCP, spec.ttl ?? 64, seg, size,
+      { tos: ecn.bits }));
   };
 
   const sendIcmpError = (icmpType: ICMPType, code: number, offending: TcpSegment, mtu?: number): void => {
@@ -221,6 +232,7 @@ export function scriptedPeer(
     dut, bus, clock, family, addresses, frames, replies, icmpReplies, icmpv6Replies, ports, send,
     sendIpv4: emit, sendIpv6: emit6, sendIcmpError, sendIcmpv6Error, sendIcmpv6ErrorQuoting, udpDatagrams,
     respond: (handler) => { responder = handler; },
+    ecnOf: (segment) => ecnOfReply.get(segment) ?? EcnCodepoint.NOT_ECT,
     take: () => replies.splice(0, replies.length),
     last: () => replies[replies.length - 1],
     clear: () => { replies.length = 0; icmpReplies.length = 0; icmpv6Replies.length = 0; },
@@ -238,13 +250,13 @@ export interface OpenConnection {
 
 export function openPassive(
   peer: ScriptedPeer, synOptions: TcpOption[] = [], peerIsn = PEER_ISN, window = 65535,
-  listenOptions: Omit<TcpListenOptions, 'onAccept'> = {},
+  listenOptions: Omit<TcpListenOptions, 'onAccept'> = {}, synFlags = 'S',
 ): OpenConnection {
   const accepted: TcpSocket[] = [];
   peer.dut.getTcpStack().listen(peer.ports.dut, {
     ...listenOptions, onAccept: (socket) => { accepted.push(socket); },
   });
-  peer.send({ flags: 'S', sequence: peerIsn, options: synOptions, window });
+  peer.send({ flags: synFlags, sequence: peerIsn, options: synOptions, window });
   const synAck = peer.last()!;
   peer.send({ flags: 'A', sequence: peerIsn + 1, acknowledgement: synAck.sequence + 1, window });
   peer.clear();
@@ -253,13 +265,13 @@ export function openPassive(
 
 export function openActive(
   peer: ScriptedPeer, synAckOptions: TcpOption[] = [], peerIsn = PEER_ISN, window = 65535,
-  connectOptions: TcpConnectOptions = {},
+  connectOptions: TcpConnectOptions = {}, synAckFlags = 'SA',
 ): OpenConnection {
   const socket = peer.dut.getTcpStack().connect(peer.addresses.peer, peer.ports.peer, connectOptions)!;
   const syn = peer.last()!;
   peer.ports.dut = syn.sourcePort;
   peer.send({
-    flags: 'SA', sequence: peerIsn, acknowledgement: syn.sequence + 1, options: synAckOptions, window,
+    flags: synAckFlags, sequence: peerIsn, acknowledgement: syn.sequence + 1, options: synAckOptions, window,
   });
   peer.clear();
   return { socket, dutIsn: syn.sequence, peerIsn };

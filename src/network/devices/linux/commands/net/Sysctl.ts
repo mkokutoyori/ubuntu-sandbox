@@ -175,6 +175,13 @@ function writeKey(ctx: LinuxCommandContext, opts: SysctlOptions, key: string, va
 
 type SysctlWriter = (ctx: LinuxCommandContext, value: string) => boolean | void;
 
+function unsignedByte(value: string): number | null {
+  const text = value.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const setting = Number(text);
+  return setting <= 255 ? setting : null;
+}
+
 function sysctlWriter(key: string): SysctlWriter | null {
   if (key === 'net.ipv4.ip_forward') {
     return (ctx, value) => ctx.net.setIpForward(value === '1');
@@ -185,6 +192,20 @@ function sysctlWriter(key: string): SysctlWriter | null {
         localDevice?: { setIgnoresBroadcastEcho?(on: boolean): void };
       }).localDevice;
       host?.setIgnoresBroadcastEcho?.(value === '1');
+    };
+  }
+  if (key === 'net.ipv4.tcp_ecn') {
+    return (ctx, value) => {
+      const setting = unsignedByte(value);
+      if (setting === null) return false;
+      ctx.net.setTcpEcn(setting);
+    };
+  }
+  if (key === 'net.ipv4.tcp_ecn_fallback') {
+    return (ctx, value) => {
+      const setting = unsignedByte(value);
+      if (setting === null) return false;
+      ctx.net.setTcpEcnFallback(setting);
     };
   }
   if (key === 'net.ipv4.tcp_tw_reuse') {

@@ -31,6 +31,7 @@ import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
+import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
 import type { DiffServField, HopLimit, TimeToLive, TtlFloor } from '../core/IpHeaderFields';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
@@ -622,6 +623,8 @@ export abstract class EndHost extends Equipment {
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
   protected get udpDiscoversPathMtu(): boolean { return false; }
+  protected get tcpEcnPolicy(): TcpEcnPolicy { return 'off'; }
+  protected get tcpEcnFallsBack(): boolean { return true; }
 
   // ─── Reactive plumbing (Phase 5) ──────────────────────────────────
   /** Owns scheduler-driven timers (ARP aging, echo waits). */
@@ -1104,6 +1107,8 @@ export abstract class EndHost extends Equipment {
         const destination = remoteIp.includes(':') ? IPv6Address.tryParse(remoteIp) : IPAddress.tryParse(remoteIp);
         return destination ? this.pathMtuTo(destination, linkMtu) : linkMtu;
       },
+      ecnPolicy: () => this.tcpEcnPolicy,
+      ecnFallback: () => this.tcpEcnFallsBack,
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();

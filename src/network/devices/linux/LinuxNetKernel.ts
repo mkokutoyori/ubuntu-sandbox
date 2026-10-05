@@ -265,6 +265,8 @@ export interface LinuxNetKernel {
 
   // ─── Forwarding / NAT (router-layer) ─────────────────────────────
   setIpForward(enabled: boolean): void;
+  setTcpEcn(setting: number): void;
+  setTcpEcnFallback(setting: number): void;
   isIpForwardEnabled(): boolean;
   addMasqueradeInterface(iface: string): void;
   removeMasqueradeInterface(iface: string): void;

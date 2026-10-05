@@ -8,7 +8,7 @@
  * `onNewAck`/`onDuplicateAck`/`onRtoTimeout` and reads `cwnd`.
  *
  * This targets RFC 5681's real *algorithm*, not byte-exact parity with a
- * modern Linux/BSD stack (no CUBIC/BBR, no ECN) — consistent with every
+ * modern Linux/BSD stack (no CUBIC/BBR) — consistent with every
  * other PRD in this repo's "real protocol, not bit-exact" stance.
  */
 
@@ -91,6 +91,12 @@ export class TcpCongestionControl {
     this.cwnd = this.ssthresh + 3 * this.mss;
     this.inFastRecovery = true;
     return true;
+  }
+
+  onCongestionEcho(): void {
+    this.ssthresh = Math.max(Math.floor(this.cwnd / 2), 2 * this.mss);
+    this.cwnd = Math.min(this.cwnd, this.ssthresh);
+    this.dupAckCount = 0;
   }
 
   /** RFC 5681 §3.1 — an RTO fired: collapse to slow start from scratch. */
