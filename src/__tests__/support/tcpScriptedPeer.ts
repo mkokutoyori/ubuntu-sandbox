@@ -5,7 +5,8 @@ import { EventBus } from '@/events/EventBus';
 import { VirtualTimeScheduler } from '@/events/Scheduler';
 import {
   IPAddress, SubnetMask, MACAddress, createIPv4Packet, resetCounters,
-  ETHERTYPE_IPV4, IP_PROTO_TCP, type EthernetFrame, type IPv4Packet,
+  ETHERTYPE_IPV4, IP_PROTO_TCP, IP_PROTO_ICMP,
+  type EthernetFrame, type IPv4Packet, type ICMPPacket, type ICMPType,
 } from '@/network/core/types';
 import {
   computeTcpChecksum, noFlags, type TcpFlags, type TcpOption, type TcpSegment,
@@ -66,6 +67,8 @@ export interface ScriptedPeer {
   readonly replies: TcpSegment[];
   readonly ports: { dut: number; peer: number };
   send(spec: PeerSegment): void;
+  sendIcmpError(icmpType: ICMPType, code: number, offending: TcpSegment): void;
+  respond(handler: ((segment: TcpSegment) => void) | null): void;
   take(): TcpSegment[];
   last(): TcpSegment | undefined;
   clear(): void;
@@ -93,13 +96,23 @@ export function scriptedPeer(): ScriptedPeer {
 
   const frames: EthernetFrame[] = [];
   const replies: TcpSegment[] = [];
+  let responder: ((segment: TcpSegment) => void) | null = null;
   port.onFrame((_name, frame) => {
     frames.push(frame);
     if (frame.etherType !== ETHERTYPE_IPV4) return;
     const packet = frame.payload as IPv4Packet;
     if (packet.protocol !== IP_PROTO_TCP) return;
-    replies.push(packet.payload as TcpSegment);
+    const segment = packet.payload as TcpSegment;
+    replies.push(segment);
+    responder?.(segment);
   });
+
+  const emit = (packet: IPv4Packet): void => {
+    port.sendFrame({
+      srcMAC: port.getMAC(), dstMAC: dut.getPort('eth0')!.getMAC(),
+      etherType: ETHERTYPE_IPV4, payload: packet,
+    } as EthernetFrame);
+  };
 
   const ports = { dut: 4000, peer: PEER_PORT };
 
@@ -123,16 +136,24 @@ export function scriptedPeer(): ScriptedPeer {
     const destination = spec.destinationAddress ?? DUT_ADDRESS;
     seg.checksum = computeTcpChecksum(seg, source, destination);
     const size = seg.dataOffset * 4 + payloadBytes(seg.payload).length;
-    port.sendFrame({
-      srcMAC: port.getMAC(), dstMAC: dut.getPort('eth0')!.getMAC(),
-      etherType: ETHERTYPE_IPV4,
-      payload: createIPv4Packet(
-        new IPAddress(source), new IPAddress(destination), IP_PROTO_TCP, spec.ttl ?? 64, seg, size),
-    } as EthernetFrame);
+    emit(createIPv4Packet(
+      new IPAddress(source), new IPAddress(destination), IP_PROTO_TCP, spec.ttl ?? 64, seg, size));
+  };
+
+  const sendIcmpError = (icmpType: ICMPType, code: number, offending: TcpSegment): void => {
+    const original = createIPv4Packet(
+      new IPAddress(DUT_ADDRESS), new IPAddress(PEER_ADDRESS), IP_PROTO_TCP, 64, offending,
+      offending.dataOffset * 4);
+    const icmp: ICMPPacket = {
+      type: 'icmp', icmpType, code, id: 0, sequence: 0, dataSize: 28, originalPacket: original,
+    };
+    emit(createIPv4Packet(
+      new IPAddress(PEER_ADDRESS), new IPAddress(DUT_ADDRESS), IP_PROTO_ICMP, 64, icmp, 8 + 28));
   };
 
   return {
-    dut, bus, clock, frames, replies, ports, send,
+    dut, bus, clock, frames, replies, ports, send, sendIcmpError,
+    respond: (handler) => { responder = handler; },
     take: () => replies.splice(0, replies.length),
     last: () => replies[replies.length - 1],
     clear: () => { replies.length = 0; },

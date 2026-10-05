@@ -1060,6 +1060,7 @@ export abstract class EndHost extends Equipment {
         this.sendIpv4FrameArpAware(outPortName, ipPkt, nextHopIP),
       sendIpv6FrameNdpAware: (outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address) =>
         this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
+      adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
@@ -2997,6 +2998,16 @@ export abstract class EndHost extends Equipment {
       // retransmits instead of aborting the connection.
       const isFragNeeded = icmp.icmpType === 'destination-unreachable'
         && icmp.code === ICMP_UNREACH_FRAG_NEEDED;
+      if (!isHardTcpError && !isFragNeeded && icmp.originalPacket) {
+        const softSeg = icmp.originalPacket.payload as TcpSegment | undefined;
+        if (softSeg && softSeg.type === 'tcp') {
+          this.tcpv2.onIcmpSoftError(
+            softSeg.sourcePort, softSeg.destinationPort,
+            icmp.originalPacket.destinationIP.toString(),
+            icmp.icmpType, icmp.code, ipPkt.sourceIP.toString(),
+          );
+        }
+      }
       if (isHardTcpError && icmp.originalPacket) {
         const origSeg = icmp.originalPacket.payload as TCPPacket | undefined;
         if (origSeg && origSeg.type === 'tcp') {
@@ -4696,6 +4707,13 @@ export abstract class EndHost extends Equipment {
     this.sendNeighborSolicitation(route.port.getName(), targetIP);
     stop();
     return learned;
+  }
+
+  private reprobeNeighbour(nextHopIp: string): void {
+    const target = IPAddress.tryParse(nextHopIp);
+    if (!target) return;
+    const route = this.resolveRoute(target);
+    if (route && route.nextHopIP.equals(target)) this.sendArpRequest(route.port, target);
   }
 
   private sendArpRequest(port: Port, targetIP: IPAddress): void {

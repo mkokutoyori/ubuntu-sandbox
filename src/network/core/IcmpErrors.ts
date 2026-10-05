@@ -80,7 +80,7 @@ export const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
 
 export function isHardTcpUnreachCode(code: number | undefined): boolean {
   if (code === undefined) return false;
-  return code === ICMP_UNREACH_PORT || PROHIBITED_UNREACH_CODES.has(code);
+  return code === ICMP_UNREACH_PROTO || code === ICMP_UNREACH_PORT || PROHIBITED_UNREACH_CODES.has(code);
 }
 
 interface SocketError {

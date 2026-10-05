@@ -14,7 +14,10 @@
 
 export const TCP_INITIAL_RTO_MS = 1000;
 export const TCP_MAX_RTO_MS = 60_000;
-export const TCP_MAX_RETRANSMITS = 5;
+export const TCP_R1_RETRANSMITS = 3;
+export const TCP_DATA_R2_MS = 100_000;
+export const TCP_SYN_R2_MS = 180_000;
+export const TCP_RTO_AFTER_SYN_RETRANSMIT_MS = 3_000;
 
 /** RFC 6298 §2.3 smoothing constants. */
 const RTT_ALPHA = 1 / 8;
@@ -50,6 +53,10 @@ export class RttEstimator {
     return this.rtoMs;
   }
 
+  holdAtLeast(minimumMs: number): void {
+    this.rtoMs = Math.max(this.rtoMs, minimumMs);
+  }
+
   /** New data was acknowledged (real progress) — drop back to the SRTT-based estimate (or the fixed base, before any sample exists). */
   reset(): void {
     this.rtoMs = this.srttMs === null ? this.initialRtoMs : this.computeRtoFromSrtt();
@@ -81,27 +88,6 @@ export class RttEstimator {
   }
 }
 
-/**
- * Worst-case elapsed time before a connection with no way to recover gives
- * up (RTO fires `TCP_MAX_RETRANSMITS + 1` times — the queue is retransmitted
- * once per fired timer, and only the retransmission *after* the count
- * exceeds the max aborts the connection — before `_teardown(..., 'timeout')`
- * runs). Tests fast-forwarding a `VirtualTimeScheduler` (or vitest fake
- * timers) past a hopeless connection attempt should advance by at least
- * this much, not by hand-summing the backoff series (easy to be off by one
- * term, since the final firing that pushes past the limit still needs to
- * be *reached* before it can be judged as "too many").
- */
-export function worstCaseRetransmitWindowMs(
-  initialRtoMs: number = TCP_INITIAL_RTO_MS,
-  maxRtoMs: number = TCP_MAX_RTO_MS,
-  maxRetransmits: number = TCP_MAX_RETRANSMITS,
-): number {
-  let total = 0;
-  let rto = initialRtoMs;
-  for (let i = 0; i <= maxRetransmits; i++) {
-    total += rto;
-    rto = Math.min(rto * 2, maxRtoMs);
-  }
-  return total;
+export function worstCaseRetransmitWindowMs(giveUpAfterMs: number = TCP_SYN_R2_MS): number {
+  return giveUpAfterMs;
 }
