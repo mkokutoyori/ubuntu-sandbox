@@ -59,6 +59,8 @@ export interface ISubShell extends IShellBase {
    */
   handleKey(e: KeyEvent): boolean;
 
+  collectLine?(line: string): string | null;
+
   /**
    * Process a completed line of input (after Enter).
    * Returns output to display and whether the sub-shell has exited.

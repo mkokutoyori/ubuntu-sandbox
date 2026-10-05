@@ -68,6 +68,7 @@ export abstract class AbstractShell implements IShell {
    */
   protected clearWords: ReadonlySet<string> = new Set();
   protected eofEndsSession = true;
+  protected passesTypedLines = false;
 
   /** Whether this shell has been disposed (idempotency guard). */
   private _disposed = false;
@@ -101,6 +102,8 @@ export abstract class AbstractShell implements IShell {
    * vendor's output and optionally a child shell to push.
    */
   protected abstract dispatch(line: string): Promise<ShellLineResult> | ShellLineResult;
+
+  protected awaitsMoreInput(): boolean { return false; }
 
   // ─── Defaultable hooks ─────────────────────────────────────────────
 
@@ -154,22 +157,23 @@ export abstract class AbstractShell implements IShell {
    */
   async processLine(line: string): Promise<ShellLineResult> {
     const trimmed = line.trim();
+    const continuing = this.awaitsMoreInput();
 
     this.context.pushHistory(trimmed);
 
-    if (!trimmed) return { output: [] };
+    if (!trimmed && !continuing) return { output: [] };
 
     const lower = trimmed.toLowerCase();
 
-    if (this.exitWords.has(lower)) {
+    if (!continuing && this.exitWords.has(lower)) {
       return { output: this.getDeactivationBanner().slice(), exit: true };
     }
 
-    if (this.clearWords.has(lower)) {
+    if (!continuing && this.clearWords.has(lower)) {
       return { output: [], clearScreen: true };
     }
 
-    const result = await this.dispatch(trimmed);
+    const result = await this.dispatch(this.passesTypedLines ? line.replace(/\r?\n$/, '') : trimmed);
     // Normalise the readonly contract — never mutate the caller's array.
     const output = result.output ?? [];
     // Default styling: every shell emits pre-parsed segments so cross-

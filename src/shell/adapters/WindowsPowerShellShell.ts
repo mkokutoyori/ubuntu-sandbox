@@ -19,6 +19,7 @@ import type { ShellLineResult } from '../IShell';
 import type { RichOutputLine, LineType } from '@/terminal/core/types';
 import { styleWindowsOutput } from '@/terminal/core/windowsOutputStyle';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
+import { powershellInputIsIncomplete } from '@/powershell/lexer/PSInputCompleteness';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { ShellFactory } from '../ShellFactory';
@@ -55,6 +56,7 @@ export interface WindowsPowerShellOptions extends AbstractShellOptions {
 export class WindowsPowerShellShell extends AbstractShell {
   readonly kind = 'powershell';
   protected override eofEndsSession = false;
+  protected override passesTypedLines = true;
 
   private subShell: PowerShellSubShell;
   private banner: readonly string[];
@@ -108,11 +110,18 @@ export class WindowsPowerShellShell extends AbstractShell {
     return this.subShell.getPrompt();
   }
 
+  protected override awaitsMoreInput(): boolean {
+    return this.subShell.awaitsMoreInput();
+  }
+
   override getActivationBanner(): readonly string[] {
     return this.banner;
   }
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
+    if (this.subShell.awaitsMoreInput() || powershellInputIsIncomplete(line)) {
+      return this.runInSubShell(line);
+    }
     const sshAttempt = await tryInterpretSshLaunch(line, {
       defaultUser: this.user,
       knownHostsTracker: this.knownHostsTracker,
@@ -147,6 +156,10 @@ export class WindowsPowerShellShell extends AbstractShell {
       });
       if (child) return { output: [], childShell: child };
     }
+    return this.runInSubShell(line);
+  }
+
+  private async runInSubShell(line: string): Promise<ShellLineResult> {
     const r = await this.subShell.processLine(line);
     return {
       output: r.output ?? [],

@@ -263,11 +263,14 @@ export async function relayScriptedShell(
   let awaitingChallenge = false;
   let remaining = skipLines;
   let ended = false;
-  for (const raw of stdin.split('\n')) {
+  let nested = false;
+  const typedLines = stdin.split('\n');
+  if (typedLines[typedLines.length - 1] === '') typedLines.pop();
+  for (const raw of typedLines) {
     if (remaining > 0) { remaining -= 1; continue; }
     if (ended) break;
-    const line = raw.trim();
-    if (!awaitingChallenge && line.length === 0) continue;
+    const line = nested && !awaitingChallenge ? raw.replace(/\r$/, '') : raw.trim();
+    if (!awaitingChallenge && !nested && line.length === 0) continue;
     const result = awaitingChallenge
       ? await shell.provideInput(line)
       : await shell.runLine(line);
@@ -277,6 +280,7 @@ export async function relayScriptedShell(
     prompt = result.prompt ?? prompt;
     awaitingChallenge = result.pendingInput !== undefined;
     ended = result.sessionEnded === true;
+    nested = result.nested === true;
   }
   return { output: lines.join('\n'), exitCode: 0 };
 }
