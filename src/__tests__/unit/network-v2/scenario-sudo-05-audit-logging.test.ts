@@ -40,7 +40,7 @@ describe('Scénario 5 — audit sudo : succès, refus, NOPASSWD', () => {
   it('un sudo réussi produit une ligne complète : user, TTY, PWD, USER=, COMMAND=', async () => {
     await run('su - netadmin -c "sudo cat /etc/hostname"');
     const log = await authLog();
-    expect(log).toMatch(/sudo: netadmin : TTY=pts\/0 ; PWD=\/home\/netadmin ; USER=root ; COMMAND=\/usr\/bin\/cat \/etc\/hostname/);
+    expect(log).toMatch(/sudo:\s+netadmin : TTY=pts\/0 ; PWD=\/home\/netadmin ; USER=root ; COMMAND=\/usr\/bin\/cat \/etc\/hostname/);
   });
 
   it('un sudo NOPASSWD réussi est tracé comme un succès normal (pas de mention de mot de passe)', async () => {
@@ -54,7 +54,7 @@ describe('Scénario 5 — audit sudo : succès, refus, NOPASSWD', () => {
   it('un refus "not in sudoers" est distinguable par le mot-clé exact', async () => {
     await run('su - guest1 -c "sudo whoami"');
     const log = await authLog();
-    expect(log).toMatch(/sudo: guest1 : user NOT in sudoers ; TTY=pts\/0 ; PWD=\/home\/guest1 ; USER=root ; COMMAND=\/usr\/bin\/whoami/);
+    expect(log).toMatch(/sudo:\s+guest1 : user NOT in sudoers ; TTY=pts\/0 ; PWD=\/home\/guest1 ; USER=root ; COMMAND=\/usr\/bin\/whoami/);
   });
 
   it('un refus "commande non autorisée" est distinguable par un mot-clé différent ("not allowed")', async () => {
@@ -63,7 +63,7 @@ guest1 ALL=(root) /bin/cat /etc/hostname
 EOF`);
     await run('su - guest1 -c "sudo whoami"');
     const log = await authLog();
-    expect(log).toMatch(/sudo: guest1 : command not allowed ; TTY=pts\/0 ; PWD=\/home\/guest1 ; USER=root ; COMMAND=\/usr\/bin\/whoami/);
+    expect(log).toMatch(/sudo:\s+guest1 : command not allowed ; TTY=pts\/0 ; PWD=\/home\/guest1 ; USER=root ; COMMAND=\/usr\/bin\/whoami/);
     // Le message utilisateur (pas la ligne de log) porte "not allowed".
     const out = await run('su - guest1 -c "sudo whoami"');
     expect(out).toMatch(/Sorry, user guest1 is not allowed to execute/);
@@ -73,7 +73,7 @@ EOF`);
     await run('su - netadmin -c "sudo whoami"');
     await run('su - guest1 -c "sudo whoami"');
     const refused = await run("grep 'NOT in sudoers' /var/log/auth.log");
-    const succeeded = await run("grep 'sudo: netadmin :' /var/log/auth.log | grep -v 'NOT in sudoers'");
+    const succeeded = await run("grep -E 'sudo: +netadmin :' /var/log/auth.log | grep -v 'NOT in sudoers'");
     expect(refused).toContain('guest1');
     expect(succeeded).toContain('netadmin');
   });
@@ -85,7 +85,7 @@ netadmin ALL=(svcaccount) NOPASSWD: ALL
 EOF`);
     await run('su - netadmin -c "sudo -u svcaccount whoami"');
     const log = await authLog();
-    expect(log).toMatch(/sudo: netadmin : TTY=pts\/0 ; PWD=\/home\/netadmin ; USER=svcaccount ; COMMAND=\/usr\/bin\/whoami/);
+    expect(log).toMatch(/sudo:\s+netadmin : TTY=pts\/0 ; PWD=\/home\/netadmin ; USER=svcaccount ; COMMAND=\/usr\/bin\/whoami/);
   });
 
   it('COMMAND= inclut les arguments complets, pas seulement le nom de la commande', async () => {
@@ -101,7 +101,7 @@ EOF`);
     await run('su - guest1 -c "echo WRONGPASS | sudo -S whoami"');
     const log = await authLog();
     expect(log).toMatch(/sudo: pam_unix\(sudo:auth\): authentication failure/);
-    expect(log).toMatch(/sudo:  guest1 : 1 incorrect password attempt/);
+    expect(log).toMatch(/sudo:\s+guest1 : 1 incorrect password attempt/);
   });
 });
 

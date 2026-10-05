@@ -93,7 +93,7 @@ EOF`);
     it('un refus est tracé dans /var/log/auth.log', async () => {
       await run('su - user-reseau -c "sudo -u root whoami"');
       const log = await run('cat /var/log/auth.log');
-      expect(log).toMatch(/sudo: user-reseau : command not allowed/);
+      expect(log).toMatch(/sudo:\s+user-reseau : command not allowed/);
     });
   });
 

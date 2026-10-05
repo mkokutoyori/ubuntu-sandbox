@@ -32,6 +32,8 @@ const MAX_SUDO_ATTEMPTS = 3;
 export interface LinuxPlannerDevice {
   canSudo(): boolean;
   checkPassword?(user: string, password: string): boolean;
+  authenticateSudo?(user: string, password: string): boolean;
+  abandonSudoAuthentication?(attempts: number, commandLine: string): void;
   setUserPassword?(user: string, password: string): void;
   setUserGecos?(
     user: string, fullName: string, room: string,
@@ -77,16 +79,21 @@ function suExecuteStep(command: string): InteractionStep {
   };
 }
 
-function sudoPasswordStep(device: LinuxPlannerDevice, currentUser: string): InteractionStep {
+function sudoPasswordStep(device: LinuxPlannerDevice, currentUser: string, commandLine: string): InteractionStep {
+  let attempts = 0;
   return {
     kind: 'password',
     prompt: `[sudo] password for ${currentUser}:`,
     storeAs: 'sudo_password',
     validate: (pwd) => {
-      const valid = device.checkPassword?.(currentUser, pwd) ?? false;
+      const valid = device.authenticateSudo?.(currentUser, pwd) ?? false;
+      if (valid) return { valid };
+      attempts += 1;
+      const exhausted = attempts >= MAX_SUDO_ATTEMPTS;
+      if (exhausted) device.abandonSudoAuthentication?.(attempts, commandLine);
       return {
         valid,
-        errorMessage: valid ? undefined : 'Sorry, try again.',
+        errorMessage: exhausted ? `sudo: ${attempts} incorrect password attempts` : 'Sorry, try again.',
         maxRetries: MAX_SUDO_ATTEMPTS - 1,
       };
     },
@@ -230,7 +237,7 @@ function sudoPlan(
   const subCmd = subParts[0];
   if (!subCmd || subCmd === '-l') return null;
 
-  const sudoStep = sudoPasswordStep(device, currentUser);
+  const sudoStep = sudoPasswordStep(device, currentUser, fullCommand);
 
   // sudo passwd with flags (e.g. -l, -u, -S) → authenticate, run as-is.
   if (subCmd === 'passwd' && subParts.length >= 2 && subParts[1].startsWith('-')) {

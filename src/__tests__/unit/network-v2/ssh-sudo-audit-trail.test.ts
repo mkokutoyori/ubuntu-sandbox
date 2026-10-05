@@ -79,7 +79,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
     expect(log).toMatch(/Accepted password for alice from 10\.0\.0\.1/);
-    expect(log).toMatch(/sudo: alice : TTY=pts\/0 ; PWD=\/home\/alice ; USER=root ; COMMAND=\/usr\/bin\/whoami/);
+    expect(log).toMatch(/sudo:\s+alice : TTY=pts\/0 ; PWD=\/home\/alice ; USER=root ; COMMAND=\/usr\/bin\/whoami/);
   });
 
   it('les deux événements (Accepted + sudo) sont distincts dans le journal', async () => {
@@ -88,7 +88,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
     const acceptedLines = log.split('\n').filter(l => /Accepted password for alice/.test(l));
-    const sudoLines     = log.split('\n').filter(l => /^.*sudo: alice :/.test(l));
+    const sudoLines     = log.split('\n').filter(l => /^.*sudo:\s+alice :/.test(l));
     expect(acceptedLines.length).toBeGreaterThanOrEqual(1);
     expect(sudoLines.length).toBeGreaterThanOrEqual(1);
   });
@@ -100,7 +100,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
     expect(log).toMatch(/Accepted password for mallory from 10\.0\.0\.1/);
-    expect(log).toMatch(/sudo: mallory : user NOT in sudoers ; TTY=pts\/0 ; PWD=\/home\/mallory ; USER=root ; COMMAND=\/usr\/bin\/cat \/etc\/shadow/);
+    expect(log).toMatch(/sudo:\s+mallory : user NOT in sudoers ; TTY=pts\/0 ; PWD=\/home\/mallory ; USER=root ; COMMAND=\/usr\/bin\/cat \/etc\/shadow/);
   });
 
   it('horodatage cohérent : la ligne sudo arrive APRÈS la ligne Accepted', async () => {
@@ -110,7 +110,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
     const lines = log.split('\n');
     const acceptedIdx = lines.findIndex(l => /Accepted password for alice/.test(l));
-    const sudoIdx     = lines.findIndex(l => /sudo: alice :/.test(l));
+    const sudoIdx     = lines.findIndex(l => /sudo:\s+alice :/.test(l));
     expect(acceptedIdx).toBeGreaterThanOrEqual(0);
     expect(sudoIdx).toBeGreaterThan(acceptedIdx);
   });
@@ -126,6 +126,6 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
     expect(log).toMatch(/Accepted password for alice/);
     expect(log).toMatch(/sudo: pam_unix\(sudo:auth\): authentication failure/);
-    expect(log).toMatch(/sudo:  alice : 1 incorrect password attempt/);
+    expect(log).toMatch(/sudo:\s+alice : 1 incorrect password attempt/);
   });
 });

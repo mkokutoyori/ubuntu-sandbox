@@ -692,9 +692,11 @@ export abstract class LinuxMachine extends EndHost
       // ce drapeau, une commande réseau privilégiée était refusée dans une
       // ligne composée (`sudo iptables -L; echo $?`) alors qu'elle passait
       // seule, et l'autorisation sudoers n'était jamais consultée.
+      let closeSudo = (): void => undefined;
       if (viaSudo) {
-        const refusal = this.sudoRefusal(argv[0], args);
-        if (refusal !== null) return Promise.resolve({ output: refusal, exitCode: 1 });
+        const admission = this.executor.admitSudo(argv[0], args, 'root', null);
+        if (admission.refusal !== null) return Promise.resolve(admission.refusal);
+        closeSudo = admission.close;
       }
       const userMgr = this.executor.userMgr;
       const saved = viaSudo
@@ -706,6 +708,7 @@ export abstract class LinuxMachine extends EndHost
         userMgr.currentGid = 0;
       }
       const restore = (): void => {
+        closeSudo();
         if (!saved) return;
         userMgr.currentUser = saved.user;
         userMgr.currentUid = saved.uid;
@@ -3556,24 +3559,13 @@ export abstract class LinuxMachine extends EndHost
    * `commandPrivileges.check()` only runs for commands that fall through
    * to the bash interpreter).
    */
-  private sudoRefusal(firstCmd: string, args: readonly string[]): string | null {
-    const commandLine = [firstCmd, ...args].join(' ');
-    const auth = this.executor.authorizeSudo(firstCmd, args, 'root');
-    if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
-      this.executor.writeSudoAuditLine('not-in-sudoers', auth, commandLine);
-      return `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`;
-    }
-    if (auth.reason === 'command-not-allowed') {
-      this.executor.writeSudoAuditLine('command-not-allowed', auth, commandLine);
-      return `Sorry, user ${auth.invokingUser} is not allowed to execute '${commandLine}' as ${auth.runasUser} on ${auth.hostname}.`;
-    }
-    this.executor.writeSudoAuditLine('success', auth, commandLine);
-    return null;
-  }
-
   sudoRefusalInSession(argv: readonly string[], session: LinuxShellSession): string | null {
     return this.sessionSwap.withinSync(
-      session, () => this.sudoRefusal(argv[0], argv.slice(1)), { capture: false });
+      session, () => {
+        const admission = this.executor.admitSudo(argv[0], argv.slice(1), 'root', null);
+        admission.close();
+        return admission.refusal?.output ?? null;
+      }, { capture: false });
   }
 
   tcpdumpDepsInSession(session: LinuxShellSession, asRoot: boolean): TcpdumpDeps {
@@ -3594,9 +3586,11 @@ export abstract class LinuxMachine extends EndHost
     run: () => Promise<string> | string,
   ): Promise<string> {
     const userMgr = this.executor.userMgr;
+    let closeSudo = (): void => undefined;
     if (isSudo) {
-      const refusal = this.sudoRefusal(firstCmd, args);
-      if (refusal !== null) return refusal;
+      const admission = this.executor.admitSudo(firstCmd, args, 'root', null);
+      if (admission.refusal !== null) return admission.refusal.output;
+      closeSudo = admission.close;
     }
     const savedUser = isSudo
       ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
@@ -3618,6 +3612,7 @@ export abstract class LinuxMachine extends EndHost
       if (denial) return denial.output;
       return await run();
     } finally {
+      closeSudo();
       if (savedUser) {
         userMgr.currentUser = savedUser.user;
         userMgr.currentUid = savedUser.uid;
@@ -4674,6 +4669,12 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other);
   }
   canSudo(): boolean { return this.executor.canSudo(); }
+  authenticateSudo(user: string, password: string): boolean {
+    return this.executor.authenticateSudo(user, password);
+  }
+  abandonSudoAuthentication(attempts: number, commandLine: string): void {
+    this.executor.abandonSudoAuthentication(attempts, commandLine);
+  }
 
   /**
    * Command-owned interactive flows (IoC): sudo/su/passwd/adduser declare
