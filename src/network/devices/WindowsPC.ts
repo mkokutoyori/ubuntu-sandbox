@@ -85,6 +85,7 @@ import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { cmdCopy, cmdMove } from './windows/WinCopy';
+import { cmdXcopy } from './windows/WinXcopy';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
 import { LlmnrAgent } from '../llmnr/LlmnrAgent';
@@ -252,7 +253,7 @@ import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType,
   cmdRen, cmdDel, cmdTree, cmdTasklist, cmdNetstat,
   cmdAttrib, cmdFind, cmdFindstr, cmdMore, cmdFc,
-  cmdXcopy, cmdSort,
+  cmdSort,
 } from './windows/WinFileCommands';
 
 /**
