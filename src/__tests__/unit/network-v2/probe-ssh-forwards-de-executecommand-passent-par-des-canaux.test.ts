@@ -11,11 +11,12 @@
  * `sshd_config` de l'autre machine pour refuser AU MOMENT du `ssh`, alors
  * qu'OpenSSH ne refuse qu'a l'usage (`channel N: open failed`).
  *
- * Mesure avant correctif (sonde rejouee sur la base du lot, git worktree) :
- * les cas « message sur le fil » et « -D relaie » tombent, ainsi que « le
- * serveur decide » ; passent a l'identique : le TEMOIN (le labo est sain :
- * un forward -L relaie des octets) et la non-regression « sans service en face
- * la connexion est refermee ».
+ * Mesure avant correctif (la sonde rejouee sur `b53568db4`, un worktree de la
+ * base) : 8 cas sur 11 tombent. Passent a l'identique, et c'est dit : le
+ * TEMOIN (un forward -L relaie des octets : le labo est sain), « l'ecoute
+ * locale est sur la boucle locale, au nom de ssh » (non-regression : la table
+ * y posait deja ce pid) et « sans service en face, la connexion locale est
+ * refermee » (non-regression).
  *
  * Les numeros de message (80 requete globale, 90 ouverture de canal) et les
  * noms (`direct-tcpip`, `tcpip-forward`, `forwarded-tcpip`) sont ceux de la
