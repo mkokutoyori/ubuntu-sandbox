@@ -132,6 +132,20 @@ describe('a reloaded cable is as degraded as it was', () => {
     expect(cable!.getArtificialDelayMs()).toBe(40);
   });
 
+  it('a netem qdisc comes back on the interface that carried it, and not on its peer', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
+    const conn = buildConnection(pc, 'eth0', sw, sw.getPorts()[0].getName(), 'ethernet')!;
+    conn.cable.setEgressNetem(pc.getPorts()[0], { lossRate: 0.2, delayMs: 30, ecn: true });
+    const back = await roundTrip([pc, sw], [conn]);
+    const port = (byName(back, 'PC1') as LinuxPC).getPorts()[0];
+    const cable = port.getCable()!;
+    const peer = cable.getPortA() === port ? cable.getPortB()! : cable.getPortA()!;
+
+    expect(cable.getEgressNetem(port)).toEqual({ lossRate: 0.2, delayMs: 30, ecn: true });
+    expect(cable.getEgressNetem(peer)).toBeUndefined();
+  });
+
   it('a cable left administratively down comes back down', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
