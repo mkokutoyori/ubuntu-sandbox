@@ -7,6 +7,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { SshdServerConfig } from '@/network/protocols/ssh/server/SshdServerConfig';
+import { reachedThrough } from './sshForwardLab';
 
 beforeEach(() => {
   resetCounters();
@@ -52,57 +53,45 @@ describe('SshdServerConfig — PermitOpen parser', () => {
 });
 
 describe('SSH server — PermitOpen gates -L destinations', () => {
-  it('rejects a -L target that is not in the PermitOpen list', async () => {
+  it('refuses a -L target that is not in the PermitOpen list: the target is never reached', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.99:22\n');
-    const out = await pc.executeCommand(
-      'ssh -L 9001:10.0.0.3:80 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).toMatch(/administratively prohibited/i);
+    const outcome = await reachedThrough(pc, srv, 'ssh -L 9001:10.0.0.2:8080 -N alice@10.0.0.2', 'client', 9001);
+    expect(outcome).toEqual({ reached: false, replies: [] });
   });
 
   it('allows a -L target that matches the PermitOpen list exactly', async () => {
     const { pc, srv } = await buildPair();
-    await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.3:80\n');
-    const out = await pc.executeCommand(
-      'ssh -L 9002:10.0.0.3:80 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).not.toMatch(/administratively prohibited/i);
+    await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.2:8080\n');
+    const outcome = await reachedThrough(pc, srv, 'ssh -L 9002:10.0.0.2:8080 -N alice@10.0.0.2', 'client', 9002);
+    expect(outcome).toEqual({ reached: true, replies: ['ECHO:probe'] });
   });
 
   it('allows any -L target when PermitOpen is "any"', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen any\n');
-    const out = await pc.executeCommand(
-      'ssh -L 9003:10.0.0.5:443 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).not.toMatch(/administratively prohibited/i);
+    const outcome = await reachedThrough(pc, srv, 'ssh -L 9003:10.0.0.2:8080 -N alice@10.0.0.2', 'client', 9003);
+    expect(outcome.reached).toBe(true);
   });
 
   it('refuses every -L target when PermitOpen is "none"', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen none\n');
-    const out = await pc.executeCommand(
-      'ssh -L 9004:10.0.0.3:80 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).toMatch(/administratively prohibited/i);
+    const outcome = await reachedThrough(pc, srv, 'ssh -L 9004:10.0.0.2:8080 -N alice@10.0.0.2', 'client', 9004);
+    expect(outcome).toEqual({ reached: false, replies: [] });
   });
 
   it('wildcard port "host:*" matches any port on that host', async () => {
     const { pc, srv } = await buildPair();
-    await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.3:*\n');
-    const out = await pc.executeCommand(
-      'ssh -L 9005:10.0.0.3:8443 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).not.toMatch(/administratively prohibited/i);
+    await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.2:*\n');
+    const outcome = await reachedThrough(pc, srv, 'ssh -L 9005:10.0.0.2:8080 -N alice@10.0.0.2', 'client', 9005);
+    expect(outcome.reached).toBe(true);
   });
 
   it('-R is not gated by PermitOpen (mirrors OpenSSH; that is PermitListen)', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.99:22\n');
-    const out = await pc.executeCommand(
-      'ssh -R 9006:10.0.0.3:80 -N alice@10.0.0.2', 'admin\n',
-    );
-    expect(out).not.toMatch(/administratively prohibited/i);
+    const outcome = await reachedThrough(pc, srv, 'ssh -R 9006:10.0.0.2:8080 -N alice@10.0.0.2', 'server', 9006);
+    expect(outcome).toEqual({ reached: true, replies: ['ECHO:probe'] });
   });
 });

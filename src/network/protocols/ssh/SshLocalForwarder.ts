@@ -1,6 +1,5 @@
-import { forwardFailureOf, type ForwardOpening } from './ForwardOpening';
+import { forwardBindIp, forwardFailureOf, type ForwardHost, type ForwardListenOptions, type ForwardOpening } from './ForwardOpening';
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
-import type { EndHost } from '@/network/devices/EndHost';
 import { joinWhenReady, type TunnelOpener } from './forwardRelay';
 
 export interface LocalForwardSpec {
@@ -19,9 +18,10 @@ export class SshLocalForwarder {
   private readonly listenerKey: number;
 
   constructor(
-    private readonly localDevice: EndHost,
+    private readonly localDevice: ForwardHost,
     private readonly tunnel: TunnelOpener | null,
     private readonly spec: LocalForwardSpec,
+    private readonly listenOptions: ForwardListenOptions = {},
   ) {
     this.listenerKey = spec.localPort;
   }
@@ -36,7 +36,8 @@ export class SshLocalForwarder {
       this.localDevice.getTcpStack().listen(this.spec.localPort, {
         onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
         ownerUid,
-      });
+        identity: this.listenOptions.identity,
+      }, forwardBindIp(this.listenOptions.bindAddress));
     } catch (error) {
       return forwardFailureOf(error);
     }
@@ -50,7 +51,7 @@ export class SshLocalForwarder {
    */
   dispose(): void {
     if (!this.registered) return;
-    this.localDevice.getTcpStack().closeListener(this.spec.localPort);
+    this.localDevice.getTcpStack().closeListener(this.spec.localPort, forwardBindIp(this.listenOptions.bindAddress));
     this.registered = false;
   }
 
