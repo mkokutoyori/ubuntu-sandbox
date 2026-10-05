@@ -34,7 +34,8 @@ import { TcpStack, receivedIpHeaderOf } from '../tcp/TcpStack';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { isDialFailure, noFlags } from '../tcp/types';
-import { computeUdpChecksum, stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
+import { computeUdpChecksum, stampUdpChecksum, stampUdpLiteChecksum } from '@/network/layers/transport/UdpChecksum';
+import { UdpLiteEndpoint, type UdpLiteHost } from './udp/UdpLiteEndpoint';
 import { acceptUdpDatagram, UDP_MAX_PAYLOAD_OVER_IPV4 } from '@/network/layers/transport/UdpInput';
 import { bogusChecksum } from '@/network/layers/transport/L4Checksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
@@ -60,9 +61,9 @@ import {
 import { HostSignalRefreshActor } from './host/actors';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
-  ARPPacket, ICMPPacket, UDPPacket, TCPPacket, type IPv4Option,
+  ARPPacket, ICMPPacket, UDPPacket, TCPPacket, type IPv4Option, type UDPLitePacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP,
+  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum, ipv4HeaderBytesFor,
   // IPv6 types
   IPv6Address, IPv6Packet, ICMPv6Packet, NDPNeighborSolicitation, NDPNeighborAdvertisement,
@@ -444,6 +445,7 @@ export abstract class EndHost extends Equipment {
 
   /** Bound UDP ports → datagram listeners (RFC 768 socket layer). */
   private readonly udpListeners: Map<number, UdpListener> = new Map();
+  protected udpLite: UdpLiteEndpoint | null = null;
 
   // ─── Hardware inventory ─────────────────────────────────────────
   /**
@@ -802,7 +804,9 @@ export abstract class EndHost extends Equipment {
       if (!srcIP) continue;
       const charge = protocol === IP_PROTO_UDP && (payload as UDPPacket | undefined)?.type === 'udp'
         ? stampUdpChecksum(payload as UDPPacket, srcIP.toString(), group.toString())
-        : payload;
+        : protocol === IP_PROTO_UDPLITE && (payload as UDPLitePacket | undefined)?.type === 'udplite'
+          ? stampUdpLiteChecksum(payload as UDPLitePacket, payloadLength, srcIP.toString(), group.toString())
+          : payload;
       const ipPkt = createIPv6Packet(srcIP, group, protocol, hopLimit, charge, payloadLength);
       if (this.firewallFilter6(name, ipPkt, 'out') !== 'accept') continue;
       this.sendFrame(name, {
@@ -2525,7 +2529,8 @@ export abstract class EndHost extends Equipment {
    * Extract port info from an IPv4 packet for firewall evaluation.
    */
   protected extractPorts(ipPkt: IPv4Packet): { srcPort: number; dstPort: number } {
-    if ((ipPkt.protocol === IP_PROTO_TCP || ipPkt.protocol === IP_PROTO_UDP) && ipPkt.payload) {
+    if ((ipPkt.protocol === IP_PROTO_TCP || ipPkt.protocol === IP_PROTO_UDP
+      || ipPkt.protocol === IP_PROTO_UDPLITE) && ipPkt.payload) {
       const transport = ipPkt.payload as UDPPacket;
       return { srcPort: transport.sourcePort ?? 0, dstPort: transport.destinationPort ?? 0 };
     }
@@ -2670,6 +2675,8 @@ export abstract class EndHost extends Equipment {
         // broadcast : répondre « port injoignable » à un groupe
         // désignerait un coupable qui n'a rien demandé.
         this.deliverUDP(portName, ipPkt, !!isBroadcast || isMulticast, srcMac);
+      } else if (ipPkt.protocol === IP_PROTO_UDPLITE && this.udpLite) {
+        this.udpLite.receive4(portName, ipPkt, !!isBroadcast || isMulticast, srcMac);
       } else if (ipPkt.protocol === IP_PROTO_GRE && this.greAgent) {
         const inner = this.greAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
         if (inner) this.handleIPv4(portName, inner, srcMac);
@@ -2865,6 +2872,8 @@ export abstract class EndHost extends Equipment {
       this.protocolCounters.tcpOutSegs++;
     } else if (ipPkt.protocol === IP_PROTO_UDP) {
       this.protocolCounters.udpOutDatagrams++;
+    } else if (ipPkt.protocol === IP_PROTO_UDPLITE) {
+      this.protocolCounters.udpLiteOutDatagrams++;
     }
   }
 
@@ -3496,6 +3505,34 @@ export abstract class EndHost extends Equipment {
     if (error?.fatal) peer.pendingError = error.errno;
   }
 
+  protected enableUdpLite(): UdpLiteEndpoint {
+    const host: UdpLiteHost = {
+      id: this.id,
+      name: this.name,
+      counters: this.protocolCounters,
+      socketTable: this.socketTable,
+      defaultTtl: () => this.defaultTTL,
+      defaultHopLimit: () => this.defaultHopLimit,
+      isLocalAddress: (address) => this.isLocalAddress(address),
+      isLocalAddress6: (address) => this.isLocalAddress6(address),
+      hasInvalidSource: (packet) => this.hasInvalidSource(packet),
+      emitIpv4: (destination, build, route) => this.emitIpv4(destination, build, route),
+      emitIpv4ToGroup: (group, build, iface) => this.emitIpv4ToGroup(group, build, iface),
+      emitIpv6: (destination, build) => this.emitIpv6(destination, build),
+      emitIpv6ToGroup: (group, payload, payloadLength, iface) =>
+        this.sendIPv6ToGroup(group, IP_PROTO_UDPLITE, payload, payloadLength, iface),
+      replyPortUnreachable: (portName, offending) =>
+        this.sendICMPError(portName, offending, 'destination-unreachable', ICMP_UNREACH_PORT),
+      replyPortUnreachable6: (portName, offending) => this.sendICMPv6Unreachable(portName, offending),
+    };
+    this.udpLite = new UdpLiteEndpoint(host);
+    return this.udpLite;
+  }
+
+  getUdpLite(): UdpLiteEndpoint | null {
+    return this.udpLite;
+  }
+
   public neighbourUnresolved(target: IPAddress | IPv6Address): boolean {
     if (target instanceof IPv6Address) {
       const route6 = this.resolveIPv6Route(target);
@@ -3639,33 +3676,49 @@ export abstract class EndHost extends Equipment {
     // pouvait rien émettre vers un groupe — pas même un groupe rejoint.
     if (isMulticastIpv4(destinationIP.toString())
       || destinationIP.toString() === '255.255.255.255') {
-      return this.sendUdpToGroup(destinationIP, udpBase, flags, options.iface);
+      return this.emitIpv4ToGroup(destinationIP, (srcIP, ttl) => {
+        const udp: UDPPacket = {
+          ...udpBase,
+          checksum: computeUdpChecksum(udpBase, srcIP.toString(), destinationIP.toString()),
+        };
+        return createIPv4Packet(
+          srcIP, destinationIP, IP_PROTO_UDP, ttl, udp, udp.length, { flags },
+        );
+      }, options.iface);
     }
 
-    const route = this.resolveRoute(destinationIP, options.iface);
-    if (!route) return false;
-    const srcIP = options.sourceIp ?? route.port.getIPAddress();
-    if (!srcIP) return false;
+    return this.emitIpv4(destinationIP, (srcIP) => {
+      const sum = computeUdpChecksum(udpBase, srcIP.toString(), destinationIP.toString());
+      const udp: UDPPacket = {
+        ...udpBase,
+        checksum: options.badChecksum ? bogusChecksum(sum, IP_PROTO_UDP) : sum,
+      };
+      return createIPv4Packet(
+        srcIP, destinationIP, IP_PROTO_UDP, options.ttl ?? this.defaultTTL,
+        udp, udp.length, {
+          flags,
+          ...(options.tos === undefined ? {} : { tos: options.tos }),
+          ...(options.ipOptions === undefined ? {} : { ipOptions: [...options.ipOptions] }),
+        },
+      );
+    }, { iface: options.iface, source: options.sourceIp });
+  }
 
-    const sum = computeUdpChecksum(udpBase, srcIP.toString(), destinationIP.toString());
-    const udp: UDPPacket = {
-      ...udpBase,
-      checksum: options.badChecksum ? bogusChecksum(sum, IP_PROTO_UDP) : sum,
-    };
-    const ipPkt = createIPv4Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, options.ttl ?? this.defaultTTL,
-      udp, udp.length, {
-        flags,
-        ...(options.tos === undefined ? {} : { tos: options.tos }),
-        ...(options.ipOptions === undefined ? {} : { ipOptions: [...options.ipOptions] }),
-      },
-    );
+  public emitIpv4(
+    destination: IPAddress, build: (source: IPAddress) => IPv4Packet,
+    route: { iface?: string; source?: IPAddress },
+  ): boolean {
+    const resolved = this.resolveRoute(destination, route.iface);
+    if (!resolved) return false;
+    const source = route.source ?? resolved.port.getIPAddress();
+    if (!source) return false;
+    const ipPkt = build(source);
 
-    const outPortName = route.port.getName();
+    const outPortName = resolved.port.getName();
     const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
     if (verdict === 'drop' || verdict === 'reject') return false;
 
-    this.sendIpv4FrameArpAware(outPortName, ipPkt, route.nextHopIP);
+    this.sendIpv4FrameArpAware(outPortName, ipPkt, resolved.nextHopIP);
     return true;
   }
 
@@ -3718,10 +3771,9 @@ export abstract class EndHost extends Equipment {
    * c'est le comportement d'un démon qui a rejoint le groupe sur tous ses
    * liens, et c'est ce dont LLMNR et mDNS ont besoin.
    */
-  private sendUdpToGroup(
+  public emitIpv4ToGroup(
     group: IPAddress,
-    udpBase: Omit<UDPPacket, 'checksum'>,
-    flags: number,
+    build: (source: IPAddress, ttl: number) => IPv4Packet,
     iface?: string,
   ): boolean {
     const isLimitedBroadcast = group.toString() === '255.255.255.255';
@@ -3737,18 +3789,12 @@ export abstract class EndHost extends Equipment {
       const srcIP = port.getIPAddress();
       if (!srcIP) continue;
 
-      const udp: UDPPacket = {
-        ...udpBase,
-        checksum: computeUdpChecksum(udpBase, srcIP.toString(), group.toString()),
-      };
       // TTL 1 : un groupe en 224.0.0.0/24 ne franchit jamais le lien
       // (RFC 1112 §6.1), et c'est exactement ce que LLMNR et mDNS
       // attendent.
       const ttl = isLimitedBroadcast || group.toString().startsWith('224.0.0.')
         ? 1 : this.defaultTTL;
-      const ipPkt = createIPv4Packet(
-        srcIP, group, IP_PROTO_UDP, ttl, udp, udp.length, { flags },
-      );
+      const ipPkt = build(srcIP, ttl);
       if (this.firewallFilter(name, ipPkt, 'out') !== 'accept') continue;
       this.sendFrame(name, {
         srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV4, payload: ipPkt,
@@ -3827,15 +3873,19 @@ export abstract class EndHost extends Equipment {
       return this.sendIPv6ToGroup(destinationIP, IP_PROTO_UDP, udp, udp.length);
     }
 
-    const route = this.resolveIPv6Route(destinationIP);
-    if (!route) return false;
-    const srcIP = selectIpv6SourceAddress(route.port, destinationIP);
-    if (!srcIP) return false;
-
-    const ipPkt = createIPv6Packet(
+    return this.emitIpv6(destinationIP, (srcIP) => createIPv6Packet(
       srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
       stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length,
-    );
+    ));
+  }
+
+  public emitIpv6(destination: IPv6Address, build: (source: IPv6Address) => IPv6Packet): boolean {
+    const route = this.resolveIPv6Route(destination);
+    if (!route) return false;
+    const srcIP = selectIpv6SourceAddress(route.port, destination);
+    if (!srcIP) return false;
+
+    const ipPkt = build(srcIP);
 
     const outPortName = route.port.getName();
     if (this.firewallFilter6(outPortName, ipPkt, 'out') !== 'accept') return false;
@@ -3905,6 +3955,7 @@ export abstract class EndHost extends Equipment {
     });
     if (verdict.accepted === false) {
       this.protocolCounters.udpInErrors++;
+      if (verdict.refusal === 'checksum-fail') this.protocolCounters.udpInCsumErrors++;
       Logger.warn(this.id, `udp:${verdict.refusal}`,
         `${this.name}: ${verdict.refusal} from ${ipPkt.sourceIP}:${udp.sourcePort}, dropping`);
       return;
@@ -5483,7 +5534,8 @@ export abstract class EndHost extends Equipment {
         this.handleICMPv6(portName, ipv6);
         return;
       }
-      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP) return;
+      const isUdpLite = ipv6.nextHeader === IP_PROTO_UDPLITE && this.udpLite !== null;
+      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP && !isUdpLite) return;
 
       const verdict = this.firewallFilter6(portName, ipv6, 'in');
       if (verdict === 'drop') return;
@@ -5500,6 +5552,8 @@ export abstract class EndHost extends Equipment {
 
       if (ipv6.nextHeader === IP_PROTO_UDP) {
         this.deliverUDP6(portName, ipv6, sourceMac);
+      } else if (isUdpLite) {
+        this.udpLite?.receive6(portName, ipv6, sourceMac);
       } else {
         this.tcpv2.handleIp6(portName, ipv6.sourceIP, ipv6);
       }

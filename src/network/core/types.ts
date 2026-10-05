@@ -764,6 +764,7 @@ export function ethernetFrameBytes(frame: EthernetFrame): number {
 export const IP_PROTO_ICMP = 1;
 export const IP_PROTO_TCP  = 6;
 export const IP_PROTO_UDP  = 17;
+export const IP_PROTO_UDPLITE = 136;
 export const IP_PROTO_ESP  = 50;  // Encapsulating Security Payload (RFC 4303)
 export const IP_PROTO_AH   = 51;  // Authentication Header (RFC 4302)
 export const IP_PROTO_EIGRP = 88; // EIGRP (RFC 7868 §4.2 — runs directly over IP)
@@ -1146,6 +1147,15 @@ export interface UDPPacket extends NetworkPdu {
   checksum: number;
   /** Upper-layer payload (RIP, DNS, etc.). */
   payload: RIPPacket | unknown;
+}
+
+export interface UDPLitePacket extends NetworkPdu {
+  type: 'udplite';
+  sourcePort: number;
+  destinationPort: number;
+  checksumCoverage: number;
+  checksum: number;
+  payload: unknown;
 }
 
 // ─── IPSec: ESP Packet (IP protocol 50, RFC 4303) ───────────────────

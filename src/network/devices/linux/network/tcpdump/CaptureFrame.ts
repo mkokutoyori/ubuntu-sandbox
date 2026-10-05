@@ -18,6 +18,7 @@ import {
   type ICMPPacket,
   type ICMPv6Packet,
   type UDPPacket,
+  type UDPLitePacket,
 } from '@/network/core/types';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
@@ -276,11 +277,20 @@ function synthUdpBytes(udp: UDPPacket): number[] {
   ];
 }
 
+function synthUdpLiteBytes(udp: UDPLitePacket): number[] {
+  return [
+    ...u16(udp.sourcePort), ...u16(udp.destinationPort),
+    ...u16(udp.checksumCoverage), ...u16(udp.checksum & 0xffff),
+    ...(appPayloadBytes(udp.payload) ?? []),
+  ];
+}
+
 function synthL4Bytes(pkt: IPv4Packet): number[] {
   const payload = pkt.payload as { type?: string };
   if (payload?.type === 'icmp') return synthIcmpBytes(pkt.payload as ICMPPacket);
   if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
   if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket);
+  if (payload?.type === 'udplite') return synthUdpLiteBytes(pkt.payload as UDPLitePacket);
   return [];
 }
 
@@ -320,6 +330,7 @@ function synthL4BytesV6(pkt: IPv6Packet): number[] {
   if (payload?.type === 'icmpv6') return synthIcmpv6Bytes(pkt.payload as ICMPv6Packet);
   if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
   if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket);
+  if (payload?.type === 'udplite') return synthUdpLiteBytes(pkt.payload as UDPLitePacket);
   return [];
 }
 
