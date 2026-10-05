@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
@@ -10,7 +10,9 @@ import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
-import type { TcpConnector, TcpStream } from '@/network/tcp/types';
+import type { TcpConnector } from '@/network/tcp/types';
+import { SshTransport } from '@/network/protocols/ssh/transport/SshTransport';
+import { SSH_MSG_REQUEST_FAILURE, SSH_MSG_REQUEST_SUCCESS } from '@/network/protocols/ssh/transport/SshMessageNumbers';
 
 let scheduler: VirtualTimeScheduler;
 
@@ -24,7 +26,7 @@ beforeEach(() => {
   __setDefaultScheduler(scheduler);
 });
 
-afterEach(() => { __setDefaultScheduler(null); });
+afterEach(() => { __setDefaultScheduler(null); vi.restoreAllMocks(); });
 
 async function buildPair() {
   const pc = new LinuxPC('linux-pc', 'pc', 0, 0);
@@ -91,15 +93,13 @@ describe('SSH server — ClientAliveInterval / ClientAliveCountMax', () => {
     });
 
     const s = await connect(pc);
-    const conn = (s as unknown as { conn: TcpStream | null }).conn!;
-    const origWrite = conn.write.bind(conn);
-    conn.write = (data: string) => {
-      try {
-        const msg = JSON.parse(data) as { op?: string };
-        if (msg.op === 'keepalive_ack') return;
-      } catch { /* allow */ }
-      origWrite(data);
-    };
+    const send = SshTransport.prototype.send;
+    vi.spyOn(SshTransport.prototype, 'send').mockImplementation(function (this: SshTransport, payload: Uint8Array) {
+      const role = (this as unknown as { config: { role: 'client' | 'server' } }).config.role;
+      const isReplyToGlobalRequest = payload[0] === SSH_MSG_REQUEST_SUCCESS || payload[0] === SSH_MSG_REQUEST_FAILURE;
+      if (role === 'client' && isReplyToGlobalRequest) return;
+      send.call(this, payload);
+    });
 
     scheduler.advance(5_000);
     scheduler.advance(5_000);

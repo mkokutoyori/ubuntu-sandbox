@@ -44,6 +44,7 @@ export interface SshdConfig extends Omit<SshServerConfig, 'permitRootLogin'> {
   readonly clientAliveInterval: number;
   /** Unanswered probes before the connection is dropped. */
   readonly clientAliveCountMax: number;
+  readonly rekeyLimit: string;
   /** Max simultaneous sessions per network connection. */
   readonly maxSessions: number;
   /** MaxStartups start:rate:full — pre-auth concurrency cap. */
@@ -130,6 +131,7 @@ export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   loginGraceTime: 120,
   clientAliveInterval: 0,
   clientAliveCountMax: 3,
+  rekeyLimit: 'default none',
   maxSessions: 10,
   maxStartups: { start: 10, rate: 30, full: 100 },
   logLevel: 'INFO' as SshLogLevel,
@@ -167,6 +169,7 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
   logingracetime: (v) => ({ loginGraceTime: parseSeconds(v) }),
   clientaliveinterval: (v) => ({ clientAliveInterval: parseSeconds(v) }),
   clientalivecountmax: (v) => ({ clientAliveCountMax: Number.parseInt(v, 10) }),
+  rekeylimit: (v) => ({ rekeyLimit: v.trim() }),
   maxsessions: (v) => ({ maxSessions: Number.parseInt(v, 10) }),
   maxstartups: (v) => {
     const parts = v.trim().split(':').map((s) => Number.parseInt(s, 10));

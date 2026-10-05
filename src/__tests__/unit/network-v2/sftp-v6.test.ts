@@ -4,6 +4,12 @@
  * negotiation (ceiling 6, floor 3), ATTRS `type`/ACL/extended
  * attributes carried faithfully on the wire, `SSH_FXP_RENAME` with
  * `OVERWRITE`/`ATOMIC` flags, and `SSH_FXP_LINK` (hard link, v6).
+ *
+ * The server's VERSION reply also lists the extension pairs it
+ * supports (`statvfs@openssh.com`), as OpenSSH's does, so the version
+ * assertions match on `type`/`version`. The type-field cases negotiate 6
+ * first: a v3 session carries the file type in the mode bits, which is
+ * the only form a v3 peer reads.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
@@ -83,34 +89,43 @@ describe('SftpWireSession — real version negotiation (§2.1.16-17/P15-P16)', (
 
   it('negotiates version 6 when the peer proposes 6 (the real target, not just a bonus)', () => {
     const { session } = buildSession();
-    expect(session.handle({ type: 'INIT', version: 6 })).toEqual({ type: 'VERSION', version: 6 });
+    expect(session.handle({ type: 'INIT', version: 6 })).toMatchObject({ type: 'VERSION', version: 6 });
     expect(session.version).toBe(6);
   });
 
   it('negotiates down to whatever a peer proposes below 6 (e.g. version 4)', () => {
     const { session } = buildSession();
-    expect(session.handle({ type: 'INIT', version: 4 })).toEqual({ type: 'VERSION', version: 4 });
+    expect(session.handle({ type: 'INIT', version: 4 })).toMatchObject({ type: 'VERSION', version: 4 });
     expect(session.version).toBe(4);
   });
 
   it('falls back to version 3 for an OpenSSH-like peer that offers nothing newer', () => {
     const { session } = buildSession();
-    expect(session.handle({ type: 'INIT', version: 3 })).toEqual({ type: 'VERSION', version: 3 });
+    expect(session.handle({ type: 'INIT', version: 3 })).toMatchObject({ type: 'VERSION', version: 3 });
     expect(session.version).toBe(3);
   });
 
   it('never negotiates above its own ceiling, even if the peer proposes more', () => {
     const { session } = buildSession();
-    expect(session.handle({ type: 'INIT', version: 42 })).toEqual({ type: 'VERSION', version: 6 });
+    expect(session.handle({ type: 'INIT', version: 42 })).toMatchObject({ type: 'VERSION', version: 6 });
+  });
+
+  it('a v3 session carries the file type in the permission bits and no type field', () => {
+    const { session } = buildSession();
+    session.handle({ type: 'INIT', version: 3 });
+    const reply = session.handle({ type: 'LSTAT', requestId: 1, path: '.' }) as { attrs: { entryType?: string; permissions?: number } };
+    expect(reply.attrs.entryType).toBeUndefined();
+    expect(reply.attrs.permissions! & 0o170000).toBe(0o040000);
   });
 
   it('never negotiates below the v3 interoperability floor', () => {
     const { session } = buildSession();
-    expect(session.handle({ type: 'INIT', version: 1 })).toEqual({ type: 'VERSION', version: 3 });
+    expect(session.handle({ type: 'INIT', version: 1 })).toMatchObject({ type: 'VERSION', version: 3 });
   });
 
   it('LSTAT ATTRS carries the v4+ type field for a real file', () => {
     const { session } = buildSession();
+    session.handle({ type: 'INIT', version: 6 });
     const reply = session.handle({ type: 'LSTAT', requestId: 1, path: 'hello.txt' });
     expect(reply.type).toBe('ATTRS');
     expect((reply as { attrs: { entryType?: string } }).attrs.entryType).toBe('file');
@@ -118,6 +133,7 @@ describe('SftpWireSession — real version negotiation (§2.1.16-17/P15-P16)', (
 
   it('LSTAT ATTRS carries the v4+ type field for a directory', () => {
     const { session } = buildSession();
+    session.handle({ type: 'INIT', version: 6 });
     const reply = session.handle({ type: 'LSTAT', requestId: 1, path: '.' });
     expect(reply.type).toBe('ATTRS');
     expect((reply as { attrs: { entryType?: string } }).attrs.entryType).toBe('directory');

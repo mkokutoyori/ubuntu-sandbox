@@ -8,6 +8,7 @@
 import type { AuthMethodType } from './auth/ISshAuthMethod';
 import { firstSshOption, sshFlag } from './SshClientOptions';
 import { resolveAlgorithmDirectives } from './transport/SshAlgorithms';
+import { parseRekeyLimit } from './transport/RekeyLimit';
 import type { SshAlgorithmPreferences } from './transport/SshTransport';
 
 export type StrictHostKeyChecking = 'yes' | 'no' | 'accept-new';
@@ -55,12 +56,16 @@ export function sshClientAuthentication(optionValues: readonly string[]): SshCli
 }
 
 export function sshClientAlgorithms(optionValues: readonly string[]): SshAlgorithmPreferences {
-  return resolveAlgorithmDirectives({
-    kex: firstSshOption(optionValues, 'kexalgorithms'),
-    hostKey: firstSshOption(optionValues, 'hostkeyalgorithms'),
-    ciphers: firstSshOption(optionValues, 'ciphers'),
-    macs: firstSshOption(optionValues, 'macs'),
-  });
+  const rekeyLimit = parseRekeyLimit(firstSshOption(optionValues, 'rekeylimit') ?? '');
+  return {
+    ...resolveAlgorithmDirectives({
+      kex: firstSshOption(optionValues, 'kexalgorithms'),
+      hostKey: firstSshOption(optionValues, 'hostkeyalgorithms'),
+      ciphers: firstSshOption(optionValues, 'ciphers'),
+      macs: firstSshOption(optionValues, 'macs'),
+    }),
+    ...(rekeyLimit === null ? {} : { rekeyLimit }),
+  };
 }
 
 export interface SshConnectOptions {

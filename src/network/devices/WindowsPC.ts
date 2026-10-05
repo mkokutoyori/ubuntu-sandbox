@@ -116,7 +116,7 @@ import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
 import { cmdNetsh } from './windows/WinNetsh';
-import { cmdPing } from './windows/WinPing';
+import { cmdPing, pingExitCode } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
 import { cmdGetmac } from './windows/WinGetmac';
 import { cmdTracert, tracertHostOf, type TracertHost } from './windows/WinTracert';
@@ -194,7 +194,8 @@ import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { discoverDc } from './windows/domain/DcHostnameDiscovery';
 import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
 import { cmdDnscmd } from './windows/WinDnscmd';
-import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
+import { cmdCertreq } from './windows/WinCertReq';
+import { cmdCertutil } from './windows/WinCertutil';
 import { cmdDsregcmd } from './windows/WinDsregcmd';
 import { WindowsCertStore } from './windows/CertStore';
 import { DFSR_PORT, DfsrServerHandler } from './windows/server/dfs/DfsReplicationGroup';
@@ -225,7 +226,10 @@ import * as WinSys from './windows/WinSystemCommands';
 import { formatLocalTime } from './linux/system/SystemInfo';
 import { windowsZoneNameAt } from '../core/time/WindowsTimeZones';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
+import { cmdAssoc, cmdFtype } from './windows/WinAssoc';
 import { cmdDir, fileSummaryLine } from './windows/WinDir';
+import { cmdWhere } from './windows/WinWhere';
+import { cmdComp } from './windows/WinComp';
 import { PATHPING_HELP, parseWinPathpingArgs, runPathping } from './windows/WinPathping';
 import { cmdFsutil } from './windows/Fsutil';
 import type { WmiHost } from './windows/WmiClasses';
@@ -246,7 +250,7 @@ import {
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
   cmdRen, cmdDel, cmdTree, cmdTasklist, cmdNetstat,
-  cmdAttrib, cmdFind, cmdFindstr, cmdWhere, cmdMore, cmdFc,
+  cmdAttrib, cmdFind, cmdFindstr, cmdMore, cmdFc,
   cmdXcopy, cmdSort,
 } from './windows/WinFileCommands';
 
@@ -3044,6 +3048,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private _scenarioStdin: string | undefined;
 
+  private async readCommandInput(prompt: string, preceding?: string): Promise<string | null> {
+    const reader = this._activeShellSession?.inputReader;
+    if (reader) return reader(prompt, preceding);
+    return this.takeScenarioInputLine();
+  }
+
+  private takeScenarioInputLine(): string | null {
+    const remaining = this._scenarioStdin;
+    if (remaining === undefined || remaining === '') return null;
+    const newline = remaining.indexOf('\n');
+    this._scenarioStdin = newline < 0 ? '' : remaining.slice(newline + 1);
+    return (newline < 0 ? remaining : remaining.slice(0, newline)).replace(/\r$/, '');
+  }
+
   /**
    * Execute a command in CMD mode.
    * Also used by PowerShellExecutor (via PSDeviceContext) to delegate
@@ -3089,6 +3107,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private batch: BatchInterpreter | null = null;
+  private commandExitStatus: number | null = null;
 
   getBatchInterpreter(): BatchInterpreter { return this.batchInterpreter(); }
 
@@ -3101,8 +3120,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         environment: () => this.getEnvVars(),
         setVariable: (name, value) => this.setEnvVar(name, value),
         removeVariable: name => this.removeEnvVar(name),
-        runSimple: (line, stdin) => this.executeSimpleCommand(line, stdin),
+        runSimple: async (line, stdin) => {
+          this.commandExitStatus = null;
+          const output = await this.executeSimpleCommand(line, stdin);
+          return { output, exitCode: this.commandExitStatus };
+        },
         timeZone: () => this.identity.timezone,
+        readInputLine: prompt => this.readCommandInput(prompt),
+        inputIsInteractive: () => this._activeShellSession?.inputReader != null,
       }));
     }
     return this.batch;
@@ -3174,6 +3199,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'where':   return cmdWhere(fileCtx, args);
       case 'more':    return cmdMore(fileCtx, args, stdin);
       case 'fc':      return cmdFc(fileCtx, args);
+      case 'comp':    return cmdComp(fileCtx, args);
       case 'xcopy':   return cmdXcopy(fileCtx, args);
       case 'sort':    return cmdSort(fileCtx, args, stdin);
       case 'cls':     return '';
@@ -3220,6 +3246,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'wmic':    return this.cmdWmic(args);
       case 'fsutil':  return cmdFsutil(this.buildSystemContext(), args);
       case 'reg':     return this.cmdReg(args);
+      case 'assoc':
+      case 'ftype': {
+        const host = { registry: this.registry, isAdmin: this.userMgr.isCurrentUserAdmin() };
+        const text = splitCmdArgs(expanded, true).slice(1).join(' ');
+        const result = cmd === 'assoc' ? cmdAssoc(host, text) : cmdFtype(host, text);
+        this.commandExitStatus = result.exitCode;
+        return result.output;
+      }
       case 'nltest':  return cmdNltest({
         domainMembership: this.domainMembership,
         probeDc: (address) => this.probeTcpReachable(address, 389),
@@ -3311,7 +3345,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'wecutil': return this.cmdWecutil(args);
       case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
       case 'certreq': return cmdCertreq({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
-      case 'certutil': return cmdCertutil({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
+      case 'certutil': return cmdCertutil({
+        adcs: this.getAdcsRole(),
+        certStore: this.certStore,
+        files: {
+          read: path => { const file = this.fs.readFile(path); return file.ok ? file.content ?? '' : null; },
+          write: (path, content) => this.fs.createFile(path, content).ok,
+          normalize: path => this.fs.normalizePath(path, this.cwd),
+        },
+        setExitCode: code => { this.commandExitStatus = code; },
+      }, args);
       case 'query': {
         if ((args[0] ?? '').toLowerCase() === 'session') return cmdQuerySession({ sessions: this.rdp.sessions });
         return `'${args[0] ?? ''}' is not a recognized query type.`;
@@ -3398,7 +3441,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'help':     return cmdHelp(args);
       case 'ipconfig': return cmdIpconfig(netCtx, args);
       case 'netsh':    return cmdNetsh(netCtx, args);
-      case 'ping':     return cmdPing(netCtx, args);
+      case 'ping': {
+        const output = await cmdPing(netCtx, args);
+        this.commandExitStatus = pingExitCode(output);
+        return output;
+      }
       case 'arp':      return cmdArp(netCtx, args);
       case 'getmac':   return cmdGetmac(netCtx, args);
       case 'tracert':
@@ -3495,6 +3542,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       cwd: this.cwd,
       hostname: this.hostname,
       env: this.getEnvVars(),
+      setExitCode: (code: number) => { this.commandExitStatus = code; },
+      ask: async (prompt: string, preceding?: string) => ({
+        answer: await this.readCommandInput(prompt, preceding),
+        flushed: this._activeShellSession?.inputReader != null,
+      }),
       setEnv: (name: string, value: string) => this.setEnvVar(name, value),
       setCwd: (path: string) => {
         // When the new cwd belongs to a different drive than the old one,
@@ -4255,8 +4307,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
-  private cmdReg(args: string[]): string {
-    return winCmdReg(this.registry, args);
+  private async cmdReg(args: string[]): Promise<string> {
+    const result = await winCmdReg({
+      registry: this.registry,
+      isAdmin: this.userMgr.isCurrentUserAdmin(),
+      computerName: this.hostname,
+      files: {
+        read: path => { const file = this.fs.readFile(path); return file.ok ? file.content ?? '' : null; },
+        write: (path, content) => this.fs.createFile(path, content).ok,
+        exists: path => this.fs.exists(path),
+        normalize: path => this.fs.normalizePath(path, this.cwd),
+      },
+      interactive: this._activeShellSession?.inputReader != null,
+      ask: prompt => this.readCommandInput(prompt),
+    }, args);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
   }
 
   private curlHost(): CurlHost {

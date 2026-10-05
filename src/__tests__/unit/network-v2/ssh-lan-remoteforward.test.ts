@@ -6,16 +6,17 @@
  * connection is tunneled back through the SSH session and bridged to
  * `localHost:localPort` (resolved by the client).
  *
- * This is the mirror of `-L`. The simulator implements it the same
- * way: at session start, register a TCP listener on the remote device
- * for `remotePort`; on accept, bridge bytes via the SSH session.
+ * This is the mirror of `-L`: a `tcpip-forward` global request on the
+ * SSH connection, answered by the server, which then listens and opens
+ * a `forwarded-tcpip` channel per accepted connection (RFC 4254 §7.1).
  *
  * Scope:
  *  - R1..R3 : parseRemoteForwardSpec accepts 3-part / 4-part / rejects bad.
  *  - R4..R5 : parseSshArgs collects multiple `-R` and `-o RemoteForward=`.
  *  - R6     : SshRemoteForwarder.register() leaves a listener on the
- *             REMOTE device.
- *  - R7     : dispose() unregisters the listener.
+ *             REMOTE device, requested over the wire.
+ *  - R7     : dispose() cancels it (cancel-tcpip-forward).
+ *  - R8     : ending the session releases it.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -33,6 +34,7 @@ import {
   assignIps,
   type SshLan,
   PC2_IP,
+  openSshSession,
 } from './ssh-lan-fixtures';
 
 describe('SSH LAN — remote port forwarding (`ssh -R`)', () => {
@@ -101,32 +103,49 @@ describe('SSH LAN — remote port forwarding (`ssh -R`)', () => {
   // ─── activation ───────────────────────────────────────────────
 
   // R6
-  it('R6 — SshRemoteForwarder.register() leaves a TCP listener on the REMOTE device', () => {
-    const fwd = new SshRemoteForwarder(lan.pc2, null, {
+  it('R6 — SshRemoteForwarder.register() asks the server over the wire for a listener on the REMOTE device', async () => {
+    const session = await openSshSession(lan.pc1, PC2_IP);
+    const fwd = new SshRemoteForwarder(session, lan.pc1, {
       remotePort: 8080,
       localHost: 'localhost',
       localPort: 80,
       sshHost: PC2_IP,
     });
-    fwd.register();
+    expect(await fwd.register()).toBe(true);
     expect(isPortListening(lan.pc2, 8080)).toBe(true);
-    // The local device must remain untouched — `-R` only opens a port on
-    // the remote.
     expect(isPortListening(lan.pc1, 8080)).toBe(false);
+    session.disconnect();
   });
 
   // R7
-  it('R7 — dispose() unregisters the listener', () => {
-    const fwd = new SshRemoteForwarder(lan.pc2, null, {
+  it('R7 — dispose() cancels the forward and the server releases the listener', async () => {
+    const session = await openSshSession(lan.pc1, PC2_IP);
+    const fwd = new SshRemoteForwarder(session, lan.pc1, {
       remotePort: 8080,
       localHost: 'localhost',
       localPort: 80,
       sshHost: PC2_IP,
     });
-    fwd.register();
+    await fwd.register();
     expect(isPortListening(lan.pc2, 8080)).toBe(true);
     fwd.dispose();
+    await Promise.resolve();
     expect(isPortListening(lan.pc2, 8080)).toBe(false);
+    session.disconnect();
+  });
+
+  it('R8 — a session that ends takes its remote listeners with it', async () => {
+    const session = await openSshSession(lan.pc1, PC2_IP);
+    const fwd = new SshRemoteForwarder(session, lan.pc1, {
+      remotePort: 8081,
+      localHost: 'localhost',
+      localPort: 80,
+      sshHost: PC2_IP,
+    });
+    await fwd.register();
+    expect(isPortListening(lan.pc2, 8081)).toBe(true);
+    session.disconnect();
+    expect(isPortListening(lan.pc2, 8081)).toBe(false);
   });
 });
 

@@ -64,9 +64,14 @@ import {
   verifyingHostKey,
 } from './SshSessionState';
 import {
-  SshTransport, legacyFrameStream, type SshAlgorithmPreferences, type SshTransportFailure,
+  SshTransport, transportLink, type SshAlgorithmPreferences, type TransportLink, type SshTransportFailure,
 } from '../transport/SshTransport';
 import { SshConfig } from '../SshConfig';
+import { parseRekeyLimit } from '../transport/RekeyLimit';
+import { SshConnection, type SshOpenFailure } from '../connection/SshConnection';
+import { channelAsStream } from '../connection/ChannelStream';
+import { SSH_OPEN_ADMINISTRATIVELY_PROHIBITED } from '../transport/SshMessageNumbers';
+import { decodeBoundPort, decodeForwardedTcpip, encodeDirectTcpip, encodeTcpipForward } from '../connection/ChannelPayloads';
 import { resolveAlgorithmDirectives } from '../transport/SshAlgorithms';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 
@@ -85,13 +90,30 @@ export interface SshSessionDeps {
 
 
 
+const OPEN_FAILURE_REASONS: Readonly<Record<number, string>> = {
+  1: 'administratively prohibited',
+  2: 'connect failed',
+  3: 'unknown channel type',
+  4: 'resource shortage',
+};
+
 export const SSH_PASSWORD_PROMPTS = OPENSSH_CLIENT_AUTHENTICATION.passwordPrompts;
 
 
+export interface ForwardedConnection {
+  readonly originatorAddress: string;
+  readonly originatorPort: number;
+  accept(): TcpConnection;
+  reject(reason: number, description: string): void;
+}
+
 export class SshSession implements ISshSession {
   private _state: SshSessionState = idle();
-  private conn: TcpConnection | null = null;
+  private conn: TransportLink | null = null;
+  private readonly remoteForwardAcceptors = new Map<number, (connection: ForwardedConnection) => void>();
+  private connection: SshConnection | null = null;
   private sessionId: Uint8Array | null = null;
+  private hostKeyBlob: Uint8Array | null = null;
 
   private channelManager = new SshChannelManager();
   private knownHosts: SshKnownHosts;
@@ -109,15 +131,23 @@ export class SshSession implements ISshSession {
     const configPath = this.deps.knownHostsPath.replace(/known_hosts$/, 'config');
     const raw = this.deps.vfs.readFile(configPath);
     const entry = raw === null ? null : SshConfig.parse(raw).resolve(opts.host);
-    const configured = entry === null ? {} : resolveAlgorithmDirectives({
-      kex: entry.kexAlgorithms, hostKey: entry.hostKeyAlgorithms, ciphers: entry.ciphers, macs: entry.macs,
-    });
+    const configuredRekeyLimit = entry?.rekeyLimit === undefined ? null : parseRekeyLimit(entry.rekeyLimit);
+    const configured = entry === null ? {} : {
+      ...resolveAlgorithmDirectives({
+        kex: entry.kexAlgorithms, hostKey: entry.hostKeyAlgorithms, ciphers: entry.ciphers, macs: entry.macs,
+      }),
+      ...(configuredRekeyLimit === null ? {} : { rekeyLimit: configuredRekeyLimit }),
+    };
     const merged = { ...configured, ...opts.algorithms };
     return Object.keys(merged).length === 0 ? {} : { algorithms: merged };
   }
 
   get state(): SshSessionState {
     return this._state;
+  }
+
+  get serverHostKeyBlob(): Uint8Array | null {
+    return this.hostKeyBlob;
   }
 
   get isConnected(): boolean {
@@ -161,8 +191,11 @@ export class SshSession implements ISshSession {
       });
     }
     this.sessionId = established.sessionId;
-    const conn = legacyFrameStream(transport, dialed);
+    this.hostKeyBlob = established.hostKeyBlob;
+    const conn = transportLink(transport, dialed);
     this.conn = conn;
+    this.connection = new SshConnection(transport);
+    this.acceptForwardedConnections(this.connection, conn);
 
     const hostKey = SshHostKey.fromFiles(
       bytesToBase64(established.hostKeyBlob),
@@ -192,7 +225,7 @@ export class SshSession implements ISshSession {
     // pushes every consumer into probing with a fresh handshake just to
     // find out — and that is what made a remote log an accept/close
     // pair per command.
-    conn.onClose?.((reason) => {
+    conn.onClose((reason) => {
       if (this._state.kind === 'connected') {
         this.transition(disconnected(reason || 'connection closed'));
       }
@@ -201,15 +234,6 @@ export class SshSession implements ISshSession {
 
     const sessionId = `${opts.user}@${opts.host}:${opts.port}#${Date.now()}`;
     this.transition(connected(opts.user, opts.host, sessionId));
-
-    conn.onData((data) => {
-      try {
-        const msg = JSON.parse(data) as { op?: string };
-        if (msg.op === 'keepalive') {
-          conn.write(JSON.stringify({ op: 'keepalive_ack' }));
-        }
-      } catch { /* not JSON or not keepalive — channel layers handle it */ }
-    });
 
     const info: SshConnectionInfo = {
       host: opts.host,
@@ -224,111 +248,111 @@ export class SshSession implements ISshSession {
   }
 
   openShellChannel(): Result<ISshShellChannel> {
-    if (!this.conn || !this.isConnected) {
+    if (!this.connection || !this.isConnected) {
       return err({ kind: 'NOT_AUTHENTICATED' });
     }
-    const channel: ISshShellChannel = this.channelManager.openShell(this.conn);
+    const channel: ISshShellChannel = this.channelManager.openShell(this.connection);
     return ok(channel);
   }
 
   openExecChannel(command: string): Result<ISshExecChannel> {
-    if (!this.conn || !this.isConnected) {
+    if (!this.connection || !this.isConnected) {
       return err({ kind: 'NOT_AUTHENTICATED' });
     }
     const channel: ISshExecChannel = this.channelManager.openExec(
-      this.conn,
+      this.connection,
       command,
     );
     return ok(channel);
   }
 
   openSftpChannel(): Result<ISshSftpChannel> {
-    if (!this.conn || !this.isConnected) {
+    if (!this.connection || !this.isConnected) {
       return err({ kind: 'NOT_AUTHENTICATED' });
     }
-    const channel: ISshSftpChannel = this.channelManager.openSftp(this.conn);
+    const channel: ISshSftpChannel = this.channelManager.openSftp(this.connection);
     return ok(channel);
   }
 
   openDirectTcpip(host: string, port: number): Promise<Result<TcpConnection>> {
+    const connection = this.connection;
     const conn = this.conn;
-    if (!conn || !this.isConnected) return Promise.resolve(err({ kind: 'NOT_AUTHENTICATED' }));
-    const dataHandlers: Array<(data: string) => void> = [];
-    const unread: string[] = [];
-    const closeHandlers: Array<(reason: string) => void> = [];
-    let open = true;
-    const finish = (reason: string): void => {
-      if (!open) return;
-      open = false;
-      offFrames();
-      offConn?.();
-      for (const handler of closeHandlers) handler(reason);
-    };
-    let settle: ((result: Result<TcpConnection>) => void) | null = null;
-    const stream: TcpConnection = {
-      localIp: conn.localIp,
-      localPort: conn.localPort,
-      remoteIp: host,
-      remotePort: port,
-      write: (data) => { if (open) conn.write(JSON.stringify({ op: 'tcpip_data', data })); },
-      close: () => {
-        if (open) conn.write(JSON.stringify({ op: 'tcpip_eof' }));
-        finish('fin');
-      },
-      onData: (handler) => {
-        dataHandlers.push(handler);
-        for (const data of unread.splice(0)) handler(data);
-        return () => { dataHandlers.splice(dataHandlers.indexOf(handler), 1); };
-      },
-      onClose: (handler) => {
-        closeHandlers.push(handler);
-        return () => { closeHandlers.splice(closeHandlers.indexOf(handler), 1); };
-      },
-    };
-    const offFrames = conn.onData((frame) => {
-      let parsed: { op?: string; ok?: boolean; reason?: string; data?: string };
-      try { parsed = JSON.parse(frame) as typeof parsed; } catch { return; }
-      if (parsed.op === 'tcpip_data') {
-        const data = String(parsed.data ?? '');
-        if (dataHandlers.length === 0) unread.push(data);
-        for (const handler of [...dataHandlers]) handler(data);
-      } else if (parsed.op === 'tcpip_eof') {
-        finish('fin');
-      } else if (parsed.op === 'direct_tcpip_reply' && settle) {
-        const reply = settle;
-        settle = null;
-        if (parsed.ok === true) {
-          reply(ok(stream));
-        } else {
-          open = false;
-          offFrames();
-          offConn?.();
-          reply(err({ kind: 'CHANNEL_ERROR', channelId: 0, message: parsed.reason ?? 'open failed' }));
-        }
+    if (!connection || !conn || !this.isConnected) return Promise.resolve(err({ kind: 'NOT_AUTHENTICATED' }));
+    return connection.openChannel('direct-tcpip', encodeDirectTcpip({
+      host, port, originatorAddress: conn.localIp, originatorPort: conn.localPort,
+    })).then(
+      (channel) => ok(channelAsStream(channel, {
+        localIp: conn.localIp, localPort: conn.localPort, remoteIp: host, remotePort: port,
+      })),
+      (failure: SshOpenFailure) => err({
+        kind: 'CHANNEL_ERROR', channelId: 0,
+        message: `${OPEN_FAILURE_REASONS[failure.reason] ?? `reason ${failure.reason}`}: ${failure.description}`,
+      }),
+    );
+  }
+
+  requestRemoteForwardNow(
+    bindAddress: string, port: number, accept: (connection: ForwardedConnection) => void,
+    onResult: (result: Result<number>) => void,
+  ): void {
+    const connection = this.connection;
+    if (!connection || !this.isConnected) {
+      onResult(err({ kind: 'NOT_AUTHENTICATED' }));
+      return;
+    }
+    connection.sendGlobalRequest('tcpip-forward', encodeTcpipForward({ address: bindAddress, port }), (success, reply) => {
+      if (!success) {
+        onResult(err({ kind: 'CHANNEL_ERROR', channelId: 0, message: 'remote port forwarding failed' }));
+        return;
       }
-    });
-    const offConn = conn.onClose?.(() => {
-      if (settle) {
-        const reply = settle;
-        settle = null;
-        reply(err({ kind: 'CHANNEL_ERROR', channelId: 0, message: 'connection closed' }));
-      }
-      finish('fin');
-    });
-    return new Promise((resolve) => {
-      settle = resolve;
-      conn.write(JSON.stringify({ op: 'direct_tcpip', host, port }));
+      const bound = port === 0 ? decodeBoundPort(reply) ?? port : port;
+      this.remoteForwardAcceptors.set(bound, accept);
+      onResult(ok(bound));
     });
   }
 
+  requestRemoteForward(
+    bindAddress: string, port: number, accept: (connection: ForwardedConnection) => void,
+  ): Promise<Result<number>> {
+    return new Promise((resolve) => this.requestRemoteForwardNow(bindAddress, port, accept, resolve));
+  }
+
+  async cancelRemoteForward(bindAddress: string, port: number): Promise<void> {
+    this.remoteForwardAcceptors.delete(port);
+    await this.connection?.globalRequest('cancel-tcpip-forward', encodeTcpipForward({ address: bindAddress, port }), true);
+  }
+
   disconnect(): void {
+    this.remoteForwardAcceptors.clear();
     this.channelManager.closeAll();
+    this.connection?.closeAll();
+    this.connection = null;
     this.conn?.close();
     this.conn = null;
     this.transition(disconnected('client disconnected'));
   }
 
   // ─── private ────────────────────────────────────────────────────────
+
+  private acceptForwardedConnections(connection: SshConnection, conn: TransportLink): void {
+    connection.onChannelOpen('forwarded-tcpip', (incoming) => {
+      const target = decodeForwardedTcpip(incoming.payload);
+      const accept = target === null ? undefined : this.remoteForwardAcceptors.get(target.connectedPort);
+      if (target === null || accept === undefined) {
+        incoming.reject(SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, 'open failed');
+        return;
+      }
+      accept({
+        originatorAddress: target.originatorAddress,
+        originatorPort: target.originatorPort,
+        accept: () => channelAsStream(incoming.accept(), {
+          localIp: conn.localIp, localPort: conn.localPort,
+          remoteIp: target.originatorAddress, remotePort: target.originatorPort,
+        }),
+        reject: (reason, description) => incoming.reject(reason, description),
+      });
+    });
+  }
 
   private transition(next: SshSessionState): void {
     this._state = next;

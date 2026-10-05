@@ -1,11 +1,14 @@
 import type { TcpStream } from '@/network/tcp/types';
-import { binaryStringToBytes, bytesToBinaryString, bytesToUtf8, utf8ToBytes } from '@/crypto/encoding';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 import {
   sshPublicKeyFromBlob, type SshPrivateKey,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { SshReader, SshWriter } from '../wire/SshDataTypes';
 import { hostKeySignatureAlgorithmsFor, signWithAlgorithm, verifyUserauthSignature } from '../auth/UserauthSignature';
 import { identificationLine, scanIdentification, type SshIdentification } from './SshIdentification';
+import { TimerSet } from '@/events/TimerSet';
+import { getDefaultScheduler } from '@/events/Scheduler';
+import { DEFAULT_REKEY_BLOCKS, type RekeyLimit } from './RekeyLimit';
 import {
   decodeKexInit, encodeKexInit, negotiate, KEX_COOKIE_LENGTH,
   type KexProposal, type NegotiatedAlgorithms, type NegotiationFailure,
@@ -29,11 +32,15 @@ import {
   SSH_DISCONNECT_BY_APPLICATION, SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE, SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
   SSH_DISCONNECT_PROTOCOL_ERROR, SSH_DISCONNECT_PROTOCOL_VERSION_NOT_SUPPORTED,
   SSH_MSG_DEBUG, SSH_MSG_DISCONNECT, SSH_MSG_EXT_INFO, SSH_MSG_IGNORE,
-  SSH_MSG_KEXDH_INIT, SSH_MSG_KEXDH_REPLY, SSH_MSG_KEXINIT, SSH_MSG_LOCAL_LEGACY_FRAME,
+  SSH_MSG_KEXDH_INIT, SSH_MSG_KEXDH_REPLY, SSH_MSG_KEXINIT,
   SSH_MSG_KEX_DH_GEX_GROUP, SSH_MSG_KEX_DH_GEX_INIT, SSH_MSG_KEX_DH_GEX_REPLY, SSH_MSG_KEX_DH_GEX_REQUEST,
-  SSH_MSG_NEWKEYS, SSH_MSG_SERVICE_ACCEPT, SSH_MSG_SERVICE_REQUEST, SSH_MSG_UNIMPLEMENTED,
+  SSH_MSG_CHANNEL_FAILURE, SSH_MSG_NEWKEYS, SSH_MSG_SERVICE_ACCEPT, SSH_MSG_SERVICE_REQUEST, SSH_MSG_UNIMPLEMENTED,
   SSH_USERAUTH_SERVICE,
 } from './SshMessageNumbers';
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
 
 const SUPPORTED_PROTOCOL_VERSIONS = ['2.0', '1.99'];
 const SERVER_SIG_ALGS = 'server-sig-algs';
@@ -49,6 +56,7 @@ export interface SshAlgorithmPreferences {
   readonly hostKey?: readonly string[];
   readonly ciphers?: readonly string[];
   readonly macs?: readonly string[];
+  readonly rekeyLimit?: RekeyLimit;
 }
 
 export interface SshTransportConfig {
@@ -111,7 +119,13 @@ export class SshTransport {
   private sendSeq = 0;
   private recvSeq = 0;
   private readonly myProposal: KexProposal;
-  private readonly myKexInit: Uint8Array;
+  private myKexInit: Uint8Array;
+  private opened = false;
+  private rekeying = false;
+  private readonly heldWhileRekeying: Uint8Array[] = [];
+  private bytesSinceKeys = 0;
+  private readonly rekeyTimers = new TimerSet(() => getDefaultScheduler());
+  private rekeyTimer: symbol | null = null;
   private peerKexInit: Uint8Array | null = null;
   private peerOffersExtInfo = false;
   private serverSignatureAlgorithms: readonly string[] | null = null;
@@ -160,12 +174,21 @@ export class SshTransport {
   }
 
   get isOpen(): boolean {
-    return this.phase === 'open';
+    return this.opened && this.phase !== 'closed';
   }
 
   send(payload: Uint8Array): void {
-    if (this.phase !== 'open') return;
+    if (!this.opened || this.phase === 'closed') return;
+    if (this.rekeying) {
+      this.heldWhileRekeying.push(payload);
+      return;
+    }
     this.sendPacket(payload);
+  }
+
+  rekey(): void {
+    if (!this.opened || this.rekeying || this.phase !== 'open') return;
+    this.beginRekey();
   }
 
   onMessage(handler: (payload: Uint8Array) => void): () => void {
@@ -226,6 +249,7 @@ export class SshTransport {
     const wire = encodePacket(payload, this.outgoing, this.sendSeq, this.random);
     this.sendSeq = (this.sendSeq + 1) >>> 0;
     this.conn.write(bytesToBinaryString(wire));
+    this.countTraffic(wire.length);
   }
 
   private receive(data: string): void {
@@ -253,6 +277,7 @@ export class SshTransport {
           break;
         }
         this.recvSeq = (this.recvSeq + 1) >>> 0;
+        this.countTraffic(result.payload.length);
         this.dispatch(result.payload);
       }
     } finally {
@@ -308,8 +333,12 @@ export class SshTransport {
       case SSH_MSG_SERVICE_REQUEST: return this.receiveServiceRequest(payload);
       case SSH_MSG_SERVICE_ACCEPT: return this.receiveServiceAccept(payload);
       default:
-        if (this.phase !== 'open') {
+        if (!this.opened) {
           this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, `protocol error: rcvd type ${type}`, 'protocol');
+          return;
+        }
+        if (type > SSH_MSG_CHANNEL_FAILURE) {
+          this.sendPacket(new SshWriter().writeByte(SSH_MSG_UNIMPLEMENTED).writeUint32((this.recvSeq - 1) >>> 0).toBytes());
           return;
         }
         if (this.handlers.size === 0) { this.undelivered.push(payload); return; }
@@ -342,8 +371,9 @@ export class SshTransport {
   }
 
   private receiveKexInit(payload: Uint8Array): void {
+    if (this.opened && !this.rekeying && this.phase === 'open') this.beginRekey();
     if (this.phase !== 'kexinit') {
-      this.abort(SSH_DISCONNECT_KEY_EXCHANGE_FAILED, 'key re-exchange is not supported', 'protocol');
+      this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, 'protocol error: unexpected KEXINIT', 'protocol');
       return;
     }
     const peerInit = decodeKexInit(payload);
@@ -353,7 +383,8 @@ export class SshTransport {
     }
     this.peerKexInit = payload;
     const client = this.config.role === 'client';
-    this.peerOffersExtInfo = !client && this.config.extInfo !== false && peerInit.proposal.kex.includes(EXT_INFO_CLIENT);
+    this.peerOffersExtInfo = !this.opened && !client && this.config.extInfo !== false
+      && peerInit.proposal.kex.includes(EXT_INFO_CLIENT);
     const [clientProposal, serverProposal] = client
       ? [this.myProposal, peerInit.proposal] : [peerInit.proposal, this.myProposal];
     const result = negotiate(clientProposal, serverProposal, this.config.role, isAeadCipher);
@@ -531,7 +562,11 @@ export class SshTransport {
       this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, 'invalid KEXDH_REPLY', 'protocol');
       return;
     }
-    if (this.config.verifyHostKey && !this.config.verifyHostKey(this.negotiated.hostKey, hostKeyBlob)) {
+    if (this.opened && this.hostKey !== null && !sameBytes(this.hostKey.blob, hostKeyBlob)) {
+      this.abort(SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE, 'server host key changed during re-exchange', 'hostkey');
+      return;
+    }
+    if (!this.opened && this.config.verifyHostKey && !this.config.verifyHostKey(this.negotiated.hostKey, hostKeyBlob)) {
       this.conclude({ ok: false, kind: 'hostkey', message: 'Host key verification failed.' });
       this.shutDown('host key verification failed');
       return;
@@ -624,6 +659,10 @@ export class SshTransport {
     }
     this.incoming = this.nextIncoming;
     this.nextIncoming = null;
+    if (this.opened) {
+      this.finishRekey();
+      return;
+    }
     this.phase = 'service';
     if (this.config.role === 'client') {
       this.sendPacket(new SshWriter()
@@ -667,6 +706,8 @@ export class SshTransport {
 
   private open(): void {
     this.phase = 'open';
+    this.opened = true;
+    this.armRekeyTimer();
     this.conclude({
       ok: true,
       sessionId: this.sessionId!,
@@ -676,6 +717,56 @@ export class SshTransport {
       algorithms: this.negotiated!,
       serverSignatureAlgorithms: this.serverSignatureAlgorithms,
     });
+  }
+
+  private beginRekey(): void {
+    this.rekeying = true;
+    this.phase = 'kexinit';
+    this.peerKexInit = null;
+    this.ephemeral = null;
+    this.exchangeGroup = null;
+    this.requestedGroup = null;
+    this.myKexInit = encodeKexInit(this.rekeyProposal(), this.random(KEX_COOKIE_LENGTH));
+    this.sendPacket(this.myKexInit);
+  }
+
+  private rekeyProposal(): KexProposal {
+    const first = this.myProposal;
+    return { ...first, kex: first.kex.filter((name) => name !== EXT_INFO_CLIENT) };
+  }
+
+  private finishRekey(): void {
+    this.rekeying = false;
+    this.phase = 'open';
+    this.bytesSinceKeys = 0;
+    this.armRekeyTimer();
+    for (const payload of this.heldWhileRekeying.splice(0)) this.sendPacket(payload);
+  }
+
+  private rekeyBytes(): number | null {
+    const configured = this.config.algorithms?.rekeyLimit?.bytes;
+    if (configured === null) return null;
+    if (configured !== undefined) return configured;
+    const negotiated = this.negotiated;
+    if (negotiated === null) return null;
+    const blocks = Math.min(cipherSpec(negotiated.encryptionClientToServer)!.blockSize,
+      cipherSpec(negotiated.encryptionServerToClient)!.blockSize);
+    return blocks * DEFAULT_REKEY_BLOCKS;
+  }
+
+  private countTraffic(bytes: number): void {
+    if (!this.opened || this.rekeying) return;
+    this.bytesSinceKeys += bytes;
+    const limit = this.rekeyBytes();
+    if (limit !== null && this.bytesSinceKeys >= limit) queueMicrotask(() => this.rekey());
+  }
+
+  private armRekeyTimer(): void {
+    if (this.rekeyTimer !== null) this.rekeyTimers.clear(this.rekeyTimer);
+    this.rekeyTimer = null;
+    const seconds = this.config.algorithms?.rekeyLimit?.seconds ?? null;
+    if (seconds === null || seconds <= 0) return;
+    this.rekeyTimer = this.rekeyTimers.setTimeout(() => this.rekey(), seconds * 1000);
   }
 
   private abort(reason: number, description: string, kind: SshTransportFailureKind): void {
@@ -691,12 +782,14 @@ export class SshTransport {
   private finishLost(reason: string): void {
     if (this.phase === 'closed') return;
     this.phase = 'closed';
+    this.rekeyTimers.clearAll();
     this.conclude({ ok: false, kind: 'closed', message: 'Connection closed by remote host', identified: this.peer !== null });
     this.notifyClosed(reason);
   }
 
   private shutDown(reason: string): void {
     this.phase = 'closed';
+    this.rekeyTimers.clearAll();
     this.conn.close();
     this.notifyClosed(reason);
   }
@@ -714,49 +807,22 @@ export class SshTransport {
   }
 }
 
-const LEGACY_FRAGMENT = 32 * 1024;
-const LEGACY_FINAL = 0;
-const LEGACY_MORE = 1;
+export interface TransportLink {
+  readonly localIp: string;
+  readonly localPort: number;
+  readonly remoteIp: string;
+  readonly remotePort: number;
+  close(): void;
+  onClose(handler: (reason: string) => void): () => void;
+}
 
-export function legacyFrameStream(transport: SshTransport, conn: TcpStream): TcpStream {
-  const listeners = new Set<(data: string) => void>();
-  const parts: Uint8Array[] = [];
-  transport.onMessage((payload) => {
-    if (payload[0] !== SSH_MSG_LOCAL_LEGACY_FRAME || payload.length < 2) return;
-    parts.push(payload.slice(2));
-    if (payload[1] !== LEGACY_FINAL) return;
-    const total = parts.reduce((n, p) => n + p.length, 0);
-    const whole = new Uint8Array(total);
-    let offset = 0;
-    for (const p of parts.splice(0)) { whole.set(p, offset); offset += p.length; }
-    const text = bytesToUtf8(whole);
-    for (const listener of [...listeners]) listener(text);
-  });
-  const stream: TcpStream = {
+export function transportLink(transport: SshTransport, conn: TcpStream): TransportLink {
+  return {
     localIp: conn.localIp,
     localPort: conn.localPort,
     remoteIp: conn.remoteIp,
     remotePort: conn.remotePort,
-    write: (data: string) => {
-      const bytes = utf8ToBytes(data);
-      let offset = 0;
-      do {
-        const chunk = bytes.subarray(offset, offset + LEGACY_FRAGMENT);
-        offset += chunk.length;
-        const frame = new Uint8Array(2 + chunk.length);
-        frame[0] = SSH_MSG_LOCAL_LEGACY_FRAME;
-        frame[1] = offset < bytes.length ? LEGACY_MORE : LEGACY_FINAL;
-        frame.set(chunk, 2);
-        transport.send(frame);
-      } while (offset < bytes.length);
-    },
     close: () => transport.disconnect(SSH_DISCONNECT_BY_APPLICATION, 'disconnected by user'),
-    onData: (handler) => {
-      listeners.add(handler);
-      return () => { listeners.delete(handler); };
-    },
     onClose: (handler) => transport.onClose(handler),
   };
-  if (conn.setNoDelay) stream.setNoDelay = (enabled: boolean) => conn.setNoDelay!(enabled);
-  return stream;
 }

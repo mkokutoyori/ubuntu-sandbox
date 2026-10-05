@@ -42,7 +42,7 @@
  * type fail2ban) coupe la connexion avant MaxAuthTries 6 ; les cas de
  * MaxAuthTries fixent donc la limite a 3 ou 2.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -270,13 +270,25 @@ describe('le serveur authentifie en messages RFC 4252', () => {
     expect(wire.last()?.[0]).toBe(SSH_MSG_USERAUTH_SUCCESS);
   });
 
-  it('un JSON {"op":"auth"} dans le message local ne repond plus', async () => {
+  it('un message de type inconnu (192) est repondu SSH_MSG_UNIMPLEMENTED avec son numero de sequence, sans effet sur l\'authentification', async () => {
     const { client } = await lab();
     const wire = await open(client);
+    const unimplemented: Uint8Array[] = [];
+    const proto = SshTransport.prototype as unknown as { sendPacket(payload: Uint8Array): void };
+    const send = proto.sendPacket;
+    const spy = vi.spyOn(proto, 'sendPacket').mockImplementation(function (this: SshTransport, payload: Uint8Array) {
+      const role = (this as unknown as { config: { role: 'client' | 'server' } }).config.role;
+      if (role === 'server' && payload[0] === 3) unimplemented.push(payload);
+      send.call(this, payload);
+    });
     const json = new TextEncoder().encode(JSON.stringify({ op: 'auth', method: 'password', user: 'alice', password: 'secret' }));
     await wire.send(new Uint8Array([192, 0, ...json]));
-    const reply = wire.inbox.map((m) => JSON.parse(new TextDecoder().decode(m.slice(2))));
+    spy.mockRestore();
 
-    expect(reply).toEqual([{ ok: false, error: 'not authenticated' }]);
+    expect(unimplemented).toHaveLength(1);
+    expect(unimplemented[0]).toHaveLength(5);
+    expect(wire.inbox).toEqual([]);
+    await wire.send(encodeUserauthRequest('alice', { method: 'password', password: 'secret' }));
+    expect(wire.last()?.[0]).toBe(SSH_MSG_USERAUTH_SUCCESS);
   });
 });

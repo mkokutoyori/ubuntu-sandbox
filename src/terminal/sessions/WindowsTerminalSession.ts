@@ -116,6 +116,7 @@ export class WindowsTerminalSession extends TerminalSession {
     super(id, device);
     if (device instanceof WindowsPC) {
       this.shell = device.openShellSession();
+      this.shell.inputReader = (prompt, preceding) => this.askCommandInput(prompt, preceding);
       this.registerTearDown(() => {
         const s = this.shell;
         if (s && device instanceof WindowsPC) device.closeShellSession(s);
@@ -151,6 +152,16 @@ export class WindowsTerminalSession extends TerminalSession {
     if (!(dev instanceof WindowsPC)) return;
     if (this.shell) dev.closeShellSession(this.shell);
     this.shell = dev.openShellSession({ user, cwd: `C:\\Users\\${user}` });
+    this.shell.inputReader = (prompt, preceding) => this.askCommandInput(prompt, preceding);
+  }
+
+  private async askCommandInput(prompt: string, preceding?: string): Promise<string | null> {
+    if (!this.inputHostImpl.capabilities().interactive) return null;
+    if (preceding !== undefined) {
+      for (const line of preceding.split('\n')) this.addShellOutputLine(line);
+      this.notify();
+    }
+    return new PromiseInputBrokerCtor(this.inputHostImpl).ask(prompt);
   }
 
   protected override getFlowUser(): string {

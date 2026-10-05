@@ -28,41 +28,22 @@
  * Reference: DESIGN-SSH-SFTP.md section 7.
  */
 
-import type { TcpStream as TcpConnection } from '@/network/tcp/types';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 import { AbstractSshChannel } from './AbstractSshChannel';
-import type {
-  ISshSftpChannel,
-  SftpRequest,
-  SftpResponse,
-} from './ISshChannel';
-import {
-  encodeSftpChannelFrame,
-  decodeSftpChannelFrame,
-  isSftpChannelFrame,
-} from './SftpChannelFraming';
-import {
-  encodeSftpWirePacket,
-  decodeSftpWirePacket,
-  type SftpWirePacket,
-} from '../sftp/SftpWireCodec';
+import type { ISshSftpChannel, SftpRequest, SftpResponse } from './ISshChannel';
+import type { ConnectionChannel, SshConnection } from '../connection/SshConnection';
+import { encodeStringPayload } from '../connection/ChannelPayloads';
+import { SshReader, SshWriter } from '../wire/SshDataTypes';
+import { encodeSftpWirePacket, decodeSftpWirePacket, entryTypeOfAttrs, type SftpWirePacket } from '../sftp/SftpWireCodec';
 import { SSH_FX } from '../sftp/SftpStatusCodes';
 
-/** Real OpenSSH sftp clients propose v3 by default too — matches this project's own pre-existing "SFTP protocol version 3" expectation while still being a genuine negotiation (§2.1.16/P15-P16 lets the server go higher for a peer that asks). */
 const CLIENT_SFTP_VERSION = 3;
 const READ_CHUNK_SIZE = 32768;
 const WRITE_CHUNK_SIZE = 32768;
-
-function stringToBytes(s: string): Uint8Array {
-  const out = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
-  return out;
-}
-
-function bytesToString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
+const PERMISSION_BITS = 0o7777;
+const WRITE_CREATE_TRUNCATE = 0x02 | 0x08 | 0x10;
+const STATVFS_EXTENSION = 'statvfs@openssh.com';
+const SFTP_SUBSYSTEM = 'sftp';
 
 export class SshSftpChannel
   extends AbstractSshChannel
@@ -71,38 +52,57 @@ export class SshSftpChannel
   readonly type = 'sftp' as const;
 
   private pendingWireReply: SftpWirePacket | null = null;
-  private pendingJsonReply: SftpResponse | null = null;
-  private offConn: (() => void) | null = null;
+  private channel: ConnectionChannel | null = null;
+  private inbound = new Uint8Array(0);
   private _remoteCwd = '.';
   private nextRequestId = 1;
   private negotiatedVersion = CLIENT_SFTP_VERSION;
 
-  constructor(conn: TcpConnection, channelId: number) {
-    super(conn, channelId, 'sftp');
+  constructor(private readonly connection: SshConnection, channelId: number) {
+    super(channelId, 'sftp');
   }
 
   protected handleOpen(): void {
-    this.offConn = this.conn.onData((data) => {
-      if (isSftpChannelFrame(data)) {
-        const { channelId, wireBytes } = decodeSftpChannelFrame(data);
-        if (channelId === this.channelId) this.pendingWireReply = decodeSftpWirePacket(wireBytes);
+    const channel = this.connection.beginOpen('session');
+    this.channel = channel;
+    channel.onData((bytes) => this.receive(bytes));
+    channel.onRequest((request) => { request.reply(false); });
+    channel.onClose(() => {
+      this.channel = null;
+      this.close();
+    });
+    channel.whenOpened((failure) => {
+      if (failure !== null) {
+        this.close();
         return;
       }
-      try {
-        this.pendingJsonReply = JSON.parse(data) as SftpResponse;
-      } catch {
-        this.pendingJsonReply = { ok: false, error: 'malformed response' };
-      }
+      void channel.request('subsystem', encodeStringPayload(SFTP_SUBSYSTEM), true).then((accepted) => {
+        if (!accepted) this.close();
+      });
+      const version = this.roundTrip({ type: 'INIT', version: CLIENT_SFTP_VERSION });
+      if (version?.type === 'VERSION') this.negotiatedVersion = version.version;
     });
-    const version = this.roundTrip({ type: 'INIT', version: CLIENT_SFTP_VERSION });
-    if (version?.type === 'VERSION') this.negotiatedVersion = version.version;
   }
 
   protected handleClose(): void {
-    this.offConn?.();
-    this.offConn = null;
+    this.channel?.close();
+    this.channel = null;
     this.pendingWireReply = null;
-    this.pendingJsonReply = null;
+    this.inbound = new Uint8Array(0);
+  }
+
+  private receive(bytes: Uint8Array): void {
+    const merged = new Uint8Array(this.inbound.length + bytes.length);
+    merged.set(this.inbound);
+    merged.set(bytes, this.inbound.length);
+    this.inbound = merged;
+    while (this.inbound.length >= 4) {
+      const length = ((this.inbound[0] << 24) | (this.inbound[1] << 16) | (this.inbound[2] << 8) | this.inbound[3]) >>> 0;
+      if (this.inbound.length < 4 + length) return;
+      const packet = decodeSftpWirePacket(this.inbound.subarray(0, 4 + length), this.negotiatedVersion);
+      this.inbound = this.inbound.slice(4 + length);
+      if (packet !== null) this.pendingWireReply = packet;
+    }
   }
 
   sendRequest(req: SftpRequest): SftpResponse {
@@ -130,7 +130,7 @@ export class SshSftpChannel
       });
       case 'stat': return this.doStat(String(req.path ?? ''));
       case 'version': return { ok: true, protocolVersion: this.negotiatedVersion };
-      case 'df': return this.legacyJsonRequest(req);
+      case 'df': return this.doDf(String(req.path ?? ''));
       default: return { ok: false, error: `unsupported op: ${req.op}` };
     }
   }
@@ -155,7 +155,7 @@ export class SshSftpChannel
     if (!reply) return { ok: false, error: 'no response' };
     if (reply.type === 'STATUS') return { ok: false, error: this.legacyError(reply) };
     if (reply.type !== 'ATTRS') return { ok: false, error: 'Failure' };
-    if (reply.attrs.entryType !== 'directory') return { ok: false, error: `${target}: Not a directory` };
+    if (entryTypeOfAttrs(reply.attrs) !== 'directory') return { ok: false, error: `${target}: Not a directory` };
     this._remoteCwd = target;
     return { ok: true, cwd: target };
   }
@@ -174,8 +174,8 @@ export class SshSftpChannel
       for (const e of readReply.entries) {
         entries.push({
           name: e.filename,
-          type: e.attrs.entryType ?? 'file',
-          mode: e.attrs.permissions ?? 0,
+          type: entryTypeOfAttrs(e.attrs),
+          mode: (e.attrs.permissions ?? 0) & PERMISSION_BITS,
           uid: e.attrs.uid ?? 0,
           gid: e.attrs.gid ?? 0,
           size: e.attrs.size ?? 0,
@@ -199,7 +199,7 @@ export class SshSftpChannel
     for (;;) {
       const readReply = this.roundTrip({ type: 'READ', requestId: this.nextRequestId++, handle, offset, length: READ_CHUNK_SIZE });
       if (!readReply || readReply.type !== 'DATA') break; // STATUS (EOF/error) or no response — done reading
-      content += bytesToString(readReply.data);
+      content += bytesToBinaryString(readReply.data);
       offset += readReply.data.length;
       if (readReply.data.length < READ_CHUNK_SIZE) break; // short read — last chunk
     }
@@ -209,14 +209,14 @@ export class SshSftpChannel
 
   private doPut(path: string, content: string): SftpResponse {
     const target = this.resolvePath(path);
-    const openReply = this.roundTrip({ type: 'OPEN', requestId: this.nextRequestId++, filename: target, pflags: 0x02, attrs: {} });
+    const openReply = this.roundTrip({ type: 'OPEN', requestId: this.nextRequestId++, filename: target, pflags: WRITE_CREATE_TRUNCATE, attrs: {} });
     if (!openReply || openReply.type !== 'HANDLE') {
       return { ok: false, error: openReply ? this.legacyError(openReply) : 'no response' };
     }
     const handle = openReply.handle;
     for (let offset = 0; offset < content.length; offset += WRITE_CHUNK_SIZE) {
       const chunk = content.slice(offset, offset + WRITE_CHUNK_SIZE);
-      this.roundTrip({ type: 'WRITE', requestId: this.nextRequestId++, handle, offset, data: stringToBytes(chunk) });
+      this.roundTrip({ type: 'WRITE', requestId: this.nextRequestId++, handle, offset, data: binaryStringToBytes(chunk) });
     }
     const closeReply = this.roundTrip({ type: 'CLOSE', requestId: this.nextRequestId++, handle });
     if (closeReply && closeReply.type === 'STATUS' && closeReply.code !== SSH_FX.OK) {
@@ -231,8 +231,8 @@ export class SshSftpChannel
     if (!reply || reply.type !== 'ATTRS') return { ok: false, error: reply ? this.legacyError(reply) : 'no response' };
     return {
       ok: true,
-      type: reply.attrs.entryType,
-      mode: reply.attrs.permissions ?? 0,
+      type: entryTypeOfAttrs(reply.attrs),
+      mode: (reply.attrs.permissions ?? 0) & PERMISSION_BITS,
       uid: reply.attrs.uid ?? 0,
       gid: reply.attrs.gid ?? 0,
       size: reply.attrs.size ?? 0,
@@ -270,14 +270,28 @@ export class SshSftpChannel
 
   private roundTrip(pkt: SftpWirePacket): SftpWirePacket | null {
     this.pendingWireReply = null;
-    this.conn.write(encodeSftpChannelFrame(this.channelId, encodeSftpWirePacket(pkt)));
+    this.channel?.write(encodeSftpWirePacket(pkt, this.negotiatedVersion));
     return this.pendingWireReply;
   }
 
-  private legacyJsonRequest(req: SftpRequest): SftpResponse {
-    if (!this._isOpen) return { ok: false, error: 'channel not open' };
-    this.pendingJsonReply = null;
-    this.conn.write(JSON.stringify({ ...req, channelId: this.channelId }));
-    return this.pendingJsonReply ?? { ok: false, error: 'no response' };
+  private doDf(path: string): SftpResponse {
+    const reply = this.roundTrip({
+      type: 'EXTENDED', requestId: this.nextRequestId++, name: STATVFS_EXTENSION,
+      data: new SshWriter().writeString(this.resolvePath(path)).toBytes(),
+    });
+    if (!reply) return { ok: false, error: 'no response' };
+    if (reply.type !== 'EXTENDED_REPLY') return { ok: false, error: reply.type === 'STATUS' ? this.legacyError(reply) : 'Failure' };
+    const fields = new SshReader(reply.data);
+    const blockSize = fields.readUint64();
+    fields.readUint64();
+    const blocks = fields.readUint64();
+    const free = fields.readUint64();
+    const available = fields.readUint64();
+    return {
+      ok: true,
+      totalBytes: blocks * blockSize,
+      usedBytes: (blocks - free) * blockSize,
+      availableBytes: available * blockSize,
+    };
   }
 }

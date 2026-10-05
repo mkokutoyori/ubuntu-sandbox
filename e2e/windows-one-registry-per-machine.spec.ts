@@ -14,8 +14,8 @@ import { test, expect, type Page } from '@playwright/test';
  * cette fois à travers le vrai terminal du navigateur.
  */
 
-const REG_KEY = 'HKLM\\SOFTWARE\\Lab';
-const PS_KEY = 'HKLM:\\SOFTWARE\\Lab';
+const REG_KEY = 'HKCU\\Software\\Lab';
+const PS_KEY = 'HKCU:\\Software\\Lab';
 
 async function waitForStore(page: Page): Promise<void> {
   await page.waitForFunction(

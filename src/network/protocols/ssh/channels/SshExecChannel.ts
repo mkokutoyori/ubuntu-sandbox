@@ -1,13 +1,11 @@
-/**
- * SshExecChannel — non-interactive command execution.
- *
- * Reference: DESIGN-SSH-SFTP.md section 7.
- */
-
-import type { TcpStream as TcpConnection } from '@/network/tcp/types';
+import { bytesToUtf8 } from '@/crypto/encoding';
+import type { ConnectionChannel, SshConnection } from '../connection/SshConnection';
+import { decodeExitStatus, encodeStringPayload } from '../connection/ChannelPayloads';
+import { SSH_EXTENDED_DATA_STDERR } from '../transport/SshMessageNumbers';
 import { AbstractSshChannel } from './AbstractSshChannel';
-import { isConnectionControlFrame } from './ConnectionControlFrame';
 import type { ExecResult, ISshExecChannel } from './ISshChannel';
+
+const EXIT_ON_SIGNAL = 255;
 
 export class SshExecChannel
   extends AbstractSshChannel
@@ -15,61 +13,77 @@ export class SshExecChannel
 {
   readonly type = 'exec' as const;
 
-  private offConn: (() => void) | null = null;
+  private channel: ConnectionChannel | null = null;
   private result: ExecResult | null = null;
-  private resolveExec: ((r: ExecResult) => void) | null = null;
+  private readonly stdoutChunks: Uint8Array[] = [];
+  private readonly stderrChunks: Uint8Array[] = [];
+  private exitStatus: number | null = null;
+  private readonly waiters: Array<(r: ExecResult) => void> = [];
 
   constructor(
-    conn: TcpConnection,
+    private readonly connection: SshConnection,
     channelId: number,
     private readonly command: string,
   ) {
-    super(conn, channelId, 'exec');
+    super(channelId, 'exec');
   }
 
   protected handleOpen(): void {
-    this.offConn = this.conn.onData((data) => {
-      try {
-        const parsed = JSON.parse(data) as ExecResult;
-        if (isConnectionControlFrame(parsed)) return;
-        this.result = parsed;
-        this.resolveExec?.(parsed);
-      } catch {
-        // Non-JSON output: collect as stdout fragment.
-        const partial: ExecResult = {
-          stdout: (this.result?.stdout ?? '') + data,
-          stderr: this.result?.stderr ?? '',
-          exitCode: this.result?.exitCode ?? 0,
-        };
-        this.result = partial;
+    const channel = this.connection.beginOpen('session');
+    this.channel = channel;
+    channel.onData((data) => { this.stdoutChunks.push(data); });
+    channel.onExtendedData((type, data) => {
+      if (type === SSH_EXTENDED_DATA_STDERR) this.stderrChunks.push(data);
+    });
+    channel.onRequest((request) => {
+      if (request.name === 'exit-status') this.exitStatus = decodeExitStatus(request.payload);
+      else if (request.name === 'exit-signal') this.exitStatus = EXIT_ON_SIGNAL;
+      else request.reply(false);
+    });
+    channel.onClose(() => this.settle());
+    channel.whenOpened((failure) => {
+      if (failure !== null) {
+        this.stderrChunks.push(new TextEncoder().encode(`channel open failed: ${failure.description}\n`));
+        this.exitStatus = EXIT_ON_SIGNAL;
+        this.settle();
+        return;
       }
+      void channel.request('exec', encodeStringPayload(this.command), true).then((accepted) => {
+        if (accepted) return;
+        this.stderrChunks.push(new TextEncoder().encode('exec request failed\n'));
+        this.exitStatus = EXIT_ON_SIGNAL;
+        channel.close();
+      });
     });
   }
 
   protected handleClose(): void {
-    this.offConn?.();
-    this.offConn = null;
+    this.channel?.close();
+  }
+
+  private settle(): void {
+    if (this.result !== null) return;
+    const join = (chunks: Uint8Array[]): string => bytesToUtf8(chunks.reduce((all, chunk) => {
+      const merged = new Uint8Array(all.length + chunk.length);
+      merged.set(all);
+      merged.set(chunk, all.length);
+      return merged;
+    }, new Uint8Array(0)));
+    this.result = { stdout: join(this.stdoutChunks), stderr: join(this.stderrChunks), exitCode: this.exitStatus ?? 0 };
+    for (const waiter of this.waiters.splice(0)) waiter(this.result);
   }
 
   run(): ExecResult | null {
     if (!this._isOpen) {
       throw new Error('SshExecChannel: cannot execute on closed channel');
     }
-    this.conn.write(
-      JSON.stringify({
-        op: 'exec',
-        command: this.command,
-        channelId: this.channelId,
-      }),
-    );
     return this.result;
   }
 
-  async execute(): Promise<ExecResult> {
+  execute(): Promise<ExecResult> {
     return new Promise<ExecResult>((resolve) => {
-      this.resolveExec = resolve;
-      const immediate = this.run();
-      if (immediate) resolve(immediate);
+      if (this.result !== null) resolve(this.result);
+      else this.waiters.push(resolve);
     });
   }
 

@@ -27,11 +27,13 @@
  * server-side-only emission (no timer-driven actor engine needed for a
  * synchronous request/response protocol).
  */
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 import { SftpCommandDispatcher } from './SftpCommandDispatcher';
 import type { SftpCommandContext } from './ISftpCommand';
 import type { ISftpFileSystem, SftpDirEntry, SftpFileAttrs } from './ISftpFileSystem';
 import type { SshUserContext } from '../SshUserContext';
 import { isOk } from '../Result';
+import { SshReader, SshWriter } from '../wire/SshDataTypes';
 import type { SshError } from '../Result';
 import type { SftpWirePacket, SftpWireAttrs } from './SftpWireCodec';
 import { SFTP_RENAME_FLAG } from './SftpWireCodec';
@@ -46,37 +48,53 @@ import { randomSftpSessionId } from './events';
  * the interoperability floor for a peer offering nothing newer
  * (widespread OpenSSH), never a value the engine invents on its own.
  */
+export const STATVFS_EXTENSION = 'statvfs@openssh.com';
+export const STATVFS_BLOCK_SIZE = 4096;
+
 const SFTP_SERVER_MAX_VERSION = 6;
 const SFTP_MIN_VERSION = 3;
 
 /** draft-ietf-secsh-filexfer §6.3 `pflags` bits relevant here. */
-const SSH_FXF = { READ: 0x01, WRITE: 0x02, APPEND: 0x04 } as const;
+const SSH_FXF = { READ: 0x01, WRITE: 0x02, APPEND: 0x04, CREAT: 0x08, TRUNC: 0x10, EXCL: 0x20 } as const;
 
-function attrsFrom(a: SftpFileAttrs): SftpWireAttrs {
+const FILE_TYPE_BITS: Readonly<Record<SftpFileAttrs['type'], number>> = {
+  file: 0o100000, directory: 0o040000, symlink: 0o120000,
+};
+const FILE_TYPE_MASK = 0o170000;
+const PERMISSION_STRING = 'rwxrwxrwx';
+const LISTING_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const SIX_MONTHS_MS = 183 * 24 * 3600 * 1000;
+
+function attrsFrom(a: SftpFileAttrs, version: number): SftpWireAttrs {
+  const seconds = Math.floor(a.mtime / 1000);
+  if (version < 4) {
+    return { size: a.size, uid: a.uid, gid: a.gid, permissions: (a.mode & ~FILE_TYPE_MASK) | FILE_TYPE_BITS[a.type], atime: seconds, mtime: seconds };
+  }
   return {
-    size: a.size, uid: a.uid, gid: a.gid, permissions: a.mode, mtime: Math.floor(a.mtime / 1000),
+    size: a.size, uid: a.uid, gid: a.gid, permissions: a.mode, mtime: seconds,
     entryType: a.type,
     acl: a.acl,
     extended: a.extended && Object.entries(a.extended).map(([name, value]) => ({ name, value })),
   };
 }
 
-function longnameOf(e: SftpDirEntry): string {
+function listingTime(mtime: number, now: number): string {
+  const when = new Date(mtime);
+  const month = LISTING_MONTHS[when.getUTCMonth()];
+  const day = String(when.getUTCDate()).padStart(2, ' ');
+  if (Math.abs(now - mtime) < SIX_MONTHS_MS) {
+    return `${month} ${day} ${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}`;
+  }
+  return `${month} ${day}  ${when.getUTCFullYear()}`;
+}
+
+const NUMERIC_ACCOUNT_NAMES: SftpAccountNames = { user: String, group: String };
+
+function longnameOf(e: SftpDirEntry, names: SftpAccountNames, now: number): string {
   const kind = e.type === 'directory' ? 'd' : e.type === 'symlink' ? 'l' : '-';
-  const perm = (e.mode & 0o777).toString(8).padStart(3, '0');
-  return `${kind}${perm} 1 ${e.uid} ${e.gid} ${e.size} ${new Date(e.mtime).toISOString()} ${e.name}`;
-}
-
-function stringToBytes(s: string): Uint8Array {
-  const out = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
-  return out;
-}
-
-function bytesToString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
+  const bits = [...PERMISSION_STRING].map((letter, i) => ((e.mode >> (8 - i)) & 1 ? letter : '-')).join('');
+  const links = e.type === 'directory' ? 2 : 1;
+  return `${kind}${bits} ${String(links).padStart(3, ' ')} ${names.user(e.uid).padEnd(8, ' ')} ${names.group(e.gid).padEnd(8, ' ')} ${String(e.size).padStart(8, ' ')} ${listingTime(e.mtime, now)} ${e.name}`;
 }
 
 /** Overwrites/extends `buffer` at `offset` with `data`, zero-padding any gap — a simplified sparse write. */
@@ -87,7 +105,13 @@ function writeAt(buffer: string, offset: number, data: string): string {
   return buffer.slice(0, offset) + data + tail;
 }
 
+export interface SftpAccountNames {
+  user(uid: number): string;
+  group(gid: number): string;
+}
+
 export interface SftpWireSessionConfig {
+  readonly accountNames?: SftpAccountNames;
   readonly vfs: ISftpFileSystem;
   readonly userCtx: SshUserContext;
   readonly rootPath?: string;
@@ -108,6 +132,10 @@ export class SftpWireSession {
   /** The version this session settled on after `INIT`/`VERSION` (§2.1.16/P15) — floor 3, ceiling 6. */
   get version(): number {
     return this.negotiatedVersion;
+  }
+
+  private longname(entry: SftpDirEntry): string {
+    return longnameOf(entry, this.config.accountNames ?? NUMERIC_ACCOUNT_NAMES, Date.now());
   }
 
   private ctx(): SftpCommandContext {
@@ -160,7 +188,7 @@ export class SftpWireSession {
     switch (pkt.type) {
       case 'INIT':
         this.negotiatedVersion = Math.max(SFTP_MIN_VERSION, Math.min(pkt.version, SFTP_SERVER_MAX_VERSION));
-        return { type: 'VERSION', version: this.negotiatedVersion };
+        return { type: 'VERSION', version: this.negotiatedVersion, extensions: [{ name: STATVFS_EXTENSION, data: '2' }] };
 
       case 'REALPATH': {
         const path = this.config.vfs.normalizePath(pkt.path, this.cwd);
@@ -171,7 +199,7 @@ export class SftpWireSession {
       case 'STAT': {
         const result = this.dispatcher.dispatch('stat', { path: pkt.path }, this.ctx());
         if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
-        return { type: 'ATTRS', requestId: pkt.requestId, attrs: attrsFrom(result.value as SftpFileAttrs) };
+        return { type: 'ATTRS', requestId: pkt.requestId, attrs: attrsFrom(result.value as SftpFileAttrs, this.negotiatedVersion) };
       }
 
       case 'MKDIR': {
@@ -219,19 +247,26 @@ export class SftpWireSession {
         const entries = (result.value as { entries: readonly SftpDirEntry[] }).entries;
         return {
           type: 'NAME', requestId: pkt.requestId,
-          entries: entries.map((e) => ({ filename: e.name, longname: longnameOf(e), attrs: attrsFrom(e) })),
+          entries: entries.map((e) => ({ filename: e.name, longname: this.longname(e), attrs: attrsFrom(e, this.negotiatedVersion) })),
         };
       }
 
       case 'OPEN': {
         const path = this.config.vfs.normalizePath(pkt.filename, this.cwd);
         if (pkt.pflags & SSH_FXF.WRITE) {
-          let initial = '';
-          if (pkt.pflags & SSH_FXF.APPEND) {
-            const existing = this.config.vfs.readFile(path);
-            if (existing.ok) initial = existing.value;
+          const existing = this.config.vfs.readFile(path);
+          const present = this.config.vfs.exists(path);
+          if (!present && !(pkt.pflags & SSH_FXF.CREAT)) return this.status(pkt.requestId, SSH_FX.NO_SUCH_FILE, 'No such file.');
+          if (present && (pkt.pflags & SSH_FXF.CREAT) && (pkt.pflags & SSH_FXF.EXCL)) {
+            return this.status(pkt.requestId, SSH_FX.FAILURE, 'File exists.');
           }
-          const handle = this.openHandle({ kind: 'file-write', path, buffer: initial });
+          const keepsContent = present && existing.ok && !(pkt.pflags & SSH_FXF.TRUNC);
+          const buffer = keepsContent ? existing.value : '';
+          if (!keepsContent) {
+            const created = this.dispatcher.dispatch('put', { path, content: buffer }, this.ctx());
+            if (!isOk(created)) { const s = statusFromError(created.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
+          }
+          const handle = this.openHandle({ kind: 'file-write', path, buffer });
           return { type: 'HANDLE', requestId: pkt.requestId, handle };
         }
         const result = this.dispatcher.dispatch('get', { path: pkt.filename }, this.ctx());
@@ -246,13 +281,13 @@ export class SftpWireSession {
         if (pkt.offset >= state.content.length) return this.status(pkt.requestId, SSH_FX.EOF, 'End of file.');
         const slice = state.content.slice(pkt.offset, pkt.offset + pkt.length);
         this.reportProgress(pkt.handle, slice.length);
-        return { type: 'DATA', requestId: pkt.requestId, data: stringToBytes(slice) };
+        return { type: 'DATA', requestId: pkt.requestId, data: binaryStringToBytes(slice) };
       }
 
       case 'WRITE': {
         const state = this.handles.get(pkt.handle);
         if (!state || state.kind !== 'file-write') return this.status(pkt.requestId, SSH_FX.FAILURE, 'Invalid handle.');
-        state.buffer = writeAt(state.buffer, pkt.offset, bytesToString(pkt.data));
+        state.buffer = writeAt(state.buffer, pkt.offset, bytesToBinaryString(pkt.data));
         this.reportProgress(pkt.handle, pkt.data.length);
         return this.okStatus(pkt.requestId);
       }
@@ -290,7 +325,7 @@ export class SftpWireSession {
       case 'SETSTAT': {
         // §2.1.20/P19 — real chmod/chown backing for the SETSTAT attribute flags a client actually sends.
         if (pkt.attrs.permissions !== undefined) {
-          const result = this.dispatcher.dispatch('chmod', { path: pkt.path, mode: pkt.attrs.permissions }, this.ctx());
+          const result = this.dispatcher.dispatch('chmod', { path: pkt.path, mode: pkt.attrs.permissions & 0o7777 }, this.ctx());
           if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
         }
         if (pkt.attrs.uid !== undefined && pkt.attrs.gid !== undefined) {
@@ -300,9 +335,37 @@ export class SftpWireSession {
         return this.okStatus(pkt.requestId);
       }
 
-      case 'FSTAT':
-      case 'FSETSTAT':
-        return this.status(pkt.requestId, SSH_FX.OP_UNSUPPORTED, 'Operation not yet supported by this server.');
+      case 'EXTENDED': {
+        if (pkt.name !== STATVFS_EXTENSION) return this.status(pkt.requestId, SSH_FX.OP_UNSUPPORTED, 'Unsupported extension.');
+        const path = new SshReader(pkt.data).readString();
+        const result = this.dispatcher.dispatch('df', { path }, this.ctx());
+        if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
+        const usage = result.value as { totalBytes: number; usedBytes: number; availableBytes: number };
+        const blocks = Math.floor(usage.totalBytes / STATVFS_BLOCK_SIZE);
+        const free = Math.floor((usage.totalBytes - usage.usedBytes) / STATVFS_BLOCK_SIZE);
+        const available = Math.floor(usage.availableBytes / STATVFS_BLOCK_SIZE);
+        const reply = new SshWriter();
+        for (const field of [STATVFS_BLOCK_SIZE, STATVFS_BLOCK_SIZE, blocks, free, available, 0, 0, 0, 0, 0, 255]) {
+          reply.writeUint64(field);
+        }
+        return { type: 'EXTENDED_REPLY', requestId: pkt.requestId, data: reply.toBytes() };
+      }
+
+      case 'FSTAT': {
+        const state = this.handles.get(pkt.handle);
+        if (!state) return this.status(pkt.requestId, SSH_FX.FAILURE, 'Invalid handle.');
+        const result = this.dispatcher.dispatch('stat', { path: state.path }, this.ctx());
+        if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
+        const attrs = result.value as SftpFileAttrs;
+        const size = state.kind === 'file-write' ? state.buffer.length : attrs.size;
+        return { type: 'ATTRS', requestId: pkt.requestId, attrs: attrsFrom({ ...attrs, size }, this.negotiatedVersion) };
+      }
+
+      case 'FSETSTAT': {
+        const state = this.handles.get(pkt.handle);
+        if (!state) return this.status(pkt.requestId, SSH_FX.FAILURE, 'Invalid handle.');
+        return this.dispatchPacket({ type: 'SETSTAT', requestId: pkt.requestId, path: state.path, attrs: pkt.attrs });
+      }
 
       default:
         return this.status(0, SSH_FX.BAD_MESSAGE, 'Unexpected packet type.');

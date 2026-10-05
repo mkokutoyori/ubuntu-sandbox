@@ -33,6 +33,8 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
+
 beforeEach(() => {
   resetCounters();
   MACAddress.resetCounter();
@@ -94,6 +96,7 @@ describe('PRD-Port-Forwarding.md Phase 8 — ssh -L real relay', () => {
     expect(acceptedRemoteIp).toBe(SERVER_IP);
 
     clientSocket!.send('hello');
+    await settle();
     expect(received).toEqual(['hello']);
   });
 });
@@ -119,6 +122,7 @@ describe('PRD-Port-Forwarding.md Phase 8 — ssh -R real relay', () => {
     expect(acceptedRemoteIp).toBe(CLIENT_IP);
 
     serverSideSocket!.send('ping');
+    await settle();
     expect(received).toEqual(['pong']);
   });
 });
@@ -129,6 +133,7 @@ describe('PRD-Port-Forwarding.md Phase 8 — no regression when the destination 
     await client.executeCommand(`ssh -L 9003:${TARGET_IP}:80 -N alice@${SERVER_IP}`, 'admin\n');
 
     const clientSocket = client.getTcpStack().connect('127.0.0.1', 9003);
+    await settle();
     expect(clientSocket!.state).not.toBe('established');
     void server;
   });

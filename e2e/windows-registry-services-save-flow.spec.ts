@@ -83,13 +83,13 @@ test.describe('Windows : registre et services survivent à Enregistrer/Ouvrir', 
   test('une valeur de registre posée dans le terminal est encore là après réouverture', async ({ page }) => {
     const id = await addDevice(page, 'windows-pc');
     await openTerminal(page, id);
-    await typeCmd(page, 'reg add HKLM\\SOFTWARE\\Lab /v Site /d Douala /f');
+    await typeCmd(page, 'reg add HKCU\\Software\\Lab /v Site /d Douala /f');
     await closeTerminal(page);
 
     await saveAndReopen(page, `e2e-registre-${Date.now()}`);
 
     await openTerminal(page, await firstDeviceId(page));
-    await typeCmd(page, 'reg query HKLM\\SOFTWARE\\Lab');
+    await typeCmd(page, 'reg query HKCU\\Software\\Lab');
     expect(await page.locator('[data-testid="terminal-modal"]').innerText()).toContain('Douala');
   });
 

@@ -265,7 +265,7 @@ function collect(ctx: WinFileCommandContext, target: Target, options: DirOptions
   return blocks;
 }
 
-function formatDate(d: Date): string {
+export function fileDateTime(d: Date): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yyyy = d.getFullYear();
@@ -279,7 +279,7 @@ function formatDate(d: Date): string {
 const shown = (text: string, options: DirOptions): string => (options.lowercase ? text.toLowerCase() : text);
 
 function rowLine(row: Row, options: DirOptions): string {
-  const date = formatDate(options.timeField === 'created' ? row.created : row.written);
+  const date = fileDateTime(options.timeField === 'created' ? row.created : row.written);
   const name = shown(row.name, options);
   return row.isDirectory
     ? `${date}${DIRECTORY_MARKER}${name}`
