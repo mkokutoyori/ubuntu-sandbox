@@ -1404,7 +1404,7 @@ export abstract class LinuxMachine extends EndHost
         return entry ? { username: entry.username, uid: entry.uid, gid: entry.gid, home: entry.home } : null;
       },
       groupsOf: (username) => this.executor.userMgr.getUserGroups(username).map((g) => g.gid),
-      checkPassword: (username, password) => this.executor.userMgr.checkPassword(username, password),
+      authenticate: (service, username, password) => this.executor.authenticateService(service, username, password, { tty: 'ftp' }).ok,
     });
     this.executor.registerServiceSocketServer('vsftpd', this.vsftpdService);
     this.executor.serviceMgr.registerConfigCheck('vsftpd', () => {
@@ -1927,7 +1927,9 @@ export abstract class LinuxMachine extends EndHost
           shell: entry.shell ?? '/bin/bash',
         };
       },
-      authenticate: (user, password) => this.executor.userMgr.checkPassword(user, password),
+      authenticate: (user, password, fromIp) => this.executor.authenticateService('login', user, password, {
+        rhost: fromIp, tty: `/dev/${this.sessionTable.nextTty()}`, pid: this.telnetdPid(),
+      }).ok,
       runLine: (user, line) => this.executor.runAsUser(user, () => this.executeCommand(line)),
       openSession: (user, fromIp, peerPort) => {
         void peerPort;

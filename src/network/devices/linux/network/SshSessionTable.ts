@@ -106,6 +106,10 @@ export class SshSessionTable {
     return this.recent(limit).map(s => s.toLastRow()).join('\n');
   }
 
+  nextTty(): string {
+    return `pts/${this.nextPts}`;
+  }
+
   private allocateTty(): string {
     return `pts/${this.nextPts++}`;
   }

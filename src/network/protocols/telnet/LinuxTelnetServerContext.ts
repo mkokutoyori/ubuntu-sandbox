@@ -19,7 +19,7 @@ export interface LinuxTelnetHost {
   readFile(path: string): string | null;
   telnetActive(): boolean;
   account(user: string): LinuxTelnetAccount | null;
-  authenticate(user: string, password: string): boolean;
+  authenticate(user: string, password: string, fromIp: string): boolean;
   runLine(user: string, line: string): Promise<string>;
   openSession(user: string, fromIp: string, peerPort: number): TelnetSessionHandle | null;
   closeSession(id: string, reason: string): void;
@@ -74,7 +74,7 @@ export class LinuxTelnetServerContext implements ITelnetServerContext {
   authenticate(username: string | null, password: string): boolean {
     this.attempts += 1;
     if (username === null) return false;
-    const ok = this.host.authenticate(username, password);
+    const ok = this.host.authenticate(username, password, this.sourceIp);
     if (!ok) {
       this.host.recordAuthFailure(username, this.sourceIp, this.attempts, 'Authentication failure');
     }

@@ -6697,9 +6697,27 @@ export class LinuxCommandExecutor {
   /** Get current UID (0 = root) */
   getCurrentUid(): number { return this.userMgr.currentUid; }
 
-  /** Check password for a user */
+  authenticateService(
+    service: string,
+    user: string,
+    password: string,
+    subject: { rhost?: string; tty?: string; pid?: number } = {},
+  ): { ok: boolean; messages: string[] } {
+    const caller = { uid: 0, euid: 0, loginName: '' };
+    const pid = subject.pid ?? this.logMgr.allocatePid();
+    const session = new PamServiceSession(
+      this.pam, service, { caller, identity: { tag: service, pid } },
+      { user, rhost: subject.rhost, tty: subject.tty },
+    );
+    let code = session.authenticate(() => password, false);
+    if (code === PamReturn.SUCCESS) code = session.account();
+    const messages = session.takeLoginMessages();
+    session.end();
+    return { ok: code === PamReturn.SUCCESS, messages };
+  }
+
   checkPassword(username: string, password: string): boolean {
-    return this.userMgr.checkPassword(username, password);
+    return this.authenticateService('sshd', username, password).ok;
   }
 
   /** Set password for a user */

@@ -412,6 +412,38 @@ const PASSWD = [
   '',
 ].join('\n');
 
+const VSFTPD = [
+  '# Standard behaviour for ftpd(8).',
+  'auth\trequired\tpam_listfile.so item=user sense=deny file=/etc/ftpusers onerr=succeed',
+  '',
+  '# Note: vsftpd handles anonymous logins on its own. Do not enable pam_ftp.so.',
+  '',
+  '# Standard pam includes',
+  '@include common-account',
+  '@include common-session',
+  '@include common-auth',
+  'auth\trequired\tpam_shells.so',
+  '',
+].join('\n');
+
+const FTPUSERS = [
+  '# /etc/ftpusers: list of users disallowed FTP access. See ftpusers(5).',
+  '',
+  'root',
+  'daemon',
+  'bin',
+  'sys',
+  'sync',
+  'games',
+  'man',
+  'lp',
+  'mail',
+  'news',
+  'uucp',
+  'nobody',
+  '',
+].join('\n');
+
 const OTHER = [
   '#',
   '# /etc/pam.d/other - specify the PAM fallback behaviour',
@@ -611,6 +643,8 @@ export const UBUNTU_PAM_FILES: readonly UbuntuPamFile[] = [
   { path: '/etc/pam.d/sshd', content: SSHD, mode: 0o644 },
   { path: '/etc/pam.d/login', content: LOGIN, mode: 0o644 },
   { path: '/etc/pam.d/common-password', content: COMMON_PASSWORD, mode: 0o644 },
+  { path: '/etc/pam.d/vsftpd', content: VSFTPD, mode: 0o644 },
+  { path: '/etc/ftpusers', content: FTPUSERS, mode: 0o644 },
   { path: '/etc/pam.d/su', content: SU, mode: 0o644 },
   { path: '/etc/pam.d/su-l', content: SU_L, mode: 0o644 },
   { path: '/etc/pam.d/sudo', content: SUDO, mode: 0o644 },
