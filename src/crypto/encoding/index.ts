@@ -26,6 +26,18 @@ export function bytesToUtf8(bytes: Uint8Array): string {
   return textDecoder.decode(bytes);
 }
 
+export function bytesToBinaryString(bytes: Uint8Array): string {
+  let out = '';
+  for (const b of bytes) out += String.fromCharCode(b);
+  return out;
+}
+
+export function binaryStringToBytes(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
+  return bytes;
+}
+
 /** Render bytes as a lowercase, zero-padded hexadecimal string. */
 export function bytesToHex(bytes: Uint8Array): string {
   let out = '';

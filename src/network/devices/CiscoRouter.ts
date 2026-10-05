@@ -7,6 +7,7 @@
  *   - Boot sequence: Cisco IOS bootstrap
  */
 
+import { ciscoSshIdentification } from '@/network/protocols/ssh/serverIdentification';
 import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './shells/cisco/CiscoPlatform';
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
@@ -478,6 +479,10 @@ export class CiscoRouter extends Router {
   }
 
   protected sshVendorTag(): 'cisco' { return 'cisco'; }
+
+  protected override sshServerIdentification(): string {
+    return ciscoSshIdentification(getSecurityConfig(this).ssh.version);
+  }
 
   protected override sshNegotiatedAlgorithms(): { chiffrement: string; hmac: string } {
     return algorithmesRetenus(getSecurityConfig(this).ssh);

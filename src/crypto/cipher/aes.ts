@@ -136,8 +136,18 @@ function invMixColumns(s: Uint8Array): void {
 
 /** Encrypt a single 16-byte block under `key` (128/192/256-bit). */
 export function aesEncryptBlock(key: Uint8Array, block: Uint8Array): Uint8Array {
+  return createAesEncryptor(key)(block);
+}
+
+export function createAesEncryptor(key: Uint8Array): (block: Uint8Array) => Uint8Array {
+  const expanded = expandKey(key);
+  return (block) => encryptExpanded(expanded, block);
+}
+
+function encryptExpanded(
+  { roundKeys: w, rounds: Nr }: ReturnType<typeof expandKey>, block: Uint8Array,
+): Uint8Array {
   if (block.length !== BLOCK_SIZE) throw new Error(`AES: block must be 16 bytes (got ${block.length})`);
-  const { roundKeys: w, rounds: Nr } = expandKey(key);
   const s = Uint8Array.from(block);
   addRoundKey(s, w, 0);
   for (let round = 1; round < Nr; round++) {

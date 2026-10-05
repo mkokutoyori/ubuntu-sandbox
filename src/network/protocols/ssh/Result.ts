@@ -83,4 +83,5 @@ export type SshError =
   | { kind: 'CHANNEL_ERROR'; channelId: number; message: string }
   | { kind: 'UNKNOWN_OP'; op: string }
   | { kind: 'IO_ERROR'; message: string }
+  | { kind: 'KEX_FAILED'; host: string; port: number; message: string }
   | { kind: 'INVALID_ARGUMENT'; message: string };

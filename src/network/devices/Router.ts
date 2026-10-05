@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../dhcp/DhcpRelay';
 import { Equipment } from '../equipment/Equipment';
 import {
@@ -1232,6 +1233,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       forcedCommand: (user) => this.sshForcedCommand(user),
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
+      identification: () => this.sshServerIdentification(),
       motd: () => this.getBanner('motd') || null,
       aaaAuthenticate: (n, p) => (this.sshPasswordLoginAdmitted(n)
         ? this.authenticateViaAaa(n, p)
@@ -4246,9 +4248,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         .map(p => p.getIPAddress()?.toString())
         .filter((ip): ip is string => !!ip),
     );
+    const receivedOn = this.ports.get(inPort)?.getIPAddress();
+    if (receivedOn) this.dhcpServer.setServerIdentifier(receivedOn.toString());
     const reply = buildDhcpServerReply(pkt, {
       server: this.dhcpServer,
-      localGatewayIP: this.ports.get(inPort)?.getIPAddress()?.toString(),
+      localGatewayIP: receivedOn?.toString(),
       isAddressInUse: (ip) => this.isCandidateAddressInUse(new IPAddress(ip)),
     });
     if (!reply) return;
@@ -5063,6 +5067,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _sshHost: CrossVendorSshHost | null = null;
 
   protected sshVendorTag(): CrossVendorSshVendor { return 'generic'; }
+
+  protected sshServerIdentification(): string { return SSH_SERVER_IDENTIFICATION; }
 
   /**
    * Le couple chiffrement/HMAC qu'annoncent `show ssh` et

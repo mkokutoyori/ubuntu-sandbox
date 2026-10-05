@@ -11,6 +11,7 @@
  *   - Boot: Cisco IOS C3560 format
  */
 
+import { ciscoSshIdentification } from '@/network/protocols/ssh/serverIdentification';
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPv4Packet, IPAddress } from '../core/types';
 import { selectBundleMember, DEFAULT_LOAD_BALANCE, type LoadBalanceMethod } from '@/network/lacp/loadBalance';
 import { AgentRegistry } from './AgentRegistry';
@@ -462,6 +463,10 @@ export class CiscoSwitch extends Switch {
   }
 
   getOSType(): string { return 'cisco-ios'; }
+
+  protected override sshServerIdentification(): string {
+    return ciscoSshIdentification(getSecurityConfig(this).ssh.version);
+  }
 
   protected override sshServerLimits(): Partial<SshServerConfig> {
     return getSecurityConfig(this).sshServerLimits();

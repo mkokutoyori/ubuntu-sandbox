@@ -2926,6 +2926,8 @@ export class LinuxTerminalSession extends TerminalSession {
             ? `ssh: connect to host ${host} port ${meta.port}: Connection timed out`
             : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
             ? 'Host key verification failed.'
+            : errKind === 'KEX_FAILED'
+            ? (result as { error: { message: string } }).error.message
             : `${user}@${host}: Permission denied (publickey,password).`;
         this.addLine(msg, 'error');
       }

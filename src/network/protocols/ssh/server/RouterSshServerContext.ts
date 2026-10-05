@@ -31,6 +31,7 @@
  * channel_opened, …) lights up regardless of vendor.
  */
 
+import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { RouterSftpFileSystem, type RouterSftpSource } from '../sftp/RouterSftpFileSystem';
@@ -70,6 +71,7 @@ export interface RouterSshServerDeps {
   events?: ISshServerEventBus;
   /** Optional banner text printed before authentication. */
   banner?(): string | null;
+  identification?(): string;
   /** Optional motd text printed after authentication. */
   motd?(): string;
   /** Optional record-login callback when a session is established. */
@@ -163,6 +165,10 @@ export class RouterSshServerContext implements ISshServerContext {
         };
       },
     };
+  }
+
+  serverIdentification(): string {
+    return this.deps.identification?.() ?? SSH_SERVER_IDENTIFICATION;
   }
 
   getBanner(): string | null {

@@ -5,7 +5,7 @@ import { TerminalTheme, SessionType, type KeyEvent } from './TerminalSession';
 import { BSD_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
 import { CyclingPolicy, type CompletionPolicy } from '@/terminal/completion';
 import { Firewall } from '@/network/devices/firewall/Firewall';
-import { PING_NO_ROUTE } from '@/network/devices/firewall/diag/FirewallPing';
+import { isPingRefusal } from '@/network/devices/firewall/diag/FirewallPing';
 import type { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import type { InteractiveStep } from '@/terminal/core/types';
 import type { CapturedFrame } from '@/network/devices/firewall/diag/PacketCapture';
@@ -307,7 +307,7 @@ export class FortiTerminalSession extends CLITerminalSession {
     if (target === null) return false;
 
     const run = device.beginPing(target);
-    if (!run) { this.addLine(PING_NO_ROUTE); this.notify(); return true; }
+    if (isPingRefusal(run)) { this.addLine(run.refusal); this.notify(); return true; }
 
     const count = device.pingRepeatCount();
     let sent = 0;

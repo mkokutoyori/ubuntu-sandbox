@@ -7,6 +7,7 @@
  *   - Boot sequence: Huawei VRP bootstrap
  */
 
+import { SSH_HUAWEI_VRP_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
@@ -442,6 +443,8 @@ export class HuaweiRouter extends Router {
   }
 
   protected sshVendorTag(): 'huawei' { return 'huawei'; }
+
+  protected override sshServerIdentification(): string { return SSH_HUAWEI_VRP_IDENTIFICATION; }
 
   protected createShell(): IRouterShell {
     return new HuaweiVRPShell();

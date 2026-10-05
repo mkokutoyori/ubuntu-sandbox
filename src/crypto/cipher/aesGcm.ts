@@ -6,7 +6,7 @@
  * directly instead of via GHASH-of-the-IV.
  */
 
-import { aesEncryptBlock, AES_BLOCK_SIZE } from './aes';
+import { aesEncryptBlock, createAesEncryptor, AES_BLOCK_SIZE } from './aes';
 
 const TAG_SIZE = 16;
 
@@ -88,9 +88,10 @@ function inc32(block: Uint8Array): Uint8Array {
 function gctr(key: Uint8Array, icb: Uint8Array, data: Uint8Array): Uint8Array {
   if (data.length === 0) return new Uint8Array(0);
   const out = new Uint8Array(data.length);
+  const encryptBlock = createAesEncryptor(key);
   let cb = icb;
   for (let off = 0; off < data.length; off += AES_BLOCK_SIZE) {
-    const ks = aesEncryptBlock(key, cb);
+    const ks = encryptBlock(cb);
     const chunkLen = Math.min(AES_BLOCK_SIZE, data.length - off);
     for (let i = 0; i < chunkLen; i++) out[off + i] = data[off + i] ^ ks[i];
     cb = inc32(cb);

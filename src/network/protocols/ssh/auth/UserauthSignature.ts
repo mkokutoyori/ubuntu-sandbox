@@ -1,6 +1,6 @@
 import { ed25519Sign, ed25519Verify } from '@/crypto/ecc/ed25519';
 import { p256Sign, p256Verify, P256_FIELD_BYTES } from '@/crypto/ecc/p256';
-import { rsaSign, rsaVerify } from '@/crypto/rsa/rsa';
+import { rsaSign, rsaVerify, type RsaSignatureHash } from '@/crypto/rsa/rsa';
 import {
   sshPublicKeyFromBlob,
   type SshPrivateKey,
@@ -13,6 +13,15 @@ const SSH_CONNECTION_SERVICE = 'ssh-connection';
 
 export function userauthSignatureAlgorithm(key: SshPublicKey): string {
   return key.algorithm === 'ssh-rsa' ? 'rsa-sha2-256' : key.algorithm;
+}
+
+const RSA_SIGNATURE_HASHES: Readonly<Record<string, RsaSignatureHash>> = {
+  'rsa-sha2-512': 'sha512',
+  'rsa-sha2-256': 'sha256',
+};
+
+export function signatureAlgorithmsFor(key: SshPublicKey): readonly string[] {
+  return key.algorithm === 'ssh-rsa' ? Object.keys(RSA_SIGNATURE_HASHES) : [key.algorithm];
 }
 
 export function userauthSignedData(
@@ -30,17 +39,21 @@ export function userauthSignedData(
     .toBytes();
 }
 
-function rawSignature(key: SshPrivateKey, data: Uint8Array): Uint8Array {
+function rawSignature(key: SshPrivateKey, algorithm: string, data: Uint8Array): Uint8Array {
   if (key.algorithm === 'ssh-ed25519') return ed25519Sign(key.seed, data);
-  if (key.algorithm === 'ssh-rsa') return rsaSign({ n: key.n, e: key.e, d: key.d }, data);
+  if (key.algorithm === 'ssh-rsa') return rsaSign({ n: key.n, e: key.e, d: key.d }, data, RSA_SIGNATURE_HASHES[algorithm]);
   const { r, s } = p256Sign(key.d, data);
   return new SshWriter().writeMpint(r).writeMpint(s).toBytes();
 }
 
 export function signUserauth(key: SshPrivateKey, data: Uint8Array): Uint8Array {
+  return signWithAlgorithm(key, userauthSignatureAlgorithm(key), data);
+}
+
+export function signWithAlgorithm(key: SshPrivateKey, algorithm: string, data: Uint8Array): Uint8Array {
   return new SshWriter()
-    .writeString(userauthSignatureAlgorithm(key))
-    .writeBytes(rawSignature(key, data))
+    .writeString(algorithm)
+    .writeBytes(rawSignature(key, algorithm, data))
     .toBytes();
 }
 
@@ -50,9 +63,9 @@ function bigIntFromBytes(bytes: Uint8Array): bigint {
   return n;
 }
 
-function verifyRaw(key: SshPublicKey, data: Uint8Array, signature: Uint8Array): boolean {
+function verifyRaw(key: SshPublicKey, algorithm: string, data: Uint8Array, signature: Uint8Array): boolean {
   if (key.algorithm === 'ssh-ed25519') return ed25519Verify(key.publicKey, data, signature);
-  if (key.algorithm === 'ssh-rsa') return rsaVerify({ n: key.n, e: key.e }, data, signature);
+  if (key.algorithm === 'ssh-rsa') return rsaVerify({ n: key.n, e: key.e }, data, signature, RSA_SIGNATURE_HASHES[algorithm]);
   const reader = new SshReader(signature);
   const r = reader.readMpint();
   const s = reader.readMpint();
@@ -68,13 +81,13 @@ export function verifyUserauthSignature(
   publicKeyBlob: Uint8Array, algorithm: string, signatureBlob: Uint8Array, data: Uint8Array,
 ): boolean {
   const key = sshPublicKeyFromBlob(publicKeyBlob);
-  if (key === null || userauthSignatureAlgorithm(key) !== algorithm) return false;
+  if (key === null || !signatureAlgorithmsFor(key).includes(algorithm)) return false;
   try {
     const reader = new SshReader(signatureBlob);
     if (reader.readString() !== algorithm) return false;
     const signature = reader.readBytes();
     if (reader.remaining !== 0) return false;
-    return verifyRaw(key, data, signature);
+    return verifyRaw(key, algorithm, data, signature);
   } catch {
     return false;
   }

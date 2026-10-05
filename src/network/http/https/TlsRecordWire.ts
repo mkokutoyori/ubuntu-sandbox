@@ -11,6 +11,7 @@
  */
 import { CONTENT_TYPE_CODE, CONTENT_TYPE_FROM_CODE } from '@/network/tls/types';
 import type { TlsRecord } from '@/network/tls/recordLayer';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 
 const RECORD_HEADER_LENGTH = 5;
 const MAX_FRAGMENT_LENGTH = 0xffff;
@@ -128,17 +129,7 @@ export interface TlsHandshakeDriver extends TlsRecordHandler {
   readonly result: 'success' | 'failure' | null;
 }
 
-export function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
-
-export function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
+export { bytesToBinaryString, binaryStringToBytes };
 
 export function runTlsHandshakeOverSocket(
   socket: TlsHandshakeSocket, tls: TlsHandshakeDriver,

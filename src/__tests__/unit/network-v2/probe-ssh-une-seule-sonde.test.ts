@@ -110,14 +110,14 @@ describe('un `ssh` ne fait plus sonder le serveur deux fois', () => {
     const { pc, srv } = await lab();
     await pc.executeCommand(
       `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
-    expect(lignes(await journal(srv), '[preauth]')).toBe(0);
+    expect(lignes(await journal(srv), `Connection closed by ${CLIENT_IP}`)).toBe(0);
   }, 30000);
 
   it('une session interactive ne laisse AUCUNE fermeture avant authentification', async () => {
     const { pc, srv } = await lab();
     await pc.executeCommand(
       `ssh -o StrictHostKeyChecking=no alice@${SERVER_IP}`, 'secret123\nwhoami\nexit\n');
-    expect(lignes(await journal(srv), '[preauth]')).toBe(0);
+    expect(lignes(await journal(srv), `Connection closed by ${CLIENT_IP}`)).toBe(0);
   }, 30000);
 
   it('le serveur voit UNE connexion pour un seul `ssh`', async () => {
