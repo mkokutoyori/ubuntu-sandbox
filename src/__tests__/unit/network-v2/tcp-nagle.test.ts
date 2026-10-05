@@ -140,7 +140,7 @@ describe('TCP Nagle (RFC 9293 §3.7.4)', () => {
     accepted!.windowSize = 64240;
     scheduler.advance(TCP_INITIAL_RTO_MS + 10);
 
-    expect(sizes).toEqual([1, 29]);
+    expect(sizes).toEqual([30]);
     expect(received.join('')).toBe('abcde'.repeat(6));
   });
 
@@ -191,7 +191,7 @@ describe('TCP Nagle (RFC 9293 §3.7.4)', () => {
     accepted!.windowSize = 64240;
     scheduler.advance(TCP_INITIAL_RTO_MS + 10);
 
-    expect(sizes).toEqual([1, 11]);
+    expect(sizes).toEqual([12]);
     expect(lengths).toEqual([12]);
   });
 

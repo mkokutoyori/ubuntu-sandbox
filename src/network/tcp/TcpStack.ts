@@ -160,6 +160,7 @@ const TCP_REASSEMBLY_MAX_BYTES = TCP_DEFAULT_WINDOW;
 const TCP_MAX_RECEIVE_WINDOW = 2 ** 30;
 const TCP_INVALID_ACK_RATELIMIT_MS = 500;
 const TCP_TS_RECENT_VALID_MS = 24 * 24 * 60 * 60 * 1000;
+const TCP_SWS_OVERRIDE_MS = 500;
 import {
   IPAddress,
   IPv6Address,
@@ -269,7 +270,10 @@ export class TcpSocket {
   sndUp: number | null = null;
   /** RCV.UP (RFC 9293 §3.3.1) — one past the last urgent octet the peer has designated. */
   rcvUp: number | null = null;
-  windowSize = TCP_DEFAULT_WINDOW;
+  private receiveCapacity = TCP_DEFAULT_WINDOW;
+  rcvEdge: number | null = null;
+  swsHeld = false;
+  swsOverride = false;
   mss = TCP_DEFAULT_MSS;
   passive = false;
   closed = false;
@@ -455,14 +459,7 @@ export class TcpSocket {
   onData(handler: TcpDataHandler): () => void {
     const first = this.dataHandlers.length === 0;
     this.dataHandlers.push(handler);
-    if (first && this.earlyData.length > 0) {
-      const backlog = this.earlyData;
-      this.earlyData = [];
-      this.earlyDataBytes = 0;
-      for (const chunk of backlog) {
-        try { handler(chunk); } catch { /* swallow per-handler */ }
-      }
-    }
+    if (first) this._drainReceiveQueue(handler);
     return () => {
       const i = this.dataHandlers.indexOf(handler);
       if (i !== -1) this.dataHandlers.splice(i, 1);
@@ -521,20 +518,50 @@ export class TcpSocket {
    * Bounded by the advertised receive window: past that a real stack
    * stops accepting, it does not grow without limit.
    */
-  private earlyData: unknown[] = [];
-  private earlyDataBytes = 0;
+  private receiveQueue: unknown[] = [];
+  private receiveQueueBytes = 0;
+  private receivePaused = false;
+
+  get windowSize(): number { return this.receiveCapacity; }
+
+  set windowSize(bytes: number) {
+    this.receiveCapacity = bytes;
+    this.stack._receiveSpaceFreed(this);
+  }
+
+  get unreadBytes(): number { return this.receiveQueueBytes; }
+
+  pause(): void { this.receivePaused = true; }
+
+  resume(): void {
+    if (!this.receivePaused) return;
+    this.receivePaused = false;
+    this._drainReceiveQueue();
+  }
 
   _fireData(data: unknown): void {
-    if (this.dataHandlers.length === 0) {
-      const len = isStreamPayload(data) ? data.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
-      if (this.earlyDataBytes + len > this.windowSize) return;
-      this.earlyData.push(data);
-      this.earlyDataBytes += len;
+    if (this.dataHandlers.length === 0 || this.receivePaused) {
+      this.receiveQueue.push(data);
+      this.receiveQueueBytes += isStreamPayload(data) ? data.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
       return;
     }
     for (const h of [...this.dataHandlers]) {
       try { h(data); } catch { /* swallow per-handler */ }
     }
+  }
+
+  _drainReceiveQueue(only?: TcpDataHandler): void {
+    if (this.receivePaused || this.dataHandlers.length === 0 || this.receiveQueue.length === 0) return;
+    const backlog = this.receiveQueue;
+    this.receiveQueue = [];
+    this.receiveQueueBytes = 0;
+    const handlers = only === undefined ? [...this.dataHandlers] : [only];
+    for (const chunk of backlog) {
+      for (const h of handlers) {
+        try { h(chunk); } catch { /* swallow per-handler */ }
+      }
+    }
+    this.stack._receiveSpaceFreed(this);
   }
 
   _fireClose(reason: TcpCloseReason): void {
@@ -1354,16 +1381,20 @@ export class TcpStack {
     // instead of nesting another one.
     if (socket.flushingBacklog) return;
     socket.flushingBacklog = true;
+    socket.swsHeld = false;
     try {
       while (socket.sendBacklog.length > 0) {
         const inFlight = (socket.sendNext - socket.sendUnacked) >>> 0;
-        // PRD-TCP.md P3+P5: bounded by whichever is smaller — the peer's
-        // advertised receive window, or our own congestion window.
-        const effectiveWindow = Math.min(socket.peerWindow, socket.cc.cwnd);
-        const available = effectiveWindow > inFlight ? effectiveWindow - inFlight : 0;
+        const windowRoom = socket.peerWindow > inFlight ? socket.peerWindow - inFlight : 0;
+        const congestionRoom = socket.cc.cwnd > inFlight ? socket.cc.cwnd - inFlight : 0;
+        const available = Math.min(windowRoom, congestionRoom);
         if (available === 0) break;
         const next = socket.sendBacklog[0];
         const take = Math.min(available, next.payload.length);
+        if (this.holdsForSillyWindow(socket, windowRoom, congestionRoom)) {
+          socket.swsHeld = true;
+          break;
+        }
         if (this.nagleHolds(socket, next.payload.length, take, overrideNagle)) break;
         const chunk = sliceStream(next.payload, 0, take);
         const remainder = sliceStream(next.payload, take);
@@ -1408,6 +1439,14 @@ export class TcpStack {
    * exempt: there is nothing to coalesce it with, and holding it would
    * simply lose the marker.
    */
+  private holdsForSillyWindow(socket: TcpSocket, windowRoom: number, congestionRoom: number): boolean {
+    if (socket.swsOverride || windowRoom >= congestionRoom) return false;
+    let queued = 0;
+    for (const entry of socket.sendBacklog) queued += entry.payload.length;
+    if (queued <= windowRoom || windowRoom >= this.sendMss(socket)) return false;
+    return windowRoom * 2 < socket.maxPeerWindow;
+  }
+
   private nagleHolds(socket: TcpSocket, headLength: number, take: number, overrideNagle: boolean): boolean {
     if (overrideNagle || socket.noDelay) return false;
     const segmentBytes = this.sendMss(socket);
@@ -1425,13 +1464,18 @@ export class TcpStack {
 
   /** (Re)arm or disarm the zero-window persist-probe timer based on current window/backlog state. */
   private maybeArmPersistTimer(socket: TcpSocket): void {
-    if (socket.peerWindow > 0 || socket.sendBacklog.length === 0) {
+    const stalled = socket.peerWindow === 0 || socket.swsHeld;
+    if (!stalled || socket.sendBacklog.length === 0) {
       this.timers.clear(socket.persistTimer);
       socket.persistTimer = null;
       socket.persistBackoffMs = 0;
       return;
     }
     if (socket.persistTimer) return;
+    if (socket.peerWindow > 0) {
+      socket.persistTimer = this.timers.setTimeout(() => this.onPersistFired(socket), TCP_SWS_OVERRIDE_MS);
+      return;
+    }
     socket.persistBackoffMs = socket.persistBackoffMs > 0
       ? Math.min(socket.persistBackoffMs * 2, TCP_MAX_RTO_MS)
       : TCP_INITIAL_RTO_MS;
@@ -1451,6 +1495,11 @@ export class TcpStack {
   private persistProbeWithinBurst(socket: TcpSocket): void {
     socket.persistTimer = null;
     if (socket.closed || socket.sendBacklog.length === 0) { socket.persistBackoffMs = 0; return; }
+    if (socket.peerWindow > 0) {
+      socket.swsOverride = true;
+      try { this.flushSendBacklog(socket); } finally { socket.swsOverride = false; }
+      return;
+    }
     const next = socket.sendBacklog[0];
     if (next.payload.length === 0) { this.maybeArmPersistTimer(socket); return; }
     const probe = sliceStream(next.payload, 0, 1);
@@ -1692,7 +1741,7 @@ export class TcpStack {
   }
 
   private sequenceAcceptable(socket: TcpSocket, sequence: number, length: number): boolean {
-    const window = socket.windowSize;
+    const window = this.heldWindow(socket);
     const first = (sequence - socket.recvNext) >>> 0;
     if (length === 0) return window === 0 ? first === 0 : first < window;
     if (window === 0) return false;
@@ -1821,7 +1870,7 @@ export class TcpStack {
   private processText(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
     const state = socket.state;
     if (state !== 'established' && state !== 'fin-wait-1' && state !== 'fin-wait-2') return;
-    const window = socket.windowSize;
+    const window = this.heldWindow(socket);
     const skip = seqLt(seg.sequence, socket.recvNext) ? (socket.recvNext - seg.sequence) >>> 0 : 0;
     const textStart = (seg.sequence + skip) >>> 0;
     const room = (socket.recvNext + window - textStart) >>> 0;
@@ -2188,12 +2237,14 @@ export class TcpStack {
     const stillUrgent = socket.sndUp !== null && seqLt(sequence, socket.sndUp);
     const urgent = stillUrgent ? (socket.sndUp! - sequence) >>> 0 : 0;
     if (stillUrgent) flags.urg = true;
+    const window = this.encodeWindowField(socket, flags);
+    if (flags.ack && !flags.rst) socket.rcvEdge = (ackNum + this.decodedOwnWindow(socket, flags, window)) >>> 0;
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: socket.localPort, destinationPort: socket.remotePort,
       sequence, acknowledgement: flags.ack ? ackNum : 0,
       dataOffset: optionsDataOffset(options), flags,
-      window: this.encodeWindowField(socket, flags), checksum: 0,
+      window, checksum: 0,
       urgentPointer: urgent, options, payload,
     };
     const source = sourceAddressOf(socket, egress.srcIp);
@@ -2207,8 +2258,40 @@ export class TcpStack {
   // RFC 7323 §2.2 — only scale once both sides negotiated it; SYN/SYN-ACK
   // window fields are never scaled.
   private encodeWindowField(socket: TcpSocket, flags: TcpFlags): number {
-    if (flags.syn || socket.peerWindowScale === null) return socket.windowSize;
-    return Math.min(0xffff, socket.windowSize >>> socket.windowScale);
+    if (flags.syn) return Math.min(0xffff, socket.windowSize);
+    const offered = this.offeredWindow(socket);
+    if (socket.peerWindowScale === null) return Math.min(0xffff, offered);
+    return Math.min(0xffff, offered >>> socket.windowScale);
+  }
+
+  private decodedOwnWindow(socket: TcpSocket, flags: TcpFlags, field: number): number {
+    if (flags.syn || socket.peerWindowScale === null) return field;
+    return (field << socket.windowScale) >>> 0;
+  }
+
+  private heldWindow(socket: TcpSocket): number {
+    if (socket.rcvEdge === null) return socket.windowSize;
+    const distance = (socket.rcvEdge - socket.recvNext) >>> 0;
+    return distance > 0x7fffffff ? 0 : distance;
+  }
+
+  private windowUpdateThreshold(socket: TcpSocket): number {
+    return Math.min(Math.floor(socket.windowSize / 2), this.sendMss(socket));
+  }
+
+  private offeredWindow(socket: TcpSocket): number {
+    const free = Math.max(0, socket.windowSize - socket.unreadBytes);
+    if (socket.rcvEdge === null || socket.unreadBytes === 0) return free;
+    const proposedEdge = (socket.recvNext + free) >>> 0;
+    if (!seqLt(socket.rcvEdge, proposedEdge)) return free;
+    const growth = (proposedEdge - socket.rcvEdge) >>> 0;
+    return growth >= this.windowUpdateThreshold(socket) ? free : this.heldWindow(socket);
+  }
+
+  _receiveSpaceFreed(socket: TcpSocket): void {
+    if (socket.closed || socket.rcvEdge === null) return;
+    if (socket.state !== 'established' && socket.state !== 'fin-wait-1' && socket.state !== 'fin-wait-2') return;
+    if (this.offeredWindow(socket) > this.heldWindow(socket)) this.sendAckNow(socket);
   }
 
   private decodeWindowField(socket: TcpSocket, seg: TcpSegment): number {

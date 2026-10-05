@@ -176,25 +176,25 @@ export interface OpenConnection {
 }
 
 export function openPassive(
-  peer: ScriptedPeer, synOptions: TcpOption[] = [], peerIsn = PEER_ISN,
+  peer: ScriptedPeer, synOptions: TcpOption[] = [], peerIsn = PEER_ISN, window = 65535,
 ): OpenConnection {
   const accepted: TcpSocket[] = [];
   peer.dut.getTcpStack().listen(peer.ports.dut, { onAccept: (socket) => { accepted.push(socket); } });
-  peer.send({ flags: 'S', sequence: peerIsn, options: synOptions });
+  peer.send({ flags: 'S', sequence: peerIsn, options: synOptions, window });
   const synAck = peer.last()!;
-  peer.send({ flags: 'A', sequence: peerIsn + 1, acknowledgement: synAck.sequence + 1 });
+  peer.send({ flags: 'A', sequence: peerIsn + 1, acknowledgement: synAck.sequence + 1, window });
   peer.clear();
   return { socket: accepted[0], dutIsn: synAck.sequence, peerIsn };
 }
 
 export function openActive(
-  peer: ScriptedPeer, synAckOptions: TcpOption[] = [], peerIsn = PEER_ISN,
+  peer: ScriptedPeer, synAckOptions: TcpOption[] = [], peerIsn = PEER_ISN, window = 65535,
 ): OpenConnection {
   const socket = peer.dut.getTcpStack().connect(PEER_ADDRESS, peer.ports.peer)!;
   const syn = peer.last()!;
   peer.ports.dut = syn.sourcePort;
   peer.send({
-    flags: 'SA', sequence: peerIsn, acknowledgement: syn.sequence + 1, options: synAckOptions,
+    flags: 'SA', sequence: peerIsn, acknowledgement: syn.sequence + 1, options: synAckOptions, window,
   });
   peer.clear();
   return { socket, dutIsn: syn.sequence, peerIsn };
