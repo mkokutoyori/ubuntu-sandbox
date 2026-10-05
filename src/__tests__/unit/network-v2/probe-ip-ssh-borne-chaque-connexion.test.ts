@@ -45,6 +45,7 @@
  *    peut s'authentifier » passent donc a vide avant ; ils gardent
  *    l'uniformite une fois la borne par connexion en place.
  */
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { userauthOverTransport, type UserauthReplyKind } from './sshUserauthOverTransport';
 import type { TcpStream } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -107,6 +108,7 @@ async function lab(kind: 'routeur' | 'commutateur', ...extra: string[]): Promise
   }
   await host.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
   await settle();
+  allowLegacyIosSsh(host);
   return { device, host, ip: '10.0.0.1' };
 }
 

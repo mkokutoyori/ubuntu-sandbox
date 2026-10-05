@@ -164,8 +164,18 @@ function encryptExpanded(
 
 /** Decrypt a single 16-byte block under `key`. */
 export function aesDecryptBlock(key: Uint8Array, block: Uint8Array): Uint8Array {
+  return createAesDecryptor(key)(block);
+}
+
+export function createAesDecryptor(key: Uint8Array): (block: Uint8Array) => Uint8Array {
+  const expanded = expandKey(key);
+  return (block) => decryptExpanded(expanded, block);
+}
+
+function decryptExpanded(
+  { roundKeys: w, rounds: Nr }: ReturnType<typeof expandKey>, block: Uint8Array,
+): Uint8Array {
   if (block.length !== BLOCK_SIZE) throw new Error(`AES: block must be 16 bytes (got ${block.length})`);
-  const { roundKeys: w, rounds: Nr } = expandKey(key);
   const s = Uint8Array.from(block);
   addRoundKey(s, w, Nr);
   for (let round = Nr - 1; round >= 1; round--) {

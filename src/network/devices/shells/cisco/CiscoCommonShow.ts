@@ -22,6 +22,7 @@ import {
 } from './CiscoLineViews';
 import { nomLoopfilterIos } from '@/network/ntp/discipline';
 import { C2900_SOFTWARE, C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
+import type { IosSshAlgorithms } from '../../router/security/CiscoSshAlgorithms';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import { lldpCapabilityLetters, type LldpAutoNegotiation } from '@/network/lldp/types';
@@ -1212,10 +1213,9 @@ function sessionSurLigne(dev: ShowStateDevice, l: LigneTty): SessionSurLigne | n
  * ecrite que si une paire existe — un routeur sans
  * `crypto key generate rsa` n'a pas de cle a decrire.
  */
-export function showIpSsh(ssh?: {
+export function showIpSsh(ssh: {
   version: number; timeoutSec: number; authRetries: number; dhMinBits: number;
-  macAlgorithms?: string[]; encryptionAlgorithms?: string[]; kexAlgorithms?: string[];
-}, hostkeyModulus?: number | null): string {
+}, algorithms: IosSshAlgorithms, hostkeyModulus?: number | null): string {
   // `version 1` est le defaut d'IOS et signifie « les deux versions
   // acceptees », ce qu'IOS ecrit `1.99` et non `1.0`. Ce n'est pas une
   // coquetterie : c'est ainsi qu'un operateur voit d'un coup d'oeil que
@@ -1228,17 +1228,13 @@ export function showIpSsh(ssh?: {
     `Minimum expected Diffie Hellman key size : ${ssh?.dhMinBits ?? 1024} bits`,
   ];
   if (hostkeyModulus) lines.push(`Hostkey RSA key size is ${hostkeyModulus} bits`);
-  // IOS n'ecrit ces lignes que si l'operateur a restreint la liste : une
-  // liste vide veut dire « les algorithmes par defaut », et la remplir
-  // d'une liste inventee decrirait une negociation qui n'a pas lieu.
-  const algos: Array<[string, string[] | undefined]> = [
-    ['MAC Algorithms', ssh?.macAlgorithms],
-    ['Encryption Algorithms', ssh?.encryptionAlgorithms],
-    ['KEX Algorithms', ssh?.kexAlgorithms],
+  const algos: Array<[string, readonly string[]]> = [
+    ['Hostkey Algorithms', algorithms.hostkey],
+    ['Encryption Algorithms', algorithms.encryption],
+    ['MAC Algorithms', algorithms.mac],
+    ['KEX Algorithms', algorithms.kex],
   ];
-  for (const [nom, liste] of algos) {
-    if (liste && liste.length > 0) lines.push(`${nom}:${liste.join(',')}`);
-  }
+  for (const [nom, liste] of algos) lines.push(`${nom}:${liste.join(',')}`);
   return lines.join('\n');
 }
 
@@ -1261,50 +1257,17 @@ export function showIpSsh(ssh?: {
  * pile TCP (limite deja ecrite pour le serveur HTTP) : il repond donc
  * « aucune connexion », ce qui est la verite et non un repli.
  */
-/**
- * Le couple chiffrement/HMAC que le serveur retient — la PREFERENCE DU
- * SERVEUR, c'est-a-dire le premier de la liste qu'il accepte, ce qu'un
- * vrai serveur choisit quand le client offre tout.
- *
- * Une seule regle, parce que deux vues la posent : `show ssh` et le
- * message `%SSH-5-SSH2_SESSION`. Les laisser choisir chacune de leur
- * cote ferait annoncer au journal un chiffre que la table contredit.
- */
-export function algorithmesRetenus(algos?: {
-  encryptionAlgorithms?: string[]; macAlgorithms?: string[];
-}): { chiffrement: string; hmac: string } {
-  return {
-    chiffrement: algos?.encryptionAlgorithms?.[0] ?? 'aes256-ctr',
-    hmac: algos?.macAlgorithms?.[0] ?? 'hmac-sha2-256',
-  };
-}
-
 export function showSshSessions(registre?: {
-  list: () => readonly { lineIndex: number; user: string }[];
-} | null, algos?: {
-  encryptionAlgorithms?: string[]; macAlgorithms?: string[];
-}): string {
+  list: () => readonly { lineIndex: number; user: string; cipher: string; hmac: string }[];
+} | null): string {
   const actives = registre?.list() ?? [];
   const finV1 = '%No SSHv1 server connections running.';
   if (actives.length === 0) {
     return ['%No SSHv2 server connections running.', finV1].join('\n');
   }
-  // Le chiffrement et le HMAC etaient ECRITS EN DUR : une machine sur
-  // laquelle on venait de taper
-  // `ip ssh server algorithm encryption aes128-ctr` annoncait quand meme
-  // `aes256-ctr`, contredisant sa propre configuration au meme instant.
-  //
-  // Ce qui est rendu est la PREFERENCE DU SERVEUR — le premier de la
-  // liste qu'il accepte — ce qu'un vrai serveur retient lorsque le
-  // client offre tout. La limite reste entiere et n'est pas maquillee :
-  // ce simulateur ne NEGOCIE pas ces algorithmes (le client n'offre
-  // rien), donc il n'y a pas d'intersection a calculer ; ce qui change
-  // est que la valeur affichee vient desormais de la machine et non
-  // d'une constante.
-  const { chiffrement, hmac } = algorithmesRetenus(algos);
   const entete = 'Connection Version Mode Encryption           Hmac                  State                 Username';
-  const rangs = actives.map((s) =>
-    `${String(s.lineIndex).padEnd(11)}2.0     IN   ${chiffrement.padEnd(21)}${hmac.padEnd(22)}Session started       ${s.user}`);
+  const rangs = actives.flatMap((s) => (['IN', 'OUT'] as const).map((mode) =>
+    `${String(s.lineIndex).padEnd(11)}2.0     ${mode.padEnd(5)}${s.cipher.padEnd(21)}${s.hmac.padEnd(22)}Session started       ${s.user}`));
   return [entete, ...rangs, finV1].join('\n');
 }
 

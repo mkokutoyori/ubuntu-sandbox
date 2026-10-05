@@ -34,14 +34,16 @@ import { SftpWireSession } from '../sftp/SftpWireSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
-import { userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
+import { signatureAlgorithmsFor, userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
 import {
   keygenBlobDigest, keygenKeyFacts, keygenPrivateKey, sshPublicKeyFromBlob,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
-import { SshTransport, legacyFrameStream, type SshServerHostKey } from '../transport/SshTransport';
+import {
+  SshTransport, legacyFrameStream, type SshServerHostKey, type SshTransportConfig,
+} from '../transport/SshTransport';
 import type { SshHostKey } from '../SshHostKey';
-import type { ILinuxShell, ISshServerContext } from './ISshServerContext';
+import type { ILinuxShell, ISshServerContext, SshTransportPolicy } from './ISshServerContext';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import type { SshInteractiveShell } from './SshInteractiveShell';
 import {
@@ -154,6 +156,7 @@ export class SshServerHandler {
       role: 'server',
       identification: this.ctx.serverIdentification?.() ?? SSH_SERVER_IDENTIFICATION,
       hostKeys: serverHostKeys(this.ctx.hostKey),
+      ...transportPolicyConfig(this.ctx.transportPolicy?.()),
     });
     const conn = legacyFrameStream(transport, rawConn);
     const channels = new Map<number, OpenChannelInfo>();
@@ -171,7 +174,10 @@ export class SshServerHandler {
     let authRequests = 0;
     let sessionId: Uint8Array | null = null;
     void transport.established.then((outcome) => {
-      if ('sessionId' in outcome) sessionId = outcome.sessionId;
+      if ('sessionId' in outcome) {
+        sessionId = outcome.sessionId;
+        this.ctx.transportEstablished?.(clientIp, outcome.algorithms);
+      }
     });
     let pendingInfoResponse: ((responses: readonly string[] | null) => void) | null = null;
     const askKeyboardInteractive = (challenge: KeyboardInteractiveChallenge): Promise<readonly string[] | null> =>
@@ -1056,6 +1062,8 @@ function signatureProvesKey(
   if (sessionId === null) return false;
   try {
     const blob = base64ToBytes(publicKey);
+    const key = sshPublicKeyFromBlob(blob);
+    if (key === null || !signatureAlgorithmsFor(key).includes(algorithm)) return false;
     return verifyUserauthSignature(
       blob, algorithm, base64ToBytes(signature), userauthSignedData(sessionId, user, algorithm, blob));
   } catch {
@@ -1086,6 +1094,14 @@ function userauthPayload(request: UserauthRequest): Record<string, unknown> {
     if (request.signature) payload.signature = bytesToBase64(request.signature);
   }
   return payload;
+}
+
+function transportPolicyConfig(policy: SshTransportPolicy | undefined): Partial<SshTransportConfig> {
+  return {
+    ...(policy?.algorithms === undefined ? {} : { algorithms: policy.algorithms }),
+    ...(policy?.groupExchangeMinBits === undefined ? {} : { groupExchangeMinBits: policy.groupExchangeMinBits }),
+    ...(policy?.extInfo === undefined ? {} : { extInfo: policy.extInfo }),
+  };
 }
 
 function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {

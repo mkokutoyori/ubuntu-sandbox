@@ -12,6 +12,7 @@
  * ('ssh ...')` which already covers the cross-vendor matrix.
  */
 
+import { IOS_LEGACY_SSH_PREFERENCES } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -88,7 +89,7 @@ async function openSshTo(client: LinuxPC, host: string, user: string, password: 
     interactionHandler: new SilentSshInteractionHandler(password),
   });
   const builder = SshConnectOptionsBuilder.create()
-    .host(host).user(user).port(22).strictHostKeyChecking('accept-new');
+    .host(host).user(user).port(22).strictHostKeyChecking('accept-new').algorithms(IOS_LEGACY_SSH_PREFERENCES);
   const result = await session.connect(builder.build());
   if (!isOk(result)) throw new Error('connect failed: ' + JSON.stringify(result));
   return session;
@@ -131,7 +132,7 @@ describe('SSH over real TCP — Linux client → router daemon', () => {
       interactionHandler: new SilentSshInteractionHandler('WRONG'),
     });
     const builder = SshConnectOptionsBuilder.create()
-      .host('10.0.0.6').user('alice').port(22).strictHostKeyChecking('accept-new');
+      .host('10.0.0.6').user('alice').port(22).strictHostKeyChecking('accept-new').algorithms(IOS_LEGACY_SSH_PREFERENCES);
     const result = await session.connect(builder.build());
     expect(isOk(result)).toBe(false);
   });

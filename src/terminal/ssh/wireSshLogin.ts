@@ -21,6 +21,8 @@ import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpConnector } from '@/network/tcp/types';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
+import { sshClientProfileOf } from '@/network/protocols/ssh/SshClientProfile';
+import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
@@ -100,6 +102,7 @@ export interface WireSshLoginRequest {
   readonly strict?: 'yes' | 'no' | 'accept-new';
   readonly identityFiles?: readonly string[];
   readonly credentialless?: boolean;
+  readonly algorithms?: SshAlgorithmPreferences;
 }
 
 export type WireSshLoginOutcome =
@@ -196,6 +199,7 @@ export async function openWireSshConnection(
     return { kind: 'unreachable', message: unreachableMessage(req) };
   }
 
+  const profile = sshClientProfileOf(req.device);
   const session = new SshSession({
     tcpConnector,
     vfs: sshLocalFsFor(req.device) as never,
@@ -204,7 +208,8 @@ export async function openWireSshConnection(
     localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     credentialless: req.credentialless,
-    clientIdentification: opensshIdentificationFor(req.device.getOSType()),
+    clientIdentification: profile?.identification ?? opensshIdentificationFor(req.device.getOSType()),
+    ...(profile ? { clientExtInfo: profile.extInfo } : {}),
     interactionHandler: req.credentialless
       ? new SilentSshInteractionHandler('')
       : new TerminalSshInteractionHandler(req.io),
@@ -216,6 +221,8 @@ export async function openWireSshConnection(
     .port(req.port)
     .strictHostKeyChecking(req.strict ?? 'accept-new');
   if (req.password !== undefined) builder.password(req.password);
+  const algorithms = req.algorithms ?? profile?.algorithms;
+  if (algorithms) builder.algorithms(algorithms);
   for (const id of req.identityFiles ?? []) builder.addIdentityFile(id);
 
   let result: Awaited<ReturnType<typeof session.connect>> | null = null;

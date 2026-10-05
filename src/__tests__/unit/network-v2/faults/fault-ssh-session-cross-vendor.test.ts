@@ -21,6 +21,7 @@
  * survivable, and it is the same reason on every one of these platforms.
  */
 
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -103,6 +104,7 @@ async function connectedTo(vendor: Vendor): Promise<Lab> {
   }
   const cableToTarget = sw.getPorts()[1].getCable()!;
 
+  allowLegacyIosSsh(cli);
   const t = new LinuxTerminalSession('t', cli);
   await t.init();
   t.setInput(`ssh ${user}@10.0.0.2`);

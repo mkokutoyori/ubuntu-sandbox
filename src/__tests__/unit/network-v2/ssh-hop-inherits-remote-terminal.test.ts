@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -52,6 +53,8 @@ async function lab(): Promise<Lab> {
     'line vty 0 4', 'login local', 'transport input ssh', 'end',
   ]) await cisco.executeCommand(cmd);
 
+  for (const d of [pc1, pc2]) allowLegacyIosSsh(d);
+  allowLegacyIosSsh(win, 'User', 'Administrator');
   const term = new LinuxTerminalSession('t1', pc1);
   await term.init?.();
   return { term };

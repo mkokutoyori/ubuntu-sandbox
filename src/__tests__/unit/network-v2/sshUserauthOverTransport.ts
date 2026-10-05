@@ -1,4 +1,5 @@
 import type { TcpStream } from '@/network/tcp/types';
+import { resolveAlgorithmDirectives } from '@/network/protocols/ssh/transport/SshAlgorithms';
 import { SshTransport } from '@/network/protocols/ssh/transport/SshTransport';
 import { encodeUserauthRequest } from '@/network/protocols/ssh/auth/UserauthMessages';
 import {
@@ -14,7 +15,14 @@ export interface UserauthChannel {
 }
 
 export async function userauthOverTransport(socket: TcpStream): Promise<UserauthChannel | null> {
-  const transport = new SshTransport(socket, { role: 'client', identification: 'SSH-2.0-probe' });
+  const transport = new SshTransport(socket, {
+    role: 'client', identification: 'SSH-2.0-probe',
+    algorithms: resolveAlgorithmDirectives({
+      kex: '+diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1',
+      hostKey: '+ssh-rsa',
+      ciphers: '+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc',
+    }),
+  });
   const replies: UserauthReplyKind[] = [];
   let closed = false;
   transport.onClose(() => {

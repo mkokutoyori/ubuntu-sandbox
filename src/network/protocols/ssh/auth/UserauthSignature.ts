@@ -16,9 +16,14 @@ export function userauthSignatureAlgorithm(key: SshPublicKey): string {
 const RSA_SIGNATURE_HASHES: Readonly<Record<string, RsaSignatureHash>> = {
   'rsa-sha2-512': 'sha512',
   'rsa-sha2-256': 'sha256',
+  'ssh-rsa': 'sha1',
 };
 
 export function signatureAlgorithmsFor(key: SshPublicKey): readonly string[] {
+  return key.algorithm === 'ssh-rsa' ? ['rsa-sha2-512', 'rsa-sha2-256'] : [key.algorithm];
+}
+
+export function hostKeySignatureAlgorithmsFor(key: SshPublicKey): readonly string[] {
   return key.algorithm === 'ssh-rsa' ? Object.keys(RSA_SIGNATURE_HASHES) : [key.algorithm];
 }
 
@@ -79,7 +84,7 @@ export function verifyUserauthSignature(
   publicKeyBlob: Uint8Array, algorithm: string, signatureBlob: Uint8Array, data: Uint8Array,
 ): boolean {
   const key = sshPublicKeyFromBlob(publicKeyBlob);
-  if (key === null || !signatureAlgorithmsFor(key).includes(algorithm)) return false;
+  if (key === null || !hostKeySignatureAlgorithmsFor(key).includes(algorithm)) return false;
   try {
     const reader = new SshReader(signatureBlob);
     if (reader.readString() !== algorithm) return false;

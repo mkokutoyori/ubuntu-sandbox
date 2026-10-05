@@ -163,6 +163,7 @@ import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem'
 import { SshSession } from '../../protocols/ssh/session/SshSession';
 import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
 import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
+import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
 import { sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
 import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
 import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
@@ -1661,18 +1662,22 @@ export class LinuxCommandExecutor {
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
-    authentication?: SshClientAuthentication,
-  ): Promise<{ session: SshSession | null; authRefused: boolean; denial?: string; notices: string[] }> {
+    authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences,
+  ): Promise<{
+    session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
+  }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
     const outcome = await connectWireSsh(
-      this.wireSshClient(), { host, user, port, password, identities, strict, authentication },
+      this.wireSshClient(), { host, user, port, password, identities, strict, authentication, algorithms },
       ((h, p) => connector(h, p)) as unknown as TcpConnector);
     const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
     const denial = authRefused ? outcome.warnings.at(-1) : undefined;
+    const keyExchangeFailure = outcome.failure?.kind === 'KEX_FAILED' ? outcome.failure.message : undefined;
     return {
       session: outcome.session,
       authRefused,
+      ...(keyExchangeFailure !== undefined ? { keyExchangeFailure } : {}),
       ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
     };
@@ -1738,9 +1743,13 @@ export class LinuxCommandExecutor {
       : await wireReachOutcomeRetransmitting(this.localDevice, target.host, target.port);
     const wire = reach === 'open' && target !== null
       ? await this.connectWireSsh(
-        target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication)
+        target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication,
+        target.algorithms)
       : { session: null, authRefused: false, notices: [] as string[] };
     const session = wire.session;
+    if (!session && 'keyExchangeFailure' in wire && wire.keyExchangeFailure !== undefined) {
+      return { output: wire.keyExchangeFailure, exitCode: 255 };
+    }
     if (!session) {
       return this.finishSshClientResult(
         runSshClient({

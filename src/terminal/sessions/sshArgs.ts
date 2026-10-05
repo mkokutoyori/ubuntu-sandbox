@@ -15,11 +15,13 @@
  */
 
 import {
+  sshClientAlgorithms,
   sshClientAuthentication,
   type SshClientAuthentication,
   type StrictHostKeyChecking,
 } from '@/network/protocols/ssh/SshConnectOptions';
 import { everySshOption, firstSshOption, sshFlag } from '@/network/protocols/ssh/SshClientOptions';
+import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 
 const STRICT_HOST_KEY_MODES: Readonly<Record<string, StrictHostKeyChecking>> = {
   yes: 'yes', true: 'yes', ask: 'yes', no: 'no', false: 'no', off: 'no', 'accept-new': 'accept-new',
@@ -87,6 +89,7 @@ export interface ParsedSshArgs {
    */
   readonly requestTty?: 'yes' | 'no' | 'force';
   readonly authentication: SshClientAuthentication;
+  readonly algorithms: SshAlgorithmPreferences;
 }
 
 export interface ProxyHop {
@@ -277,5 +280,6 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     forwardAgent: forwardAgentRequested,
     requestTty: requestTty ?? ttyFromOption,
     authentication: sshClientAuthentication(optionValues),
+    algorithms: sshClientAlgorithms(optionValues),
   };
 }

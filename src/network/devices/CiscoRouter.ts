@@ -8,7 +8,11 @@
  */
 
 import { ciscoSshIdentification } from '@/network/protocols/ssh/serverIdentification';
-import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './shells/cisco/CiscoPlatform';
+import { C2900_SOFTWARE, ciscoSoftwareDescriptor, type CiscoSoftwareIdentity } from './shells/cisco/CiscoPlatform';
+import { iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
+import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
+import type { SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
+import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
@@ -68,7 +72,7 @@ import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import {
-  algorithmesRetenus, chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
+  chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
   formatIosUptime,
 } from './shells/cisco/CiscoCommonShow';
 
@@ -484,8 +488,18 @@ export class CiscoRouter extends Router {
     return ciscoSshIdentification(getSecurityConfig(this).ssh.version);
   }
 
-  protected override sshNegotiatedAlgorithms(): { chiffrement: string; hmac: string } {
-    return algorithmesRetenus(getSecurityConfig(this).ssh);
+  iosSoftware(): CiscoSoftwareIdentity { return C2900_SOFTWARE; }
+
+  sshClientProfile(): SshClientProfile {
+    return iosSshClientProfile(getSecurityConfig(this).ssh, C2900_SOFTWARE);
+  }
+
+  protected override sshTransportPolicy(): SshTransportPolicy {
+    return iosSshTransportPolicy(getSecurityConfig(this).ssh, C2900_SOFTWARE);
+  }
+
+  protected override sshHostKeySpec(): { algorithm: SshKeyAlgorithm; bits?: number } {
+    return { algorithm: 'ssh-rsa', bits: getSecurityConfig(this).cryptoKeys[0]?.modulus };
   }
 
   protected createShell(): IRouterShell {

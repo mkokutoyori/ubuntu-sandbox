@@ -30,6 +30,7 @@
  *   - le ping vers le SVI repond toujours : NON-REGRESSION.
  */
 
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -64,6 +65,7 @@ async function buildLan(withKeys: boolean): Promise<{ pc: LinuxPC; sw: CiscoSwit
   lines.push('end');
   for (const l of lines) await sw.executeCommand(l);
   await settle();
+  allowLegacyIosSsh(pc);
   return { pc, sw };
 }
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -131,11 +132,13 @@ async function labFor(clientKind: Vendor, peerKind: Vendor): Promise<Lab> {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.getPorts()[0].configureIP(new IPAddress('10.0.70.1'), MASK);
     clientCable.connect(pc.getPorts()[0], sw.getPorts()[1]);
+    allowLegacyIosSsh(pc);
     term = new LinuxTerminalSession('t1', pc);
   } else if (clientKind === 'windows') {
     const win = new WindowsPC('windows-pc', 'WIN1');
     win.getPorts()[0].configureIP(new IPAddress('10.0.70.2'), MASK);
     clientCable.connect(win.getPorts()[0], sw.getPorts()[2]);
+    allowLegacyIosSsh(win);
     term = new WindowsTerminalSession('t1', win);
   } else {
     const cisco = new CiscoRouter('router-cisco', 'R1');

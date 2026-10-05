@@ -18,6 +18,10 @@ export interface SshHostEntry {
   readonly identityFile?: string;
   readonly strictHostKeyChecking?: StrictHostKeyChecking;
   readonly hashKnownHosts?: boolean;
+  readonly kexAlgorithms?: string;
+  readonly hostKeyAlgorithms?: string;
+  readonly ciphers?: string;
+  readonly macs?: string;
 }
 
 export class SshConfig {
@@ -85,6 +89,10 @@ function buildEntry(host: string, raw: Record<string, string>): SshHostEntry {
       | StrictHostKeyChecking
       | undefined,
     hashKnownHosts: parseYesNo(raw.hashknownhosts),
+    kexAlgorithms: raw.kexalgorithms,
+    hostKeyAlgorithms: raw.hostkeyalgorithms,
+    ciphers: raw.ciphers,
+    macs: raw.macs,
   });
 }
 

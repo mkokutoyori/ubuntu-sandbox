@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -47,6 +48,7 @@ async function ciscoLan(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
   new Cable('c2').connect(cisco.getPorts()[0], sw.getPorts()[1]);
   pc.getPorts()[0].configureIP(new IPAddress(PC_IP), new SubnetMask(MASK));
   await configureCiscoSshServer(cisco, CISCO_IP, MASK);
+  allowLegacyIosSsh(pc, 'root');
   return { pc, cisco };
 }
 

@@ -42,7 +42,9 @@ import {
   type ILinuxShell,
   type ISshServerContext,
   type SshServerConfig,
+  type SshTransportPolicy,
 } from './ISshServerContext';
+import type { NegotiatedAlgorithms } from '../transport/SshKexInit';
 import type { ISshServerEventBus } from './SshServerEvent';
 import type { SshExecTarget } from './SshExecTarget';
 
@@ -72,6 +74,8 @@ export interface RouterSshServerDeps {
   /** Optional banner text printed before authentication. */
   banner?(): string | null;
   identification?(): string;
+  transportPolicy?(): SshTransportPolicy;
+  transportEstablished?(clientIp: string, algorithms: NegotiatedAlgorithms): void;
   /** Optional motd text printed after authentication. */
   motd?(): string;
   /** Optional record-login callback when a session is established. */
@@ -169,6 +173,14 @@ export class RouterSshServerContext implements ISshServerContext {
 
   serverIdentification(): string {
     return this.deps.identification?.() ?? SSH_SERVER_IDENTIFICATION;
+  }
+
+  transportPolicy(): SshTransportPolicy {
+    return this.deps.transportPolicy?.() ?? {};
+  }
+
+  transportEstablished(clientIp: string, algorithms: NegotiatedAlgorithms): void {
+    this.deps.transportEstablished?.(clientIp, algorithms);
   }
 
   getBanner(): string | null {

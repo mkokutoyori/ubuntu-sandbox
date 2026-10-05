@@ -63,7 +63,11 @@ import {
   idle,
   verifyingHostKey,
 } from './SshSessionState';
-import { SshTransport, legacyFrameStream, type SshTransportFailure } from '../transport/SshTransport';
+import {
+  SshTransport, legacyFrameStream, type SshAlgorithmPreferences, type SshTransportFailure,
+} from '../transport/SshTransport';
+import { SshConfig } from '../SshConfig';
+import { resolveAlgorithmDirectives } from '../transport/SshAlgorithms';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 
 export interface SshSessionDeps {
@@ -76,6 +80,7 @@ export interface SshSessionDeps {
   readonly credentialless?: boolean;
   readonly interactionHandler: ISshInteractionHandler;
   readonly clientIdentification?: string;
+  readonly clientExtInfo?: boolean;
 }
 
 
@@ -98,6 +103,17 @@ export class SshSession implements ISshSession {
       deps.localUid,
       deps.localGid,
     );
+  }
+
+  private clientAlgorithms(opts: SshConnectOptions): { algorithms?: SshAlgorithmPreferences } {
+    const configPath = this.deps.knownHostsPath.replace(/known_hosts$/, 'config');
+    const raw = this.deps.vfs.readFile(configPath);
+    const entry = raw === null ? null : SshConfig.parse(raw).resolve(opts.host);
+    const configured = entry === null ? {} : resolveAlgorithmDirectives({
+      kex: entry.kexAlgorithms, hostKey: entry.hostKeyAlgorithms, ciphers: entry.ciphers, macs: entry.macs,
+    });
+    const merged = { ...configured, ...opts.algorithms };
+    return Object.keys(merged).length === 0 ? {} : { algorithms: merged };
   }
 
   get state(): SshSessionState {
@@ -132,6 +148,8 @@ export class SshSession implements ISshSession {
     const transport = new SshTransport(dialed, {
       role: 'client',
       identification: this.deps.clientIdentification ?? SSH_SERVER_IDENTIFICATION,
+      ...this.clientAlgorithms(opts),
+      ...(this.deps.clientExtInfo === undefined ? {} : { extInfo: this.deps.clientExtInfo }),
     });
     const established = await transport.established;
     if ('kind' in established) {

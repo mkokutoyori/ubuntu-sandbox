@@ -129,6 +129,7 @@ import {
   type ProxyHop,
   type RemoteForward,
 } from './sshArgs';
+import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import type { TcpConnector } from '@/network/tcp/types';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
@@ -2800,6 +2801,7 @@ export class LinuxTerminalSession extends TerminalSession {
       forwardAgent?: boolean;
       requestTty?: 'yes' | 'no' | 'force';
       authentication?: SshClientAuthentication;
+      algorithms?: SshAlgorithmPreferences;
     },
   ): Promise<void> {
     const dev = this.device as unknown as {
@@ -2863,6 +2865,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // Analysis doc §1.6: forward HashKnownHosts (CLI -o or ~/.ssh/config).
     if (meta.hashKnownHosts) builder.hashKnownHosts(true);
     if (meta.authentication) builder.authentication(meta.authentication);
+    if (meta.algorithms) builder.algorithms(meta.algorithms);
     for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) {
       builder.addIdentityFile(id);
     }
@@ -3163,6 +3166,7 @@ export class LinuxTerminalSession extends TerminalSession {
       forwardAgent: parsed.forwardAgent,
       requestTty: parsed.requestTty,
       authentication: parsed.authentication,
+      algorithms: parsed.algorithms,
     };
   }
 

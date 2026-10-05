@@ -33,6 +33,7 @@
  * the configuration. The two sections that MUTATE it build their own.
  */
 
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, expect, beforeEach, beforeAll, test } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -188,6 +189,7 @@ async function buildPrivLan(): Promise<PrivLan> {
   await configureCiscoRouter(ciscoR1);
   await configureCiscoSwitch(ciscoS1);
   await configureHuawei(hwR1);
+  for (const d of [linux1, lxsrv1, win1]) allowLegacyIosSsh(d, 'root');
 
   return { linux1, lxsrv1, win1, ciscoR1, ciscoS1, hwR1, sw, all };
 }
