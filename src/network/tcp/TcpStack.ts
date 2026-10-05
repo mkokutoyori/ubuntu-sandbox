@@ -140,7 +140,9 @@ import {
   TCP_RTO_AFTER_SYN_RETRANSMIT_MS,
 } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
-import { encodeOptions, decodeOptions, optionsDataOffset, type TcpOptionsSet } from './TcpOptionsCodec';
+import {
+  encodeOptions, decodeOptions, interpretOptions, optionsDataOffset, TCP_MAX_WINDOW_SCALE, type TcpOptionsSet,
+} from './TcpOptionsCodec';
 import { ReassemblyQueue } from './ReassemblyQueue';
 import type { TcpDropReason } from './events';
 import { AckThrottle } from './AckThrottle';
@@ -1133,9 +1135,10 @@ export class TcpStack {
       socket.sendNext = this.initialSequence(socket);
       socket.sendUnacked = socket.sendNext;
       // PRD-TCP.md P6 — negotiate against whatever the peer's SYN offered.
-      const peerOpts = decodeOptions(seg.options);
+      const peerOpts = interpretOptions(seg.options);
       socket.mss = Math.min(announcedMss, peerOpts.mss ?? defaultSendMss(socket.family));
       socket.peerWindowScale = peerOpts.windowScale ?? null;
+      this.reportWindowScaleClamp(socket, seg);
       socket.sackEnabled = peerOpts.sackPermitted === true;
       if (peerOpts.timestamp) {
         socket.timestampsEnabled = true;
@@ -1560,7 +1563,7 @@ export class TcpStack {
       this.dropped(socket.remoteIp, socket.remotePort, 'bad-state');
       return;
     }
-    const options = decodeOptions(seg.options);
+    const options = interpretOptions(seg.options);
     socket.recvNext = (seg.sequence + 1) >>> 0;
     socket.lastAckSent = socket.recvNext;
     socket.peerWindow = seg.window;
@@ -1569,6 +1572,7 @@ export class TcpStack {
     socket.sendWl2 = seg.acknowledgement;
     socket.mss = Math.min(socket.mss, options.mss ?? defaultSendMss(socket.family));
     socket.peerWindowScale = options.windowScale ?? null;
+    this.reportWindowScaleClamp(socket, seg);
     socket.sackEnabled = options.sackPermitted === true;
     socket.timestampsEnabled = options.timestamp !== undefined;
     if (options.timestamp) {
@@ -1597,8 +1601,17 @@ export class TcpStack {
     }
   }
 
+  private reportWindowScaleClamp(socket: TcpSocket, seg: TcpSegment): void {
+    const offered = decodeOptions(seg.options).windowScale;
+    if (offered === undefined || offered <= TCP_MAX_WINDOW_SCALE) return;
+    Logger.warn(
+      this.host.id, 'tcp:window-scale',
+      `${socket.remoteIp}:${socket.remotePort} offered shift.cnt ${offered}, using ${TCP_MAX_WINDOW_SCALE}`,
+    );
+  }
+
   private arriveSynchronized(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
-    const options = decodeOptions(seg.options);
+    const options = interpretOptions(seg.options);
     const length = payloadSize + (seg.flags.syn ? 1 : 0) + (seg.flags.fin ? 1 : 0);
 
     if (this.failsPaws(socket, seg, options)) {
