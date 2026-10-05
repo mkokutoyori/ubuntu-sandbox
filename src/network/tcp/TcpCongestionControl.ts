@@ -12,9 +12,10 @@
  * other PRD in this repo's "real protocol, not bit-exact" stance.
  */
 
-/** RFC 5681 §3.1 — IW = min(4×MSS, max(2×MSS, 4380 bytes)). */
 export function initialCongestionWindow(mss: number): number {
-  return Math.min(4 * mss, Math.max(2 * mss, 4380));
+  if (mss > 2190) return 2 * mss;
+  if (mss > 1095) return 3 * mss;
+  return 4 * mss;
 }
 
 export class TcpCongestionControl {
@@ -27,12 +28,24 @@ export class TcpCongestionControl {
     this.cwnd = initialCongestionWindow(mss);
   }
 
-  initialize(mss: number): void {
+  initialize(mss: number, handshakeLost = false): void {
     this.mss = mss;
-    this.cwnd = initialCongestionWindow(mss);
+    this.cwnd = handshakeLost ? mss : initialCongestionWindow(mss);
     this.ssthresh = Number.MAX_SAFE_INTEGER;
     this.dupAckCount = 0;
     this.inFastRecovery = false;
+  }
+
+  get duplicateAcks(): number { return this.dupAckCount; }
+
+  restartAfterIdle(): void {
+    this.cwnd = Math.min(this.cwnd, initialCongestionWindow(this.mss));
+  }
+
+  setSegmentSize(mss: number): void {
+    if (mss >= this.mss) return;
+    this.cwnd = Math.max(mss, Math.floor((this.cwnd * mss) / this.mss));
+    this.mss = mss;
   }
 
   get phase(): 'slow-start' | 'congestion-avoidance' | 'fast-recovery' {
