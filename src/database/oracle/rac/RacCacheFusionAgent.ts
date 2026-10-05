@@ -116,7 +116,7 @@ function isMemberInterconnectDegraded(member: RacMember): boolean {
   const port = dev?.getPorts().find((p) => p.getName() === member.interconnectIface);
   const cable = port?.getCable();
   if (!cable) return false;
-  return cable.getPacketLossRate() > 0 || cable.getArtificialDelayMs() > 0;
+  return cable.isDegraded();
 }
 
 function isClusterInterconnectDegraded(cluster: RacCluster): boolean {

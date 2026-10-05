@@ -6,8 +6,16 @@ export interface FrameLineage {
 const lineages = new WeakMap<object, FrameLineage>();
 let nextSequence = 1;
 
+export function carryLineage(original: { readonly payload?: unknown }, copy: { readonly payload?: unknown }): void {
+  lineages.set(lineageKey(copy), lineageOf(original));
+}
+
+function lineageKey(frame: { readonly payload?: unknown }): object {
+  return typeof frame.payload === 'object' && frame.payload !== null ? frame.payload : frame;
+}
+
 export function lineageOf(frame: { readonly payload?: unknown }): FrameLineage {
-  const key: object = typeof frame.payload === 'object' && frame.payload !== null ? frame.payload : frame;
+  const key = lineageKey(frame);
   let lineage = lineages.get(key);
   if (!lineage) {
     lineage = { seq: nextSequence++, at: new Date() };
