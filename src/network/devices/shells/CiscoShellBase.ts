@@ -70,6 +70,8 @@ import { toutesLesSuites } from './cisco/ciscoContinuations';
 import type { ParsedPing } from './cisco/ciscoPing';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
+import { ciscoSoftwareOf } from './cisco/CiscoPlatform';
+import { effectiveIosSshAlgorithms } from '../router/security/CiscoSshAlgorithms';
 import { terminalSpecs } from './cisco/terminalSpecs';
 import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
@@ -2077,6 +2079,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return {
       sshConfig: () => getSecurityConfig(this.d()).ssh,
       hasRsaKeys: () => getSecurityConfig(this.d()).cryptoKeys.length > 0,
+      software: () => ciscoSoftwareOf(this.d()),
     };
   }
 
@@ -5537,7 +5540,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const administration: CommandSpec[] = [
       vue(['show', 'ip', 'ssh'], 'Display SSH server status', 15, () => {
         const sec = getSecurityConfig(this.d());
-        return showIpSsh(sec.ssh,
+        return showIpSsh(sec.ssh, effectiveIosSshAlgorithms(sec.ssh, ciscoSoftwareOf(this.d())),
           sec.cryptoKeys.length > 0 ? sec.cryptoKeys[0].modulus : null);
       }),
       vue(['show', 'ip', 'ssh', 'known-hosts'], 'Display learned SSH host keys', 15,
@@ -5552,13 +5555,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         run: () => {
           const dev = this.d() as unknown as {
             getSshSessionRegistry?: () =>
-            { list: () => readonly { lineIndex: number; user: string }[] } | null;
+            { list: () => readonly { lineIndex: number; user: string; cipher: string; hmac: string }[] } | null;
           };
-          const ssh = getSecurityConfig(this.d() as object).ssh;
-          return showSshSessions(dev.getSshSessionRegistry?.() ?? null, {
-            encryptionAlgorithms: ssh.encryptionAlgorithms,
-            macAlgorithms: ssh.macAlgorithms,
-          });
+          return showSshSessions(dev.getSshSessionRegistry?.() ?? null);
         },
       },
       vue(['show', 'ip', 'http', 'server', 'status'], 'Display HTTP server status', 15,

@@ -31,6 +31,7 @@
  *      knew the account was locked/expired.
  */
 
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -268,6 +269,7 @@ describe('§4 — Cisco per-account lockout is coherent across ssh and sftp', ()
     await r1.executeCommand('transport input ssh');
     await r1.executeCommand('ip scp server enable');
     await r1.executeCommand('end');
+    allowLegacyIosSsh(client);
     return { client, r1 };
   }
 

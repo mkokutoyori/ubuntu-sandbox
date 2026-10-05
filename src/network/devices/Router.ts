@@ -88,7 +88,8 @@ import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext'
 import type { RouterSftpSource } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
 import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
-import { SshHostKey } from '../protocols/ssh/SshHostKey';
+import { SshHostKey, type SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
+import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { FtpServer } from '../ftp/FtpServer';
 import { RouterSftpFileSystem } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
@@ -196,7 +197,6 @@ import {
 } from './router/aaa/NetworkOsAccount';
 import { LoginBlocker } from './router/aaa/LoginBlocker';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
-import { algorithmesRetenus } from './shells/cisco/CiscoCommonShow';
 import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/server/CrossVendorSshHost';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
@@ -1215,13 +1215,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return src ?? null;
   }
 
-  private _sshHostKeyCache: SshHostKey | null = null;
+  private _sshHostKeyCache: { readonly tag: string; readonly key: SshHostKey } | null = null;
+
+  protected sshHostKeySpec(): { algorithm: SshKeyAlgorithm; bits?: number } {
+    return { algorithm: 'ssh-ed25519' };
+  }
+
+  protected sshTransportPolicy(): SshTransportPolicy { return {}; }
+
+  private sshHostKey(): SshHostKey {
+    const spec = this.sshHostKeySpec();
+    const tag = `${spec.algorithm}:${spec.bits ?? ''}:${this.hostname}`;
+    if (this._sshHostKeyCache?.tag !== tag) {
+      this._sshHostKeyCache = { tag, key: SshHostKey.generate(this.hostname, spec.algorithm, spec.bits) };
+    }
+    return this._sshHostKeyCache.key;
+  }
+
   private buildRouterSshServerHandler(): SshServerHandler {
     const credentials = this.getCredentialStore();
-    if (!this._sshHostKeyCache) this._sshHostKeyCache = SshHostKey.generate(this.hostname);
     const ctx = new RouterSshServerContext({
       hostname: () => this.hostname,
-      hostKey: () => this._sshHostKeyCache!,
+      hostKey: () => this.sshHostKey(),
       credentials: () => ({
         authenticate: (n, p) => this.sshPasswordLoginAdmitted(n) && credentials.authenticate(n, p),
         has: (n) => credentials.get(n) !== undefined,
@@ -1236,6 +1251,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
       identification: () => this.sshServerIdentification(),
+      transportPolicy: () => this.sshTransportPolicy(),
+      transportEstablished: (ip, algorithms) => this.getSshSessionRegistry().noteTransport(ip, {
+        chiffrement: algorithms.encryptionClientToServer, hmac: algorithms.macClientToServer ?? 'none',
+      }),
       motd: () => this.getBanner('motd') || null,
       aaaAuthenticate: (n, p) => (this.sshPasswordLoginAdmitted(n)
         ? this.authenticateViaAaa(n, p)
@@ -5073,16 +5092,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected sshServerIdentification(): string { return SSH_SERVER_IDENTIFICATION; }
 
-  /**
-   * Le couple chiffrement/HMAC qu'annoncent `show ssh` et
-   * `%SSH-5-SSH2_SESSION`. Un routeur generique n'a pas de configuration
-   * SSH a lire ; `CiscoRouter` surcharge pour lire la sienne, de sorte
-   * que les deux vues ne puissent pas se contredire.
-   */
-  protected sshNegotiatedAlgorithms(): { chiffrement: string; hmac: string } {
-    return algorithmesRetenus();
-  }
-
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
       this._securityAuditLog = new SecurityAuditLog({
@@ -5093,7 +5102,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         deviceId: this.id,
         bus: this.getBus(),
         capacity: () => this.vtyLineConfig.lineCapacity(),
-        algorithms: () => this.sshNegotiatedAlgorithms(),
       });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._credentialStore.liveSessionCount = (user) =>

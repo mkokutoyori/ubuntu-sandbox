@@ -20,6 +20,7 @@
  * and that a wrong password must be rejected by the real protocol
  * exchange, not a local check.
  */
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -104,6 +105,8 @@ async function buildLab() {
   await huawei.executeCommand('quit');
 
   await winA.executeCommand('netsh interface ip set address "Ethernet0" static 10.0.0.7 255.255.255.0');
+
+  for (const d of [linuxA, winA]) allowLegacyIosSsh(d);
 
   return { linuxA, cisco, huawei, winA };
 }

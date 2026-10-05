@@ -20,6 +20,9 @@ import type { WinCommandContext } from './WinCommandExecutor';
 import { showRoutePrint } from './WinRoute';
 import { netstatStatistics, type NetstatProtocolFilter } from './WinNetstatStatistics';
 import { snmpSnapshot } from '../linux/ports/PortsFilesystem';
+import {
+  filterFind, filterFindstr, parseFindArguments, parseFindstrArguments, textLines,
+} from './FindText';
 
 /** Context provided to all Windows file command modules */
 export interface WinFileCommandContext {
@@ -193,40 +196,6 @@ export function cmdTree(ctx: WinFileCommandContext, args: string[]): string {
 }
 
 // ─── set ───────────────────────────────────────────────────────────
-
-export function cmdSet(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length === 0) {
-    // Show all env vars
-    const lines: string[] = [];
-    const sorted = Array.from(ctx.env.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [key, value] of sorted) {
-      lines.push(`${key}=${value}`);
-    }
-    return lines.join('\n');
-  }
-
-  const full = args.join(' ');
-  const eqIndex = full.indexOf('=');
-  if (eqIndex === -1) {
-    // Filter by prefix
-    const prefix = full.toUpperCase();
-    const lines: string[] = [];
-    const sorted = Array.from(ctx.env.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [key, value] of sorted) {
-      if (key.toUpperCase().startsWith(prefix)) {
-        lines.push(`${key}=${value}`);
-      }
-    }
-    if (lines.length === 0) return `Environment variable ${full} not defined`;
-    return lines.join('\n');
-  }
-
-  // Set new variable
-  const name = full.substring(0, eqIndex).trim();
-  const value = full.substring(eqIndex + 1);
-  ctx.setEnv(name, value);
-  return '';
-}
 
 // ─── tasklist ──────────────────────────────────────────────────────
 
@@ -433,130 +402,49 @@ function formatAttrib(entry: { attributes: Set<string> }, path: string): string 
 
 // ─── find ─────────────────────────────────────────────────────────
 
-export function cmdFind(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length === 0) return 'FIND: Parameter format not correct';
+export function cmdFind(ctx: WinFileCommandContext, args: string[], stdin?: string): string {
+  const parsed = parseFindArguments(args);
+  if ('error' in parsed) return parsed.error;
+  const { options, files } = parsed;
 
-  let ignoreCase = false;
-  let countOnly = false;
-  let invertMatch = false;
-  let showLineNumbers = false;
-  let searchString = '';
-  const filePaths: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const lower = args[i].toLowerCase();
-    if (lower === '/i') { ignoreCase = true; continue; }
-    if (lower === '/c') { countOnly = true; continue; }
-    if (lower === '/v') { invertMatch = true; continue; }
-    if (lower === '/n') { showLineNumbers = true; continue; }
-    if (!searchString && args[i].startsWith('"')) {
-      let str = args[i].substring(1);
-      while (i < args.length - 1 && !str.endsWith('"')) {
-        i++;
-        str += ' ' + args[i];
-      }
-      if (str.endsWith('"')) str = str.slice(0, -1);
-      searchString = str;
-      continue;
-    }
-    if (!searchString) { searchString = args[i]; continue; }
-    filePaths.push(args[i]);
+  if (files.length === 0) {
+    if (stdin === undefined) return 'FIND: Parameter format not correct';
+    const { shown, count } = filterFind(textLines(stdin), options);
+    return options.count ? String(count) : shown.join('\n');
   }
 
-  if (!searchString) return 'FIND: Parameter format not correct';
-  if (filePaths.length === 0) return 'FIND: Parameter format not correct';
-
   const lines: string[] = [];
-  for (const fp of filePaths) {
-    const absPath = ctx.fs.normalizePath(fp, ctx.cwd);
-    const result = ctx.fs.readFile(absPath);
-    if (!result.ok) { lines.push(`File not found - ${fp}`); continue; }
-
-    lines.push(`---------- ${fp.toUpperCase()}`);
-    const fileLines = result.content!.split('\n');
-    let count = 0;
-
-    for (let n = 0; n < fileLines.length; n++) {
-      const line = fileLines[n];
-      const haystack = ignoreCase ? line.toLowerCase() : line;
-      const needle = ignoreCase ? searchString.toLowerCase() : searchString;
-      const found = haystack.includes(needle);
-      const match = invertMatch ? !found : found;
-      if (match) {
-        count++;
-        if (!countOnly) {
-          lines.push(showLineNumbers ? `[${n + 1}]${line}` : line);
-        }
-      }
-    }
-    if (countOnly) lines.push(`---------- ${fp.toUpperCase()}: ${count}`);
+  for (const file of files) {
+    const result = ctx.fs.readFile(ctx.fs.normalizePath(file, ctx.cwd));
+    if (!result.ok) { lines.push(`File not found - ${file}`); continue; }
+    lines.push(`---------- ${file.toUpperCase()}`);
+    const { shown, count } = filterFind(textLines(result.content!), options);
+    if (options.count) lines.push(`---------- ${file.toUpperCase()}: ${count}`);
+    else lines.push(...shown);
   }
   return lines.join('\n');
 }
 
 // ─── findstr ──────────────────────────────────────────────────────
 
-export function cmdFindstr(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length === 0) return 'FINDSTR: Wrong number of arguments';
+export function cmdFindstr(ctx: WinFileCommandContext, args: string[], stdin?: string): string {
+  const parsed = parseFindstrArguments(args);
+  if ('error' in parsed) return parsed.error;
+  const { options, files } = parsed;
 
-  let ignoreCase = false;
-  let useRegex = false;
-  let showLineNumbers = false;
-  let invertMatch = false;
-  let searchPattern = '';
-  const filePaths: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const lower = args[i].toLowerCase();
-    if (lower === '/i') { ignoreCase = true; continue; }
-    if (lower === '/r') { useRegex = true; continue; }
-    if (lower === '/n') { showLineNumbers = true; continue; }
-    if (lower === '/v') { invertMatch = true; continue; }
-    if (lower === '/l') { useRegex = false; continue; }
-    if (!searchPattern && args[i].startsWith('"')) {
-      let str = args[i].substring(1);
-      while (i < args.length - 1 && !str.endsWith('"')) {
-        i++;
-        str += ' ' + args[i];
-      }
-      if (str.endsWith('"')) str = str.slice(0, -1);
-      searchPattern = str;
-      continue;
-    }
-    if (!searchPattern) { searchPattern = args[i]; continue; }
-    filePaths.push(args[i]);
-  }
-
-  if (!searchPattern) return 'FINDSTR: Wrong number of arguments';
-  if (filePaths.length === 0) return 'FINDSTR: Wrong number of arguments';
-
-  const flags = ignoreCase ? 'i' : '';
-  let regex: RegExp;
-  try {
-    regex = useRegex
-      ? new RegExp(searchPattern, flags)
-      : new RegExp(searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-  } catch {
-    return `FINDSTR: Cannot open ${searchPattern}`;
+  if (files.length === 0) {
+    if (stdin === undefined) return 'FINDSTR: Wrong number of arguments';
+    const selected = filterFindstr(textLines(stdin), options);
+    return selected === null ? `FINDSTR: Cannot open ${options.patterns[0]}` : selected.join('\n');
   }
 
   const lines: string[] = [];
-  for (const fp of filePaths) {
-    const absPath = ctx.fs.normalizePath(fp, ctx.cwd);
-    const result = ctx.fs.readFile(absPath);
-    if (!result.ok) continue;
-
-    const fileLines = result.content!.split('\n');
-    for (let n = 0; n < fileLines.length; n++) {
-      const line = fileLines[n];
-      const found = regex.test(line);
-      const match = invertMatch ? !found : found;
-      if (match) {
-        const prefix = filePaths.length > 1 ? `${fp}:` : '';
-        const lineNum = showLineNumbers ? `${n + 1}:` : '';
-        lines.push(`${prefix}${lineNum}${line}`);
-      }
-    }
+  for (const file of files) {
+    const result = ctx.fs.readFile(ctx.fs.normalizePath(file, ctx.cwd));
+    if (!result.ok) { lines.push(`FINDSTR: Cannot open ${file}`); continue; }
+    const selected = filterFindstr(textLines(result.content!), options, files.length > 1 ? `${file}:` : '');
+    if (selected === null) return `FINDSTR: Cannot open ${options.patterns[0]}`;
+    lines.push(...selected);
   }
   return lines.join('\n');
 }
@@ -608,8 +496,8 @@ function matchPattern(name: string, pattern: string): boolean {
 
 // ─── more ─────────────────────────────────────────────────────────
 
-export function cmdMore(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length === 0) return '';
+export function cmdMore(ctx: WinFileCommandContext, args: string[], stdin?: string): string {
+  if (args.length === 0) return stdin === undefined ? '' : textLines(stdin).join('\n');
   const path = args.join(' ');
   const absPath = ctx.fs.normalizePath(path, ctx.cwd);
   const result = ctx.fs.readFile(absPath);
@@ -723,20 +611,23 @@ function xcopyDir(ctx: WinFileCommandContext, src: string, dest: string, recursi
 
 // ─── sort ─────────────────────────────────────────────────────────
 
-export function cmdSort(ctx: WinFileCommandContext, args: string[]): string {
+export function cmdSort(ctx: WinFileCommandContext, args: string[], stdin?: string): string {
   let reverse = false;
   const filePaths: string[] = [];
   for (const arg of args) {
     if (arg.toLowerCase() === '/r') { reverse = true; continue; }
     filePaths.push(arg);
   }
-  if (filePaths.length === 0) return '';
 
-  const absPath = ctx.fs.normalizePath(filePaths[0], ctx.cwd);
-  const result = ctx.fs.readFile(absPath);
-  if (!result.ok) return 'The system cannot find the file specified.';
-
-  const lines = result.content!.split('\n');
+  let lines: string[];
+  if (filePaths.length === 0) {
+    if (stdin === undefined) return '';
+    lines = textLines(stdin);
+  } else {
+    const result = ctx.fs.readFile(ctx.fs.normalizePath(filePaths[0], ctx.cwd));
+    if (!result.ok) return 'The system cannot find the file specified.';
+    lines = textLines(result.content!);
+  }
   lines.sort((a, b) => a.localeCompare(b));
   if (reverse) lines.reverse();
   return lines.join('\n');

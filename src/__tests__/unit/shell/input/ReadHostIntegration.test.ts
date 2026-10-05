@@ -48,7 +48,7 @@ describe('Read-Host via the unified input broker', () => {
     const p = subShell.processLine('Read-Host -Prompt "Name"');
     await new Promise(r => setTimeout(r, 5));
     expect(h.modes[0]).toBe('text');
-    expect(h.prompts[0]).toBe('Name');
+    expect(h.prompts[0]).toBe('Name: ');
     h.pump('Alice');
     const r = await p;
     expect(r.output.join('')).toBe('Alice');

@@ -26,7 +26,19 @@ export interface KexMethod {
   readonly name: string;
   readonly hash: HashAlgorithm;
   readonly encoding: KexValueEncoding;
-  generate(random: RandomSource, needBytes: number): EphemeralKey;
+  readonly groupExchange?: boolean;
+  generate(random: RandomSource, needBytes: number, group?: ModpGroup): EphemeralKey;
+}
+
+export interface GroupExchangeRequest {
+  readonly min: number;
+  readonly n: number;
+  readonly max: number;
+}
+
+export interface GroupExchangeParameters extends GroupExchangeRequest {
+  readonly prime: bigint;
+  readonly generator: bigint;
 }
 
 function bytesToBigInt(bytes: Uint8Array): bigint {
@@ -108,30 +120,65 @@ const ecdhNistp256: KexMethod = {
 const MIN_DH_PUBLIC_BITS_SET = 4;
 const MIN_DH_NEED_BITS = 256;
 
+function dhEphemeral(group: ModpGroup, random: RandomSource, needBytes: number): EphemeralKey {
+  const pBits = group.prime.toString(2).length;
+  const need = Math.max(needBytes * 8, MIN_DH_NEED_BITS);
+  const exponentBits = Math.min(need * 2, pBits - 1);
+  const raw = random(Math.ceil(exponentBits / 8));
+  let x = bytesToBigInt(raw) & ((1n << BigInt(exponentBits)) - 1n);
+  if (x < 2n) x += 2n;
+  const e = modPow(group.generator, x, group.prime);
+  return {
+    publicKey: bigIntToBytes(e),
+    sharedSecret(peer) {
+      const f = bytesToBigInt(peer);
+      if (f <= 1n || f >= group.prime - 1n || popCount(f) < MIN_DH_PUBLIC_BITS_SET) return null;
+      return modPow(f, x, group.prime);
+    },
+  };
+}
+
 function finiteFieldDh(name: string, hash: HashAlgorithm, groupId: number): KexMethod {
   return {
     name,
     hash,
     encoding: 'mpint',
-    generate(random, needBytes) {
-      const group = modpGroup(groupId) as ModpGroup;
-      const pBits = group.prime.toString(2).length;
-      const need = Math.max(needBytes * 8, MIN_DH_NEED_BITS);
-      const exponentBits = Math.min(need * 2, pBits - 1);
-      const raw = random(Math.ceil(exponentBits / 8));
-      let x = bytesToBigInt(raw) & ((1n << BigInt(exponentBits)) - 1n);
-      if (x < 2n) x += 2n;
-      const e = modPow(group.generator, x, group.prime);
-      return {
-        publicKey: bigIntToBytes(e),
-        sharedSecret(peer) {
-          const f = bytesToBigInt(peer);
-          if (f <= 1n || f >= group.prime - 1n || popCount(f) < MIN_DH_PUBLIC_BITS_SET) return null;
-          return modPow(f, x, group.prime);
-        },
-      };
-    },
+    generate: (random, needBytes) => dhEphemeral(modpGroup(groupId) as ModpGroup, random, needBytes),
   };
+}
+
+function groupExchangeDh(name: string, hash: HashAlgorithm): KexMethod {
+  return {
+    name,
+    hash,
+    encoding: 'mpint',
+    groupExchange: true,
+    generate: (random, needBytes, group) => dhEphemeral(group as ModpGroup, random, needBytes),
+  };
+}
+
+export const GEX_MIN_BITS = 1024;
+export const GEX_MAX_BITS = 8192;
+const GEX_GROUP_IDS: readonly number[] = [2, 5, 14, 15, 16, 17, 18];
+
+export function groupExchangeRequestValid(request: GroupExchangeRequest): boolean {
+  return request.min >= GEX_MIN_BITS && request.min <= request.n && request.n <= request.max
+    && request.max <= GEX_MAX_BITS;
+}
+
+export function selectExchangeGroup(request: GroupExchangeRequest, floorBits = GEX_MIN_BITS): ModpGroup | null {
+  const groups = GEX_GROUP_IDS.map((id) => modpGroup(id) as ModpGroup)
+    .filter((g) => g.bits >= Math.max(request.min, floorBits) && g.bits <= request.max);
+  const atLeast = groups.filter((g) => g.bits >= request.n);
+  if (atLeast.length > 0) return atLeast[0];
+  return groups.length > 0 ? groups[groups.length - 1] : null;
+}
+
+export function estimateGroupBits(strengthBits: number): number {
+  if (strengthBits <= 112) return 2048;
+  if (strengthBits <= 128) return 3072;
+  if (strengthBits <= 192) return 7680;
+  return 8192;
 }
 
 export const KEX_METHODS: readonly KexMethod[] = [
@@ -143,6 +190,8 @@ export const KEX_METHODS: readonly KexMethod[] = [
   finiteFieldDh('diffie-hellman-group14-sha256', SHA256, 14),
   finiteFieldDh('diffie-hellman-group14-sha1', SHA1, 14),
   finiteFieldDh('diffie-hellman-group1-sha1', SHA1, 2),
+  groupExchangeDh('diffie-hellman-group-exchange-sha256', SHA256),
+  groupExchangeDh('diffie-hellman-group-exchange-sha1', SHA1),
 ];
 
 export function kexMethod(name: string): KexMethod | null {
@@ -167,6 +216,7 @@ export interface ExchangeHashInput {
   readonly clientPublic: Uint8Array;
   readonly serverPublic: Uint8Array;
   readonly sharedSecret: bigint;
+  readonly groupExchange?: GroupExchangeParameters;
 }
 
 export function exchangeHash(input: ExchangeHashInput): Uint8Array {
@@ -179,6 +229,10 @@ export function exchangeHash(input: ExchangeHashInput): Uint8Array {
     .writeBytes(input.clientKexInit)
     .writeBytes(input.serverKexInit)
     .writeBytes(input.hostKeyBlob);
+  if (input.groupExchange) {
+    const { min, n, max, prime, generator } = input.groupExchange;
+    writer.writeUint32(min).writeUint32(n).writeUint32(max).writeMpint(prime).writeMpint(generator);
+  }
   writeKexValue(writer, input.method.encoding, input.clientPublic);
   writeKexValue(writer, input.method.encoding, input.serverPublic);
   return input.method.hash.digest(writer.writeMpint(input.sharedSecret).toBytes());

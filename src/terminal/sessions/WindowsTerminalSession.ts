@@ -31,17 +31,7 @@ import {
   parseGetCounterArgs, sampleCounterSet, formatCounterSnapshot, formatCounterSet,
   newRateState, GET_COUNTER_HELP,
 } from '@/network/devices/windows/GetCounter';
-import {
-  parseWinPathpingArgs,
-  formatPathpingHeader,
-  formatPathpingDiscoveryHop,
-  formatPathpingComputing,
-  formatPathpingTableHeader,
-  formatPathpingTable,
-  formatPathpingTrailer,
-  pathpingDurationSeconds,
-  type PathpingStatsRow,
-} from '@/network/devices/windows/WinPathping';
+import { parseWinPathpingArgs, runPathping } from '@/network/devices/windows/WinPathping';
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
 import {
@@ -54,7 +44,8 @@ import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
-import { CompletionController, ReadlinePolicy, LastWordSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion, SubShellCompletionControllers } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, LastWordSource, FullLineSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion, scanWords, SubShellCompletionControllers } from '@/terminal/completion';
+import { CMD_COMPLETION_WORDS, completeWindowsPath, pathLooksLikeAPath } from '@/network/devices/windows/PathCompletion';
 import type { SubShellTabHost } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
@@ -354,6 +345,7 @@ export class WindowsTerminalSession extends TerminalSession {
         this.notify();
         return true;
       }
+      if (e.key === 'Tab') return true;
       return false; // Let the view drive char-by-char input.
     }
 
@@ -515,92 +507,12 @@ export class WindowsTerminalSession extends TerminalSession {
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        const discovered: TracerouteHopResult[] = [];
-        let resolvedTarget: IPAddress | null = null;
-        const outcome = await dev.tracerouteStreamInSession(parsed.targetStr, {
-          maxHops: parsed.maxHops,
-          probesPerHop: 1,
-          timeoutMs: parsed.timeoutMs,
-          onResolved: (ip, hostname) => {
-            resolvedTarget = ip;
-            for (const line of formatPathpingHeader(ip, parsed.maxHops, hostname)) ctx.sink.line(line);
-          },
-          onHop: (hop) => { discovered.push(hop); },
-          shouldStop: () => ctx.cancelled(),
+        await runPathping(dev, parsed, {
+          line: text => ctx.sink.line(text),
+          error: text => ctx.sink.error(text),
+          cancelled: () => ctx.cancelled(),
+          delay: milliseconds => ctx.delay(milliseconds),
         });
-        if (ctx.cancelled()) return;
-        if (!outcome.resolved || !resolvedTarget) {
-          ctx.sink.error(`Unable to resolve target system name ${parsed.targetStr}.`);
-          return;
-        }
-
-        const sourceIp = dev.getEgressIPFor(resolvedTarget)?.toString();
-        const hopRows: PathpingStatsRow[] = [{
-          hop: 0,
-          ip: sourceIp ?? '0.0.0.0',
-          hostname: parsed.noResolve ? undefined : dev.getHostname(),
-          rttMs: undefined,
-          sourceLost: 0,
-          sourceSent: 0,
-          nodeLost: 0,
-          linkLost: 0,
-        }];
-        let hopNum = 0;
-        for (const hop of discovered) {
-          hopNum++;
-          if (!hop.ip) continue;
-          ctx.sink.line(formatPathpingDiscoveryHop(hopNum, hop.ip));
-          hopRows.push({
-            hop: hopNum,
-            ip: hop.ip,
-            hostname: undefined,
-            rttMs: undefined,
-            sourceLost: 0,
-            sourceSent: 0,
-            nodeLost: 0,
-            linkLost: 0,
-          });
-        }
-        if (hopRows.length <= 1) {
-          ctx.sink.error(`Unable to resolve target system name ${parsed.targetStr}.`);
-          return;
-        }
-
-        const durationSec = pathpingDurationSeconds(parsed, hopRows.length - 1);
-        for (const line of formatPathpingComputing(durationSec)) ctx.sink.line(line);
-
-        for (let i = 1; i < hopRows.length; i++) {
-          if (ctx.cancelled()) return;
-          const row = hopRows[i];
-          const rtts: number[] = [];
-          const results: PingResult[] = [];
-          await dev.pingStreamInSession(row.ip, {
-            count: parsed.queriesPerHop,
-            timeoutMs: parsed.timeoutMs,
-            intervalMs: parsed.periodMs,
-            onResult: (r) => { results.push(r); if (r.success) rtts.push(r.rttMs); },
-            shouldStop: () => ctx.cancelled(),
-            sleep: (ms) => ctx.delay(ms),
-          });
-          row.sourceSent = results.length;
-          row.sourceLost = results.filter((r) => !r.success).length;
-          if (rtts.length > 0) row.rttMs = rtts.reduce((a, b) => a + b, 0) / rtts.length;
-        }
-        if (ctx.cancelled()) return;
-
-        for (let i = 1; i < hopRows.length; i++) {
-          const prev = hopRows[i - 1];
-          const cur = hopRows[i];
-          const prevLossRate = prev.sourceSent > 0 ? prev.sourceLost / prev.sourceSent : 0;
-          const curLossRate = cur.sourceSent > 0 ? cur.sourceLost / cur.sourceSent : 0;
-          cur.linkLost = Math.round(Math.max(0, curLossRate - prevLossRate) * cur.sourceSent);
-        }
-
-        ctx.sink.line('');
-        for (const line of formatPathpingTableHeader()) ctx.sink.line(line);
-        for (const line of formatPathpingTable(hopRows, parsed.queriesPerHop)) ctx.sink.line(line);
-        ctx.sink.line('');
-        ctx.sink.line(formatPathpingTrailer());
       },
     });
     return job !== null;
@@ -1517,15 +1429,21 @@ export class WindowsTerminalSession extends TerminalSession {
     if (!this.activeSubShell) return false;
 
     if (e.key === 'Enter') {
-      const line = this._inputBuf;
+      const typed = this._inputBuf;
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.subShellSavedInput = '';
-      this.addEchoLine(this.activeSubShell.getPrompt(), line);
+      this.addEchoLine(this.activeSubShell.getPrompt(), typed);
 
       // Push non-empty lines to sub-shell history
-      if (line.trim()) {
-        this.subShellHistory = [...this.subShellHistory.slice(-199), line];
+      if (typed.trim()) {
+        this.subShellHistory = [...this.subShellHistory.slice(-199), typed];
+      }
+
+      const line = this.activeSubShell.collectLine ? this.activeSubShell.collectLine(typed) : typed;
+      if (line === null) {
+        this.notify();
+        return true;
       }
 
       // Native commands (ping/tracert/pathping/netstat) stream identically
@@ -1763,8 +1681,35 @@ export class WindowsTerminalSession extends TerminalSession {
       (line) => (this.shell && dev instanceof WindowsPC)
         ? dev.getCompletionsForSession(line, this.shell)
         : this.device.getCompletions(line),
-      { uniqueSpace: 'first-word' },
+      { uniqueSpace: 'first-word', wordStart: line => scanWords(line, CMD_COMPLETION_WORDS).typingStart },
     );
+  }
+
+  protected override handleBrokerKey(e: KeyEvent): boolean {
+    if (e.key !== 'Tab') return super.handleBrokerKey(e);
+    this.completeAnswer(e.shiftKey);
+    return true;
+  }
+
+  private completeAnswer(reverse: boolean): void {
+    const dev = this.device;
+    if (this.currentInputMode.type !== 'interactive-text' || !(dev instanceof WindowsPC)) return;
+    const typed = this._inputBuf;
+    if (!pathLooksLikeAPath(typed)) return;
+    const candidates = completeWindowsPath(dev.getFileSystem(), {
+      token: typed,
+      cwd: this.shell?.cwd ?? dev.getCwd(),
+      home: dev.getEnvVars().get('USERPROFILE') ?? null,
+      directoriesOnly: false,
+      style: 'literal',
+    });
+    const out = this.subShellCompletion.select({}).handleTab(
+      typed, new FullLineSource(() => candidates, { uniqueSpace: 'never' }), reverse,
+    );
+    if (!out.changed && out.suggestions === null) return;
+    this._inputBuf = out.input;
+    this.tabSuggestions = out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
+    this.notify();
   }
 
   protected onTab(): void {

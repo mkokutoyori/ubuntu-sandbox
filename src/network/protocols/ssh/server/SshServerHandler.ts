@@ -7,6 +7,13 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import {
+  USERAUTH_SUCCESS, decodeUserauthInfoResponse, decodeUserauthRequest, encodeUserauthBanner,
+  encodeUserauthFailure, encodeUserauthInfoRequest, encodeUserauthPkOk, type UserauthRequest,
+} from '../auth/UserauthMessages';
+import {
+  SSH_DISCONNECT_PROTOCOL_ERROR, SSH_MSG_USERAUTH_INFO_RESPONSE, SSH_MSG_USERAUTH_REQUEST,
+} from '../transport/SshMessageNumbers';
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler } from '@/events/Scheduler';
@@ -27,14 +34,16 @@ import { SftpWireSession } from '../sftp/SftpWireSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
-import { userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
+import { signatureAlgorithmsFor, userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
 import {
   keygenBlobDigest, keygenKeyFacts, keygenPrivateKey, sshPublicKeyFromBlob,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
-import { base64ToBytes } from '@/crypto/encoding';
-import { SshTransport, legacyFrameStream, type SshServerHostKey } from '../transport/SshTransport';
+import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
+import {
+  SshTransport, legacyFrameStream, type SshServerHostKey, type SshTransportConfig,
+} from '../transport/SshTransport';
 import type { SshHostKey } from '../SshHostKey';
-import type { ILinuxShell, ISshServerContext } from './ISshServerContext';
+import type { ILinuxShell, ISshServerContext, SshTransportPolicy } from './ISshServerContext';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import type { SshInteractiveShell } from './SshInteractiveShell';
 import {
@@ -147,6 +156,7 @@ export class SshServerHandler {
       role: 'server',
       identification: this.ctx.serverIdentification?.() ?? SSH_SERVER_IDENTIFICATION,
       hostKeys: serverHostKeys(this.ctx.hostKey),
+      ...transportPolicyConfig(this.ctx.transportPolicy?.()),
     });
     const conn = legacyFrameStream(transport, rawConn);
     const channels = new Map<number, OpenChannelInfo>();
@@ -164,15 +174,16 @@ export class SshServerHandler {
     let authRequests = 0;
     let sessionId: Uint8Array | null = null;
     void transport.established.then((outcome) => {
-      if ('sessionId' in outcome) sessionId = outcome.sessionId;
+      if ('sessionId' in outcome) {
+        sessionId = outcome.sessionId;
+        this.ctx.transportEstablished?.(clientIp, outcome.algorithms);
+      }
     });
     let pendingInfoResponse: ((responses: readonly string[] | null) => void) | null = null;
     const askKeyboardInteractive = (challenge: KeyboardInteractiveChallenge): Promise<readonly string[] | null> =>
       new Promise((resolve) => {
         pendingInfoResponse = resolve;
-        conn.write(JSON.stringify({
-          op: 'auth_info_request', name: challenge.name, instruction: challenge.instruction, prompts: challenge.prompts,
-        }));
+        transport.send(encodeUserauthInfoRequest(challenge));
       });
     const preauth = preauthSlot(this.ctx);
     preauth.value += 1;
@@ -300,6 +311,83 @@ export class SshServerHandler {
       conn.write(encodeSftpChannelFrame(channelId, encodeSftpWirePacket(reply)));
     };
 
+    let authIdentity: { readonly user: string; readonly service: string } | null = null;
+    const disconnect = this.ctx.maxAuthTriesDisconnect;
+    const endAuthentication = (): void => {
+      if (disconnect) transport.disconnect(SSH_DISCONNECT_PROTOCOL_ERROR, disconnect);
+      else transport.close();
+    };
+    const reportMaxTries = (request: UserauthRequest): void => {
+      this.eventBus.emit({
+        kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
+        user: request.user,
+        reason: 'max_auth_tries',
+        ip: clientIp,
+        method: request.method,
+      });
+    };
+    transport.onMessage((payload) => {
+      if (payload[0] === SSH_MSG_USERAUTH_INFO_RESPONSE) {
+        const deliver = pendingInfoResponse;
+        pendingInfoResponse = null;
+        deliver?.(decodeUserauthInfoResponse(payload) ?? []);
+        return;
+      }
+      if (payload[0] !== SSH_MSG_USERAUTH_REQUEST || userCtx) return;
+      const request = decodeUserauthRequest(payload);
+      if (request === null) {
+        transport.disconnect(SSH_DISCONNECT_PROTOCOL_ERROR, 'Packet corrupt');
+        return;
+      }
+      if (authIdentity === null) {
+        authIdentity = { user: request.user, service: request.service };
+        const banner = this.ctx.getBanner?.() ?? null;
+        if (banner) transport.send(encodeUserauthBanner(banner));
+      } else if (authIdentity.user !== request.user || authIdentity.service !== request.service) {
+        transport.disconnect(SSH_DISCONNECT_PROTOCOL_ERROR,
+          `Change of username or service not allowed: (${authIdentity.user},${authIdentity.service}) -> `
+          + `(${request.user},${request.service})`);
+        return;
+      }
+      pendingInfoResponse?.(null);
+      pendingInfoResponse = null;
+      const cap = this.ctx.config.maxAuthTries;
+      authRequests += 1;
+      const penaltyFree = authRequests === 1 && request.method === 'none';
+      if (authFailures >= cap) {
+        reportMaxTries(request);
+        endAuthentication();
+        return;
+      }
+      void this.handleAuth(userauthPayload(request), clientIp, askKeyboardInteractive, authRequests === 1, sessionId)
+        .then((result) => {
+          if (!transport.isOpen) return;
+          if ('pkOk' in result && 'publicKeyBlob' in request) {
+            transport.send(encodeUserauthPkOk(request.algorithm, request.publicKeyBlob));
+            return;
+          }
+          if (result.ok) {
+            userCtx = result.userCtx;
+            authenticatedKeyOptions = result.keyOptions;
+            transport.send(USERAUTH_SUCCESS);
+            transport.markAuthenticated();
+            this.ctx.recordLogin(result.userCtx.username, clientIp);
+            timers.clear(graceTimer);
+            graceTimer = null;
+            decPreauth();
+            return;
+          }
+          if (!penaltyFree) authFailures += 1;
+          if (authFailures >= cap) {
+            reportMaxTries(request);
+            endAuthentication();
+            return;
+          }
+          transport.send(encodeUserauthFailure(this.ctx.auth.getAvailableMethods(), false));
+        });
+    });
+
     conn.onData((data) => {
       if (isSftpChannelFrame(data)) {
         handleSftpWireFrame(data);
@@ -316,81 +404,6 @@ export class SshServerHandler {
       if (op === 'keepalive_ack') { missedAcks = 0; return; }
 
       switch (op) {
-        case 'hello': {
-          const preAuthBanner = this.ctx.getBanner?.() ?? null;
-          conn.write(
-            JSON.stringify({
-              hello: true,
-              ...(preAuthBanner ? { preAuthBanner } : {}),
-            }),
-          );
-          break;
-        }
-
-        case 'auth_info_response': {
-          const deliver = pendingInfoResponse;
-          pendingInfoResponse = null;
-          deliver?.(Array.isArray(parsed.responses) ? parsed.responses.map(String) : []);
-          break;
-        }
-
-        case 'auth': {
-          const cap = this.ctx.config.maxAuthTries;
-          authRequests += 1;
-          const penaltyFree = authRequests === 1 && parsed.method === 'none';
-          const disconnect = this.ctx.maxAuthTriesDisconnect;
-          if (authFailures >= cap) {
-            conn.write(JSON.stringify({
-              ok: false, ended: true, error: 'too many authentication failures',
-              ...(disconnect ? { disconnect } : {}),
-            }));
-            this.eventBus.emit({
-              kind: 'auth_failure',
-              port: this.ctx.clientPort?.(clientIp),
-              user: (parsed.user as string | undefined) ?? '',
-              reason: 'max_auth_tries',
-              ip: clientIp,
-              method: parsed.method as string | undefined,
-            });
-            conn.close();
-            return;
-          }
-          void this.handleAuth(parsed, clientIp, askKeyboardInteractive, authRequests === 1, sessionId).then((result) => {
-            if ('pkOk' in result) {
-              conn.write(JSON.stringify({ pk_ok: true, algorithm: parsed.algorithm, publicKey: parsed.publicKey }));
-              return;
-            }
-            if (result.ok) {
-              conn.write(JSON.stringify({ ok: true }));
-              userCtx = result.userCtx;
-              authenticatedKeyOptions = result.keyOptions;
-              this.ctx.recordLogin(result.userCtx.username, clientIp);
-              timers.clear(graceTimer);
-              graceTimer = null;
-              decPreauth();
-              return;
-            }
-            if (!penaltyFree) authFailures += 1;
-            const ended = authFailures >= cap;
-            conn.write(JSON.stringify({
-              ok: false, ended, methods: this.ctx.auth.getAvailableMethods().join(','),
-              ...(ended && disconnect ? { disconnect } : {}),
-            }));
-            if (ended) {
-              this.eventBus.emit({
-                kind: 'auth_failure',
-                port: this.ctx.clientPort?.(clientIp),
-                user: (parsed.user as string | undefined) ?? '',
-                reason: 'max_auth_tries',
-                ip: clientIp,
-                method: parsed.method as string | undefined,
-              });
-              conn.close();
-            }
-          });
-          break;
-        }
-
         case 'open_channel': {
           if (!userCtx) {
             conn.write(JSON.stringify({ ok: false, error: 'not authenticated' }));
@@ -1049,6 +1062,8 @@ function signatureProvesKey(
   if (sessionId === null) return false;
   try {
     const blob = base64ToBytes(publicKey);
+    const key = sshPublicKeyFromBlob(blob);
+    if (key === null || !signatureAlgorithmsFor(key).includes(algorithm)) return false;
     return verifyUserauthSignature(
       blob, algorithm, base64ToBytes(signature), userauthSignedData(sessionId, user, algorithm, blob));
   } catch {
@@ -1068,6 +1083,25 @@ function keyEvidence(publicKey: string): { keyType: string; keyFingerprint: stri
 function withOriginalCommand(forced: string, asked: string): string {
   if (!asked) return forced;
   return `export SSH_ORIGINAL_COMMAND='${asked.replace(/'/g, "'\\''")}'; ${forced}`;
+}
+
+function userauthPayload(request: UserauthRequest): Record<string, unknown> {
+  const payload: Record<string, unknown> = { user: request.user, method: request.method };
+  if ('password' in request) payload.password = request.password;
+  if ('publicKeyBlob' in request) {
+    payload.algorithm = request.algorithm;
+    payload.publicKey = bytesToBase64(request.publicKeyBlob);
+    if (request.signature) payload.signature = bytesToBase64(request.signature);
+  }
+  return payload;
+}
+
+function transportPolicyConfig(policy: SshTransportPolicy | undefined): Partial<SshTransportConfig> {
+  return {
+    ...(policy?.algorithms === undefined ? {} : { algorithms: policy.algorithms }),
+    ...(policy?.groupExchangeMinBits === undefined ? {} : { groupExchangeMinBits: policy.groupExchangeMinBits }),
+    ...(policy?.extInfo === undefined ? {} : { extInfo: policy.extInfo }),
+  };
 }
 
 function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {

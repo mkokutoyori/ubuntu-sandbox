@@ -30,6 +30,7 @@
  * matrix so adding a vendor or a user is one line.
  */
 
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, expect, beforeEach, test } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -108,6 +109,8 @@ async function buildXLan(): Promise<XLan> {
       }
     }
   }
+
+  for (const d of [linuxA, linuxB, winA, winB]) allowLegacyIosSsh(d);
 
   return {
     linuxA, linuxB, winA, winB, ciscoR, hwR, sw,

@@ -21,6 +21,8 @@ import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpConnector } from '@/network/tcp/types';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
+import { sshClientProfileOf } from '@/network/protocols/ssh/SshClientProfile';
+import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
@@ -100,6 +102,7 @@ export interface WireSshLoginRequest {
   readonly strict?: 'yes' | 'no' | 'accept-new';
   readonly identityFiles?: readonly string[];
   readonly credentialless?: boolean;
+  readonly algorithms?: SshAlgorithmPreferences;
 }
 
 export type WireSshLoginOutcome =
@@ -196,6 +199,7 @@ export async function openWireSshConnection(
     return { kind: 'unreachable', message: unreachableMessage(req) };
   }
 
+  const profile = sshClientProfileOf(req.device);
   const session = new SshSession({
     tcpConnector,
     vfs: sshLocalFsFor(req.device) as never,
@@ -204,7 +208,8 @@ export async function openWireSshConnection(
     localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     credentialless: req.credentialless,
-    clientIdentification: opensshIdentificationFor(req.device.getOSType()),
+    clientIdentification: profile?.identification ?? opensshIdentificationFor(req.device.getOSType()),
+    ...(profile ? { clientExtInfo: profile.extInfo } : {}),
     interactionHandler: req.credentialless
       ? new SilentSshInteractionHandler('')
       : new TerminalSshInteractionHandler(req.io),
@@ -216,6 +221,8 @@ export async function openWireSshConnection(
     .port(req.port)
     .strictHostKeyChecking(req.strict ?? 'accept-new');
   if (req.password !== undefined) builder.password(req.password);
+  const algorithms = req.algorithms ?? profile?.algorithms;
+  if (algorithms) builder.algorithms(algorithms);
   for (const id of req.identityFiles ?? []) builder.addIdentityFile(id);
 
   let result: Awaited<ReturnType<typeof session.connect>> | null = null;
@@ -263,11 +270,14 @@ export async function relayScriptedShell(
   let awaitingChallenge = false;
   let remaining = skipLines;
   let ended = false;
-  for (const raw of stdin.split('\n')) {
+  let nested = false;
+  const typedLines = stdin.split('\n');
+  if (typedLines[typedLines.length - 1] === '') typedLines.pop();
+  for (const raw of typedLines) {
     if (remaining > 0) { remaining -= 1; continue; }
     if (ended) break;
-    const line = raw.trim();
-    if (!awaitingChallenge && line.length === 0) continue;
+    const line = nested && !awaitingChallenge ? raw.replace(/\r$/, '') : raw.trim();
+    if (!awaitingChallenge && !nested && line.length === 0) continue;
     const result = awaitingChallenge
       ? await shell.provideInput(line)
       : await shell.runLine(line);
@@ -277,6 +287,7 @@ export async function relayScriptedShell(
     prompt = result.prompt ?? prompt;
     awaitingChallenge = result.pendingInput !== undefined;
     ended = result.sessionEnded === true;
+    nested = result.nested === true;
   }
   return { output: lines.join('\n'), exitCode: 0 };
 }

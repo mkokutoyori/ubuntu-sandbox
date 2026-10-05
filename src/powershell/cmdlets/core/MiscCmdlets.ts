@@ -744,7 +744,7 @@ export class SetLocationCmdlet implements ICmdlet {
   readonly name = 'set-location';
   readonly displayName = 'Set-Location';
   readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
-  readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
+  readonly parameterValues = { Path: 'directory', LiteralPath: 'directory' } as const;
   readonly aliases = ['cd', 'chdir', 'sl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -759,7 +759,7 @@ export class PushLocationCmdlet implements ICmdlet {
   readonly name = 'push-location';
   readonly displayName = 'Push-Location';
   readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
-  readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
+  readonly parameterValues = { Path: 'directory', LiteralPath: 'directory' } as const;
   readonly aliases = ['pushd'] as const;
 
   execute(ctx: CmdletContext): PSValue {

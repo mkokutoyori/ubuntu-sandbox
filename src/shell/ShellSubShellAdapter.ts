@@ -73,5 +73,9 @@ export class ShellSubShellAdapter implements ISubShell {
     return [...this.shell.getCompletions(line)];
   }
 
+  completionStart(line: string): number | null {
+    return this.shell.completionStart?.(line) ?? null;
+  }
+
   dispose(): void { this.shell.dispose(); }
 }

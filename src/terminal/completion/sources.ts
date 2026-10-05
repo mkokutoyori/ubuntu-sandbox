@@ -11,19 +11,25 @@ export function splitLastWord(line: string): { readonly base: string; readonly w
 export class LastWordSource implements ICompletionSource {
   private readonly fetch: (line: string) => readonly string[];
   private readonly spaceMode: UniqueSpaceMode;
+  private readonly wordStart: (line: string) => number | null;
 
   constructor(
     fetch: (line: string) => readonly string[],
-    options?: { readonly uniqueSpace?: UniqueSpaceMode },
+    options?: {
+      readonly uniqueSpace?: UniqueSpaceMode;
+      readonly wordStart?: (line: string) => number | null;
+    },
   ) {
     this.fetch = fetch;
     this.spaceMode = options?.uniqueSpace ?? 'never';
+    this.wordStart = options?.wordStart ?? (() => null);
   }
 
   query(q: CompletionQuery): CompletionCandidates | null {
     const candidates = this.fetch(q.line);
     if (candidates.length === 0) return null;
-    const { base } = splitLastWord(q.line);
+    const start = this.wordStart(q.line);
+    const base = start === null ? splitLastWord(q.line).base : q.line.slice(0, start);
     return {
       base,
       candidates,
@@ -42,14 +48,19 @@ export class LastWordSource implements ICompletionSource {
 
 export class FullLineSource implements ICompletionSource {
   private readonly fetch: (line: string) => readonly string[];
+  private readonly appendSpace: boolean;
 
-  constructor(fetch: (line: string) => readonly string[]) {
+  constructor(
+    fetch: (line: string) => readonly string[],
+    options?: { readonly uniqueSpace?: 'always' | 'never' },
+  ) {
     this.fetch = fetch;
+    this.appendSpace = (options?.uniqueSpace ?? 'always') === 'always';
   }
 
   query(q: CompletionQuery): CompletionCandidates | null {
     const candidates = this.fetch(q.line);
     if (candidates.length === 0) return null;
-    return { base: '', candidates, appendSpaceOnUnique: true };
+    return { base: '', candidates, appendSpaceOnUnique: this.appendSpace };
   }
 }

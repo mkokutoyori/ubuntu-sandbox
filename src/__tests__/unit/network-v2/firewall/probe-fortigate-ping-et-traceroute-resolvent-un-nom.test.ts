@@ -32,12 +32,6 @@
  * cible sans route donnait `undefined !== null`, donc VRAIE : un serveur que
  * rien n'atteint etait declare vivant. Les deux passent maintenant par
  * `Firewall.answersEcho`, qui lit le refus.
- *
- * Ce que la correction ne couvre pas, et dit : `execute ping6` et
- * `execute traceroute6` recoivent aussi un nom dans une vraie machine ; leur
- * resolution demande un enregistrement AAAA que le client DNS du pare-feu
- * ne sait pas encore chercher. Et un serveur DNS appris par bail DHCP
- * (`dns-server-override`) n'est pas consulte par le resolveur.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';

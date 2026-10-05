@@ -14,6 +14,8 @@ export const SSH_WINDOWS_IDENTIFICATION = 'SSH-2.0-OpenSSH_for_Windows_8.6';
 
 export const SSH_HUAWEI_VRP_IDENTIFICATION = 'SSH-2.0-HUAWEI-1.5';
 
+export const IOS_SSH_CLIENT_IDENTIFICATION = 'SSH-2.0-Cisco-1.25';
+
 export function ciscoSshIdentification(configuredVersion: number): string {
   return `SSH-${configuredVersion === 2 ? '2.0' : '1.99'}-Cisco-1.25`;
 }

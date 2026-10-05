@@ -67,8 +67,10 @@ describe('les deux plateformes repondent la MEME chose', () => {
   it('`show ip ssh` decrit le meme serveur', async () => {
     const routeur = await privilegie(PLATEFORMES[0][1]);
     const commutateur = await privilegie(PLATEFORMES[1][1]);
-    expect(await commutateur.executeCommand('show ip ssh'))
-      .toBe(await routeur.executeCommand('show ip ssh'));
+    const sansListesDeRelease = (texte: string): string => texte.split('\n')
+      .filter((ligne) => !/^(Encryption|KEX) Algorithms:/.test(ligne)).join('\n');
+    expect(sansListesDeRelease(await commutateur.executeCommand('show ip ssh')))
+      .toBe(sansListesDeRelease(await routeur.executeCommand('show ip ssh')));
   });
 
   it('`show ip ssh known-hosts` rend son en-tete des deux cotes', async () => {

@@ -99,6 +99,7 @@
  *  - LE BON MOT DE PASSE, partout. Il passait deja et doit continuer :
  *    c'est le cas qui tombe si l'on « corrige » en refusant tout.
  */
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -199,6 +200,8 @@ async function laboratoire() {
     'aaa authentication ssh console LOCAL',
     'ssh 10.0.0.0 255.255.255.0 inside', 'end',
   ]);
+
+  for (const d of [poste, linux, windows]) allowLegacyIosSsh(d);
 
   return { poste, linux, cisco, huawei, windows, forti, asa };
 }

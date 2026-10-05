@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -95,6 +96,7 @@ async function buildLab() {
   await huawei.executeCommand('ssh user admin authentication-type password');
   await huawei.executeCommand('ssh user admin service-type stelnet');
   await huawei.executeCommand('quit');
+  for (const d of [winA, winB, linuxA, linuxB]) allowLegacyIosSsh(d);
   return { winA, winB, linuxA, linuxB, cisco, huawei };
 }
 

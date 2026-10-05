@@ -199,10 +199,10 @@ function pairFor(key: SshPrivateKey, random: RandomBytes): KeygenPair {
 }
 
 export function keygenDeterministicPair(
-  algorithm: string, seed: string, comment: string,
+  algorithm: string, seed: string, comment: string, bits?: number,
 ): KeygenPair {
   const random = deterministicBytes(seed);
-  return pairFor(generateKey(algorithm, comment, keygenBits(algorithm), random), random);
+  return pairFor(generateKey(algorithm, comment, keygenBits(algorithm, bits), random), random);
 }
 
 export function keygenPair(algorithm: string, comment: string, bits?: number): KeygenPair {

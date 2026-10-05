@@ -17,6 +17,7 @@
  * The fixture is rebuilt per test to avoid registry bleed.
  */
 
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, expect, beforeEach, test } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -101,6 +102,9 @@ async function buildCast(): Promise<Cast> {
     await linux.executeCommand(`ping -c 1 ${ip}`);
     await windows.executeCommand(`ping ${ip}`);
   }
+
+  allowLegacyIosSsh(linux);
+  allowLegacyIosSsh(windows);
 
   return { linux, windows, cisco, huawei };
 }

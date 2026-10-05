@@ -16,6 +16,8 @@ import type { ISshServerEventBus } from './SshServerEvent';
 import type { SshInteractiveShell } from './SshInteractiveShell';
 import type { TcpStream } from '@/network/tcp/types';
 import type { AuthorizedKey, AuthorizedKeyOptions, KeySource } from '../SshPureUtils';
+import type { SshAlgorithmPreferences } from '../transport/SshTransport';
+import type { NegotiatedAlgorithms } from '../transport/SshKexInit';
 export type { SshUserContext };
 
 export interface SshServerConfig {
@@ -117,6 +119,12 @@ export interface ILinuxShell {
 
 export const SSHD_MAX_AUTH_TRIES_REASON = 'Too many authentication failures';
 
+export interface SshTransportPolicy {
+  readonly algorithms?: SshAlgorithmPreferences;
+  readonly groupExchangeMinBits?: number;
+  readonly extInfo?: boolean;
+}
+
 export interface ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
@@ -194,6 +202,8 @@ export interface ISshServerContext {
    */
   getBanner?(): string | null;
   serverIdentification?(): string;
+  transportPolicy?(): SshTransportPolicy;
+  transportEstablished?(clientIp: string, algorithms: NegotiatedAlgorithms): void;
   openDirectTcpip?(request: DirectTcpipRequest): Promise<DirectTcpipOutcome>;
   rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;

@@ -6,6 +6,7 @@ import {
   SshConnectOptionsBuilder,
   type SshClientAuthentication,
 } from '../../../protocols/ssh/SshConnectOptions';
+import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import { isOk, type SshError } from '../../../protocols/ssh/Result';
 import type { ISshLocalFs } from '../../../protocols/ssh/ISshLocalFs';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -29,6 +30,7 @@ export interface WireSshTarget {
   readonly identities: readonly string[];
   readonly strict: StrictHostKeyChecking;
   readonly authentication?: SshClientAuthentication;
+  readonly algorithms?: SshAlgorithmPreferences;
 }
 
 export interface WireSshOutcome {
@@ -56,6 +58,7 @@ export async function connectWireSsh(
   const builder = SshConnectOptionsBuilder.create()
     .host(target.host).user(target.user).port(target.port).strictHostKeyChecking(target.strict)
     .authentication(target.authentication ?? OPENSSH_CLIENT_AUTHENTICATION);
+  if (target.algorithms) builder.algorithms(target.algorithms);
   for (const path of target.identities) builder.addIdentityFile(path);
   if (target.identities.length === 0) {
     for (const candidate of OPENSSH_DEFAULT_IDENTITY_FILES) {

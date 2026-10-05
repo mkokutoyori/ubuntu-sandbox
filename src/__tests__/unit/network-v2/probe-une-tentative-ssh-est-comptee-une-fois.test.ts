@@ -64,6 +64,7 @@
  *    une fois le seuil vraiment atteint, donc que le cas « une tentative
  *    ne ferme pas la porte » mesure le COMPTE et non un blocage muet.
  */
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -108,6 +109,7 @@ async function lab(): Promise<{ r1: CiscoRouter; host: LinuxPC }> {
   ]) await r1.executeCommand(c);
 
   await host.executeCommand(`ifconfig eth0 ${HOST_IP} netmask 255.255.255.0`);
+  allowLegacyIosSsh(host);
   return { r1, host };
 }
 

@@ -35,6 +35,7 @@ function describeFailure(
 ): string {
   const connectError = failure ? CONNECT_ERRORS[failure.kind] : undefined;
   if (connectError) return `ssh: connect to host ${endpoint.host} port ${endpoint.port}: ${connectError}`;
+  if (failure?.kind === 'KEX_FAILED') return failure.message;
   if (warnings.length > 0) return warnings.join('\n');
   return `ssh: connect to host ${endpoint.host} port ${endpoint.port}: ${failure?.kind ?? 'failed'}`;
 }

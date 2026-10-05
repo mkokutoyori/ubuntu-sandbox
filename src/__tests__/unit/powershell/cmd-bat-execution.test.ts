@@ -73,7 +73,7 @@ describe('CmdSubShell .bat execution', () => {
 
   it('skips REM comments', async () => {
     const { pc, cmd } = createSetup();
-    writeBat(pc, 'rem.bat', 'REM this is a comment\r\necho visible\r\n');
+    writeBat(pc, 'rem.bat', '@echo off\r\nREM this is a comment\r\necho visible\r\n');
     const out = await run(cmd, 'rem.bat');
     expect(out.join('\n')).not.toContain('this is a comment');
     expect(out.join('\n')).toContain('visible');

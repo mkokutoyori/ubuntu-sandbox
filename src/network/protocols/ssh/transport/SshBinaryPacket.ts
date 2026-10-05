@@ -1,5 +1,6 @@
 import { aesGcmDecrypt, aesGcmEncrypt } from '@/crypto/cipher/aesGcm';
-import { createAesEncryptor, AES_BLOCK_SIZE } from '@/crypto/cipher/aes';
+import { createAesDecryptor, createAesEncryptor, AES_BLOCK_SIZE } from '@/crypto/cipher/aes';
+import { DES_BLOCK_SIZE, tripleDesDecryptBlock, tripleDesEncryptBlock } from '@/crypto/cipher/des';
 import { chacha20Block, chacha20Xor, poly1305 } from '@/crypto/cipher/chacha20Poly1305';
 import { hmac } from '@/crypto/mac/hmac';
 import { SHA1 } from '@/crypto/hash/sha1';
@@ -109,6 +110,53 @@ function aesCtr(name: string, keyLength: number): CipherSpec {
   };
 }
 
+interface BlockPrimitives {
+  encrypt(block: Uint8Array): Uint8Array;
+  decrypt(block: Uint8Array): Uint8Array;
+}
+
+function cbcCipher(
+  name: string, keyLength: number, blockSize: number, primitives: (key: Uint8Array) => BlockPrimitives,
+): CipherSpec {
+  return {
+    name, keyLength, ivLength: blockSize, blockSize, authLength: 0,
+    create(key, iv) {
+      const { encrypt, decrypt } = primitives(key);
+      let chain = iv.slice(0, blockSize);
+      return {
+        blockSize,
+        authLength: 0,
+        crypt: (_seq, input, aadLength, doEncrypt) => {
+          const out = input.slice();
+          for (let offset = aadLength; offset + blockSize <= input.length; offset += blockSize) {
+            const block = input.subarray(offset, offset + blockSize);
+            if (doEncrypt) {
+              const mixed = block.map((byte, i) => byte ^ chain[i]);
+              chain = encrypt(mixed);
+              out.set(chain, offset);
+            } else {
+              out.set(decrypt(block).map((byte, i) => byte ^ chain[i]), offset);
+              chain = block.slice();
+            }
+          }
+          return out;
+        },
+        length: (_seq, head) => readUint32(head, 0),
+      };
+    },
+  };
+}
+
+const aesCbc = (name: string, keyLength: number): CipherSpec =>
+  cbcCipher(name, keyLength, AES_BLOCK_SIZE, (key) => ({
+    encrypt: createAesEncryptor(key), decrypt: createAesDecryptor(key),
+  }));
+
+const tripleDesCbc: CipherSpec = cbcCipher('3des-cbc', 24, DES_BLOCK_SIZE, (key) => ({
+  encrypt: (block) => tripleDesEncryptBlock(key, block),
+  decrypt: (block) => tripleDesDecryptBlock(key, block),
+}));
+
 function aesGcm(name: string, keyLength: number): CipherSpec {
   const tagLength = 16;
   const ivLength = 12;
@@ -179,19 +227,24 @@ export const CIPHER_SPECS: readonly CipherSpec[] = [
   aesCtr('aes256-ctr', 32),
   aesGcm('aes128-gcm@openssh.com', 16),
   aesGcm('aes256-gcm@openssh.com', 32),
+  aesCbc('aes128-cbc', 16),
+  aesCbc('aes192-cbc', 24),
+  aesCbc('aes256-cbc', 32),
+  tripleDesCbc,
 ];
 
 export function cipherSpec(name: string): CipherSpec | null {
   return CIPHER_SPECS.find((c) => c.name === name) ?? null;
 }
 
-function hmacSpec(name: string, hash: HashAlgorithm, etm: boolean): MacSpec {
+function hmacSpec(name: string, hash: HashAlgorithm, etm: boolean, truncatedBits = hash.digestSize * 8): MacSpec {
+  const length = truncatedBits / 8;
   return {
     name, keyLength: hash.digestSize, etm,
     create: (key) => ({
-      length: hash.digestSize,
+      length,
       etm,
-      compute: (seq, data) => hmac(hash, key, concat(uint32(seq), data)),
+      compute: (seq, data) => hmac(hash, key, concat(uint32(seq), data)).slice(0, length),
     }),
   };
 }
@@ -203,6 +256,7 @@ export const MAC_SPECS: readonly MacSpec[] = [
   hmacSpec('hmac-sha2-256', SHA256, false),
   hmacSpec('hmac-sha2-512', SHA512, false),
   hmacSpec('hmac-sha1', SHA1, false),
+  hmacSpec('hmac-sha1-96', SHA1, false, 96),
 ];
 
 export function macSpec(name: string): MacSpec | null {

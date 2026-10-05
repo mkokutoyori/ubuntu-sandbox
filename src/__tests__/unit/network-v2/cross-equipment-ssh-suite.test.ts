@@ -32,6 +32,7 @@
  *     section so adding cases is one row of data.
  */
 
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, expect, beforeEach, test } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -127,6 +128,8 @@ async function buildXLan(): Promise<XLan> {
       um.setPassword(u, 'admin');
     }
   }
+
+  for (const d of [linux1, linux2, lxsrv1, win1, win2]) allowLegacyIosSsh(d);
 
   return {
     linux1, linux2, lxsrv1, win1, win2, ciscoR1, ciscoS1, hwR1, hwS1, sw,

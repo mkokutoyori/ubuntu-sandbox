@@ -59,6 +59,7 @@
  *    des deux cotes — la coquille de session ne doit pas cesser de
  *    rendre la vue en adoptant le magasin d'une autre.
  */
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -111,6 +112,7 @@ async function laboratoire(): Promise<{ r1: CiscoRouter; poste: LinuxPC }> {
   ]) await r1.executeCommand(c);
 
   await poste.executeCommand(`ifconfig eth0 ${POSTE_IP} netmask 255.255.255.0`);
+  allowLegacyIosSsh(poste);
   return { r1, poste };
 }
 

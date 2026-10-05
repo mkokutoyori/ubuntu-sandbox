@@ -9,6 +9,10 @@
  * emission), conservee d'un port a l'autre ; la capture remet ses trames dans l'ordre de
  * cette lignee et horodate a l'emission.
  *
+ * Le client pose le drapeau BROADCAST : un client qui le laisse a zero (dhclient) recoit l'Offer et
+ * l'ACK en unicast, que le commutateur ne livre qu'a son port — un tiers n'en voit que le Discover et
+ * le Request, comme sur un vrai commutateur.
+ *
  * Avant le correctif : les 2 cas d'ordre tombent (Offer avant Discover, ACK avant Request) ; le temoin « quatre messages vus » et les horodatages (qui passent parce que la reception est deja croissante) passent avant comme apres. Un Release unicast vers le serveur n'est pas vu par un observateur : le commutateur a appris l'adresse du serveur, comme un vrai.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -30,6 +34,7 @@ beforeEach(() => {
 async function lan() {
   const srv = new LinuxServer('linux-server', 'SRV');
   const client = new LinuxPC('linux-pc', 'C1');
+  client.getDHCPClient().setBroadcastFlag(true);
   const observer = new LinuxPC('linux-pc', 'OBS');
   const sw = new GenericSwitch('switch-generic', 'SW');
   new Cable('a').connect(srv.getPorts()[0], sw.getPorts()[0]);

@@ -4,7 +4,7 @@ import {
   sshPublicKeyFromBlob, type SshPrivateKey,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { SshReader, SshWriter } from '../wire/SshDataTypes';
-import { signWithAlgorithm, signatureAlgorithmsFor, verifyUserauthSignature } from '../auth/UserauthSignature';
+import { hostKeySignatureAlgorithmsFor, signWithAlgorithm, verifyUserauthSignature } from '../auth/UserauthSignature';
 import { identificationLine, scanIdentification, type SshIdentification } from './SshIdentification';
 import {
   decodeKexInit, encodeKexInit, negotiate, KEX_COOKIE_LENGTH,
@@ -15,8 +15,10 @@ import {
   type PacketProtection,
 } from './SshBinaryPacket';
 import {
-  deriveKey, exchangeHash, kexMethod, readKexValue, systemRandom, writeKexValue,
-  type EphemeralKey, type KexMethod, type KeyLetter, type RandomSource,
+  GEX_MAX_BITS, deriveKey, estimateGroupBits, exchangeHash, groupExchangeRequestValid, kexMethod, readKexValue,
+  selectExchangeGroup, systemRandom, writeKexValue,
+  type EphemeralKey, type GroupExchangeParameters, type GroupExchangeRequest, type KexMethod, type KeyLetter,
+  type RandomSource,
 } from './SshKeyExchange';
 import {
   EXT_INFO_CLIENT, IMPLEMENTED_CIPHERS, IMPLEMENTED_COMPRESSION, IMPLEMENTED_HOST_KEY_ALGORITHMS,
@@ -26,8 +28,9 @@ import {
 import {
   SSH_DISCONNECT_BY_APPLICATION, SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE, SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
   SSH_DISCONNECT_PROTOCOL_ERROR, SSH_DISCONNECT_PROTOCOL_VERSION_NOT_SUPPORTED,
-  SSH_DISCONNECT_SERVICE_NOT_AVAILABLE, SSH_MSG_DEBUG, SSH_MSG_DISCONNECT, SSH_MSG_EXT_INFO, SSH_MSG_IGNORE,
+  SSH_MSG_DEBUG, SSH_MSG_DISCONNECT, SSH_MSG_EXT_INFO, SSH_MSG_IGNORE,
   SSH_MSG_KEXDH_INIT, SSH_MSG_KEXDH_REPLY, SSH_MSG_KEXINIT, SSH_MSG_LOCAL_LEGACY_FRAME,
+  SSH_MSG_KEX_DH_GEX_GROUP, SSH_MSG_KEX_DH_GEX_INIT, SSH_MSG_KEX_DH_GEX_REPLY, SSH_MSG_KEX_DH_GEX_REQUEST,
   SSH_MSG_NEWKEYS, SSH_MSG_SERVICE_ACCEPT, SSH_MSG_SERVICE_REQUEST, SSH_MSG_UNIMPLEMENTED,
   SSH_USERAUTH_SERVICE,
 } from './SshMessageNumbers';
@@ -56,7 +59,12 @@ export interface SshTransportConfig {
   readonly algorithms?: SshAlgorithmPreferences;
   readonly verifyHostKey?: (algorithm: string, blob: Uint8Array) => boolean;
   readonly random?: RandomSource;
+  readonly groupExchangeMinBits?: number;
+  readonly groupExchangeClientMinBits?: number;
+  readonly extInfo?: boolean;
 }
+
+const OPENSSH_GEX_CLIENT_MIN_BITS = 2048;
 
 export interface SshTransportEstablished {
   readonly ok: true;
@@ -87,7 +95,7 @@ type Phase = 'kexinit' | 'kex' | 'newkeys' | 'service' | 'open' | 'closed';
 
 function hostKeyAlgorithmsOf(key: SshServerHostKey): readonly string[] {
   const parsed = sshPublicKeyFromBlob(key.publicKeyBlob);
-  return parsed === null ? [] : signatureAlgorithmsFor(parsed);
+  return parsed === null ? [] : hostKeySignatureAlgorithmsFor(parsed);
 }
 
 export class SshTransport {
@@ -110,6 +118,8 @@ export class SshTransport {
   private negotiated: NegotiatedAlgorithms | null = null;
   private method: KexMethod | null = null;
   private ephemeral: EphemeralKey | null = null;
+  private exchangeGroup: GroupExchangeParameters | null = null;
+  private requestedGroup: GroupExchangeRequest | null = null;
   private sessionId: Uint8Array | null = null;
   private hostKey: { readonly algorithm: string; readonly blob: Uint8Array } | null = null;
   private phase: Phase = 'kexinit';
@@ -117,6 +127,8 @@ export class SshTransport {
   private processing = true;
   private peerClosed: string | null = null;
   private closeNotified = false;
+  private userAuthenticated = false;
+  private receivedDisconnect: { readonly reason: number; readonly description: string } | null = null;
   private readonly handlers = new Set<(payload: Uint8Array) => void>();
   private readonly undelivered: Uint8Array[] = [];
   private readonly closeHandlers = new Set<(reason: string) => void>();
@@ -143,6 +155,10 @@ export class SshTransport {
     return this.peer;
   }
 
+  get peerDisconnect(): { readonly reason: number; readonly description: string } | null {
+    return this.receivedDisconnect;
+  }
+
   get isOpen(): boolean {
     return this.phase === 'open';
   }
@@ -163,6 +179,15 @@ export class SshTransport {
     return () => { this.closeHandlers.delete(handler); };
   }
 
+  markAuthenticated(): void {
+    this.userAuthenticated = true;
+  }
+
+  close(): void {
+    if (this.phase === 'closed') return;
+    this.shutDown('closed');
+  }
+
   disconnect(reason: number, description: string): void {
     if (this.phase === 'closed') return;
     this.sendPacket(new SshWriter()
@@ -175,7 +200,7 @@ export class SshTransport {
     const server = this.config.role === 'server';
     const preferences = this.config.algorithms ?? {};
     const hostKey = server
-      ? implementedOnly(OPENSSH_HOST_KEY_ALGORITHMS,
+      ? implementedOnly(preferences.hostKey ?? OPENSSH_HOST_KEY_ALGORITHMS,
         (this.config.hostKeys ?? []).flatMap(hostKeyAlgorithmsOf))
       : implementedOnly(preferences.hostKey ?? this.config.hostKeyAlgorithms ?? OPENSSH_HOST_KEY_ALGORITHMS,
         IMPLEMENTED_HOST_KEY_ALGORITHMS);
@@ -183,7 +208,7 @@ export class SshTransport {
     const ciphers = implementedOnly(preferences.ciphers ?? OPENSSH_CIPHERS, IMPLEMENTED_CIPHERS);
     const macs = implementedOnly(preferences.macs ?? OPENSSH_MACS, IMPLEMENTED_MACS);
     return {
-      kex: server ? kex : [...kex, EXT_INFO_CLIENT],
+      kex: server || this.config.extInfo === false ? kex : [...kex, EXT_INFO_CLIENT],
       hostKey,
       encryptionClientToServer: ciphers,
       encryptionServerToClient: ciphers,
@@ -268,12 +293,20 @@ export class SshTransport {
       case SSH_MSG_UNIMPLEMENTED:
         return;
       case SSH_MSG_KEXINIT: return this.receiveKexInit(payload);
-      case SSH_MSG_KEXDH_INIT: return this.receiveKexdhInit(payload);
-      case SSH_MSG_KEXDH_REPLY: return this.receiveKexdhReply(payload);
+      case SSH_MSG_KEXDH_INIT:
+        return this.method?.groupExchange ? this.unexpectedKexMessage(type) : this.receiveKexdhInit(payload);
+      case SSH_MSG_KEXDH_REPLY:
+        return this.method?.groupExchange ? this.receiveGroupExchangeGroup(payload) : this.receiveKexdhReply(payload);
+      case SSH_MSG_KEX_DH_GEX_INIT:
+        return this.method?.groupExchange ? this.receiveKexdhInit(payload) : this.unexpectedKexMessage(type);
+      case SSH_MSG_KEX_DH_GEX_REPLY:
+        return this.method?.groupExchange ? this.receiveKexdhReply(payload) : this.unexpectedKexMessage(type);
+      case SSH_MSG_KEX_DH_GEX_REQUEST:
+        return this.method?.groupExchange ? this.receiveGroupExchangeRequest(payload) : this.unexpectedKexMessage(type);
       case SSH_MSG_NEWKEYS: return this.receiveNewKeys();
       case SSH_MSG_EXT_INFO: return this.receiveExtInfo(payload);
       case SSH_MSG_SERVICE_REQUEST: return this.receiveServiceRequest(payload);
-      case SSH_MSG_SERVICE_ACCEPT: return this.receiveServiceAccept();
+      case SSH_MSG_SERVICE_ACCEPT: return this.receiveServiceAccept(payload);
       default:
         if (this.phase !== 'open') {
           this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, `protocol error: rcvd type ${type}`, 'protocol');
@@ -282,6 +315,10 @@ export class SshTransport {
         if (this.handlers.size === 0) { this.undelivered.push(payload); return; }
         for (const handler of [...this.handlers]) handler(payload);
     }
+  }
+
+  private unexpectedKexMessage(type: number): void {
+    this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, `protocol error: rcvd type ${type}`, 'protocol');
   }
 
   private receiveDisconnect(payload: Uint8Array): void {
@@ -295,6 +332,7 @@ export class SshTransport {
     } catch {
       description = '';
     }
+    this.receivedDisconnect = { reason, description };
     this.conclude({
       ok: false, kind: 'disconnect', message: description, disconnect: { reason, description },
     });
@@ -315,7 +353,7 @@ export class SshTransport {
     }
     this.peerKexInit = payload;
     const client = this.config.role === 'client';
-    this.peerOffersExtInfo = !client && peerInit.proposal.kex.includes(EXT_INFO_CLIENT);
+    this.peerOffersExtInfo = !client && this.config.extInfo !== false && peerInit.proposal.kex.includes(EXT_INFO_CLIENT);
     const [clientProposal, serverProposal] = client
       ? [this.myProposal, peerInit.proposal] : [peerInit.proposal, this.myProposal];
     const result = negotiate(clientProposal, serverProposal, this.config.role, isAeadCipher);
@@ -335,11 +373,77 @@ export class SshTransport {
         || peerInit.proposal.hostKey[0] !== result.algorithms.hostKey);
     if (guessed) this.skipNextPacket = true;
     this.phase = 'kex';
-    if (client) {
+    if (client && this.method.groupExchange) {
+      const request = this.groupExchangeRequest();
+      this.requestedGroup = request;
+      this.sendPacket(new SshWriter()
+        .writeByte(SSH_MSG_KEX_DH_GEX_REQUEST).writeUint32(request.min).writeUint32(request.n).writeUint32(request.max)
+        .toBytes());
+    } else if (client) {
       this.ephemeral = this.method.generate(this.random, this.keyMaterialNeeded());
       this.sendPacket(writeKexValue(new SshWriter().writeByte(SSH_MSG_KEXDH_INIT),
         this.method.encoding, this.ephemeral.publicKey).toBytes());
     }
+  }
+
+  private groupExchangeRequest(): GroupExchangeRequest {
+    return {
+      min: this.config.groupExchangeClientMinBits ?? OPENSSH_GEX_CLIENT_MIN_BITS,
+      n: estimateGroupBits(this.keyMaterialNeeded() * 8),
+      max: GEX_MAX_BITS,
+    };
+  }
+
+  private receiveGroupExchangeRequest(payload: Uint8Array): void {
+    if (this.config.role !== 'server' || this.phase !== 'kex') {
+      this.unexpectedKexMessage(payload[0]);
+      return;
+    }
+    let request: GroupExchangeRequest;
+    try {
+      const reader = new SshReader(payload);
+      reader.readByte();
+      request = { min: reader.readUint32(), n: reader.readUint32(), max: reader.readUint32() };
+    } catch {
+      this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, 'invalid KEX_DH_GEX_REQUEST', 'protocol');
+      return;
+    }
+    const group = groupExchangeRequestValid(request)
+      ? selectExchangeGroup(request, this.config.groupExchangeMinBits) : null;
+    if (group === null) {
+      this.abort(SSH_DISCONNECT_KEY_EXCHANGE_FAILED, 'DH_GEX_REQUEST, bad parameters', 'protocol');
+      return;
+    }
+    this.exchangeGroup = { ...request, prime: group.prime, generator: group.generator };
+    this.sendPacket(new SshWriter()
+      .writeByte(SSH_MSG_KEX_DH_GEX_GROUP).writeMpint(group.prime).writeMpint(group.generator).toBytes());
+  }
+
+  private receiveGroupExchangeGroup(payload: Uint8Array): void {
+    if (this.config.role !== 'client' || this.phase !== 'kex' || !this.method || !this.requestedGroup) {
+      this.unexpectedKexMessage(payload[0]);
+      return;
+    }
+    let prime: bigint;
+    let generator: bigint;
+    try {
+      const reader = new SshReader(payload);
+      reader.readByte();
+      prime = reader.readMpint();
+      generator = reader.readMpint();
+    } catch {
+      this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, 'invalid KEX_DH_GEX_GROUP', 'protocol');
+      return;
+    }
+    const bits = prime.toString(2).length;
+    if (bits < this.requestedGroup.min || bits > this.requestedGroup.max || generator < 2n || generator >= prime - 1n) {
+      this.abort(SSH_DISCONNECT_KEY_EXCHANGE_FAILED, `DH parameter out of range: ${bits}`, 'protocol');
+      return;
+    }
+    this.exchangeGroup = { ...this.requestedGroup, prime, generator };
+    this.ephemeral = this.method.generate(this.random, this.keyMaterialNeeded(), { id: 0, bits, prime, generator });
+    this.sendPacket(writeKexValue(new SshWriter().writeByte(SSH_MSG_KEX_DH_GEX_INIT),
+      this.method.encoding, this.ephemeral.publicKey).toBytes());
   }
 
   private keyMaterialNeeded(): number {
@@ -373,7 +477,13 @@ export class SshTransport {
     }
     const negotiated = this.negotiated;
     const hostKey = (this.config.hostKeys ?? []).find((k) => hostKeyAlgorithmsOf(k).includes(negotiated.hostKey));
-    const ephemeral = method.generate(this.random, this.keyMaterialNeeded());
+    const group = this.exchangeGroup;
+    if (method.groupExchange && group === null) {
+      this.unexpectedKexMessage(payload[0]);
+      return;
+    }
+    const ephemeral = method.generate(this.random, this.keyMaterialNeeded(),
+      group === null ? undefined : { id: 0, bits: group.prime.toString(2).length, ...group });
     const shared = ephemeral.sharedSecret(clientPublic);
     if (!hostKey || shared === null) {
       this.abort(SSH_DISCONNECT_KEY_EXCHANGE_FAILED, 'invalid client public key', 'protocol');
@@ -389,10 +499,13 @@ export class SshTransport {
       clientPublic,
       serverPublic: ephemeral.publicKey,
       sharedSecret: shared,
+      ...(group === null ? {} : { groupExchange: group }),
     });
     this.sessionId ??= hash;
     this.hostKey = { algorithm: negotiated.hostKey, blob: hostKey.publicKeyBlob };
-    const reply = new SshWriter().writeByte(SSH_MSG_KEXDH_REPLY).writeBytes(hostKey.publicKeyBlob);
+    const reply = new SshWriter()
+      .writeByte(method.groupExchange ? SSH_MSG_KEX_DH_GEX_REPLY : SSH_MSG_KEXDH_REPLY)
+      .writeBytes(hostKey.publicKeyBlob);
     writeKexValue(reply, method.encoding, ephemeral.publicKey);
     this.sendPacket(reply.writeBytes(signWithAlgorithm(hostKey.privateKey, negotiated.hostKey, hash)).toBytes());
     this.installKeys(shared, hash);
@@ -438,6 +551,7 @@ export class SshTransport {
       clientPublic: this.ephemeral.publicKey,
       serverPublic,
       sharedSecret: shared,
+      ...(this.exchangeGroup === null ? {} : { groupExchange: this.exchangeGroup }),
     });
     if (!verifyUserauthSignature(hostKeyBlob, this.negotiated.hostKey, signature, hash)) {
       this.abort(SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE, 'incorrect signature', 'signature');
@@ -526,20 +640,29 @@ export class SshTransport {
     } catch {
       service = '';
     }
-    if (this.config.role !== 'server' || this.phase !== 'service' || service !== SSH_USERAUTH_SERVICE) {
-      this.abort(SSH_DISCONNECT_SERVICE_NOT_AVAILABLE, `service ${service} not available`, 'protocol');
+    if (this.config.role !== 'server' || (this.phase !== 'service' && this.phase !== 'open')) {
+      this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, 'protocol error: unexpected SERVICE_REQUEST', 'protocol');
+      return;
+    }
+    if (service !== SSH_USERAUTH_SERVICE || this.userAuthenticated) {
+      this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, `bad service request ${service}`, 'protocol');
       return;
     }
     this.sendPacket(new SshWriter().writeByte(SSH_MSG_SERVICE_ACCEPT).writeString(service).toBytes());
-    this.open();
+    if (this.phase === 'service') this.open();
   }
 
-  private receiveServiceAccept(): void {
-    if (this.config.role !== 'client' || this.phase !== 'service') {
+  private receiveServiceAccept(payload: Uint8Array): void {
+    if (this.config.role !== 'client' || (this.phase !== 'service' && this.phase !== 'open')) {
       this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, 'protocol error: unexpected SERVICE_ACCEPT', 'protocol');
       return;
     }
-    this.open();
+    if (this.phase === 'service') {
+      this.open();
+      return;
+    }
+    if (this.handlers.size === 0) this.undelivered.push(payload);
+    for (const handler of [...this.handlers]) handler(payload);
   }
 
   private open(): void {

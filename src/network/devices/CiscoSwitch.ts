@@ -18,7 +18,11 @@ import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState, type SwitchportMode } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
-import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './shells/cisco/CiscoPlatform';
+import { C3560_SOFTWARE, ciscoSoftwareDescriptor, type CiscoSoftwareIdentity } from './shells/cisco/CiscoPlatform';
+import { iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
+import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
+import type { SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
+import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
 import { CdpAgent } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP } from '../cdp/types';
@@ -470,6 +474,20 @@ export class CiscoSwitch extends Switch {
 
   protected override sshServerLimits(): Partial<SshServerConfig> {
     return getSecurityConfig(this).sshServerLimits();
+  }
+
+  iosSoftware(): CiscoSoftwareIdentity { return C3560_SOFTWARE; }
+
+  sshClientProfile(): SshClientProfile {
+    return iosSshClientProfile(getSecurityConfig(this).ssh, C3560_SOFTWARE);
+  }
+
+  protected override sshTransportPolicy(): SshTransportPolicy {
+    return iosSshTransportPolicy(getSecurityConfig(this).ssh, C3560_SOFTWARE);
+  }
+
+  protected override sshHostKeySpec(): { algorithm: SshKeyAlgorithm; bits?: number } {
+    return { algorithm: 'ssh-rsa', bits: getSecurityConfig(this).cryptoKeys[0]?.modulus };
   }
 
   getBootSequence(): string {

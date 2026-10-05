@@ -86,6 +86,7 @@
  *    C'est le cas qui tombe si l'on « corrige » en supprimant le refus
  *    au lieu de le faire dependre du fil.
  */
+import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, it, expect } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -178,6 +179,8 @@ async function laboratoire(allowaccess = 'ping https ssh') {
     'interface GigabitEthernet0/0', `ip address ${ROUTEUR} 255.255.255.0`,
     'no shutdown', 'end',
   ]);
+
+  for (const poste of [posteLinux, posteWindows, serveur]) allowLegacyIosSsh(poste);
 
   return { pareFeu, shell, routeur, posteLinux, posteWindows, serveur };
 }
