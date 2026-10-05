@@ -153,7 +153,7 @@ import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
-import { isValidIPv4 } from '../../core/ip';
+import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import { PingOptions } from './diag/PingOptions';
 import { AdminSessionTable } from './mgmt/AdminSessionTable';
 import { FortiGuardDatabases } from './mgmt/FortiGuardDatabases';
@@ -313,12 +313,13 @@ export class Firewall extends Equipment {
 
   getDhcp6(): FirewallDhcp6 { return this.dhcp6; }
 
-  private readonly traceroute6 = new FirewallTraceroute6(() => this.ipv6.dataPlane());
+  private readonly traceroute6 = new FirewallTraceroute6(
+    () => this.ipv6.dataPlane(), (name) => this.resolveHostName6(name));
 
   runTraceroute6(target: string): string { return this.traceroute6.run(target); }
 
   private readonly ping6 = new FirewallPing6(
-    () => this.ipv6.dataPlane(), () => this.ping6Options);
+    () => this.ipv6.dataPlane(), (name) => this.resolveHostName6(name), () => this.ping6Options);
 
   private readonly ipv6Routes = new Map<string, string>();
   private readonly revisions: RevisionStore;
@@ -912,6 +913,10 @@ export class Firewall extends Equipment {
     return this.dnsClient.resolve(name).find(isValidIPv4) ?? null;
   }
 
+  private resolveHostName6(name: string): string | null {
+    return this.dnsClient.resolve(name, 'ipv6').find(isValidIPv6) ?? null;
+  }
+
   private rememberUnroutable(destination: string): void {
     const context = makePacketContext({
       ingressPort: 'local',
@@ -943,6 +948,8 @@ export class Firewall extends Equipment {
       destinationPort: DNS_PORT, sourcePort, payload,
       payloadBytes: payload.length,
     }),
+    now: () => this.getSystemClockMs(),
+    learnedServers: () => this.dhcp.learnedDnsServers(),
   });
 
   getDnsClient(): FirewallDnsClient { return this.dnsClient; }
