@@ -122,6 +122,7 @@ import {
 import { DnsService } from './linux/LinuxDnsService';
 import { Bind9Service } from './linux/bind9/Bind9Service';
 import { attachOrderedCapture } from '../hardware/PortTap';
+import { settleOrderedDeliveries } from '../hardware/FrameLineage';
 import { LinuxDhcpdService } from './linux/dhcp/LinuxDhcpdService';
 import { LinuxDhcpd6Service } from './linux/dhcp/LinuxDhcpd6Service';
 import { seedDhcpdFiles } from './linux/dhcp/DhcpdFiles';
@@ -3359,6 +3360,7 @@ export abstract class LinuxMachine extends EndHost
    */
   async executeCommand(command: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
+    settleOrderedDeliveries();
     if (stdin !== undefined) {
       this.executor._scenarioStdin = stdin;
     }

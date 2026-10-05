@@ -21,15 +21,25 @@ export interface OrderedDelivery<T extends { readonly seq: number }> {
   flush(): void;
 }
 
+const undelivered = new Set<() => void>();
+
+export function settleOrderedDeliveries(): void {
+  for (const flush of [...undelivered]) flush();
+}
+
 export function orderedDelivery<T extends { readonly seq: number }>(sink: (entry: T) => void): OrderedDelivery<T> {
   const pending: T[] = [];
   const flush = (): void => {
+    undelivered.delete(flush);
     pending.sort((a, b) => a.seq - b.seq);
     for (const entry of pending.splice(0)) sink(entry);
   };
   return {
     push(entry) {
-      if (pending.length === 0) queueMicrotask(flush);
+      if (pending.length === 0) {
+        undelivered.add(flush);
+        queueMicrotask(flush);
+      }
       pending.push(entry);
     },
     flush,
