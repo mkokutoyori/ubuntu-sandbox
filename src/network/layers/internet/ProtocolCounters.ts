@@ -43,6 +43,8 @@ export interface ProtocolCounters {
   tcpRetransSegs: number;
   tcpInErrs: number;
   tcpOutRsts: number;
+  tcpInCsumErrors: number;
+  tcpCurrEstab: number;
 
   udpInDatagrams: number;
   udpNoPorts: number;
@@ -72,6 +74,7 @@ export function newProtocolCounters(): ProtocolCounters {
     icmpOutTimeExcds: 0, icmpOutRedirects: 0, icmpOutEchos: 0, icmpOutEchoReps: 0,
     tcpActiveOpens: 0, tcpPassiveOpens: 0, tcpAttemptFails: 0, tcpEstabResets: 0,
     tcpInSegs: 0, tcpOutSegs: 0, tcpRetransSegs: 0, tcpInErrs: 0, tcpOutRsts: 0,
+    tcpInCsumErrors: 0, tcpCurrEstab: 0,
     udpInDatagrams: 0, udpNoPorts: 0, udpInErrors: 0, udpOutDatagrams: 0, udpInCsumErrors: 0,
     udpLiteInDatagrams: 0, udpLiteNoPorts: 0, udpLiteInErrors: 0, udpLiteOutDatagrams: 0,
     udpLiteInCsumErrors: 0,

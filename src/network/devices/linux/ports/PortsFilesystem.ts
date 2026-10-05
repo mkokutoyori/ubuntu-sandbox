@@ -63,7 +63,7 @@ export class PortsFilesystem {
       renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'udplite')),
     );
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetSnmp, () =>
-      renderProcNetSnmp(linuxSnmpSnapshot(socketTable, counters?.(), kernel?.())),
+      renderProcNetSnmp(linuxSnmpSnapshot(counters?.(), kernel?.())),
     );
   }
 }
@@ -77,19 +77,14 @@ export interface LinuxSnmpSnapshot extends SnmpSnapshot {
   kernel: KernelIpFacts;
 }
 
-export function linuxSnmpSnapshot(
-  socketTable: SocketTable | null | undefined, counters?: ProtocolCounters, kernel?: KernelIpFacts,
-): LinuxSnmpSnapshot {
-  return { ...snmpSnapshot(socketTable, counters), kernel: kernel ?? STANDALONE_KERNEL_IP_FACTS };
+export function linuxSnmpSnapshot(counters?: ProtocolCounters, kernel?: KernelIpFacts): LinuxSnmpSnapshot {
+  return { ...snmpSnapshot(counters), kernel: kernel ?? STANDALONE_KERNEL_IP_FACTS };
 }
 
-export function snmpSnapshot(
-  socketTable: SocketTable | null | undefined, counters?: ProtocolCounters,
-): SnmpSnapshot {
+export function snmpSnapshot(counters?: ProtocolCounters): SnmpSnapshot {
   return {
     counters: counters ?? newProtocolCounters(),
-    currEstab: (socketTable?.getAll() ?? [])
-      .filter((s) => s.protocol === 'tcp' && s.state === 'ESTABLISHED').length,
+    currEstab: counters?.tcpCurrEstab ?? 0,
   };
 }
 
@@ -105,7 +100,7 @@ export function renderProcNetSnmp(snapshot: LinuxSnmpSnapshot): string {
     'IcmpMsg: InType8 OutType0',
     `IcmpMsg: ${c.icmpInEchos} ${c.icmpOutEchoReps}`,
     'Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors',
-    `Tcp: 1 ${k.rtoMinMs} ${k.rtoMaxMs} -1 ${c.tcpActiveOpens} ${c.tcpPassiveOpens} ${c.tcpAttemptFails} ${c.tcpEstabResets} ${snapshot.currEstab} ${c.tcpInSegs} ${c.tcpOutSegs} ${c.tcpRetransSegs} ${c.tcpInErrs} ${c.tcpOutRsts} 0`,
+    `Tcp: 1 ${k.rtoMinMs} ${k.rtoMaxMs} -1 ${c.tcpActiveOpens} ${c.tcpPassiveOpens} ${c.tcpAttemptFails} ${c.tcpEstabResets} ${snapshot.currEstab} ${c.tcpInSegs} ${c.tcpOutSegs} ${c.tcpRetransSegs} ${c.tcpInErrs} ${c.tcpOutRsts} ${c.tcpInCsumErrors}`,
     'Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
     `Udp: ${c.udpInDatagrams} ${c.udpNoPorts} ${c.udpInErrors} ${c.udpOutDatagrams} 0 0 ${c.udpInCsumErrors} 0`,
     'UdpLite: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',

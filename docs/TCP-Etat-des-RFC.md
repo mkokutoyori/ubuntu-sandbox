@@ -181,6 +181,12 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   les erreurs ICMP et ICMPv6 des connexions qu'elle ouvre (`probe-router-tcp-receives-icmp-errors`).
 - **Pare-feu et commutateurs** : même pile, sans ECN ; elle ne reçoit pas encore les erreurs ICMP des
   connexions qu'elle ouvre (`probe-commutateur-a-une-pile-tcp` pour la pile du commutateur).
+- **Compteurs.** Le groupe TCP de la RFC 4022 (`/proc/net/snmp`, `netstat -s` sous Linux et sous Windows) est
+  tenu par la pile, sur ses propres événements : ouvertures actives et passives, tentatives échouées,
+  connexions remises à zéro, connexions établies (ESTABLISHED ou CLOSE-WAIT), segments reçus (même en
+  erreur) et envoyés (sans les retransmissions, comme le noyau et comme Windows), segments retransmis,
+  erreurs et erreurs de checksum, RST envoyés (`probe-tcp-mib-counters`). Une connexion qui ne quitte pas la
+  machine et l'IPv6 sont comptés comme le reste.
 
 ## Limites assumées
 

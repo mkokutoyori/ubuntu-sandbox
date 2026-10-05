@@ -287,7 +287,7 @@ export function cmdNetstat(
 
   if (hasFlag('s')) {
     return netstatStatistics(
-      snmpSnapshot(socketTable, netCtx?.protocolCounters()),
+      snmpSnapshot(netCtx?.protocolCounters()),
       familleDemandee(args));
   }
 

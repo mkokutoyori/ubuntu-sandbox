@@ -320,7 +320,7 @@ export function cmdNetstat(
   }
 
   if (hasFlag('s') || args.includes('--statistics')) {
-    return cmdNetstatStatistics(linuxSnmpSnapshot(socketTable, counters, kernel));
+    return cmdNetstatStatistics(linuxSnmpSnapshot(counters, kernel));
   }
 
   // Determine which protocols to show (no -t/-u → show both)
