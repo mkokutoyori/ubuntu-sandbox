@@ -10,7 +10,7 @@ export interface WindowsBatchDevice {
   environment(): Map<string, string>;
   setVariable(name: string, value: string): void;
   removeVariable(name: string): void;
-  runSimple(line: string): Promise<string>;
+  runSimple(line: string, stdin?: string): Promise<string>;
   timeZone(): string;
   readInputLine?(prompt: string): Promise<string | null>;
 }
@@ -20,10 +20,16 @@ const NOT_RECOGNIZED = 'is not recognized as an internal or external command';
 export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
   return {
     env: {
-      get: name => device.environment().get(name.toUpperCase()),
+      get: name => {
+        const value = device.environment().get(name.toUpperCase());
+        return value === '' ? undefined : value;
+      },
       set: (name, value) => device.setVariable(name, value),
-      unset: name => device.removeVariable(name),
-      names: () => [...device.environment().keys()],
+      unset: name => {
+        device.removeVariable(name);
+        if (device.environment().has(name.toUpperCase())) device.setVariable(name, '');
+      },
+      names: () => [...device.environment()].filter(([, value]) => value !== '').map(([name]) => name),
     },
     fs: {
       normalize: (path, base) => device.fileSystem().normalizePath(path, base),
@@ -50,8 +56,8 @@ export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
     formattedDate: () => cmdDate([], device.timeZone()),
     formattedTime: () => clockTimeWithCentiseconds(device.timeZone()),
     random: () => Math.floor(Math.random() * 32768),
-    async runCommand(line): Promise<CommandOutcome> {
-      const output = await device.runSimple(line);
+    async runCommand(line, stdin): Promise<CommandOutcome> {
+      const output = await device.runSimple(line, stdin);
       return {
         output,
         exitCode: commandExitCode(output),

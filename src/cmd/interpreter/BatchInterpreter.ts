@@ -37,12 +37,16 @@ class StepLimitSignal {}
 
 const STEP_LIMIT = 200000;
 const SYNTAX_ERROR = 'The syntax of the command is incorrect.';
-const COMMAND_WORD = /^([A-Za-z]+)(?=$|[\s/:\\,;=(+[\]!]|\.(?<=^echo\.))/i;
+const COMMAND_WORD = /^([A-Za-z]+)(?:\.exe(?=\s|$))?(?=$|[\s/:\\,;=(+[\]!]|\.(?<=^echo\.))/i;
 const NUMBER = /^[-+]?(0x[0-9a-f]+|\d+)$/i;
 
 const linesOf = (text: string): string[] => (text === '' ? [] : text.split('\n'));
 const flatten = (text: string): string => text.replace(/\s*\n\s*/g, ' ').trim();
 const success = (lines: string[] = []): Produced => ({ lines, exitCode: 0 });
+const failure = (message: string): Produced => ({ lines: [message], exitCode: 1 });
+const NO_REDIRECTIONS: Redirections = extractRedirections('');
+const PATH_NOT_FOUND = 'The system cannot find the path specified.';
+const FILE_NOT_FOUND = 'The system cannot find the file specified.';
 
 function parseArguments(text: string): string[] {
   const parts: string[] = [];
@@ -97,6 +101,7 @@ export class BatchInterpreter {
   private echoOn = true;
   private delayedExpansion = false;
   private readonly locals: LocalState[] = [];
+  private readonly directoryStack: string[] = [];
 
   constructor(private readonly host: BatchHost) {}
 
@@ -222,6 +227,7 @@ export class BatchInterpreter {
     const echoes = echo && this.echoOn && link.echoed !== '';
     if (statement.kind === 'simple') return this.executeSimple(statement.text, link.echoed, frame, run, echoes);
     if (echoes) this.echoCommand(link.echoed, run);
+    if (statement.kind === 'pipeline') return this.executePipeline(statement.segments, frame, run);
     if (statement.kind === 'group') return this.executeGroup(statement, frame, run);
     if (statement.kind === 'if') return this.executeIf(statement, frame, run);
     return this.executeFor(statement, frame, run);
@@ -331,11 +337,55 @@ export class BatchInterpreter {
     text: string, echoed: string, frame: Frame, run: Run, echoes: boolean,
   ): Promise<boolean> {
     if (echoes) this.echoCommand(echoed, run);
+    const prepared = this.prepare(text);
+    const produced = await this.produce(prepared, frame, run, undefined);
+    this.route(produced, prepared.redirections, run);
+    return produced.exitCode === 0;
+  }
+
+  private prepare(text: string): { command: string; redirections: Redirections } {
     const source = this.delayedExpansion ? expandDelayed(text, name => this.lookupVariable(name)) : text;
     const redirections = extractRedirections(source);
-    const command = stripCarets(redirections.command).trim();
-    const produced = command === '' ? success() : await this.dispatch(command, redirections, frame, run);
-    this.route(produced, redirections, run);
+    return { command: stripCarets(redirections.command).trim(), redirections };
+  }
+
+  private async produce(
+    prepared: { command: string; redirections: Redirections }, frame: Frame, run: Run, stdin: string | undefined,
+  ): Promise<Produced> {
+    if (prepared.command === '') return success();
+    let input = stdin;
+    const source = prepared.redirections.stdin;
+    if (source !== null) {
+      const content = this.host.fs.read(this.host.fs.normalize(source, this.host.cwd()));
+      if (content === null) return failure(FILE_NOT_FOUND);
+      input = content;
+    }
+    return this.dispatch(prepared.command, prepared.redirections, frame, run, input);
+  }
+
+  private async executePipeline(segments: Statement[], frame: Frame, run: Run): Promise<boolean> {
+    let input: string | undefined;
+    let produced: Produced = success();
+    const last = segments.length - 1;
+    for (let index = 0; index <= last; index++) {
+      const segment = segments[index];
+      let redirections = NO_REDIRECTIONS;
+      if (segment.kind === 'group') {
+        produced = success(await this.captureBody(segment.body, frame, run));
+      } else if (segment.kind === 'simple') {
+        const prepared = this.prepare(segment.text);
+        redirections = prepared.redirections;
+        produced = await this.produce(prepared, frame, run, input);
+      }
+      if (index === last) {
+        this.route(produced, redirections, run);
+      } else if (produced.exitCode === 0) {
+        input = produced.lines.join('\n');
+      } else {
+        run.output.push(...produced.lines);
+        input = '';
+      }
+    }
     return produced.exitCode === 0;
   }
 
@@ -360,7 +410,9 @@ export class BatchInterpreter {
     }
   }
 
-  private async dispatch(command: string, redirections: Redirections, frame: Frame, run: Run): Promise<Produced> {
+  private async dispatch(
+    command: string, redirections: Redirections, frame: Frame, run: Run, stdin: string | undefined,
+  ): Promise<Produced> {
     const match = COMMAND_WORD.exec(command);
     const word = match?.[1].toLowerCase() ?? '';
     const rest = match === null ? command : command.slice(match[0].length);
@@ -374,7 +426,15 @@ export class BatchInterpreter {
       case 'shift': frame.arguments.shift(); return success();
       case 'setlocal': return this.setlocalBuiltin(rest);
       case 'endlocal': this.restoreLocal(); return success();
-      default: return this.runExternal(command, redirections, frame, run);
+      case 'title': return success();
+      case 'pause': return success(['Press any key to continue . . .']);
+      case 'pushd': return this.pushdBuiltin(rest);
+      case 'popd': return this.popdBuiltin();
+      case 'path': return this.pathBuiltin(rest);
+      case 'timeout': return this.timeoutBuiltin(rest);
+      case 'choice': return this.choiceBuiltin(rest);
+      case 'cmd': return this.cmdBuiltin(rest);
+      default: return this.runExternal(command, frame, run, stdin);
     }
   }
 
@@ -491,15 +551,13 @@ export class BatchInterpreter {
     return { lines: captured, exitCode: this.errorLevel };
   }
 
-  private async runExternal(command: string, redirections: Redirections, frame: Frame, run: Run): Promise<Produced> {
+  private async runExternal(command: string, frame: Frame, run: Run, stdin: string | undefined): Promise<Produced> {
     const firstWord = parseArguments(command)[0] ?? '';
     if (/\.(bat|cmd)$/i.test(firstWord.replace(/^"|"$/g, ''))) {
       const script = this.resolveBatchFile(firstWord);
       if (script !== null) return this.invokeScript(script, parseArguments(command).slice(1), frame, run, false);
     }
-    let line = command;
-    if (redirections.stdin !== null) line = `type "${redirections.stdin}" | ${command}`;
-    const outcome: CommandOutcome = await this.host.runCommand(line);
+    const outcome: CommandOutcome = await this.host.runCommand(command, stdin);
     if (outcome.notRecognized === true) {
       const script = this.resolveBatchFile(firstWord);
       if (script !== null) return this.invokeScript(script, parseArguments(command).slice(1), frame, run, false);
@@ -507,5 +565,106 @@ export class BatchInterpreter {
     this.errorLevel = outcome.exitCode;
     return { lines: linesOf(outcome.output), exitCode: outcome.exitCode };
   }
-}
 
+  private pushdBuiltin(rest: string): Produced {
+    const target = rest.trim().replace(/^"(.*)"$/, '$1');
+    if (target === '') return success([...this.directoryStack].reverse());
+    const absolute = this.host.fs.normalize(target, this.host.cwd());
+    if (!this.host.fs.isDirectory(absolute)) return failure(PATH_NOT_FOUND);
+    this.directoryStack.push(this.host.cwd());
+    this.host.setCwd(absolute);
+    return success();
+  }
+
+  private popdBuiltin(): Produced {
+    const previous = this.directoryStack.pop();
+    if (previous !== undefined) this.host.setCwd(previous);
+    return success();
+  }
+
+  private pathBuiltin(rest: string): Produced {
+    const value = rest.trim().replace(/^=/, '');
+    if (value === '') {
+      const current = this.host.env.get('PATH');
+      return success([current === undefined || current === '' ? 'No Path set' : `PATH=${current}`]);
+    }
+    if (value === ';') this.host.env.unset('PATH');
+    else this.host.env.set('PATH', value);
+    return success();
+  }
+
+  private timeoutBuiltin(rest: string): Produced {
+    const tokens = parseArguments(rest);
+    let seconds: string | undefined;
+    let patient = false;
+    for (let index = 0; index < tokens.length; index++) {
+      const lowered = tokens[index].toLowerCase();
+      if (lowered === '/nobreak') patient = true;
+      else if (lowered === '/t') seconds = tokens[++index];
+      else if (!lowered.startsWith('/')) seconds = tokens[index];
+    }
+    const duration = seconds === undefined ? Number.NaN : Number(seconds);
+    if (!Number.isInteger(duration) || duration < -1 || duration > 99999) {
+      return failure('ERROR: Invalid value for timeout specified. Valid range is -1 to 99999.');
+    }
+    const advice = patient ? 'press CTRL+C to quit' : 'press a key to continue';
+    return success([`Waiting for ${duration} seconds, ${advice} ...`]);
+  }
+
+  private async choiceBuiltin(rest: string): Promise<Produced> {
+    const tokens = parseArguments(rest);
+    let choices = 'YN';
+    let message = '';
+    let fallback: string | undefined;
+    let hidden = false;
+    for (let index = 0; index < tokens.length; index++) {
+      const lowered = tokens[index].toLowerCase();
+      if (lowered === '/c') choices = (tokens[++index] ?? choices).replace(/^"|"$/g, '');
+      else if (lowered === '/m') message = (tokens[++index] ?? '').replace(/^"|"$/g, '');
+      else if (lowered === '/d') fallback = (tokens[++index] ?? '').replace(/^"|"$/g, '').toUpperCase();
+      else if (lowered === '/t') index++;
+      else if (lowered === '/n') hidden = true;
+    }
+    const letters = [...choices.toUpperCase()];
+    const prompt = `${message === '' ? '' : `${message} `}${hidden ? '' : `[${letters.join(',')}]?`}`;
+    let picked = fallback;
+    if (picked === undefined && this.host.readInputLine) {
+      picked = ((await this.host.readInputLine(prompt)) ?? '').toUpperCase();
+    }
+    const index = picked === undefined ? -1 : letters.indexOf(picked.charAt(0));
+    if (index < 0) return { lines: [prompt], exitCode: 255 };
+    this.errorLevel = index + 1;
+    return { lines: [`${prompt}${letters[index]}`], exitCode: index + 1 };
+  }
+
+  private async cmdBuiltin(rest: string): Promise<Produced> {
+    const match = /^\s*((?:\/[a-z](?::\S+)?\s+)*?)\/[ck]\s*(.*)$/is.exec(rest);
+    if (match === null) return success();
+    let line = match[2].trim();
+    if (line.length >= 2 && line.startsWith('"') && line.endsWith('"') && !line.slice(1, -1).includes('"')) line = line.slice(1, -1);
+    const environment = new Map<string, string>();
+    for (const name of this.host.env.names()) environment.set(name, this.host.env.get(name) ?? '');
+    const directory = this.host.cwd();
+    const savedEcho = this.echoOn;
+    const savedDelayed = this.delayedExpansion;
+    const savedDirectories = [...this.directoryStack];
+    this.delayedExpansion = /\/v:on/i.test(match[1]);
+    const child = this.buildFrame([line], null, [], false);
+    let output = '';
+    try {
+      output = await this.execute(child, innerRun => this.runFrame(child, 0, innerRun));
+    } finally {
+      for (const name of this.host.env.names()) {
+        if (!environment.has(name)) this.host.env.unset(name);
+      }
+      for (const [name, value] of environment) {
+        if (this.host.env.get(name) !== value) this.host.env.set(name, value);
+      }
+      this.host.setCwd(directory);
+      this.echoOn = savedEcho;
+      this.delayedExpansion = savedDelayed;
+      this.directoryStack.splice(0, this.directoryStack.length, ...savedDirectories);
+    }
+    return { lines: linesOf(output), exitCode: this.errorLevel };
+  }
+}

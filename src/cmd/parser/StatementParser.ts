@@ -16,6 +16,7 @@ export type ForMode = 'plain' | 'l' | 'd' | 'r' | 'f';
 
 export type Statement =
   | { readonly kind: 'simple'; readonly text: string }
+  | { readonly kind: 'pipeline'; readonly segments: Statement[] }
   | { readonly kind: 'group'; readonly body: string; readonly suffix: string }
   | {
     readonly kind: 'if';
@@ -183,7 +184,7 @@ function readSimpleSegment(text: string, start: number): number {
     if (character === '"') { inQuote = !inQuote; continue; }
     if (inQuote || isCaretEscaped(text, index)) continue;
     if (character === '&' && text[index - 1] !== '>' && text[index - 1] !== '<') return index;
-    if (character === '|' && text[index + 1] === '|') return index;
+    if (character === '|') return index;
   }
   return text.length;
 }
@@ -196,6 +197,33 @@ function readOperator(text: string, start: number): { operator: ChainOperator; e
   return { operator: '', end: cursor };
 }
 
+function isPipeAt(text: string, index: number): boolean {
+  const cursor = skipSpaces(text, index);
+  return text[cursor] === '|' && text[cursor + 1] !== '|';
+}
+
+function parseOperand(text: string, start: number): { statement: Statement; end: number } {
+  const cursor = start;
+  if (text[cursor] === '(') {
+    const close = findMatchingParenthesis(text, cursor);
+    const stop = close < 0 ? text.length : close + 1;
+    const tail = readSimpleSegment(text, stop);
+    const body = text.slice(cursor + 1, close < 0 ? text.length : close);
+    return { statement: { kind: 'group', body, suffix: text.slice(stop, tail).trim() }, end: tail };
+  }
+  const word = readWord(text, cursor);
+  const keyword = word.word.toLowerCase();
+  if (keyword === 'if' && /^\s/.test(text.slice(word.end, word.end + 1))) {
+    const parsed = parseIf(text, word.end);
+    if (parsed) return parsed;
+  } else if (keyword === 'for' && /^\s/.test(text.slice(word.end, word.end + 1))) {
+    const parsed = parseFor(text, word.end);
+    if (parsed) return parsed;
+  }
+  const end = readSimpleSegment(text, cursor);
+  return { statement: { kind: 'simple', text: text.slice(cursor, end).trim() }, end };
+}
+
 export function parseLine(text: string): Link[] {
   const links: Link[] = [];
   let cursor = 0;
@@ -206,29 +234,15 @@ export function parseLine(text: string): Link[] {
     while (text[cursor] === '@') { silent = true; cursor = skipSpaces(text, cursor + 1); }
     if (cursor >= text.length) break;
     const origin = cursor;
-    let statement: Statement | null = null;
-    let end = cursor;
-
-    if (text[cursor] === '(') {
-      const close = findMatchingParenthesis(text, cursor);
-      const stop = close < 0 ? text.length : close + 1;
-      const tail = readSimpleSegment(text, stop);
-      statement = { kind: 'group', body: text.slice(cursor + 1, close < 0 ? text.length : close), suffix: text.slice(stop, tail).trim() };
-      end = tail;
-    } else {
-      const word = readWord(text, cursor);
-      const keyword = word.word.toLowerCase();
-      if (keyword === 'if' && /^\s/.test(text.slice(word.end, word.end + 1))) {
-        const parsed = parseIf(text, word.end);
-        if (parsed) { statement = parsed.statement; end = parsed.end; }
-      } else if (keyword === 'for' && /^\s/.test(text.slice(word.end, word.end + 1))) {
-        const parsed = parseFor(text, word.end);
-        if (parsed) { statement = parsed.statement; end = parsed.end; }
+    let { statement, end } = parseOperand(text, cursor);
+    if (isPipeAt(text, end) && (statement.kind === 'simple' || statement.kind === 'group')) {
+      const segments: Statement[] = [statement];
+      while (isPipeAt(text, end)) {
+        const next = parseOperand(text, skipSpaces(text, skipSpaces(text, end) + 1));
+        segments.push(next.statement);
+        end = next.end;
       }
-      if (statement === null) {
-        end = readSimpleSegment(text, cursor);
-        statement = { kind: 'simple', text: text.slice(cursor, end).trim() };
-      }
+      statement = { kind: 'pipeline', segments };
     }
     links.push({ operator, statement, echoed: silent ? '' : text.slice(origin, end).trim() });
     const next = readOperator(text, end);

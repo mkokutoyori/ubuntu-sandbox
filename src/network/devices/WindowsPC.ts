@@ -225,9 +225,9 @@ import { formatLocalTime } from './linux/system/SystemInfo';
 import { windowsZoneNameAt } from '../core/time/WindowsTimeZones';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir, fileSummaryLine } from './windows/WinDir';
+import { PATHPING_HELP, parseWinPathpingArgs, runPathping } from './windows/WinPathping';
 import { cmdFsutil } from './windows/Fsutil';
 import type { WmiHost } from './windows/WmiClasses';
-import { applyFindstr } from './windows/textFilters';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import type { NetIPAddressEntry } from './windows/netIpAddress';
 import type { NetRouteEntry } from './windows/netRoute';
@@ -2547,6 +2547,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
+  private async runPathpingCommand(args: string[]): Promise<string> {
+    if (args.some(argument => argument === '/?' || argument === '-?')) return PATHPING_HELP;
+    const parsed = parseWinPathpingArgs(args);
+    if (parsed.targetStr === '') return PATHPING_HELP;
+    const lines: string[] = [];
+    await runPathping(this, parsed, {
+      line: text => { lines.push(text); },
+      error: text => { lines.push(text); },
+      cancelled: () => false,
+      delay: () => Promise.resolve(),
+    });
+    return lines.join('\n');
+  }
+
   private cmdSftp(args: string[]): Promise<string> {
     const user = this.userMgr.currentUser;
     let stdin: string | undefined;
@@ -3084,15 +3098,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         environment: () => this.getEnvVars(),
         setVariable: (name, value) => this.setEnvVar(name, value),
         removeVariable: name => this.removeEnvVar(name),
-        runSimple: line => this.executeSimpleCommand(line),
+        runSimple: (line, stdin) => this.executeSimpleCommand(line, stdin),
         timeZone: () => this.identity.timezone,
       }));
     }
     return this.batch;
   }
 
-  private async executeSimpleCommand(trimmed: string): Promise<string> {
-    if (WindowsPC.hasUnquotedPipe(trimmed)) return this.executePipedCommand(trimmed);
+  private async executeSimpleCommand(trimmed: string, stdin?: string): Promise<string> {
     const expanded = this.doskey.expand(trimmed);
     if (expanded !== trimmed) return this.executeCmdCommand(expanded);
     const parts = this.parseCommandLine(expanded);
@@ -3153,13 +3166,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'winrm':   return cmdWinrm(this.winrm, args);
       case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable, this.buildNetContext());
       case 'attrib':  return cmdAttrib(fileCtx, args);
-      case 'find':    return cmdFind(fileCtx, args);
-      case 'findstr': return cmdFindstr(fileCtx, args);
+      case 'find':    return cmdFind(fileCtx, args, stdin);
+      case 'findstr': return cmdFindstr(fileCtx, args, stdin);
       case 'where':   return cmdWhere(fileCtx, args);
-      case 'more':    return cmdMore(fileCtx, args);
+      case 'more':    return cmdMore(fileCtx, args, stdin);
       case 'fc':      return cmdFc(fileCtx, args);
       case 'xcopy':   return cmdXcopy(fileCtx, args);
-      case 'sort':    return cmdSort(fileCtx, args);
+      case 'sort':    return cmdSort(fileCtx, args, stdin);
       case 'cls':     return '';
       case 'doskey':  return this.cmdDoskey(args);
       case 'powershell':
@@ -3400,6 +3413,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'ssh-add':
       case 'ssh-keyscan':
         return Promise.resolve(this.runOpenSshTool(cmd, args));
+      case 'pathping': return this.runPathpingCommand(args);
       case 'sftp':     return this.cmdSftp(args);
       case 'scp':      return this.cmdScp(args);
       case 'telnet':   return this.cmdTelnet(args);
@@ -3408,62 +3422,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
-  // ─── Command Chaining ─────────────────────────────────────────────
-
-  /**
-   * Split a command line into `&&` / `||` / `&`-separated links,
-   * respecting double quotes. A single `|` is a PIPE (left intact for
-   * the segment's own pipe handling); only `||` is a chain operator.
-   */
-  private static hasUnquotedPipe(line: string): boolean {
-    let inQuote = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { inQuote = !inQuote; continue; }
-      if (c === '|' && !inQuote) return true;
-    }
-    return false;
-  }
-
   // ─── Command Parsing ──────────────────────────────────────────────
 
   private parseCommandLine(line: string): string[] {
     return separateCommandWord(splitCmdArgs(line));
-  }
-
-  // ─── Piped Commands ─────────────────────────────────────────────
-
-  private async executePipedCommand(command: string): Promise<string> {
-    const segments = command.split('|').map(s => s.trim());
-    let output = await this.executeCommand(segments[0]);
-
-    for (let i = 1; i < segments.length; i++) {
-      const filter = segments[i].trim();
-      const filterParts = filter.split(/\s+/);
-      const filterCmd = filterParts[0].toLowerCase();
-
-      if (filterCmd === 'findstr') {
-        output = applyFindstr(output, filter);
-      } else if (filterCmd === 'grep') {
-        const pattern = filterParts[filterParts.length - 1];
-        const lines = output.split('\n');
-        output = lines.filter(l => l.includes(pattern)).join('\n');
-      } else if (filterCmd === 'find') {
-        const ci = /\s\/i(\s|$)/i.test(' ' + filter);
-        const cnt = /\s\/c(\s|$)/i.test(' ' + filter);
-        const quoteMatch = filter.match(/find\s+(?:\/[a-z]\s+)*"([^"]+)"/i);
-        if (quoteMatch) {
-          const pattern = quoteMatch[1];
-          const lines = output.split('\n');
-          const matched = lines.filter(l => ci ? l.toLowerCase().includes(pattern.toLowerCase()) : l.includes(pattern));
-          output = cnt ? String(matched.length) : matched.join('\n');
-        }
-      } else if (filterCmd === 'more') {
-        // Passthrough in simulation
-      }
-    }
-
-    return output;
   }
 
   // ─── Tab Completion ──────────────────────────────────────────────

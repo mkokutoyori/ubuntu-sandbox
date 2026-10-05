@@ -19,7 +19,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv } from '@/powershell/nativeAsync';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { applyFindstr } from '@/network/devices/windows/textFilters';
+import { applyFindstrArguments } from '@/network/devices/windows/FindText';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 
 function runNative(name: string, ctx: CmdletContext): PSValue {
@@ -49,7 +49,7 @@ class TextFilterShim implements ICmdlet {
     if (piped === null || piped === undefined) return runNative(this.name, ctx);
     const text = (Array.isArray(piped) ? piped : [piped]).map(psValueToString).join('\n');
     const argv = nativeArgv(ctx.positional, ctx.named);
-    const filtered = applyFindstr(text, [this.name, ...argv].join(' '));
+    const filtered = applyFindstrArguments(text, argv);
     return filtered === '' ? null : (filtered.split('\n') as unknown as PSValue);
   }
 }
