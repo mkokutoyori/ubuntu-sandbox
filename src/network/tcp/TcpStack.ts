@@ -3,7 +3,7 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
-  type UnackedSegment, type TcpOption, type TcpWireOutcome, type TcpErrorReport,
+  type UnackedSegment, type TcpOption, type TcpWireOutcome, type TcpErrorReport, type TcpUserCallResult,
   noFlags, flagsString, randomSequenceNumber, makeSocketKey, makeListenerKey,
   computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS, TCP_BASE_HEADER_BYTES,
@@ -239,6 +239,7 @@ export interface TcpConnectOptions {
   onClose?: TcpCloseHandler;
   ttl?: TimeToLive;
   diffServ?: DiffServField;
+  allowHalfOpen?: boolean;
 }
 
 export interface TcpListenOptions {
@@ -255,6 +256,7 @@ export interface TcpListenOptions {
   maxSegmentSize?: number;
   ttl?: TimeToLive;
   diffServ?: DiffServField;
+  allowHalfOpen?: boolean;
 }
 
 export class TcpSocket {
@@ -266,6 +268,9 @@ export class TcpSocket {
   state: TcpState = 'closed';
   ttl: TimeToLive | null = null;
   diffServ: DiffServField = DiffServField.DEFAULT;
+  allowHalfOpen = false;
+  writeShutdown = false;
+  peerFinished = false;
   sendNext = 0;
   sendUnacked = 0;
   recvNext = 0;
@@ -383,6 +388,8 @@ export class TcpSocket {
   private readonly dataHandlers: TcpDataHandler[] = [];
   private readonly closeHandlers: TcpCloseHandler[] = [];
   private readonly urgentHandlers: Array<(lastUrgentByte: string) => void> = [];
+  private readonly endHandlers: Array<() => void> = [];
+  private endDelivered = false;
 
   constructor(
     readonly stack: TcpStack,
@@ -396,8 +403,8 @@ export class TcpSocket {
     this.family = ipFamilyOf(remoteIp);
   }
 
-  send(data: unknown): void { this.stack._sendData(this, data); }
-  write(data: string): void { this.stack._sendData(this, data); }
+  send(data: unknown): TcpUserCallResult { return this.stack._sendData(this, data); }
+  write(data: string): TcpUserCallResult { return this.stack._sendData(this, data); }
 
   /**
    * RFC 9293 §3.8.5 — the urgent mechanism, which MUST-30 requires a TCP
@@ -405,7 +412,7 @@ export class TcpSocket {
    * to reach for it. The data still travels in the stream; what URG adds is
    * a point designating where the urgent information ENDS.
    */
-  sendUrgent(data: string): void { this.stack._sendUrgentData(this, data); }
+  sendUrgent(data: string): TcpUserCallResult { return this.stack._sendUrgentData(this, data); }
 
   /** True while the peer's urgent point is in advance of RCV.NXT (RFC 9293 §3.8.5). */
   get urgentMode(): boolean {
@@ -423,7 +430,7 @@ export class TcpSocket {
   _fireUrgent(lastUrgentByte: string): void {
     for (const handler of [...this.urgentHandlers]) handler(lastUrgentByte);
   }
-  close(): void { this.stack._initiateClose(this); }
+  close(): TcpUserCallResult { return this.stack._initiateClose(this); }
 
   /**
    * Abandon the connection immediately with an RST (RFC 9293 §3.10.4),
@@ -471,6 +478,25 @@ export class TcpSocket {
       const i = this.dataHandlers.indexOf(handler);
       if (i !== -1) this.dataHandlers.splice(i, 1);
     };
+  }
+
+  onEnd(handler: () => void): () => void {
+    if (this.endDelivered) {
+      handler();
+      return () => {};
+    }
+    this.endHandlers.push(handler);
+    this._deliverEndWhenDrained();
+    return () => {
+      const i = this.endHandlers.indexOf(handler);
+      if (i !== -1) this.endHandlers.splice(i, 1);
+    };
+  }
+
+  _deliverEndWhenDrained(): void {
+    if (!this.peerFinished || this.endDelivered || this.receiveQueue.length > 0) return;
+    this.endDelivered = true;
+    for (const h of [...this.endHandlers]) this.stack._runHandler('tcp:onEnd', h);
   }
 
   onClose(handler: TcpCloseHandler): () => void {
@@ -569,6 +595,7 @@ export class TcpSocket {
       }
     }
     this.stack._receiveSpaceFreed(this);
+    this._deliverEndWhenDrained();
   }
 
   _fireClose(reason: TcpCloseReason): void {
@@ -594,6 +621,7 @@ export class TcpListener {
     readonly maxSegmentSize: number = Number.MAX_SAFE_INTEGER,
     readonly ttl: TimeToLive | null = null,
     readonly diffServ: DiffServField = DiffServField.DEFAULT,
+    readonly allowHalfOpen: boolean = false,
   ) {}
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
@@ -699,7 +727,8 @@ export class TcpStack {
     }
     const listener = new TcpListener(
       localIp, boundPort, opts.onAccept, opts.identity ?? {},
-      opts.receiveWindow, opts.maxSegmentSize, opts.ttl ?? null, opts.diffServ ?? DiffServField.DEFAULT);
+      opts.receiveWindow, opts.maxSegmentSize, opts.ttl ?? null, opts.diffServ ?? DiffServField.DEFAULT,
+      opts.allowHalfOpen ?? false);
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
@@ -807,6 +836,7 @@ export class TcpStack {
     if (opts.onClose) socket.onClose(opts.onClose);
     socket.ttl = opts.ttl ?? null;
     socket.diffServ = opts.diffServ ?? DiffServField.DEFAULT;
+    socket.allowHalfOpen = opts.allowHalfOpen ?? false;
     socket.passive = false;
     socket.mss = mssForMtu(socket.family, this.egressMtu(egress));
     socket.sendNext = this.initialSequence(socket);
@@ -1204,6 +1234,7 @@ export class TcpStack {
       socket.windowSize = listener.receiveWindow;
       socket.ttl = listener.ttl;
       socket.diffServ = listener.diffServ;
+      socket.allowHalfOpen = listener.allowHalfOpen;
       const announcedMss = Math.min(
         mssForMtu(socket.family, this.egressMtu(this.resolveEgress(senderIp))), listener.maxSegmentSize);
       socket.recvNext = (seg.sequence + 1) >>> 0;
@@ -1270,8 +1301,30 @@ export class TcpStack {
     return true;
   }
 
-  _sendData(socket: TcpSocket, data: unknown): void {
+  _runHandler(label: string, handler: () => void): void {
+    try { handler(); } catch (e) { Logger.warn(this.host.id, label, String(e)); }
+  }
+
+  private refuseSend(socket: TcpSocket): TcpUserCallResult | null {
+    if (socket.closed) return 'no-connection';
+    if (socket.writeShutdown) return 'closing';
+    switch (socket.state) {
+      case 'fin-wait-1':
+      case 'fin-wait-2':
+      case 'closing':
+      case 'last-ack':
+      case 'time-wait':
+        return 'closing';
+      default:
+        return null;
+    }
+  }
+
+  _sendData(socket: TcpSocket, data: unknown): TcpUserCallResult {
+    const refusal = this.refuseSend(socket);
+    if (refusal !== null) return refusal;
     this.withinBurst(() => this.sendDataWithinBurst(socket, data));
+    return 'ok';
   }
 
   /**
@@ -1281,12 +1334,14 @@ export class TcpStack {
    * urgent data". SND.UP therefore lands one past the last urgent octet, and
    * `transmit` marks every segment still behind it.
    */
-  _sendUrgentData(socket: TcpSocket, data: string): void {
-    if (socket.closed || data.length === 0) return;
+  _sendUrgentData(socket: TcpSocket, data: string): TcpUserCallResult {
+    const refusal = this.refuseSend(socket);
+    if (refusal !== null) return refusal;
+    if (data.length === 0) return 'ok';
     const queued = socket.sendBacklog.reduce((n, e) => n + e.payload.length, 0);
     const point = (socket.sendNext + queued + data.length) >>> 0;
     socket.sndUp = socket.sndUp !== null && seqLt(point, socket.sndUp) ? socket.sndUp : point;
-    this._sendData(socket, data);
+    return this._sendData(socket, data);
   }
 
   private withinBurst(body: () => void): void {
@@ -1563,7 +1618,7 @@ export class TcpStack {
     if (socket.pendingSendQueue.length > 0) {
       const queued = socket.pendingSendQueue.slice();
       socket.pendingSendQueue.length = 0;
-      for (const data of queued) this._sendData(socket, data);
+      for (const data of queued) this.withinBurst(() => this.sendDataWithinBurst(socket, data));
     }
     if (socket.closeAfterFlush) {
       socket.closeAfterFlush = false;
@@ -1571,8 +1626,8 @@ export class TcpStack {
     }
   }
 
-  _initiateClose(socket: TcpSocket): void {
-    if (socket.closed) return;
+  _initiateClose(socket: TcpSocket): TcpUserCallResult {
+    if (socket.closed) return 'no-connection';
     // RFC 9293 §3.10.4, CLOSE Call / SYN-SENT STATE: "Delete the TCB and
     // return 'error: closing' responses to any queued SENDs, or RECEIVEs."
     // There is no connection to shut down gracefully — the handshake never
@@ -1583,37 +1638,30 @@ export class TcpStack {
     // one port per attempt until the pool ran dry.
     if (socket.state === 'syn-sent') {
       this._teardown(socket, 'shutdown');
-      return;
+      return 'ok';
     }
     // 'syn-received' keeps the deferred close: the handshake is genuinely
     // in flight, and a `.close()` from inside `onAccept` must take effect
     // once it completes (see flushPendingSends).
     if (socket.state === 'syn-received') {
+      socket.writeShutdown = true;
       socket.closeAfterFlush = true;
-      return;
+      return 'ok';
     }
-    if (socket.state === 'established' || socket.state === 'close-wait') {
-      this.flushSendBacklog(socket, true);
-      if (socket.sendBacklog.length > 0) {
-        socket.closeAfterFlush = true;
-        return;
-      }
+    if (socket.state !== 'established' && socket.state !== 'close-wait') return 'closing';
+    socket.writeShutdown = true;
+    this.flushSendBacklog(socket, true);
+    if (socket.sendBacklog.length > 0) {
+      socket.closeAfterFlush = true;
+      return 'ok';
     }
-    if (socket.state === 'established') {
-      this._transition(socket, 'fin-wait-1');
-      const flags = noFlags(); flags.fin = true; flags.ack = true;
-      const seq = socket.sendNext;
-      socket.sendNext = (seq + 1) >>> 0;
-      this.transmitTracked(socket, flags, seq, socket.recvNext, undefined, 1);
-    } else if (socket.state === 'close-wait') {
-      this._transition(socket, 'last-ack');
-      const flags = noFlags(); flags.fin = true; flags.ack = true;
-      const seq = socket.sendNext;
-      socket.sendNext = (seq + 1) >>> 0;
-      this.transmitTracked(socket, flags, seq, socket.recvNext, undefined, 1);
-    } else {
-      this._teardown(socket, 'shutdown');
-    }
+    const nextState = socket.state === 'established' ? 'fin-wait-1' : 'last-ack';
+    this._transition(socket, nextState);
+    const flags = noFlags(); flags.fin = true; flags.ack = true;
+    const seq = socket.sendNext;
+    socket.sendNext = (seq + 1) >>> 0;
+    this.transmitTracked(socket, flags, seq, socket.recvNext, undefined, 1);
+    return 'ok';
   }
 
   private _processReset(socket: TcpSocket, seg: TcpSegment): void {
@@ -2076,16 +2124,20 @@ export class TcpStack {
     this.pushToApplication(socket);
     socket.recvNext = (socket.recvNext + 1) >>> 0;
     this.sendAckNow(socket);
+    socket.peerFinished = true;
     switch (socket.state) {
       case 'established':
         this._transition(socket, 'close-wait');
-        this._initiateClose(socket);
+        socket._deliverEndWhenDrained();
+        if (!socket.allowHalfOpen) this._initiateClose(socket);
         break;
       case 'fin-wait-1':
         this._transition(socket, 'closing');
+        socket._deliverEndWhenDrained();
         break;
       case 'fin-wait-2':
         this.enterTimeWait(socket);
+        socket._deliverEndWhenDrained();
         break;
       default:
         break;

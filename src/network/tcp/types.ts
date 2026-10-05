@@ -59,6 +59,8 @@ export type TcpOption =
 
 export type TcpCloseReason = 'fin' | 'rst' | 'timeout' | 'shutdown';
 
+export type TcpUserCallResult = 'ok' | 'closing' | 'no-connection';
+
 export type TcpErrorReport =
   | { source: 'icmp'; icmpType: string; code: number; from: string }
   | { source: 'retransmission'; attempts: number; sequence: number };
