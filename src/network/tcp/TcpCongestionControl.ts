@@ -23,8 +23,16 @@ export class TcpCongestionControl {
   private dupAckCount = 0;
   private inFastRecovery = false;
 
-  constructor(private readonly mss: number) {
+  constructor(private mss: number) {
     this.cwnd = initialCongestionWindow(mss);
+  }
+
+  initialize(mss: number): void {
+    this.mss = mss;
+    this.cwnd = initialCongestionWindow(mss);
+    this.ssthresh = Number.MAX_SAFE_INTEGER;
+    this.dupAckCount = 0;
+    this.inFastRecovery = false;
   }
 
   get phase(): 'slow-start' | 'congestion-avoidance' | 'fast-recovery' {

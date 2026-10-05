@@ -142,6 +142,9 @@ import { ReassemblyQueue } from './ReassemblyQueue';
 import type { TcpDropReason } from './events';
 import { AckThrottle } from './AckThrottle';
 import { IsnGenerator } from './IsnGenerator';
+import {
+  DEFAULT_ETHERNET_MTU, LOOPBACK_MTU, defaultSendMss, mssForMtu,
+} from './TcpSegmentSize';
 import type { ListenerIdentity, ListenerSocketSink } from './ListenerSocketSink';
 
 /** RFC 7323 §2.2 — our own advertised window-scale shift (always offered on SYN). */
@@ -511,7 +514,7 @@ export class TcpListener {
     readonly onAccept: TcpAcceptHandler,
     readonly identity: ListenerIdentity = {},
     readonly receiveWindow: number = TCP_DEFAULT_WINDOW,
-    readonly maxSegmentSize: number = TCP_DEFAULT_MSS,
+    readonly maxSegmentSize: number = Number.MAX_SAFE_INTEGER,
   ) {}
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
@@ -723,6 +726,7 @@ export class TcpStack {
     if (opts.onData) socket.onData(opts.onData);
     if (opts.onClose) socket.onClose(opts.onClose);
     socket.passive = false;
+    socket.mss = mssForMtu(socket.family, this.egressMtu(egress));
     socket.sendNext = this.initialSequence(socket);
     socket.sendUnacked = socket.sendNext;
     this.sockets.set(socket.key(), socket);
@@ -961,8 +965,7 @@ export class TcpStack {
       // under-estimate the real on-wire size, computing a "corrected" MSS
       // that's still too big and bounces off the very same hop forever
       // (the guard below then blocks ever retrying the same value again).
-      const ipHeaderBytes = socket.family === 'ipv6' ? 40 : 20;
-      const newMss = Math.max(TCP_MIN_MSS, nextHopMtu - ipHeaderBytes - TCP_BASE_HEADER_BYTES);
+      const newMss = Math.max(TCP_MIN_MSS, mssForMtu(socket.family, nextHopMtu));
       // Never grow MSS off this signal, but still attempt resegmentation
       // even when it doesn't need to shrink further: an already-queued
       // segment chunked at an *earlier*, larger MSS (before a previous
@@ -1093,14 +1096,15 @@ export class TcpStack {
       socket.passive = true;
       socket.pendingListener = listener;
       socket.windowSize = listener.receiveWindow;
-      socket.mss = Math.min(socket.mss, listener.maxSegmentSize);
+      const announcedMss = Math.min(
+        mssForMtu(socket.family, this.egressMtu(this.resolveEgress(senderIp))), listener.maxSegmentSize);
       socket.recvNext = (seg.sequence + 1) >>> 0;
       socket.lastAckSent = socket.recvNext;
       socket.sendNext = this.initialSequence(socket);
       socket.sendUnacked = socket.sendNext;
       // PRD-TCP.md P6 — negotiate against whatever the peer's SYN offered.
       const peerOpts = decodeOptions(seg.options);
-      if (peerOpts.mss !== undefined) socket.mss = Math.min(socket.mss, peerOpts.mss);
+      socket.mss = Math.min(announcedMss, peerOpts.mss ?? defaultSendMss(socket.family));
       socket.peerWindowScale = peerOpts.windowScale ?? null;
       socket.sackEnabled = peerOpts.sackPermitted === true;
       if (peerOpts.timestamp) {
@@ -1120,7 +1124,7 @@ export class TcpStack {
       // below, since `socket.timestampsEnabled` is already set above —
       // including it here too would duplicate the option on the wire.
       const synAckOptions = encodeOptions({
-        mss: socket.mss,
+        mss: announcedMss,
         windowScale: socket.peerWindowScale !== null ? socket.windowScale : undefined,
         sackPermitted: socket.sackEnabled || undefined,
       });
@@ -1474,6 +1478,11 @@ export class TcpStack {
     }
   }
 
+  private egressMtu(egress: { name: string; port?: import('../hardware/Port').Port } | null): number {
+    if (egress?.port) return egress.port.getMTU();
+    return egress?.name === 'lo' ? LOOPBACK_MTU : DEFAULT_ETHERNET_MTU;
+  }
+
   private initialSequence(socket: TcpSocket): number {
     return this.isn.next(
       this.getScheduler().now(), socket.localIp, socket.localPort, socket.remoteIp, socket.remotePort);
@@ -1527,7 +1536,7 @@ export class TcpStack {
     socket.maxPeerWindow = Math.max(socket.maxPeerWindow, socket.peerWindow);
     socket.sendWl1 = seg.sequence;
     socket.sendWl2 = seg.acknowledgement;
-    if (options.mss !== undefined) socket.mss = Math.min(socket.mss, options.mss);
+    socket.mss = Math.min(socket.mss, options.mss ?? defaultSendMss(socket.family));
     socket.peerWindowScale = options.windowScale ?? null;
     socket.sackEnabled = options.sackPermitted === true;
     socket.timestampsEnabled = options.timestamp !== undefined;
@@ -1544,6 +1553,7 @@ export class TcpStack {
       return;
     }
     this.pruneUnackedQueue(socket, seg.acknowledgement, options.timestamp?.tsEcr);
+    socket.cc.initialize(socket.mss);
     this._transition(socket, 'established');
     this.sendAckNow(socket);
     this.emitOpened(socket);
@@ -1679,6 +1689,7 @@ export class TcpStack {
     socket.maxPeerWindow = Math.max(socket.maxPeerWindow, socket.peerWindow);
     socket.sendWl1 = seg.sequence;
     socket.sendWl2 = seg.acknowledgement;
+    socket.cc.initialize(socket.mss);
     this._transition(socket, 'established');
     this.emitOpened(socket);
     this.completePassiveOpen(socket);
