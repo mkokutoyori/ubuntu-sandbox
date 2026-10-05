@@ -70,6 +70,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import { parseDialAddress } from '@/network/tcp/dial';
+import { worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { CiscoTerminalSession } from '@/terminal/sessions/CiscoTerminalSession';
@@ -101,13 +102,9 @@ interface Cmd { executeCommand(cmd: string): Promise<string> }
 const runOn = (d: Cmd, cmds: string[]) =>
   cmds.reduce(async (p, c) => { await p; await d.executeCommand(c); }, Promise.resolve<unknown>(undefined));
 
-/**
- * Le repli de retransmission d'un SYN dure une minute d'horloge. On la
- * fait passer par tranches, en laissant respirer les micro-taches entre
- * chaque, parce que la resolution traverse une chaine de promesses.
- */
 async function laisserExpirer(clock: VirtualTimeScheduler): Promise<void> {
-  for (let i = 0; i < 40; i++) {
+  const slices = Math.ceil(worstCaseRetransmitWindowMs() / 4000) + 2;
+  for (let i = 0; i < slices; i++) {
     clock.advance(4000);
     for (let t = 0; t < 4; t++) await Promise.resolve();
     await new Promise<void>((r) => setTimeout(r, 0));

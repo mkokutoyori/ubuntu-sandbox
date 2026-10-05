@@ -3,7 +3,7 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
-  type UnackedSegment, type TcpOption, type TcpWireOutcome,
+  type UnackedSegment, type TcpOption, type TcpWireOutcome, type TcpErrorReport,
   noFlags, flagsString, randomSequenceNumber, makeSocketKey, makeListenerKey,
   computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS, TCP_BASE_HEADER_BYTES,
@@ -135,7 +135,10 @@ function emptyProbeDetail(reply: StatelessProbeReply): StatelessProbeDetail {
 import {
   connectedPrefixesOfPort, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
-import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
+import {
+  RttEstimator, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS, TCP_R1_RETRANSMITS, TCP_DATA_R2_MS, TCP_SYN_R2_MS,
+  TCP_RTO_AFTER_SYN_RETRANSMIT_MS,
+} from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
 import { encodeOptions, decodeOptions, optionsDataOffset, type TcpOptionsSet } from './TcpOptionsCodec';
 import { ReassemblyQueue } from './ReassemblyQueue';
@@ -201,6 +204,7 @@ export interface TcpHost {
    */
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
+  adviseNegative?(nextHopIp: string): void;
 }
 
 export interface TcpAcceptHandler {
@@ -341,6 +345,10 @@ export class TcpSocket {
   lastAckSent = 0;
   peerTsRecentAtMs = 0;
   lastOutOfWindowAckAt: number | null = null;
+  userTimeoutMs: number | null = null;
+  lastHeardAtMs = 0;
+  troubleReportedFor: number | null = null;
+  private readonly errorReportHandlers: Array<(report: TcpErrorReport) => void> = [];
 
   /** PRD-TCP.md P8 (RFC 9293 §3.8.4, SO_KEEPALIVE) — optional idle-probe timer, off by default. */
   keepAliveEnabled = false;
@@ -458,6 +466,28 @@ export class TcpSocket {
       const i = this.closeHandlers.indexOf(handler);
       if (i !== -1) this.closeHandlers.splice(i, 1);
     };
+  }
+
+  setUserTimeout(milliseconds: number | null): void {
+    if (milliseconds !== null && !(milliseconds > 0)) {
+      throw new Error(`TCP user timeout out of range: ${milliseconds} (EINVAL)`);
+    }
+    this.userTimeoutMs = milliseconds;
+    this.stack._userTimeoutChanged(this);
+  }
+
+  onErrorReport(handler: (report: TcpErrorReport) => void): () => void {
+    this.errorReportHandlers.push(handler);
+    return () => {
+      const i = this.errorReportHandlers.indexOf(handler);
+      if (i !== -1) this.errorReportHandlers.splice(i, 1);
+    };
+  }
+
+  _fireErrorReport(report: TcpErrorReport): void {
+    for (const h of [...this.errorReportHandlers]) {
+      try { h(report); } catch { /* swallow per-handler */ }
+    }
   }
 
   _fireOpen(): void {
@@ -1470,6 +1500,7 @@ export class TcpStack {
   }
 
   private _processSegment(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
+    socket.lastHeardAtMs = this.getScheduler().now();
     if (socket.state === 'syn-sent') this.arriveInSynSent(socket, seg, payloadSize);
     else this.arriveSynchronized(socket, seg, payloadSize);
     if (socket.keepAliveEnabled && socket.state === 'established') {
@@ -1552,7 +1583,9 @@ export class TcpStack {
       this._transition(socket, 'syn-received');
       return;
     }
+    const synRetransmitted = (socket.unackedQueue[0]?.retransmitCount ?? 0) > 0;
     this.pruneUnackedQueue(socket, seg.acknowledgement, options.timestamp?.tsEcr);
+    if (synRetransmitted) socket.rtt.holdAtLeast(TCP_RTO_AFTER_SYN_RETRANSMIT_MS);
     socket.cc.initialize(socket.mss);
     this._transition(socket, 'established');
     this.sendAckNow(socket);
@@ -1684,7 +1717,9 @@ export class TcpStack {
       this.sendRst(socket.localIp, socket.remoteIp, seg);
       return false;
     }
+    const synAckRetransmitted = (socket.unackedQueue[0]?.retransmitCount ?? 0) > 0;
     this.pruneUnackedQueue(socket, seg.acknowledgement, options.timestamp?.tsEcr);
+    if (synAckRetransmitted) socket.rtt.holdAtLeast(TCP_RTO_AFTER_SYN_RETRANSMIT_MS);
     socket.peerWindow = this.decodeWindowField(socket, seg);
     socket.maxPeerWindow = Math.max(socket.maxPeerWindow, socket.peerWindow);
     socket.sendWl1 = seg.sequence;
@@ -2189,8 +2224,72 @@ export class TcpStack {
   private rearmRtoTimer(socket: TcpSocket): void {
     this.timers.clear(socket.rtoTimer);
     socket.rtoTimer = null;
-    if (socket.unackedQueue.length === 0) return;
-    socket.rtoTimer = this.timers.setTimeout(() => this.onRtoFired(socket), socket.rtt.currentRto());
+    const head = socket.unackedQueue[0];
+    if (!head) return;
+    const delay = Math.min(socket.rtt.currentRto(), this.timeUntilGiveUp(socket, head));
+    socket.rtoTimer = this.timers.setTimeout(() => this.onRtoFired(socket), delay);
+  }
+
+  _userTimeoutChanged(socket: TcpSocket): void {
+    if (!socket.closed) this.rearmRtoTimer(socket);
+  }
+
+  private giveUpThresholdMs(socket: TcpSocket): number {
+    if (socket.userTimeoutMs !== null) return socket.userTimeoutMs;
+    return socket.state === 'syn-sent' || socket.state === 'syn-received' ? TCP_SYN_R2_MS : TCP_DATA_R2_MS;
+  }
+
+  private retransmissionBaselineMs(socket: TcpSocket, head: UnackedSegment): number {
+    const handshaking = socket.state === 'syn-sent' || socket.state === 'syn-received';
+    if (socket.peerWindow === 0 && !handshaking) return Math.max(head.firstSentAtMs, socket.lastHeardAtMs);
+    return head.firstSentAtMs;
+  }
+
+  private timeUntilGiveUp(socket: TcpSocket, head: UnackedSegment): number {
+    const threshold = this.giveUpThresholdMs(socket);
+    if (!Number.isFinite(threshold)) return Number.POSITIVE_INFINITY;
+    const elapsed = this.getScheduler().now() - this.retransmissionBaselineMs(socket, head);
+    return Math.max(1, threshold - elapsed);
+  }
+
+  private retransmissionGivenUp(socket: TcpSocket, head: UnackedSegment): boolean {
+    const threshold = this.giveUpThresholdMs(socket);
+    if (!Number.isFinite(threshold)) return false;
+    return this.getScheduler().now() - this.retransmissionBaselineMs(socket, head) >= threshold;
+  }
+
+  private reportRetransmissionTrouble(socket: TcpSocket, head: UnackedSegment): void {
+    if (head.retransmitCount < TCP_R1_RETRANSMITS || socket.troubleReportedFor === head.sequence) return;
+    socket.troubleReportedFor = head.sequence;
+    this.host.adviseNegative?.(this.resolveEgress(socket.remoteIp)?.nextHopIp ?? socket.remoteIp);
+    this.reportError(socket, { source: 'retransmission', attempts: head.retransmitCount, sequence: head.sequence });
+  }
+
+  private reportError(socket: TcpSocket, report: TcpErrorReport): void {
+    this.getBus().publish({
+      topic: 'tcp.error.reported',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        localIp: socket.localIp, localPort: socket.localPort,
+        remoteIp: socket.remoteIp, remotePort: socket.remotePort,
+        report,
+      },
+    });
+    socket._fireErrorReport(report);
+  }
+
+  onIcmpSoftError(
+    origSourcePort: number, origDestPort: number, origDestIp: string,
+    icmpType: string, icmpCode: number, icmpFrom: string,
+  ): void {
+    for (const socket of this.sockets.values()) {
+      if (socket.localPort !== origSourcePort) continue;
+      if (socket.remotePort !== origDestPort) continue;
+      if (socket.remoteIp !== origDestIp) continue;
+      if (socket.state === 'closed' || socket.state === 'time-wait') continue;
+      this.reportError(socket, { source: 'icmp', icmpType, code: icmpCode, from: icmpFrom });
+      return;
+    }
   }
 
   /** RFC 6298 §5: retransmit the earliest unacked segment, back off the RTO, and restart the timer. */
@@ -2202,11 +2301,12 @@ export class TcpStack {
     socket.rtoTimer = null;
     const head = socket.unackedQueue[0];
     if (!head) return;
-    head.retransmitCount++;
-    if (head.retransmitCount > TCP_MAX_RETRANSMITS) {
+    if (this.retransmissionGivenUp(socket, head)) {
       this._teardown(socket, 'timeout');
       return;
     }
+    head.retransmitCount++;
+    this.reportRetransmissionTrouble(socket, head);
     // RFC 5681 §3.1 — a real timeout means slow start starts over.
     socket.cc.onRtoTimeout((socket.sendNext - socket.sendUnacked) >>> 0);
     const rtoMs = socket.rtt.backoff();
@@ -2228,7 +2328,8 @@ export class TcpStack {
     const now = this.getScheduler().now();
     const sentTsVal = this.transmit(socket, head.flags, head.sequence, socket.recvNext, head.payload, head.extraOptions ?? []);
     if (sentTsVal !== undefined) { head.lastSentTsVal = sentTsVal; head.lastSentAtMs = now; }
-    socket.rtoTimer = this.timers.setTimeout(() => this.onRtoFired(socket), rtoMs);
+    socket.rtoTimer = this.timers.setTimeout(
+      () => this.onRtoFired(socket), Math.min(rtoMs, this.timeUntilGiveUp(socket, head)));
   }
 
   /** RFC 5681 §3.2 — the 3rd duplicate ACK fast-retransmits without waiting for the RTO timer. */

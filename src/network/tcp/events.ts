@@ -1,4 +1,4 @@
-import type { TcpState, TcpCloseReason } from './types';
+import type { TcpState, TcpCloseReason, TcpErrorReport } from './types';
 
 export interface TcpDeviceRef {
   deviceId: string;
@@ -95,6 +95,14 @@ export interface TcpRetransmitPayload extends TcpDeviceRef {
   rtoMs: number;
 }
 
+export interface TcpErrorReportedPayload extends TcpDeviceRef {
+  localIp: string;
+  localPort: number;
+  remoteIp: string;
+  remotePort: number;
+  report: TcpErrorReport;
+}
+
 export type TcpDomainEvent =
   | { topic: 'tcp.segment.sent'; payload: TcpSegmentSentPayload }
   | { topic: 'tcp.segment.received'; payload: TcpSegmentReceivedPayload }
@@ -103,4 +111,5 @@ export type TcpDomainEvent =
   | { topic: 'tcp.connection.closed'; payload: TcpConnectionClosedPayload }
   | { topic: 'tcp.listener.changed'; payload: TcpListenerChangedPayload }
   | { topic: 'tcp.segment.dropped'; payload: TcpSegmentDroppedPayload }
-  | { topic: 'tcp.retransmit'; payload: TcpRetransmitPayload };
+  | { topic: 'tcp.retransmit'; payload: TcpRetransmitPayload }
+  | { topic: 'tcp.error.reported'; payload: TcpErrorReportedPayload };
