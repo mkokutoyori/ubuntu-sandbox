@@ -21,3 +21,19 @@ export function splitCmdArgs(line: string, keepQuotes = false): string[] {
   if (current || quoted) parts.push(current);
   return parts;
 }
+
+const COMMAND_WORD_THEN_SWITCH = /^([A-Za-z][A-Za-z0-9_-]*)(\/.*)$/;
+const PATH_COMMAND_THEN_PATH = /^(cd|chdir|dir)([.\\].*)$/i;
+const ECHO_THEN_TEXT = /^(echo)\.(.*)$/i;
+
+export function separateCommandWord(parts: string[]): string[] {
+  const [first, ...rest] = parts;
+  if (first === undefined) return parts;
+  const switchAfter = COMMAND_WORD_THEN_SWITCH.exec(first);
+  if (switchAfter) return [switchAfter[1], switchAfter[2], ...rest];
+  const pathAfter = PATH_COMMAND_THEN_PATH.exec(first);
+  if (pathAfter) return [pathAfter[1], pathAfter[2], ...rest];
+  const textAfter = ECHO_THEN_TEXT.exec(first);
+  if (textAfter) return [textAfter[1], textAfter[2], ...rest];
+  return parts;
+}
