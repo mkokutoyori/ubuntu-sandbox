@@ -8,7 +8,7 @@
  * must only clock a segment that was never retransmitted, since an ACK
  * covering a retransmitted segment cannot tell which transmission it
  * actually acknowledges), the RTO tracks real SRTT/RTTVAR instead.
- * `currentRto()`/`backoff()`/`reset()`'s contract never changed across
+ * `currentRto()`/`backoff()`'s contract never changed across
  * P1 → P4, so `TcpStack.ts` only gained the one new `sample()` call site.
  */
 
@@ -67,11 +67,6 @@ export class RttEstimator {
 
   holdAtLeast(minimumMs: number): void {
     this.rtoMs = Math.max(this.rtoMs, minimumMs);
-  }
-
-  /** New data was acknowledged (real progress) — drop back to the SRTT-based estimate (or the fixed base, before any sample exists). */
-  reset(): void {
-    this.rtoMs = this.srttMs === null ? this.initialRtoMs : this.computeRtoFromSrtt();
   }
 
   /**

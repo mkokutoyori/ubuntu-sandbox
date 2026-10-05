@@ -86,22 +86,6 @@ describe('RttEstimator (RFC 6298)', () => {
     rtt.sample(2000); // rto=6000
     expect(rtt.backoff()).toBe(12000);
   });
-
-  it('reset() after a sample drops back to the SRTT-based estimate, not the fixed initial value', () => {
-    const rtt = new RttEstimator();
-    rtt.sample(2000); // rto=6000
-    rtt.backoff(); // 12000
-    rtt.backoff(); // 24000
-    rtt.reset();
-    expect(rtt.currentRto()).toBe(6000);
-  });
-
-  it('reset() before any sample exists falls back to the fixed initial RTO', () => {
-    const rtt = new RttEstimator();
-    rtt.backoff(); // 2000, no sample taken
-    rtt.reset();
-    expect(rtt.currentRto()).toBe(TCP_INITIAL_RTO_MS);
-  });
 });
 
 function lossOnceRng(): () => number {

@@ -2744,7 +2744,6 @@ export class TcpStack {
       socket.unackedQueue.shift();
       progressed = true;
     }
-    if (progressed) socket.rtt.reset();
     this.rearmRtoTimer(socket);
     return progressed ? (ackNum - priorUnacked) >>> 0 : 0;
   }
