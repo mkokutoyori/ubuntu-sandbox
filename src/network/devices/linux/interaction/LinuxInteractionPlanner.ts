@@ -24,7 +24,6 @@ import { tokenize } from '../LinuxShellParser';
 import { parseAdduserArgs } from '../iam/adduserOptions';
 
 const MAX_SUDO_ATTEMPTS = 3;
-const MAX_SU_ATTEMPTS = 3;
 
 /**
  * The device surface the planner needs. LinuxMachine satisfies this
@@ -94,19 +93,12 @@ function sudoPasswordStep(device: LinuxPlannerDevice, currentUser: string): Inte
   };
 }
 
-function suPasswordStep(device: LinuxPlannerDevice, targetUser: string): InteractionStep {
+function suPasswordStep(): InteractionStep {
   return {
     kind: 'password',
     prompt: 'Password:',
     storeAs: 'su_password',
-    validate: (pwd) => {
-      const valid = device.checkPassword?.(targetUser, pwd) ?? false;
-      return {
-        valid,
-        errorMessage: valid ? undefined : 'su: Authentication failure',
-        maxRetries: MAX_SU_ATTEMPTS - 1,
-      };
-    },
+    validate: () => ({ valid: true }),
   };
 }
 
@@ -285,16 +277,10 @@ function sudoPlan(
   return { steps: [sudoStep, executeCommandStep(fullCommand)] };
 }
 
-function suPlan(device: LinuxPlannerDevice, parts: string[]): CommandInteractionPlan {
-  let targetUser = 'root';
-  for (const p of parts.slice(1)) {
-    if (p !== '-' && p !== '-l' && p !== '--login' && !p.startsWith('-')) {
-      targetUser = p;
-    }
-  }
+function suPlan(parts: string[]): CommandInteractionPlan {
   return {
     steps: [
-      suPasswordStep(device, targetUser),
+      suPasswordStep(),
       suExecuteStep(parts.join(' ')),
     ],
   };
@@ -391,7 +377,7 @@ export function buildLinuxInteractionPlan(
   }
 
   if (parts[0] === 'su' && !isRoot) {
-    return suPlan(device, parts);
+    return suPlan(parts);
   }
 
   if (parts[0] === 'passwd') {

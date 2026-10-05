@@ -287,6 +287,10 @@ export class LinuxLogManager {
    * to keep `/var/log/auth.log` (and the journal) coherent with account
    * changes. `tag` is the responsible program (`useradd`, `passwd`, …).
    */
+  allocatePid(): number {
+    return this.nextPid++;
+  }
+
   logAuth(tag: string, message: string, pid?: number, unit?: string, priority = 'info'): void {
     this.addEntry({
       priority: PRIORITY_NAMES[priority] ?? PRIORITY_NAMES.info,

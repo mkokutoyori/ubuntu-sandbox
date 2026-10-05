@@ -40,7 +40,6 @@ export interface PamTransactionOptions {
 export class LinuxPam {
   private readonly files: LinuxPamFiles;
   private readonly accounts: LinuxPamAccounts;
-  private nextPid = 3000;
 
   constructor(private readonly deps: LinuxPamDeps) {
     this.files = new LinuxPamFiles(deps.vfs);
@@ -54,7 +53,7 @@ export class LinuxPam {
 
   begin(service: string, options: PamTransactionOptions): PamTransaction<LinuxPamHost> {
     const identity = options.identity ?? { tag: service };
-    const pid = identity.pid ?? this.nextPid++;
+    const pid = identity.pid ?? this.deps.logs.allocatePid();
     const host: LinuxPamHost = {
       readFile: (path) => this.deps.vfs.readFile(path),
       now: this.deps.clock,

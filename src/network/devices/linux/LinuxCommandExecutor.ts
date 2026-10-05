@@ -39,6 +39,9 @@ import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager, fmtSyslogTimestamp } from './LinuxLogManager';
 import { LinuxPam } from './pam/LinuxPam';
+import { PamServiceSession } from './pam/PamServiceSession';
+import type { SuFrame } from '@/shell/ShellContext';
+import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
@@ -272,6 +275,8 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'openssl',
 ];
 
+const SU_TTY_NAME = 'pts/0';
+const SU_TTY = `/dev/${SU_TTY_NAME}`;
 const SUDO_FLAG_LETTERS = /^-[nSEkbiHvPs]+$/;
 
 function parseSudoLead(args: readonly string[]): {
@@ -534,7 +539,7 @@ export class LinuxCommandExecutor {
   /** caller-supplied PID → OS-managed PID, so unregisterProcess can find the spawn back. */
   private _externalToOsPid: Map<number, number> = new Map();
   // Stack for su sessions: stores previous user context
-  private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
+  private suStack: SuFrame[] = [];
   // Command history (like bash HISTFILE)
   private commandHistory: string[] = [];
   /**
@@ -4088,10 +4093,9 @@ export class LinuxCommandExecutor {
     // For sudo su: fix the suStack to return to the original (pre-sudo) user, not root
     if (savedUser && suLeftSessionOpen) {
       const top = this.suStack[this.suStack.length - 1];
-      top.user = savedUser.user;
-      top.uid = savedUser.uid;
-      top.gid = savedUser.gid;
-      top.cwd = savedUser.cwd;
+      this.suStack[this.suStack.length - 1] = {
+        ...top, user: savedUser.user, uid: savedUser.uid, gid: savedUser.gid, cwd: savedUser.cwd,
+      };
     }
 
     return result;
@@ -6557,46 +6561,55 @@ export class LinuxCommandExecutor {
    */
   private beginSuSession(
     targetUser: string, loginShell: boolean, stdin?: string,
-  ): { ok: true; restore: () => void } | { ok: false; result: { output: string; exitCode: number } } {
+  ): { ok: true; restore: () => void; messages: string } | { ok: false; result: { output: string; exitCode: number } } {
     const user = this.userMgr.getUser(targetUser);
     if (!user) return { ok: false, result: { output: `su: user ${targetUser} does not exist`, exitCode: 1 } };
-    if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
-      return { ok: false, result: { output: `su: user ${targetUser} does not have a login shell`, exitCode: 1 } };
-    }
 
-    if (this.userMgr.currentUid !== 0 && this.userMgr.currentUser !== user.username) {
-      const supplied = (stdin ?? '').replace(/\n+$/, '').split('\n').pop() ?? '';
-      if (!this.userMgr.checkPassword(user.username, supplied)) {
-        this.publishFsAccess(resolveExePath('su'), 'x', 'execve');
-        this.publishSyscall('execve', resolveExePath('su'));
-        const byUid = this.userMgr.currentUid;
-        const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : byUid;
+    const previous = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd, umask: this.umask };
+    const supplied = (stdin ?? '').replace(/\n+$/, '').split('\n').pop() ?? '';
+    const pid = this.logMgr.allocatePid();
+    const session = new PamServiceSession(
+      this.pam,
+      loginShell ? 'su-l' : 'su',
+      { caller: { uid: previous.uid, euid: 0, loginName: this.loginName() }, identity: { tag: 'su', pid } },
+      { user: user.username, ruser: previous.user, tty: SU_TTY },
+    );
+    this.publishFsAccess(resolveExePath('su'), 'x', 'execve');
+    this.publishSyscall('execve', resolveExePath('su'));
+    let code = session.authenticate(() => supplied, true);
+    if (code === PamReturn.SUCCESS) code = session.account();
+    const refusal = session.takeLoginMessages().join('');
+    if (code !== PamReturn.SUCCESS) {
+      session.end();
+      this.logMgr.logAuth('su', `FAILED SU (to ${user.username}) ${previous.user} on ${SU_TTY_NAME}`, pid);
+      if (code === PamReturn.AUTH_ERR || code === PamReturn.USER_UNKNOWN || code === PamReturn.MAXTRIES) {
+        const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : previous.uid;
         this.auditLog.record('USER_AUTH', {
-          pid: this.shellPid ?? 1, uid: byUid, auid: loginUid, ses: 1,
+          pid: this.shellPid ?? 1, uid: previous.uid, auid: loginUid, ses: 1,
           msg: `op=PAM_authentication grantors=? acct="${user.username}" exe="/bin/su" hostname=? addr=? terminal=pts/0 res=failed`,
           acct: user.username, res: 'failed',
         });
-        this.logMgr.logAuth('su', `FAILED su for ${user.username} by ${this.userMgr.currentUser}(uid=${byUid})`);
-        return { ok: false, result: { output: 'su: Authentication failure', exitCode: 1 } };
       }
+      return { ok: false, result: { output: `${refusal}su: ${pamStrError(code)}`, exitCode: 1 } };
     }
 
-    // Save current context to suStack
+    this.logMgr.logAuth('su', `(to ${user.username}) ${previous.user} on ${SU_TTY_NAME}`, pid);
+    session.openSession();
+    const messages = session.sessionMessages.join('');
+    this.recordPamSession('USER_START', user.username, user.uid, previous.uid, 'PAM_session_open');
+
+    if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
+      session.closeSession();
+      session.end();
+      this.recordPamSession('USER_END', user.username, user.uid, previous.uid, 'PAM_session_close');
+      const notice = this.vfs.readFile('/etc/nologin.txt');
+      return { ok: false, result: { output: `${messages}${notice === null ? 'This account is currently not available.' : notice.replace(/\n+$/, '')}`, exitCode: 1 } };
+    }
+
     this.suStack.push({
-      user: this.userMgr.currentUser,
-      uid: this.userMgr.currentUid,
-      gid: this.userMgr.currentGid,
-      cwd: this.cwd,
-      umask: this.umask,
+      ...previous,
+      release: () => { session.closeSession(); session.end(); },
     });
-
-    // PAM logs the su attempt and session open to auth.log (authpriv).
-    const prev = this.suStack[this.suStack.length - 1];
-    this.logMgr.logAuth('su', `(to ${user.username}) ${prev.user} on pts/0`);
-    this.logMgr.logAuth('su', `pam_unix(su:session): session opened for user ${user.username}(uid=${user.uid}) by ${prev.user}(uid=${prev.uid})`);
-    this.recordPamSession('USER_START', user.username, user.uid, prev.uid, 'PAM_session_open');
-
-    // Switch user
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
@@ -6604,18 +6617,24 @@ export class LinuxCommandExecutor {
 
     return {
       ok: true,
+      messages,
       restore: () => {
-        const popped = this.suStack.pop();
-        if (popped) {
-          this.userMgr.currentUser = popped.user;
-          this.userMgr.currentUid = popped.uid;
-          this.userMgr.currentGid = popped.gid;
-          this.cwd = popped.cwd;
-          this.umask = popped.umask;
-        }
-        this.recordPamSession('USER_END', user.username, user.uid, prev.uid, 'PAM_session_close');
+        this.popSuFrame();
+        this.recordPamSession('USER_END', user.username, user.uid, previous.uid, 'PAM_session_close');
       },
     };
+  }
+
+  private popSuFrame(): SuFrame | null {
+    const frame = this.suStack.pop();
+    if (frame === undefined) return null;
+    this.userMgr.currentUser = frame.user;
+    this.userMgr.currentUid = frame.uid;
+    this.userMgr.currentGid = frame.gid;
+    this.cwd = frame.cwd;
+    this.umask = frame.umask;
+    frame.release?.();
+    return frame;
   }
 
   private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
@@ -6632,10 +6651,10 @@ export class LinuxCommandExecutor {
       } finally {
         session.restore();
       }
-      return { output, exitCode: 0 };
+      return { output: session.messages + output, exitCode: 0 };
     }
 
-    return { output: '', exitCode: 0 };
+    return { output: session.messages.replace(/\n+$/, ''), exitCode: 0 };
   }
 
   /**
@@ -6687,29 +6706,12 @@ export class LinuxCommandExecutor {
 
   /** Handle exit/logout — pops su stack if in su session */
   handleExit(): { output: string; inSu: boolean } {
-    if (this.suStack.length > 0) {
-      const prev = this.suStack.pop()!;
-      this.userMgr.currentUser = prev.user;
-      this.userMgr.currentUid = prev.uid;
-      this.userMgr.currentGid = prev.gid;
-      this.cwd = prev.cwd;
-      this.umask = prev.umask;
-      return { output: 'logout', inSu: true };
-    }
-    return { output: '', inSu: false };
+    return this.popSuFrame() === null ? { output: '', inSu: false } : { output: 'logout', inSu: true };
   }
 
   /** Reset terminal session — clear su stack and restore original user/cwd */
   resetSession(): void {
-    // Pop all su contexts to return to original user
-    while (this.suStack.length > 0) {
-      const prev = this.suStack.pop()!;
-      this.userMgr.currentUser = prev.user;
-      this.userMgr.currentUid = prev.uid;
-      this.userMgr.currentGid = prev.gid;
-      this.cwd = prev.cwd;
-      this.umask = prev.umask;
-    }
+    while (this.suStack.length > 0) this.popSuFrame();
   }
 
   /** Is the current session inside a `su` context? */

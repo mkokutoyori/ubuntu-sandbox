@@ -208,7 +208,7 @@ describe('Group 2: su command execution', () => {
     const server = new LinuxServer('linux-server', 'SRV1');
     await server.executeCommand('useradd -s /usr/sbin/nologin svcacct');
     const result = await server.executeCommand('su svcacct');
-    expect(result).toContain('does not have a login shell');
+    expect(result).toBe('This account is currently not available.');
   });
 
   it('should reject su to nonexistent user', async () => {

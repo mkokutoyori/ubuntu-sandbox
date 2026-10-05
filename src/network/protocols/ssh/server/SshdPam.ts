@@ -1,83 +1,16 @@
 import type { LinuxPam, PamSyslogIdentity } from '@/network/devices/linux/pam/LinuxPam';
-import type { PamConversation } from '@/network/devices/linux/pam/PamTransaction';
-import { PamTransaction, runPamSync } from '@/network/devices/linux/pam/PamTransaction';
+import type { PamTransaction } from '@/network/devices/linux/pam/PamTransaction';
+import { PamServiceSession } from '@/network/devices/linux/pam/PamServiceSession';
 import type { LinuxPamHost, PamProcessState } from '@/network/devices/linux/pam/PamLinuxHost';
-import { PamFlag, PamReturn, pamStrError } from '@/network/devices/linux/pam/PamReturnCode';
+import { PamReturn, pamStrError } from '@/network/devices/linux/pam/PamReturnCode';
 import type { AccountLifecycleVerdict, KeyboardInteractiveChallenge, SshPeer } from '../auth/ISshAuthMethod';
 
 const SSHD_SERVICE = 'sshd';
 const SSHD_TTY = 'ssh';
 const ROOT_CALLER = { uid: 0, euid: 0, loginName: '' };
 
-class SshdPamConnection {
-  readonly transaction: PamTransaction<LinuxPamHost>;
-  readonly loginMessages: string[] = [];
-  maxTriesReached = false;
-  sessionOpen = false;
-  sessionMessages: string[] = [];
-
-  constructor(pam: LinuxPam, identity: PamSyslogIdentity, readonly user: string, ip: string) {
-    this.transaction = pam.begin(SSHD_SERVICE, { caller: ROOT_CALLER, identity });
-    this.transaction.handle.user = user;
-    this.transaction.handle.rhost = ip;
-    this.transaction.handle.tty = SSHD_TTY;
-  }
-
-  private collect(text: string): void {
-    if (text.length > 0) this.loginMessages.push(`${text}\n`);
-  }
-
-  conversation(answers: () => string | null): PamConversation {
-    return (request) => request.map((message) => {
-      if (message.style === 'prompt-echo-off') return { text: answers() };
-      if (message.style === 'error' || message.style === 'info') {
-        this.collect(message.text);
-        return { text: '' };
-      }
-      return { text: null };
-    });
-  }
-
-  authenticate(answers: () => string | null, permitEmptyPasswords: boolean): number {
-    const flags = permitEmptyPasswords ? 0 : PamFlag.DISALLOW_NULL_AUTHTOK;
-    const code = runPamSync(this.transaction.authenticate(flags), this.conversation(answers));
-    if (code === PamReturn.MAXTRIES) this.maxTriesReached = true;
-    return code;
-  }
-
-  account(): number {
-    return runPamSync(this.transaction.acctMgmt(0), this.conversation(() => null));
-  }
-
-  takeLoginMessages(): string[] {
-    return this.loginMessages.splice(0);
-  }
-
-  openSession(): void {
-    const conversation = this.conversation(() => null);
-    runPamSync(this.transaction.setcred(PamFlag.ESTABLISH_CRED), conversation);
-    this.takeLoginMessages();
-    const code = runPamSync(this.transaction.openSession(0), conversation);
-    this.sessionOpen = code === PamReturn.SUCCESS;
-    this.sessionMessages = this.takeLoginMessages();
-  }
-
-  closeSession(): void {
-    if (!this.sessionOpen) return;
-    const conversation = this.conversation(() => null);
-    runPamSync(this.transaction.closeSession(0), conversation);
-    runPamSync(this.transaction.setcred(PamFlag.DELETE_CRED), conversation);
-    this.takeLoginMessages();
-    this.sessionOpen = false;
-  }
-
-  end(): void {
-    this.transaction.end();
-  }
-}
-
 export class SshdPam {
-  private readonly connections = new Map<string, SshdPamConnection>();
+  private readonly connections = new Map<string, PamServiceSession>();
 
   constructor(
     private readonly pam: LinuxPam,
@@ -91,12 +24,16 @@ export class SshdPam {
     return `${peer.ip}:${peer.port ?? 0}`;
   }
 
-  private connectionFor(user: string, peer: SshPeer): SshdPamConnection {
+  private openConnection(user: string, ip: string): PamServiceSession {
+    return new PamServiceSession(this.pam, SSHD_SERVICE, { caller: ROOT_CALLER, identity: this.identity() }, { user, rhost: ip, tty: SSHD_TTY });
+  }
+
+  private connectionFor(user: string, peer: SshPeer): PamServiceSession {
     const key = this.key(peer);
     let connection = this.connections.get(key);
     if (connection === undefined || connection.user !== user) {
       connection?.end();
-      connection = new SshdPamConnection(this.pam, this.identity(), user, peer.ip);
+      connection = this.openConnection(user, peer.ip);
       this.connections.set(key, connection);
     }
     return connection;
@@ -105,7 +42,7 @@ export class SshdPam {
   private authenticateAs(user: string, answers: () => string | null, peer: SshPeer | undefined): boolean {
     const effectivePeer: SshPeer = peer ?? { ip: '', port: undefined };
     const connection = peer === undefined
-      ? new SshdPamConnection(this.pam, this.identity(), user, '')
+      ? this.openConnection(user, '')
       : this.connectionFor(user, effectivePeer);
     if (connection.maxTriesReached) return false;
     const valid = this.userExists(user);
@@ -145,7 +82,7 @@ export class SshdPam {
   account(user: string, peer: SshPeer | undefined): AccountLifecycleVerdict {
     const effectivePeer: SshPeer = peer ?? { ip: '', port: undefined };
     const connection = peer === undefined
-      ? new SshdPamConnection(this.pam, this.identity(), user, '')
+      ? this.openConnection(user, '')
       : this.connectionFor(user, effectivePeer);
     const code = connection.account();
     const results = connection.transaction.handle.moduleResults;
