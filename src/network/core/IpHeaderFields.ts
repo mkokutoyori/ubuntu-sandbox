@@ -60,6 +60,45 @@ export class HopLimit {
   }
 }
 
+export class TtlFloor {
+  static readonly MIN = 0;
+  static readonly MAX = 255;
+  static readonly NONE = new TtlFloor(0);
+  readonly value: number;
+
+  constructor(value: number) {
+    if (!Number.isInteger(value) || value < TtlFloor.MIN || value > TtlFloor.MAX) {
+      throw new RangeError(
+        `Invalid minimum incoming TTL ${value}: must be an integer in ${TtlFloor.MIN}–${TtlFloor.MAX}`,
+      );
+    }
+    this.value = value;
+  }
+
+  static of(value: number): TtlFloor {
+    return new TtlFloor(value);
+  }
+
+  admits(receivedTtl: number): boolean {
+    return receivedTtl >= this.value;
+  }
+
+  equals(other: TtlFloor): boolean {
+    return this.value === other.value;
+  }
+
+  toString(): string {
+    return String(this.value);
+  }
+}
+
+export const DSCP_CODEPOINTS = {
+  default: 0,
+  cs0: 0, cs1: 8, cs2: 16, cs3: 24, cs4: 32, cs5: 40, cs6: 48, cs7: 56,
+  af11: 10, af12: 12, af13: 14, af21: 18, af22: 20, af23: 22,
+  af31: 26, af32: 28, af33: 30, af41: 34, af42: 36, af43: 38, ef: 46,
+} as const satisfies Readonly<Record<string, number>>;
+
 export class DiffServField {
   static readonly MAX = 255;
   static readonly DSCP_SHIFT = 2;

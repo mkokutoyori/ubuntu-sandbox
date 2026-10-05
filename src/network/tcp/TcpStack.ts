@@ -13,7 +13,7 @@ import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from '
 import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
 import { PortNumber, PORT_ANY } from '@/network/core/ports/PortNumber';
 import type { PortBindingPolicy } from '@/network/core/ports/PortBindingPolicy';
-import { DiffServField, type TimeToLive } from '@/network/core/IpHeaderFields';
+import { DiffServField, TtlFloor, type HopLimit, type TimeToLive } from '@/network/core/IpHeaderFields';
 
 /**
  * Ce qu'une sonde apatride a vu revenir. `rst-window` distingue un RST a
@@ -235,14 +235,32 @@ export interface TcpOpenHandler {
   (socket: TcpSocket): void;
 }
 
+export interface QuotedSegment {
+  readonly sourcePort: number;
+  readonly destinationPort: number;
+  readonly destination: string;
+  readonly sequence: number;
+  readonly ttl: number;
+}
+
+export interface TcpExchangeOptions {
+  localPort?: PortNumber;
+  localIp?: string;
+  ttl?: TimeToLive | HopLimit;
+  diffServ?: DiffServField;
+  ttlFloor?: TtlFloor;
+  shutdownWrite?: boolean;
+}
+
 export interface TcpConnectOptions {
   localPort?: PortNumber;
   localIp?: string;
   onOpen?: TcpOpenHandler;
   onData?: TcpDataHandler;
   onClose?: TcpCloseHandler;
-  ttl?: TimeToLive;
+  ttl?: TimeToLive | HopLimit;
   diffServ?: DiffServField;
+  ttlFloor?: TtlFloor;
   allowHalfOpen?: boolean;
 }
 
@@ -258,8 +276,9 @@ export interface TcpListenOptions {
   ownerUid?: number;
   receiveWindow?: number;
   maxSegmentSize?: number;
-  ttl?: TimeToLive;
+  ttl?: TimeToLive | HopLimit;
   diffServ?: DiffServField;
+  ttlFloor?: TtlFloor;
   allowHalfOpen?: boolean;
 }
 
@@ -270,8 +289,9 @@ export class TcpSocket {
   localPort: number;
   remotePort: number;
   state: TcpState = 'closed';
-  ttl: TimeToLive | null = null;
+  ttl: TimeToLive | HopLimit | null = null;
   diffServ: DiffServField = DiffServField.DEFAULT;
+  ttlFloor: TtlFloor = TtlFloor.NONE;
   allowHalfOpen = false;
   writeShutdown = false;
   peerFinished = false;
@@ -454,7 +474,8 @@ export class TcpSocket {
    */
   setNoDelay(enabled: boolean): void { this.stack._setNoDelay(this, enabled); }
 
-  setTtl(ttl: TimeToLive | null): void { this.ttl = ttl; }
+  setTtl(ttl: TimeToLive | HopLimit | null): void { this.ttl = ttl; }
+  setTtlFloor(floor: TtlFloor): void { this.ttlFloor = floor; }
   setDiffServ(field: DiffServField): void { this.diffServ = field; }
 
   /**
@@ -625,9 +646,10 @@ export class TcpListener {
     readonly identity: ListenerIdentity = {},
     readonly receiveWindow: number = TCP_DEFAULT_WINDOW,
     readonly maxSegmentSize: number = Number.MAX_SAFE_INTEGER,
-    readonly ttl: TimeToLive | null = null,
+    readonly ttl: TimeToLive | HopLimit | null = null,
     readonly diffServ: DiffServField = DiffServField.DEFAULT,
     readonly allowHalfOpen: boolean = false,
+    readonly ttlFloor: TtlFloor = TtlFloor.NONE,
   ) {}
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
@@ -734,7 +756,7 @@ export class TcpStack {
     const listener = new TcpListener(
       localIp, boundPort, opts.onAccept, opts.identity ?? {},
       opts.receiveWindow, opts.maxSegmentSize, opts.ttl ?? null, opts.diffServ ?? DiffServField.DEFAULT,
-      opts.allowHalfOpen ?? false);
+      opts.allowHalfOpen ?? false, opts.ttlFloor ?? TtlFloor.NONE);
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
@@ -842,6 +864,7 @@ export class TcpStack {
     if (opts.onClose) socket.onClose(opts.onClose);
     socket.ttl = opts.ttl ?? null;
     socket.diffServ = opts.diffServ ?? DiffServField.DEFAULT;
+    socket.ttlFloor = opts.ttlFloor ?? TtlFloor.NONE;
     socket.allowHalfOpen = opts.allowHalfOpen ?? false;
     socket.passive = false;
     socket.mss = mssForMtu(socket.family, this.pathMtuTo(remoteIp, egress));
@@ -894,11 +917,14 @@ export class TcpStack {
 
   exchange(
     remoteIp: string, remotePort: number, payload: string,
-    opts: { localPort?: PortNumber; localIp?: string } = {},
+    opts: TcpExchangeOptions = {},
   ): { outcome: TcpWireOutcome; received: string } {
     const socket = this.connect(remoteIp, remotePort, {
       ...(opts.localPort === undefined ? {} : { localPort: opts.localPort }),
       ...(opts.localIp === undefined ? {} : { localIp: opts.localIp }),
+      ...(opts.ttl === undefined ? {} : { ttl: opts.ttl }),
+      ...(opts.diffServ === undefined ? {} : { diffServ: opts.diffServ }),
+      ...(opts.ttlFloor === undefined ? {} : { ttlFloor: opts.ttlFloor }),
     });
     if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', received: '' };
     if (!socket.everEstablished) {
@@ -912,6 +938,7 @@ export class TcpStack {
       else if (chunk instanceof Uint8Array) received += new TextDecoder().decode(chunk);
     });
     if (payload.length > 0) socket.write(payload);
+    if (opts.shutdownWrite === true) socket.close();
     stop();
     socket.close();
     return { outcome: 'open', received };
@@ -1041,41 +1068,43 @@ export class TcpStack {
    * rejecting mid-session).
    */
   onIcmpUnreachable(
-    origSourcePort: number, origDestPort: number, origDestIp: string, origSequence: number,
-    prohibited: boolean, icmpCode?: number, icmpFrom?: string, icmpHeader?: ReceivedIpHeader,
+    quote: QuotedSegment, prohibited: boolean,
+    icmpCode?: number, icmpFrom?: string, icmpHeader?: ReceivedIpHeader,
   ): void {
-    const socket = this.socketQuotedByIcmp(origSourcePort, origDestPort, origDestIp);
+    const socket = this.socketQuotedByIcmp(quote);
     if (socket) {
-      if (!this.quotedSequenceInFlight(socket, origSequence)) return;
+      if (!this.admitsQuote(socket, quote)) return;
       if (prohibited) socket.connectProhibited = true;
       socket.connectRefused = true;
       this._teardown(socket, 'rst');
       return;
     }
     this.noteStatelessUnreachable(
-      origSourcePort, origDestPort, origDestIp, prohibited, icmpCode, icmpFrom, icmpHeader);
+      quote.sourcePort, quote.destinationPort, quote.destination, prohibited, icmpCode, icmpFrom, icmpHeader);
   }
 
-  private socketQuotedByIcmp(sourcePort: number, destinationPort: number, destination: string): TcpSocket | null {
+  private socketQuotedByIcmp(quote: QuotedSegment): TcpSocket | null {
     for (const socket of this.sockets.values()) {
-      if (socket.localPort !== sourcePort) continue;
-      if (socket.remotePort !== destinationPort) continue;
-      if (socket.remoteIp !== destination) continue;
+      if (socket.localPort !== quote.sourcePort) continue;
+      if (socket.remotePort !== quote.destinationPort) continue;
+      if (socket.remoteIp !== quote.destination) continue;
       if (socket.state === 'closed' || socket.state === 'time-wait') continue;
       return socket;
     }
     return null;
   }
 
-  private quotedSequenceInFlight(socket: TcpSocket, sequence: number): boolean {
-    if (seqWithin(socket.sendUnacked, sequence, socket.sendNext)) return true;
+  private admitsQuote(socket: TcpSocket, quote: QuotedSegment): boolean {
+    const reason = !socket.ttlFloor.admits(quote.ttl) ? 'ttl-below-floor'
+      : seqWithin(socket.sendUnacked, quote.sequence, socket.sendNext) ? null : 'icmp-out-of-window';
+    if (reason === null) return true;
     this.getBus().publish({
       topic: 'tcp.segment.dropped',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         sourceIp: socket.localIp, destinationIp: socket.remoteIp,
         sourcePort: socket.localPort, destinationPort: socket.remotePort,
-        reason: 'icmp-out-of-window',
+        reason,
       },
     });
     return false;
@@ -1088,14 +1117,11 @@ export class TcpStack {
    * for it. Shrink MSS to fit the reported next-hop MTU and re-send the
    * data that bounced, instead of tearing the connection down.
    */
-  onIcmpFragNeeded(
-    origSourcePort: number, origDestPort: number, origDestIp: string,
-    origSequence: number, nextHopMtu: number,
-  ): void {
-    const socket = this.socketQuotedByIcmp(origSourcePort, origDestPort, origDestIp);
+  onIcmpFragNeeded(quote: QuotedSegment, nextHopMtu: number): void {
+    const socket = this.socketQuotedByIcmp(quote);
     if (!socket) return;
     if (socket.family === 'ipv6' && nextHopMtu < MTU.MIN_IPV6) return;
-    if (!this.quotedSequenceInFlight(socket, origSequence)) return;
+    if (!this.admitsQuote(socket, quote)) return;
     // A plain outgoing data segment carries a timestamp option whenever
     // negotiated (see `transmit()`) — omitting its bytes here would
     // under-estimate the real on-wire size, computing a "corrected" MSS
@@ -1111,7 +1137,7 @@ export class TcpStack {
       socket.cc.setSegmentSize(newMss);
       socket.mss = newMss;
     }
-    this.resegmentAndRetransmit(socket, origSequence);
+    this.resegmentAndRetransmit(socket, quote.sequence);
   }
 
   /**
@@ -1188,7 +1214,7 @@ export class TcpStack {
       return true;
     }
     return this.handleSegment(
-      srcIp.toString(), ipPkt.destinationIP.toString(), seg, receivedIpHeaderOf(ipPkt));
+      srcIp.toString(), ipPkt.destinationIP.toString(), seg, ipPkt.ttl, receivedIpHeaderOf(ipPkt));
   }
 
   handleIp6(_inPort: string, srcIp: IPv6Address, ipv6: IPv6Packet): boolean {
@@ -1204,7 +1230,7 @@ export class TcpStack {
       this.dropped(srcIp.toString(), seg.sourcePort, 'invalid-source');
       return true;
     }
-    return this.handleSegment(srcIp.toString(), ipv6.destinationIP.toString(), seg);
+    return this.handleSegment(srcIp.toString(), ipv6.destinationIP.toString(), seg, ipv6.hopLimit);
   }
 
   private wireRefusal4(source: IPAddress, destination: IPAddress): TcpDropReason | null {
@@ -1216,7 +1242,7 @@ export class TcpStack {
   }
 
   private handleSegment(
-    senderIp: string, dstIp: string, seg: TcpSegment, ipHeader?: ReceivedIpHeader,
+    senderIp: string, dstIp: string, seg: TcpSegment, receivedTtl: number, ipHeader?: ReceivedIpHeader,
   ): boolean {
     // RFC 9293 §3.1 — a corrupted segment is discarded silently.
     if (!verifyTcpChecksum(seg, senderIp, dstIp)) {
@@ -1240,6 +1266,10 @@ export class TcpStack {
     const socketKey = makeSocketKey(dstIp, seg.destinationPort, senderIp, seg.sourcePort);
     const existing = this.sockets.get(socketKey);
     if (existing && !this.yieldsToNewIncarnation(existing, seg)) {
+      if (existing.state !== 'time-wait' && !existing.ttlFloor.admits(receivedTtl)) {
+        this.dropped(senderIp, seg.sourcePort, 'ttl-below-floor');
+        return true;
+      }
       this._processSegment(existing, seg, payloadSize);
       return true;
     }
@@ -1250,12 +1280,17 @@ export class TcpStack {
         this.dropped(senderIp, seg.sourcePort, 'no-listener');
         return true;
       }
+      if (!listener.ttlFloor.admits(receivedTtl)) {
+        this.dropped(senderIp, seg.sourcePort, 'ttl-below-floor');
+        return true;
+      }
       const socket = new TcpSocket(this, dstIp, seg.destinationPort, senderIp, seg.sourcePort);
       socket.passive = true;
       socket.pendingListener = listener;
       socket.windowSize = listener.receiveWindow;
       socket.ttl = listener.ttl;
       socket.diffServ = listener.diffServ;
+      socket.ttlFloor = listener.ttlFloor;
       socket.allowHalfOpen = listener.allowHalfOpen;
       const announcedMss = Math.min(
         mssForMtu(socket.family, this.pathMtuTo(senderIp, this.resolveEgress(senderIp))), listener.maxSegmentSize);
@@ -2565,12 +2600,9 @@ export class TcpStack {
     socket._fireErrorReport(report);
   }
 
-  onIcmpSoftError(
-    origSourcePort: number, origDestPort: number, origDestIp: string, origSequence: number,
-    icmpType: string, icmpCode: number, icmpFrom: string,
-  ): void {
-    const socket = this.socketQuotedByIcmp(origSourcePort, origDestPort, origDestIp);
-    if (!socket || !this.quotedSequenceInFlight(socket, origSequence)) return;
+  onIcmpSoftError(quote: QuotedSegment, icmpType: string, icmpCode: number, icmpFrom: string): void {
+    const socket = this.socketQuotedByIcmp(quote);
+    if (!socket || !this.admitsQuote(socket, quote)) return;
     this.reportError(socket, { source: 'icmp', icmpType, code: icmpCode, from: icmpFrom });
   }
 
@@ -2661,7 +2693,7 @@ export class TcpStack {
     });
     if (local) {
       const ipv4 = family === 'ipv6' ? undefined : l3Packet as IPv4Packet;
-      this.handleSegment(srcIp, dstIp, seg, ipv4 === undefined ? undefined : {
+      this.handleSegment(srcIp, dstIp, seg, ttl, ipv4 === undefined ? undefined : {
         ttl: ipv4.ttl,
         identification: ipv4.identification,
         tos: ipv4.tos,
