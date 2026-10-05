@@ -904,7 +904,7 @@ export class LinuxCommandExecutor {
       const base = `/proc/sys/net/ipv4/conf/${scope}`;
       this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
-      this.vfs.writeFile(`${base}/arp_accept`, '0\n', 0, 0, 0o022);
+      this.vfs.createFileAt(`${base}/arp_accept`, '0\n', 0o644, 0, 0);
       this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
@@ -913,7 +913,7 @@ export class LinuxCommandExecutor {
       this.vfs.mkdirp(base, 0o755, 0, 0);
       this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
-      this.vfs.writeFile(`${base}/arp_accept`, '0\n', 0, 0, 0o022);
+      this.vfs.createFileAt(`${base}/arp_accept`, '0\n', 0o644, 0, 0);
       this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
@@ -3155,6 +3155,7 @@ export class LinuxCommandExecutor {
       color: this.displayColor,
       isPiped: outputPiped,
       envOverride: this.envOverride ?? undefined,
+      openRefusal: (absPath: string) => this.openRefusal(absPath),
     };
   }
 
@@ -4360,39 +4361,31 @@ export class LinuxCommandExecutor {
     });
   }
 
+  private openRefusal(absPath: string): string | null {
+    const existing = this.vfs.resolveInode(absPath);
+    if (existing && existing.type === 'directory') return 'Is a directory';
+    if (this.mountTable.isReadOnly(absPath)) return 'Read-only file system';
+    if (existing) return this.checkPermission(existing, 'w') ? null : this.refuseOpen(absPath, 'Permission denied');
+    if (this.vfs.isVirtualTree(absPath)) return this.refuseOpen(absPath, 'No such file or directory');
+    const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
+    if (!parent) return this.refuseOpen(absPath, 'No such file or directory');
+    if (parent.type !== 'directory') return this.refuseOpen(absPath, 'Not a directory');
+    return this.checkPermission(parent, 'w') ? null : this.refuseOpen(absPath, 'Permission denied');
+  }
+
+  private refuseOpen(absPath: string, reason: string): string {
+    this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
+    return reason;
+  }
+
   /** Build an IOContext for the bash interpreter. */
   private buildIOContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
     return {
       writeFile: (path: string, content: string, append: boolean) => {
         const absPath = this.vfs.normalizePath(path, this.cwd);
-        // Check if target is a directory
         const existing = this.vfs.resolveInode(absPath);
-        if (existing && existing.type === 'directory') {
-          throw new Error(`bash: ${path}: Is a directory`);
-        }
-        if (this.mountTable.isReadOnly(absPath)) {
-          throw new Error(`bash: ${path}: Read-only file system`);
-        }
-        if (existing) {
-          if (!this.checkPermission(existing, 'w')) {
-            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
-            throw new Error(`bash: ${path}: Permission denied`);
-          }
-        } else {
-          const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
-          if (!parent) {
-            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
-            throw new Error(`bash: ${path}: No such file or directory`);
-          }
-          if (parent.type !== 'directory') {
-            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
-            throw new Error(`bash: ${path}: Not a directory`);
-          }
-          if (!this.checkPermission(parent, 'w')) {
-            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
-            throw new Error(`bash: ${path}: Permission denied`);
-          }
-        }
+        const refusal = this.openRefusal(absPath);
+        if (refusal !== null) throw new Error(`bash: ${path}: ${refusal}`);
         const written = this.vfs.writeFile(
           absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append,
           undefined, false);
@@ -4827,7 +4820,10 @@ export class LinuxCommandExecutor {
         return { output: outLn, exitCode: outLn.startsWith('ln:') ? 1 : 0 };
       }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
-      case 'tee': return { output: cmdTee(c, args, stdin ?? ''), exitCode: 0 };
+      case 'tee': {
+        const teed = cmdTee(c, args, stdin ?? '');
+        return { output: teed.output, exitCode: teed.failed ? 1 : 0 };
+      }
 
       // cd changes state
       case 'cd': {
