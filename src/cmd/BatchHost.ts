@@ -38,4 +38,5 @@ export interface BatchHost {
   random(): number;
   runCommand(line: string, stdin?: string): Promise<CommandOutcome>;
   readInputLine?(prompt: string): Promise<string | null>;
+  inputIsInteractive?(): boolean;
 }

@@ -432,3 +432,9 @@ function formatPingOutput(
 
   return lines.join('\n');
 }
+
+export function pingExitCode(output: string): number {
+  const received = /Received = (\d+)/.exec(output);
+  if (received !== null) return Number(received[1]) > 0 ? 0 : 1;
+  return /transmit failed|could not find host|Invalid|Bad |usage:/i.test(output) ? 1 : 0;
+}

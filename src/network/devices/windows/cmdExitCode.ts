@@ -13,9 +13,16 @@ const FAILURE_MARKERS = [
   'cannot find',
   'invalid switch',
   'not defined',
+  'already exists',
 ];
 
+const NET_ERROR = /NET HELPMSG \d+/i;
+const SERVICE_ERROR = /FAILED (\d+):/;
+
 export function commandExitCode(output: string): number {
+  if (NET_ERROR.test(output)) return 2;
+  const service = SERVICE_ERROR.exec(output);
+  if (service !== null) return Number(service[1]);
   const firstLine = output.split('\n').find(line => line.trim() !== '')?.trim().toLowerCase() ?? '';
   if (firstLine === '') return 0;
   if (firstLine.startsWith('error:')) return 1;

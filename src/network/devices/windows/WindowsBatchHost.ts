@@ -10,9 +10,10 @@ export interface WindowsBatchDevice {
   environment(): Map<string, string>;
   setVariable(name: string, value: string): void;
   removeVariable(name: string): void;
-  runSimple(line: string, stdin?: string): Promise<string>;
+  runSimple(line: string, stdin?: string): Promise<{ output: string; exitCode: number | null }>;
   timeZone(): string;
   readInputLine?(prompt: string): Promise<string | null>;
+  inputIsInteractive?(): boolean;
 }
 
 const NOT_RECOGNIZED = 'is not recognized as an internal or external command';
@@ -57,13 +58,14 @@ export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
     formattedTime: () => clockTimeWithCentiseconds(device.timeZone()),
     random: () => Math.floor(Math.random() * 32768),
     async runCommand(line, stdin): Promise<CommandOutcome> {
-      const output = await device.runSimple(line, stdin);
+      const { output, exitCode } = await device.runSimple(line, stdin);
       return {
         output,
-        exitCode: commandExitCode(output),
+        exitCode: exitCode ?? commandExitCode(output),
         notRecognized: output.includes(NOT_RECOGNIZED),
       };
     },
     readInputLine: device.readInputLine?.bind(device),
+    inputIsInteractive: device.inputIsInteractive?.bind(device),
   };
 }
