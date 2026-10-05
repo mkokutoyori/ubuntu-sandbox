@@ -723,6 +723,10 @@ export const IPV6_LOOPBACK = new IPv6Address('::1');
 export const IPV6_ALL_NODES_MULTICAST = new IPv6Address('ff02::1');
 export const IPV6_ALL_ROUTERS_MULTICAST = new IPv6Address('ff02::2');
 
+export function addressTextWithoutScope(address: IPAddress | IPv6Address): string {
+  return address instanceof IPv6Address ? address.withScopeId(null).toString() : address.toString();
+}
+
 // ─── L2: Ethernet Frame ─────────────────────────────────────────────
 
 export const ETHERTYPE_ARP  = 0x0806;

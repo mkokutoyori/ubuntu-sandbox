@@ -30,7 +30,8 @@ import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters }
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
-import { TcpStack, receivedIpHeaderOf } from '../tcp/TcpStack';
+import { TcpStack } from '../tcp/TcpStack';
+import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { isDialFailure, noFlags } from '../tcp/types';
@@ -61,7 +62,7 @@ import {
 import { HostSignalRefreshActor } from './host/actors';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
-  ARPPacket, ICMPPacket, UDPPacket, TCPPacket, type IPv4Option, type UDPLitePacket,
+  ARPPacket, ICMPPacket, UDPPacket, type IPv4Option, type UDPLitePacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum, ipv4HeaderBytesFor,
@@ -70,7 +71,7 @@ import {
   NDPRouterAdvertisement, NDPOptionPrefixInfo,
   createIPv6Packet, createNeighborSolicitation, createNeighborAdvertisement,
   createICMPv6EchoRequest, createICMPv6EchoReply, createRouterSolicitation,
-  IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
+  IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST, addressTextWithoutScope,
 } from '../core/types';
 import {
   DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
@@ -81,9 +82,10 @@ import {
   UDP_OVER_IPV4_HEADER_BYTES, udpPayloadLength, type UdpEmissionOptions, type UdpSendRequest,
 } from '../layers/transport/UdpEgress';
 import type { HostIcmpUnreachablePayload } from './host/events';
-import { icmpUnreachablePayload } from './host/icmpUnreachablePayload';
+import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
 import { Logger } from '../core/Logger';
 import type { Errno } from '../core/Errno';
+import { MTU } from '../core/constants';
 import { PacketQueue } from '../core/PacketQueue';
 import {
   buildICMPError,
@@ -101,7 +103,6 @@ import {
   ICMPV6_UNREACH_ADMIN_PROHIBITED,
   ICMPV6_UNREACH_PORT,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
-  isHardTcpUnreachCode,
   udpSocketErrorFor,
   type ICMPErrorType,
   type IcmpErrorQuote,
@@ -977,6 +978,13 @@ export abstract class EndHost extends Equipment {
     });
   }
 
+  private publishIcmpv6Unreachable(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    this.getBus().publish({
+      topic: 'host.icmp.unreachable',
+      payload: icmpv6UnreachablePayload(this.hostRef(), ipv6, icmpv6),
+    });
+  }
+
   /** Bus emission helper for ARP entry learned. */
   protected emitArpLearned(payload: {
     ip: string; mac: string; iface: string; source: 'reply' | 'gratuitous' | 'request' | 'static';
@@ -1069,6 +1077,10 @@ export abstract class EndHost extends Equipment {
         this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
       adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
       defaultTtl: (family: string) => family === 'ipv6' ? this.defaultHopLimit : this.defaultTTL,
+      pathMtu: (remoteIp: string, linkMtu: number) => {
+        const destination = remoteIp.includes(':') ? IPv6Address.tryParse(remoteIp) : IPAddress.tryParse(remoteIp);
+        return destination ? this.pathMtuTo(destination, linkMtu) : linkMtu;
+      },
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
@@ -3003,55 +3015,7 @@ export abstract class EndHost extends Equipment {
         this.recordPathMtu(icmp.originalPacket.destinationIP, icmp.mtu);
       }
 
-      const isHardTcpError = icmp.icmpType === 'destination-unreachable'
-        && isHardTcpUnreachCode(icmp.code);
-      // PRD-TCP.md P7 (RFC 1191/1981) — Fragmentation Needed/Packet Too Big
-      // is not a hard error like the codes above: the path works, our
-      // segment was just too big for it, so this shrinks MSS and
-      // retransmits instead of aborting the connection.
-      const isFragNeeded = icmp.icmpType === 'destination-unreachable'
-        && icmp.code === ICMP_UNREACH_FRAG_NEEDED;
-      if (!isHardTcpError && !isFragNeeded && icmp.originalPacket) {
-        const softSeg = icmp.originalPacket.payload as TcpSegment | undefined;
-        if (softSeg && softSeg.type === 'tcp') {
-          this.tcpv2.onIcmpSoftError(
-            softSeg.sourcePort, softSeg.destinationPort,
-            icmp.originalPacket.destinationIP.toString(),
-            icmp.icmpType, icmp.code, ipPkt.sourceIP.toString(),
-          );
-        }
-      }
-      if (isHardTcpError && icmp.originalPacket) {
-        const origSeg = icmp.originalPacket.payload as TCPPacket | undefined;
-        if (origSeg && origSeg.type === 'tcp') {
-          this.tcpv2.onIcmpUnreachable(
-            origSeg.sourcePort, origSeg.destinationPort,
-            icmp.originalPacket.destinationIP.toString(),
-            icmp.code, ipPkt.sourceIP.toString(), receivedIpHeaderOf(ipPkt),
-          );
-        }
-      } else if (icmp.icmpType === 'time-exceeded' && icmp.originalPacket) {
-        const origSeg = icmp.originalPacket.payload as TCPPacket | undefined;
-        if (origSeg && origSeg.type === 'tcp') {
-          this.tcpv2.noteProbeTimeExceeded(
-            origSeg.sourcePort, origSeg.destinationPort,
-            icmp.originalPacket.destinationIP.toString(),
-            icmp.code, ipPkt.sourceIP.toString(), receivedIpHeaderOf(ipPkt),
-          );
-        }
-      } else if (isFragNeeded && icmp.originalPacket && icmp.mtu !== undefined) {
-        // Real TCP traffic in this stack is a `TcpSegment` (`sequence`),
-        // not the legacy `TCPPacket` PDU (`sequenceNumber`) used above —
-        // PMTUD needs the real sequence number to identify the bounced
-        // segment in `unackedQueue`.
-        const origSeg = icmp.originalPacket.payload as TcpSegment | undefined;
-        if (origSeg && origSeg.type === 'tcp') {
-          this.tcpv2.onIcmpFragNeeded(
-            origSeg.sourcePort, origSeg.destinationPort,
-            icmp.originalPacket.destinationIP.toString(), origSeg.sequence, icmp.mtu,
-          );
-        }
-      }
+      deliverIcmpv4ErrorToTcp(this.tcpv2, ipPkt, icmp);
 
       // Phase 5.6: emit host.icmp.echo-failed so awaiting `sendPing` promises
       // can settle through `waitForEvent`. Carries the original id/seq so the
@@ -3350,8 +3314,8 @@ export abstract class EndHost extends Equipment {
 
   private readonly routeExceptions = new Map<string, StoredRouteException>();
 
-  private liveRouteException(destination: IPAddress): StoredRouteException | null {
-    const key = destination.toString();
+  private liveRouteException(destination: IPAddress | IPv6Address): StoredRouteException | null {
+    const key = addressTextWithoutScope(destination);
     const entry = this.routeExceptions.get(key);
     if (!entry) return null;
     if (entry.expiresAt <= this.getScheduler().now()) {
@@ -3361,7 +3325,7 @@ export abstract class EndHost extends Equipment {
     return entry;
   }
 
-  public routeException(destination: IPAddress): RouteException | null {
+  public routeException(destination: IPAddress | IPv6Address): RouteException | null {
     const entry = this.liveRouteException(destination);
     if (!entry) return null;
     return {
@@ -3376,7 +3340,7 @@ export abstract class EndHost extends Equipment {
     this.routeExceptions.clear();
   }
 
-  private pathMtuTo(destination: IPAddress, linkMtu: number): number {
+  private pathMtuTo(destination: IPAddress | IPv6Address, linkMtu: number): number {
     const mtu = this.liveRouteException(destination)?.mtu;
     return mtu ? Math.min(linkMtu, mtu) : linkMtu;
   }
@@ -3387,10 +3351,23 @@ export abstract class EndHost extends Equipment {
     const current = this.pathMtuTo(destination, route.port.getMTU());
     if (current < reported) return;
     const locked = reported < MIN_PMTU;
-    this.routeExceptions.set(destination.toString(), {
+    this.routeExceptions.set(addressTextWithoutScope(destination), {
       redirect: this.liveRouteException(destination)?.redirect ?? null,
       mtu: locked ? Math.min(current, MIN_PMTU) : reported,
       locked,
+      expiresAt: this.getScheduler().now() + PMTU_EXPIRES_MS,
+    });
+  }
+
+  private recordPathMtu6(destination: IPv6Address, reported: number): void {
+    if (reported < MTU.MIN_IPV6) return;
+    const route = this.resolveIPv6Route(destination);
+    if (!route) return;
+    if (reported >= this.pathMtuTo(destination, route.port.getMTU())) return;
+    this.routeExceptions.set(addressTextWithoutScope(destination), {
+      redirect: null,
+      mtu: reported,
+      locked: false,
       expiresAt: this.getScheduler().now() + PMTU_EXPIRES_MS,
     });
   }
@@ -3410,7 +3387,7 @@ export abstract class EndHost extends Equipment {
     const fibRoute = this.bestHostRoute(destination);
     if (!fibRoute?.nextHop) return;
     const previous = this.liveRouteException(destination);
-    this.routeExceptions.set(destination.toString(), {
+    this.routeExceptions.set(addressTextWithoutScope(destination), {
       redirect: { gateway: newGateway, replaces: fibRoute.nextHop, iface: fibRoute.iface },
       mtu: previous?.mtu ?? null,
       locked: previous?.locked ?? false,
@@ -5584,6 +5561,7 @@ export abstract class EndHost extends Equipment {
         break;
       case 'time-exceeded':
       case 'destination-unreachable':
+      case 'packet-too-big':
         this.handleICMPv6Error(ipv6, icmpv6);
         break;
     }
@@ -5656,9 +5634,32 @@ export abstract class EndHost extends Equipment {
   }
 
   private handleICMPv6Error(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    const packetTooBig = icmpv6.icmpType === 'packet-too-big';
     const reason = icmpv6.icmpType === 'time-exceeded'
       ? `Hop limit exceeded (from ${ipv6.sourceIP})`
-      : `Destination unreachable (from ${ipv6.sourceIP})`;
+      : packetTooBig
+        ? `Packet too big (from ${ipv6.sourceIP}) mtu ${icmpv6.mtu ?? 0}`
+        : `Destination unreachable (from ${ipv6.sourceIP})`;
+
+    this.publishIcmpv6Unreachable(ipv6, icmpv6);
+    const invoking = icmpv6.invokingPacket;
+    if (packetTooBig && icmpv6.mtu !== undefined && invoking && this.isLocalAddress6(invoking.sourceIP)) {
+      this.recordPathMtu6(invoking.destinationIP, icmpv6.mtu);
+    }
+    deliverIcmpv6ErrorToTcp(this.tcpv2, ipv6, icmpv6);
+
+    const echo = invoking?.payload as ICMPv6Packet | undefined;
+    if (invoking && echo?.type === 'icmpv6' && echo.icmpType === 'echo-request') {
+      this.emitIcmpEchoFailed({
+        fromIp: ipv6.sourceIP.toString(),
+        toIp: invoking.destinationIP.toString(),
+        id: echo.id ?? 0,
+        seq: echo.sequence ?? 0,
+        reason,
+      });
+      return;
+    }
+    if (packetTooBig) return;
 
     // Phase 5.7: wildcard emission so any awaiting `sendPing6` settles.
     this.emitIcmpEchoFailed({

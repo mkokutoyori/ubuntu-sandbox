@@ -83,6 +83,32 @@ export function isHardTcpUnreachCode(code: number | undefined): boolean {
   return code === ICMP_UNREACH_PROTO || code === ICMP_UNREACH_PORT || PROHIBITED_UNREACH_CODES.has(code);
 }
 
+const PROHIBITED_UNREACH_CODES_V6: ReadonlySet<number> = new Set([
+  ICMPV6_UNREACH_ADMIN_PROHIBITED, ICMPV6_UNREACH_POLICY_FAILED, ICMPV6_UNREACH_REJECT_ROUTE,
+]);
+
+const HARD_TCP_UNREACH_CODES_V6: ReadonlySet<number> = new Set([
+  ...PROHIBITED_UNREACH_CODES_V6, ICMPV6_UNREACH_PORT,
+]);
+
+export function isProhibitedUnreachCode(family: 'ipv4' | 'ipv6', code: number | undefined): boolean {
+  if (code === undefined) return false;
+  return (family === 'ipv6' ? PROHIBITED_UNREACH_CODES_V6 : PROHIBITED_UNREACH_CODES).has(code);
+}
+
+export type TcpIcmpErrorKind = 'destination-unreachable' | 'time-exceeded' | 'packet-too-big';
+export type TcpIcmpErrorClass = 'hard' | 'soft' | 'path-mtu';
+
+export function tcpIcmpErrorClass(
+  family: 'ipv4' | 'ipv6', kind: TcpIcmpErrorKind, code: number,
+): TcpIcmpErrorClass {
+  if (kind === 'packet-too-big') return 'path-mtu';
+  if (kind === 'time-exceeded') return 'soft';
+  if (family === 'ipv6') return HARD_TCP_UNREACH_CODES_V6.has(code) ? 'hard' : 'soft';
+  if (code === ICMP_UNREACH_FRAG_NEEDED) return 'path-mtu';
+  return isHardTcpUnreachCode(code) ? 'hard' : 'soft';
+}
+
 interface SocketError {
   readonly errno: Errno;
   readonly fatal: boolean;

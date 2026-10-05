@@ -6,9 +6,10 @@ import { Port } from '@/network/hardware/Port';
 import { EventBus } from '@/events/EventBus';
 import { VirtualTimeScheduler } from '@/events/Scheduler';
 import {
-  IPAddress, SubnetMask, MACAddress, createIPv4Packet, resetCounters,
-  ETHERTYPE_IPV4, IP_PROTO_TCP, IP_PROTO_ICMP,
-  type EthernetFrame, type IPv4Packet, type ICMPPacket, type ICMPType,
+  IPAddress, IPv6Address, SubnetMask, MACAddress, createIPv4Packet, createIPv6Packet, resetCounters,
+  ETHERTYPE_IPV4, ETHERTYPE_IPV6, IP_PROTO_TCP, IP_PROTO_ICMP, IP_PROTO_ICMPV6,
+  type EthernetFrame, type IPv4Packet, type IPv6Packet, type ICMPPacket, type ICMPType,
+  type ICMPv6Packet, type ICMPv6Type,
 } from '@/network/core/types';
 import {
   computeTcpChecksum, noFlags, type TcpFlags, type TcpOption, type TcpSegment,
@@ -21,7 +22,11 @@ import type { TcpSocket, TcpListenOptions, TcpConnectOptions } from '@/network/t
 
 export const DUT_ADDRESS = '10.0.0.1';
 export const PEER_ADDRESS = '10.0.0.2';
+export const DUT_ADDRESS_V6 = '2001:db8::1';
+export const PEER_ADDRESS_V6 = '2001:db8::2';
 export const PEER_PORT = 40000;
+
+export type PeerFamily = 'ipv4' | 'ipv6';
 
 const FLAG_LETTERS: Readonly<Record<string, keyof TcpFlags>> = {
   F: 'fin', S: 'syn', R: 'rst', P: 'psh', A: 'ack', U: 'urg', E: 'ece', C: 'cwr',
@@ -65,13 +70,18 @@ export interface ScriptedPeer {
   readonly dut: EndHost;
   readonly bus: EventBus;
   readonly clock: VirtualTimeScheduler;
+  readonly family: PeerFamily;
+  readonly addresses: { readonly dut: string; readonly peer: string };
   readonly frames: EthernetFrame[];
   readonly replies: TcpSegment[];
   readonly icmpReplies: ICMPPacket[];
+  readonly icmpv6Replies: ICMPv6Packet[];
   readonly ports: { dut: number; peer: number };
   send(spec: PeerSegment): void;
   sendIpv4(packet: IPv4Packet): void;
-  sendIcmpError(icmpType: ICMPType, code: number, offending: TcpSegment): void;
+  sendIpv6(packet: IPv6Packet): void;
+  sendIcmpError(icmpType: ICMPType, code: number, offending: TcpSegment, mtu?: number): void;
+  sendIcmpv6Error(icmpType: ICMPv6Type, code: number, offending: TcpSegment, mtu?: number): void;
   respond(handler: ((segment: TcpSegment) => void) | null): void;
   take(): TcpSegment[];
   last(): TcpSegment | undefined;
@@ -79,7 +89,9 @@ export interface ScriptedPeer {
   advance(ms: number): void;
 }
 
-export function scriptedPeer(platform: 'linux' | 'windows' = 'linux'): ScriptedPeer {
+export function scriptedPeer(
+  platform: 'linux' | 'windows' = 'linux', family: PeerFamily = 'ipv4',
+): ScriptedPeer {
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -95,15 +107,33 @@ export function scriptedPeer(platform: 'linux' | 'windows' = 'linux'): ScriptedP
   const cable = new Cable('scripted');
   cable.setEventBus(bus);
   cable.connect(dut.getPort('eth0')!, port);
-  dut.getPort('eth0')!.configureIP(new IPAddress(DUT_ADDRESS), new SubnetMask('255.255.255.0'));
-  dut.addStaticARP(new IPAddress(PEER_ADDRESS), port.getMAC(), 'eth0');
+  const addresses = family === 'ipv6'
+    ? { dut: DUT_ADDRESS_V6, peer: PEER_ADDRESS_V6 }
+    : { dut: DUT_ADDRESS, peer: PEER_ADDRESS };
+  if (family === 'ipv6') {
+    dut.configureIPv6Interface('eth0', new IPv6Address(DUT_ADDRESS_V6), 64);
+    dut.addStaticNeighbor6(new IPv6Address(PEER_ADDRESS_V6), port.getMAC(), 'eth0');
+  } else {
+    dut.getPort('eth0')!.configureIP(new IPAddress(DUT_ADDRESS), new SubnetMask('255.255.255.0'));
+    dut.addStaticARP(new IPAddress(PEER_ADDRESS), port.getMAC(), 'eth0');
+  }
 
   const frames: EthernetFrame[] = [];
   const replies: TcpSegment[] = [];
   const icmpReplies: ICMPPacket[] = [];
+  const icmpv6Replies: ICMPv6Packet[] = [];
   let responder: ((segment: TcpSegment) => void) | null = null;
   port.onFrame((_name, frame) => {
     frames.push(frame);
+    if (frame.etherType === ETHERTYPE_IPV6) {
+      const packet = frame.payload as IPv6Packet;
+      if (packet.nextHeader === IP_PROTO_ICMPV6) icmpv6Replies.push(packet.payload as ICMPv6Packet);
+      if (packet.nextHeader !== IP_PROTO_TCP) return;
+      const segment = packet.payload as TcpSegment;
+      replies.push(segment);
+      responder?.(segment);
+      return;
+    }
     if (frame.etherType !== ETHERTYPE_IPV4) return;
     const packet = frame.payload as IPv4Packet;
     if (packet.protocol === IP_PROTO_ICMP) icmpReplies.push(packet.payload as ICMPPacket);
@@ -113,12 +143,13 @@ export function scriptedPeer(platform: 'linux' | 'windows' = 'linux'): ScriptedP
     responder?.(segment);
   });
 
-  const emit = (packet: IPv4Packet): void => {
+  const emitFrame = (etherType: number, packet: IPv4Packet | IPv6Packet): void => {
     port.sendFrame({
-      srcMAC: port.getMAC(), dstMAC: dut.getPort('eth0')!.getMAC(),
-      etherType: ETHERTYPE_IPV4, payload: packet,
+      srcMAC: port.getMAC(), dstMAC: dut.getPort('eth0')!.getMAC(), etherType, payload: packet,
     } as EthernetFrame);
   };
+  const emit = (packet: IPv4Packet): void => emitFrame(ETHERTYPE_IPV4, packet);
+  const emit6 = (packet: IPv6Packet): void => emitFrame(ETHERTYPE_IPV6, packet);
 
   const ports = { dut: 4000, peer: PEER_PORT };
 
@@ -138,31 +169,49 @@ export function scriptedPeer(platform: 'linux' | 'windows' = 'linux'): ScriptedP
       options,
       payload: spec.payload,
     };
-    const source = spec.sourceAddress ?? PEER_ADDRESS;
-    const destination = spec.destinationAddress ?? DUT_ADDRESS;
+    const source = spec.sourceAddress ?? addresses.peer;
+    const destination = spec.destinationAddress ?? addresses.dut;
     seg.checksum = computeTcpChecksum(seg, source, destination);
     const size = seg.dataOffset * 4 + payloadBytes(seg.payload).length;
+    if (family === 'ipv6') {
+      emit6(createIPv6Packet(
+        new IPv6Address(source), new IPv6Address(destination), IP_PROTO_TCP, spec.ttl ?? 64, seg, size));
+      return;
+    }
     emit(createIPv4Packet(
       new IPAddress(source), new IPAddress(destination), IP_PROTO_TCP, spec.ttl ?? 64, seg, size));
   };
 
-  const sendIcmpError = (icmpType: ICMPType, code: number, offending: TcpSegment): void => {
+  const sendIcmpError = (icmpType: ICMPType, code: number, offending: TcpSegment, mtu?: number): void => {
     const original = createIPv4Packet(
       new IPAddress(DUT_ADDRESS), new IPAddress(PEER_ADDRESS), IP_PROTO_TCP, 64, offending,
       offending.dataOffset * 4);
     const icmp: ICMPPacket = {
       type: 'icmp', icmpType, code, id: 0, sequence: 0, dataSize: 28, originalPacket: original,
+      ...(mtu === undefined ? {} : { mtu }),
     };
     emit(createIPv4Packet(
       new IPAddress(PEER_ADDRESS), new IPAddress(DUT_ADDRESS), IP_PROTO_ICMP, 64, icmp, 8 + 28));
   };
 
+  const sendIcmpv6Error = (icmpType: ICMPv6Type, code: number, offending: TcpSegment, mtu?: number): void => {
+    const invoking = createIPv6Packet(
+      new IPv6Address(DUT_ADDRESS_V6), new IPv6Address(PEER_ADDRESS_V6), IP_PROTO_TCP, 64, offending,
+      offending.dataOffset * 4 + payloadBytes(offending.payload).length);
+    const icmp: ICMPv6Packet = {
+      type: 'icmpv6', icmpType, code, invokingPacket: invoking, ...(mtu === undefined ? {} : { mtu }),
+    };
+    emit6(createIPv6Packet(
+      new IPv6Address(PEER_ADDRESS_V6), new IPv6Address(DUT_ADDRESS_V6), IP_PROTO_ICMPV6, 64, icmp, 48));
+  };
+
   return {
-    dut, bus, clock, frames, replies, icmpReplies, ports, send, sendIpv4: emit, sendIcmpError,
+    dut, bus, clock, family, addresses, frames, replies, icmpReplies, icmpv6Replies, ports, send,
+    sendIpv4: emit, sendIpv6: emit6, sendIcmpError, sendIcmpv6Error,
     respond: (handler) => { responder = handler; },
     take: () => replies.splice(0, replies.length),
     last: () => replies[replies.length - 1],
-    clear: () => { replies.length = 0; icmpReplies.length = 0; },
+    clear: () => { replies.length = 0; icmpReplies.length = 0; icmpv6Replies.length = 0; },
     advance: (ms) => clock.advance(ms),
   };
 }
@@ -194,7 +243,7 @@ export function openActive(
   peer: ScriptedPeer, synAckOptions: TcpOption[] = [], peerIsn = PEER_ISN, window = 65535,
   connectOptions: TcpConnectOptions = {},
 ): OpenConnection {
-  const socket = peer.dut.getTcpStack().connect(PEER_ADDRESS, peer.ports.peer, connectOptions)!;
+  const socket = peer.dut.getTcpStack().connect(peer.addresses.peer, peer.ports.peer, connectOptions)!;
   const syn = peer.last()!;
   peer.ports.dut = syn.sourcePort;
   peer.send({
