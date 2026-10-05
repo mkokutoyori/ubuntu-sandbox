@@ -224,6 +224,7 @@ export class LinuxSshServerContext implements ISshServerContext {
           // Hand the device's journal in so SSH events surface in
           // `journalctl -u sshd`, not just in /var/log/auth.log.
           logMgr: this.executor?.logMgr,
+          logLevel: () => this.effectiveSshdServerConfig().logLevel,
         })
       : null;
     const userMgr = this.executor?.userMgr;
@@ -700,6 +701,11 @@ export class LinuxSshServerContext implements ISshServerContext {
   clientPort(fromIp: string): number | undefined {
     const machine = this.device as { sshClientPort?: (ip: string) => number } | null;
     return machine?.sshClientPort?.(fromIp);
+  }
+
+  connectionClosed(user: string, fromIp: string): void {
+    const machine = this.device as { sshWireConnectionClosed?: (u: string, ip: string) => void } | null;
+    machine?.sshWireConnectionClosed?.(user, fromIp);
   }
 
   recordAuthFailure(user: string, fromIp: string, reason: string): void {

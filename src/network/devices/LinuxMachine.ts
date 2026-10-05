@@ -2175,33 +2175,52 @@ export abstract class LinuxMachine extends EndHost
     }
   }
 
-  scheduleSshLogout(user: string, fromIp: string, holdSeconds: number): void {
-    if (holdSeconds <= 0) { this.recordSshLogout(user, fromIp); return; }
-    this.getScheduler().setTimeout(
-      () => this.recordSshLogout(user, fromIp),
-      holdSeconds * 1000,
-    );
+  private readonly heldSshRecords = new Map<string, number>();
+
+  scheduleSshLogout(user: string, fromIp: string, holdSeconds: number, wireOwned = false): void {
+    if (!wireOwned) {
+      if (holdSeconds <= 0) { this.recordSshLogout(user, fromIp); return; }
+      this.getScheduler().setTimeout(() => this.recordSshLogout(user, fromIp), holdSeconds * 1000);
+      return;
+    }
+    if (holdSeconds <= 0) return;
+    const key = `${user}@${fromIp}`;
+    this.heldSshRecords.set(key, (this.heldSshRecords.get(key) ?? 0) + 1);
+    this.getScheduler().setTimeout(() => {
+      const left = (this.heldSshRecords.get(key) ?? 1) - 1;
+      if (left > 0) this.heldSshRecords.set(key, left); else this.heldSshRecords.delete(key);
+      if (left === 0) this.closeSshSessionRecord(user, fromIp);
+    }, holdSeconds * 1000);
+  }
+
+  sshWireConnectionClosed(user: string, fromIp: string): void {
+    if (this.heldSshRecords.has(`${user}@${fromIp}`)) return;
+    this.closeSshSessionRecord(user, fromIp);
+  }
+
+  private closeSshSessionRecord(user: string, fromIp: string): boolean {
+    const session = this.sessionTable.list()
+      .find((s) => s.user === user && s.fromIp === fromIp && !s.closedAt);
+    if (!session) return false;
+    const sid = String(session.shellPid ?? session.sshdPid ?? 0);
+    if (session.shellPid) this.executor.processMgr.reap(session.shellPid);
+    if (session.sshdPid) this.executor.processMgr.reap(session.sshdPid);
+    this.sessionTable.close(session.tty, 'normal');
+    this.removePtsNode(session.tty);
+    this.dropLogindSession(sid, session.uid);
+    this.emitSessionClosedLog(user, session.sshdPid ?? 0, sid);
+    this.socketTable.removeConnection({
+      protocol: 'tcp', localPort: 22, remoteAddress: fromIp, remotePort: this.sshClientPort(fromIp),
+    });
+    return true;
   }
 
   recordSshLogout(user: string, fromIp: string): void {
-    const session = this.sessionTable.list()
-      .find((s) => s.user === user && s.fromIp === fromIp && !s.closedAt);
     const port = this.sshClientPort(fromIp);
-    if (session) {
-      const sid = String(session.shellPid ?? session.sshdPid ?? 0);
-      if (session.shellPid) this.executor.processMgr.reap(session.shellPid);
-      if (session.sshdPid) this.executor.processMgr.reap(session.sshdPid);
-      this.sessionTable.close(session.tty, 'normal');
-      this.removePtsNode(session.tty);
-      this.dropLogindSession(sid, session.uid);
-      this.emitSessionClosedLog(user, session.sshdPid ?? 0, sid);
-      this.socketTable.removeConnection({
-        protocol: 'tcp', localPort: 22, remoteAddress: fromIp, remotePort: port,
-      });
-    }
+    const closed = this.closeSshSessionRecord(user, fromIp);
     this.getSshServerContext().events.emit({
       kind: 'client_disconnected', user, ip: fromIp, port,
-      authenticated: session !== undefined, reason: 'client_disconnect',
+      authenticated: closed, reason: 'client_disconnect',
     });
     this.sshForgetPeerPort(fromIp);
   }

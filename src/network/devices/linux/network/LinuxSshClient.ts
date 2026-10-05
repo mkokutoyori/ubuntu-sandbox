@@ -897,7 +897,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   const machine = found.device as LinuxMachine & {
     isServiceActive?: (n: string) => boolean;
-    scheduleSshLogout?: (user: string, fromIp: string, holdSeconds: number) => void;
+    scheduleSshLogout?: (user: string, fromIp: string, holdSeconds: number, wireOwned?: boolean) => void;
     sshdAcceptsLogin?: (
       u: string, ctx?: {
         address?: string; host?: string; method?: 'publickey' | 'password' | 'pending'; keyForcesCommand?: boolean;
@@ -1319,7 +1319,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine));
+    machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine), opts.wireAuthenticated === true);
     return { output: clientHeader + normalised, exitCode: execRc, connection };
   }
 
@@ -1387,7 +1387,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const relayedShell = opts.shellRelay?.() ?? null;
   if (relayedShell && relayedShell.output.length > 0) lines.push(relayedShell.output);
   lines.push(connectionClosed(host));
-  machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
+  machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0, opts.wireAuthenticated === true);
   return { output: clientHeader + lines.join('\n'), exitCode: 0, connection };
 }
 

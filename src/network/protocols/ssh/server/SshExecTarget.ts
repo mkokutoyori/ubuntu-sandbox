@@ -155,7 +155,7 @@ export interface SshExecTarget {
   /** Audit-trail hook called once per connection (accepted or rejected). */
   recordSshLogout?(user: string, fromIp: string): void;
 
-  scheduleSshLogout?(user: string, fromIp: string, holdSeconds: number): void;
+  scheduleSshLogout?(user: string, fromIp: string, holdSeconds: number, wireOwned?: boolean): void;
 
   recordSshLogin(
     user: string,
