@@ -29,6 +29,37 @@ export class TimeToLive {
   }
 }
 
+export class HopLimit {
+  static readonly MIN = 0;
+  static readonly MAX = 255;
+  readonly value: number;
+
+  constructor(value: number) {
+    if (!HopLimit.isValid(value)) {
+      throw new RangeError(
+        `Invalid hop limit ${value}: must be an integer in ${HopLimit.MIN}–${HopLimit.MAX}`,
+      );
+    }
+    this.value = value;
+  }
+
+  static of(value: number): HopLimit {
+    return new HopLimit(value);
+  }
+
+  static isValid(value: number): boolean {
+    return Number.isInteger(value) && value >= HopLimit.MIN && value <= HopLimit.MAX;
+  }
+
+  equals(other: HopLimit): boolean {
+    return this.value === other.value;
+  }
+
+  toString(): string {
+    return String(this.value);
+  }
+}
+
 export class DiffServField {
   static readonly MAX = 255;
   static readonly DSCP_SHIFT = 2;

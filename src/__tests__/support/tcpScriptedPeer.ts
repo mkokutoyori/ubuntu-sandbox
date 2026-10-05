@@ -7,7 +7,7 @@ import { EventBus } from '@/events/EventBus';
 import { VirtualTimeScheduler } from '@/events/Scheduler';
 import {
   IPAddress, IPv6Address, SubnetMask, MACAddress, createIPv4Packet, createIPv6Packet, resetCounters,
-  ETHERTYPE_IPV4, ETHERTYPE_IPV6, IP_PROTO_TCP, IP_PROTO_ICMP, IP_PROTO_ICMPV6,
+  ETHERTYPE_IPV4, ETHERTYPE_IPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, IP_PROTO_ICMPV6,
   type EthernetFrame, type IPv4Packet, type IPv6Packet, type ICMPPacket, type ICMPType,
   type ICMPv6Packet, type ICMPv6Type,
 } from '@/network/core/types';
@@ -82,6 +82,8 @@ export interface ScriptedPeer {
   sendIpv6(packet: IPv6Packet): void;
   sendIcmpError(icmpType: ICMPType, code: number, offending: TcpSegment, mtu?: number): void;
   sendIcmpv6Error(icmpType: ICMPv6Type, code: number, offending: TcpSegment, mtu?: number): void;
+  sendIcmpv6ErrorQuoting(icmpType: ICMPv6Type, code: number, invoking: IPv6Packet, mtu?: number): void;
+  udpDatagrams(): IPv6Packet[];
   respond(handler: ((segment: TcpSegment) => void) | null): void;
   take(): TcpSegment[];
   last(): TcpSegment | undefined;
@@ -194,10 +196,9 @@ export function scriptedPeer(
       new IPAddress(PEER_ADDRESS), new IPAddress(DUT_ADDRESS), IP_PROTO_ICMP, 64, icmp, 8 + 28));
   };
 
-  const sendIcmpv6Error = (icmpType: ICMPv6Type, code: number, offending: TcpSegment, mtu?: number): void => {
-    const invoking = createIPv6Packet(
-      new IPv6Address(DUT_ADDRESS_V6), new IPv6Address(PEER_ADDRESS_V6), IP_PROTO_TCP, 64, offending,
-      offending.dataOffset * 4 + payloadBytes(offending.payload).length);
+  const sendIcmpv6ErrorQuoting = (
+    icmpType: ICMPv6Type, code: number, invoking: IPv6Packet, mtu?: number,
+  ): void => {
     const icmp: ICMPv6Packet = {
       type: 'icmpv6', icmpType, code, invokingPacket: invoking, ...(mtu === undefined ? {} : { mtu }),
     };
@@ -205,9 +206,20 @@ export function scriptedPeer(
       new IPv6Address(PEER_ADDRESS_V6), new IPv6Address(DUT_ADDRESS_V6), IP_PROTO_ICMPV6, 64, icmp, 48));
   };
 
+  const sendIcmpv6Error = (icmpType: ICMPv6Type, code: number, offending: TcpSegment, mtu?: number): void => {
+    sendIcmpv6ErrorQuoting(icmpType, code, createIPv6Packet(
+      new IPv6Address(DUT_ADDRESS_V6), new IPv6Address(PEER_ADDRESS_V6), IP_PROTO_TCP, 64, offending,
+      offending.dataOffset * 4 + payloadBytes(offending.payload).length), mtu);
+  };
+
+  const udpDatagrams = (): IPv6Packet[] => frames
+    .filter((frame) => frame.etherType === ETHERTYPE_IPV6)
+    .map((frame) => frame.payload as IPv6Packet)
+    .filter((packet) => packet.nextHeader === IP_PROTO_UDP);
+
   return {
     dut, bus, clock, family, addresses, frames, replies, icmpReplies, icmpv6Replies, ports, send,
-    sendIpv4: emit, sendIpv6: emit6, sendIcmpError, sendIcmpv6Error,
+    sendIpv4: emit, sendIpv6: emit6, sendIcmpError, sendIcmpv6Error, sendIcmpv6ErrorQuoting, udpDatagrams,
     respond: (handler) => { responder = handler; },
     take: () => replies.splice(0, replies.length),
     last: () => replies[replies.length - 1],

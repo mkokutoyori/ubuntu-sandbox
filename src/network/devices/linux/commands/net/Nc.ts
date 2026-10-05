@@ -224,13 +224,20 @@ function sourcePortOf(ctx: LinuxCommandContext, text: string | undefined): PortN
   return PortNumber.of(value);
 }
 
-function sourceAddressOf(ctx: LinuxCommandContext, text: string | undefined): IPAddress | undefined {
+function sourceAddressOf(
+  ctx: LinuxCommandContext, text: string | undefined, target: IPAddress | IPv6Address,
+): IPAddress | IPv6Address | undefined {
   if (text === undefined) return undefined;
-  const address = IPAddress.tryParse(text) ?? ctx.net.resolveHostnameSync(text);
+  const v6 = target instanceof IPv6Address;
+  const v4Literal = IPAddress.tryParse(text);
+  const v6Literal = v4Literal ? null : IPv6Address.tryParse(text);
+  if ((v4Literal && v6) || (v6Literal && !v6)) throw new NcExit(['nc: getaddrinfo: Address family for hostname not supported']);
+  const address = v4Literal ?? v6Literal ?? (v6 ? ctx.net.resolveHostname6Sync(text) : ctx.net.resolveHostnameSync(text));
   if (!address) throw new NcExit(['nc: getaddrinfo: Name or service not known']);
-  if (!address.isLoopback() && !ctx.net.isLocalAddress(address)) {
-    throw new NcExit([`nc: bind failed: ${strerror('EADDRNOTAVAIL')}`]);
-  }
+  const owned = address instanceof IPv6Address
+    ? ctx.net.isLocalAddress6(address)
+    : address.isLoopback() || ctx.net.isLocalAddress(address);
+  if (!owned) throw new NcExit([`nc: bind failed: ${strerror('EADDRNOTAVAIL')}`]);
   return address;
 }
 
@@ -266,16 +273,13 @@ async function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: stri
   const target = getaddrinfo(ctx, host, ports[0], opts);
   const address = target.toString();
   const sourcePort = sourcePortOf(ctx, opts.sourcePort);
-  const sourceIP = sourceAddressOf(ctx, opts.sourceAddress);
+  const sourceIP = sourceAddressOf(ctx, opts.sourceAddress, target);
   const payload = opts.zero || opts.detachStdin ? '' : stdin;
   const proto = opts.udp ? 'udp' : 'tcp';
   let ret = 1;
 
   for (const port of ports) {
     if (opts.udp) {
-      if (target instanceof IPv6Address) {
-        throw new NcExit(['nc: option -u: this simulator cannot build a connected UDP socket over IPv6']);
-      }
       const socket = ctx.net.udpConnect(target, port, {
         localPort: sourcePort?.value, source: sourceIP, processName: 'nc',
         pid: ctx.executor.currentPid(), uid: ctx.executor.userMgr.currentUid,

@@ -32,12 +32,15 @@ import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
 import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
+import type { DiffServField, HopLimit, TimeToLive } from '../core/IpHeaderFields';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { isDialFailure, noFlags } from '../tcp/types';
 import { computeUdpChecksum, stampUdpChecksum, stampUdpLiteChecksum } from '@/network/layers/transport/UdpChecksum';
 import { UdpLiteEndpoint, type UdpLiteHost } from './udp/UdpLiteEndpoint';
-import { acceptUdpDatagram, UDP_MAX_PAYLOAD_OVER_IPV4 } from '@/network/layers/transport/UdpInput';
+import {
+  acceptUdpDatagram, UDP_MAX_PAYLOAD_OVER_IPV4, UDP_MAX_PAYLOAD_OVER_IPV6,
+} from '@/network/layers/transport/UdpInput';
 import { bogusChecksum } from '@/network/layers/transport/L4Checksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import { PortNumber, PORT_ANY } from '../core/ports/PortNumber';
@@ -104,6 +107,7 @@ import {
   ICMPV6_UNREACH_PORT,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   udpSocketErrorFor,
+  udpSocketErrorForV6,
   type ICMPErrorType,
   type IcmpErrorQuote,
   RFC792_ICMP_ERROR_QUOTE,
@@ -311,6 +315,16 @@ export interface UdpDelivery {
 
 /** Callback invoked for every datagram delivered to a bound UDP port. */
 export type UdpListener = (delivery: UdpDelivery) => void;
+
+export interface UdpConnectOptions {
+  localPort?: number;
+  source?: IPAddress | IPv6Address;
+  processName?: string;
+  pid?: number;
+  uid?: number;
+  ttl?: TimeToLive | HopLimit;
+  diffServ?: DiffServField;
+}
 
 export interface ConnectedUdpSocket {
   readonly localPort: number;
@@ -3435,11 +3449,20 @@ export abstract class EndHost extends Equipment {
   }
 
   public udpConnect(
-    remote: IPAddress, remotePort: number,
-    options: { localPort?: number; source?: IPAddress; processName?: string; pid?: number; uid?: number } = {},
+    remote: IPAddress | IPv6Address, remotePort: number,
+    options: UdpConnectOptions = {},
   ): ConnectedUdpSocket | Errno {
-    if (!remote.isLoopback() && !this.isLocalAddress(remote) && !this.resolveRoute(remote)) return 'ENETUNREACH';
-    if (options.source && !options.source.isLoopback() && !this.isLocalAddress(options.source)) return 'EADDRNOTAVAIL';
+    const reachable = remote instanceof IPv6Address
+      ? this.isLocalAddress6(remote) || this.resolveIPv6Route(remote) !== null
+      : remote.isLoopback() || this.isLocalAddress(remote) || this.resolveRoute(remote) !== null;
+    if (!reachable) return 'ENETUNREACH';
+    if (options.source !== undefined) {
+      if ((options.source instanceof IPv6Address) !== (remote instanceof IPv6Address)) return 'EAFNOSUPPORT';
+      const owned = options.source instanceof IPv6Address
+        ? this.isLocalAddress6(options.source)
+        : options.source.isLoopback() || this.isLocalAddress(options.source);
+      if (!owned) return 'EADDRNOTAVAIL';
+    }
     let localPort: number | false;
     try {
       localPort = this.udpBind(options.localPort ?? PORT_ANY, () => undefined, options.processName,
@@ -3449,7 +3472,7 @@ export abstract class EndHost extends Equipment {
       throw error;
     }
     if (localPort === false) return 'EADDRINUSE';
-    const peer: ConnectedUdpPeer = { remote: remote.toString(), remotePort, pendingError: null };
+    const peer: ConnectedUdpPeer = { remote: addressTextWithoutScope(remote), remotePort, pendingError: null };
     this.connectedUdpPeers.set(localPort, peer);
     return {
       localPort,
@@ -3459,10 +3482,21 @@ export abstract class EndHost extends Equipment {
           peer.pendingError = null;
           return pending;
         }
+        if (remote instanceof IPv6Address) {
+          if (payload.length > UDP_MAX_PAYLOAD_OVER_IPV6) return 'EMSGSIZE';
+          return this.sendUdpDatagram6(remote, remotePort, localPort, payload, payload.length, {
+            ...(options.source instanceof IPv6Address ? { sourceIp: options.source } : {}),
+            ...(options.ttl === undefined ? {} : { hopLimit: options.ttl.value }),
+            ...(options.diffServ === undefined ? {} : { trafficClass: options.diffServ.value }),
+          }) ? null : 'ENETUNREACH';
+        }
         if (payload.length > UDP_MAX_PAYLOAD_OVER_IPV4) return 'EMSGSIZE';
         const sent = this.sendUdpDatagram(
-          remote, remotePort, localPort, payload, payload.length,
-          options.source ? { sourceIp: options.source } : {});
+          remote, remotePort, localPort, payload, payload.length, {
+            ...(options.source instanceof IPAddress ? { sourceIp: options.source } : {}),
+            ...(options.ttl === undefined ? {} : { ttl: options.ttl.value }),
+            ...(options.diffServ === undefined ? {} : { tos: options.diffServ.value }),
+          });
         return sent ? null : 'ENETUNREACH';
       },
       close: () => {
@@ -3477,8 +3511,18 @@ export abstract class EndHost extends Equipment {
     const datagram = original?.payload as UDPPacket | undefined;
     if (!original || datagram?.type !== 'udp') return;
     const peer = this.connectedUdpPeers.get(datagram.sourcePort);
-    if (!peer || peer.remote !== original.destinationIP.toString() || peer.remotePort !== datagram.destinationPort) return;
+    if (!peer || peer.remote !== addressTextWithoutScope(original.destinationIP) || peer.remotePort !== datagram.destinationPort) return;
     const error = udpSocketErrorFor(icmp.icmpType, icmp.code);
+    if (error?.fatal) peer.pendingError = error.errno;
+  }
+
+  private reportUdpSocketError6(icmpv6: ICMPv6Packet): void {
+    const invoking = icmpv6.invokingPacket;
+    const datagram = invoking?.payload as UDPPacket | undefined;
+    if (!invoking || datagram?.type !== 'udp') return;
+    const peer = this.connectedUdpPeers.get(datagram.sourcePort);
+    if (!peer || peer.remote !== addressTextWithoutScope(invoking.destinationIP) || peer.remotePort !== datagram.destinationPort) return;
+    const error = udpSocketErrorForV6(icmpv6.icmpType, icmpv6.code);
     if (error?.fatal) peer.pendingError = error.errno;
   }
 
@@ -3828,18 +3872,23 @@ export abstract class EndHost extends Equipment {
     sourcePort: number,
     payload: unknown,
     payloadBytes: number = 0,
+    options: { hopLimit?: number; trafficClass?: number; sourceIp?: IPv6Address } = {},
   ): boolean {
     const udp: UDPPacket = {
       type: 'udp', sourcePort, destinationPort,
       length: 8 + udpPayloadLength(payload, payloadBytes), checksum: 0, payload,
     };
+    const hopLimit = options.hopLimit ?? this.defaultHopLimit;
+    const marked = (packet: IPv6Packet): IPv6Packet =>
+      options.trafficClass === undefined ? packet : { ...packet, trafficClass: options.trafficClass };
 
     if (this.isLocalAddress6(destinationIP)) {
-      const localPkt = createIPv6Packet(
-        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
-        stampUdpChecksum(udp, destinationIP.toString(), destinationIP.toString()),
+      const origin = options.sourceIp ?? destinationIP;
+      const localPkt = marked(createIPv6Packet(
+        origin, destinationIP, IP_PROTO_UDP, hopLimit,
+        stampUdpChecksum(udp, origin.toString(), destinationIP.toString()),
         udp.length,
-      );
+      ));
       this.deliverUDP6('lo', localPkt);
       return true;
     }
@@ -3850,16 +3899,18 @@ export abstract class EndHost extends Equipment {
       return this.sendIPv6ToGroup(destinationIP, IP_PROTO_UDP, udp, udp.length);
     }
 
-    return this.emitIpv6(destinationIP, (srcIP) => createIPv6Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+    return this.emitIpv6(destinationIP, (srcIP) => marked(createIPv6Packet(
+      srcIP, destinationIP, IP_PROTO_UDP, hopLimit,
       stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length,
-    ));
+    )), options.sourceIp);
   }
 
-  public emitIpv6(destination: IPv6Address, build: (source: IPv6Address) => IPv6Packet): boolean {
+  public emitIpv6(
+    destination: IPv6Address, build: (source: IPv6Address) => IPv6Packet, forcedSource?: IPv6Address,
+  ): boolean {
     const route = this.resolveIPv6Route(destination);
     if (!route) return false;
-    const srcIP = selectIpv6SourceAddress(route.port, destination);
+    const srcIP = forcedSource ?? selectIpv6SourceAddress(route.port, destination);
     if (!srcIP) return false;
 
     const ipPkt = build(srcIP);
@@ -4864,12 +4915,16 @@ export abstract class EndHost extends Equipment {
 
   tcpExchange(
     targetIP: IPAddress | IPv6Address, port: number, payload: string,
-    options: { sourcePort?: PortNumber; sourceIP?: IPAddress } = {},
+    options: { sourcePort?: PortNumber; sourceIP?: IPAddress | IPv6Address } = {},
   ): { outcome: TcpWireOutcome; received: string } {
+    if (options.sourceIP !== undefined && (options.sourceIP instanceof IPv6Address) !== (targetIP instanceof IPv6Address)) {
+      throw new Error('TCP exchange: the source address is of another family than the destination (EAFNOSUPPORT)');
+    }
     if (targetIP instanceof IPv6Address) this.resolveNdpSync(targetIP);
     else this.resolveArpSync(targetIP);
     return this.tcpv2.exchange(targetIP.toString(), port, payload, {
-      localPort: options.sourcePort, localIp: options.sourceIP?.toString(),
+      localPort: options.sourcePort,
+      localIp: options.sourceIP === undefined ? undefined : addressTextWithoutScope(options.sourceIP),
     });
   }
 
@@ -5642,6 +5697,7 @@ export abstract class EndHost extends Equipment {
         : `Destination unreachable (from ${ipv6.sourceIP})`;
 
     this.publishIcmpv6Unreachable(ipv6, icmpv6);
+    this.reportUdpSocketError6(icmpv6);
     const invoking = icmpv6.invokingPacket;
     if (packetTooBig && icmpv6.mtu !== undefined && invoking && this.isLocalAddress6(invoking.sourceIP)) {
       this.recordPathMtu6(invoking.destinationIP, icmpv6.mtu);

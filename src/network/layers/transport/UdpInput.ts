@@ -4,6 +4,7 @@ import { verifyUdpChecksum } from './UdpChecksum';
 
 export const UDP_HEADER_BYTES = 8;
 export const UDP_MAX_PAYLOAD_OVER_IPV4 = 65535 - 20 - UDP_HEADER_BYTES;
+export const UDP_MAX_PAYLOAD_OVER_IPV6 = 65535 - UDP_HEADER_BYTES;
 
 export type UdpInputRefusal = 'short-datagram' | 'truncated-datagram' | 'checksum-fail';
 

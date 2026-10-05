@@ -834,7 +834,7 @@ export abstract class LinuxMachine extends EndHost
    */
   override tcpExchange(
     targetIP: IPAddress | IPv6Address, port: number, payload: string,
-    options: { sourcePort?: PortNumber; sourceIP?: IPAddress } = {},
+    options: { sourcePort?: PortNumber; sourceIP?: IPAddress | IPv6Address } = {},
   ): { outcome: TcpWireOutcome; received: string } {
     const exchange = super.tcpExchange(targetIP, port, payload, options);
     return { ...exchange, outcome: this.failedNeighbourIsHostUnreachable(targetIP, exchange.outcome) };
@@ -3966,6 +3966,7 @@ export abstract class LinuxMachine extends EndHost
       },
       canTraceTo: (target: IPAddress, socket: TraceSocketOptions): boolean => this.canTraceTo(target, socket),
       isLocalAddress: (ip: IPAddress): boolean => this.isLocalAddress(ip),
+      isLocalAddress6: (ip: IPv6Address): boolean => this.isLocalAddress6(ip),
       sendUdpProbe: (
         target: IPAddress, destinationPort: number, sourcePort: number,
         options: {
