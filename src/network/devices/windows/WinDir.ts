@@ -1,5 +1,5 @@
 import type { WinFileCommandContext } from './WinFileCommands';
-import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import { hasWildcard, joinPath, nameMatcher, splitFileSpec } from './WinPathSpec';
 import {
   isDefaultVisible, parseDirAttributeSpec, selectionAccepts,
   type AttributeSelection,
@@ -158,10 +158,7 @@ function parseArguments(args: readonly string[]): { options: DirOptions; positio
   return { options, positionals };
 }
 
-const hasWildcard = (text: string): boolean => /[*?]/.test(text);
 const isVolumeRoot = (path: string): boolean => /^[A-Za-z]:\\?$/.test(path);
-const joinPath = (directory: string, name: string): string =>
-  directory.endsWith('\\') ? `${directory}${name}` : `${directory}\\${name}`;
 
 function resolveTarget(ctx: WinFileCommandContext, positionals: readonly string[]): Target | null {
   const spec = positionals[0];
@@ -173,24 +170,7 @@ function resolveTarget(ctx: WinFileCommandContext, positionals: readonly string[
     return ctx.fs.isDirectory(directory) ? { directory, pattern: second } : null;
   }
 
-  if (hasWildcard(spec)) {
-    const separator = Math.max(spec.lastIndexOf('\\'), spec.lastIndexOf('/'));
-    const directory = separator >= 0 ? ctx.fs.normalizePath(spec.slice(0, separator + 1), ctx.cwd) : ctx.cwd;
-    return ctx.fs.isDirectory(directory) ? { directory, pattern: spec.slice(separator + 1) } : null;
-  }
-
-  const absolute = ctx.fs.normalizePath(spec, ctx.cwd);
-  if (ctx.fs.isDirectory(absolute)) return { directory: absolute, pattern: null };
-  const lastSeparator = absolute.lastIndexOf('\\');
-  const parent = lastSeparator <= 2 ? absolute.slice(0, lastSeparator + 1) : absolute.slice(0, lastSeparator);
-  if (!ctx.fs.isDirectory(parent)) return null;
-  return { directory: parent, pattern: absolute.slice(lastSeparator + 1) };
-}
-
-function nameMatcher(pattern: string | null): (name: string) => boolean {
-  if (pattern === null || pattern === '*' || pattern === '*.*') return () => true;
-  const expression = wildcardToRegex(pattern);
-  return name => expression.test(name);
+  return splitFileSpec(ctx.fs, ctx.cwd, spec);
 }
 
 function dotRows(ctx: WinFileCommandContext, directory: string): Row[] {
@@ -265,7 +245,7 @@ function collect(ctx: WinFileCommandContext, target: Target, options: DirOptions
   return blocks;
 }
 
-function formatDate(d: Date): string {
+export function fileDateTime(d: Date): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yyyy = d.getFullYear();
@@ -279,7 +259,7 @@ function formatDate(d: Date): string {
 const shown = (text: string, options: DirOptions): string => (options.lowercase ? text.toLowerCase() : text);
 
 function rowLine(row: Row, options: DirOptions): string {
-  const date = formatDate(options.timeField === 'created' ? row.created : row.written);
+  const date = fileDateTime(options.timeField === 'created' ? row.created : row.written);
   const name = shown(row.name, options);
   return row.isDirectory
     ? `${date}${DIRECTORY_MARKER}${name}`

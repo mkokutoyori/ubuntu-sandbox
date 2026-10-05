@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -40,6 +41,7 @@ async function buildCiscoLan(
   opts: { vtyRange?: string } = {},
 ): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
   const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+  allowLegacyIosSsh(pc, 'root');
   const cisco = new CiscoRouter('cisco1', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);
@@ -53,6 +55,7 @@ async function buildCiscoLan(
 
 async function buildHuaweiLan(): Promise<{ pc: LinuxPC; huawei: HuaweiRouter }> {
   const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+  allowLegacyIosSsh(pc, 'root');
   const huawei = new HuaweiRouter('huawei1', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);

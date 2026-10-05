@@ -16,6 +16,8 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
+import { readSshdConfig } from '../../../protocols/ssh/server/SshdConfigText';
+import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
 import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
@@ -39,6 +41,7 @@ import { sshOptionValues } from '@/network/protocols/ssh/SshClientCommandLine';
 import { everySshOption, firstSshOption, sshOptionAssignment } from '@/network/protocols/ssh/SshClientOptions';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { TcpStack } from '../../../tcp/TcpStack';
+import type { SshSession } from '../../../protocols/ssh/session/SshSession';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import { fmtHumanDate } from '../LinuxLogManager';
 import type { LinuxMachine } from '../../LinuxMachine';
@@ -128,6 +131,8 @@ export interface SshClientOpts {
    * bound here so the tunnel surfaces through `ss` / `netstat`.
    */
   localForwarding?: SshForwardingTable;
+  forwardingSession?: ForwardingSession;
+  wirePeerIp?: string;
   /**
    * The local machine's ssh-agent — when `-A` (agent forwarding) is used,
    * its identities are exposed to the remote command for its duration.
@@ -220,7 +225,7 @@ function effectiveSshdView(
   sourceHost?: string,
 ): import('../../../protocols/ssh/server/SshdServerConfig').SshdEffectiveView | null {
   const machine = machineRef as { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } };
-  const raw = machine.executor?.vfs?.readFile('/etc/ssh/sshd_config') ?? '';
+  const raw = machine.executor?.vfs ? readSshdConfig(machine.executor.vfs) : '';
   if (!raw) return null;
   const cfg = SshdServerConfig.parse(raw);
   const groups = (machine.executor?.userMgr?.getUserGroups?.(user) ?? []).map(g => g.name);
@@ -228,9 +233,9 @@ function effectiveSshdView(
 }
 
 function remoteSshdConfig(machine: LinuxMachine): SshdServerConfig {
-  const raw = (machine as LinuxMachine & {
+  const raw = readSshdConfig((machine as LinuxMachine & {
     executor: { vfs: { readFile: (p: string) => string | null } };
-  }).executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  }).executor.vfs);
   return SshdServerConfig.parse(raw);
 }
 
@@ -270,14 +275,14 @@ function deniedLine(user: string, host: string, methods: readonly string[] | str
 
 /** Read a single sshd_config directive's first value (lower-cased). */
 function readRemoteSshdDirective(exec: RemoteExecLike, name: string): string | null {
-  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const raw = readSshdConfig(exec.vfs);
   const m = new RegExp(`^\\s*${name}\\s+(\\S+)`, 'im').exec(raw);
   return m ? m[1].toLowerCase() : null;
 }
 
 /** Case-preserving variant — for directives whose value is a path. */
 function readRemoteSshdDirectiveRaw(exec: RemoteExecLike, name: string): string | null {
-  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const raw = readSshdConfig(exec.vfs);
   const m = new RegExp(`^\\s*${name}\\s+(\\S+)`, 'im').exec(raw);
   return m ? m[1] : null;
 }
@@ -555,7 +560,7 @@ function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
 }
 
 function serverAcceptEnvPatterns(exec: RemoteExecLike): string[] {
-  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const raw = readSshdConfig(exec.vfs);
   const cfg = SshdServerConfig.parse(raw);
   return [...DEFAULT_ENV_PATTERNS, ...cfg.acceptEnv];
 }
@@ -590,7 +595,8 @@ export interface WireExecTarget {
   port: number;
   identities: string[];
   command: string;
-  strict: 'yes' | 'no' | 'accept-new';
+  holdOnly: boolean;
+  strict: StrictHostKeyChecking;
   authentication: SshClientAuthentication;
   algorithms: SshAlgorithmPreferences;
 }
@@ -604,7 +610,7 @@ export function wireExecTarget(
   const { positional, flags } = splitSshArgs(args);
   const target = positional[0];
   if (target === undefined) return null;
-  for (const blocking of ['-N', '-W', '-J', '-A', '-D', '-L', '-R']) {
+  for (const blocking of ['-W', '-J', '-A']) {
     if (flags.includes(blocking)) return null;
   }
   const at = target.indexOf('@');
@@ -619,7 +625,8 @@ export function wireExecTarget(
   return {
     host, user, port: clientPort(flags), identities,
     command: joinRemoteCommand(positional.slice(1)),
-    strict: asked === 'yes' || asked === 'no' ? asked : 'accept-new',
+    holdOnly: flags.includes('-N'),
+    strict: parseStrictHostKeyChecking(asked) ?? 'accept-new',
     authentication: sshClientAuthentication(sshOptionValues(flags)),
     algorithms: sshClientAlgorithms(sshOptionValues(flags)),
   };
@@ -672,115 +679,40 @@ function clientPort(args: string[]): number {
   return 22;
 }
 
-// ─── SSH port forwarding (-L / -R / -D) ─────────────────────────────
-
-/** PID attributed to a backgrounded `ssh` client holding a -L/-D listener. */
 const SSH_CLIENT_FORWARD_PID = 2200;
-/** PID of the remote sshd that owns a -R listener (matches initDefaultSockets). */
-const SSHD_PID = 985;
 
-/**
- * Honour the `-L` / `-R` / `-D` flags: open a listening socket for each
- * forward on whichever host owns it — the client for `-L`/`-D`, the SSH
- * server for `-R`. The server's `AllowTcpForwarding` directive gates the
- * request: `no` blocks everything, `local` permits only `-L`/`-D`,
- * `remote` permits only `-R`, anything else (default) permits all.
- *
- * Returns OpenSSH-style diagnostic text for any forward the policy
- * rejects — empty when every forward is permitted (or none were asked).
- */
-function setupPortForwards(
-  opts: SshClientOpts,
-  flags: string[],
-  machine: LinuxMachine,
-  remoteExec: RemoteExecLike | undefined,
-  matchedKey: AuthorizedKey | null | undefined,
-  remoteUser: string,
-): string {
+export interface ForwardingSession {
+  readonly session: SshSession;
+  readonly clientHost: { getTcpStack(): TcpStack };
+  readonly resolveHost: (name: string) => string | null;
+}
+
+function setupPortForwards(opts: SshClientOpts, flags: string[]): string {
   const forwards = SshPortForward.collect(flags);
   if (forwards.length === 0) return '';
-
-  // Match-block aware: a `Match User …` override of AllowTcpForwarding /
-  // GatewayPorts takes precedence over the top-level directive.
-  const eff = effectiveSshdView(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
-  const policy = eff?.allowTcpForwarding
-    ?? (remoteExec ? readRemoteSshdDirective(remoteExec, 'AllowTcpForwarding') : null);
-  const keyBansForwarding = matchedKey?.options?.noPortForwarding === true;
-  const permitOpen = remoteExec
-    ? SshdServerConfig.parse(remoteExec.vfs.readFile('/etc/ssh/sshd_config') ?? '')
-    : null;
-  const permits = (f: SshPortForward): boolean => {
-    if (keyBansForwarding) return false;
-    if (policy === 'no') return false;
-    if (policy === 'local') return f.kind !== 'remote';
-    if (policy === 'remote') return f.kind === 'remote';
-    return true; // null / 'yes' / 'all' / unrecognised → OpenSSH default
-  };
-  const destAllowed = (f: SshPortForward): boolean => {
-    if (f.kind !== 'local' || !f.destHost || f.destPort === null) return true;
-    return permitOpen === null || permitOpen.permitOpenAllows(f.destHost, f.destPort);
-  };
-
-  const remoteForwarding = (machine as unknown as {
-    executor?: { forwardingTable?: SshForwardingTable | null };
-  }).executor?.forwardingTable;
-
-  const gatewayPolicy = eff?.gatewayPorts
-    ?? (remoteExec ? readRemoteSshdDirective(remoteExec, 'GatewayPorts') : null);
-
+  const table = opts.localForwarding;
+  const carrier = opts.forwardingSession;
   let diagnostics = '';
   let localRequested = 0;
   let localOpened = 0;
   for (const fwd of forwards) {
-    if (!permits(fwd) || !destAllowed(fwd)) {
-      diagnostics +=
-        'channel 0: open failed: administratively prohibited: open failed\n';
+    if (fwd.listensOnServer) {
+      const accepted = table !== undefined && carrier !== undefined
+        && table.openRemote(fwd, carrier.session, carrier.clientHost, carrier.resolveHost);
+      if (!accepted) diagnostics += `${remoteForwardFailure(fwd.listenPort)}\n`;
       continue;
     }
-    if (fwd.listensOnServer) {
-      // -R : the listener lives on the SSH server, owned by its sshd.
-      // GatewayPorts decides whether the client's bind address survives:
-      // 'no' (default) silently rebinds to loopback; 'yes' / 'clientspecified'
-      // honour it.
-      const honourBind = gatewayPolicy === 'yes' || gatewayPolicy === 'clientspecified';
-      const effective = honourBind ? fwd : rebindToLoopback(fwd);
-      const clientStack = (opts.sourceDevice as { getTcpStack?: () => TcpStack } | null)?.getTcpStack?.();
-      const remoteUid = machine.uidOfUser(remoteUser) ?? undefined;
-      const opening = remoteForwarding?.open(effective, SSHD_PID, 'sshd', clientStack, remoteUid);
-      if (opening !== undefined && opening !== 'opened') {
-        diagnostics += `${remoteForwardFailure(fwd.listenPort)}\n`;
-      }
-    } else {
-      // -L / -D : the listener lives on the client host, owned by ssh.
-      // The outbound side is re-originated FROM the SSH server: tag the
-      // forward with that server's IP so a local probe (`nc`) hitting the
-      // tunnel listener is evaluated as if it came from the sshd process.
-      localRequested++;
-      const opening = opts.localForwarding?.open(
-        fwd, SSH_CLIENT_FORWARD_PID, 'ssh', machine.getTcpStack(), opts.sourceUid);
-      if (opening !== undefined && opening !== 'opened') {
-        diagnostics += localListenerFailure(fwd.bindAddress, fwd.listenPort, opening).map((l) => `${l}\n`).join('');
-        continue;
-      }
-      localOpened++;
-      const sshServerIp = machine.getPorts()
-        .map(p => p.getIPAddress()?.toString())
-        .find(Boolean);
-      if (sshServerIp) opts.localForwarding?.setOrigin(fwd.listenPort, sshServerIp);
+    localRequested++;
+    if (table === undefined || carrier === undefined) continue;
+    const opening = table.openLocal(fwd, carrier.session, SSH_CLIENT_FORWARD_PID, opts.sourceUid);
+    if (opening !== 'opened') {
+      diagnostics += localListenerFailure(fwd.bindAddress, fwd.listenPort, opening).map((l) => `${l}\n`).join('');
+      continue;
     }
+    localOpened++;
   }
-  if (localRequested > 0 && localOpened === 0 && opts.localForwarding !== undefined) {
-    diagnostics += `${NO_LOCAL_FORWARDING}\n`;
-  }
+  if (localRequested > 0 && localOpened === 0) diagnostics += `${NO_LOCAL_FORWARDING}\n`;
   return diagnostics;
-}
-
-function rebindToLoopback(fwd: SshPortForward): SshPortForward {
-  if (fwd.bindAddress === '127.0.0.1') return fwd;
-  const spec = fwd.destHost && fwd.destPort
-    ? `127.0.0.1:${fwd.listenPort}:${fwd.destHost}:${fwd.destPort}`
-    : `127.0.0.1:${fwd.listenPort}`;
-  return SshPortForward.parse(fwd.kind, spec) ?? fwd;
 }
 
 function wireFailure(
@@ -877,16 +809,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
   // look it up via the local source IP, which the registry knows.
   const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-  // If the loopback target hits an active `-L` / `-D` forward, retarget
-  // through the tunnel's far end (destHost/destPort). Matches what the
-  // local OpenSSH forwarder would do on a real machine.
-  if (isLoopback && opts.localForwarding) {
-    const fwd = opts.localForwarding.list().find(f => f.listenPort === port);
-    if (fwd?.destHost && fwd?.destPort) {
-      host = fwd.destHost;
-      port = fwd.destPort;
-    }
-  }
+  const behindTunnel = isLoopback && opts.wirePeerIp !== undefined;
+  if (behindTunnel) host = opts.wirePeerIp!;
   const stillLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
   let lookupHost = stillLoopback ? opts.sourceIp : host;
   if (!stillLoopback && opts.resolveName && !IPAddress.isValid(host)) {
@@ -975,7 +899,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   const machine = found.device as LinuxMachine & {
     isServiceActive?: (n: string) => boolean;
-    scheduleSshLogout?: (user: string, fromIp: string, holdSeconds: number) => void;
+    scheduleSshLogout?: (user: string, fromIp: string, holdSeconds: number, wireOwned?: boolean) => void;
     sshdAcceptsLogin?: (
       u: string, ctx?: {
         address?: string; host?: string; method?: 'publickey' | 'password' | 'pending'; keyForcesCommand?: boolean;
@@ -1027,6 +951,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
   const cfgPorts = sshdConfiguredPorts(machine);
+  if (behindTunnel) port = cfgPorts[0] ?? port;
   if (!cfgPorts.includes(port)) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
@@ -1202,18 +1127,15 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     );
   }
 
-  // StrictHostKeyChecking=yes — refuse if no known_hosts entry exists
-  // for the remote IP. The default behaviour (ask/accept-new) keeps the
-  // OpenSSH-style TOFU and is handled by updateKnownHosts() below.
-  if (clientOption(flags, 'StrictHostKeyChecking') === 'yes' && opts.localVfs) {
+  const strictMode = parseStrictHostKeyChecking(clientOption(flags, 'StrictHostKeyChecking'));
+  if ((strictMode === 'yes' || strictMode === 'ask') && opts.localVfs) {
     const home = opts.sourceHome ?? '/root';
     const existing = opts.localVfs.readFile(`${home}/.ssh/known_hosts`) ?? '';
     if (!SshKnownHostsFile.parse(existing).find(host)) {
       return {
-        output:
-          `No matching host key fingerprint found in DNS.\n` +
-          `No ED25519 host key is known for ${host} and you have requested strict checking.\n` +
-          `Host key verification failed.`,
+        output: strictMode === 'yes'
+          ? `No ED25519 host key is known for ${host} and you have requested strict checking.\nHost key verification failed.`
+          : 'Host key verification failed.',
         exitCode: 255,
       };
     }
@@ -1222,8 +1144,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Update the local ~/.ssh/known_hosts with the remote's host key (or
   // emit the OpenSSH-style identification-changed warning when the key
   // already present differs from the remote's).
-  const strictOption = clientOption(flags, 'StrictHostKeyChecking');
-  const keyChanged = updateKnownHosts(opts, machine, host, strictOption === 'no');
+  const keyChanged = updateKnownHosts(opts, machine, host, strictMode === 'no');
   if (keyChanged) {
     return {
       output:
@@ -1241,7 +1162,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Each requested forward opens a listening socket on whichever host
   // owns it (the client for -L/-D, the SSH server for -R). The server's
   // `AllowTcpForwarding` directive decides whether the request stands.
-  const forwardingError = setupPortForwards(opts, flags, machine, remoteExec, auth.matchedKey, remoteUser);
+  const forwardingError = setupPortForwards(opts, flags);
 
   // `-N` (no remote command) — paired with `-f` to hold a tunnel open.
   // The session carries no shell, so there is no banner: only forwarding
@@ -1396,7 +1317,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine));
+    machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine), opts.wireAuthenticated === true);
     return { output: clientHeader + normalised, exitCode: execRc, connection };
   }
 
@@ -1449,7 +1370,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return { output: clientHeader, exitCode: 0, connection };
   }
 
-  const printMotd     = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintMotd')    !== 'no' : true;
+  const printMotd     = remoteExec ? SshdServerConfig.parse(readSshdConfig(remoteExec.vfs)).showsMotd : true;
   const printLastLog  = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintLastLog') !== 'no' : true;
   const lines: string[] = [];
   if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
@@ -1464,7 +1385,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const relayedShell = opts.shellRelay?.() ?? null;
   if (relayedShell && relayedShell.output.length > 0) lines.push(relayedShell.output);
   lines.push(connectionClosed(host));
-  machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
+  machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0, opts.wireAuthenticated === true);
   return { output: clientHeader + lines.join('\n'), exitCode: 0, connection };
 }
 

@@ -654,52 +654,77 @@ export class WindowsFileSystem {
     return { ok: true };
   }
 
-  copyFile(srcPath: string, destPath: string): { ok: boolean; error?: string } {
+  copyFile(
+    srcPath: string, destPath: string, options: { security?: boolean } = {},
+  ): { ok: boolean; error?: string } {
     const srcEntry = this.resolve(srcPath);
     if (!srcEntry) return { ok: false, error: 'The system cannot find the file specified.' };
     if (srcEntry.type !== 'file') return { ok: false, error: 'Access is denied.' };
 
-    // If dest is a directory, copy into it with same name
     const destEntry = this.resolve(destPath);
-    if (destEntry && destEntry.type === 'directory') {
-      const srcName = srcPath.substring(srcPath.lastIndexOf('\\') + 1);
-      return this.createFile(destPath + '\\' + srcName, srcEntry.content);
+    const target = destEntry && destEntry.type === 'directory'
+      ? destPath.replace(/\\$/, '') + '\\' + srcPath.substring(srcPath.lastIndexOf('\\') + 1)
+      : destPath;
+    if (this.sameEntry(srcPath, target)) {
+      return { ok: false, error: 'The file cannot be copied onto itself.' };
+    }
+    const existing = this.resolve(target);
+    if (existing && existing.type === 'file' && existing.attributes.has('readonly')) {
+      return { ok: false, error: 'Access is denied.' };
     }
 
-    return this.createFile(destPath, srcEntry.content);
+    const created = this.createFile(target, srcEntry.content);
+    if (!created.ok) return created;
+    const copy = this.resolve(target);
+    if (copy) {
+      copy.mtime = new Date(srcEntry.mtime);
+      copy.attributes = new Set([...srcEntry.attributes, 'archive']);
+      if (options.security) {
+        copy.owner = srcEntry.owner;
+        copy.acl = srcEntry.acl.map((ace) => ({ ...ace, permissions: [...ace.permissions] }));
+        copy.aclProtected = srcEntry.aclProtected;
+        copy.sacl = srcEntry.sacl?.map((ace) => ({ ...ace, flags: [...ace.flags], permissions: [...ace.permissions] }));
+      }
+    }
+    return { ok: true };
+  }
+
+  private sameEntry(first: string, second: string): boolean {
+    const a = this.resolve(first);
+    return a !== null && a === this.resolve(second);
   }
 
   moveFile(srcPath: string, destPath: string): { ok: boolean; error?: string } {
     const srcEntry = this.resolve(srcPath);
     if (!srcEntry) return { ok: false, error: 'The system cannot find the file specified.' };
 
-    // If dest is a directory, move into it
     const destEntry = this.resolve(destPath);
     if (destEntry && destEntry.type === 'directory') {
       const srcName = srcPath.substring(srcPath.lastIndexOf('\\') + 1);
-      destPath = destPath + '\\' + srcName;
+      destPath = destPath.replace(/\\$/, '') + '\\' + srcName;
+    }
+    if (this.sameEntry(srcPath, destPath)) return { ok: true };
+    if (srcEntry.type === 'directory' && (destPath.toLowerCase() + '\\').startsWith(srcPath.toLowerCase().replace(/\\$/, '') + '\\')) {
+      return { ok: false, error: 'Access is denied.' };
     }
 
-    // Copy content then delete source
-    if (srcEntry.type === 'file') {
-      const result = this.createFile(destPath, srcEntry.content);
-      if (!result.ok) return result;
-    } else {
-      // Moving a directory
-      const pair = this.resolveParent(destPath);
-      if (!pair) return { ok: false, error: 'The system cannot find the path specified.' };
-      const [destParent, destName] = pair;
-      destParent.children.set(destName.toLowerCase(), srcEntry);
-      srcEntry.name = destName;
+    const pair = this.resolveParent(destPath);
+    if (!pair) return { ok: false, error: 'The system cannot find the path specified.' };
+    const [destParent, destName] = pair;
+    const existing = destParent.children.get(destName.toLowerCase());
+    if (existing && (existing.type === 'directory' || existing.attributes.has('readonly'))) {
+      return { ok: false, error: 'Access is denied.' };
     }
 
-    // Remove from source
     const srcPair = this.resolveParent(srcPath);
     if (srcPair) {
       const [srcParent, srcChildName] = srcPair;
       srcParent.children.delete(srcChildName.toLowerCase());
       srcParent.mtime = this.now();
     }
+    destParent.children.set(destName.toLowerCase(), srcEntry);
+    srcEntry.name = destName;
+    destParent.mtime = this.now();
     return { ok: true };
   }
 

@@ -74,6 +74,19 @@ export function martianSource(source: IPAddress): MartianSource | null {
   return null;
 }
 
+export type InvalidSource = MartianSource | 'directed-broadcast';
+
+export function invalidSourceFor(
+  source: IPAddress, destination: IPAddress, connected: readonly ConnectedIpv4Prefix[],
+): InvalidSource | null {
+  const martian = martianSource(source);
+  if (martian === 'network-zero') {
+    return classifyIpv4Destination(destination) === 'limited-broadcast' ? null : martian;
+  }
+  if (martian !== null) return martian;
+  return isDirectedBroadcast(source, connected) ? 'directed-broadcast' : null;
+}
+
 export type Ipv4HeaderProblem = 'checksum' | 'version' | 'ihl' | 'total-length';
 
 export function ipv4HeaderProblem(packet: IPv4Packet): Ipv4HeaderProblem | null {

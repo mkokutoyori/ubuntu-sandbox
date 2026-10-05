@@ -46,6 +46,7 @@ export interface ShellContext {
   /** When set, a script run through this context (e.g. a cron job) uses
    *  this exact environment instead of the interactive session's. */
   envOverride?: Record<string, string>;
+  openRefusal?: (absPath: string) => string | null;
 }
 
 export function cmdTouch(ctx: ShellContext, args: string[]): string {
@@ -712,7 +713,7 @@ export function cmdPwd(ctx: ShellContext): string {
   return ctx.cwd;
 }
 
-export function cmdTee(ctx: ShellContext, args: string[], stdin: string): string {
+export function cmdTee(ctx: ShellContext, args: string[], stdin: string): { output: string; failed: boolean } {
   let append = false;
   const files: string[] = [];
   for (const arg of args) {
@@ -721,12 +722,22 @@ export function cmdTee(ctx: ShellContext, args: string[], stdin: string): string
     files.push(arg);
   }
 
+  const refusedAtOpen: string[] = [];
+  const refusedAtWrite: string[] = [];
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    ctx.vfs.writeFile(absPath, stdin, ctx.uid, ctx.gid, ctx.umask, append);
+    const refusal = ctx.openRefusal?.(absPath) ?? null;
+    if (refusal !== null) {
+      refusedAtOpen.push(`tee: ${f}: ${refusal}`);
+      continue;
+    }
+    const written = ctx.vfs.writeFile(absPath, stdin, ctx.uid, ctx.gid, ctx.umask, append);
+    if (!written && ctx.vfs.hasWriter(absPath)) refusedAtWrite.push(`tee: ${f}: Invalid argument`);
   }
 
-  return stdin;
+  const copied = refusedAtWrite.length === 0 || stdin.endsWith('\n') ? stdin : `${stdin}\n`;
+  const output = [...refusedAtOpen.map((line) => `${line}\n`), copied, ...refusedAtWrite].join('');
+  return { output, failed: refusedAtOpen.length + refusedAtWrite.length > 0 };
 }
 
 // ─── Glob expansion helper ─────────────────────────────────────────

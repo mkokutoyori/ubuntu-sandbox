@@ -125,7 +125,7 @@ function poserBanniere(sh: FortiShell, stage: 'pre' | 'post', texte: string): vo
 async function ouvrirSsh(poste: LinuxPC): Promise<TerminalSession> {
   const host = new LinuxTerminalSession('h', poste);
   await host.init?.();
-  host.setInput('ssh admin@192.168.1.1');
+  host.setInput('ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1');
   host.handleKey(key('Enter'));
   for (let i = 0; i < 12 && host.currentInputMode.type !== 'password'; i++) await tick();
   return host;

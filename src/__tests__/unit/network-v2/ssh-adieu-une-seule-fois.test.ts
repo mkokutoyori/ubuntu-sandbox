@@ -85,7 +85,7 @@ describe('une session SSH ne dit adieu qu une fois', () => {
     const host = new LinuxTerminalSession('h', serveur);
     await host.init?.();
 
-    await taper(host, 'ssh alice@192.168.10.15');
+    await taper(host, 'ssh -o StrictHostKeyChecking=accept-new alice@192.168.10.15');
     await taper(host, 'powershell');
     await taper(host, 'exit');
     await taper(host, 'exit');
@@ -100,7 +100,7 @@ describe('une session SSH ne dit adieu qu une fois', () => {
       const host = new LinuxTerminalSession('h', serveur);
       await host.init?.();
 
-      await taper(host, 'ssh alice@192.168.10.15');
+      await taper(host, 'ssh -o StrictHostKeyChecking=accept-new alice@192.168.10.15');
       await taper(host, 'exit');
 
       const lignes = transcription(host);
@@ -115,7 +115,7 @@ describe('une session SSH ne dit adieu qu une fois', () => {
       const host = new LinuxTerminalSession('h', serveur);
       await host.init?.();
 
-      await taper(host, 'ssh alice@192.168.10.15');
+      await taper(host, 'ssh -o StrictHostKeyChecking=accept-new alice@192.168.10.15');
       await taper(host, 'exit');
 
       expect(transcription(host).filter(l => /^root@Server1:.*#\s*$/.test(l)))
@@ -137,7 +137,7 @@ describe('une session SSH ne dit adieu qu une fois', () => {
     const host = new LinuxTerminalSession('h', serveur);
     await host.init?.();
 
-    await taper(host, 'ssh alice@192.168.10.15');
+    await taper(host, 'ssh -o StrictHostKeyChecking=accept-new alice@192.168.10.15');
     await taper(host, 'exit');
     await taper(host, 'logout');
 

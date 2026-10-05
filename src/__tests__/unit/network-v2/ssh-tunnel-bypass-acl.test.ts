@@ -180,55 +180,41 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
 
   // ── Phase 2 : durcissement (AllowTcpForwarding no) → tunnel refusé.
 
-  it('AllowTcpForwarding no + reload : ssh -fNL est refusé (administratively prohibited)', async () => {
+  async function throughTunnel(publicPc: LinuxPC, jump: LinuxServer): Promise<string> {
+    const socket = publicPc.getTcpStack().connect('127.0.0.1', 13306);
+    await new Promise<void>((resolve) => setTimeout(resolve, 40));
+    socket?.send('probe');
+    await new Promise<void>((resolve) => setTimeout(resolve, 40));
+    return jump.executeCommand('ss -tn');
+  }
+
+  async function forbidForwarding(jump: LinuxServer): Promise<void> {
+    const sshd = srvVfs(jump).readFile('/etc/ssh/sshd_config') ?? '';
+    srvVfs(jump).writeFile('/etc/ssh/sshd_config', sshd + '\nAllowTcpForwarding no\n', 0, 0, 0o022);
+    await jump.executeCommand('systemctl reload ssh');
+  }
+
+  it('TEMOIN — tunnel autorisé : le jump compose bien le backend:3306', async () => {
     const { publicPc, router, jump } = await buildLan();
     await installFilteringAcl(router);
-
-    const sshd = srvVfs(jump).readFile('/etc/ssh/sshd_config') ?? '';
-    srvVfs(jump).writeFile(
-      '/etc/ssh/sshd_config',
-      sshd + '\nAllowTcpForwarding no\n',
-      0, 0, 0o022,
-    );
-    await jump.executeCommand('systemctl reload ssh');
-
-    const out = await publicPc.executeCommand(
-      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n',
-    );
-    expect(out).toMatch(/administratively prohibited/i);
+    await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n');
+    expect(await throughTunnel(publicPc, jump)).toMatch(/10\.0\.30\.20:3306/);
   });
 
-  it('après durcissement : aucun listener ss -tln ne se présente sur 13306', async () => {
+  it('AllowTcpForwarding no + reload : ssh -fNL n\'écrit rien et ouvre son écoute', async () => {
     const { publicPc, router, jump } = await buildLan();
     await installFilteringAcl(router);
-
-    const sshd = srvVfs(jump).readFile('/etc/ssh/sshd_config') ?? '';
-    srvVfs(jump).writeFile(
-      '/etc/ssh/sshd_config',
-      sshd + '\nAllowTcpForwarding no\n',
-      0, 0, 0o022,
-    );
-    await jump.executeCommand('systemctl reload ssh');
-
-    await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n');
-    const ss = await publicPc.executeCommand('ss -tln');
-    expect(ss).not.toMatch(/127\.0\.0\.1:13306/);
+    await forbidForwarding(jump);
+    const out = await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n');
+    expect(out).toBe('');
+    expect(await publicPc.executeCommand('ss -tln')).toMatch(/127\.0\.0\.1:13306/);
   });
 
-  it('après durcissement : nc -zv 127.0.0.1 13306 échoue (pas de tunnel)', async () => {
+  it('après durcissement : le jump ne compose jamais le backend:3306', async () => {
     const { publicPc, router, jump } = await buildLan();
     await installFilteringAcl(router);
-
-    const sshd = srvVfs(jump).readFile('/etc/ssh/sshd_config') ?? '';
-    srvVfs(jump).writeFile(
-      '/etc/ssh/sshd_config',
-      sshd + '\nAllowTcpForwarding no\n',
-      0, 0, 0o022,
-    );
-    await jump.executeCommand('systemctl reload ssh');
-
+    await forbidForwarding(jump);
     await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n');
-    const out = await publicPc.executeCommand('nc -zv 127.0.0.1 13306');
-    expect(out).not.toMatch(/succeeded/);
+    expect(await throughTunnel(publicPc, jump)).not.toMatch(/10\.0\.30\.20:3306/);
   });
 });

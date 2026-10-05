@@ -129,7 +129,7 @@ describe('Linux -> Cisco SSH: real wire, not a local checkPassword() call', () =
     const host = new LinuxTerminalSession('h', linuxA);
     await host.init?.();
 
-    const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh admin@10.0.0.5', 'Admin@123'));
+    const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'Admin@123'));
 
     // The point of this suite is that the login crossed the cable, which
     // `frames` proves. The landing prompt replaces the old assertion on a
@@ -144,7 +144,7 @@ describe('Linux -> Cisco SSH: real wire, not a local checkPassword() call', () =
     const host = new LinuxTerminalSession('h', linuxA);
     await host.init?.();
 
-    await sshLogin(host, 'ssh admin@10.0.0.5', 'WRONG-PASSWORD');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'WRONG-PASSWORD');
 
     expect(host.foreground).toBe(host);
     expect(host.foreground).not.toBeInstanceOf(CiscoTerminalSession);
@@ -158,7 +158,7 @@ describe('Linux -> Huawei SSH: real wire, not a local checkPassword() call', () 
     const host = new LinuxTerminalSession('h', linuxA);
     await host.init?.();
 
-    const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh admin@10.0.0.6', 'Admin@123'));
+    const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123'));
 
     expect(frames).toBeGreaterThan(0);
     expect(host.foreground.getPrompt()).toMatch(/^</);
@@ -169,7 +169,7 @@ describe('Linux -> Huawei SSH: real wire, not a local checkPassword() call', () 
     const host = new LinuxTerminalSession('h', linuxA);
     await host.init?.();
 
-    await sshLogin(host, 'ssh admin@10.0.0.6', 'WRONG-PASSWORD');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'WRONG-PASSWORD');
 
     expect(host.foreground).toBe(host);
     expect(host.foreground).not.toBeInstanceOf(HuaweiTerminalSession);
@@ -182,7 +182,7 @@ describe('Linux -> Windows SSH: real wire, not a local checkPassword() call', ()
     const host = new LinuxTerminalSession('h', linuxA);
     await host.init?.();
 
-    const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh User@10.0.0.7', 'user'));
+    const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.7', 'user'));
 
     expect(frames).toBeGreaterThan(0);
     expect(host.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);

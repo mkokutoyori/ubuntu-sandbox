@@ -121,7 +121,7 @@ async function laboratoire() {
 async function connecte(poste: LinuxPC): Promise<void> {
   const host = new LinuxTerminalSession('h', poste);
   await host.init?.();
-  await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+  await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 }
 
 describe('get system admin list', () => {

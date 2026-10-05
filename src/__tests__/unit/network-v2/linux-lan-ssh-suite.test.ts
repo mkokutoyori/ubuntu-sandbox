@@ -2226,7 +2226,7 @@ describe('§33 — SSH port forwarding (-L / -R / -D)', () => {
     },
     {
       name: 'after -L is up, ss -tln on pc1 shows port 8080 listening',
-      setup: (l) => { void l.pc1.executeCommand('ssh -fNL 8080:10.0.0.11:80 alice@10.0.0.10', 'admin\n'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh -fNL 8080:10.0.0.11:80 alice@10.0.0.10', 'admin\n'); },
       on: l => l.pc1,
       cmd: 'ss -tln',
       contains: [/127\.0\.0\.1:8080|0\.0\.0\.0:8080/],
@@ -2239,20 +2239,21 @@ describe('§33 — SSH port forwarding (-L / -R / -D)', () => {
     },
     {
       name: 'after -R is up, srv1 ss -tln shows 9090 listening',
-      setup: (l) => { void l.pc1.executeCommand('ssh -fNR 9090:localhost:22 alice@10.0.0.10', 'admin\n'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh -fNR 9090:localhost:22 alice@10.0.0.10', 'admin\n'); },
       on: l => l.srv1,
       cmd: 'ss -tln',
       contains: [/127\.0\.0\.1:9090|0\.0\.0\.0:9090/],
     },
     {
-      name: 'AllowTcpForwarding no rejects -L with error',
+      name: 'AllowTcpForwarding no: the -L listener opens and the server refuses the connection through it',
       setup: async (l) => {
         await l.srv1.executeCommand('printf "AllowTcpForwarding no\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.srv1.executeCommand('systemctl reload ssh');
+        await l.pc1.executeCommand('ssh -fNL 8080:10.0.0.11:22 alice@10.0.0.10', 'admin\n');
       },
       on: l => l.pc1,
-      cmd: 'ssh -L 8080:10.0.0.11:80 alice@10.0.0.10',
-      contains: [/administratively prohibited|forwarding disabled/i],
+      cmd: 'ssh -p 8080 -o StrictHostKeyChecking=no alice@127.0.0.1 hostname',
+      contains: [/Connection closed|kex_exchange_identification|Connection reset/i],
     },
     {
       name: 'ssh -D 1080 alice@host sets up a SOCKS proxy listener',

@@ -122,7 +122,7 @@ describe('GPO — Remove/Rename/Get/Remove-GPRegistryValue, validation, retrait 
     await joinIn(l, POSTES);
     expect(await mode(l.client)).toContain('un');
     await run(l.dc, `Remove-GPRegistryValue -Name "Lab" -Key "${KEY}" -ValueName Mode`);
-    expect(await mode(l.client)).not.toContain('un');
+    expect(await mode(l.client)).not.toMatch(/REG_SZ\s+un\b/);
   });
 
   it('supprimer la GPO retire sa valeur du registre du poste', async () => {
@@ -131,7 +131,7 @@ describe('GPO — Remove/Rename/Get/Remove-GPRegistryValue, validation, retrait 
     await joinIn(l, POSTES);
     expect(await mode(l.client)).toContain('un');
     await run(l.dc, 'Remove-GPO -Name "Lab"');
-    expect(await mode(l.client)).not.toContain('un');
+    expect(await mode(l.client)).not.toMatch(/REG_SZ\s+un\b/);
   });
 
   it("une clé hors Policies reste en place après le retrait de la GPO", async () => {

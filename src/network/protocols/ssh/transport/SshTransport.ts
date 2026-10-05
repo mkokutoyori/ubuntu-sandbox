@@ -34,7 +34,7 @@ import {
   SSH_MSG_DEBUG, SSH_MSG_DISCONNECT, SSH_MSG_EXT_INFO, SSH_MSG_IGNORE,
   SSH_MSG_KEXDH_INIT, SSH_MSG_KEXDH_REPLY, SSH_MSG_KEXINIT,
   SSH_MSG_KEX_DH_GEX_GROUP, SSH_MSG_KEX_DH_GEX_INIT, SSH_MSG_KEX_DH_GEX_REPLY, SSH_MSG_KEX_DH_GEX_REQUEST,
-  SSH_MSG_NEWKEYS, SSH_MSG_SERVICE_ACCEPT, SSH_MSG_SERVICE_REQUEST, SSH_MSG_UNIMPLEMENTED,
+  SSH_MSG_CHANNEL_FAILURE, SSH_MSG_NEWKEYS, SSH_MSG_SERVICE_ACCEPT, SSH_MSG_SERVICE_REQUEST, SSH_MSG_UNIMPLEMENTED,
   SSH_USERAUTH_SERVICE,
 } from './SshMessageNumbers';
 
@@ -335,6 +335,10 @@ export class SshTransport {
       default:
         if (!this.opened) {
           this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, `protocol error: rcvd type ${type}`, 'protocol');
+          return;
+        }
+        if (type > SSH_MSG_CHANNEL_FAILURE) {
+          this.sendPacket(new SshWriter().writeByte(SSH_MSG_UNIMPLEMENTED).writeUint32((this.recvSeq - 1) >>> 0).toBytes());
           return;
         }
         if (this.handlers.size === 0) { this.undelivered.push(payload); return; }

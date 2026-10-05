@@ -35,7 +35,7 @@ describe('Scénario 10 — audit complet (linux-audit.sh)', () => {
     EquipmentRegistry.resetInstance();
     srv = new LinuxServer('linux-server', 'srv1', 0, 0);
     srv.powerOn();
-    await run("sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config");
+    await run("sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config");
     await installAudit();
   });
 
@@ -117,7 +117,7 @@ check_file_perms /etc/sudoers  440 root
 check_file_perms /etc/ssh/sshd_config 644 root
 check_file_perms /etc/crontab  644 root
 
-ROOT_LOGIN=$(grep -i '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}')
+ROOT_LOGIN=$(sshd -T 2>/dev/null | awk '/^permitrootlogin/ {print $2}')
 [ "\${ROOT_LOGIN:-yes}" = "no" ] && \\
   finding "INFO" "PermitRootLogin: no (correct)" || \\
   finding "HIGH" "PermitRootLogin: \${ROOT_LOGIN:-non defini} (devrait etre no)"

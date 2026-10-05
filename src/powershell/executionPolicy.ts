@@ -101,12 +101,18 @@ export function writeExecutionPolicy(
   const key = SCOPE_KEY[scope]!;
   const registry = providers.registry;
   if (!registry) return 'No registry provider on this device.';
-  if (policy === 'Undefined') {
-    registry.removeItemProperty(key, 'ExecutionPolicy');
-    return null;
+  const outcomes: string[] = [];
+  if (policy === 'Undefined') outcomes.push(registry.removeItemProperty(key, 'ExecutionPolicy'));
+  else {
+    if (!registry.testPath(key)) outcomes.push(registry.newItem(key, true));
+    outcomes.push(registry.setItemProperty(key, 'ExecutionPolicy', policy));
   }
-  if (!registry.testPath(key)) registry.newItem(key, true);
-  registry.setItemProperty(key, 'ExecutionPolicy', policy);
+  if (outcomes.some(outcome => outcome.includes('Requested registry access is not allowed'))) {
+    return `Access to the registry key '${key.replace(/^HKLM:\\/, 'HKEY_LOCAL_MACHINE\\')}' is denied. `
+      + 'To change the execution policy for the default (LocalMachine) scope, start Windows PowerShell '
+      + 'with the "Run as administrator" option. To change the execution policy for the current user, '
+      + 'run "Set-ExecutionPolicy -Scope CurrentUser".';
+  }
   return null;
 }
 

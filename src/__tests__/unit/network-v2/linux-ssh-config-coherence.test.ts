@@ -38,7 +38,7 @@ describe('Scénario 4 — sshd_config: dérive fichier vs configuration en mémo
     const before = await server.executeCommand('sshd -T');
     expect(before).toMatch(/passwordauthentication yes/);
 
-    await server.executeCommand("sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config");
+    await server.executeCommand("sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config");
     expect(await server.executeCommand('sshd -T')).toMatch(/passwordauthentication no/);
     expect(server.getSshServerContext().config.passwordAuthentication).toBe(true);
 

@@ -39,6 +39,8 @@ import {
 } from '@/terminal/ssh/wireSshLogin';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
+import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
+import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { firstConfiguredIp, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -116,6 +118,7 @@ export class WindowsTerminalSession extends TerminalSession {
     super(id, device);
     if (device instanceof WindowsPC) {
       this.shell = device.openShellSession();
+      this.shell.inputReader = (prompt, preceding) => this.askCommandInput(prompt, preceding);
       this.registerTearDown(() => {
         const s = this.shell;
         if (s && device instanceof WindowsPC) device.closeShellSession(s);
@@ -151,6 +154,16 @@ export class WindowsTerminalSession extends TerminalSession {
     if (!(dev instanceof WindowsPC)) return;
     if (this.shell) dev.closeShellSession(this.shell);
     this.shell = dev.openShellSession({ user, cwd: `C:\\Users\\${user}` });
+    this.shell.inputReader = (prompt, preceding) => this.askCommandInput(prompt, preceding);
+  }
+
+  private async askCommandInput(prompt: string, preceding?: string): Promise<string | null> {
+    if (!this.inputHostImpl.capabilities().interactive) return null;
+    if (preceding !== undefined) {
+      for (const line of preceding.split('\n')) this.addShellOutputLine(line);
+      this.notify();
+    }
+    return new PromiseInputBrokerCtor(this.inputHostImpl).ask(prompt);
   }
 
   protected override getFlowUser(): string {
@@ -838,48 +851,12 @@ export class WindowsTerminalSession extends TerminalSession {
 
   // ── SSH interactive intercept ──────────────────────────────────
 
-  /**
-   * Parse `ssh [-flags] [user@]host [command...]`. Returns the parsed
-   * shape when this is an *interactive* invocation (no command after the
-   * host); returns `null` for malformed input or exec mode, letting the
-   * caller fall through to the device-level `cmdSsh` (banner-only) path.
-   *
-   * The flag set mirrors the value-consuming short flags of OpenSSH so
-   * `-p 2222 user@host` and `-l alice host` are routed correctly.
-   */
   private parseInteractiveSsh(
     line: string,
-  ): { user: string | null; host: string; port: number; quiet: boolean } | null {
-    const parts = line.split(/\s+/).filter(p => p.length > 0);
-    if (parts[0] !== 'ssh' || parts.length < 2) return null;
-    const valueFlags = new Set([
-      '-p', '-i', '-l', '-o', '-L', '-R', '-D', '-F', '-J',
-      '-c', '-m', '-b', '-E', '-S', '-W', '-w',
-    ]);
-    let i = 1;
-    let port = 22;
-    let loginUser: string | null = null;
-    let quiet = false;
-    while (i < parts.length && parts[i].startsWith('-')) {
-      const flag = parts[i];
-      if (flag === '-q') { quiet = true; i++; continue; }
-      if (flag === '-p' && parts[i + 1]) {
-        const n = Number.parseInt(parts[i + 1], 10);
-        if (Number.isFinite(n) && n > 0 && n < 65536) port = n;
-        i += 2; continue;
-      }
-      if (flag === '-l' && parts[i + 1]) { loginUser = parts[i + 1]; i += 2; continue; }
-      if (valueFlags.has(flag)) { i += 2; continue; }
-      i++;
-    }
-    const target = parts[i];
-    if (!target) return null;
-    const remoteCmd = parts.slice(i + 1).join(' ').trim();
-    if (remoteCmd) return null;
-
-    const m = /^(?:([\w.\-\\]+)@)?([\w.-]+)$/.exec(target);
-    if (!m) return null;
-    return { user: m[1] ?? loginUser, host: m[2], port, quiet };
+  ): { user: string | null; host: string; port: number; quiet: boolean; algorithms: SshAlgorithmPreferences } | null {
+    const parsed = parseSshCommandLine(line);
+    if (parsed === null || parsed.host === '' || parsed.command !== null) return null;
+    return parsed;
   }
 
   /**
@@ -975,6 +952,7 @@ export class WindowsTerminalSession extends TerminalSession {
       sourceHostname: dev.getHostname(),
       localUser,
       quiet: parsed.quiet,
+      algorithms: parsed.algorithms,
     };
     if (this.inputHostImpl.capabilities().interactive) {
       await this.runTopLevelSshAuthViaBroker();
@@ -1010,7 +988,7 @@ export class WindowsTerminalSession extends TerminalSession {
   private pendingSshPush: {
     user: string; host: string; port: number;
     device: Equipment; sourceIp: string; sourceHostname: string;
-    localUser: string; quiet: boolean;
+    localUser: string; quiet: boolean; algorithms: SshAlgorithmPreferences;
   } | null = null;
 
   /**
@@ -1041,6 +1019,7 @@ export class WindowsTerminalSession extends TerminalSession {
       io: silentConnectIo(),
       password,
       strict: 'accept-new',
+      algorithms: pending.algorithms,
     });
 
     if (outcome.kind === 'auth-failed') {

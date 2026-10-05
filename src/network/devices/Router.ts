@@ -74,9 +74,11 @@ import { Port, LOOPBACK_MTU, LOOPBACK_BW_KBPS, LOOPBACK_DELAY_US } from '../hard
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { TcpStack, type TcpSocket } from '../tcp/TcpStack';
+import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
 import type { TcpStream, TcpDialFailure } from '../tcp/types';
 import { isDialFailure } from '../tcp/types';
-import { verifyUdpChecksum, stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
+import { stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
+import { acceptUdpDatagram } from '@/network/layers/transport/UdpInput';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import type { DeviceClockStore } from '../core/time/DeviceClock';
 import { PortNumber } from '../core/ports/PortNumber';
@@ -150,8 +152,8 @@ import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmen
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
-  classifyIpv4Destination, connectedPrefixesOfPort, decrementForForwarding, isDirectedBroadcast,
-  ipv4HeaderProblem, martianSource,
+  classifyIpv4Destination, connectedPrefixesOfPort, decrementForForwarding, invalidSourceFor,
+  isDirectedBroadcast, ipv4HeaderProblem, martianSource,
 } from '../layers/internet/InternetLayer';
 import {
   DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
@@ -593,6 +595,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           topic: 'host.icmp.unreachable',
           payload: icmpv6UnreachablePayload(this.routerRef(), ipv6, icmpv6),
         });
+        deliverIcmpv6ErrorToTcp(this.tcpv2, ipv6, icmpv6);
       },
       getDhcpv6Server: () => this.dhcpv6Server,
       getDhcpv6ServerPool: (iface) => this.dhcpv6InterfacePools.get(iface),
@@ -713,6 +716,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       },
       sendIpv6FrameNdpAware: (iface: string, pkt: IPv6Packet, nextHopIP: IPv6Address) =>
         this.ipv6Engine.sendFrameNdpAware(iface, pkt, nextHopIP),
+      defaultTtl: (family: string) => family === 'ipv6' ? undefined : this.defaultTTL,
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus(),
       () => this.getRouterScheduler());
@@ -1218,6 +1222,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   protected sshTransportPolicy(): SshTransportPolicy { return {}; }
+
+  protected sshConfiguredTransport(): { chiffrement: string; hmac: string } | null { return null; }
 
   private sshHostKey(): SshHostKey {
     const spec = this.sshHostKeySpec();
@@ -2827,6 +2833,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           topic: 'host.icmp.unreachable',
           payload: icmpUnreachablePayload(this.routerRef(), ipPkt, icmp),
         });
+        deliverIcmpv4ErrorToTcp(this.tcpv2, ipPkt, icmp);
       }
 
       if (icmp.icmpType === 'echo-request') {
@@ -2923,15 +2930,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         }
       }
     } else if (ipPkt.protocol === IP_PROTO_UDP) {
-      const udp = ipPkt.payload as UDPPacket;
-      if (!udp || udp.type !== 'udp') return;
-      // RFC 768: a non-zero checksum that doesn't match is corruption —
-      // silently discarded, no ICMP reply (matches EndHost.deliverUDP).
-      if (!verifyUdpChecksum(udp, ipPkt.sourceIP.toString(), ipPkt.destinationIP.toString())) {
-        Logger.warn(this.id, 'udp:checksum-fail',
-          `${this.name}: invalid UDP checksum from ${ipPkt.sourceIP}:${udp.sourcePort}, dropping`);
+      const received = ipPkt.payload as UDPPacket;
+      if (!received || received.type !== 'udp') return;
+      if (this.hasInvalidSource(ipPkt)) {
+        this.counters.ipInHdrErrors++;
+        Logger.warn(this.id, 'udp:invalid-source',
+          `${this.name}: invalid source ${ipPkt.sourceIP} for UDP to ${ipPkt.destinationIP}, dropping`);
         return;
       }
+      const verdict = acceptUdpDatagram(received, {
+        source: ipPkt.sourceIP.toString(), destination: ipPkt.destinationIP.toString(),
+        availableBytes: ipPkt.totalLength - ipPkt.ihl * 4,
+      });
+      if (verdict.accepted === false) {
+        Logger.warn(this.id, `udp:${verdict.refusal}`,
+          `${this.name}: ${verdict.refusal} from ${ipPkt.sourceIP}:${received.sourcePort}, dropping`);
+        return;
+      }
+      const udp = verdict.datagram;
 
       if (this.receiveControlPlaneUdp(inPort, ipPkt, udp)) return;
 
@@ -2947,8 +2963,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
   }
 
-  private deliverUdp6(ipv6: IPv6Packet, udp: UDPPacket): boolean {
-    if (!verifyUdpChecksum(udp, ipv6.sourceIP.toString(), ipv6.destinationIP.toString())) return true;
+  private hasInvalidSource(ipPkt: IPv4Packet): boolean {
+    const prefixes = this.getPorts().flatMap((port) => connectedPrefixesOfPort(port));
+    return invalidSourceFor(ipPkt.sourceIP, ipPkt.destinationIP, prefixes) !== null
+      || this.ownsIPv4Address(ipPkt.sourceIP);
+  }
+
+  private deliverUdp6(ipv6: IPv6Packet, received: UDPPacket): boolean {
+    const verdict = acceptUdpDatagram(received, {
+      source: ipv6.sourceIP.toString(), destination: ipv6.destinationIP.toString(),
+      availableBytes: ipv6.payloadLength,
+    });
+    if (verdict.accepted === false) return true;
+    const udp = verdict.datagram;
     return this.udpEndpoint?.deliver6(
       ipv6.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
     ) ?? false;
@@ -5077,6 +5104,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         deviceId: this.id,
         bus: this.getBus(),
         capacity: () => this.vtyLineConfig.lineCapacity(),
+        configuredTransport: () => this.sshConfiguredTransport(),
       });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._credentialStore.liveSessionCount = (user) =>

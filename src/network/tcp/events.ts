@@ -1,4 +1,5 @@
-import type { TcpState, TcpCloseReason } from './types';
+import type { TcpState, TcpCloseReason, TcpErrorReport } from './types';
+import type { IPv4Packet, IPv6Packet } from '@/network/core/types';
 
 export interface TcpDeviceRef {
   deviceId: string;
@@ -20,6 +21,12 @@ export interface TcpSegmentSentPayload extends TcpDeviceRef {
    * to know whether a port tap has already seen the frame.
    */
   iface: string;
+  /**
+   * The very packet delivered in process, present only when `iface` is
+   * `lo`: nothing else ever puts it on a wire, so a capture of the
+   * loopback decodes THIS object, as a capture of a port decodes its frame.
+   */
+  packet?: IPv4Packet | IPv6Packet;
 }
 
 export interface TcpSegmentReceivedPayload extends TcpDeviceRef {
@@ -74,7 +81,8 @@ export interface TcpListenerChangedPayload extends TcpDeviceRef {
 
 export type TcpDropReason =
   | 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled'
-  | 'bad-checksum' | 'no-ephemeral' | 'addr-in-use' | 'listen-ignores-segment';
+  | 'bad-checksum' | 'no-ephemeral' | 'addr-in-use' | 'listen-ignores-segment'
+  | 'non-unicast-destination' | 'invalid-source' | 'icmp-out-of-window' | 'ttl-below-floor';
 
 export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   sourceIp: string;
@@ -84,7 +92,9 @@ export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   reason: TcpDropReason;
 }
 
-/** PRD-TCP.md P1 — a segment (SYN/data/FIN) was resent by the RTO timer. */
+export type TcpRetransmitReason =
+  | 'timeout' | 'fast-retransmit' | 'sack-hole' | 'partial-ack' | 'rescue' | 'timeout-recovery';
+
 export interface TcpRetransmitPayload extends TcpDeviceRef {
   localIp: string;
   localPort: number;
@@ -93,6 +103,24 @@ export interface TcpRetransmitPayload extends TcpDeviceRef {
   sequence: number;
   attempt: number;
   rtoMs: number;
+  reason: TcpRetransmitReason;
+}
+
+export interface TcpErrorReportedPayload extends TcpDeviceRef {
+  localIp: string;
+  localPort: number;
+  remoteIp: string;
+  remotePort: number;
+  report: TcpErrorReport;
+}
+
+export interface TcpEcnReactionPayload extends TcpDeviceRef {
+  localIp: string;
+  localPort: number;
+  remoteIp: string;
+  remotePort: number;
+  congestionWindow: number;
+  slowStartThreshold: number;
 }
 
 export type TcpDomainEvent =
@@ -103,4 +131,6 @@ export type TcpDomainEvent =
   | { topic: 'tcp.connection.closed'; payload: TcpConnectionClosedPayload }
   | { topic: 'tcp.listener.changed'; payload: TcpListenerChangedPayload }
   | { topic: 'tcp.segment.dropped'; payload: TcpSegmentDroppedPayload }
-  | { topic: 'tcp.retransmit'; payload: TcpRetransmitPayload };
+  | { topic: 'tcp.retransmit'; payload: TcpRetransmitPayload }
+  | { topic: 'tcp.error.reported'; payload: TcpErrorReportedPayload }
+  | { topic: 'tcp.ecn.reaction'; payload: TcpEcnReactionPayload };

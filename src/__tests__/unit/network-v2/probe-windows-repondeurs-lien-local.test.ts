@@ -74,6 +74,7 @@ async function segment() {
   const sw = createDevice('switch-cisco', 0, 0) as Equipment;
   const lin = createDevice('linux-pc', 0, 0) as Equipment;
   const win = createDevice('windows-pc', 0, 0) as Equipment;
+  (win as unknown as { setCurrentUser(name: string): void }).setCurrentUser('Administrator');
 
   new Cable('c1').connect(
     lin.getPorts().find((p) => p.getName() === 'eth0')!, sw.getPorts()[0]);

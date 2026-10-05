@@ -16,8 +16,10 @@ import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { ISshAuthContext } from '../../../protocols/ssh/auth/ISshAuthMethod';
 import {
   OPENSSH_DEFAULT_IDENTITY_FILES,
+  sshClientAlgorithms,
   sshClientAuthentication,
 } from '../../../protocols/ssh/SshConnectOptions';
+import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import { sshOptionValues } from '../../../protocols/ssh/SshClientCommandLine';
 import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
@@ -65,6 +67,7 @@ export interface WinWireTarget {
   port: number;
   command: string;
   identities: string[];
+  algorithms: SshAlgorithmPreferences;
 }
 
 export function winWireExecTarget(args: string[], defaultUser: string): WinWireTarget | null {
@@ -83,6 +86,7 @@ export function winWireExecTarget(args: string[], defaultUser: string): WinWireT
     port: clientPort(flags),
     command: positional.slice(1).join(' ').trim(),
     identities: identity >= 0 && flags[identity + 1] ? [flags[identity + 1]] : [],
+    algorithms: sshClientAlgorithms(sshOptionValues(args)),
   };
 }
 

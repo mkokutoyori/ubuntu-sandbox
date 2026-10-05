@@ -69,7 +69,7 @@ async function connectedLab(): Promise<Lab> {
 
   const t = new LinuxTerminalSession('t', cli);
   await t.init();
-  t.setInput('ssh alice@10.0.0.2');
+  t.setInput('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2');
   t.handleKey(key('Enter'));
   await flush();
   if (t.foreground.currentInputMode.type === 'password') {
@@ -281,7 +281,7 @@ describe('the same rules from a Windows client', () => {
 
     const t = new WindowsTerminalSession('t', win);
     await t.init();
-    t.setInput('ssh alice@10.0.0.2');
+    t.setInput('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2');
     t.handleKey(key('Enter'));
     await flush();
     if (t.currentInputMode.type === 'password') {

@@ -32,6 +32,10 @@ export interface WinFileCommandContext {
   env: Map<string, string>;
   setEnv(name: string, value: string): void;
   setCwd(path: string): void;
+  setExitCode(code: number): void;
+  readonly inScript: boolean;
+  readonly timezone: string;
+  ask(prompt: string, preceding?: string): Promise<{ answer: string | null; flushed: boolean }>;
 }
 
 // ─── cd / chdir ────────────────────────────────────────────────────
@@ -112,28 +116,6 @@ export function cmdType(ctx: WinFileCommandContext, args: string[]): string {
   const result = ctx.fs.readFile(absPath);
   if (!result.ok) return result.error!;
   return result.content!;
-}
-
-// ─── copy ──────────────────────────────────────────────────────────
-
-export function cmdCopy(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length < 2) return 'The syntax of the command is incorrect.';
-  const src = ctx.fs.normalizePath(args[0], ctx.cwd);
-  const dest = ctx.fs.normalizePath(args[1], ctx.cwd);
-  const result = ctx.fs.copyFile(src, dest);
-  if (!result.ok) return result.error!;
-  return '        1 file(s) copied.';
-}
-
-// ─── move ──────────────────────────────────────────────────────────
-
-export function cmdMove(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length < 2) return 'The syntax of the command is incorrect.';
-  const src = ctx.fs.normalizePath(args[0], ctx.cwd);
-  const dest = ctx.fs.normalizePath(args[1], ctx.cwd);
-  const result = ctx.fs.moveFile(src, dest);
-  if (!result.ok) return result.error!;
-  return '        1 file(s) moved.';
 }
 
 // ─── ren / rename ──────────────────────────────────────────────────
@@ -404,24 +386,35 @@ function formatAttrib(entry: { attributes: Set<string> }, path: string): string 
 
 export function cmdFind(ctx: WinFileCommandContext, args: string[], stdin?: string): string {
   const parsed = parseFindArguments(args);
-  if ('error' in parsed) return parsed.error;
+  if ('error' in parsed) {
+    ctx.setExitCode(2);
+    return parsed.error;
+  }
   const { options, files } = parsed;
 
   if (files.length === 0) {
-    if (stdin === undefined) return 'FIND: Parameter format not correct';
+    if (stdin === undefined) {
+      ctx.setExitCode(2);
+      return 'FIND: Parameter format not correct';
+    }
     const { shown, count } = filterFind(textLines(stdin), options);
+    ctx.setExitCode(count > 0 ? 0 : 1);
     return options.count ? String(count) : shown.join('\n');
   }
 
   const lines: string[] = [];
+  let matched = 0;
+  let unreadable = false;
   for (const file of files) {
     const result = ctx.fs.readFile(ctx.fs.normalizePath(file, ctx.cwd));
-    if (!result.ok) { lines.push(`File not found - ${file}`); continue; }
+    if (!result.ok) { lines.push(`File not found - ${file}`); unreadable = true; continue; }
     lines.push(`---------- ${file.toUpperCase()}`);
     const { shown, count } = filterFind(textLines(result.content!), options);
+    matched += count;
     if (options.count) lines.push(`---------- ${file.toUpperCase()}: ${count}`);
     else lines.push(...shown);
   }
+  ctx.setExitCode(unreadable ? 2 : matched > 0 ? 0 : 1);
   return lines.join('\n');
 }
 
@@ -429,69 +422,41 @@ export function cmdFind(ctx: WinFileCommandContext, args: string[], stdin?: stri
 
 export function cmdFindstr(ctx: WinFileCommandContext, args: string[], stdin?: string): string {
   const parsed = parseFindstrArguments(args);
-  if ('error' in parsed) return parsed.error;
+  if ('error' in parsed) {
+    ctx.setExitCode(2);
+    return parsed.error;
+  }
   const { options, files } = parsed;
 
   if (files.length === 0) {
-    if (stdin === undefined) return 'FINDSTR: Wrong number of arguments';
+    if (stdin === undefined) {
+      ctx.setExitCode(2);
+      return 'FINDSTR: Wrong number of arguments';
+    }
     const selected = filterFindstr(textLines(stdin), options);
-    return selected === null ? `FINDSTR: Cannot open ${options.patterns[0]}` : selected.join('\n');
+    if (selected === null) {
+      ctx.setExitCode(2);
+      return `FINDSTR: Cannot open ${options.patterns[0]}`;
+    }
+    ctx.setExitCode(selected.length > 0 ? 0 : 1);
+    return selected.join('\n');
   }
 
   const lines: string[] = [];
+  let unreadable = false;
   for (const file of files) {
     const result = ctx.fs.readFile(ctx.fs.normalizePath(file, ctx.cwd));
-    if (!result.ok) { lines.push(`FINDSTR: Cannot open ${file}`); continue; }
+    if (!result.ok) { lines.push(`FINDSTR: Cannot open ${file}`); unreadable = true; continue; }
     const selected = filterFindstr(textLines(result.content!), options, files.length > 1 ? `${file}:` : '');
-    if (selected === null) return `FINDSTR: Cannot open ${options.patterns[0]}`;
+    if (selected === null) {
+      ctx.setExitCode(2);
+      return `FINDSTR: Cannot open ${options.patterns[0]}`;
+    }
     lines.push(...selected);
   }
+  const shown = lines.filter(line => !line.startsWith('FINDSTR: Cannot open ')).length;
+  ctx.setExitCode(unreadable ? 2 : shown > 0 ? 0 : 1);
   return lines.join('\n');
-}
-
-// ─── where ────────────────────────────────────────────────────────
-
-export function cmdWhere(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length === 0) return 'ERROR: A pattern must be specified.';
-
-  const patterns: string[] = [];
-  for (const arg of args) {
-    if (arg.toLowerCase() === '/r') continue;
-    patterns.push(arg);
-  }
-  if (patterns.length === 0) return 'ERROR: A pattern must be specified.';
-
-  const pattern = patterns[0];
-  const searchDirs = [ctx.cwd];
-  const pathVar = ctx.env.get('PATH') || '';
-  if (pathVar) {
-    for (const dir of pathVar.split(';')) {
-      if (dir.trim()) searchDirs.push(dir.trim());
-    }
-  }
-
-  const results: string[] = [];
-  for (const dir of searchDirs) {
-    if (!ctx.fs.isDirectory(dir)) continue;
-    const entries = ctx.fs.listDirectory(dir);
-    for (const { name, entry } of entries) {
-      if (entry.type !== 'file') continue;
-      if (matchPattern(name, pattern)) {
-        results.push(dir.endsWith('\\') ? dir + name : dir + '\\' + name);
-      }
-    }
-  }
-
-  if (results.length === 0) return 'INFO: Could not find files for the given pattern(s).';
-  return results.join('\n');
-}
-
-function matchPattern(name: string, pattern: string): boolean {
-  const regex = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
-  return new RegExp('^' + regex + '$', 'i').test(name);
 }
 
 // ─── more ─────────────────────────────────────────────────────────
@@ -508,7 +473,10 @@ export function cmdMore(ctx: WinFileCommandContext, args: string[], stdin?: stri
 // ─── fc (file compare) ───────────────────────────────────────────
 
 export function cmdFc(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length < 2) return 'FC: Insufficient number of file specifications';
+  if (args.length < 2) {
+    ctx.setExitCode(-1);
+    return 'FC: Insufficient number of file specifications';
+  }
 
   let ignoreCase = false;
   const filePaths: string[] = [];
@@ -519,15 +487,24 @@ export function cmdFc(ctx: WinFileCommandContext, args: string[]): string {
     filePaths.push(arg);
   }
 
-  if (filePaths.length < 2) return 'FC: Insufficient number of file specifications';
+  if (filePaths.length < 2) {
+    ctx.setExitCode(-1);
+    return 'FC: Insufficient number of file specifications';
+  }
 
   const absPath1 = ctx.fs.normalizePath(filePaths[0], ctx.cwd);
   const absPath2 = ctx.fs.normalizePath(filePaths[1], ctx.cwd);
 
   const r1 = ctx.fs.readFile(absPath1);
-  if (!r1.ok) return `FC: cannot open ${filePaths[0]} - No such file or directory`;
+  if (!r1.ok) {
+    ctx.setExitCode(2);
+    return `FC: cannot open ${filePaths[0]} - No such file or directory`;
+  }
   const r2 = ctx.fs.readFile(absPath2);
-  if (!r2.ok) return `FC: cannot open ${filePaths[1]} - No such file or directory`;
+  if (!r2.ok) {
+    ctx.setExitCode(2);
+    return `FC: cannot open ${filePaths[1]} - No such file or directory`;
+  }
 
   const lines1 = r1.content!.split('\n');
   const lines2 = r2.content!.split('\n');
@@ -553,61 +530,11 @@ export function cmdFc(ctx: WinFileCommandContext, args: string[]): string {
   }
 
   if (!hasDiff) lines.push('FC: no differences encountered');
+  ctx.setExitCode(hasDiff ? 1 : 0);
   return lines.join('\n');
 }
 
 // ─── xcopy ────────────────────────────────────────────────────────
-
-export function cmdXcopy(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length < 2) return 'Invalid number of parameters';
-
-  let recursive = false;
-  const pathParts: string[] = [];
-
-  for (const arg of args) {
-    const lower = arg.toLowerCase();
-    if (lower === '/s') { recursive = true; continue; }
-    if (lower === '/e') { recursive = true; continue; }
-    if (lower === '/y' || lower === '/i' || lower === '/q' || lower === '/h') continue;
-    pathParts.push(arg);
-  }
-
-  if (pathParts.length < 2) return 'Invalid number of parameters';
-
-  const srcPath = ctx.fs.normalizePath(pathParts[0], ctx.cwd);
-  const destPath = ctx.fs.normalizePath(pathParts[1], ctx.cwd);
-
-  if (!ctx.fs.exists(srcPath)) return `File not found - ${pathParts[0]}`;
-
-  if (ctx.fs.isFile(srcPath)) {
-    const result = ctx.fs.copyFile(srcPath, destPath);
-    if (!result.ok) return result.error!;
-    return '1 File(s) copied';
-  }
-
-  if (!ctx.fs.isDirectory(srcPath)) return `File not found - ${pathParts[0]}`;
-
-  ctx.fs.mkdirp(destPath);
-  const count = xcopyDir(ctx, srcPath, destPath, recursive);
-  return `${count} File(s) copied`;
-}
-
-function xcopyDir(ctx: WinFileCommandContext, src: string, dest: string, recursive: boolean): number {
-  const entries = ctx.fs.listDirectory(src);
-  let count = 0;
-  for (const { name, entry } of entries) {
-    const srcChild = src + '\\' + name;
-    const destChild = dest + '\\' + name;
-    if (entry.type === 'file') {
-      ctx.fs.copyFile(srcChild, destChild);
-      count++;
-    } else if (entry.type === 'directory' && recursive) {
-      ctx.fs.mkdirp(destChild);
-      count += xcopyDir(ctx, srcChild, destChild, recursive);
-    }
-  }
-  return count;
-}
 
 // ─── sort ─────────────────────────────────────────────────────────
 

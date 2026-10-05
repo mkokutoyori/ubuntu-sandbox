@@ -55,6 +55,7 @@ export interface WinScheduledTask {
 
 export interface WinSystemContext {
   readonly hostname: string;
+  readonly isAdmin: boolean;
   /** OS identity block (systeminfo header). */
   readonly os: { prettyName: string; version: string };
   /** Boot timestamp, when the host lifecycle reports one. */
@@ -248,6 +249,28 @@ export function cmdTime(_args: string[], timezone = 'UTC'): string {
   return `${h12}:${min} ${tt}`;
 }
 
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+export function longDateTime(timezone = 'UTC', atMs = Date.now()): string {
+  const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
+  const local = partsAt(zone, atMs);
+  const hour = local.hour % 12 === 0 ? 12 : local.hour % 12;
+  const meridiem = local.hour >= 12 ? 'PM' : 'AM';
+  return `${WEEKDAY_NAMES[local.weekday]}, ${MONTH_NAMES[local.month - 1]} ${local.day}, ${local.year} `
+    + `${hour}:${String(local.minute).padStart(2, '0')}:${String(local.second).padStart(2, '0')} ${meridiem}`;
+}
+
+export function slashedTimestamp(timezone = 'UTC', atMs = Date.now()): string {
+  const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
+  const local = partsAt(zone, atMs);
+  const two = (value: number): string => String(value).padStart(2, '0');
+  return `${local.year}/${two(local.month)}/${two(local.day)} ${two(local.hour)}:${two(local.minute)}:${two(local.second)}`;
+}
+
 export function clockTimeWithCentiseconds(timezone = 'UTC', atMs = Date.now()): string {
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
   const local = partsAt(zone, atMs);
@@ -287,6 +310,8 @@ export function cmdStart(ctx: WinSystemContext, args: string[]): string {
 
 /** `setx VAR VALUE [/M]` — persists an environment variable. */
 export function cmdSetx(ctx: WinSystemContext, args: string[]): string {
+  const machine = args.some(a => a.toUpperCase() === '/M');
+  if (machine && !ctx.isAdmin) return 'ERROR: Access to the registry path is denied.';
   const filtered = args.filter(a => a.toUpperCase() !== '/M');
   if (filtered.length < 2) {
     return 'ERROR: Invalid syntax. Type "SETX /?" for usage.';

@@ -52,6 +52,7 @@ export class TcpdumpCaptureProjection {
       ack: p.acknowledgement,
       length: p.payloadSize,
       iface: LOOPBACK_IFACE,
+      packet: p.packet,
     });
   }
 }

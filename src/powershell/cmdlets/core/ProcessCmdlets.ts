@@ -268,6 +268,18 @@ export class StartProcessCmdlet implements ICmdlet {
       runAsUser = credential.userName;
     }
 
+    const verb = psValueToString(ctx.named['verb'] ?? '').toLowerCase();
+    if (verb === 'runas') {
+      const user = ctx.providers.environment?.get('USERNAME');
+      if (user !== undefined && user !== null && ctx.providers.users?.isAdmin(String(user)) === false) {
+        ctx.emitError(
+          'Start-Process : This command cannot be executed due to the error: '
+          + 'The operation was canceled by the user.',
+        );
+        return null;
+      }
+    }
+
     const argList = ctx.named['argumentlist'] ?? ctx.named['arguments'];
     const argString = argList === undefined ? undefined
       : Array.isArray(argList) ? argList.map(psValueToString).join(' ')

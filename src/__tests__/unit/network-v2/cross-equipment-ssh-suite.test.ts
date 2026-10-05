@@ -1085,14 +1085,16 @@ describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
       excludes: [/^lxsrv1$/m],
     },
     {
-      name: 'AllowTcpForwarding no on the gateway refuses -L setup',
+      name: 'AllowTcpForwarding no on the gateway: the -L listener opens, the gateway refuses every connection through it',
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sed -i "s/^#\\?AllowTcpForwarding.*/AllowTcpForwarding no/" /etc/ssh/sshd_config');
         await l.linux2.executeCommand('sudo systemctl restart ssh');
+        await l.linux1.executeCommand('ssh -f -N -L 9322:10.0.0.3:22 alice@10.0.0.2', 'admin\n');
       },
       on: l => l.linux1,
-      cmd: 'ssh -L 9322:10.0.0.3:22 -N -o ExitOnForwardFailure=yes alice@10.0.0.2',
-      contains: [/administratively prohibited|Could not request|refused/i],
+      cmd: 'ssh -p 9322 -o StrictHostKeyChecking=no alice@127.0.0.1 hostname',
+      contains: [/Connection closed|kex_exchange_identification|Connection reset/i],
+      excludes: [/^lxsrv1$/m],
     },
   ];
 
@@ -1288,7 +1290,9 @@ describe('§17 — Banner, MOTD and last-login per platform', () => {
     {
       name: 'Windows: LegalNoticeText reaches the SSH client',
       setup: async (l) => {
+        l.win1.setCurrentUser('Administrator');
         await l.win1.executeCommand('reg add "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v LegalNoticeText /d "WIN BANNER" /f');
+        l.win1.setCurrentUser('User');
       },
       on: l => l.linux1, cmd: 'ssh User@10.0.0.4',
       contains: ['WIN BANNER'],

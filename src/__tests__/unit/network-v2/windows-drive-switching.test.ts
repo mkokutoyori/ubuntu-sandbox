@@ -388,7 +388,7 @@ describe('su over SSH prompts for password and switches user', () => {
       while (!p()) { if (Date.now() - start > t) throw new Error('timeout'); await new Promise(r => setTimeout(r, 5)); }
     };
 
-    term.setInput('ssh user@10.0.0.2'); term.handleKey(k('Enter')); await flush();
+    term.setInput('ssh -o StrictHostKeyChecking=accept-new user@10.0.0.2'); term.handleKey(k('Enter')); await flush();
     await waitFor(() => term.currentInputMode.type === 'password');
     term.setPasswordBuf('admin'); term.handleKey(k('Enter')); await flush();
     await waitFor(() => term.isInsideSshSession);
@@ -442,7 +442,7 @@ describe('su over SSH prompts for password and switches user', () => {
       while (!p()) { if (Date.now() - start > t) throw new Error('timeout'); await new Promise(r => setTimeout(r, 5)); }
     };
 
-    term.setInput('ssh user@10.0.0.2'); term.handleKey(k('Enter')); await flush();
+    term.setInput('ssh -o StrictHostKeyChecking=accept-new user@10.0.0.2'); term.handleKey(k('Enter')); await flush();
     await waitFor(() => term.currentInputMode.type === 'password');
     term.setPasswordBuf('admin'); term.handleKey(k('Enter')); await flush();
     await waitFor(() => term.isInsideSshSession);

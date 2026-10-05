@@ -2,7 +2,11 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
+import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { bytesToBase64 } from '@/crypto/encoding';
 import { sshUnreachableReason, relayScriptedShell } from '@/terminal/ssh/wireSshLogin';
 import type { TcpWireOutcome } from '../../tcp/types';
 import { LinuxUserManager } from './LinuxUserManager';
@@ -73,6 +77,7 @@ import { KernelModuleTable } from './kernel/KernelModuleTable';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
+import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
@@ -900,7 +905,7 @@ export class LinuxCommandExecutor {
       const base = `/proc/sys/net/ipv4/conf/${scope}`;
       this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
-      this.vfs.writeFile(`${base}/arp_accept`, '0\n', 0, 0, 0o022);
+      this.vfs.createFileAt(`${base}/arp_accept`, '0\n', 0o644, 0, 0);
       this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
@@ -909,7 +914,7 @@ export class LinuxCommandExecutor {
       this.vfs.mkdirp(base, 0o755, 0, 0);
       this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
-      this.vfs.writeFile(`${base}/arp_accept`, '0\n', 0, 0, 0o022);
+      this.vfs.createFileAt(`${base}/arp_accept`, '0\n', 0o644, 0, 0);
       this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
@@ -1665,6 +1670,7 @@ export class LinuxCommandExecutor {
     authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences,
   ): Promise<{
     session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
+    hostKeyRefusal?: string;
   }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
@@ -1674,10 +1680,14 @@ export class LinuxCommandExecutor {
     const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
     const denial = authRefused ? outcome.warnings.at(-1) : undefined;
     const keyExchangeFailure = outcome.failure?.kind === 'KEX_FAILED' ? outcome.failure.message : undefined;
+    const hostKeyRefusal = outcome.failure?.kind === 'HOST_KEY_REJECTED'
+      ? [...outcome.warnings, 'Host key verification failed.'].join('\n')
+      : undefined;
     return {
       session: outcome.session,
       authRefused,
       ...(keyExchangeFailure !== undefined ? { keyExchangeFailure } : {}),
+      ...(hostKeyRefusal !== undefined ? { hostKeyRefusal } : {}),
       ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
     };
@@ -1750,6 +1760,9 @@ export class LinuxCommandExecutor {
     if (!session && 'keyExchangeFailure' in wire && wire.keyExchangeFailure !== undefined) {
       return { output: wire.keyExchangeFailure, exitCode: 255 };
     }
+    if (!session && 'hostKeyRefusal' in wire && wire.hostKeyRefusal !== undefined) {
+      return { output: wire.hostKeyRefusal, exitCode: 255 };
+    }
     if (!session) {
       return this.finishSshClientResult(
         runSshClient({
@@ -1761,7 +1774,7 @@ export class LinuxCommandExecutor {
     const settled = !linuxPeer && target !== null && target.command
       ? await this.relayOverWire(session, target.command)
       : null;
-    const interactif = target !== null && !target.command;
+    const interactif = target !== null && !target.command && !target.holdOnly;
     const relayedShell = interactif
       ? await this.relayShellOverWire(
         session, offeredPassword === undefined && stdinPwd ? 1 : 0, !linuxPeer)
@@ -1771,8 +1784,14 @@ export class LinuxCommandExecutor {
         ...opts,
         wireAuthenticated: true,
         wireOutcome: reach,
+        wirePeerIp: this.machineAnswering(session) ?? undefined,
         wireNotices: interactif ? wire.notices : undefined,
         shellRelay: () => relayedShell,
+        forwardingSession: {
+          session,
+          clientHost: this.localDevice as unknown as { getTcpStack(): TcpStack },
+          resolveHost: (name) => this.resolveHostIpv4(name),
+        },
         execRelay: (command) => {
           if (settled && target !== null && command === target.command) return settled;
           const channel = session.openExecChannel(command);
@@ -1785,8 +1804,20 @@ export class LinuxCommandExecutor {
         },
       }), true);
     } finally {
-      session.disconnect();
+      if (target?.holdOnly === true) this.forwarding?.holdOpen(session);
+      if (!this.forwarding?.holds(session)) session.disconnect();
     }
+  }
+
+  private machineAnswering(session: SshSession): string | null {
+    const blob = session.serverHostKeyBlob;
+    if (blob === null) return null;
+    const wanted = bytesToBase64(blob);
+    for (const equipment of EquipmentRegistry.getInstance().getAll()) {
+      const context = (equipment as { getSshServerContext?: () => { hostKey?: { publicKey: string } } }).getSshServerContext?.();
+      if (context?.hostKey?.publicKey === wanted) return firstConfiguredIp(equipment);
+    }
+    return null;
   }
 
   private finishSshClientResult(
@@ -1872,7 +1903,7 @@ export class LinuxCommandExecutor {
   private readChrootDirectory(device: unknown, user: string, sourceIp: string | null): string | null {
     const remoteVfs = (device as { executor?: { vfs?: { readFile: (p: string) => string | null } } }).executor?.vfs;
     if (!remoteVfs) return null;
-    const raw = remoteVfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const raw = readSshdConfig(remoteVfs);
     if (!raw) return null;
     const userMgr = (device as { executor?: { userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } }).executor?.userMgr;
     const groups = (userMgr?.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
@@ -2128,8 +2159,8 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
-    const { output, stderr, exitCode } = runSshKeyscanCommand(args, {
+  private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const { output, stderr, exitCode, lines } = runSshKeyscanCommand(args, {
       resolve: (target: string) =>
         findHostByAddress(target, undefined, this.localDevice as never)?.ip ?? null,
       probe: (ip, port, hostKeyAlgorithms) => this.sshHostKeyProbe?.(ip, port, hostKeyAlgorithms) ?? null,
@@ -2139,7 +2170,7 @@ export class LinuxCommandExecutor {
       },
       stdin,
     });
-    return { output, exitCode, ...(stderr === '' ? {} : { stderr }) };
+    return { output, exitCode, ...(stderr === '' ? {} : { stderr, interleaved: lines.map((line) => line.text).join('\n') }) };
   }
 
   private keygenHost(): SshKeygenHost {
@@ -2495,7 +2526,6 @@ export class LinuxCommandExecutor {
   applyEphemeralRange(min: number, max: number): void {
     this.socketTable?.setEphemeralRange(min, max);
     this.setStackEphemeralRangeFn?.(min, max);
-    this.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', `${min}\t${max}\n`, 0, 0, 0o022);
   }
 
   private ephemeralPoolFreeChecker: (() => boolean) | null = null;
@@ -3126,6 +3156,7 @@ export class LinuxCommandExecutor {
       color: this.displayColor,
       isPiped: outputPiped,
       envOverride: this.envOverride ?? undefined,
+      openRefusal: (absPath: string) => this.openRefusal(absPath),
     };
   }
 
@@ -4331,42 +4362,35 @@ export class LinuxCommandExecutor {
     });
   }
 
+  private openRefusal(absPath: string): string | null {
+    const existing = this.vfs.resolveInode(absPath);
+    if (existing && existing.type === 'directory') return 'Is a directory';
+    if (this.mountTable.isReadOnly(absPath)) return 'Read-only file system';
+    if (existing) return this.checkPermission(existing, 'w') ? null : this.refuseOpen(absPath, 'Permission denied');
+    if (this.vfs.isVirtualTree(absPath)) return this.refuseOpen(absPath, 'No such file or directory');
+    const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
+    if (!parent) return this.refuseOpen(absPath, 'No such file or directory');
+    if (parent.type !== 'directory') return this.refuseOpen(absPath, 'Not a directory');
+    return this.checkPermission(parent, 'w') ? null : this.refuseOpen(absPath, 'Permission denied');
+  }
+
+  private refuseOpen(absPath: string, reason: string): string {
+    this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
+    return reason;
+  }
+
   /** Build an IOContext for the bash interpreter. */
   private buildIOContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
     return {
       writeFile: (path: string, content: string, append: boolean) => {
         const absPath = this.vfs.normalizePath(path, this.cwd);
-        // Check if target is a directory
         const existing = this.vfs.resolveInode(absPath);
-        if (existing && existing.type === 'directory') {
-          throw new Error(`bash: ${path}: Is a directory`);
-        }
-        if (this.mountTable.isReadOnly(absPath)) {
-          throw new Error(`bash: ${path}: Read-only file system`);
-        }
-        if (existing) {
-          if (!this.checkPermission(existing, 'w')) {
-            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
-            throw new Error(`bash: ${path}: Permission denied`);
-          }
-        } else {
-          const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
-          if (!parent) {
-            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
-            throw new Error(`bash: ${path}: No such file or directory`);
-          }
-          if (parent.type !== 'directory') {
-            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
-            throw new Error(`bash: ${path}: Not a directory`);
-          }
-          if (!this.checkPermission(parent, 'w')) {
-            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
-            throw new Error(`bash: ${path}: Permission denied`);
-          }
-        }
-        this.vfs.writeFile(
+        const refusal = this.openRefusal(absPath);
+        if (refusal !== null) throw new Error(`bash: ${path}: ${refusal}`);
+        const written = this.vfs.writeFile(
           absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append,
           undefined, false);
+        if (!written && existing?.writer !== undefined) throw new RedirectWriteError('Invalid argument');
         this.auditRules.onAccessIndirect(absPath, 'w', 'openat', this.snapshotActor());
       },
       readFile: (path: string) => {
@@ -4797,7 +4821,10 @@ export class LinuxCommandExecutor {
         return { output: outLn, exitCode: outLn.startsWith('ln:') ? 1 : 0 };
       }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
-      case 'tee': return { output: cmdTee(c, args, stdin ?? ''), exitCode: 0 };
+      case 'tee': {
+        const teed = cmdTee(c, args, stdin ?? '');
+        return { output: teed.output, exitCode: teed.failed ? 1 : 0 };
+      }
 
       // cd changes state
       case 'cd': {

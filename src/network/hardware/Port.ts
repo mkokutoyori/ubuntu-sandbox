@@ -1125,9 +1125,11 @@ export class Port {
     }
 
     lineageOf(frame);
-    this.recordOutboundFrame(frame);
+    const carried = this.cable.applyEgressNetem(frame, this);
+    if (carried === null) return false;
+    this.recordOutboundFrame(carried);
 
-    return this.cable.transmit(frame, this);
+    return this.cable.transmit(carried, this);
   }
 
   recordOutboundFrame(frame: EthernetFrame): void {

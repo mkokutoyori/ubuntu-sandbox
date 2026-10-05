@@ -67,6 +67,7 @@
  *    avant — par le jugement en memoire — et apres — par le serveur. Ils
  *    tombent a l'etat intermediaire, ou le fil la triplait.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -101,7 +102,9 @@ beforeEach(() => {
 
 async function lab(): Promise<{ host: LinuxPC; srv: LinuxServer; r1: CiscoRouter }> {
   const host = new LinuxPC('linux-pc', 'pc1', 0, 0);
+  allowLegacyIosSsh(host);
   const srv = new LinuxServer('linux-server', 'srv1', 0, 0);
+  allowLegacyIosSsh(srv);
   const r1 = new CiscoRouter('R1', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   new Cable('c1').connect(host.getPorts()[0], sw.getPorts()[0]);

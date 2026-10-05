@@ -32,7 +32,7 @@ describe('SshSyslogger — reactive auth.log producer', () => {
   const readAuthLog = () => vfs.readFile('/var/log/auth.log') ?? '';
 
   it('creates /var/log/auth.log on first event', () => {
-    bus.emit({ kind: 'client_connected', ip: '10.0.0.2', timestamp: Date.now() });
+    bus.emit({ kind: 'auth_invalid_user', user: 'alice', ip: '10.0.0.2' });
     expect(vfs.exists('/var/log/auth.log')).toBe(true);
   });
 

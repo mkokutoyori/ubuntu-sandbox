@@ -134,6 +134,7 @@ export type SshServerEvent =
       ip: string;
       port?: number;
       reason?: DisconnectReason;
+      receivedDisconnect?: { readonly code: number; readonly description: string };
       authenticated?: boolean;
       validUser?: boolean;
       beforeIdentification?: boolean;

@@ -27,7 +27,7 @@ function currentUserOf(device: Equipment): string {
 
 export function allowLegacyIosSsh(device: Equipment, ...users: string[]): void {
   const fs = sshLocalFsFor(device);
-  for (const user of users.length > 0 ? users : [currentUserOf(device)]) {
+  for (const user of users.length > 0 ? users : [...new Set([currentUserOf(device), 'root'])]) {
     const path = knownHostsPathFor(device, user).replace(/known_hosts$/, 'config');
     const { uid, gid } = sshLocalIdentityFor(device, user);
     fs.mkdirp?.(path.slice(0, path.lastIndexOf('/')), 0o700, uid, gid);

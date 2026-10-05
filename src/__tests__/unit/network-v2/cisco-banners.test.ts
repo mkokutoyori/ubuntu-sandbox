@@ -42,6 +42,7 @@
  * capture multi-lignes n'existe pas, et le rendu utilisait `^` au lieu
  * de `^C`).
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -262,6 +263,7 @@ describe('Scénario 3 — ordre réel des bannières via SSH entrant', () => {
 
   async function buildSshLab(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
     const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+    allowLegacyIosSsh(pc);
     const cisco = new CiscoRouter('ciscoR', 0, 0);
     const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
     new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);
@@ -275,7 +277,7 @@ describe('Scénario 3 — ordre réel des bannières via SSH entrant', () => {
   }
 
   async function sshLogin(term: LinuxTerminalSession, host: string, password: string): Promise<void> {
-    await type(term, `ssh admin@${host}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new admin@${host}`);
     if (term.currentInputMode.type === 'password') await submitPassword(term, password);
   }
 

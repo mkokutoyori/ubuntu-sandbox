@@ -107,7 +107,7 @@ async function connectedTo(vendor: Vendor): Promise<Lab> {
   allowLegacyIosSsh(cli);
   const t = new LinuxTerminalSession('t', cli);
   await t.init();
-  t.setInput(`ssh ${user}@10.0.0.2`);
+  t.setInput(`ssh -o StrictHostKeyChecking=accept-new ${user}@10.0.0.2`);
   t.handleKey(key('Enter'));
   await flush();
   if (t.foreground.currentInputMode.type === 'password') {

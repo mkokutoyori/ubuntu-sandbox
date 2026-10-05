@@ -107,7 +107,7 @@ describe('FortiGate : execute disconnect-admin-session', () => {
     const { poste } = await laboratoire();
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
     expect(/FGT\b.*#/.test(host.foreground.getPrompt())).toBe(true);
   });
 
@@ -115,7 +115,7 @@ describe('FortiGate : execute disconnect-admin-session', () => {
     const { fw, poste } = await laboratoire();
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
+    await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
 
     const sessions = fw.getAdminSessions().list();
     expect(sessions).toHaveLength(1);

@@ -163,7 +163,7 @@ describe('SSH LAN — advanced scenarios', () => {
         .host(PC2_IP)
         .user('user')
         .password('admin')
-        .strictHostKeyChecking('yes')
+        .strictHostKeyChecking('ask')
         .build(),
     );
     expect(isOk(result)).toBe(true);

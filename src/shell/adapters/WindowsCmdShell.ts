@@ -166,6 +166,12 @@ export class WindowsCmdShell extends AbstractShell {
     }
 
     const dev = this.device as unknown as WindowsDevice;
+    if (this.windowsSession) {
+      this.windowsSession.inputReader = (prompt, preceding) => {
+        if (preceding !== undefined) for (const text of preceding.split('\n')) this.input.emit(text);
+        return this.input.ask(prompt);
+      };
+    }
     // Use the per-session dispatch when a session is bound so `cd` /
     // `set` mutate THIS terminal's state, not the device-wide globals.
     const raw = (this.windowsSession && this.device instanceof WindowsPC

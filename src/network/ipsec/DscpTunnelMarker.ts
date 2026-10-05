@@ -1,11 +1,13 @@
-export const DSCP = {
-  CS0: 0, CS1: 8, CS2: 16, CS3: 24, CS4: 32, CS5: 40, CS6: 48, CS7: 56,
-  AF11: 10, AF12: 12, AF13: 14,
-  AF21: 18, AF22: 20, AF23: 22,
-  AF31: 26, AF32: 28, AF33: 30,
-  AF41: 34, AF42: 36, AF43: 38,
-  EF: 46,
-} as const;
+import { DSCP_CODEPOINTS, DiffServField, EcnCodepoint } from '../core/IpHeaderFields';
+import { ecnForOuterHeader, ecnOnDecapsulation } from '../core/EcnTunnel';
+
+type UppercaseKeys<T> = { readonly [K in keyof T as Uppercase<K & string>]: T[K] };
+
+export const DSCP = Object.fromEntries(
+  Object.entries(DSCP_CODEPOINTS)
+    .filter(([name]) => name !== 'default')
+    .map(([name, value]) => [name.toUpperCase(), value]),
+) as Omit<UppercaseKeys<typeof DSCP_CODEPOINTS>, 'DEFAULT'>;
 
 export type DscpMode = 'copy' | 'set' | 'map';
 
@@ -36,21 +38,20 @@ export function makeMapConfig(mapping: ReadonlyMap<number, number>): DscpTunnelC
 }
 
 export function dscpOf(tos: number): number {
-  return (tos >> 2) & 0x3f;
+  return DiffServField.of(tos).dscp;
 }
 
 export function ecnOf(tos: number): number {
-  return tos & 0x03;
+  return DiffServField.of(tos).ecn.bits;
 }
 
 export function withDscp(tos: number, dscp: number): number {
-  if (dscp < 0 || dscp > 63) throw new Error(`DSCP out of range: ${dscp}`);
-  return (dscp << 2) | (tos & 0x03);
+  return DiffServField.of(tos).withDscp(dscp).value;
 }
 
 export function computeOuterTos(innerTos: number, cfg: DscpTunnelConfig): number {
   const innerDscp = dscpOf(innerTos);
-  const innerEcn = ecnOf(innerTos);
+  const innerEcn = EcnCodepoint.ofField(innerTos);
   let outerDscp: number;
   switch (cfg.dscpMode) {
     case 'copy':
@@ -63,15 +64,12 @@ export function computeOuterTos(innerTos: number, cfg: DscpTunnelConfig): number
       outerDscp = cfg.dscpMap.get(innerDscp) ?? innerDscp;
       break;
   }
-  const outerEcn = cfg.ecnEnabled ? innerEcn : 0;
-  return (outerDscp << 2) | outerEcn;
+  const outerEcn = cfg.ecnEnabled ? ecnForOuterHeader(innerEcn) : EcnCodepoint.NOT_ECT;
+  return DiffServField.fromDscp(outerDscp & 0x3f).withEcn(outerEcn).value;
 }
 
-export function propagateCeOnDecap(outerTos: number, innerTos: number, cfg: DscpTunnelConfig): number {
+export function ecnOnDecapsulatedTos(outerTos: number, innerTos: number, cfg: DscpTunnelConfig): number | null {
   if (!cfg.ecnEnabled) return innerTos;
-  const outerEcn = ecnOf(outerTos);
-  if (outerEcn === 0b11) {
-    return (innerTos & 0xfc) | 0b11;
-  }
-  return innerTos;
+  const verdict = ecnOnDecapsulation(EcnCodepoint.ofField(outerTos), EcnCodepoint.ofField(innerTos));
+  return verdict.forward ? DiffServField.of(innerTos).withEcn(verdict.inner).value : null;
 }

@@ -28,7 +28,7 @@ import { describe, it, expect } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
-import { nextIsn } from '@/network/tcp/types';
+import { IsnGenerator } from '@/network/tcp/IsnGenerator';
 
 const run = (device: unknown, command: string): Promise<string> =>
   (device as { executeCommand(c: string): Promise<string> }).executeCommand(command);
@@ -74,7 +74,8 @@ describe('the sniffer prints real TCP numbers', () => {
   });
 
   it('an initial sequence number is an unsigned 32-bit value', () => {
-    const draws = Array.from({ length: 200 }, () => nextIsn());
+    const generator = new IsnGenerator();
+    const draws = Array.from({ length: 200 }, (_, i) => generator.next(i * 997, '10.0.0.1', 1024 + i, '10.0.0.2', 80));
     expect(draws.every((isn) => Number.isInteger(isn) && isn >= 0 && isn <= 0xffffffff)).toBe(true);
   });
 });

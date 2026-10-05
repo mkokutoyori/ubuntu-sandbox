@@ -50,6 +50,7 @@
  * mécanisme d'exec-timeout nulle part dans la couche terminal, `show
  * line` totalement statique.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -159,6 +160,7 @@ const CISCO_IP = '10.0.0.6';
 
 async function buildSshLab(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
   const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+  allowLegacyIosSsh(pc, 'alice', 'root', 'user');
   const cisco = new CiscoRouter('ciscoR', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);
@@ -186,9 +188,9 @@ function launchOpts(pc: LinuxPC, sourceIp = PC_IP): SshLaunchOptions {
   };
 }
 
-/** Drive `ssh admin@<ip>` from the Linux client through the real terminal. */
+/** Drive `ssh -o StrictHostKeyChecking=accept-new admin@<ip>` from the Linux client through the real terminal. */
 async function sshLogin(term: LinuxTerminalSession, host: string, password: string): Promise<void> {
-  await type(term, `ssh admin@${host}`);
+  await type(term, `ssh -o StrictHostKeyChecking=accept-new admin@${host}`);
   if (term.currentInputMode.type === 'password') {
     await submitPassword(term, password);
   }
@@ -416,7 +418,7 @@ describe('Scénario 2 — access-class restreint les IP autorisées en SSH', () 
     await cisco.executeCommand('access-class 10 in');
     await cisco.executeCommand('end');
 
-    const attempt = await tryInterpretSshLaunch(`ssh admin@${CISCO_IP}`, launchOpts(pc, PC_IP));
+    const attempt = await tryInterpretSshLaunch(`ssh -o StrictHostKeyChecking=accept-new admin@${CISCO_IP}`, launchOpts(pc, PC_IP));
     expect(attempt?.kind).toBe('error');
     // The router's real SshServerHandler accepts the TCP connection
     // (ACL admission is an application-layer check, not a SYN-time
@@ -436,7 +438,7 @@ describe('Scénario 2 — access-class restreint les IP autorisées en SSH', () 
     await cisco.executeCommand('access-class 10 in');
     await cisco.executeCommand('end');
 
-    const attempt = await tryInterpretSshLaunch(`ssh admin@${CISCO_IP}`, launchOpts(pc, PC_IP));
+    const attempt = await tryInterpretSshLaunch(`ssh -o StrictHostKeyChecking=accept-new admin@${CISCO_IP}`, launchOpts(pc, PC_IP));
     expect(attempt?.kind).not.toBe('error');
   });
 });

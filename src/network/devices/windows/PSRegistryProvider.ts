@@ -12,8 +12,12 @@
 export interface RegistryValue {
   name: string;
   value: string | number;
-  type: 'String' | 'DWord' | 'QWord' | 'ExpandString' | 'MultiString' | 'Binary';
+  type: RegistryValueType;
 }
+
+export type RegistryValueType =
+  | 'String' | 'DWord' | 'QWord' | 'ExpandString' | 'MultiString' | 'Binary'
+  | 'None' | 'DWordBigEndian' | 'Link' | 'ResourceList';
 
 export interface RegistryKey {
   name: string;
@@ -56,6 +60,92 @@ export const WINDOWS_SERVER_PRODUCT_IDENTITY: WindowsProductIdentity = {
   installationType: 'Server',
 };
 
+export type RegistryRoot = 'HKLM' | 'HKCU' | 'HKCR' | 'HKU' | 'HKCC';
+
+export interface RegistryAddress {
+  readonly root: RegistryRoot;
+  readonly segments: readonly string[];
+  readonly machine: string | null;
+}
+
+export interface RegistryKeyView {
+  readonly name: string;
+  readonly values: readonly RegistryValue[];
+  readonly subkeys: readonly string[];
+}
+
+export const REGISTRY_ROOT_NAMES: Readonly<Record<RegistryRoot, string>> = {
+  HKLM: 'HKEY_LOCAL_MACHINE',
+  HKCU: 'HKEY_CURRENT_USER',
+  HKCR: 'HKEY_CLASSES_ROOT',
+  HKU: 'HKEY_USERS',
+  HKCC: 'HKEY_CURRENT_CONFIG',
+};
+
+const ROOT_ALIASES: Readonly<Record<string, RegistryRoot>> = {
+  hklm: 'HKLM', hkey_local_machine: 'HKLM',
+  hkcu: 'HKCU', hkey_current_user: 'HKCU',
+  hkcr: 'HKCR', hkey_classes_root: 'HKCR',
+  hku: 'HKU', hkey_users: 'HKU',
+  hkcc: 'HKCC', hkey_current_config: 'HKCC',
+};
+
+export function parseRegistryAddress(text: string): RegistryAddress | null {
+  let rest = text.trim();
+  let machine: string | null = null;
+  const remote = /^\\\\([^\\]+)\\(.*)$/.exec(rest);
+  if (remote) {
+    machine = remote[1];
+    rest = remote[2];
+  }
+  const parts = rest.split('\\').filter(part => part !== '');
+  const root = parts.length > 0 ? ROOT_ALIASES[parts[0].toLowerCase()] : undefined;
+  if (root === undefined) return null;
+  return { root, segments: parts.slice(1), machine };
+}
+
+const FILE_ASSOCIATIONS: ReadonlyArray<readonly [extension: string, progId: string, openCommand: string | null]> = [
+  ['.txt', 'txtfile', '%SystemRoot%\\system32\\NOTEPAD.EXE %1'],
+  ['.log', 'txtfile', null],
+  ['.ini', 'inifile', '%SystemRoot%\\system32\\NOTEPAD.EXE %1'],
+  ['.bat', 'batfile', '"%1" %*'],
+  ['.cmd', 'cmdfile', '"%1" %*'],
+  ['.exe', 'exefile', '"%1" %*'],
+  ['.com', 'comfile', '"%1" %*'],
+  ['.vbs', 'VBSFile', '"%SystemRoot%\\System32\\WScript.exe" "%1" %*'],
+  ['.js', 'JSFile', '"%SystemRoot%\\System32\\WScript.exe" "%1" %*'],
+  ['.reg', 'regfile', 'regedit.exe "%1"'],
+  ['.msi', 'Msi.Package', '"%SystemRoot%\\System32\\msiexec.exe" /i "%1" %*'],
+  ['.inf', 'inffile', '%SystemRoot%\\System32\\InfDefaultInstall.exe "%1"'],
+  ['.scr', 'scrfile', '"%1" /S'],
+  ['.dll', 'dllfile', null],
+  ['.sys', 'sysfile', null],
+  ['.lnk', 'lnkfile', null],
+  ['.url', 'InternetShortcut', null],
+  ['.zip', 'CompressedFolder', null],
+  ['.htm', 'htmlfile', null],
+  ['.html', 'htmlfile', null],
+  ['.bmp', 'Paint.Picture', null],
+];
+
+function seedClasses(classes: RegistryKey): void {
+  for (const [extension, progId, openCommand] of FILE_ASSOCIATIONS) {
+    const extensionKey = classes.subkeys.get(extension) ?? makeKey(extension);
+    classes.subkeys.set(extension, extensionKey);
+    seedValue(extensionKey, '', progId);
+    if (openCommand === null) continue;
+    const progKey = classes.subkeys.get(progId.toLowerCase()) ?? makeKey(progId);
+    classes.subkeys.set(progId.toLowerCase(), progKey);
+    const shell = progKey.subkeys.get('shell') ?? makeKey('shell');
+    progKey.subkeys.set('shell', shell);
+    const open = makeKey('open');
+    shell.subkeys.set('open', open);
+    const command = makeKey('command');
+    open.subkeys.set('command', command);
+    seedValue(command, '', openCommand, 'ExpandString');
+  }
+}
+
 function buildHKLM(product: WindowsProductIdentity): RegistryKey {
   const root = makeKey('HKEY_LOCAL_MACHINE');
 
@@ -89,7 +179,9 @@ function buildHKLM(product: WindowsProductIdentity): RegistryKey {
   windows.subkeys.set('currentversion', currentVersionWin);
 
   // HKLM:\SOFTWARE\Classes
-  software.subkeys.set('classes', makeKey('Classes'));
+  const classes = makeKey('Classes');
+  software.subkeys.set('classes', classes);
+  seedClasses(classes);
 
   // HKLM:\SOFTWARE\Policies
   software.subkeys.set('policies', makeKey('Policies'));
@@ -125,6 +217,17 @@ function buildHKLM(product: WindowsProductIdentity): RegistryKey {
   return root;
 }
 
+function buildHKU(): RegistryKey {
+  const root = makeKey('HKEY_USERS');
+  for (const name of ['.DEFAULT', 'S-1-5-18', 'S-1-5-19', 'S-1-5-20']) {
+    const user = makeKey(name);
+    root.subkeys.set(name.toLowerCase(), user);
+    user.subkeys.set('software', makeKey('Software'));
+    user.subkeys.set('environment', makeKey('Environment'));
+  }
+  return root;
+}
+
 function buildHKCU(): RegistryKey {
   const root = makeKey('HKEY_CURRENT_USER');
 
@@ -152,8 +255,8 @@ function buildHKCU(): RegistryKey {
   // HKCU:\Environment
   const env = makeKey('Environment');
   root.subkeys.set('environment', env);
-  seedValue(env, 'TEMP', '%USERPROFILE%\\AppData\\Local\\Temp');
-  seedValue(env, 'TMP', '%USERPROFILE%\\AppData\\Local\\Temp');
+  seedValue(env, 'TEMP', '%USERPROFILE%\\AppData\\Local\\Temp', 'ExpandString');
+  seedValue(env, 'TMP', '%USERPROFILE%\\AppData\\Local\\Temp', 'ExpandString');
 
   // HKCU:\Control Panel
   const controlPanel = makeKey('Control Panel');
@@ -163,6 +266,20 @@ function buildHKCU(): RegistryKey {
   root.subkeys.set('console', makeKey('Console'));
 
   return root;
+}
+
+const POWERSHELL_DEFAULT = '(default)';
+
+function storedName(name: string): string {
+  return name.toLowerCase() === POWERSHELL_DEFAULT ? '' : name;
+}
+
+function shownName(name: string): string {
+  return name === '' ? POWERSHELL_DEFAULT : name;
+}
+
+function byRegistryName(left: string, right: string): number {
+  return left.toLowerCase().localeCompare(right.toLowerCase());
 }
 
 // ─── Path Helpers ─────────────────────────────────────────────────────────────
@@ -253,6 +370,8 @@ export interface RegistryValueChange {
 export class PSRegistryProvider {
   private hklm: RegistryKey;
   private hkcu: RegistryKey = buildHKCU();
+  private hku: RegistryKey = buildHKU();
+  currentUserSid: () => string = () => 'S-1-5-21-1000000000-1000000000-1000000000-1001';
 
   /**
    * Notifié après toute écriture, quel qu'en soit le chemin — `reg add`
@@ -356,11 +475,15 @@ export class PSRegistryProvider {
 
     for (const [, child] of key.subkeys) {
       const valueCount = child.values.size;
-      const prop = valueCount > 0 ? Array.from(child.values.values()).map(v => v.name).join(', ') : '';
+      const prop = valueCount > 0 ? Array.from(child.values.values()).map(v => shownName(v.name)).join(', ') : '';
       lines.push(`${child.name.padEnd(30)} ${prop}`);
     }
 
     return lines.join('\n');
+  }
+
+  targetsMachineHive(path: string): boolean {
+    return parseRegistryPath(path)?.hive === 'HKLM';
   }
 
   newItem(path: string, force: boolean): string {
@@ -411,16 +534,16 @@ export class PSRegistryProvider {
     if (!key) return `Get-ItemProperty : Cannot find path '${path}' because it does not exist.`;
 
     if (name) {
-      const val = key.values.get(name.toLowerCase());
+      const val = key.values.get(storedName(name).toLowerCase());
       if (!val) return `Get-ItemProperty : Property '${name}' does not exist at path '${path}'.`;
-      return `\n${val.name.padEnd(20)}: ${val.value}\n`;
+      return `\n${shownName(val.name).padEnd(20)}: ${val.value}\n`;
     }
 
     // List all values
     if (key.values.size === 0) return '';
     const lines: string[] = [''];
     for (const [, val] of key.values) {
-      lines.push(`${val.name.padEnd(20)}: ${val.value}`);
+      lines.push(`${shownName(val.name).padEnd(20)}: ${val.value}`);
     }
     lines.push('');
     return lines.join('\n');
@@ -437,8 +560,138 @@ export class PSRegistryProvider {
     const key = this.navigateTo(parsed);
     if (!key) return null;
     const out: Record<string, string | number> = {};
-    for (const [, val] of key.values) out[val.name] = val.value;
+    for (const [, val] of key.values) out[shownName(val.name)] = val.value;
     return out;
+  }
+
+
+  // ─── Typed access (reg.exe, assoc, ftype) ─────────────────────────
+
+  private static readonly HARDWARE_PROFILE = ['SYSTEM', 'CurrentControlSet', 'Hardware Profiles', 'Current'];
+
+  private descend(base: RegistryKey, segments: readonly string[], create: boolean): RegistryKey | null {
+    let current = base;
+    for (const segment of segments) {
+      const key = segment.toLowerCase();
+      let child = current.subkeys.get(key);
+      if (!child) {
+        if (!create) return null;
+        child = makeKey(segment);
+        current.subkeys.set(key, child);
+      }
+      current = child;
+    }
+    return current;
+  }
+
+  private classesParts(segments: readonly string[], create: boolean): { machine: RegistryKey | null; user: RegistryKey | null } {
+    return {
+      machine: this.descend(this.hklm, ['SOFTWARE', 'Classes', ...segments], create),
+      user: this.descend(this.hkcu, ['Software', 'Classes', ...segments], false),
+    };
+  }
+
+  private plainKey(address: RegistryAddress, create: boolean): RegistryKey | null {
+    switch (address.root) {
+      case 'HKLM': return this.descend(this.hklm, address.segments, create);
+      case 'HKCU': return this.descend(this.hkcu, address.segments, create);
+      case 'HKCC': return this.descend(this.hklm, [...PSRegistryProvider.HARDWARE_PROFILE, ...address.segments], create);
+      case 'HKU': {
+        const [first, ...rest] = address.segments;
+        if (first !== undefined && first.toLowerCase() === this.currentUserSid().toLowerCase()) return this.descend(this.hkcu, rest, create);
+        return this.descend(this.hku, address.segments, create && first !== undefined && this.hku.subkeys.has(first.toLowerCase()));
+      }
+      case 'HKCR': return null;
+    }
+  }
+
+  private writableKey(address: RegistryAddress): RegistryKey | null {
+    if (address.root !== 'HKCR') return this.plainKey(address, true);
+    const { user } = this.classesParts(address.segments, false);
+    return user ?? this.classesParts(address.segments, true).machine;
+  }
+
+  writesUserHive(address: RegistryAddress): boolean {
+    switch (address.root) {
+      case 'HKCU': return true;
+      case 'HKU': return address.segments[0]?.toLowerCase() === this.currentUserSid().toLowerCase();
+      case 'HKCR': return this.classesParts(address.segments, false).user !== null;
+      default: return false;
+    }
+  }
+
+  keyView(address: RegistryAddress): RegistryKeyView | null {
+    if (address.root !== 'HKCR') {
+      const key = this.plainKey(address, false);
+      if (key === null) return null;
+      return {
+        name: address.segments.length === 0 ? REGISTRY_ROOT_NAMES[address.root] : key.name,
+        values: [...key.values.values()],
+        subkeys: [...key.subkeys.values()].map(child => child.name).sort(byRegistryName),
+      };
+    }
+    const { machine, user } = this.classesParts(address.segments, false);
+    if (machine === null && user === null) return null;
+    const values = new Map<string, RegistryValue>();
+    for (const key of [machine, user]) {
+      if (key === null) continue;
+      for (const [name, value] of key.values) values.set(name, value);
+    }
+    const subkeys = new Map<string, string>();
+    for (const key of [machine, user]) {
+      if (key === null) continue;
+      for (const [name, child] of key.subkeys) if (!subkeys.has(name)) subkeys.set(name, child.name);
+    }
+    return {
+      name: address.segments.length === 0 ? REGISTRY_ROOT_NAMES.HKCR : (machine ?? user)!.name,
+      values: [...values.values()],
+      subkeys: [...subkeys.values()].sort(byRegistryName),
+    };
+  }
+
+  createKey(address: RegistryAddress): boolean {
+    if (address.segments.length === 0) return false;
+    return this.writableKey(address) !== null;
+  }
+
+  setValue(address: RegistryAddress, name: string, type: RegistryValueType, value: string | number): boolean {
+    const key = this.writableKey(address);
+    if (key === null) return false;
+    const previous = key.values.get(name.toLowerCase())?.value;
+    key.values.set(name.toLowerCase(), { name, value, type });
+    this.notifyChanged({ path: this.displayPath(address), name, previous, next: value });
+    return true;
+  }
+
+  deleteValue(address: RegistryAddress, name: string): boolean {
+    const key = this.writableKey(address);
+    const existing = key?.values.get(name.toLowerCase());
+    if (key === null || existing === undefined) return false;
+    key.values.delete(name.toLowerCase());
+    this.notifyChanged({ path: this.displayPath(address), name, previous: existing.value, next: '' });
+    return true;
+  }
+
+  deleteAllValues(address: RegistryAddress): boolean {
+    const key = this.writableKey(address);
+    if (key === null) return false;
+    for (const value of [...key.values.values()]) this.deleteValue(address, value.name);
+    return true;
+  }
+
+  deleteKey(address: RegistryAddress): boolean {
+    if (address.segments.length === 0) return false;
+    const parent = this.writableKey({ ...address, segments: address.segments.slice(0, -1) });
+    const leaf = address.segments[address.segments.length - 1].toLowerCase();
+    if (parent === null || !parent.subkeys.has(leaf)) return false;
+    parent.subkeys.delete(leaf);
+    this.notifyChanged();
+    return true;
+  }
+
+  private displayPath(address: RegistryAddress): string {
+    const hive = address.root === 'HKCR' ? 'HKCR' : address.root;
+    return [`${hive}:`, ...address.segments].join('\\');
   }
 
   /** List immediate subkey names (preserving their original casing). */
@@ -495,10 +748,11 @@ export class PSRegistryProvider {
     if (!parsed) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     const key = this.navigateTo(parsed);
     if (!key) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
+    const stored = storedName(name);
     const type: RegistryValue['type'] = typeof value === 'number' ? 'DWord' : 'String';
-    const previous = key.values.get(name.toLowerCase())?.value;
-    key.values.set(name.toLowerCase(), { name, value, type });
-    this.notifyChanged({ path, name, previous, next: value });
+    const previous = key.values.get(stored.toLowerCase())?.value;
+    key.values.set(stored.toLowerCase(), { name: stored, value, type });
+    this.notifyChanged({ path, name: stored, previous, next: value });
     return '';
   }
 
@@ -507,12 +761,13 @@ export class PSRegistryProvider {
     if (!parsed) return `Remove-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     const key = this.navigateTo(parsed);
     if (!key) return `Remove-ItemProperty : Cannot find path '${path}' because it does not exist.`;
-    if (!key.values.has(name.toLowerCase())) {
+    const stored = storedName(name);
+    if (!key.values.has(stored.toLowerCase())) {
       return `Remove-ItemProperty : Property '${name}' does not exist at path '${path}'.`;
     }
-    const removed = key.values.get(name.toLowerCase())?.value;
-    key.values.delete(name.toLowerCase());
-    this.notifyChanged({ path, name, previous: removed, next: '' });
+    const removed = key.values.get(stored.toLowerCase())?.value;
+    key.values.delete(stored.toLowerCase());
+    this.notifyChanged({ path, name: stored, previous: removed, next: '' });
     return '';
   }
 

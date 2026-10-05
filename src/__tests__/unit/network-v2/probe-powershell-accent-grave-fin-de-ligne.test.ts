@@ -260,14 +260,14 @@ describe('a PowerShell reached over SSH', () => {
 
   it('answers a single-line command — WITNESS', async () => {
     const { client } = await lab();
-    const out = await client.executeCommand(`ssh User@${WIN_IP}`, session('Write-Output "bonjour"'));
+    const out = await client.executeCommand(`ssh -o StrictHostKeyChecking=accept-new User@${WIN_IP}`, session('Write-Output "bonjour"'));
 
     expect(out).toContain('bonjour');
   }, 30000);
 
   it('joins a backtick continuation from a Windows client', async () => {
     const { client } = await lab();
-    const out = await client.executeCommand(`ssh User@${WIN_IP}`, session(`Write-Output ${BACKTICK}`, '"bonjour"'));
+    const out = await client.executeCommand(`ssh -o StrictHostKeyChecking=accept-new User@${WIN_IP}`, session(`Write-Output ${BACKTICK}`, '"bonjour"'));
 
     expect(out).toContain('>> "bonjour"');
     expect(out.split('\n').filter(line => line.trim() === 'bonjour')).toEqual(['bonjour']);
@@ -275,7 +275,7 @@ describe('a PowerShell reached over SSH', () => {
 
   it('joins a backtick continuation from a Linux client', async () => {
     const { pc } = await lab();
-    const out = await pc.executeCommand(`ssh User@${WIN_IP}`, session(`Write-Output ${BACKTICK}`, '"bonjour"'));
+    const out = await pc.executeCommand(`ssh -o StrictHostKeyChecking=accept-new User@${WIN_IP}`, session(`Write-Output ${BACKTICK}`, '"bonjour"'));
 
     expect(out).toContain('>> "bonjour"');
     expect(out.split('\n').filter(line => line.trim() === 'bonjour')).toEqual(['bonjour']);
@@ -283,7 +283,7 @@ describe('a PowerShell reached over SSH', () => {
 
   it('treats a backtick followed by a space as a complete line', async () => {
     const { client } = await lab();
-    const out = await client.executeCommand(`ssh User@${WIN_IP}`, session(`Write-Output "bonjour" ${BACKTICK} `));
+    const out = await client.executeCommand(`ssh -o StrictHostKeyChecking=accept-new User@${WIN_IP}`, session(`Write-Output "bonjour" ${BACKTICK} `));
 
     expect(out.split('\n').filter(line => line.trim() === 'bonjour')).toEqual(['bonjour']);
     expect(out).not.toContain('>> ');
@@ -291,7 +291,7 @@ describe('a PowerShell reached over SSH', () => {
 
   it('ends the continuation on an empty line', async () => {
     const { client } = await lab();
-    const out = await client.executeCommand(`ssh User@${WIN_IP}`, session(`Write-Output "bonjour" ${BACKTICK}`, ''));
+    const out = await client.executeCommand(`ssh -o StrictHostKeyChecking=accept-new User@${WIN_IP}`, session(`Write-Output "bonjour" ${BACKTICK}`, ''));
 
     expect(out.split('\n').filter(line => line.trim() === 'bonjour')).toEqual(['bonjour']);
   }, 30000);
@@ -318,7 +318,7 @@ describe('a PowerShell reached over SSH from a graphical terminal', () => {
       ? new WindowsTerminalSession('term', client as WindowsPC)
       : new LinuxTerminalSession('term', client as LinuxPC);
     await session.init?.();
-    session.setInput(`ssh User@${WIN_IP}`);
+    session.setInput(`ssh -o StrictHostKeyChecking=accept-new User@${WIN_IP}`);
     session.handleKey(key('Enter'));
     for (let i = 0; i < 8 && session.currentInputMode.type !== 'password'; i++) await tick();
     session.setPasswordBuf('user');

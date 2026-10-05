@@ -17,15 +17,14 @@
  *   C1460 C1460 S0 C1460 C1460 S0 C1460 C1460 S0 C1460 C1460 S0 C320 S0
  *
  * so cable call #2 is the client's 2nd data segment. Dropping it leaves
- * the 3rd/4th/5th/6th arriving out of order; the first of those flushes
- * the ACK still owed for segment #1 (a real stack subsumes the delayed
- * ACK into the immediate out-of-order one rather than sending two), so
- * the 3rd DUPLICATE only lands on the 6th segment — one segment later
- * than before delayed ACK existed, which is why the 6000-byte stream the
- * old scaffold used is now too short to reach fast retransmit at all.
- * At that instant SND.UNA/SND.NXT were measured 5841 apart (the +1 is
- * the SYN's own sequence number), and the figure is set by `cwnd`, not
- * by the stream length: 12000, 20000 and 30000 bytes all measure 5841.
+ * the 3rd/4th/5th arriving out of order; the first of those flushes the
+ * ACK still owed for segment #1 (a real stack subsumes the delayed ACK
+ * into the immediate out-of-order one rather than sending two) and
+ * already carries a SACK block, which RFC 6675 §2 counts as a duplicate
+ * acknowledgment, so the 3rd DUPLICATE lands on the 5th segment. At that
+ * instant SND.UNA/SND.NXT are 5792 apart: four full segments, with no
+ * limited-transmit runt among them, because the SACK-bearing duplicates
+ * take the sender into recovery before a second limited transmit.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -105,8 +104,8 @@ describe('TCP congestion control (PRD-TCP.md P5)', () => {
     clientSocket.send('B'.repeat(12_000));
 
     expect(retransmits.length).toBeGreaterThan(0);
-    expect(flightAtRetransmit[0]).toBe(5828);
-    expect(clientSocket.cc.ssthresh).toBe(Math.max(Math.floor(5828 / 2), 2 * clientSocket.mss));
+    expect(flightAtRetransmit[0]).toBe(5792);
+    expect(clientSocket.cc.ssthresh).toBe(Math.max(Math.floor(5792 / 2), 2 * clientSocket.mss));
     expect(clientSocket.cc.ssthresh).toBe(2920);
     expect(clientSocket.cc.ssthresh).toBeLessThan(Number.MAX_SAFE_INTEGER);
   });

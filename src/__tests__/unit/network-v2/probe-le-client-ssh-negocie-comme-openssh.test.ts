@@ -82,9 +82,9 @@ async function buildLab(sshd: { password?: 'yes' | 'no'; kbd?: 'yes' | 'no'; max
   await server.executeCommand('sudo useradd -m -s /bin/bash alice');
   await server.executeCommand('echo "alice:s3cret" | sudo chpasswd');
   const edits: string[] = [];
-  if (sshd.password) edits.push(`s/^PasswordAuthentication.*/PasswordAuthentication ${sshd.password}/`);
-  if (sshd.kbd) edits.push(`s/^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication ${sshd.kbd}/`);
-  if (sshd.maxAuthTries) edits.push(`s/^MaxAuthTries.*/MaxAuthTries ${sshd.maxAuthTries}/`);
+  if (sshd.password) edits.push(`s/^#\\?PasswordAuthentication.*/PasswordAuthentication ${sshd.password}/`);
+  if (sshd.kbd) edits.push(`s/^#\\?KbdInteractiveAuthentication.*/KbdInteractiveAuthentication ${sshd.kbd}/`);
+  if (sshd.maxAuthTries) edits.push(`s/^#\\?MaxAuthTries.*/MaxAuthTries ${sshd.maxAuthTries}/`);
   for (const edit of edits) await server.executeCommand(`sudo sed -i '${edit}' /etc/ssh/sshd_config`);
   await server.executeCommand('sudo systemctl restart ssh');
   await client.executeCommand(`ping -c 1 ${SERVER}`);
@@ -152,7 +152,7 @@ async function answerEveryPrompt(term: LinuxTerminalSession, answer: string, unt
 describe('the client offers only what the server advertises', () => {
   it('three wrong passwords end on the server list — WITNESS', async () => {
     const { term } = await buildLab();
-    await type(term, `ssh alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new alice@${SERVER}`);
     const prompts = await answerEveryPrompt(term, 'wrong', () => denied(term) !== null);
 
     expect(prompts).toEqual([PASSWORD_PROMPT, PASSWORD_PROMPT, PASSWORD_PROMPT]);
@@ -161,7 +161,7 @@ describe('the client offers only what the server advertises', () => {
 
   it('a server without password authentication is never asked for one', async () => {
     const { term } = await buildLab({ password: 'no' });
-    await type(term, `ssh alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new alice@${SERVER}`);
     const prompts = await answerEveryPrompt(term, 'wrong', () => denied(term) !== null);
 
     expect(prompts).toEqual([]);
@@ -170,7 +170,7 @@ describe('the client offers only what the server advertises', () => {
 
   it('keyboard-interactive shows the server prompt and opens the session', async () => {
     const { term } = await buildLab({ password: 'no', kbd: 'yes' });
-    await type(term, `ssh alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new alice@${SERVER}`);
     const prompts = await answerEveryPrompt(term, 's3cret', () => term.isInsideSshSession);
 
     expect(prompts).toEqual([KBD_PROMPT]);
@@ -179,7 +179,7 @@ describe('the client offers only what the server advertises', () => {
 
   it('keyboard-interactive comes before password when the server offers both', async () => {
     const { term } = await buildLab({ kbd: 'yes' });
-    await type(term, `ssh alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new alice@${SERVER}`);
     await waitFor(() => promptOf(term) !== null);
 
     expect(promptOf(term)).toBe(KBD_PROMPT);
@@ -187,7 +187,7 @@ describe('the client offers only what the server advertises', () => {
 
   it('MaxAuthTries 4: three keyboard-interactive prompts, one password prompt, then the server disconnects', async () => {
     const { term } = await buildLab({ kbd: 'yes', maxAuthTries: 4 });
-    await type(term, `ssh alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new alice@${SERVER}`);
     const gone = () => texts(term).some((l) => l.startsWith('Received disconnect'));
     const prompts = await answerEveryPrompt(term, 'wrong', () => gone() || denied(term) !== null);
 
@@ -202,7 +202,7 @@ describe('the client offers only what the server advertises', () => {
 describe('the client options decide which methods it tries', () => {
   it('KbdInteractiveAuthentication=no leaves the password prompt — passes either way', async () => {
     const { term } = await buildLab({ kbd: 'yes' });
-    await type(term, `ssh -o KbdInteractiveAuthentication=no alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new -o KbdInteractiveAuthentication=no alice@${SERVER}`);
     await waitFor(() => promptOf(term) !== null);
 
     expect(promptOf(term)).toBe(PASSWORD_PROMPT);
@@ -210,7 +210,7 @@ describe('the client options decide which methods it tries', () => {
 
   it('PasswordAuthentication=no still allows keyboard-interactive', async () => {
     const { term } = await buildLab({ kbd: 'yes' });
-    await type(term, `ssh -o PasswordAuthentication=no alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new -o PasswordAuthentication=no alice@${SERVER}`);
     await waitFor(() => promptOf(term) !== null);
 
     expect(promptOf(term)).toBe(KBD_PROMPT);
@@ -220,7 +220,7 @@ describe('the client options decide which methods it tries', () => {
     const lab = await buildLab();
     await lab.client.executeCommand("ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
     await authorize(lab, { 'id_ed25519.pub': '' });
-    await type(lab.term, `ssh -o PreferredAuthentications=password alice@${SERVER}`);
+    await type(lab.term, `ssh -o StrictHostKeyChecking=accept-new -o PreferredAuthentications=password alice@${SERVER}`);
     await waitFor(() => promptOf(lab.term) !== null || lab.term.isInsideSshSession);
 
     expect(promptOf(lab.term)).toBe(PASSWORD_PROMPT);
@@ -230,7 +230,7 @@ describe('the client options decide which methods it tries', () => {
     const lab = await buildLab();
     await lab.client.executeCommand("ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
     await authorize(lab, { 'id_ed25519.pub': '' });
-    await type(lab.term, `ssh -o PubkeyAuthentication=no alice@${SERVER}`);
+    await type(lab.term, `ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no alice@${SERVER}`);
     await waitFor(() => promptOf(lab.term) !== null || lab.term.isInsideSshSession);
 
     expect(promptOf(lab.term)).toBe(PASSWORD_PROMPT);
@@ -240,7 +240,7 @@ describe('the client options decide which methods it tries', () => {
     const lab = await buildLab();
     await lab.client.executeCommand("ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
     await authorize(lab, { 'id_ed25519.pub': '' });
-    await type(lab.term, `ssh alice@${SERVER}`);
+    await type(lab.term, `ssh -o StrictHostKeyChecking=accept-new alice@${SERVER}`);
     await waitFor(() => promptOf(lab.term) !== null || lab.term.isInsideSshSession);
 
     expect(lab.term.isInsideSshSession).toBe(true);
@@ -248,7 +248,7 @@ describe('the client options decide which methods it tries', () => {
 
   it('NumberOfPasswordPrompts=1 asks once', async () => {
     const { term } = await buildLab();
-    await type(term, `ssh -o NumberOfPasswordPrompts=1 alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=1 alice@${SERVER}`);
     const prompts = await answerEveryPrompt(term, 'wrong', () => denied(term) !== null);
 
     expect(prompts).toEqual([PASSWORD_PROMPT]);
@@ -258,7 +258,7 @@ describe('the client options decide which methods it tries', () => {
 
   it('BatchMode=yes never prompts', async () => {
     const { term } = await buildLab();
-    await type(term, `ssh -o BatchMode=yes alice@${SERVER}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes alice@${SERVER}`);
     const prompts = await answerEveryPrompt(term, 'wrong', () => denied(term) !== null);
 
     expect(prompts).toEqual([]);
@@ -272,7 +272,7 @@ describe('default identities are tried in OpenSSH order', () => {
     await lab.client.executeCommand("ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
     await lab.client.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
     await authorize(lab, { 'id_ed25519.pub': 'by-ed25519', 'id_rsa.pub': 'by-rsa' });
-    await type(lab.term, `ssh alice@${SERVER} hostname`);
+    await type(lab.term, `ssh -o StrictHostKeyChecking=accept-new alice@${SERVER} hostname`);
     await waitFor(() => texts(lab.term).some((l) => /^by-/.test(l)));
 
     expect(texts(lab.term).filter((l) => /^by-/.test(l))).toEqual(['by-rsa']);
@@ -282,7 +282,7 @@ describe('default identities are tried in OpenSSH order', () => {
 describe('a script sees the list the server advertised', () => {
   it('BatchMode against a server without passwords names keyboard-interactive', async () => {
     const { client } = await buildLab({ password: 'no', kbd: 'yes' });
-    const out = await client.executeCommand(`ssh -o BatchMode=yes alice@${SERVER} true`);
+    const out = await client.executeCommand(`ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes alice@${SERVER} true`);
 
     expect(out).toContain(`alice@${SERVER}: Permission denied (publickey,keyboard-interactive).`);
   });
@@ -300,14 +300,14 @@ describe('a script sees the list the server advertised', () => {
     await lab.client.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
     await authorize(lab, { 'id_rsa.pub': '' });
     const out = await lab.client.executeCommand(
-      `ssh -o PreferredAuthentications=password alice@${SERVER} whoami`, 'wrong\n');
+      `ssh -o StrictHostKeyChecking=accept-new -o PreferredAuthentications=password alice@${SERVER} whoami`, 'wrong\n');
 
     expect(out).not.toMatch(/^alice$/m);
   });
 
   it('BatchMode against the default server — WITNESS', async () => {
     const { client } = await buildLab();
-    const out = await client.executeCommand(`ssh -o BatchMode=yes alice@${SERVER} true`);
+    const out = await client.executeCommand(`ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes alice@${SERVER} true`);
 
     expect(out).toContain(`alice@${SERVER}: Permission denied (publickey,password).`);
   });

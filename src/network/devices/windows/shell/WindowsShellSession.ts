@@ -55,6 +55,7 @@ export class WindowsShellSession {
   codePage: number = 437;
   /** Whether the shell has been disposed. */
   disposed: boolean = false;
+  inputReader: ((prompt: string, preceding?: string) => Promise<string | null>) | null = null;
 
   constructor(init: WindowsShellSessionInit) {
     this.id = `wshell-${nextSessionSeq++}`;

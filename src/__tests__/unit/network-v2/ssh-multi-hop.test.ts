@@ -61,8 +61,8 @@ describe('SSH from inside a remote session works recursively', () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
-    await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
-    await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
+    await sshFromHost(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.2', 'admin');
+    await sshFromHost(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.3', 'admin');
 
     // Both hops are driven over the real, authenticated SSH channel, so
     // no child session is pushed and `foreground` stays the host; the
@@ -78,8 +78,8 @@ describe('SSH from inside a remote session works recursively', () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
-    await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
-    await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
+    await sshFromHost(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.2', 'admin');
+    await sshFromHost(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.3', 'admin');
     expect(subShellOf(host)!.getPrompt()).toMatch(/user@linuxB/);
 
     runOnForeground(host, 'exit');
@@ -96,8 +96,8 @@ describe('SSH from inside a remote session works recursively', () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
-    await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
-    await sshFromHost(host, 'ssh User@10.0.0.4', 'user');
+    await sshFromHost(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.2', 'admin');
+    await sshFromHost(host, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.4', 'user');
     runOnForeground(host, 'hostname');
     await waitFor(host, (l) => l.some((t) => t === 'winB'));
     expect(texts(host)).toContain('winB');
@@ -107,8 +107,8 @@ describe('SSH from inside a remote session works recursively', () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
-    await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
-    await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
+    await sshFromHost(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.2', 'admin');
+    await sshFromHost(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.3', 'admin');
     runOnForeground(host, 'ping 10.0.0.2');
     await waitFor(host, (l) => l.some((t) => /bytes from 10\.0\.0\.2/.test(t)));
     host.handleKey(key('c', { ctrlKey: true }));

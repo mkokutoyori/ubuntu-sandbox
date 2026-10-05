@@ -10,12 +10,9 @@ import type { SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '.
 import { IPAddress } from '../../core/types';
 import { IP_PROTO_TCP } from '../../core/types';
 import { ReflexiveSessions } from './acl/ReflexiveSessions';
+import { DSCP_CODEPOINTS } from '../../core/IpHeaderFields';
 
-export const DSCP_KEYWORD_TO_VALUE: Record<string, number> = {
-  default: 0, cs0: 0, cs1: 8, cs2: 16, cs3: 24, cs4: 32, cs5: 40, cs6: 48, cs7: 56,
-  af11: 10, af12: 12, af13: 14, af21: 18, af22: 20, af23: 22,
-  af31: 26, af32: 28, af33: 30, af41: 34, af42: 36, af43: 38, ef: 46,
-};
+export const DSCP_KEYWORD_TO_VALUE: Record<string, number> = { ...DSCP_CODEPOINTS };
 
 export const PRECEDENCE_KEYWORD_TO_VALUE: Record<string, number> = {
   routine: 0, priority: 1, immediate: 2, flash: 3,

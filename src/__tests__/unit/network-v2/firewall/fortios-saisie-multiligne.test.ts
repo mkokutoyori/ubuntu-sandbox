@@ -178,7 +178,7 @@ async function laboratoireSsh() {
 
   const host = new LinuxTerminalSession('h', poste);
   await host.init?.();
-  host.setInput('ssh admin@192.168.1.1');
+  host.setInput('ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1');
   host.handleKey(key('Enter'));
   for (let i = 0; i < 10 && host.currentInputMode.type !== 'password'; i++) await tick();
   host.setPasswordBuf('Secret123');

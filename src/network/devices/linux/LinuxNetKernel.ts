@@ -20,7 +20,7 @@ import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
 import type { PortNumber } from '../../core/ports/PortNumber';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute, ConnectedUdpSocket, RouteException, UdpErrorReport } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute, ConnectedUdpSocket, RouteException, UdpErrorReport, TcpExchangeSocketOptions, UdpConnectOptions } from '../EndHost';
 import type { Errno } from '../../core/Errno';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
@@ -172,6 +172,8 @@ export interface LinuxNetKernel {
 
   isLocalAddress(ip: IPAddress): boolean;
 
+  isLocalAddress6(ip: IPv6Address): boolean;
+
   /** Emit a single locally-originated UDP probe (for UDP-mode traceroute and the like). */
   sendUdpProbe(
     target: IPAddress, destinationPort: number, sourcePort: number,
@@ -208,12 +210,12 @@ export interface LinuxNetKernel {
 
   tcpExchange(
     target: IPAddress | IPv6Address, port: number, payload: string,
-    options?: { sourcePort?: PortNumber; sourceIP?: IPAddress },
+    options?: TcpExchangeSocketOptions,
   ): { outcome: TcpWireOutcome; received: string };
 
   udpConnect(
-    target: IPAddress, port: number,
-    options?: { localPort?: number; source?: IPAddress; processName?: string; pid?: number; uid?: number },
+    target: IPAddress | IPv6Address, port: number,
+    options?: UdpConnectOptions,
   ): ConnectedUdpSocket | Errno;
 
   udpListen(port: number, processName: string, owner: { pid?: number; uid?: number }): Errno | null;

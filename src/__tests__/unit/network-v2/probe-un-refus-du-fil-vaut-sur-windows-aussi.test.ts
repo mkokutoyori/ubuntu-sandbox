@@ -46,6 +46,7 @@
  *     comme une victoire.
  */
 
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -82,7 +83,9 @@ const transcript = (s: TerminalSession): string => s.lines.map(l => l.text).join
 async function lab(allowed: string): Promise<{ win: WindowsPC; lin: LinuxPC }> {
   EquipmentRegistry.resetInstance();
   const win = new WindowsPC('windows-pc', 'win', 0, 0);
+  allowLegacyIosSsh(win);
   const lin = new LinuxPC('linux-pc', 'lin', 0, 0);
+  allowLegacyIosSsh(lin);
   const r1 = new CiscoRouter('R1', 0, 0);
   const sw = new CiscoSwitch('switch-cisco', 'SW', 24, 0, 0);
   [win, lin, r1].forEach(d => d.powerOn());
@@ -110,7 +113,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { lin } = await lab(WIN);
     const host = new LinuxTerminalSession('hL', lin);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, SECRET);
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
     expect(host.foreground).toBe(host);
   }, 60_000);
@@ -119,7 +122,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { win } = await lab(LIN);
     const host = new WindowsTerminalSession('hW', win);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, SECRET);
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
     expect(host.foreground).toBe(host);
     expect(transcript(host)).not.toContain('R1#');
@@ -129,7 +132,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { win } = await lab(WIN);
     const host = new WindowsTerminalSession('hW', win);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, SECRET);
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
     expect(host.getPrompt()).toMatch(/^R1[>#]/);
     expect(transcript(host)).toContain('R1#');
@@ -139,7 +142,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { win } = await lab(WIN);
     const host = new WindowsTerminalSession('hW', win);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, 'wrong-one');
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, 'wrong-one');
 
     expect(host.foreground).toBe(host);
     expect(transcript(host)).not.toContain('R1#');
@@ -157,7 +160,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { win } = await lab(LIN);
     const host = new WindowsTerminalSession('hW', win);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, SECRET);
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
     expect(transcript(host)).toContain('Connection refused');
     expect(transcript(host)).not.toContain('No route to host');

@@ -21,6 +21,12 @@
 import type { WindowsUserManager } from './WindowsUserManager';
 import type { DirectoryStore } from './server/ad/DirectoryStore';
 
+const ACCESS_DENIED = 'System error 5 has occurred.\n\nAccess is denied.';
+
+function netError(message: string): string {
+  return message === 'Access is denied.' ? ACCESS_DENIED : `System error.\n\n${message}`;
+}
+
 export interface NetUserContext {
   hostname: string;
   userManager: WindowsUserManager;
@@ -79,7 +85,7 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
   if (flags.has('add')) {
     const password = positional[1] || '';
     const err = ctx.userManager.createUser(username, password);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     ctx.userManager.addGroupMember('Users', username);
     for (const propKey of ['fullname', 'comment', 'active'] as const) {
       if (flags.has(propKey)) {
@@ -92,37 +98,37 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
 
   // net user <name> /delete
   if (flags.has('delete')) {
-    if (!ctx.userManager.isCurrentUserAdmin()) return 'System error.\n\nAccess is denied.';
+    if (!ctx.userManager.isCurrentUserAdmin()) return ACCESS_DENIED;
     const err = ctx.userManager.deleteUser(username);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     return 'The command completed successfully.';
   }
 
   // net user <name> /active:yes|no
   if (flags.has('active')) {
     const err = ctx.userManager.setUserProperty(username, 'active', flags.get('active')!);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     return 'The command completed successfully.';
   }
 
   // net user <name> /fullname:"x"
   if (flags.has('fullname')) {
     const err = ctx.userManager.setUserProperty(username, 'fullname', flags.get('fullname')!);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     return 'The command completed successfully.';
   }
 
   // net user <name> /comment:"x"
   if (flags.has('comment')) {
     const err = ctx.userManager.setUserProperty(username, 'comment', flags.get('comment')!);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     return 'The command completed successfully.';
   }
 
   // net user <name> <password> (change password)
   if (positional.length >= 2) {
     const err = ctx.userManager.setUserProperty(username, 'password', positional[1]);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     return 'The command completed successfully.';
   }
 
@@ -154,38 +160,38 @@ export function cmdNetLocalgroup(ctx: NetUserContext, args: string[]): string {
 
   // net localgroup <name> <member> /add
   if (flags.has('add') && memberName) {
-    if (!ctx.userManager.isCurrentUserAdmin()) return 'System error.\n\nAccess is denied.';
+    if (!ctx.userManager.isCurrentUserAdmin()) return ACCESS_DENIED;
     const err = ctx.userManager.addGroupMember(groupName, memberName);
     if (err) {
       if (err.includes('was not found')) return `System error.\n\nThe user name could not be found.`;
       if (err.includes('already a member')) return `System error.\n\nThe specified account name is already a member of the group.`;
-      return `System error.\n\n${err}`;
+      return netError(err);
     }
     return 'The command completed successfully.';
   }
 
   // net localgroup <name> /add (create group)
   if (flags.has('add') && !memberName) {
-    if (!ctx.userManager.isCurrentUserAdmin()) return 'System error.\n\nAccess is denied.';
+    if (!ctx.userManager.isCurrentUserAdmin()) return ACCESS_DENIED;
     const desc = flags.get('comment') || '';
     const err = ctx.userManager.createGroup(groupName, desc);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     return 'The command completed successfully.';
   }
 
   // net localgroup <name> <member> /delete
   if (flags.has('delete') && memberName) {
-    if (!ctx.userManager.isCurrentUserAdmin()) return 'System error.\n\nAccess is denied.';
+    if (!ctx.userManager.isCurrentUserAdmin()) return ACCESS_DENIED;
     const err = ctx.userManager.removeGroupMember(groupName, memberName);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     return 'The command completed successfully.';
   }
 
   // net localgroup <name> /delete (delete group)
   if (flags.has('delete') && !memberName) {
-    if (!ctx.userManager.isCurrentUserAdmin()) return 'System error.\n\nAccess is denied.';
+    if (!ctx.userManager.isCurrentUserAdmin()) return ACCESS_DENIED;
     const err = ctx.userManager.deleteGroup(groupName);
-    if (err) return `System error.\n\n${err}`;
+    if (err) return netError(err);
     return 'The command completed successfully.';
   }
 

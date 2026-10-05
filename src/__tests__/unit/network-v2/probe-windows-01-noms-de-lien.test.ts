@@ -52,6 +52,7 @@ function regAdd(value: string, data: number): string {
 async function mixte(): Promise<{ win: Win; lin: Lin }> {
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   const win = new WindowsPC('windows-pc', 'WIN10', 0, 0);
+  win.setCurrentUser('Administrator');
   const lin = new LinuxPC('linux-pc', 'alpha', 0, 0);
   sw.powerOn(); win.powerOn(); lin.powerOn();
   new Cable('c1').connect(win.getPorts()[0], sw.getPorts()[0]);
@@ -74,6 +75,8 @@ async function deuxWindows(): Promise<{ a: Win; b: Win }> {
   const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   const a = new WindowsPC('windows-pc', 'WIN10', 0, 0);
   const b = new WindowsPC('windows-pc', 'WIN11', 0, 0);
+  a.setCurrentUser('Administrator');
+  b.setCurrentUser('Administrator');
   sw.powerOn(); a.powerOn(); b.powerOn();
   new Cable('c1').connect(a.getPorts()[0], sw.getPorts()[0]);
   new Cable('c2').connect(b.getPorts()[0], sw.getPorts()[1]);

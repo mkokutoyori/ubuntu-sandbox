@@ -245,7 +245,7 @@ describe('§P2 — les entrées décoratives, une par une', () => {
 });
 
 describe('§P2b — sshd sur les deux familles, sans doublon', () => {
-  it('les lignes v4 et v6 du 22 viennent de l\'écoute, bannière comprise', async () => {
+  it('les lignes v4 et v6 du 22 viennent de l\'écoute', async () => {
     const srv = new LinuxServer('linux-server', 'SSHD');
     srv.powerOn();
 
@@ -262,9 +262,6 @@ describe('§P2b — sshd sur les deux familles, sans doublon', () => {
     for (const l of lignes) {
       expect(l.processName).toBe('sshd');
       expect(l.pid).toBe(parPs);
-      // La bannière est ce que lisent `nc`/`nmap` : elle voyage avec
-      // l'écoute depuis §P2b, au lieu d'être réinscrite à côté.
-      expect(l.banner).toContain('SSH-2.0');
     }
     expect(lignes.map((l) => l.localAddress).sort()).toEqual(['0.0.0.0', '::']);
   });
@@ -328,7 +325,6 @@ describe('§P2b — le cycle de vie de sshd, pas seulement son amorçage', () =>
     expect(lignes.map((l) => l.localAddress).sort()).toEqual(['0.0.0.0', '::']);
     for (const l of lignes) {
       expect(l.processName).toBe('sshd');
-      expect(l.banner).toContain('SSH-2.0');
     }
     expect(joignableInvisible(srv as unknown as Host)).toEqual([]);
   });

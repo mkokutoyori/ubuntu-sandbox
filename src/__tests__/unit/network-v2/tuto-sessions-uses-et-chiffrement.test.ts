@@ -19,19 +19,32 @@
  *
  * 2. **`show ssh` decrivait un chiffrement ECRIT EN DUR.** Une machine
  *    sur laquelle on venait de taper
- *    `ip ssh server algorithm encryption aes128-ctr` annoncait quand
- *    meme `aes256-ctr` — elle contredisait sa propre configuration au
- *    meme instant. La valeur vient desormais de la machine.
+ *    `ip ssh server algorithm encryption aes256-ctr` annoncait quand
+ *    meme le meme chiffrement — elle contredisait sa propre configuration
+ *    au meme instant. La valeur vient desormais de la session elle-meme :
+ *    ce que le client et le serveur ont NEGOCIE sur le fil.
  *
- *    **Ce que cela ne fait PAS**, et qui reste ecrit : ce simulateur ne
- *    NEGOCIE pas ces algorithmes. Ce qui est rendu est la preference du
- *    serveur — le premier de la liste qu'il accepte — c'est-a-dire ce
- *    qu'un vrai serveur retient quand le client offre tout. Il n'y a
- *    pas d'intersection a calculer parce qu'aucun client n'offre rien.
+ *    Ce que RFC 4253 §7.1 fait de la negociation : c'est la liste du
+ *    CLIENT qui decide — le premier algorithme du client que le serveur
+ *    accepte. Un OpenSSH 8.9 prefere aes128-ctr, puis aes192-ctr, puis
+ *    aes256-ctr, et hmac-sha2-256 avant hmac-sha2-512 et hmac-sha1 ; le
+ *    serveur IOS 15.7 n'offre par defaut que hmac-sha1 et hmac-sha1-96 et ne
+ *    fait que restreindre ou elargir ce que le client peut retenir.
+ *    La section 2 ouvre donc de VRAIES sessions (un LinuxPC, un routeur,
+ *    des trames) au lieu d'inscrire une ligne dans le registre, et elle
+ *    ne suppose plus que l'ordre de la liste du serveur choisisse.
  */
+import { allowLegacyIosSsh } from './iosLegacySsh';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { GenericSwitch } from '@/network/devices/GenericSwitch';
+import { Cable } from '@/network/hardware/Cable';
+import { IPAddress, SubnetMask } from '@/network/core/types';
+import { tryInterpretSshLaunch, finalisePendingAuth } from '@/shell/sshLauncher';
+import { reinstallDefaultShells } from '@/shell/registerDefaults';
+import { configureCiscoSshServer, ROUTER_SSH_USER, ROUTER_SSH_PASSWORD } from './_helpers/routerSshFixtures';
 import { CiscoTerminalSession } from '@/terminal/sessions';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -44,6 +57,7 @@ beforeEach(() => {
   MACAddress.resetCounter();
   EquipmentRegistry.resetInstance();
   Logger.clear();
+  reinstallDefaultShells();
 });
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -149,48 +163,72 @@ describe('`Uses` compte vraiment les connexions par ligne', () => {
 
 // ── 2. `show ssh` : le chiffrement vient de la machine ───────────────
 
-describe('`show ssh` decrit les algorithmes CONFIGURES', () => {
+describe('`show ssh` decrit les algorithmes NEGOCIES', () => {
   async function avecSession(...cfg: string[]): Promise<CiscoRouter> {
-    const d = await routeur(...cfg);
-    registre(d).open({ user: 'jean-baptiste', fromIp: '192.168.1.55', localPort: 22, peerPort: 52341 });
+    const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+    const d = new CiscoRouter('R1', 0, 0);
+    const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
+    new Cable('c1').connect(pc.getPorts()[0], sw.getPorts()[0]);
+    new Cable('c2').connect(d.getPorts()[0], sw.getPorts()[1]);
+    pc.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await configureCiscoSshServer(d, '10.0.0.6', '255.255.255.0', { interfaceName: 'GigabitEthernet0/0' });
+    if (cfg.length > 0) {
+      await d.executeCommand('configure terminal');
+      for (const c of cfg) await d.executeCommand(c);
+      await d.executeCommand('end');
+    }
+    allowLegacyIosSsh(pc);
+    const attempt = await tryInterpretSshLaunch(`ssh ${ROUTER_SSH_USER}@10.0.0.6`, {
+      defaultUser: 'root',
+      sourceIp: '10.0.0.1',
+      sourceDevice: pc,
+      wireProbe: (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port),
+    });
+    expect(attempt?.kind).toBe('pending');
+    const finalised = await finalisePendingAuth(
+      (attempt as { pendingAuth: Parameters<typeof finalisePendingAuth>[0] }).pendingAuth,
+      ROUTER_SSH_PASSWORD,
+    );
+    expect(finalised.kind).toBe('success');
     return d;
   }
 
-  it('sans restriction, le defaut de la plateforme', async () => {
+  it('sans restriction, la preference du client parmi ce que le serveur offre : aes128-ctr et hmac-sha1', async () => {
     const out = await (await avecSession()).executeCommand('show ssh');
-    expect(out).toContain('aes256-ctr');
-    expect(out).toContain('hmac-sha2-256');
+    expect(out).toContain('aes128-ctr');
+    expect(out).toContain('hmac-sha1');
   }, 30_000);
 
-  it('`ip ssh server algorithm encryption` change ce qui est annonce', async () => {
-    const d = await avecSession('ip ssh server algorithm encryption aes128-ctr');
+  it('`ip ssh server algorithm encryption` restreint ce que le client peut retenir', async () => {
+    const d = await avecSession('ip ssh server algorithm encryption aes256-ctr');
     const out = await d.executeCommand('show ssh');
-    expect(out).toContain('aes128-ctr');
-    expect(out).not.toContain('aes256-ctr');
+    expect(out).toContain('aes256-ctr');
+    expect(out).not.toContain('aes128-ctr');
   }, 30_000);
 
   it('`ip ssh server algorithm mac` de meme', async () => {
-    const d = await avecSession('ip ssh server algorithm mac hmac-sha1');
+    const d = await avecSession('ip ssh server algorithm mac hmac-sha2-256');
     const out = await d.executeCommand('show ssh');
-    expect(out).toContain('hmac-sha1');
-    expect(out).not.toContain('hmac-sha2-256');
+    expect(out).toContain('hmac-sha2-256');
+    expect(out).not.toContain('hmac-sha1');
   }, 30_000);
 
   /**
-   * C'est la PREFERENCE du serveur qui est rendue — le premier de la
-   * liste — donc une liste de plusieurs algorithmes ne rend que le
-   * premier, comme un vrai serveur retiendrait le sien face a un client
-   * qui offre tout.
+   * RFC 4253 §7.1 : le premier algorithme de la liste du CLIENT qui figure
+   * aussi chez le serveur. Le serveur liste aes256-ctr d'abord ; le client
+   * prefere aes192-ctr ; c'est aes192-ctr qui est retenu.
    */
-  it('avec plusieurs algorithmes, le PREMIER est retenu', async () => {
-    const d = await avecSession('ip ssh server algorithm encryption aes192-ctr aes128-ctr');
-    expect(await d.executeCommand('show ssh')).toContain('aes192-ctr');
+  it('avec plusieurs algorithmes, l\'ordre du CLIENT decide', async () => {
+    const d = await avecSession('ip ssh server algorithm encryption aes256-ctr aes192-ctr');
+    const out = await d.executeCommand('show ssh');
+    expect(out).toContain('aes192-ctr');
+    expect(out).not.toContain('aes256-ctr');
   }, 30_000);
 
-  it('`show ip ssh` et `show ssh` decrivent la meme machine', async () => {
-    const d = await avecSession('ip ssh server algorithm encryption aes128-ctr');
-    expect(await d.executeCommand('show ip ssh')).toContain('aes128-ctr');
-    expect(await d.executeCommand('show ssh')).toContain('aes128-ctr');
+  it('`show ip ssh` annonce ce que le serveur ACCEPTE, `show ssh` ce que la session a retenu', async () => {
+    const d = await avecSession('ip ssh server algorithm encryption aes256-ctr');
+    expect(await d.executeCommand('show ip ssh')).toContain('aes256-ctr');
+    expect(await d.executeCommand('show ssh')).toContain('aes256-ctr');
   }, 30_000);
 
   it('le commutateur repond toujours dans les memes mots que le routeur', async () => {

@@ -170,7 +170,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a1', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
@@ -178,7 +178,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a2', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'whoami');
     expectAnyLine(t, /^alice$/);
   });
@@ -187,7 +187,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a3', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'hostname');
     expectAnyLine(t, /^linuxSrv$/);
   });
@@ -196,7 +196,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a4', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'pwd');
     expectAnyLine(t, /\/home\/alice/);
   });
@@ -205,7 +205,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a5', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'ls /etc');
     expectAnyLine(t, /passwd/);
   });
@@ -214,7 +214,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a6', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'cat /etc/os-release');
     expectAnyLine(t, /Ubuntu/);
   });
@@ -223,7 +223,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a7', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     const remote = await lan.linuxSrv.executeCommand('cat /var/log/auth.log');
     expect(remote).toMatch(/Accepted password for alice from 10\.0\.0\.1/);
   });
@@ -232,7 +232,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a8', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh root@10.0.0.3', 'wrong');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new root@10.0.0.3', 'wrong');
     expectAnyLine(t, /Permission denied/);
   });
 
@@ -240,7 +240,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('a9', lan.linuxA);
     await t.init();
-    await typeRoot(t, 'ssh alice@10.0.0.3');
+    await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
     expect(t.currentInputMode.type).toBe('password');
     t.setPasswordBuf('totally-wrong');
     t.handleKey(key('Enter'));
@@ -254,7 +254,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await lan.linuxSrv.executeCommand('systemctl reload ssh');
     const t = new LinuxTerminalSession('a10', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh root@10.0.0.3', 'admin');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new root@10.0.0.3', 'admin');
     expect(t.getPrompt()).toMatch(/root@linuxSrv/);
   });
 
@@ -263,7 +263,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b11', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'cd /tmp');
     await typeRoot(t, 'touch hello.txt');
     await typeRoot(t, 'ls /tmp');
@@ -274,7 +274,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b12', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'echo hello-from-ssh > /tmp/greeting.txt');
     await typeRoot(t, 'cat /tmp/greeting.txt');
     expectAnyLine(t, /hello-from-ssh/);
@@ -284,7 +284,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b13', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'echo secret > /tmp/secret.txt');
     await typeRoot(t, 'chmod 600 /tmp/secret.txt');
     await typeRoot(t, 'ls -l /tmp/secret.txt');
@@ -295,7 +295,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b14', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh carl@10.0.0.3', 'carl');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new carl@10.0.0.3', 'carl');
     await typeRoot(t, 'cat /etc/shadow');
     expectAnyLine(t, /Permission denied|cannot open/);
   });
@@ -304,7 +304,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b15', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'id');
     expectAnyLine(t, /uid=\d+\(alice\)/);
   });
@@ -313,7 +313,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b16', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'ps -ef');
     expectAnyLine(t, /sshd/);
   });
@@ -322,7 +322,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b17', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'systemctl status ssh');
     expectAnyLine(t, /Active:.*active \(running\)/);
   });
@@ -331,7 +331,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b18', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'exit');
     expect(t.getPrompt()).not.toMatch(/linuxSrv/);
   });
@@ -340,7 +340,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b19', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'exit');
     expectAnyLine(t, /Connection to 10\.0\.0\.3 closed/);
   });
@@ -349,9 +349,9 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('b20', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeRoot(t, 'exit');
-    await linuxSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new bob@10.0.0.3', 'bob');
     const log = await lan.linuxSrv.executeCommand('cat /var/log/auth.log');
     expect(log).toMatch(/Accepted password for alice/);
     expect(log).toMatch(/Accepted password for bob/);
@@ -362,7 +362,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c21', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     expect(t.getPrompt()).toMatch(/alice@linuxSrv:~\$/);
   });
 
@@ -370,7 +370,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c22', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ls /etc');
     expectAnyLine(t, /passwd/);
   });
@@ -379,7 +379,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c23', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'pwd');
     expectAnyLine(t, /\/home\/alice/);
   });
@@ -388,7 +388,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c24', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'uname -a');
     expectAnyLine(t, /Linux/);
   });
@@ -397,7 +397,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c25', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'cat /etc/passwd');
     expectAnyLine(t, /^alice:/m);
   });
@@ -406,7 +406,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c26', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/^[A-Z]:\\/);
     expectAnyLine(t, /Connection to 10\.0\.0\.3 closed/);
@@ -416,7 +416,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c27', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'sqlplus / as sysdba');
     expect(t.getPrompt()).toMatch(/^SQL>/);
   });
@@ -425,7 +425,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c28', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'sqlplus / as sysdba');
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
@@ -435,7 +435,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c29', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'rman target /');
     expect(t.getPrompt()).toMatch(/^RMAN>/);
   });
@@ -444,7 +444,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('c30', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'rman target /');
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
@@ -455,7 +455,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d31', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     expect(t.getPrompt()).toMatch(/C:\\Users\\User>/);
   });
 
@@ -463,7 +463,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d32', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'ver');
     expectAnyLine(t, /Microsoft Windows/);
   });
@@ -472,7 +472,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d33', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'hostname');
     expectAnyLine(t, /winB/);
   });
@@ -481,7 +481,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d34', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     expect(t.getPrompt()).toMatch(/^PS /);
   });
@@ -490,7 +490,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d35', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     await typeSub(t, 'Get-Service | Select-Object -First 1');
     expectAnyLine(t, /Status/i);
@@ -500,7 +500,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d36', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     await typeSub(t, 'echo before');
     const before = t.lines.length;
@@ -513,7 +513,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d37', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/^[A-Z]:\\/);
@@ -523,7 +523,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d38', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     await typeSub(t, 'exit');
     await typeSub(t, 'exit');
@@ -535,7 +535,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d39', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     await typeSub(t, 'cmd');
     await typeSub(t, 'exit');
@@ -548,7 +548,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('d40', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'echo before-cls');
     const before = t.lines.length;
     await typeSub(t, 'cls');
@@ -560,7 +560,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('e41', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     expect(t.getPrompt()).toMatch(/C:\\Users\\User>/);
   });
 
@@ -568,7 +568,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('e42', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'ver');
     expectAnyLine(t, /Microsoft Windows/);
   });
@@ -577,7 +577,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('e43', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     expect(t.getPrompt()).toMatch(/^PS /);
   });
@@ -586,7 +586,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('e44', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     await typeSub(t, 'Get-Service | Select-Object -First 1');
     expectAnyLine(t, /Status/i);
@@ -596,7 +596,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('e45', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh User@10.0.0.5', 'user');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.5', 'user');
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/@linuxA/);
   });
@@ -606,7 +606,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('f46', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'cd /var/log');
     await typeSub(t, 'pwd');
     expectAnyLine(t, /\/var\/log/);
@@ -616,7 +616,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('f47', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'cd /tmp');
     expect(t.getPrompt()).toMatch(/\/tmp/);
   });
@@ -625,7 +625,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('f48', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'cd /var/log');
     await typeSub(t, 'cd ..');
     await typeSub(t, 'pwd');
@@ -636,7 +636,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('f49', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'env');
     expectAnyLine(t, /HOME=\/home\/alice/);
   });
@@ -645,7 +645,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('f50', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'echo $HOME');
     expectAnyLine(t, /\/home\/alice/);
   });
@@ -655,7 +655,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('g51', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     const log = await lan.linuxSrv.executeCommand('cat /var/log/auth.log');
     expect(log).toMatch(/Accepted password for alice from 10\.0\.0\.4/);
   });
@@ -664,7 +664,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('g52', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'wrong-pw-1');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'wrong-pw-1');
     t.setPasswordBuf('wrong-pw-2'); t.handleKey(key('Enter')); await flush();
     t.setPasswordBuf('wrong-pw-3'); t.handleKey(key('Enter')); await flush();
     const log = await lan.linuxSrv.executeCommand('cat /var/log/auth.log');
@@ -675,7 +675,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('g53', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'last');
     expectAnyLine(t, /alice/);
   });
@@ -684,7 +684,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('g54', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'who');
     expectAnyLine(t, /alice/);
   });
@@ -693,7 +693,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('g55', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ss -tln');
     expectAnyLine(t, /:22\s/);
   });
@@ -703,7 +703,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('h56', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'groups');
     expectAnyLine(t, /sudo/);
   });
@@ -712,7 +712,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('h57', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'cat /etc/shadow');
     expectAnyLine(t, /Permission denied/);
   });
@@ -723,7 +723,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await lan.linuxSrv.executeCommand('systemctl reload ssh');
     const t = new LinuxTerminalSession('h58', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh root@10.0.0.3', 'admin');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new root@10.0.0.3', 'admin');
     expectAnyLine(t, /Permission denied/);
   });
 
@@ -733,7 +733,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await lan.linuxSrv.executeCommand('systemctl reload ssh');
     const t = new WindowsTerminalSession('h59', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh carl@10.0.0.3', 'carl');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new carl@10.0.0.3', 'carl');
     expectAnyLine(t, /Permission denied/);
   });
 
@@ -743,7 +743,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await lan.linuxSrv.executeCommand('systemctl reload ssh');
     const t = new WindowsTerminalSession('h60', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new bob@10.0.0.3', 'bob');
     expectAnyLine(t, /Permission denied/);
   });
 
@@ -753,7 +753,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan.linuxSrv.powerOff();
     const t = new WindowsTerminalSession('i61', lan.winA);
     await t.init();
-    await typeRoot(t, 'ssh alice@10.0.0.3');
+    await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
     expectAnyLine(t, /No route to host/);
   });
 
@@ -762,7 +762,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await lan.linuxSrv.executeCommand('ip link set eth0 down');
     const t = new WindowsTerminalSession('i62', lan.winA);
     await t.init();
-    await typeRoot(t, 'ssh alice@10.0.0.3');
+    await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
     expectAnyLine(t, /No route to host/);
   });
 
@@ -771,7 +771,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await lan.linuxSrv.executeCommand('systemctl stop ssh');
     const t = new WindowsTerminalSession('i63', lan.winA);
     await t.init();
-    await typeRoot(t, 'ssh alice@10.0.0.3');
+    await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
     expectAnyLine(t, /Connection refused/);
   });
 
@@ -779,7 +779,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('i64', lan.winA);
     await t.init();
-    await typeRoot(t, 'ssh alice@nope.invalid');
+    await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@nope.invalid');
     expectAnyLine(t, /Could not resolve hostname/);
   });
 
@@ -787,7 +787,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('i65', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh ghost@10.0.0.3', 'whatever');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new ghost@10.0.0.3', 'whatever');
     expectAnyLine(t, /Permission denied/);
   });
 
@@ -796,7 +796,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('j66', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'pwd');
     t.handleKey(key('ArrowUp'));
     await flush();
@@ -807,7 +807,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('j67', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     t.addLine('scrollback');
     t.handleKey(key('l', { ctrlKey: true }));
     await flush();
@@ -818,7 +818,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('j68', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     t.setInput('ech');
     t.setInputBuf('ech');
     t.handleKey(key('Tab'));
@@ -831,7 +831,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('k69', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'sqlplus / as sysdba');
     expect(t.getPrompt()).toMatch(/^SQL>/);
     await typeSub(t, 'exit');
@@ -844,7 +844,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('k70', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'rman target /');
     expect(t.getPrompt()).toMatch(/^RMAN>/);
     await typeSub(t, 'exit');
@@ -856,7 +856,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('l71', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'mkdir /tmp/workdir');
     await typeSub(t, 'ls /tmp');
     expectAnyLine(t, /workdir/);
@@ -866,7 +866,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('l72', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'echo hello > /tmp/src.txt');
     await typeSub(t, 'cp /tmp/src.txt /tmp/dst.txt');
     await typeSub(t, 'cat /tmp/dst.txt');
@@ -877,7 +877,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('l73', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'echo gone > /tmp/expendable.txt');
     await typeSub(t, 'rm /tmp/expendable.txt');
     const ls = await lan.linuxSrv.executeCommand('ls /tmp');
@@ -888,7 +888,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('l74', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'printf "alpha\\nbeta\\ngamma\\n" > /tmp/words.txt');
     await typeSub(t, 'grep beta /tmp/words.txt');
     expectAnyLine(t, /^beta$/);
@@ -898,7 +898,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('l75', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'printf "c\\nb\\na\\n" | sort');
     expectAnyLine(t, /^a$/);
     expectAnyLine(t, /^b$/);
@@ -910,7 +910,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('m76', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ifconfig');
     expectAnyLine(t, /eth0/);
   });
@@ -919,7 +919,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('m77', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ip addr');
     expectAnyLine(t, /10\.0\.0\.3/);
   });
@@ -929,7 +929,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await lan.winA.executeCommand('ping 10.0.0.3');
     const t = new WindowsTerminalSession('m78', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ping -c 1 10.0.0.4');
     expectAnyLine(t, /(bytes from|1 (packets )?received)/i);
   });
@@ -938,7 +938,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('m79', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'netstat -tln');
     expectAnyLine(t, /LISTEN/);
   });
@@ -947,7 +947,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('m80', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ss -t');
     expectAnyLine(t, /(ESTAB|LISTEN)/);
   });
@@ -957,7 +957,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('n81', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ps aux');
     expectAnyLine(t, /USER\s+PID/);
   });
@@ -966,7 +966,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('n82', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'pgrep sshd');
     expectAnyLine(t, /\d+/);
   });
@@ -975,7 +975,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('n83', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'systemctl is-active ssh');
     expectAnyLine(t, /^active$/);
   });
@@ -984,7 +984,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('n84', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'kill 99999');
     expectAnyLine(t, /No such process/);
   });
@@ -993,7 +993,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('n85', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'kill -9 1');
     expectAnyLine(t, /Operation not permitted|not permitted/);
   });
@@ -1003,7 +1003,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('o86', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     expectAnyLine(t, /Ubuntu|Welcome to/);
   });
 
@@ -1012,7 +1012,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await lan.linuxSrv.executeCommand('echo "AUTHORIZED USE ONLY" > /etc/issue.net');
     const t = new WindowsTerminalSession('o87', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     expectAnyLine(t, /AUTHORIZED USE ONLY/);
   });
 
@@ -1020,7 +1020,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('o88', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ls -la /etc');
     const linesAfter = t.lines.length;
     expect(linesAfter).toBeGreaterThan(5);
@@ -1031,7 +1031,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('p89', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh admin@10.0.0.6', 'Admin@123');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123');
     await typeSub(t, 'show version');
     expectAnyLine(t, /IOS|Cisco/i);
   });
@@ -1040,7 +1040,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('p90', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh admin@10.0.0.6', 'Admin@123');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123');
     await typeSub(t, 'show ip interface brief');
     expectAnyLine(t, /GigabitEthernet/);
   });
@@ -1049,7 +1049,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('p91', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh admin@10.0.0.7', 'Admin@123');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.7', 'Admin@123');
     await typeSub(t, 'display version');
     expectAnyLine(t, /VRP|Huawei/i);
   });
@@ -1058,7 +1058,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('p92', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh admin@10.0.0.7', 'Admin@123');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.7', 'Admin@123');
     await typeSub(t, 'display interface brief');
     expectAnyLine(t, /(?:GE|GigabitEthernet)0\/0\/0/);
   });
@@ -1067,7 +1067,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('p93', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh admin@10.0.0.6', 'Admin@123');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123');
     expect(t.getPrompt()).toMatch(/cisco/);
   });
 
@@ -1075,7 +1075,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('p94', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh admin@10.0.0.7', 'Admin@123');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.7', 'Admin@123');
     expect(t.getPrompt()).toMatch(/<huawei>/);
   });
 
@@ -1084,7 +1084,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('q95', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'echo first && echo second');
     expectAnyLine(t, /first/);
     expectAnyLine(t, /second/);
@@ -1094,7 +1094,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('q96', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'pwd');
     await typeSub(t, 'whoami');
     await typeSub(t, 'history');
@@ -1105,9 +1105,9 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('q97', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'exit');
-    await winSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new bob@10.0.0.3', 'bob');
     expect(t.getPrompt()).toMatch(/bob@linuxSrv/);
   });
 
@@ -1115,7 +1115,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('q98', lan.linuxA);
     await t.init();
-    await linuxSshLogin(t, 'ssh alice@10.0.0.2', 'alice');
+    await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2', 'alice');
     expect(t.getPrompt()).toMatch(/alice@linuxB/);
     await typeRoot(t, 'exit');
     expect(t.getPrompt()).toMatch(/@linuxA/);
@@ -1125,7 +1125,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('q99', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'whoami; hostname');
     expectAnyLine(t, /^alice$/);
     expectAnyLine(t, /^linuxSrv$/);
@@ -1135,7 +1135,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     lan = await buildLan();
     const t = new WindowsTerminalSession('q100', lan.winA);
     await t.init();
-    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'sqlplus / as sysdba');
     await typeSub(t, 'exit');
     await typeSub(t, 'exit');

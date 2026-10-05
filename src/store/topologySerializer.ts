@@ -39,6 +39,7 @@ import {
   type SwitchportMode,
 } from '@/network';
 import type { PortDuplex } from '@/network/core/types';
+import type { NetemSpec } from '@/network/hardware/Netem';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
@@ -320,6 +321,8 @@ interface TopologyConnectionExport {
   packetLossRate?: number;
   corruptionRate?: number;
   artificialDelayMs?: number;
+  sourceNetem?: NetemSpec;
+  targetNetem?: NetemSpec;
 }
 
 export interface TopologyExport {
@@ -877,6 +880,13 @@ function cableOf(
   return dev?.getPort(c.sourceInterfaceId)?.getCable() ?? null;
 }
 
+function netemOfEnd(
+  deviceInstances: Map<string, Equipment>, deviceId: string, interfaceId: string, cable: Cable,
+): NetemSpec | undefined {
+  const port = deviceInstances.get(deviceId)?.getPort(interfaceId);
+  return port ? cable.getEgressNetem(port) : undefined;
+}
+
 // ── Export ──
 
 export function exportTopology(
@@ -987,6 +997,10 @@ export function exportTopology(
       if (cable.getCorruptionRate() > 0) entry.corruptionRate = cable.getCorruptionRate();
       const delay = cable.getArtificialDelayMs();
       if (delay > 0) entry.artificialDelayMs = delay;
+      const sourceNetem = netemOfEnd(deviceInstances, c.sourceDeviceId, c.sourceInterfaceId, cable);
+      if (sourceNetem) entry.sourceNetem = sourceNetem;
+      const targetNetem = netemOfEnd(deviceInstances, c.targetDeviceId, c.targetInterfaceId, cable);
+      if (targetNetem) entry.targetNetem = targetNetem;
     }
     return entry;
   });
@@ -1180,6 +1194,10 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
         if (connData.artificialDelayMs !== undefined) {
           cable.setArtificialDelayMs(connData.artificialDelayMs);
         }
+        const sourcePort = sourceDevice.getPort(connData.sourceInterfaceId);
+        const targetPort = targetDevice.getPort(connData.targetInterfaceId);
+        if (sourcePort && connData.sourceNetem) cable.setEgressNetem(sourcePort, connData.sourceNetem);
+        if (targetPort && connData.targetNetem) cable.setEgressNetem(targetPort, connData.targetNetem);
         // Last: pulling the cable down is what the other knobs are read
         // through, and setting it first would fight the link-up the
         // connection just produced.
