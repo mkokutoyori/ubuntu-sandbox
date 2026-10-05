@@ -40,7 +40,7 @@ import {
   aesGcmEncrypt, aesGcmDecrypt,
 } from '@/crypto';
 import { encodePacket, decodePacket } from './packetCodec';
-import { computeOuterTos } from './DscpTunnelMarker';
+import { computeOuterTos, ecnOnDecapsulatedTos } from './DscpTunnelMarker';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPSEC_CONSTANTS } from '../core/constants';
 import { type IEventBus } from '@/events/EventBus';
@@ -2922,19 +2922,18 @@ export class IPSecEngine implements IProtocolEngine {
     return true;
   }
 
-  /**
-   * After inbound decapsulation (tunnel mode), propagate ECN marks
-   * from the outer header to the inner header per RFC 6040 §4.
-   */
-  private propagateEcnOnDecap(outerPkt: IPv4Packet, innerPkt: IPv4Packet, sa: IPSec_SA): void {
-    if (!sa.dscpEcnConfig.ecnEnabled) return;
-    if (sa.mode !== 'Tunnel') return;
-
-    const outerEcn = outerPkt.tos & 0x03;
-    // RFC 6040: if outer has CE (Congestion Experienced = 0b11), set inner CE too
-    if (outerEcn === 0b11) {
-      innerPkt.tos = (innerPkt.tos & 0xfc) | 0b11;
+  private acceptsEcnOnDecap(outerPkt: IPv4Packet, innerPkt: IPv4Packet, sa: IPSec_SA): boolean {
+    if (sa.mode !== 'Tunnel') return true;
+    const tos = ecnOnDecapsulatedTos(outerPkt.tos, innerPkt.tos, sa.dscpEcnConfig);
+    if (tos === null) {
+      sa.recvErrors++;
+      return false;
     }
+    if (tos !== innerPkt.tos) {
+      innerPkt.tos = tos;
+      innerPkt.headerChecksum = computeIPv4Checksum(innerPkt);
+    }
+    return true;
   }
 
   // ── RFC 4301 §8.1: DF bit policy for outer header ─────────────────
@@ -3189,10 +3188,7 @@ export class IPSecEngine implements IProtocolEngine {
     sa.pktsDecaps++;
     sa.bytesDecaps += (inner?.totalLength || 0);
 
-    // RFC 6040: propagate ECN congestion marks from outer to inner
-    if (inner) {
-      this.propagateEcnOnDecap(outerPkt, inner, sa);
-    }
+    if (inner && !this.acceptsEcnOnDecap(outerPkt, inner, sa)) return null;
 
     if (this.debugIpsec) {
       Logger.info(this.router.id, 'debug:ipsec',
@@ -3229,17 +3225,12 @@ export class IPSecEngine implements IProtocolEngine {
         if (espInner === null) { sa.recvErrors++; return null; }
         sa.pktsDecaps++;
         sa.bytesDecaps += (espInner?.totalLength || 0);
-        if (espInner) {
-          this.propagateEcnOnDecap(outerPkt, espInner, sa);
-        }
+        if (espInner && !this.acceptsEcnOnDecap(outerPkt, espInner, sa)) return null;
         return espInner;
       }
     }
 
-    // RFC 6040: propagate ECN congestion marks from outer to inner
-    if (ah.innerPacket) {
-      this.propagateEcnOnDecap(outerPkt, ah.innerPacket, sa);
-    }
+    if (ah.innerPacket && !this.acceptsEcnOnDecap(outerPkt, ah.innerPacket, sa)) return null;
 
     return ah.innerPacket;
   }
