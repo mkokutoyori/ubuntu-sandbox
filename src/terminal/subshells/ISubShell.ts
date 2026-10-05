@@ -111,6 +111,8 @@ export interface ISubShell extends IShellBase {
 
   completionStyle?(): 'readline' | 'cycling';
 
+  completionStart?(line: string): number | null;
+
   /**
    * Continuation hook: after the host terminal collects the value
    * requested by a `pendingInput` directive, it calls this method with

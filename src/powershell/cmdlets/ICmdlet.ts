@@ -12,6 +12,7 @@ import type { CmdletContext } from './CmdletContext';
 /** Where a parameter's completions come from. `path` defers to the shell, which alone knows the session's current directory. */
 export type ParameterValueKind =
   | 'path'
+  | 'directory'
   | 'interfaceAlias'
   | 'interfaceIndex'
   | 'addressFamily'

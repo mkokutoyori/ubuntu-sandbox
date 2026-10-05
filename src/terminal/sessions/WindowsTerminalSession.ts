@@ -44,7 +44,8 @@ import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
-import { CompletionController, ReadlinePolicy, LastWordSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion, SubShellCompletionControllers } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, LastWordSource, FullLineSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion, scanWords, SubShellCompletionControllers } from '@/terminal/completion';
+import { CMD_COMPLETION_WORDS, completeWindowsPath, pathLooksLikeAPath } from '@/network/devices/windows/PathCompletion';
 import type { SubShellTabHost } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
@@ -344,6 +345,7 @@ export class WindowsTerminalSession extends TerminalSession {
         this.notify();
         return true;
       }
+      if (e.key === 'Tab') return true;
       return false; // Let the view drive char-by-char input.
     }
 
@@ -1679,8 +1681,35 @@ export class WindowsTerminalSession extends TerminalSession {
       (line) => (this.shell && dev instanceof WindowsPC)
         ? dev.getCompletionsForSession(line, this.shell)
         : this.device.getCompletions(line),
-      { uniqueSpace: 'first-word' },
+      { uniqueSpace: 'first-word', wordStart: line => scanWords(line, CMD_COMPLETION_WORDS).typingStart },
     );
+  }
+
+  protected override handleBrokerKey(e: KeyEvent): boolean {
+    if (e.key !== 'Tab') return super.handleBrokerKey(e);
+    this.completeAnswer(e.shiftKey);
+    return true;
+  }
+
+  private completeAnswer(reverse: boolean): void {
+    const dev = this.device;
+    if (this.currentInputMode.type !== 'interactive-text' || !(dev instanceof WindowsPC)) return;
+    const typed = this._inputBuf;
+    if (!pathLooksLikeAPath(typed)) return;
+    const candidates = completeWindowsPath(dev.getFileSystem(), {
+      token: typed,
+      cwd: this.shell?.cwd ?? dev.getCwd(),
+      home: dev.getEnvVars().get('USERPROFILE') ?? null,
+      directoriesOnly: false,
+      style: 'literal',
+    });
+    const out = this.subShellCompletion.select({}).handleTab(
+      typed, new FullLineSource(() => candidates, { uniqueSpace: 'never' }), reverse,
+    );
+    if (!out.changed && out.suggestions === null) return;
+    this._inputBuf = out.input;
+    this.tabSuggestions = out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
+    this.notify();
   }
 
   protected onTab(): void {

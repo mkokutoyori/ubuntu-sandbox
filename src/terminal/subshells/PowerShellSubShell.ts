@@ -25,6 +25,9 @@ import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { parseCredentialArg } from '@/powershell/cmdlets/core/RemotingCmdlets';
 import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
 import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
+import { scanWords, type WordScan } from '@/terminal/completion/words';
+import { completeWindowsPath } from '@/network/devices/windows/PathCompletion';
+import { completeProviderPath, type ProviderPathSources } from './PowerShellProviderPaths';
 
 /**
  * Tokens that bypass the interpreter and are handed straight to the
@@ -47,6 +50,11 @@ const DEVICE_ONLY_COMMANDS = new Set([
 ]);
 
 const CONTINUATION_PROMPT = '>> ';
+
+const ACTION_PREFERENCES = ['Continue', 'Ignore', 'Inquire', 'SilentlyContinue', 'Stop', 'Suspend'] as const;
+const ACTION_PREFERENCE_PARAMETERS: ReadonlySet<string> = new Set(['erroraction', 'warningaction', 'informationaction']);
+
+const POWERSHELL_WORDS: WordScan = { quotes: ["'", '"'], breakers: '|;&({', separators: ',>', escape: '`' };
 
 export class PowerShellSubShell implements ISubShell {
   readonly kind = 'powershell';
@@ -338,87 +346,55 @@ export class PowerShellSubShell implements ISubShell {
     return String(e);
   }
 
-  /**
-   * PowerShell-grade Tab completion. Returns FULL candidate tokens so the
-   * session can replace the trailing word and cycle through them.
-   *
-   * Context is resolved like the real shell:
-   *   $var<Tab>      → variable names in scope (+ automatic variables)
-   *   cmd -Pa<Tab>   → that cmdlet's parameters + the common parameters
-   *   <verb-noun>    → cmdlet names + aliases (command position, also the
-   *                    token right after `|`, `;`, `&`, `(`, `{`)
-   *   anything else  → device filesystem path completion (dirs get `\`,
-   *                    paths with spaces are quoted)
-   */
   getCompletions(line: string): string[] {
-    const endsWithSpace = /\s$/.test(line);
-    // Current token = trailing run of non-whitespace (empty after a space).
-    const tokMatch = /(\S*)$/.exec(line);
-    const token = endsWithSpace ? '' : (tokMatch ? tokMatch[1] : '');
+    const { done, typing } = scanWords(this.statementContext(line), POWERSHELL_WORDS);
+    const commandWord = done[0] ?? '';
+    const previous = done[done.length - 1] ?? '';
 
-    // Segment = everything after the last unquoted pipeline/scope break,
-    // so `Get-Process | gp<Tab>` still treats `gp` as a command.
-    const seg = this.currentSegment(line);
-    const segTokens = seg.trim().length ? seg.trim().split(/\s+/) : [];
-    const commandWord = segTokens[0] ?? '';
-    const onCommandPosition =
-      segTokens.length === 0 ||
-      (segTokens.length === 1 && !endsWithSpace);
+    if (typing.startsWith('$')) return this.completeVariable(typing);
+    if (done.length === 0) return this.completeCommandPosition(typing);
+    if (typing.startsWith('-')) return this.completeParameter(commandWord, typing);
 
-    // 1) Variable completion ($name / $env:name).
-    if (token.startsWith('$')) {
-      return this.completeVariable(token);
+    if (previous.startsWith('-')) {
+      const preference = ACTION_PREFERENCE_PARAMETERS.has(previous.slice(1).toLowerCase());
+      if (preference) return this.completeFromList(ACTION_PREFERENCES, typing);
+      const kind = this.interp.getParameterValueKind(commandWord, previous);
+      if (kind === 'path') return this.completePath(typing, false);
+      if (kind === 'directory') return this.completePath(typing, true);
+      if (kind !== null) return this.completeParameterValue(kind, typing);
     }
+    const positional = done.length === 1 ? this.interp.getPositionalValueKind(commandWord) : null;
+    return this.completePath(typing, positional === 'directory');
+  }
 
-    // 2) Parameter completion (-Name), only in argument position.
-    if (token.startsWith('-') && !onCommandPosition) {
-      return this.completeParameter(commandWord, token);
-    }
+  completionStart(line: string): number {
+    const context = this.statementContext(line);
+    return Math.max(0, scanWords(context, POWERSHELL_WORDS).typingStart - (context.length - line.length));
+  }
 
-    // 3) Parameter VALUE completion: the token before this one named a
-    //    parameter whose values the cmdlet declares.
-    if (!onCommandPosition) {
-      const previous = endsWithSpace ? segTokens[segTokens.length - 1] : segTokens[segTokens.length - 2];
-      if (previous && previous.startsWith('-')) {
-        const kind = this.interp.getParameterValueKind(commandWord, previous);
-        if (kind === 'path') return this.completePath(token);
-        if (kind !== null) return this.completeParameterValue(kind, token);
-      }
-    }
+  private statementContext(line: string): string {
+    return [...this.pendingLines, line].join('\n');
+  }
 
-    // 4) Command-name completion.
-    if (onCommandPosition) {
-      const prefix = token.toLowerCase();
-      return this.interp.listCommandNames()
-        .filter(n => n.toLowerCase().startsWith(prefix))
-        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-    }
-
-    // 5) Filesystem path completion.
-    return this.completePath(token);
+  private completeCommandPosition(typing: string): string[] {
+    if (/[\\/]/.test(typing) || typing.startsWith('.')) return this.completePath(typing, false);
+    const prefix = typing.toLowerCase();
+    return this.interp.listCommandNames()
+      .filter(name => name.toLowerCase().startsWith(prefix))
+      .sort((left, right) => left.toLowerCase().localeCompare(right.toLowerCase()));
   }
 
   private completeParameterValue(kind: ParameterValueKind, token: string): string[] {
+    return this.completeFromList(this.interp.getParameterValues(kind), token);
+  }
+
+  private completeFromList(values: readonly string[], token: string): string[] {
     const quote = token.startsWith('"') || token.startsWith("'") ? token[0] : '';
     const stem = (quote ? token.slice(1) : token).toLowerCase();
-    return this.interp.getParameterValues(kind)
+    return values
       .filter(v => v.toLowerCase().startsWith(stem))
       .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
       .map(v => (/\s/.test(v) ? `"${v}"` : v));
-  }
-
-  /** Substring after the last unquoted `| ; & ( { ` separator. */
-  private currentSegment(line: string): string {
-    let depth = 0, q = '', start = 0;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (q) { if (c === q) q = ''; continue; }
-      if (c === '"' || c === "'") { q = c; continue; }
-      if (c === '(' || c === '{') { depth++; start = i + 1; continue; }
-      if (c === ')' || c === '}') { depth = Math.max(0, depth - 1); continue; }
-      if (c === '|' || c === ';' || c === '&') start = i + 1;
-    }
-    return line.slice(start);
   }
 
   private completeVariable(token: string): string[] {
@@ -473,35 +449,25 @@ export class PowerShellSubShell implements ISubShell {
       .map(p => `-${p}`);
   }
 
-  private completePath(token: string): string[] {
+  private completePath(token: string, directoriesOnly: boolean): string[] {
+    const provider = completeProviderPath(this.providerPathSources(), token);
+    if (provider !== null) return provider;
     if (!(this.device instanceof WindowsPC)) return [];
-    const fs  = this.device.getFileSystem();
-    // Prefer the per-terminal session cwd over the device-wide shared one
-    // so Tab-completion in PowerShell resolves paths in the terminal's own
-    // location (terminal_gap.md §7.x).
-    const cwd = this.session?.cwd ?? this.device.getCwd();
+    return completeWindowsPath(this.device.getFileSystem(), {
+      token,
+      cwd: this.session?.cwd ?? this.device.getCwd(),
+      home: this.device.getEnvVars().get('USERPROFILE') ?? null,
+      directoriesOnly,
+      style: 'powershell',
+    });
+  }
 
-    const quote = token.startsWith('"') || token.startsWith("'")
-      ? token[0] : '';
-    const bare = quote ? token.slice(1).replace(/["']$/, '') : token;
-
-    const sep = Math.max(bare.lastIndexOf('\\'), bare.lastIndexOf('/'));
-    const dirPart  = sep >= 0 ? bare.slice(0, sep) : '';
-    const namePart = sep >= 0 ? bare.slice(sep + 1) : bare;
-    const absDir   = fs.normalizePath(dirPart || '.', cwd);
-
-    const names = fs.getCompletions(absDir, namePart);
-    return names
-      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-      .map(n => {
-        const isDir = fs.isDirectory(
-          fs.normalizePath((dirPart ? dirPart + '\\' : '') + n, cwd),
-        );
-        const full = (dirPart ? dirPart + '\\' : '') + n + (isDir ? '\\' : '');
-        // PowerShell wraps paths containing spaces in single quotes.
-        if (quote) return quote + full + (isDir ? '' : quote);
-        return /\s/.test(full) ? `'${full}'` : full;
-      });
+  private providerPathSources(): ProviderPathSources {
+    const device = this.device;
+    return {
+      registrySubkeys: path => (device instanceof WindowsPC ? device.registry.listSubkeyNames(path) : []),
+      environmentNames: () => this.envNames(),
+    };
   }
 
   dispose(): void {
@@ -518,7 +484,7 @@ export class PowerShellSubShell implements ISubShell {
         const close = matchingParen(line, i);
         if (close !== -1) {
           const parsed = parseReadHost(line.slice(i + 1, close).trim());
-          const prompt = parsed?.prompt ?? '';
+          const prompt = readHostPromptText(parsed?.prompt ?? null);
           const entered = parsed?.secure
             ? await this._broker.password(prompt)
             : await this._broker.ask(prompt);
@@ -539,7 +505,7 @@ export class PowerShellSubShell implements ISubShell {
     if (!this._broker.capabilities().interactive) return null;
     const parsed = parseReadHost(line);
     if (!parsed) return null;
-    const prompt = parsed.prompt ?? '';
+    const prompt = readHostPromptText(parsed.prompt);
     const value = parsed.secure
       ? await this._broker.password(prompt)
       : await this._broker.ask(prompt);
@@ -593,6 +559,10 @@ interface ParsedReadHost {
   bindTo: string | null;
   prompt: string | null;
   secure: boolean;
+}
+
+function readHostPromptText(prompt: string | null): string {
+  return prompt === null || prompt === '' ? '' : `${prompt}: `;
 }
 
 function matchingParen(line: string, open: number): number {

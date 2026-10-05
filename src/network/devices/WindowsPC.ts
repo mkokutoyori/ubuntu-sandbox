@@ -228,6 +228,8 @@ import { cmdDir, fileSummaryLine } from './windows/WinDir';
 import { PATHPING_HELP, parseWinPathpingArgs, runPathping } from './windows/WinPathping';
 import { cmdFsutil } from './windows/Fsutil';
 import type { WmiHost } from './windows/WmiClasses';
+import { scanWords } from '@/terminal/completion/words';
+import { CMD_COMPLETION_WORDS, completeWindowsPath, pathLooksLikeAPath } from './windows/PathCompletion';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import type { NetIPAddressEntry } from './windows/netIpAddress';
 import type { NetRouteEntry } from './windows/netRoute';
@@ -3451,11 +3453,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   };
 
   getCompletions(partial: string): string[] {
-    const parts = partial.trimStart().split(/\s+/);
+    const { done, typing } = scanWords(partial.trimStart(), CMD_COMPLETION_WORDS);
+    const commandWord = (done[0] ?? '').toLowerCase();
 
-    if (parts.length <= 1) {
-      // Command completion
-      const prefix = (parts[0] || '').toLowerCase();
+    if (done.length === 0 && !pathLooksLikeAPath(typing)) {
+      const prefix = typing.toLowerCase();
       const commands = [
         'help', 'ipconfig', 'netsh', 'ping', 'arp', 'getmac', 'tracert', 'route',
         'nslookup', 'wevtutil', 'hostname', 'ver', 'cls', 'systeminfo', 'tasklist',
@@ -3466,31 +3468,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return commands.filter(c => c.startsWith(prefix)).sort();
     }
 
-    // File/directory completion for the last argument
-    const lastArg = parts[parts.length - 1];
-
-    // Flag completion: `/`- or `-`-prefixed argument of a known command
-    if (lastArg.startsWith('/') || lastArg.startsWith('-')) {
-      const flags = WindowsPC.CMD_FLAGS[(parts[0] || '').toLowerCase()];
+    if (typing.startsWith('/') || typing.startsWith('-')) {
+      const flags = WindowsPC.CMD_FLAGS[commandWord];
       if (flags) {
-        return flags.filter(f => f.toLowerCase().startsWith(lastArg.toLowerCase()));
+        return flags.filter(f => f.toLowerCase().startsWith(typing.toLowerCase()));
       }
     }
-    // Split on last backslash to get directory and partial name
-    const lastSep = lastArg.lastIndexOf('\\');
-    let dir: string;
-    let partialName: string;
-    if (lastSep >= 0) {
-      const dirPart = lastArg.substring(0, lastSep) || '\\';
-      dir = this.fs.normalizePath(dirPart, this.cwd);
-      partialName = lastArg.substring(lastSep + 1);
-    } else {
-      dir = this.cwd;
-      partialName = lastArg;
-    }
 
-    return this.fs.getCompletions(dir, partialName);
+    return completeWindowsPath(this.fs, {
+      token: typing,
+      cwd: this.cwd,
+      home: this.env.get('USERPROFILE') ?? null,
+      directoriesOnly: WindowsPC.CMD_DIRECTORY_COMMANDS.has(commandWord),
+      style: 'cmd',
+    });
   }
+
+  private static readonly CMD_DIRECTORY_COMMANDS: ReadonlySet<string> = new Set(['cd', 'chdir', 'pushd', 'rd', 'rmdir']);
 
   // ─── Build Contexts ──────────────────────────────────────────────
 

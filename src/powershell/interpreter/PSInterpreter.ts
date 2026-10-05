@@ -119,6 +119,10 @@ export class PSInterpreter {
     return this.runtime.getParameterValues(kind);
   }
 
+  getPositionalValueKind(command: string): ParameterValueKind | null {
+    return this.runtime.getPositionalValueKind(command);
+  }
+
   getCommandParameters(name: string): string[] {
     return this.runtime.getCommandParameters(name);
   }

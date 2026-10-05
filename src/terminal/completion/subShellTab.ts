@@ -8,6 +8,7 @@ export interface SubShellCompletionTarget {
   getCompletionsAsync?(line: string): Promise<string[]>;
   completesWholeLine?(): boolean;
   completionStyle?(): 'readline' | 'cycling';
+  completionStart?(line: string): number | null;
 }
 
 export class SubShellCompletionControllers {
@@ -41,7 +42,10 @@ export function subShellCompletionSource(
   const fetch = (): readonly string[] => candidates;
   return sub.completesWholeLine?.() === true
     ? new FullLineSource(fetch)
-    : new LastWordSource(fetch, { uniqueSpace: 'never' });
+    : new LastWordSource(fetch, {
+      uniqueSpace: 'never',
+      wordStart: line => sub.completionStart?.(line) ?? null,
+    });
 }
 
 function applyCandidates(

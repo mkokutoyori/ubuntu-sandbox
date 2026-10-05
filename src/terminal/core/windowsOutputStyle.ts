@@ -46,6 +46,7 @@ export function classifyWindowsLines(text: string): ClassifiedLine[] {
 }
 
 export function styleWindowsOutput(output: readonly string[]): RichOutputLine[] {
+  if (output.length === 0) return [];
   return classifyWindowsLines(output.join('\n')).map(({ text, type }) => {
     if (type === 'error') {
       return { id: nextLineId(), segments: [{ text, style: { color: WINDOWS_ERROR_COLOR } }], lineType: 'error' as LineType };
