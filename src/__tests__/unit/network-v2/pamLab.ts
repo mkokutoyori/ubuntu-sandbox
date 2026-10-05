@@ -1,8 +1,9 @@
 import { createLinuxPamModules } from '@/network/devices/linux/pam/LinuxPamModules';
 import type {
-  LinuxPamHost, PamGroupRecord, PamShadowRecord, PamUserRecord,
+  LinuxPamHost, PamGroupRecord, PamLoginEntry, PamProcessState, PamShadowRecord, PamUserRecord,
 } from '@/network/devices/linux/pam/PamLinuxHost';
 import { formatPamLogLine, type PamConversationRequest, type PamLogEntry, type PamReply } from '@/network/devices/linux/pam/PamHandle';
+import { defaultRlimits } from '@/network/devices/linux/pam/PamRlimitDefaults';
 import { PamTransaction, runPamSync } from '@/network/devices/linux/pam/PamTransaction';
 
 export const DAY_MS = 86_400_000;
@@ -15,6 +16,7 @@ export interface LabUser {
   readonly hash?: string;
   readonly home?: string;
   readonly shell?: string;
+  readonly gecos?: string;
   readonly shadow?: Partial<PamShadowRecord> | null;
 }
 
@@ -37,6 +39,10 @@ export class PamLab {
   readonly files = new Map<string, string>();
   readonly passwords = new Map<string, string>();
   readonly history = new Map<string, string[]>();
+  auditd = false;
+  readonly modes = new Map<string, number>();
+  readonly loginList: PamLoginEntry[] = [];
+  readonly process: PamProcessState = { umask: 0o022, priority: 0, loginUid: null, limits: defaultRlimits() };
   now: number;
   private readonly users = new Map<string, LabUser>();
   private readonly groups: LabGroup[];
@@ -63,13 +69,16 @@ export class PamLab {
     };
     return {
       name: user.name, uid: user.uid, gid: user.gid, home: user.home ?? `/home/${user.name}`,
-      shell: user.shell ?? '/bin/bash', gecos: '', shadow,
+      shell: user.shell ?? '/bin/bash', gecos: user.gecos ?? '', shadow,
     };
   }
 
   readonly host: LinuxPamHost = {
     readFile: (path) => this.files.get(path) ?? null,
     now: () => this.now,
+    process: this.process,
+    logins: () => this.loginList,
+    auditdRunning: () => this.auditd,
     log: (entry) => { this.logs.push(entry); },
     caller: new Proxy({} as { uid: number; euid: number; loginName: string }, {
       get: (_target, key) => this.caller[key as 'uid' | 'euid' | 'loginName'],
@@ -77,9 +86,16 @@ export class PamLab {
     files: {
       writeFile: (path, content) => { this.files.set(path, content); return true; },
       exists: (path) => this.files.has(path),
-      stat: (path) => (this.files.has(path) ? { mode: 0o644, regular: true } : null),
+      stat: (path) => (this.files.has(path) ? { mode: this.modes.get(path) ?? 0o644, regular: true } : null),
       mkdirp: () => undefined,
-      listDirectory: () => [],
+      listDirectory: (path) => {
+        const prefix = path.endsWith('/') ? path : `${path}/`;
+        const names = new Set<string>();
+        for (const key of this.files.keys()) {
+          if (key.startsWith(prefix)) names.add(key.slice(prefix.length).split('/')[0]);
+        }
+        return [...names].sort();
+      },
       remove: (path) => { this.files.delete(path); },
     },
     accounts: {

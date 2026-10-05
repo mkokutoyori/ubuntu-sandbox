@@ -30,7 +30,22 @@ export async function runPamAsync<T>(flow: PamConversationFlow<T>, conversation:
 
 export const NO_CONVERSATION: PamConversation = (request) => request.map(() => ({ text: null }));
 
+const DELAY_MULTIPLIER = 1664525;
+const DELAY_INCREMENT = 1013904223;
+
+export function computeFailDelay(seed: number, base: number): number {
+  let state = seed >>> 0;
+  let sum = 0;
+  for (let round = 0; round < 3; round++) {
+    state = (Math.imul(DELAY_MULTIPLIER, state) + DELAY_INCREMENT) >>> 0;
+    sum += Math.floor(state / 10) % 1_000_000;
+  }
+  const spread = sum / 3 / 1e6 - 0.5;
+  return Math.floor(base * (1 + spread)) >>> 0;
+}
+
 export class PamTransaction<H extends PamHost = PamHost> {
+  private pendingFailDelayUs = 0;
   readonly handle: PamHandle<H>;
   private loaded: LoadedPamStacks | null = null;
 
@@ -64,9 +79,18 @@ export class PamTransaction<H extends PamHost = PamHost> {
 
   *authenticate(flags = 0): PamConversationFlow<number> {
     this.handle.sanitize();
+    const timerBegin = Math.floor(this.host.now() / 1000);
     const result = yield* this.dispatch('authenticate', 'auth', flags);
+    this.pendingFailDelayUs = result !== PamReturn.SUCCESS && this.handle.failDelay.set
+      ? computeFailDelay(timerBegin, this.handle.failDelay.delayUs)
+      : 0;
+    this.handle.failDelay.set = false;
     this.handle.sanitize();
     return result;
+  }
+
+  get failDelayUs(): number {
+    return this.pendingFailDelayUs;
   }
 
   *setcred(flags = PamFlag.ESTABLISH_CRED): PamConversationFlow<number> {

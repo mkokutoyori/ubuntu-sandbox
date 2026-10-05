@@ -58,7 +58,35 @@ export interface PamCaller {
   readonly loginName: string;
 }
 
+export type PamRlimitResource =
+  | 'cpu' | 'fsize' | 'data' | 'stack' | 'core' | 'rss' | 'nproc' | 'nofile' | 'memlock'
+  | 'as' | 'locks' | 'sigpending' | 'msgqueue' | 'nice' | 'rtprio' | 'rttime';
+
+export const PAM_RLIMIT_RESOURCES: readonly PamRlimitResource[] = [
+  'cpu', 'fsize', 'data', 'stack', 'core', 'rss', 'nproc', 'nofile', 'memlock',
+  'as', 'locks', 'sigpending', 'msgqueue', 'nice', 'rtprio', 'rttime',
+];
+
+export interface PamRlimit {
+  soft: number;
+  hard: number;
+}
+
+export interface PamProcessState {
+  umask: number;
+  priority: number;
+  loginUid: number | null;
+  readonly limits: Map<PamRlimitResource, PamRlimit>;
+}
+
+export interface PamLoginEntry {
+  readonly user: string;
+}
+
 export interface LinuxPamHost extends PamHost {
+  readonly process: PamProcessState;
+  readonly logins: () => readonly PamLoginEntry[];
+  readonly auditdRunning: () => boolean;
   readonly accounts: PamAccountsPort;
   readonly files: PamWritableFiles;
   readonly caller: PamCaller;

@@ -45,7 +45,7 @@ export const PAM_INVALID_RETVAL = -1;
 const MAX_SUBSTACK_LEVEL = 16;
 const MAX_INCLUDE_DEPTH = 64;
 
-function assembleLines(content: string): string[] {
+export function assemblePamLines(content: string): string[] {
   const lines: string[] = [];
   let pending = '';
   for (const physical of content.split('\n')) {
@@ -124,7 +124,7 @@ class StackBuilder {
       this.diagnostics.push(`_pam_load_conf_file: unable to open config for ${name}`);
       return false;
     }
-    for (const line of assembleLines(content)) this.parseLine(line, requested, stackLevel, depth, knownService, path);
+    for (const line of assemblePamLines(content)) this.parseLine(line, requested, stackLevel, depth, knownService, path);
     return true;
   }
 

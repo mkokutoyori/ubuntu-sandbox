@@ -14,6 +14,7 @@ interface UnixControl {
   debug: boolean;
   quiet: boolean;
   noPassExpiry: boolean;
+  noDelay: boolean;
   useAuthtok: boolean;
   minLength: number | null;
   remember: number | null;
@@ -35,7 +36,7 @@ const FLAG_TOKENS: ReadonlySet<string> = new Set([
 function parseControl(pamh: PamHandle<LinuxPamHost>, flags: number, args: readonly string[]): UnixControl {
   const control: UnixControl = {
     nullok: false, nullresetok: false, likeauth: false, audit: false, debug: false, quiet: false,
-    noPassExpiry: false, useAuthtok: false, minLength: null, remember: null,
+    noPassExpiry: false, noDelay: false, useAuthtok: false, minLength: null, remember: null,
   };
   for (const argument of args) {
     if (argument === 'nullok') control.nullok = true;
@@ -45,6 +46,7 @@ function parseControl(pamh: PamHandle<LinuxPamHost>, flags: number, args: readon
     else if (argument === 'debug') control.debug = true;
     else if (argument === 'quiet') control.quiet = true;
     else if (argument === 'no_pass_expiry') control.noPassExpiry = true;
+    else if (argument === 'nodelay') control.noDelay = true;
     else if (argument === 'use_authtok') control.useAuthtok = true;
     else if (argument.startsWith('minlen=')) control.minLength = Number.parseInt(argument.slice(7), 10) || 0;
     else if (argument.startsWith('remember=')) control.remember = Math.min(400, Number.parseInt(argument.slice(9), 10) || 0);
@@ -125,6 +127,7 @@ function failureCleanup(pamh: PamHandle<LinuxPamHost>, value: unknown, silent: b
 }
 
 function verifyPassword(pamh: PamHandle<LinuxPamHost>, control: UnixControl, name: string, password: string | null): number {
+  if (!control.noDelay) pamh.requestFailDelay(2_000_000);
   const hash = passwordHash(pamh, name);
   const dataName = `${FAIL_PREFIX}${name}`;
   let retval: number;

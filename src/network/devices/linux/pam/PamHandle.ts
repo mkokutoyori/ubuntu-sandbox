@@ -73,6 +73,7 @@ export class PamHandle<H extends PamHost = PamHost> {
   authtokType: string | null = null;
   authtokVerified = false;
   readonly environment = new Map<string, string>();
+  readonly failDelay = { set: false, delayUs: 0 };
   private readonly dataEntries = new Map<string, { value: unknown; cleanup: PamDataCleanup | null }>();
   choice: PamChoice | null = null;
   currentModule: string | null = null;
@@ -105,6 +106,34 @@ export class PamHandle<H extends PamHost = PamHost> {
   *notify(style: 'error' | 'info', text: string): PamConversationFlow<void> {
     this.messages.push({ style, text });
     yield [{ style, text }];
+  }
+
+  requestFailDelay(microseconds: number): void {
+    if (!this.failDelay.set) {
+      this.failDelay.set = true;
+      this.failDelay.delayUs = 0;
+    }
+    if (this.failDelay.delayUs < microseconds) this.failDelay.delayUs = microseconds;
+  }
+
+  getenv(name: string): string | null {
+    return this.environment.get(name) ?? null;
+  }
+
+  putenv(assignment: string): number {
+    const equals = assignment.indexOf('=');
+    if (equals === 0) return PamReturn.BAD_ITEM;
+    if (equals < 0) {
+      if (!this.environment.has(assignment)) return PamReturn.BAD_ITEM;
+      this.environment.delete(assignment);
+      return PamReturn.SUCCESS;
+    }
+    this.environment.set(assignment.slice(0, equals), assignment.slice(equals + 1));
+    return PamReturn.SUCCESS;
+  }
+
+  environmentList(): string[] {
+    return [...this.environment].map(([name, value]) => `${name}=${value}`);
   }
 
   option(name: string): string | null {

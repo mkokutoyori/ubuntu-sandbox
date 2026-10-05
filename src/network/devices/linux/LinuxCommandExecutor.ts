@@ -664,7 +664,18 @@ export class LinuxCommandExecutor {
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
-    this.pam = new LinuxPam({ vfs: this.vfs, users: this.userMgr, logs: this.logMgr, clock: () => Date.now() });
+    this.pam = new LinuxPam({
+      vfs: this.vfs,
+      users: this.userMgr,
+      logs: this.logMgr,
+      clock: () => Date.now(),
+      logins: () => this.sessionTable?.list().map((session) => ({ user: session.user })) ?? [],
+      auditdRunning: () => this.auditDaemon?.running ?? false,
+      processLimits: (uid) => new Map([
+        ['nofile', { soft: this.processMgr.nofileLimit(uid), hard: this.processMgr.nofileHardLimit(uid) }],
+        ['nproc', { soft: this.processMgr.nprocLimit(uid), hard: this.processMgr.nprocHardLimit(uid) }],
+      ]),
+    });
     this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);

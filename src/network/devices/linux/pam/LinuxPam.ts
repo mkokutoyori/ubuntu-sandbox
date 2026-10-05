@@ -5,7 +5,8 @@ import { LinuxPamAccounts } from './LinuxPamAccounts';
 import { LinuxPamFiles } from './LinuxPamFiles';
 import { createLinuxPamModules } from './LinuxPamModules';
 import { formatPamLogLine, type PamLogEntry } from './PamHandle';
-import type { LinuxPamHost, PamCaller } from './PamLinuxHost';
+import { defaultRlimits } from './PamRlimitDefaults';
+import type { LinuxPamHost, PamCaller, PamLoginEntry, PamRlimit, PamRlimitResource } from './PamLinuxHost';
 import { PamTransaction } from './PamTransaction';
 
 export interface LinuxPamDeps {
@@ -13,6 +14,9 @@ export interface LinuxPamDeps {
   readonly users: LinuxUserManager;
   readonly logs: LinuxLogManager;
   readonly clock: () => number;
+  readonly logins: () => readonly PamLoginEntry[];
+  readonly auditdRunning: () => boolean;
+  readonly processLimits?: (uid: number) => ReadonlyMap<PamRlimitResource, PamRlimit>;
 }
 
 export interface PamSyslogIdentity {
@@ -46,6 +50,14 @@ export class LinuxPam {
       accounts: this.accounts,
       files: this.files,
       caller: options.caller,
+      logins: this.deps.logins,
+      auditdRunning: this.deps.auditdRunning,
+      process: {
+        umask: 0o022,
+        priority: 0,
+        loginUid: null,
+        limits: defaultRlimits(this.deps.processLimits?.(options.caller.uid)),
+      },
     };
     return new PamTransaction(service, host, createLinuxPamModules(), host);
   }
