@@ -5,6 +5,7 @@ import { LinuxPamAccounts } from './LinuxPamAccounts';
 import { LinuxPamFiles } from './LinuxPamFiles';
 import { createLinuxPamModules } from './LinuxPamModules';
 import { formatPamLogLine, type PamLogEntry } from './PamHandle';
+import type { KeyringTable } from '../kernel/KeyringTable';
 import { defaultRlimits } from './PamRlimitDefaults';
 import type { LinuxPamHost, PamCaller, PamLoginEntry, PamRlimit, PamRlimitResource } from './PamLinuxHost';
 import { PamTransaction } from './PamTransaction';
@@ -16,6 +17,8 @@ export interface LinuxPamDeps {
   readonly clock: () => number;
   readonly logins: () => readonly PamLoginEntry[];
   readonly auditdRunning: () => boolean;
+  readonly keyrings: KeyringTable;
+  readonly updateMotd?: () => string | null;
   readonly processLimits?: (uid: number) => ReadonlyMap<PamRlimitResource, PamRlimit>;
 }
 
@@ -52,7 +55,15 @@ export class LinuxPam {
       caller: options.caller,
       logins: this.deps.logins,
       auditdRunning: this.deps.auditdRunning,
+      updateMotd: this.deps.updateMotd ?? null,
+      keyrings: {
+        userSessionKeyring: (uid) => this.deps.keyrings.userSessionKeyring(uid).id,
+        joinAnonymousSession: (uid, gid) => this.deps.keyrings.joinAnonymousSession(uid, gid).id,
+        linkUserKeyring: (uid, session) => this.deps.keyrings.link(this.deps.keyrings.userKeyring(uid).id, session),
+        revoke: (id, asUid) => this.deps.keyrings.revoke(id, asUid),
+      },
       process: {
+        sessionKeyring: this.deps.keyrings.userSessionKeyring(options.caller.uid).id,
         umask: 0o022,
         priority: 0,
         loginUid: null,

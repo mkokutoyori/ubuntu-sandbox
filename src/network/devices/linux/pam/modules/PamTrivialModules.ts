@@ -85,3 +85,9 @@ export const pamNologinModule: PamModuleImplementation<LinuxPamHost> = {
   setcred: () => PamReturn.SUCCESS,
   acctMgmt: (pamh, _flags, args) => nologinCheck(pamh, args),
 };
+
+export const pamSelinuxModule: PamModuleImplementation<LinuxPamHost> = {
+  openSession: () => PamReturn.SUCCESS,
+  closeSession: () => PamReturn.SUCCESS,
+  authenticate: () => PamReturn.SUCCESS,
+};

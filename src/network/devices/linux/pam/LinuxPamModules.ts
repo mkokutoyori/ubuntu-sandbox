@@ -4,7 +4,10 @@ import { pamEnvModule } from './modules/PamEnvModule';
 import { pamFaillockModule } from './modules/PamFaillockModule';
 import { pamLimitsModule } from './modules/PamLimitsModule';
 import { pamListfileModule, pamSucceedIfModule, pamWheelModule } from './modules/PamAccessControlModules';
-import { pamDenyModule, pamNologinModule, pamPermitModule, pamRootokModule } from './modules/PamTrivialModules';
+import { pamKeyinitModule } from './modules/PamKeyinitModule';
+import { pamMailModule } from './modules/PamMailModule';
+import { pamMotdModule } from './modules/PamMotdModule';
+import { pamDenyModule, pamNologinModule, pamPermitModule, pamRootokModule, pamSelinuxModule } from './modules/PamTrivialModules';
 import { pamFaildelayModule, pamLoginuidModule, pamShellsModule, pamUmaskModule } from './modules/PamSessionModules';
 import { pamPwqualityModule } from './modules/PamPwqualityModule';
 import { pamUnixModule } from './modules/PamUnixModule';
@@ -23,6 +26,10 @@ export function createLinuxPamModules(): PamModuleRegistry<LinuxPamHost> {
     .register('pam_env', pamEnvModule)
     .register('pam_limits', pamLimitsModule)
     .register('pam_pwquality', pamPwqualityModule)
+    .register('pam_keyinit', pamKeyinitModule)
+    .register('pam_mail', pamMailModule)
+    .register('pam_motd', pamMotdModule)
+    .register('pam_selinux', pamSelinuxModule)
     .register('pam_umask', pamUmaskModule)
     .register('pam_loginuid', pamLoginuidModule)
     .register('pam_shells', pamShellsModule)

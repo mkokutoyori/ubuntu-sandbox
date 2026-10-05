@@ -18,7 +18,15 @@ export class LinuxPamFiles implements PamWritableFiles {
 
   stat(path: string): PamFileStat | null {
     const inode = this.vfs.resolveInode(path);
-    return inode === null ? null : { mode: inode.permissions, regular: inode.type === 'file' };
+    if (inode === null) return null;
+    return {
+      mode: inode.permissions,
+      regular: inode.type === 'file',
+      directory: inode.type === 'directory',
+      size: inode.size,
+      accessTime: inode.atime,
+      modifyTime: inode.mtime,
+    };
   }
 
   mkdirp(path: string): void {

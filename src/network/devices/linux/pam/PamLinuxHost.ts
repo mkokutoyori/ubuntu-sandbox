@@ -29,6 +29,10 @@ export interface PamGroupRecord {
 export interface PamFileStat {
   readonly mode: number;
   readonly regular: boolean;
+  readonly directory: boolean;
+  readonly size: number;
+  readonly accessTime: number;
+  readonly modifyTime: number;
 }
 
 export interface PamAccountsPort {
@@ -72,7 +76,15 @@ export interface PamRlimit {
   hard: number;
 }
 
+export interface PamKeyrings {
+  userSessionKeyring(uid: number): number;
+  joinAnonymousSession(uid: number, gid: number): number;
+  linkUserKeyring(uid: number, session: number): boolean;
+  revoke(id: number, asUid: number): boolean;
+}
+
 export interface PamProcessState {
+  sessionKeyring: number | null;
   umask: number;
   priority: number;
   loginUid: number | null;
@@ -87,6 +99,8 @@ export interface LinuxPamHost extends PamHost {
   readonly process: PamProcessState;
   readonly logins: () => readonly PamLoginEntry[];
   readonly auditdRunning: () => boolean;
+  readonly keyrings: PamKeyrings;
+  readonly updateMotd: (() => string | null) | null;
   readonly accounts: PamAccountsPort;
   readonly files: PamWritableFiles;
   readonly caller: PamCaller;

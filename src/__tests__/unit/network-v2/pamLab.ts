@@ -3,6 +3,7 @@ import type {
   LinuxPamHost, PamGroupRecord, PamLoginEntry, PamProcessState, PamShadowRecord, PamUserRecord,
 } from '@/network/devices/linux/pam/PamLinuxHost';
 import { formatPamLogLine, type PamConversationRequest, type PamLogEntry, type PamReply } from '@/network/devices/linux/pam/PamHandle';
+import { KeyringTable } from '@/network/devices/linux/kernel/KeyringTable';
 import { defaultRlimits } from '@/network/devices/linux/pam/PamRlimitDefaults';
 import { PamTransaction, runPamSync } from '@/network/devices/linux/pam/PamTransaction';
 
@@ -41,8 +42,12 @@ export class PamLab {
   readonly history = new Map<string, string[]>();
   auditd = false;
   readonly modes = new Map<string, number>();
+  readonly times = new Map<string, { access: number; modify: number }>();
   readonly loginList: PamLoginEntry[] = [];
-  readonly process: PamProcessState = { umask: 0o022, priority: 0, loginUid: null, limits: defaultRlimits() };
+  readonly keyringTable = new KeyringTable();
+  updateMotdOutput: string | null = null;
+  motdUpdates = 0;
+  readonly process: PamProcessState = { sessionKeyring: this.keyringTable.userSessionKeyring(0).id, umask: 0o022, priority: 0, loginUid: null, limits: defaultRlimits() };
   now: number;
   private readonly users = new Map<string, LabUser>();
   private readonly groups: LabGroup[];
@@ -58,6 +63,7 @@ export class PamLab {
     for (const [path, content] of Object.entries(options.files ?? {})) this.files.set(path, content);
     const caller = options.caller ?? { uid: 0 };
     this.caller = { uid: caller.uid, euid: caller.euid ?? caller.uid, loginName: caller.loginName ?? '' };
+    this.process.sessionKeyring = this.keyringTable.userSessionKeyring(this.caller.uid).id;
   }
 
   private record(user: LabUser): PamUserRecord {
@@ -79,6 +85,13 @@ export class PamLab {
     process: this.process,
     logins: () => this.loginList,
     auditdRunning: () => this.auditd,
+    updateMotd: () => { this.motdUpdates++; return this.updateMotdOutput; },
+    keyrings: {
+      userSessionKeyring: (uid) => this.keyringTable.userSessionKeyring(uid).id,
+      joinAnonymousSession: (uid, gid) => this.keyringTable.joinAnonymousSession(uid, gid).id,
+      linkUserKeyring: (uid, session) => this.keyringTable.link(this.keyringTable.userKeyring(uid).id, session),
+      revoke: (id, asUid) => this.keyringTable.revoke(id, asUid),
+    },
     log: (entry) => { this.logs.push(entry); },
     caller: new Proxy({} as { uid: number; euid: number; loginName: string }, {
       get: (_target, key) => this.caller[key as 'uid' | 'euid' | 'loginName'],
@@ -86,7 +99,20 @@ export class PamLab {
     files: {
       writeFile: (path, content) => { this.files.set(path, content); return true; },
       exists: (path) => this.files.has(path),
-      stat: (path) => (this.files.has(path) ? { mode: this.modes.get(path) ?? 0o644, regular: true } : null),
+      stat: (path) => {
+        const content = this.files.get(path);
+        const isDirectory = content === undefined && [...this.files.keys()].some((key) => key.startsWith(`${path}/`));
+        if (content === undefined && !isDirectory) return null;
+        const times = this.times.get(path) ?? { access: this.now, modify: this.now };
+        return {
+          mode: this.modes.get(path) ?? 0o644,
+          regular: !isDirectory,
+          directory: isDirectory,
+          size: content?.length ?? 0,
+          accessTime: times.access,
+          modifyTime: times.modify,
+        };
+      },
       mkdirp: () => undefined,
       listDirectory: (path) => {
         const prefix = path.endsWith('/') ? path : `${path}/`;
@@ -94,7 +120,7 @@ export class PamLab {
         for (const key of this.files.keys()) {
           if (key.startsWith(prefix)) names.add(key.slice(prefix.length).split('/')[0]);
         }
-        return [...names].sort();
+        return names.size === 0 ? null : [...names].sort();
       },
       remove: (path) => { this.files.delete(path); },
     },

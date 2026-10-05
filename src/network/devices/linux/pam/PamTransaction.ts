@@ -93,7 +93,7 @@ export class PamTransaction<H extends PamHost = PamHost> {
     return this.pendingFailDelayUs;
   }
 
-  *setcred(flags = PamFlag.ESTABLISH_CRED): PamConversationFlow<number> {
+  *setcred(flags: number = PamFlag.ESTABLISH_CRED): PamConversationFlow<number> {
     return yield* this.dispatch('setcred', 'auth', flags);
   }
 

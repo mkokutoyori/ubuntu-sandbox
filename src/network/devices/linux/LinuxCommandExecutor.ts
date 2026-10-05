@@ -39,6 +39,7 @@ import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager, fmtSyslogTimestamp } from './LinuxLogManager';
 import { LinuxPam } from './pam/LinuxPam';
+import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
@@ -428,6 +429,7 @@ export class LinuxCommandExecutor {
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
   readonly pam: LinuxPam;
+  readonly keyrings = new KeyringTable();
   readonly netConfig: LinuxNetworkConfigManager;
   /** Kernel audit subsystem — the security audit trail (`/var/log/audit`). */
   readonly auditLog: LinuxAuditLog;
@@ -671,6 +673,7 @@ export class LinuxCommandExecutor {
       clock: () => Date.now(),
       logins: () => this.sessionTable?.list().map((session) => ({ user: session.user })) ?? [],
       auditdRunning: () => this.auditDaemon?.running ?? false,
+      keyrings: this.keyrings,
       processLimits: (uid) => new Map([
         ['nofile', { soft: this.processMgr.nofileLimit(uid), hard: this.processMgr.nofileHardLimit(uid) }],
         ['nproc', { soft: this.processMgr.nprocLimit(uid), hard: this.processMgr.nprocHardLimit(uid) }],
@@ -880,6 +883,7 @@ export class LinuxCommandExecutor {
     this.vfs.mkdirp('/proc/sys/kernel', 0o755, 0, 0);
     const k = () => this.identity.kernel;
     this.vfs.registerGeneratedFile('/proc/version', () => k().toProcVersion());
+    this.vfs.registerGeneratedFile('/proc/keys', () => this.keyrings.renderProcKeys());
     this.vfs.registerGeneratedFile('/proc/cmdline', () => `${this.logMgr.kernelCommandLine()}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
