@@ -136,6 +136,7 @@ export interface UnackedSegment {
    */
   lastSentTsVal?: number;
   lastSentAtMs?: number;
+  windowProbe?: boolean;
 }
 
 export const TCP_DEFAULT_MSS = 1460;
