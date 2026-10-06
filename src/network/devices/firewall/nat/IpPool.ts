@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { tryIpToUint32, uint32ToIp } from '../../../core/ip';
 
 export type IpPoolType =
@@ -119,7 +121,7 @@ export class IpPoolAllocator {
   private readonly oneToOne = new Map<string, OneToOneBinding>();
   private readonly blocks = new Map<string, HeldBlock[]>();
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(private readonly now: () => number = simulationNowMs) {}
 
   blocksHeldBy(name: string, sourceIP: string): readonly PoolAllocation[] {
     const pool = this.pools.get(name);

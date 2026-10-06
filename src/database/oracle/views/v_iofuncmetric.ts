@@ -2,6 +2,8 @@
  * V$IOFUNCMETRIC — per-I/O-function metrics snapshot.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -14,7 +16,7 @@ registerView({
   query({ runtime }) {
     let reads = 0;
     for (const s of runtime.sqlCache.values()) reads += s.diskReads;
-    const end = Date.now();
+    const end = simulationNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

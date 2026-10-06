@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { RRType } from '@/network/dns/wire/RRType';
 import { makeRrsigRecord } from '@/network/dns/wire/ResourceRecord';
 import type {
@@ -17,7 +19,7 @@ export interface SignatureWindow {
 
 const DEFAULT_VALIDITY_SECONDS = 30 * 86400;
 
-export function defaultSignatureWindow(nowSeconds: number = Math.floor(Date.now() / 1000)): SignatureWindow {
+export function defaultSignatureWindow(nowSeconds: number = Math.floor(simulationNowMs() / 1000)): SignatureWindow {
   return { inception: nowSeconds - 3600, expiration: nowSeconds + DEFAULT_VALIDITY_SECONDS };
 }
 

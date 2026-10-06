@@ -9,6 +9,8 @@
  * reference for uncabled unit tests.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { DHCPPacket, DHCP_OPTION } from './DHCPPacket';
 import type {
   DHCPDiscoverParams,
@@ -69,7 +71,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
   constructor(
     private readonly iface: string,
     private readonly sendFrame: DhcpFrameSender,
-    private readonly clock: () => number = () => Date.now(),
+    private readonly clock: () => number = () => simulationNowMs(),
   ) {}
 
   get serverIP(): string | null { return this.lastServerIp; }

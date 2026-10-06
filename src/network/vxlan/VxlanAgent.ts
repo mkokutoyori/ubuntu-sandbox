@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import {
   type VxlanConfig, type VxlanRemoteVtep, type VxlanInterface,
@@ -146,7 +148,7 @@ export class VxlanAgent {
     const knownVtep = this.config.remoteVteps.get(makeVtepKey(vni, remoteVtepIp));
     if (knownVtep) {
       knownVtep.packetsIn++;
-      knownVtep.lastSeenMs = Date.now();
+      knownVtep.lastSeenMs = simulationNowMs();
     }
     const inner = payload.innerFrame as EthernetFrame | undefined;
     if (!inner || !inner.srcMAC || !inner.dstMAC) {
@@ -157,7 +159,7 @@ export class VxlanAgent {
       const macKey = makeMacKey(vni, inner.srcMAC.toString());
       const existing = this.config.macTable.get(macKey);
       if (!existing || existing.remoteVtepIp !== remoteVtepIp) {
-        this.config.macTable.set(macKey, { vni, remoteVtepIp, lastSeenMs: Date.now() });
+        this.config.macTable.set(macKey, { vni, remoteVtepIp, lastSeenMs: simulationNowMs() });
         if (knownVtep) knownVtep.remoteMacs.add(inner.srcMAC.toString().toLowerCase());
         this.getBus().publish({
           topic: 'vxlan.mac.learned',
@@ -167,7 +169,7 @@ export class VxlanAgent {
           },
         });
       } else {
-        existing.lastSeenMs = Date.now();
+        existing.lastSeenMs = simulationNowMs();
       }
     }
     this.getBus().publish({

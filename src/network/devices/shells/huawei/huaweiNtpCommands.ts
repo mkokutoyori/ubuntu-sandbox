@@ -49,6 +49,8 @@
  * constructeur, et le PRD (§3) tient les deux separes.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NtpAgent } from '../../../ntp/NtpAgent';
 import type { ErreurGrammaireVrp } from '../cli-utils';
 import { isValidIPv4 } from '../../../core/ip';
@@ -293,7 +295,7 @@ export function displayNtpServiceStatus(agent: NtpAgent | undefined): string {
     `Root delay: ${(best ? Math.abs(best.delayMs) : 0).toFixed(2)} ms`,
     `Root dispersion: ${(best ? best.dispersionMs : maitreLocal ? 0 : 16000).toFixed(2)} ms`,
     `Peer dispersion: ${(best ? best.dispersionMs / 2 : maitreLocal ? 0 : 16000).toFixed(2)} ms`,
-    `Reference time: ${horodatageVrp(cfg.lastSyncMs || Date.now())}`,
+    `Reference time: ${horodatageVrp(cfg.lastSyncMs || simulationNowMs())}`,
   ];
   if (cfg.sourceInterface) lignes.push(`Source interface: ${cfg.sourceInterface}`);
   return lignes.join('\n');
@@ -371,7 +373,7 @@ export function displayNtpServiceSessions(
   for (const [, a] of cfg.associations) {
     const joignable = a.reach !== 0;
     const marque = a.preferred && joignable ? '*' : a.prefer && joignable ? '+' : ' ';
-    const depuis = a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 0;
+    const depuis = a.lastReplyMs ? Math.floor((simulationNowMs() - a.lastReplyMs) / 1000) : 0;
     lignes.push(
       `${marque}${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? a.serverIp : 'LOCAL(0)').padEnd(15)} `
       + `${String(a.stratum).padStart(2)} ${a.reach.toString(8).padStart(3, '0')} `

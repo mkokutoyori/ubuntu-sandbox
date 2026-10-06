@@ -26,6 +26,8 @@
  * explicitly out of scope).
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { EndHost } from '@/network/devices/EndHost';
 import { RadiusServerAgent, type RadiusServerHost, type RadiusUserResolverContext } from '@/network/radius/RadiusServerAgent';
 import { attr, type RadiusUser, type RadiusAttribute } from '@/network/radius/types';
@@ -87,7 +89,7 @@ export class WindowsNpsRole {
     private readonly host: EndHost,
     private readonly userStore: NpsUserStore,
     private readonly eventLog: PSEventLogProvider,
-    private readonly getNow: () => Date = () => new Date(),
+    private readonly getNow: () => Date = () => simulationDate(),
     private readonly getHostBus: () => IEventBus = ownBusProvider(),
   ) {
     const radiusHost: RadiusServerHost = {

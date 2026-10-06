@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type {
   Block, Stmt, Expr, Declaration, TypeRef, CallArg, AssignTarget, SubprogramDecl,
 } from './PlsqlAst';
@@ -939,7 +941,7 @@ export class PlsqlInterpreter {
     if (slot) return slot.value;
     if (up === 'SQLCODE') return this.sqlcode;
     if (up === 'SQLERRM') return this.sqlerrm;
-    if (up === 'SYSDATE' || up === 'SYSTIMESTAMP' || up === 'CURRENT_DATE' || up === 'CURRENT_TIMESTAMP') return new Date();
+    if (up === 'SYSDATE' || up === 'SYSTIMESTAMP' || up === 'CURRENT_DATE' || up === 'CURRENT_TIMESTAMP') return simulationDate();
     if (up === 'USER') return this.host.currentSchema();
     if (up === 'TRUE') return true;
     if (up === 'FALSE') return false;
@@ -1181,7 +1183,7 @@ export class PlsqlInterpreter {
       case 'TO_NUMBER': { const v = ev(0); if (v === null) return h(null); const n = Number(v); if (isNaN(n)) throw new PlsqlException('INVALID_NUMBER', 1722, 'ORA-01722: invalid number'); return h(n); }
       case 'SQLCODE': return h(this.sqlcode);
       case 'SQLERRM': { if (args.length) { const c = num(0); const pre = matchPredefinedException(`ORA-${String(Math.abs(c)).padStart(5, '0')}`); return h(pre ? pre.defaultMessage : `ORA-${String(Math.abs(c)).padStart(5, '0')}: Message ${Math.abs(c)} not found`); } return h(this.sqlerrm); }
-      case 'SYSDATE': case 'CURRENT_DATE': return h(new Date());
+      case 'SYSDATE': case 'CURRENT_DATE': return h(simulationDate());
       case 'USER': return h(this.host.currentSchema());
       case 'MOD2': return { handled: false, value: null };
     }

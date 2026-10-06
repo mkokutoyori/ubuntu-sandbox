@@ -6,6 +6,8 @@
  * CHANNEL_RELEASED on dedicated subjects exposed as observables.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { RmanSubject, type RmanObservable } from '../reactive/RmanSubject';
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
@@ -39,7 +41,7 @@ export class ReactiveChannelPool implements IChannelPool {
         const id = alias ?? `${cfg.id}_${idx}`;
         const sid = this._sidCounter++;
         const handle: ChannelHandle = Object.freeze({
-          id, deviceType: cfg.deviceType, sid, allocatedAt: Date.now(),
+          id, deviceType: cfg.deviceType, sid, allocatedAt: simulationNowMs(),
         });
         this._handles.set(id, { handle, state: 'BUSY' });
         this._stats = {

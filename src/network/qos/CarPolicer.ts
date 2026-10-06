@@ -30,6 +30,8 @@
  * ce plan de données — écrit ici plutôt que découvert.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type CarDirection = 'input' | 'output';
 export type CarAction = 'transmit' | 'drop' | 'continue' | string;
 
@@ -78,7 +80,7 @@ export function parseRateLimitRule(args: string[], raw: string): CarRule | null 
     direction: dir, bitsPerSecond: bps,
     normalBurstBytes: normal, maxBurstBytes: max,
     conformAction: conform, exceedAction: exceed, raw,
-    tokens: normal, lastRefillMs: Date.now(),
+    tokens: normal, lastRefillMs: simulationNowMs(),
     conformedPackets: 0, conformedBytes: 0,
     exceededPackets: 0, exceededBytes: 0, lastPacketMs: null,
   };
@@ -121,7 +123,7 @@ function parseCarParameters(
     direction,
     bitsPerSecond, normalBurstBytes: cbs, maxBurstBytes: pbs,
     conformAction: 'transmit', exceedAction: 'drop', raw,
-    tokens: cbs, lastRefillMs: Date.now(),
+    tokens: cbs, lastRefillMs: simulationNowMs(),
     conformedPackets: 0, conformedBytes: 0,
     exceededPackets: 0, exceededBytes: 0, lastPacketMs: null,
   };
@@ -152,7 +154,7 @@ export class CarPolicer {
    * `now` est injectable pour que les tests mesurent le remplissage du
    * seau sans dépendre de l'horloge murale.
    */
-  police(direction: CarDirection, bytes: number, now: number = Date.now()): boolean {
+  police(direction: CarDirection, bytes: number, now: number = simulationNowMs()): boolean {
     for (const r of this.rules) {
       if (r.direction !== direction) continue;
       this.refill(r, now);
@@ -199,7 +201,7 @@ export function parseSuppressionRule(
     direction: 'input',
     bitsPerSecond, normalBurstBytes, maxBurstBytes: normalBurstBytes * 2,
     conformAction: 'transmit', exceedAction: 'drop', raw,
-    tokens: percent === 0 ? 0 : normalBurstBytes, lastRefillMs: Date.now(),
+    tokens: percent === 0 ? 0 : normalBurstBytes, lastRefillMs: simulationNowMs(),
     conformedPackets: 0, conformedBytes: 0,
     exceededPackets: 0, exceededBytes: 0, lastPacketMs: null,
   };
@@ -213,7 +215,7 @@ export function suppressionKindOf(dstMac: string): SuppressionKind {
 }
 
 /** Une copie NEUVE d'une regle : son seau lui appartient. */
-export function cloneCarRule(rule: CarRule, now = Date.now()): CarRule {
+export function cloneCarRule(rule: CarRule, now = simulationNowMs()): CarRule {
   return {
     ...rule,
     tokens: rule.normalBurstBytes, lastRefillMs: now,

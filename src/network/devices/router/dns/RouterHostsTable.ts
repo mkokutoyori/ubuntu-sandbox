@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export interface RouterHostsEntry {
   readonly name: string;
   readonly ip: string;
@@ -17,7 +19,7 @@ export class RouterHostsTable {
   private readonly byName = new Map<string, Entree>();
   private readonly maintenant: () => number;
 
-  constructor(maintenant: () => number = Date.now) {
+  constructor(maintenant: () => number = simulationNowMs) {
     this.maintenant = maintenant;
   }
 

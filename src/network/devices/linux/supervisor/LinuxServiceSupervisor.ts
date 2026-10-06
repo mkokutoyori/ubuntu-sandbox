@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { LinuxServiceManager } from '../LinuxServiceManager';
 import type { LinuxService } from '../service/LinuxService';
@@ -90,7 +92,7 @@ export class LinuxServiceSupervisor {
   private startLimitReached(unit: LinuxService): boolean {
     const burst = unit.startLimitBurst ?? DEFAULT_START_LIMIT_BURST;
     const intervalMs = (unit.startLimitIntervalSec ?? DEFAULT_START_LIMIT_INTERVAL_SEC) * 1000;
-    const now = Date.now();
+    const now = simulationNowMs();
     const epochs = (unit.restartEpochs ?? []).filter((t) => now - t <= intervalMs);
     if (epochs.length >= burst) {
       unit.restartEpochs = epochs;

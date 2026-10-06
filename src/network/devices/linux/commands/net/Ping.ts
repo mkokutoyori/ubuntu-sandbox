@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   formatPingHeader, formatPing6Header, formatPingRedirectLine, formatPingReplyLine, formatPingStats,
   pingErrorCount, PING_TIMING_MIN_SIZE, type PingAddressRenderer,
@@ -303,7 +305,7 @@ function patternBytes(pattern: string): number[] {
 
 function timestampPrefix(enabled: boolean): string {
   if (!enabled) return '';
-  const nowMs = Date.now();
+  const nowMs = simulationNowMs();
   return `[${Math.floor(nowMs / 1000)}.${String((nowMs % 1000) * 1000).padStart(6, '0')}] `;
 }
 

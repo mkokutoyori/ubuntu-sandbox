@@ -5,6 +5,8 @@
  * Queries against these views return simulated metadata from the storage layer.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { TableHistory } from './flashback/TableHistory';
 import { BaseCatalog, type CatalogUser, type CatalogPrivilege } from '../engine/catalog/BaseCatalog';
 import { type ResultSet, queryResult, emptyResult } from '../engine/executor/ResultSet';
@@ -370,7 +372,7 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private initDefaultUsersAndRoles(): void {
-    const now = new Date();
+    const now = simulationDate();
     const defaultUsers: (CatalogUser & { password: string })[] = [
       { username: 'SYS', userId: this.nextUserId++, defaultTablespace: 'SYSTEM', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'oracle' },
       { username: 'SYSTEM', userId: this.nextUserId++, defaultTablespace: 'SYSTEM', temporaryTablespace: 'TEMP', accountStatus: 'OPEN', lockDate: null, expiryDate: null, created: now, profile: 'DEFAULT', authenticationType: 'PASSWORD', password: 'oracle' },
@@ -606,7 +608,7 @@ export class OracleCatalog extends BaseCatalog {
       osUsername: entry.osUsername ?? 'oracle',
       userhost: entry.userhost ?? 'localhost',
       terminal: entry.terminal ?? 'pts/0',
-      timestamp: entry.timestamp ?? new Date(),
+      timestamp: entry.timestamp ?? simulationDate(),
       username: entry.username,
       actionName: entry.actionName,
       objName: entry.objName ?? null,
@@ -761,7 +763,7 @@ export class OracleCatalog extends BaseCatalog {
     ['DATA_PUMP_DIR', {
       name: 'DATA_PUMP_DIR',
       path: `${ORACLE_CONFIG.BASE}/admin/${ORACLE_CONFIG.SID}/dpdump/`,
-      created: new Date(),
+      created: simulationDate(),
     }],
   ]);
 
@@ -930,7 +932,7 @@ export class OracleCatalog extends BaseCatalog {
     const full: RecyclebinEntry = {
       ...entry,
       objectName,
-      droptime: entry.droptime ?? new Date(),
+      droptime: entry.droptime ?? simulationDate(),
     };
     this.recyclebin.push(full);
     return full;
@@ -1183,7 +1185,7 @@ export class OracleCatalog extends BaseCatalog {
     if (!this.tdeWallet || this.tdeWallet.status === 'CLOSED') {
       throw new Error('ORA-28365: wallet is not open');
     }
-    const now = new Date();
+    const now = simulationDate();
     // Synthesise a 78-char base64-like key id from time + sequence — real
     // Oracle uses a UUID-style identifier; reproducibility is fine here.
     const seq = (this.tdeKeys.length + 1).toString().padStart(4, '0');
@@ -1625,7 +1627,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // Tables.
     for (const t of this.storage.getAllTables()) {
-      const created = new Date();
+      const created = simulationDate();
       const id = allocId(nextId++);
       out.push({
         owner: t.schema, name: t.name, subobject: null,
@@ -1639,7 +1641,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // User-defined views.
     for (const v of this.storage.getAllViews()) {
-      const created = new Date();
+      const created = simulationDate();
       out.push({
         owner: v.schema, name: v.name, subobject: null,
         objectId: allocId(nextId++), dataObjectId: null,
@@ -1653,7 +1655,7 @@ export class OracleCatalog extends BaseCatalog {
     // Indexes.
     for (const schema of this.storage.getSchemas()) {
       for (const idx of this.storage.getIndexes(schema)) {
-        const created = new Date();
+        const created = simulationDate();
         const id = allocId(nextId++);
         out.push({
           owner: schema, name: idx.name, subobject: null,
@@ -1675,7 +1677,7 @@ export class OracleCatalog extends BaseCatalog {
       const map = seqs?.get(schema);
       if (!map) continue;
       for (const seqName of map.keys()) {
-        const created = new Date();
+        const created = simulationDate();
         out.push({
           owner: schema, name: seqName, subobject: null,
           objectId: allocId(nextId++), dataObjectId: null,
@@ -1689,7 +1691,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // Synonyms.
     for (const s of this.storage.getAllSynonyms()) {
-      const created = new Date();
+      const created = simulationDate();
       out.push({
         owner: s.owner, name: s.name, subobject: null,
         objectId: allocId(nextId++), dataObjectId: null,
@@ -1713,7 +1715,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // Triggers.
     for (const t of this.storage.getAllTriggers()) {
-      const created = new Date();
+      const created = simulationDate();
       out.push({
         owner: t.schema, name: t.name, subobject: null,
         objectId: allocId(nextId++), dataObjectId: null,

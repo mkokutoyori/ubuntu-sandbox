@@ -2,6 +2,8 @@
  * DBA_HIST_ACTIVE_SESS_HISTORY — historical ASH samples.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -10,7 +12,7 @@ registerView({
   name: 'DBA_HIST_ACTIVE_SESS_HISTORY',
   comment: 'Historical Active Session History',
   query({ runtime }) {
-    const now = Date.now();
+    const now = simulationNowMs();
     const elapsedHours = Math.max(1, Math.floor((now - runtime.startedAt) / 3_600_000));
     return queryResult(
       [

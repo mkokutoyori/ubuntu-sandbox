@@ -5,6 +5,8 @@
  * Used by CiscoIOSShell for "show" commands in user and privileged modes.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { OSPF_DEFAULT_REFERENCE_BANDWIDTH } from '../../../ospf/types';
 import { ARP_TIMEOUT_DEFAULT_SEC } from '../../../arp/ArpCache';
@@ -1482,7 +1484,7 @@ export function showInterfaceRateLimit(router: Router, ifName: string): string {
   const regles = router.getCarPolicer(ifName)?.list() ?? [];
   if (regles.length === 0) return `${ifName}`;
   const lines = [`${ifName}`];
-  const maintenant = Date.now();
+  const maintenant = simulationNowMs();
   for (const r of regles) {
     lines.push(`  ${r.direction === 'input' ? 'Input' : 'Output'}`);
     lines.push(`    matches: all traffic`);

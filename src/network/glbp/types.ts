@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { FhrpGroupBase } from '../fhrp/types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 import { createDefaultFhrpConfig, type FhrpTrackEntry } from '../fhrp/types';
@@ -115,7 +117,7 @@ export function defaultGroupRuntime(iface: string, group: number): GlbpGroupRunt
     preempt: false, loadBalancing: 'round-robin',
     helloSec: 3, holdSec: 10,
     avgIp: null, avgPriority: 0,
-    lastHeardAvgMs: 0, lastTransitionMs: Date.now(),
+    lastHeardAvgMs: 0, lastTransitionMs: simulationNowMs(),
     forwarders: new Map(),
     rrCursor: 0,
     hostMap: new Map(),

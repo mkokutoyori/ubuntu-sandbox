@@ -21,6 +21,8 @@
  * UFW never evaluates packets directly.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import type { ListFormat } from './LinuxIptablesManager';
@@ -1625,7 +1627,7 @@ export class LinuxFirewallManager {
   private appendUfwLine(kernelMessage: string): void {
     if (!this.vfs) return;
 
-    const now = new Date();
+    const now = simulationDate();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const ts = `${months[now.getMonth()]} ${String(now.getDate()).padStart(2, ' ')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     const line = `${ts} localhost kernel: ${kernelMessage}`;

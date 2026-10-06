@@ -12,6 +12,8 @@
  * Référence : `systemd-resolved.service(8)`, `resolved.conf(5)`.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
@@ -234,7 +236,7 @@ export class ResolvedService {
   }>();
 
   constructor(private readonly deps: ResolvedDeps) {
-    this.cache = new DnsCache(deps.now ?? (() => Date.now()));
+    this.cache = new DnsCache(deps.now ?? (() => simulationNowMs()));
   }
 
   setGlobal(cfg: ResolvedGlobalConfig): void { this.global = cfg; }
@@ -369,7 +371,7 @@ export class ResolvedService {
   ): ResolvedQueryOutcome | null {
     const key = name.toLowerCase().replace(/\.$/, '');
     const ck = this.cacheKey(key, qtype);
-    const now = (this.deps.now ?? (() => Date.now()))();
+    const now = (this.deps.now ?? (() => simulationNowMs()))();
 
     if (this.global.cache) {
       const cached = this.answers.get(ck);
@@ -486,7 +488,7 @@ export class ResolvedService {
     this.stats.transactions++;
     const key = name.toLowerCase().replace(/\.$/, '');
     const ck = this.cacheKey(key, qtype);
-    const now = (this.deps.now ?? (() => Date.now()))();
+    const now = (this.deps.now ?? (() => simulationNowMs()))();
 
     if (this.global.cache) {
       const cached = this.answers.get(ck);

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { FhrpGroupBase } from '../fhrp/types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 import { createDefaultFhrpConfig, trackedPriority, type FhrpTrackEntry } from '../fhrp/types';
@@ -70,7 +72,7 @@ export function defaultGroupRuntime(iface: string, group: number, version: 1 | 2
     helloSec: 3, holdSec: 10, version, authText: 'cisco',
     activeRouterIp: null, activeRouterPriority: 0,
     standbyRouterIp: null, standbyRouterPriority: 0,
-    lastHeardActiveMs: 0, lastHeardStandbyMs: 0, lastTransitionMs: Date.now(),
+    lastHeardActiveMs: 0, lastHeardStandbyMs: 0, lastTransitionMs: simulationNowMs(),
     tracks: [],
     vipLearn: false,
     probed: false,

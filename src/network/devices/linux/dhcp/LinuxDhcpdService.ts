@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { EndHost } from '../../EndHost';
 import { DhcpBulkLeasequeryService } from '@/network/dhcp/DhcpBulkLeasequery';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
@@ -65,7 +67,7 @@ export class LinuxDhcpdService {
 
   constructor(private readonly host: EndHost, private readonly fs: DhcpdFsPort) {
     this.engine.setEventBus(host.getBus());
-    this.bulkLeasequery = new DhcpBulkLeasequeryService({ tcp: () => host.getTcpStack(), now: () => Date.now() }, this.engine);
+    this.bulkLeasequery = new DhcpBulkLeasequeryService({ tcp: () => host.getTcpStack(), now: () => simulationNowMs() }, this.engine);
   }
 
   isRunning(): boolean { return this.running; }

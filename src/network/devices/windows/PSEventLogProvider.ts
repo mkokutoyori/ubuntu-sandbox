@@ -12,6 +12,8 @@
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 export type EntryType = 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit';
 
 export interface EventLogEntry {
@@ -38,7 +40,7 @@ export interface EventLogMetadata {
 // ─── Seed helpers ─────────────────────────────────────────────────────────────
 
 function makeDate(daysAgo: number, hoursAgo = 0): Date {
-  const d = new Date();
+  const d = simulationDate();
   d.setDate(d.getDate() - daysAgo);
   d.setHours(d.getHours() - hoursAgo);
   return d;
@@ -430,7 +432,7 @@ export class PSEventLogProvider {
    * événement que la machine venait pourtant d'écrire. Deux commandes du
    * même système ne peuvent pas être en désaccord sur « maintenant ».
    */
-  now: () => number = () => Date.now();
+  now: () => number = () => simulationNowMs();
 
   /**
    * Bascule le journal sur l'horloge de l'hôte, et **décale les entrées
@@ -443,7 +445,7 @@ export class PSEventLogProvider {
    * exactement leur espacement.
    */
   attachClock(now: () => number): void {
-    const shift = now() - Date.now();
+    const shift = now() - simulationNowMs();
     this.now = now;
     if (shift === 0) return;
     for (const meta of this.logs.values()) {

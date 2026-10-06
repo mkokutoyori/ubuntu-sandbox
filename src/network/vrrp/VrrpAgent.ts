@@ -4,6 +4,8 @@
  * (init/backup/master), the IP-protocol-112 wire format, and the
  * master-down-interval expiry (3×advert + skew).
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   type VrrpConfig, type VrrpGroupRuntime, type VrrpPacket, type VrrpState,
   defaultGroupRuntime, makeKey, vrrpVirtualMac,
@@ -182,7 +184,7 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     const oldMasterIp = g.masterIp;
     g.masterIp = payload.senderIp;
     g.masterPriority = payload.priority;
-    g.lastHeardMasterMs = Date.now();
+    g.lastHeardMasterMs = simulationNowMs();
 
     if (oldMasterIp !== g.masterIp) {
       this.getBus().publish({
@@ -363,7 +365,7 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
       g.masterPriority = this.prioriteReelle(g, myIp);
     }
     if (oldState !== g.state) {
-      g.lastTransitionMs = Date.now();
+      g.lastTransitionMs = simulationNowMs();
       const c = this.stats(g);
       if (g.state === 'master') c.transitedToMaster++;
       else if (g.state === 'backup') c.transitedToBackup++;
@@ -437,7 +439,7 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
 
   // ── Master-down expiry (RFC 5798 §6.1) ───────────────────────────
   protected expireDue(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const g of this.config.groups.values()) {
       if (g.state !== 'backup') continue;
       if (!g.masterIp) continue;

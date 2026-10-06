@@ -53,6 +53,7 @@
  *     pas, contrairement à ce que faisait le simulateur.
  */
 
+import { pinClock } from './pinnedClockLab';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -419,7 +420,7 @@ describe('Scénario 8 — systemd-analyze calendar (L9)', () => {
 
 describe('Scénario 9 — l\'analyseur PowerShell recolle un mot nu', () => {
   it('un nom de canal garde sa barre oblique', async () => {
-    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pc.powerOn();
+    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pinClock(pc); pc.powerOn();
     const ps = (pc as unknown as { getPowerShellInterpreter(): { execute(c: string): string } })
       .getPowerShellInterpreter();
     // Le défaut : le mot ressortait coupé à la barre, et l'appelant ne
@@ -429,7 +430,7 @@ describe('Scénario 9 — l\'analyseur PowerShell recolle un mot nu', () => {
   });
 
   it('une valeur de paramètre qui commence par `/` n\'est plus perdue', async () => {
-    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pc.powerOn();
+    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pinClock(pc); pc.powerOn();
     const ps = (pc as unknown as { getPowerShellInterpreter(): { execute(c: string): string } })
       .getPowerShellInterpreter();
     // Le défaut était pire qu'une coupure : `/` n'ouvrant pas une valeur,
@@ -440,14 +441,14 @@ describe('Scénario 9 — l\'analyseur PowerShell recolle un mot nu', () => {
   });
 
   it('un pourcentage collé à un nombre reste un mot', async () => {
-    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pc.powerOn();
+    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pinClock(pc); pc.powerOn();
     const ps = (pc as unknown as { getPowerShellInterpreter(): { execute(c: string): string } })
       .getPowerShellInterpreter();
     expect(ps.execute('Write-Output 50%').trim()).toBe('50%');
   });
 
   it('un chemin avec deux-points passait déjà — la réserve du PRD visait la mauvaise cause', async () => {
-    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pc.powerOn();
+    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pinClock(pc); pc.powerOn();
     const ps = (pc as unknown as { getPowerShellInterpreter(): { execute(c: string): string } })
       .getPowerShellInterpreter();
     // `:` n'a jamais fait partie des caractères d'arrêt du lexeur ; ce que
@@ -459,7 +460,7 @@ describe('Scénario 9 — l\'analyseur PowerShell recolle un mot nu', () => {
 
 describe('Scénario 10 — les exécutions manquées se comptent', () => {
   it('une occurrence passée pendant l\'arrêt du planificateur est comptée, pas rejouée', async () => {
-    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pc.powerOn();
+    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pinClock(pc); pc.powerOn();
     pc.setCurrentUser('Administrator');
     await pc.executeCommand('schtasks /create /tn "T" /tr "C:\\bin\\save.exe" /sc minute');
     await pc.executeCommand('sc stop Schedule');
@@ -476,7 +477,7 @@ describe('Scénario 10 — les exécutions manquées se comptent', () => {
   });
 
   it('le planificateur en marche exécute au lieu de compter', async () => {
-    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pc.powerOn();
+    const pc = new WindowsPC('windows-pc', 'w', 0, 0); pinClock(pc); pc.powerOn();
     pc.setCurrentUser('Administrator');
     await pc.executeCommand('schtasks /create /tn "T" /tr "C:\\bin\\save.exe" /sc minute');
     for (let i = 0; i < 2; i++) (pc as unknown as { scheduledTaskTick(): void }).scheduledTaskTick();

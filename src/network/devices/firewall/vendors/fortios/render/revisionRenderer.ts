@@ -1,8 +1,10 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
 import type { ConfigRevision } from '../../../config/RevisionStore';
 
 function stamp(at: number, localNow: number): string {
-  const offset = localNow - Date.now();
+  const offset = localNow - simulationNowMs();
   const local = new Date(at + offset);
   const two = (value: number) => String(value).padStart(2, '0');
   return `${local.getUTCFullYear()}-${two(local.getUTCMonth() + 1)}-`

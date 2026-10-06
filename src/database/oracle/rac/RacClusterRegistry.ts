@@ -36,6 +36,8 @@
  * unaffected.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { HostCapableDevice } from '@/network';
 import type { OracleDatabase } from '../OracleDatabase';
@@ -171,7 +173,7 @@ export function evictMember(dbName: string, deviceId: string): RacMember | null 
   const member = cluster?.members.get(deviceId);
   if (!cluster || !member || member.status === 'EVICTED') return null;
   member.status = 'EVICTED';
-  member.evictedAt = new Date();
+  member.evictedAt = simulationDate();
   return member;
 }
 

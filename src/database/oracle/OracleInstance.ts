@@ -5,6 +5,8 @@
  * background processes, SGA/PGA parameters, and redo log groups.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { RedoRecord } from './storage/RedoStream';
 import type { UndoRecord } from './transaction/TransactionManager';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
@@ -130,7 +132,7 @@ export class OracleInstance {
    *  datafile headers (V$DATAFILE / V$DATAFILE_HEADER agree by design). */
   private _currentScn = 1_000_000;
   private _checkpointScn = 1_000_000;
-  private _checkpointTime = new Date();
+  private _checkpointTime = simulationDate();
 
   // ── Reactive (Phase 7) ───────────────────────────────────────────
   /** Bus override; an instance with no host publishes on its own. */
@@ -639,7 +641,7 @@ export class OracleInstance {
    */
   performCheckpoint(): void {
     this._checkpointScn = this.advanceScn();
-    this._checkpointTime = new Date();
+    this._checkpointTime = simulationDate();
     this.logAlert(`Completed checkpoint up to RBA, SCN: ${this._checkpointScn}`);
     this.getBus().publish({
       topic: 'oracle.storage.checkpoint-completed',
@@ -765,7 +767,7 @@ export class OracleInstance {
 
   startup(mode?: 'NOMOUNT' | 'MOUNT' | 'RESTRICT' | 'FORCE'): string[] {
     const output: string[] = [];
-    const now = new Date();
+    const now = simulationDate();
 
     if (mode === 'FORCE' && this._state !== 'SHUTDOWN') {
       output.push(...this.shutdown('ABORT'));
@@ -1317,7 +1319,7 @@ export class OracleInstance {
   // ── Alert log ────────────────────────────────────────────────────
 
   private logAlert(message: string): void {
-    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const ts = simulationDate().toISOString().replace('T', ' ').slice(0, 19);
     const line = `${ts}: ${message}`;
     this._alertLog.push(line);
     this.getBus().publish({

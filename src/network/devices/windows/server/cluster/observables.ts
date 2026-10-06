@@ -5,6 +5,8 @@
  * changes.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { WritableSignal, type Signal } from '@/events/Signal';
 
 export interface ClusterLogEntryVM {
@@ -27,18 +29,18 @@ export class ClusterSignalStore {
   readonly stats = new WritableSignal<ClusterStatsVM>(EMPTY_STATS);
 
   recordNodeUp(nodeName: string): void {
-    this.log.set([...this.log.get(), { timestamp: Date.now(), kind: 'node-up' as const, detail: `node=${nodeName}` }].slice(-LOG_CAPACITY));
+    this.log.set([...this.log.get(), { timestamp: simulationNowMs(), kind: 'node-up' as const, detail: `node=${nodeName}` }].slice(-LOG_CAPACITY));
     this.stats.set({ ...this.stats.get(), nodeUpTransitions: this.stats.get().nodeUpTransitions + 1 });
   }
 
   recordNodeDown(nodeName: string): void {
-    this.log.set([...this.log.get(), { timestamp: Date.now(), kind: 'node-down' as const, detail: `node=${nodeName}` }].slice(-LOG_CAPACITY));
+    this.log.set([...this.log.get(), { timestamp: simulationNowMs(), kind: 'node-down' as const, detail: `node=${nodeName}` }].slice(-LOG_CAPACITY));
     this.stats.set({ ...this.stats.get(), nodeDownTransitions: this.stats.get().nodeDownTransitions + 1 });
   }
 
   recordGroupMoved(groupName: string, fromNode: string | null, toNode: string): void {
     const detail = `group=${groupName} ${fromNode ?? '(none)'} -> ${toNode}`;
-    this.log.set([...this.log.get(), { timestamp: Date.now(), kind: 'group-moved' as const, detail }].slice(-LOG_CAPACITY));
+    this.log.set([...this.log.get(), { timestamp: simulationNowMs(), kind: 'group-moved' as const, detail }].slice(-LOG_CAPACITY));
     this.stats.set({ ...this.stats.get(), groupMoves: this.stats.get().groupMoves + 1 });
   }
 }

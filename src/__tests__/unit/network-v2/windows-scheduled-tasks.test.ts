@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { pinClock } from './pinnedClockLab';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 
 function pc(): WindowsPC {
-  const p = new WindowsPC('windows-pc', 'WIN-SCH');
+  const p = new WindowsPC('windows-pc', 'WIN-SCH'); pinClock(p);
   p.setCurrentUser('Administrator');
   return p;
 }

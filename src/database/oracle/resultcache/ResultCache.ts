@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 export type ResultCacheStatus = 'NEW' | 'PUBLISHED' | 'BYPASS' | 'EXPIRED' | 'INVALID';
 export type ResultCacheObjectType = 'Result' | 'Dependency';
 
@@ -46,7 +48,7 @@ export class ResultCacheEntry {
     this.pinCount = 0;
     this.scanCount = 0;
     this.spaceForResultCacheMb = this.blockCount * 8 / 1024;
-    this.cachedAt = new Date();
+    this.cachedAt = simulationDate();
     this.invalidatedAt = null;
     this.invalidationsCount = 0;
     this.creator = init.creator ?? 'SYS';
@@ -55,7 +57,7 @@ export class ResultCacheEntry {
 
   invalidate(): void {
     this.status = 'INVALID';
-    this.invalidatedAt = new Date();
+    this.invalidatedAt = simulationDate();
     this.invalidationsCount++;
   }
 

@@ -11,6 +11,8 @@
  * show output, sc config flags).
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { PortSpec } from '../../core/ports/PortNumber';
 
 export type ServiceState = 'inactive' | 'activating' | 'active' | 'deactivating' | 'failed';
@@ -290,7 +292,7 @@ export class OSService {
     this.failureCount++;
     this.lastFailureReason = reason;
     this.lastFailureExitCode = exitCode;
-    this.lastFailureAt = new Date();
+    this.lastFailureAt = simulationDate();
     this.state = 'failed';
   }
 

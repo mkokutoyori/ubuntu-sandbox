@@ -7,6 +7,8 @@
  * on a shared bus stay isolated — mirrors `DHCPClientSignalRefreshActor`'s
  * shape.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe as BusUnsubscribe } from '@/events/EventBus';
 import type { ReplicationSignalStore } from '../observables';
 import type { ReplicationLogEntry } from '../ReplicationSession';
@@ -28,7 +30,7 @@ export class ReplicationSignalRefreshActor {
     this.subscriptions.push(
       this.bus.subscribeWhere('replication.pull.completed', isOurs, (e) => {
         const entry: ReplicationLogEntry = {
-          timestamp: Math.floor(Date.now() / 1000), partnerAddress: e.payload.partnerAddress,
+          timestamp: Math.floor(simulationNowMs() / 1000), partnerAddress: e.payload.partnerAddress,
           applied: e.payload.applied, ok: true, siteRelation: e.payload.siteRelation, direction: 'inbound',
           remoteInvocationId: e.payload.remoteInvocationId,
         };
@@ -36,14 +38,14 @@ export class ReplicationSignalRefreshActor {
       }),
       this.bus.subscribeWhere('replication.pull.failed', isOurs, (e) => {
         const entry: ReplicationLogEntry = {
-          timestamp: Math.floor(Date.now() / 1000), partnerAddress: e.payload.partnerAddress,
+          timestamp: Math.floor(simulationNowMs() / 1000), partnerAddress: e.payload.partnerAddress,
           applied: 0, ok: false, siteRelation: e.payload.siteRelation, direction: 'inbound', error: e.payload.error,
         };
         this.store.recordPull(entry);
       }),
       this.bus.subscribeWhere('replication.served', isOurs, (e) => {
         const entry: ReplicationLogEntry = {
-          timestamp: Math.floor(Date.now() / 1000), partnerAddress: e.payload.partnerAddress,
+          timestamp: Math.floor(simulationNowMs() / 1000), partnerAddress: e.payload.partnerAddress,
           applied: e.payload.changesSent, ok: true, siteRelation: e.payload.siteRelation, direction: 'outbound',
         };
         this.store.recordServed(entry);

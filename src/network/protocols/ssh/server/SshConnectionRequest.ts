@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { SshAuthMethod } from '../../../devices/router/aaa/NetworkOsAccount';
 
 export interface SshPortForwardSpec {
@@ -132,7 +134,7 @@ export class SshConnectionRequest implements SshConnectionRequestSnapshot {
       requestedSubsystem: init.requestedSubsystem ?? null,
       command: init.command ?? null,
       credentials: Object.freeze({ ...(init.credentials ?? {}) }),
-      receivedAt: init.now ?? Date.now(),
+      receivedAt: init.now ?? simulationNowMs(),
     });
   }
 
@@ -177,13 +179,13 @@ export class SshConnectionDecision implements SshConnectionDecisionSnapshot {
 
   static accept(method: SshAuthMethod, init: { sessionId: string; at?: number }): SshConnectionDecision {
     return new SshConnectionDecision({
-      outcome: 'accepted', method, reason: null, sessionId: init.sessionId, at: init.at ?? Date.now(),
+      outcome: 'accepted', method, reason: null, sessionId: init.sessionId, at: init.at ?? simulationNowMs(),
     });
   }
-  static reject(reason: string, at: number = Date.now()): SshConnectionDecision {
+  static reject(reason: string, at: number = simulationNowMs()): SshConnectionDecision {
     return new SshConnectionDecision({ outcome: 'rejected', method: null, reason, sessionId: null, at });
   }
-  static drop(reason: string, at: number = Date.now()): SshConnectionDecision {
+  static drop(reason: string, at: number = simulationNowMs()): SshConnectionDecision {
     return new SshConnectionDecision({ outcome: 'dropped', method: null, reason, sessionId: null, at });
   }
 }

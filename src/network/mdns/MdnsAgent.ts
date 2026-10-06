@@ -48,6 +48,8 @@
  * auditeur qui n'a rien réentendu depuis 120 s n'a effectivement plus
  * de raison d'affirmer que le service est là.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { EndHost } from '@/network/devices/EndHost';
 import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
@@ -155,7 +157,7 @@ export class MdnsAgent {
    * sans cela, vérifier l'expiration demanderait d'attendre deux
    * minutes, et l'on finirait par ne pas la vérifier du tout.
    */
-  private nowMs: () => number = () => Date.now();
+  private nowMs: () => number = () => simulationNowMs();
 
   setClock(fn: () => number): void { this.nowMs = fn; }
 

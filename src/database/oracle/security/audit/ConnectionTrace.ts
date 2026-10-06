@@ -8,6 +8,8 @@
  * downstream consumers see truthful values.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IConnectionTrace, ConnectionOutcome } from './interfaces';
 
 export interface ConnectionTraceInit {
@@ -59,7 +61,7 @@ export class ConnectionTrace implements IConnectionTrace {
 
   constructor(init: ConnectionTraceInit) {
     this.traceId = init.traceId;
-    this.timestamp = init.timestamp ?? new Date();
+    this.timestamp = init.timestamp ?? simulationDate();
     this.username = init.username.toUpperCase();
     this.sessionId = init.sessionId;
     this.serial = init.serial;

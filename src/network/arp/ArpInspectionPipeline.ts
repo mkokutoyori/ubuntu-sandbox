@@ -16,6 +16,8 @@
  * `ArpInspectionConfig` carried by the switch, which keeps the running
  * / startup config the single source of truth.
  */
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import type {
   ArpAccessList, ArpDropReason, ArpInspectionConfig, ArpInspectionContext, ArpInspectionVerdict,
@@ -221,12 +223,12 @@ export class ArpInspectionPipeline {
       e.senderMac === senderMac && e.senderIp === senderIp && e.reason === reason);
     if (existing) {
       existing.numPkts++;
-      existing.lastSeenMs = Date.now();
+      existing.lastSeenMs = simulationNowMs();
       return;
     }
     this.log.push({
       port: ctx.ingressPort, vlan: ctx.vlan, senderMac, senderIp,
-      numPkts: 1, reason, lastSeenMs: Date.now(),
+      numPkts: 1, reason, lastSeenMs: simulationNowMs(),
     });
     if (this.log.length > DAI_LOG_BUFFER_SIZE) this.log.shift();
   }
@@ -240,7 +242,7 @@ export class ArpInspectionPipeline {
 
   private appendLog(line: string, enabled: boolean): void {
     if (!enabled) return;
-    const ts = new Date().toISOString();
+    const ts = simulationDate().toISOString();
     this.host._addSnoopingLog(`*${ts}: ${line}`);
     Logger.warn(this.host.id, 'switch:arp-inspection', `${this.host.name}: ${line}`);
   }

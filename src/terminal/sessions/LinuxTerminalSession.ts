@@ -9,6 +9,8 @@
  *   - Tab completion
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
 import { Equipment, type HostCapableDevice } from '@/network';
 import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
@@ -921,7 +923,7 @@ export class LinuxTerminalSession extends TerminalSession {
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        const host = dev.pingHostInSession(shell, { sleep: (ms) => ctx.delay(ms), now: () => Date.now() });
+        const host = dev.pingHostInSession(shell, { sleep: (ms) => ctx.delay(ms), now: () => simulationNowMs() });
         ping = createPing(toks.slice(1), host, (line) => ctx.sink.line(line), { cmd: toks[0] as 'ping' | 'ping6' });
         await ping.run(() => ctx.cancelled());
       },
@@ -1029,7 +1031,7 @@ export class LinuxTerminalSession extends TerminalSession {
         }
 
         const stats = hopIps.map(() => new MtrHopStats());
-        const startedAt = new Date();
+        const startedAt = simulationDate();
         const hostname = dev.getHostname();
         const targetIpStr = hopIps[hopIps.length - 1] ?? parsed.target;
 
@@ -1298,11 +1300,11 @@ export class LinuxTerminalSession extends TerminalSession {
       commandLine,
       intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
       maxFrames: parsed.count ?? undefined,
-      header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(new Date())}`,
+      header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(simulationDate())}`,
       frame: () => {
         const rows = dev.sampleMpstatSnapshot(parsed);
         accumulator.add(rows);
-        const now = new Date();
+        const now = simulationDate();
         return rows.map((r) => formatMpstatRow(now, r)).join('\n');
       },
       trailer: () => {
@@ -1328,11 +1330,11 @@ export class LinuxTerminalSession extends TerminalSession {
         commandLine,
         intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
         maxFrames: parsed.count ?? undefined,
-        header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, new Date())}`,
+        header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, simulationDate())}`,
         frame: () => {
           const rows = dev.samplePidstatCpu(parsed);
           accumulator.add(rows);
-          const now = new Date();
+          const now = simulationDate();
           return rows.map((r) => formatPidstatCpuRow(now, r)).join('\n');
         },
         trailer: () => {
@@ -1346,11 +1348,11 @@ export class LinuxTerminalSession extends TerminalSession {
       commandLine,
       intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
       maxFrames: parsed.count ?? undefined,
-      header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, new Date())}`,
+      header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, simulationDate())}`,
       frame: () => {
         const rows = dev.samplePidstatMemory(parsed);
         accumulator.add(rows);
-        const now = new Date();
+        const now = simulationDate();
         return rows.map((r) => formatPidstatMemRow(now, r)).join('\n');
       },
       trailer: () => {
@@ -1378,7 +1380,7 @@ export class LinuxTerminalSession extends TerminalSession {
         parsed,
         dev.sampleIostatCpuSnapshot(),
         dev.sampleIostatDevicesSnapshot(parsed),
-        new Date(),
+        simulationDate(),
       )}`,
     });
   }

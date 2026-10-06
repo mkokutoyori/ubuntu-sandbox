@@ -8,6 +8,8 @@
  * Design: Facade + Strategy (each subsystem is independently testable).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { ProfileManager } from './ProfileManager';
 import { QuotaManager } from './QuotaManager';
 import { LoginTracker } from './LoginTracker';
@@ -92,7 +94,7 @@ export class SecurityEngine {
     const inactiveDays = this.profiles.resolveInactiveAccountTimeDays(user.profile);
     if (inactiveDays !== Infinity && user.accountStatus !== 'LOCKED') {
       const lastLogin = this.loginTracker.getLastSuccessfulLogin(upper) ?? user.created;
-      const idleDays = (Date.now() - lastLogin.getTime()) / (24 * 60 * 60 * 1000);
+      const idleDays = (simulationNowMs() - lastLogin.getTime()) / (24 * 60 * 60 * 1000);
       if (idleDays >= inactiveDays) {
         catalog.lockUser(upper);
         this.loginTracker.lockAccount(upper, 'INACTIVITY');

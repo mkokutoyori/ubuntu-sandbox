@@ -7,6 +7,8 @@
  * commands, replay scenarios, and §11.2.5 trace snapshots.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe as BusUnsubscribe } from '@/events/EventBus';
 
 export type CapturedHostKind =
@@ -93,7 +95,7 @@ export class HostCaptureActor {
 
   private append(kind: CapturedHostKind, payload: unknown): void {
     const deviceId = (payload as { deviceId?: string }).deviceId ?? '';
-    this.buffer.push({ kind, timestamp: Date.now(), deviceId, payload: payload as Record<string, unknown> });
+    this.buffer.push({ kind, timestamp: simulationNowMs(), deviceId, payload: payload as Record<string, unknown> });
     if (this.buffer.length > this.maxEntries) {
       this.buffer.splice(0, Math.floor(this.maxEntries / 2));
     }

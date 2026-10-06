@@ -14,6 +14,8 @@
  * Les deux affirmations sont desormais LUES : la synchronisation vient
  * de l'agent NTP, le service de l'unite `chrony`.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import {
@@ -31,7 +33,7 @@ function estampille(d: Date): string {
 /** Le rapport de statut, monte sur ce que la machine sait vraiment. */
 function statut(ctx: LinuxCommandContext): string {
   const nomZone = ctx.executor.identity.timezone;
-  const maintenant = Date.now();
+  const maintenant = simulationNowMs();
   const offsetMin = decalageA(nomZone, maintenant);
   const abbr = abreviationA(nomZone, maintenant);
   const utc = new Date(maintenant);
@@ -78,7 +80,7 @@ export const timedatectlCommand: LinuxCommand = {
         // machine.
         ctx.executor.vfs.writeFile('/etc/timezone', `${zone.nom}\n`, 0, 0, 0o022, true);
         ctx.executor.vfs.writeFile('/etc/localtime',
-          `TZif2 ${zone.nom} ${formatOffset(decalageA(zone.nom, Date.now()))}\n`,
+          `TZif2 ${zone.nom} ${formatOffset(decalageA(zone.nom, simulationNowMs()))}\n`,
           0, 0, 0o022, true);
         return '';
       }
@@ -99,8 +101,8 @@ export const timedatectlCommand: LinuxCommand = {
           `CanNTP=yes`,
           `NTP=${actif ? 'yes' : 'no'}`,
           `NTPSynchronized=${actif && (agent?.isSynced() ?? false) ? 'yes' : 'no'}`,
-          `TimeUSec=${Date.now() * 1000}`,
-          `TimezoneOffset=${decalageA(nomZone, Date.now())}`,
+          `TimeUSec=${simulationNowMs() * 1000}`,
+          `TimezoneOffset=${decalageA(nomZone, simulationNowMs())}`,
         ].join('\n');
       }
       default:

@@ -14,6 +14,8 @@
  *   Show:          show ip nat translations / show ip nat statistics
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { Router } from '../../Router';
 import type { NatStaticEntry } from '../../router/NATEngine';
 import { IP_PROTO_TCP, IP_PROTO_UDP } from '../../../core/types';
@@ -804,7 +806,7 @@ export function showNATTranslationsVerbose(router: Router, filterArgs: string[] 
 
   const lines: string[] = [];
   lines.push(header);
-  const now = Date.now();
+  const now = simulationNowMs();
   for (const e of entries) {
     lines.push(`${e.proto.padEnd(4)} ${e.insideGlobal.padEnd(23)}${e.insideLocal.padEnd(23)}${e.outsideLocal.padEnd(23)}${e.outsideGlobal}`);
     if (e.createdAtMs !== undefined && e.lastUsedMs !== undefined && e.timeoutMs !== undefined) {

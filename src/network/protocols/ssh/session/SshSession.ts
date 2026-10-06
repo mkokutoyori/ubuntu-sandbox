@@ -8,6 +8,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 6.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   decodeUserauthBanner, decodeUserauthFailure, decodeUserauthInfoRequest, encodeUserauthInfoResponse,
   encodeUserauthRequest, type UserauthMethodRequest,
@@ -232,7 +234,7 @@ export class SshSession implements ISshSession {
       this.conn = null;
     });
 
-    const sessionId = `${opts.user}@${opts.host}:${opts.port}#${Date.now()}`;
+    const sessionId = `${opts.user}@${opts.host}:${opts.port}#${simulationNowMs()}`;
     this.transition(connected(opts.user, opts.host, sessionId));
 
     const info: SshConnectionInfo = {
@@ -241,7 +243,7 @@ export class SshSession implements ISshSession {
       port: opts.port,
       sessionId,
       hostFingerprint: hostKey.fingerprint,
-      connectedAt: Date.now(),
+      connectedAt: simulationNowMs(),
     };
     this.deps.interactionHandler.onConnected(info);
     return ok(info);

@@ -21,6 +21,8 @@
  *   - INIT-REBOOT: Reuse last known lease after reboot (RFC 2131 §3.2)
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { PathClock } from '../core/time/PathClock';
 import { ISC_DISCOVER_INTERVALS_SECONDS } from './DhcpClientPersonality';
 import { DHCPServer } from './DHCPServer';
@@ -157,7 +159,7 @@ export class DHCPClient implements IProtocolEngine {
   private requestsSent = 0;
   private acksReceived = 0;
   private naksReceived = 0;
-  private clock: () => number = () => Date.now();
+  private clock: () => number = () => simulationNowMs();
   private leasesGranted = 0;
   private leasesExpired = 0;
   private leasesReleased = 0;

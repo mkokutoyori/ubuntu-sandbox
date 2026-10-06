@@ -6,6 +6,8 @@
  * successful outbound TOFU handshake.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export interface RouterSshKnownHostEntry {
   readonly host: string;
   readonly keyType: string;
@@ -18,7 +20,7 @@ export class RouterSshKnownHosts {
 
   add(entry: { host: string; keyType: string; publicKey: string }): void {
     if (this.entries.some(e => e.host === entry.host && e.keyType === entry.keyType)) return;
-    this.entries.push(Object.freeze({ ...entry, addedAt: Date.now() }));
+    this.entries.push(Object.freeze({ ...entry, addedAt: simulationNowMs() }));
   }
 
   list(): readonly RouterSshKnownHostEntry[] {

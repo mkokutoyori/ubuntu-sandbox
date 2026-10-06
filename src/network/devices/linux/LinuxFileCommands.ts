@@ -2,6 +2,8 @@
  * File operation commands: touch, ls, cat, cp, mv, rm, mkdir, rmdir, ln, echo, pwd, cd, tee
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { interpretEscapes } from './LinuxShellParser';
@@ -338,7 +340,7 @@ function colorName(name: string, inode: INode, useColor = true): string {
  */
 function formatLsDate(mtime: number): string {
   const date = new Date(mtime);
-  const now = Date.now();
+  const now = simulationNowMs();
   const sixMonths = 6 * 30 * 24 * 60 * 60 * 1000;
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const mon = monthNames[date.getMonth()];

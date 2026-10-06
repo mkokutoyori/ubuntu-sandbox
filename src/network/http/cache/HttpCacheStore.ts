@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { HttpMessage, HttpMethod } from '../semantics/types';
 import { isSafeMethod } from '../semantics/methods';
 import { parseETag, type ConditionalHeaders } from '../semantics/conditionalRequests';
@@ -83,7 +85,7 @@ export class HttpCacheStore {
     return true;
   }
 
-  put(request: HttpMessage, response: HttpMessage, now = Date.now()): void {
+  put(request: HttpMessage, response: HttpMessage, now = simulationNowMs()): void {
     if (request.method !== 'GET') return;
     const cc = parseCacheControl(response.headers.get('Cache-Control'));
     if (cc.noStore) return;
@@ -121,13 +123,13 @@ export class HttpCacheStore {
     return undefined;
   }
 
-  ageMs(entry: CacheEntry, now = Date.now()): number {
+  ageMs(entry: CacheEntry, now = simulationNowMs()): number {
     const ageHeader = entry.response.headers.get('Age');
     const initialAgeMs = ageHeader ? Math.max(0, parseInt(ageHeader, 10) * 1000) : 0;
     return initialAgeMs + Math.max(0, now - entry.storedAt);
   }
 
-  isFresh(entry: CacheEntry, now = Date.now()): boolean {
+  isFresh(entry: CacheEntry, now = simulationNowMs()): boolean {
     if (entry.mustRevalidate) return false;
     return this.ageMs(entry, now) < entry.freshnessLifetimeMs;
   }
@@ -140,7 +142,7 @@ export class HttpCacheStore {
   }
 
   /** RFC 9111 §4.3.3 — 304 refreshes stored metadata/freshness in place; anything else replaces the entry. */
-  applyRevalidationResponse(request: HttpMessage, revalidationResponse: HttpMessage, now = Date.now()): void {
+  applyRevalidationResponse(request: HttpMessage, revalidationResponse: HttpMessage, now = simulationNowMs()): void {
     const uri = request.target ?? '';
     if (revalidationResponse.statusCode === 304) {
       const found = [...this.entries.values()].find((e) => e.key.uri === uri && this.matchesVary(e, request));

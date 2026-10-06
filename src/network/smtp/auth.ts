@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { MD5 } from '@/crypto/hash/md5';
 import { hmacHex } from '@/crypto/mac/hmac';
 
@@ -45,7 +47,7 @@ let challengeCounter = 0;
 
 export function generateCramMd5Challenge(hostname: string): string {
   challengeCounter += 1;
-  return `<${challengeCounter}.${Date.now()}@${hostname}>`;
+  return `<${challengeCounter}.${simulationNowMs()}@${hostname}>`;
 }
 
 export function decodeCramMd5Response(response: string): { username: string; digest: string } | null {

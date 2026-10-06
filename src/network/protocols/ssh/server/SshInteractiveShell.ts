@@ -19,6 +19,8 @@
  * `ILinuxShell.execute()` single-round-trip path, unchanged.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { TerminalAsyncRuntime } from '@/terminal/async/TerminalAsyncRuntime';
 import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
@@ -89,7 +91,7 @@ export class SshInteractiveShell {
       kind: 'streaming',
       command: line,
       run: async (ctx) => {
-        const host = dev.pingHost({ sleep: (ms) => ctx.delay(ms), now: () => Date.now() });
+        const host = dev.pingHost({ sleep: (ms) => ctx.delay(ms), now: () => simulationNowMs() });
         ping = createPing(toks.slice(1), host, (text) => ctx.sink.line(text), { cmd: toks[0] as 'ping' | 'ping6' });
         await ping.run(() => ctx.cancelled());
         if (!ctx.cancelled()) hooks.onDone();

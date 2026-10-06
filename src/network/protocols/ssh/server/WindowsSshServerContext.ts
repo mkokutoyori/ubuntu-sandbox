@@ -5,6 +5,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { SSH_WINDOWS_IDENTIFICATION } from '../serverIdentification';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
@@ -196,7 +198,7 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   recordLogin(user: string, _fromIp: string): void {
     const entry = this.userManager.getUser(user);
-    if (entry) entry.lastLogon = new Date();
+    if (entry) entry.lastLogon = simulationDate();
   }
 
   /** Build a SshUserContext from the Windows user database. */

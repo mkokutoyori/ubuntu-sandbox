@@ -22,6 +22,8 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { LinuxPam } from './linux/pam/LinuxPam';
 import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
@@ -1378,7 +1380,7 @@ export abstract class LinuxMachine extends EndHost
       tcpStack: () => this.getTcpStack(),
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
-      now: () => new Date(),
+      now: () => simulationDate(),
       // §P6 — le mandataire résout par la MACHINE qui l'exécute :
       // `/etc/hosts` et `/etc/resolv.conf` du serveur décident, comme
       // pour le vrai nginx. La variante synchrone est la bonne ici,
@@ -1516,7 +1518,7 @@ export abstract class LinuxMachine extends EndHost
         return () => this.udpClose(port);
       },
       hostname: () => this.getHostname(),
-      maintenant: () => Date.now(),
+      maintenant: () => simulationNowMs(),
     });
     this.executor.registerServiceSocketServer('rsyslog', this.rsyslogService);
     this.executor.rsyslogService = this.rsyslogService;
@@ -1734,7 +1736,7 @@ export abstract class LinuxMachine extends EndHost
       tcpStack: () => this.getTcpStack(),
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
-      now: () => new Date(),
+      now: () => simulationDate(),
     });
 
     this.executor.registerServiceSocketServer('apache2', this.apacheService);
@@ -2448,7 +2450,7 @@ export abstract class LinuxMachine extends EndHost
 
   /** Push a new last-login entry; called from `recordSshLogin` on accept. */
   private rememberLastSshLogin(user: string, fromIp: string): void {
-    this.lastSshLoginByUser.set(user, { at: new Date(), from: fromIp });
+    this.lastSshLoginByUser.set(user, { at: simulationDate(), from: fromIp });
   }
 
   /** Ensure a tty=tty1 console session exists for the local user. */
@@ -2477,7 +2479,7 @@ export abstract class LinuxMachine extends EndHost
         table: this.sessionTable,
         utmp: this.utmpSync,
         uptimeSeconds: this.executor.lifecycle.uptimeSeconds(),
-        now: new Date(),
+        now: simulationDate(),
       }, argv.slice(1));
     }
     if (cmd === 'who') {
@@ -2487,7 +2489,7 @@ export abstract class LinuxMachine extends EndHost
         currentUser: this.executor.userMgr.currentUser,
         currentTty: 'tty1',
         bootDate: this.executor.lifecycle.bootedAt(),
-        now: new Date(),
+        now: simulationDate(),
       }, argv.slice(1));
     }
     if (cmd === 'last') {
@@ -2496,7 +2498,7 @@ export abstract class LinuxMachine extends EndHost
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
         kernelRelease: this.executor.identity.kernel.release,
-        now: new Date(),
+        now: simulationDate(),
       }, argv.slice(1));
     }
     if (cmd === 'loginctl') {
@@ -2504,7 +2506,7 @@ export abstract class LinuxMachine extends EndHost
         table: this.sessionTable,
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
-        now: new Date(),
+        now: simulationDate(),
         action: this.buildLoginctlAction(),
       }, argv.slice(1));
     }
@@ -2582,7 +2584,7 @@ export abstract class LinuxMachine extends EndHost
       scope: `session-${sid}.scope`,
       classOf: 'user',
       type: 'tty',
-      realtimeMicros: Date.now() * 1000,
+      realtimeMicros: simulationNowMs() * 1000,
       monotonicMicros: this.executor.lifecycle.uptimeSeconds() * 1_000_000,
     }, sidsForUser);
   }
@@ -4917,7 +4919,7 @@ export abstract class LinuxMachine extends EndHost
         return this.openTcpdumpCapture(iface, sink);
       },
       now: (): Date => {
-        return new Date();
+        return simulationDate();
       },
       delay: (ms: number): Promise<void> => {
         return new Promise((resolve) => setTimeout(resolve, ms));
@@ -5044,13 +5046,13 @@ export abstract class LinuxMachine extends EndHost
   }
 
   mpstatBannerLine(): string {
-    const now = new Date();
+    const now = simulationDate();
     const hostname = this.getHostname();
     return mpstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
 
   pidstatBannerLine(): string {
-    const now = new Date();
+    const now = simulationDate();
     const hostname = this.getHostname();
     return pidstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
@@ -5064,7 +5066,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   iostatBannerLine(): string {
-    const now = new Date();
+    const now = simulationDate();
     const hostname = this.getHostname();
     return iostatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }

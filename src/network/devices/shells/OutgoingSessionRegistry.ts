@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type OutgoingProtocol = 'telnet' | 'ssh';
 
 export interface OutgoingSession {
@@ -16,7 +18,7 @@ export class OutgoingSessionRegistry {
   private seq = 0;
 
   open(args: { host: string; address: string; protocol: OutgoingProtocol; user: string }): OutgoingSession {
-    const now = Date.now();
+    const now = simulationNowMs();
     this.seq += 1;
     const session: OutgoingSession = {
       conn: this.seq,
@@ -42,7 +44,7 @@ export class OutgoingSessionRegistry {
 
   touch(conn: number, bytes = 0): void {
     const s = this.sessions.get(conn);
-    if (s) { s.lastActiveMs = Date.now(); s.bytes += bytes; }
+    if (s) { s.lastActiveMs = simulationNowMs(); s.bytes += bytes; }
   }
 
   close(conn: number): boolean {
@@ -59,7 +61,7 @@ export class OutgoingSessionRegistry {
 }
 
 function idle(ms: number): string {
-  const sec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  const sec = Math.max(0, Math.floor((simulationNowMs() - ms) / 1000));
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;

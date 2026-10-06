@@ -2,6 +2,8 @@
  * V$WAITCLASSMETRIC — current per-wait-class metric snapshot.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -18,7 +20,7 @@ registerView({
       const t = totals.get(w.waitClass);
       if (t) { t.waits++; t.tot += w.waitTimeMicros; }
     }
-    const end = Date.now();
+    const end = simulationNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

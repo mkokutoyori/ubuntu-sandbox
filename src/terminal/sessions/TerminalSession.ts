@@ -24,6 +24,8 @@
  *   └── WindowsTerminalSession   — CMD/PS dual-mode, shell nesting
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { Equipment, type HostCapableDevice } from '@/network';
 import { IPAddress } from '@/network/core/types';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
@@ -827,7 +829,7 @@ export abstract class TerminalSession {
     const trailing = lines.pop() ?? '';
     this._pasteAborted = false;
     this._pasteRunning = true;
-    let tranche = Date.now();
+    let tranche = simulationNowMs();
     try {
       for (let i = 0; i < lines.length; i++) {
         if (this.disposed) return;
@@ -837,9 +839,9 @@ export abstract class TerminalSession {
           return;
         }
         await this.submitPastedLine(lines[i]);
-        if (Date.now() - tranche >= PASTE_SLICE_MS) {
+        if (simulationNowMs() - tranche >= PASTE_SLICE_MS) {
           await yieldToEventLoop();
-          tranche = Date.now();
+          tranche = simulationNowMs();
         }
       }
       if (!this.disposed) this.insertText(trailing);
@@ -2015,12 +2017,12 @@ class SessionRecorder {
     this.sessionId = sessionId;
     this.sessionType = sessionType;
     this.deviceName = deviceName;
-    this.startTime = Date.now();
+    this.startTime = simulationNowMs();
     this.lastEventTime = this.startTime;
   }
 
   record(type: RecordedEventType, data: string): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     this.events.push({
       delay: now - this.lastEventTime,
       type,
@@ -2035,7 +2037,7 @@ class SessionRecorder {
       sessionType: this.sessionType,
       deviceName: this.deviceName,
       startedAt: new Date(this.startTime).toISOString(),
-      duration: Date.now() - this.startTime,
+      duration: simulationNowMs() - this.startTime,
       events: this.events,
     };
   }

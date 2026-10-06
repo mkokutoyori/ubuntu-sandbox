@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
@@ -296,7 +298,7 @@ export class SyslogAgent {
   }
 
   private horloge(): { localMs: number; offsetMin: number } {
-    return this.host.localClock?.() ?? { localMs: Date.now(), offsetMin: 0 };
+    return this.host.localClock?.() ?? { localMs: simulationNowMs(), offsetMin: 0 };
   }
 
   private readonly liens = new Map<string, TcpLien>();
@@ -416,7 +418,7 @@ export class SyslogAgent {
   private compter(s: SyslogServer, severity: SyslogSeverityName,
                   tag: string, message: string): void {
     s.count++;
-    s.lastSentMs = Date.now();
+    s.lastSentMs = simulationNowMs();
     this.getBus().publish({
       topic: 'syslog.packet.sent',
       payload: {

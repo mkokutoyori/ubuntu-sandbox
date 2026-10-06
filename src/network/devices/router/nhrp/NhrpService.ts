@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export interface NhrpInterfaceConfig {
   ifName: string;
   networkId?: number;
@@ -54,7 +56,7 @@ export class NhrpService {
       nbmaAddress: nbma,
       static: opts?.static ?? true,
       multicast: opts?.multicast ?? false,
-      registeredAtMs: Date.now(),
+      registeredAtMs: simulationNowMs(),
     };
     this.mappings.push(m);
     this.cache.push({
@@ -94,7 +96,7 @@ export class NhrpService {
         this.cache.splice(i, 1);
       }
     }
-    const now = Date.now();
+    const now = simulationNowMs();
     const entry: NhrpCacheEntry = {
       ifName, targetAddress, targetPrefixLen: 32, nbmaAddress,
       type: 'dynamic', flags: ['D'], registeredAtMs: now,
@@ -136,8 +138,8 @@ export class NhrpService {
     if (this.cache.length === 0) return 'IP-NHRP table contains no entries';
     const lines: string[] = ['IP NHRP cache:'];
     for (const e of this.cache) {
-      const ageSec = Math.max(0, Math.floor((Date.now() - e.registeredAtMs) / 1000));
-      const exp = e.expiresAtMs ? Math.max(0, Math.floor((e.expiresAtMs - Date.now()) / 1000)) : null;
+      const ageSec = Math.max(0, Math.floor((simulationNowMs() - e.registeredAtMs) / 1000));
+      const exp = e.expiresAtMs ? Math.max(0, Math.floor((e.expiresAtMs - simulationNowMs()) / 1000)) : null;
       lines.push(`${e.targetAddress}/${e.targetPrefixLen} via ${e.nbmaAddress}, ${e.ifName} created ${ageSec}s ago${exp !== null ? ', expire ' + exp + 's' : ''}`);
       lines.push(`  Type: ${e.type}, Flags: ${e.flags.join(' ')}`);
       lines.push(`  NBMA address: ${e.nbmaAddress}`);

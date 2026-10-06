@@ -3,6 +3,8 @@
  * Oracle step messages. Each builder returns a frozen RmanJob.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { RmanJob, JobStep } from './types';
 import type { RmanOperation } from '../core/types';
 
@@ -307,7 +309,7 @@ function _make(
     id:        `JOB-${_jobCounter++}`,
     operation,
     steps:     Object.freeze(steps.map(s => Object.freeze({ ...s }))),
-    startedAt: Date.now(),
+    startedAt: simulationNowMs(),
     params:    params ? Object.freeze({ ...params }) : undefined,
   });
 }

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { tryIpToUint32 } from '../../../core/ip';
 
 export type PolicyRouteAction = 'permit' | 'deny';
@@ -71,7 +73,7 @@ export class PolicyRouteTable {
   private readonly now: () => number;
 
   constructor(options: PolicyRouteTableOptions = {}) {
-    this.now = options.now ?? (() => Date.now());
+    this.now = options.now ?? (() => simulationNowMs());
   }
 
   upsert(draft: PolicyRouteDraft, position = -1): void {

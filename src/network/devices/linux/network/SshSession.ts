@@ -11,6 +11,8 @@
  * MaxSessions limits, session leases) can read it without churn.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 export type SessionTransport = 'ssh' | 'console' | 'serial' | 'rdp';
 
 export interface SshSessionInit {
@@ -72,7 +74,7 @@ export class SshSession {
     this.fromIp = init.fromIp;
     this.fromHost = init.fromHost;
     this.transport = init.transport ?? 'ssh';
-    this.loginAt = init.loginAt ?? new Date();
+    this.loginAt = init.loginAt ?? simulationDate();
     this.lastActivityAt = this.loginAt;
     // Real Linux uses c1, c2… but ssh sessions number from 1.
     this.systemdSessionId = String(init.sshdPid);
@@ -81,24 +83,24 @@ export class SshSession {
   isActive(): boolean { return !this.closed; }
 
   /** Mark the session as idle since `now`; backs the `w` IDLE column. */
-  recordActivity(now: Date = new Date()): void {
+  recordActivity(now: Date = simulationDate()): void {
     if (!this.closed) this.lastActivityAt = now;
   }
 
   /** Disconnect / logout the session, recording the reason. */
-  close(reason: string = 'normal', at: Date = new Date()): void {
+  close(reason: string = 'normal', at: Date = simulationDate()): void {
     this.closed = true;
     this.closedAt = at;
     this.closedReason = reason;
   }
 
   /** Seconds elapsed since the last keystroke — for `w` formatting. */
-  idleSeconds(now: Date = new Date()): number {
+  idleSeconds(now: Date = simulationDate()): number {
     return Math.max(0, Math.round((now.getTime() - this.lastActivityAt.getTime()) / 1000));
   }
 
   /** Login duration in seconds. */
-  durationSeconds(now: Date = new Date()): number {
+  durationSeconds(now: Date = simulationDate()): number {
     const end = this.closedAt ?? now;
     return Math.max(0, Math.round((end.getTime() - this.loginAt.getTime()) / 1000));
   }

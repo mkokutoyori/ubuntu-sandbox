@@ -7,6 +7,8 @@
  * document rendering, only the acknowledgement/queue-progression state
  * that structure already models.
  */
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { PrintJob } from '@/network/devices/windows/WinPrint';
 
 export interface PrintOpResult { ok: boolean; message: string }
@@ -19,7 +21,7 @@ class SharedPrintQueue {
   submit(document: string, owner: string, sizeBytes: number): PrintJob {
     const job: PrintJob = {
       id: this.nextId++, document, owner,
-      submittedAt: new Date(), size: sizeBytes, status: 'Printing',
+      submittedAt: simulationDate(), size: sizeBytes, status: 'Printing',
     };
     this.jobs.push(job);
     return job;

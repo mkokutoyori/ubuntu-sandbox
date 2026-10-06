@@ -2,6 +2,8 @@
  * DBA_HIST_SYSMETRIC_HISTORY — historical metric samples.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { queryView } from './registry';
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -14,7 +16,7 @@ registerView({
   query(ctx) {
     const sample = queryView('V$SYSMETRIC', ctx);
     if (!sample) return queryResult([], []);
-    const now = Date.now();
+    const now = simulationNowMs();
     const elapsedHours = Math.max(1, Math.floor((now - ctx.runtime.startedAt) / 3_600_000));
     const rows: (string | number)[][] = [];
     for (let b = 0; b < Math.min(elapsedHours, 100); b++) {

@@ -27,6 +27,8 @@
  *   4. Egress: strip or add 802.1Q tag based on egress port mode
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { Equipment } from '../equipment/Equipment';
 import { DeviceClockStore } from '../core/time/DeviceClock';
@@ -664,7 +666,7 @@ export abstract class Switch extends Equipment {
       (p) => p.deviceId === this.id,
       (e) => {
         const { portName, mac, mode, action } = e.payload;
-        const ts = new Date().toISOString();
+        const ts = simulationDate().toISOString();
         this.snoopingLog.push(
           `*${ts}: %PORT_SECURITY-2-PSECURE_VIOLATION: Security violation occurred,` +
           ` caused by MAC address ${mac.toString().toLowerCase()} on port ${portName}` +
@@ -672,7 +674,7 @@ export abstract class Switch extends Equipment {
         );
         if (action === 'shutdown') {
           this.psecErrDisabledPorts.add(portName);
-          this.psecErrDisableTimestamps.set(portName, Date.now());
+          this.psecErrDisableTimestamps.set(portName, simulationNowMs());
           if (this.psecRecoverySec > 0) this.ensurePsecRecoveryTimer();
         }
       },
@@ -687,7 +689,7 @@ export abstract class Switch extends Equipment {
       (p) => p.deviceId === this.id,
       (e) => {
         const { portName, mac } = e.payload;
-        const ts = new Date().toISOString();
+        const ts = simulationDate().toISOString();
         this.snoopingLog.push(
           `*${ts}: %PORT_SECURITY-6-STICKY_LEARN: ${portName} learned sticky MAC ${mac.toString().toLowerCase()}`,
         );
@@ -711,7 +713,7 @@ export abstract class Switch extends Equipment {
       this.stopPsecRecoveryTimer();
       return;
     }
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const port of [...this.psecErrDisabledPorts]) {
       const ts = this.psecErrDisableTimestamps.get(port) ?? now;
       if ((now - ts) / 1000 >= this.psecRecoverySec) {
@@ -755,7 +757,7 @@ export abstract class Switch extends Equipment {
   }
 
   private tickPsecAging(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const [portName, port] of this.ports) {
       const sec = port.getPortSecurity();
       if (!sec.isEnabled() || sec.getAgingTimeMin() <= 0) continue;
@@ -865,7 +867,7 @@ export abstract class Switch extends Equipment {
     if (type === null) return false;
 
     const verdict = storm.admit(
-      type, ethernetFrameBytes(frame) * 8, port.getSpeed(), Date.now());
+      type, ethernetFrameBytes(frame) * 8, port.getSpeed(), simulationNowMs());
     if (verdict === 'forward') return false;
 
     Logger.warn(this.id, 'switch:storm-control',
@@ -895,7 +897,7 @@ export abstract class Switch extends Equipment {
   private arpErrDisablePort(port: string): void {
     if (this.arpErrDisabledPorts.has(port)) return;
     this.arpErrDisabledPorts.add(port);
-    this.arpErrDisableTimestamps.set(port, Date.now());
+    this.arpErrDisableTimestamps.set(port, simulationNowMs());
     const p = this.getPort(port);
     if (p) p.setUp(false);
     this.getBus().publish({
@@ -921,7 +923,7 @@ export abstract class Switch extends Equipment {
       this.stopRecoveryTimer();
       return;
     }
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const port of [...this.arpErrDisabledPorts]) {
       const ts = this.arpErrDisableTimestamps.get(port) ?? now;
       if ((now - ts) / 1000 >= recoverySec) {
@@ -2229,7 +2231,7 @@ export abstract class Switch extends Equipment {
       port,
       type: 'static',
       age: -1,
-      timestamp: Date.now(),
+      timestamp: simulationNowMs(),
     });
     return true;
   }
@@ -2270,7 +2272,7 @@ export abstract class Switch extends Equipment {
       port: '',
       type: 'blackhole',
       age: -1,
-      timestamp: Date.now(),
+      timestamp: simulationNowMs(),
     });
     return true;
   }
@@ -2522,7 +2524,7 @@ export abstract class Switch extends Equipment {
         port: portName,
         type: 'dynamic',
         age: this.macAgingTime,
-        timestamp: Date.now(),
+        timestamp: simulationNowMs(),
       });
       Logger.debug(this.id, 'switch:mac-learn', `${this.name}: learned ${srcMAC} VLAN ${ingressVlan} on ${portName}`);
       if (isNew) {
@@ -3101,7 +3103,7 @@ export abstract class Switch extends Equipment {
       },
       closeSession: (id, reason) => { this.getSshSessionRegistry().close(id, reason); },
       touchSession: (id, bytesIn, bytesOut) => {
-        this.getSshSessionRegistry().touch(id, Date.now(), bytesIn, bytesOut);
+        this.getSshSessionRegistry().touch(id, simulationNowMs(), bytesIn, bytesOut);
       },
       idleTimeoutMs: () => null,
       recordAuthFailure: (user, ip) => { void user; void ip; },
@@ -3501,7 +3503,7 @@ export abstract class Switch extends Equipment {
     const scheduler = this.getScheduler();
     this.macAgingScheduler = scheduler;
     this.macAgingTimer = scheduler.setInterval(() => {
-      const now = Date.now();
+      const now = simulationNowMs();
       const limit = this.effectiveMacAgingTime();
       for (const [key, entry] of this.macTable) {
         if (entry.type === 'dynamic') {
@@ -3724,7 +3726,7 @@ export abstract class Switch extends Equipment {
     if (sec.cryptoKeys.length === 0) {
       sec.cryptoKeys.push({
         label: `${this.getHostname()}.${this.getDomainName() ?? ''}`,
-        modulus: 512, general: true, generatedAtMs: Date.now(),
+        modulus: 512, general: true, generatedAtMs: simulationNowMs(),
       });
     }
   }
@@ -4353,7 +4355,7 @@ export abstract class Switch extends Equipment {
   async loginAs(username: string, password: string): Promise<boolean> {
     if (!this.isPoweredOn) return false;
     if (!this.getCredentialStore().authenticate(username, password)) {
-      this.getCredentialStore().recordLoginFailure(username, '', 'bad password', Date.now());
+      this.getCredentialStore().recordLoginFailure(username, '', 'bad password', simulationNowMs());
       return false;
     }
     const compte = this.getCredentialStore().lookup(username);

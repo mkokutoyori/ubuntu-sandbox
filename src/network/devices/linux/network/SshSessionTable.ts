@@ -9,6 +9,8 @@
  * issued on the same device can query the same table.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { SshSession, type SshSessionInit } from './SshSession';
 import type { UtmpSync } from './UtmpSync';
 import { IDLE_LOAD_AVERAGE } from '../system/LoadAverage';
@@ -46,7 +48,7 @@ export class SshSessionTable {
         s.close(reason);
         this.history.push(s);
         this.active.delete(k);
-        this.sync?.closeSession(s.tty, new Date());
+        this.sync?.closeSession(s.tty, simulationDate());
         removed = true;
       }
     }
@@ -54,7 +56,7 @@ export class SshSessionTable {
   }
 
   recordFailedLogin(user: string, fromIp: string): void {
-    this.sync?.appendFailure({ user, tty: 'ssh:notty', fromIp, at: Date.now() });
+    this.sync?.appendFailure({ user, tty: 'ssh:notty', fromIp, at: simulationNowMs() });
   }
 
   /** Sessions currently open. */
@@ -95,7 +97,7 @@ export class SshSessionTable {
 
   /** Render `w` — uptime/header line followed by one row per session. */
   renderW(): string {
-    const header = ' ' + new Date().toUTCString().slice(5, 21) + '  up 0 min,  ' +
+    const header = ' ' + simulationDate().toUTCString().slice(5, 21) + '  up 0 min,  ' +
       `${this.list().length} users,  load average: ${IDLE_LOAD_AVERAGE}\n` +
       'USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT';
     return [header, ...this.list().map(s => s.toWRow())].join('\n');

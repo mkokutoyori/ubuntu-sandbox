@@ -6,6 +6,8 @@
  * classes the simulator actually supports.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
@@ -85,7 +87,7 @@ export class GetCounterCmdlet implements ICmdlet {
       samples.push({ Path: path.toLowerCase(), InstanceName: instanceName.toLowerCase(), CookedValue: value });
     }
     return {
-      Timestamp: new Date(),
+      Timestamp: simulationDate(),
       CounterSamples: samples,
     } as Record<string, PSValue>;
   }
@@ -137,7 +139,7 @@ export class RegisterScheduledTaskCmdlet implements ICmdlet {
     let runAt: Date | undefined;
     let intervalMs: number | undefined;
     if (trigger) {
-      const deviceNow = tasks.now?.() ?? new Date();
+      const deviceNow = tasks.now?.() ?? simulationDate();
       // `Get-Date` now reflects the device's own simulated clock (not real
       // wall time), so a `-At (Get-Date)` argument already IS the correct
       // simulated instant — no rebasing against the real clock needed.
@@ -393,7 +395,7 @@ function parseTriggerAt(raw: PSValue | undefined, ctx: CmdletContext): Date | un
   if (raw === undefined) return undefined;
   if (raw instanceof Date) return raw;
   const text = psValueToString(raw).trim();
-  const now = ctx.providers.scheduledTasks?.now?.() ?? new Date();
+  const now = ctx.providers.scheduledTasks?.now?.() ?? simulationDate();
   const clock = /^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(am|pm)?$/i.exec(text);
   if (clock) {
     let hour = Number(clock[1]);

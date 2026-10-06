@@ -12,6 +12,8 @@
  *   any ──dispose()/EXIT──▶ DISCONNECTED
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { RmanEventBus } from '../reactive/RmanEventBus';
 import { createAggregations, type ReactiveAggregations, type SessionMetrics } from '../reactive/aggregations';
 import { ReactiveChannelPool } from '../channel/ReactiveChannelPool';
@@ -114,7 +116,7 @@ export class RmanSession implements IRmanSession {
     this.activeJob$       = this._aggregations.activeJob$;
     this.activeChannels$  = this._aggregations.activeChannels$;
 
-    this.sessionId = _options.sessionId ?? `rman-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    this.sessionId = _options.sessionId ?? `rman-${simulationNowMs().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     if (_options.sharedBus) {
       this._bridge = new RmanBusBridge(_options.sharedBus, this.sessionId, this.events$);
       this._bridge.start();
@@ -137,7 +139,7 @@ export class RmanSession implements IRmanSession {
       type: 'CONNECTED',
       dbId: String(this._options.dbId.value),
       dbName: this._options.dbId.name,
-      connectedAt: Date.now(),
+      connectedAt: simulationNowMs(),
     });
     return ok(undefined);
   }

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IPAddress } from '@/network/core/types';
 import { normalizeDnsName as normalizeName, isWithinDomain } from '@/network/dns/wire/DnsName';
 import type { EndHost } from '@/network/devices/EndHost';
@@ -101,7 +103,7 @@ export class RecursiveResolver {
   }
 
   private nowSeconds(): number {
-    return (this.dnssecOptions?.now ?? (() => Math.floor(Date.now() / 1000)))();
+    return (this.dnssecOptions?.now ?? (() => Math.floor(simulationNowMs() / 1000)))();
   }
 
   private get validator(): DnsValidator | null {

@@ -27,6 +27,8 @@
  * server-side-only emission (no timer-driven actor engine needed for a
  * synchronous request/response protocol).
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 import { SftpCommandDispatcher } from './SftpCommandDispatcher';
 import type { SftpCommandContext } from './ISftpCommand';
@@ -135,7 +137,7 @@ export class SftpWireSession {
   }
 
   private longname(entry: SftpDirEntry): string {
-    return longnameOf(entry, this.config.accountNames ?? NUMERIC_ACCOUNT_NAMES, Date.now());
+    return longnameOf(entry, this.config.accountNames ?? NUMERIC_ACCOUNT_NAMES, simulationNowMs());
   }
 
   private ctx(): SftpCommandContext {

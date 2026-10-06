@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IPAddress } from '../../../core/types';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
@@ -116,7 +118,7 @@ export function tacacsServerPort(
 
 export function newRadiusServerStats(): RadiusServerStats {
   return {
-    upSinceMs: Date.now(),
+    upSinceMs: simulationNowMs(),
     authRequests: 0, authAccepts: 0, authRejects: 0,
     authTimeouts: 0, authRetransmits: 0,
     acctRequests: 0, acctResponses: 0,
@@ -126,7 +128,7 @@ export function newRadiusServerStats(): RadiusServerStats {
 
 export function newTacacsServerStats(): TacacsServerStats {
   return {
-    upSinceMs: Date.now(),
+    upSinceMs: simulationNowMs(),
     socketOpens: 0, socketCloses: 0, socketAborts: 0, socketErrors: 0,
     authRequests: 0, authAccepts: 0, authRejects: 0,
   };

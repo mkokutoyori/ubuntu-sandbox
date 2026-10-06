@@ -5,6 +5,8 @@
  * automatically started (OPEN state) with demo schemas installed.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import type { OsSecurityContext } from '@/database/oracle/security/types';
@@ -662,7 +664,7 @@ remote_login_passwordfile = EXCLUSIVE
 `# Oracle password file (binary format simulated)
 # Format: Oracle proprietary
 # Users:   SYS (SYSDBA, SYSOPER)
-# Created: ${new Date().toISOString().slice(0, 19)}
+# Created: ${simulationDate().toISOString().slice(0, 19)}
 `,
 
     // ── /etc config ─────────────────────────────────────────────
@@ -769,7 +771,7 @@ SELECT 'All objects recompiled successfully.' FROM DUAL;
 
     // ── Diagnostic trace dir ──────────────────────────────────
     [`${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`]:
-`${new Date().toISOString().replace('T', ' ').slice(0, 19)}
+`${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}
 Starting ORACLE instance (normal)
 LICENSE_MAX_SESSION = 0
 LICENSE_SESSIONS_WARNING = 0
@@ -790,7 +792,7 @@ No Resource Manager plan active
 replication_dependency_tracking turned off (no async multimaster replication found)
 Starting background process MMON
 Starting background process MMNL
-${new Date().toISOString().replace('T', ' ').slice(0, 19)}
+${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}
 Database ${sid} opened.
 Completed: ALTER DATABASE OPEN
 `,

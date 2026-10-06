@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
@@ -38,7 +40,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
       ctx.executor.userMgr.currentUid, ctx.executor.userMgr.currentGid, 0o022,
     ),
     fileExists: (p) => vfs.readFile(chemin(p)) !== null,
-    now: () => Date.now(),
+    now: () => simulationNowMs(),
     randomBytes: (n) => {
       const out = new Uint8Array(n);
       for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);

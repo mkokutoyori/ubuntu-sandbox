@@ -18,6 +18,8 @@
  * faire semblant : hors terminal, il n'y a pas d'écran à repeindre.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { kernelHostname } from '../../KernelHostname';
 import { IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
@@ -85,7 +87,7 @@ export const mtrCommand: LinuxCommand = {
       // l'hôte d'où part la mesure, et `hostname` a pu être changé.
       hostname: kernelHostname(ctx.executor.vfs),
       target: stats[stats.length - 1].ip ?? ip.toString(),
-      startedAt: new Date(),
+      startedAt: simulationDate(),
       hops: stats,
     }, 'report');
   },

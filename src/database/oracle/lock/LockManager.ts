@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type LockMode = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type LockType = 'TM' | 'TX' | 'UL';
 
@@ -103,7 +105,7 @@ export class LockManager {
       this.held.push({
         sessionId: args.sessionId, sid: args.sid, type: 'TM', id1, id2: 0,
         lmode: 0, request: args.mode, schema: args.schema.toUpperCase(),
-        table: args.table.toUpperCase(), txId: args.txId ?? null, acquiredAt: Date.now(),
+        table: args.table.toUpperCase(), txId: args.txId ?? null, acquiredAt: simulationNowMs(),
       });
       return;
     }
@@ -117,7 +119,7 @@ export class LockManager {
     this.held.push({
       sessionId: args.sessionId, sid: args.sid, type: 'TM', id1, id2: 0,
       lmode: args.mode, request: 0, schema: args.schema.toUpperCase(),
-      table: args.table.toUpperCase(), txId: args.txId ?? null, acquiredAt: Date.now(),
+      table: args.table.toUpperCase(), txId: args.txId ?? null, acquiredAt: simulationNowMs(),
     });
   }
 
@@ -133,7 +135,7 @@ export class LockManager {
         sessionId: args.sessionId, sid: args.sid, type: 'TX',
         id1: 0x10000 | (args.txId & 0xffff), id2: args.txId, lmode: 6, request: 0,
         schema: args.schema.toUpperCase(), table: args.table.toUpperCase(),
-        txId: args.txId, acquiredAt: Date.now(),
+        txId: args.txId, acquiredAt: simulationNowMs(),
       });
     }
   }

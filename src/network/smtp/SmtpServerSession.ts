@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { SmtpCommand, SmtpReply, SmtpSessionState, MailEnvelope, MimeMessage } from './types';
 import { reply, replyEnhanced, ENHANCED } from './replies';
 import { parseMailFromArgument, parseRcptToArgument, buildEnvelope, unstuffDotLines, splitHeadersAndBody } from './envelope';
@@ -196,7 +198,7 @@ export class SmtpServerSession {
       fromIp: this.remoteIp,
       by: this.config.hostname,
       withProtocol: determineProtocolLabel(this.usedEhlo, this.tlsActive, this.authActive),
-      timestamp: Date.now(),
+      timestamp: simulationNowMs(),
     });
 
     this.lastDelivered = {

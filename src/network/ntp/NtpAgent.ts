@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
@@ -230,7 +232,7 @@ export class NtpAgent {
   clearCounters(): void { this.config.counters = createNtpCounters(); }
 
   getUptimeSec(): number {
-    return Math.max(0, Math.floor((Date.now() - this.config.startedAtMs) / 1000));
+    return Math.max(0, Math.floor((simulationNowMs() - this.config.startedAtMs) / 1000));
   }
   removeAuthKey(id: number): void { this.config.authKeys.delete(id); }
   removeTrustedKey(id: number): void { this.config.trustedKeys.delete(id); }
@@ -306,7 +308,7 @@ export class NtpAgent {
   isSynced(): boolean { return this.config.localStratum < 16; }
 
   now(): number {
-    return Date.now() + this.config.offsetMs;
+    return simulationNowMs() + this.config.offsetMs;
   }
 
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
@@ -691,7 +693,7 @@ export class NtpAgent {
     const t1 = reply.origTimestampMs;
     const t2 = reply.rxTimestampMs;
     const t3 = reply.txTimestampMs;
-    const t4 = Date.now();
+    const t4 = simulationNowMs();
     if (t1 === 0) return;
     const { offset, delay } = computeOffsetMs(t1, t2, t3, t4);
     a.lastReplyMs = t4;
@@ -748,7 +750,7 @@ export class NtpAgent {
     // L'ecart n'est plus applique d'un coup : il traverse la discipline,
     // qui decide de glisser, de sauter, d'ecarter une aberration ou de
     // paniquer (lot N9). C'est le §2 du tutoriel, rendu observable.
-    const maintenant = Date.now();
+    const maintenant = simulationNowMs();
     const ecoule = this.horloge.dernierReglageMs
       ? maintenant - this.horloge.dernierReglageMs
       : (best.pollSec || 64) * 1000;
@@ -763,7 +765,7 @@ export class NtpAgent {
     this.config.offsetMs = this.horloge.etat.offsetApplique;
     this.config.localStratum = best.stratum + 1;
     this.config.refIdentifier = best.serverIp;
-    this.config.lastSyncMs = Date.now();
+    this.config.lastSyncMs = simulationNowMs();
     this.getBus().publish({
       topic: 'ntp.synced',
       payload: {
@@ -784,7 +786,7 @@ export class NtpAgent {
   private poll(serverIp: string): void {
     const a = this.config.associations.get(serverIp);
     if (!a) return;
-    const now = Date.now();
+    const now = simulationNowMs();
     a.lastPollMs = now;
     const mode: NtpMode = a.mode === 'symmetric-active' ? 'symmetric-active' : 'client';
     const request: NtpPacket = {

@@ -17,6 +17,8 @@
  * constant** ; c'est de l'arithmétique juste, pas une bibliothèque de
  * sécurité.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   generateRsaKeyPair, rsaSign, rsaVerify,
   materialToPublicKey, materialToPrivateKey,
@@ -58,7 +60,7 @@ function octetsAleatoires(n: number): Uint8Array {
 
 function randomSeed(): string {
   counter += 1;
-  const t = Date.now().toString(36);
+  const t = simulationNowMs().toString(36);
   const r = Math.random().toString(36).slice(2, 10);
   return `${t}-${r}-${counter.toString(36)}`;
 }

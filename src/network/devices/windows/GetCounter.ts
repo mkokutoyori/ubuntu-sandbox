@@ -1,3 +1,5 @@
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { WindowsPC } from '../WindowsPC';
 
 export interface GetCounterParsedArgs {
@@ -179,7 +181,7 @@ export function sampleCounter(
   rateState: CounterRateState,
 ): CounterSample {
   const lower = path.toLowerCase();
-  const now = Date.now();
+  const now = simulationNowMs();
 
   if (lower === '\\processor(_total)\\% processor time') {
     const procs = dev.getProcessManager().getAllProcesses();
@@ -231,5 +233,5 @@ export function sampleCounterSet(
   const expanded: string[] = [];
   for (const c of requested) expanded.push(...expandWildcardCounters(c, dev));
   const samples = expanded.map((p) => sampleCounter(p, dev, rateState));
-  return { ts: new Date(), samples };
+  return { ts: simulationDate(), samples };
 }

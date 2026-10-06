@@ -7,6 +7,8 @@
  * and user-private-group classifications that `useradd` relies on.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { SYSTEM_UID_CEILING } from './LinuxUserAccount';
 
 // ─── Structural contract ────────────────────────────────────────────────
@@ -57,7 +59,7 @@ export class LinuxGroup implements GroupEntry {
     this.password = init.password ?? '';
     this.systemGroup = init.systemGroup ?? init.gid < SYSTEM_GID_CEILING;
     this.userPrivateGroup = init.userPrivateGroup ?? false;
-    this.createdAt = init.createdAt ?? Date.now();
+    this.createdAt = init.createdAt ?? simulationNowMs();
   }
 
   /** Adapt a plain `GroupEntry` record into an entity. */

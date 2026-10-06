@@ -11,6 +11,8 @@
  * ICMP is encapsulated in IPv4 (protocol 1).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NetworkPdu } from './NetworkPdu';
 export type { NetworkPdu } from './NetworkPdu';
 
@@ -1753,7 +1755,7 @@ let idCounter = 0;
 
 export function generateId(): string {
   idCounter++;
-  return `${Date.now()}-${idCounter.toString(36)}`;
+  return `${simulationNowMs()}-${idCounter.toString(36)}`;
 }
 
 export function resetCounters(): void {

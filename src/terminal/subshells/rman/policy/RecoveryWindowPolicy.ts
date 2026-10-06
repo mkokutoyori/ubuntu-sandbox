@@ -8,6 +8,8 @@
  * politique de retention qui promet sept jours et n'en tient que six.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IRetentionPolicy, RetentionKind } from './IRetentionPolicy';
 import type { BackupSet } from '../catalog/types';
 
@@ -25,7 +27,7 @@ export class RecoveryWindowPolicy implements IRetentionPolicy {
   describe(): string { return `RECOVERY WINDOW OF ${this.value} DAYS`; }
 
   findObsolete(sets: ReadonlyArray<BackupSet>): BackupSet[] {
-    const cutoff = Date.now() - this.value * 86_400_000;
+    const cutoff = simulationNowMs() - this.value * 86_400_000;
     const preWindow = [...sets]
       .sort((a, b) => b.completionTime - a.completionTime)
       .filter(s => s.completionTime < cutoff);

@@ -10,6 +10,8 @@
  *   ReactiveRmanSubShell.fromContext(args, ctx) — injected context (tests)
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from '../ISubShell';
 import type { IRmanSession } from './session/IRmanSession';
@@ -86,7 +88,7 @@ export class ReactiveRmanSubShell implements ISubShell {
     const targetId = resolved?.ok === true ? resolved.deviceId : localId;
     const ctx = resolved?.ok === true ? resolved.ctx : LinuxRmanContext.forDevice(device);
     const bus = device.getBus();
-    const sessionId = `${localId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const sessionId = `${localId}-${simulationNowMs().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
     const builder = new RmanSessionOptionsBuilder()
       .withDbId(ctx.dbId)

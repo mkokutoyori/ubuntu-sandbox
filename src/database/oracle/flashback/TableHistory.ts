@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { StorageRow } from '../../engine/storage/BaseStorage';
 
 interface HistoryEntry {
@@ -19,7 +21,7 @@ export class TableHistory {
     const k = this.key(schema, table);
     let list = this.entries.get(k);
     if (!list) { list = []; this.entries.set(k, list); }
-    list.push({ scn, timeMs: Date.now(), rows: rows.map(r => [...r]) });
+    list.push({ scn, timeMs: simulationNowMs(), rows: rows.map(r => [...r]) });
     if (list.length > MAX_ENTRIES_PER_TABLE) list.shift();
   }
 

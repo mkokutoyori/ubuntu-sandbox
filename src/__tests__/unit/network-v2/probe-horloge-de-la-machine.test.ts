@@ -24,9 +24,9 @@
  * « un sleep en arriere-plan ne retient pas le shell » (rien n'attendait avant, rien n'attend apres :
  * non-regression) et « Start-Sleep fait avancer Get-Date » (la voie PowerShell avançait deja sa
  * propre horloge logique : non-regression, c'est le doublon qui disparait).
- * Les machines Windows des tests partent du 2026-06-20 00:00 (`setupGlobalState` pose l'origine de
- * `ClockOrigin`) : en production elles partent de l'heure reelle, un test de planificateur ne depend
- * donc pas de l'heure a laquelle on le lance.
+ * Les tests de planificateur Windows dont les horaires sont absolus posent l'horloge de leur machine
+ * (`pinClock`) : l'horloge d'une machine est l'heure reelle, un test ne doit pas dependre de l'heure
+ * a laquelle on le lance.
  */
 import { describe, it, expect } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';

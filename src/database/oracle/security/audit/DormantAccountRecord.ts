@@ -3,6 +3,8 @@
  * for at least `thresholdDays`. Produced by `DormantAccountAnalyzer`.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IDormantAccountRecord } from './interfaces';
 
 export class DormantAccountRecord implements IDormantAccountRecord {
@@ -32,7 +34,7 @@ export class DormantAccountRecord implements IDormantAccountRecord {
     this.thresholdDays = init.thresholdDays;
     this.profile = init.profile.toUpperCase();
     this.createdAt = init.createdAt;
-    this.detectedAt = init.detectedAt ?? new Date();
+    this.detectedAt = init.detectedAt ?? simulationDate();
     this.contactEmail = init.contactEmail ?? null;
     this.lastPasswordChangeAt = init.lastPasswordChangeAt ?? null;
   }

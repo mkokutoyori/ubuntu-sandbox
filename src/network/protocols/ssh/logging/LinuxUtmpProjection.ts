@@ -13,6 +13,8 @@
  * stream, different sink. One JSON row per auth event.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type {
   ISshServerEventBus,
@@ -64,7 +66,7 @@ export class LinuxUtmpProjection {
         this.append<WtmpRow>(WTMP_PATH, {
           user: event.user,
           ip: event.ip,
-          at: event.timestamp ?? Date.now(),
+          at: event.timestamp ?? simulationNowMs(),
           type: 'login',
           tty: this.allocateTty(),
         });
@@ -74,7 +76,7 @@ export class LinuxUtmpProjection {
         this.append<BtmpRow>(BTMP_PATH, {
           user: event.user,
           ip: event.ip,
-          at: event.timestamp ?? Date.now(),
+          at: event.timestamp ?? simulationNowMs(),
           type: 'failed',
           reason: event.reason,
           tty: this.allocateTty(),
@@ -85,7 +87,7 @@ export class LinuxUtmpProjection {
         this.append<BtmpRow>(BTMP_PATH, {
           user: event.user,
           ip: event.ip,
-          at: event.timestamp ?? Date.now(),
+          at: event.timestamp ?? simulationNowMs(),
           type: 'failed',
           reason: 'invalid user',
           tty: this.allocateTty(),

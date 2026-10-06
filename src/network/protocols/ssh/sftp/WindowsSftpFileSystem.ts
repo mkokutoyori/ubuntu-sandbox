@@ -10,6 +10,8 @@
  * Windows convention (`C:\Users\User\payload.txt`) before delegating.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type {
   ISftpFileSystem, SftpDirEntry, SftpFileAttrs, EntryType,
 } from './ISftpFileSystem';
@@ -63,7 +65,7 @@ export class WindowsSftpFileSystem implements ISftpFileSystem {
     }
     return ok({
       type: this.fs.isDirectory(abs) ? 'directory' : 'file',
-      mode: 0o644, uid: 0, gid: 0, size: 0, mtime: Date.now(),
+      mode: 0o644, uid: 0, gid: 0, size: 0, mtime: simulationNowMs(),
     });
   }
 

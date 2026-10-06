@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type EemTrigger =
   | { kind: 'none' }
   | { kind: 'syslog'; pattern: string }
@@ -60,7 +62,7 @@ export class EemService {
     const a = this.applets.get(appletName);
     if (!a) return false;
     a.recordTriggerCount++;
-    a.lastTriggeredAtMs = Date.now();
+    a.lastTriggeredAtMs = simulationNowMs();
     return true;
   }
 

@@ -30,6 +30,8 @@
  * vérifiable.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
 
 export interface CiscoFile {
@@ -81,7 +83,7 @@ export class CiscoFileSystem {
 
   constructor(
     private readonly profile: CiscoChassisProfile,
-    private readonly now: () => Date = () => new Date(),
+    private readonly now: () => Date = () => simulationDate(),
     private readonly offsetMin: () => number = () => 0,
   ) {
     const hw = CISCO_HARDWARE_PROFILES[profile];

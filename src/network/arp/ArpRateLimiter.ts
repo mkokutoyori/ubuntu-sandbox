@@ -6,6 +6,8 @@
  * configured limit, the port is err-disabled. We model the same
  * semantics with a sliding-window counter keyed by `(port, intervalSec)`.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export interface ArpRateState {
   windowStartMs: number;
   count: number;
@@ -21,7 +23,7 @@ export class ArpRateLimiter {
    *     the caller is expected to err-disable the port and increment
    *     the rate-limit drop counter.
    */
-  consume(port: string, limitPps: number, burstSec: number, nowMs: number = Date.now()):
+  consume(port: string, limitPps: number, burstSec: number, nowMs: number = simulationNowMs()):
     { ok: true; observedPps: number } | { ok: false; observedPps: number; limit: number }
   {
     if (limitPps <= 0) return { ok: true, observedPps: 0 };

@@ -14,6 +14,8 @@
  *     trails and views can react.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { SecurityEngine } from '../security/SecurityEngine';
 import type { ResourceManager } from './ResourceManager';
@@ -94,7 +96,7 @@ export class ConsumerGroupSwitcher {
       payload: {
         deviceId: this.deviceId, sid: '', sessionId: sid,
         username: s.username, oldGroup, newGroup, reason,
-        timestamp: new Date(),
+        timestamp: simulationDate(),
       },
     });
   }

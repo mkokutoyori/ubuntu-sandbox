@@ -16,6 +16,8 @@
  * Voir `docs/PRD-Wevtutil.md`.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import { parseEventXPath, levelOf, type XPathEvent } from './WinEventXPath';
@@ -353,7 +355,7 @@ function queryEvents(ctx: WinCommandContext, cmd: ParsedCommand): string {
       : ERR.noChannel(target);
   }
 
-  const now = ctx.eventLog?.now?.() ?? Date.now();
+  const now = ctx.eventLog?.now?.() ?? simulationNowMs();
   let events = source.filter((e) => parsed.predicate!(e, now));
   // `getEntriesStructured` rend du plus récent au plus ancien ;
   // `wevtutil` sans `/rd:` fait l'inverse — c'est un piège classique, et
@@ -384,7 +386,7 @@ function readChannel(ctx: WinCommandContext, logName: string): SourceEvent[] | n
     eventId: e.eventId,
     source: e.source,
     entryType: e.entryType ?? 'Information',
-    timeGenerated: e.timeGenerated ?? new Date(),
+    timeGenerated: e.timeGenerated ?? simulationDate(),
     data: e.data,
     message: e.message,
     computer,

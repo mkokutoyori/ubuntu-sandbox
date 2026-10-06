@@ -7,6 +7,8 @@
  * application data, encrypted via `ApplicationDataCipher.ts`. Mirrors
  * `Http1ClientSession.ts`'s synchronous connect/send/parse shape.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import type { HttpMessage } from '../semantics/types';
 import { encodeRequest, parseResponse, type Http1EncodeOptions } from '../http1/Http1Wire';
@@ -135,7 +137,7 @@ export class HttpsClientSession {
     if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
-    if (hsts) this.hstsStore.record(this.targetIp, hsts, Date.now());
+    if (hsts) this.hstsStore.record(this.targetIp, hsts, simulationNowMs());
 
     if (parsed.message.headers.get('Connection')?.toLowerCase() === 'close') {
       socket.close();
@@ -194,7 +196,7 @@ export class HttpsClientSession {
     if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
-    if (hsts) this.hstsStore.record(this.targetIp, hsts, Date.now());
+    if (hsts) this.hstsStore.record(this.targetIp, hsts, simulationNowMs());
 
     if (parsed.message.headers.get('Connection')?.toLowerCase() === 'close') {
       socket.close();

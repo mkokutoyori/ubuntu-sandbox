@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { IMPLICIT_RULE_ID, makeRule, type SecurityRule, type SecurityRuleInit } from './SecurityRule';
 
 export type PolicyError =
@@ -41,7 +43,7 @@ export class PolicyStore {
   private readonly now: () => number;
 
   constructor(deps: { now?: () => number; implicitAction?: SecurityRule['action'] } = {}) {
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
     this.implicit = makeRule({
       id: IMPLICIT_RULE_ID, seq: Number.MAX_SAFE_INTEGER, name: 'implicit',
       action: deps.implicitAction ?? 'deny', implicit: true,

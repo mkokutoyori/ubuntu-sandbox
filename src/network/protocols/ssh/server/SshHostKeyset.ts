@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type SshHostKeyAlgorithm =
   | 'ssh-ed25519'
   | 'ssh-rsa'
@@ -143,7 +145,7 @@ export class SshHostKeyMaterial {
       curveName: curve,
       comment,
       seed,
-      createdAt: init.createdAt ?? Date.now(),
+      createdAt: init.createdAt ?? simulationNowMs(),
     });
   }
 

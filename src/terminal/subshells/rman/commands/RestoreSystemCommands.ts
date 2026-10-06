@@ -12,6 +12,8 @@
  * sub-shell le rende correctement.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
@@ -89,16 +91,16 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
       if (written.ok === false) return written;
       return ok([
         '',
-        `Starting restore at ${new Date().toISOString()}`,
+        `Starting restore at ${simulationDate().toISOString()}`,
         'allocated channel: ORA_DISK_1',
         'channel ORA_DISK_1: SID=100 device type=DISK',
         '',
-        'channel ORA_DISK_1: looking for AUTOBACKUP on day: ' + new Date().toISOString().slice(0, 10).replace(/-/g, ''),
-        `channel ORA_DISK_1: AUTOBACKUP found: c-${ctx.dbId.value}-${new Date().toISOString().slice(0, 10)}-00`,
+        'channel ORA_DISK_1: looking for AUTOBACKUP on day: ' + simulationDate().toISOString().slice(0, 10).replace(/-/g, ''),
+        `channel ORA_DISK_1: AUTOBACKUP found: c-${ctx.dbId.value}-${simulationDate().toISOString().slice(0, 10)}-00`,
         `channel ORA_DISK_1: restoring control file from AUTOBACKUP c-${ctx.dbId.value}-...`,
         'channel ORA_DISK_1: control file restore from AUTOBACKUP complete',
         `output file name=${ctx.getControlFilePath?.() ?? '/u01/oradata/' + ctx.dbName + '/control01.ctl'}`,
-        `Finished restore at ${new Date().toISOString()}`,
+        `Finished restore at ${simulationDate().toISOString()}`,
         '',
       ]);
     }
@@ -112,24 +114,24 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
       if (written.ok === false) return written;
       return ok([
         '',
-        `Starting restore at ${new Date().toISOString()}`,
+        `Starting restore at ${simulationDate().toISOString()}`,
         'allocated channel: ORA_DISK_1',
         `channel ORA_DISK_1: restoring control file from '${path}'`,
         'channel ORA_DISK_1: control file restore complete',
-        `Finished restore at ${new Date().toISOString()}`,
+        `Finished restore at ${simulationDate().toISOString()}`,
         '',
       ]);
     }
     if (this.target === 'SPFILE_AUTOBACKUP') {
       return ok([
         '',
-        `Starting restore at ${new Date().toISOString()}`,
+        `Starting restore at ${simulationDate().toISOString()}`,
         'allocated channel: ORA_DISK_1',
-        `channel ORA_DISK_1: looking for AUTOBACKUP on day: ${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
-        `channel ORA_DISK_1: AUTOBACKUP found: c-${ctx.dbId.value}-${new Date().toISOString().slice(0, 10)}-00`,
+        `channel ORA_DISK_1: looking for AUTOBACKUP on day: ${simulationDate().toISOString().slice(0, 10).replace(/-/g, '')}`,
+        `channel ORA_DISK_1: AUTOBACKUP found: c-${ctx.dbId.value}-${simulationDate().toISOString().slice(0, 10)}-00`,
         'channel ORA_DISK_1: restoring SPFILE from AUTOBACKUP',
         'channel ORA_DISK_1: SPFILE restore complete',
-        `Finished restore at ${new Date().toISOString()}`,
+        `Finished restore at ${simulationDate().toISOString()}`,
         '',
       ]);
     }
@@ -137,9 +139,9 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
       const path = (args[0] ?? '').replace(/^'|'$/g, '');
       return ok([
         '',
-        `Starting restore at ${new Date().toISOString()}`,
+        `Starting restore at ${simulationDate().toISOString()}`,
         `channel ORA_DISK_1: SPFILE restored to ${path || '/u01/oradata/spfile.ora'}`,
-        `Finished restore at ${new Date().toISOString()}`,
+        `Finished restore at ${simulationDate().toISOString()}`,
         '',
       ]);
     }

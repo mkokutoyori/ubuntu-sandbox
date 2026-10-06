@@ -13,6 +13,8 @@
  *  - the lsnrctl transcript bodies (status / services), which used to be
  *    hand-copied in three places with hardcoded counters and uptime.
  */
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { ORACLE_CONFIG, TNS_ERRORS } from '../OracleConfig';
 import type { InstanceState } from '../OracleInstance';
 import { pad2 } from '@/lib/format';
@@ -91,7 +93,7 @@ export class ListenerControl {
 
   recordScanAttempt(sourceIp: string, event: ListenerScanEvent = 'syn-probe'): void {
     this._scanLog.push({
-      timestamp: new Date().toISOString(),
+      timestamp: simulationDate().toISOString(),
       sourceIp, destinationPort: this._port, event,
     });
   }
@@ -106,10 +108,10 @@ export class ListenerControl {
 
   private recordConnection(sourceIp: string, service: string, result: 'established' | 'refused', returnCode: number): void {
     const entry: ListenerConnectionLogEntry = {
-      timestamp: new Date().toISOString(), sourceIp, service: service.toUpperCase(), result, returnCode,
+      timestamp: simulationDate().toISOString(), sourceIp, service: service.toUpperCase(), result, returnCode,
     };
     this._connectionLog.push(entry);
-    const line = `${formatListenerTimestamp(new Date())} * `
+    const line = `${formatListenerTimestamp(simulationDate())} * `
       + `(CONNECT_DATA=(SERVICE_NAME=${entry.service})) * `
       + `(ADDRESS=(PROTOCOL=tcp)(HOST=${sourceIp})) * `
       + `${result} * ${returnCode}`;
@@ -124,7 +126,7 @@ export class ListenerControl {
   start(): boolean {
     if (this._running) return false;
     this._running = true;
-    this._startedAt = new Date();
+    this._startedAt = simulationDate();
     this._pid = this.env.allocatePid?.() ?? this._pid;
     return true;
   }
@@ -191,7 +193,7 @@ export class ListenerControl {
 
   /** Real "N days M hr. K min. S sec" uptime from the actual start date. */
   uptime(): string {
-    const ms = this._startedAt ? Date.now() - this._startedAt.getTime() : 0;
+    const ms = this._startedAt ? simulationNowMs() - this._startedAt.getTime() : 0;
     const sec = Math.floor(ms / 1000);
     const days = Math.floor(sec / 86400);
     const hr = Math.floor((sec % 86400) / 3600);

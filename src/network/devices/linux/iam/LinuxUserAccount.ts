@@ -13,6 +13,8 @@
  * pair and the manager mutates it in place via `usermod` / `chage`.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { GecosInfo } from './GecosInfo';
 
 // ─── Structural contract ────────────────────────────────────────────────
@@ -114,7 +116,7 @@ export class LinuxUserAccount implements UserEntry {
     this.expireDate = init.expireDate ?? -1;
     this.systemAccount = init.systemAccount ?? init.uid < SYSTEM_UID_CEILING;
     this.nonUnique = init.nonUnique ?? false;
-    this.createdAt = init.createdAt ?? Date.now();
+    this.createdAt = init.createdAt ?? simulationNowMs();
   }
 
   /** Adapt a plain `UserEntry` record (e.g. a legacy literal) into an entity. */
@@ -193,7 +195,7 @@ export class LinuxUserAccount implements UserEntry {
     return today >= this.expireDate;
   }
 
-  recordLogin(at: number = Date.now()): void {
+  recordLogin(at: number = simulationNowMs()): void {
     this.lastLoginAt = at;
   }
 
@@ -234,6 +236,6 @@ export class LinuxUserAccount implements UserEntry {
 }
 
 /** Days elapsed since the Unix epoch (shadow file time unit). */
-export function daysSinceEpoch(at: number = Date.now()): number {
+export function daysSinceEpoch(at: number = simulationNowMs()): number {
   return Math.floor(at / 86_400_000);
 }

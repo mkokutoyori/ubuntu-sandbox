@@ -35,7 +35,7 @@ export function bindLdapWithKerberos(opts: {
   if (!asResult.ok) return { failure: 'bad-credential' };
   const tgsResult = kdcConn.client.tgsExchange(asResult.ticket!, asResult.sessionKey!, cname, realm, dcHostname);
   if (!tgsResult.ok) return { failure: 'bad-credential' };
-  const apReqBytes = buildApReq(tgsResult.ticket!, tgsResult.sessionKey!, cname, realm, KU_AP_REQ_AUTHENTICATOR);
+  const apReqBytes = buildApReq(tgsResult.ticket!, tgsResult.sessionKey!, cname, realm, KU_AP_REQ_AUTHENTICATOR, opts.tcpStack.nowMs());
 
   const conn = dialLdap(opts.tcpStack, opts.dcAddress);
   if (!conn.ok || !conn.client) return { failure: 'no-network-path' };

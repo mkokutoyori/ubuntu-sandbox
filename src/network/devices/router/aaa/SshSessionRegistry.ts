@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { NetworkOsAccountEventEnvelope, SshAuthMethod } from './NetworkOsAccount';
 import { renderTable } from '../../shells/cli/TextTable';
@@ -124,7 +126,7 @@ export class SshSessionRegistry {
     this.maxLines = opts.maxLines ?? 16;
     this.capacity = opts.capacity ?? null;
     this.historyLimit = opts.historyLimit ?? 256;
-    this.now = opts.now ?? Date.now;
+    this.now = opts.now ?? simulationNowMs;
     this.configuredTransport = opts.configuredTransport ?? (() => null);
     this.subs.push(this.bus.subscribe('router.aaa.account.login.success', this.onLoginSuccess));
     this.subs.push(this.bus.subscribe('router.ssh.session.closed', this.onSessionClosed));

@@ -16,6 +16,8 @@
  *   - PROMPT, ACCEPT (simulated)
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
 import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from '../security/types';
@@ -306,7 +308,7 @@ export class SQLPlusSession {
   getBanner(): string[] {
     return [
       '',
-      'SQL*Plus: Release 19.0.0.0.0 - Production on ' + new Date().toDateString(),
+      'SQL*Plus: Release 19.0.0.0.0 - Production on ' + simulationDate().toDateString(),
       'Version 19.3.0.0.0',
       '',
       'Copyright (c) 1982, 2019, Oracle.  All rights reserved.',
@@ -875,11 +877,11 @@ export class SQLPlusSession {
     const output: string[] = [...substituted.verifyLines];
 
     try {
-      const startTime = Date.now();
+      const startTime = simulationNowMs();
       const result = this.netSession
         ? this.executeOverOracleNet(sql)
         : this.db.executeSql(this.executor, sql);
-      const elapsed = Date.now() - startTime;
+      const elapsed = simulationNowMs() - startTime;
 
       if (result.isQuery && result.columns.length > 0) {
         if (result.rows.length === 0) {

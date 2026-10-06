@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IPAddress } from '@/network/core/types';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
@@ -109,7 +111,7 @@ export class ZoneTransferClient {
   private async fetchTransfer(
     primary: IPAddress, query: DnsMessage,
   ): Promise<ResourceRecord<ResourceRecordData>[] | null> {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Math.floor(simulationNowMs() / 1000);
     const key = this.keys.get(primary.toString()) ?? this.key;
     const sent = key ? signedDnsMessage(query, { key, timeSigned: now }) : query;
     const requestMac = key

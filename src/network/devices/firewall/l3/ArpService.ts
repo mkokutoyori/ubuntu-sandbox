@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { INeighborEntry, INeighborResolver } from '../../../core/interfaces';
 import { IPAddress, MACAddress, type ARPEntry, type ARPPacket } from '../../../core/types';
 import type { InterfaceTable } from './InterfaceTable';
@@ -39,7 +41,7 @@ export class ArpService implements INeighborResolver<string> {
 
   constructor(deps: ArpServiceDeps) {
     this.deps = deps;
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
     this.agingMs = (deps.agingSec ?? DEFAULT_AGING_SEC) * 1000;
   }
 

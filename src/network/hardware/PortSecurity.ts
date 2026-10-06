@@ -25,6 +25,8 @@
  * just count the violation — matching the side-effect-free contract
  * that the Port layer relies on.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { MACAddress, type PortViolationMode } from '../core/types';
 import { Logger } from '../core/Logger';
 
@@ -154,7 +156,7 @@ export class PortSecurity {
   /** Insert (or no-op if already present). Used by sticky-save & static binding. */
   private addEntry(mac: MACAddress, vlan: number, type: LearnedMacType): boolean {
     if (this.entries.some(e => e.mac.equals(mac))) return false;
-    const now = Date.now();
+    const now = simulationNowMs();
     this.entries.push({ mac, vlan, type, learnedAtMs: now, lastSeenMs: now });
     return true;
   }
@@ -177,7 +179,7 @@ export class PortSecurity {
     // Known entry — refresh lastSeen for inactivity aging.
     const existing = this.entries.find(e => e.mac.equals(srcMAC));
     if (existing) {
-      existing.lastSeenMs = Date.now();
+      existing.lastSeenMs = simulationNowMs();
       return { allowed: true, shouldShutdown: false, violation: false };
     }
 
@@ -229,7 +231,7 @@ export class PortSecurity {
    * Static entries only age out when `agingStatic` is on (matches
    * `switchport port-security aging static`).
    */
-  ageOut(nowMs: number = Date.now()): SecureMacEntry[] {
+  ageOut(nowMs: number = simulationNowMs()): SecureMacEntry[] {
     if (this.agingTimeMin <= 0) return [];
     const windowMs = this.agingTimeMin * 60_000;
     const expired: SecureMacEntry[] = [];

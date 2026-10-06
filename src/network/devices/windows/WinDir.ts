@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { WinFileCommandContext } from './WinFileCommands';
 import { hasWildcard, joinPath, nameMatcher, splitFileSpec } from './WinPathSpec';
 import {
@@ -177,7 +179,7 @@ function dotRows(ctx: WinFileCommandContext, directory: string): Row[] {
   const own = ctx.fs.resolve(directory);
   const parentPath = directory.slice(0, directory.lastIndexOf('\\'));
   const parent = ctx.fs.resolve(isVolumeRoot(parentPath) ? `${parentPath.slice(0, 2)}\\` : parentPath) ?? own;
-  const now = new Date();
+  const now = simulationDate();
   return [
     { name: '.', isDirectory: true, size: 0, written: own?.mtime ?? now, created: own?.ctime ?? now, attributes: NO_ATTRIBUTES },
     { name: '..', isDirectory: true, size: 0, written: parent?.mtime ?? now, created: parent?.ctime ?? now, attributes: NO_ATTRIBUTES },

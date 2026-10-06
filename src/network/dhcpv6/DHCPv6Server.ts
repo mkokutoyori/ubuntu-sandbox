@@ -8,6 +8,8 @@
  * core that a real client actually needs to obtain an address.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { IPv6Address } from '../core/types';
 import { ipv6FromBigInt, ipv6ToBigInt } from '../core/Ipv6Arithmetic';
 import {
@@ -36,7 +38,7 @@ export class DHCPv6Server {
   private reconfigureGenerations: Map<string, number> = new Map();
   private relayPaths: Map<string, DHCPv6RelayPath> = new Map();
   private localPools: Map<string, { prefix: string; prefixLength: number; assignedLength: number }> = new Map();
-  private clock: () => number = () => Date.now();
+  private clock: () => number = () => simulationNowMs();
 
   noteClientAddress(clientDuid: string, address: string, iface: string | null = null): void {
     this.clientAddresses.set(clientDuid, { address, iface });

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { InfoCenterConfig, type InfoCenterError } from './InfoCenterConfig';
 import { vrpDatetimeToEpochMs } from '../../shells/huawei/huaweiClockDatetime';
 import { parseVrpDaylightSaving } from '../../shells/huawei/huaweiDaylightSaving';
@@ -166,7 +168,7 @@ export class RouterManagementService {
   private readonly raw: RawConfigEntry[] = [];
 
   recordRaw(feature: string, line: string): void {
-    this.raw.push({ feature, index: this.raw.length + 1, line, recordedAtMs: Date.now() });
+    this.raw.push({ feature, index: this.raw.length + 1, line, recordedAtMs: simulationNowMs() });
   }
   getRawEntries(feature?: string): readonly RawConfigEntry[] {
     return feature ? this.raw.filter(r => r.feature === feature) : [...this.raw];

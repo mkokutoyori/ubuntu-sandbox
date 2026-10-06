@@ -14,6 +14,8 @@
  * scripts and DV / Database Security Assessments work as expected.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 export type RedactionFunctionType =
   | 'FULL' | 'PARTIAL' | 'RANDOM' | 'REGEXP' | 'NONE' | 'NULLIFY';
 
@@ -111,7 +113,7 @@ export class DataRedactionManager {
       objectOwner: o, objectName: t, policyName: p.policyName.toUpperCase(),
       expression: p.expression, enabled: true,
       policyDescription: p.policyDescription ?? '',
-      createdAt: new Date(),
+      createdAt: simulationDate(),
     });
   }
 
@@ -220,7 +222,7 @@ export class DataRedactionManager {
       case 'RANDOM': {
         if (typeof value === 'number') return Math.floor(Math.random() * 1_000_000);
         if (value instanceof Date) {
-          return new Date(Date.now() - Math.floor(Math.random() * 31536000000));
+          return new Date(simulationNowMs() - Math.floor(Math.random() * 31536000000));
         }
         const s = String(value);
         return Array.from(s, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');

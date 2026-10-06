@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 const MONTH_NAMES = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
   'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
 const MONTH_ABBREVIATIONS = MONTH_NAMES.map(m => m.slice(0, 3));
@@ -13,7 +15,7 @@ const pad = (n: number, width = 2): string => String(n).padStart(width, '0');
  * current year's are 0-49 — otherwise both stay in the current century.
  */
 function resolveRRYear(twoDigit: number): number {
-  const currentYear = new Date().getFullYear();
+  const currentYear = simulationDate().getFullYear();
   const century = Math.floor(currentYear / 100) * 100;
   const currentYY = currentYear % 100;
   if (twoDigit <= 49) {

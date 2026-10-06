@@ -5,6 +5,8 @@
  * root key private). Same "simulated crypto, real protocol shape"
  * convention as the rest of `src/network/pki/`.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { PkiKeyPair, type PkiPrivateKey, type PkiPublicKey } from './PkiKeyPair';
 import { type X509Certificate, type X509CertificateFields, signCertificate } from './X509Certificate';
 
@@ -67,7 +69,7 @@ export function generateSelfSignedCertificate(
 export function selfSignedServiceCertificate(subject: string): { cert: X509Certificate; keyPair: PkiKeyPair } {
   const keyPair = PkiKeyPair.generate('rsa');
   const name = subject.includes('=') ? subject : `CN=${subject}`;
-  const now = Date.now();
+  const now = simulationNowMs();
   const fields: X509CertificateFields = {
     version: 3, serialNumber: '1', subject: name, issuer: name,
     notBefore: now - 1000, notAfter: now + 365 * 24 * 3600 * 1000,

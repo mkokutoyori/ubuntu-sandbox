@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { flowKeyToString, reverseFlowKey, type FlowKey } from './FlowKey';
 import type { FlowDirection, ObservedTcpState, TcpStateMachine } from './TcpStateMachine';
 import { sessionFamily, type SessionFamily } from './SessionFamily';
@@ -141,7 +143,7 @@ export class SessionTable {
 
   constructor(deps: SessionTableDeps = {}) {
     this.deps = deps;
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
     this.limits = deps.limits ?? {};
     const scheduler = deps.scheduler;
     this.timers = scheduler ? new TimerSet(scheduler) : null;

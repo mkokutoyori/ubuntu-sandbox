@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { OracleDatabase } from '../OracleDatabase';
 import { SchedulerJob, SchedulerJobRun, type SchedulerJobInit } from './SchedulerJob';
 
@@ -54,7 +56,7 @@ export class SchedulerManager {
   runJob(owner: string, jobName: string, useCurrentSession: boolean = true): SchedulerJobRun | null {
     const j = this.lookup(owner, jobName);
     if (!j) return null;
-    const startedAt = new Date();
+    const startedAt = simulationDate();
     j.recordStart(startedAt);
     let status: 'SUCCEEDED' | 'FAILED' = 'SUCCEEDED';
     let errorCode = 0;
@@ -112,7 +114,7 @@ export class SchedulerManager {
       const m = errorMessage.match(/ORA-(\d+)/);
       errorCode = m ? parseInt(m[1], 10) : 600;
     }
-    const endedAt = new Date();
+    const endedAt = simulationDate();
     j.recordEnd(endedAt, status === 'SUCCEEDED');
     const run = new SchedulerJobRun({
       runId: this.nextRunId++, owner: j.owner, jobName: j.jobName,
@@ -133,7 +135,7 @@ export class SchedulerManager {
     return run;
   }
 
-  sweep(now: Date = new Date()): number {
+  sweep(now: Date = simulationDate()): number {
     let executed = 0;
     for (const j of this.jobs.values()) {
       if (!j.enabled) continue;

@@ -5,6 +5,8 @@
  * out of the box with a bare PSInterpreter (no Windows device attached).
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IFileSystemProvider, DirEntry } from './PSProviders';
 import { normalizeWindowsPath } from '@/network/devices/windows/windowsPath';
 
@@ -79,7 +81,7 @@ export class SimulatedFileSystem implements IFileSystemProvider {
       if (!seg || seen.has(seg)) return;
       seen.add(seg);
       const isDirectory = this.dirs.has(prefix + seg);
-      out.push({ name: seg, isDirectory, size: isDirectory ? 0 : size, mtime: new Date() });
+      out.push({ name: seg, isDirectory, size: isDirectory ? 0 : size, mtime: simulationDate() });
     };
 
     for (const [k, content] of this.files) collect(k, content.length);

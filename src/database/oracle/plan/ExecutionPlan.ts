@@ -10,6 +10,8 @@
  * only models the result.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 export type PlanOperation =
   | 'SELECT STATEMENT' | 'INSERT STATEMENT' | 'UPDATE STATEMENT' | 'DELETE STATEMENT'
   | 'MERGE STATEMENT'
@@ -74,7 +76,7 @@ export class ExecutionPlan {
     this.sqlText = init.sqlText;
     this.nodes = init.nodes;
     this.planHashValue = init.planHashValue ?? ExecutionPlan.hash(init.sqlText, init.nodes);
-    this.createdAt = init.createdAt ?? new Date();
+    this.createdAt = init.createdAt ?? simulationDate();
   }
 
   /** Total cost — sum of node costs, like Oracle's SELECT STATEMENT COST. */

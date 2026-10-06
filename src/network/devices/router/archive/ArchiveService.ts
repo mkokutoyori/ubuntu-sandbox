@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 export interface ArchivePath {
   path: string;
   timePeriodMin?: number;
@@ -208,7 +210,7 @@ export class ArchiveService {
   capture(
     source: ArchivedRevision['source'], contenu: string,
   ): ArchivedRevision | { erreur: string } {
-    const quand = new Date();
+    const quand = simulationDate();
     const chemin = this.developper(this.nextRevisionPath(), quand);
     const octets = contenu.length;
     if (this.storage && this.storage.freeBytes() < octets) {
@@ -284,7 +286,7 @@ export class ArchiveService {
       lines.push('No backups exist on archive path');
     }
     lines.push(` The next archive file will be named `
-      + `${this.developper(this.nextRevisionPath(), new Date())}`);
+      + `${this.developper(this.nextRevisionPath(), simulationDate())}`);
     lines.push(' Archive #  Name');
     const dernier = this.revisions.length;
     this.revisions.forEach((r, i) => {

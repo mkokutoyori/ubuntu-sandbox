@@ -6,6 +6,8 @@
  * so DBA_HIST_SYSSTAT is never empty on a fresh database.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -34,7 +36,7 @@ registerView({
       return queryResult(cols, rows);
     }
     // Synthetic fallback.
-    const now = Date.now();
+    const now = simulationNowMs();
     const elapsedHours = Math.max(1, Math.floor((now - runtime.startedAt) / 3_600_000));
     const buckets = Math.min(elapsedHours, 100);
     const rows: (string | number)[][] = [];

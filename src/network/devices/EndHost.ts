@@ -18,6 +18,8 @@
  *          └─ ICMP Packet (protocol 1)
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { PathClock } from '../core/time/PathClock';
 import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
@@ -185,7 +187,7 @@ export const ARP_AGING_INTERVAL_MS = 5_000;
 export function getNUDState(entry: ARPEntry): string {
   if (entry.type === 'static') return 'PERMANENT';
   if (entry.type === 'failed') return 'FAILED';
-  return Date.now() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
+  return simulationNowMs() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
 }
 
 export interface IcmpRedirectNotice {
@@ -899,7 +901,7 @@ export abstract class EndHost extends Equipment {
   }
 
   protected ageArpEntries(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     let purged = false;
     for (const [ip, entry] of this.arpTable) {
       if (entry.type !== 'failed') continue;
@@ -1136,6 +1138,7 @@ export abstract class EndHost extends Equipment {
       restartsAfterIdle: () => this.tcpRestartsAfterIdle,
       retryPolicy: () => this.tcpRetryPolicy,
       mib: this.tcpMib,
+      nowMs: () => this.getSystemClockMs(),
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
@@ -1203,7 +1206,7 @@ export abstract class EndHost extends Equipment {
         this.arpTable.set(serverIp, {
           mac: new MACAddress(serverMac),
           iface,
-          timestamp: Date.now(),
+          timestamp: simulationNowMs(),
           type: 'dynamic',
         });
       } catch { /* malformed MAC */ }
@@ -2279,7 +2282,7 @@ export abstract class EndHost extends Equipment {
     this.arpTable.set(key, {
       mac,
       iface,
-      timestamp: Date.now(),
+      timestamp: simulationNowMs(),
       type: 'static',
     });
     this.emitArpLearned({ ip: key, mac: mac.toString(), iface, source: 'static' });
@@ -2443,7 +2446,7 @@ export abstract class EndHost extends Equipment {
       this.arpTable.set(sender, {
         mac: arp.senderMAC,
         iface: portName,
-        timestamp: Date.now(),
+        timestamp: simulationNowMs(),
         type: 'dynamic',
       });
       this.emitArpLearned({
@@ -4247,7 +4250,7 @@ export abstract class EndHost extends Equipment {
       this.arpTable.set(targetIpStr, {
         mac: MACAddress.broadcast(),
         iface: portName,
-        timestamp: Date.now(),
+        timestamp: simulationNowMs(),
         type: 'failed',
       });
     }

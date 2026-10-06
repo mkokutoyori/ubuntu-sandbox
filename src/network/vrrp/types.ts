@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { FhrpGroupBase } from '../fhrp/types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 import { createDefaultFhrpConfig, trackedPriority, type FhrpTrackEntry } from '../fhrp/types';
@@ -163,7 +165,7 @@ export function defaultGroupRuntime(iface: string, vrid: number): VrrpGroupRunti
     iface, vrid, state: 'init', vip: null, priority: 100, preempt: true,
     advertiseSec: 1,
     masterIp: null, masterPriority: 0,
-    lastHeardMasterMs: 0, lastTransitionMs: Date.now(),
+    lastHeardMasterMs: 0, lastTransitionMs: simulationNowMs(),
     tracks: [],
     preemptDelaySec: 0, description: '', authMode: 'none',
   };

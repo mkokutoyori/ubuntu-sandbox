@@ -10,6 +10,8 @@
  *   posix    →   `\nreal 0.123\nuser 0.001\nsys 0.001`        (TIMEFORMAT=POSIX)
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export interface TimeMeasurement {
   realMs: number;
   userMs: number;
@@ -39,9 +41,9 @@ export function formatTimes(m: TimeMeasurement, format: TimeFormat = 'bash'): st
 
 /** Measure a synchronous closure and return its result plus timings. */
 export function measure<T>(work: () => T): { result: T; timing: TimeMeasurement } {
-  const t0 = Date.now();
+  const t0 = simulationNowMs();
   const result = work();
-  const realMs = Date.now() - t0;
+  const realMs = simulationNowMs() - t0;
   return { result, timing: { realMs, userMs: 1, sysMs: 1 } };
 }
 

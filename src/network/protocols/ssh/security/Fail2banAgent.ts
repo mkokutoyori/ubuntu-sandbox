@@ -25,6 +25,8 @@
  * SshAuthThrottler clock (Date.now by default).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { ISshServerEventBus, SshServerEvent } from '../server/SshServerEvent';
 
 export interface Fail2banLogSink {
@@ -94,7 +96,7 @@ export class Fail2banAgent {
   ) {
     this.jailName = opts.jailName ?? 'sshd';
     this.pid = opts.pid ?? 1717;
-    this.clock = opts.clock ?? Date.now;
+    this.clock = opts.clock ?? simulationNowMs;
     this.port = opts.port ?? 22;
     this.chainName = `${CHAIN_PREFIX}${this.jailName}`;
     this.journal = opts.journal ?? null;

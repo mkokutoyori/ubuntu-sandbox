@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { Logger } from '@/network/core/Logger';
 import { formatIosElapsed } from '@/network/devices/shells/cisco/iosElapsed';
 import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
@@ -374,7 +376,7 @@ export function deviceClockSource(device: unknown): LoggingClockSource {
   };
   return {
     uptimeMs: () => dev.getUptimeMs?.() ?? 0,
-    epochMs: () => dev.getSystemClockMs?.() ?? Date.now(),
+    epochMs: () => dev.getSystemClockMs?.() ?? simulationNowMs(),
     zone: () => {
       const c = getManagementService(device)?.getClock();
       return { name: c?.timezone ?? 'UTC', offsetMin: c?.offsetMin ?? 0 };
@@ -876,7 +878,7 @@ export class LoggingConfig {
    * compte le compteur d'IOS.
    */
   recordDebugLine(text: string): string {
-    const ts = this.clock?.epochMs() ?? Date.now();
+    const ts = this.clock?.epochMs() ?? simulationNowMs();
     const rendu = this.formatEntry(
       'debugging', 'debug', text, ts, DEBUG_VERBATIM, this.uptimeNow(), this.nextSequence());
     if (!this.enabled) return rendu;
@@ -916,7 +918,7 @@ export class LoggingConfig {
     if (!this.redemarrageAccepte(severity)) return;
     // The device's own clock, not the host's: a router whose operator ran
     // `clock set` must date its messages with the date it was given.
-    const ts = this.clock?.epochMs() ?? Date.now();
+    const ts = this.clock?.epochMs() ?? simulationNowMs();
     const rendu = this.formatEntry(
       severity, tag, text, ts, mnemonic, this.uptimeNow(), this.nextSequence());
     const mnem = mnemonic.toUpperCase();

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { MemoryProfile } from '../../host/hardware/MemoryProfile';
 import type { LinuxProcessManager } from '../LinuxProcessManager';
 
@@ -159,7 +161,7 @@ export function sampleDstat(ctx: DstatSampleContext, rate: DstatRateState): Dsta
 
   const totalIn = ctx.ports.reduce((a, p) => a + p.bytesIn, 0);
   const totalOut = ctx.ports.reduce((a, p) => a + p.bytesOut, 0);
-  const now = Date.now();
+  const now = simulationNowMs();
   let recvPerSec = 0;
   let sendPerSec = 0;
   if (rate.lastTsMs !== null) {

@@ -13,6 +13,8 @@
  * yet, it returns its static schema-only empty set.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export interface RuntimeSessionRecord {
   sessionId: string;
   sid: number;
@@ -233,7 +235,7 @@ export class OracleRuntimeState {
   };
 
   /** Time the actor first subscribed — used as a baseline for histories. */
-  startedAt: number = Date.now();
+  startedAt: number = simulationNowMs();
 }
 
 /**

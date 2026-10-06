@@ -25,6 +25,8 @@
  *   netsh <context> ?                                    — sub-context help
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { WinCommandContext } from './WinCommandExecutor';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
@@ -1799,7 +1801,7 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
         const ip = port.getIPAddress();
         lines.push(`DHCP parameters for interface "${displayName}":`);
         lines.push(`  IP Address:          ${ip ? ip.toString() : '(none)'}`);
-        lines.push(`  Lease obtained:      ${released ? 'N/A' : new Date().toLocaleDateString()}`);
+        lines.push(`  Lease obtained:      ${released ? 'N/A' : simulationDate().toLocaleDateString()}`);
         if (released) lines.push(`  Lease expired:       Yes`);
         lines.push('');
       }

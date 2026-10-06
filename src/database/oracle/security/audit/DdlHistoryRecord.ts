@@ -8,6 +8,8 @@
  * a single monotonic timeline.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IDdlHistoryRecord } from './interfaces';
 
 export class DdlHistoryRecord implements IDdlHistoryRecord {
@@ -34,7 +36,7 @@ export class DdlHistoryRecord implements IDdlHistoryRecord {
     timestamp?: Date;
   }) {
     this.scn = init.scn;
-    this.timestamp = init.timestamp ?? new Date();
+    this.timestamp = init.timestamp ?? simulationDate();
     this.sessionId = init.sessionId;
     this.username = init.username.toUpperCase();
     this.schema = init.schema.toUpperCase();

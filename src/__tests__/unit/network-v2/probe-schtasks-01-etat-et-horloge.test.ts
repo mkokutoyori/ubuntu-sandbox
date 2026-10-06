@@ -21,6 +21,7 @@
  * sans avoir été relevés sur un binaire. Les comportements, eux, sont
  * vérifiés ici.
  */
+import { pinClock } from './pinnedClockLab';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -28,7 +29,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
 function lab(): { pc: WindowsPC; tick: () => void } {
-  const pc = new WindowsPC('windows-pc', 'win1', 0, 0);
+  const pc = new WindowsPC('windows-pc', 'win1', 0, 0); pinClock(pc);
   pc.powerOn();
   const t = pc as unknown as { scheduledTaskTick(): void };
   return { pc, tick: () => t.scheduledTaskTick() };

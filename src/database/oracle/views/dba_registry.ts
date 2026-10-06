@@ -6,6 +6,8 @@
  * to verify a healthy upgrade behave as expected.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -32,7 +34,7 @@ registerView({
   name: 'DBA_REGISTRY',
   comment: 'Installed database components',
   query({ instance }) {
-    const created = instance.startupTime ?? new Date();
+    const created = instance.startupTime ?? simulationDate();
     const ts = created.toISOString();
     return queryResult(
       [

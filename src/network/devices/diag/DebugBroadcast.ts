@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 
 export type DebugLineListener = (line: string) => void;
@@ -83,7 +85,7 @@ export class DebugBroadcast {
    * for everything the previous one lost.
    */
   private admit(): boolean {
-    const now = Date.now();
+    const now = simulationNowMs();
     if (now - this.windowStartedAtMs >= 1000) {
       const dropped = this.droppedThisWindow;
       this.windowStartedAtMs = now;

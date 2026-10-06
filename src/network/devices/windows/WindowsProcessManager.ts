@@ -10,6 +10,8 @@
  *   - Process creation/termination with child cascade (/T tree kill)
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { WindowsServiceManager } from './WindowsServiceManager';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -96,7 +98,7 @@ export class WindowsProcessManager {
    *  so a killed process that hosted a service is reported as a crash
    *  (SCM recovery actions), not a graceful `Stop-Service`. */
   private serviceManager: WindowsServiceManager | null = null;
-  private nowMs: () => number = () => Date.now();
+  private nowMs: () => number = () => simulationNowMs();
 
   constructor() {
     this.initDefaults();

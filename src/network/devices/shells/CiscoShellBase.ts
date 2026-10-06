@@ -12,6 +12,8 @@
  *                     Subclasses use this for typed access to device-specific APIs.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { IPAddress } from '@/network/core/types';
 import { IOS_SSH } from '@/terminal/ssh/sshDialect';
@@ -3692,7 +3694,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return {
       server: () => device._getDHCPv6ServerInternal!(),
       currentPool: () => (this.d() as unknown as { _ciscoIpv6DhcpCurrent?: string })._ciscoIpv6DhcpCurrent ?? null,
-      now: () => Date.now(),
+      now: () => simulationNowMs(),
     };
   }
 
@@ -5117,7 +5119,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const associations = [...(cfg?.associations?.values() ?? [])];
     if (associations.length === 0) return 'No SNTP servers configured';
 
-    const maintenant = agent?.now?.() ?? Date.now();
+    const maintenant = agent?.now?.() ?? simulationNowMs();
     const ligne = (a: {
       serverIp: string; stratum: number; lastReplyMs: number; synced: boolean;
     }): string => [
@@ -5730,7 +5732,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   timeRangeClockMs(): number {
     const device = this.d() as unknown as { getSystemClockMs?: () => number };
-    return device.getSystemClockMs?.() ?? Date.now();
+    return device.getSystemClockMs?.() ?? simulationNowMs();
   }
 
   /**
@@ -8440,7 +8442,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!service) return;
     const record = service.logCommand(
       this.configSessionLabel, this.configSessionLabel === 'console' ? 'console' : 'vty0',
-      commande, Date.now());
+      commande, simulationNowMs());
     if (!record) return;
     if (service.getConfigLogger().notifySyslogContent === undefined) return;
     const device = this.configExitLogTarget as {

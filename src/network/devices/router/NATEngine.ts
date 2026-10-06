@@ -12,6 +12,8 @@
  *   2. translateOutbound() — POSTROUTING: SNAT/PAT on packets leaving to outside
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { IPAddress, IPv4Packet, computeIPv4Checksum, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
 import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
 import { computeTcpChecksum } from '../../tcp/types';
@@ -349,8 +351,8 @@ export class NATEngine {
       localIP: opts.insideIP, localPort: opts.insidePort,
       globalIP: opts.globalIP, globalPort: opts.globalPort,
       outsideIP: opts.outsideIP, outsidePort: opts.outsidePort,
-      timestamp: Date.now(),
-      createdAt: Date.now(),
+      timestamp: simulationNowMs(),
+      createdAt: simulationNowMs(),
       tcpState: opts.protocol === IP_PROTO_TCP ? 'syn-seen' : undefined,
     };
     const key = makeKey4(opts.protocol, opts.insideIP, opts.insidePort, opts.outsideIP, opts.outsidePort);
@@ -454,7 +456,7 @@ export class NATEngine {
     // 1. Reverse PAT session lookup (reply to an inside-to-outside packet).
     const revSession = this.reverseSessions.get(makeKey(proto, dstIP, dstPort));
     if (revSession && (isOutside || isHairpinReturn(revSession, ipPkt))) {
-      revSession.timestamp = Date.now();
+      revSession.timestamp = simulationNowMs();
       if (proto === IP_PROTO_TCP) updateTcpState(revSession, ipPkt, 'in');
       this.hitCount++;
       const toClient = rewriteDestIP(ipPkt, revSession.localIP, revSession.localPort);
@@ -566,8 +568,8 @@ export class NATEngine {
               localIP: srcIP, localPort: srcPort,
               globalIP: translated, globalPort: srcPort,
               outsideIP: dstIP, outsidePort: dstPort,
-              timestamp: Date.now(),
-              createdAt: Date.now(),
+              timestamp: simulationNowMs(),
+              createdAt: simulationNowMs(),
               inIface,
             };
             this.sessions.set(key, session);
@@ -609,8 +611,8 @@ export class NATEngine {
             globalIP, globalPort,
             outsideIP: dstIP, outsidePort: dstPort,
             outsideLocalIP, outsideLocalPort,
-            timestamp: Date.now(),
-            createdAt: Date.now(),
+            timestamp: simulationNowMs(),
+            createdAt: simulationNowMs(),
             tcpState: proto === IP_PROTO_TCP ? 'syn-seen' : undefined,
             inIface,
           };
@@ -637,7 +639,7 @@ export class NATEngine {
           });
         } else {
           const oldTcp = session.tcpState;
-          session.timestamp = Date.now();
+          session.timestamp = simulationNowMs();
           if (proto === IP_PROTO_TCP) updateTcpState(session, pkt, 'out');
           this.hitCount++;
           this.debugLog(`s=${srcIP}->${session.globalIP}, d=${dstIP} [${session.globalPort}]`);
@@ -682,8 +684,8 @@ export class NATEngine {
             globalIP: poolIP, globalPort: poolPort,
             outsideIP: dstIP, outsidePort: dstPort,
             outsideLocalIP, outsideLocalPort,
-            timestamp: Date.now(),
-            createdAt: Date.now(),
+            timestamp: simulationNowMs(),
+            createdAt: simulationNowMs(),
             inIface,
           };
           this.sessions.set(sessionKey, session);
@@ -876,7 +878,7 @@ export class NATEngine {
    * Pass an explicit override (in ms) for testing purposes.
    */
   purgeStale(overrideMs?: number): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     let sweeped = 0;
     for (const [key, session] of this.sessions) {
       const timeout = overrideMs !== undefined

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { EndHost } from '@/network/devices/EndHost';
 import { Zone, ZoneError } from '@/network/dns/zone/Zone';
 import { ZoneStore, ZoneStoreError } from '@/network/dns/zone/ZoneStore';
@@ -344,7 +346,7 @@ export class WindowsDnsServerRole {
   private readonly directoryAvailable: () => boolean;
 
   constructor(private readonly host: EndHost, environment: DnsRoleEnvironment = {}) {
-    this.now = environment.now ?? (() => Date.now());
+    this.now = environment.now ?? (() => simulationNowMs());
     this.zoneFiles = environment.zoneFiles ?? null;
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
     this.cache = new DnsCache(this.now);
@@ -506,7 +508,7 @@ export class WindowsDnsServerRole {
   }
 
   private handleUpdate(query: DnsMessage, raw?: Uint8Array): DnsMessage {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Math.floor(simulationNowMs() / 1000);
     const request = parseOrFormerr(query);
     const mode = request ? this.dynamicUpdateMode(request.zone) : 'NonsecureAndSecure';
     const auth = authorizeUpdate(raw, mode === 'Secure' ? 'secure' : 'none', this.keyring, now);

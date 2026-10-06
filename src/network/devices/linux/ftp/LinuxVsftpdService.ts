@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import type { PortSpec } from '@/network/core/ports/PortNumber';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
@@ -183,7 +185,7 @@ export class LinuxVsftpdService implements ServiceSocketServer {
       },
       sessionFor: (username) => this.sessionFor(username, flags, strings),
       permitsWrite: (username, verb) => permitsWrite(flags, isAnonymous(username), verb),
-      listLine: (entry) => this.listLine(entry, Date.now()),
+      listLine: (entry) => this.listLine(entry, simulationNowMs()),
     };
   }
 

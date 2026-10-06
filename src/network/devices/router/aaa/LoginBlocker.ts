@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { NetworkOsAccountEventEnvelope } from './NetworkOsAccount';
 
@@ -37,7 +39,7 @@ export class LoginBlocker {
     this.attempts = opts.attempts;
     this.withinMs = opts.withinSeconds * 1000;
     this.blockMs = opts.blockSeconds * 1000;
-    this.now = opts.now ?? Date.now;
+    this.now = opts.now ?? simulationNowMs;
     this.subs.push(opts.bus.subscribe('router.aaa.account.login.failure', this.onFailure));
   }
 

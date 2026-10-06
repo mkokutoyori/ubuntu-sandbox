@@ -13,6 +13,8 @@
  * revenait à écrire un planificateur qui ne planifie rien.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { formatCtime } from '../time/ctime';
 
 /** Une tâche en attente. */
@@ -81,7 +83,7 @@ const AT_SHELL_WARNING = 'warning: commands will be executed using /bin/sh';
  * Ce qu'il ne reconnaît pas n'est pas ramené silencieusement à
  * maintenant : le vrai répond `Garbled time` et ne met rien au spool.
  */
-export function parseAtTime(spec: string, base: Date = new Date()): Date | null {
+export function parseAtTime(spec: string, base: Date = simulationDate()): Date | null {
   const text = spec.trim().toLowerCase();
   if (text === '' || text === 'now') return new Date(base);
 
@@ -143,7 +145,7 @@ export function cmdAt(
   stdin: string,
   user: string,
   atdRunning: boolean,
-  now: Date = new Date(),
+  now: Date = simulationDate(),
   file: 'a' | 'b' = 'a',
 ): AtResult {
   if (args.includes('-l')) return cmdAtq(queue);

@@ -20,6 +20,8 @@
  *    phase.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -69,7 +71,7 @@ class LoggerSingleton {
   /** Publish a log event */
   log(level: LogLevel, source: string, event: string, message: string, data?: Record<string, unknown>): void {
     const entry: NetworkLog = {
-      timestamp: Date.now(),
+      timestamp: simulationNowMs(),
       level,
       source,
       event,
@@ -152,7 +154,7 @@ class LoggerSingleton {
     for (const sub of this.subscriptions) {
       try {
         sub.subscriber({
-          timestamp: Date.now(),
+          timestamp: simulationNowMs(),
           level: 'info',
           source: 'logger',
           event: 'log:cleared',

@@ -6,6 +6,8 @@
  * the current dml counter.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -33,7 +35,7 @@ registerView({
         slice(runtime.counters.dml),
         slice(runtime.counters.dml),
         slice(runtime.counters.dml),
-        new Date().toISOString(),
+        simulationDate().toISOString(),
         'NO', 0,
       ])
     );

@@ -19,6 +19,8 @@
  * `LinuxCommandExecutor.executeInSession()`.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { LinuxJobTable } from '../jobs/LinuxJobTable';
 
 import type { SuFrame } from '@/shell/ShellContext';
@@ -111,7 +113,7 @@ export class LinuxShellSession {
   /** Per-session job control table (real bash has one per shell). */
   readonly jobTable: LinuxJobTable;
   /** When the shell was opened — backs `$SECONDS`. */
-  readonly startTime: number = Date.now();
+  readonly startTime: number = simulationNowMs();
   /** Whether the session has been disposed. */
   disposed: boolean = false;
 

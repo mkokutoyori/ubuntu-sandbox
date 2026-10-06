@@ -9,6 +9,8 @@
  *      using `created` as the reference point.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { OracleCatalog } from '../../OracleCatalog';
 import type { SecurityEngine } from '../SecurityEngine';
 import type { AuditJournal } from './AuditJournal';
@@ -28,7 +30,7 @@ export class DormantAccountAnalyzer {
   ) {}
 
   /** Run a full sweep, returning the number of dormant accounts found. */
-  sweep(now: Date = new Date()): number {
+  sweep(now: Date = simulationDate()): number {
     let found = 0;
     for (const user of this.catalog.getAllUsers()) {
       const upper = user.username.toUpperCase();

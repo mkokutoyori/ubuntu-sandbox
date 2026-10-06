@@ -13,7 +13,6 @@ import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/deviceNameCounters';
 import { Logger } from '@/network/core/Logger';
 import { PathClock } from '@/network/core/time/PathClock';
-import { setWindowsClockOrigin } from '@/network/core/time/ClockOrigin';
 import { __setDefaultEventBus } from '@/events/EventBus';
 import { __setDefaultScheduler } from '@/events/Scheduler';
 import { resetFaultRegistry } from '@/network/faults/FaultRegistry';
@@ -28,7 +27,6 @@ beforeEach(() => {
   resetDeviceCounters();
   Logger.reset();
   PathClock.reset();
-  setWindowsClockOrigin(new Date(2026, 5, 20).getTime());
   __setDefaultEventBus(null);
   __setDefaultScheduler(null);
   // The fault registry is a topology-wide singleton like the ones above:

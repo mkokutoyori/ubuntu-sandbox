@@ -2,6 +2,8 @@
  * V$DATAFILE_BLOCK_CHECK — last DBVERIFY result for each datafile.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -14,7 +16,7 @@ registerView({
     let f = 1;
     for (const ts of storage.getAllTablespaces()) {
       for (const _df of ts.datafiles) {
-        rows.push([f++, ts.name, 'COMPLETED', 0, 0, new Date().toISOString()]);
+        rows.push([f++, ts.name, 'COMPLETED', 0, 0, simulationDate().toISOString()]);
       }
     }
     return queryResult(

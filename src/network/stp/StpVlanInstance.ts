@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IScheduler, TimerHandle } from '@/events/Scheduler';
 import type { IEventBus } from '@/events/EventBus';
 import type { Port } from '../hardware/Port';
@@ -248,7 +250,7 @@ export class StpVlanInstance {
         designatedBridge: this.agent.ownBridgeId(this.vlanId),
         designatedCost: 0,
         designatedPort: this.agent.portIdFor(portName, this.vlanId),
-        ageMs: Date.now(),
+        ageMs: simulationNowMs(),
       };
       this.portInfo.set(portName, info);
     }

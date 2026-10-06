@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { bytesToUtf8, utf8ToBytes } from '@/crypto/encoding';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
@@ -43,7 +45,7 @@ export class SshShellSession {
   private streamAnnounced = false;
   private readonly heldAsync: string[] = [];
   private offAsync: (() => void) | null = null;
-  private readonly startedAt = Date.now();
+  private readonly startedAt = simulationNowMs();
   private disposed = false;
   private endOfInput = false;
 
@@ -273,6 +275,6 @@ export class SshShellSession {
     this.editor?.close();
     this.services.interactive?.dispose();
     this.services.shell.dispose?.();
-    this.services.closed(Date.now() - this.startedAt);
+    this.services.closed(simulationNowMs() - this.startedAt);
   }
 }

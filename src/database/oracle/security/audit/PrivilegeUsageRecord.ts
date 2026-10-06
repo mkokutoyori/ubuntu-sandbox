@@ -5,6 +5,8 @@
  * identify over-privileged accounts (`DBA_PRIV_USAGE` in Oracle 18c+).
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IPrivilegeUsageRecord } from './interfaces';
 
 export class PrivilegeUsageRecord implements IPrivilegeUsageRecord {
@@ -28,12 +30,12 @@ export class PrivilegeUsageRecord implements IPrivilegeUsageRecord {
     this.action = init.action.toUpperCase();
     this.objectSchema = init.objectSchema ? init.objectSchema.toUpperCase() : null;
     this.objectName = init.objectName ? init.objectName.toUpperCase() : null;
-    this.firstUsedAt = init.timestamp ?? new Date();
+    this.firstUsedAt = init.timestamp ?? simulationDate();
     this.lastUsedAt = this.firstUsedAt;
     this.useCount = 1;
   }
 
-  touch(at: Date = new Date()): void {
+  touch(at: Date = simulationDate()): void {
     this.lastUsedAt = at;
     this.useCount++;
   }

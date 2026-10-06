@@ -4,6 +4,8 @@
  * Synchronous read from IRmanOracleContext (datafile list) and catalog.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
@@ -111,7 +113,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
     }
     const fenetre = activePolicy.kind === 'recovery_window';
     const seuil = activePolicy.value ?? 1;
-    const bord = Date.now() - seuil * 86_400_000;
+    const bord = simulationNowMs() - seuil * 86_400_000;
     const lines = [
       '',
       'RMAN retention policy will be applied to the command',
@@ -131,7 +133,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
         if (ancienne !== undefined && ancienne <= bord) continue;
         const jours = ancienne === undefined
           ? seuil
-          : Math.floor((Date.now() - ancienne) / 86_400_000);
+          : Math.floor((simulationNowMs() - ancienne) / 86_400_000);
         lines.push(`${String(df.fileNo).padEnd(4)} ${String(jours).padEnd(5)} ${df.path}`);
         continue;
       }

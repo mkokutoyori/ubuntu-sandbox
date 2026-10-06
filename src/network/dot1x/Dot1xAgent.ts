@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
@@ -168,7 +170,7 @@ export class Dot1xAgent {
 
   private onEapolStart(rt: Dot1xPortRuntime): void {
     if (rt.mode !== 'auto') return;
-    if (rt.holdUntilMs > Date.now()) return;
+    if (rt.holdUntilMs > simulationNowMs()) return;
     this.transition(rt, 'authenticating', 'eapol-start');
     rt.reauthCount = 0;
     rt.pendingEapId = this.nextEapId++ & 0xff;
@@ -278,7 +280,7 @@ export class Dot1xAgent {
     } else {
       rt.reauthCount++;
       if (rt.reauthCount >= rt.maxReauthReq) {
-        rt.holdUntilMs = Date.now() + rt.holdMs;
+        rt.holdUntilMs = simulationNowMs() + rt.holdMs;
         this.transition(rt, 'held', 'auth-failure');
       } else {
         this.transition(rt, 'unauthorized', 'auth-failure');
@@ -315,7 +317,7 @@ export class Dot1xAgent {
     if (rt.state === newState) return;
     const oldState = rt.state;
     rt.state = newState;
-    rt.lastTransitionMs = Date.now();
+    rt.lastTransitionMs = simulationNowMs();
     this.getBus().publish({
       topic: 'dot1x.port.state.changed',
       payload: {

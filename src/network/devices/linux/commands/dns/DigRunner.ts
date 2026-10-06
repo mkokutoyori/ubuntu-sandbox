@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { PathClock } from '@/network/core/time/PathClock';
 import { DnsClass, RRType } from '@/network/dns/wire/RRType';
@@ -194,7 +196,7 @@ function transferOutput(invocation: DigInvocation, message: DnsMessage, elapsedM
   for (const rr of records) lines.push(formatRecordLine(rr));
   lines.push(`;; Query time: ${Math.round(elapsedMs)} msec`);
   lines.push(`;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server})`);
-  lines.push(`;; WHEN: ${new Date().toUTCString()}`);
+  lines.push(`;; WHEN: ${simulationDate().toUTCString()}`);
   lines.push(`;; XFR size: ${records.length} records (messages 1, bytes ${encodeDnsMessage(message).length})`);
   return lines.join('\n');
 }
@@ -259,7 +261,7 @@ function fullOutput(invocation: DigInvocation, message: DnsMessage, elapsedMs: n
 
   lines.push(`;; Query time: ${Math.round(elapsedMs)} msec`);
   lines.push(`;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server})`);
-  lines.push(`;; WHEN: ${new Date().toUTCString()}`);
+  lines.push(`;; WHEN: ${simulationDate().toUTCString()}`);
   lines.push(`;; MSG SIZE  rcvd: ${encodeDnsMessage(message).length}`);
   return lines.join('\n');
 }

@@ -49,6 +49,8 @@
  *    rapidement »), et c'est observable.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NtpAgent } from '../../../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../../../ntp/types';
 import { parseChronyConf, type ChronyConf, CHRONY_CONF_DEBIAN } from './ChronyConfig';
@@ -95,7 +97,7 @@ export class LinuxChronyService implements ServiceSocketServer {
   getConf(): ChronyConf { return this.conf; }
   getCles(): ChronyKeysLecture { return this.cles; }
   getUptimeSec(): number {
-    return this.actif ? Math.max(0, Math.floor((Date.now() - this.demarreALe) / 1000)) : 0;
+    return this.actif ? Math.max(0, Math.floor((simulationNowMs() - this.demarreALe) / 1000)) : 0;
   }
 
   /**
@@ -130,7 +132,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     this.host.bindNtpPort?.(UDP_PORT_NTP);
     this.appliquer();
     this.actif = true;
-    this.demarreALe = Date.now();
+    this.demarreALe = simulationNowMs();
     this.sautsFaits = 0;
     this.host.ntp().start();
     return { ok: true };

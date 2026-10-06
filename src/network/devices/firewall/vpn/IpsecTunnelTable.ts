@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type IkeVersion = 1 | 2;
 
 export type Phase1Type = 'static' | 'dynamic' | 'ddns';
@@ -112,7 +114,7 @@ export class IpsecTunnelTable {
   private nextSerial = 1;
 
   constructor(private readonly deps: IpsecTunnelTableDeps = {}) {
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
   }
 
   setPhase1(tunnel: Phase1Tunnel): void {

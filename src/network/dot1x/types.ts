@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 // EAP itself (RFC 3748) lives under radius/ — 802.1X is only a transport for
 // it, and the RADIUS server terminates the same packets via EAP-Message.
@@ -92,7 +94,7 @@ export function defaultPortRuntime(port: string, mode: Dot1xPortMode = 'auto'): 
     identity: null, pendingEapId: null, lastSupplicantMac: null,
     radiusState: null,
     reauthCount: 0,
-    lastTransitionMs: Date.now(),
+    lastTransitionMs: simulationNowMs(),
     maxReauthReq: 2,
     holdMs: 60_000,
     holdUntilMs: 0,

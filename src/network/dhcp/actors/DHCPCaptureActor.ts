@@ -6,6 +6,8 @@
  * needed (CLI command, replay, snapshot test).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe as BusUnsubscribe } from '@/events/EventBus';
 
 export type CapturedDhcpKind =
@@ -111,7 +113,7 @@ export class DHCPCaptureActor {
 
   private append(kind: CapturedDhcpKind, payload: Record<string, unknown>): void {
     const deviceId = (payload as { deviceId?: string }).deviceId ?? '';
-    this.buffer.push({ kind, timestamp: Date.now(), deviceId, payload });
+    this.buffer.push({ kind, timestamp: simulationNowMs(), deviceId, payload });
     if (this.buffer.length > this.maxEntries) {
       this.buffer.splice(0, Math.floor(this.maxEntries / 2));
     }

@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
 import type { UtmpSync, UtmpRecord } from './UtmpSync';
@@ -139,7 +141,7 @@ function renderRow(s: SshSession, opts: WOptions): string {
   if (opts.from) cols.push(pad(s.fromIp, 16));
   if (!opts.short) cols.push(pad(fmtLogin(s.loginAt), 8));
   const last = s.lastActivityAt ?? s.loginAt;
-  cols.push(pad(fmtIdle(last, new Date()), 6));
+  cols.push(pad(fmtIdle(last, simulationDate()), 6));
   if (!opts.short) {
     cols.push(pad('0.00s', 6));
     cols.push(pad('0.00s', 6));

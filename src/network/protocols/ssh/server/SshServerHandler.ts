@@ -7,6 +7,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   USERAUTH_SUCCESS, decodeUserauthInfoResponse, decodeUserauthRequest, encodeUserauthBanner,
   encodeUserauthFailure, encodeUserauthInfoRequest, encodeUserauthPkOk, type UserauthRequest,
@@ -100,7 +102,7 @@ export class SshServerHandler {
           kind: 'client_disconnected',
           user: '', ip: clientIp,
           reason: 'too_many_failures',
-          timestamp: Date.now(),
+          timestamp: simulationNowMs(),
         });
         return;
       }
@@ -109,7 +111,7 @@ export class SshServerHandler {
       kind: 'client_connected',
       ip: clientIp,
       port: this.ctx.clientPort?.(clientIp),
-      timestamp: Date.now(),
+      timestamp: simulationNowMs(),
     });
     // Reactive guard: throttled IPs are dropped at connect time. The bus
     // already carries the auth_throttled event, so the logger has written
@@ -121,7 +123,7 @@ export class SshServerHandler {
         user: '',
         ip: clientIp,
         reason: 'throttled',
-        timestamp: Date.now(),
+        timestamp: simulationNowMs(),
       });
       return;
     }
@@ -130,14 +132,14 @@ export class SshServerHandler {
 
   private serveScp(channel: ConnectionChannel, user: SshUserContext, command: ScpServerCommand): void {
     const fs = new PermissionCheckingFSDecorator(this.ctx.getFilesystem(user), user);
-    const openedAt = Date.now();
+    const openedAt = simulationNowMs();
     this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'exec' });
     new ScpServerSession(channel, fs, user.homeDirectory, command, (exitCode) => {
       void channel.request('exit-status', encodeExitStatus(exitCode));
       channel.eof();
       channel.close();
       this.eventBus.emit({
-        kind: 'channel_closed', user: user.username, channelType: 'exec', durationMs: Date.now() - openedAt,
+        kind: 'channel_closed', user: user.username, channelType: 'exec', durationMs: simulationNowMs() - openedAt,
       });
     }).start();
   }
@@ -147,7 +149,7 @@ export class SshServerHandler {
     const sftp = new SftpWireSession({
       vfs: fs, userCtx: user, rootPath: user.homeDirectory, accountNames: this.ctx.accountNames?.(),
     });
-    const openedAt = Date.now();
+    const openedAt = simulationNowMs();
     this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'sftp' });
     let pending = new Uint8Array(0);
     channel.onData((bytes) => {
@@ -169,7 +171,7 @@ export class SshServerHandler {
     channel.onEof(() => { channel.eof(); channel.close(); });
     channel.onClose(() => {
       this.eventBus.emit({
-        kind: 'channel_closed', user: user.username, channelType: 'sftp', durationMs: Date.now() - openedAt,
+        kind: 'channel_closed', user: user.username, channelType: 'sftp', durationMs: simulationNowMs() - openedAt,
       });
     });
   }
@@ -226,7 +228,7 @@ export class SshServerHandler {
           user: '',
           ip: clientIp,
           reason: 'auth_grace_timeout',
-          timestamp: Date.now(),
+          timestamp: simulationNowMs(),
         });
         conn.close();
       }, graceSec * 1000);
@@ -241,7 +243,7 @@ export class SshServerHandler {
             user: userCtx?.username ?? '',
             ip: clientIp,
             reason: 'client-alive-timeout',
-            timestamp: Date.now(),
+            timestamp: simulationNowMs(),
           });
           conn.close();
           return;
@@ -266,7 +268,7 @@ export class SshServerHandler {
           user: userCtx?.username ?? '',
           ip: clientIp,
           reason: 'exec_timeout',
-          timestamp: Date.now(),
+          timestamp: simulationNowMs(),
         });
         conn.close();
       }, ms);
@@ -295,7 +297,7 @@ export class SshServerHandler {
           ? { receivedDisconnect: { code: transport.peerDisconnect.reason, description: transport.peerDisconnect.description } }
           : {}),
         reason: reason === 'rst' ? 'reset' : 'closed',
-        timestamp: Date.now(),
+        timestamp: simulationNowMs(),
       });
       if (closedUser !== null) this.ctx.connectionClosed?.(closedUser, clientIp);
       this.ctx.connectionEnded?.(clientIp, closedPort);
@@ -416,7 +418,7 @@ export class SshServerHandler {
               }
               const command = forced === null ? asked : withOriginalCommand(forced, asked);
               const shell = this.ctx.getShell(user, user.homeDirectory);
-              const sessionStart = Date.now();
+              const sessionStart = simulationNowMs();
               this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'exec' });
               void shell.execute(command).then((result) => {
                 channel.write(endedLine(result.stdout));
@@ -429,7 +431,7 @@ export class SshServerHandler {
                   kind: 'channel_closed',
                   user: user.username,
                   channelType: 'exec',
-                  durationMs: Date.now() - sessionStart,
+                  durationMs: simulationNowMs() - sessionStart,
                 });
               });
               return;
@@ -647,7 +649,7 @@ export class SshServerHandler {
           user,
           ip: clientIp,
           port: this.ctx.clientPort?.(clientIp),
-          timestamp: Date.now(),
+          timestamp: simulationNowMs(),
         });
       }
       if (passwordBacked && !credentialless && !challenge) {
@@ -751,7 +753,7 @@ export class SshServerHandler {
       method: method ?? 'unknown',
       ip: clientIp,
       port: this.ctx.clientPort?.(clientIp),
-      timestamp: Date.now(),
+      timestamp: simulationNowMs(),
       ...(authenticatedKey === null ? {} : keyEvidence(authenticatedKey)),
     });
     const userCtx =

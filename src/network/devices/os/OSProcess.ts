@@ -13,6 +13,8 @@
  * handle counts, security descriptors) belong in subclasses.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 export type ProcessState =
   | 'R'  // running
   | 'S'  // sleeping (interruptible)
@@ -216,7 +218,7 @@ export class OSProcess {
     this.cwd = init.cwd ?? '/';
     this.environ = init.environ ?? {};
     this.state = init.state ?? 'S';
-    this.startTime = init.startTime ?? new Date();
+    this.startTime = init.startTime ?? simulationDate();
     this.numThreads = init.numThreads ?? 1;
     this.vsize = init.vsize ?? 10240;
     this.rss = init.rss ?? 4096;

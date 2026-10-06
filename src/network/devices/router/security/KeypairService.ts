@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type KeypairAlgo = 'rsa' | 'dsa' | 'ecdsa';
 
 export interface Keypair {
@@ -31,7 +33,7 @@ export class KeypairService {
     const fingerprint = pseudoHex(seed, 32).match(/.{2}/g)!.join(':');
     const publicKeyBlob = pseudoHex(seed + ':blob', Math.max(64, modulusBits / 4));
     const pair: Keypair = {
-      name, algo, modulusBits, fingerprint, publicKeyBlob, createdAtMs: Date.now(),
+      name, algo, modulusBits, fingerprint, publicKeyBlob, createdAtMs: simulationNowMs(),
     };
     this.pairs.set(name, pair);
     return pair;

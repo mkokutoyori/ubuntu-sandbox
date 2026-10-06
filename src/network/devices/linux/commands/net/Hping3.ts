@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { IPAddress } from '@/network/core/types';
 import { noFlags, type TcpFlags } from '@/network/tcp/types';
 import type { NssServiceEntry } from '@/network/devices/linux/nss/types';
@@ -117,7 +119,7 @@ const USAGE = [
 
 function parseArgs(args: readonly string[]): Hping3Args {
   const out: Hping3Args = {
-    target: '', count: Infinity, destPort: 0, baseSourcePort: (Date.now() & 0xffff) || 1024,
+    target: '', count: Infinity, destPort: 0, baseSourcePort: (simulationNowMs() & 0xffff) || 1024,
     mode: 'tcp', flags: noFlags(), ttl: DEFAULT_TTL, dataSize: 0,
     window: DEFAULT_SRCWINSIZE, ipProto: IPPROTO_RAW,
     keepSourcePort: false, destPortStep: 'fixed', flood: false, quiet: false,

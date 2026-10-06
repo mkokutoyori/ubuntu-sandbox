@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { SshdServerConfig, type SshdEffectiveView } from './SshdServerConfig';
 import { SshHostKeyset } from './SshHostKeyset';
@@ -50,7 +52,7 @@ export class CrossVendorSshHost {
     this.vendor = opts.vendor;
     this.bus = opts.bus;
     this.authority = opts.authority;
-    this.now = opts.now ?? Date.now;
+    this.now = opts.now ?? simulationNowMs;
     this.config = opts.config ?? SshdServerConfig.defaults();
     this.keyset = opts.keyset ?? SshHostKeyset.defaults(`${opts.vendor}:${opts.deviceId}`);
     this.banner = opts.banner ?? '';

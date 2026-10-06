@@ -15,6 +15,8 @@
  *     re-hydrates from the file on attach.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { VirtualFileSystem } from './VirtualFileSystem';
 
 /** Canonical path lastlog(8) reads on a real system. */
@@ -62,7 +64,7 @@ export class LinuxLastlogRegistry {
    * previous ← current ; current ← new, and projects to disk.
    * Returns the entry that became `previous` (undefined on first login).
    */
-  record(user: string, sourceHost: string, tty: string, when: number = Date.now()): LastlogEntry | undefined {
+  record(user: string, sourceHost: string, tty: string, when: number = simulationNowMs()): LastlogEntry | undefined {
     const slot = this.entries.get(user) ?? {};
     const newEntry: LastlogEntry = { when, sourceHost, tty };
     const becamePrevious = slot.current;

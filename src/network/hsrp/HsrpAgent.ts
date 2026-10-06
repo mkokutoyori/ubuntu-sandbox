@@ -4,6 +4,8 @@
  * two-tier election, UDP/1985 wire format, interface tracking with
  * priority decrement, and the v1/v2 multicast destinations.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   type HsrpConfig, type HsrpGroupRuntime, type HsrpPacket,
   defaultGroupRuntime, makeKey, compareSpeaker,
@@ -176,7 +178,7 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       },
     });
 
-    const now = Date.now();
+    const now = simulationNowMs();
     const oldActiveIp = g.activeRouterIp;
     if (payload.state === 'active') {
       // RFC 2281 §5.5: an Active router yields only to a HIGHER-priority
@@ -318,7 +320,7 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
     }
 
     if (oldState !== g.state) {
-      g.lastTransitionMs = Date.now();
+      g.lastTransitionMs = simulationNowMs();
       this.getBus().publish({
         topic: 'hsrp.state.changed',
         payload: {
@@ -375,7 +377,7 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
 
   // ── Hold-timer expiry ────────────────────────────────────────────
   protected expireDue(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const g of this.config.groups.values()) {
       if (g.activeRouterIp && now - g.lastHeardActiveMs > g.holdSec * 1000) {
         g.activeRouterIp = null;

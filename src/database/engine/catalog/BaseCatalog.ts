@@ -5,6 +5,8 @@
  * Subclasses implement dialect-specific catalog views (V$, DBA_, pg_catalog, etc.).
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { ResultSet } from '../executor/ResultSet';
 
 export interface CatalogUser {
@@ -85,7 +87,7 @@ export abstract class BaseCatalog {
     const user = this.getUser(username);
     if (user) {
       user.accountStatus = 'LOCKED';
-      user.lockDate = new Date();
+      user.lockDate = simulationDate();
     }
   }
 

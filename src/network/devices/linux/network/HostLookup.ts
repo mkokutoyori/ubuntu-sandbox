@@ -11,6 +11,8 @@
 // docs/PRD-Frame-Only-Refactor.md §2.2 allows to enumerate the topology.
 // Every caller inside src/network passes a source device.
 // eslint-disable-next-line no-restricted-imports
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { HostsFile } from '../../HostsFile';
@@ -185,7 +187,7 @@ interface FirewallSimulationSurface {
  */
 export function transitUdpAclVerdict(
   srcIp: string, dstIp: string, dstPort: number,
-  now: Date = new Date(),
+  now: Date = simulationDate(),
   from?: Equipment | null,
 ): 'permit' | 'deny' {
   return transitAclVerdict(srcIp, dstIp, dstPort, now, from);

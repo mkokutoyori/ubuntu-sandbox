@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IPv6Packet, ICMPv6Packet, TCPPacket } from '../../core/types';
 import { IPv6Address } from '../../core/types';
 import type { IPv6ACL, IPv6ACLEntry } from '../Router';
@@ -159,7 +161,7 @@ function matchesEntry(entry: IPv6ACLEntry, pkt: IPv6Packet, ctx?: Ipv6AclContext
 
   if (entry.timeRange !== undefined) {
     if (!ctx?.timeRangeActive) return false;
-    const now = new Date(ctx.now ? ctx.now() : Date.now());
+    const now = new Date(ctx.now ? ctx.now() : simulationNowMs());
     if (!ctx.timeRangeActive(entry.timeRange, now)) return false;
   }
 
