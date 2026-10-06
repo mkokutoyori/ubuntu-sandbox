@@ -304,6 +304,21 @@ function parseSudoLead(args: readonly string[]): {
   return { flags, user, rest: args.slice(i) };
 }
 
+const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
+  'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'basenc', 'xxd',
+  'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
+  'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
+  'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
+  'sh', 'bash', 'dash', 'env', 'xargs', 'timeout', 'nohup', 'nice', 'ionice', 'time', 'stdbuf',
+  'command', 'exec', 'eval', 'source', '.', 'watch', 'script', 'busybox', 'su', 'runuser', 'chroot',
+]);
+
+function writesLines(argv: readonly string[]): boolean {
+  const lead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
+  const name = lead[0]?.split('/').pop();
+  return name !== undefined && !RAW_STDOUT_COMMANDS.has(name);
+}
+
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
 
@@ -3620,6 +3635,20 @@ export class LinuxCommandExecutor {
     background?: boolean,
     stdin?: string,
     outputPiped?: boolean,
+  ): { output: string; exitCode: number; stderr?: string; lineOriented?: boolean } | Promise<{ output: string; exitCode: number; stderr?: string; lineOriented?: boolean }> {
+    const outcome = this.dispatchNetworkAware(argv, env, background, stdin, outputPiped);
+    const lineOriented = writesLines(argv);
+    return outcome instanceof Promise
+      ? outcome.then((result) => ({ ...result, lineOriented }))
+      : { ...outcome, lineOriented };
+  }
+
+  private dispatchNetworkAware(
+    argv: string[],
+    env?: Record<string, string>,
+    background?: boolean,
+    stdin?: string,
+    outputPiped?: boolean,
   ): { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }> {
     if (!background && this.networkRunner && argv.length > 0) {
       const viaSudo = argv[0] === 'sudo';
@@ -3920,7 +3949,7 @@ export class LinuxCommandExecutor {
     const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
     const startupVars = cmd === 'bash'
       ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-      : this.buildEnvVars();
+      : this.childProcessVars();
     if (parsed.cmdString !== null) {
       return this.runScriptProcessAsync(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
         runScriptContentAsync(
@@ -3980,6 +4009,17 @@ export class LinuxCommandExecutor {
   }
 
   private dispatchFromInterpreter(
+    argv: string[],
+    env?: Record<string, string>,
+    background?: boolean,
+    outputPiped?: boolean,
+    interpreterStdin?: string,
+  ): { output: string; exitCode: number; backgroundPid?: number; lineOriented?: boolean } {
+    const result = this.dispatchResolved(argv, env, background, outputPiped, interpreterStdin);
+    return { ...result, lineOriented: writesLines(argv) };
+  }
+
+  private dispatchResolved(
     argv: string[],
     env?: Record<string, string>,
     background?: boolean,
@@ -4504,7 +4544,7 @@ export class LinuxCommandExecutor {
    */
   private runBashStartupFiles(login: boolean, interactive: boolean): Record<string, string> {
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`;
-    let vars = this.buildEnvVars();
+    let vars = this.childProcessVars();
     // Real bash sets PS1 before sourcing rc files for an interactive shell —
     // /etc/bash.bashrc / ~/.bashrc commonly bail out early on `[ -z "$PS1" ]`.
     if ((login || interactive) && !vars.PS1) {
@@ -4541,6 +4581,10 @@ export class LinuxCommandExecutor {
       if (bashEnv) source(this.vfs.normalizePath(bashEnv, this.cwd));
     }
     return vars;
+  }
+
+  private childProcessVars(): Record<string, string> {
+    return { ...this.buildEnvVars(), ...this._cmdEnv };
   }
 
   /** Build initial environment variables for the bash interpreter. */
@@ -5310,7 +5354,7 @@ export class LinuxCommandExecutor {
         const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
         const startupVars = cmd === 'bash'
           ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-          : this.buildEnvVars();
+          : this.childProcessVars();
         if (parsed.cmdString !== null) {
           return this.runScriptProcess(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
             runScriptContent(

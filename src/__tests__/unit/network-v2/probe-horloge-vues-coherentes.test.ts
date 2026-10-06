@@ -33,7 +33,7 @@ describe('every view of a Linux machine reads the clock that date -s set', () =>
     const pc = new LinuxPC('linux-pc', 'PC1');
     await pc.executeCommand(SET);
     await pc.executeCommand('touch /tmp/f');
-    expect(await pc.executeCommand('ls -l --time-style=full-iso /tmp/f')).toContain('Jan  1 12:00');
+    expect(await pc.executeCommand('ls -l --time-style=full-iso /tmp/f')).toContain('2030-01-01 12:00:00');
   });
 
   it('the journal stamps its entries with it', async () => {

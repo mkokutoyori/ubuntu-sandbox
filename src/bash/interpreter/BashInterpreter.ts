@@ -50,6 +50,7 @@ export interface ExternalCommandResult {
   stderr?: string;
   interleaved?: string;
   backgroundPid?: number;
+  lineOriented?: boolean;
 }
 
 /**
@@ -914,7 +915,7 @@ export class BashInterpreter {
           if (result.stderr) this.stderrParts.push(result.stderr);
         } else {
           if (result.output) {
-            this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
+            this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : ensureTrailingNewline(result.output));
           }
           if (result.stderr) {
             this.stderrParts.push(result.stderr);
@@ -925,7 +926,7 @@ export class BashInterpreter {
         }
       } else if (result.output) {
         // Verbatim on redirect (binary-safe); add trailing newline only when going to the terminal.
-        this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
+        this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : ensureTrailingNewline(result.output));
       }
       this.env.lastExitCode = result.exitCode;
     }

@@ -1407,6 +1407,7 @@ export abstract class LinuxMachine extends EndHost
 
     this.vsftpdService = new LinuxVsftpdService({
       vfs,
+      nowMs: () => this.executor.simulatedDate().getTime(),
       tcpStack: () => this.getTcpStack(),
       account: (username) => {
         const entry = this.executor.userMgr.getUser(username);
