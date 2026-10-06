@@ -38,6 +38,7 @@ import { rndcCommand } from './dns/Rndc';
 import { nmapCommand } from './net/Nmap';
 import { hping3Command } from './net/Hping3';
 import { snmpwalkCommand } from './net/Snmpwalk';
+import { ldapsearchCommand } from './net/Ldapsearch';
 import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
 import { sshCommand } from './net/Ssh';
@@ -176,6 +177,7 @@ export {
   nmapCommand,
   hping3Command,
   snmpwalkCommand,
+  ldapsearchCommand,
   curlCommand,
   scpCommand,
   sshCommand,
@@ -334,6 +336,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nmapCommand,
   hping3Command,
   snmpwalkCommand,
+  ldapsearchCommand,
   curlCommand,
   scpCommand,
   sshCommand,

@@ -1963,6 +1963,12 @@ export class DirectoryStore {
   getBindCheck(): LdapBindCheck {
     return {
       checkBind: (name, password) => {
+        const qualified = /^([^\\=]+)\\(.+)$/.exec(name);
+        if (qualified !== null) {
+          const domain = qualified[1].toLowerCase();
+          if (domain !== this.netbiosName.toLowerCase() && domain !== this.dnsName.toLowerCase()) return false;
+          name = qualified[2];
+        }
         const sam = this.resolveIdentity(name);
         return this.checkPassword(sam, password) || this.checkComputerSecret(sam.replace(/\$$/, ''), password);
       },

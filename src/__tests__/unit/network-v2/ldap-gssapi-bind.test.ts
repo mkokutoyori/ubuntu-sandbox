@@ -99,7 +99,7 @@ describe('LDAP GSSAPI SASL bind — real AP-REQ credentials over TCP/389', () =>
     const ldapConn = dialLdap(client.getTcpStack(), '192.168.53.10');
     const bindRes = ldapConn.client!.bindSasl('DIGEST-MD5', new Uint8Array([1, 2, 3]));
     expect(bindRes.ok).toBe(false);
-    expect(bindRes.result.resultCode).toBe(LdapResultCode.invalidCredentials);
+    expect(bindRes.result.resultCode).toBe(LdapResultCode.authMethodNotSupported);
   });
 
   it('still permits ordinary simple binds unaffected by the SASL extension', async () => {

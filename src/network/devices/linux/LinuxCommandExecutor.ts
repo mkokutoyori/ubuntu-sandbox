@@ -4526,6 +4526,10 @@ export class LinuxCommandExecutor {
     return vars;
   }
 
+  commandEnvironment(): Readonly<Record<string, string>> {
+    return { ...this.buildEnvVars(), ...(this._cmdEnv ?? {}) };
+  }
+
   /** Build initial environment variables for the bash interpreter. */
   private buildEnvVars(): Record<string, string> {
     if (this.envOverride) return { ...this.envOverride };
@@ -4934,7 +4938,7 @@ export class LinuxCommandExecutor {
       case 'which': return this.handleWhich(args);
       case 'whereis': return this.handleWhereis(args);
       case 'type': return this.handleType(args);
-      case 'command': return cmdCommand(c, args, KNOWN_LINUX_COMMAND_SET);
+      case 'command': return cmdCommand(c, args, this.knownCommandSet());
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
       // Permission commands
@@ -7205,7 +7209,7 @@ export class LinuxCommandExecutor {
     const pathDirs = (this.env.get('PATH') ?? '').split(':').filter(Boolean);
     const vfs = this.vfs;
     const cwd = this.cwd;
-    const known = KNOWN_LINUX_COMMAND_SET;
+    const known = this.knownCommandSet();
     const toLocation = (path: string): FileLocation => {
       const inode = vfs.resolveInode(path);
       const slash = path.lastIndexOf('/');
@@ -7287,7 +7291,7 @@ export class LinuxCommandExecutor {
       if (a.startsWith('-')) continue;
       names.push(a);
     }
-    const known = KNOWN_LINUX_COMMAND_SET;
+    const known = this.knownCommandSet();
     const resolver = new WhereisResolver({
       exists: (p) => this.vfs.exists(p),
       list: (dir) => {
@@ -7873,8 +7877,13 @@ export class LinuxCommandExecutor {
 
   registeredCommandNames: () => readonly string[] = () => [];
 
+  private knownCommandSet(): ReadonlySet<string> {
+    const registered = this.registeredCommandNames();
+    return registered.length === 0 ? KNOWN_LINUX_COMMAND_SET : new Set([...KNOWN_LINUX_COMMANDS, ...registered]);
+  }
+
   private getCommandCompletions(prefix: string): string[] {
-    const unique = Array.from(new Set([...KNOWN_LINUX_COMMANDS, ...this.registeredCommandNames()]));
+    const unique = Array.from(this.knownCommandSet());
     if (!prefix) return unique.sort();
     return unique.filter(c => c.startsWith(prefix)).sort();
   }

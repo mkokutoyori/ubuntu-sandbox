@@ -83,6 +83,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'ISC DHCP server for automatic IP address assignment', units: ['isc-dhcp-server', 'isc-dhcp-server6'] },
   { name: 'kmod', version: '29-1ubuntu1', arch: 'amd64',
     summary: 'tools for managing Linux kernel modules', },
+  { name: 'ldap-utils', version: '2.5.18+dfsg-0ubuntu0.22.04.2', arch: 'amd64',
+    summary: 'OpenLDAP utilities', },
   { name: 'libuser', version: '1:0.62~dfsg-0.1ubuntu2', arch: 'amd64',
     summary: 'user and group account administration library', },
   { name: 'lldpd', version: '1.0.16-1', arch: 'amd64',

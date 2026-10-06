@@ -1,0 +1,1247 @@
+{
+ "files": {},
+ "scenarios": [
+  {
+   "name": "chase-attrs",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Attrs,dc=a,dc=local",
+    "-s",
+    "base",
+    "mail"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "3041020102633c04166f753d41747472732c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c617373300604046d61696c",
+       3
+      ],
+      [
+       "s",
+       "3064020102655f0a010a04166f753d41747472732c64633d612c64633d6c6f63616c0400a340043e6c6461703a2f2f3132372e302e302e313a333839382f6f753d50656f706c652c64633d622c64633d6c6f63616c3f6d61696c3f7375623f28736e3d422a29",
+       4
+      ],
+      [
+       "c",
+       "30050201064200",
+       10
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "3042020103633d04176f753d50656f706c652c64633d622c64633d6c6f63616c0a01020a0100020100020100010100870b6f626a656374636c617373300604046d61696c",
+       8
+      ],
+      [
+       "s",
+       "3020020103641b04176f753d50656f706c652c64633d622c64633d6c6f63616c3000303f020103643a041f7569643d626f622c6f753d50656f706c652c64633d622c64633d6c6f63616c3017301504046d61696c310d040b626f6240622e6c6f63616c3043020103643e04217569643d6361726f6c2c6f753d50656f706c652c64633d622c64633d6c6f63616c3019301704046d61696c310f040d6361726f6c40622e6c6f63616c300c02010365070a010004000400",
+       9
+      ],
+      [
+       "c",
+       "30050201054200",
+       11
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Attrs,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: mail \n#\n\n# People, b.local\ndn: ou=People,dc=b,dc=local\n\n# bob, People, b.local\ndn: uid=bob,ou=People,dc=b,dc=local\nmail: bob@b.local\n\n# carol, People, b.local\ndn: uid=carol,ou=People,dc=b,dc=local\nmail: carol@b.local\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 4\n# numEntries: 3\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-base",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303c020102633704176f753d52656d6f74652c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "305a02010265550a010a04176f753d52656d6f74652c64633d612c64633d6c6f63616c0400a33504336c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201064200",
+       11
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "303c020103633704176f753d52656d6f74652c64633d622c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       8
+      ],
+      [
+       "s",
+       "3071020103646c04176f753d52656d6f74652c64633d622c64633d6c6f63616c30513023040b6f626a656374436c617373311404126f7267616e697a6174696f6e616c556e6974300e04026f753108040652656d6f7465301a040b6465736372697074696f6e310b040968656c642062792059300c02010365070a010004000400",
+       9
+      ],
+      [
+       "c",
+       "30050201054200",
+       10
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Remote,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# Remote, b.local\ndn: ou=Remote,dc=b,dc=local\nobjectClass: organizationalUnit\nou: Remote\ndescription: held by Y\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 2\n# numEntries: 1\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-bound-bad",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base",
+    "-D",
+    "cn=admin,dc=local",
+    "-w",
+    "wrong"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "3022020101601d0201030411636e3d61646d696e2c64633d6c6f63616c800577726f6e67",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a013104000400",
+       2
+      ],
+      [
+       "c",
+       "30050201024200",
+       3
+      ]
+     ]
+    }
+   ],
+   "stdout": "",
+   "stderr": "ldap_bind: Invalid credentials (49)\n",
+   "exitCode": 49
+  },
+  {
+   "name": "chase-bound",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base",
+    "-D",
+    "cn=admin,dc=local",
+    "-w",
+    "secret"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "3023020101601e0201030411636e3d61646d696e2c64633d6c6f63616c8006736563726574",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303c020102633704176f753d52656d6f74652c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "305a02010265550a010a04176f753d52656d6f74652c64633d612c64633d6c6f63616c0400a33504336c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201064200",
+       11
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "303c020103633704176f753d52656d6f74652c64633d622c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       8
+      ],
+      [
+       "s",
+       "3071020103646c04176f753d52656d6f74652c64633d622c64633d6c6f63616c30513023040b6f626a656374436c617373311404126f7267616e697a6174696f6e616c556e6974300e04026f753108040652656d6f7465301a040b6465736372697074696f6e310b040968656c642062792059300c02010365070a010004000400",
+       9
+      ],
+      [
+       "c",
+       "30050201054200",
+       10
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Remote,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# Remote, b.local\ndn: ou=Remote,dc=b,dc=local\nobjectClass: organizationalUnit\nou: Remote\ndescription: held by Y\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 2\n# numEntries: 1\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-crit",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Crit,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303a020102633504156f753d437269742c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "3064020102655f0a010a04156f753d437269742c64633d612c64633d6c6f63616c0400a341043f6c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f626173653f3f21782d666f6f3d626172",
+       4
+      ],
+      [
+       "c",
+       "30050201034200",
+       5
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Crit,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# search result\nsearch: 2\nresult: 10 Referral\nmatchedDN: ou=Crit,dc=a,dc=local\nref: ldap://127.0.0.1:3898/ou=Remote,dc=b,dc=local??base??!x-foo=bar\n\n# numResponses: 1\n",
+   "stderr": "",
+   "exitCode": 10
+  },
+  {
+   "name": "chase-dead",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Dead,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303a020102633504156f753d446561642c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "305802010265530a010a04156f753d446561642c64633d612c64633d6c6f63616c0400a33504336c6461703a2f2f3132372e302e302e313a333839392f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201044200",
+       5
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Dead,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# search result\nsearch: 2\nresult: 10 Referral\nmatchedDN: ou=Dead,dc=a,dc=local\nref: ldap://127.0.0.1:3899/ou=Remote,dc=b,dc=local??base\n\n# numResponses: 1\n",
+   "stderr": "",
+   "exitCode": 10
+  },
+  {
+   "name": "chase-default",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "dc=c,dc=other",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "3032020102632d040d64633d632c64633d6f746865720a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "303902010265340a010a04000400a32b04296c6461703a2f2f3132372e302e302e313a333839382f64633d632c64633d6f746865723f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201064200",
+       10
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "3032020103632d040d64633d632c64633d6f746865720a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       8
+      ],
+      [
+       "s",
+       "300c02010365070a012004000400",
+       9
+      ],
+      [
+       "c",
+       "30050201054200",
+       11
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <dc=c,dc=other> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# search result\nsearch: 2\nresult: 32 No such object\n\n# numResponses: 1\n",
+   "stderr": "",
+   "exitCode": 32
+  },
+  {
+   "name": "chase-ldaprc",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base",
+    "-e",
+    "!manageDSAit"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "305c020102633704176f753d52656d6f74652c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000a01e301c0417322e31362e3834302e312e3131333733302e332e342e320101ff",
+       3
+      ],
+      [
+       "s",
+       "305d020102645804176f753d52656d6f74652c64633d612c64633d6c6f63616c303d302b040b6f626a656374436c617373311c0408726566657272616c0410657874656e7369626c654f626a656374300e04026f753108040652656d6f7465300c02010265070a010004000400",
+       4
+      ],
+      [
+       "c",
+       "30050201034200",
+       5
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Remote,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n# with manageDSAit critical control\n#\n\n# Remote, a.local\ndn: ou=Remote,dc=a,dc=local\nobjectClass: referral\nobjectClass: extensibleObject\nou: Remote\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 2\n# numEntries: 1\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-loop",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Loop,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303a020102633504156f753d4c6f6f702c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "305602010265510a010a04156f753d4c6f6f702c64633d612c64633d6c6f63616c0400a33304316c6461703a2f2f3132372e302e302e313a333839382f6f753d4c6f6f702c64633d622c64633d6c6f63616c3f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201064200",
+       11
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "303a020103633504156f753d4c6f6f702c64633d622c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       8
+      ],
+      [
+       "s",
+       "305602010365510a010a04156f753d4c6f6f702c64633d622c64633d6c6f63616c0400a33304316c6461703a2f2f3132372e302e302e313a333839372f6f753d4c6f6f702c64633d612c64633d6c6f63616c3f3f62617365",
+       9
+      ],
+      [
+       "c",
+       "30050201054200",
+       10
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Loop,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# search result\nsearch: 2\nresult: 10 Referral\n\n# numResponses: 1\n",
+   "stderr": "",
+   "exitCode": 10
+  },
+  {
+   "name": "chase-manage",
+   "args": [
+    "-C",
+    "-M",
+    "-x",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "3059020102633704176f753d52656d6f74652c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000a01b30190417322e31362e3834302e312e3131333733302e332e342e32",
+       3
+      ],
+      [
+       "s",
+       "305d020102645804176f753d52656d6f74652c64633d612c64633d6c6f63616c303d302b040b6f626a656374436c617373311c0408726566657272616c0410657874656e7369626c654f626a656374300e04026f753108040652656d6f7465300c02010265070a010004000400",
+       4
+      ],
+      [
+       "c",
+       "30050201034200",
+       5
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Remote,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n# with manageDSAit control\n#\n\n# Remote, a.local\ndn: ou=Remote,dc=a,dc=local\nobjectClass: referral\nobjectClass: extensibleObject\nou: Remote\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 2\n# numEntries: 1\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-multi",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=Multi,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303b020102633604166f753d4d756c74692c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "30818f0201026581890a010a04166f753d4d756c74692c64633d612c64633d6c6f63616c0400a36a04336c6461703a2f2f3132372e302e302e313a333839392f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f6261736504336c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201074200",
+       11
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020105600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010561070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "303c020104633704176f753d52656d6f74652c64633d622c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       8
+      ],
+      [
+       "s",
+       "3071020104646c04176f753d52656d6f74652c64633d622c64633d6c6f63616c30513023040b6f626a656374436c617373311404126f7267616e697a6174696f6e616c556e6974300e04026f753108040652656d6f7465301a040b6465736372697074696f6e310b040968656c642062792059300c02010465070a010004000400",
+       9
+      ],
+      [
+       "c",
+       "30050201064200",
+       10
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Multi,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# Remote, b.local\ndn: ou=Remote,dc=b,dc=local\nobjectClass: organizationalUnit\nou: Remote\ndescription: held by Y\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 2\n# numEntries: 1\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-no-flag-sub",
+   "args": [
+    "-x",
+    "-b",
+    "dc=a,dc=local",
+    "-s",
+    "sub",
+    "dn"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "30360201026331040d64633d612c64633d6c6f63616c0a01020a0100020100020100010100870b6f626a656374636c61737330040402646e",
+       3
+      ],
+      [
+       "s",
+       "30160201026411040d64633d612c64633d6c6f63616c30003039020102733404326c6461703a2f2f3132372e302e302e313a333839382f6f753d50656f706c652c64633d622c64633d6c6f63616c3f3f6f6e653039020102733404326c6461703a2f2f3132372e302e302e313a333839382f6f753d50656f706c652c64633d622c64633d6c6f63616c3f3f73756230450201027340043e6c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f7375623f3f21782d666f6f3d626172",
+       4
+      ],
+      [
+       "s",
+       "3039020102733404326c6461703a2f2f3132372e302e302e313a333839392f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f7375623037020102733204306c6461703a2f2f3132372e302e302e313a333839382f6f753d4c6f6f702c64633d622c64633d6c6f63616c3f3f7375623037020102733204306c6461703a2f2f3132372e302e302e313a333839382f6f753d4e6f446e2c64633d612c64633d6c6f63616c3f3f73756230450201027340043e6c6461703a2f2f3132372e302e302e313a333839382f6f753d50656f706c652c64633d622c64633d6c6f63616c3f6d61696c3f7375623f28736e3d422a29306d020102736804326c6461703a2f2f3132372e302e302e313a333839392f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f73756204326c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f7375623020020102641b04176f753d50656f706c652c64633d612c64633d6c6f63616c30003039020102733404326c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f737562302a020102642504217569643d616c6963652c6f753d50656f706c652c64633d612c64633d6c6f63616c3000300c02010265070a010004000400",
+       5
+      ],
+      [
+       "c",
+       "30050201034200",
+       6
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <dc=a,dc=local> with scope subtree\n# filter: (objectclass=*)\n# requesting: dn \n#\n\n# a.local\ndn: dc=a,dc=local\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=People,dc=b,dc=local??one\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=People,dc=b,dc=local??sub\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=Remote,dc=b,dc=local??sub??!x-foo=bar\n\n# search reference\nref: ldap://127.0.0.1:3899/ou=Remote,dc=b,dc=local??sub\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=Loop,dc=b,dc=local??sub\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=NoDn,dc=a,dc=local??sub\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=People,dc=b,dc=local?mail?sub?(sn=B*)\n\n# search reference\nref: ldap://127.0.0.1:3899/ou=Remote,dc=b,dc=local??sub\nref: ldap://127.0.0.1:3898/ou=Remote,dc=b,dc=local??sub\n\n# People, a.local\ndn: ou=People,dc=a,dc=local\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=Remote,dc=b,dc=local??sub\n\n# alice, People, a.local\ndn: uid=alice,ou=People,dc=a,dc=local\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 13\n# numEntries: 3\n# numReferences: 9\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-nodn",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "ou=NoDn,dc=a,dc=local",
+    "-s",
+    "sub",
+    "dn"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303e020102633904156f753d4e6f446e2c64633d612c64633d6c6f63616c0a01020a0100020100020100010100870b6f626a656374636c61737330040402646e",
+       3
+      ],
+      [
+       "s",
+       "305502010265500a010a04156f753d4e6f446e2c64633d612c64633d6c6f63616c0400a33204306c6461703a2f2f3132372e302e302e313a333839382f6f753d4e6f446e2c64633d612c64633d6c6f63616c3f3f737562",
+       4
+      ],
+      [
+       "c",
+       "30050201064200",
+       10
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "303e020103633904156f753d4e6f446e2c64633d612c64633d6c6f63616c0a01020a0100020100020100010100870b6f626a656374636c61737330040402646e",
+       8
+      ],
+      [
+       "s",
+       "3014020103650f0a0120040864633d6c6f63616c0400",
+       9
+      ],
+      [
+       "c",
+       "30050201054200",
+       11
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=NoDn,dc=a,dc=local> with scope subtree\n# filter: (objectclass=*)\n# requesting: dn \n#\n\n# search result\nsearch: 2\nresult: 32 No such object\nmatchedDN: dc=local\n\n# numResponses: 1\n",
+   "stderr": "",
+   "exitCode": 32
+  },
+  {
+   "name": "chase-opt-off",
+   "args": [
+    "-C",
+    "-x",
+    "-o",
+    "ref_nochase",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [],
+   "stdout": "",
+   "stderr": "Invalid general option name: ref_nochase\nusage: ldapsearch [options] [filter [attributes...]]\nwhere:\n  filter\tRFC 4515 compliant LDAP search filter\n  attributes\twhitespace-separated list of attribute descriptions\n    which may include:\n      1.1   no attributes\n      *     all user attributes\n      +     all operational attributes\nSearch options:\n  -a deref   one of never (default), always, search, or find\n  -A         retrieve attribute names only (no values)\n  -b basedn  base dn for search\n  -c         continuous operation mode (do not stop on errors)\n  -E [!]<ext>[=<extparam>] search extensions (! indicates criticality)\n             [!]accountUsability         (NetScape Account usability)\n             [!]domainScope              (domain scope)\n             !dontUseCopy                (Don't Use Copy)\n             [!]mv=<filter>              (RFC 3876 matched values filter)\n             [!]pr=<size>[/prompt|noprompt] (RFC 2696 paged results/prompt)\n             [!]ps=<changetypes>/<changesonly>/<echg> (draft persistent search)\n             [!]sss=[-]<attr[:OID]>[/[-]<attr[:OID]>...]\n                                         (RFC 2891 server side sorting)\n             [!]subentries[=true|false]  (RFC 3672 subentries)\n             [!]sync=ro[/<cookie>]       (RFC 4533 LDAP Sync refreshOnly)\n                     rp[/<cookie>][/<slimit>] (refreshAndPersist)\n             [!]vlv=<before>/<after>(/<offset>/<count>|:<value>)\n                                         (ldapv3-vlv-09 virtual list views)\n             [!]deref=derefAttr:attr[,...][;derefAttr:attr[,...][;...]]\n             !dirSync=<flags>/<maxAttrCount>[/<cookie>]\n                                         (MS AD DirSync)\n             [!]extendedDn=<flag>        (MS AD Extended DN\n             [!]showDeleted              (MS AD Show Deleted)\n             [!]serverNotif              (MS AD Server Notification)\n             [!]<oid>[=:<value>|::<b64value>] (generic control; no response handling)\n  -f file    read operations from `file'\n  -F prefix  URL prefix for files (default: file:///tmp/)\n  -l limit   time limit (in seconds, or \"none\" or \"max\") for search\n  -L         print responses in LDIFv1 format\n  -LL        print responses in LDIF format without comments\n  -LLL       print responses in LDIF format without comments\n             and version\n  -M         enable Manage DSA IT control (-MM to make critical)\n  -P version protocol version (default: 3)\n  -s scope   one of base, one, sub or children (search scope)\n  -S attr    sort the results by attribute `attr'\n  -t         write binary values to files in temporary directory\n  -tt        write all values to files in temporary directory\n  -T path    write files to directory specified by path (default: /tmp)\n  -u         include User Friendly entry names in the output\n  -z limit   size limit (in entries, or \"none\" or \"max\") for search\nCommon options:\n  -d level   set LDAP debugging level to `level'\n  -D binddn  bind DN\n  -e [!]<ext>[=<extparam>] general extensions (! indicates criticality)\n             [!]assert=<filter>     (RFC 4528; a RFC 4515 Filter string)\n             [!]authzid=<authzid>   (RFC 4370; \"dn:<dn>\" or \"u:<user>\")\n             [!]bauthzid            (RFC 3829)\n             [!]chaining[=<resolveBehavior>[/<continuationBehavior>]]\n                     one of \"chainingPreferred\", \"chainingRequired\",\n                     \"referralsPreferred\", \"referralsRequired\"\n             [!]manageDSAit         (RFC 3296)\n             [!]noop\n             ppolicy\n             [!]postread[=<attrs>]  (RFC 4527; comma-separated attr list)\n             [!]preread[=<attrs>]   (RFC 4527; comma-separated attr list)\n             [!]relax\n             [!]sessiontracking[=<username>]\n             abandon, cancel, ignore (SIGINT sends abandon/cancel,\n             or ignores response; if critical, doesn't wait for SIGINT.\n             not really controls)\n  -H URI     LDAP Uniform Resource Identifier(s)\n  -I         use SASL Interactive mode\n  -n         show what would be done but don't actually do it\n  -N         do not use reverse DNS to canonicalize SASL host name\n  -O props   SASL security properties\n  -o <opt>[=<optparam>] any libldap ldap.conf options, plus\n             ldif_wrap=<width> (in columns, or \"no\" for no wrapping)\n             nettimeout=<timeout> (in seconds, or \"none\" or \"max\")\n  -Q         use SASL Quiet mode\n  -R realm   SASL realm\n  -U authcid SASL authentication identity\n  -v         run in verbose mode (diagnostics to standard output)\n  -V         print version info (-VV only)\n  -w passwd  bind password (for simple authentication)\n  -W         prompt for bind password\n  -x         Simple authentication\n  -X authzid SASL authorization identity (\"dn:<dn>\" or \"u:<user>\")\n  -y file    Read password from file\n  -Y mech    SASL mechanism\n  -Z         Start TLS request (-ZZ to require successful response)\n",
+   "exitCode": 1
+  },
+  {
+   "name": "chase-sub",
+   "args": [
+    "-C",
+    "-x",
+    "-b",
+    "dc=a,dc=local",
+    "-s",
+    "sub",
+    "dn"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "30360201026331040d64633d612c64633d6c6f63616c0a01020a0100020100020100010100870b6f626a656374636c61737330040402646e",
+       3
+      ],
+      [
+       "s",
+       "30160201026411040d64633d612c64633d6c6f63616c3000",
+       4
+      ],
+      [
+       "s",
+       "3039020102733404326c6461703a2f2f3132372e302e302e313a333839382f6f753d50656f706c652c64633d622c64633d6c6f63616c3f3f6f6e65",
+       5
+      ],
+      [
+       "s",
+       "3039020102733404326c6461703a2f2f3132372e302e302e313a333839382f6f753d50656f706c652c64633d622c64633d6c6f63616c3f3f737562",
+       6
+      ],
+      [
+       "s",
+       "30450201027340043e6c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f7375623f3f21782d666f6f3d626172",
+       7
+      ],
+      [
+       "s",
+       "3039020102733404326c6461703a2f2f3132372e302e302e313a333839392f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f737562",
+       8
+      ],
+      [
+       "s",
+       "3037020102733204306c6461703a2f2f3132372e302e302e313a333839382f6f753d4c6f6f702c64633d622c64633d6c6f63616c3f3f737562",
+       9
+      ],
+      [
+       "s",
+       "3037020102733204306c6461703a2f2f3132372e302e302e313a333839382f6f753d4e6f446e2c64633d612c64633d6c6f63616c3f3f73756230450201027340043e6c6461703a2f2f3132372e302e302e313a333839382f6f753d50656f706c652c64633d622c64633d6c6f63616c3f6d61696c3f7375623f28736e3d422a29",
+       10
+      ],
+      [
+       "s",
+       "306d020102736804326c6461703a2f2f3132372e302e302e313a333839392f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f73756204326c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f737562",
+       11
+      ],
+      [
+       "s",
+       "3020020102641b04176f753d50656f706c652c64633d612c64633d6c6f63616c3000",
+       12
+      ],
+      [
+       "s",
+       "3039020102733404326c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f737562",
+       13
+      ],
+      [
+       "s",
+       "302a020102642504217569643d616c6963652c6f753d50656f706c652c64633d612c64633d6c6f63616c3000",
+       14
+      ],
+      [
+       "s",
+       "300c02010265070a010004000400",
+       15
+      ],
+      [
+       "c",
+       "300502010a4200",
+       25
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       17
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       18
+      ],
+      [
+       "c",
+       "3040020103633b04176f753d50656f706c652c64633d622c64633d6c6f63616c0a01010a0100020100020100010100870b6f626a656374636c61737330040402646e3040020107633b04176f753d52656d6f74652c64633d622c64633d6c6f63616c0a01020a0100020100020100010100870b6f626a656374636c61737330040402646e",
+       19
+      ],
+      [
+       "s",
+       "3020020107641b04176f753d52656d6f74652c64633d622c64633d6c6f63616c3000",
+       20
+      ],
+      [
+       "s",
+       "3029020107642404207569643d646176652c6f753d52656d6f74652c64633d622c64633d6c6f63616c3000300c02010765070a010004000400",
+       21
+      ],
+      [
+       "s",
+       "30280201036423041f7569643d626f622c6f753d50656f706c652c64633d622c64633d6c6f63616c3000",
+       22
+      ],
+      [
+       "s",
+       "302a020103642504217569643d6361726f6c2c6f753d50656f706c652c64633d622c64633d6c6f63616c3000300c02010365070a010004000400",
+       23
+      ],
+      [
+       "c",
+       "30050201094200",
+       24
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <dc=a,dc=local> with scope subtree\n# filter: (objectclass=*)\n# requesting: dn \n#\n\n# a.local\ndn: dc=a,dc=local\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=People,dc=b,dc=local??one\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=People,dc=b,dc=local??sub\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=Remote,dc=b,dc=local??sub??!x-foo=bar\n\n# search reference\nref: ldap://127.0.0.1:3899/ou=Remote,dc=b,dc=local??sub\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=Loop,dc=b,dc=local??sub\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=NoDn,dc=a,dc=local??sub\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=People,dc=b,dc=local?mail?sub?(sn=B*)\n\n# search reference\nref: ldap://127.0.0.1:3899/ou=Remote,dc=b,dc=local??sub\nref: ldap://127.0.0.1:3898/ou=Remote,dc=b,dc=local??sub\n\n# People, a.local\ndn: ou=People,dc=a,dc=local\n\n# search reference\nref: ldap://127.0.0.1:3898/ou=Remote,dc=b,dc=local??sub\n\n# alice, People, a.local\ndn: uid=alice,ou=People,dc=a,dc=local\n\n# Remote, b.local\ndn: ou=Remote,dc=b,dc=local\n\n# dave, Remote, b.local\ndn: uid=dave,ou=Remote,dc=b,dc=local\n\n# bob, People, b.local\ndn: uid=bob,ou=People,dc=b,dc=local\n\n# carol, People, b.local\ndn: uid=carol,ou=People,dc=b,dc=local\n\n# search result\nsearch: 2\nresult: 0 Success\ntext: Referral:\nldap://127.0.0.1:3899/ou=Remote,dc=b,dc=local??sub\n\n# numResponses: 17\n# numEntries: 7\n# numReferences: 9\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-timelimit",
+   "args": [
+    "-C",
+    "-x",
+    "-l",
+    "5",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303c020102633704176f753d52656d6f74652c64633d612c64633d6c6f63616c0a01000a0100020100020105010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "305a02010265550a010a04176f753d52656d6f74652c64633d612c64633d6c6f63616c0400a33504336c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201064200",
+       12
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "303c020103633704176f753d52656d6f74652c64633d622c64633d6c6f63616c0a01000a0100020100020105010100870b6f626a656374636c6173733000",
+       8
+      ],
+      [
+       "s",
+       "3071020103646c04176f753d52656d6f74652c64633d622c64633d6c6f63616c30513023040b6f626a656374436c617373311404126f7267616e697a6174696f6e616c556e6974300e04026f753108040652656d6f7465301a040b6465736372697074696f6e310b040968656c642062792059",
+       9
+      ],
+      [
+       "s",
+       "300c02010365070a010004000400",
+       10
+      ],
+      [
+       "c",
+       "30050201054200",
+       11
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Remote,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# Remote, b.local\ndn: ou=Remote,dc=b,dc=local\nobjectClass: organizationalUnit\nou: Remote\ndescription: held by Y\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 2\n# numEntries: 1\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-typesonly",
+   "args": [
+    "-C",
+    "-x",
+    "-A",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303c020102633704176f753d52656d6f74652c64633d612c64633d6c6f63616c0a01000a01000201000201000101ff870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "305a02010265550a010a04176f753d52656d6f74652c64633d612c64633d6c6f63616c0400a33504336c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201064200",
+       11
+      ]
+     ]
+    },
+    {
+     "port": 3898,
+     "transcript": [
+      [
+       "c",
+       "300c020104600702010304008000",
+       6
+      ],
+      [
+       "s",
+       "300c02010461070a010004000400",
+       7
+      ],
+      [
+       "c",
+       "303c020103633704176f753d52656d6f74652c64633d622c64633d6c6f63616c0a01000a01000201000201000101ff870b6f626a656374636c6173733000",
+       8
+      ],
+      [
+       "s",
+       "304a020103644504176f753d52656d6f74652c64633d622c64633d6c6f63616c302a300f040b6f626a656374436c6173733100300604026f753100300f040b6465736372697074696f6e3100300c02010365070a010004000400",
+       9
+      ],
+      [
+       "c",
+       "30050201054200",
+       10
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Remote,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# Remote, b.local\ndn: ou=Remote,dc=b,dc=local\nobjectClass:\nou:\ndescription:\n\n# search result\nsearch: 2\nresult: 0 Success\n\n# numResponses: 2\n# numEntries: 1\n",
+   "stderr": "",
+   "exitCode": 0
+  },
+  {
+   "name": "chase-v2",
+   "args": [
+    "-C",
+    "-x",
+    "-P",
+    "2",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010204008000",
+       1
+      ],
+      [
+       "s",
+       "304502010161400a010204000439686973746f726963616c2070726f746f636f6c2076657273696f6e207265717565737465642c20757365204c444150763320696e7374656164",
+       2
+      ],
+      [
+       "c",
+       "30050201024200",
+       3
+      ]
+     ]
+    }
+   ],
+   "stdout": "",
+   "stderr": "ldap_bind: Protocol error (2)\n\tadditional info: historical protocol version requested, use LDAPv3 instead\n",
+   "exitCode": 2
+  },
+  {
+   "name": "plain-no-chase",
+   "args": [
+    "-x",
+    "-b",
+    "ou=Remote,dc=a,dc=local",
+    "-s",
+    "base"
+   ],
+   "stdin": "",
+   "connections": [
+    {
+     "port": 3897,
+     "transcript": [
+      [
+       "c",
+       "300c020101600702010304008000",
+       1
+      ],
+      [
+       "s",
+       "300c02010161070a010004000400",
+       2
+      ],
+      [
+       "c",
+       "303c020102633704176f753d52656d6f74652c64633d612c64633d6c6f63616c0a01000a0100020100020100010100870b6f626a656374636c6173733000",
+       3
+      ],
+      [
+       "s",
+       "305a02010265550a010a04176f753d52656d6f74652c64633d612c64633d6c6f63616c0400a33504336c6461703a2f2f3132372e302e302e313a333839382f6f753d52656d6f74652c64633d622c64633d6c6f63616c3f3f62617365",
+       4
+      ],
+      [
+       "c",
+       "30050201034200",
+       5
+      ]
+     ]
+    }
+   ],
+   "stdout": "# extended LDIF\n#\n# LDAPv3\n# base <ou=Remote,dc=a,dc=local> with scope baseObject\n# filter: (objectclass=*)\n# requesting: ALL\n#\n\n# search result\nsearch: 2\nresult: 10 Referral\nmatchedDN: ou=Remote,dc=a,dc=local\nref: ldap://127.0.0.1:3898/ou=Remote,dc=b,dc=local??base\n\n# numResponses: 1\n",
+   "stderr": "",
+   "exitCode": 10
+  }
+ ]
+}

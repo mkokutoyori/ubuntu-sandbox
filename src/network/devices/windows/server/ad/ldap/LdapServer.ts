@@ -19,6 +19,10 @@ import {
   encodeLdapMessage, decodeLdapMessages, ldapResult, LdapResultCode,
   START_TLS_OID, PAGED_RESULTS_CONTROL_OID, encodePagedResultsValue, decodePagedResultsValue,
 } from './LdapMessage';
+import { attributeToWire } from './LdapWireSyntax';
+import {
+  SORT_REQUEST_OID, SORT_RESPONSE_OID, DOMAIN_SCOPE_OID, decodeSortKeys, encodeSortResponse, type SortKey,
+} from './LdapSortControl';
 import { verifyApReq } from '@/network/kerberos/ApReqVerifier';
 import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
@@ -83,17 +87,59 @@ function treeMessageToResultCode(message: string): number {
   return LdapResultCode.operationsError;
 }
 
-function entryToAttributes(entry: DirectoryEntry, wanted: string[]): PartialAttribute[] {
-  const all = [...entry.attributes.entries()].map(([type, values]) => ({ type, values }));
-  if (wanted.length === 0 || wanted.includes('*')) return all;
-  const wantedLower = new Set(wanted.map(w => w.toLowerCase()));
-  return all.filter(a => wantedLower.has(a.type.toLowerCase()));
+function entryToAttributes(tree: DirectoryTree, entry: DirectoryEntry): PartialAttribute[] {
+  return [...entry.attributes.entries()].map(([type, values]) => ({ type: tree.canonicalAttributeName(type), values }));
 }
 
-const NOT_BOUND: LdapResult = { resultCode: LdapResultCode.operationsError, matchedDN: '', diagnosticMessage: 'operation requires a successful bind' };
+const INVALID_CREDENTIALS_TEXT = '80090308: LdapErr: DSID-0C09044E, comment: AcceptSecurityContext error, data 52e, v4563';
+
+function ldapGeneralizedTime(moment: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${moment.getUTCFullYear()}${pad(moment.getUTCMonth() + 1)}${pad(moment.getUTCDate())}${pad(moment.getUTCHours())}${pad(moment.getUTCMinutes())}${pad(moment.getUTCSeconds())}.0Z`;
+}
+
+const NOT_BOUND: LdapResult = {
+  resultCode: LdapResultCode.operationsError, matchedDN: '',
+  diagnosticMessage: '000004DC: LdapErr: DSID-0C090A69, comment: In order to perform this operation a successful bind must be completed on the connection., data 0, v4563',
+};
+
+const SUPPORTED_CONTROLS: readonly string[] = [PAGED_RESULTS_CONTROL_OID, SORT_REQUEST_OID, DOMAIN_SCOPE_OID];
+const SUPPORTED_SASL_MECHANISMS: readonly string[] = ['GSSAPI'];
+const OPERATIONAL_ATTRIBUTES: ReadonlySet<string> = new Set([
+  'createtimestamp', 'modifytimestamp', 'subschemasubentry', 'structuralobjectclass', 'entrydn',
+]);
+
+function responseFor(op: ProtocolOp, result: LdapResult): ProtocolOp | null {
+  switch (op.kind) {
+    case 'bindRequest': return { kind: 'bindResponse', result };
+    case 'searchRequest': return { kind: 'searchResultDone', result };
+    case 'modifyRequest': return { kind: 'modifyResponse', result };
+    case 'addRequest': return { kind: 'addResponse', result };
+    case 'delRequest': return { kind: 'delResponse', result };
+    case 'compareRequest': return { kind: 'compareResponse', result };
+    case 'modifyDNRequest': return { kind: 'modifyDNResponse', result };
+    case 'extendedRequest': return { kind: 'extendedResponse', result };
+    default: return null;
+  }
+}
+
+function selectAttributes(
+  attributes: PartialAttribute[], wanted: readonly string[], typesOnly: boolean,
+): PartialAttribute[] {
+  const names = new Set(wanted.map(name => name.toLowerCase()));
+  const wantsUser = names.size === 0 || names.has('*');
+  const wantsOperational = names.has('+');
+  const selected = attributes.filter(attribute => {
+    const key = attribute.type.toLowerCase();
+    if (names.has(key)) return true;
+    return OPERATIONAL_ATTRIBUTES.has(key) ? wantsOperational : wantsUser;
+  });
+  return typesOnly ? selected.map(attribute => ({ type: attribute.type, values: [] })) : selected;
+}
 
 export class LdapServerHandler {
   private bound = false;
+  private authenticated = false;
   /** Non-null once an `extendedRequest` StartTLS has been accepted — `result === null` while the handshake itself is still in progress (§5 P11). */
   private tls: TlsServerSession | null = null;
   private tlsSendSeq = 0;
@@ -160,21 +206,55 @@ export class LdapServerHandler {
 
   private handle(socket: TcpSocket, msg: LdapMessage): void {
     const op = msg.protocolOp;
+    const unavailable = msg.controls?.find(c => c.criticality && !SUPPORTED_CONTROLS.includes(c.controlType));
+    if (unavailable !== undefined) {
+      const refusal = responseFor(op, ldapResult(LdapResultCode.unavailableCriticalExtension));
+      if (refusal !== null) {
+        this.reply(socket, msg.messageID, refusal);
+        return;
+      }
+    }
     switch (op.kind) {
       case 'bindRequest': {
-        if (op.sasl) {
-          this.bound = this.checkSaslBind(op.sasl);
+        this.authenticated = false;
+        if (op.version !== 2 && op.version !== 3) {
+          this.bound = false;
           this.reply(socket, msg.messageID, {
             kind: 'bindResponse',
-            result: this.bound ? ldapResult(LdapResultCode.success) : ldapResult(LdapResultCode.invalidCredentials),
+            result: ldapResult(LdapResultCode.protocolError, '', 'unsupported LDAP version'),
+          });
+          return;
+        }
+        if (op.sasl) {
+          if (!SUPPORTED_SASL_MECHANISMS.includes(op.sasl.mechanism)) {
+            this.bound = false;
+            this.reply(socket, msg.messageID, {
+              kind: 'bindResponse', result: ldapResult(LdapResultCode.authMethodNotSupported),
+            });
+            return;
+          }
+          this.bound = this.checkSaslBind(op.sasl);
+          this.authenticated = this.bound;
+          this.reply(socket, msg.messageID, {
+            kind: 'bindResponse',
+            result: this.bound ? ldapResult(LdapResultCode.success) : ldapResult(LdapResultCode.invalidCredentials, '', INVALID_CREDENTIALS_TEXT),
           });
           return;
         }
         const anonymous = op.name === '' && op.password === '';
+        if (!anonymous && op.password === '') {
+          this.bound = false;
+          this.reply(socket, msg.messageID, {
+            kind: 'bindResponse',
+            result: ldapResult(LdapResultCode.unwillingToPerform, '', '0000052D: SvcErr: DSID-0C09075C, problem 5003 (WILL_NOT_PERFORM), data 0'),
+          });
+          return;
+        }
         this.bound = anonymous || this.ctx.auth.checkBind(op.name, op.password);
+        this.authenticated = this.bound && !anonymous;
         this.reply(socket, msg.messageID, {
           kind: 'bindResponse',
-          result: this.bound ? ldapResult(LdapResultCode.success) : ldapResult(LdapResultCode.invalidCredentials),
+          result: this.bound ? ldapResult(LdapResultCode.success) : ldapResult(LdapResultCode.invalidCredentials, '', INVALID_CREDENTIALS_TEXT),
         });
         return;
       }
@@ -182,47 +262,98 @@ export class LdapServerHandler {
         socket.close();
         return;
       case 'searchRequest': {
-        if (!this.bound) { this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: NOT_BOUND }); return; }
-        if (op.baseObject.trim() === '' && op.scope === 'base') {
+        const rootDse = op.baseObject.trim() === '' && op.scope === 'base';
+        if (!this.authenticated && !rootDse) {
+          this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: NOT_BOUND });
+          return;
+        }
+        if (rootDse) {
           this.reply(socket, msg.messageID, {
             kind: 'searchResultEntry', objectName: '',
-            attributes: this.rootDseAttributes(op.attributes),
+            attributes: selectAttributes(this.rootDseAttributes(), op.attributes, op.typesOnly),
           });
           this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.success) });
           return;
         }
         const baseDn = this.tryParseDn(op.baseObject);
-        if (!baseDn) { this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
+        if (!baseDn) {
+          this.reply(socket, msg.messageID, {
+            kind: 'searchResultDone',
+            result: ldapResult(LdapResultCode.invalidDNSyntax, '', `0000208F: NameErr: DSID-03100233, problem 2006 (BAD_NAME), data 8350, best match of:\n\t''\n`),
+          });
+          return;
+        }
 
-        {
-          // Checked before `isWithinTree`: a child domain's root
-          // (`DC=child,DC=lab,DC=local`) is itself a longer, more specific
-          // suffix than this DC's own root (`DC=lab,DC=local`) — which is
-          // *also* technically a trailing suffix of it. The explicit
-          // forest-domain match must win, or a search meant for the child
-          // domain would be silently (and wrongly) treated as local.
-          const referralUri = this.referralFor(baseDn);
-          if (referralUri) {
-            this.reply(socket, msg.messageID, { kind: 'searchResultReference', uris: [referralUri] });
-            this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.referral) });
+        const domainScope = msg.controls?.some(c => c.controlType === DOMAIN_SCOPE_OID) === true;
+        const referralUri = domainScope ? null : this.referralFor(baseDn);
+        if (referralUri) {
+          this.reply(socket, msg.messageID, { kind: 'searchResultReference', uris: [referralUri] });
+          this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.referral) });
+          return;
+        }
+
+        if (!this.ctx.tree.isWithinTree(baseDn)) {
+          const domain = baseDn.flat().filter(ava => ava.type.toLowerCase() === 'dc').map(ava => ava.value).join('.');
+          if (domain !== '') {
+            this.reply(socket, msg.messageID, {
+              kind: 'searchResultDone',
+              result: {
+                resultCode: LdapResultCode.referral, matchedDN: '',
+                diagnosticMessage: `0000202B: RefErr: DSID-0310082F, data 0, 1 access points\n\tref 1: '${domain}'\n`,
+                referral: [`ldap://${domain}/${formatDN(baseDn)}`],
+              },
+            });
             return;
           }
         }
 
-        const entries = this.ctx.tree.search(baseDn, op.scope, op.filter);
-        const { page, responseControls } = this.paginate(entries, msg.controls);
+        if (!this.ctx.tree.getByDn(baseDn)) {
+          this.reply(socket, msg.messageID, {
+            kind: 'searchResultDone',
+            result: ldapResult(LdapResultCode.noSuchObject, '', this.noSuchObjectText(baseDn)),
+          });
+          return;
+        }
+
+        let entries = this.ctx.tree.search(baseDn, op.scope, op.filter);
+        const sortControl = msg.controls?.find(c => c.controlType === SORT_REQUEST_OID);
+        const responseControls: LdapControl[] = [];
+        if (sortControl?.controlValue !== undefined) {
+          const keys = decodeSortKeys(sortControl.controlValue);
+          if (keys === null) {
+            this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.protocolError) });
+            return;
+          }
+          entries = this.sortEntries(entries, keys);
+          responseControls.push({
+            controlType: SORT_RESPONSE_OID, criticality: false,
+            controlValue: encodeSortResponse(LdapResultCode.success, null),
+          });
+        }
+        const paged = this.paginate(entries, msg.controls);
+        let page = paged.page;
+        let resultCode: number = LdapResultCode.success;
+        if (op.sizeLimit > 0 && page.length > op.sizeLimit) {
+          page = page.slice(0, op.sizeLimit);
+          resultCode = LdapResultCode.sizeLimitExceeded;
+        }
         for (const entry of page) {
           this.reply(socket, msg.messageID, {
             kind: 'searchResultEntry',
             objectName: formatDN(entry.dn),
-            attributes: entryToAttributes(entry, op.attributes),
+            attributes: selectAttributes(entryToAttributes(this.ctx.tree, entry), op.attributes, op.typesOnly).map(attributeToWire),
           });
         }
-        this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.success) }, responseControls);
+        if (paged.responseControls) responseControls.push(...paged.responseControls);
+        this.reply(
+          socket, msg.messageID,
+          { kind: 'searchResultDone', result: ldapResult(resultCode) },
+          responseControls.length > 0 ? responseControls : undefined,
+        );
         return;
       }
       case 'addRequest': {
-        if (!this.bound) { this.reply(socket, msg.messageID, { kind: 'addResponse', result: NOT_BOUND }); return; }
+        if (!this.authenticated) { this.reply(socket, msg.messageID, { kind: 'addResponse', result: NOT_BOUND }); return; }
         const dn = this.tryParseDn(op.entry);
         if (!dn) { this.reply(socket, msg.messageID, { kind: 'addResponse', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
         const attrs: Record<string, string[]> = {};
@@ -235,7 +366,7 @@ export class LdapServerHandler {
         return;
       }
       case 'modifyRequest': {
-        if (!this.bound) { this.reply(socket, msg.messageID, { kind: 'modifyResponse', result: NOT_BOUND }); return; }
+        if (!this.authenticated) { this.reply(socket, msg.messageID, { kind: 'modifyResponse', result: NOT_BOUND }); return; }
         const dn = this.tryParseDn(op.object);
         if (!dn) { this.reply(socket, msg.messageID, { kind: 'modifyResponse', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
         const ttls: Array<{ member: string; seconds: number }> = [];
@@ -253,7 +384,7 @@ export class LdapServerHandler {
         return;
       }
       case 'delRequest': {
-        if (!this.bound) { this.reply(socket, msg.messageID, { kind: 'delResponse', result: NOT_BOUND }); return; }
+        if (!this.authenticated) { this.reply(socket, msg.messageID, { kind: 'delResponse', result: NOT_BOUND }); return; }
         const dn = this.tryParseDn(op.entry);
         if (!dn) { this.reply(socket, msg.messageID, { kind: 'delResponse', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
         const res = this.ctx.tree.deleteEntry(dn);
@@ -264,7 +395,7 @@ export class LdapServerHandler {
         return;
       }
       case 'compareRequest': {
-        if (!this.bound) { this.reply(socket, msg.messageID, { kind: 'compareResponse', result: NOT_BOUND }); return; }
+        if (!this.authenticated) { this.reply(socket, msg.messageID, { kind: 'compareResponse', result: NOT_BOUND }); return; }
         const dn = this.tryParseDn(op.entry);
         if (!dn) { this.reply(socket, msg.messageID, { kind: 'compareResponse', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
         const outcome = this.ctx.tree.compare(dn, op.attributeDesc, op.assertionValue);
@@ -274,7 +405,7 @@ export class LdapServerHandler {
         return;
       }
       case 'modifyDNRequest': {
-        if (!this.bound) { this.reply(socket, msg.messageID, { kind: 'modifyDNResponse', result: NOT_BOUND }); return; }
+        if (!this.authenticated) { this.reply(socket, msg.messageID, { kind: 'modifyDNResponse', result: NOT_BOUND }); return; }
         const dn = this.tryParseDn(op.entry);
         if (!dn) { this.reply(socket, msg.messageID, { kind: 'modifyDNResponse', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
         let newSuperior: DistinguishedName | undefined;
@@ -337,16 +468,20 @@ export class LdapServerHandler {
   }
 
   /** A `searchResultReference` URI if `baseDn` lies under a *different* domain of this DC's forest, else `null` (an ordinary, possibly-empty local search). */
-  private rootDseAttributes(requested: string[]): PartialAttribute[] {
+  private rootDseAttributes(): PartialAttribute[] {
     const root = formatDN(this.ctx.tree.getRootDn());
     const configuration = `CN=Configuration,${root}`;
     const all: PartialAttribute[] = [
+      { type: 'currentTime', values: [ldapGeneralizedTime(new Date())] },
+      { type: 'subschemaSubentry', values: [`CN=Aggregate,CN=Schema,${configuration}`] },
       { type: 'namingContexts', values: [root, configuration, `CN=Schema,${configuration}`] },
       { type: 'defaultNamingContext', values: [root] },
-      { type: 'configurationNamingContext', values: [configuration] },
       { type: 'schemaNamingContext', values: [`CN=Schema,${configuration}`] },
-      { type: 'subschemaSubentry', values: [`CN=Aggregate,CN=Schema,${configuration}`] },
-      { type: 'supportedLDAPVersion', values: ['3'] },
+      { type: 'configurationNamingContext', values: [configuration] },
+      { type: 'rootDomainNamingContext', values: [root] },
+      { type: 'supportedControl', values: [...SUPPORTED_CONTROLS] },
+      { type: 'supportedLDAPVersion', values: ['3', '2'] },
+      { type: 'supportedSASLMechanisms', values: [...SUPPORTED_SASL_MECHANISMS] },
     ];
     const identity = this.ctx.serverIdentity?.();
     if (identity) {
@@ -355,9 +490,40 @@ export class LdapServerHandler {
         all.push({ type: 'serverName', values: [`CN=${identity.hostname},CN=Servers,CN=${identity.site},CN=Sites,${configuration}`] });
       }
     }
-    if (requested.length === 0) return all;
-    const wanted = new Set(requested.map(a => a.toLowerCase()));
-    return wanted.has('*') ? all : all.filter(a => wanted.has(a.type.toLowerCase()));
+    return all;
+  }
+
+  private noSuchObjectText(baseDn: DistinguishedName): string {
+    let ancestor: DistinguishedName | null = baseDn;
+    while (ancestor !== null && ancestor.length > 0) {
+      ancestor = ancestor.slice(1);
+      if (ancestor.length > 0 && this.ctx.tree.getByDn(ancestor)) {
+        return `0000208D: NameErr: DSID-03100238, problem 2001 (NO_OBJECT), data 0, best match of:\n\t'${formatDN(ancestor)}'\n`;
+      }
+    }
+    return "0000208D: NameErr: DSID-03100238, problem 2001 (NO_OBJECT), data 0, best match of:\n\t''\n";
+  }
+
+  private sortEntries(entries: DirectoryEntry[], keys: readonly SortKey[]): DirectoryEntry[] {
+    const valueOf = (entry: DirectoryEntry, attribute: string): string | null => {
+      const values = entry.attributes.get(attribute.toLowerCase());
+      return values === undefined || values.length === 0 ? null : values[0].toLowerCase();
+    };
+    return entries
+      .map((entry, index) => ({ entry, index }))
+      .sort((left, right) => {
+        for (const key of keys) {
+          const a = valueOf(left.entry, key.attributeType);
+          const b = valueOf(right.entry, key.attributeType);
+          if (a === b) continue;
+          if (a === null) return 1;
+          if (b === null) return -1;
+          const comparison = a < b ? -1 : 1;
+          return key.reverseOrder ? -comparison : comparison;
+        }
+        return left.index - right.index;
+      })
+      .map(item => item.entry);
   }
 
   private referralFor(baseDn: DistinguishedName): string | null {
