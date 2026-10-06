@@ -2,18 +2,32 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { isPSCredential, getNetworkCredential } from '@/powershell/credential/PSCredential';
 
-/**
- * This simulator has no `PSCredential`/`Get-Credential` object model, so
- * `-Credential` is accepted as a plain string: `"user:password"`, or bare
- * `"user"` (password defaults to the username — matching the seeded demo
- * accounts' "password equals username" convention; a real account with
- * an actual password must be spelled out as `"user:password"`).
- */
-export function parseCredentialArg(raw: string): { username: string; password: string } {
+export interface ResolvedCredential {
+  readonly username: string;
+  readonly password: string;
+}
+
+function parseCredentialArg(raw: string): ResolvedCredential {
   const idx = raw.indexOf(':');
   if (idx === -1) return { username: raw, password: raw };
   return { username: raw.slice(0, idx), password: raw.slice(idx + 1) };
+}
+
+export function credentialFromValue(raw: PSValue): ResolvedCredential {
+  if (isPSCredential(raw)) {
+    const { userName, password } = getNetworkCredential(raw);
+    return { username: userName, password };
+  }
+  return parseCredentialArg(psValueToString(raw));
+}
+
+export function namedCredential(ctx: CmdletContext, key: string): ResolvedCredential | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined || raw === null) return undefined;
+  if (!isPSCredential(raw) && psValueToString(raw) === '') return undefined;
+  return credentialFromValue(raw);
 }
 
 export class EnablePSRemotingCmdlet implements ICmdlet {

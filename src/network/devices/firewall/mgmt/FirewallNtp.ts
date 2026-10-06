@@ -1,5 +1,5 @@
 import { NtpAgent, type NtpHost } from '../../../ntp/NtpAgent';
-import type { IPv4Packet, IPAddress } from '../../../core/types';
+import type { UdpSendRequest } from '../../../layers/transport/UdpEgress';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { EthernetFrame } from '../../../core/types';
 import type { Port } from '../../../hardware/Port';
@@ -54,7 +54,7 @@ export interface NtpWiringHost {
   port(name: string): Port | undefined;
   ports(): Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  sendArpAware(portName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendUdpDatagram(request: UdpSendRequest): boolean;
   bus(): IEventBus;
 }
 
@@ -65,7 +65,7 @@ export function buildFirewallNtp(host: NtpWiringHost): FirewallNtp {
     getHostname: () => host.hostname(),
     getPort: (name) => host.port(name),
     getPorts: () => host.ports(),
-    sendIpv4FrameArpAware: (p, ipPkt, nextHopIP) => host.sendArpAware(p, ipPkt, nextHopIP),
+    sendUdpDatagram: (request) => host.sendUdpDatagram(request),
     sendFrame: (portName, frame) => { host.sendFrame(portName, frame); },
   }, () => host.bus());
 }

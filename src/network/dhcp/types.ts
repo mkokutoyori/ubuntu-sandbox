@@ -90,6 +90,18 @@ export interface DHCPPoolConfig {
 
 // ─── DHCP Message Parameters (RFC 2131 §2, RFC 2132) ────────────────
 
+export interface DhcpIpEmission {
+  readonly ttl?: number;
+  readonly tos?: number;
+}
+
+export interface DhcpClientPersonality {
+  readonly alwaysSendsClientIdentifier: boolean;
+  readonly parameterRequestList: readonly number[];
+  readonly sendsFqdn: boolean;
+  readonly optionOrder: readonly number[];
+}
+
 /** Parameters sent in DHCPDISCOVER (client → server) */
 export interface DhcpClientFqdn {
   /** RFC 4702 §2.1 flags: bit0 S, bit1 O, bit2 E, bit3 N. */
@@ -112,7 +124,9 @@ export interface DHCPDiscoverParams {
   broadcast?: boolean;
   relayInformation?: DhcpRelayInformation;
   /** Option 55: Parameter Request List (option codes client wants) */
-  parameterRequestList: number[];
+  parameterRequestList: readonly number[];
+  optionOrder?: readonly number[];
+  alwaysSendClientIdentifier?: boolean;
   /** Option 50: Requested IP (used in INIT-REBOOT) */
   requestedIP?: string;
   /** Relay agent IP (giaddr) — set by relay agent for remote subnet selection */
@@ -157,6 +171,9 @@ export interface DHCPRequestParams {
   serverIdentifier?: string;
   /** Option 61: Client Identifier */
   clientIdentifier: string;
+  parameterRequestList?: readonly number[];
+  optionOrder?: readonly number[];
+  alwaysSendClientIdentifier?: boolean;
   /** Option 60: Vendor Class Identifier */
   vendorClass?: string;
   /** RFC 2131 §4.1 BROADCAST flag: ask the server to answer by broadcast. */
@@ -195,6 +212,8 @@ export function ackOf(result: DHCPRequestWithNakResult | null): DHCPAckResult | 
 /** Parameters sent in DHCPRELEASE (client → server) */
 export interface DHCPReleaseParams {
   clientMAC: string;
+  xid?: number;
+  alwaysSendClientIdentifier?: boolean;
   /** ciaddr: client's current IP */
   clientIP: string;
   /** Option 54: Server Identifier */

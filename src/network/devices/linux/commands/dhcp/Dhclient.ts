@@ -115,7 +115,7 @@ export const dhclientCommand: LinuxCommand = {
     if (release && !iface) {
       const outputs: string[] = [];
       for (const [name] of ports) {
-        const result = dhcp.releaseLease(name);
+        const result = dhcp.releaseLease(name, verbose);
         if (result) outputs.push(result);
       }
       syncDhclientProcesses(ctx);
@@ -126,7 +126,7 @@ export const dhclientCommand: LinuxCommand = {
     if (!ports.has(iface)) return `RTNETLINK answers: No such device ${iface}`;
 
     if (release) {
-      const out = dhcp.releaseLease(iface);
+      const out = dhcp.releaseLease(iface, verbose);
       writeLeaseFiles(ctx);
       syncDhclientProcesses(ctx);
       return out;

@@ -17,10 +17,9 @@
  * Three details are worth knowing, because they are where a naive parser
  * would quietly lose information:
  *
- * 1. **Fields the files do not carry.** `lastLoginAt`, the faillock tally
- *    and `createdAt` are not in `/etc/passwd` or `/etc/shadow` on a real
- *    system either — they live in `/var/log/lastlog` and faillock's own
- *    tally directory. So they are carried over from the account of the same
+ * 1. **Fields the files do not carry.** `lastLoginAt` and `createdAt` are not in
+ *    `/etc/passwd` or `/etc/shadow` on a real system either — `lastLoginAt`
+ *    lives in `/var/log/lastlog`. So they are carried over from the account of the same
  *    name rather than reset, which is what a real reload does too.
  *
  * 2. **The password.** `passwd` stores the secret as `$6$simulated$<clear>`,
@@ -163,8 +162,6 @@ export function parseAccountDatabase(
     });
     if (prior) {
       account.lastLoginAt = prior.lastLoginAt;
-      account.failedLoginCount = prior.failedLoginCount;
-      account.lastFailedLoginAt = prior.lastFailedLoginAt;
     }
     users.push(account);
 

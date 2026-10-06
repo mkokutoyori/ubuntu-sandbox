@@ -83,7 +83,7 @@ describe('Scénario 2 — compte désactivé par inactivité (chage -I) et banni
       expect(out).toMatch(/Your account has expired; please contact your system administrator/);
 
       const authLog = await server.executeCommand('cat /var/log/auth.log');
-      expect(authLog).toMatch(/pam_unix\(sshd:account\): account alice has expired \(account expired\)/);
+      expect(authLog).toMatch(/pam_unix\(sshd:account\): account alice has expired \(failed to change password\)/);
     });
   });
 

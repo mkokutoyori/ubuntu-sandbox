@@ -14,7 +14,7 @@ import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import { PromiseInputBroker as PromiseInputBrokerPS } from '@/shell/input';
 import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
-import { NativeCommandNeedsAsync, translateNativeAnswer, nativeLineFor } from '@/powershell/nativeAsync';
+import { NativeCommandNeedsAsync, translateNativeAnswer, nativeNotRecognized } from '@/powershell/nativeAsync';
 import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 import { powershellInputIsIncomplete } from '@/powershell/lexer/PSInputCompleteness';
@@ -22,7 +22,7 @@ import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProvid
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
-import { parseCredentialArg } from '@/powershell/cmdlets/core/RemotingCmdlets';
+import { credentialFromValue } from '@/powershell/cmdlets/core/RemotingCmdlets';
 import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
 import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import { scanWords, type WordScan } from '@/terminal/completion/words';
@@ -45,10 +45,6 @@ import { completeProviderPath, type ProviderPathSources } from './PowerShellProv
  * del / ren / mkdir / rmdir / hostname / whoami) are also first-class
  * ICmdlets in the interpreter's core registry.
  */
-const DEVICE_ONLY_COMMANDS = new Set([
-  'ping', 'tracert',
-]);
-
 const CONTINUATION_PROMPT = '>> ';
 
 const ACTION_PREFERENCES = ['Continue', 'Ignore', 'Inquire', 'SilentlyContinue', 'Stop', 'Suspend'] as const;
@@ -289,7 +285,9 @@ export class PowerShellSubShell implements ISubShell {
     const found = findHostByAddress(targetIp.toString());
     if (!found || found.poweredOff || found.interfaceDown) return fail();
 
-    const credential = credMatch ? parseCredentialArg(credMatch[1]) : { username: this.device.getUserManager().currentUser, password: '' };
+    const credential = credMatch
+      ? credentialFromValue(credMatch[1].startsWith('$') ? this.interp.getVariable(credMatch[1].slice(1)) : credMatch[1])
+      : { username: this.device.getUserManager().currentUser, password: '' };
     const dial = this.device.dialWinRm(targetIp.toString(), credential.username, credential.password);
     if (!dial.ok) return fail();
 
@@ -302,43 +300,24 @@ export class PowerShellSubShell implements ISubShell {
     } as SubShellResult & { _enterRemotePS: { device: Equipment; promptPrefix: string } };
   }
 
-  /**
-   * Route a single command through the interpreter (the primary engine after
-   * Phase 4). Async native CLI tools (ping / tracert / net) still go to
-   * PowerShellExecutor because the tree-walker is sync. Other interpreter
-   * errors that look like "not recognized" also fall through to the executor
-   * as a safety net during the migration tail — once every test path runs
-   * cleanly through the interpreter this branch can be removed.
-   */
   private async dispatchCommand(line: string): Promise<string | null> {
-    if (this.shouldBypassInterpreter(line)) {
-      PowerShellSubShell.fallbackHits++;
-      const device = this.device as unknown as { executeCmdCommand(c: string): Promise<string> };
-      return device.executeCmdCommand(this.interp.expandInterpolation(line));
-    }
-    try {
-      return this.interp.executeInteractive(line);
-    } catch (e) {
-      if (e instanceof NativeCommandNeedsAsync) {
-        const device = this.device as unknown as { executeCmdCommand(c: string): Promise<string> };
-        return translateNativeAnswer(e.command, await device.executeCmdCommand(nativeLineFor(e, line)));
+    const device = this.device as unknown as {
+      runProgram(commandLine: string, stdin?: string): Promise<{ output: string; exitCode: number }>;
+    };
+    this.interp.beginInteractive(line);
+    for (;;) {
+      try {
+        return this.interp.resumeInteractive();
+      } catch (e) {
+        if (!(e instanceof NativeCommandNeedsAsync)) return this.formatInterpreterError(e);
+        const answer = await device.runProgram(e.commandLine, e.stdin ?? undefined);
+        this.interp.provideNativeResult({
+          output: translateNativeAnswer(e.command, answer.output),
+          exitCode: answer.exitCode,
+          notRecognized: nativeNotRecognized(e.command, answer.output),
+        });
       }
-      return this.formatInterpreterError(e);
     }
-  }
-
-  // Debug counter — useful when assessing how much production code still
-  // reaches PowerShellExecutor. Exposed as a static so tests can read it.
-  static fallbackHits = 0;
-
-  /**
-   * Heuristic: skip the interpreter entirely for commands that are clearly
-   * device-bound (ipconfig, ping, cd, ls, ...).  Avoids noisy parse errors
-   * and keeps fallback output identical to the pre-interpreter behavior.
-   */
-  private shouldBypassInterpreter(line: string): boolean {
-    const firstToken = line.split(/\s+/)[0]?.toLowerCase() ?? '';
-    return DEVICE_ONLY_COMMANDS.has(firstToken);
   }
 
   private formatInterpreterError(e: unknown): string {

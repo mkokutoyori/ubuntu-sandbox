@@ -260,14 +260,10 @@ describe('LinuxUserAccount', () => {
     expect(stale.isPasswordExpired(today)).toBe(true);
   });
 
-  it('records logins and failed attempts', () => {
+  it('records the time of a login', () => {
     const acc = new LinuxUserAccount({ ...baseInit });
-    acc.recordFailedLogin();
-    acc.recordFailedLogin();
-    expect(acc.failedLoginCount).toBe(2);
     acc.recordLogin(123);
     expect(acc.lastLoginAt).toBe(123);
-    expect(acc.failedLoginCount).toBe(0);
   });
 });
 
@@ -340,7 +336,7 @@ describe('LinuxFlowBuilder — adduser (root)', () => {
     const device = createMockDevice();
     const steps = buildFlow('adduser bob', 'root', 0, device);
     expect(steps).not.toBeNull();
-    expect(countSteps(steps!, 'password')).toBe(2);   // new + retype
+    expect(countSteps(steps!, 'password')).toBe(1);
     expect(countSteps(steps!, 'text')).toBe(5);       // 5 GECOS fields
     expect(countSteps(steps!, 'confirmation')).toBe(1);
   });
@@ -349,7 +345,7 @@ describe('LinuxFlowBuilder — adduser (root)', () => {
     const device = createMockDevice();
     const steps = buildFlow('adduser --gecos "Bob Martin" bob', 'root', 0, device);
     expect(steps).not.toBeNull();
-    expect(countSteps(steps!, 'password')).toBe(2);
+    expect(countSteps(steps!, 'password')).toBe(1);
     expect(countSteps(steps!, 'text')).toBe(0);
   });
 
@@ -387,7 +383,7 @@ describe('LinuxFlowBuilder — sudo adduser', () => {
     const device = createMockDevice();
     const steps = buildFlow('sudo adduser bob', 'user', 1000, device);
     expect(steps).not.toBeNull();
-    expect(countSteps(steps!, 'password')).toBe(3); // sudo + new + retype
+    expect(countSteps(steps!, 'password')).toBe(2);
     expect(countSteps(steps!, 'text')).toBe(5);
   });
 

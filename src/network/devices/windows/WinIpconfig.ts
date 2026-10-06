@@ -287,26 +287,21 @@ function ipconfigRelease(ctx: WinCommandContext, args: string[]): string {
     return lines.join('\n');
   }
 
-  lines.push(adapterFilter
-    ? `Adapter "${adapterFilter}" has been successfully released.`
-    : 'All adapters have been successfully released.');
-  lines.push('');
+  const shown = [...ctx.ports.keys()].filter(name => !adapterFilter || adapterFilterMatches(ctx, name, adapterFilter));
+  const connected = (name: string): boolean => {
+    const port = ctx.ports.get(name)!;
+    return port.getIsUp() && !port.isAdminDown() && port.isConnected();
+  };
+  const disconnected = shown.filter(name => !connected(name));
+  for (const name of disconnected) {
+    lines.push(`No operation can be performed on ${adapterDisplayName(name, ctx.ports)} while it has its media disconnected.`);
+  }
+  if (disconnected.length > 0) lines.push('');
 
-  for (const [name, port] of ctx.ports) {
-    const displayName = adapterDisplayName(name, ctx.ports);
-    if (adapterFilter && !adapterFilterMatches(ctx, name, adapterFilter)) continue;
-
-    lines.push(`Ethernet adapter ${displayName}:`);
+  for (const name of shown.filter(connected)) {
+    lines.push(`Ethernet adapter ${adapterDisplayName(name, ctx.ports)}:`, '');
     lines.push(`   Connection-specific DNS Suffix  . :`);
-    const ip = port.getIPAddress();
-    const adapterUp = port.getIsUp() && !port.isAdminDown() && port.isConnected();
-    if (ip) {
-      lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
-      lines.push(`   Subnet Mask . . . . . . . . . . . : ${port.getSubnetMask() || '255.255.255.0'}`);
-      lines.push(`   Default Gateway . . . . . . . . . : ${ctx.defaultGateway || ''}`);
-    } else if (!adapterUp) {
-      lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
-    }
+    lines.push(`   Default Gateway . . . . . . . . . :`);
     lines.push('');
   }
 
@@ -347,18 +342,21 @@ function ipconfigRenew(ctx: WinCommandContext, args: string[]): string {
 
   for (const name of targets) {
     const displayName = adapterDisplayName(name, ctx.ports);
-    ctx.requestLease(name, { verbose: false });
+    const port = ctx.ports.get(name)!;
+    if (!(port.getIsUp() && !port.isAdminDown() && port.isConnected())) {
+      failed.add(name);
+      lines.push(`No operation can be performed on ${displayName} while it has its media disconnected.`, '');
+      continue;
+    }
+    if (ctx.getDHCPState(name)?.state === 'BOUND') ctx.renewLease(name);
+    if (ctx.getDHCPState(name)?.state !== 'BOUND') ctx.requestLease(name, { verbose: false });
     const state = ctx.getDHCPState(name);
 
     if (state?.lease && state.lease.serverIdentifier === '0.0.0.0') {
-      lines.push(`Ethernet adapter ${displayName}:`, '');
-      lines.push(`   No DHCP server was found, using autoconfiguration IP address ${state.lease.ipAddress}`, '');
+      failed.add(name);
+      lines.push(`An error occurred while renewing interface ${displayName} : unable to contact your DHCP server. Request has timed out.`, '');
     } else if (state?.lease) {
       ctx.addDHCPEvent('RENEW', `Renewed IP ${state.lease.ipAddress} on ${name}`);
-      lines.push(`Ethernet adapter ${displayName}:`, '');
-      lines.push(`   DHCP Offer received from ${state.lease.serverIdentifier}`);
-      lines.push(`   DHCP Request - Broadcast`);
-      lines.push(`   DHCP ACK received`, '');
     } else {
       failed.add(name);
       lines.push(`An error occurred while renewing interface ${displayName} : unable to contact your DHCP server. Request has timed out.`, '');
@@ -410,9 +408,18 @@ function ipconfigRelease6(ctx: WinCommandContext, args: string[]): string {
     }
   }
 
-  lines.push(adapterFilter
-    ? `Adapter "${adapterFilter}" has been successfully released.`
-    : 'All adapters have been successfully released.');
+  for (const name of targets) {
+    const port = ctx.ports.get(name)!;
+    if (!(port.getIsUp() && !port.isAdminDown() && port.isConnected())) {
+      lines.push(`No operation can be performed on ${adapterDisplayName(name, ctx.ports)} while it has its media disconnected.`, '');
+      continue;
+    }
+    const linkLocal6 = port.getLinkLocalIPv6();
+    lines.push(`Ethernet adapter ${adapterDisplayName(name, ctx.ports)}:`, '');
+    lines.push(`   Connection-specific DNS Suffix  . : ${ctx.getConnectionDnsSuffix(name)}`.trimEnd());
+    if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${withWindowsZone(linkLocal6, windowsZoneOf(ctx, name))}`);
+    lines.push('');
+  }
   return lines.join('\n');
 }
 

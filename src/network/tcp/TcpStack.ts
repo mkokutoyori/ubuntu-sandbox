@@ -138,9 +138,7 @@ function emptyProbeDetail(reply: StatelessProbeReply): StatelessProbeDetail {
 import {
   connectedPrefixesOfPort, invalidSourceFor, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
-import {
-  RttEstimator, TCP_INITIAL_RTO_MS, TCP_RTO_AFTER_SYN_RETRANSMIT_MS,
-} from './RttEstimator';
+import { RttEstimator, TCP_RTO_AFTER_SYN_RETRANSMIT_MS } from './RttEstimator';
 import {
   RFC_RETRY_POLICY, giveUpDeadlineMs, giveUpReached, type TcpGiveUp, type TcpRetryPolicy,
 } from './TcpRetryPolicy';
@@ -211,6 +209,20 @@ export interface TcpOptionPolicy {
 
 const ALL_TCP_OPTIONS: TcpOptionPolicy = { sack: true, timestamps: true, windowScaling: true };
 
+export interface TcpMibSink {
+  activeOpen(): void;
+  passiveOpen(): void;
+  attemptFail(): void;
+  establishedReset(): void;
+  establishedEntered(): void;
+  establishedLeft(): void;
+  segmentIn(): void;
+  segmentOut(): void;
+  retransmitted(): void;
+  inError(checksum: boolean): void;
+  outReset(): void;
+}
+
 export interface TcpHost {
   readonly id: string;
   readonly name: string;
@@ -236,6 +248,7 @@ export interface TcpHost {
   optionPolicy?(): TcpOptionPolicy;
   restartsAfterIdle?(): boolean;
   retryPolicy?(): TcpRetryPolicy;
+  readonly mib?: TcpMibSink;
 }
 
 interface SegmentArrival {
@@ -387,6 +400,8 @@ export class TcpSocket {
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
   persistTimer: symbol | null = null;
   persistBackoffMs = 0;
+  persistProbesOut = 0;
+  persistProbesSince: number | null = null;
   /**
    * Reentrancy guard for `flushSendBacklog` (PRD-TCP.md P3/P5) — this
    * simulator delivers frames synchronously end to end, so transmitting a
@@ -462,7 +477,7 @@ export class TcpSocket {
     this.remotePort = remotePort;
     this.family = ipFamilyOf(remoteIp);
     const policy = stack._retryPolicy();
-    this.rtt = new RttEstimator(policy.initialRtoMs, policy.maxRtoMs);
+    this.rtt = new RttEstimator(policy.initialRtoMs, policy.maxRtoMs, policy.rtoFloor);
   }
 
   send(data: unknown): TcpUserCallResult { return this.stack._sendData(this, data); }
@@ -1289,8 +1304,10 @@ export class TcpStack {
   ): boolean {
     const receivedTtl = arrival.ttl;
     const ipHeader = arrival.header;
+    this.host.mib?.segmentIn();
     // RFC 9293 §3.1 — a corrupted segment is discarded silently.
     if (!verifyTcpChecksum(seg, senderIp, dstIp)) {
+      this.host.mib?.inError(true);
       this.dropped(senderIp, seg.sourcePort, 'bad-checksum');
       return true;
     }
@@ -1666,6 +1683,8 @@ export class TcpStack {
       this.timers.clear(socket.persistTimer);
       socket.persistTimer = null;
       socket.persistBackoffMs = 0;
+      socket.persistProbesOut = 0;
+      socket.persistProbesSince = null;
       return;
     }
     if (socket.persistTimer) return;
@@ -1676,8 +1695,15 @@ export class TcpStack {
     }
     socket.persistBackoffMs = socket.persistBackoffMs > 0
       ? Math.min(socket.persistBackoffMs * 2, this._retryPolicy().maxRtoMs)
-      : TCP_INITIAL_RTO_MS;
-    socket.persistTimer = this.timers.setTimeout(() => this.onPersistFired(socket), socket.persistBackoffMs);
+      : socket.rtt.currentRto();
+    socket.persistTimer = this.timers.setTimeout(
+      () => this.onPersistFired(socket), this.clampedToUserTimeout(socket, socket.persistBackoffMs));
+  }
+
+  private clampedToUserTimeout(socket: TcpSocket, delayMs: number): number {
+    if (socket.userTimeoutMs === null || socket.persistProbesSince === null) return delayMs;
+    const remainingMs = socket.userTimeoutMs - (this.getScheduler().now() - socket.persistProbesSince);
+    return Math.min(delayMs, Math.max(1, remainingMs));
   }
 
   /**
@@ -1698,6 +1724,11 @@ export class TcpStack {
       try { this.flushSendBacklog(socket); } finally { socket.swsOverride = false; }
       return;
     }
+    const windowProbe = this._retryPolicy().windowProbe;
+    if (windowProbe.form === 'old-sequence') {
+      this.probeWindowWithOldSequence(socket, windowProbe.unanswered);
+      return;
+    }
     const next = socket.sendBacklog[0];
     if (next.payload.length === 0) { this.maybeArmPersistTimer(socket); return; }
     const probe = sliceStream(next.payload, 0, 1);
@@ -1711,6 +1742,20 @@ export class TcpStack {
     const seq = socket.sendNext;
     socket.sendNext = (seq + probe.length) >>> 0;
     this.transmitTracked(socket, flags, seq, socket.recvNext, probe, probe.length, [], true);
+    this.maybeArmPersistTimer(socket);
+  }
+
+  private probeWindowWithOldSequence(socket: TcpSocket, unanswered: number): void {
+    const now = this.getScheduler().now();
+    if (socket.persistProbesSince === null) socket.persistProbesSince = now;
+    const userTimeoutPassed = socket.userTimeoutMs !== null && now - socket.persistProbesSince >= socket.userTimeoutMs;
+    if (userTimeoutPassed || socket.persistProbesOut >= unanswered) {
+      this._teardown(socket, 'timeout');
+      return;
+    }
+    const flags = noFlags(); flags.ack = true;
+    this.transmit(socket, flags, (socket.sendUnacked - 1) >>> 0, socket.recvNext, undefined);
+    socket.persistProbesOut++;
     this.maybeArmPersistTimer(socket);
   }
 
@@ -1785,6 +1830,7 @@ export class TcpStack {
     socket: TcpSocket, seg: TcpSegment, payloadSize: number, ecn: EcnCodepoint,
   ): void {
     socket.lastHeardAtMs = this.getScheduler().now();
+    socket.persistProbesOut = 0;
     if (socket.state === 'syn-sent') this.arriveInSynSent(socket, seg, payloadSize);
     else this.arriveSynchronized(socket, seg, payloadSize, ecn);
     if (socket.keepAliveEnabled && socket.state === 'established') {
@@ -2465,10 +2511,21 @@ export class TcpStack {
     try { socket._fireClose(reason); } catch (e) { Logger.warn(this.host.id, 'tcp:onClose', String(e)); }
   }
 
+  private countTransition(mib: TcpMibSink, from: TcpState, to: TcpState): void {
+    const counted = (state: TcpState): boolean => state === 'established' || state === 'close-wait';
+    if (from === 'closed' && to === 'syn-sent') mib.activeOpen();
+    if (from === 'closed' && to === 'syn-received') mib.passiveOpen();
+    if (to === 'closed' && (from === 'syn-sent' || from === 'syn-received')) mib.attemptFail();
+    if (to === 'closed' && counted(from)) mib.establishedReset();
+    if (counted(to) && !counted(from)) mib.establishedEntered();
+    if (counted(from) && !counted(to)) mib.establishedLeft();
+  }
+
   _transition(socket: TcpSocket, newState: TcpState): void {
     if (socket.state === newState) return;
     const oldState = socket.state;
     socket.state = newState;
+    if (this.host.mib) this.countTransition(this.host.mib, oldState, newState);
     if (newState === 'established') socket.everEstablished = true;
     this.getBus().publish({
       topic: 'tcp.state.changed',
@@ -2629,7 +2686,7 @@ export class TcpStack {
     seg.checksum = computeTcpChecksum(seg, source, socket.remoteIp);
     this.shipSegment(egress, source, socket.remoteIp, seg, {
       ttl: socket.ttl?.value, tos: socket.diffServ.withEcn(marking.codepoint).value,
-    });
+    }, emission === 'retransmission');
     return sentTsVal;
   }
 
@@ -2746,7 +2803,6 @@ export class TcpStack {
       socket.unackedQueue.shift();
       progressed = true;
     }
-    if (progressed) socket.rtt.reset();
     this.rearmRtoTimer(socket);
     return progressed ? (ackNum - priorUnacked) >>> 0 : 0;
   }
@@ -2865,6 +2921,7 @@ export class TcpStack {
   }
 
   private resend(socket: TcpSocket, entry: UnackedSegment, reason: TcpRetransmitReason, rtoMs: number): void {
+    this.host.mib?.retransmitted();
     this.getBus().publish({
       topic: 'tcp.retransmit',
       payload: {
@@ -2882,11 +2939,13 @@ export class TcpStack {
 
   private shipSegment(
     egress: { name: string; port?: import('../hardware/Port').Port; nextHopIp?: string },
-    srcIp: string, dstIp: string, seg: TcpSegment, shape?: ScanProbeShape,
+    srcIp: string, dstIp: string, seg: TcpSegment, shape?: ScanProbeShape, retransmission = false,
   ): void {
     const family = ipFamilyOf(dstIp);
     const local = this.isLocalDestination(dstIp, family);
     const ttl = shape?.ttl ?? this.defaultTtl(family);
+    if (!retransmission) this.host.mib?.segmentOut();
+    if (seg.flags.rst) this.host.mib?.outReset();
     const l3Packet = family === 'ipv6'
       ? this.buildIpv6Segment(srcIp, dstIp, seg, ttl, shape?.tos)
       : this.buildIpv4Segment(srcIp, dstIp, seg, ttl, shape?.fragmentMtu, shape);

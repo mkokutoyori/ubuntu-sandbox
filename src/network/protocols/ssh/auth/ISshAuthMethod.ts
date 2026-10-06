@@ -7,9 +7,19 @@
 export type AuthMethodType = 'password' | 'publickey' | 'keyboard-interactive';
 
 /** Result of the PAM-equivalent account-phase check run after credentials verify. */
+export interface SshPeer {
+  readonly ip: string;
+  readonly port?: number;
+}
+
 export type AccountLifecycleVerdict =
-  | { ok: true; kind?: undefined }
-  | { ok: false; kind: 'account-expired' | 'password-expired' };
+  | { ok: true; kind?: undefined; messages?: readonly string[] }
+  | {
+      ok: false;
+      kind: 'account-expired' | 'password-expired' | 'pam-denied';
+      messages?: readonly string[];
+      detail?: string;
+    };
 
 export interface KeyboardInteractiveChallenge {
   readonly device: string;
@@ -27,17 +37,18 @@ export interface KeyboardInteractiveChallenge {
  */
 export interface ISshAuthContext {
   checkPassword(user: string, password: string): boolean;
-  checkPasswordAsync?(user: string, password: string): Promise<boolean>;
+  checkPasswordAsync?(user: string, password: string, peer?: SshPeer): Promise<boolean>;
+  rejectInvalidUser?(user: string, password: string, peer?: SshPeer): Promise<void>;
   checkPublicKey(user: string, publicKey: string): boolean;
   checkPublicKeyAsync?(user: string, publicKey: string): Promise<boolean>;
   getAttemptsRemaining(): number;
   getAvailableMethods(): readonly AuthMethodType[];
-  keyboardInteractive?(): KeyboardInteractiveChallenge | null;
+  keyboardInteractive?(peer?: SshPeer): KeyboardInteractiveChallenge | null;
   /**
    * PAM account phase, consulted after credentials verify successfully
    * (any auth method) but before the session is granted. Optional so
    * non-Linux contexts (router/switch AAA) are unaffected.
    */
-  checkAccountLifecycle?(user: string): AccountLifecycleVerdict;
+  checkAccountLifecycle?(user: string, peer?: SshPeer): AccountLifecycleVerdict;
   acceptsWithoutCredential?(user: string): boolean;
 }

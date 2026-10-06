@@ -485,13 +485,11 @@ function verifyOfferedPassword(
   machine?: unknown,
 ): 'ok' | 'wrong-password' | 'not-offered' {
   const mgr = exec?.userMgr as unknown as {
-    checkPassword?: (u: string, p: string) => boolean;
-    isAccountLockedOut?: (u: string) => boolean;
+    passwordMatches?: (u: string, p: string) => boolean;
   } | undefined;
-  if (mgr?.isAccountLockedOut?.(remoteUser)) return 'wrong-password';
   if (offeredPassword === undefined) return 'not-offered';
-  if (typeof mgr?.checkPassword === 'function') {
-    return mgr.checkPassword(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
+  if (typeof mgr?.passwordMatches === 'function') {
+    return mgr.passwordMatches(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
   }
   // La machine distante n'a pas de gestionnaire d'utilisateurs à la
   // Linux — c'est le cas d'un routeur Cisco, dont les comptes vivent
@@ -1361,7 +1359,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     : bannerPath.toLowerCase() === 'none'
       ? ''
       : remoteVfs.readFile(bannerPath) ?? '';
-  const motd = remoteVfs.readFile('/etc/motd') ?? '';
+  const motd = opts.wireAuthenticated ? '' : remoteVfs.readFile('/etc/motd') ?? '';
 
   // -q / -Q (quiet) suppresses banner output (still connects). Match
   // OpenSSH: stay silent on success.

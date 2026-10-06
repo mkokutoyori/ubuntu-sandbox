@@ -8,7 +8,8 @@
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import type { SocketTable, SocketEntry, SocketState } from '../../core/SocketTable';
 import { broadcastAddress, tryIpToUint32, prefixLengthToMaskUint32 } from '../../core/ip';
-import { snmpSnapshot, type SnmpSnapshot } from './ports/PortsFilesystem';
+import { linuxSnmpSnapshot, type LinuxSnmpSnapshot } from './ports/PortsFilesystem';
+import type { KernelIpFacts } from './LinuxIpv4Settings';
 import type { ProtocolCounters } from '../../layers/internet/ProtocolCounters';
 
 export type ServiceResolver = (port: number, proto: string) => string | null;
@@ -257,6 +258,7 @@ export function cmdNetstat(
   resolveService?: ServiceResolver,
   resolvePid?: PidResolver,
   counters?: ProtocolCounters,
+  kernel?: KernelIpFacts,
 ): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
@@ -318,7 +320,7 @@ export function cmdNetstat(
   }
 
   if (hasFlag('s') || args.includes('--statistics')) {
-    return cmdNetstatStatistics(snmpSnapshot(socketTable, counters));
+    return cmdNetstatStatistics(linuxSnmpSnapshot(counters, kernel));
   }
 
   // Determine which protocols to show (no -t/-u → show both)
@@ -380,11 +382,11 @@ export function cmdNetstat(
   return lines.join('\n');
 }
 
-function cmdNetstatStatistics(snapshot: SnmpSnapshot): string {
+function cmdNetstatStatistics(snapshot: LinuxSnmpSnapshot): string {
   const c = snapshot.counters;
   return [
     'Ip:',
-    '    Forwarding: 2',
+    `    Forwarding: ${snapshot.kernel.forwarding ? 1 : 2}`,
     `    ${c.ipInReceives} total packets received`,
     `    ${c.ipForwDatagrams} forwarded`,
     `    ${c.ipInDiscards} incoming packets discarded`,

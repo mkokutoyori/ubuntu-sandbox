@@ -64,9 +64,6 @@ export class SshSyslogger {
   private readonly sshdPid: number;
   private readonly port: number;
   private readonly clock: () => Date;
-  private pendingSessionUser: string | null = null;
-  private openSessionUser: string | null = null;
-  private uidLookup: ((user: string) => number) | null = null;
   private readonly logMgr: LinuxLogManager | null;
   private readonly logLevel: () => SshdLogLevel;
   private readonly unsubscribe: () => void;
@@ -100,6 +97,9 @@ export class SshSyslogger {
     const message = this.format(event);
     if (!message) return;
     this.append(message);
+    if (event.kind === 'auth_failure' && (event.reason === 'account_expired' || event.reason === 'pam_account_denied')) {
+      this.append(`fatal: Access denied for user ${event.user} by PAM account configuration [preauth]`);
+    }
   }
 
   /**
@@ -113,7 +113,6 @@ export class SshSyslogger {
         return `Connection from ${event.ip} port ${event.port ?? this.port} on ${hostnameOf(this.hostnameSource)} port ${this.port} rdomain ""`;
 
       case 'auth_success': {
-        this.pendingSessionUser = event.user;
         if (event.method === 'publickey' && event.keyType && event.keyFingerprint) {
           return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ${event.keyType} ${event.keyFingerprint}`;
         }
@@ -121,19 +120,17 @@ export class SshSyslogger {
       }
 
       case 'auth_failure': {
-        if (event.reason === 'account_expired') {
-          return `pam_unix(sshd:account): account ${event.user} has expired (account expired)`;
+        if (event.reason === 'account_expired' || event.reason === 'pam_account_denied') {
+          return `error: PAM: ${event.detail ?? 'Authentication failure'} for ${event.user} from ${event.ip}`;
         }
-        if (event.reason === 'password_expired') {
-          return `pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=${event.ip} user=${event.user}`;
-        }
+        if (event.reason === 'password_expired') return null;
         const method = event.method ?? 'unknown';
         const qualite = event.validUser === false ? 'invalid user ' : '';
         return `Failed ${method} for ${qualite}${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
       }
 
       case 'auth_account_phase':
-        return `pam_unix(sshd:account): expired password for user ${event.user}`;
+        return null;
 
       case 'auth_invalid_user':
         return `Invalid user ${event.user} from ${event.ip} port ${event.port ?? this.port}`;
@@ -171,11 +168,7 @@ export class SshSyslogger {
         if (event.channelType === 'sftp') {
           return `subsystem request for sftp by user ${event.user}`;
         }
-        if (this.pendingSessionUser !== event.user) return null;
-        this.pendingSessionUser = null;
-        this.openSessionUser = event.user;
-        return `pam_unix(sshd:session): session opened for user ${event.user}`
-          + `(uid=${this.uidOf(event.user)}) by (uid=0)`;
+        return null;
 
       case 'channel_closed':
         return null;
@@ -209,16 +202,8 @@ export class SshSyslogger {
         : '';
       lines.push(`Connection closed by ${who}${event.ip} port ${port} [preauth]`);
     }
-    if (this.openSessionUser === event.user) {
-      this.openSessionUser = null;
-      lines.push(`pam_unix(sshd:session): session closed for user ${event.user}`);
-    }
     return lines;
   }
-
-  setUidLookup(lookup: (user: string) => number): void { this.uidLookup = lookup; }
-
-  private uidOf(user: string): number { return this.uidLookup?.(user) ?? 1000; }
 
   private append(message: string): void {
     // When wired to a LinuxLogManager the journal owns BOTH the on-disk

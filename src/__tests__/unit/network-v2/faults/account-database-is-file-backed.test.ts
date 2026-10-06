@@ -106,43 +106,43 @@ describe('editing /etc/shadow changes authentication', () => {
     await run(d, `sed -i 's|^bob:[^:]*:|bob:$6$simulated$motdepasse:|' /etc/shadow`);
 
     const mgr = (d as unknown as {
-      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+      executor: { userMgr: { passwordMatches(u: string, p: string): boolean } };
     }).executor.userMgr;
-    expect(mgr.checkPassword('bob', 'motdepasse')).toBe(true);
+    expect(mgr.passwordMatches('bob', 'motdepasse')).toBe(true);
   });
 
   it('a secret nobody can invert stops the password working', async () => {
     const d = await box();
     await run(d, `sh -c "echo 'bob:secret' | chpasswd"`);
     const mgr = (d as unknown as {
-      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+      executor: { userMgr: { passwordMatches(u: string, p: string): boolean } };
     }).executor.userMgr;
-    expect(mgr.checkPassword('bob', 'secret')).toBe(true);
+    expect(mgr.passwordMatches('bob', 'secret')).toBe(true);
 
     // Pasting an opaque hash over the entry is exactly what an admin does
     // when copying between machines — and it really does mean the old
     // password no longer opens the account.
     await run(d, `sed -i 's|^bob:[^:]*:|bob:$6$abcdef$OpaqueHashFromElsewhere:|' /etc/shadow`);
 
-    expect(mgr.checkPassword('bob', 'secret')).toBe(false);
+    expect(mgr.passwordMatches('bob', 'secret')).toBe(false);
   });
 
   it('the `!` lock prefix written by hand locks the account', async () => {
     const d = await box();
     await run(d, `sh -c "echo 'bob:secret' | chpasswd"`);
     const mgr = (d as unknown as {
-      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+      executor: { userMgr: { passwordMatches(u: string, p: string): boolean } };
     }).executor.userMgr;
 
     await run(d, `sed -i 's|^bob:|bob:!|' /etc/shadow`);
 
-    expect(mgr.checkPassword('bob', 'secret')).toBe(false);
+    expect(mgr.passwordMatches('bob', 'secret')).toBe(false);
   });
 
   it('root\'s own secret round-trips through the file like anyone else\'s', async () => {
     const d = await box();
     const mgr = (d as unknown as {
-      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+      executor: { userMgr: { passwordMatches(u: string, p: string): boolean } };
     }).executor.userMgr;
 
     // root used to be the one account the file could not describe: its
@@ -150,12 +150,12 @@ describe('editing /etc/shadow changes authentication', () => {
     // so the very first reload lost it. If the files are the store, root
     // has to be in them too.
     expect(await run(d, 'grep "^root:" /etc/shadow')).toContain('$6$simulated$admin');
-    expect(mgr.checkPassword('root', 'admin')).toBe(true);
+    expect(mgr.passwordMatches('root', 'admin')).toBe(true);
 
     await run(d, `sed -i 's|^root:[^:]*:|root:$6$simulated$autre:|' /etc/shadow`);
 
-    expect(mgr.checkPassword('root', 'admin')).toBe(false);
-    expect(mgr.checkPassword('root', 'autre')).toBe(true);
+    expect(mgr.passwordMatches('root', 'admin')).toBe(false);
+    expect(mgr.passwordMatches('root', 'autre')).toBe(true);
   });
 
   it('an account with no shadow line still exists — it just has no password', async () => {
@@ -167,9 +167,9 @@ describe('editing /etc/shadow changes authentication', () => {
     // and dropping the account here would hide the real problem.
     expect(await run(d, 'id bob')).toContain('(bob)');
     const mgr = (d as unknown as {
-      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+      executor: { userMgr: { passwordMatches(u: string, p: string): boolean } };
     }).executor.userMgr;
-    expect(mgr.checkPassword('bob', 'secret')).toBe(false);
+    expect(mgr.passwordMatches('bob', 'secret')).toBe(false);
   });
 });
 
@@ -232,9 +232,9 @@ describe('the projection and the file stay in step', () => {
 
     expect(await run(dst, 'id zoe')).toContain('(zoe)');
     const mgr = (dst as unknown as {
-      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+      executor: { userMgr: { passwordMatches(u: string, p: string): boolean } };
     }).executor.userMgr;
-    expect(mgr.checkPassword('zoe', 'motdepasse')).toBe(true);
+    expect(mgr.passwordMatches('zoe', 'motdepasse')).toBe(true);
   });
 
   it('restoring /etc/passwd- restores the accounts it holds', async () => {
@@ -286,7 +286,6 @@ describe('the parser itself', () => {
       passwd: 'bob:x:1500:1500:Bob:/home/bob:/bin/bash\n',
       shadow: '', group: '', gshadow: '',
     }, empty);
-    first.users[0].failedLoginCount = 3;
     first.users[0].lastLoginAt = 1234;
 
     const second = parseAccountDatabase({
@@ -294,10 +293,9 @@ describe('the parser itself', () => {
       shadow: '', group: '', gshadow: '',
     }, { users: first.users, groups: [] });
 
-    // lastlog and the faillock tally live outside /etc on a real system too,
-    // so a reload must not reset them.
+    // lastlog lives outside /etc on a real system too, so a reload must
+    // not reset it.
     expect(second.users[0].shell).toBe('/bin/sh');
-    expect(second.users[0].failedLoginCount).toBe(3);
     expect(second.users[0].lastLoginAt).toBe(1234);
   });
 

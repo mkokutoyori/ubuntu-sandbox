@@ -5,6 +5,7 @@ import { principalName, PrincipalNameType } from '@/network/kerberos/types';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import { discoverDc } from './DcHostnameDiscovery';
+import { parseDomainQualifiedUser } from './DomainTypes';
 
 export type KerberosLdapFailure = 'no-network-path' | 'bad-credential';
 
@@ -27,9 +28,10 @@ export function bindLdapWithKerberos(opts: {
   const realm = opts.domainName.toUpperCase();
   const kdcConn = dialKdc(opts.tcpStack, opts.dcAddress);
   if (!kdcConn.ok || !kdcConn.client) return { failure: 'no-network-path' };
-  const cname = principalName(PrincipalNameType.NT_PRINCIPAL, opts.user);
+  const account = parseDomainQualifiedUser(opts.user, { dnsName: opts.domainName, netbiosName: opts.domainName.split('.')[0] })?.sam ?? opts.user;
+  const cname = principalName(PrincipalNameType.NT_PRINCIPAL, account);
 
-  const asResult = kdcConn.client.asExchange(opts.user, opts.password, realm);
+  const asResult = kdcConn.client.asExchange(account, opts.password, realm);
   if (!asResult.ok) return { failure: 'bad-credential' };
   const tgsResult = kdcConn.client.tgsExchange(asResult.ticket!, asResult.sessionKey!, cname, realm, dcHostname);
   if (!tgsResult.ok) return { failure: 'bad-credential' };

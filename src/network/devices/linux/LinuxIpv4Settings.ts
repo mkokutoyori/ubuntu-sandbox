@@ -3,8 +3,19 @@ import type { TcpOptionPolicy } from '@/network/tcp/TcpStack';
 import { TCP_INITIAL_RTO_MS } from '@/network/tcp/RttEstimator';
 import { modelledRetransmitTimeoutMs, type TcpRetryPolicy } from '@/network/tcp/TcpRetryPolicy';
 
-const LINUX_RTO_MIN_MS = 200;
-const LINUX_RTO_MAX_MS = 120_000;
+export const LINUX_RTO_MIN_MS = 200;
+export const LINUX_RTO_MAX_MS = 120_000;
+
+export interface KernelIpFacts {
+  readonly forwarding: boolean;
+  readonly defaultTtl: number;
+  readonly rtoMinMs: number;
+  readonly rtoMaxMs: number;
+}
+
+export interface KernelIpFactsSource {
+  getKernelIpFacts(): KernelIpFacts;
+}
 
 export interface KernelByteKnob {
   readonly name: string;
@@ -70,11 +81,13 @@ export class LinuxIpv4Settings {
     const timeoutOf = (retries: number) => modelledRetransmitTimeoutMs(retries, LINUX_RTO_MIN_MS, LINUX_RTO_MAX_MS);
     return {
       initialRtoMs: TCP_INITIAL_RTO_MS,
+      rtoFloor: { granularityMs: LINUX_RTO_MIN_MS, minRtoMs: 0 },
       maxRtoMs: LINUX_RTO_MAX_MS,
       activeOpen: { kind: 'retransmissions', count: this.get('tcp_syn_retries') },
       passiveOpen: { kind: 'retransmissions', count: this.get('tcp_synack_retries') },
-      established: { kind: 'elapsed', ms: timeoutOf(this.get('tcp_retries2')) },
-      delivery: { kind: 'elapsed', ms: timeoutOf(this.get('tcp_retries1')) },
+      established: { kind: 'elapsed', ms: timeoutOf(this.get('tcp_retries2')), atExpiry: true },
+      delivery: { kind: 'elapsed', ms: timeoutOf(this.get('tcp_retries1')), atExpiry: true },
+      windowProbe: { form: 'old-sequence', unanswered: this.get('tcp_retries2') },
     };
   }
 
@@ -85,4 +98,15 @@ export class LinuxIpv4Settings {
   get defaultTtl(): number {
     return this.get('ip_default_ttl');
   }
+
+  kernelIpFacts(forwarding: boolean): KernelIpFacts {
+    return {
+      forwarding,
+      defaultTtl: this.defaultTtl,
+      rtoMinMs: LINUX_RTO_MIN_MS,
+      rtoMaxMs: LINUX_RTO_MAX_MS,
+    };
+  }
 }
+
+export const STANDALONE_KERNEL_IP_FACTS: KernelIpFacts = new LinuxIpv4Settings().kernelIpFacts(false);

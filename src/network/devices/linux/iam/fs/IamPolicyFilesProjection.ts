@@ -19,7 +19,7 @@ import type { PasswordPolicyChangedPayload } from '../events';
 
 /** The slice of `LinuxUserManager` this projection drives. */
 export interface PolicyFilesystemTarget {
-  applyPolicyToFilesystem(section: 'quality' | 'aging' | 'lockout'): void;
+  applyPolicyToFilesystem(section: 'quality' | 'aging'): void;
 }
 
 export class IamPolicyFilesProjection {

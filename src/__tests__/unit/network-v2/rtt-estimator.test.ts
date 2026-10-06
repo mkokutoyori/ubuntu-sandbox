@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { RttEstimator, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from '@/network/tcp/RttEstimator';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
+import { LINUX_RTO_MIN_MS } from '@/network/devices/linux/LinuxIpv4Settings';
 import { Cable } from '@/network/hardware/Cable';
 import { VirtualTimeScheduler } from '@/events/Scheduler';
 import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
@@ -85,22 +86,6 @@ describe('RttEstimator (RFC 6298)', () => {
     rtt.sample(2000); // rto=6000
     expect(rtt.backoff()).toBe(12000);
   });
-
-  it('reset() after a sample drops back to the SRTT-based estimate, not the fixed initial value', () => {
-    const rtt = new RttEstimator();
-    rtt.sample(2000); // rto=6000
-    rtt.backoff(); // 12000
-    rtt.backoff(); // 24000
-    rtt.reset();
-    expect(rtt.currentRto()).toBe(6000);
-  });
-
-  it('reset() before any sample exists falls back to the fixed initial RTO', () => {
-    const rtt = new RttEstimator();
-    rtt.backoff(); // 2000, no sample taken
-    rtt.reset();
-    expect(rtt.currentRto()).toBe(TCP_INITIAL_RTO_MS);
-  });
 });
 
 function lossOnceRng(): () => number {
@@ -132,21 +117,12 @@ describe('Karn\'s algorithm through TcpStack (PRD-TCP.md P4 integration)', () =>
     cable.setPacketLossRate(0.999);
     cable.setRng(lossOnceRng());
     clientSocket.send('first');
-    // Recovery takes a whole RTO cycle (~1s) — if that ambiguous, retry-
-    // inclusive elapsed time were (wrongly) sampled, the estimator's RTO
-    // would jump well above the fixed floor.
-    scheduler.advance(TCP_INITIAL_RTO_MS + 10);
+    scheduler.advance(LINUX_RTO_MIN_MS + 10);
     expect(received).toEqual(['first']);
-    expect(clientSocket.rtt.currentRto()).toBe(TCP_INITIAL_RTO_MS);
+    expect(clientSocket.rtt.currentRto()).toBe(LINUX_RTO_MIN_MS);
 
-    // A subsequent clean (never-retransmitted) segment's genuinely tiny
-    // elapsed time is Karn-eligible and does get sampled — still floors
-    // to the 1-second minimum (RFC 6298 §2.4), which is the same value,
-    // so the real proof is the *first* assertion above: had the lossy
-    // segment's retry window been sampled, this would already have
-    // drifted upward before the clean send ever happened.
     clientSocket.send('second');
     expect(received).toEqual(['first', 'second']);
-    expect(clientSocket.rtt.currentRto()).toBe(TCP_INITIAL_RTO_MS);
+    expect(clientSocket.rtt.currentRto()).toBe(LINUX_RTO_MIN_MS);
   });
 });

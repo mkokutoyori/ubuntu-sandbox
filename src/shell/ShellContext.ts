@@ -45,6 +45,7 @@ export interface SuFrame {
   readonly gid: number;
   readonly cwd: string;
   readonly umask: number;
+  readonly release?: () => void;
 }
 
 export class ShellContext {

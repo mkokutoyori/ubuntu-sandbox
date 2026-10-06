@@ -29,20 +29,24 @@ function runNative(name: string, ctx: CmdletContext): PSValue {
   const args = nativeArgv(ctx.positional, ctx.named);
   const out = ctx.providers.network.runSyncNativeCommand(name, args);
   if (out === null) {
+    const replayed = ctx.runtime.takeNativeResult();
+    if (replayed !== null) return ctx.runtime.acceptNativeResult(replayed);
     throw new NativeCommandNeedsAsync(name, args);
   }
-  return out;
+  return ctx.runtime.acceptNativeResult({ output: out, exitCode: ctx.providers.network.nativeExitCode(out) });
 }
 
 class NativeShim implements ICmdlet {
   constructor(public readonly name: string) {}
   readonly aliases = [] as const;
+  readonly nativeProgram = true as const;
   execute(ctx: CmdletContext): PSValue { return runNative(this.name, ctx); }
 }
 
 class TextFilterShim implements ICmdlet {
   constructor(public readonly name: string) {}
   readonly aliases = [] as const;
+  readonly nativeProgram = true as const;
 
   execute(ctx: CmdletContext): PSValue {
     const piped = ctx.pipeInput;
@@ -72,7 +76,6 @@ export const ChcpCmdlet      = new NativeShim('chcp');
 // cmd↔PS coherence (same as `net` / `netsh`). `sc.exe` is the
 // always-correct explicit form.
 export const ScCmdlet        = new NativeShim('sc');
-export const ScExeCmdlet     = new NativeShim('sc.exe');
 export const SshKeygenCmdlet  = new NativeShim('ssh-keygen');
 export const SshAgentCmdlet   = new NativeShim('ssh-agent');
 export const SshAddCmdlet     = new NativeShim('ssh-add');

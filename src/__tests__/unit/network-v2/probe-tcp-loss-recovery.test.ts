@@ -279,7 +279,7 @@ describe('after a retransmission timeout every segment that was outstanding is r
     'six segments lost: the timer resends the first, the acknowledgment of it releases the next ones (%s)',
     (_name, options) => {
       const l = lab(options, 6);
-      l.peer.advance(1100);
+      l.peer.advance(250);
       expect(resent(l)).toEqual([1]);
       receive(l, sequenceOf(l, 2));
       expect(resent(l)).toEqual([2, 3]);
@@ -290,7 +290,7 @@ describe('after a retransmission timeout every segment that was outstanding is r
 
   it('a segment the receiver reports after the timeout is skipped: the holes are filled, the reported ones are not resent', () => {
     const l = lab(SACK_OFFER, 6);
-    l.peer.advance(1100);
+    l.peer.advance(250);
     l.peer.take();
     receive(l, sequenceOf(l, 2), [[3, 4]]);
     expect(resent(l)).toEqual([2, 5]);
@@ -298,7 +298,7 @@ describe('after a retransmission timeout every segment that was outstanding is r
 
   it('WITNESS: a single lost segment is resent once by the timer and its acknowledgment ends the episode', () => {
     const l = lab(SACK_OFFER, 1);
-    l.peer.advance(1100);
+    l.peer.advance(250);
     expect(resent(l)).toEqual([1]);
     receive(l, sequenceOf(l, 2));
     expect(resent(l)).toEqual([]);
@@ -306,7 +306,7 @@ describe('after a retransmission timeout every segment that was outstanding is r
 
   it('duplicate acknowledgments during the timeout recovery do not open a new fast retransmit', () => {
     const l = lab(PLAIN_OFFER, 6);
-    l.peer.advance(1100);
+    l.peer.advance(250);
     l.peer.take();
     receive(l, sequenceOf(l, 2));
     l.peer.take();

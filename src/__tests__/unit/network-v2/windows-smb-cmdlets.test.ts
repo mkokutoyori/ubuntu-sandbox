@@ -1,8 +1,10 @@
 /**
  * PRD-Windows-Server.md §5 P3 — New/Get/Remove-SmbShare, Get-SmbSession.
- * Gated on the FS-FileServer role (§8 acceptance criterion 2): before
- * install, New-SmbShare must fail with the "not recognized" module-absent
- * message; on a windows-pc it must never exist at all.
+ * The SmbShare module ships with Windows (client and server): creating a
+ * share needs no role. Before, `New-SmbShare` was gated on FS-FileServer
+ * (§8 acceptance criterion 2) and unknown on a workstation — a premise
+ * false on a real machine, so a lab that shared a folder on a stock server
+ * got "not recognized". FS-FileServer still installs; it just gates nothing.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -22,32 +24,27 @@ const ps = (d: WindowsPC) => PowerShellSubShell.create(d).subShell;
 const run = async (sh: ReturnType<typeof ps>, l: string) =>
   (await sh.processLine(l)).output.join('\n');
 
-describe('New-SmbShare requires the FS-FileServer role', () => {
-  it('fails with "not recognized" before the role is installed', async () => {
+describe('New-SmbShare needs no role', () => {
+  it('creates a share on a stock server', async () => {
     const srv = new WindowsServer('SRV1');
     srv.setCurrentUser('Administrator');
     const out = await run(ps(srv), 'New-SmbShare -Name Data -Path C:\\Shares\\Data');
-    expect(out).toMatch(/is not recognized as the name of a cmdlet/i);
+    expect(out).toContain('Data');
+    expect(out).not.toMatch(/is not recognized as the name of a cmdlet/i);
   });
 
-  it('enumere les partages administratifs sur un poste, mais refuse d en creer un', async () => {
-    // `Get-SmbShare` fait partie du module SmbShare livre avec Windows
-    // client : il enumere les partages administratifs que LanmanServer
-    // cree (ADMIN$, C$, IPC$). Seule la CREATION d'un partage demande le
-    // role FS-FileServer, comme le disait deja le commentaire de
-    // `WindowsSmbAdapter.requireRole`.
+  it('creates a share on a workstation and lists the administrative ones', async () => {
     const pc = new WindowsPC('windows-pc', 'DESKTOP-01');
     pc.setCurrentUser('Administrator');
     expect(await run(ps(pc), 'Get-SmbShare')).toMatch(/ADMIN\$|IPC\$/);
-    expect(await run(ps(pc), 'New-SmbShare -Name Data -Path C:\\Shares\\Data'))
-      .toMatch(/is not recognized as the name of a cmdlet/i);
+    expect(await run(ps(pc), 'New-SmbShare -Name Data -Path C:\\Shares\\Data')).toContain('Data');
+    expect(await run(ps(pc), 'Get-SmbShare -Name Data')).toContain('C:\\Shares\\Data');
   });
 
-  it('works once FS-FileServer is installed', async () => {
+  it('lists and removes a share once created', async () => {
     const srv = new WindowsServer('SRV1');
     srv.setCurrentUser('Administrator');
     const sh = ps(srv);
-    await run(sh, 'Install-WindowsFeature FS-FileServer');
 
     const created = await run(sh, 'New-SmbShare -Name Data -Path C:\\Shares\\Data');
     expect(created).toContain('Data');

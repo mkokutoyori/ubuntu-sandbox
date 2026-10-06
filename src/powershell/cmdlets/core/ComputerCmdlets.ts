@@ -9,7 +9,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { parseCredentialArg } from './RemotingCmdlets';
+import { namedCredential } from './RemotingCmdlets';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 export class AddComputerCmdlet implements ICmdlet {
@@ -28,12 +28,11 @@ export class AddComputerCmdlet implements ICmdlet {
       ctx.emitError('Add-Computer : Cannot process command because of one or more missing mandatory parameters: DomainName.');
       return null;
     }
-    const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
-    if (!credentialRaw) {
+    const credential = namedCredential(ctx, 'credential');
+    if (!credential) {
       ctx.emitError('Add-Computer : Cannot process command because of one or more missing mandatory parameters: Credential.');
       return null;
     }
-    const credential = parseCredentialArg(credentialRaw);
     const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : undefined;
     const ouPath = ctx.named['oupath'] !== undefined ? psValueToString(ctx.named['oupath']) : undefined;
     const newName = ctx.named['newname'] !== undefined ? psValueToString(ctx.named['newname']) : undefined;
@@ -61,12 +60,11 @@ export class RemoveComputerCmdlet implements ICmdlet {
       ctx.emitError('Remove-Computer : Computer failed to be un-joined from the domain: This computer is not currently joined to a domain.');
       return null;
     }
-    const credentialRaw = ctx.named['unjoindomaincredential'] !== undefined ? psValueToString(ctx.named['unjoindomaincredential']) : '';
-    if (!credentialRaw) {
+    const credential = namedCredential(ctx, 'unjoindomaincredential');
+    if (!credential) {
       ctx.emitError('Remove-Computer : Cannot process command because of one or more missing mandatory parameters: UnjoinDomainCredential.');
       return null;
     }
-    const credential = parseCredentialArg(credentialRaw);
     const res = computer.remove(credential);
     if (!res.ok) { ctx.emitError(`Remove-Computer : ${res.message}`); return null; }
     return null;
@@ -91,8 +89,7 @@ export class RenameComputerCmdlet implements ICmdlet {
       ctx.emitError('Rename-Computer : Cannot process command because of one or more missing mandatory parameters: NewName.');
       return null;
     }
-    const credentialRaw = ctx.named['domaincredential'] !== undefined ? psValueToString(ctx.named['domaincredential']) : '';
-    const credential = credentialRaw ? parseCredentialArg(credentialRaw) : undefined;
+    const credential = namedCredential(ctx, 'domaincredential');
     if (computer.getDomainInfo() && !credential) {
       ctx.emitError('Rename-Computer : Cannot process command because of one or more missing mandatory parameters: DomainCredential.');
       return null;

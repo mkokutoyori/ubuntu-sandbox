@@ -29,6 +29,10 @@ export enum PasswordQualityRule {
   ContainsGecos = 'contains-gecos',
   Palindrome = 'palindrome',
   DictionaryWord = 'dictionary-word',
+  SamePassword = 'same-password',
+  CaseChangesOnly = 'case-changes-only',
+  Rotated = 'rotated',
+  BadWords = 'bad-words',
 }
 
 /** A single reason a password was rejected. */

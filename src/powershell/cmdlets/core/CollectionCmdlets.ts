@@ -13,6 +13,7 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { hasWildcard, wildcardMatches } from '@/powershell/runtime/PSWildcard';
 import { formatTable as renderTable, formatList as renderList, type PSObject } from '@/network/devices/windows/PSPipeline';
 
 const GROUP_KEY_DELIMITER = '\u0000';
@@ -678,6 +679,70 @@ export class CompareObjectCmdlet implements ICmdlet {
 
 // ─── Select-String ────────────────────────────────────────────────────────
 
+interface MatchSource {
+  readonly path: string;
+  readonly lines: readonly string[];
+}
+
+function patternList(value: PSValue): string[] {
+  return (Array.isArray(value) ? value : [value])
+    .filter(item => item !== null && item !== undefined)
+    .map(item => psValueToString(item));
+}
+
+function contextWindow(value: PSValue): { before: number; after: number } {
+  const [before, after] = (Array.isArray(value) ? value : [value]).map(item => Math.max(0, Number(item) || 0));
+  return { before: before ?? 0, after: after ?? before ?? 0 };
+}
+
+function fileSources(ctx: CmdletContext, paths: readonly string[]): MatchSource[] {
+  const files = ctx.providers.filesystem;
+  if (!files) return [];
+  const sources: MatchSource[] = [];
+  for (const given of paths) {
+    const absolute = files.normalizePath(given, files.getCwd());
+    const separator = absolute.lastIndexOf('\\');
+    const directory = absolute.slice(0, separator);
+    const pattern = absolute.slice(separator + 1);
+    const matched = hasWildcard(pattern)
+      ? files.listDir(directory).filter(entry => !entry.isDirectory && wildcardMatches(pattern, entry.name))
+        .map(entry => `${directory}\\${entry.name}`)
+      : [absolute];
+    for (const path of matched) {
+      if (!files.exists(path)) {
+        ctx.emitError(`Select-String : The file ${path} cannot be read: Could not find file '${path}'.`);
+        continue;
+      }
+      const text = files.readFile(path);
+      const lines = text.split(/\r?\n/);
+      if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+      sources.push({ path, lines });
+    }
+  }
+  return sources;
+}
+
+function pipelineSources(ctx: CmdletContext, input: readonly PSValue[]): MatchSource[] {
+  const lines: string[] = [];
+  const sources: MatchSource[] = [];
+  const flush = (): void => {
+    if (lines.length > 0) sources.push({ path: 'InputStream', lines: [...lines] });
+    lines.length = 0;
+  };
+  for (const item of input) {
+    const fullName = item !== null && typeof item === 'object' && !Array.isArray(item)
+      ? (item as Record<string, PSValue>)['FullName'] : undefined;
+    if (typeof fullName === 'string') {
+      flush();
+      sources.push(...fileSources(ctx, [fullName]));
+    } else {
+      lines.push(psValueToString(item));
+    }
+  }
+  flush();
+  return sources;
+}
+
 export class SelectStringCmdlet implements ICmdlet {
   readonly name = 'select-string';
   readonly parameters = ['Pattern', 'Path', 'LiteralPath', 'InputObject', 'SimpleMatch', 'CaseSensitive', 'Quiet', 'List', 'NotMatch', 'AllMatches', 'Context'] as const;
@@ -685,27 +750,64 @@ export class SelectStringCmdlet implements ICmdlet {
   readonly aliases = ['sls'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const patterns    = stringArgs(ctx.positional, ctx.named, 'pattern');
-    const pat         = patterns[0] ?? '';
-    const simple      = isTruthy(ctx.named['simplematch'] ?? false);
-    const notMatch    = isTruthy(ctx.named['notmatch']    ?? false);
-    const caseSens    = isTruthy(ctx.named['casesensitive'] ?? false);
-    const input       = toArray(ctx.pipeInput);
+    const patternNamed = ctx.named['pattern'] !== undefined;
+    const patterns = patternList(patternNamed ? ctx.named['pattern'] : (ctx.positional[0] ?? ''));
+    const pathValue = ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[patternNamed ? 0 : 1];
+    const simple = isTruthy(ctx.named['simplematch'] ?? false);
+    const notMatch = isTruthy(ctx.named['notmatch'] ?? false);
+    const caseSensitive = isTruthy(ctx.named['casesensitive'] ?? false);
+    const allMatches = isTruthy(ctx.named['allmatches'] ?? false);
+    const firstOnly = isTruthy(ctx.named['list'] ?? false);
+    const quiet = isTruthy(ctx.named['quiet'] ?? false);
+    const context = contextWindow(ctx.named['context'] ?? 0);
 
-    const escaped = pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = simple
-      ? new RegExp(escaped,  caseSens ? '' : 'i')
-      : new RegExp(pat,      caseSens ? '' : 'i');
+    const flags = caseSensitive ? 'g' : 'gi';
+    const expressions = patterns.map(pattern => new RegExp(
+      simple ? pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : pattern, flags));
 
-    const matches: Record<string, PSValue>[] = [];
-    for (const item of input) {
-      const line = psValueToString(item);
-      const hit  = re.test(line);
-      if (hit !== notMatch) {
-        matches.push({ Line: line, Pattern: pat, LineNumber: matches.length + 1 });
-      }
+    const literal = ctx.named['literalpath'] !== undefined;
+    const sources = pathValue !== undefined && pathValue !== null
+      ? fileSources(ctx, patternList(pathValue).map(path => literal ? path.replace(/[*?]/g, '') : path))
+      : pipelineSources(ctx, toArray(ctx.named['inputobject'] ?? ctx.pipeInput));
+
+    const results: Record<string, PSValue>[] = [];
+    for (const source of sources) {
+      let sourceMatched = false;
+      source.lines.forEach((line, index) => {
+        if (firstOnly && sourceMatched) return;
+        const found: Array<{ Value: string; Index: number; Length: number }> = [];
+        let hit = false;
+        for (const expression of expressions) {
+          expression.lastIndex = 0;
+          let match: RegExpExecArray | null;
+          while ((match = expression.exec(line)) !== null) {
+            hit = true;
+            found.push({ Value: match[0], Index: match.index, Length: match[0].length });
+            if (!allMatches || match[0] === '') break;
+          }
+          if (hit && !allMatches) break;
+        }
+        if (hit === notMatch) return;
+        sourceMatched = true;
+        results.push({
+          IgnoreCase: !caseSensitive,
+          LineNumber: index + 1,
+          Line: line,
+          Filename: source.path === 'InputStream' ? 'InputStream' : source.path.slice(source.path.lastIndexOf('\\') + 1),
+          Path: source.path,
+          Pattern: patterns.join(','),
+          Context: context.before > 0 || context.after > 0
+            ? {
+              PreContext: source.lines.slice(Math.max(0, index - context.before), index),
+              PostContext: source.lines.slice(index + 1, index + 1 + context.after),
+            }
+            : null,
+          Matches: notMatch ? [] : found,
+        });
+      });
     }
-    return matches;
+    if (quiet) return results.length > 0;
+    return results;
   }
 }
 

@@ -750,6 +750,8 @@ export function formatList(objects: PSObject[], args: string): string {
  */
 export function formatDefault(objects: PSObject[]): string {
   if (objects.length === 0) return '';
+  const matchInfo = matchInfoView(objects);
+  if (matchInfo !== null) return matchInfo;
   const serverManager = serverManagerView(objects);
   if (serverManager !== null) return serverManager;
   const partitions = partitionDiskGroups(objects);
@@ -765,6 +767,30 @@ export function formatDefault(objects: PSObject[]): string {
   }
   if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+function matchInfoView(objects: PSObject[]): string | null {
+  const lower = new Set(Object.keys(objects[0]).map(k => k.toLowerCase()));
+  for (const key of ['line', 'linenumber', 'pattern', 'path', 'filename', 'ignorecase']) {
+    if (!lower.has(key)) return null;
+  }
+  const rows: string[] = [];
+  for (const entry of objects) {
+    const match = entry as Record<string, unknown>;
+    const stream = match.Path === 'InputStream';
+    const number = Number(match.LineNumber);
+    const context = match.Context as { PreContext: string[]; PostContext: string[] } | null;
+    const render = (text: string, at: number, marker: string): string =>
+      stream ? `${marker}${text}` : `${marker}${String(match.Path)}:${at}:${text}`;
+    if (context !== null && context !== undefined) {
+      context.PreContext.forEach((text, i) => rows.push(render(text, number - context.PreContext.length + i, '  ')));
+      rows.push(render(String(match.Line), number, '> '));
+      context.PostContext.forEach((text, i) => rows.push(render(text, number + 1 + i, '  ')));
+    } else {
+      rows.push(render(String(match.Line), number, ''));
+    }
+  }
+  return rows.join('\n');
 }
 
 /**

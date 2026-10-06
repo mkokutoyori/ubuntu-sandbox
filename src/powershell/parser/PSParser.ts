@@ -318,6 +318,11 @@ export class PSParser {
   private startsCommandArgument(): boolean {
     const t = this.peek().type;
     if (this.canStartExpression()) return true;
+    if (t === PSTokenType.PLUS) {
+      const suite = this.peekAt(1);
+      if (suite !== undefined && suite.type === PSTokenType.WORD
+          && suite.position.offset === this.peek().position.offset + 1) return true;
+    }
     if (BAREWORD_LEADERS.has(t) || t === PSTokenType.DOT || t === PSTokenType.RANGE) return true;
     return t === PSTokenType.WORD && this.peekAt(1)?.type !== PSTokenType.LBRACE;
   }
@@ -387,19 +392,24 @@ export class PSParser {
 
     const parameters: PSCommandParameter[] = [];
     const args: PSExpression[] = [];
+    const sequence: Array<PSCommandParameter | PSExpression> = [];
 
     // Parse parameters and arguments
     while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE) && !this.isRedirection()) {
       if (this.check(PSTokenType.PARAMETER)) {
-        parameters.push(this.parseCommandParameter());
+        const parameter = this.parseCommandParameter();
+        parameters.push(parameter);
+        sequence.push(parameter);
       } else if (this.startsCommandArgument()) {
-        args.push(this.parseCommandArgument());
+        const argument = this.parseCommandArgument();
+        args.push(argument);
+        sequence.push(argument);
       } else {
         break;
       }
     }
 
-    return makeCommand(name, parameters, args, pos);
+    return makeCommand(name, parameters, args, pos, sequence);
   }
 
   /**
@@ -495,6 +505,7 @@ export class PSParser {
     const pos = this.pos_();
     const paramTok = this.advance(); // consume PARAMETER token
     const name = paramTok.value;    // already lowercased
+    const text = tokenText(paramTok);
 
     // If next token can be a value (not another param, not a terminator, not a pipe)
     // and the param name is NOT a comparison/logical operator used standalone
@@ -509,7 +520,7 @@ export class PSParser {
       value = this.parseCommandArgument();
     }
 
-    return makeCommandParam(name, value, pos);
+    return makeCommandParam(name, value, pos, text);
   }
 
   /**
@@ -546,6 +557,13 @@ export class PSParser {
     // A command-argument value beginning with unary `-`/`+` (`-Age -5`,
     // `-Minimum -10`, `-n -$x`) — parse the full unary expression;
     // parsePostfixExpression alone can't consume the prefix sign.
+    if (tok.type === PSTokenType.PLUS) {
+      const suite = this.peekAt(1);
+      if (suite !== undefined && suite.type === PSTokenType.WORD
+          && suite.position.offset === tok.position.offset + 1) {
+        return this.parseBareword(false);
+      }
+    }
     if ((tok.type === PSTokenType.MINUS || tok.type === PSTokenType.PLUS)) {
       const n = this.peekAt(1)?.type;
       if (n === PSTokenType.NUMBER || n === PSTokenType.VARIABLE
@@ -604,6 +622,12 @@ export class PSParser {
       if (nxt.position.offset !== prevEnd) break;
       if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
       if (nxt.type === PSTokenType.RANGE && !withRange) break;
+      if (nxt.type === PSTokenType.STRING_SINGLE
+          || (nxt.type === PSTokenType.STRING_DOUBLE && !/[$`]/.test(nxt.value))) {
+        value += nxt.value;
+        this.advance();
+        break;
+      }
       if (!BAREWORD_GLUE.has(nxt.type)) break;
       value += tokenText(nxt);
       this.advance();
@@ -643,6 +667,14 @@ export class PSParser {
    * Parses the right-hand side of an assignment.
    * Handles: single expression, comma list, cmdlet call with named params, and pipeline.
    */
+  private parseLoopStatementOnRight(): PSStatement | null {
+    if (this.checkValue(PSTokenType.WORD, 'foreach') && this.peekAt(1)?.type === PSTokenType.LPAREN) return this.parseForeachStatement();
+    if (this.checkValue(PSTokenType.WORD, 'for') && this.peekAt(1)?.type === PSTokenType.LPAREN) return this.parseForStatement();
+    if (this.checkValue(PSTokenType.WORD, 'while')) return this.parseWhileStatement();
+    if (this.checkValue(PSTokenType.WORD, 'do')) return this.parseDoStatement();
+    return null;
+  }
+
   private parseAssignmentRHS(): PSExpression {
     const pos = this.pos_();
 
@@ -655,6 +687,8 @@ export class PSParser {
       const stmt = this.parseIfStatement();
       return { type: 'StatementExpression', stmt, position: pos } as unknown as PSExpression;
     }
+    const loop = this.parseLoopStatementOnRight();
+    if (loop !== null) return { type: 'StatementExpression', stmt: loop, position: pos } as unknown as PSExpression;
 
     const first = this.parseCommaList();
 
@@ -671,18 +705,24 @@ export class PSParser {
     if (hasNamedParam || hasPositionalArg) {
       const params: PSCommandParameter[] = [];
       const args:   PSExpression[]       = [];
-      while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)) {
-        params.push(this.parseCommandParameter());
-      }
+      const sequence: Array<PSCommandParameter | PSExpression> = [];
+      const takeParameters = (): void => {
+        while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)) {
+          const parameter = this.parseCommandParameter();
+          params.push(parameter);
+          sequence.push(parameter);
+        }
+      };
+      takeParameters();
       while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE)
              && !this.isRedirection()
              && this.canStartExpression()) {
-        args.push(this.parseCommandArgument());
-        while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)) {
-          params.push(this.parseCommandParameter());
-        }
+        const argument = this.parseCommandArgument();
+        args.push(argument);
+        sequence.push(argument);
+        takeParameters();
       }
-      const firstCmd = makeCommand(first, params, args, pos);
+      const firstCmd = makeCommand(first, params, args, pos, sequence);
       const cmds = [firstCmd];
       while (this.check(PSTokenType.PIPE)) { this.advance(); cmds.push(this.parseCommand()); }
       const redirections = this.parseTrailingStreamRedirections();

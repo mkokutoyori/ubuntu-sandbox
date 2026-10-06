@@ -287,9 +287,13 @@ export class LinuxLogManager {
    * to keep `/var/log/auth.log` (and the journal) coherent with account
    * changes. `tag` is the responsible program (`useradd`, `passwd`, …).
    */
-  logAuth(tag: string, message: string, pid?: number, unit?: string): void {
+  allocatePid(): number {
+    return this.nextPid++;
+  }
+
+  logAuth(tag: string, message: string, pid?: number, unit?: string, priority = 'info'): void {
     this.addEntry({
-      priority: PRIORITY_NAMES.info,
+      priority: PRIORITY_NAMES[priority] ?? PRIORITY_NAMES.info,
       facility: FACILITY_NAMES.auth,
       // Ubuntu's systemd unit for sshd is `ssh.service`, even though
       // the binary identifies itself as `sshd` in syslog lines. Let

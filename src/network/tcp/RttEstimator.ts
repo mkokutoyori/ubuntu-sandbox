@@ -8,7 +8,7 @@
  * must only clock a segment that was never retransmitted, since an ACK
  * covering a retransmitted segment cannot tell which transmission it
  * actually acknowledges), the RTO tracks real SRTT/RTTVAR instead.
- * `currentRto()`/`backoff()`/`reset()`'s contract never changed across
+ * `currentRto()`/`backoff()`'s contract never changed across
  * P1 → P4, so `TcpStack.ts` only gained the one new `sample()` call site.
  */
 
@@ -18,6 +18,17 @@ export const TCP_R1_RETRANSMITS = 3;
 export const TCP_DATA_R2_MS = 100_000;
 export const TCP_SYN_R2_MS = 180_000;
 export const TCP_RTO_AFTER_SYN_RETRANSMIT_MS = 3_000;
+export const TCP_CLOCK_GRANULARITY_MS = 1;
+
+export interface RtoFloor {
+  readonly granularityMs: number;
+  readonly minRtoMs: number;
+}
+
+export const RFC_RTO_FLOOR: RtoFloor = {
+  granularityMs: TCP_CLOCK_GRANULARITY_MS,
+  minRtoMs: TCP_INITIAL_RTO_MS,
+};
 
 /** RFC 6298 §2.3 smoothing constants. */
 const RTT_ALPHA = 1 / 8;
@@ -33,6 +44,7 @@ export class RttEstimator {
   constructor(
     private readonly initialRtoMs: number = TCP_INITIAL_RTO_MS,
     private readonly maxRtoMs: number = TCP_MAX_RTO_MS,
+    private readonly floor: RtoFloor = RFC_RTO_FLOOR,
   ) {
     this.rtoMs = initialRtoMs;
   }
@@ -57,11 +69,6 @@ export class RttEstimator {
     this.rtoMs = Math.max(this.rtoMs, minimumMs);
   }
 
-  /** New data was acknowledged (real progress) — drop back to the SRTT-based estimate (or the fixed base, before any sample exists). */
-  reset(): void {
-    this.rtoMs = this.srttMs === null ? this.initialRtoMs : this.computeRtoFromSrtt();
-  }
-
   /**
    * Feed a genuine round-trip sample (RFC 6298 §2). Callers must apply
    * Karn's algorithm themselves — only clock a segment that was never
@@ -82,9 +89,8 @@ export class RttEstimator {
   }
 
   private computeRtoFromSrtt(): number {
-    const raw = this.srttMs! + Math.max(1, RTT_K * this.rttvarMs!);
-    // RFC 6298 §2.4 — round up to at least 1 second.
-    return Math.min(Math.max(raw, TCP_INITIAL_RTO_MS), this.maxRtoMs);
+    const raw = this.srttMs! + Math.max(this.floor.granularityMs, RTT_K * this.rttvarMs!);
+    return Math.min(Math.max(raw, this.floor.minRtoMs), this.maxRtoMs);
   }
 }
 

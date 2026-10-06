@@ -26,6 +26,13 @@ beforeEach(() => {
   vi.useRealTimers();
 });
 
+function windowsOnQuietLink(): WindowsPC {
+  const pc = new WindowsPC('windows-pc', 'WinPC');
+  const peer = new LinuxPC('linux-pc', 'QUIET');
+  new Cable('quiet-link').connect(pc.getPorts()[0], peer.getPort('eth0')!);
+  return pc;
+}
+
 async function labWithDhcpServer(): Promise<{ router: CiscoRouter; pc: LinuxPC }> {
   const router = new CiscoRouter('R1');
   const pc = new LinuxPC('linux-pc', 'PC1');
@@ -57,7 +64,7 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
       
       // Then: Should start DHCP process
       expect(output).toContain('DHCPDISCOVER on eth0');
-      expect(output).toContain('INIT state');
+      expect(output).not.toContain('INIT state');
       
       // Verify internal state
       const dhcpState = pc.getDHCPState('eth0');
@@ -66,13 +73,13 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
     });
 
     it('Windows DHCP client should broadcast DHCPDiscover', async () => {
-      const pc = new WindowsPC('windows-pc', 'WinPC');
+      const pc = windowsOnQuietLink();
       
       const output = await pc.executeCommand('ipconfig /release');
-      expect(output).toContain('successfully released');
+      expect(output).not.toContain('IPv4 Address');
       
       const output2 = await pc.executeCommand('ipconfig /renew');
-      expect(output2).toMatch(/IPv4 Address/);
+      expect(output2).toContain('unable to contact your DHCP server');
       expect(output2).not.toContain('DHCP Discover');
     });
   });
@@ -344,8 +351,8 @@ describe('Group 2: Functional — DORA Process', () => {
       expect(beforeRelease).toContain('192.168.1.');
 
       // Release the lease
-      const releaseOutput = await pc.executeCommand('sudo dhclient -r eth0');
-      expect(releaseOutput).toContain('released');
+      const releaseOutput = await pc.executeCommand('sudo dhclient -v -r eth0');
+      expect(releaseOutput).toContain('DHCPRELEASE of 192.168.1.');
 
       // Verify no IP
       const afterRelease = await pc.executeCommand('ip addr show eth0 | grep "inet "');
@@ -473,18 +480,21 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
   // Windows DHCP Client Commands
   describe('Windows: DHCP Client Commands', () => {
     it('should release and renew DHCP lease', async () => {
+      const router = new CiscoRouter('R1');
+      for (const c of [
+        'enable', 'configure terminal', 'interface GigabitEthernet0/0',
+        'ip address 192.168.1.1 255.255.255.0', 'no shutdown', 'exit',
+        'ip dhcp pool LAN', 'network 192.168.1.0 255.255.255.0', 'default-router 192.168.1.1', 'exit', 'end',
+      ]) await router.executeCommand(c);
       const pc = new WindowsPC('windows-pc', 'WinPC');
+      new Cable('win-dhcp').connect(router.getPort('GigabitEthernet0/0')!, pc.getPorts()[0]);
       
-      // Release current IP
       const releaseOutput = await pc.executeCommand('ipconfig /release');
-      expect(releaseOutput).toContain('successfully released');
+      expect(releaseOutput).not.toContain('IPv4 Address');
       
-      // Renew IP
       const renewOutput = await pc.executeCommand('ipconfig /renew');
-      expect(renewOutput).toContain('DHCP');
-      expect(renewOutput).toContain('IPv4 Address');
+      expect(renewOutput).toMatch(/IPv4 Address[ .]*: 192\.168\.1\.\d+/);
       
-      // Show all info
       const allOutput = await pc.executeCommand('ipconfig /all');
       expect(allOutput).toContain('DHCP Enabled');
       expect(allOutput).toContain('Lease Obtained');
@@ -492,7 +502,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
     });
 
     it('should show DHCP client events in Event Log', async () => {
-      const pc = new WindowsPC('windows-pc', 'WinPC');
+      const pc = windowsOnQuietLink();
 
       // Une machine qui n'a jamais rien tenté n'a pas d'événement DHCP —
       // l'implémentation précédente en fabriquait un quand le journal

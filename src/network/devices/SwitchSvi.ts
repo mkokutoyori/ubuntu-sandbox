@@ -35,6 +35,7 @@ import type { DHCPServer } from '../dhcp/DHCPServer';
 import { buildDhcpServerReply, dhcpReplyRoute } from '../dhcp/DhcpServerExchange';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../dhcp/DhcpRelay';
 import { dhcpLinkDestination, dhcpServerReplyFrame } from '../dhcp/DhcpServerReplyFrame';
+import { NETWORK_OS_DHCP_EMISSION } from '../dhcp/DhcpIpEmission';
 import { DHCP_SERVER_PORT } from '../core/WellKnownPorts';
 import { buildUdpOverIpv4, type UdpSendRequest } from '../layers/transport/UdpEgress';
 
@@ -486,7 +487,7 @@ export class SwitchSvi {
         const svi = sviNamed(iface);
         if (svi?.ip === undefined) return;
         this.host.egressOnVlan(svi.vlan, dhcpServerReplyFrame(
-          reply, svi.ip, this.host.getBridgeMac(), dhcpLinkDestination(route, reply.chaddr)));
+          reply, svi.ip, this.host.getBridgeMac(), dhcpLinkDestination(route, reply.chaddr), NETWORK_OS_DHCP_EMISSION));
       },
       relayInformationOption: () => this.host.isDhcpRelayInfoEnabled?.() ?? false,
       countForward: () => server()?.countRelayForward(),
@@ -519,7 +520,7 @@ export class SwitchSvi {
       return;
     }
     this.host.egressOnVlan(svi.vlan, dhcpServerReplyFrame(
-      reply, svi.ip, this.host.getBridgeMac(), dhcpLinkDestination(route, pkt.chaddr)));
+      reply, svi.ip, this.host.getBridgeMac(), dhcpLinkDestination(route, pkt.chaddr), NETWORK_OS_DHCP_EMISSION));
   }
 
   /**

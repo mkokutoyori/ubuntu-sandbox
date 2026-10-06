@@ -87,12 +87,13 @@ describe('Scénario 10 — rôles FSMO : vérification, transfert et saisie (man
     it('w32tm /query /status indique DC02.mandeng.lan comme source NTP après transfert du PDC Emulator', async () => {
       const { dc1, dc2 } = await buildTwoDcs();
       await run(ps(dc1), 'Move-ADDirectoryServerOperationMasterRole -Identity "DC02.mandeng.lan" -OperationMasterRole PDCEmulator -Confirm:$false');
+      const out = await dc1.executeCmdCommand('w32tm /query /status');
+      expect(out).toMatch(/Source: DC02\.mandeng\.lan/);
       // Real AD writes the role change on the current/target DC and
       // replicates it out — an admin who wants it visible on another DC
       // immediately forces that sync, same as `repadmin /syncall` here.
       dc2.replicateFrom('192.168.10.10');
-      const out = await dc2.executeCmdCommand('w32tm /query /status');
-      expect(out).toMatch(/DC02\.mandeng\.lan/);
+      expect(await dc2.executeCmdCommand('w32tm /query /source')).toBe('Local CMOS Clock');
     });
   });
 

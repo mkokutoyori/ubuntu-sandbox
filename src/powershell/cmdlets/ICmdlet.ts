@@ -52,6 +52,7 @@ export interface ICmdlet {
    * `ctx.pipeInput` itself must NOT declare it: the runtime would fan the
    * pipeline out before the body ever saw it.
    */
+  readonly nativeProgram?: true;
   readonly pipelineByPropertyName?: true;
   readonly pipelineByValue?: string;
 

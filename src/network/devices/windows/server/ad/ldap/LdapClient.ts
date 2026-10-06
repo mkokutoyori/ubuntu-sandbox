@@ -180,8 +180,8 @@ export class LdapClient {
 }
 
 /** Dial TCP/389 on `targetIp` and wrap the socket in an `LdapClient`. Does not bind — call `.bind()` next. */
-export function dialLdap(tcpStack: TcpStack, targetIp: string): LdapConnectResult {
-  const socket = tcpStack.connect(targetIp, 389);
+export function dialLdap(tcpStack: TcpStack, targetIp: string, port = 389): LdapConnectResult {
+  const socket = tcpStack.connect(targetIp, port);
   if (!socket || socket.state !== 'established') {
     return { ok: false, error: "A local error occurred (Can't contact LDAP server)" };
   }

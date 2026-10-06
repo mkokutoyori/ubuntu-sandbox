@@ -58,6 +58,9 @@ export const VSFTPD_UPSTREAM_SAMPLE_CONF = [
   '# listens on IPv4 sockets. This directive cannot be used in conjunction',
   '# with the listen_ipv6 directive.',
   'listen=YES',
+  '#',
+  '# Name of the PAM service vsftpd authenticates local users against.',
+  'pam_service_name=vsftpd',
   '',
 ].join('\n');
 
@@ -75,11 +78,12 @@ const STRING_DEFAULTS: Readonly<Record<string, string | null>> = {
   anon_root: null,
   ftp_username: 'ftp',
   ftpd_banner: null,
+  pam_service_name: 'ftp',
 };
 
 const HARMLESS_DIRECTIVES: ReadonlySet<string> = new Set([
   'dirmessage_enable', 'xferlog_enable', 'xferlog_std_format', 'connect_from_port_20',
-  'listen', 'listen_ipv6', 'use_localtime', 'pam_service_name', 'secure_chroot_dir',
+  'listen', 'listen_ipv6', 'use_localtime', 'secure_chroot_dir',
 ]);
 
 export interface VsftpdSettings {
@@ -128,7 +132,7 @@ export interface VsftpdHost {
   tcpStack(): TcpStack;
   account(username: string): VsftpdAccount | null;
   groupsOf(username: string): readonly number[];
-  checkPassword(username: string, password: string): boolean;
+  authenticate(service: string, username: string, password: string): boolean;
 }
 
 function isAnonymous(username: string): boolean {
@@ -175,7 +179,7 @@ export class LinuxVsftpdService implements ServiceSocketServer {
       authenticate: (username, password) => {
         if (isAnonymous(username)) return flags.anonymous_enable && this.anonymousAccount(strings) !== null;
         return flags.local_enable && this.host.account(username) !== null
-          && this.host.checkPassword(username, password);
+          && this.host.authenticate(strings.pam_service_name ?? 'ftp', username, password);
       },
       sessionFor: (username) => this.sessionFor(username, flags, strings),
       permitsWrite: (username, verb) => permitsWrite(flags, isAnonymous(username), verb),

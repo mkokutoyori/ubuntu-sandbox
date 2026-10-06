@@ -61,12 +61,12 @@ export function toInteractiveSteps(plan: CommandInteractionPlan): InteractiveSte
         break;
       }
       case 'output':
-        out.push({ type: 'output', outputLines: [...step.lines] });
+        out.push({ type: 'output', get outputLines(): string[] { return [...step.lines]; } });
         break;
       case 'text':
         out.push({
           type: 'text',
-          prompt: step.prompt,
+          get prompt(): string { return step.prompt; },
           allowEmpty: step.allowEmpty ?? false,
           defaultValue: step.defaultValue,
           storeAs: step.storeAs,
@@ -76,7 +76,7 @@ export function toInteractiveSteps(plan: CommandInteractionPlan): InteractiveSte
       case 'password':
         out.push({
           type: 'password',
-          prompt: step.prompt,
+          get prompt(): string { return step.prompt; },
           mask: 'hidden',
           storeAs: step.storeAs,
           validation: adaptValidation(step.validate),

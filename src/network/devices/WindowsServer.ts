@@ -1482,6 +1482,18 @@ export class WindowsServer extends WindowsPC {
       { dependencies: ['NTDS'], account: 'NT AUTHORITY\\SYSTEM' });
     svcMgr.addService('ADWS', 'Active Directory Web Services', 'Provides a web service interface to Active Directory domains',
       { dependencies: ['NTDS'], account: 'NT AUTHORITY\\NETWORK SERVICE', processName: 'Microsoft.ActiveDirectory.WebServices.exe' });
+    this.startDomainTimeServer();
+  }
+
+  private startDomainTimeServer(): void {
+    const agent = this.getNtpAgent();
+    if (this.directoryStore?.getDomainFsmoRoleOwner('PDCEmulator') === this.getHostname()) {
+      agent.setServerMode(true);
+      agent.setLocalStratum(1);
+      return;
+    }
+    this.getW32Time().configure({ update: true });
+    agent.setServerMode(true, false);
   }
 
   private logDirectoryServiceStartup(): void {

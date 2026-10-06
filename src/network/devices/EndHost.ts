@@ -30,7 +30,7 @@ import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters }
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
-import { TcpStack, type TcpOptionPolicy } from '../tcp/TcpStack';
+import { TcpStack, type TcpOptionPolicy, type TcpMibSink } from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
@@ -135,7 +135,8 @@ import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
 import { addressAnswersOnLink } from '../arp/AddressProbe';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import { dhcpClientFrame, isDhcpReplyFor } from '../dhcp/DhcpClientFrame';
-import type { DhcpUnicastTarget } from '../dhcp/types';
+import type { DhcpIpEmission, DhcpUnicastTarget } from '../dhcp/types';
+import { ISC_DHCLIENT_PERSONALITY } from '../dhcp/DhcpClientPersonality';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import {
   DHCPv6Packet, DHCPV6_OPTION, DHCPV6_STATUS, DHCPV6_IRT_DEFAULT, DHCPV6_IRT_INFINITY, DHCPV6_IRT_MINIMUM,
@@ -584,6 +585,23 @@ export abstract class EndHost extends Equipment {
   private readonly forwardedDatagrams = new WeakSet<IPv4Packet>();
 
   getProtocolCounters(): ProtocolCounters { return this.protocolCounters; }
+
+  private readonly tcpMib: TcpMibSink = {
+    activeOpen: () => { this.protocolCounters.tcpActiveOpens++; },
+    passiveOpen: () => { this.protocolCounters.tcpPassiveOpens++; },
+    attemptFail: () => { this.protocolCounters.tcpAttemptFails++; },
+    establishedReset: () => { this.protocolCounters.tcpEstabResets++; },
+    establishedEntered: () => { this.protocolCounters.tcpCurrEstab++; },
+    establishedLeft: () => { this.protocolCounters.tcpCurrEstab--; },
+    segmentIn: () => { this.protocolCounters.tcpInSegs++; },
+    segmentOut: () => { this.protocolCounters.tcpOutSegs++; },
+    retransmitted: () => { this.protocolCounters.tcpRetransSegs++; },
+    inError: (checksum) => {
+      this.protocolCounters.tcpInErrs++;
+      if (checksum) this.protocolCounters.tcpInCsumErrors++;
+    },
+    outReset: () => { this.protocolCounters.tcpOutRsts++; },
+  };
 
   ignoresBroadcastEcho(): boolean { return this.broadcastEchoIgnored; }
   setIgnoresBroadcastEcho(on: boolean): void { this.broadcastEchoIgnored = on; }
@@ -1116,6 +1134,7 @@ export abstract class EndHost extends Equipment {
       optionPolicy: () => this.tcpOptionPolicy,
       restartsAfterIdle: () => this.tcpRestartsAfterIdle,
       retryPolicy: () => this.tcpRetryPolicy,
+      mib: this.tcpMib,
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
@@ -1170,6 +1189,7 @@ export abstract class EndHost extends Equipment {
       },
     );
     this.dhcpClient.setBroadcastFlag(false);
+    this.dhcpClient.setPersonality(ISC_DHCLIENT_PERSONALITY);
     this.dhcpClient.setLinkLocalAutoconfiguration(() => this.linkLocalAutoconfigurationEnabled());
     this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setHostnameProvider(() => this.getHostname());
@@ -1270,8 +1290,10 @@ export abstract class EndHost extends Equipment {
   private sendWireDhcpFrame(iface: string, pkt: DHCPPacket, target?: DhcpUnicastTarget): void {
     const port = this.ports.get(iface);
     if (!port) return;
-    this.sendFrame(iface, dhcpClientFrame(pkt, port.getMAC(), target));
+    this.sendFrame(iface, dhcpClientFrame(pkt, port.getMAC(), target, this.dhcpIpEmission()));
   }
+
+  protected dhcpIpEmission(): DhcpIpEmission { return { ttl: this.defaultTTL }; }
 
   protected onDhcpLeaseReleased(_iface: string): void {}
 
@@ -2720,7 +2742,6 @@ export abstract class EndHost extends Equipment {
       if (ipPkt.protocol === IP_PROTO_ICMP) {
         this.handleICMP(portName, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
-        this.protocolCounters.tcpInSegs++;
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_UDP) {
         // Un multicast sans écouteur se jette en silence, comme un
@@ -2920,8 +2941,6 @@ export abstract class EndHost extends Equipment {
     if (ipPkt.protocol === IP_PROTO_ICMP) {
       const icmp = ipPkt.payload as ICMPPacket;
       if (icmp && icmp.type === 'icmp') countIcmpOut(this.protocolCounters, icmp.icmpType);
-    } else if (ipPkt.protocol === IP_PROTO_TCP) {
-      this.protocolCounters.tcpOutSegs++;
     } else if (ipPkt.protocol === IP_PROTO_UDP) {
       this.protocolCounters.udpOutDatagrams++;
     } else if (ipPkt.protocol === IP_PROTO_UDPLITE) {

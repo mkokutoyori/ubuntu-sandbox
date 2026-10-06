@@ -86,12 +86,14 @@ export interface PSCommand extends ASTBase {
   parameters: PSCommandParameter[];
   /** Positional arguments (expressions not preceded by -ParamName) */
   arguments: PSExpression[];
+  sequence?: ReadonlyArray<PSCommandParameter | PSExpression>;
 }
 
 export interface PSCommandParameter extends ASTBase {
   type: 'CommandParameter';
   name: string;           // lowercase parameter name (without -)
   value: PSExpression | null;  // null for switch parameters
+  text?: string;
 }
 
 // ─── Assignment Statement ─────────────────────────────────────────────────────
@@ -551,12 +553,15 @@ export function makePipelineStatement(pipeline: PSPipeline, redirections: PSRedi
   return { type: 'PipelineStatement', pipeline, redirections, position: pos };
 }
 
-export function makeCommand(name: PSExpression, params: PSCommandParameter[] = [], args: PSExpression[] = [], pos?: SourcePosition): PSCommand {
-  return { type: 'Command', name, parameters: params, arguments: args, position: pos };
+export function makeCommand(
+  name: PSExpression, params: PSCommandParameter[] = [], args: PSExpression[] = [], pos?: SourcePosition,
+  sequence?: ReadonlyArray<PSCommandParameter | PSExpression>,
+): PSCommand {
+  return { type: 'Command', name, parameters: params, arguments: args, position: pos, sequence };
 }
 
-export function makeCommandParam(name: string, value: PSExpression | null, pos?: SourcePosition): PSCommandParameter {
-  return { type: 'CommandParameter', name, value, position: pos };
+export function makeCommandParam(name: string, value: PSExpression | null, pos?: SourcePosition, text?: string): PSCommandParameter {
+  return { type: 'CommandParameter', name, value, position: pos, text };
 }
 
 export function makeLiteral(value: PSLiteralValue, raw: string, kind: PSLiteralExpression['kind'], pos?: SourcePosition): PSLiteralExpression {

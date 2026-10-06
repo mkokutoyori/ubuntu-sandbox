@@ -23,7 +23,7 @@ import type { LoginDefs } from './LoginDefs';
 import type { UseraddDefaults } from './UseraddDefaults';
 import type { PasswordPolicy } from '../policy/PasswordPolicy';
 import type { PasswordQualityPolicy } from '../policy/PasswordQualityPolicy';
-import type { AccountLockoutPolicy } from '../policy/AccountLockoutPolicy';
+import { UBUNTU_PAM_FILES } from '../../pam/UbuntuPamFiles';
 import { IAM_PATHS, ACCOUNT_DB_BACKUPS } from './IamPaths';
 
 // ─── Skeleton templates (seeded into /etc/skel) ─────────────────────────
@@ -112,8 +112,8 @@ export class IamFilesystem {
   // ─── Password policy projection ────────────────────────────────────────
 
   /**
-   * Seed the PAM password-policy configuration: `/etc/security/pwquality.conf`,
-   * `/etc/security/faillock.conf` and `/etc/pam.d/common-password`. Idempotent
+   * Seed the PAM password-policy configuration: `/etc/security/pwquality.conf`
+   * and `/etc/pam.d/common-password`. Idempotent
    * — existing files (operator edits) are preserved.
    */
   seedPasswordPolicy(policy: PasswordPolicy): void {
@@ -122,12 +122,14 @@ export class IamFilesystem {
     this.vfs.mkdirp(IAM_PATHS.faillockTallyDir, 0o755, 0, 0);
 
     this.writeIfAbsent(IAM_PATHS.pwqualityConf, policy.quality.render(), 0o644);
-    this.writeIfAbsent(IAM_PATHS.faillockConf, policy.lockout.render(), 0o644);
     this.writeIfAbsent(
       IAM_PATHS.pamCommonPassword,
       renderCommonPassword(policy.quality),
       0o644,
     );
+    this.vfs.mkdirp('/etc/security/limits.d', 0o755, 0, 0);
+    this.vfs.mkdirp('/etc/security/access.d', 0o755, 0, 0);
+    for (const file of UBUNTU_PAM_FILES) this.writeIfAbsent(file.path, file.content, file.mode);
   }
 
   /**
@@ -138,12 +140,6 @@ export class IamFilesystem {
     this.vfs.mkdirp(IAM_PATHS.securityDir, 0o755, 0, 0);
     this.vfs.writeFile(IAM_PATHS.pwqualityConf, quality.render(), 0, 0, 0o022);
     this.vfs.writeFile(IAM_PATHS.pamCommonPassword, renderCommonPassword(quality), 0, 0, 0o022);
-  }
-
-  /** Rewrite `/etc/security/faillock.conf` after the lockout policy changed. */
-  writeFaillockConfig(lockout: AccountLockoutPolicy): void {
-    this.vfs.mkdirp(IAM_PATHS.securityDir, 0o755, 0, 0);
-    this.vfs.writeFile(IAM_PATHS.faillockConf, lockout.render(), 0, 0, 0o022);
   }
 
   /** Rewrite `/etc/login.defs` after the aging policy changed. */

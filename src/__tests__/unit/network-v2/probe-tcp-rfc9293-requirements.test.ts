@@ -65,6 +65,11 @@
  * ACK (3), MUST-61, keep-alive (4), MUST-50, premier bloc SACK et bloc couvert
  * par l'ACK cumulatif (2), la minuterie de la RFC 6298 (6), la premiere sonde
  * de fenetre nulle une RTO apres le refus, MUST-37 et MUST-66 (3), MUST-42.
+ *
+ * Les cas de la minuterie de la RFC 6298 (arrondi a une seconde) et de la sonde
+ * de fenetre nulle tournent sur une machine Windows, qui garde l'arrondi de la
+ * RFC ; le plancher de 200 ms d'une machine Linux est mesure par
+ * `probe-linux-tcp-rto-floor`.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -368,7 +373,7 @@ describe('the receiver reports what it holds, newest first (RFC 2018 §4)', () =
 
 describe('the retransmission timer follows RFC 6298', () => {
   function clocked(handshakeRttMs: number) {
-    const peer = scriptedPeer();
+    const peer = scriptedPeer('windows');
     const accepted: TcpSocket[] = [];
     peer.dut.getTcpStack().listen(peer.ports.dut, { onAccept: (socket) => { accepted.push(socket); } });
     peer.send({ flags: 'S', sequence: PEER_ISN, options: [{ kind: 'mss', value: FULL }] });
@@ -457,7 +462,7 @@ describe('the retransmission timer follows RFC 6298', () => {
 
 describe('a zero window is probed on the retransmission timer, then less and less often (MUST-36, SHLD-29, SHLD-30)', () => {
   function closed() {
-    const peer = scriptedPeer();
+    const peer = scriptedPeer('windows');
     const connection = openPassive(peer, [{ kind: 'mss', value: FULL }], PEER_ISN, 0);
     connection.socket.setNoDelay(true);
     peer.clear();

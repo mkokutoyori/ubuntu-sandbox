@@ -362,6 +362,11 @@ export class LinuxProcessManager {
     this.nofileLimits.set(uid, limit);
   }
 
+  setNofileHardLimit(uid: number, limit: number): void {
+    this.nofileHardLimits.set(uid, limit);
+    if (this.nofileLimit(uid) > limit) this.nofileLimits.set(uid, limit);
+  }
+
   /**
    * Ce processus peut-il ouvrir un descripteur de plus (§F9.3) ?
    *

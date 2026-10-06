@@ -21,6 +21,7 @@ import { Logger } from '@/network/core/Logger';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import type { TcpCloseReason } from '@/network/tcp/types';
 import { TCP_INITIAL_RTO_MS, worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
+import { LINUX_RTO_MIN_MS } from '@/network/devices/linux/LinuxIpv4Settings';
 
 beforeEach(() => {
   resetCounters();
@@ -82,7 +83,7 @@ describe('TCP retransmission (PRD-TCP.md P1)', () => {
     expect(received).toEqual([]); // genuinely lost — not yet delivered
 
     // No progress until the RTO actually fires.
-    scheduler.advance(TCP_INITIAL_RTO_MS - 10);
+    scheduler.advance(LINUX_RTO_MIN_MS - 10);
     expect(received).toEqual([]);
 
     // RTO fires — the segment is retransmitted and this time gets through.

@@ -189,7 +189,7 @@ describe('a negotiated timestamp rides on every segment that is not a RST (RFC 7
     connection.socket.setNoDelay(true);
     connection.socket.write('ping');
     peer.send({
-      flags: 'PA', sequence: connection.peerIsn + 1, acknowledgement: connection.dutIsn + 1, payload: 'pong',
+      flags: 'PA', sequence: connection.peerIsn + 1, acknowledgement: connection.dutIsn + 1 + 4, payload: 'pong',
       options: [{ kind: 'timestamp', tsVal: 101, tsEcr: 0 }],
     });
     peer.advance(1000);

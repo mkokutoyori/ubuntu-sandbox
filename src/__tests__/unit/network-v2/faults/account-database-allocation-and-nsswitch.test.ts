@@ -39,7 +39,7 @@ const mgrOf = (d: LinuxPC) => (d as unknown as {
   executor: {
     userMgr: {
       getUser(u: string): { shell: string; uid: number } | undefined;
-      checkPassword(u: string, p: string): boolean;
+      passwordMatches(u: string, p: string): boolean;
     };
   };
 }).executor.userMgr;
@@ -222,11 +222,11 @@ describe('/etc/nsswitch.conf governs the account model', () => {
     await run(d, `sed -i 's|^passwd:.*|passwd:         systemd|' /etc/nsswitch.conf`);
 
     const mgr = (d as unknown as {
-      executor: { userMgr: { checkPassword(u: string, p: string): boolean } };
+      executor: { userMgr: { passwordMatches(u: string, p: string): boolean } };
     }).executor.userMgr;
     // Resolving a name and authenticating it are different questions: the
     // synthetic record makes the box usable, not open.
-    expect(mgr.checkPassword('root', 'admin')).toBe(false);
+    expect(mgr.passwordMatches('root', 'admin')).toBe(false);
   });
 
   it('the file wins over the synthetic record when both could answer', async () => {

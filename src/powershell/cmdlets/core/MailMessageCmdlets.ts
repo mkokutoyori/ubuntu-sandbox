@@ -19,7 +19,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { isPSCredential, getNetworkCredential } from '@/powershell/credential/PSCredential';
+import { namedCredential } from './RemotingCmdlets';
 
 function addressListOf(raw: PSValue): string[] {
   if (raw === undefined || raw === null) return [];
@@ -58,11 +58,7 @@ export class SendMailMessageCmdlet implements ICmdlet {
     const body = ctx.named['body'] !== undefined ? psValueToString(ctx.named['body']) : '';
     const port = ctx.named['port'] !== undefined ? Number(psValueToString(ctx.named['port'])) : undefined;
     const useSsl = ctx.named['usessl'] === true;
-    const rawCred = ctx.named['credential'];
-    const netCred = isPSCredential(rawCred) ? getNetworkCredential(rawCred) : undefined;
-    const credential = netCred
-      ? { username: netCred.userName, password: netCred.password }
-      : undefined;
+    const credential = namedCredential(ctx, 'credential');
 
     const result = ctx.providers.network.sendMailMessage({
       from, to, cc, bcc, subject, body, smtpServer, port, useSsl, credential,

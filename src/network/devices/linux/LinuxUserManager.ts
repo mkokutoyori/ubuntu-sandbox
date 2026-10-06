@@ -39,7 +39,6 @@ import { SYNTH_PASSWD, SYNTH_GROUP } from './nss/SystemdNssSource';
 import { PasswordPolicy } from './iam/policy/PasswordPolicy';
 import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
 import type { PasswordAgingPolicyInit } from './iam/policy/PasswordAgingPolicy';
-import type { AccountLockoutPolicyInit } from './iam/policy/AccountLockoutPolicy';
 import { PASSWORD_NEVER_EXPIRES } from './iam/policy/PasswordAgingPolicy';
 
 // Re-export the structural contracts so existing importers keep working.
@@ -795,27 +794,6 @@ export class LinuxUserManager {
     const user = this.users.get(username);
     if (!user) return `passwd: user '${username}' does not exist`;
 
-    // Evaluate the new secret against the quality policy and surface any
-    // weakness reactively. The low-level setter is warn-only (mirroring
-    // `passwd` run by root); a non-root caller blocked by an enforcing
-    // policy is gated upstream via {@link evaluatePassword}.
-    const verdict = this.passwordPolicy.quality.evaluate(password, {
-      username,
-      gecos: user.gecos,
-      oldPassword: this.passwords.get(username),
-    });
-    if (!verdict.acceptable) {
-      this.publish({
-        topic: 'linux.iam.password.rejected',
-        payload: {
-          deviceId: this.deviceId,
-          username,
-          reasons: verdict.messages,
-          blocked: false,
-        },
-      });
-    }
-
     user.password = `$6$simulated$${password}`;
     user.lastChange = this.daysSinceEpoch();
     this.passwords.set(username, password);
@@ -912,85 +890,11 @@ export class LinuxUserManager {
     return lines.join('\n');
   }
 
-  /**
-   * Verify a user's password. Returns true if correct.
-   *
-   * Also drives the `pam_faillock` tally: a correct password clears the
-   * account's consecutive-failure counter (and records the login), a wrong
-   * one increments it and, on reaching the lockout `deny` threshold,
-   * publishes a `linux.iam.user.locked-out` event.
-   */
-  checkPassword(username: string, password: string): boolean {
-    // Nothing file-specific to check here any more: with no /etc/shadow the
-    // reload simply yields no recoverable secret for anyone, so every
-    // password is refused — while the accounts themselves still parse out
-    // of /etc/passwd, which is why `id` keeps working and SSH public-key
-    // authentication (which never consults shadow) keeps letting people in.
-    // That dissociation is §F7.4, and it now falls out of the data.
+  passwordMatches(username: string, password: string): boolean {
     this.reloadIfChanged();
-    const account = this.users.get(username);
-    // `usermod -L` / `passwd -l` prefixes the shadow hash with `!` —
-    // no password, however correct, authenticates against it until
-    // unlocked. Distinct from (and checked ahead of) the faillock tally.
-    if (account?.locked) return false;
-    // pam_faillock denies every attempt — even the correct password — once
-    // an account has tripped the lockout threshold, until it's reset.
-    if (account && this.isAccountLockedOut(username)) return false;
-
+    if (this.users.get(username)?.locked) return false;
     const stored = this.passwords.get(username);
-    const correct = stored !== undefined && stored === password;
-
-    if (account) {
-      if (correct) {
-        account.recordLogin();
-      } else {
-        account.recordFailedLogin();
-        this.maybePublishLockout(account);
-      }
-    }
-    return correct;
-  }
-
-  /** `faillock --reset` — clear an account's consecutive-failure tally. */
-  resetFaillock(username: string): string {
-    const account = this.users.get(username);
-    if (!account) return `faillock: user '${username}' does not exist`;
-    account.failedLoginCount = 0;
-    return '';
-  }
-
-  /**
-   * Snapshot of the faillock tally — for the `faillock` command. With no
-   * `username` only accounts that currently carry failures are reported.
-   */
-  getFaillockReport(username?: string): Array<{ username: string; failures: number; lockedOut: boolean }> {
-    const accounts = username
-      ? (this.users.has(username) ? [this.users.get(username)!] : [])
-      : [...this.users.values()].filter((a) => a.failedLoginCount > 0);
-    return accounts.map((a) => ({
-      username: a.username,
-      failures: a.failedLoginCount,
-      lockedOut: this.isAccountLockedOut(a.username),
-    }));
-  }
-
-  /** True when an account has tripped the faillock lockout threshold. */
-  isAccountLockedOut(username: string): boolean {
-    const account = this.users.get(username);
-    if (!account) return false;
-    const lockout = this.passwordPolicy.lockout;
-    const stillLocked = lockout.shouldLockOut(
-      account.failedLoginCount,
-      account.uid === 0,
-      account.lastFailedLoginAt,
-    );
-    // unlock_time elapsed — pam_faillock clears the tally itself, not just
-    // the gate, so a later failure starts counting from zero again.
-    if (!stillLocked && account.failedLoginCount >= lockout.deny) {
-      account.failedLoginCount = 0;
-      account.lastFailedLoginAt = null;
-    }
-    return stillLocked;
+    return stored !== undefined && stored === password;
   }
 
   passwdStatus(username: string): string {
@@ -1186,24 +1090,13 @@ export class LinuxUserManager {
     return '';
   }
 
-  /** Reconfigure the account-lockout rules (`/etc/security/faillock.conf`). */
-  configureAccountLockout(changes: AccountLockoutPolicyInit): string {
-    const change = this.passwordPolicy.configureLockout(changes);
-    if (!change) return '';
-    this.publish({
-      topic: 'linux.iam.password-policy.changed',
-      payload: { deviceId: this.deviceId, section: 'lockout', changedFields: change.changedFields },
-    });
-    return '';
-  }
-
   /**
    * Re-materialise the on-disk file backing one password-policy section.
    * Called by {@link IamPolicyFilesProjection} in reaction to a
    * `linux.iam.password-policy.changed` event — the manager mutates and
    * announces, the projection keeps the filesystem coherent.
    */
-  applyPolicyToFilesystem(section: 'quality' | 'aging' | 'lockout'): void {
+  applyPolicyToFilesystem(section: 'quality' | 'aging'): void {
     switch (section) {
       case 'quality':
         this.iamFs.writeQualityConfig(this.passwordPolicy.quality);
@@ -1211,30 +1104,7 @@ export class LinuxUserManager {
       case 'aging':
         this.iamFs.rewriteLoginDefs(this.loginDefs);
         break;
-      case 'lockout':
-        this.iamFs.writeFaillockConfig(this.passwordPolicy.lockout);
-        break;
     }
-  }
-
-  /**
-   * Publish a faillock lockout event the first time an account's consecutive
-   * failure tally reaches the policy `deny` threshold.
-   */
-  private maybePublishLockout(account: LinuxUserAccount): void {
-    const lockout = this.passwordPolicy.lockout;
-    if (account.failedLoginCount !== lockout.deny) return;
-    if (!lockout.shouldLockOut(account.failedLoginCount, account.uid === 0)) return;
-    this.publish({
-      topic: 'linux.iam.user.locked-out',
-      payload: {
-        deviceId: this.deviceId,
-        username: account.username,
-        uid: account.uid,
-        failedAttempts: account.failedLoginCount,
-        deny: lockout.deny,
-      },
-    });
   }
 
   // ─── Group operations ─────────────────────────────────────────────

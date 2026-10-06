@@ -21,6 +21,7 @@ import { nullProviders }            from '@/powershell/providers/NullProviders';
 import type { PSProviders }          from '@/powershell/providers/PSProviders';
 import { registerCoreCmdlets }       from '@/powershell/cmdlets/core/index';
 import type { PSValue }              from '@/powershell/runtime/PSEnvironment';
+import type { NativeResult }         from '@/powershell/nativeAsync';
 import type { PSScriptBlock }        from '@/powershell/parser/PSASTNode';
 import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 
@@ -87,6 +88,12 @@ export class PSInterpreter {
   executeInteractive(code: string): string {
     return this.runtime.executeInteractive(code);
   }
+
+  beginInteractive(code: string): void { this.runtime.beginInteractive(code); }
+
+  resumeInteractive(): string { return this.runtime.resumeInteractive(); }
+
+  provideNativeResult(result: NativeResult): void { this.runtime.provideNativeResult(result); }
 
   getVariable(name: string): PSValue {
     return this.runtime.getVariable(name);

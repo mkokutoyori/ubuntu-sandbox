@@ -86,34 +86,16 @@ export interface UserAgingChangedPayload extends UserRef {
   expireDate: number;
 }
 
-/** An account tripped the faillock lockout threshold. */
-export interface UserLockedOutPayload extends UserRef {
-  /** Consecutive failed authentications recorded. */
-  failedAttempts: number;
-  /** The `deny` threshold from the lockout policy. */
-  deny: number;
-}
-
 // ─── Password policy ────────────────────────────────────────────────────
 
 /** Which section of the host password policy a change touched. */
-export type PasswordPolicySectionTopic = 'quality' | 'aging' | 'lockout';
+export type PasswordPolicySectionTopic = 'quality' | 'aging';
 
 /** The host-wide password policy was reconfigured. */
 export interface PasswordPolicyChangedPayload extends LinuxIamDeviceRef {
   section: PasswordPolicySectionTopic;
   /** Names of the policy fields that changed. */
   changedFields: string[];
-}
-
-/** A candidate password failed the quality policy. */
-export interface PasswordRejectedPayload extends LinuxIamDeviceRef {
-  /** The account the password was being set for. */
-  username: string;
-  /** The faithful `pam_pwquality` messages describing each violation. */
-  reasons: string[];
-  /** True when the policy actually blocked the change (vs. warn-only). */
-  blocked: boolean;
 }
 
 // ─── Group lifecycle ────────────────────────────────────────────────────
@@ -144,9 +126,7 @@ export type LinuxIamDomainEvent =
   | { topic: 'linux.iam.user.lock-state-changed'; payload: UserLockStateChangedPayload }
   | { topic: 'linux.iam.user.gecos-changed'; payload: UserGecosChangedPayload }
   | { topic: 'linux.iam.user.aging-changed'; payload: UserAgingChangedPayload }
-  | { topic: 'linux.iam.user.locked-out'; payload: UserLockedOutPayload }
   | { topic: 'linux.iam.password-policy.changed'; payload: PasswordPolicyChangedPayload }
-  | { topic: 'linux.iam.password.rejected'; payload: PasswordRejectedPayload }
   | { topic: 'linux.iam.group.created'; payload: GroupCreatedPayload }
   | { topic: 'linux.iam.group.deleted'; payload: GroupDeletedPayload }
   | { topic: 'linux.iam.group.modified'; payload: GroupModifiedPayload }

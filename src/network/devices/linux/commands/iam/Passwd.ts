@@ -23,6 +23,6 @@ export const passwdCommand: LinuxCommand = {
       exitCode: 1,
     }),
   },
-  run: (ctx, args) => ctx.executor.handlePasswd(args).output,
-  runWithStatus: (ctx, args) => Promise.resolve(ctx.executor.handlePasswd(args)),
+  run: (ctx, args, input) => ctx.executor.handlePasswd(args, input).output,
+  runWithStatus: (ctx, args, input) => Promise.resolve(ctx.executor.handlePasswd(args, input)),
 };

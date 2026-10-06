@@ -13,20 +13,10 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { ProcessInfo, IProcessProvider } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { isPSCredential, getNetworkCredential } from '@/powershell/credential/PSCredential';
-import { parseCredentialArg } from './RemotingCmdlets';
+import { namedCredential } from './RemotingCmdlets';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { wildcardToRegex, hasWildcard } from '@/powershell/runtime/PSWildcard';
 import { namesThisMachine } from './ServiceCmdlets';
-
-/** Accepts a real `PSCredentialValue` (from `Get-Credential`) or the legacy `"user:password"` string form. */
-function credentialOf(ctx: CmdletContext): { userName: string; password: string } | null {
-  const raw = ctx.named['credential'];
-  if (raw === undefined) return null;
-  if (isPSCredential(raw)) return getNetworkCredential(raw);
-  const { username, password } = parseCredentialArg(psValueToString(raw));
-  return { userName: username, password };
-}
 
 function requireProcesses(ctx: CmdletContext): IProcessProvider {
   if (!ctx.providers.processes) {
@@ -255,9 +245,9 @@ export class StartProcessCmdlet implements ICmdlet {
     // named identity only once its password has actually been checked,
     // not merely accepted at face value.
     let runAsUser: string | undefined;
-    const credential = credentialOf(ctx);
+    const credential = namedCredential(ctx, 'credential');
     if (credential) {
-      const verified = ctx.providers.processes?.checkCredential?.(credential.userName, credential.password) ?? false;
+      const verified = ctx.providers.processes?.checkCredential?.(credential.username, credential.password) ?? false;
       if (!verified) {
         ctx.emitError(
           'Start-Process : This command cannot be executed due to the error: ' +
@@ -265,7 +255,7 @@ export class StartProcessCmdlet implements ICmdlet {
         );
         return null;
       }
-      runAsUser = credential.userName;
+      runAsUser = credential.username;
     }
 
     const verb = psValueToString(ctx.named['verb'] ?? '').toLowerCase();

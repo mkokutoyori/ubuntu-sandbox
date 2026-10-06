@@ -24,13 +24,15 @@ const buildFlow = (
 )?.steps ?? null;
 
 
+const PASSWORD_DIALOGUE = ['output', 'label', 'branch', 'password', 'output', 'branch', 'label', 'output'];
+
 // ─── Mock device ────────────────────────────────────────────────────
 
 function createMockDevice(overrides?: Record<string, unknown>) {
   return {
     canSudo: vi.fn().mockReturnValue(true),
     checkPassword: vi.fn().mockReturnValue(true),
-    setUserPassword: vi.fn(),
+    beginPasswordChange: vi.fn(),
     setUserGecos: vi.fn(),
     ...overrides,
   };
@@ -74,18 +76,12 @@ describe('LinuxFlowBuilder.build — sudo', () => {
     expect(steps![1].kind).toBe('run');
   });
 
-  it('builds sudo passwd <user> flow with new/retype steps', () => {
+  it('builds sudo passwd <user> flow: the sudo password, then the PAM password dialogue', () => {
     const device = createMockDevice();
     const steps = buildFlow('sudo passwd john', 'admin', 1000, device);
     expect(steps).not.toBeNull();
 
-    const types = steps!.map(s => s.kind);
-    // sudo pwd → new pwd → retype pwd → execute (setPassword) → output
-    expect(types[0]).toBe('password'); // sudo password
-    expect(types[1]).toBe('password'); // new password
-    expect(types[2]).toBe('password'); // retype
-    expect(types[3]).toBe('run');  // setUserPassword
-    expect(types[4]).toBe('output');   // success message
+    expect(steps!.map(s => s.kind)).toEqual(['password', ...PASSWORD_DIALOGUE]);
   });
 
   it('builds sudo passwd with flags (e.g., -l) as password + execute only', () => {
@@ -177,13 +173,7 @@ describe('LinuxFlowBuilder.build — passwd', () => {
     const steps = buildFlow('passwd', 'user', 1000, device);
     expect(steps).not.toBeNull();
 
-    const types = steps!.map(s => s.kind);
-    expect(types[0]).toBe('output');   // "Changing password for user."
-    expect(types[1]).toBe('password'); // current password
-    expect(types[2]).toBe('password'); // new password
-    expect(types[3]).toBe('password'); // retype
-    expect(types[4]).toBe('run');  // setUserPassword
-    expect(types[5]).toBe('output');   // success
+    expect(steps!.map(s => s.kind)).toEqual(PASSWORD_DIALOGUE);
   });
 
   it('builds own-password flow for root (no current password needed)', () => {
@@ -191,20 +181,14 @@ describe('LinuxFlowBuilder.build — passwd', () => {
     const steps = buildFlow('passwd', 'root', 0, device);
     expect(steps).not.toBeNull();
 
-    const types = steps!.map(s => s.kind);
-    // Root: new → retype → set → output (no current password step)
-    expect(types[0]).toBe('password'); // new
-    expect(types[1]).toBe('password'); // retype
-    expect(types[2]).toBe('run');
-    expect(types[3]).toBe('output');
+    expect(steps!.map(s => s.kind)).toEqual(PASSWORD_DIALOGUE);
   });
 
   it('builds passwd <user> flow for root', () => {
     const device = createMockDevice();
     const steps = buildFlow('passwd john', 'root', 0, device);
     expect(steps).not.toBeNull();
-    expect(steps!.length).toBeGreaterThanOrEqual(3);
-    expect(steps![0].kind).toBe('password'); // new password
+    expect(steps!.map(s => s.kind)).toEqual(PASSWORD_DIALOGUE);
   });
 
   it('returns null for passwd with flags from non-root', () => {

@@ -134,56 +134,6 @@ function push(into: string[], result: string, successLine: string): void {
   into.push(result === '' ? successLine : result);
 }
 
-export function cmdChpasswd(ctx: ShellContext, stdin: string): string {
-  // Format: username:password
-  const lines = stdin.split('\n').filter(l => l.includes(':'));
-  for (const line of lines) {
-    const [user, pass] = line.split(':');
-    ctx.userMgr.setPassword(user.trim(), pass.trim());
-  }
-  return '';
-}
-
-/**
- * `faillock` — display or reset the `pam_faillock` consecutive-failure tally.
- *
- *   faillock                       show every account that has failures
- *   faillock --user LOGIN          show one account
- *   faillock --reset               clear the tally for every account
- *   faillock --user LOGIN --reset  clear the tally for one account
- */
-export function cmdFaillock(ctx: ShellContext, args: string[]): string {
-  let user: string | undefined;
-  let reset = false;
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--user' || args[i] === '-u') { user = args[++i]; continue; }
-    if (args[i] === '--reset') { reset = true; continue; }
-  }
-
-  if (reset) {
-    if (user) return ctx.userMgr.resetFaillock(user);
-    for (const report of ctx.userMgr.getFaillockReport()) {
-      ctx.userMgr.resetFaillock(report.username);
-    }
-    return '';
-  }
-
-  const reports = ctx.userMgr.getFaillockReport(user);
-  if (reports.length === 0) {
-    return user ? `${user}:\nWhen                Type  Source                                           Valid` : '';
-  }
-
-  const blocks = reports.map((r) => {
-    const header = `${r.username}:\nWhen                Type  Source                                           Valid`;
-    const rows = Array.from({ length: r.failures }, () =>
-      '                    TTY   localhost                                        V');
-    const note = r.lockedOut ? '\n(account is locked — too many authentication failures)' : '';
-    return [header, ...rows].join('\n') + note;
-  });
-  return blocks.join('\n\n');
-}
-
 /**
  * Parse a `chage` date argument. Accepts a `YYYY-MM-DD` calendar date, a plain
  * day count (days since the epoch), or `-1` / `''` meaning "disabled" — all

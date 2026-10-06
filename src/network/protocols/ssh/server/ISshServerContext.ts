@@ -155,7 +155,7 @@ export interface ISshServerContext {
    * the line never times out, which is what a POSIX sshd does.
    */
   execIdleTimeoutMs?(): number | null;
-  getMotd(): string;
+  getMotd(session?: { readonly user: string; readonly ip: string; readonly port?: number }): string;
   getLastLogin(user: string): string | null;
   recordLogin(user: string, fromIp: string): void;
   /**
@@ -174,6 +174,7 @@ export interface ISshServerContext {
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
   clientPort?(fromIp: string): number | undefined;
   connectionClosed?(user: string, fromIp: string): void;
+  connectionEnded?(fromIp: string, port: number | undefined): void;
   /**
    * Build a fully-populated SshUserContext from /etc/passwd (real uid/gid/groups/home).
    * Returns null when the user does not exist on this system.

@@ -378,8 +378,16 @@ describe('DHCP Windows — enregistrement DNS dynamique du bail', () => {
     expect(records).toMatch(/192\.168\.40\.\d+/);
   });
 
-  it('TEMOIN — par defaut, le SERVEUR enregistre le client qui le lui demande', async () => {
+  it('TEMOIN — par defaut, le SERVEUR n enregistre pas le client qui ne demande rien (dhclient)', async () => {
     const { linuxClient, sh } = await labWithDns();
+    await linuxClient.executeCommand('dhclient eth0');
+    const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
+    expect(records.toLowerCase()).not.toContain('pc-lnx');
+  });
+
+  it('TEMOIN — regle pour les clients qui ne demandent rien, le SERVEUR enregistre', async () => {
+    const { linuxClient, sh } = await labWithDns();
+    await run(sh, 'Set-DhcpServerv4DnsSetting -UpdateDnsRRForOlderClients $true');
     await linuxClient.executeCommand('dhclient eth0');
     const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
     expect(records.toLowerCase()).toContain('pc-lnx');
@@ -387,7 +395,7 @@ describe('DHCP Windows — enregistrement DNS dynamique du bail', () => {
 
   it('DynamicUpdates Never empeche le SERVEUR d enregistrer', async () => {
     const { linuxClient, sh } = await labWithDns();
-    await run(sh, 'Set-DhcpServerv4DnsSetting -DynamicUpdates Never');
+    await run(sh, 'Set-DhcpServerv4DnsSetting -UpdateDnsRRForOlderClients $true -DynamicUpdates Never');
     await linuxClient.executeCommand('dhclient eth0');
     const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
     expect(records.toLowerCase()).not.toContain('pc-lnx');

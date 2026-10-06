@@ -14,6 +14,7 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { WINDOWS_DHCP_CLIENT_PERSONALITY } from '../dhcp/DhcpClientPersonality';
 import { EndHost, type TracerouteHopResult } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { NicTeam, TeamMember, TeamNic } from './windows/WindowsNicTeam';
@@ -232,6 +233,8 @@ import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdAssoc, cmdFtype } from './windows/WinAssoc';
 import { cmdDir, fileSummaryLine } from './windows/WinDir';
 import { cmdWhere } from './windows/WinWhere';
+import { programStem } from './windows/WinPrograms';
+import { commandExitCode } from './windows/cmdExitCode';
 import { cmdComp } from './windows/WinComp';
 import { PATHPING_HELP, parseWinPathpingArgs, runPathping } from './windows/WinPathping';
 import { cmdFsutil } from './windows/Fsutil';
@@ -272,6 +275,10 @@ const TASK_TICK_MS = 60_000;
  */
 function w32ReferenceId(ref: string): string {
   if (!ref || ref === '.INIT.') return '0x00000000 (unspecified)';
+  if (/^[A-Za-z0-9]{1,4}$/.test(ref)) {
+    const hex = Array.from(ref.padEnd(4, '\0')).map((c) => c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')).join('');
+    return `0x${hex} (source name:  ${ref})`;
+  }
   if (IPAddress.tryParse(ref) === null) return `0x00000000 (${ref})`;
   const hex = ref.split('.')
     .map((o) => parseInt(o, 10).toString(16).toUpperCase().padStart(2, '0')).join('');
@@ -478,6 +485,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.hostModel = 'strong';
     this.dhcpClient.setVendorClass('MSFT 5.0');
     this.dhcpClient.setBroadcastFlag(true);
+    this.dhcpClient.setPersonality(WINDOWS_DHCP_CLIENT_PERSONALITY);
     this.dhcpClient.setAddressConflictChecker((iface, ip) => this.addressAnsweredOnLink(iface, ip));
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
@@ -898,30 +906,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // TCP LDAP server on port 389 (RFC 4511) — real AD DS directory queries
     // (PRD-Windows-Server.md §5 P5). Refuses (drops) the connection until
     // `Install-ADDSForest` promotes this server to a domain controller.
-    this.getTcpStack().listen(389, {
-      onAccept: (socket) => {
-        const store = this.getDirectoryStore();
-        if (!store) { socket.close(); return; }
-        const serviceSecret = store.getComputerSecret(this.getHostname());
-        if (!this.ldapStartTlsIdentity) this.ldapStartTlsIdentity = selfSignedLdapCert(store.getRealm());
-        const forest = getForestForDomain(store.dnsName);
-        const otherDomainRoots = forest
-          ? forest.listDomains()
-            .filter(d => d.dnsName.toLowerCase() !== store.dnsName.toLowerCase())
-            .map(d => d.dnsName.split('.').map(p => `DC=${p}`).join(','))
-          : [];
-        new LdapServerHandler({
-          tree: store.getTree(), auth: store.getBindCheck(),
-          kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
-          startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
-          otherForestDomainRoots: () => otherDomainRoots,
-          serverIdentity: () => ({
-            hostname: this.getHostname(), dnsName: store.dnsName,
-            site: store.siteForDc(this.getHostname()),
-          }),
-        }).register(socket);
-      },
-    });
+    for (const [port, implicitTls] of [[389, false], [3268, false], [636, true], [3269, true]] as const) {
+      this.getTcpStack().listen(port, { onAccept: (socket) => this.serveLdap(socket, implicitTls) });
+    }
 
     // TCP KDC listener on port 88 (RFC 4120 §7.2.1) — real AS-REQ/AS-REP
     // Kerberos exchange (PRD-Windows-Server-Advanced.md §5 P1). Refuses
@@ -2731,7 +2718,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       ['LOGONSERVER', `\\\\${host}`],
       ['NUMBER_OF_PROCESSORS', '4'],
       ['OS', 'Windows_NT'],
-      ['PATH', 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0'],
+      ['PATH', 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Windows\\System32\\OpenSSH'],
       ['PATHEXT', '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1'],
       ['PROCESSOR_ARCHITECTURE', 'AMD64'],
       ['PROGRAMDATA', 'C:\\ProgramData'],
@@ -3077,7 +3064,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Also used by PowerShellExecutor (via PSDeviceContext) to delegate
    * native commands (ipconfig, ping, cd, etc.) directly to cmd.
    */
-  async executeCmdCommand(trimmed: string): Promise<string> {
+  async runProgram(commandLine: string, stdin?: string): Promise<{ output: string; exitCode: number }> {
+    const output = await this.executeCmdCommand(commandLine, stdin);
+    return { output, exitCode: this.batchInterpreter().getErrorLevel() };
+  }
+
+  async executeCmdCommand(trimmed: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
 
     trimmed = trimmed.trim();
@@ -3113,7 +3105,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return 'STOP: C0000244 {Audit Failed}\nAn attempt to generate a security audit failed.\nAn administrator must clear the Security event log or disable CrashOnAuditFail to continue.';
     }
 
-    return this.batchInterpreter().runLine(trimmed);
+    return this.batchInterpreter().runLine(trimmed, stdin);
   }
 
   private batch: BatchInterpreter | null = null;
@@ -3146,13 +3138,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.batch;
   }
 
+  programStemOf(token: string): string | null {
+    return programStem({
+      exists: path => this.fs.resolve(path)?.type === 'file',
+      normalize: path => this.fs.normalizePath(path, this.cwd),
+      searchDirectories: () => (this.getEnvVars().get('PATH') ?? '').split(';').map(entry => entry.trim()).filter(entry => entry !== ''),
+    }, token);
+  }
+
   private async executeSimpleCommand(trimmed: string, stdin?: string): Promise<string> {
     const expanded = this.doskey.expand(trimmed);
     if (expanded !== trimmed) return this.executeCmdCommand(expanded);
     const parts = this.parseCommandLine(expanded);
     if (parts.length === 0) return '';
 
-    const cmd = parts[0].toLowerCase();
+    const stem = this.programStemOf(parts[0]);
+    const cmd = stem ?? parts[0].toLowerCase();
     const args = parts.slice(1);
 
     // Bare drive letter (e.g. "D:" or "D:\\path") — change current drive
@@ -3161,7 +3162,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // its remembered cwd (terminal_gap.md §6.3).
     const driveOnly = /^([a-zA-Z]):$/.exec(parts[0]);
     const drivePath = /^([a-zA-Z]):[\\/](.*)$/.exec(parts[0]);
-    if ((driveOnly || drivePath) && args.length === 0) {
+    if (stem === null && (driveOnly || drivePath) && args.length === 0) {
       const letter = (driveOnly ? driveOnly[1] : drivePath![1]).toUpperCase();
       return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
     }
@@ -3665,6 +3666,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       getDHCPState: (ifName: string) => this.dhcpClient.getState(ifName),
       releaseLease: (ifName: string) => this.dhcpClient.releaseLease(ifName),
       requestLease: (ifName: string, opts: any) => this.dhcpClient.requestLease(ifName, opts),
+      renewLease: (ifName: string) => this.dhcpClient.renewLease(ifName),
       autoDiscoverDHCPServers: () => this.autoDiscoverDHCPServers(),
 
       addDHCPEvent: (type: string, message: string) => this.addDHCPEvent(type, message),
@@ -3901,8 +3903,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
+  lastNativeExitCode(output: string): number {
+    return this.commandExitStatus ?? commandExitCode(output);
+  }
+
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
+    this.commandExitStatus = null;
     if (lower === 'ssh-keygen' || lower === 'ssh-agent'
       || lower === 'ssh-add' || lower === 'ssh-keyscan') {
       return this.runOpenSshTool(lower, args);
@@ -4802,6 +4809,30 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * controller; always null on a client, overridden by `WindowsServer`.
    */
   getDirectoryStore(): import('./windows/server/ad/DirectoryStore').DirectoryStore | null { return null; }
+
+  private serveLdap(socket: TcpSocket, implicitTls: boolean): void {
+    const store = this.getDirectoryStore();
+    if (!store) { socket.close(); return; }
+    const serviceSecret = store.getComputerSecret(this.getHostname());
+    if (!this.ldapStartTlsIdentity) this.ldapStartTlsIdentity = selfSignedLdapCert(store.getRealm());
+    const forest = getForestForDomain(store.dnsName);
+    const otherDomainRoots = forest
+      ? forest.listDomains()
+        .filter(d => d.dnsName.toLowerCase() !== store.dnsName.toLowerCase())
+        .map(d => d.dnsName.split('.').map(p => `DC=${p}`).join(','))
+      : [];
+    new LdapServerHandler({
+      tree: store.getTree(), auth: store.getBindCheck(),
+      kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
+      startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
+      implicitTls,
+      otherForestDomainRoots: () => otherDomainRoots,
+      serverIdentity: () => ({
+        hostname: this.getHostname(), dnsName: store.dnsName,
+        site: store.siteForDc(this.getHostname()),
+      }),
+    }).register(socket);
+  }
 
   /**
    * DNS Server role (PRD-Windows-Server.md §5 P7) — null until
@@ -5756,7 +5787,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         sourceDomaine: () => {
           const store = this.getDirectoryStore();
           const pdc = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-          return store && pdc ? `${pdc}.${store.dnsName}` : null;
+          return store && pdc && pdc !== this.getHostname() ? store.ipForDc(pdc) : null;
         },
       });
     }
@@ -5765,15 +5796,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** Le nom de la source affichee : une adresse, un FQDN, ou l'horloge locale. */
   private w32Source(): string {
+    const w32 = this.getW32Time();
+    const store = this.getDirectoryStore();
+    if (store && w32.getFlags() === 'domhier') {
+      const pdc = store.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+      return pdc && pdc !== this.getHostname() ? `${pdc}.${store.dnsName},0x9` : 'Local CMOS Clock';
+    }
     const cfg = this.getNtpAgent().getConfig();
+    if (cfg.refIdentifier === 'LOCL' && this.getNtpAgent().isSynced()) return 'Local CMOS Clock';
     if (cfg.refIdentifier && cfg.refIdentifier !== '.INIT.' && this.getNtpAgent().isSynced()) {
       return cfg.refIdentifier;
-    }
-    const w32 = this.getW32Time();
-    if (w32.getFlags() === 'domhier') {
-      const store = this.getDirectoryStore();
-      const pdc = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-      if (store && pdc) return `${pdc}.${store.dnsName},0x9`;
     }
     const premier = w32.getPeers()[0];
     return premier ? `${premier.hote},${premier.drapeau}` : 'Local CMOS Clock';
@@ -5904,7 +5936,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const synced = agent.isSynced();
     return [
       `Leap Indicator: 0(no warning)`,
-      `Stratum: ${synced ? cfg.localStratum : 0} (${synced ? 'secondary reference - syncd by (S)NTP' : 'unspecified'})`,
+      `Stratum: ${synced ? cfg.localStratum : 0} (${!synced ? 'unspecified' : cfg.localStratum === 1 ? 'primary reference - syncd by radio clock' : 'secondary reference - syncd by (S)NTP'})`,
       `Precision: -23 (119.209ns per tick)`,
       `Root Delay: ${((best ? Math.abs(best.delayMs) : 0) / 1000).toFixed(7)}s`,
       `Root Dispersion: ${((best ? best.dispersionMs : 0) / 1000).toFixed(7)}s`,

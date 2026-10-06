@@ -23,6 +23,7 @@ import { verifyApReq } from '@/network/kerberos/ApReqVerifier';
 import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 import { encodeRecords, decodeRecords } from '@/network/http/https/TlsRecordWire';
 import { stepServerHandshake } from './ldapStartTls';
 
@@ -53,6 +54,7 @@ export interface LdapServerContext {
   kerberos?: LdapKerberosContext;
   /** RFC 4511 §4.14.1 StartTLS — omitted (`undefined`) means `extendedRequest` is refused with `protocolError`, same as before this phase (PRD-Windows-Server-Advanced.md §5 P11). */
   startTls?: TlsServerConfig;
+  implicitTls?: boolean;
   /**
    * RFC 4511 §4.1.10/§4.5.2 referrals (§5 P11, useful for §5 P8/P9's
    * multi-domain forest): DN-root strings (e.g.
@@ -97,8 +99,11 @@ export class LdapServerHandler {
   private tlsRecvSeq = 0;
   /** Whether the *inbound* message currently being handled arrived as TLS application data — read by `reply()` so its response goes back the same way. */
   private replyEncrypted = false;
+  private stringWire = false;
 
-  constructor(private readonly ctx: LdapServerContext) {}
+  constructor(private readonly ctx: LdapServerContext) {
+    if (ctx.implicitTls === true && ctx.startTls) this.tls = new TlsServerSession(ctx.startTls);
+  }
 
   register(socket: TcpSocket): void {
     let pending = new Uint8Array(0);
@@ -110,10 +115,13 @@ export class LdapServerHandler {
       pending = joined.slice(bytesConsumed);
       return messages;
     };
-    socket.onData((data) => {
+    socket.onData((arriving) => {
+      this.stringWire = typeof arriving === 'string';
+      const data = typeof arriving === 'string' ? binaryStringToBytes(arriving) : arriving;
       if (!(data instanceof Uint8Array)) return;
       if (this.tls && this.tls.result === null) {
-        stepServerHandshake(this.tls, socket, data);
+        const flight = stepServerHandshake(this.tls, data);
+        if (flight) this.transmit(socket, flight);
         return;
       }
       if (this.tls && this.tls.result === 'accept') {
@@ -139,10 +147,14 @@ export class LdapServerHandler {
     if (this.replyEncrypted && this.tls && this.tls.result === 'accept') {
       const { records, nextSeq } = encryptApplicationData(this.tls.serverTraffic(), this.tlsSendSeq, bytes);
       this.tlsSendSeq = nextSeq;
-      socket.send(encodeRecords(records));
+      this.transmit(socket, encodeRecords(records));
       return;
     }
-    socket.send(bytes);
+    this.transmit(socket, bytes);
+  }
+
+  private transmit(socket: TcpSocket, bytes: Uint8Array): void {
+    socket.send(this.stringWire ? bytesToBinaryString(bytes) : bytes);
   }
 
   private handle(socket: TcpSocket, msg: LdapMessage): void {

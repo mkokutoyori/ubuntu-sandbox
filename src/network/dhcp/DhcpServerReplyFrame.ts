@@ -5,6 +5,7 @@ import { DHCP_CLIENT_PORT, DHCP_SERVER_PORT } from '../core/WellKnownPorts';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 import { DHCP_WIRE_BYTES, type DHCPPacket } from './DHCPPacket';
 import type { DhcpDirectRoute } from './DhcpServerExchange';
+import type { DhcpIpEmission } from './types';
 
 export interface DhcpLinkDestination {
   readonly address: IPAddress;
@@ -20,6 +21,7 @@ export function dhcpLinkDestination(route: DhcpDirectRoute, clientMac: string): 
 
 export function dhcpServerReplyFrame(
   reply: DHCPPacket, sourceAddress: IPAddress, sourceMac: MACAddress, to: DhcpLinkDestination,
+  emission: DhcpIpEmission = {}, destinationPort: number = DHCP_CLIENT_PORT,
 ): EthernetFrame {
   return {
     srcMAC: sourceMac,
@@ -27,8 +29,11 @@ export function dhcpServerReplyFrame(
     etherType: ETHERTYPE_IPV4,
     payload: buildUdpOverIpv4(sourceAddress, {
       destination: to.address,
-      sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
+      sourcePort: DHCP_SERVER_PORT, destinationPort,
       payload: reply, payloadBytes: DHCP_WIRE_BYTES,
+      dontFragment: false,
+      ...(emission.ttl === undefined ? {} : { ttl: emission.ttl }),
+      ...(emission.tos === undefined ? {} : { tos: emission.tos }),
     }),
   };
 }

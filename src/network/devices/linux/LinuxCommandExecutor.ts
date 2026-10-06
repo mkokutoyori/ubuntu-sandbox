@@ -38,6 +38,14 @@ import { parseMailArgs, sendMail, parseMailbox, formatMailboxSummary, type MailC
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager, fmtSyslogTimestamp } from './LinuxLogManager';
+import { LinuxPam } from './pam/LinuxPam';
+import { PamServiceSession } from './pam/PamServiceSession';
+import type { PamDialogue } from './pam/PamDialogue';
+import { runFaillock } from './pam/FaillockTool';
+import { SudoPamSessions } from './pam/SudoPamSessions';
+import type { SuFrame } from '@/shell/ShellContext';
+import { PamReturn, pamStrError } from './pam/PamReturnCode';
+import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
@@ -56,7 +64,7 @@ import {
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
 import { runXargs } from './coreutils/Xargs';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
   CommandPrivilegePolicy,
@@ -116,6 +124,7 @@ import {
   STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
 } from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
+import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts, type KernelIpFactsSource } from './LinuxIpv4Settings';
 import { newProtocolCounters, type ProtocolCounters } from '@/network/layers/internet/ProtocolCounters';
 import type { KernelBootFacts } from './boot/KernelBootLog';
 import { ServicePortProjection } from './ports/ServicePortProjection';
@@ -269,6 +278,8 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'openssl',
 ];
 
+const SU_TTY_NAME = 'pts/0';
+const SU_TTY = `/dev/${SU_TTY_NAME}`;
 const SUDO_FLAG_LETTERS = /^-[nSEkbiHvPs]+$/;
 
 function parseSudoLead(args: readonly string[]): {
@@ -426,6 +437,9 @@ export class LinuxCommandExecutor {
   readonly ip6tables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
+  readonly pam: LinuxPam;
+  private readonly sudoPam: SudoPamSessions;
+  readonly keyrings = new KeyringTable();
   readonly netConfig: LinuxNetworkConfigManager;
   /** Kernel audit subsystem — the security audit trail (`/var/log/audit`). */
   readonly auditLog: LinuxAuditLog;
@@ -529,7 +543,7 @@ export class LinuxCommandExecutor {
   /** caller-supplied PID → OS-managed PID, so unregisterProcess can find the spawn back. */
   private _externalToOsPid: Map<number, number> = new Map();
   // Stack for su sessions: stores previous user context
-  private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
+  private suStack: SuFrame[] = [];
   // Command history (like bash HISTFILE)
   private commandHistory: string[] = [];
   /**
@@ -662,6 +676,23 @@ export class LinuxCommandExecutor {
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
+    this.pam = new LinuxPam({
+      vfs: this.vfs,
+      users: this.userMgr,
+      logs: this.logMgr,
+      clock: () => Date.now(),
+      logins: () => this.sessionTable?.list().map((session) => ({ user: session.user })) ?? [],
+      auditdRunning: () => this.auditDaemon?.running ?? false,
+      hostname: () => kernelHostname(this.vfs),
+      timezone: () => (this.vfs.readFile('/etc/timezone') ?? 'UTC').trim(),
+      resolveHost: (name) => this.resolveHostAddresses(name),
+      keyrings: this.keyrings,
+      processLimits: (uid) => new Map([
+        ['nofile', { soft: this.processMgr.nofileLimit(uid), hard: this.processMgr.nofileHardLimit(uid) }],
+        ['nproc', { soft: this.processMgr.nprocLimit(uid), hard: this.processMgr.nprocHardLimit(uid) }],
+      ]),
+    });
+    this.sudoPam = new SudoPamSessions(this.pam, () => ({ uid: this.userMgr.currentUid, euid: 0, loginName: this.loginName() }));
     this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
@@ -866,6 +897,7 @@ export class LinuxCommandExecutor {
     this.vfs.mkdirp('/proc/sys/kernel', 0o755, 0, 0);
     const k = () => this.identity.kernel;
     this.vfs.registerGeneratedFile('/proc/version', () => k().toProcVersion());
+    this.vfs.registerGeneratedFile('/proc/keys', () => this.keyrings.renderProcKeys());
     this.vfs.registerGeneratedFile('/proc/cmdline', () => `${this.logMgr.kernelCommandLine()}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
@@ -1467,23 +1499,8 @@ export class LinuxCommandExecutor {
     effective: string[],
     run: () => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
   ): Promise<{ output: string; exitCode: number; stderr?: string }> {
-    const line = ['sudo', ...effective].join(' ');
-    const auth = this.authorizeSudo(effective[0], effective.slice(1), 'root');
-    if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
-      this.writeSudoAuditLine('not-in-sudoers', auth, line);
-      return {
-        output: `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`,
-        exitCode: 1,
-      };
-    }
-    if (auth.reason === 'command-not-allowed') {
-      this.writeSudoAuditLine('command-not-allowed', auth, line);
-      return {
-        output: `Sorry, user ${auth.invokingUser} is not allowed to execute '${effective.join(' ')}' as ${auth.runasUser} on ${auth.hostname}.`,
-        exitCode: 1,
-      };
-    }
-    this.writeSudoAuditLine('success', auth, line);
+    const admission = this.admitSudo(effective[0], effective.slice(1), 'root', null);
+    if (admission.refusal !== null) return admission.refusal;
     const um = this.userMgr;
     const saved = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
     um.currentUser = 'root';
@@ -1495,6 +1512,7 @@ export class LinuxCommandExecutor {
       um.currentUser = saved.user;
       um.currentUid = saved.uid;
       um.currentGid = saved.gid;
+      admission.close();
     }
   }
 
@@ -1777,7 +1795,7 @@ export class LinuxCommandExecutor {
     const interactif = target !== null && !target.command && !target.holdOnly;
     const relayedShell = interactif
       ? await this.relayShellOverWire(
-        session, offeredPassword === undefined && stdinPwd ? 1 : 0, !linuxPeer)
+        session, offeredPassword === undefined && stdinPwd ? 1 : 0, true)
       : null;
     try {
       return this.finishSshClientResult(runSshClient({
@@ -1987,6 +2005,17 @@ export class LinuxCommandExecutor {
       resolveName: (name: string): string | null =>
         IPAddress.isValid(name) ? null : this.resolveHostIpv4(name),
     };
+  }
+
+  resolveHostAddresses(name: string): string[] {
+    const found: string[] = [];
+    for (const family of [2, 10] as const) {
+      const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, family));
+      if (r.status === 'SUCCESS' && r.entry) {
+        for (const h of r.entry) if (h.addressFamily === family) found.push(h.address);
+      }
+    }
+    return found;
   }
 
   resolveHostIpv4(name: string): string | null {
@@ -2362,17 +2391,59 @@ export class LinuxCommandExecutor {
    *  (a no-op when rsyslog isn't running, exactly like real syslog). Real
    *  sudo additionally appends to `Defaults logfile=PATH` when set — *in
    *  addition to* syslog, not instead of it. */
-  writeSudoAuditLine(kind: 'success' | 'not-in-sudoers' | 'command-not-allowed', auth: SudoAuthorization, cmdStr: string): void {
-    if (!this.serviceMgr.isActive('rsyslog')) return;
-    const ts = fmtSyslogTimestamp(new Date());
-    const reasonSuffix = kind === 'success' ? '' : kind === 'not-in-sudoers' ? 'user NOT in sudoers ; ' : 'command not allowed ; ';
-    const line = `${ts} ${auth.hostname} sudo: ${auth.invokingUser} : ${reasonSuffix}TTY=pts/0 ; PWD=${this.cwd} ; USER=${auth.runasUser} ; COMMAND=/usr/bin/${cmdStr}\n`;
-    const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
-    this.vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
+  writeSudoAuditLine(kind: 'success' | 'not-in-sudoers' | 'command-not-allowed' | number, auth: SudoAuthorization, cmdStr: string): void {
+    const reason = typeof kind === 'number'
+      ? `${kind} incorrect password attempt${kind === 1 ? '' : 's'} ; `
+      : kind === 'success' ? '' : kind === 'not-in-sudoers' ? 'user NOT in sudoers ; ' : 'command not allowed ; ';
+    const text = `${auth.invokingUser.padStart(8)} : ${reason}TTY=${SU_TTY_NAME} ; PWD=${this.cwd} ; USER=${auth.runasUser} ; COMMAND=/usr/bin/${cmdStr}`;
+    this.logMgr.logAuth('sudo', text, 0);
     if (auth.logfile) {
       const existingCustom = this.vfs.readFile(auth.logfile) ?? '';
-      this.vfs.writeFile(auth.logfile, existingCustom + line, 0, 0, 0o022);
+      this.vfs.writeFile(auth.logfile, `${existingCustom}${fmtSyslogTimestamp(new Date())} ${auth.hostname} sudo: ${text}\n`, 0, 0, 0o022);
     }
+  }
+
+  authenticateSudo(user: string, password: string): boolean {
+    return this.sudoPam.authenticateAttempt(user, password);
+  }
+
+  abandonSudoAuthentication(attempts: number, commandLine: string): void {
+    this.sudoPam.abandonAuthentication();
+    const lead = parseSudoLead(commandLine.trim().split(/\s+/).slice(1));
+    const auth = this.authorizeSudo(lead.rest[0] ?? '', lead.rest.slice(1), lead.user ?? 'root');
+    this.writeSudoAuditLine(attempts, auth, lead.rest.join(' '));
+  }
+
+  admitSudo(
+    cmdName: string, args: readonly string[], runAs: string, pipedPassword: string | null,
+  ): { refusal: { output: string; exitCode: number } | null; close: () => void } {
+    const none = (): void => undefined;
+    const refuse = (output: string): { refusal: { output: string; exitCode: number }; close: () => void } => (
+      { refusal: { output, exitCode: 1 }, close: none }
+    );
+    const auth = this.authorizeSudo(cmdName, args, runAs);
+    const command = [cmdName, ...args].join(' ');
+    if (auth.reason === 'unknown-target-user') return refuse(`sudo: unknown user: ${runAs}`);
+    if (auth.reason === 'sudoers-missing') return refuse('sudo: /etc/sudoers is required');
+    if (auth.reason === 'not-in-sudoers') {
+      this.writeSudoAuditLine('not-in-sudoers', auth, command);
+      return refuse(`${auth.invokingUser} is not in the sudoers file. This incident will be reported.`);
+    }
+    if (auth.reason === 'command-not-allowed') {
+      this.writeSudoAuditLine('command-not-allowed', auth, command);
+      return refuse(`Sorry, user ${auth.invokingUser} is not allowed to execute '${command}' as ${runAs} on ${auth.hostname}.`);
+    }
+    const entry = this.sudoPam.enter(auth.invokingUser, auth.nopasswd ? null : pipedPassword);
+    if (entry.ok === false) {
+      if (entry.stage === 'authentication') {
+        this.writeSudoAuditLine(1, auth, command);
+        return refuse(`${entry.messages}[sudo] password for ${auth.invokingUser}: \nSorry, try again.\nsudo: 1 incorrect password attempt`);
+      }
+      return refuse(`${entry.messages}sudo: account validation failure, is your account locked?`);
+    }
+    this.writeSudoAuditLine('success', auth, command);
+    entry.begin(runAs);
+    return { refusal: null, close: entry.close };
   }
 
   /** First non-loopback IPv4 address configured on this machine. */
@@ -2414,7 +2485,7 @@ export class LinuxCommandExecutor {
     // generated files that always reflect the live table. `/etc/services`
     // is seeded once at construction from the canonical SystemFiles list.
     const portsFs = new PortsFilesystem(this.vfs);
-    portsFs.registerProcNet(table, () => this.protocolCounters());
+    portsFs.registerProcNet(table, () => this.protocolCounters(), () => this.kernelIpFacts());
   }
 
   /** The SSH port-forwarding table — `-R` listeners are bound here too. */
@@ -2496,6 +2567,11 @@ export class LinuxCommandExecutor {
   protocolCounters(): ProtocolCounters {
     const holder = this.localDevice as { getProtocolCounters?: () => ProtocolCounters } | null;
     return holder?.getProtocolCounters?.() ?? newProtocolCounters();
+  }
+
+  kernelIpFacts(): KernelIpFacts {
+    const holder = this.localDevice as Partial<KernelIpFactsSource> | null;
+    return holder?.getKernelIpFacts?.() ?? STANDALONE_KERNEL_IP_FACTS;
   }
   setLocalDevice(device: object): void { this.localDevice = device; }
   getLocalDevice(): object | null { return this.localDevice; }
@@ -3891,6 +3967,7 @@ export class LinuxCommandExecutor {
     let cmdArgs = [...argv];
     let isSudo = false;
     let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
+    let closeSudo: () => void = () => undefined;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
@@ -3911,80 +3988,19 @@ export class LinuxCommandExecutor {
         if (piped !== undefined) cmdArgs.push(piped);
       }
       const runasUser = sudoTargetUser ?? 'root';
-      const auth = this.authorizeSudo(cmdArgs[0], cmdArgs.slice(1), runasUser);
-      const invokingUser = auth.invokingUser;
-      const hostname = auth.hostname;
-
-      if (auth.reason === 'unknown-target-user') {
-        return { output: `sudo: unknown user: ${sudoTargetUser}`, exitCode: 1 };
+      let pipedPassword: string | null = null;
+      const lastArg = cmdArgs[cmdArgs.length - 1];
+      if (readsStdinPassword && lastArg !== undefined && lastArg.includes('\n')) {
+        pipedPassword = (lastArg.replace(/\n+$/, '').split('\n').pop() ?? '').trim();
+        cmdArgs.pop();
       }
-      if (auth.reason === 'sudoers-missing') {
-        // Nothing is audited here: with no policy file sudo refuses before
-        // it has any notion of who may do what — and rsyslog is likely
-        // just as unreachable. This is also the moment a lab becomes
-        // unrecoverable without root, which is the lesson.
-        return { output: 'sudo: /etc/sudoers is required', exitCode: 1 };
-      }
-      if (auth.reason === 'not-in-sudoers') {
-        // Real sudo audits the refusal too — `sudo: <u> : user NOT in
-        // sudoers ; …` lands in /var/log/auth.log next to the existing
-        // "Accepted password" line. Critical for the SSH→sudo
-        // traceability scenario where the SOC needs to see who tried
-        // to escalate without permission.
-        this.writeSudoAuditLine('not-in-sudoers', auth, cmdArgs.join(' '));
-        return {
-          output: `${invokingUser} is not in the sudoers file. This incident will be reported.`,
-          exitCode: 1,
-        };
-      }
-      if (auth.reason === 'command-not-allowed') {
-        this.writeSudoAuditLine('command-not-allowed', auth, cmdArgs.join(' '));
-        return {
-          output: `Sorry, user ${invokingUser} is not allowed to execute '${cmdArgs.join(' ')}' as ${runasUser} on ${hostname}.`,
-          exitCode: 1,
-        };
-      }
-
-      // `sudo -S` authenticates against the invoking user's password,
-      // piped in on stdin. A wrong password is rejected and audited
-      // through PAM, exactly as on a real host — unless the matched
-      // rule carries NOPASSWD, in which case sudo never checks it.
-      const last0 = cmdArgs[cmdArgs.length - 1];
-      const passwordPiped = !!last0 && last0.includes('\n');
-      if (readsStdinPassword && passwordPiped && !auth.nopasswd) {
-        const last = cmdArgs[cmdArgs.length - 1];
-        const supplied = last && last.includes('\n')
-          ? (last.replace(/\n+$/, '').split('\n').pop() ?? '').trim()
-          : '';
-        if (!this.userMgr.checkPassword(invokingUser, supplied)) {
-          if (this.serviceMgr.isActive('rsyslog')) {
-            const ts = fmtSyslogTimestamp(new Date());
-            const cmdStr = cmdArgs.filter((a) => !a.includes('\n')).join(' ');
-            const fail =
-              `${ts} ${hostname} sudo: pam_unix(sudo:auth): authentication failure; ` +
-              `logname=${invokingUser} uid=${this.userMgr.currentUid} euid=0 tty=pts/0 ruser=${invokingUser} rhost=  user=${invokingUser}\n` +
-              `${ts} ${hostname} sudo:  ${invokingUser} : 1 incorrect password attempt ; TTY=pts/0 ; ` +
-              `PWD=${this.cwd} ; USER=${runasUser} ; COMMAND=/usr/bin/${cmdStr}\n`;
-            const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
-            this.vfs.writeFile('/var/log/auth.log', existing + fail, 0, 0, 0o022);
-          }
-          return {
-            output: `[sudo] password for ${invokingUser}: \n` +
-              'Sorry, try again.\nsudo: 1 incorrect password attempt',
-            exitCode: 1,
-          };
-        }
-        // Correct password — drop the stdin token so the command never
-        // sees it as an argument.
-        if (last && last.includes('\n')) cmdArgs.pop();
-      } else if (readsStdinPassword && passwordPiped && auth.nopasswd) {
-        // NOPASSWD: the piped token is never a password prompt reply —
-        // drop it so it isn't mistaken for a command argument.
-        if (last0 && last0.includes('\n')) cmdArgs.pop();
-      }
-      // Audit: write a syslog-style sudo line to /var/log/auth.log
-      // (real sudo logs through pam_systemd → journald → rsyslog).
-      this.writeSudoAuditLine('success', auth, cmdArgs.join(' '));
+      const trailing = cmdArgs[cmdArgs.length - 1];
+      const carriesStdin = cmdArgs.length > 1 && trailing !== undefined
+        && (trailing === interpreterStdin || trailing.includes('\n'));
+      const audited = carriesStdin ? cmdArgs.slice(0, -1) : cmdArgs;
+      const admission = this.admitSudo(audited[0], audited.slice(1), runasUser, pipedPassword);
+      if (admission.refusal !== null) return admission.refusal;
+      closeSudo = admission.close;
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
       const targetUserEntry = this.userMgr.getUser(runasUser)!;
       this.userMgr.currentUser = targetUserEntry.username;
@@ -3994,6 +4010,7 @@ export class LinuxCommandExecutor {
 
     if (cmdArgs.length === 0) {
       if (savedUser) { this.userMgr.currentUser = savedUser.user; this.userMgr.currentUid = savedUser.uid; this.userMgr.currentGid = savedUser.gid; }
+      closeSudo();
       return { output: '', exitCode: 0 };
     }
 
@@ -4037,9 +4054,10 @@ export class LinuxCommandExecutor {
     try {
       result = this.dispatch(actualCmd, actualArgs, stdin, isSudo, outputPiped);
     } catch (e) {
-      if (e instanceof DaemonParkSignal || e instanceof ExitSignal) throw e;
+      if (e instanceof DaemonParkSignal || e instanceof ExitSignal) { closeSudo(); throw e; }
       result = { output: `${actualCmd}: error`, exitCode: 1 };
     }
+    closeSudo();
 
     const suLeftSessionOpen = actualCmd === 'su' && this.suStack.length > 0;
     if (savedUser && !suLeftSessionOpen) {
@@ -4050,10 +4068,9 @@ export class LinuxCommandExecutor {
     // For sudo su: fix the suStack to return to the original (pre-sudo) user, not root
     if (savedUser && suLeftSessionOpen) {
       const top = this.suStack[this.suStack.length - 1];
-      top.user = savedUser.user;
-      top.uid = savedUser.uid;
-      top.gid = savedUser.gid;
-      top.cwd = savedUser.cwd;
+      this.suStack[this.suStack.length - 1] = {
+        ...top, user: savedUser.user, uid: savedUser.uid, gid: savedUser.gid, cwd: savedUser.cwd,
+      };
     }
 
     return result;
@@ -5012,9 +5029,9 @@ export class LinuxCommandExecutor {
       case 'usermod': return { output: cmdUsermod(c, args), exitCode: 0 };
       case 'userdel': return this.handleUserdel(args);
       case 'deluser': return this.handleDeluser(args);
-      case 'passwd': return this.handlePasswd(args);
-      case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
-      case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
+      case 'passwd': return this.handlePasswd(args, stdin);
+      case 'chpasswd': return this.runChpasswd(stdin ?? '');
+      case 'faillock': return this.runFaillock(args);
       // `batch` est le même binaire qu'`at` — seule la file change (`b`),
       // et l'heure n'est pas demandée. Les deux partagent donc le cas.
       case 'at':
@@ -5498,7 +5515,7 @@ export class LinuxCommandExecutor {
       // 05, constat A8). A `case` here used to shadow that hook with a
       // second, independently-drifted implementation that only a script
       // (`bash script.sh`) could reach.
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (name) => this.processMgr.list({ comm: name })[0]?.pid, this.protocolCounters()), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (name) => this.processMgr.list({ comm: name })[0]?.pid, this.protocolCounters(), this.kernelIpFacts()), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       case 'dstat': {
         const parsed = parseDstatArgs(args);
@@ -6519,46 +6536,55 @@ export class LinuxCommandExecutor {
    */
   private beginSuSession(
     targetUser: string, loginShell: boolean, stdin?: string,
-  ): { ok: true; restore: () => void } | { ok: false; result: { output: string; exitCode: number } } {
+  ): { ok: true; restore: () => void; messages: string } | { ok: false; result: { output: string; exitCode: number } } {
     const user = this.userMgr.getUser(targetUser);
     if (!user) return { ok: false, result: { output: `su: user ${targetUser} does not exist`, exitCode: 1 } };
-    if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
-      return { ok: false, result: { output: `su: user ${targetUser} does not have a login shell`, exitCode: 1 } };
-    }
 
-    if (this.userMgr.currentUid !== 0 && this.userMgr.currentUser !== user.username) {
-      const supplied = (stdin ?? '').replace(/\n+$/, '').split('\n').pop() ?? '';
-      if (!this.userMgr.checkPassword(user.username, supplied)) {
-        this.publishFsAccess(resolveExePath('su'), 'x', 'execve');
-        this.publishSyscall('execve', resolveExePath('su'));
-        const byUid = this.userMgr.currentUid;
-        const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : byUid;
+    const previous = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd, umask: this.umask };
+    const supplied = (stdin ?? '').replace(/\n+$/, '').split('\n').pop() ?? '';
+    const pid = this.logMgr.allocatePid();
+    const session = new PamServiceSession(
+      this.pam,
+      loginShell ? 'su-l' : 'su',
+      { caller: { uid: previous.uid, euid: 0, loginName: this.loginName() }, identity: { tag: 'su', pid } },
+      { user: user.username, ruser: previous.user, tty: SU_TTY },
+    );
+    this.publishFsAccess(resolveExePath('su'), 'x', 'execve');
+    this.publishSyscall('execve', resolveExePath('su'));
+    let code = session.authenticate(() => supplied, true);
+    if (code === PamReturn.SUCCESS) code = session.account();
+    const refusal = session.takeLoginMessages().join('');
+    if (code !== PamReturn.SUCCESS) {
+      session.end();
+      this.logMgr.logAuth('su', `FAILED SU (to ${user.username}) ${previous.user} on ${SU_TTY_NAME}`, pid);
+      if (code === PamReturn.AUTH_ERR || code === PamReturn.USER_UNKNOWN || code === PamReturn.MAXTRIES) {
+        const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : previous.uid;
         this.auditLog.record('USER_AUTH', {
-          pid: this.shellPid ?? 1, uid: byUid, auid: loginUid, ses: 1,
+          pid: this.shellPid ?? 1, uid: previous.uid, auid: loginUid, ses: 1,
           msg: `op=PAM_authentication grantors=? acct="${user.username}" exe="/bin/su" hostname=? addr=? terminal=pts/0 res=failed`,
           acct: user.username, res: 'failed',
         });
-        this.logMgr.logAuth('su', `FAILED su for ${user.username} by ${this.userMgr.currentUser}(uid=${byUid})`);
-        return { ok: false, result: { output: 'su: Authentication failure', exitCode: 1 } };
       }
+      return { ok: false, result: { output: `${refusal}su: ${pamStrError(code)}`, exitCode: 1 } };
     }
 
-    // Save current context to suStack
+    this.logMgr.logAuth('su', `(to ${user.username}) ${previous.user} on ${SU_TTY_NAME}`, pid);
+    session.openSession();
+    const messages = session.sessionMessages.join('');
+    this.recordPamSession('USER_START', user.username, user.uid, previous.uid, 'PAM_session_open');
+
+    if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
+      session.closeSession();
+      session.end();
+      this.recordPamSession('USER_END', user.username, user.uid, previous.uid, 'PAM_session_close');
+      const notice = this.vfs.readFile('/etc/nologin.txt');
+      return { ok: false, result: { output: `${messages}${notice === null ? 'This account is currently not available.' : notice.replace(/\n+$/, '')}`, exitCode: 1 } };
+    }
+
     this.suStack.push({
-      user: this.userMgr.currentUser,
-      uid: this.userMgr.currentUid,
-      gid: this.userMgr.currentGid,
-      cwd: this.cwd,
-      umask: this.umask,
+      ...previous,
+      release: () => { session.closeSession(); session.end(); },
     });
-
-    // PAM logs the su attempt and session open to auth.log (authpriv).
-    const prev = this.suStack[this.suStack.length - 1];
-    this.logMgr.logAuth('su', `(to ${user.username}) ${prev.user} on pts/0`);
-    this.logMgr.logAuth('su', `pam_unix(su:session): session opened for user ${user.username}(uid=${user.uid}) by ${prev.user}(uid=${prev.uid})`);
-    this.recordPamSession('USER_START', user.username, user.uid, prev.uid, 'PAM_session_open');
-
-    // Switch user
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
@@ -6566,18 +6592,24 @@ export class LinuxCommandExecutor {
 
     return {
       ok: true,
+      messages,
       restore: () => {
-        const popped = this.suStack.pop();
-        if (popped) {
-          this.userMgr.currentUser = popped.user;
-          this.userMgr.currentUid = popped.uid;
-          this.userMgr.currentGid = popped.gid;
-          this.cwd = popped.cwd;
-          this.umask = popped.umask;
-        }
-        this.recordPamSession('USER_END', user.username, user.uid, prev.uid, 'PAM_session_close');
+        this.popSuFrame();
+        this.recordPamSession('USER_END', user.username, user.uid, previous.uid, 'PAM_session_close');
       },
     };
+  }
+
+  private popSuFrame(): SuFrame | null {
+    const frame = this.suStack.pop();
+    if (frame === undefined) return null;
+    this.userMgr.currentUser = frame.user;
+    this.userMgr.currentUid = frame.uid;
+    this.userMgr.currentGid = frame.gid;
+    this.cwd = frame.cwd;
+    this.umask = frame.umask;
+    frame.release?.();
+    return frame;
   }
 
   private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
@@ -6594,10 +6626,10 @@ export class LinuxCommandExecutor {
       } finally {
         session.restore();
       }
-      return { output, exitCode: 0 };
+      return { output: session.messages + output, exitCode: 0 };
     }
 
-    return { output: '', exitCode: 0 };
+    return { output: session.messages.replace(/\n+$/, ''), exitCode: 0 };
   }
 
   /**
@@ -6649,29 +6681,12 @@ export class LinuxCommandExecutor {
 
   /** Handle exit/logout — pops su stack if in su session */
   handleExit(): { output: string; inSu: boolean } {
-    if (this.suStack.length > 0) {
-      const prev = this.suStack.pop()!;
-      this.userMgr.currentUser = prev.user;
-      this.userMgr.currentUid = prev.uid;
-      this.userMgr.currentGid = prev.gid;
-      this.cwd = prev.cwd;
-      this.umask = prev.umask;
-      return { output: 'logout', inSu: true };
-    }
-    return { output: '', inSu: false };
+    return this.popSuFrame() === null ? { output: '', inSu: false } : { output: 'logout', inSu: true };
   }
 
   /** Reset terminal session — clear su stack and restore original user/cwd */
   resetSession(): void {
-    // Pop all su contexts to return to original user
-    while (this.suStack.length > 0) {
-      const prev = this.suStack.pop()!;
-      this.userMgr.currentUser = prev.user;
-      this.userMgr.currentUid = prev.uid;
-      this.userMgr.currentGid = prev.gid;
-      this.cwd = prev.cwd;
-      this.umask = prev.umask;
-    }
+    while (this.suStack.length > 0) this.popSuFrame();
   }
 
   /** Is the current session inside a `su` context? */
@@ -6683,9 +6698,27 @@ export class LinuxCommandExecutor {
   /** Get current UID (0 = root) */
   getCurrentUid(): number { return this.userMgr.currentUid; }
 
-  /** Check password for a user */
+  authenticateService(
+    service: string,
+    user: string,
+    password: string,
+    subject: { rhost?: string; tty?: string; pid?: number } = {},
+  ): { ok: boolean; messages: string[] } {
+    const caller = { uid: 0, euid: 0, loginName: '' };
+    const pid = subject.pid ?? this.logMgr.allocatePid();
+    const session = new PamServiceSession(
+      this.pam, service, { caller, identity: { tag: service, pid } },
+      { user, rhost: subject.rhost, tty: subject.tty },
+    );
+    let code = session.authenticate(() => password, false);
+    if (code === PamReturn.SUCCESS) code = session.account();
+    const messages = session.takeLoginMessages();
+    session.end();
+    return { ok: code === PamReturn.SUCCESS, messages };
+  }
+
   checkPassword(username: string, password: string): boolean {
-    return this.userMgr.checkPassword(username, password);
+    return this.authenticateService('sshd', username, password).ok;
   }
 
   /** Set password for a user */
@@ -6705,17 +6738,62 @@ export class LinuxCommandExecutor {
 
   // ─── Improved command handlers ────────────────────────────────────
 
-  handlePasswd(args: string[]): { output: string; exitCode: number } {
-    // A bare `passwd` / `passwd <user>` is driven by the interactive flow —
-    // the Terminal applies the new secret after prompting.
-    const hasFlag = args.some((a) => a.startsWith('-'));
-    if (!hasFlag) {
-      if (args.length > 0) {
-        const user = this.userMgr.getUser(args[0]);
-        if (!user) return { output: `passwd: user '${args[0]}' does not exist`, exitCode: 1 };
-      }
-      return { output: 'passwd: password updated successfully', exitCode: 0 };
+  beginPasswordChange(target: string, invoker: { uid: number; name: string }): PamDialogue {
+    const caller = { uid: invoker.uid, euid: 0, loginName: invoker.name };
+    const pid = this.logMgr.allocatePid();
+    return new PamServiceSession(this.pam, 'passwd', { caller, identity: { tag: 'passwd', pid } }, { user: target }).changeAuthtok();
+  }
+
+  private changePasswordFromInput(requested: string | undefined, input: string | undefined): { output: string; exitCode: number } {
+    const target = requested ?? this.userMgr.currentUser;
+    if (!this.userMgr.getUser(target)) return { output: `passwd: user '${target}' does not exist`, exitCode: 1 };
+    const lines = (input ?? '').replace(/\n$/, '').split('\n');
+    const answers = input === undefined || input === '' ? [] : lines;
+    const dialogue = this.beginPasswordChange(target, { uid: this.userMgr.currentUid, name: this.loginName() });
+    let output = '';
+    const flush = (): void => { for (const notice of dialogue.takeNotices()) output += `${notice}\n`; };
+    flush();
+    while (!dialogue.finished) {
+      output += dialogue.prompt;
+      dialogue.answer(answers.shift() ?? null);
+      flush();
     }
+    if (dialogue.code === PamReturn.SUCCESS) return { output: `${output}passwd: password updated successfully`, exitCode: 0 };
+    return { output: `${output}passwd: ${pamStrError(dialogue.code)}\npasswd: password unchanged`, exitCode: 10 };
+  }
+
+  runFaillock(args: readonly string[]): { output: string; exitCode: number } {
+    return runFaillock(args, this.pam.faillockToolHost());
+  }
+
+  runChpasswd(input: string): { output: string; exitCode: number } {
+    const out: string[] = [];
+    let errors = 0;
+    input.split('\n').forEach((raw, index) => {
+      if (raw.trim() === '') return;
+      const line = index + 1;
+      const colon = raw.indexOf(':');
+      if (colon < 0) { out.push(`chpasswd: line ${line}: missing new password`); errors++; return; }
+      const name = raw.slice(0, colon);
+      const password = raw.slice(colon + 1);
+      if (!this.userMgr.getUser(name)) { out.push(`chpasswd: line ${line}: user '${name}' does not exist`); errors++; return; }
+      const caller = { uid: this.userMgr.currentUid, euid: 0, loginName: this.loginName() };
+      const session = new PamServiceSession(this.pam, 'chpasswd', { caller, identity: { tag: 'chpasswd', pid: this.logMgr.allocatePid() } }, { user: name });
+      const code = session.changeAuthtokWith(() => password);
+      session.end();
+      if (code !== PamReturn.SUCCESS) {
+        out.push(`chpasswd: (user ${name}) pam_chauthtok() failed, error:\n${pamStrError(code)}`);
+        out.push(`chpasswd: (line ${line}, user ${name}) password not changed`);
+        errors++;
+      }
+    });
+    if (errors > 0) out.push('chpasswd: error detected, changes ignored');
+    return { output: out.join('\n'), exitCode: errors > 0 ? 1 : 0 };
+  }
+
+  handlePasswd(args: string[], input?: string): { output: string; exitCode: number } {
+    const hasFlag = args.some((a) => a.startsWith('-'));
+    if (!hasFlag) return this.changePasswordFromInput(args[0], input);
 
     // Flag overloads — status / lock / unlock / expire / delete / aging.
     const output = cmdPasswd(this.ctx(), args);

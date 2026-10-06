@@ -13,15 +13,13 @@
  *     (IamPolicyFilesProjection rewrites config, IamAuthLogProjection logs).
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { EventBus } from '@/events/EventBus';
 import { IamPolicyFilesProjection } from '@/network/devices/linux/iam/fs/IamPolicyFilesProjection';
 import { IAM_PATHS } from '@/network/devices/linux/iam/fs/IamPaths';
-import { cmdFaillock } from '@/network/devices/linux/LinuxUserCommands';
-import type { ShellContext } from '@/network/devices/linux/LinuxFileCommands';
 import type { DomainEvent } from '@/events/types';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -166,9 +164,11 @@ describe('password-policy filesystem coherence', () => {
     expect(content).toContain('enforcing = 1');
   });
 
-  it('seeds /etc/security/faillock.conf at boot', async () => {
+  it('seeds /etc/security/faillock.conf at boot, every directive commented out as Ubuntu ships it', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    expect(await srv.executeCommand(`cat ${IAM_PATHS.faillockConf}`)).toContain('deny = 3');
+    const content = await srv.executeCommand(`cat ${IAM_PATHS.faillockConf}`);
+    expect(content).toContain('# deny = 3');
+    expect(content.split('\n').filter((line) => line.trim() !== '' && !line.startsWith('#'))).toEqual([]);
   });
 
   it('seeds /etc/pam.d/common-password referencing pam_pwquality', async () => {
@@ -196,13 +196,6 @@ describe('reactive password-policy reconfiguration', () => {
     mgr.configurePasswordAging({ maxDays: 45 });
 
     expect(vfs.readFile(IAM_PATHS.loginDefs)).toContain('PASS_MAX_DAYS   45');
-  });
-
-  it('rewrites faillock.conf when the lockout policy changes', () => {
-    const { vfs, mgr } = wiredManager();
-    mgr.configureAccountLockout({ deny: 5 });
-
-    expect(vfs.readFile(IAM_PATHS.faillockConf)).toContain('deny = 5');
   });
 
   it('publishes a password-policy.changed event carrying the section', () => {
@@ -234,10 +227,10 @@ describe('reactive password-policy reconfiguration', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// Reactive event stream — aging, rejection, lockout
+// Reactive event stream — aging, lockout
 // ═══════════════════════════════════════════════════════════════════
 
-describe('IAM aging & rejection events', () => {
+describe('IAM aging events', () => {
   it('publishes user.aging-changed with the post-change shadow fields', () => {
     const { mgr, bus } = wiredManager();
     const events = capture(bus, 'linux.iam.user.aging-changed');
@@ -248,137 +241,6 @@ describe('IAM aging & rejection events', () => {
     expect(events).toHaveLength(1);
     expect(events[0].changedFields.sort()).toEqual(['maxDays', 'warnDays']);
     expect(events[0].maxDays).toBe(30);
-  });
-
-  it('publishes password.rejected for a weak password (warn-only)', () => {
-    const { mgr, bus } = wiredManager();
-    const rejected = capture(bus, 'linux.iam.password.rejected');
-
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'admin');
-
-    expect(rejected).toHaveLength(1);
-    expect(rejected[0].blocked).toBe(false);
-    expect(rejected[0].reasons.length).toBeGreaterThan(0);
-  });
-
-  it('does not publish password.rejected for a strong password', () => {
-    const { mgr, bus } = wiredManager();
-    const rejected = capture(bus, 'linux.iam.password.rejected');
-
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'Str0ng!pwxy');
-    expect(rejected).toHaveLength(0);
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════
-// faillock — lockout tally
-// ═══════════════════════════════════════════════════════════════════
-
-describe('faillock — lockout tally', () => {
-  it('publishes user.locked-out once the deny threshold is reached', () => {
-    const { mgr, bus } = wiredManager();
-    const lockouts = capture(bus, 'linux.iam.user.locked-out');
-
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'Str0ng!pwxy');
-    mgr.checkPassword('bob', 'wrong');
-    mgr.checkPassword('bob', 'wrong');
-    mgr.checkPassword('bob', 'wrong');
-
-    expect(lockouts).toHaveLength(1);
-    expect(lockouts[0].failedAttempts).toBe(3);
-    expect(mgr.isAccountLockedOut('bob')).toBe(true);
-  });
-
-  it('clears the tally on a successful authentication', () => {
-    const { mgr } = wiredManager();
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'Str0ng!pwxy');
-    mgr.checkPassword('bob', 'wrong');
-    mgr.checkPassword('bob', 'wrong');
-    expect(mgr.checkPassword('bob', 'Str0ng!pwxy')).toBe(true);
-    expect(mgr.isAccountLockedOut('bob')).toBe(false);
-  });
-
-  it('reports the tally through the faillock command', () => {
-    const { mgr } = wiredManager();
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'Str0ng!pwxy');
-    mgr.checkPassword('bob', 'wrong');
-    mgr.checkPassword('bob', 'wrong');
-
-    const ctx = { userMgr: mgr } as unknown as ShellContext;
-    const report = cmdFaillock(ctx, ['--user', 'bob']);
-    expect(report).toContain('bob:');
-    expect(report).toContain('Valid');
-  });
-
-  it('resets the tally through faillock --reset', () => {
-    const { mgr } = wiredManager();
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'Str0ng!pwxy');
-    mgr.checkPassword('bob', 'wrong');
-    mgr.checkPassword('bob', 'wrong');
-    mgr.checkPassword('bob', 'wrong');
-
-    const ctx = { userMgr: mgr } as unknown as ShellContext;
-    cmdFaillock(ctx, ['--user', 'bob', '--reset']);
-    expect(mgr.isAccountLockedOut('bob')).toBe(false);
-  });
-});
-
-describe('faillock — lockout auto-expiry (unlock_time)', () => {
-  it('rejects even the CORRECT password while locked out', () => {
-    const { mgr } = wiredManager();
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'Str0ng!pwxy');
-    mgr.checkPassword('bob', 'wrong');
-    mgr.checkPassword('bob', 'wrong');
-    mgr.checkPassword('bob', 'wrong');
-
-    expect(mgr.isAccountLockedOut('bob')).toBe(true);
-    expect(mgr.checkPassword('bob', 'Str0ng!pwxy')).toBe(false);
-  });
-
-  it('does not auto-unlock before unlock_time elapses', () => {
-    vi.useFakeTimers();
-    try {
-      const { mgr } = wiredManager();
-      mgr.useradd('bob');
-      mgr.setPassword('bob', 'Str0ng!pwxy');
-      mgr.checkPassword('bob', 'wrong');
-      mgr.checkPassword('bob', 'wrong');
-      mgr.checkPassword('bob', 'wrong');
-
-      vi.advanceTimersByTime(599_000); // default unlock_time = 600s
-
-      expect(mgr.isAccountLockedOut('bob')).toBe(true);
-      expect(mgr.checkPassword('bob', 'Str0ng!pwxy')).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('auto-unlocks once unlock_time elapses, and the correct password then succeeds', () => {
-    vi.useFakeTimers();
-    try {
-      const { mgr } = wiredManager();
-      mgr.useradd('bob');
-      mgr.setPassword('bob', 'Str0ng!pwxy');
-      mgr.checkPassword('bob', 'wrong');
-      mgr.checkPassword('bob', 'wrong');
-      mgr.checkPassword('bob', 'wrong');
-      expect(mgr.isAccountLockedOut('bob')).toBe(true);
-
-      vi.advanceTimersByTime(600_000); // default unlock_time = 600s
-
-      expect(mgr.isAccountLockedOut('bob')).toBe(false);
-      expect(mgr.checkPassword('bob', 'Str0ng!pwxy')).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 

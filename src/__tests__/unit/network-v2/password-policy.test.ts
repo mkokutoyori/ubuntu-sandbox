@@ -5,7 +5,6 @@
  * that make up a host's password posture:
  *   - PasswordQualityPolicy  — the `pam_pwquality` strength check
  *   - PasswordAgingPolicy    — the system-wide aging defaults
- *   - AccountLockoutPolicy   — the `pam_faillock` lockout rules
  *
  * Coverage spans the happy path and the awkward edges: empty input, length
  * credits, negative (class-minimum) credits, repeats, monotonic sequences,
@@ -19,7 +18,6 @@ import {
   PasswordAgingPolicy,
   PASSWORD_NEVER_EXPIRES,
 } from '@/network/devices/linux/iam/policy/PasswordAgingPolicy';
-import { AccountLockoutPolicy } from '@/network/devices/linux/iam/policy/AccountLockoutPolicy';
 import { PasswordPolicy } from '@/network/devices/linux/iam/policy/PasswordPolicy';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -46,9 +44,11 @@ describe('PasswordQualityPolicy — evaluation', () => {
   });
 
   it('counts per-class credits towards the required length', () => {
-    // 7 chars + 4 class credits (one each) = 11 credited ≥ 8 → length ok.
-    const result = PasswordQualityPolicy.defaults().evaluate('aB3!cdz');
-    expect(result.violated(PasswordQualityRule.MinLength)).toBe(false);
+    // libpwquality's defaults grant no credit (dcredit = ucredit = lcredit = ocredit = 0):
+    // 7 chars < minlen 8. With one credit per class, 7 + 4 = 11 credited ≥ 8 → length ok.
+    expect(PasswordQualityPolicy.defaults().evaluate('aB3!cdz').violated(PasswordQualityRule.MinLength)).toBe(true);
+    const credited = new PasswordQualityPolicy({ digitCredit: 1, uppercaseCredit: 1, lowercaseCredit: 1, otherCredit: 1 });
+    expect(credited.evaluate('aB3!cdz').violated(PasswordQualityRule.MinLength)).toBe(false);
   });
 
   it('treats a negative credit as a class minimum', () => {
@@ -85,7 +85,7 @@ describe('PasswordQualityPolicy — evaluation', () => {
     const result = PasswordQualityPolicy.defaults().evaluate('Abcdef1!xy', {
       oldPassword: 'Abcdef1!xy',
     });
-    expect(result.violated(PasswordQualityRule.TooSimilar)).toBe(true);
+    expect(result.violated(PasswordQualityRule.SamePassword)).toBe(true);
   });
 
   it('rejects a password containing the user name', () => {
@@ -95,11 +95,17 @@ describe('PasswordQualityPolicy — evaluation', () => {
     expect(result.violated(PasswordQualityRule.ContainsUsername)).toBe(true);
   });
 
-  it('rejects a password containing a word from the GECOS field', () => {
+  it('rejects a password containing a word from the GECOS field (libpwquality splits on spaces only, so `Carpenter,Room` is one word)', () => {
     const result = PasswordQualityPolicy.defaults().evaluate('Carpenter1!', {
-      gecos: 'John Carpenter,Room 4',
+      username: 'jc',
+      gecos: 'John Carpenter',
     });
     expect(result.violated(PasswordQualityRule.ContainsGecos)).toBe(true);
+    const attached = PasswordQualityPolicy.defaults().evaluate('Carpenter1!', {
+      username: 'jc',
+      gecos: 'John Carpenter,Room 4',
+    });
+    expect(attached.violated(PasswordQualityRule.ContainsGecos)).toBe(false);
   });
 
   it('rejects a dictionary word', () => {
@@ -139,7 +145,7 @@ describe('PasswordQualityPolicy — rendering & overrides', () => {
   it('renders the canonical pwquality.conf directives', () => {
     const content = PasswordQualityPolicy.defaults().render();
     expect(content).toContain('minlen = 8');
-    expect(content).toContain('dcredit = 1');
+    expect(content).toContain('dcredit = 0');
     expect(content).toContain('enforcing = 1');
     expect(content).toContain('retry = 3');
   });
@@ -183,50 +189,14 @@ describe('PasswordAgingPolicy', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// AccountLockoutPolicy
-// ═══════════════════════════════════════════════════════════════════
-
-describe('AccountLockoutPolicy', () => {
-  it('locks an account once the deny threshold is reached', () => {
-    const policy = AccountLockoutPolicy.defaults();
-    expect(policy.shouldLockOut(2)).toBe(false);
-    expect(policy.shouldLockOut(3)).toBe(true);
-  });
-
-  it('exempts root unless even_deny_root is set', () => {
-    expect(AccountLockoutPolicy.defaults().shouldLockOut(5, true)).toBe(false);
-    expect(new AccountLockoutPolicy({ evenDenyRoot: true }).shouldLockOut(5, true)).toBe(true);
-  });
-
-  it('treats deny=0 as lockout disabled', () => {
-    const policy = new AccountLockoutPolicy({ deny: 0 });
-    expect(policy.enabled).toBe(false);
-    expect(policy.shouldLockOut(100)).toBe(false);
-  });
-
-  it('reports the attempts remaining before the lock trips', () => {
-    expect(AccountLockoutPolicy.defaults().attemptsRemaining(1)).toBe(2);
-    expect(AccountLockoutPolicy.defaults().attemptsRemaining(9)).toBe(0);
-  });
-
-  it('renders the canonical faillock.conf directives', () => {
-    const content = AccountLockoutPolicy.defaults().render();
-    expect(content).toContain('deny = 3');
-    expect(content).toContain('unlock_time = 600');
-    expect(content).toContain('dir = /var/run/faillock');
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════
 // PasswordPolicy aggregate
 // ═══════════════════════════════════════════════════════════════════
 
 describe('PasswordPolicy aggregate', () => {
-  it('composes the three default sub-policies', () => {
+  it('composes the two default sub-policies', () => {
     const policy = PasswordPolicy.defaults();
     expect(policy.quality.minLength).toBe(8);
     expect(policy.aging.neverExpires).toBe(true);
-    expect(policy.lockout.deny).toBe(3);
   });
 
   it('reports a quality change with its section and fields', () => {
@@ -239,11 +209,6 @@ describe('PasswordPolicy aggregate', () => {
     const change = policy.configureAging({ maxDays: 30 });
     expect(change).toEqual({ section: 'aging', changedFields: ['maxDays'] });
     expect(policy.aging.maxDays).toBe(30);
-  });
-
-  it('reports a lockout change', () => {
-    const change = PasswordPolicy.defaults().configureLockout({ deny: 5 });
-    expect(change).toEqual({ section: 'lockout', changedFields: ['deny'] });
   });
 
   it('returns null for a no-op reconfiguration', () => {
