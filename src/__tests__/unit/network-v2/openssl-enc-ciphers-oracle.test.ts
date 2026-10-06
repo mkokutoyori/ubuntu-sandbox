@@ -10,8 +10,8 @@
  * MESURÉ avant correctif : seuls aes-*-cbc existaient ; des3, ECB, CTR, CFB, OFB et chacha20 répondaient
  * « not implemented in this simulator », le 3DES au motif que le déchiffrement manquait (il existe
  * depuis, dans crypto/cipher/des.ts) ; les refus legacy/AEAD n'avaient pas le texte d'openssl. Avant
- * correctif, tous les cas de chiffrement et de refus tombent ; le témoin aes-256-cbc (déjà couvert)
- * passe dans les deux états.
+ * correctif, 19 des 21 cas tombent (mesuré par git stash) ; les deux cas aes-128-cbc et aes-256-cbc passent dans les deux
+ * états : ce sont les TÉMOINS que le laboratoire est sain, déjà couverts par le comparateur d'octets.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
