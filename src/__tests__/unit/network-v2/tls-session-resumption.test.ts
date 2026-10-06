@@ -146,7 +146,7 @@ describe('TLS 1.3 PSK resumption and 0-RTT (RFC 8446 §4.2.11, §2.3)', () => {
   it('falls back to a full handshake when the ticket has expired', () => {
     const store = new SessionTicketStore();
     store.issue({
-      ticket: 'expired-ticket', resumptionMasterSecret: 'irrelevant', ticketNonce: 'n',
+      ticket: 'ab'.repeat(8), resumptionMasterSecret: 'irrelevant', ticketNonce: '01',
       cipherSuite: 'TLS_AES_128_GCM_SHA256', ticketLifetime: 1, issuedAt: NOW - 10_000, consumed: false,
     });
     const { issued, verifier } = setUpCa();
@@ -154,7 +154,7 @@ describe('TLS 1.3 PSK resumption and 0-RTT (RFC 8446 §4.2.11, §2.3)', () => {
     const client = new TlsClientSession({
       verifier,
       resumptionTicket: {
-        ticket: 'expired-ticket', resumptionMasterSecret: 'irrelevant', ticketNonce: 'n',
+        ticket: 'ab'.repeat(8), resumptionMasterSecret: 'irrelevant', ticketNonce: '01',
         cipherSuite: 'TLS_AES_128_GCM_SHA256', ticketLifetime: 1, issuedAt: NOW - 10_000, consumed: false,
       },
       earlyData: utf8ToBytes('should not be accepted'),

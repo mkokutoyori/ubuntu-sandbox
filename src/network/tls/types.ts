@@ -48,4 +48,4 @@ export const MAX_TLS_RECORD_LENGTH = 16384;
 export const TLS_LEGACY_RECORD_VERSION = 0x0303;
 
 /** RFC 8446 §4.1.3 — magic random value identifying a HelloRetryRequest. */
-export const HELLO_RETRY_REQUEST_RANDOM = 'HelloRetryRequest-magic';
+export const HELLO_RETRY_REQUEST_RANDOM = 'cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c';

@@ -78,7 +78,7 @@ describe('RFC 8446 §4.6.1 — durée de vie des tickets', () => {
     const { client, server } = lab(undefined, []);
     drive(client, server);
     const ticket: NewSessionTicket = {
-      kind: 'new_session_ticket', ticketLifetime: lifetime, ticketAgeAdd: 'a', ticketNonce: 'n', ticket: 't', extensions: {},
+      kind: 'new_session_ticket', ticketLifetime: lifetime, ticketAgeAdd: '0a0a0a0a', ticketNonce: '01', ticket: '74', extensions: {},
     };
     client.receiveSessionTicket(fragmentAsRecords('handshake', encodeHandshakeMessage(ticket), true));
     return client;

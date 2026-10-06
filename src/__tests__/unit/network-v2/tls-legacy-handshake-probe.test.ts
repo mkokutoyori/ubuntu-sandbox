@@ -19,6 +19,7 @@
  * du client » (mTLS 1.3 préexistant). Ils prouvent que le laboratoire
  * lui-même est sain.
  */
+import { decodeLegacyMessages, encodeLegacyBundle } from '@/network/tls/legacy/legacyMessages';
 import { describe, it, expect } from 'vitest';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -168,7 +169,7 @@ describe('RFC 8446 §4.1.3 — sentinelle de rétrogradation', () => {
     const { client, server } = lab({ versions: ['1.3', '1.2'] }, { protocols: ['1.3', '1.2'] });
     const wire = drive(client, server, stripTls13);
     expect(server.negotiatedVersion).toBe('1.2');
-    const hello = JSON.parse(bytesToUtf8(wire.sentToClient[0][0].fragment))[0];
+    const hello = decodeLegacyMessages(wire.sentToClient[0][0].fragment)[0] as unknown as { random: string };
     expect(hello.random.slice(-16)).toBe('444f574e47524401');
     expect(client.result).toBe('failure');
     expect(client.lastAlert?.description).toBe('illegal_parameter');
@@ -229,15 +230,15 @@ describe('suites et échanges de clés', () => {
     const { client, server } = lab({ versions: ['1.2'], ...only('TLS_RSA_WITH_AES_128_GCM_SHA256') }, {});
     const wire = drive(client, server);
     expect(client.result).toBe('success');
-    const keyExchange = JSON.parse(bytesToUtf8(wire.sentToServer[1][0].fragment))
-      .find((m: { kind: string }) => m.kind === 'client_key_exchange');
+    const keyExchange = (decodeLegacyMessages(wire.sentToServer[1][0].fragment, { version: '1.2', keyExchange: 'RSA' }) as unknown as { kind: string; exchange: { type: string; encryptedPreMasterSecret: string } }[])
+      .find((m) => m.kind === 'client_key_exchange')!;
     expect(keyExchange.exchange.type).toBe('rsa');
     expect(keyExchange.exchange.encryptedPreMasterSecret).toMatch(/^[0-9a-f]+$/);
   });
 
   it('3DES n\'est jamais offert par défaut mais se négocie sur demande', () => {
     const offered = lab({ versions: ['1.2'] }, {});
-    const hello = JSON.parse(bytesToUtf8(offered.client.start()[0].fragment)) as ClientHello;
+    const hello = decodeHandshakeMessage(offered.client.start()[0].fragment) as ClientHello;
     expect(hello.legacyCipherSuites).not.toContain(0x000a);
     const { client, server } = lab(
       { versions: ['1.2'], ...only('TLS_RSA_WITH_3DES_EDE_CBC_SHA') },
@@ -250,8 +251,8 @@ describe('suites et échanges de clés', () => {
 
   it('RFC 7465 : RC4 n\'est jamais offert, même demandé', () => {
     const { client } = lab({ versions: ['1.2'], legacyCipherSuites: ['TLS_RSA_WITH_RC4_128_SHA'] }, {});
-    const hello = JSON.parse(bytesToUtf8(client.start()[0].fragment)) as ClientHello;
-    expect(hello.legacyCipherSuites).toEqual([]);
+    const hello = decodeHandshakeMessage(client.start()[0].fragment) as ClientHello;
+    expect(hello.legacyCipherSuites ?? []).toEqual([]);
   });
 
   it('l\'ordre du serveur l\'emporte par défaut, celui du client sur demande', () => {
@@ -313,11 +314,11 @@ describe('authentification et intégrité', () => {
     const { client, server } = lab({ versions: ['1.2'] }, {});
     drive(client, server, (records, direction) => {
       if (direction !== 'down') return records;
-      const bundle = JSON.parse(bytesToUtf8(records[0].fragment)) as { kind: string; signature?: string }[];
+      const bundle = decodeLegacyMessages(records[0].fragment) as { kind: string; signature?: string }[];
       for (const message of bundle) {
         if (message.kind === 'server_key_exchange') message.signature = `00${message.signature!.slice(2)}`;
       }
-      return [{ ...records[0], fragment: utf8ToBytes(JSON.stringify(bundle)) }];
+      return [{ ...records[0], fragment: encodeLegacyBundle(bundle, { version: '1.2', keyExchange: 'ECDHE_RSA' }) }];
     });
     expect(client.result).toBe('failure');
     expect(client.lastAlert?.description).toBe('decrypt_error');

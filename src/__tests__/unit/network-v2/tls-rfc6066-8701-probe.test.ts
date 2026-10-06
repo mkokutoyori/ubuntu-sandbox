@@ -12,6 +12,11 @@
  * « un client sans GREASE n'en émet pas » et « sans status_request, le
  * serveur n'agrafe rien » (en 1.3 et en 1.2).
  */
+import { splitHandshakeMessages } from '@/network/tls/wire/Tls13HandshakeCodec';
+import { HANDSHAKE_TYPE } from '@/network/tls/wire/TlsRegistry';
+import { decodeHandshakeMessage, encodeHandshakeMessage } from '@/network/tls/messages';
+import { decodeLegacyMessages, encodeLegacyBundle } from '@/network/tls/legacy/legacyMessages';
+import type { ServerHello } from '@/network/tls/messages';
 import { describe, it, expect } from 'vitest';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -115,8 +120,9 @@ describe.each([['1.3', ['1.3'] as const], ['1.2', ['1.2'] as const]])('TLS %s', 
 
     it('sans status_request, le serveur n\'agrafe rien', () => {
       const { down } = connect({ versions: [...versions] }, { ocspStaple: staple() });
-      expect(JSON.stringify(down)).not.toContain('legacy_certificate_status');
-      expect(down.flat().some((r) => bytesToUtf8(r.fragment).includes('"ocspStaple"'))).toBe(false);
+      const types = down.filter((flight) => flight[0]?.contentType === 'handshake').flatMap((flight) => splitHandshakeMessages(flight[0].fragment).map((m) => m.type));
+      expect(types.length).toBeGreaterThan(0);
+      expect(types).not.toContain(HANDSHAKE_TYPE.certificateStatus);
     });
   });
 
@@ -155,7 +161,7 @@ describe('GREASE (RFC 8701)', () => {
     for (const versions of [['1.3'], ['1.2']] as const) {
       const { client, up } = connect({ versions: [...versions], grease: true }, {});
       expect(client.result).toBe('success');
-      const hello = JSON.parse(bytesToUtf8(up[0][0].fragment));
+      const hello = decodeHandshakeMessage(up[0][0].fragment) as unknown as { legacyCipherSuites: number[]; extensions: { supportedGroups: string[]; signatureAlgorithms: string[] } };
       expect(hello.legacyCipherSuites[0]).toBe(0x0a0a);
       expect(hello.extensions.supportedGroups[0]).toBe('grease_0a0a');
       expect(hello.extensions.signatureAlgorithms[0]).toBe('grease_0a0a');
@@ -164,15 +170,14 @@ describe('GREASE (RFC 8701)', () => {
 
   it('un client sans GREASE n\'en émet pas', () => {
     const { up } = connect({ versions: ['1.2'] }, {});
-    expect(bytesToUtf8(up[0][0].fragment)).not.toContain('grease');
+    expect(JSON.stringify(decodeHandshakeMessage(up[0][0].fragment))).not.toContain('grease');
   });
 
   it('un serveur qui sélectionne une valeur GREASE est refusé (illegal_parameter)', () => {
     const tamper: Tamper = (records, direction) => {
       if (direction !== 'down' || records[0].contentType !== 'handshake') return records;
-      const hello = JSON.parse(bytesToUtf8(records[0].fragment));
-      hello.cipherSuite = 'TLS_GREASE_0A0A';
-      return [{ ...records[0], fragment: utf8ToBytes(JSON.stringify(hello)) }, ...records.slice(1)];
+      const hello = decodeHandshakeMessage(records[0].fragment) as ServerHello;
+      return [{ ...records[0], fragment: encodeHandshakeMessage({ ...hello, cipherSuite: 'TLS_GREASE_0A0A' as ServerHello['cipherSuite'] }) }, ...records.slice(1)];
     };
     const { client } = connect({ versions: ['1.3'], grease: true }, {}, tamper);
     expect(client.lastAlert?.description).toBe('illegal_parameter');

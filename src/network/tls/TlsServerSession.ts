@@ -31,6 +31,7 @@ import {
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
+import { randomHex } from './legacy/LegacyHandshake';
 import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
@@ -342,6 +343,8 @@ export class TlsServerSession {
 
     const helloRetryRequest: HelloRetryRequest = {
       kind: 'hello_retry_request', random: HELLO_RETRY_REQUEST_RANDOM, selectedGroup: mutualGroup,
+      cipherSuite: this.selectCipherSuite(clientHello) ?? 'TLS_AES_128_GCM_SHA256',
+      ...(clientHello.legacyExtensions?.sessionId ? { sessionIdEcho: clientHello.legacyExtensions.sessionId } : {}),
     };
     const hrrBytes = encodeHandshakeMessage(helloRetryRequest);
     this.transcript.push(hrrBytes);
@@ -479,12 +482,16 @@ export class TlsServerSession {
     return this.proceedWithServerFlight(clientHello, null, []);
   }
 
+  private selectCipherSuite(clientHello: ClientHello): CipherSuite | null {
+    return this.config.preferServerCiphers === false
+      ? clientHello.cipherSuites.find((suite) => this.cipherSuitePreference.includes(suite)) ?? null
+      : selectCipherSuite(clientHello.cipherSuites, this.cipherSuitePreference);
+  }
+
   private proceedWithServerFlight(
     clientHello: ClientHello, redeemed: RedeemedPsk | null, earlyRecords: readonly TlsRecord[],
   ): readonly TlsRecord[] | null {
-    const negotiatedSuite = this.config.preferServerCiphers === false
-      ? clientHello.cipherSuites.find((suite) => this.cipherSuitePreference.includes(suite)) ?? null
-      : selectCipherSuite(clientHello.cipherSuites, this.cipherSuitePreference);
+    const negotiatedSuite = this.selectCipherSuite(clientHello);
     if (!negotiatedSuite) return this.reject('handshake_failure');
     this.negotiatedCipherSuite = negotiatedSuite;
     this.hash = suiteInfo(negotiatedSuite).hash;
@@ -499,7 +506,7 @@ export class TlsServerSession {
     this.negotiatedAlpnProtocol = selectAlpnProtocol(clientHello.extensions.alpn, this.alpnProtocols);
     if (this.alpnRefused(clientHello)) return this.reject('no_application_protocol');
 
-    const serverRandom = randomNonce('srv');
+    const serverRandom = randomHex(32);
     // La part du serveur porte désormais son groupe, comme celle du
     // client : sans ce préfixe le client ne saurait pas quelle courbe
     // interpréter, et le §4.2.8 en fait de toute façon un `NamedGroup`.
@@ -507,6 +514,7 @@ export class TlsServerSession {
     const serverKeyShare = echange.share;
     const serverHello: ServerHello = {
       kind: 'server_hello', random: serverRandom, cipherSuite: negotiatedSuite,
+      ...(clientHello.legacyExtensions?.sessionId ? { sessionIdEcho: clientHello.legacyExtensions.sessionId } : {}),
       extensions: {
         supportedVersions: '1.3', keyShare: serverKeyShare,
         preSharedKey: pskAccepted ? 'accepted' : undefined,
@@ -656,9 +664,9 @@ export class TlsServerSession {
 
     if (!this.config.sessionTicketStore) return null;
     const ticket: SessionTicket = {
-      ticket: randomNonce('ticket'),
+      ticket: randomHex(16),
       resumptionMasterSecret: this.resumptionMasterSecret!,
-      ticketNonce: randomNonce('ticket-nonce'),
+      ticketNonce: randomHex(8),
       cipherSuite: this.negotiatedCipherSuite as CipherSuite,
       ticketLifetime: 7200,
       issuedAt: simulationNowMs(),
@@ -666,7 +674,7 @@ export class TlsServerSession {
     };
     this.config.sessionTicketStore.issue(ticket);
     const newSessionTicket: NewSessionTicket = {
-      kind: 'new_session_ticket', ticketLifetime: ticket.ticketLifetime, ticketAgeAdd: randomNonce('age-add'),
+      kind: 'new_session_ticket', ticketLifetime: ticket.ticketLifetime, ticketAgeAdd: randomHex(4),
       ticketNonce: ticket.ticketNonce, ticket: ticket.ticket, extensions: { earlyData: this.config.earlyData !== false },
     };
     return fragmentAsRecords('handshake', encodeHandshakeMessage(newSessionTicket), true);

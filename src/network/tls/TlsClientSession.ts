@@ -41,7 +41,6 @@ import {
   type LegacySuiteDefinition, type ResolvedLegacyPolicy, type LegacyVersion, type TlsProtocolVersion,
 } from './legacy/legacyCipherSuites';
 import { LegacyClientHandshake, newHelloRandom } from './legacy/LegacyHandshake';
-import { decodeLegacyMessages } from './legacy/legacyMessages';
 import type { TrafficProtection } from './trafficProtection';
 import { suiteInfo } from './suite13';
 import type { Tls13Hash } from './hkdf';
@@ -343,8 +342,8 @@ export class TlsClientSession {
     const { leading, rest } = splitLeadingContentType(incoming, 'handshake');
     const { contentType: leadType, plaintext: leadBytes } = reassembleRecords(leading, false);
     if (leadType !== 'handshake') return this.fail('decode_error');
-    if (decodeLegacyMessages(leadBytes)[0]?.kind === 'legacy_server_hello') return this.startLegacy(incoming);
     const leadMessage = decodeHandshakeMessage(leadBytes);
+    if (leadMessage.kind === 'server_hello' && leadMessage.extensions.supportedVersions !== '1.3') return this.startLegacy(incoming);
 
     if (leadMessage.kind === 'hello_retry_request') {
       if (rest.length > 0) return this.fail('unexpected_message');

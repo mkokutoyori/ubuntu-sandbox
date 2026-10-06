@@ -4,6 +4,7 @@ import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { TlsClientSession } from '@/network/tls/TlsClientSession';
 import { HELLO_RETRY_REQUEST_RANDOM } from '@/network/tls/types';
+import { decodeHandshakeMessage, type HelloRetryRequest } from '@/network/tls/messages';
 import type { TlsRecord } from '@/network/tls/recordLayer';
 
 const NOW = Date.now();
@@ -57,7 +58,7 @@ describe('TLS 1.3 HelloRetryRequest (RFC 8446 §4.1.4)', () => {
     expect(hrrFlight).toHaveLength(1);
     expect(hrrFlight[0].contentType).toBe('handshake');
 
-    const decoded = JSON.parse(new TextDecoder().decode(hrrFlight[0].fragment));
+    const decoded = decodeHandshakeMessage(hrrFlight[0].fragment) as HelloRetryRequest;
     expect(decoded.kind).toBe('hello_retry_request');
     expect(decoded.random).toBe(HELLO_RETRY_REQUEST_RANDOM);
     expect(decoded.selectedGroup).toBe('secp256r1');
