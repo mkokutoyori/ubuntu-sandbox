@@ -25,6 +25,11 @@ import { pbkdf2 } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate } from './X509Certificate';
 import { encodeCertificate, decodeCertificate } from './der/X509Der';
+import { encryptPrivateKeyPkcs8, decryptPrivateKeyPkcs8 } from './der/EncryptedKeyDer';
+import {
+  encodePrivateKeyPkcs8, decodePrivateKeyPkcs8, encodeRsaPrivateKeyPkcs1, decodeRsaPrivateKeyPkcs1,
+  encodeEcPrivateKeySec1, decodeEcPrivateKeySec1, encodePublicKeySpki, decodePublicKeySpki,
+} from './der/KeyDer';
 import type { PkiPrivateKey, PkiPublicKey } from './PkiKeyPair';
 import { CertificateRevocationList, type CrlFields } from './CertificateRevocationList';
 import type { OcspRequestMessage, OcspResponseMessage } from './OcspWire';
@@ -152,16 +157,29 @@ export function pemToCertChain(pem: string): X509Certificate[] {
  * `genrsa -traditional` demande encore.
  */
 export function privateKeyToPem(key: PkiPrivateKey, traditional = false): string {
-  const label: PemLabel = traditional
-    ? (key.algorithm === 'ecdsa' ? 'EC PRIVATE KEY' : 'RSA PRIVATE KEY')
-    : 'PRIVATE KEY';
-  return armour(label, key);
+  if (!traditional) return armourBytes('PRIVATE KEY', encodePrivateKeyPkcs8(key));
+  return key.algorithm === 'ecdsa'
+    ? armourBytes('EC PRIVATE KEY', encodeEcPrivateKeySec1(key.material))
+    : armourBytes('RSA PRIVATE KEY', encodeRsaPrivateKeyPkcs1(key.material));
 }
 
 export function pemToPrivateKey(pem: string): PkiPrivateKey | null {
-  for (const label of ['PRIVATE KEY', 'RSA PRIVATE KEY', 'EC PRIVATE KEY'] as const) {
-    const o = unarmour(pem, label) as PkiPrivateKey | null;
-    if (o && typeof o.material === 'string') return o;
+  const decoders: readonly [PemLabel, (bytes: Uint8Array) => PkiPrivateKey][] = [
+    ['PRIVATE KEY', decodePrivateKeyPkcs8], ['RSA PRIVATE KEY', decodeRsaPrivateKeyPkcs1], ['EC PRIVATE KEY', decodeEcPrivateKeySec1],
+  ];
+  for (const [label, decode] of decoders) {
+    const bytes = unarmourBytes(pem, label);
+    if (bytes === null) continue;
+    try {
+      if (bytes[0] === 0x7b) {
+        const legacy = JSON.parse(bytesToUtf8(bytes)) as PkiPrivateKey;
+        if (typeof legacy.material === 'string') return legacy;
+        continue;
+      }
+      return decode(bytes);
+    } catch {
+      continue;
+    }
   }
   return null;
 }
@@ -182,58 +200,15 @@ export function pemToPrivateKey(pem: string): PkiPrivateKey | null {
  * indéchiffrable, et les inventer à la lecture reviendrait à ne pas
  * chiffrer.
  */
-const PKCS8_ITERATIONS = 2048;
-const PKCS8_KEY_LEN = 32;
-const PKCS8_IV_LEN = 16;
-
-interface EnveloppePkcs8 {
-  readonly alg: 'aes-256-cbc';
-  readonly kdf: 'pbkdf2-sha256';
-  readonly iter: number;
-  readonly salt: string;
-  readonly iv: string;
-  readonly data: string;
-}
-
 export function encryptedPrivateKeyToPem(
   key: PkiPrivateKey, passphrase: string, random: (n: number) => Uint8Array,
 ): string {
-  const salt = random(16);
-  const iv = random(PKCS8_IV_LEN);
-  const cle = pbkdf2(SHA256, utf8ToBytes(passphrase), salt, PKCS8_ITERATIONS, PKCS8_KEY_LEN);
-  const clair = utf8ToBytes(JSON.stringify(key));
-  const enveloppe: EnveloppePkcs8 = {
-    alg: 'aes-256-cbc',
-    kdf: 'pbkdf2-sha256',
-    iter: PKCS8_ITERATIONS,
-    salt: bytesToHex(salt),
-    iv: bytesToHex(iv),
-    data: bytesToHex(aesCbcEncrypt(cle, iv, clair)),
-  };
-  return armour('ENCRYPTED PRIVATE KEY', enveloppe);
+  return armourBytes('ENCRYPTED PRIVATE KEY', encryptPrivateKeyPkcs8(key, passphrase, random));
 }
 
-/**
- * `null` sur une mauvaise phrase de passe — et c'est le seul verdict
- * possible : le déchiffrement AES rend des octets quelconques dont le
- * dépaddage ou le JSON échouent. C'est aussi ce que fait un vrai
- * openssl, qui ne peut pas distinguer « mauvaise phrase » de « fichier
- * corrompu ».
- */
 export function pemToEncryptedPrivateKey(pem: string, passphrase: string): PkiPrivateKey | null {
-  const env = unarmour(pem, 'ENCRYPTED PRIVATE KEY') as EnveloppePkcs8 | null;
-  if (!env || typeof env.salt !== 'string' || typeof env.iv !== 'string') return null;
-  try {
-    const cle = pbkdf2(
-      SHA256, utf8ToBytes(passphrase), hexToBytes(env.salt),
-      env.iter ?? PKCS8_ITERATIONS, PKCS8_KEY_LEN,
-    );
-    const clair = aesCbcDecrypt(cle, hexToBytes(env.iv), hexToBytes(env.data));
-    const o = JSON.parse(bytesToUtf8(clair)) as PkiPrivateKey;
-    return typeof o?.material === 'string' ? o : null;
-  } catch {
-    return null;
-  }
+  const bytes = unarmourBytes(pem, 'ENCRYPTED PRIVATE KEY');
+  return bytes === null ? null : decryptPrivateKeyPkcs8(bytes, passphrase);
 }
 
 /** Une armure de clé chiffrée est-elle présente ? */
@@ -247,12 +222,21 @@ export function isEncryptedPrivateKeyPem(pem: string): boolean {
 }
 
 export function publicKeyToPem(key: PkiPublicKey): string {
-  return armour('PUBLIC KEY', key);
+  return armourBytes('PUBLIC KEY', encodePublicKeySpki(key));
 }
 
 export function pemToPublicKey(pem: string): PkiPublicKey | null {
-  const o = unarmour(pem, 'PUBLIC KEY') as PkiPublicKey | null;
-  return o && typeof o.material === 'string' ? o : null;
+  const bytes = unarmourBytes(pem, 'PUBLIC KEY');
+  if (bytes === null) return null;
+  try {
+    if (bytes[0] === 0x7b) {
+      const legacy = JSON.parse(bytesToUtf8(bytes)) as PkiPublicKey;
+      return typeof legacy.material === 'string' ? legacy : null;
+    }
+    return decodePublicKeySpki(bytes);
+  } catch {
+    return null;
+  }
 }
 
 // ─── Demandes de signature ──────────────────────────────────────────

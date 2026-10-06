@@ -57,7 +57,7 @@ describe('-topk8 chiffre, sauf si on demande le contraire', () => {
     await s.executeCommand('openssl pkcs8 -topk8 -nocrypt -in /tmp/k.pem -out /tmp/clair.pem');
     const decode = (pem: string): string => {
       const corps = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
-      return Buffer.from(corps, 'base64').toString('utf8');
+      return Buffer.from(corps, 'base64').toString('hex');
     };
     expect(decode(await s.executeCommand('cat /tmp/clair.pem')).toUpperCase())
       .toContain(module.slice(0, 20));
