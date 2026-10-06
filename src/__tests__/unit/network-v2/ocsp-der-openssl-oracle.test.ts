@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -32,12 +33,12 @@ interface Lab { readonly srv: LinuxServer; readonly ca: string; readonly good: s
 
 function exportBinary(srv: LinuxServer, path: string, name: string): string {
   const file = join(dir, name);
-  writeFileSync(file, Buffer.from(srv.readTextFile(path) ?? '', 'latin1'));
+  writeFileSync(file, Buffer.from(fileTextToBytes(srv.readTextFile(path) ?? '')));
   return file;
 }
 
 function importBinary(srv: LinuxServer, file: string, path: string): void {
-  srv.writeTextFile(path, readFileSync(file).toString('latin1'));
+  srv.writeTextFile(path, bytesToFileText(readFileSync(file)));
 }
 
 function exportText(srv: LinuxServer, path: string, name: string): string {

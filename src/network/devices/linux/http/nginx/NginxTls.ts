@@ -6,7 +6,7 @@ import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import { decodeOcspResponse } from '@/network/pki/der/OcspDer';
 import { sameSerial } from '@/network/pki/der/X509Der';
-import { binaryStringToBytes } from '@/crypto/encoding';
+import { fileTextToBytes } from '@/crypto/encoding';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import {
   pemToCertChain, pemToPrivateKey, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem,
@@ -205,7 +205,7 @@ export function loadServerTls(
     }
     let parsed: OcspResponseMessage;
     try {
-      parsed = decodeOcspResponse(binaryStringToBytes(pem));
+      parsed = decodeOcspResponse(fileTextToBytes(pem));
     } catch {
       return fail(`d2i_OCSP_RESPONSE_bio("${settings.staplingFile}") failed `
         + '(SSL: error:0688010A:asn1 encoding routines::nested asn1 error)');

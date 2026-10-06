@@ -50,7 +50,7 @@ export const REAL_OPENSSL_SUBCOMMANDS: ReadonlySet<string> = new Set([
  * quelqu'un écrit `openssl x509 -in c.pem -noout`.
  */
 const VALUED: Readonly<Record<string, readonly string[]>> = {
-  '*': ['-in', '-out', '-keyout', '-key', '-passin', '-passout', '-pass', '-md', '-config'],
+  '*': ['-in', '-out', '-keyout', '-key', '-passin', '-passout', '-pass', '-md', '-config', '-inform', '-outform', '-keyform'],
   dgst: ['-hmac', '-mac', '-macopt', '-sigopt', '-signature'],
   enc: ['-k', '-kfile', '-K', '-iv', '-S', '-iter'],
   passwd: ['-salt'],

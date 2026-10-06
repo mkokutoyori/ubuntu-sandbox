@@ -22,6 +22,7 @@
 
 import { simulationDate } from '@/network/core/SystemClock';
 
+import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 
@@ -606,9 +607,10 @@ export const base64Command = coreutil(
       if (decode) {
         const binary = atob(input.replace(/\s+/g, ''));
         const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
-        return new TextDecoder().decode(bytes).replace(/\n$/, '');
+        const decoded = bytesToFileText(bytes);
+        return /[\udc80-\udcff]/.test(decoded) ? decoded : decoded.replace(/\n$/, '');
       }
-      const bytes = new TextEncoder().encode(input.endsWith('\n') ? input : input + '\n');
+      const bytes = fileTextToBytes(input.endsWith('\n') ? input : input + '\n');
       let binary = '';
       for (const b of bytes) binary += String.fromCharCode(b);
       return btoa(binary);
@@ -651,7 +653,7 @@ export const cksumCommand = coreutil(
     const got = inputs(ctx, files, stdin, 'cksum');
     if (!Array.isArray(got)) return got;
     return got.map((content, i) => {
-      const bytes = new TextEncoder().encode(content);
+      const bytes = fileTextToBytes(content);
       return `${posixCksum(bytes)} ${bytes.length}${files[i] ? ` ${files[i]}` : ''}`;
     }).join('\n');
   },

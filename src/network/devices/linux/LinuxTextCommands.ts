@@ -2,6 +2,7 @@
  * Text processing commands: grep, head, tail, wc, sort, cut, uniq, tr, awk
  */
 
+import { fileTextToBytes } from '@/crypto/encoding';
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { ShellContext, expandGlob } from './LinuxFileCommands';
 import { runAwk, type AwkHost } from './awk';
@@ -423,10 +424,8 @@ export function cmdWc(ctx: ShellContext, args: string[], stdin?: string): string
     // tail of a file with no final newline doesn't add a phantom line.
     const lines = (content.match(/\n/g) ?? []).length;
     const words = content.split(/\s+/).filter(Boolean).length;
-    const bytes = content.length;
-    // For an ASCII-only sandbox bytes == chars; multi-byte support
-    // would require encoding into UTF-8 first.
-    const chars = bytes;
+    const bytes = fileTextToBytes(content).length;
+    const chars = Array.from(content).length;
     let maxLine = 0;
     for (const l of content.split('\n')) {
       if (l.length > maxLine) maxLine = l.length;

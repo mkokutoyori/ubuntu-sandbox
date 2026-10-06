@@ -1,4 +1,5 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -11,14 +12,8 @@ import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { createRequest, createResponse } from '@/network/http/semantics/types';
 
-function textBytes(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
-
 function bytesText(bytes: Uint8Array | null): string {
-  return bytes === null ? '' : Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+  return bytes === null ? '' : bytesToFileText(bytes);
 }
 
 /**
@@ -66,8 +61,9 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
       const request = createRequest('POST', path);
       request.headers.set('Host', `${ip}:${port}`);
       for (const [name, value] of Object.entries(headers)) request.headers.set(name, value);
-      request.headers.set('Content-Length', String(body.length));
-      request.body = textBytes(body);
+      const payload = fileTextToBytes(body);
+      request.headers.set('Content-Length', String(payload.length));
+      request.body = payload;
       const session = new Http1ClientSession(ctx.net.getTcpStack(), ip, port);
       const result = session.send(request);
       session.close();
@@ -81,7 +77,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         const outcome = handler(bytesText(req.body));
         const response = createResponse(outcome.status, outcome.status === 200 ? 'OK' : 'Bad Request');
         response.headers.set('Content-Type', 'application/ocsp-response');
-        response.body = textBytes(outcome.body);
+        response.body = fileTextToBytes(outcome.body);
         return response;
       }).start({ processName: 'openssl' });
       return true;

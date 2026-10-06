@@ -1,3 +1,4 @@
+import { bytesToFileText } from '@/crypto/encoding';
 /**
  * Inode-based Virtual File System for Linux device simulation.
  * Supports files, directories, symlinks, hard links, FIFOs, and special devices.
@@ -717,12 +718,9 @@ export class VirtualFileSystem {
         case 'null': return '';
         case 'zero': return '\0'.repeat(1024);
         case 'urandom': {
-          // Return pseudo-random bytes
-          let s = '';
-          for (let i = 0; i < 1024; i++) {
-            s += String.fromCharCode(Math.floor(Math.random() * 256));
-          }
-          return s;
+          const bytes = new Uint8Array(1024);
+          for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+          return bytesToFileText(bytes);
         }
       }
     }
@@ -742,11 +740,9 @@ export class VirtualFileSystem {
         case 'null': return '';
         case 'zero': return '\0'.repeat(count);
         case 'urandom': {
-          let s = '';
-          for (let i = 0; i < count; i++) {
-            s += String.fromCharCode(Math.floor(Math.random() * 256));
-          }
-          return s;
+          const bytes = new Uint8Array(count);
+          for (let i = 0; i < count; i++) bytes[i] = Math.floor(Math.random() * 256);
+          return bytesToFileText(bytes);
         }
       }
     }

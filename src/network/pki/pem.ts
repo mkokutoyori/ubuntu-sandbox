@@ -18,7 +18,7 @@
  */
 
 import {
-  bytesToBase64, base64ToBytes, utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes,
+  bytesToBase64, base64ToBytes, utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
 import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
 import { pbkdf2 } from '@/crypto/kdf';
@@ -110,6 +110,23 @@ function unarmourBytes(pem: string, label: PemLabel): Uint8Array | null {
   const body = pem.slice(from + begin.length, to).replace(/\s+/g, '');
   if (body.length === 0) return null;
   try { return base64ToBytes(body); } catch { return null; }
+}
+
+export function derFromPem(pem: string): string | null {
+  const begin = pem.indexOf('-----BEGIN ');
+  if (begin === -1) return null;
+  const labelEnd = pem.indexOf('-----', begin + 11);
+  if (labelEnd === -1) return null;
+  const bytes = unarmourBytes(pem, pem.slice(begin + 11, labelEnd) as PemLabel);
+  return bytes === null ? null : bytesToFileText(bytes);
+}
+
+export function isDerText(text: string): boolean {
+  return text.length > 0 && !text.includes('-----BEGIN ') && text.charCodeAt(0) === 0x30;
+}
+
+export function armourDer(text: string, label: PemLabel): string {
+  return armourBytes(label, fileTextToBytes(text));
 }
 
 export function certToPem(cert: X509Certificate): string {

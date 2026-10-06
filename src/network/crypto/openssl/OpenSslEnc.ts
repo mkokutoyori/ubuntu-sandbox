@@ -2,30 +2,16 @@
  * docs/PRD-OpenSSL.md §P2 — `enc`, symmetric encryption.
  *
  * Everything here is REAL: AES-CBC comes from `src/crypto/cipher/`, key
- * derivation from `src/crypto/kdf/` (PBKDF2). Nothing is imitated — that
- * is §5 P1, and it is what makes the exercise verifiable.
- *
- * ONE LIMIT, imposed by the platform rather than chosen, written here
- * because it is visible to the operator.
- *
- * The real `openssl enc` writes raw binary by default. This simulator's
- * filesystem stores UTF-8 STRINGS — `xxd` itself reads a file through
- * `TextEncoder().encode(content)`. Writing arbitrary bytes there would not
- * store them: invalid UTF-8 sequences are replaced on read, so decryption
- * would return something other than the original, SILENTLY.
- *
- * Rather than shipping a round-trip that corrupts, `enc` requires `-a`
- * (the base64 armour, a real openssl option) as soon as it writes to a
- * file, and refuses raw binary while saying why. The output with `-a` is
- * exactly the real tool's — base64 of `Salted__` ‖ salt ‖ ciphertext — so
- * nothing is invented: it is a faithful subset, not an imitation.
+ * derivation from `src/crypto/kdf/` (PBKDF2). Like the real tool, `enc`
+ * reads and writes raw bytes by default (`Salted__` ‖ salt ‖ ciphertext)
+ * and the base64 armour only with `-a`.
  */
 
 import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
 import { pbkdf2 } from '@/crypto/kdf';
 import { md5, SHA256 } from '@/crypto/hash';
 import {
-  bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8,
+  bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
 import { parseArgs } from './OpenSslArgs';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
@@ -132,13 +118,6 @@ export function runEnc(
   const armoured = opts.has('-a') || opts.has('-base64');
   const out = opts.get('-out');
 
-  // The limit from this file's header, stated where it applies, with the
-  // option that lifts it.
-  if (!armoured && typeof out === 'string' && !decrypting) {
-    return fail('openssl: enc: raw binary output cannot be stored by this simulator\'s '
-      + 'filesystem (it holds text); add -a for the base64 armour openssl itself offers');
-  }
-
   const iterations = Number(opts.get('-iter') ?? (opts.has('-pbkdf2') ? 10000 : 1));
   const derive = (salt: Uint8Array): { key: Uint8Array; iv: Uint8Array } => {
     const total = algo.keyLen + algo.ivLen;
@@ -148,39 +127,46 @@ export function runEnc(
     return { key: raw.subarray(0, algo.keyLen), iv: raw.subarray(algo.keyLen, total) };
   };
 
+  const givenSalt = opts.get('-S');
+  let fixedSalt: Uint8Array | null = null;
+  if (typeof givenSalt === 'string') {
+    if (!/^[0-9a-fA-F]{1,16}$/.test(givenSalt)) return fail('invalid hex salt value');
+    fixedSalt = hexToBytes(givenSalt.padEnd(16, '0'));
+  }
+  const headerless = fixedSalt !== null || opts.has('-nosalt');
+
   if (!decrypting) {
-    const salt = typeof opts.get('-S') === 'string'
-      ? hexToBytes(String(opts.get('-S')))
-      : host.randomBytes(8);
+    const salt = fixedSalt ?? host.randomBytes(8);
     const { key, iv } = derive(salt);
-    const body = aesCbcEncrypt(key, iv, utf8ToBytes(input));
+    const body = aesCbcEncrypt(key, iv, fileTextToBytes(input));
 
     if (opts.has('-P') || opts.has('-p')) {
       const trace = [
-        `salt=${bytesToHex(salt).toUpperCase()}`,
+        ...(opts.has('-nosalt') ? [] : [`salt=${bytesToHex(salt).toUpperCase()}`]),
         `key=${bytesToHex(key).toUpperCase()}`,
         `iv =${bytesToHex(iv).toUpperCase()}`,
       ].join('\n');
-      // `-P` prints and does NOT operate; `-p` prints then operates.
       if (opts.has('-P')) return ok(trace);
-      const armour = assemble(salt, body, opts.has('-nosalt'));
-      return write(host, out, `${trace}\n${armour}`, armour, trace);
+      const content = assemble(salt, body, headerless, armoured, opts.has('-A'));
+      if (typeof out === 'string') {
+        return host.writeFile(out, content) ? ok(trace) : fail(`${out}: cannot write`);
+      }
+      return ok(`${trace}\n${content}`);
     }
 
-    const armour = assemble(salt, body, opts.has('-nosalt'));
-    return write(host, out, armour, armour, '');
+    return write(host, out, assemble(salt, body, headerless, armoured, opts.has('-A')), '');
   }
 
   // ── decryption ──
   let raw: Uint8Array;
   try {
-    raw = base64ToBytes(input.replace(/\s+/g, ''));
+    raw = armoured ? base64ToBytes(input.replace(/\s+/g, '')) : fileTextToBytes(input);
   } catch {
     return fail('error reading input file');
   }
-  let salt = new Uint8Array(8);
+  let salt = fixedSalt ?? new Uint8Array(8);
   let body = raw;
-  if (!opts.has('-nosalt')) {
+  if (!headerless) {
     const header = bytesToUtf8(raw.subarray(0, 8));
     if (header !== MAGIC) return fail('bad magic number');
     salt = raw.subarray(8, 16);
@@ -193,20 +179,22 @@ export function runEnc(
   } catch {
     return badDecrypt();
   }
-  const text = bytesToUtf8(plain);
-  // A wrong password must FAIL rather than return noise: that is what the
-  // PKCS#7 padding says, as on a real machine.
-  if (text.includes('�')) return badDecrypt();
-  return write(host, out, text, text, '');
+  return write(host, out, bytesToFileText(plain), '');
 }
 
-function assemble(salt: Uint8Array, body: Uint8Array, withoutSalt: boolean): string {
-  if (withoutSalt) return bytesToBase64(body);
-  const all = new Uint8Array(16 + body.length);
-  all.set(utf8ToBytes(MAGIC), 0);
-  all.set(salt, 8);
-  all.set(body, 16);
-  return bytesToBase64(all);
+function assemble(
+  salt: Uint8Array, body: Uint8Array, withoutSalt: boolean, armoured: boolean, singleLine: boolean,
+): string {
+  let all = body;
+  if (!withoutSalt) {
+    all = new Uint8Array(16 + body.length);
+    all.set(utf8ToBytes(MAGIC), 0);
+    all.set(salt, 8);
+    all.set(body, 16);
+  }
+  if (!armoured) return bytesToFileText(all);
+  const encoded = bytesToBase64(all);
+  return `${singleLine ? encoded : (encoded.match(/.{1,64}/g) ?? []).join('\n')}\n`;
 }
 
 function badDecrypt(): OpenSslResult {
@@ -219,13 +207,12 @@ function badDecrypt(): OpenSslResult {
 }
 
 function write(
-  host: OpenSslHost, out: string | true | undefined,
-  toFile: string, toScreen: string, trace: string,
+  host: OpenSslHost, out: string | true | undefined, content: string, trace: string,
 ): OpenSslResult {
   if (typeof out === 'string') {
-    return host.writeFile(out, toFile.split('\n').pop()! + '\n')
+    return host.writeFile(out, content)
       ? { output: '', stderr: trace, exitCode: 0 }
       : fail(`${out}: cannot write`);
   }
-  return ok(toScreen);
+  return { output: content, stderr: trace, exitCode: 0 };
 }

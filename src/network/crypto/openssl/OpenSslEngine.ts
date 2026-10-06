@@ -11,25 +11,24 @@
 
 import { connectErrno } from '@/network/tcp/types';
 import { errnoNumber } from '@/network/core/Errno';
-import { md4, md5Hex, sha1Hex, sha256Hex, sha512Hex, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
-import { hmacHex } from '@/crypto/mac';
+import { md4, md5, sha1, sha256, sha512, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
 import { md5Crypt } from '@/crypto/passwords';
 import {
-  bytesToBase64, base64ToBytes, bytesToHex, utf8ToBytes, bytesToUtf8,
+  bytesToBase64, base64ToBytes, bytesToHex, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { modpGroup, namedGroupOf } from '@/crypto/dh/modp';
 import { isProbablePrime } from '@/crypto/rsa';
-import { dhParametersToPem, pemToDhParameters, type DhParameters } from '@/network/pki/pem';
+import { dhParametersToPem, pemToDhParameters as strictPemToDhParameters, type DhParameters } from '@/network/pki/pem';
 import {
   buildOcspResponse, verifyOcspResponse, ocspTimeIsValid, ocspCertIdFor, ocspCertIdForSerial, sameCertId,
   ocspReasonCode, ocspReasonName, OCSP_RESPONSE_STATUS_CODE, OCSP_REQUEST_CONTENT_TYPE,
   type OcspCertId, type OcspRequestMessage, type OcspResponseMessage, type OcspStatusSource,
 } from '@/network/pki/OcspWire';
 import { encodeOcspRequest, decodeOcspRequest, encodeOcspResponse, decodeOcspResponse } from '@/network/pki/der/OcspDer';
-import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
+import { hmac } from '@/crypto/mac';
 import { parseOpensslConfig, buildExtensions, type CertificateExtensions } from './X509v3Config';
 import { materialToP256Public } from '@/crypto/ecc';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
@@ -37,10 +36,46 @@ import { signCertificate, type X509Certificate } from '@/network/pki/X509Certifi
 import { encodeCertificate, canonicalSerial, sameSerial } from '@/network/pki/der/X509Der';
 import { opensslDistinguishedName, slashDistinguishedName, splitDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import {
-  certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
-  pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
+  certToPem, pemToCert as strictPemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey as strictPemToPrivateKey, publicKeyToPem,
+  pemToPublicKey as strictPemToPublicKey, csrToPem, pemToCsr as strictPemToCsr, crlToPem, pemToCrl as strictPemToCrl, type CertificateRequest,
+  derFromPem, isDerText, armourDer, type PemLabel,
   encryptedPrivateKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem, pemToPrivateKeyWithPassphrase,
 } from '@/network/pki/pem';
+
+function inputPem(text: string, label: PemLabel): string {
+  return isDerText(text) ? armourDer(text, label) : text;
+}
+
+function pemToCert(text: string): X509Certificate | null { return strictPemToCert(inputPem(text, 'CERTIFICATE')); }
+function pemToCsr(text: string): CertificateRequest | null { return strictPemToCsr(inputPem(text, 'CERTIFICATE REQUEST')); }
+function pemToCrl(text: string): CertificateRevocationList | null { return strictPemToCrl(inputPem(text, 'X509 CRL')); }
+function pemToDhParameters(text: string): DhParameters | null { return strictPemToDhParameters(inputPem(text, 'DH PARAMETERS')); }
+function pemToPublicKey(text: string): PkiPublicKey | null { return strictPemToPublicKey(inputPem(text, 'PUBLIC KEY')); }
+
+function privateKeyInput(text: string): string {
+  if (!isDerText(text)) return text;
+  for (const label of ['PRIVATE KEY', 'RSA PRIVATE KEY', 'EC PRIVATE KEY'] as const) {
+    const candidate = armourDer(text, label);
+    if (strictPemToPrivateKey(candidate)) return candidate;
+  }
+  return armourDer(text, 'ENCRYPTED PRIVATE KEY');
+}
+
+function pemToPrivateKey(text: string): PkiPrivateKey | null { return strictPemToPrivateKey(privateKeyInput(text)); }
+
+function wantsDer(opts: Map<string, string | true>): boolean {
+  const form = opts.get('-outform');
+  return typeof form === 'string' && form.toUpperCase() === 'DER';
+}
+
+function emitDer(host: OpenSslHost, opts: Map<string, string | true>, lines: readonly string[], der: string, message = ''): OpenSslResult {
+  const out = opts.get('-out');
+  if (typeof out === 'string') {
+    return host.writeFile(out, der) ? { output: lines.join('\n'), stderr: message, exitCode: 0 } : fail(`${out}: cannot write`);
+  }
+  return { output: [...lines, der].join('\n'), stderr: message, exitCode: 0 };
+}
+import type { PkiPublicKey } from '@/network/pki/PkiKeyPair';
 import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
@@ -66,11 +101,11 @@ import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 import { OPENSSL_VERSION_DATE, OPENSSL_VERSION_TEXT } from './opensslVersion';
 
 const DIGESTS: Readonly<Record<string, { label: string; fn: (s: string) => string }>> = {
-  md4: { label: 'MD4', fn: (s) => bytesToHex(md4(utf8ToBytes(s))) },
-  md5: { label: 'MD5', fn: md5Hex },
-  sha1: { label: 'SHA1', fn: sha1Hex },
-  sha256: { label: 'SHA2-256', fn: sha256Hex },
-  sha512: { label: 'SHA2-512', fn: sha512Hex },
+  md4: { label: 'MD4', fn: (s) => bytesToHex(md4(fileTextToBytes(s))) },
+  md5: { label: 'MD5', fn: (s) => bytesToHex(md5(fileTextToBytes(s))) },
+  sha1: { label: 'SHA1', fn: (s) => bytesToHex(sha1(fileTextToBytes(s))) },
+  sha256: { label: 'SHA2-256', fn: (s) => bytesToHex(sha256(fileTextToBytes(s))) },
+  sha512: { label: 'SHA2-512', fn: (s) => bytesToHex(sha512(fileTextToBytes(s))) },
 };
 
 /** Ce qu'openssl connaît et que ce build n'offre pas — §8.2/§8.3. */
@@ -145,7 +180,7 @@ function runDgst(host: OpenSslHost, argv: readonly string[], forced?: string): O
     // and output size both matter in RFC 2104), hence the object rather
     // than its name.
     const empreinte = typeof hmacKey === 'string'
-      ? hmacHex(HMAC_HASHES[algo] ?? SHA256, hmacKey, contenu)
+      ? bytesToHex(hmac(HMAC_HASHES[algo] ?? SHA256, utf8ToBytes(hmacKey), fileTextToBytes(contenu)))
       : d.fn(contenu);
 
     if (opts.has('-r')) {
@@ -197,18 +232,18 @@ function runBase64(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   let sortie: string;
   if (opts.has('-d')) {
     try {
-      sortie = bytesToUtf8(base64ToBytes(entree.replace(/\s+/g, '')));
+      sortie = bytesToFileText(base64ToBytes(entree.replace(/\s+/g, '')));
     } catch {
       return fail('error in base64');
     }
   } else {
-    const b64 = bytesToBase64(utf8ToBytes(entree));
+    const b64 = bytesToBase64(fileTextToBytes(entree));
     sortie = opts.has('-A') ? b64 : (b64.match(/.{1,64}/g) ?? []).join('\n');
   }
 
   const out = opts.get('-out');
   if (typeof out === 'string') {
-    return host.writeFile(out, sortie + '\n') ? ok() : fail(`${out}: cannot write`);
+    return host.writeFile(out, opts.has('-d') ? sortie : sortie + '\n') ? ok() : fail(`${out}: cannot write`);
   }
   return ok(sortie);
 }
@@ -244,7 +279,7 @@ function runGenRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const paire = PkiKeyPair.generate('rsa', bits);
   const written = privateKeyPem(host, paire.privateKey, opts, opts.has('-traditional'));
   if ('error' in written) return fail(written.error);
-  const pem = written.pem;
+  const pem = wantsDer(opts) ? derFromPem(written.pem) ?? written.pem : written.pem;
   const out = opts.get('-out');
   const trace = `Generating RSA private key, ${bits} bit long modulus (2 primes)`;
   if (typeof out === 'string') {
@@ -286,15 +321,20 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     lignes.push(`Modulus=${modulusHex(cle.material) ?? ''}`);
   }
 
+  let der: string | null = null;
   if (!opts.has('-noout')) {
+    let pem: string;
     if (opts.has('-pubout')) {
-      lignes.push(publicKeyToPem({ algorithm: cle.algorithm, material: publicPartOf(cle.material) }));
+      pem = publicKeyToPem({ algorithm: cle.algorithm, material: publicPartOf(cle.material) });
     } else {
       const written = privateKeyPem(host, cle, opts);
       if ('error' in written) return fail(written.error);
-      lignes.push(written.pem);
+      pem = written.pem;
     }
+    if (wantsDer(opts)) der = derFromPem(pem);
+    else lignes.push(pem);
   }
+  if (der !== null) return emitDer(host, opts, lignes, der, 'writing RSA key');
   const sortie = lignes.join('\n');
   const out = opts.get('-out');
   if (typeof out === 'string') {
@@ -322,6 +362,7 @@ function readRequest(host: OpenSslHost, opts: Map<string, string | true>, path: 
   if (opts.has('-subject')) lines.push(`subject=${opensslDistinguishedName(csr.subject)}`);
   if (opts.has('-modulus')) lines.push(`Modulus=${modulusHex(csr.publicKey.material)?.toUpperCase() ?? ''}`);
   if (opts.has('-pubkey')) lines.push(publicKeyToPem(csr.publicKey).trimEnd());
+  if (!opts.has('-noout') && wantsDer(opts)) return emitDer(host, opts, lines, derFromPem(csrToPem(csr)) ?? '', verification);
   if (!opts.has('-noout')) lines.push(csrToPem(csr).trimEnd());
   const output = lines.join('\n');
   const out = opts.get('-out');
@@ -411,15 +452,16 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       keyPair: { publicKey: publique, privateKey: cle },
       extensions: built.extensions,
     });
-    const pem = certToPem(cert);
+    const pem = wantsDer(opts) ? derFromPem(certToPem(cert)) ?? '' : certToPem(cert);
     if (typeof out === 'string') {
       return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);
     }
     return ok(pem);
   }
 
-  const pem = csrToPem(
+  const requestPem = csrToPem(
     buildCertificateRequest(sujet, { publicKey: publique, privateKey: cle }, altNames));
+  const pem = wantsDer(opts) ? derFromPem(requestPem) ?? '' : requestPem;
   if (typeof out === 'string') {
     return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);
   }
@@ -471,6 +513,7 @@ function runX509(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     };
   }
 
+  if (!opts.has('-noout') && wantsDer(opts)) return emitDer(host, opts, lignes, derFromPem(certToPem(cert)) ?? '');
   if (!opts.has('-noout')) lignes.push(certToPem(cert).trimEnd());
 
   const sortie = lignes.join('\n');
@@ -785,6 +828,9 @@ function runDhparam(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (!safe) return fail('Error, invalid parameters generated');
     messages.push('DH parameters appear to be ok.');
   }
+  if (!opts.has('-noout') && wantsDer(opts)) {
+    return emitDer(host, opts, chunks, derFromPem(dhParametersToPem(parameters)) ?? '', messages.join('\n'));
+  }
   if (!opts.has('-noout')) chunks.push(dhParametersToPem(parameters).replace(/\n$/, ''));
   const body = chunks.join('\n');
   if (typeof out === 'string') {
@@ -1031,7 +1077,7 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const validityMs = nmin !== null ? Number(nmin) * 60_000 : ndays !== null ? Number(ndays) * 86_400_000 : null;
   const readDer = (path: string, what: string): Uint8Array | OpenSslResult => {
     const content = read(path, what);
-    return typeof content === 'string' ? binaryStringToBytes(content) : content;
+    return typeof content === 'string' ? fileTextToBytes(content) : content;
   };
 
   const respondTo = (request: OcspRequestMessage): OcspResponseMessage | OpenSslResult => {
@@ -1099,10 +1145,10 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const probe = respondTo({ ids: [{ hashAlgorithm: 'sha1', issuerNameHash: '', issuerKeyHash: '', serialNumber: '00' }] });
     if ('exitCode' in probe) return probe;
     const opened = host.serveHttp(number, (body) => {
-      const encoded = (response: OcspResponseMessage): string => bytesToBinaryString(encodeOcspResponse(response));
+      const encoded = (response: OcspResponseMessage): string => bytesToFileText(encodeOcspResponse(response));
       let request: OcspRequestMessage;
       try {
-        request = decodeOcspRequest(binaryStringToBytes(body));
+        request = decodeOcspRequest(fileTextToBytes(body));
       } catch {
         return { status: 200, body: encoded({ status: 'malformedRequest', singles: [] }) };
       }
@@ -1152,7 +1198,7 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const reqout = text('-reqout');
   if (request !== null && (opts.has('-text') || opts.has('-req_text'))) out.push(...ocspRequestText(request));
-  if (reqout !== null && request !== null && !host.writeFile(reqout, bytesToBinaryString(encodeOcspRequest(request)))) return fail(`${reqout}: cannot write`);
+  if (reqout !== null && request !== null && !host.writeFile(reqout, bytesToFileText(encodeOcspRequest(request)))) return fail(`${reqout}: cannot write`);
 
   let response: OcspResponseMessage | null = null;
   const respout = text('-respout');
@@ -1168,18 +1214,18 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (!url) return fail(`${text('-url')} Error parsing -url argument`);
     const address = host.resolveHost(url[1]) ?? url[1];
     if (typeof host.httpPost !== 'function') return fail('openssl: ocsp -url: this platform has no HTTP client');
-    const reply = host.httpPost(address, Number(url[2] ?? 80), url[3] ?? '/', bytesToBinaryString(encodeOcspRequest(request!)), {
+    const reply = host.httpPost(address, Number(url[2] ?? 80), url[3] ?? '/', bytesToFileText(encodeOcspRequest(request!)), {
       'Content-Type': OCSP_REQUEST_CONTENT_TYPE,
     });
     if (reply.ok === false) return fail(`Error querying OCSP responder\nconnect:errno=111 (${reply.reason})`);
-    try { response = decodeOcspResponse(binaryStringToBytes(reply.body)); } catch { return fail('Error querying OCSP responder'); }
+    try { response = decodeOcspResponse(fileTextToBytes(reply.body)); } catch { return fail('Error querying OCSP responder'); }
   } else if (request !== null) {
     return finish(0);
   } else {
     return fail('Need an OCSP response: use -respin, -url or a local responder (-index with -reqin)');
   }
 
-  if (respout !== null && !host.writeFile(respout, bytesToBinaryString(encodeOcspResponse(response)))) return fail(`${respout}: cannot write`);
+  if (respout !== null && !host.writeFile(respout, bytesToFileText(encodeOcspResponse(response)))) return fail(`${respout}: cannot write`);
   if (opts.has('-text') || opts.has('-resp_text')) out.push(...ocspResponseText(response));
   if (response.status !== 'successful') {
     stderr.push(`Responder Error: ${OCSP_STATUS_NAMES[response.status]} (${OCSP_RESPONSE_STATUS_CODE[response.status]})`);
@@ -1428,7 +1474,10 @@ function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (opts.has('-text')) {
     lignes.push(...crlText(crl));
   }
+  if (!opts.has('-noout') && wantsDer(opts)) return emitDer(host, opts, lignes, derFromPem(crlToPem(crl)) ?? '');
   if (!opts.has('-noout')) lignes.push(crlToPem(crl).trimEnd());
+  const crlOut = opts.get('-out');
+  if (typeof crlOut === 'string') return host.writeFile(crlOut, `${lignes.join('\n')}\n`) ? ok() : fail(`${crlOut}: cannot write`);
   return ok(lignes.join('\n'));
 }
 
@@ -1509,14 +1558,24 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     lignes.push(`ASN1 OID: ${COURBE_IMPLEMENTEE}`);
     lignes.push('NIST CURVE: P-256');
   }
+  let der: string | null = null;
   if (!opts.has('-noout')) {
+    let pem: string;
     if (opts.has('-pubout')) {
-      lignes.push(publicKeyToPem({ algorithm: 'ecdsa', material: publicPartOf(cle.material) }));
+      pem = publicKeyToPem({ algorithm: 'ecdsa', material: publicPartOf(cle.material) });
     } else {
       const written = privateKeyPem(host, cle, opts, true);
       if ('error' in written) return fail(written.error);
-      lignes.push(written.pem);
+      pem = written.pem;
     }
+    if (wantsDer(opts)) der = derFromPem(pem);
+    else lignes.push(pem);
+  }
+  if (der !== null) return emitDer(host, opts, lignes, der, 'read EC key');
+  const ecOut = opts.get('-out');
+  if (typeof ecOut === 'string') {
+    const written = lignes.filter((line) => line !== 'read EC key').join('\n');
+    return host.writeFile(ecOut, `${written}\n`) ? { output: '', stderr: 'read EC key', exitCode: 0 } : fail(`${ecOut}: cannot write`);
   }
   return ok(lignes.join('\n'));
 }
@@ -1557,7 +1616,7 @@ function privateKeyPem(
 function privateKeyFrom(
   host: OpenSslHost, text: string, opts: Map<string, string | true>,
 ): PkiPrivateKey | null {
-  return pemToPrivateKeyWithPassphrase(text, phraseDePasse(opts.get('-passin'), host));
+  return pemToPrivateKeyWithPassphrase(privateKeyInput(text), phraseDePasse(opts.get('-passin'), host));
 }
 
 /**
@@ -1577,14 +1636,15 @@ function runPkcs8(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (texte === null) return fail(`Can't open "${chemin}" for reading, No such file or directory`);
 
   const passin = phraseDePasse(opts.get('-passin'));
-  let cle = pemToPrivateKey(texte);
-  if (!cle && isEncryptedPrivateKeyPem(texte)) {
+  const keyText = privateKeyInput(texte);
+  let cle = pemToPrivateKey(keyText);
+  if (!cle && isEncryptedPrivateKeyPem(keyText)) {
     if (passin === null) {
       // Sans terminal, un vrai openssl ne peut pas demander la phrase et
       // échoue ici plutôt que de rendre une clé.
       return fail('unable to load key\nopenssl: pkcs8: an encrypted key needs -passin pass:...');
     }
-    cle = pemToEncryptedPrivateKey(texte, passin);
+    cle = pemToEncryptedPrivateKey(keyText, passin);
     if (!cle) return fail('unable to load key\nbad decrypt');
   }
   if (!cle) return fail('unable to load key');
@@ -1600,6 +1660,7 @@ function runPkcs8(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     // `-topk8` demande la forme PKCS#8 ; sans lui, openssl fait l'inverse.
     pem = privateKeyToPem(cle, !opts.has('-topk8'));
   }
+  if (wantsDer(opts)) pem = derFromPem(pem) ?? pem;
 
   const out = opts.get('-out');
   if (typeof out === 'string') {

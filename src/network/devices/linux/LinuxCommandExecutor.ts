@@ -196,7 +196,8 @@ import {
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import type { TcpStack } from '../../tcp/TcpStack';
-import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
+import { md5, sha1, sha256 } from '@/crypto/hash';
+import { bytesToHex, fileTextToBytes } from '@/crypto/encoding';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
@@ -8331,9 +8332,10 @@ function simpleTokenize(input: string): string[] {
 }
 
 function checksumVfs(content: string, cmd: string): string {
-  if (cmd === 'sha256sum') return sha256Hex(content);
-  if (cmd === 'sha1sum') return sha1Hex(content);
-  return md5Hex(content);
+  const bytes = fileTextToBytes(content);
+  if (cmd === 'sha256sum') return bytesToHex(sha256(bytes));
+  if (cmd === 'sha1sum') return bytesToHex(sha1(bytes));
+  return bytesToHex(md5(bytes));
 }
 
 function basenameOf(path: string): string {
