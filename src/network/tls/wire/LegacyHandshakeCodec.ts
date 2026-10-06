@@ -2,7 +2,7 @@ import { bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8 } from '@/crypto/encod
 import { encodeCertificate, decodeCertificate } from '@/network/pki/der/X509Der';
 import { der, children, parseDer, integerMagnitude, unsignedIntegerBytes, concatBytes } from '@/network/pki/der/Asn1';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import { decodeOcspResponse, encodeOcspResponse } from '@/network/pki/der/OcspDer';
 import {
   PROTOCOL_VERSION_WIRE, legacySuiteByCode, legacySuiteByName, type KeyExchangeKind, type LegacyVersion,
 } from '../legacy/legacyCipherSuites';
@@ -123,7 +123,7 @@ function encodeFresh(message: Message, context: LegacyWireContext): Uint8Array {
     }
     case 'legacy_certificate_status': {
       const status = message as LegacyCertificateStatus;
-      return handshake(HANDSHAKE_TYPE.certificateStatus, (body) => body.u8(OCSP_STATUS_TYPE).vector(3, (response) => response.bytes(utf8ToBytes(JSON.stringify(status.response)))));
+      return handshake(HANDSHAKE_TYPE.certificateStatus, (body) => body.u8(OCSP_STATUS_TYPE).vector(3, (response) => response.bytes(encodeOcspResponse(status.response))));
     }
     case 'server_key_exchange': {
       const exchange = message as ServerKeyExchange;
@@ -234,7 +234,7 @@ export function decodeLegacyMessages(bytes: Uint8Array, initial: LegacyWireConte
       }
       case HANDSHAKE_TYPE.certificateStatus: {
         body.u8();
-        out.push({ kind: 'legacy_certificate_status', response: JSON.parse(bytesToUtf8(body.vector(3).rest())) as SignedOcspResponse } as LegacyCertificateStatus);
+        out.push({ kind: 'legacy_certificate_status', response: decodeOcspResponse(body.vector(3).rest()) } as LegacyCertificateStatus);
         break;
       }
       case HANDSHAKE_TYPE.serverKeyExchange: {

@@ -45,7 +45,7 @@ import type { TrafficProtection } from './trafficProtection';
 import { suiteInfo } from './suite13';
 import type { Tls13Hash } from './hkdf';
 import { stapleAlert } from './ocspStapling';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import { isValidMaxFragmentLength, DEFAULT_MAX_FRAGMENT } from './maxFragment';
 import type { ResumableLegacySession } from './legacy/legacySessions';
 import { randomHex } from './legacy/LegacyHandshake';
@@ -134,7 +134,7 @@ export class TlsClientSession {
   receivedTicket: SessionTicket | null = null;
   peerCertificate: X509Certificate | null = null;
   peerCertificateChain: readonly X509Certificate[] = [];
-  receivedStaple: SignedOcspResponse | null = null;
+  receivedStaple: OcspResponseMessage | null = null;
   peerVerified = false;
   peerVerificationReason: string | null = null;
   /**

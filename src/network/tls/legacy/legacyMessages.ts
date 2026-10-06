@@ -1,6 +1,6 @@
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { LegacyVersion } from './legacyCipherSuites';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 
 export interface LegacyServerHello {
   readonly kind: 'legacy_server_hello';
@@ -67,7 +67,7 @@ export interface LegacyFinished {
 
 export interface LegacyCertificateStatus {
   readonly kind: 'legacy_certificate_status';
-  readonly response: SignedOcspResponse;
+  readonly response: OcspResponseMessage;
 }
 
 export interface LegacyNewSessionTicket {

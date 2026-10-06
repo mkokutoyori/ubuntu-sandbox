@@ -3,10 +3,14 @@ import type { CertificateRevocationList } from '@/network/pki/CertificateRevocat
 import type { OcspStapleSource } from '@/network/tls/ocspStapling';
 import { OcspClient, WireOcspResponder, DEFAULT_OCSP_POLICY, ocspUrlOf, parseOcspUrl, type OcspWireDeps } from '@/network/http/ocsp/OcspHttpClient';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
+import { decodeOcspResponse } from '@/network/pki/der/OcspDer';
+import { sameSerial } from '@/network/pki/der/X509Der';
+import { binaryStringToBytes } from '@/crypto/encoding';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import {
   pemToCertChain, pemToPrivateKey, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem,
-  pemToOcspResponse, pemToDhParameters, type DhParameters,
+  pemToDhParameters, type DhParameters,
 } from '@/network/pki/pem';
 import {
   fopenFailure, loadLocationsFailure, ticketKeyFromFile, crlsFromPem, buildClientVerifier, anchorsFromPem,
@@ -199,15 +203,17 @@ export function loadServerTls(
     if (pem === null) {
       return fail(`BIO_new_file("${settings.staplingFile}") failed (SSL: ${fopenFailure(settings.staplingFile)})`);
     }
-    const parsed = pemToOcspResponse(pem);
-    if (!parsed) {
+    let parsed: OcspResponseMessage;
+    try {
+      parsed = decodeOcspResponse(binaryStringToBytes(pem));
+    } catch {
       return fail(`d2i_OCSP_RESPONSE_bio("${settings.staplingFile}") failed `
         + '(SSL: error:0688010A:asn1 encoding routines::nested asn1 error)');
     }
-    staple = parsed.singles.find((single) => single.tbs.serialNumber === leafChain[0]?.serialNumber);
-    if (!staple) {
+    if (!parsed.singles.some((single) => sameSerial(single.certId.serialNumber, leafChain[0]?.serialNumber ?? ''))) {
       return fail(`"ssl_stapling_file" "${settings.staplingFile}" holds no response for the server certificate`);
     }
+    staple = parsed;
   } else if (settings.stapling && wire) {
     const leaf = leafChain[0];
     const trustedText = settings.trustedCertificate === '' ? null : files.read(settings.trustedCertificate);
@@ -227,8 +233,8 @@ export function loadServerTls(
         trusted: [issuer, ...trusted], verifySignature: settings.staplingVerify, useNonce: false,
       });
       staple = (cert) => {
-        const found = client.lookup(cert);
-        return found.ok ? found.single : null;
+        const found = client.lookup(cert, issuer);
+        return found.ok ? found.response : null;
       };
     }
   }

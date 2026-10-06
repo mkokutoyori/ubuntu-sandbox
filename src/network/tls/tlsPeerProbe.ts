@@ -4,7 +4,7 @@ import { CertificateVerifier } from '../pki/CertificateVerifier';
 import { runTlsHandshakeOverSocket } from '../http/https/TlsRecordWire';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { X509Certificate } from '../pki/X509Certificate';
-import type { SignedOcspResponse } from '../pki/OcspResponder';
+import type { OcspResponseMessage } from '../pki/OcspWire';
 
 export interface TlsProbeOutcome {
   readonly ok: boolean;
@@ -14,7 +14,7 @@ export interface TlsProbeOutcome {
   readonly protocolVersion?: string | null;
   readonly alert?: string | null;
   readonly verified: boolean;
-  readonly staple?: SignedOcspResponse | null;
+  readonly staple?: OcspResponseMessage | null;
 }
 
 export interface TlsProbeOptions {

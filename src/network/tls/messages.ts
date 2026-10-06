@@ -6,7 +6,7 @@
  * strings computed elsewhere (key schedule, PKI) rather than real crypto.
  */
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import type { CipherSuite } from './types';
 import { HELLO_RETRY_REQUEST_RANDOM } from './types';
 import { encodeTls13Message, decodeTls13Message, splitHandshakeMessages } from './wire/Tls13HandshakeCodec';
@@ -79,7 +79,7 @@ export interface CertificateRequest {
 export interface CertificateMessage {
   readonly kind: 'certificate';
   readonly certificateList: readonly X509Certificate[];
-  readonly ocspStaple?: SignedOcspResponse;
+  readonly ocspStaple?: OcspResponseMessage;
 }
 
 export interface CertificateVerify {

@@ -26,7 +26,7 @@ import {
 } from './legacyMessages';
 import type { LegacyClientExtensions } from '../messages';
 import { serverKeyExchangeParametersBytes } from '../wire/LegacyHandshakeCodec';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import { stapleAlert } from '../ocspStapling';
 import {
   LegacySessionStore, LegacyTicketCodec, type LegacySessionState, type ResumableLegacySession,
@@ -158,7 +158,7 @@ export interface LegacyServerSetup {
   readonly sessionStore?: LegacySessionStore;
   readonly ticketCodec?: LegacyTicketCodec;
   readonly sessionLifetimeSeconds: number;
-  readonly statusStaple: SignedOcspResponse | null;
+  readonly statusStaple: OcspResponseMessage | null;
   readonly maxFragmentLength: number | null;
   readonly acceptResumedSuite: (name: string) => boolean;
   readonly resolveSuite: (name: string) => LegacySuiteDefinition | undefined;
@@ -546,7 +546,7 @@ export class LegacyClientHandshake {
   lastAlert: TlsAlert | null = null;
   peerCertificate: X509Certificate | null = null;
   peerCertificateChain: readonly X509Certificate[] = [];
-  receivedStaple: SignedOcspResponse | null = null;
+  receivedStaple: OcspResponseMessage | null = null;
   peerVerified = false;
   peerVerificationReason: string | null = null;
   traffic: LegacyTraffic | null = null;

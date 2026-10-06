@@ -44,7 +44,7 @@ describe('répondeur local (-reqin / -index / -respout) et vérification (-respi
   it('good : requête, réponse signée, « Response verify OK », « good », This Update / Next Update', async () => {
     const srv = new LinuxServer('linux-server', 'O2'); srv.powerOn(); await pki(srv);
     await srv.executeCommand(`openssl ocsp ${ISSUER} -cert /tmp/good.crt -reqout /tmp/q.req`);
-    await srv.executeCommand(`openssl ocsp -reqin /tmp/q.req ${RESPONDER} -respout /tmp/r.resp`);
+    await srv.executeCommand(`openssl ocsp -reqin /tmp/q.req ${RESPONDER} -ndays 4 -respout /tmp/r.resp`);
     const out = await srv.executeCommand(`openssl ocsp ${ISSUER} -cert /tmp/good.crt -respin /tmp/r.resp -CAfile ${CA}/ca.crt 2>&1`);
     expect(out).toContain('Response verify OK');
     expect(out).toContain('/tmp/good.crt: good');

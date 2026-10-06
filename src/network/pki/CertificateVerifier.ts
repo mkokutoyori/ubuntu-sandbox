@@ -6,7 +6,8 @@ import { keyPermitted } from '@/network/tls/legacy/securityPolicy';
 import type { X509Certificate } from './X509Certificate';
 import { tbsPayload } from './X509Certificate';
 import type { CertificateRevocationList } from './CertificateRevocationList';
-import { verifyOcspStaple, type IOcspResponder, type SignedOcspResponse, type OcspStapleVerdict } from './OcspResponder';
+import type { IOcspResponder } from './OcspResponder';
+import { verifyOcspStaple, type OcspResponseMessage, type OcspStapleVerdict } from './OcspWire';
 
 export type VerificationReason =
   | 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted'
@@ -86,8 +87,9 @@ export class CertificateVerifier {
     if (this.revocationCheck === 'ocsp') {
       if (!this.ocspResponder) return { ok: false, reason: 'crl-stale' };
       const members = this.ocspScope === 'leaf' || anchorIsLeaf(cert, issuer) ? [cert] : [cert, ...path.intermediates];
-      for (const member of members) {
-        const resp = this.ocspResponder.check(member, now);
+      const memberIssuers = [...path.intermediates, issuer];
+      for (const [position, member] of members.entries()) {
+        const resp = this.ocspResponder.check(member, now, memberIssuers[position]);
         if (resp.status === 'revoked') return { ok: false, reason: 'revoked' };
         if (resp.status === 'unknown' && !this.missingOcspOk) return { ok: false, reason: 'unknown' };
       }
@@ -113,7 +115,7 @@ export class CertificateVerifier {
   }
 
   checkOcspStaple(
-    cert: X509Certificate, intermediates: readonly X509Certificate[], staple: SignedOcspResponse,
+    cert: X509Certificate, intermediates: readonly X509Certificate[], staple: OcspResponseMessage,
   ): OcspStapleVerdict | { ok: false; reason: 'unknown-issuer' } {
     const path = this.buildPath(cert, intermediates);
     if (path.ok === false) return { ok: false, reason: 'unknown-issuer' };

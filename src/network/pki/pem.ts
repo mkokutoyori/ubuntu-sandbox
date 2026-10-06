@@ -35,7 +35,6 @@ import {
 } from './der/KeyDer';
 import type { PkiPrivateKey, PkiPublicKey } from './PkiKeyPair';
 import { CertificateRevocationList, type CrlFields } from './CertificateRevocationList';
-import type { OcspRequestMessage, OcspResponseMessage } from './OcspWire';
 
 export type PemLabel =
   | 'CERTIFICATE'
@@ -290,25 +289,6 @@ export function pemToCrl(pem: string): CertificateRevocationList | null {
   } catch {
     return null;
   }
-}
-
-export function ocspResponseToPem(response: OcspResponseMessage): string {
-  return armour('OCSP RESPONSE', response);
-}
-
-export function pemToOcspResponse(pem: string): OcspResponseMessage | null {
-  const o = unarmour(pem, 'OCSP RESPONSE') as OcspResponseMessage | null;
-  if (!o || typeof o.status !== 'string' || !Array.isArray(o.singles)) return null;
-  return o;
-}
-
-export function ocspRequestToPem(request: OcspRequestMessage): string {
-  return armour('OCSP REQUEST', request);
-}
-
-export function pemToOcspRequest(pem: string): OcspRequestMessage | null {
-  const o = unarmour(pem, 'OCSP REQUEST') as OcspRequestMessage | null;
-  return o && Array.isArray(o.ids) ? o : null;
 }
 
 export interface DhParameters {

@@ -4738,6 +4738,11 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.vfs.readFile(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
   }
 
+  writeTextFile(path: string, content: string): boolean {
+    const vfs = this.executor.vfs;
+    return vfs.writeFile(vfs.normalizePath(path, this.executor.getCwd()), content, 0, 0, 0o022);
+  }
+
   // ── Shell sessions (per-terminal isolation, §2 of terminal_gap.md) ─
 
   /** Per-device pty allocator. Recycles released slots like Linux pty(7). */

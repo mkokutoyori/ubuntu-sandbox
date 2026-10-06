@@ -1,6 +1,7 @@
 import { bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
+import { encodeOcspResponse, decodeOcspResponse } from '@/network/pki/der/OcspDer';
 import { encodeCertificate, decodeCertificate } from '@/network/pki/der/X509Der';
 import { der, children, parseDer, integerMagnitude, unsignedIntegerBytes, concatBytes } from '@/network/pki/der/Asn1';
 import { HELLO_RETRY_REQUEST_RANDOM } from '../types';
@@ -333,7 +334,7 @@ export function encodeCertificateMessage(message: CertificateMessage): Uint8Arra
         list.vector(3, (data) => data.bytes(encodeCertificate(cert)));
         list.vector(2, (extensions) => {
           if (index === 0 && message.ocspStaple !== undefined) {
-            extension(extensions, EXTENSION.statusRequest, (e) => e.u8(1).vector(3, (response) => response.bytes(utf8ToBytes(JSON.stringify(message.ocspStaple)))));
+            extension(extensions, EXTENSION.statusRequest, (e) => e.u8(1).vector(3, (response) => response.bytes(encodeOcspResponse(message.ocspStaple))));
           }
         });
       });
@@ -345,12 +346,12 @@ export function decodeCertificateMessage(reader: TlsReader): CertificateMessage 
   reader.vector(1);
   const list = reader.vector(3);
   const certificateList: X509Certificate[] = [];
-  let ocspStaple: SignedOcspResponse | undefined;
+  let ocspStaple: OcspResponseMessage | undefined;
   while (!list.done) {
     certificateList.push(decodeCertificate(list.vector(3).rest()));
     eachExtension(list.vector(2), (type, body) => {
       if (type === EXTENSION.statusRequest && certificateList.length === 1 && body.u8() === 1) {
-        ocspStaple = JSON.parse(bytesToUtf8(body.vector(3).rest())) as SignedOcspResponse;
+        ocspStaple = decodeOcspResponse(body.vector(3).rest());
       }
     });
   }

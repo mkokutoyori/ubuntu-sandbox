@@ -27,6 +27,10 @@ export const OID = {
   caIssuers: '1.3.6.1.5.5.7.48.2',
   extensionRequest: '1.2.840.113549.1.9.14',
   crlNumber: '2.5.29.20',
+  sha1: '1.3.14.3.2.26',
+  sha256: '2.16.840.1.101.3.4.2.1',
+  ocspBasic: '1.3.6.1.5.5.7.48.1.1',
+  ocspNonce: '1.3.6.1.5.5.7.48.1.2',
   reasonCode: '2.5.29.21',
 } as const;
 
@@ -341,6 +345,23 @@ const RECEIVED_TBS = new WeakMap<object, Uint8Array>();
 
 export function tbsBytesOf(cert: X509CertificateFields): Uint8Array {
   return RECEIVED_TBS.get(cert) ?? encodeTbsCertificate(cert);
+}
+
+function tbsFieldNodes(cert: X509CertificateFields): DerNode[] {
+  const fields = children(parseDer(tbsBytesOf(cert)));
+  return fields[0].tag === contextTag(0, true) ? fields.slice(1) : fields;
+}
+
+export function issuerNameDerOf(cert: X509CertificateFields): Uint8Array {
+  return tbsFieldNodes(cert)[2].raw;
+}
+
+export function subjectNameDerOf(cert: X509CertificateFields): Uint8Array {
+  return tbsFieldNodes(cert)[4].raw;
+}
+
+export function subjectPublicKeyBitsOf(key: PkiPublicKey): Uint8Array {
+  return bitStringBytes(children(parseDer(encodeSubjectPublicKeyInfo(key)))[1]).bytes;
 }
 
 export function encodeCertificate(cert: X509Certificate): Uint8Array {

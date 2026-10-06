@@ -20,7 +20,8 @@ import type { ServerHello } from '@/network/tls/messages';
 import { describe, it, expect } from 'vitest';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
-import { OcspResponder, type SignedOcspResponse } from '@/network/pki/OcspResponder';
+import { OcspResponder } from '@/network/pki/OcspResponder';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
 import type { TlsRecord } from '@/network/tls/recordLayer';
@@ -81,7 +82,7 @@ describe.each([['1.3', ['1.3'] as const], ['1.2', ['1.2'] as const]])('TLS %s', 
 
   describe('status_request, agrafage OCSP signé (RFC 6066 §8)', () => {
     const responder = new OcspResponder(ca);
-    const staple = (): SignedOcspResponse => responder.respond(a.cert, NOW);
+    const staple = (): OcspResponseMessage => responder.respond(a.cert, NOW);
 
     it('un agrafe valide : accepté', () => {
       const { client } = connect({ versions: [...versions], requestOcspStaple: true }, { ocspStaple: staple() });
@@ -100,7 +101,7 @@ describe.each([['1.3', ['1.3'] as const], ['1.2', ['1.2'] as const]])('TLS %s', 
     });
 
     it('une signature d\'agrafe altérée : bad_certificate_status_response (113)', () => {
-      const forged: SignedOcspResponse = { ...staple(), signature: 'rsa:00' };
+      const forged: OcspResponseMessage = { ...staple(), signature: 'rsa:00' };
       const { client } = connect({ versions: [...versions], requestOcspStaple: true }, { ocspStaple: forged });
       expect(client.lastAlert?.description).toBe('bad_certificate_status_response');
     });
