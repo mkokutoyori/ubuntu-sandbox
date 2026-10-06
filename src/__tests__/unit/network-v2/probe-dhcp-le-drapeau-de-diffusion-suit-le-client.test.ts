@@ -37,6 +37,18 @@
  * qui prouvent que chaque laboratoire est sain ; le TEMOIN Windows ; le TEMOIN
  * « la politique DROP coupe un ping » ; et les deux clients sur concentrateur,
  * non-regression de la reponse qui n'est pas pour eux.
+ *
+ * MISE A JOUR — le client Windows. « Windows le pose » etait une memoire de captures, et la
+ * documentation de Microsoft dit autre chose : depuis Windows 7 (blog Team DHCP « DHCP broadcast
+ * flag handling in Windows 7 », KB 2459530), le client emet ses quatre premiers DISCOVER avec le
+ * drapeau a ZERO, ne le bascule a UN que si aucune OFFER ne vient, puis garde en memoire la valeur
+ * qui a reussi comme point de depart de l'acquisition suivante (Vista le posait toujours). Le
+ * poste Windows est donc repondu en unicast comme dhclient et un tiers sur un commutateur n'en voit
+ * que D et R. 5 des 23 cas tombent avant (git stash push -- src/network) : le drapeau initial et la
+ * reponse unicast, le tiers sur le commutateur, les trois cas de bascule ; le TEMOIN du client a
+ * drapeau fixe passe des deux cotes. Limite : la documentation parle de quatre DISCOVER par valeur
+ * a intervalles exponentiels ; le client du simulateur n'en emet qu'un par valeur, faute d'horloge
+ * qui avance pendant l'attente.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -50,6 +62,9 @@ import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import type { Port } from '@/network/hardware/Port';
 import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
+import { DHCPClient } from '@/network/dhcp/DHCPClient';
+import type { DhcpServerChannel } from '@/network/dhcp/DhcpServerChannel';
+import { createDefaultPoolConfig } from '@/network/dhcp/types';
 import {
   resetCounters, MACAddress, IPAddress, SubnetMask, ETHERTYPE_IPV4,
   type IPv4Packet, type UDPPacket,
@@ -198,7 +213,7 @@ describe.each(servers)('a Linux client facing %s', (_label, makeServer) => {
 });
 
 describe('a Windows client', () => {
-  it('sets the BROADCAST flag and is answered in broadcast — WITNESS of the unchanged side', async () => {
+  it('starts with the BROADCAST flag clear and is answered in unicast, like Windows 7 and later', async () => {
     const { port } = await windowsServer();
     const client = new WindowsPC('windows-pc', 'PC-WIN');
     new Cable('win').connect(port, client.getPorts()[0]);
@@ -209,13 +224,86 @@ describe('a Windows client', () => {
 
     const sent = kinds(seen, 'out', 'DHCPDISCOVER', 'DHCPREQUEST');
     expect(sent.length).toBeGreaterThan(0);
-    for (const entry of sent) expect(entry.flags).toBe(BROADCAST_FLAG);
+    for (const entry of sent) expect(entry.flags).toBe(0);
     const replies = kinds(seen, 'in', 'DHCPOFFER', 'DHCPACK');
     expect(replies.length).toBeGreaterThan(0);
-    for (const reply of replies) {
-      expect(reply.ipDestination).toBe('255.255.255.255');
-      expect(reply.macDestination).toBe('ff:ff:ff:ff:ff:ff');
-    }
+    for (const reply of replies) expect(reply.macDestination).toBe(client.getPorts()[0].getMAC().toString());
+  });
+
+  it('a third machine on the same switch sees only its broadcast requests, as with dhclient', async () => {
+    const { port } = await windowsServer();
+    const sw = new GenericSwitch('switch-generic', 'SW');
+    new Cable('up').connect(port, sw.getPorts()[0]);
+    const client = new WindowsPC('windows-pc', 'PC-WIN');
+    const observer = new LinuxPC('linux-pc', 'OBS');
+    new Cable('c1').connect(client.getPorts()[0], sw.getPorts()[1]);
+    new Cable('c2').connect(observer.getPort('eth0')!, sw.getPorts()[2]);
+    const seen = record(observer.getPort('eth0')!);
+    await observer.executeCommand('ip link set eth0 up');
+    await runPowershell(powershell(client), 'ipconfig /renew');
+
+    expect(kinds(seen, 'in', 'DHCPDISCOVER', 'DHCPREQUEST').length).toBeGreaterThan(0);
+    expect(kinds(seen, 'in', 'DHCPOFFER', 'DHCPACK')).toEqual([]);
+  });
+});
+
+describe('the Windows broadcast flag toggle (Windows 7 and later)', () => {
+  function offerOnlyWhen(flag: boolean): { channel: DhcpServerChannel; seen: boolean[] } {
+    const seen: boolean[] = [];
+    const channel: DhcpServerChannel = {
+      serverIP: '10.5.0.1',
+      processDiscover: (params) => {
+        seen.push(params.broadcast);
+        if (params.broadcast !== flag) return null;
+        const pool = createDefaultPoolConfig();
+        return { type: 'OFFER', xid: params.xid, ip: '10.5.0.50', serverIdentifier: '10.5.0.1', pool } as unknown as ReturnType<DhcpServerChannel['processDiscover']>;
+      },
+      processRequestWithNak: () => null,
+      processRequest: () => null,
+      processDecline: () => undefined,
+      processRelease: () => undefined,
+    };
+    return { channel, seen };
+  }
+
+  function clientWith(channel: DhcpServerChannel): DHCPClient {
+    const client = new DHCPClient(() => '02:00:00:00:00:01', () => undefined, () => undefined);
+    client.setBroadcastFlagToggling(false);
+    client.setWireChannelFactory(() => channel);
+    return client;
+  }
+
+  it('sends its DISCOVER with the flag clear first, then toggles it when nothing answers', () => {
+    const { channel, seen } = offerOnlyWhen(true);
+    clientWith(channel).requestLease('eth0');
+    expect(seen).toEqual([false, true]);
+  });
+
+  it('keeps the flag that obtained an OFFER for the next acquisition', () => {
+    const { channel, seen } = offerOnlyWhen(true);
+    const client = clientWith(channel);
+    client.requestLease('eth0');
+    seen.length = 0;
+    client.requestLease('eth0');
+    expect(seen[0]).toBe(true);
+  });
+
+  it('goes back to the remembered flag when neither value is answered', () => {
+    const { channel, seen } = offerOnlyWhen(true);
+    const client = clientWith({ ...channel, processDiscover: (params) => { seen.push(params.broadcast); return null; } });
+    client.requestLease('eth0');
+    seen.length = 0;
+    client.requestLease('eth0');
+    expect(seen[0]).toBe(false);
+  });
+
+  it('a client with a fixed flag never toggles — WITNESS (dhclient)', () => {
+    const { channel, seen } = offerOnlyWhen(true);
+    const client = new DHCPClient(() => '02:00:00:00:00:01', () => undefined, () => undefined);
+    client.setBroadcastFlag(false);
+    client.setWireChannelFactory(() => channel);
+    client.requestLease('eth0');
+    expect(seen).toEqual([false]);
   });
 });
 

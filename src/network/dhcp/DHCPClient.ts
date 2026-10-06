@@ -354,8 +354,17 @@ export class DHCPClient implements IProtocolEngine {
   setVendorClass(value: string | null): void { this.vendorClass = value; }
 
   private broadcastFlag = true;
+  private broadcastFlagToggles = false;
 
-  setBroadcastFlag(value: boolean): void { this.broadcastFlag = value; }
+  setBroadcastFlag(value: boolean): void {
+    this.broadcastFlag = value;
+    this.broadcastFlagToggles = false;
+  }
+
+  setBroadcastFlagToggling(initial: boolean): void {
+    this.broadcastFlag = initial;
+    this.broadcastFlagToggles = true;
+  }
 
   private readonly identifierOverrides = new Map<string, string>();
   private readonly renewTimeOverrides = new Map<string, number>();
@@ -435,21 +444,20 @@ export class DHCPClient implements IProtocolEngine {
       payload: { ...this.deviceRef(), iface, xid: state.xid },
     });
 
-    for (const channel of channels) {
-      const result = channel.processDiscover({
-        clientMAC: mac,
-        xid: state.xid,
-        clientIdentifier,
-        vendorClass: this.vendorClass ?? undefined,
-        ...this.clientIdentity(),
-      });
-      if (result) {
-        // XID validation (RFC 2131 §3.1): response xid must match our xid
+    const discoverRound = (): (DHCPOfferResult & { channel: DhcpServerChannel }) | null => {
+      for (const channel of channels) {
+        const result = channel.processDiscover({
+          clientMAC: mac,
+          xid: state.xid,
+          clientIdentifier,
+          vendorClass: this.vendorClass ?? undefined,
+          ...this.clientIdentity(),
+        });
+        if (!result) continue;
         if (result.xid !== state.xid) {
           state.logs.push(`DHCPOFFER XID mismatch (expected ${state.xid}, got ${result.xid}) - ignoring`);
           continue;
         }
-        offer = { ...result, channel };
         this.offersReceived++;
         this.getBus().publish({
           topic: 'dhcp.offer.received',
@@ -461,8 +469,22 @@ export class DHCPClient implements IProtocolEngine {
             leaseTimeSec: result.pool.leaseDuration,
           },
         });
-        break;
+        return { ...result, channel };
       }
+      return null;
+    };
+
+    offer = discoverRound();
+    if (offer === null && this.broadcastFlagToggles) {
+      const remembered = this.broadcastFlag;
+      this.broadcastFlag = !remembered;
+      this.discoversSent++;
+      this.getBus().publish({
+        topic: 'dhcp.discover.sent',
+        payload: { ...this.deviceRef(), iface, xid: state.xid },
+      });
+      offer = discoverRound();
+      if (offer === null) this.broadcastFlag = remembered;
     }
 
     if (!offer) {

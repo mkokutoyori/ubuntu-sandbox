@@ -484,7 +484,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // accepted when addressed to the ingress interface (RFC 1122 §3.3.4.2).
     this.hostModel = 'strong';
     this.dhcpClient.setVendorClass('MSFT 5.0');
-    this.dhcpClient.setBroadcastFlag(true);
+    this.dhcpClient.setBroadcastFlagToggling(false);
     this.dhcpClient.setPersonality(WINDOWS_DHCP_CLIENT_PERSONALITY);
     this.dhcpClient.setAddressConflictChecker((iface, ip) => this.addressAnsweredOnLink(iface, ip));
     this.createPorts();
