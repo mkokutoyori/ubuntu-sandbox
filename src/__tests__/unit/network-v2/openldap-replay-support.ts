@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { runLdapsearch, type LdapToolHost } from '@/network/ldap/openldap/ldapsearch';
+import { loadClientPlugins } from '@/network/ldap/openldap/sasl/saslPlugins';
 import type { LdapChannel, ChannelRead, ConnectOutcome } from '@/network/ldap/openldap/ldapChannel';
 import { parseTLV } from '@/network/devices/windows/server/ad/ldap/Ber';
 
@@ -10,6 +11,7 @@ export interface RecordedConnection {
 
 export interface Scenario {
   readonly name: string;
+  readonly port?: number;
   readonly args: readonly string[];
   readonly stdin: string;
   readonly connections: readonly RecordedConnection[];
@@ -47,7 +49,9 @@ function splitPdus(bytes: Uint8Array): Uint8Array[] {
   const pdus: Uint8Array[] = [];
   let offset = 0;
   while (offset < bytes.length) {
-    const next = parseTLV(bytes, offset).nextOffset;
+    const next = bytes[offset] === 0
+      ? offset + 4 + ((bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3])
+      : parseTLV(bytes, offset).nextOffset;
     pdus.push(bytes.subarray(offset, next));
     offset = next;
   }
@@ -122,14 +126,19 @@ class ReplayChannel implements LdapChannel {
   }
 
   write(bytes: Uint8Array): boolean {
-    const recorded = this.events[this.cursor];
-    if (recorded === undefined || recorded.direction !== 'c') {
-      this.problems.push(`unexpected request ${hex(bytes)}`);
-      return true;
-    }
-    this.cursor++;
-    if (hex(bytes) !== hex(recorded.pdu)) {
-      this.problems.push(`request mismatch: sent ${hex(bytes)} recorded ${hex(recorded.pdu)}`);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const recorded = this.events[this.cursor];
+      if (recorded === undefined || recorded.direction !== 'c') {
+        this.problems.push(`unexpected request ${hex(bytes.subarray(offset))}`);
+        return true;
+      }
+      this.cursor++;
+      const sent = bytes.subarray(offset, offset + recorded.pdu.length);
+      if (hex(sent) !== hex(recorded.pdu)) {
+        this.problems.push(`request mismatch: sent ${hex(sent)} recorded ${hex(recorded.pdu)}`);
+      }
+      offset += recorded.pdu.length;
     }
     const chunks: Uint8Array[] = [];
     const seq = this.cursor < this.events.length ? this.events[this.cursor].seq : 0;
@@ -171,18 +180,38 @@ function replayTransport(connections: readonly RecordedConnection[], problems: s
       if (index < 0) return { kind: 'failed', errno: CONNECTION_REFUSED };
       opened.add(index);
       const events: { direction: string; pdu: Uint8Array; seq: number }[] = [];
+      const runs: { direction: string; seq: number; bytes: Buffer }[] = [];
       for (const [direction, chunk, seq] of connections[index].transcript) {
-        for (const pdu of splitPdus(Buffer.from(chunk, 'hex'))) events.push({ direction, pdu, seq });
+        const last = runs[runs.length - 1];
+        if (last !== undefined && last.direction === direction) last.bytes = Buffer.concat([last.bytes, Buffer.from(chunk, 'hex')]);
+        else runs.push({ direction, seq, bytes: Buffer.from(chunk, 'hex') });
+      }
+      for (const run of runs) {
+        for (const pdu of splitPdus(run.bytes)) events.push({ direction: run.direction, pdu, seq: run.seq });
       }
       return { kind: 'connected', channel: new ReplayChannel(events, problems, network) };
     },
   };
 }
 
+function recordedClientRandom(scenario: Scenario, length: number): Uint8Array | undefined {
+  const pattern = length === 24 ? /,r=([A-Za-z0-9+/]{32})/ : /cnonce="([A-Za-z0-9+/]{43}=)"/;
+  for (const connection of scenario.connections) {
+    for (const [direction, chunk] of connection.transcript) {
+      if (direction !== 'c') continue;
+      const match = pattern.exec(Buffer.from(chunk, 'hex').toString('latin1'));
+      if (match !== null) return new Uint8Array(Buffer.from(match[1], 'base64'));
+    }
+  }
+  return undefined;
+}
+
 export interface ReplayOptions {
   readonly args: readonly string[];
   readonly debugLevel?: number;
   readonly files: Readonly<Record<string, string>>;
+  readonly saslPlugins?: readonly string[];
+  readonly randomBytes?: Uint8Array;
 }
 
 export interface ReplayOutcome {
@@ -197,7 +226,7 @@ export async function replay(scenario: Scenario, options: ReplayOptions): Promis
   const { files } = options;
   let stdinPosition = 0;
   const host: LdapToolHost = {
-    environment: (name) => ({ HOME: '/root', USER: 'root' } as Record<string, string>)[name] ?? null,
+    environment: (name) => ({ HOME: '/root' } as Record<string, string>)[name] ?? null,
     readTextFile: (path) => files[path] ?? null,
     readFile: (path) => (files[path] === undefined
       ? { error: 'No such file or directory' }
@@ -216,12 +245,16 @@ export async function replay(scenario: Scenario, options: ReplayOptions): Promis
     readStdinCharacter: () => (stdinPosition < scenario.stdin.length ? scenario.stdin[stdinPosition++] : null),
     localHostName: () => 'vm',
     localAddress: () => '127.0.0.1',
-    saslClientMechanisms: () => [],
+    sasl: {
+      plugins: () => loadClientPlugins(options.saslPlugins ?? ['libanonymous.so', 'libcrammd5.so', 'libdigestmd5.so', 'liblogin.so', 'libntlm.so', 'libplain.so', 'libscram.so']),
+      hostname: () => 'vm',
+      random: (length) => (options.randomBytes ?? recordedClientRandom(scenario, length))?.slice(0, length) ?? new Uint8Array(length),
+    },
     lookupDomainHosts: () => null,
   };
-  const port = scenario.connections[0]?.port ?? DEFAULT_PORT;
+  const port = scenario.connections[0]?.port ?? scenario.port ?? DEFAULT_PORT;
   const debug = options.debugLevel === undefined ? [] : ['-d', String(options.debugLevel)];
-  const result = await runLdapsearch(['ldapsearch', '-H', `ldap://127.0.0.1:${port}`, ...debug, ...options.args], host);
+  const result = await runLdapsearch(['ldapsearch', '-H', `ldap://127.0.0.1:${port}`, ...debug, ...options.args.map((argument) => Buffer.from(argument, 'latin1').toString('utf8'))], host);
   return { problems, stdout: asLatin1(result.stdout), stderr: asLatin1(result.stderr), exitCode: result.exitCode };
 }
 

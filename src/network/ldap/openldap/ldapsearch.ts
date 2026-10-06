@@ -17,6 +17,9 @@ import {
 import { putFilter, putVrFilter } from '@/network/devices/windows/server/ad/ldap/LdapFilterString';
 import * as C from './ldapControls';
 import { traceControlParse } from './ldapControlTrace';
+import { saslDefaults, saslInteract, type SaslTerminal } from './lutilSasl';
+import { parseSecprops } from './sasl/saslSecprops';
+import type { SaslHostEnvironment } from './sasl/saslClient';
 
 export interface LdapToolHost extends ConfigHost {
   readonly transport: LdapTransport;
@@ -28,7 +31,7 @@ export interface LdapToolHost extends ConfigHost {
   createTemporaryFile(template: string, bytes: Uint8Array): { path: string } | { error: string };
   localHostName(): string | null;
   localAddress(): string | null;
-  saslClientMechanisms(): readonly string[];
+  readonly sasl: SaslHostEnvironment;
   lookupDomainHosts(domain: string): string | null;
 }
 
@@ -1264,7 +1267,7 @@ class LdapSearchTool {
         this.ldapuri = uri;
       }
       if (this.verbose) this.fprintfStderr(`ldap_initialize( ${uri ?? '<DEFAULT>'} )\n`);
-      const session = new LdapSession(options, this.host.transport, this.log, this.host.clock);
+      const session = new LdapSession(options, this.host.transport, this.log, this.host.clock, this.host.sasl);
       session.reservedDescriptors = this.infile !== null && this.infile !== '-' ? 1 : 0;
       if (uri !== null) {
         const rc = session.setUri(uri);
@@ -1290,7 +1293,7 @@ class LdapSearchTool {
       if (this.nettimeout > 0) session.options.networkTimeout = this.nettimeout;
       return session;
     }
-    const session = new LdapSession(options, this.host.transport, this.log, this.host.clock);
+    const session = new LdapSession(options, this.host.transport, this.log, this.host.clock, this.host.sasl);
     this.session = session;
     return session;
   }
@@ -1333,9 +1336,7 @@ class LdapSearchTool {
 
     let parsed: ParsedResult | null = null;
     if (this.authmethod === AUTH_SASL) {
-      const outcome = await this.saslBind(session, sctrlsp);
-      if (outcome === null) return;
-      parsed = outcome;
+      parsed = await this.saslBind(session, sctrlsp);
     } else {
       const sent = await session.saslBindSimple(this.binddn, this.passwd, sctrlsp);
       if (sent.messageId === -1) {
@@ -1399,56 +1400,43 @@ class LdapSearchTool {
     return true;
   }
 
-  private async saslBind(session: LdapSession, sctrls: LdapControl[] | null): Promise<ParsedResult | null> {
-    void sctrls;
-    const mechanisms = this.saslMech ?? session.options.sasl.mech;
-    if (this.saslSecprops !== null) session.options.sasl.secprops = this.saslSecprops;
-    const rc = await session.open();
-    if (rc !== 0) {
-      this.toolPerror('ldap_sasl_interactive_bind', session.errno, null, null, session.errorText, null);
-      this.toolExit(session.errno);
+  private async saslBind(session: LdapSession, sctrls: LdapControl[] | null): Promise<ParsedResult> {
+    if (this.saslSecprops !== null && parseSecprops(this.saslSecprops, session.options.sasl.secprops) !== LdapRc.SUCCESS) {
+      this.fprintfStderr(`Could not set LDAP_OPT_X_SASL_SECPROPS: ${this.saslSecprops}\n`);
+      this.toolExit(LdapRc.LOCAL_ERROR);
     }
-    let offered: string | null = mechanisms;
-    if (offered === null || offered === '') {
-      const fetched = await this.fetchServerMechanisms(session);
-      if (typeof fetched === 'number') {
-        this.toolPerror('ldap_sasl_interactive_bind', fetched, null, null, session.errorText, null);
-        this.toolExit(fetched);
+    const defaults = saslDefaults(
+      session.options.sasl, this.saslMech, this.saslRealm, this.saslAuthcId, this.passwd, this.saslAuthzId,
+    );
+    const terminal: SaslTerminal = {
+      stderr: (text) => this.fprintfStderr(text),
+      readLine: () => this.host.readStdinLine(),
+      getpass: (prompt) => this.lutilGetpass(prompt),
+    };
+    const rmech: { value: string | null } = { value: null };
+    let result: LdapMessage | null = null;
+    let rc: number;
+    for (;;) {
+      const step = await session.saslInteractiveBind({
+        dn: this.binddn, mechs: this.saslMech, controls: sctrls, flags: this.saslFlags,
+        interact: (flags, prompts) => saslInteract(flags, defaults, prompts, terminal),
+        result, rmech,
+      });
+      rc = step.rc;
+      if (rc !== LdapRc.SASL_BIND_IN_PROGRESS) break;
+      this.log.debug(LdapDebug.TRACE, 'ldap_msgfree\n');
+      const batch = await session.result(step.msgid, LdapMsg.ALL);
+      if (batch === null) {
+        this.toolPerror('ldap_sasl_interactive_bind', session.errno, null, null, session.errorText, null);
+        this.toolExit(session.errno);
       }
-      offered = fetched;
+      result = batch.messages[batch.messages.length - 1];
     }
-    const candidates = offered.split(/\s+/).filter(name => name !== '');
-    const available = this.host.saslClientMechanisms();
-    const chosen = candidates.find(name => available.includes(name.toUpperCase()));
-    if (chosen === undefined) {
-      session.errno = LdapRc.AUTH_UNKNOWN;
-      session.errorText = 'SASL(-4): no mechanism available: No worthy mechs found';
-      this.toolPerror('ldap_sasl_interactive_bind', LdapRc.AUTH_UNKNOWN, null, null, session.errorText, null);
-      this.toolExit(LdapRc.AUTH_UNKNOWN);
+    if (rc !== LdapRc.SUCCESS || result === null) {
+      this.toolPerror('ldap_sasl_interactive_bind', rc, null, null, session.errorText, null);
+      this.toolExit(rc);
     }
-    if (this.saslFlags !== SASL_QUIET) this.fprintfStderr(`SASL/${chosen} authentication started\n`);
-    session.errno = LdapRc.AUTH_UNKNOWN;
-    session.errorText = `SASL(-1): generic failure: mechanism ${chosen} is not supported by this client`;
-    this.toolPerror('ldap_sasl_interactive_bind', LdapRc.LOCAL_ERROR, null, null, session.errorText, null);
-    this.toolExit(LdapRc.LOCAL_ERROR);
-  }
-
-  private async fetchServerMechanisms(session: LdapSession): Promise<string | number> {
-    const sent = await session.searchExt({
-      base: '', scope: LdapScope.BASE, filter: '(objectclass=*)', attributes: ['supportedSASLMechanisms'],
-      attrsOnly: false, serverControls: null, timeoutSeconds: null, sizeLimit: -1,
-    });
-    if (sent.messageId === -1) return sent.rc;
-    const batch = await session.result(sent.messageId, LdapMsg.ALL);
-    if (batch === null) return session.errno;
-    const done = batch.messages[batch.messages.length - 1];
-    const parsed = session.parseResult(done);
-    if (parsed.code !== LdapRc.SUCCESS) return parsed.code;
-    const entry = batch.messages.find(message => message.protocolOp.kind === 'searchResultEntry');
-    if (entry === undefined) return LdapRc.NO_SUCH_OBJECT;
-    const attribute = entryAttributes(entry).find(candidate => candidate.name.toLowerCase() === 'supportedsaslmechanisms');
-    if (attribute === undefined) return LdapRc.NO_SUCH_ATTRIBUTE;
-    return attribute.values.map(fromUtf8).join(' ');
+    return session.parseResult(result, true);
   }
 
   private toolServerControls(session: LdapSession, extra: readonly LdapControl[]): void {

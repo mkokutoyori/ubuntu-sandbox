@@ -56,7 +56,7 @@ export interface LdapResult {
 export interface PartialAttribute { type: string; values: string[]; valueBytes?: Uint8Array[] }
 
 /** RFC 4511 §4.2 AuthenticationChoice — `simple [0] OCTET STRING` (password) or `sasl [3] SaslCredentials` (GSSAPI/Kerberos, PRD-Windows-Server-Advanced.md §5 P3). `sasl` is undefined for a simple bind. */
-export interface SaslCredentials { mechanism: string; credentials: Uint8Array }
+export interface SaslCredentials { mechanism: string; credentials?: Uint8Array }
 
 export type ProtocolOp =
   | { kind: 'bindRequest'; version: number; name: string; password: string; credentials?: Uint8Array; sasl?: SaslCredentials }
@@ -190,7 +190,9 @@ export function encodeProtocolOp(op: ProtocolOp): Uint8Array {
         encodeOctetString(op.name),
         // AuthenticationChoice ::= CHOICE { simple [0] OCTET STRING, sasl [3] SaslCredentials }.
         op.sasl
-          ? encodeContextConstructed(3, [encodeOctetString(op.sasl.mechanism), encodeRawOctetString(op.sasl.credentials)])
+          ? encodeContextConstructed(3, op.sasl.credentials === undefined
+            ? [encodeOctetString(op.sasl.mechanism)]
+            : [encodeOctetString(op.sasl.mechanism), encodeRawOctetString(op.sasl.credentials)])
           : op.credentials !== undefined ? encodeContextPrimitive(0, op.credentials) : encodeContextPrimitiveString(0, op.password),
       ]));
     case 'bindResponse':
@@ -291,7 +293,9 @@ export function decodeProtocolOp(node: BerNode): ProtocolOp {
       const authChoice = parts[2];
       if (authChoice.tagNumber === 3) {
         const [mechNode, credNode] = parseAll(authChoice.content);
-        const sasl: SaslCredentials = { mechanism: decodeOctetString(mechNode.content), credentials: credNode.content };
+        const sasl: SaslCredentials = credNode === undefined
+          ? { mechanism: decodeOctetString(mechNode.content) }
+          : { mechanism: decodeOctetString(mechNode.content), credentials: credNode.content };
         return { kind: 'bindRequest', version, name, password: '', sasl };
       }
       const password = decodeOctetString(authChoice.content); // AuthenticationChoice simple [0]

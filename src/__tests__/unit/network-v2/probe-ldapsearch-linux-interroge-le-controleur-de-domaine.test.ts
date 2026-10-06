@@ -38,6 +38,15 @@
  * client : libldap rejoue un bind ANONYME sur la connexion suivie, et un DC
  * refuse alors la recherche (`Operations error`, 000004DC), exactement ce que
  * le vrai `ldapsearch -C` obtient d'un controleur Active Directory.
+ *
+ * Les deux cas du fichier de configuration systeme (19 au total) ont ete
+ * mesures contre le port sans `/etc/ldap/ldap.conf` : « the package ships
+ * /etc/ldap/ldap.conf with its commented defaults and the GnuTLS CA bundle »
+ * tombe (le fichier n'existait pas) ; « URI and BASE come from the
+ * configuration file named by LDAPCONF » passe avant et apres, car le cas
+ * ecrit lui-meme le fichier (temoin : la lecture de `ldap.conf` etait deja
+ * juste). Non attestable ici : le contenu du fichier
+ * du paquet Ubuntu 22.04, donne de memoire.
  */
 import { describe, it, expect } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -211,6 +220,25 @@ describe('ldapsearch from a Linux host against a promoted domain controller', ()
     expect(endOfInput).toContain('Enter LDAP Password: ');
     expect(endOfInput).not.toContain('dn:');
     expect(endOfInput).toContain('exit=1');
+  });
+
+  it('the package ships /etc/ldap/ldap.conf with its commented defaults and the GnuTLS CA bundle', async () => {
+    const workstation = new LinuxPC('linux-pc', 'PC1');
+    workstation.powerOn();
+    const content = await workstation.executeCommand('cat /etc/ldap/ldap.conf');
+    expect(content).toContain('# LDAP Defaults');
+    expect(content).toContain('#URI\tldap://ldap.example.com ldap://ldap-provider.example.com:666');
+    expect(content).toContain('TLS_CACERT\t/etc/ssl/certs/ca-certificates.crt');
+    expect(await workstation.executeCommand('stat -c %a /etc/ldap/ldap.conf')).toContain('644');
+  });
+
+  it('URI and BASE come from the configuration file named by LDAPCONF when the command line gives neither', async () => {
+    const { workstation } = await buildLab();
+    await workstation.executeCommand(`printf 'URI ldap://${DC_ADDRESS}\\nBASE dc=corp,dc=local\\n' > /tmp/ldap.conf`);
+    const output = await workstation.executeCommand(
+      `LDAPCONF=/tmp/ldap.conf ldapsearch -x -D '${ADMIN_UPN}' -w '${ADMIN_PASSWORD}' -s base -LLL dn`,
+    );
+    expect(output).toContain('dn: DC=corp,DC=local');
   });
 
   it('the exchange crosses the wire: the credentials leave in the request and the entries return in the reply', async () => {

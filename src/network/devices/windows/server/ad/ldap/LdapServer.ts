@@ -551,6 +551,6 @@ export class LdapServerHandler {
    */
   private checkSaslBind(sasl: SaslCredentials): boolean {
     if (sasl.mechanism !== 'GSSAPI' || !this.ctx.kerberos) return false;
-    return verifyApReq(sasl.credentials, this.ctx.kerberos) !== null;
+    return verifyApReq(sasl.credentials ?? new Uint8Array(0), this.ctx.kerberos) !== null;
   }
 }

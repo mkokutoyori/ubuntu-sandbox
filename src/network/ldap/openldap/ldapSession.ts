@@ -15,6 +15,9 @@ import { BerElement, LBER_DEFAULT, formatPointer } from './libber';
 import { Sockbuf, berGetNext, newBerGetNextState, type BerGetNextState } from './ldapSockbuf';
 import type { LdapChannel, LdapTransport, TlsUpgradeRequest } from './ldapChannel';
 import { HeapSim } from './ldapHeap';
+import { LDAP_SASL_QUIET } from './lutilSasl';
+import { SaslClientConn, saslErrstring, type SaslHostEnvironment } from './sasl/saslClient';
+import { SaslProp, SaslRc, type SaslInteract } from './sasl/saslTypes';
 
 export type { LdapChannel, LdapTransport, TlsUpgradeRequest, TlsUpgradeOutcome } from './ldapChannel';
 
@@ -138,6 +141,8 @@ class LdapConn {
   server: LdapUrlDesc | null = null;
   isDefault = false;
   descriptor = 3;
+  saslAuthCtx: SaslClientConn | null = null;
+  saslSockCtx: SaslClientConn | null = null;
 
   constructor(readonly sb: Sockbuf) {}
 }
@@ -215,6 +220,7 @@ export class LdapSession {
     private readonly transport: LdapTransport,
     readonly log: LdapLog = new LdapLog(() => undefined),
     private readonly clock: SessionClock,
+    private readonly saslHost: SaslHostEnvironment | null = null,
   ) {
     this.ldPointer = this.heap.allocate(1024);
     this.log.debug(LdapDebug.TRACE, 'ldap_create\n');
@@ -260,12 +266,7 @@ export class LdapSession {
 
   async open(): Promise<number> {
     if (this.defConn !== null && this.defConn.status === ConnStatus.CONNECTED) return 0;
-    const rc = await this.openDefconn();
-    if (rc === 0) {
-      this.log.debug(LdapDebug.TRACE, 'ldap_open_defconn: successful\n');
-      return 0;
-    }
-    return -1;
+    return (await this.openDefconn()) === 0 ? 0 : -1;
   }
 
   private async openDefconn(): Promise<number> {
@@ -711,8 +712,8 @@ export class LdapSession {
     return explicit ?? this.serverControls ?? [];
   }
 
-  async searchExt(spec: SearchRequestSpec): Promise<{ rc: number; messageId: number }> {
-    this.log.debug(LdapDebug.TRACE, 'ldap_search_ext\n');
+  async searchExt(spec: SearchRequestSpec, entryPoint = 'ldap_search_ext'): Promise<{ rc: number; messageId: number }> {
+    this.log.debug(LdapDebug.TRACE, `${entryPoint}\n`);
     let timeLimit = this.options.timeLimit;
     if (spec.timeoutSeconds !== null && spec.timeoutSeconds === 0) return { rc: LdapRc.PARAM_ERROR, messageId: -1 };
     const messageId = this.allocateMessageId();
@@ -1607,10 +1608,306 @@ export class LdapSession {
     return LdapRc.SUCCESS;
   }
 
+  async saslBind(
+    dn: string | null, mechanism: string, cred: Uint8Array | null, controls: readonly LdapControl[] | null,
+  ): Promise<{ rc: number; messageId: number }> {
+    this.log.debug(LdapDebug.TRACE, 'ldap_sasl_bind\n');
+    if (this.options.version < LdapVersion.V3) {
+      this.errno = LdapRc.NOT_SUPPORTED;
+      return { rc: this.errno, messageId: -1 };
+    }
+    const messageId = this.allocateMessageId();
+    const op: ProtocolOp = {
+      kind: 'bindRequest', version: this.options.version, name: dn ?? '', password: '',
+      sasl: cred === null ? { mechanism } : { mechanism, credentials: cred },
+    };
+    const effective = this.effectiveControls(controls);
+    const ber = this.newRequestBer(op, effective, messageId);
+    const id = await this.sendInitialRequest(ber, op, effective, messageId);
+    if (id < 0) return { rc: this.errno, messageId: -1 };
+    return { rc: LdapRc.SUCCESS, messageId: id };
+  }
+
+  parseSaslBindResult(message: LdapMessage): { rc: number; scred: Uint8Array | null } {
+    this.log.debug(LdapDebug.TRACE, 'ldap_parse_sasl_bind_result\n');
+    const response = this.responseIndex.get(message);
+    if (response === undefined || response.msgtype !== LdapRes.BIND) {
+      this.errno = LdapRc.PARAM_ERROR;
+      return { rc: this.errno, scred: null };
+    }
+    this.errorText = null;
+    this.matched = null;
+    const ber = response.ber.copy();
+    const op = message.protocolOp;
+    const result = op.kind === 'bindResponse' ? op.result : null;
+    let scred: Uint8Array | null = null;
+    if (this.options.version < LdapVersion.V2) {
+      if (ber.scanf('{iA}') === LBER_DEFAULT) {
+        this.errno = LdapRc.DECODING_ERROR;
+        return { rc: this.errno, scred: null };
+      }
+    } else {
+      if (ber.scanf('{eAA') === LBER_DEFAULT) {
+        this.errno = LdapRc.DECODING_ERROR;
+        return { rc: this.errno, scred: null };
+      }
+      let tag = ber.peekTag().tag;
+      if (tag === LDAP_TAG_REFERRAL) {
+        if (ber.scanf('x') === LBER_DEFAULT) {
+          this.errno = LdapRc.DECODING_ERROR;
+          return { rc: this.errno, scred: null };
+        }
+        tag = ber.peekTag().tag;
+      }
+      if (tag === LDAP_TAG_SASL_RES_CREDS) {
+        if (ber.scanf('O') === LBER_DEFAULT) {
+          this.errno = LdapRc.DECODING_ERROR;
+          return { rc: this.errno, scred: null };
+        }
+        scred = op.kind === 'bindResponse' && op.serverSaslCreds !== undefined ? op.serverSaslCreds : new Uint8Array(0);
+      }
+    }
+    this.errno = result?.resultCode ?? LdapRc.DECODING_ERROR;
+    this.errorText = result?.diagnosticMessage ?? null;
+    this.matched = result?.matchedDN ?? null;
+    return { rc: LdapRc.SUCCESS, scred };
+  }
+
+  result2error(message: LdapMessage, freeit: boolean): number {
+    const parsed = this.parseResult(message, freeit);
+    return parsed.code;
+  }
+
+  private async getSaslMechs(): Promise<{ rc: number; mechs: string | null }> {
+    this.log.debug(LdapDebug.TRACE, 'ldap_pvt_sasl_getmech\n');
+    const sent = await this.searchExt({
+      base: '', scope: LdapScope.BASE, filter: '(objectclass=*)', attributes: ['supportedSASLMechanisms'],
+      attrsOnly: false, serverControls: null, timeoutSeconds: null, sizeLimit: -1,
+    }, 'ldap_search');
+    if (sent.messageId === -1) return { rc: sent.rc, mechs: null };
+    const batch = await this.result(sent.messageId, LdapMsg.ALL);
+    if (batch === null) return { rc: this.errno, mechs: null };
+    const done = batch.messages[batch.messages.length - 1];
+    const code = this.result2error(done, false);
+    if (code !== LdapRc.SUCCESS) return { rc: code, mechs: null };
+    const entry = batch.messages.find((candidate) => candidate.protocolOp.kind === 'searchResultEntry');
+    if (entry === undefined) {
+      this.log.debug(LdapDebug.TRACE, 'ldap_msgfree\n');
+      this.errno = LdapRc.NO_SUCH_OBJECT;
+      return { rc: this.errno, mechs: null };
+    }
+    const op = entry.protocolOp;
+    const attributes = op.kind === 'searchResultEntry' ? op.attributes : [];
+    this.traceGetValues(entry, 'supportedSASLMechanisms', attributes.map((candidate) => candidate.type));
+    const attribute = attributes.find((candidate) => candidate.type.toLowerCase() === 'supportedsaslmechanisms');
+    this.log.debug(LdapDebug.TRACE, 'ldap_msgfree\n');
+    if (attribute === undefined) {
+      this.errno = LdapRc.NO_SUCH_ATTRIBUTE;
+      return { rc: this.errno, mechs: null };
+    }
+    return { rc: LdapRc.SUCCESS, mechs: attribute.values.join(' ') };
+  }
+
+  private async saslHostName(conn: LdapConn): Promise<string | null> {
+    const server = conn.server;
+    if (server !== null && server.scheme === 'ldapi') return this.saslHost?.hostname() ?? 'localhost';
+    if (this.options.sasl.noCanon) return server === null ? null : server.host;
+    const peer = conn.sb.channel.peerAddress;
+    if (peer === '' || peer === '0.0.0.0' || peer === '::1' || peer === '127.0.0.1') {
+      return this.saslHost?.hostname() ?? 'localhost';
+    }
+    const reverse = this.transport.reverse === undefined ? null : await this.transport.reverse(peer);
+    return reverse !== null && reverse !== '' ? reverse : 'localhost';
+  }
+
+  async saslInteractiveBind(args: {
+    dn: string | null;
+    mechs: string | null;
+    controls: readonly LdapControl[] | null;
+    flags: number;
+    interact: ((flags: number, prompts: SaslInteract[]) => number) | null;
+    result: LdapMessage | null;
+    rmech: { value: string | null };
+  }): Promise<{ rc: number; msgid: number }> {
+    let mechs = args.mechs;
+    if (args.result === null) {
+      if (mechs === null || mechs === '') mechs = this.options.sasl.mech;
+      if (mechs === null || mechs === '') {
+        const fetched = await this.getSaslMechs();
+        if (fetched.rc !== LdapRc.SUCCESS) return { rc: fetched.rc, msgid: -1 };
+        this.log.debug(LdapDebug.TRACE, `ldap_sasl_interactive_bind: server supports: ${fetched.mechs}\n`);
+        mechs = fetched.mechs;
+      } else {
+        this.log.debug(LdapDebug.TRACE, `ldap_sasl_interactive_bind: user selected: ${mechs}\n`);
+      }
+    }
+    return this.saslBindStep({ ...args, mechs });
+  }
+
+  private async saslBindStep(args: {
+    dn: string | null;
+    mechs: string | null;
+    controls: readonly LdapControl[] | null;
+    flags: number;
+    interact: ((flags: number, prompts: SaslInteract[]) => number) | null;
+    result: LdapMessage | null;
+    rmech: { value: string | null };
+  }): Promise<{ rc: number; msgid: number }> {
+    const { mechs, flags, interact, result, rmech } = args;
+    this.log.debug(LdapDebug.TRACE, `ldap_int_sasl_bind: ${mechs ?? '<null>'}\n`);
+    if (this.options.version < LdapVersion.V3) {
+      this.errno = LdapRc.NOT_SUPPORTED;
+      return { rc: this.errno, msgid: -1 };
+    }
+    let ctx: SaslClientConn;
+    let ccred: Uint8Array | null = null;
+    let saslrc: number = SaslRc.OK;
+    let mech: string | null = null;
+    let rc: number;
+    if (result === null) {
+      const opened = await this.open();
+      if (opened !== 0 || this.defConn === null) {
+        if (this.errno === LdapRc.SUCCESS) this.errno = LdapRc.LOCAL_ERROR;
+        return { rc: this.errno, msgid: -1 };
+      }
+      const conn = this.defConn;
+      conn.saslAuthCtx = null;
+      const saslhost = await this.saslHostName(conn);
+      if (this.saslHost === null || saslhost === null) {
+        this.errno = LdapRc.LOCAL_ERROR;
+        return { rc: this.errno, msgid: -1 };
+      }
+      const created = SaslClientConn.create('ldap', saslhost, {
+        plugins: this.saslHost.plugins(), clientFqdn: this.saslHost.hostname(), hostname: this.saslHost.hostname(),
+        random: (length) => this.saslHost!.random(length),
+      });
+      if (created.conn === null) {
+        this.errno = LdapRc.LOCAL_ERROR;
+        return { rc: this.errno, msgid: -1 };
+      }
+      this.log.debug(LdapDebug.TRACE, `ldap_int_sasl_open: host=${saslhost}\n`);
+      ctx = created.conn;
+      conn.saslAuthCtx = ctx;
+      const tls = conn.sb.channel.tlsState?.() ?? null;
+      if (tls !== null) ctx.setExternal(tls.strength, tls.clientDn);
+      ctx.setSecProps(this.options.sasl.secprops);
+      let prompts: SaslInteract[] | null = null;
+      let pmech: string | null = null;
+      do {
+        const started = ctx.start(mechs, prompts);
+        saslrc = started.rc;
+        prompts = started.prompts;
+        ccred = started.out;
+        mech = started.mech;
+        if (pmech === null && mech !== null) {
+          pmech = mech;
+          rmech.value = mech;
+          if (flags !== LDAP_SASL_QUIET) this.log.raw(`SASL/${pmech} authentication started\n`);
+        }
+        if (saslrc === SaslRc.INTERACT) {
+          if (interact === null || prompts === null) break;
+          const res = interact(flags, prompts);
+          if (res !== LdapRc.SUCCESS) break;
+        }
+      } while (saslrc === SaslRc.INTERACT);
+      rc = LdapRc.SASL_BIND_IN_PROGRESS;
+    } else {
+      const conn = this.defConn;
+      if (conn === null || conn.saslAuthCtx === null) {
+        this.errno = LdapRc.LOCAL_ERROR;
+        return { rc: this.errno, msgid: -1 };
+      }
+      ctx = conn.saslAuthCtx;
+      const parsedBind = this.parseSaslBindResult(result);
+      if (parsedBind.rc !== LdapRc.SUCCESS) return { rc: parsedBind.rc, msgid: -1 };
+      const scred = parsedBind.scred;
+      rc = this.result2error(result, false);
+      if (rc !== LdapRc.SUCCESS && rc !== LdapRc.SASL_BIND_IN_PROGRESS) {
+        if (scred !== null) {
+          this.log.debug(LdapDebug.TRACE, `ldap_int_sasl_bind: rc=${rc} len=${scred.length}\n`);
+        }
+        return { rc, msgid: -1 };
+      }
+      mech = rmech.value;
+      if (rc === LdapRc.SUCCESS && mech === null) return this.saslBindSuccess(ctx, flags, rc);
+      let prompts: SaslInteract[] | null = null;
+      do {
+        if (scred === null) this.log.debug(LdapDebug.TRACE, 'ldap_int_sasl_bind: no data in step!\n');
+        const stepped = ctx.step(scred, prompts);
+        saslrc = stepped.rc;
+        prompts = stepped.prompts;
+        ccred = stepped.out;
+        this.log.debug(LdapDebug.TRACE, `sasl_client_step: ${saslrc}\n`);
+        if (saslrc === SaslRc.INTERACT) {
+          if (interact === null || prompts === null) break;
+          const res = interact(flags, prompts);
+          if (res !== LdapRc.SUCCESS) break;
+        }
+      } while (saslrc === SaslRc.INTERACT);
+    }
+
+    if (saslrc !== SaslRc.OK && saslrc !== SaslRc.CONTINUE) {
+      rc = this.errno = saslErrorToLdap(saslrc);
+      this.errorText = ctx.errdetail();
+      return { rc, msgid: -1 };
+    }
+    if (saslrc === SaslRc.OK) rmech.value = null;
+
+    if (rc === LdapRc.SASL_BIND_IN_PROGRESS) {
+      const sent = await this.saslBind(args.dn, mech ?? '', ccred, args.controls);
+      if (sent.rc !== LdapRc.SUCCESS) return { rc: sent.rc, msgid: -1 };
+      return { rc: LdapRc.SASL_BIND_IN_PROGRESS, msgid: sent.messageId };
+    }
+    return this.saslBindSuccess(ctx, flags, rc);
+  }
+
+  private saslBindSuccess(ctx: SaslClientConn, flags: number, rc: number): { rc: number; msgid: number } {
+    if (flags !== LDAP_SASL_QUIET) {
+      const user = ctx.getProp(SaslProp.USERNAME);
+      if (user.rc === SaslRc.OK && typeof user.value === 'string' && user.value !== '') {
+        this.log.raw(`SASL username: ${user.value}\n`);
+      }
+    }
+    const ssf = ctx.getProp(SaslProp.SSF);
+    if (ssf.rc === SaslRc.OK) {
+      if (flags !== LDAP_SASL_QUIET) this.log.raw(`SASL SSF: ${ssf.value}\n`);
+      if (typeof ssf.value === 'number' && ssf.value !== 0) {
+        this.installSaslLayer(ctx);
+        if (flags !== LDAP_SASL_QUIET) this.log.raw('SASL data security layer installed.\n');
+      }
+    }
+    return { rc, msgid: -1 };
+  }
+
+  private installSaslLayer(ctx: SaslClientConn): void {
+    const conn = this.defConn;
+    if (conn === null) return;
+    conn.saslSockCtx = ctx;
+    conn.sb.installSasl({ encode: (data) => ctx.encode(data), decode: (data) => ctx.decode(data), errorText: saslErrstring });
+  }
+
   unbind(): void {
     if (this.unbound) return;
     this.unbound = true;
     this.freeAllRequests();
     while (this.conns.length > 0) this.freeConnection(this.conns[0], true, true);
+  }
+}
+
+function saslErrorToLdap(saslrc: number): number {
+  switch (saslrc) {
+    case SaslRc.CONTINUE: return LdapRc.MORE_RESULTS_TO_RETURN;
+    case SaslRc.INTERACT: return LdapRc.LOCAL_ERROR;
+    case SaslRc.OK: return LdapRc.SUCCESS;
+    case SaslRc.NOMEM: return LdapRc.NO_MEMORY;
+    case SaslRc.NOMECH: return LdapRc.AUTH_UNKNOWN;
+    case SaslRc.BADPROT: return LdapRc.DECODING_ERROR;
+    case SaslRc.BADSERV: return LdapRc.AUTH_UNKNOWN;
+    case SaslRc.BADAUTH: return LdapRc.AUTH_UNKNOWN;
+    case SaslRc.NOAUTHZ: return LdapRc.PARAM_ERROR;
+    case SaslRc.FAIL: return LdapRc.LOCAL_ERROR;
+    case SaslRc.TOOWEAK:
+    case SaslRc.ENCRYPT: return LdapRc.AUTH_UNKNOWN;
+    default: return LdapRc.LOCAL_ERROR;
   }
 }

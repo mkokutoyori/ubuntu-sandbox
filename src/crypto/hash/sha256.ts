@@ -29,12 +29,29 @@ const K = new Uint32Array([
 
 const rotr = (x: number, n: number): number => (x >>> n) | (x << (32 - n));
 
+const SHA256_IV: readonly number[] = [
+  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+];
+
+const SHA224_IV: readonly number[] = [
+  0xc1059ed8, 0x367cd507, 0x3070dd17, 0xf70e5939, 0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4,
+];
+
 /** Compute the raw 32-byte SHA-256 digest of `input` (input is not mutated). */
 export function sha256(input: Uint8Array): Uint8Array {
+  return wordsToBytes(sha2Words(input, SHA256_IV));
+}
+
+const SHA224_WORDS = 7;
+
+export function sha224(input: Uint8Array): Uint8Array {
+  return wordsToBytes(sha2Words(input, SHA224_IV).slice(0, SHA224_WORDS));
+}
+
+function sha2Words(input: Uint8Array, iv: readonly number[]): number[] {
   // Initial hash values: fractional parts of the square roots of the first
   // eight primes (FIPS 180-4 §5.3.3).
-  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
-  let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+  let [h0, h1, h2, h3, h4, h5, h6, h7] = iv;
 
   const padded = padMessage(input);
   const w = new Uint32Array(64);
@@ -66,7 +83,7 @@ export function sha256(input: Uint8Array): Uint8Array {
     h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0; h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
   }
 
-  return wordsToBytes([h0, h1, h2, h3, h4, h5, h6, h7]);
+  return [h0, h1, h2, h3, h4, h5, h6, h7];
 }
 
 /** Hex digest of a UTF-8 string — the common convenience path. */
@@ -79,6 +96,12 @@ export const SHA256: HashAlgorithm = {
   blockSize: BLOCK_SIZE,
   digestSize: DIGEST_SIZE,
   digest: sha256,
+};
+
+export const SHA224: HashAlgorithm = {
+  blockSize: BLOCK_SIZE,
+  digestSize: 28,
+  digest: sha224,
 };
 
 /** Apply the SHA-2 length padding (the 0x80 byte, zero fill, 64-bit length). */

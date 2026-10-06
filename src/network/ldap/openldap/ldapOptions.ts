@@ -1,4 +1,6 @@
 import { LdapRc } from './ldapErrors';
+import { parseSecprops } from './sasl/saslSecprops';
+import { defaultSecurityProperties, type SaslSecurityProperties } from './sasl/saslTypes';
 import {
   type LdapUrlDesc, LdapUrlErr, LdapUrlParse, ldapUrlParseHosts, ldapUrlParseListExt,
 } from './ldapUrl';
@@ -22,7 +24,7 @@ export interface LdapOptions {
     realm: string | null;
     authcid: string | null;
     authzid: string | null;
-    secprops: string | null;
+    secprops: SaslSecurityProperties;
     noCanon: boolean;
     channelBinding: string | null;
   };
@@ -59,7 +61,7 @@ export function defaultLdapOptions(): LdapOptions {
     defPort: LDAP_PORT_DEFAULT,
     urls,
     referrals: true,
-    sasl: { mech: null, realm: null, authcid: null, authzid: null, secprops: null, noCanon: false, channelBinding: null },
+    sasl: { mech: null, realm: null, authcid: null, authzid: null, secprops: defaultSecurityProperties(), noCanon: false, channelBinding: null },
     tls: {
       certFile: null, keyFile: null, caCertFile: null, caCertDir: null,
       requireCert: TlsRequireCert.DEMAND, requireSan: TlsRequireCert.ALLOW,
@@ -77,7 +79,7 @@ export function cloneLdapOptions(source: LdapOptions): LdapOptions {
   return {
     ...source,
     urls: source.urls.map(url => ({ ...url, attrs: url.attrs ? [...url.attrs] : null, exts: url.exts ? [...url.exts] : null })),
-    sasl: { ...source.sasl },
+    sasl: { ...source.sasl, secprops: { ...source.sasl.secprops } },
     tls: { ...source.tls },
     keepalive: { ...source.keepalive },
   };
@@ -162,7 +164,7 @@ const DEFINITIONS: readonly OptionDefinition[] = [
   { name: 'SASL_REALM', userOnly: false, apply: (o, v, s) => { o.sasl.realm = s === 'environment' && v === '' ? null : v; } },
   { name: 'SASL_AUTHCID', userOnly: true, apply: (o, v, s) => { o.sasl.authcid = s === 'environment' && v === '' ? null : v; } },
   { name: 'SASL_AUTHZID', userOnly: true, apply: (o, v, s) => { o.sasl.authzid = s === 'environment' && v === '' ? null : v; } },
-  { name: 'SASL_SECPROPS', userOnly: false, apply: (o, v) => { o.sasl.secprops = v; } },
+  { name: 'SASL_SECPROPS', userOnly: false, apply: (o, v) => { parseSecprops(v, o.sasl.secprops); } },
   { name: 'SASL_NOCANON', userOnly: false, apply: (o, v) => { o.sasl.noCanon = booleanOf(v); } },
   { name: 'SASL_CBINDING', userOnly: false, apply: (o, v) => { o.sasl.channelBinding = v; } },
   { name: 'TLS_CERT', userOnly: true, apply: (o, v) => { o.tls.certFile = v; } },
@@ -205,6 +207,24 @@ export interface ConfigHost {
 }
 
 export const SYSTEM_CONFIG_FILE = '/etc/ldap/ldap.conf';
+export const SYSTEM_CONFIG_DIRECTORY = '/etc/ldap';
+export const SYSTEM_CONFIG_DEFAULTS =
+  '#\n' +
+  '# LDAP Defaults\n' +
+  '#\n' +
+  '\n' +
+  '# See ldap.conf(5) for details\n' +
+  '# This file should be world readable but not world writable.\n' +
+  '\n' +
+  '#BASE\tdc=example,dc=com\n' +
+  '#URI\tldap://ldap.example.com ldap://ldap-provider.example.com:666\n' +
+  '\n' +
+  '#SIZELIMIT\t12\n' +
+  '#TIMELIMIT\t15\n' +
+  '#DEREF\t\tnever\n' +
+  '\n' +
+  '# TLS certificates (needed for GnuTLS)\n' +
+  'TLS_CACERT\t/etc/ssl/certs/ca-certificates.crt\n';
 const USER_RC_FILE = 'ldaprc';
 const ENV_PREFIX = 'LDAP';
 

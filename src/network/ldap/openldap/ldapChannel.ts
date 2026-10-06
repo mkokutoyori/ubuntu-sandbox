@@ -19,6 +19,7 @@ export interface LdapChannel {
   readable(): boolean;
   upgradeTls(request: TlsUpgradeRequest): TlsUpgradeOutcome;
   readonly peerAddress: string;
+  tlsState?(): { readonly strength: number; readonly clientDn: string | null } | null;
   readonly localEndpoint: string;
   close(): void;
 }
@@ -30,4 +31,5 @@ export type ConnectOutcome =
 export interface LdapTransport {
   resolve(name: string): Promise<readonly string[] | null>;
   connect(address: string, port: number): ConnectOutcome;
+  reverse?(address: string): Promise<string | null>;
 }

@@ -103,10 +103,11 @@ function ldifPutBinary(
     case LdifPut.TEXT:
     case LdifPut.URL:
     case LdifPut.B64:
-      out.push(' ');
-      len++;
-    // falls through
     case LdifPut.COMMENT:
+      if (type !== LdifPut.COMMENT) {
+        out.push(' ');
+        len++;
+      }
       for (let i = 0; i < vlen; i++) {
         if (len > wrap) { out.push('\n', ' '); len = 1; }
         out.push(String.fromCharCode(val[i]));

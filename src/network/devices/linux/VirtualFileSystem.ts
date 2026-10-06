@@ -8,6 +8,8 @@ import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
 import { VfsPath, type PathActor } from './VfsPath';
 import { AT_DENY_USINE } from './jobs/AtPermissions';
+import { SYSTEM_CONFIG_DEFAULTS, SYSTEM_CONFIG_DIRECTORY, SYSTEM_CONFIG_FILE } from '../../ldap/openldap/ldapOptions';
+import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFileNames } from '../../ldap/openldap/sasl/saslFiles';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
@@ -230,7 +232,8 @@ export class VirtualFileSystem {
       '/usr/games', '/usr/include', '/usr/libexec', '/usr/src',
       '/etc/ssl', '/etc/ssl/certs', '/etc/ssl/private',
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly', '/etc/cron.d',
-      '/etc/sudoers.d',
+      '/etc/sudoers.d', SYSTEM_CONFIG_DIRECTORY,
+      '/usr/lib/x86_64-linux-gnu', SASL_PLUGIN_DIRECTORY,
       '/etc/ufw', '/etc/ufw/applications.d',
       '/etc/iptables',
       '/etc/network', '/etc/network/interfaces.d', '/etc/network/if-up.d',
@@ -317,6 +320,10 @@ export class VirtualFileSystem {
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
       0o666, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
+    this.createFileAt(SYSTEM_CONFIG_FILE, SYSTEM_CONFIG_DEFAULTS, 0o644, 0, 0);
+    for (const plugin of LIBSASL2_MODULES_PLUGINS) {
+      for (const name of pluginFileNames(plugin)) this.createFileAt(`${SASL_PLUGIN_DIRECTORY}/${name}`, '\x7fELF', 0o644, 0, 0);
+    }
     this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
     this.createFileAt('/etc/lsb-release',
       'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +

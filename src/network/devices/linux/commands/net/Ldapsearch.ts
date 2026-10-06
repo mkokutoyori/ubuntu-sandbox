@@ -1,3 +1,4 @@
+import { reverseNameOfAsync } from '../../network/ReverseName';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
@@ -10,11 +11,9 @@ import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { pemToCertChain } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { TlsRequireCert } from '@/network/ldap/openldap/ldapOptions';
+import { SASL_PLUGIN_DIRECTORY, loadClientPlugins } from '@/network/ldap/openldap/sasl/saslPlugins';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 
-const SASL_CLIENT_MECHANISMS = [
-  'ANONYMOUS', 'CRAM-MD5', 'DIGEST-MD5', 'LOGIN', 'NTLM', 'OTP', 'PLAIN', 'SCRAM-SHA-1', 'SCRAM-SHA-256',
-] as const;
 
 class ClientChannel implements LdapChannel {
   constructor(
@@ -86,6 +85,7 @@ function linuxLdapTransport(ctx: LinuxCommandContext): LdapTransport {
       const address = await ctx.net.resolveHostname(name);
       return address ? [address.toString()] : null;
     },
+    reverse: (address: string) => reverseNameOfAsync(ctx.executor.nss, address),
     connect(address: string, port: number): ConnectOutcome {
       const dialed = dialLdap(ctx.net.getTcpStack(), address, port);
       if (!dialed.ok || dialed.client === undefined) {
@@ -147,7 +147,11 @@ function linuxLdapToolHost(ctx: LinuxCommandContext, stdin: string | undefined):
     },
     localHostName: () => kernelHostname(vfs),
     localAddress: () => null,
-    saslClientMechanisms: () => SASL_CLIENT_MECHANISMS,
+    sasl: {
+      plugins: () => loadClientPlugins(vfs.listDirectory(SASL_PLUGIN_DIRECTORY)?.map((entry) => entry.name) ?? null),
+      hostname: () => kernelHostname(vfs),
+      random: (length) => crypto.getRandomValues(new Uint8Array(length)),
+    },
     lookupDomainHosts: () => null,
   };
 }
