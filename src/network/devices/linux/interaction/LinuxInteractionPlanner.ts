@@ -22,6 +22,7 @@ import type {
 } from '@/shell/interaction/CommandInteraction';
 import { tokenize } from '../LinuxShellParser';
 import { parseAdduserArgs } from '../iam/adduserOptions';
+import { buildOpensslInteractionPlan } from './OpensslInteraction';
 import type { PamDialogue } from '../pam/PamDialogue';
 import { PamReturn, pamStrError } from '../pam/PamReturnCode';
 
@@ -359,6 +360,10 @@ export function buildLinuxInteractionPlan(
 
   if (parts[0] === 'adduser' && parts.length >= 2 && isRoot) {
     return rootAdduserPlan(device, trimmed, ctx.currentUser);
+  }
+
+  if (parts[0] === 'openssl') {
+    return buildOpensslInteractionPlan(trimmed);
   }
 
   // `useradd` is intentionally absent — non-interactive on real systems.
