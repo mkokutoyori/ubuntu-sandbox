@@ -130,6 +130,7 @@ export abstract class Equipment {
   getSystemClock(): SystemClock { return this.systemClock; }
   getSystemClockMs(): number { return this.systemClock.now(); }
   _setSystemClock(epochMs: number): void { this.systemClock.set(epochMs); }
+  _stepSystemClock(deltaMs: number): void { this.systemClock.step(deltaMs); }
 
   /** Optional bus override (Phase 2 of the reactive refactor). */
   private busOverride: IEventBus | null = null;

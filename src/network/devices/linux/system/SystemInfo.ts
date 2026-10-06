@@ -10,7 +10,8 @@
 
 import type { HostLifecycle } from '../../host/lifecycle';
 import type { KernelInfo } from '../../host/identity';
-import { formatOffsetCompact } from '../../../core/time/TimeZoneRegistry';
+import { formatOffsetCompact, utcMsForLocal } from '../../../core/time/TimeZoneRegistry';
+import { TimeZone } from '../../../core/time/TimeZone';
 import { abreviationA, decalageA } from '../time/TimezoneDatabase';
 import { IDLE_LOAD_AVERAGE } from './LoadAverage';
 
@@ -229,22 +230,22 @@ function strftime(fmt: string, d: Date, rendu: DateRendering = UTC_RENDERING): s
  * Returns null when the string can't be parsed — the caller mirrors
  * coreutils' "date: invalid date '<x>'" error in that case.
  */
-function parseDateSpec(spec: string): Date | null {
+function parseDateSpec(spec: string, nowMs: number, timezone?: string): Date | null {
   const s = spec.trim();
-  if (!s || s === 'now') return new Date();
+  if (!s || s === 'now') return new Date(nowMs);
   if (s === 'today') {
-    const d = new Date();
+    const d = new Date(nowMs);
     d.setUTCHours(0, 0, 0, 0);
     return d;
   }
   if (s === 'yesterday') {
-    const d = new Date();
+    const d = new Date(nowMs);
     d.setUTCDate(d.getUTCDate() - 1);
     d.setUTCHours(0, 0, 0, 0);
     return d;
   }
   if (s === 'tomorrow') {
-    const d = new Date();
+    const d = new Date(nowMs);
     d.setUTCDate(d.getUTCDate() + 1);
     d.setUTCHours(0, 0, 0, 0);
     return d;
@@ -253,8 +254,6 @@ function parseDateSpec(spec: string): Date | null {
     const seconds = parseInt(s.slice(1), 10);
     return isNaN(seconds) ? null : new Date(seconds * 1000);
   }
-  // GNU date relative specs: "5 minutes ago", "-5 minutes", "1 day ago",
-  // "-1 day" — the two forms are equivalent, both accepted by real `date -d`.
   const relative = /^(-)?\s*(\d+)\s*(second|minute|hour|day|week)s?(\s+ago)?$/i.exec(s);
   if (relative) {
     const isPast = relative[1] === '-' || !!relative[4];
@@ -263,10 +262,15 @@ function parseDateSpec(spec: string): Date | null {
       second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
     };
     const ms = amount * unitMs[relative[3].toLowerCase()];
-    return new Date(Date.now() + (isPast ? -ms : ms));
+    return new Date(nowMs + (isPast ? -ms : ms));
   }
-  const t = Date.parse(s);
-  return isNaN(t) ? null : new Date(t);
+  const explicit = Date.parse(s);
+  const hasZoneDesignator = /(\bUTC|\bGMT|Z|[+-]\d{2}:?\d{2})$/i.test(s);
+  if (hasZoneDesignator) return isNaN(explicit) ? null : new Date(explicit);
+  const wallMs = Date.parse(`${s} UTC`);
+  if (isNaN(wallMs)) return isNaN(explicit) ? null : new Date(explicit);
+  const zone = timezone === undefined ? null : TimeZone.parse(timezone);
+  return new Date(zone === null ? wallMs : utcMsForLocal(zone, wallMs));
 }
 
 export interface DateRendering {
@@ -288,37 +292,75 @@ function renderingIn(timezone: string | undefined, epochMs: number): DateRenderi
   };
 }
 
-export function cmdDate(args: string[], timezone?: string): string {
-  // Accept -d <spec> / --date=<spec> / --date <spec>.
-  let when = new Date();
+export interface DateHost {
+  readonly nowMs: number;
+  readonly mayStepClock: boolean;
+  setClock(epochMs: number): void;
+}
+
+const POSITIONAL_SET = /^(\d{2})(\d{2})(\d{2})(\d{2})(?:(\d{2})?(\d{2}))?(?:\.(\d{2}))?$/;
+
+function positionalSetSpec(token: string, nowMs: number): string | null {
+  const m = POSITIONAL_SET.exec(token);
+  if (!m) return null;
+  const year = m[6] === undefined
+    ? new Date(nowMs).getUTCFullYear()
+    : Number(`${m[5] ?? (Number(m[6]) < 69 ? '20' : '19')}${m[6]}`);
+  const pad = (n: string | undefined) => (n ?? '00').padStart(2, '0');
+  return `${year}-${m[1]}-${m[2]} ${m[3]}:${m[4]}:${pad(m[7])}`;
+}
+
+export function cmdDate(args: string[], timezone: string | undefined, host: DateHost): string {
+  let when = new Date(host.nowMs);
   let fmtArg: string | undefined;
   let forceUtc = false;
+  let setSpec: string | null = null;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-d' || a === '--date') {
       const spec = args[++i];
-      const parsed = spec !== undefined ? parseDateSpec(spec) : null;
+      const parsed = spec !== undefined ? parseDateSpec(spec, host.nowMs, timezone) : null;
       if (!parsed) return `date: invalid date '${spec ?? ''}'`;
       when = parsed;
       continue;
     }
     if (a.startsWith('--date=')) {
-      const parsed = parseDateSpec(a.slice('--date='.length));
+      const parsed = parseDateSpec(a.slice('--date='.length), host.nowMs, timezone);
       if (!parsed) return `date: invalid date '${a.slice('--date='.length)}'`;
       when = parsed;
+      continue;
+    }
+    if (a === '-s' || a === '--set') {
+      setSpec = args[++i] ?? '';
+      continue;
+    }
+    if (a.startsWith('--set=')) {
+      setSpec = a.slice('--set='.length);
       continue;
     }
     if (a.startsWith('+')) {
       fmtArg = a.slice(1);
       continue;
     }
-    if (a === '-u' || a === '--utc' || a === '--universal') forceUtc = true;
+    if (a === '-u' || a === '--utc' || a === '--universal') {
+      forceUtc = true;
+      continue;
+    }
+    if (!a.startsWith('-')) setSpec = positionalSetSpec(a, host.nowMs) ?? setSpec;
   }
 
   const zone = forceUtc ? undefined : timezone;
-  if (fmtArg !== undefined) return formatLocalTime(fmtArg, when.getTime(), zone);
+  let denied = '';
+  if (setSpec !== null) {
+    const parsed = parseDateSpec(setSpec, host.nowMs, zone);
+    if (!parsed) return `date: invalid date '${setSpec}'`;
+    when = parsed;
+    if (host.mayStepClock) host.setClock(parsed.getTime());
+    else denied = 'date: cannot set date: Operation not permitted\n';
+  }
+  if (fmtArg !== undefined) return denied + formatLocalTime(fmtArg, when.getTime(), zone);
   const rendu = renderingIn(zone, when.getTime());
-  return fullDate(new Date(when.getTime() + rendu.offsetMin * 60_000), rendu.abbr);
+  return denied + fullDate(new Date(when.getTime() + rendu.offsetMin * 60_000), rendu.abbr);
 }
 
 export function formatLocalTime(fmt: string, atMs: number, timezone?: string, zoneName?: string): string {

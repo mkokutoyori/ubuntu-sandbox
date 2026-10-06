@@ -303,7 +303,8 @@ describe('the Windows broadcast flag toggle (Windows 7 and later)', () => {
     client.setBroadcastFlag(false);
     client.setWireChannelFactory(() => channel);
     client.requestLease('eth0');
-    expect(seen).toEqual([false]);
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.every((flag) => flag === false)).toBe(true);
   });
 });
 

@@ -32,6 +32,12 @@ export const PathClock = {
     }
   },
 
+  wait(delayMs: number): void {
+    const resumedAt = PathClock.now() + Math.max(0, delayMs);
+    if (carriedDepth > 0) cursorMs = resumedAt;
+    if (resumedAt > horizonMs) horizonMs = resumedAt;
+  },
+
   reset(): void {
     horizonMs = 0;
     cursorMs = 0;

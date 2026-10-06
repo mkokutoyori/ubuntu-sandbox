@@ -229,9 +229,9 @@ export function cmdChcp(args: string[]): string {
 }
 
 /** date /t — print today's date in MM/DD/YYYY (en-US), in the machine's zone. */
-export function cmdDate(_args: string[], timezone = 'UTC'): string {
+export function cmdDate(_args: string[], timezone: string, nowMs: number): string {
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
-  const local = partsAt(zone, Date.now());
+  const local = partsAt(zone, nowMs);
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const dow = days[local.weekday];
   const mm = String(local.month).padStart(2, '0');
@@ -240,9 +240,9 @@ export function cmdDate(_args: string[], timezone = 'UTC'): string {
 }
 
 /** time /t — print current time in h:mm AM/PM (en-US), in the machine's zone. */
-export function cmdTime(_args: string[], timezone = 'UTC'): string {
+export function cmdTime(_args: string[], timezone: string, nowMs: number): string {
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
-  const local = partsAt(zone, Date.now());
+  const local = partsAt(zone, nowMs);
   const min = String(local.minute).padStart(2, '0');
   const tt = local.hour >= 12 ? 'PM' : 'AM';
   const h12 = local.hour % 12 === 0 ? 12 : local.hour % 12;

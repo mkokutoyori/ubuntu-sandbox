@@ -480,16 +480,6 @@ le drapeau `ra` pose ; le `allow-recursion` par defaut de BIND vaut
 `localnets; localhost;`, et un refus de recursion ne devrait pas annoncer
 `ra`.
 
-### [sleep] `sleep` ne laisse pas passer le temps
-`sleep N` analyse sa duree et rend la main aussitot : sous l'horloge
-virtuelle, `sleep 2` dure 0 ms. Rien de ce qui vieillit (sessions d'un
-pare-feu, baux, caches) ne peut donc etre observe depuis un script. Le
-faire attendre vraiment sur l'ordonnanceur est juste, mais sous
-l'horloge REELLE qui est le defaut des tests, chaque `sleep` en ferait
-attendre autant ; le changement demande de passer d'abord ces tests a
-l'horloge virtuelle. Les sondes qui ont besoin d'une duree avancent
-l'horloge virtuelle directement.
-
 ### [oracle] un outil client sur un poste provisionne une base locale
 `tnsping` et `sqlplus user/pw@hote:port/service`, tapes sur un LinuxPC
 (terminal comme `executeCommand`), passent par `getOracleDatabase(id)` du

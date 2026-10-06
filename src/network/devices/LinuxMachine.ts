@@ -23,6 +23,7 @@
  */
 
 import type { LinuxPam } from './linux/pam/LinuxPam';
+import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
@@ -362,6 +363,12 @@ export abstract class LinuxMachine extends EndHost
     this.enableUdpLite();
     this.initDefaultSockets(profile.isServer);
     this.executor.setLocalDevice(this);
+    this.executor.bindClock({
+      monotonic: () => this.getMonotonicClockMs(),
+      wall: () => this.getSystemClockMs(),
+      step: (deltaMs) => PathClock.wait(deltaMs),
+      set: (epochMs) => this._setSystemClock(epochMs),
+    });
     this.executor.bindKernelHostname({
       read: () => this.getHostname(),
       write: (name) => this.setKernelHostname(name),
