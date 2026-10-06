@@ -42,7 +42,7 @@ import {
 import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
-import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
+import { CertificateRevocationList, type RevokedEntry } from '@/network/pki/CertificateRevocationList';
 import { MANDATORY_CIPHER_SUITES } from '@/network/tls/cipherSuites';
 import {
   createCipherList, cipherDescription, tls13Description, DEFAULT_CIPHER_RULE as DEFAULT_CIPHER_LIST,
@@ -53,6 +53,7 @@ import {
 } from '@/network/tls/legacy/legacyCipherSuites';
 import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
+import { crlVersionOf } from '@/network/pki/der/CrlDer';
 import { publicKeyTextLines, signatureTextLines, certificateRequestText } from './OpenSslText';
 import { verifyCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
@@ -856,6 +857,16 @@ function runInfo(argv: readonly string[]): OpenSslResult {
 
 const CA_INDEX = '/etc/ssl/CA/index.txt';
 const CA_SERIAL = '/etc/ssl/CA/serial';
+const CA_CRL_NUMBER = '/etc/ssl/CA/crlnumber';
+const CRL_REASON_NAMES = [
+  'unspecified', 'keyCompromise', 'CACompromise', 'affiliationChanged', 'superseded',
+  'cessationOfOperation', 'certificateHold', 'removeFromCRL',
+] as const;
+const CRL_REASON_TEXT: Readonly<Record<string, string>> = {
+  unspecified: 'Unspecified', keyCompromise: 'Key Compromise', cACompromise: 'CA Compromise',
+  affiliationChanged: 'Affiliation Changed', superseded: 'Superseded',
+  cessationOfOperation: 'Cessation Of Operation', certificateHold: 'Certificate Hold', removeFromCRL: 'Remove From CRL',
+};
 
 /**
  * Une entrée de l'index d'openssl-ca, au format réel :
@@ -1160,8 +1171,14 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (!cert) return fail('unable to load certificate');
     const entree = index.find((e) => sameSerial(e.serie, cert.serialNumber));
     if (!entree) return fail(`ERROR:Serial number ${shownSerial(cert.serialNumber)} is not in the index`);
+    const reasonText = opts.get('-crl_reason');
+    let reason: string | undefined;
+    if (typeof reasonText === 'string') {
+      reason = CRL_REASON_NAMES.find((name) => name.toLowerCase() === reasonText.toLowerCase());
+      if (reason === undefined) return fail(`Unknown CRL reason ${reasonText}`);
+    }
     entree.etat = 'R';
-    entree.revocation = dateIndex(host.now());
+    entree.revocation = reason ? `${dateIndex(host.now())},${reason}` : dateIndex(host.now());
     ecrireIndex(host, index);
     return { output: '', stderr: `Revoking Certificate ${shownSerial(cert.serialNumber)}.\nDatabase updated`, exitCode: 0 };
   }
@@ -1173,15 +1190,35 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     // personne : n'importe qui pouvait en écrire une, et rien ne pouvait
     // la distinguer de celle de l'autorité. C'est ce qui manquait pour
     // que `verify -crl_check` puisse exister.
+    const crlDays = Number(opts.get('-crldays') ?? 0);
+    const crlHours = Number(opts.get('-crlhours') ?? 0);
+    const nextUpdateMs = crlDays === 0 && crlHours === 0
+      ? 30 * 24 * 3600 * 1000
+      : (crlDays * 24 + crlHours) * 3600 * 1000;
+    const crlNumberText = host.readFile(CA_CRL_NUMBER);
+    const crlNumber = crlNumberText === null ? undefined : Number.parseInt(crlNumberText.trim() || '0', 16);
+    if (crlNumber !== undefined && Number.isNaN(crlNumber)) return fail('error while loading CRL number');
     const crl = CertificateRevocationList.sign({
       version: 2,
       issuer: ca.subject,
       thisUpdate: host.now(),
-      nextUpdate: host.now() + 30 * 24 * 3600 * 1000,
+      nextUpdate: host.now() + nextUpdateMs,
       signatureAlgorithm: 'sha256WithRSAEncryption',
-      revoked: index.filter((e) => e.etat === 'R')
-        .map((e) => ({ serialNumber: canonicalSerial(e.serie), revocationDate: dateDepuisIndex(e.revocation) })),
+      revoked: index.filter((e) => e.etat === 'R').map((e) => {
+        const [date, reason] = e.revocation.split(',');
+        const reasonCode = reason === undefined ? undefined
+          : (reason === 'CACompromise' ? 'cACompromise' : reason) as RevokedEntry['reasonCode'];
+        return {
+          serialNumber: canonicalSerial(e.serie),
+          revocationDate: dateDepuisIndex(date),
+          ...(reasonCode ? { reasonCode } : {}),
+        };
+      }),
+      ...(crlNumber !== undefined ? { crlNumber } : {}),
     }, cleCa);
+    if (crlNumber !== undefined) {
+      host.writeFile(CA_CRL_NUMBER, `${(crlNumber + 1).toString(16).toUpperCase().padStart(2, '0')}\n`);
+    }
     const pem = crlToPem(crl);
     const out = opts.get('-out');
     if (typeof out === 'string') {
@@ -1199,8 +1236,12 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (!csr) return fail('unable to load certificate request');
   if (!verifyCertificateRequest(csr)) return fail('Signature did not match the certificate request');
 
+  const evenHex = (value: number): string => {
+    const digits = value.toString(16).toUpperCase();
+    return digits.length % 2 === 1 ? `0${digits}` : digits;
+  };
   const serieCourante = Number.parseInt(host.readFile(CA_SERIAL)?.trim() ?? '1000', 16);
-  const serie = (serieCourante + 1).toString(16).toUpperCase().padStart(4, '0');
+  const serie = evenHex(serieCourante);
 
   const caExtensions = extensionsFromFile(host, opts, csr, ca);
   if ('error' in caExtensions) return fail(caExtensions.error);
@@ -1248,7 +1289,7 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   }
   trace += `Write out database with 1 new entries\nDatabase updated`;
 
-  host.writeFile(CA_SERIAL, serie + '\n');
+  host.writeFile(CA_SERIAL, evenHex(serieCourante + 1) + '\n');
   index.push({
     etat: 'V',
     expiration: dateIndex(cert.notAfter),
@@ -1269,6 +1310,36 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   return { output: pem, stderr: text, exitCode: 0 };
 }
 
+function crlText(crl: CertificateRevocationList): string[] {
+  const lines = [
+    'Certificate Revocation List (CRL):',
+    `        Version ${crlVersionOf(crl)} (0x${crlVersionOf(crl) - 1})`,
+    `        Signature Algorithm: ${crl.signatureAlgorithm}`,
+    `        Issuer: ${opensslDistinguishedName(crl.issuer)}`,
+    `        Last Update: ${opensslDate(crl.thisUpdate)}`,
+    `        Next Update: ${opensslDate(crl.nextUpdate)}`,
+  ];
+  const extensions: string[] = [];
+  if (crl.authorityKeyIdentifier !== undefined) {
+    extensions.push('            X509v3 Authority Key Identifier: ', `                ${crl.authorityKeyIdentifier}`);
+  }
+  if (crl.crlNumber !== undefined) extensions.push('            X509v3 CRL Number: ', `                ${crl.crlNumber}`);
+  if (extensions.length > 0) lines.push('        CRL extensions:', ...extensions);
+  if (crl.revoked.length === 0) {
+    lines.push('No Revoked Certificates.');
+  } else {
+    lines.push('Revoked Certificates:');
+    for (const entry of crl.revoked) {
+      lines.push(`    Serial Number: ${shownSerial(entry.serialNumber)}`, `        Revocation Date: ${opensslDate(entry.revocationDate)}`);
+      if (entry.reasonCode) {
+        lines.push('        CRL entry extensions:', '            X509v3 CRL Reason Code: ', `                ${CRL_REASON_TEXT[entry.reasonCode]}`);
+      }
+    }
+  }
+  lines.push(...signatureTextLines(crl.signatureAlgorithm, crl.signature));
+  return lines;
+}
+
 function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('crl', argv);
   const chemin = opts.get('-in');
@@ -1283,23 +1354,7 @@ function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (opts.has('-lastupdate')) lignes.push(`lastUpdate=${opensslDate(crl.thisUpdate)}`);
   if (opts.has('-nextupdate')) lignes.push(`nextUpdate=${opensslDate(crl.nextUpdate)}`);
   if (opts.has('-text')) {
-    lignes.push('Certificate Revocation List (CRL):');
-    lignes.push('        Version 2 (0x1)');
-    lignes.push(`        Issuer: ${opensslDistinguishedName(crl.issuer)}`);
-    lignes.push(`        Last Update: ${opensslDate(crl.thisUpdate)}`);
-    lignes.push(`        Next Update: ${opensslDate(crl.nextUpdate)}`);
-    if (crl.revoked.length === 0) {
-      lignes.push('No Revoked Certificates.');
-    } else {
-      lignes.push('Revoked Certificates:');
-      for (const r of crl.revoked) {
-        lignes.push(`    Serial Number: ${shownSerial(r.serialNumber)}`);
-        // La date de révocation s'affiche comme toutes les autres dates
-        // d'openssl. Elle sortait jusqu'ici au format de l'index
-        // (`260806083012Z`), qui n'apparaît nulle part ailleurs.
-        lignes.push(`        Revocation Date: ${opensslDate(r.revocationDate)}`);
-      }
-    }
+    lignes.push(...crlText(crl));
   }
   if (!opts.has('-noout')) lignes.push(crlToPem(crl).trimEnd());
   return ok(lignes.join('\n'));

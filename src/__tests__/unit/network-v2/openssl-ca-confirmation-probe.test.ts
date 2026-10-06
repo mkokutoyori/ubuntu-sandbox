@@ -58,7 +58,7 @@ async function simulatedRun(answers: string, flags: string): Promise<{ srv: Linu
 describe('openssl ca : confirmations', () => {
   it('témoin : -batch signe et inscrit le certificat à l\'index', async () => {
     const { srv } = await simulatedRun('', '-batch');
-    expect(await srv.executeCommand(`cat ${CA}/index.txt`)).toMatch(/^V\t.*\t1001\tunknown\t\/C=FR\/O=Lab\/CN=www\.lab$/m);
+    expect(await srv.executeCommand(`cat ${CA}/index.txt`)).toMatch(/^V\t.*\t1000\tunknown\t\/C=FR\/O=Lab\/CN=www\.lab$/m);
   });
 
   it('oui puis oui : trace identique à openssl réel', async () => {
@@ -72,7 +72,7 @@ describe('openssl ca : confirmations', () => {
   it('non à la signature : « CERTIFICATE WILL NOT BE CERTIFIED », rien n\'est inscrit', async () => {
     const { srv, text } = await simulatedRun('n\\n', '');
     expect(normalize(text)).toBe(normalize(realRun('n\n', ['-days', '30'])).trimEnd());
-    expect(await srv.executeCommand(`cat ${CA}/index.txt`)).not.toMatch(/1001/);
+    expect(await srv.executeCommand(`cat ${CA}/index.txt`)).not.toMatch(/1000\tunknown/);
   });
 
   it('oui puis non au commit : « CERTIFICATION CANCELED », rien n\'est inscrit', async () => {

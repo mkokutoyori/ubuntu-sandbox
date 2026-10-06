@@ -26,6 +26,8 @@ export const OID = {
   ocsp: '1.3.6.1.5.5.7.48.1',
   caIssuers: '1.3.6.1.5.5.7.48.2',
   extensionRequest: '1.2.840.113549.1.9.14',
+  crlNumber: '2.5.29.20',
+  reasonCode: '2.5.29.21',
 } as const;
 
 export const EXTENDED_KEY_USAGE_OIDS: Readonly<Record<string, string>> = {
@@ -171,7 +173,7 @@ function keyUsageBits(usage: readonly string[]): Uint8Array {
   return der.bitString(bytes, unused);
 }
 
-function extension(oid: string, critical: boolean, value: Uint8Array): Uint8Array {
+export function extension(oid: string, critical: boolean, value: Uint8Array): Uint8Array {
   return der.sequence(der.oid(oid), ...(critical ? [der.boolean(true)] : []), der.octetString(value));
 }
 

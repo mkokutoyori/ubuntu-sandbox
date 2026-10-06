@@ -24,6 +24,7 @@ import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
 import { pbkdf2 } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate, X509CertificateFields } from './X509Certificate';
+import { encodeCrl, decodeCrl } from './der/CrlDer';
 import { encodeCertificateRequest, decodeCertificateRequest } from './der/CsrDer';
 import { encodeCertificate, decodeCertificate } from './der/X509Der';
 import { encryptPrivateKeyPkcs8, decryptPrivateKeyPkcs8 } from './der/EncryptedKeyDer';
@@ -264,30 +265,30 @@ export function pemToCsr(pem: string): CertificateRequest | null {
 // ─── Liste de révocation ────────────────────────────────────────────
 
 export function crlToPem(crl: CertificateRevocationList): string {
-  return armour('X509 CRL', crl);
+  return armourBytes('X509 CRL', encodeCrl(crl));
 }
 
-/**
- * Une CRL relue est une VRAIE `CertificateRevocationList`, signature
- * comprise, et non plus l'objet quelconque que ce module rendait.
- *
- * Le typage n'est pas cosmétique : tant que cette fonction rendait
- * `unknown`, aucun appelant ne pouvait demander `isValidSignature` ni
- * `contains`, donc aucune CRL de ce simulateur n'était opposable à quoi
- * que ce soit — `-gencrl` publiait une liste que personne ne pouvait
- * lire autrement que pour l'afficher.
- */
 export function pemToCrl(pem: string): CertificateRevocationList | null {
-  const o = unarmour(pem, 'X509 CRL') as (CrlFields & { signature?: string }) | null;
-  if (!o || typeof o.issuer !== 'string' || !Array.isArray(o.revoked)) return null;
-  return CertificateRevocationList.fromParsed({
-    version: 2,
-    issuer: o.issuer,
-    thisUpdate: o.thisUpdate,
-    nextUpdate: o.nextUpdate,
-    signatureAlgorithm: o.signatureAlgorithm ?? 'sha256WithRSAEncryption',
-    revoked: o.revoked,
-  }, o.signature ?? '');
+  const bytes = unarmourBytes(pem, 'X509 CRL');
+  if (bytes === null) return null;
+  try {
+    if (bytes[0] === 0x7b) {
+      const o = JSON.parse(bytesToUtf8(bytes)) as CrlFields & { signature?: string };
+      if (typeof o.issuer !== 'string' || !Array.isArray(o.revoked)) return null;
+      return CertificateRevocationList.fromParsed({
+        version: 2,
+        issuer: o.issuer,
+        thisUpdate: o.thisUpdate,
+        nextUpdate: o.nextUpdate,
+        signatureAlgorithm: o.signatureAlgorithm ?? 'sha256WithRSAEncryption',
+        revoked: o.revoked,
+      }, o.signature ?? '');
+    }
+    const decoded = decodeCrl(bytes);
+    return CertificateRevocationList.fromParsed(decoded.fields, decoded.signature, decoded.tbs);
+  } catch {
+    return null;
+  }
 }
 
 export function ocspResponseToPem(response: OcspResponseMessage): string {
