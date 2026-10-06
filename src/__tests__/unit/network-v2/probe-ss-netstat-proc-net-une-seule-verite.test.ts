@@ -32,8 +32,7 @@
  * Ce qui n'est PAS construit : `ss -m`, qui lit les tampons de la prise (sk_rcvbuf, sk_sndbuf), est
  * refuse en le disant ; `-D`, `-E` et `-N` aussi ; ni pacing_rate, delivery_rate, busy ni rcv_rtt
  * (aucun RTT physique dans la pile, aucun pacer) ; ni les tables AF_UNIX, netlink et packet de `ss` ;
- * ni le peripherique lie d'une prise (`127.0.0.53%lo:53`) ; `netstat -g` et `-M` disent que la
- * machine ne les supporte pas, et `-c` n'imprime que le premier cliche.
+ * `netstat -g` et `-M` disent que la machine ne les supporte pas, et `-c` n'imprime que le premier cliche.
  *
  * Discrimination (fichier copie sur origin/mandeng 75c5280d8) : CINQUANTE-DEUX cas sur cinquante-cinq
  * tombent. Les trois autres passent des deux cotes : un TEMOIN (la connexion du banc est ESTABLISHED
@@ -194,7 +193,7 @@ describe('listeners: Recv-Q is the accept queue and Send-Q the backlog the daemo
     const ss = await server.executeCommand('ss -ltn');
     expect(rowContaining(ss, '0.0.0.0:9000')[2]).toBe('1');
     expect(rowContaining(ss, '0.0.0.0:80')[2]).toBe('511');
-    expect(rowContaining(ss, '127.0.0.53:53')[2]).toBe('4096');
+    expect(rowContaining(ss, '127.0.0.53%lo:53')[2]).toBe('4096');
   });
 
   it('a socket opened under sudo belongs to root, not to the shell that ran sudo', async () => {
@@ -494,7 +493,7 @@ describe('ss -K destroys a connection the way SOCK_DESTROY does', () => {
   it('a UDP socket is destroyable: the kernel answers success, the row is shown, a bound socket stays', async () => {
     const { a } = lab();
     const before = await a.executeCommand('ss -uan');
-    expect(before).toContain('127.0.0.53:53');
+    expect(before).toContain('127.0.0.53%lo:53');
     expect(await a.executeCommand('sudo ss -K -uan')).toBe(before);
     expect(await a.executeCommand('ss -uan')).toBe(before);
   });

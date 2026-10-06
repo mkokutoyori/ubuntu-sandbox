@@ -260,6 +260,7 @@ export interface TcpHost {
 interface SegmentArrival {
   readonly ttl: number;
   readonly ecn: EcnCodepoint;
+  readonly device: string;
   readonly header?: ReceivedIpHeader;
 }
 
@@ -332,6 +333,7 @@ export interface TcpListenOptions {
   ttlFloor?: TtlFloor;
   allowHalfOpen?: boolean;
   backlog?: number;
+  boundDevice?: string;
 }
 
 export class TcpSocket {
@@ -730,6 +732,7 @@ export class TcpListener {
     readonly allowHalfOpen: boolean = false,
     readonly ttlFloor: TtlFloor = TtlFloor.NONE,
     readonly backlog: number = TCP_SOMAXCONN,
+    readonly boundDevice: string | null = null,
   ) {}
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
@@ -844,16 +847,20 @@ export class TcpStack {
     if (opts.backlog !== undefined && (!Number.isInteger(opts.backlog) || opts.backlog < 0)) {
       throw new Error(`TCP listener backlog out of range: ${opts.backlog} (EINVAL)`);
     }
+    if (opts.boundDevice !== undefined && this.host.getPort(opts.boundDevice) === undefined) {
+      throw new Error(`TCP listener bound to unknown device ${opts.boundDevice} (ENODEV)`);
+    }
     const backlogLimit = this.host.listenBacklogLimit?.() ?? TCP_SOMAXCONN;
     const listener = new TcpListener(
       localIp, boundPort, opts.onAccept, opts.identity ?? {},
       opts.receiveWindow, opts.maxSegmentSize, opts.ttl ?? null, opts.diffServ ?? DiffServField.DEFAULT,
-      opts.allowHalfOpen ?? false, opts.ttlFloor ?? TtlFloor.NONE, Math.min(opts.backlog ?? backlogLimit, backlogLimit));
+      opts.allowHalfOpen ?? false, opts.ttlFloor ?? TtlFloor.NONE, Math.min(opts.backlog ?? backlogLimit, backlogLimit),
+      opts.boundDevice ?? null);
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
     this.listeners.set(listener.key(), listener);
-    this.socketSink?.announce(localIp, boundPort, listener.identity);
+    this.socketSink?.announce(localIp, boundPort, listener.identity, listener.boundDevice ?? undefined);
     this.getBus().publish({
       topic: 'tcp.listener.changed',
       payload: {
@@ -1425,7 +1432,7 @@ export class TcpStack {
     return false;
   }
 
-  handleIp(_inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): boolean {
+  handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): boolean {
     if (!this.enabled) return false;
     if (ipPkt.protocol !== IP_PROTO_TCP) return false;
     const seg = ipPkt.payload as TcpSegment | undefined;
@@ -1436,11 +1443,11 @@ export class TcpStack {
       return true;
     }
     return this.handleSegment(srcIp.toString(), ipPkt.destinationIP.toString(), seg, {
-      ttl: ipPkt.ttl, ecn: EcnCodepoint.ofField(ipPkt.tos), header: receivedIpHeaderOf(ipPkt),
+      ttl: ipPkt.ttl, ecn: EcnCodepoint.ofField(ipPkt.tos), device: inPort, header: receivedIpHeaderOf(ipPkt),
     });
   }
 
-  handleIp6(_inPort: string, srcIp: IPv6Address, ipv6: IPv6Packet): boolean {
+  handleIp6(inPort: string, srcIp: IPv6Address, ipv6: IPv6Packet): boolean {
     if (!this.enabled) return false;
     if (ipv6.nextHeader !== IP_PROTO_TCP) return false;
     const seg = ipv6.payload as TcpSegment | undefined;
@@ -1454,7 +1461,7 @@ export class TcpStack {
       return true;
     }
     return this.handleSegment(srcIp.toString(), ipv6.destinationIP.toString(), seg, {
-      ttl: ipv6.hopLimit, ecn: EcnCodepoint.ofField(ipv6.trafficClass),
+      ttl: ipv6.hopLimit, ecn: EcnCodepoint.ofField(ipv6.trafficClass), device: inPort,
     });
   }
 
@@ -1503,7 +1510,7 @@ export class TcpStack {
       return true;
     }
     if (seg.flags.syn && !seg.flags.ack) {
-      const listener = this.findListener(dstIp, seg.destinationPort);
+      const listener = this.findListener(dstIp, seg.destinationPort, arrival.device);
       if (!listener) {
         this.sendRst(dstIp, senderIp, seg);
         this.dropped(senderIp, seg.sourcePort, 'no-listener');
@@ -1583,7 +1590,7 @@ export class TcpStack {
     // n'est ni RST, ni ACK, ni SYN est JETE en silence par un port a
     // l'ecoute, alors qu'un port ferme repond RST (§3.10.7.1). Cette
     // asymetrie EST ce que mesurent les balayages FIN, NULL et Xmas.
-    if (!seg.flags.ack && this.findListener(dstIp, seg.destinationPort)) {
+    if (!seg.flags.ack && this.findListener(dstIp, seg.destinationPort, arrival.device)) {
       this.dropped(senderIp, seg.sourcePort, 'listen-ignores-segment');
       return true;
     }
@@ -3167,6 +3174,7 @@ export class TcpStack {
       this.handleSegment(srcIp, dstIp, seg, {
         ttl,
         ecn: EcnCodepoint.ofField(ipv4 === undefined ? shape?.tos ?? 0 : ipv4.tos),
+        device: 'lo',
         header: ipv4 === undefined ? undefined : receivedIpHeaderOf(ipv4),
       });
       return;
@@ -3228,12 +3236,15 @@ export class TcpStack {
     };
   }
 
-  private findListener(dstIp: string, port: number): import('./TcpStack').TcpListener | undefined {
-    const specific = this.listeners.get(makeListenerKey(dstIp, port));
-    if (specific) return specific;
+  private findListener(dstIp: string, port: number, device: string | null = null): import('./TcpStack').TcpListener | undefined {
     const wildcard = ipFamilyOf(dstIp) === 'ipv6' ? '::' : '0.0.0.0';
-    return this.listeners.get(makeListenerKey(wildcard, port))
-      ?? this.listeners.get(makeListenerKey('0.0.0.0', port));
+    for (const address of [dstIp, wildcard, '0.0.0.0']) {
+      const listener = this.listeners.get(makeListenerKey(address, port));
+      if (listener && (device === null || listener.boundDevice === null || listener.boundDevice === device)) {
+        return listener;
+      }
+    }
+    return undefined;
   }
 
   private nextEphemeral(localIp?: string): number {

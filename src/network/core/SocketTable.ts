@@ -48,6 +48,7 @@ export interface SocketEntry {
   /** Human-readable process name (optional) */
   processName?: string;
   uid?: number;
+  boundDevice?: string;
   /**
    * Application-layer greeting the service writes as the first bytes on a
    * fresh TCP connection (e.g. `SSH-2.0-...\r\n`, `220 mail.example.com\r\n`).
@@ -102,7 +103,7 @@ export class SocketTable {
     pid?: number,
     processName?: string,
     banner?: string,
-    options?: { reuseAddr?: boolean; ownerUid?: number },
+    options?: { reuseAddr?: boolean; ownerUid?: number; boundDevice?: string },
   ): SocketEntry {
     if (localPort !== 0 && options?.ownerUid !== undefined && this.bindingPolicy !== null
       && !this.bindingPolicy.permits(localPort, { uid: options.ownerUid })) {
@@ -139,6 +140,7 @@ export class SocketTable {
       processName,
       banner,
       uid: options?.ownerUid,
+      boundDevice: options?.boundDevice,
     };
 
     this.sockets.set(this.idCounter, entry);

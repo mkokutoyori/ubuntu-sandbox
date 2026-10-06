@@ -1967,12 +1967,13 @@ export abstract class EndHost extends Equipment {
    */
   private attachListenerProjection(): void {
     this.tcpv2.attachSocketSink({
-      announce: (localIp, localPort, identity) => {
+      announce: (localIp, localPort, identity, boundDevice) => {
         const family = localIp.includes(':') ? 'v6' : 'v4';
         if (this.socketTable.isPortBound(localPort, 'tcp', family)) return;
         try {
           this.socketTable.bind(
             'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,
+            boundDevice === undefined ? undefined : { boundDevice },
           );
           this.sinkOwnedListeners.add(`${localIp}:${localPort}`);
         } catch { /* déjà annoncé par ailleurs — l'entrée existante fait foi */ }
@@ -3374,7 +3375,7 @@ export abstract class EndHost extends Equipment {
     return bound;
   }
 
-  private readonly udpAddressListeners = new Map<string, UdpListener>();
+  private readonly udpAddressListeners = new Map<string, { listener: UdpListener; boundDevice: string | null }>();
 
   private readonly connectedUdpPeers = new Map<number, ConnectedUdpPeer>();
 
@@ -3623,10 +3624,14 @@ export abstract class EndHost extends Equipment {
    * réelle entre systemd-resolved (127.0.0.53:53) et un serveur DNS local.
    */
   public udpBindAddress(
-    address: string, port: number, listener: UdpListener, processName?: string,
+    address: string, port: number, listener: UdpListener, processName?: string, boundDevice?: string,
   ): void {
-    this.socketTable.bind('udp', address, port, undefined, processName);
-    this.udpAddressListeners.set(`${address}:${port}`, listener);
+    if (boundDevice !== undefined && !this.ports.has(boundDevice)) {
+      throw new Error(`ENODEV: No such device ${boundDevice}`);
+    }
+    this.socketTable.bind('udp', address, port, undefined, processName, undefined,
+      boundDevice === undefined ? undefined : { boundDevice });
+    this.udpAddressListeners.set(`${address}:${port}`, { listener, boundDevice: boundDevice ?? null });
   }
 
   public udpCloseAddress(address: string, port: number): void {
@@ -4008,8 +4013,8 @@ export abstract class EndHost extends Equipment {
     // interdire à dnsmasq ou bind9 de prendre 0.0.0.0:53, exactement comme
     // sur un Ubuntu réel.
     const bound = this.udpAddressListeners.get(`${destinationIP.toString()}:${udp.destinationPort}`);
-    if (bound) {
-      bound({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC, ipOptions });
+    if (bound && (bound.boundDevice === null || bound.boundDevice === portName)) {
+      bound.listener({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC, ipOptions });
       return true;
     }
     const listener = this.udpListeners.get(udp.destinationPort);

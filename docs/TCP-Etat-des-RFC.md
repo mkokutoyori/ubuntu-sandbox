@@ -193,6 +193,11 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   `netstat -p` et `lsof` n'inventent ni pid ni nom, et un tunnel `ssh -f -N -L` est un vrai processus `ssh`
   (détaché du shell avec `-f`, enfant du shell sans lui) que `ps` liste, qui tient l'écoute et la connexion, et
   dont le `kill` ferme l'une et l'autre (`probe-ssh-client-est-un-processus`).
+- **Écoute liée à un périphérique (Linux).** Une écoute peut être liée à un périphérique (`SO_BINDTODEVICE`) : la
+  pile ne lui livre que ce qui arrive sur lui (`lo` pour une livraison locale), un périphérique inconnu est refusé
+  (`ENODEV`), et `ss` l'écrit après l'adresse locale, `127.0.0.53%lo:53` pour le stub de systemd-resolved en TCP
+  comme en UDP, que `ss ... dev lo` sélectionne ; `netstat` et `/proc/net/tcp` n'en montrent aucun, comme au noyau
+  (`probe-ecoute-liee-a-un-peripherique`).
 - **Files d'écoute (Linux).** Une écoute garde le `backlog` que son programme a passé à `listen()`, borné par
   `net.core.somaxconn` (4096, lisible et inscriptible par `sysctl` comme par `/proc/sys`), et `ss -l` le
   montre dans Send-Q : sshd 128, nginx et apache 511, vsftpd 32, `nc -l` 1, le résolveur local 4096
@@ -261,8 +266,7 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   les nombres au `printf` de `ss.c` compilé. Ne sont pas construits : `ss -m` (il lit `sk_rcvbuf`, `sk_sndbuf`
   et la taille réelle des tampons, que la pile ne tient pas ; il est refusé en le disant), `pacing_rate`,
   `delivery_rate`, `busy` et `rcv_rtt` (aucun pacer, et le RTT que la pile échantillonne vaut 0 en temps
-  virtuel), les tables AF_UNIX, netlink et packet de `ss`, `-D`, `-E` et `-N`, le périphérique auquel une prise
-  est liée (`127.0.0.53%lo:53`), et côté `netstat` `-g` et `-M` (qui disent que la machine ne les supporte pas)
+  virtuel), les tables AF_UNIX, netlink et packet de `ss`, `-D`, `-E` et `-N`, et côté `netstat` `-g` et `-M` (qui disent que la machine ne les supporte pas)
   et `-c` (un seul cliché). L'algorithme annoncé est `reno` et la fenêtre initiale celle de la RFC 5681 (3
   segments) là où un noyau 5.15 annonce `cubic` et 10 segments ; l'ATO est de 200 ms là où le noyau part de
   40 ms.

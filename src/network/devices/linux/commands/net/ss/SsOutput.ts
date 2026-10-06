@@ -66,7 +66,7 @@ export function socketViewOf(row: KernelSocketRow): SsSocketView | null {
   return null;
 }
 
-export function filterSubjectOf(view: SsSocketView): SsFilterSubject {
+export function filterSubjectOf(view: SsSocketView, interfaceIndexOf: (name: string) => number | null): SsFilterSubject {
   const endpoint = (address: string, port: number) => {
     const parsed = addressBytes(address);
     return {
@@ -78,7 +78,7 @@ export function filterSubjectOf(view: SsSocketView): SsFilterSubject {
   return {
     local: endpoint(view.localAddress, view.localPort),
     remote: endpoint(view.remoteAddress, view.remotePort),
-    interfaceIndex: 0,
+    interfaceIndex: view.row.entry.boundDevice === undefined ? 0 : interfaceIndexOf(view.row.entry.boundDevice) ?? 0,
     mark: 0,
   };
 }
@@ -108,8 +108,8 @@ export class SsRowPrinter {
     const full = isFullSocket(view);
     const v6only = view.family === 6 && (view.state === SS.LISTEN || view.state === SS.CLOSE);
     this.printState(view);
-    this.printAddress(view.localAddress, view.localPort, view, v6only);
-    this.printAddress(view.remoteAddress, view.remotePort, view, v6only);
+    this.printAddress(view.localAddress, view.localPort, view, v6only, view.row.entry.boundDevice ?? null);
+    this.printAddress(view.remoteAddress, view.remotePort, view, v6only, null);
     if (full) this.printUsers(view);
     if (this.request.showOptions) this.printTimer(view);
     if (this.request.showDetails > 0) this.printDetails(view, full, v6only);
@@ -136,7 +136,9 @@ export class SsRowPrinter {
     table.set(COLUMN.ADDR);
   }
 
-  private printAddress(address: string, port: number, view: SsSocketView, v6only: boolean): void {
+  private printAddress(
+    address: string, port: number, view: SsSocketView, v6only: boolean, device: string | null,
+  ): void {
     const { table, request } = this;
     let shown: string;
     if (view.family === 4) {
@@ -149,7 +151,7 @@ export class SsRowPrinter {
       shown = resolved ?? numeric;
       if (shown.includes(':')) shown = `[${shown}]`;
     }
-    table.out(`${shown}:`);
+    table.out(device === null ? `${shown}:` : `${shown}%${device}:`);
     table.next();
     table.out(this.portText(port, view.protocol));
     table.next();

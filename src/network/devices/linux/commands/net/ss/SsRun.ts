@@ -183,7 +183,8 @@ function selected(view: SsSocketView, request: SsRequest, host: SsHost): boolean
   if (request.filter.expression === null) return true;
   const { low, high } = host.ephemeralPorts();
   return evaluateExpression(
-    request.filter.expression, filterSubjectOf(view), (port) => port >= low && port <= high,
+    request.filter.expression, filterSubjectOf(view, (name) => host.interfaceIndex(name)),
+    (port) => port >= low && port <= high,
   );
 }
 

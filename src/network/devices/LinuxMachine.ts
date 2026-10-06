@@ -144,6 +144,7 @@ import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
 
 /** Le listener TNS d'Oracle — §P2c de docs/PRD-Sockets-Une-Seule-Verite.md. */
 const TNS_PORT = 1521;
+const STUB_DEVICE = 'lo';
 const TNS_BOOT_BANNER = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
@@ -1150,7 +1151,7 @@ export abstract class LinuxMachine extends EndHost
       bindDnsUdpServer(this, (query) => {
         const immediate = this.answerResolvedQuerySync(query);
         return immediate ?? this.answerResolvedQuery(query);
-      }, DNS_PORT, 'systemd-resolved', STUB_ADDRESS);
+      }, DNS_PORT, 'systemd-resolved', STUB_ADDRESS, STUB_DEVICE);
       // Le stub répond aussi en TCP sur une vraie machine — c'est par là
       // que passe une réponse trop grande pour un datagramme (RFC 7766).
       // L'entrée `tcp 127.0.0.53:53` figurait déjà dans `ss` ; jusqu'ici
@@ -1159,7 +1160,7 @@ export abstract class LinuxMachine extends EndHost
       bindDnsTcpServer(this, (query) => {
         const immediate = this.answerResolvedQuerySync(query);
         return immediate ?? this.answerResolvedQuery(query);
-      }, DNS_PORT, { address: STUB_ADDRESS, processName: 'systemd-resolved' });
+      }, DNS_PORT, { address: STUB_ADDRESS, processName: 'systemd-resolved', boundDevice: STUB_DEVICE });
       this.resolvedStubBound = true;
     } catch { /* déjà lié */ }
     // systemd-resolved est le contre-exemple de docs/PRD-Nginx.md §P0 : son
