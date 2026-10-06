@@ -4,6 +4,7 @@
 
 import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, ScrollText, Undo2, Redo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SimulationClockControls } from './SimulationClockControls';
 
 interface ToolbarProps {
   projectName: string;
@@ -83,6 +84,7 @@ export function Toolbar({
 
       {/* Right section - Help */}
       <div className="flex items-center gap-2">
+        <SimulationClockControls />
         {onToggleLogs && (
           <ToolbarButton
             icon={ScrollText}

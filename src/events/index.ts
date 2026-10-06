@@ -27,6 +27,15 @@ export {
   __setDefaultScheduler,
 } from './Scheduler';
 
+export type { SimulationClockState, SimulationClockOptions } from './SimulationClock';
+export {
+  SimulationClock,
+  SIMULATION_SPEEDS,
+  getSimulationClock,
+  installSimulationClock,
+  __resetSimulationClock,
+} from './SimulationClock';
+
 export { TimerSet } from './TimerSet';
 export { SchedulerBinding } from './SchedulerBinding';
 
