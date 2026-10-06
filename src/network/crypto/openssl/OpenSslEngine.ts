@@ -33,7 +33,7 @@ import { materialToP256Public } from '@/crypto/ecc';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { signCertificate, type X509Certificate } from '@/network/pki/X509Certificate';
 import { encodeCertificate, canonicalSerial, sameSerial } from '@/network/pki/der/X509Der';
-import { opensslDistinguishedName } from '@/network/pki/der/DistinguishedName';
+import { opensslDistinguishedName, splitDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import {
   certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
@@ -1095,6 +1095,19 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   return finish(printed.ok ? code : 1);
 }
 
+const LONG_ATTRIBUTE_NAMES: Readonly<Record<string, string>> = {
+  C: 'countryName', ST: 'stateOrProvinceName', L: 'localityName', O: 'organizationName',
+  OU: 'organizationalUnitName', CN: 'commonName', emailAddress: 'emailAddress', DC: 'domainComponent',
+  serialNumber: 'serialNumber', title: 'title', SN: 'surname', GN: 'givenName', street: 'streetAddress', UID: 'userId',
+};
+
+function subjectAttributeLines(subject: string): string[] {
+  return splitDistinguishedName(subject).map(({ type, value }) => {
+    const kind = type === 'C' || type === 'serialNumber' ? 'PRINTABLE' : type === 'DC' || type === 'emailAddress' ? 'IA5STRING' : 'ASN.1 12';
+    return `${(LONG_ATTRIBUTE_NAMES[type] ?? type).padEnd(22)}:${kind}:'${value}'`;
+  });
+}
+
 function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('ca', argv);
   const cheminCa = opts.get('-cert');
@@ -1124,7 +1137,7 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     entree.etat = 'R';
     entree.revocation = dateIndex(host.now());
     ecrireIndex(host, index);
-    return { output: '', stderr: `Revoking Certificate ${shownSerial(cert.serialNumber)}.\nData Base Updated`, exitCode: 0 };
+    return { output: '', stderr: `Revoking Certificate ${shownSerial(cert.serialNumber)}.\nDatabase updated`, exitCode: 0 };
   }
 
   // ── publication de la CRL ──
@@ -1161,7 +1174,6 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const serieCourante = Number.parseInt(host.readFile(CA_SERIAL)?.trim() ?? '1000', 16);
   const serie = (serieCourante + 1).toString(16).toUpperCase().padStart(4, '0');
-  host.writeFile(CA_SERIAL, serie + '\n');
 
   const caExtensions = extensionsFromFile(host, opts, csr, ca);
   if ('error' in caExtensions) return fail(caExtensions.error);
@@ -1179,6 +1191,37 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   };
   const cert: X509Certificate = signCertificate(champs, cleCa);
 
+  const batch = opts.has('-batch');
+  const typed = (host.stdin() ?? '').split('\n');
+  if (typed[typed.length - 1] === '') typed.pop();
+  const nextAnswer = (): string | null => typed.shift() ?? null;
+  let trace = [
+    `Using configuration from ${typeof opts.get('-config') === 'string' ? opts.get('-config') : '/usr/lib/ssl/openssl.cnf'}`,
+    'Check that the request matches the signature',
+    'Signature ok',
+    "The Subject's Distinguished Name is as follows",
+    ...subjectAttributeLines(csr.subject),
+    `Certificate is to be certified until ${opensslDate(cert.notAfter)} (${jours} days)`,
+  ].join('\n') + '\n';
+  const declined = (prompt: string, refusal: string): OpenSslResult | null => {
+    trace += prompt;
+    const answer = nextAnswer();
+    if (answer !== null && /^[yY]/.test(answer)) return null;
+    trace += answer === null ? `${refusal}: I/O error` : refusal;
+    return { output: '', stderr: trace, exitCode: 0 };
+  };
+  if (!batch) {
+    const refused = declined('Sign the certificate? [y/n]:', 'CERTIFICATE WILL NOT BE CERTIFIED');
+    if (refused !== null) return refused;
+  }
+  trace += '\n';
+  if (!batch) {
+    const refused = declined('\n1 out of 1 certificate requests certified, commit? [y/n]', 'CERTIFICATION CANCELED');
+    if (refused !== null) return refused;
+  }
+  trace += `Write out database with 1 new entries\nDatabase updated`;
+
+  host.writeFile(CA_SERIAL, serie + '\n');
   index.push({
     etat: 'V',
     expiration: dateIndex(cert.notAfter),
@@ -1190,15 +1233,13 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const pem = certToPem(cert);
   const out = opts.get('-out');
-  const trace = `Check that the request matches the signature\nSignature ok\n`
-    + `Certificate is to be certified until ${opensslDate(cert.notAfter)}\n`
-    + `\n1 out of 1 certificate requests certified, commit? [y/n]y\n\nWrite out database with 1 new entries\nData Base Updated`;
+  const text = trace;
   if (typeof out === 'string') {
     return host.writeFile(out, pem)
-      ? { output: '', stderr: trace, exitCode: 0 }
+      ? { output: '', stderr: text, exitCode: 0 }
       : fail(`${out}: cannot write`);
   }
-  return { output: pem, stderr: trace, exitCode: 0 };
+  return { output: pem, stderr: text, exitCode: 0 };
 }
 
 function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {

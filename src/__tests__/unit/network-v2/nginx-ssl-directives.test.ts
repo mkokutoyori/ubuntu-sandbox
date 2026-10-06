@@ -394,13 +394,13 @@ describe('ssl_buffer_size, ssl_early_data, ssl_dhparam, ssl_password_file, ssl_c
     const srv = machine(); await lab(srv);
     await sh(srv, 'mkdir -p /etc/ssl/CA');
     await sh(srv, `openssl req -new -newkey rsa:1024 -nodes -keyout ${PKI}/dave.key -out ${PKI}/dave.csr -subj "/CN=dave"`);
-    await sh(srv, `openssl ca -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -in ${PKI}/dave.csr -out ${PKI}/dave.crt -days 30`);
-    await sh(srv, `openssl ca -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -gencrl -out ${PKI}/ca.crl`);
+    await sh(srv, `openssl ca -batch -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -in ${PKI}/dave.csr -out ${PKI}/dave.crt -days 30`);
+    await sh(srv, `openssl ca -batch -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -gencrl -out ${PKI}/ca.crl`);
     await up(srv, `${MTLS}  ssl_crl ${PKI}/ca.crl;\n`);
     const dave = `--cert ${PKI}/dave.crt --key ${PKI}/dave.key`;
     expect(await sh(srv, `curl -sS -k ${dave} https://127.0.0.1/`)).toContain('Welcome');
-    await sh(srv, `openssl ca -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -revoke ${PKI}/dave.crt`);
-    await sh(srv, `openssl ca -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -gencrl -out ${PKI}/ca.crl`);
+    await sh(srv, `openssl ca -batch -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -revoke ${PKI}/dave.crt`);
+    await sh(srv, `openssl ca -batch -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -gencrl -out ${PKI}/ca.crl`);
     await sh(srv, 'nginx -s reload');
     expect(await sh(srv, `curl -sS -k ${dave} https://127.0.0.1/`)).toContain('400 The SSL certificate error');
   });

@@ -38,7 +38,7 @@ async function sh(srv: LinuxServer, command: string): Promise<string> {
 async function issue(srv: LinuxServer, name: string, usage = ''): Promise<void> {
   await sh(srv, `sh -c 'printf "authorityInfoAccess=OCSP;URI:${URL}\\n${usage}" > /tmp/${name}.ext'`);
   await sh(srv, `openssl req -new -newkey rsa:1024 -nodes -keyout /tmp/${name}.key -out /tmp/${name}.csr -subj "/CN=${name}.lab"`);
-  await sh(srv, `openssl ca -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -in /tmp/${name}.csr -extfile /tmp/${name}.ext -out /tmp/${name}.crt -days 30`);
+  await sh(srv, `openssl ca -batch -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -in /tmp/${name}.csr -extfile /tmp/${name}.ext -out /tmp/${name}.crt -days 30`);
 }
 
 async function lab(): Promise<LinuxServer> {
@@ -47,7 +47,7 @@ async function lab(): Promise<LinuxServer> {
   await sh(srv, `openssl req -x509 -newkey rsa:1024 -keyout ${CA}/ca.key -out ${CA}/ca.crt -days 365 -nodes -subj "/CN=Lab CA"`);
   await issue(srv, 'good');
   await issue(srv, 'bad');
-  await sh(srv, `openssl ca -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -revoke /tmp/bad.crt`);
+  await sh(srv, `openssl ca -batch -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -revoke /tmp/bad.crt`);
   await sh(srv, `openssl ocsp -index ${CA}/index.txt -CA ${CA}/ca.crt -rkey ${CA}/ca.key -port 2560 &`);
   return srv;
 }

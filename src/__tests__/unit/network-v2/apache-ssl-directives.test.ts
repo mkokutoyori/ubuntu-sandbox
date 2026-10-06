@@ -257,13 +257,13 @@ describe('SSLVerifyClient (ssl_init_ctx_verify, ssl_callback_SSLVerify)', () => 
   it('SSLCARevocationFile + chain : un certificat révoqué est refusé, avant révocation il passe', async () => {
     const srv = machine(); await lab(srv);
     await sh(srv, `openssl req -new -newkey rsa:1024 -nodes -keyout ${PKI}/dave.key -out ${PKI}/dave.csr -subj "/CN=dave"`);
-    await sh(srv, `openssl ca -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -in ${PKI}/dave.csr -out ${PKI}/dave.crt -days 30`);
-    await sh(srv, `openssl ca -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -gencrl -out ${PKI}/ca.crl`);
+    await sh(srv, `openssl ca -batch -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -in ${PKI}/dave.csr -out ${PKI}/dave.crt -days 30`);
+    await sh(srv, `openssl ca -batch -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -gencrl -out ${PKI}/ca.crl`);
     await up(srv, `${MTLS('require')}  SSLCARevocationFile ${PKI}/ca.crl\n  SSLCARevocationCheck chain\n`);
     const dave = `--cert ${PKI}/dave.crt --key ${PKI}/dave.key`;
     expect(await sh(srv, `curl -sS -k ${dave} https://127.0.0.1/`)).toContain('It works!');
-    await sh(srv, `openssl ca -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -revoke ${PKI}/dave.crt`);
-    await sh(srv, `openssl ca -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -gencrl -out ${PKI}/ca.crl`);
+    await sh(srv, `openssl ca -batch -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -revoke ${PKI}/dave.crt`);
+    await sh(srv, `openssl ca -batch -cert ${PKI}/ca.crt -keyfile ${PKI}/ca.key -gencrl -out ${PKI}/ca.crl`);
     await sh(srv, 'systemctl restart apache2');
     expect(await sh(srv, `curl -sS -k ${dave} https://127.0.0.1/`)).toContain('curl: (');
   });

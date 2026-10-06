@@ -27,9 +27,9 @@ async function pki(srv: LinuxServer): Promise<void> {
   await srv.executeCommand(`openssl req -x509 -newkey rsa:1024 -keyout ${CA}/ca.key -out ${CA}/ca.crt -days 365 -nodes -subj "/CN=Lab CA"`);
   for (const name of ['good', 'bad']) {
     await srv.executeCommand(`openssl req -new -newkey rsa:1024 -nodes -keyout /tmp/${name}.key -out /tmp/${name}.csr -subj "/CN=${name}.lab"`);
-    await srv.executeCommand(`openssl ca -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -in /tmp/${name}.csr -out /tmp/${name}.crt -days 30`);
+    await srv.executeCommand(`openssl ca -batch -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -in /tmp/${name}.csr -out /tmp/${name}.crt -days 30`);
   }
-  await srv.executeCommand(`openssl ca -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -revoke /tmp/bad.crt`);
+  await srv.executeCommand(`openssl ca -batch -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -revoke /tmp/bad.crt`);
 }
 
 const ISSUER = `-issuer ${CA}/ca.crt`;

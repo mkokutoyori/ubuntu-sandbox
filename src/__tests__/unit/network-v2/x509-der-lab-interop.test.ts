@@ -33,7 +33,7 @@ async function simulatedLab(): Promise<{ srv: LinuxServer; caPem: string; leafPe
   await sh(`openssl req -x509 -newkey rsa:1024 -keyout ${CA}/ca.key -out ${CA}/ca.crt -days 365 -nodes -subj "/C=FR/O=Lab/CN=Lab CA"`);
   await sh(`sh -c 'printf "subjectAltName=DNS:www.lab,IP:10.0.0.9\\nextendedKeyUsage=serverAuth\\n" > /tmp/leaf.ext'`);
   await sh('openssl req -new -newkey rsa:1024 -nodes -keyout /tmp/leaf.key -out /tmp/leaf.csr -subj "/CN=www.lab"');
-  await sh(`openssl ca -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -in /tmp/leaf.csr -extfile /tmp/leaf.ext -out /tmp/leaf.crt -days 30`);
+  await sh(`openssl ca -batch -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -in /tmp/leaf.csr -extfile /tmp/leaf.ext -out /tmp/leaf.crt -days 30`);
   return { srv, caPem: await sh(`cat ${CA}/ca.crt`), leafPem: await sh('cat /tmp/leaf.crt') };
 }
 
