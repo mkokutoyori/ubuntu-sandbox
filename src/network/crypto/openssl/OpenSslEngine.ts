@@ -54,6 +54,7 @@ import {
 import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
+import { opensslHelpLines } from './OpenSslHelp';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 
@@ -87,10 +88,7 @@ function notImplemented(name: string): OpenSslResult {
 }
 
 function invalidCommand(name: string): OpenSslResult {
-  return fail(
-    `openssl:Error: '${name}' is an invalid command.\n` +
-    `\nStandard commands\n${[...IMPLEMENTED].sort().join(' ')}`,
-  );
+  return fail(`Invalid command '${name}'; type "help" for a list.`);
 }
 
 /** `Aug  5 08:00:00 2026 GMT` — trois lettres, jour sur deux colonnes. */
@@ -1587,25 +1585,14 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 }
 
 function runHelp(): OpenSslResult {
-  return ok([
-    'Standard commands',
-    [...IMPLEMENTED].sort().join(' '),
-    '',
-    'Message Digest commands',
-    Object.keys(DIGESTS).sort().join(' '),
-  ].join('\n'));
+  return { output: '', stderr: opensslHelpLines().join('\n'), exitCode: 0 };
 }
 
 // ─── dispatch ───────────────────────────────────────────────────────
 
 export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const sub = argv[0];
-  if (sub === undefined) {
-    // Un vrai openssl entre en mode interactif ; le dire vaut mieux
-    // qu'un faux prompt qui ne saurait rien faire (§12).
-    return fail('openssl: interactive mode is not implemented in this simulator; '
-      + "run 'openssl help' for the list of commands");
-  }
+  if (sub === undefined) return runHelp();
   const reste = argv.slice(1);
 
   if (sub === 'version') return runVersion(reste);
