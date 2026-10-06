@@ -20,7 +20,7 @@ import {
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
-import { modpGroup } from '@/crypto/dh/modp';
+import { modpGroup, namedGroupOf } from '@/crypto/dh/modp';
 import { isProbablePrime } from '@/crypto/rsa';
 import { dhParametersToPem, pemToDhParameters, type DhParameters } from '@/network/pki/pem';
 import {
@@ -739,10 +739,13 @@ function labeledBignum(label: string, value: bigint): string[] {
 
 function dhParametersText(parameters: DhParameters): string {
   const bits = parameters.prime.toString(2).length;
+  const named = namedGroupOf(parameters.prime, parameters.generator);
   const lines = [
     `DH Parameters: (${bits} bit)`,
-    ...labeledBignum('P:   ', parameters.prime),
-    ...labeledBignum('G:   ', parameters.generator),
+    ...(named !== undefined ? [`GROUP: ${named}`] : [
+      ...labeledBignum('P:   ', parameters.prime),
+      ...labeledBignum('G:   ', parameters.generator),
+    ]),
   ];
   return lines.map((line) => `    ${line}`).join('\n');
 }

@@ -24,6 +24,7 @@ import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
 import { pbkdf2 } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate, X509CertificateFields } from './X509Certificate';
+import { der, children, expectTag, integerValue, parseDer, TAG } from './der/Asn1';
 import { encodeCrl, decodeCrl } from './der/CrlDer';
 import { encodeCertificateRequest, decodeCertificateRequest } from './der/CsrDer';
 import { encodeCertificate, decodeCertificate } from './der/X509Der';
@@ -316,11 +317,21 @@ export interface DhParameters {
 }
 
 export function dhParametersToPem(parameters: DhParameters): string {
-  return armour('DH PARAMETERS', { p: parameters.prime.toString(16), g: parameters.generator.toString(16) });
+  return armourBytes('DH PARAMETERS', der.sequence(der.integer(parameters.prime), der.integer(parameters.generator)));
 }
 
 export function pemToDhParameters(pem: string): DhParameters | null {
-  const o = unarmour(pem, 'DH PARAMETERS') as { p?: unknown; g?: unknown } | null;
-  if (!o || typeof o.p !== 'string' || typeof o.g !== 'string' || !/^[0-9a-f]+$/.test(o.p) || !/^[0-9a-f]+$/.test(o.g)) return null;
-  return { prime: BigInt(`0x${o.p}`), generator: BigInt(`0x${o.g}`) };
+  const bytes = unarmourBytes(pem, 'DH PARAMETERS');
+  if (bytes === null) return null;
+  try {
+    if (bytes[0] === 0x7b) {
+      const o = JSON.parse(bytesToUtf8(bytes)) as { p?: unknown; g?: unknown };
+      if (typeof o.p !== 'string' || typeof o.g !== 'string' || !/^[0-9a-f]+$/.test(o.p) || !/^[0-9a-f]+$/.test(o.g)) return null;
+      return { prime: BigInt(`0x${o.p}`), generator: BigInt(`0x${o.g}`) };
+    }
+    const [prime, generator] = children(expectTag(parseDer(bytes), TAG.SEQUENCE, 'DHParameter'));
+    return { prime: integerValue(prime), generator: integerValue(generator) };
+  } catch {
+    return null;
+  }
 }

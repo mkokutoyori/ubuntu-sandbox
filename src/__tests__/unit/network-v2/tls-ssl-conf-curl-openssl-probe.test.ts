@@ -335,13 +335,21 @@ describe('openssl dhparam (apps/dhparam.c, encode_key2text.c)', () => {
 
   it('-text imprime « DH Parameters: (N bit) », P sur lignes de 15 octets avec 00 de tête, G: 2 (0x2), indentés de 4', async () => {
     const srv = machine();
-    await srv.executeCommand('openssl dhparam -out /tmp/dh.pem 2048');
+    await srv.executeCommand('openssl dhparam -out /tmp/dh.pem 1024');
     const text = await srv.executeCommand('openssl dhparam -in /tmp/dh.pem -noout -text');
     const lines = text.split('\n');
-    expect(lines[0]).toBe('    DH Parameters: (2048 bit)');
+    expect(lines[0]).toBe('    DH Parameters: (1024 bit)');
     expect(lines[1]).toBe('    P:   ');
     expect(lines[2]).toBe('        00:ff:ff:ff:ff:ff:ff:ff:ff:c9:0f:da:a2:21:68:');
     expect(lines.filter((line) => line !== '').pop()).toBe('    G:    2 (0x2)');
+  });
+
+  it('-text nomme un groupe connu comme openssl 3.0 (GROUP: modp_2048) au lieu de P et G', async () => {
+    const srv = machine();
+    await srv.executeCommand('openssl dhparam -out /tmp/dh.pem 2048');
+    const text = await srv.executeCommand('openssl dhparam -in /tmp/dh.pem -noout -text');
+    expect(text).toContain('    GROUP: modp_2048');
+    expect(text).not.toContain('    P:');
   });
 
   it('-check valide un groupe sûr', async () => {
