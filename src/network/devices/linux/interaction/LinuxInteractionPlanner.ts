@@ -22,6 +22,7 @@ import type {
 } from '@/shell/interaction/CommandInteraction';
 import { tokenize } from '../LinuxShellParser';
 import { parseAdduserArgs } from '../iam/adduserOptions';
+import { buildOpensslInteractionPlan } from './OpensslInteraction';
 import type { PamDialogue } from '../pam/PamDialogue';
 import { PamReturn, pamStrError } from '../pam/PamReturnCode';
 
@@ -42,6 +43,7 @@ export interface LinuxPlannerDevice {
     workPhone: string, homePhone: string, other: string,
   ): void;
   userExists?(user: string): boolean;
+  readTextFile?(path: string): string | null;
 }
 
 export interface PasswordInvoker {
@@ -359,6 +361,10 @@ export function buildLinuxInteractionPlan(
 
   if (parts[0] === 'adduser' && parts.length >= 2 && isRoot) {
     return rootAdduserPlan(device, trimmed, ctx.currentUser);
+  }
+
+  if (parts[0] === 'openssl') {
+    return buildOpensslInteractionPlan(trimmed, device);
   }
 
   // `useradd` is intentionally absent — non-interactive on real systems.

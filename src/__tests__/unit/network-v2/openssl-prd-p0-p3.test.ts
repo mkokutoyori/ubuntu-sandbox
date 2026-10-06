@@ -75,7 +75,7 @@ describe('§P0 — le paquet ne ment plus', () => {
 
   it('un sous-mode inexistant reçoit le message d\'openssl', async () => {
     const out = await machine().executeCommand('openssl frobnicate');
-    expect(out).toContain("'frobnicate' is an invalid command");
+    expect(out).toContain("Invalid command 'frobnicate'; type \"help\" for a list.");
   });
 
   it('un sous-mode qu\'openssl connaît mais que ce build n\'a pas est distingué', async () => {

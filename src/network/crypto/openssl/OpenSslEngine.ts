@@ -54,6 +54,7 @@ import {
 import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
+import { opensslHelpLines } from './OpenSslHelp';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 
@@ -87,10 +88,7 @@ function notImplemented(name: string): OpenSslResult {
 }
 
 function invalidCommand(name: string): OpenSslResult {
-  return fail(
-    `openssl:Error: '${name}' is an invalid command.\n` +
-    `\nStandard commands\n${[...IMPLEMENTED].sort().join(' ')}`,
-  );
+  return fail(`Invalid command '${name}'; type "help" for a list.`);
 }
 
 /** `Aug  5 08:00:00 2026 GMT` — trois lettres, jour sur deux colonnes. */
@@ -535,18 +533,27 @@ function signCsr(
 
   const cheminCa = opts.get('-CA');
   const cheminCaKey = opts.get('-CAkey');
-  if (typeof cheminCa !== 'string' || typeof cheminCaKey !== 'string') {
-    return fail('openssl: x509 -req: -CA and -CAkey are required');
+  const cheminSignKey = opts.get('-signkey');
+  let ca: X509Certificate | null;
+  let caKey: PkiPrivateKey | null;
+  if (typeof cheminCa === 'string' && typeof cheminCaKey === 'string') {
+    const texteCa = host.readFile(cheminCa);
+    const texteCaKey = host.readFile(cheminCaKey);
+    if (texteCa === null) return fail(`Can't open "${cheminCa}" for reading, No such file or directory`);
+    if (texteCaKey === null) return fail(`Can't open "${cheminCaKey}" for reading, No such file or directory`);
+    ca = pemToCert(texteCa);
+    caKey = privateKeyFrom(host, texteCaKey, opts);
+    if (!ca) return fail('unable to load certificate');
+    if (!caKey) return fail('unable to load CA Private Key');
+  } else if (typeof cheminSignKey === 'string') {
+    const texteKey = host.readFile(cheminSignKey);
+    if (texteKey === null) return fail(`Can't open "${cheminSignKey}" for reading, No such file or directory`);
+    caKey = privateKeyFrom(host, texteKey, opts);
+    if (!caKey) return fail('unable to load Private Key');
+    ca = { subject: csr.subject, issuer: csr.subject, publicKey: csr.publicKey, serialNumber: '' } as unknown as X509Certificate;
+  } else {
+    return fail('openssl: x509 -req: -CA and -CAkey, or -signkey, are required');
   }
-  const texteCa = host.readFile(cheminCa);
-  const texteCaKey = host.readFile(cheminCaKey);
-  if (texteCa === null) return fail(`Can't open "${cheminCa}" for reading, No such file or directory`);
-  if (texteCaKey === null) return fail(`Can't open "${cheminCaKey}" for reading, No such file or directory`);
-
-  const ca = pemToCert(texteCa);
-  const caKey = privateKeyFrom(host, texteCaKey, opts);
-  if (!ca) return fail('unable to load certificate');
-  if (!caKey) return fail('unable to load CA Private Key');
 
   const jours = Number(opts.get('-days') ?? 30);
   const loaded = extensionsFromFile(host, opts, csr, ca);
@@ -1587,25 +1594,14 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 }
 
 function runHelp(): OpenSslResult {
-  return ok([
-    'Standard commands',
-    [...IMPLEMENTED].sort().join(' '),
-    '',
-    'Message Digest commands',
-    Object.keys(DIGESTS).sort().join(' '),
-  ].join('\n'));
+  return { output: '', stderr: opensslHelpLines().join('\n'), exitCode: 0 };
 }
 
 // ─── dispatch ───────────────────────────────────────────────────────
 
 export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const sub = argv[0];
-  if (sub === undefined) {
-    // Un vrai openssl entre en mode interactif ; le dire vaut mieux
-    // qu'un faux prompt qui ne saurait rien faire (§12).
-    return fail('openssl: interactive mode is not implemented in this simulator; '
-      + "run 'openssl help' for the list of commands");
-  }
+  if (sub === undefined) return runHelp();
   const reste = argv.slice(1);
 
   if (sub === 'version') return runVersion(reste);
