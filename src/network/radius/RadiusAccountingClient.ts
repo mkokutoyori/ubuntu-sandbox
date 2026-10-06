@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { type RadiusPacket, UDP_PORT_RADIUS_ACCT } from './types';
@@ -114,7 +116,7 @@ export class RadiusAccountingClient {
     if (!server) return null;
     const sessionId = generateAcctSessionId();
     this.sessions.set(sessionId, {
-      sessionId, username, server, startedAt: Date.now(), inputOctets: 0, outputOctets: 0,
+      sessionId, username, server, startedAt: simulationNowMs(), inputOctets: 0, outputOctets: 0,
     });
     this.send(server, {
       sessionId, username, nasIp: '0.0.0.0', status: 'start',
@@ -179,7 +181,7 @@ export class RadiusAccountingClient {
     this.nextIdentifier = (this.nextIdentifier + 1) & 0xff;
     const pending: PendingAcct = {
       identifier, server, record, authenticator: '',
-      firstAttemptAt: Date.now(), timer: null, attemptsLeft: server.retransmit,
+      firstAttemptAt: simulationNowMs(), timer: null, attemptsLeft: server.retransmit,
     };
     this.pending.set(identifier, pending);
     this.transmit(pending);
@@ -237,5 +239,5 @@ export class RadiusAccountingClient {
 }
 
 function elapsedSeconds(sinceMs: number): number {
-  return Math.max(0, Math.floor((Date.now() - sinceMs) / 1000));
+  return Math.max(0, Math.floor((simulationNowMs() - sinceMs) / 1000));
 }

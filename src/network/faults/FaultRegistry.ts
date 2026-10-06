@@ -16,6 +16,8 @@
  *    reasoning that keeps the rest of the simulator reactive.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { Logger } from '../core/Logger';
 import { catalogEntry } from './faultCatalog';
 import {
@@ -55,7 +57,7 @@ export class FaultRegistry {
   private readonly resolved: ResolvedFault[] = [];
   private readonly listeners = new Set<FaultListener>();
   /** Injectable for deterministic tests. */
-  private clock: () => number = () => Date.now();
+  private clock: () => number = () => simulationNowMs();
 
   setClock(clock: () => number): void {
     this.clock = clock;
@@ -209,7 +211,7 @@ export class FaultRegistry {
   reset(): void {
     this.active.clear();
     this.resolved.length = 0;
-    this.clock = () => Date.now();
+    this.clock = () => simulationNowMs();
   }
 
   private emit(event: Parameters<FaultListener>[0]): void {

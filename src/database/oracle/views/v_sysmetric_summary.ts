@@ -2,6 +2,8 @@
  * V$SYSMETRIC_SUMMARY — last-hour min/max/avg/stddev per metric.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { queryView } from './registry';
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -14,7 +16,7 @@ registerView({
   query(ctx) {
     const sample = queryView('V$SYSMETRIC', ctx);
     if (!sample) return queryResult([], []);
-    const now = Date.now();
+    const now = simulationNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

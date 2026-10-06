@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type FortiGuardFamily = 'antivirus' | 'ips' | 'geo-ip';
 
 export interface FortiGuardDatabase {
@@ -40,7 +42,7 @@ export class FortiGuardDatabases {
   private readonly now: () => number;
 
   constructor(deps: FortiGuardDeps = {}) {
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
     this.databases = SEED.map(seed => ({ ...seed, lastAttemptMs: null }));
   }
 

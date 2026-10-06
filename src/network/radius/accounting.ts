@@ -3,6 +3,8 @@
  * shared by `RadiusAccountingClient` (NAS side) and `RadiusServerAgent`'s
  * accounting handling (collector side).
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { attr, type RadiusAttribute } from './types';
 
 export type AcctStatusType = 'start' | 'interim-update' | 'stop' | 'accounting-on' | 'accounting-off';
@@ -74,5 +76,5 @@ let acctSessionCounter = 0;
 /** Generate a locally-unique accounting session id (NAS-side identifier, RFC 2866 §5.5). */
 export function generateAcctSessionId(): string {
   acctSessionCounter += 1;
-  return `${Date.now().toString(16)}-${acctSessionCounter.toString(16).padStart(4, '0')}`;
+  return `${simulationNowMs().toString(16)}-${acctSessionCounter.toString(16).padStart(4, '0')}`;
 }

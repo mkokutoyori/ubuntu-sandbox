@@ -10,6 +10,8 @@
  * (`pullFrom`/`triggerRemoteReplicate`), and `/options` on a remote DC
  * (`setRemoteOption`).
  */
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { ReplicationLogEntry } from './server/ad/replication/ReplicationSession';
 import type { HighWatermarkVectorWire } from './server/ad/replication/HighWatermarkVector';
 import type { EntryReplMeta } from './server/ad/ldap/DirectoryTree';
@@ -183,7 +185,7 @@ function showRepl(ctx: RepadminContext, targetArg: string | undefined, opts: Sho
 
 function replSummary(ctx: RepadminContext): string {
   const lines: string[] = [
-    `Replication Summary Start Time: ${new Date().toUTCString()}`,
+    `Replication Summary Start Time: ${simulationDate().toUTCString()}`,
     'Beginning data collection for replication summary, this may take awhile:',
     '    .',
     '',
@@ -198,7 +200,7 @@ function replSummary(ctx: RepadminContext): string {
       const total = relevant.length;
       const fails = relevant.filter(e => !e.ok).length;
       const latest = relevant.length > 0 ? relevant[relevant.length - 1] : null;
-      const delta = latest ? `${Math.max(0, Math.floor(Date.now() / 1000) - latest.timestamp)}s ago` : 'n/a';
+      const delta = latest ? `${Math.max(0, Math.floor(simulationNowMs() / 1000) - latest.timestamp)}s ago` : 'n/a';
       lines.push(` ${dsa.padEnd(20)} ${delta.padStart(14)}    ${fails} / ${total}    Fails ${fails}`);
     }
     lines.push('');

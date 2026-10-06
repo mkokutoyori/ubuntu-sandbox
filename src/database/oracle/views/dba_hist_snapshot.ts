@@ -6,6 +6,8 @@
  * monotonically increasing.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -39,7 +41,7 @@ registerView({
       ]));
     }
     // Synthetic hourly snapshots so DBA_HIST_SNAPSHOT is never empty.
-    const now = Date.now();
+    const now = simulationNowMs();
     const elapsedHours = Math.max(1, Math.floor((now - runtime.startedAt) / 3_600_000));
     const rows: (string | number)[][] = [];
     for (let i = 0; i < Math.min(elapsedHours, 200); i++) {

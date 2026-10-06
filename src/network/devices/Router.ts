@@ -35,6 +35,8 @@
  *   - SNMP-ready performance counters
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { PathClock } from '../core/time/PathClock';
 import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../dhcp/DhcpRelay';
@@ -1173,7 +1175,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       },
       closeSession: (id, reason) => { this.getSshSessionRegistry().close(id, reason); },
       touchSession: (id, bytesIn, bytesOut) => {
-        this.getSshSessionRegistry().touch(id, Date.now(), bytesIn, bytesOut);
+        this.getSshSessionRegistry().touch(id, simulationNowMs(), bytesIn, bytesOut);
       },
       idleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       recordAuthFailure: (user, ip) => this.recordSshLogin(user, ip, '', false),
@@ -3733,7 +3735,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const identifie = this.getCredentialStore().authenticate(username, password)
       || await this.authenticateViaAaa(username, password);
     if (!identifie) {
-      this.getCredentialStore().recordLoginFailure(username, '', 'bad password', Date.now());
+      this.getCredentialStore().recordLoginFailure(username, '', 'bad password', simulationNowMs());
       return false;
     }
     const verdict = await this.authenticateLine('console', { user: username, pass: password });
@@ -3744,12 +3746,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // commande.
     const exec = await this.getAaaAuthenticator().authorizeExec(username);
     if (!exec.allowed) {
-      this.getCredentialStore().recordLoginFailure(username, '', 'exec authorization failed', Date.now());
+      this.getCredentialStore().recordLoginFailure(username, '', 'exec authorization failed', simulationNowMs());
       return false;
     }
     const refus = this.perUserAdmissionRefusal(username, '');
     if (refus !== null) {
-      this.getCredentialStore().recordLoginFailure(username, '', refus, Date.now());
+      this.getCredentialStore().recordLoginFailure(username, '', refus, simulationNowMs());
       return false;
     }
     const compte = this.getCredentialStore().lookup(username);
@@ -3793,16 +3795,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (methode === 'password') {
       const attendu = this.motDePasseDeLigne(kind);
       const ok = attendu !== null && attendu === credentials.pass;
-      if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+      if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', simulationNowMs());
       return ok;
     }
     if (methode === 'aaa') {
       const ok = await this.authenticateViaAaa(user, credentials.pass);
-      if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+      if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', simulationNowMs());
       return ok;
     }
     const ok = this.getCredentialStore().authenticate(user, credentials.pass);
-    if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+    if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', simulationNowMs());
     return ok;
   }
 
@@ -4911,7 +4913,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private httpTlsConfig(): { serverCert: X509Certificate; serverPrivateKey: PkiPrivateKey } {
     if (!this._httpTlsMaterial) {
       this._httpTlsMaterial = generateSelfSignedCertificate(
-        `CN = ${this.hostname}`, { now: Date.now(), subjectAltName: [`DNS:${this.hostname}`] });
+        `CN = ${this.hostname}`, { now: simulationNowMs(), subjectAltName: [`DNS:${this.hostname}`] });
     }
     return {
       serverCert: this._httpTlsMaterial.cert,
@@ -5435,7 +5437,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // see failures from the interactive `ssh user@router` (bash) path too,
     // not just the synchronous cross-vendor exec path.
     if (!accepted) {
-      this.getCredentialStore().recordLoginFailure(user, fromIp, 'bad password', Date.now());
+      this.getCredentialStore().recordLoginFailure(user, fromIp, 'bad password', simulationNowMs());
       return;
     }
     // Successes are logged directly to the audit trail rather than through

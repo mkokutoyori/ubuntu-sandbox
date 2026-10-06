@@ -6,6 +6,8 @@
  * Output is derived from the device's REAL internal state (ports,
  * cabled neighbours, configured addresses) — never hardcoded fixtures.
  */
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { Port } from '@/network/hardware/Port';
 import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
@@ -90,7 +92,7 @@ export function ciscoClockReading(
   }
   const dev = arg as unknown as { getSystemClockMs?: () => number };
   const clock = getDeviceClock(arg)?.get();
-  const now = atMs ?? dev.getSystemClockMs?.() ?? Date.now();
+  const now = atMs ?? dev.getSystemClockMs?.() ?? simulationNowMs();
   const synced = getNtpAgent(arg)?.isSynced() ?? false;
   if (!clock) {
     return { local: new Date(now), timezone: 'UTC', offsetMin: 0, synced };
@@ -134,7 +136,7 @@ export function iosTimeOfDay(local: Date): string {
     + `:${pad2(local.getUTCSeconds())}`;
 }
 
-export function showClock(arg: Date | ShowStateDevice = new Date()): string {
+export function showClock(arg: Date | ShowStateDevice = simulationDate()): string {
   const reading = ciscoClockReading(arg);
   return `${reading.synced ? '' : '*'}${iosTimeOfDay(reading.local)}.000`
     + ` ${reading.timezone} ${iosDateSuffix(reading.local)}`;
@@ -886,7 +888,7 @@ export function showNtpStatus(dev?: ShowStateDevice): string {
   const peerDisp = best ? best.dispersionMs / 2 : localMaster ? 0 : 16000;
   const pollSec = best?.pollSec ?? 64;
   const lastUpdateSec = best?.lastReplyMs
-    ? Math.max(0, Math.floor((Date.now() - best.lastReplyMs) / 1000))
+    ? Math.max(0, Math.floor((simulationNowMs() - best.lastReplyMs) / 1000))
     : null;
   const tete = synced
     ? `Clock is synchronized, stratum ${cfg.localStratum}, reference is ${cfg.refIdentifier || '.INIT.'}`
@@ -895,7 +897,7 @@ export function showNtpStatus(dev?: ShowStateDevice): string {
     tete,
     `nominal freq is ${nominalHz.toFixed(4)} Hz, actual freq is ${actualHz.toFixed(4)} Hz, precision is 2**18`,
     `ntp uptime is ${ntp.getUptimeSec() * 100} (1/100 of seconds), resolution is 4001`,
-    `reference time is ${formatNtpReferenceTime(cfg.lastSyncMs || Date.now())}`,
+    `reference time is ${formatNtpReferenceTime(cfg.lastSyncMs || simulationNowMs())}`,
     `clock offset is ${cfg.offsetMs.toFixed(4)} msec, root delay is ${rootDelay.toFixed(2)} msec`,
     `root dispersion is ${rootDisp.toFixed(2)} msec, peer dispersion is ${peerDisp.toFixed(2)} msec`,
     // L'etat de la boucle est LU sur la discipline (lot N9) : il valait
@@ -943,7 +945,7 @@ export function showNtpAssociationsDetail(dev?: ShowStateDevice): string {
     const filt = (v: number) => Array(8).fill(v.toFixed(2)).join('  ');
     blocs.push([
       `${a.serverIp} configured${auth}, ${role}, sane, valid, stratum ${a.stratum}`,
-      `ref ID ${a.stratum < 16 ? a.serverIp : '.INIT.'}, time ${formatNtpReferenceTime(a.lastReplyMs || Date.now())}`,
+      `ref ID ${a.stratum < 16 ? a.serverIp : '.INIT.'}, time ${formatNtpReferenceTime(a.lastReplyMs || simulationNowMs())}`,
       `our mode ${notreMode}, peer mode ${sonMode}, our poll intvl ${a.pollSec}, peer poll intvl ${a.pollSec}`,
       `root delay ${Math.abs(a.delayMs).toFixed(2)} msec, root disp ${a.dispersionMs.toFixed(2)}, reach ${a.reach.toString(8).padStart(3, '0')}, sync dist ${syncDist.toFixed(2)}`,
       `delay ${Math.abs(a.delayMs).toFixed(2)} msec, offset ${a.offsetMs.toFixed(4)} msec, dispersion ${a.dispersionMs.toFixed(2)}`,
@@ -1057,7 +1059,7 @@ export function showNtpAssociations(dev?: ShowStateDevice): string {
     // simplement configurée.
     const joignable = a.reach !== 0;
     const marker = a.preferred && joignable ? '*' : a.prefer && joignable ? '+' : ' ';
-    const since = a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 999;
+    const since = a.lastReplyMs ? Math.floor((simulationNowMs() - a.lastReplyMs) / 1000) : 999;
     rows.push(
       `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? a.serverIp : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
       `${a.delayMs.toFixed(1).padStart(5)} ${a.offsetMs.toFixed(1).padStart(6)} ${a.dispersionMs.toFixed(1).padStart(5)}`,
@@ -1113,7 +1115,7 @@ export function showLine(dev: ShowStateDevice, args: string[] = []): string {
   // demande deja le detail — il n'existe pas de mot-cle `detail`, et
   // l'ajouter apprendrait une commande que le materiel refuse.
   if (!resumeSeul) {
-    const maintenant = Date.now();
+    const maintenant = simulationNowMs();
     for (const l of choisies) {
       sortie.push(...blocDetailLigne(l, reglagesDeLigne(dev, l), sessionSurLigne(dev, l), maintenant));
     }
@@ -1196,7 +1198,7 @@ function sessionSurLigne(dev: ShowStateDevice, l: LigneTty): SessionSurLigne | n
   }).getSshSessionRegistry?.();
   const s = (reg?.listSessions?.() ?? []).find((x) => x.line === l.rang);
   if (!s) return null;
-  return { user: s.user ?? null, depuisMs: s.startedAt ?? Date.now() };
+  return { user: s.user ?? null, depuisMs: s.startedAt ?? simulationNowMs() };
 }
 
 /**
@@ -1445,7 +1447,7 @@ export function showFileSystems(fs: FileSystemUsage, startupConfigSize: number):
  * système non autoritative — un composant matériel ne se déclare pas
  * incertain.
  */
-export function showCalendar(arg: Date | ShowStateDevice = new Date()): string {
+export function showCalendar(arg: Date | ShowStateDevice = simulationDate()): string {
   const reading = ciscoClockReading(arg);
   return `${iosTimeOfDay(reading.local)} ${reading.timezone}`
     + ` ${iosDateSuffix(reading.local)}`;

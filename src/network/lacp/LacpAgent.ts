@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
@@ -276,7 +278,7 @@ export class LacpAgent extends ReactiveAgentBase {
     this.lacpduReceived.set(portName, (this.lacpduReceived.get(portName) ?? 0) + 1);
     const etaitCourant = p.partner !== null && p.state !== 'expired';
     p.partner = { ...payload.actor };
-    p.lastRxMs = Date.now();
+    p.lastRxMs = simulationNowMs();
     // A fresh LACPDU revives an expired port (802.3ad receive machine:
     // EXPIRED → CURRENT); selection below re-bundles it.
     if (p.state === 'expired') p.state = 'standalone';
@@ -407,7 +409,7 @@ export class LacpAgent extends ReactiveAgentBase {
    * stopped) was never detected as long as the link stayed up.
    */
   private expireDue(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const p of this.config.ports.values()) {
       if (p.mode === 'on' || !p.partner || p.lastRxMs === 0) continue;
       const port = this.host.getPort(p.portName);
@@ -444,7 +446,7 @@ export class LacpAgent extends ReactiveAgentBase {
   private static readonly CHURN_DETECTION_MS = 60_000;
 
   private armChurn(p: LacpPortInfo): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     p.churnActorState = 'monitoring';
     p.churnPartnerState = 'monitoring';
     p.churnActorDeadlineMs = now + LacpAgent.CHURN_DETECTION_MS;
@@ -452,7 +454,7 @@ export class LacpAgent extends ReactiveAgentBase {
   }
 
   private churnDue(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const p of this.config.ports.values()) {
       if (p.churnActorDeadlineMs !== 0 && now >= p.churnActorDeadlineMs) {
         p.churnActorDeadlineMs = 0;

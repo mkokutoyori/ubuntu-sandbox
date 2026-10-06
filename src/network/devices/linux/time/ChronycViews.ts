@@ -6,6 +6,8 @@
  * dite a l'endroit ou elle apparait.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NtpAgent } from '../../../ntp/NtpAgent';
 import type { NtpAssociation } from '../../../ntp/types';
 import type { LinuxChronyService } from './LinuxChronyService';
@@ -58,7 +60,7 @@ export function chronycTracking(agent: NtpAgent): string {
   return [
     `Reference ID    : ${refId(cfg.refIdentifier)}`,
     `Stratum         : ${cfg.localStratum}`,
-    `Ref time (UTC)  : ${dateChrony(cfg.lastSyncMs || Date.now())}`,
+    `Ref time (UTC)  : ${dateChrony(cfg.lastSyncMs || simulationNowMs())}`,
     `System time     : ${Math.abs(offsetSec).toFixed(9)} seconds ${offsetSec >= 0 ? 'slow' : 'fast'} of NTP time`,
     `Last offset     : ${(-offsetSec).toFixed(9)} seconds`,
     `RMS offset      : ${Math.abs(offsetSec).toFixed(9)} seconds`,
@@ -148,7 +150,7 @@ export function chronycSources(agent: NtpAgent, verbose: boolean): string {
       stratum: a.stratum,
       poll: Math.max(0, Math.round(Math.log2(a.pollSec))),
       reach: a.reach.toString(8).padStart(3, '0'),
-      lastRx: a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 0,
+      lastRx: a.lastReplyMs ? Math.floor((simulationNowMs() - a.lastReplyMs) / 1000) : 0,
       // La legende de chrony distingue les deux crochets : « xxxx =
       // adjusted offset, yyyy = measured offset ». Les deux valaient la
       // MEME expression, donc la distinction que la legende explique

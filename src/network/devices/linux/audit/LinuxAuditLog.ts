@@ -13,7 +13,8 @@
  * and the model never drift.
  */
 
-import { simulationNowMs } from '../../../core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 
 /** Canonical audit-subsystem filesystem locations. */
@@ -35,7 +36,7 @@ export class LinuxAuditRecord {
     type: string,
     serial: number,
     fields: Record<string, string | number> = {},
-    timestampMs: number = Date.now(),
+    timestampMs: number = simulationNowMs(),
   ) {
     this.type = type;
     this.serial = serial;

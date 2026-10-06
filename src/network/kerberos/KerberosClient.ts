@@ -10,6 +10,8 @@
  * resulting AS-REP; and the TGS exchange (§3.3): presents the TGT plus a
  * fresh Authenticator (PA-TGS-REQ) to obtain a service ticket.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import {
   encodeKdcReq, decodeKdcRep, decodeKrbError, isKrbError,
@@ -33,10 +35,13 @@ import {
  * application-server AP-REQ such as LDAP's GSSAPI SASL bind (usage 11,
  * `KU_AP_REQ_AUTHENTICATOR`, PRD-Windows-Server-Advanced.md §5 P3).
  */
-export function buildApReq(ticket: Ticket, sessionKey: string, cname: PrincipalName, crealm: string, usage: number): Uint8Array {
+export function buildApReq(
+  ticket: Ticket, sessionKey: string, cname: PrincipalName, crealm: string, usage: number,
+  nowMs: number = simulationNowMs(),
+): Uint8Array {
   const authenticatorCipher = encryptWithUsage(
     sessionKey, usage,
-    encodeAuthenticator({ crealm, cname, ctime: Math.floor(Date.now() / 1000), cusec: 0 }),
+    encodeAuthenticator({ crealm, cname, ctime: Math.floor(nowMs / 1000), cusec: 0 }),
   );
   return encodeApReq({ apOptions: 0, ticket, authenticator: { etype: AES256_CTS_HMAC_SHA1_96, cipher: authenticatorCipher } });
 }
@@ -63,7 +68,7 @@ const TICKET_REQUEST_LIFETIME_SECONDS = 24 * 3600;
 export class KerberosClient {
   private nextNonce = 1;
 
-  constructor(private readonly socket: TcpSocket) {}
+  constructor(private readonly socket: TcpSocket, private readonly clockMs: () => number = simulationNowMs) {}
 
   private roundTrip(bytes: Uint8Array): Uint8Array | null {
     let reply: Uint8Array | null = null;
@@ -80,7 +85,7 @@ export class KerberosClient {
     const cname = principalName(PrincipalNameType.NT_PRINCIPAL, username);
     const sname = principalName(PrincipalNameType.NT_SRV_INST, serviceName, realm);
     const nonce = this.nextNonce++;
-    const till = Math.floor(Date.now() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
+    const till = Math.floor(this.clockMs() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
     const baseReq: KdcReq = {
       msgType: 'AS-REQ', padata: [],
       reqBody: { kdcOptions: 0, cname, realm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
@@ -96,7 +101,7 @@ export class KerberosClient {
     }
 
     const clientKey = stringToKey(password, realm);
-    const tsCipher = encryptWithUsage(clientKey, KU_PA_ENC_TIMESTAMP, encodePaEncTsEnc(Math.floor(Date.now() / 1000)));
+    const tsCipher = encryptWithUsage(clientKey, KU_PA_ENC_TIMESTAMP, encodePaEncTsEnc(Math.floor(this.clockMs() / 1000)));
     const paValue = encodeEncryptedData({ etype: AES256_CTS_HMAC_SHA1_96, cipher: tsCipher });
     const reqWithPa: KdcReq = { ...baseReq, padata: [{ type: PA_ENC_TIMESTAMP, value: paValue }] };
 
@@ -144,8 +149,8 @@ export class KerberosClient {
   ): TgsExchangeResult {
     const sname = principalName(PrincipalNameType.NT_SRV_HST, serviceName);
     const nonce = this.nextNonce++;
-    const till = Math.floor(Date.now() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
-    const paValue = buildApReq(tgt, tgtSessionKey, cname, crealm, KU_TGS_REQ_AUTHENTICATOR);
+    const till = Math.floor(this.clockMs() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
+    const paValue = buildApReq(tgt, tgtSessionKey, cname, crealm, KU_TGS_REQ_AUTHENTICATOR, this.clockMs());
 
     const req: KdcReq = {
       msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],
@@ -178,8 +183,8 @@ export class KerberosClient {
   ): TgsExchangeResult {
     const sname = principalName(PrincipalNameType.NT_SRV_HST, targetServiceName);
     const nonce = this.nextNonce++;
-    const till = Math.floor(Date.now() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
-    const paValue = buildApReq(serviceTgt, serviceTgtSessionKey, serviceCname, serviceCrealm, KU_TGS_REQ_AUTHENTICATOR);
+    const till = Math.floor(this.clockMs() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
+    const paValue = buildApReq(serviceTgt, serviceTgtSessionKey, serviceCname, serviceCrealm, KU_TGS_REQ_AUTHENTICATOR, this.clockMs());
 
     const req: KdcReq = {
       msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],
@@ -204,5 +209,5 @@ export function dialKdc(tcpStack: TcpStack, targetIp: string): KerberosConnectRe
   if (!socket || socket.state !== 'established') {
     return { ok: false, error: "A local error occurred (Can't contact KDC)" };
   }
-  return { ok: true, client: new KerberosClient(socket) };
+  return { ok: true, client: new KerberosClient(socket, () => tcpStack.nowMs()) };
 }

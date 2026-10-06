@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { ResourceRecord, ResourceRecordData, SoaRecordData } from '@/network/dns/wire/ResourceRecord';
 import { resourceRecordToLegacyRecord } from '@/network/dns/compat/DnsWireCompat';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
@@ -56,7 +58,7 @@ export class DnsCache {
   private readonly negative = new Map<string, NegativeEntry>();
   private readonly servfail = new Map<string, { readonly expiresAtMs: number }>();
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(private readonly now: () => number = simulationNowMs) {}
 
   storePositive(
     records: readonly ResourceRecord<ResourceRecordData>[], qname?: string, security?: DnssecStatus,

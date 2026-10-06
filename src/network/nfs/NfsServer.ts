@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { RpcCallContext, RpcProgramHandler } from './RpcService';
 import {
   ACCESS3_DELETE, ACCESS3_EXTEND, ACCESS3_MODIFY, CreateMode3, FSF3_CANSETTIME,
@@ -680,10 +682,10 @@ function sattrToChanges(attr: Sattr3): {
   if (attr.atime?.how === TimeHow.SET_TO_CLIENT_TIME && attr.atime.time) {
     changes.atime = new Date(attr.atime.time.seconds * 1000 + attr.atime.time.nseconds / 1e6);
   }
-  if (attr.atime?.how === TimeHow.SET_TO_SERVER_TIME) changes.atime = new Date();
+  if (attr.atime?.how === TimeHow.SET_TO_SERVER_TIME) changes.atime = simulationDate();
   if (attr.mtime?.how === TimeHow.SET_TO_CLIENT_TIME && attr.mtime.time) {
     changes.mtime = new Date(attr.mtime.time.seconds * 1000 + attr.mtime.time.nseconds / 1e6);
   }
-  if (attr.mtime?.how === TimeHow.SET_TO_SERVER_TIME) changes.mtime = new Date();
+  if (attr.mtime?.how === TimeHow.SET_TO_SERVER_TIME) changes.mtime = simulationDate();
   return changes;
 }

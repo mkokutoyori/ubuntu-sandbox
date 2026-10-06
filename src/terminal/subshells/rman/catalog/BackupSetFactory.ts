@@ -5,6 +5,8 @@
  * caller-supplied datafiles, and seals everything with Object.freeze.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { BackupKey } from '../values/BackupKey';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
@@ -27,7 +29,7 @@ export interface BackupSetSpec {
 
 export const BackupSetFactory = {
   createBackupSet(spec: BackupSetSpec): BackupSet {
-    const now  = Date.now();
+    const now  = simulationNowMs();
     const key  = BackupKey.next();
     const tag  = spec.tag ?? RmanTag.generate();
     const scnR = Scn.of(Math.floor(1_800_000 + Math.random() * 100_000));

@@ -14,6 +14,8 @@
  * else touches the journal directly.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type {
   OracleConnectionTracedPayload,
@@ -174,7 +176,7 @@ export class SecurityAuditActor {
         }
 
         // Off-hours DML anomaly.
-        if (action !== 'SELECT' && isOffHours(new Date(), this.policy.businessHours)) {
+        if (action !== 'SELECT' && isOffHours(simulationDate(), this.policy.businessHours)) {
           this.emitAnomaly({
             kind: 'OFF_HOURS_DML', severity: 'MEDIUM',
             username: p.schema, sessionId,
@@ -187,7 +189,7 @@ export class SecurityAuditActor {
         const sens = this.journal.getSensitiveObjectRegistry().lookup(p.schema, p.table);
         if (sens) {
           const accessId = this.journal.allocateSensitiveAccessId();
-          const offHours = isOffHours(new Date(), this.policy.businessHours);
+          const offHours = isOffHours(simulationDate(), this.policy.businessHours);
           this.journal.recordSensitiveAccess(new SensitiveAccessRecord({
             accessId, sessionId, username: p.schema, action,
             objectSchema: sens.schema, objectName: sens.object,
@@ -201,7 +203,7 @@ export class SecurityAuditActor {
               username: p.schema, action,
               objectSchema: sens.schema, objectName: sens.object,
               classification: sens.classification, rowsAffected: p.rowsAffected,
-              sqlText: null, timestamp: new Date(), offHours,
+              sqlText: null, timestamp: simulationDate(), offHours,
             } as OracleSensitiveAccessPayload,
           });
           // Increment session counter for "mass select" pattern.
@@ -310,7 +312,7 @@ export class SecurityAuditActor {
   /** Slide failed-logon window for a username. */
   private recordFailedLogin(username: string): void {
     const u = username.toUpperCase();
-    const now = Date.now();
+    const now = simulationNowMs();
     const cutoff = now - this.policy.bruteForceWindowMs;
     const rec = this.failedLogins.get(u) ?? { username: u, timestamps: [] };
     rec.timestamps = rec.timestamps.filter(t => t >= cutoff);
@@ -416,7 +418,7 @@ export class SecurityAuditActor {
         deviceId: this.deviceId, sid: '', username: rec.username,
         lastLoginAt: rec.lastLoginAt, daysSinceLastLogin: rec.daysSinceLastLogin,
         thresholdDays: rec.thresholdDays, accountStatus: rec.accountStatus,
-        timestamp: new Date(),
+        timestamp: simulationDate(),
       } as OracleDormantDetectedPayload,
     });
   }

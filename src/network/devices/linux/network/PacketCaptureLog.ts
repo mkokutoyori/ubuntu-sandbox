@@ -8,6 +8,8 @@
  * so a long-lived host does not grow without limit.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IPv4Packet, IPv6Packet } from '@/network/core/types';
 
 /** One captured TCP segment, in the shape `tcpdump` prints. */
@@ -61,7 +63,7 @@ export class PacketCaptureLog {
     src: { ip: string; port: number },
     dst: { ip: string; port: number },
   ): void {
-    const t = Date.now();
+    const t = simulationNowMs();
     this.capture({ at: new Date(t),     srcIp: src.ip, srcPort: src.port, dstIp: dst.ip, dstPort: dst.port, flags: 'S',  seq: 0, ack: 0, length: 0 });
     this.capture({ at: new Date(t + 1), srcIp: dst.ip, srcPort: dst.port, dstIp: src.ip, dstPort: src.port, flags: 'S.', seq: 0, ack: 1, length: 0 });
     this.capture({ at: new Date(t + 2), srcIp: src.ip, srcPort: src.port, dstIp: dst.ip, dstPort: dst.port, flags: '.',  seq: 1, ack: 1, length: 0 });
@@ -76,7 +78,7 @@ export class PacketCaptureLog {
     dst: { ip: string; port: number },
   ): void {
     this.capture({
-      at: new Date(),
+      at: simulationDate(),
       srcIp: src.ip, srcPort: src.port,
       dstIp: dst.ip, dstPort: dst.port,
       flags: 'S', seq: 0, ack: 0, length: 0,
@@ -91,7 +93,7 @@ export class PacketCaptureLog {
     ack = 1,
   ): void {
     this.capture({
-      at: new Date(),
+      at: simulationDate(),
       srcIp: src.ip, srcPort: src.port,
       dstIp: dst.ip, dstPort: dst.port,
       flags: 'P.', seq, ack, length: payload.length,

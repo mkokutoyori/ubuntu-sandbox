@@ -14,6 +14,8 @@
  * wire representation this codebase doesn't otherwise have.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { IPv4Packet, computeIPv4Checksum, ipv4HeaderBytesFor, optionsForFragment } from './types';
 import type { NetworkPdu } from './NetworkPdu';
 
@@ -134,7 +136,7 @@ export class IPv4Reassembler {
    * `null` while the set is still incomplete.
    */
   add(
-    pkt: IPv4Packet, nowMs: number = Date.now(), ingressPort?: string,
+    pkt: IPv4Packet, nowMs: number = simulationNowMs(), ingressPort?: string,
   ): IPv4Packet | null {
     if (!isIPv4Fragment(pkt)) return pkt;
 
@@ -201,7 +203,7 @@ export class IPv4Reassembler {
   forget(key: string): void { this.pending.delete(key); }
 
   /** Drop fragment sets idle for longer than the reassembly timeout. */
-  purgeExpired(nowMs: number = Date.now()): void {
+  purgeExpired(nowMs: number = simulationNowMs()): void {
     for (const [key, entry] of this.pending) {
       if (nowMs - entry.firstSeenMs > REASSEMBLY_TIMEOUT_MS) {
         this.pending.delete(key);

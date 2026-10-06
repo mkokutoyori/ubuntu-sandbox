@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   TIME_RANGE_DAYS,
   type TimeRange,
@@ -145,7 +147,7 @@ const SHOW: CommandSpec = {
     if (wanted.length === 0) return '';
 
     const owner = host(session.device);
-    const now = new Date(owner?.timeRangeClockMs?.() ?? Date.now());
+    const now = new Date(owner?.timeRangeClockMs?.() ?? simulationNowMs());
     const used = new Set(owner?.timeRangesUsedByAcls?.() ?? []);
 
     const lines: string[] = [];

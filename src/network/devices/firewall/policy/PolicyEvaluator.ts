@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { ObjectStore } from '../model/ObjectStore';
 import {
   IMPLICIT_RULE_ID, isDenyAction, makeRule,
@@ -65,7 +67,7 @@ export class PolicyEvaluator {
     this.namesZones = deps.policyNamesZones ?? false;
     this.implicitMode = deps.implicitPolicy ?? 'deny-all';
     this.applicationShift = deps.applicationShift ?? false;
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
     this.implicit = makeRule({
       id: IMPLICIT_RULE_ID, seq: Number.MAX_SAFE_INTEGER, name: 'implicit',
       from: [ANY], to: [ANY], source: [ANY], destination: [ANY], service: [ANY],

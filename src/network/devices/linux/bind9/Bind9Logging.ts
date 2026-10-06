@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
 import type { NamedConfig } from './NamedConfig';
 
@@ -28,7 +30,7 @@ export interface QueryLogEntry {
 export class Bind9Logging {
   constructor(
     private readonly appendFile: AppendFileFn,
-    private readonly now: () => Date = () => new Date(),
+    private readonly now: () => Date = () => simulationDate(),
   ) {}
 
   queryLogPath(config: NamedConfig): string | null {

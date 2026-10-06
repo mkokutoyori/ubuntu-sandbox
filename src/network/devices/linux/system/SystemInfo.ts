@@ -8,6 +8,8 @@
  * formatting so `uptime` and `w` cannot drift apart again.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { HostLifecycle } from '../../host/lifecycle';
 import type { KernelInfo } from '../../host/identity';
 import { formatOffsetCompact, utcMsForLocal } from '../../../core/time/TimeZoneRegistry';
@@ -66,7 +68,7 @@ function uptimeClause(uptimeSeconds: number): string {
  * load from {@link IDLE_LOAD_AVERAGE} — la seule ecriture de ce fait.
  */
 export function uptimeHeader(users = 1, uptimeSeconds = 0): string {
-  const now = new Date();
+  const now = simulationDate();
   return ` ${hhmmss(now)} up ${uptimeClause(uptimeSeconds)},  ${users} user${users !== 1 ? 's' : ''}, ` +
     ` load average: ${IDLE_LOAD_AVERAGE}`;
 }
@@ -85,7 +87,7 @@ export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
     return prettyUptime(Math.floor(seconds / 60));
   }
   if (args.includes('-s') || args.includes('--since')) {
-    const boot = lifecycle.bootedAt() ?? new Date();
+    const boot = lifecycle.bootedAt() ?? simulationDate();
     return `${boot.getUTCFullYear()}-${two(boot.getUTCMonth() + 1)}-${two(boot.getUTCDate())} ` +
       `${hhmmss(boot)}`;
   }

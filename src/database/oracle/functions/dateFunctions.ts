@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { SqlFunctionBundle } from './types';
 
 const DAY_NUMBERS: Record<string, number> = {
@@ -7,9 +9,9 @@ const DAY_NUMBERS: Record<string, number> = {
 };
 
 export const dateFunctions: SqlFunctionBundle = {
-  SYSDATE: () => new Date().toISOString().slice(0, 19).replace('T', ' '),
+  SYSDATE: () => simulationDate().toISOString().slice(0, 19).replace('T', ' '),
 
-  SYSTIMESTAMP: () => new Date().toISOString(),
+  SYSTIMESTAMP: () => simulationDate().toISOString(),
 
   ADD_MONTHS: ([dateArg, monthsArg], ctx) => {
     if (dateArg == null || monthsArg == null) return null;

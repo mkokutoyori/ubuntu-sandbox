@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { hexToBytes, bytesToHex, bytesToUtf8 } from '@/crypto/encoding';
@@ -217,7 +219,7 @@ export class RadiusClientAgent {
 
   /** Per-server liveness + request/accept/reject/timeout counters (`show radius statistics` material). */
   listServerStatus(): RadiusServerStatus[] {
-    const now = Date.now();
+    const now = simulationNowMs();
     return this.config.servers.map((s) => {
       const state = this.stateFor(s.ip);
       return {
@@ -519,7 +521,7 @@ export class RadiusClientAgent {
       const s = this.config.servers.find((sv) => sv.ip === serverIp);
       return s ? [s] : [];
     }
-    const now = Date.now();
+    const now = simulationNowMs();
     const alive = this.config.servers.filter((s) => !this.isDead(s.ip, now));
     return alive.length > 0 ? alive : this.config.servers.slice();
   }
@@ -570,8 +572,8 @@ export class RadiusClientAgent {
   private markDead(ip: string): void {
     if (this.deadtimeMs <= 0) return;
     const state = this.stateFor(ip);
-    const wasAlive = !this.isDead(ip, Date.now());
-    state.deadUntil = Date.now() + this.deadtimeMs;
+    const wasAlive = !this.isDead(ip, simulationNowMs());
+    state.deadUntil = simulationNowMs() + this.deadtimeMs;
     if (wasAlive) {
       this.getBus().publish({
         topic: 'radius.server.dead',

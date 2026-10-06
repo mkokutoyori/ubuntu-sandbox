@@ -14,6 +14,8 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { WINDOWS_DHCP_CLIENT_PERSONALITY } from '../dhcp/DhcpClientPersonality';
 import { EndHost, type TracerouteHopResult } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
@@ -116,7 +118,6 @@ import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { defaultHostClockPort, type HostClockPort } from '../core/time/HostClockPort';
 import { PathClock } from '../core/time/PathClock';
-import { windowsClockOrigin } from '../core/time/ClockOrigin';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue, type RegistryValueChange } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
@@ -492,8 +493,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       set: (epochMs) => this._setSystemClock(epochMs),
     };
     this.bootMonotonicMs = this.clockPort.monotonic();
-    const origin = windowsClockOrigin();
-    if (origin !== null) this._setSystemClock(origin);
     this.dhcpClient.setVendorClass('MSFT 5.0');
     this.dhcpClient.setBroadcastFlagToggling(false);
     this.dhcpClient.setPersonality(WINDOWS_DHCP_CLIENT_PERSONALITY);
@@ -931,7 +930,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
         new KdcSessionHandler({
-          store, deviceId: this.getHostname(), bus: this.getBus(),
+          store, deviceId: this.getHostname(), bus: this.getBus(), nowMs: () => this.getSystemClockMs(),
           writeSecurityEvent: (eventId, entryType, message, data) =>
             this.eventLog.writeEventLog('Security', 'Microsoft-Windows-Security-Auditing', eventId, entryType, message, data),
         }).register(socket);
@@ -1283,14 +1282,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     });
   }
 
-  private kerberosServiceIdentity(): { realm: string; serviceSecret: string } | undefined {
+  private kerberosServiceIdentity(): { realm: string; serviceSecret: string; clockMs: () => number } | undefined {
     const store = this.getDirectoryStore();
     if (store) {
       const secret = store.getComputerSecret(this.getHostname());
-      return secret !== null ? { realm: store.getRealm(), serviceSecret: secret } : undefined;
+      return secret !== null ? { realm: store.getRealm(), serviceSecret: secret, clockMs: () => this.getSystemClockMs() } : undefined;
     }
     return this.domainMembership
-      ? { realm: this.domainMembership.dnsName.toUpperCase(), serviceSecret: this.domainMembership.machineSecret }
+      ? { realm: this.domainMembership.dnsName.toUpperCase(), serviceSecret: this.domainMembership.machineSecret, clockMs: () => this.getSystemClockMs() }
       : undefined;
   }
 
@@ -1366,7 +1365,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const cname = principalName(PrincipalNameType.NT_PRINCIPAL, this.domainSession.sam);
     const tgs = conn.client.tgsExchange(tgt.ticket, tgt.sessionKey, cname, realm, serviceName);
     if (!tgs.ok || !tgs.ticket || !tgs.sessionKey) return null;
-    return buildApReq(tgs.ticket, tgs.sessionKey, cname, realm, KU_AP_REQ_AUTHENTICATOR);
+    return buildApReq(tgs.ticket, tgs.sessionKey, cname, realm, KU_AP_REQ_AUTHENTICATOR, this.getSystemClockMs());
   }
 
   // ─── Domain join / logon (PRD-Windows-Server.md §5 P6) ──────────────
@@ -1879,7 +1878,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
     if (wantsComputer) this.gpoAppliedNames = appliedGpoNames;
     if (wantsUser) this.gpoAppliedUserNames = appliedUserGpoNames;
-    this.gpoLastAppliedAt = new Date();
+    this.gpoLastAppliedAt = simulationDate();
     if (wantsComputer) {
       this.logGroupPolicyProcessed(appliedGpoNames.length + appliedUserGpoNames.length, JSON.stringify({ appliedGpoNames, appliedUserGpoNames, settings }));
     }
@@ -3357,9 +3356,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
             }
             const targetIp = resolveNameToIp(name);
             if (!targetIp) return { ok: false, error: `Unable to contact target: ${name}`, fqdn: '', hostname: '', invocationId: '', log: [], outboundVector: [] };
-            const start = Date.now();
+            const start = simulationNowMs();
             const remote = queryRemoteReplicationStatus(this.getTcpStack(), targetIp, objectDn);
-            const latencyMs = Date.now() - start;
+            const latencyMs = simulationNowMs() - start;
             if (!remote) return { ok: false, error: `Unable to contact target: ${name}`, fqdn: '', hostname: '', invocationId: '', log: [], outboundVector: [] };
             return {
               ok: true, fqdn: remote.fqdn, hostname: remote.fqdn.split('.')[0], invocationId: remote.invocationId,
@@ -4264,8 +4263,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const lease = this.dhcpClient.getState(ifName)?.lease;
     if (!lease) return null;
     if (lease.serverIdentifier === '0.0.0.0') return null;
-    const remaining = Math.max(0, Math.floor((lease.expiration - Date.now()) / 1000));
-    const preferred = Math.max(0, Math.min(remaining, Math.floor((lease.leaseStart + lease.renewalTime * 1000 - Date.now()) / 1000)));
+    const remaining = Math.max(0, Math.floor((lease.expiration - simulationNowMs()) / 1000));
+    const preferred = Math.max(0, Math.min(remaining, Math.floor((lease.leaseStart + lease.renewalTime * 1000 - simulationNowMs()) / 1000)));
     return { validSeconds: remaining, preferredSeconds: preferred };
   }
 
@@ -4848,7 +4847,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       : [];
     new LdapServerHandler({
       tree: store.getTree(), auth: store.getBindCheck(),
-      kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
+      kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret, clockMs: () => this.getSystemClockMs() } : undefined,
       startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
       implicitTls,
       otherForestDomainRoots: () => otherDomainRoots,
@@ -5987,12 +5986,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const lignes = [
       `Tracking ${cible} [${cible}:123].`,
       `Collecting ${nEchantillons} samples.`,
-      `The current time is ${new Date().toUTCString()}.`,
+      `The current time is ${simulationDate().toUTCString()}.`,
     ];
     for (let i = 0; i < nEchantillons; i++) {
       agent.pollAll();
       const a = agent.getAssociation(cible);
-      const h = new Date();
+      const h = simulationDate();
       const p = (n: number) => String(n).padStart(2, '0');
       const heure = `${p(h.getUTCHours())}:${p(h.getUTCMinutes())}:${p(h.getUTCSeconds())}`;
       if (!a || a.reach === 0) {

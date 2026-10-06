@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type IdentitySource = 'local' | 'radius' | 'tacacs+' | 'ldap';
 
 export interface AuthenticatedIdentity {
@@ -46,7 +48,7 @@ export class IdentityTable {
   private timeoutSec = DEFAULT_AUTH_TIMEOUT_SEC;
 
   constructor(deps: IdentityTableDeps = {}) {
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
   }
 
   setTimeoutPolicy(type: AuthTimeoutType, seconds: number): void {

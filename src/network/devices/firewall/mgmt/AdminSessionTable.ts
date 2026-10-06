@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type AdminSessionType = 'CLI' | 'WEB';
 
 export type AdminTransport = 'ssh' | 'telnet' | 'web' | 'console';
@@ -49,7 +51,7 @@ export class AdminSessionTable {
   private readonly now: () => number;
 
   constructor(deps: AdminSessionTableDeps = {}) {
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
   }
 
   open(draft: AdminSessionDraft): AdminSession {

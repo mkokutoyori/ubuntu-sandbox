@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { StreamAttachment, StreamAttachOptions } from '@/shell/input';
 import { LineAssembler } from './LineAssembler';
 import type {
@@ -58,7 +60,7 @@ export class TerminalAsyncRuntime {
       controller,
       assembler: new LineAssembler(),
       cancelHandlers: [],
-      startedAt: Date.now(),
+      startedAt: simulationNowMs(),
       ctx: null as unknown as AsyncJobContext,
       attachment: null,
       running: true,

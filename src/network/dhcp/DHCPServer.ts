@@ -19,6 +19,8 @@
  *   - processRequestWithNak: Returns explicit NAK objects
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { IPAddress } from '../core/types';
 import { isValidIPv4 } from '../core/ip';
 import {
@@ -116,7 +118,7 @@ export class DHCPServer implements IProtocolEngine {
 
   /** Conflict TTL in seconds (0 = never expire) */
   private conflictTTL: number = DEFAULT_CONFLICT_TTL;
-  private clock: () => number = () => Date.now();
+  private clock: () => number = () => simulationNowMs();
 
   /** Debug flags */
   private debug: DHCPDebugFlags = { serverPacket: false, serverEvents: false };

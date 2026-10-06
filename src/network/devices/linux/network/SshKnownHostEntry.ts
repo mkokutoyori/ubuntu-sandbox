@@ -16,6 +16,8 @@
  * trust, host-key rotation alerts) can rely on them.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 export type SshHostKeyType =
   | 'ssh-rsa'
   | 'ssh-dss'
@@ -44,9 +46,9 @@ export class SshKnownHostEntry {
   comment: string;
   hashed: boolean;
   /** UTC timestamp the entry was first observed (used by `last seen`). */
-  firstSeen: Date = new Date();
+  firstSeen: Date = simulationDate();
   /** Timestamp of the most recent successful match. */
-  lastSeen: Date = new Date();
+  lastSeen: Date = simulationDate();
 
   constructor(init: SshKnownHostInit) {
     this.hostnames = [...init.hostnames];

@@ -5,6 +5,8 @@
  * Network info comes from the IpNetworkContext when available.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import type { SocketTable, SocketEntry, SocketState } from '../../core/SocketTable';
 import { broadcastAddress, tryIpToUint32, prefixLengthToMaskUint32 } from '../../core/ip';
@@ -591,7 +593,7 @@ export function cmdWget(args: string[]): string {
     const filename = url.split('/').pop() || 'index.html';
     if (quiet) return '';
     return [
-      `--${new Date().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
+      `--${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
       `Resolving ${host}... 127.0.0.1`,
       `Connecting to ${host}|127.0.0.1|:80... connected.`,
       'HTTP request sent, awaiting response... 200 OK',
@@ -600,7 +602,7 @@ export function cmdWget(args: string[]): string {
       '',
       `${filename}              100%[===================>]   1.00K  --.-KB/s    in 0s`,
       '',
-      `${new Date().toISOString().replace('T', ' ').slice(0, 19)} (10.0 MB/s) - '${filename}' saved [1024/1024]`,
+      `${simulationDate().toISOString().replace('T', ' ').slice(0, 19)} (10.0 MB/s) - '${filename}' saved [1024/1024]`,
     ].join('\n');
   }
 
@@ -614,13 +616,13 @@ export function cmdWget(args: string[]): string {
     const nu = host.replace(/^\[|\]$/g, '').split(/]?:(?=\d+$)/)[0];
     if (quiet) return '';
     return [
-      `--${new Date().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
+      `--${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
       `Connecting to ${nu}:80... failed: Connection refused.`,
     ].join('\n');
   }
 
   return [
-    `--${new Date().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
+    `--${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
     `Resolving ${host}... failed: Temporary failure in name resolution.`,
     `wget: unable to resolve host address '${host}'`,
   ].join('\n');

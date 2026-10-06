@@ -154,22 +154,23 @@ machine d'etats de voisin (INCOMPLETE -> FAILED) touche `resolveARP`,
 avancer l'horloge de la machine (`PathClock.wait`), comme le calendrier de
 DISCOVER du client DHCP.
 
-### [horloge] des lecteurs du temps bruts subsistent
-**Mesure** : 566 sites `Date.now()` / `new Date()` hors tests sous
-`src/network` (105 dans `devices/linux`, 55 dans `devices/windows`, 46 dans
-`devices/router`, 41 dans `devices/shells`, 37 dans `protocols/ssh`). Ils
-valent l'heure de la machine tant qu'on ne pose pas l'horloge ni n'attend :
-apres `sudo date -s "2030-01-01 12:00:00"`, les dates des fichiers, le
-journal, syslog, auth.log, `chage -l`, `uptime -s`, `dir` et `Get-Date`
-suivent l'horloge de la machine (`probe-horloge-vues-coherentes`), mais le
-`START` de `ps` des processus de demarrage et les dates de `last` / `who`
-(enregistrements utmp) gardent l'heure reelle. Sur un vrai noyau, `ps`
-suit (btime recalcule), `last` non.
-**Pourquoi ce n'est pas ferme** : chaque sous-systeme prend l'horloge par un
-`setClock` (VFS, journal, processus, services, comptes, audit, systeme de
-fichiers Windows) ; les 566 restants n'ont pas de machine sous la main
-(fonctions libres, tables statiques) et demandent le meme port etroit.
-
+### [horloge] des piles de protocole lisent l'heure globale, pas celle de leur machine
+**Mesure** : les lecteurs bruts `Date.now()` / `new Date()` ont ete remplaces
+par `simulationNowMs()` / `simulationDate()` (une seule lecture : l'heure de
+l'ordonnanceur et le temps passe sur le fil), mais une machine dont on a pose
+l'horloge (`date -s`, `Set-Date`, `clock set`) n'est lue par sa propre pile
+que pour Kerberos (KDC, client, verification d'AP-REQ), TCP (`TcpStack.nowMs`),
+le systeme de fichiers, le journal, les processus, les services, les comptes
+et l'audit. Les autres — validite des certificats TLS et X.509, fenetres de
+signature DNSSEC, horodatages SSH, caches DNS — lisent l'heure globale : une
+machine decalee de dix minutes ne voit toujours pas un certificat « pas encore
+valide ». Le `START` de `ps` des processus de demarrage et les dates de
+`last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;
+sur un vrai noyau `ps` suit (btime recalcule), `last` non.
+**Pourquoi ce n'est pas ferme** : chaque pile prend l'horloge de sa machine par
+un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
+DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
+passee de proche en proche) et demandent le meme port.
 
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
 La zone d'options existe desormais (RFC 791 §3.1), et Record Route comme

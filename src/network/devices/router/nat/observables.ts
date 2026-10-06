@@ -2,6 +2,8 @@
  * NAT — observable read-models (Signals) + projection functions.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { WritableSignal, type Signal } from '@/events/Signal';
 import type { NatSession, NatTcpState } from '../NATEngine';
 
@@ -56,7 +58,7 @@ export function makeReadonlyNATObservables(store: NATSignalStore): NATObservable
 // ── Projections ────────────────────────────────────────────────────────
 
 export function projectNatSessions(sessions: Map<string, NatSession>): NatSessionVM[] {
-  const now = Date.now();
+  const now = simulationNowMs();
   const out: NatSessionVM[] = [];
   for (const [, s] of sessions) {
     out.push({

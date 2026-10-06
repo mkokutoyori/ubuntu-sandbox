@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 export type SslVpnSessionMode = 'web' | 'tunnel';
 
 export interface SslVpnSession {
@@ -27,7 +29,7 @@ export class SslVpnSessionTable {
   private nextIndex = 0;
   private idleTimeout = SSL_VPN_DEFAULT_IDLE_TIMEOUT;
 
-  constructor(private readonly now: () => number = () => Date.now()) {}
+  constructor(private readonly now: () => number = () => simulationNowMs()) {}
 
   setIdleTimeout(seconds: number): void { this.idleTimeout = seconds; }
 

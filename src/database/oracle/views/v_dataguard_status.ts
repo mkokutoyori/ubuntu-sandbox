@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -9,12 +11,12 @@ registerView({
     const dg = instance.dataGuard;
     const rows: (string | number | null)[][] = [
       [1, 'Log Transport', 'CONFIGURATION', 'STATIC', 0, null,
-        `Configuration ${dg.configurationName} (${dg.protectionMode})`, new Date().toISOString()],
+        `Configuration ${dg.configurationName} (${dg.protectionMode})`, simulationDate().toISOString()],
     ];
     dg.getStandbys().forEach((s, i) => {
       rows.push([i + 2, 'Log Apply', s.dbUniqueName, 'DYNAMIC', 0, null,
         `${s.dbUniqueName} apply=${s.applyMode} transport=${s.transportMode}`,
-        new Date().toISOString()]);
+        simulationDate().toISOString()]);
     });
     return queryResult(
       [

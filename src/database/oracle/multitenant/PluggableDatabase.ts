@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { md5Hex } from '@/crypto';
 
 export type PdbOpenMode = 'MOUNTED' | 'READ ONLY' | 'READ WRITE' | 'MIGRATE';
@@ -30,7 +32,7 @@ export class PluggableDatabase {
     // deterministically from the PDB identity so repeated runs (and the
     // debug transcripts) render a stable, realistic value.
     this.guid = md5Hex(`pdb-guid:${this.name}:${this.dbid}`).toUpperCase();
-    this.createdAt = init.createdAt ?? new Date();
+    this.createdAt = init.createdAt ?? simulationDate();
     this.openMode = init.openMode ?? 'MOUNTED';
     this.status = init.status ?? 'NORMAL';
     this.restricted = init.restricted ?? false;

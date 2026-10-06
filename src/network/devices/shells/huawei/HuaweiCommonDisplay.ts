@@ -7,6 +7,8 @@
  * entry to these pure functions.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { pad2 } from '@/lib/format';
 import { clockReadingAt, type DeviceClockConfig } from '@/network/core/time/DeviceClock';
 import {
@@ -28,7 +30,7 @@ const WEEKDAYS = [
  * desormais de la configuration d'horloge, comme chez Cisco.
  */
 export function displayClock(
-  now: Date = new Date(),
+  now: Date = simulationDate(),
   fuseau?: DeviceClockConfig,
 ): string {
   const lecture = fuseau
@@ -50,7 +52,7 @@ export function displayClock(
 }
 
 /** `display cpu-usage` — steady-state utilisation snapshot. */
-export function displayCpuUsage(now: Date = new Date()): string {
+export function displayCpuUsage(now: Date = simulationDate()): string {
   const stamp =
     `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}` +
     ` ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
@@ -65,7 +67,7 @@ export function displayCpuUsage(now: Date = new Date()): string {
 }
 
 /** `display memory-usage` — pool totals + percentage. */
-export function displayMemoryUsage(now: Date = new Date()): string {
+export function displayMemoryUsage(now: Date = simulationDate()): string {
   const stamp =
     `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}` +
     ` ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
@@ -129,7 +131,7 @@ export function displayLicense(): string {
 }
 
 /** `display logbuffer` — informational log ring buffer. */
-export function displayLogbuffer(now: Date = new Date()): string {
+export function displayLogbuffer(now: Date = simulationDate()): string {
   const stamp =
     `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}` +
     ` ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;

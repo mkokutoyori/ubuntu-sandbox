@@ -2,6 +2,8 @@
  * V$IOFUNCMETRIC_SUMMARY — hourly summary of V$IOFUNCMETRIC.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { queryView } from './registry';
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -13,7 +15,7 @@ registerView({
   query(ctx) {
     const sample = queryView('V$IOFUNCMETRIC', ctx);
     if (!sample) return queryResult([], []);
-    const end = Date.now();
+    const end = simulationNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

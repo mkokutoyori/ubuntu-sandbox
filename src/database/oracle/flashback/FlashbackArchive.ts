@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 export class FlashbackArchiveTablespace {
   readonly archiveName: string;
   readonly tablespaceName: string;
@@ -28,7 +30,7 @@ export class FlashbackArchive {
     this.flashbackArchiveName = init.flashbackArchiveName.toUpperCase();
     this.owner = (init.owner ?? 'SYS').toUpperCase();
     this.retentionInDays = init.retentionInDays;
-    this.createTime = new Date();
+    this.createTime = simulationDate();
     this.lastPurgeTime = null;
     this.status = 'ACTIVE';
     this.isDefault = init.isDefault ?? false;

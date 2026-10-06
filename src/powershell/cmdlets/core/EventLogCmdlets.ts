@@ -7,6 +7,8 @@
  * executor and the interpreter so log state stays coherent.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
@@ -298,7 +300,7 @@ export class GetWinEventCmdlet implements ICmdlet {
   private emit(
     ctx: CmdletContext, log: IEventLogProvider, queries: XPathChannelQuery[],
   ): PSValue {
-    const now = Date.now();
+    const now = simulationNowMs();
     const localHostname = ctx.providers.network?.getHostname() ?? '';
     const max = ctx.named['maxevents'] !== undefined ? Number(ctx.named['maxevents']) : undefined;
     const known = new Set((log.listLogs() ?? []).map((l) => l.logName.toLowerCase()));

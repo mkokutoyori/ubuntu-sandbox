@@ -15,6 +15,8 @@
  * Reference: man 5 sshd_config — LogLevel, SyslogFacility.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { hostnameOf, type HostnameSource } from '@/network/devices/linux/KernelHostname';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { LinuxLogManager } from '@/network/devices/linux/LinuxLogManager';
@@ -76,7 +78,7 @@ export class SshSyslogger {
     this.hostnameSource = opts.hostname;
     this.sshdPid = opts.sshdPid ?? 1000 + Math.floor(Math.random() * 9000);
     this.port = opts.port ?? 22;
-    this.clock = opts.clock ?? (() => new Date());
+    this.clock = opts.clock ?? (() => simulationDate());
     this.logMgr = opts.logMgr ?? null;
     this.logLevel = opts.logLevel ?? (() => 'INFO');
     this.unsubscribe = bus.on('*', (e) => this.handle(e));

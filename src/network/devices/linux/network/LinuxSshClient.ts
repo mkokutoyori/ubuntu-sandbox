@@ -16,6 +16,8 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { readSshdConfig } from '../../../protocols/ssh/server/SshdConfigText';
 import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
 import { findHostByAddress, isPathReachable } from './HostLookup';
@@ -942,7 +944,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     recordFailure: (ip: string, now: number) => void;
   } }).sshThrottler;
   const cfg = remoteSshdConfig(machine);
-  if (throttler && throttler.shouldDrop(opts.sourceIp, cfg.maxStartups, Date.now())) {
+  if (throttler && throttler.shouldDrop(opts.sourceIp, cfg.maxStartups, simulationNowMs())) {
     return {
       output: `ssh: connect to host ${host} port ${port}: Connection refused (MaxStartups drop)\n`,
       exitCode: 255,
@@ -977,7 +979,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       return;
     }
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, method, reason);
-    throttler?.recordFailure(opts.sourceIp, Date.now());
+    throttler?.recordFailure(opts.sourceIp, simulationNowMs());
   };
 
   // Login policy gate (root login, allowed users, etc.).
@@ -1377,7 +1379,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // en dur, avec une autre version et un autre noyau : une seule
   // connexion en affichait donc deux, contradictoires.
   if (printLastLog) {
-    lines.push(`Last login: ${fmtHumanDate(new Date())} from ${opts.sourceIp}`);
+    lines.push(`Last login: ${fmtHumanDate(simulationDate())} from ${opts.sourceIp}`);
   }
   if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   const relayedShell = opts.shellRelay?.() ?? null;

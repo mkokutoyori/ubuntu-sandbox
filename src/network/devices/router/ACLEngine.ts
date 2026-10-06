@@ -5,6 +5,8 @@
  * Manages numbered/named ACLs and interface bindings.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { ipProtocolMatches } from './acl/AclSyntax';
 import type { SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
 import { IPAddress } from '../../core/types';
@@ -721,7 +723,7 @@ export class ACLEngine {
   private clockSource: (() => number) | null = null;
   setClockSource(fn: (() => number) | null): void { this.clockSource = fn; }
   private nowFromDevice(): Date {
-    return new Date(this.clockSource ? this.clockSource() : Date.now());
+    return new Date(this.clockSource ? this.clockSource() : simulationNowMs());
   }
 
   private readonly reflexive = new ReflexiveSessions();

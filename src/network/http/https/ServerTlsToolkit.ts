@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -44,7 +46,7 @@ export function randomTicketKey(): Uint8Array {
 }
 
 export function ephemeralIdentity(): ServerIdentity {
-  const generated = generateSelfSignedCertificate('CN=reject-handshake', { now: Date.now() });
+  const generated = generateSelfSignedCertificate('CN=reject-handshake', { now: simulationNowMs() });
   return { cert: generated.cert, key: generated.privateKey, chain: [] };
 }
 

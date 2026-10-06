@@ -17,6 +17,8 @@
  * SRP: pure functions over a narrow filesystem seam — no executor
  * dependency, testable in isolation.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { DirEntry, INode } from '../VirtualFileSystem';
 
 /** Narrow filesystem seam (DIP — the executor injects its VFS). */
@@ -308,7 +310,7 @@ function tarCreate(ctx: ArchiveCtx, o: TarOptions, baseDir: string): CmdResult {
     payload = packGzip({
       name: basename(o.archive!).replace(/\.(gz|tgz)$/, (s) =>
         s === '.tgz' ? '.tar' : ''),
-      mtime: Date.now(), payload,
+      mtime: simulationNowMs(), payload,
     });
   }
   const archiveAbs = ctx.fs.normalizePath(o.archive!, ctx.cwd);

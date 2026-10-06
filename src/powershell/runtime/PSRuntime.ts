@@ -16,6 +16,8 @@
  *   5. Helper utilities
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { PSLexer }  from '@/powershell/lexer/PSLexer';
 import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
@@ -146,9 +148,9 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
   } as Record<string, PSValue>,
 
   datetime: {
-    get now()    { return new Date() as unknown as PSValue; },
-    get utcnow() { return new Date() as unknown as PSValue; },
-    get today()  { const d = new Date(); d.setHours(0,0,0,0); return d as unknown as PSValue; },
+    get now()    { return simulationDate() as unknown as PSValue; },
+    get utcnow() { return simulationDate() as unknown as PSValue; },
+    get today()  { const d = simulationDate(); d.setHours(0,0,0,0); return d as unknown as PSValue; },
     new: (...a: PSValue[]) => {
       const n = a.map(Number);
       return new Date(n[0] ?? 1970, (n[1] ?? 1) - 1, n[2] ?? 1, n[3] ?? 0, n[4] ?? 0, n[5] ?? 0) as unknown as PSValue;
@@ -260,7 +262,7 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     osversion:          { Platform: 'Win32NT', VersionString: 'Microsoft Windows NT 10.0.19041.0' } as unknown as PSValue,
     currentdirectory:   'C:\\' as PSValue,
     newline:            '\r\n' as PSValue,
-    tickcount:          () => Date.now() as PSValue,
+    tickcount:          () => simulationNowMs() as PSValue,
     getenvironmentvariable: (name: PSValue) => process.env[String(name)] ?? null as PSValue,
   } as Record<string, PSValue>,
 } as Record<string, Record<string, PSValue>>;
@@ -1211,7 +1213,7 @@ export class PSRuntime {
       newline:                '\r\n' as PSValue,
       currentdirectory:       'C:\\' as PSValue,
       processorcount:         (Number(lookup('NUMBER_OF_PROCESSORS')) || 1) as PSValue,
-      tickcount:              Date.now() as PSValue,
+      tickcount:              simulationNowMs() as PSValue,
       is64bitoperatingsystem: true as PSValue,
       is64bitprocess:         true as PSValue,
       getenvironmentvariable: (name: PSValue, _target?: PSValue) => lookup(String(name)),

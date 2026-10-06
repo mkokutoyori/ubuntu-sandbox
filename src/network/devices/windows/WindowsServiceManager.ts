@@ -12,6 +12,8 @@
  *   - Service creation/deletion with protection on built-in services
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { PortSpec } from '../../core/ports/PortNumber';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -631,7 +633,7 @@ export class WindowsServiceManager {
     if (previousState === svc.state) return;
     for (const w of this.instanceWatchers.values()) {
       if (w.serviceName !== svc.name.toLowerCase()) continue;
-      w.cb({ previousState, newState: svc.state, timestamp: new Date() });
+      w.cb({ previousState, newState: svc.state, timestamp: simulationDate() });
     }
   }
 

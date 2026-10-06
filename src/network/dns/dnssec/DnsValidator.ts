@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { RRType } from '@/network/dns/wire/RRType';
 import { normalizeDnsName as normalize } from '@/network/dns/wire/DnsName';
 import type {
@@ -77,7 +79,7 @@ export class DnsValidator {
     private readonly anchors: readonly ResourceRecord<DsRecordData>[],
     options: DnsValidatorOptions = {},
   ) {
-    this.now = options.now ?? (() => Math.floor(Date.now() / 1000));
+    this.now = options.now ?? (() => Math.floor(simulationNowMs() / 1000));
     this.maxChainDepth = options.maxChainDepth ?? DEFAULT_MAX_CHAIN_DEPTH;
   }
 

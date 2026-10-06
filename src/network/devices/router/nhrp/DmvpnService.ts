@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NhrpService } from './NhrpService';
 import { hms } from '@/lib/format';
 
@@ -53,7 +55,7 @@ export class DmvpnService {
       ...s,
       pktsSent: 0, pktsRcvd: 0, bytesSent: 0, bytesRcvd: 0,
       uptimeMs: 0,
-      createdAtMs: Date.now(),
+      createdAtMs: simulationNowMs(),
     };
     this.sessions.push(session);
     return session;
@@ -95,7 +97,7 @@ export class DmvpnService {
       const sessions = this.sessions.filter(s => s.ifName === profile.ifName);
       for (let i = 0; i < sessions.length; i++) {
         const s = sessions[i];
-        const upTime = hms(Date.now() - s.createdAtMs);
+        const upTime = hms(simulationNowMs() - s.createdAtMs);
         lines.push(`     ${(i + 1).toString().padStart(2, ' ')} ${s.peerNbmaAddress.padEnd(15)} ${s.peerTunnelAddress.padEnd(15)} ${s.state.padEnd(5)} ${upTime}  ${s.attribute}`);
         if (detail) {
           lines.push(`   Type: ${profile.role === 'hub' ? 'Hub' : 'Spoke'}, NHS Status: E --> 1`);

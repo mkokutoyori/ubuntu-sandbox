@@ -5,6 +5,8 @@
  * a DML row change, plus tx id and an SCN allocated by the journal.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IDmlHistoryRecord } from './interfaces';
 
 export class DmlHistoryRecord implements IDmlHistoryRecord {
@@ -32,7 +34,7 @@ export class DmlHistoryRecord implements IDmlHistoryRecord {
     timestamp?: Date;
   }) {
     this.scn = init.scn;
-    this.timestamp = init.timestamp ?? new Date();
+    this.timestamp = init.timestamp ?? simulationDate();
     this.sessionId = init.sessionId;
     this.username = init.username.toUpperCase();
     this.schema = init.schema.toUpperCase();

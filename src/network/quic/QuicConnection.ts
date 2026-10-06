@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { EndHost, UdpDelivery } from '@/network/devices/EndHost';
 import type { IEventBus } from '@/events/EventBus';
 import type { TlsClientSession } from '@/network/tls/TlsClientSession';
@@ -257,7 +259,7 @@ export class QuicConnection {
   close(errorCode = 0, reason = ''): void {
     if (this.state === 'closing' || this.state === 'draining' || this.state === 'closed') return;
     this.state = 'closing';
-    this.closingSince = Date.now();
+    this.closingSince = simulationNowMs();
     this.emit({ topic: 'quic.connection.closing', payload: { connectionId: this.connectionId, role: this.role, errorCode, reason } });
     this.sendPacket('application', [{ type: 'CONNECTION_CLOSE', errorCode, reasonPhrase: reason, layer: 'application' }], false);
   }
@@ -287,7 +289,7 @@ export class QuicConnection {
           version: QUIC_VERSION_1, destConnectionId: '', srcConnectionId: '', packetNumber: pn, payload: ciphertext,
         });
 
-    onLossPacketSent(this.lossState, space, pn, bytes.length, ackEliciting, frames, Date.now());
+    onLossPacketSent(this.lossState, space, pn, bytes.length, ackEliciting, frames, simulationNowMs());
     onCongestionPacketSent(this.congestionState, bytes.length);
     this.packetSizes.set(pn, bytes.length);
 
@@ -446,7 +448,7 @@ export class QuicConnection {
 
       case 'ACK': {
         const acked = expandSingleRangeAck(frame);
-        const { newlyAcked, lostPackets } = onAckReceived(this.lossState, space, acked, frame.ackDelay, Date.now());
+        const { newlyAcked, lostPackets } = onAckReceived(this.lossState, space, acked, frame.ackDelay, simulationNowMs());
         const windowBeforeAck = this.congestionState.congestionWindow;
         for (const pn of newlyAcked) {
           const size = this.packetSizes.get(pn);
@@ -462,7 +464,7 @@ export class QuicConnection {
             this.packetSizes.delete(p.packetNumber);
             this.emit({ topic: 'quic.packet.lost', payload: { connectionId: this.connectionId, role: this.role, space, packetNumber: p.packetNumber } });
           }
-          onPacketsLost(this.congestionState, accounting, Date.now());
+          onPacketsLost(this.congestionState, accounting, simulationNowMs());
           this.emitWindowChanged(windowBeforeLoss);
         }
         return;
@@ -470,7 +472,7 @@ export class QuicConnection {
 
       case 'CONNECTION_CLOSE':
         this.state = 'draining';
-        this.closingSince = Date.now();
+        this.closingSince = simulationNowMs();
         this.emit({
           topic: 'quic.connection.closing',
           payload: { connectionId: this.connectionId, role: this.role, errorCode: frame.errorCode, reason: frame.reasonPhrase },

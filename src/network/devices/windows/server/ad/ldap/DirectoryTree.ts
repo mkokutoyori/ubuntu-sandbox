@@ -6,6 +6,8 @@
  * not a flat lookup table with cosmetic DN strings.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   type DistinguishedName, type Rdn, parseDN, formatDN, dnEquals, parentOf, isDescendantOf,
 } from './LdapDN';
@@ -139,7 +141,7 @@ export class DirectoryTree {
     private readonly replication?: ReplicationIdentity,
     /** RFC 4512 schema validation (PRD-Windows-Server-Advanced.md §5 P7) — absent on any `DirectoryTree` with no schema partition (e.g. the LDAP wire-protocol unit tests), which behaves exactly as before this phase. */
     private readonly schema?: SchemaValidator,
-    private readonly now: () => Date = () => new Date(),
+    private readonly now: () => Date = () => simulationDate(),
   ) {
     const dn = typeof baseDn === 'string' ? parseDN(baseDn) : baseDn;
     this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map(), replMeta: this.stampFor() };
@@ -151,7 +153,7 @@ export class DirectoryTree {
     return {
       originatingInvocationId: this.replication.invocationId,
       originatingUsn: this.replication.nextUsn(),
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp: Math.floor(simulationNowMs() / 1000),
       version: (precedent?.version ?? 0) + 1,
     };
   }

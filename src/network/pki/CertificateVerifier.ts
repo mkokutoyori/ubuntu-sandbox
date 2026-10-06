@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import { PkiKeyPair } from './PkiKeyPair';
 import { keyPermitted } from '@/network/tls/legacy/securityPolicy';
@@ -53,7 +55,7 @@ export class CertificateVerifier {
     this.trustAnchors = opts.trustAnchors;
     this.crls = opts.crls ?? [];
     this.revocationCheck = opts.revocationCheck ?? 'none';
-    this.clock = opts.clock ?? Date.now;
+    this.clock = opts.clock ?? simulationNowMs;
     this.ocspResponder = opts.ocspResponder;
     this.securityLevel = opts.securityLevel ?? 0;
     this.maxDepth = opts.maxDepth;

@@ -48,6 +48,8 @@ export type DebugCategory =
   | 'stp.events'
   | 'stp.bpdu';
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortTap';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -184,7 +186,7 @@ export class RouterDebugService implements TerminalDebugSource {
 
   enable(category: DebugCategory, scope?: string, detail = false): string {
     this.requirePlatform(category);
-    const flag = { category, enabledAtMs: Date.now(), scope, detail };
+    const flag = { category, enabledAtMs: simulationNowMs(), scope, detail };
     this.flags.set(category, flag);
     return RouterDebugService.flagLabel(flag);
   }
@@ -289,7 +291,7 @@ export class RouterDebugService implements TerminalDebugSource {
   ];
 
   enableAll(): string {
-    const now = Date.now();
+    const now = simulationNowMs();
     const tout = this.platform === 'switch'
       ? [...SWITCH_CATEGORIES] as DebugCategory[]
       : RouterDebugService.ALL.filter((c) => categoryOnPlatform(c, this.platform));

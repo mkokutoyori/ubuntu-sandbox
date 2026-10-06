@@ -6,7 +6,7 @@ export class SystemClock {
   private setAtMs = 0;
   private skewMs = 0;
 
-  constructor(private readonly source: () => number = () => Date.now()) {}
+  constructor(private readonly source: () => number = simulationNowMs) {}
 
   now(): number {
     if (this.overrideMs === null) return this.source() + this.skewMs;
@@ -67,12 +67,25 @@ export function schedulerWallClock(
   };
 }
 
-const simulationWallClock = schedulerWallClock();
+const virtualOrigins = new WeakMap<IScheduler, number>();
+
+function virtualOriginOf(scheduler: IScheduler): number {
+  let origin = virtualOrigins.get(scheduler);
+  if (origin === undefined) {
+    origin = Date.now() - scheduler.now();
+    virtualOrigins.set(scheduler, origin);
+  }
+  return origin;
+}
 
 export function simulationNowMs(): number {
-  return simulationWallClock();
+  const scheduler = unwrapped(getDefaultScheduler());
+  const base = scheduler instanceof RealTimeScheduler
+    ? Date.now()
+    : virtualOriginOf(scheduler) + scheduler.now();
+  return Math.floor(base + PathClock.horizon());
 }
 
 export function simulationDate(): Date {
-  return new Date(simulationWallClock());
+  return new Date(simulationNowMs());
 }

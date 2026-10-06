@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
@@ -225,6 +227,7 @@ export interface TcpMibSink {
 
 export interface TcpHost {
   readonly id: string;
+  nowMs?(): number;
   readonly name: string;
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
@@ -721,7 +724,7 @@ export class TcpStack {
   private nextEphemeralPort = 49152;
   private ephemeralMin = 49152;
   private ephemeralMax = 65535;
-  private startedAtMs = Date.now();
+  private startedAtMs = simulationNowMs();
 
   setEphemeralRange(min: number, max: number): void {
     if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max > 65535 || min > max) {
@@ -747,6 +750,8 @@ export class TcpStack {
     private readonly getScheduler: () => IScheduler =
     () => getDefaultScheduler(),
   ) {}
+
+  nowMs(): number { return this.host.nowMs?.() ?? simulationNowMs(); }
 
   start(): void { if (!this.running) this.running = true; }
 

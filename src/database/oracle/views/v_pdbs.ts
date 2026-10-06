@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -28,7 +30,7 @@ registerView({
       instance.multitenant.getAll().map(p => [
         p.conId, p.dbid, String(p.dbid), p.guid, p.name, p.openMode,
         p.restricted ? 'YES' : 'NO',
-        p.openMode === 'MOUNTED' ? null : new Date().toISOString(),
+        p.openMode === 'MOUNTED' ? null : simulationDate().toISOString(),
         100000, p.totalSizeBytes, 8192, p.status,
         p.applicationRoot ? 'YES' : 'NO',
         p.applicationPdb ? 'YES' : 'NO',

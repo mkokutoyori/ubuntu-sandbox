@@ -16,6 +16,8 @@
  * The engine never throws — every error becomes a JOB_FAILED event.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanJobEngine } from './IRmanJobEngine';
@@ -72,7 +74,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   ) {}
 
   run(job: RmanJob): Result<void, RmanError> {
-    const start = Date.now();
+    const start = simulationNowMs();
 
     if (this._cancelled.has(job.id)) {
       return err({ code: 'JOB_CANCELLED', message: `Job ${job.id} was cancelled`, jobId: job.id });
@@ -113,7 +115,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       //    SubShell sees CHANNEL_RELEASED before the "Finished" line.
       this._bus.emit({
         type: 'JOB_COMPLETED', jobId: job.id, operation: job.operation,
-        elapsedMs: Date.now() - start,
+        elapsedMs: simulationNowMs() - start,
       });
     } catch (e) {
       this._pool.release(channel);
@@ -248,7 +250,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       return Object.freeze({
         fileNo: df.fileNo, level: incLevel ?? (0 as 0 | 1),
         ckpScn: ckp.ok ? ckp.value : Scn.ZERO,
-        ckpTime: Date.now(), path: df.path,
+        ckpTime: simulationNowMs(), path: df.path,
       });
     });
 
@@ -293,7 +295,7 @@ export class RmanJobEngine implements IRmanJobEngine {
           sizeBytes: df.sizeBytes, tag,
           datafiles: [Object.freeze({
             fileNo: df.fileNo, level: 0 as 0 | 1,
-            ckpScn: ckp, ckpTime: Date.now(), path: df.path,
+            ckpScn: ckp, ckpTime: simulationNowMs(), path: df.path,
           })],
           compressed, encrypted,
         });
@@ -582,7 +584,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       copyNumber:   1,
       logSequence:  1,
       logThread:    1,
-      at:           new Date(),
+      at:           simulationDate(),
       fileNumber:   seul?.fileNumber,
       tablespace:   seul?.tablespace,
     });
@@ -964,7 +966,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     const params = job.params ?? {};
     const limites = this._maxCorruptOf(params);
     const kind = params.asCopy === 'true' ? 'COPY' : 'BACKUPSET';
-    const setStamp = Math.floor(Date.now() / 1000);
+    const setStamp = Math.floor(simulationNowMs() / 1000);
     const blockSize = Number(this._ctx.getSpfileParam('db_block_size') ?? 8192) || 8192;
     for (const df of datafiles) {
       const defaut = datafileFault(this._ctx.vfs, df, params.checkLogical === 'true');
@@ -1259,7 +1261,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   private _emitFailed(job: RmanJob, error: RmanError, start: number): void {
     this._bus.emit({
       type: 'JOB_FAILED', jobId: job.id, operation: job.operation,
-      error, elapsedMs: Date.now() - start,
+      error, elapsedMs: simulationNowMs() - start,
     });
   }
 }

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { Router } from '../../Router';
 import type { CiscoRouter } from '../../CiscoRouter';
 import { CommandTrie } from '../CommandTrie';
@@ -298,7 +300,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     if (!tp) return `% Trustpoint ${name} not configured`;
     if (!tp.caCert) return `% Trustpoint ${name} is not authenticated — run 'crypto pki authenticate ${name}' first`;
     const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
-    const now = Date.now();
+    const now = simulationNowMs();
     const subject = tp.subjectName || `CN=${ctx.r()._getHostnameInternal()}`;
     const issued = ca.issueCertificate({
       subject, notBefore: now, notAfter: now + 365 * 24 * 3600 * 1000,
@@ -325,7 +327,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     if (what === 'certificate' || what === 'pem') {
       (tp as unknown as { importedCertificate?: { format: string; importedAtMs: number } }).importedCertificate = {
         format: what,
-        importedAtMs: Date.now(),
+        importedAtMs: simulationNowMs(),
       };
       if (tp.localCert && tp.localKey && tp.caCert) {
         (ctx.r() as CiscoRouter).installIkeCertAuth({
@@ -1605,7 +1607,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
 }
 
 function secondsSince(ms: number): number {
-  return Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  return Math.max(0, Math.floor((simulationNowMs() - ms) / 1000));
 }
 
 /** `10:04:36 UTC Aug 6 2026` — la date telle qu'IOS l'écrit ici. */

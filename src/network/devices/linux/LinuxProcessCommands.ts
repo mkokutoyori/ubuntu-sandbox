@@ -6,6 +6,8 @@
  * scripts that parse the output keep working.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
@@ -72,7 +74,7 @@ export function cmdPs(args: string[], ctx: ProcessCmdContext): string {
 export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   // We always print one snapshot — the simulator has no interactive top.
   const procs = [...ctx.pm.list(), transientSelfProcess(ctx, 'top')];
-  const now = new Date();
+  const now = simulationDate();
   const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
   const mib = (kib: number) => Math.round(kib / 1024);
   const mem = ctx.memory;
@@ -428,7 +430,7 @@ function unitActiveParts(u: ServiceUnit): { head: string; tail: string } {
     case 'active':
       return {
         head: `active (${ACTIVE_SUBSTATE[unitSuffix(u.name)]})`,
-        tail: ` since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`,
+        tail: ` since ${u.activeSince?.toUTCString() ?? simulationDate().toUTCString()}`,
       };
     case 'activating':
       return { head: u.autoRestartPending ? 'activating (auto-restart)' : 'activating (start)', tail: '' };
@@ -637,7 +639,7 @@ export function cmdSystemctl(rawArgs: string[], sm: LinuxServiceManager, color =
             '    State: running',
             '     Jobs: 0 queued',
             '   Failed: 0 units',
-            `   Since: ${new Date().toUTCString()}`,
+            `   Since: ${simulationDate().toUTCString()}`,
             '   CGroup: /',
           ].join('\n'),
           exitCode: 0,
@@ -852,7 +854,7 @@ export function cmdSystemctl(rawArgs: string[], sm: LinuxServiceManager, color =
     }
 
     case 'list-timers': {
-      const now = new Date();
+      const now = simulationDate();
       // `list-timers mon.timer` ne montre que celui-là — l'argument était
       // accepté puis ignoré, et la commande répondait toute la table.
       const wanted = operands.map((o) => (o.includes('.') ? o : `${o}.timer`));

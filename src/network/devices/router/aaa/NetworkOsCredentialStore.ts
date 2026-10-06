@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { NetworkOsAccount, publishAccountEvent, type AccountServiceType } from './NetworkOsAccount';
 import type { IAccountAuthority, AccountSnapshot } from '../../../protocols/ssh/server/IAccountAuthority';
@@ -90,7 +92,7 @@ export class NetworkOsCredentialStore implements IAccountAuthority {
     return next;
   }
 
-  recordLoginSuccess(name: string, from: string, method: 'password' | 'publickey' | 'keyboard-interactive', at: number = Date.now()): void {
+  recordLoginSuccess(name: string, from: string, method: 'password' | 'publickey' | 'keyboard-interactive', at: number = simulationNowMs()): void {
     const updated = this.mutateSilent(name, a => a.withSuccessfulLogin(at, from, method));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.login.success', this.deviceId, updated, { from, method, at });
@@ -112,7 +114,7 @@ export class NetworkOsCredentialStore implements IAccountAuthority {
     return this.liveSessionCount(name) >= account.maxConcurrentSessions;
   }
 
-  recordLoginFailure(name: string, from: string, reason: string, at: number = Date.now()): void {
+  recordLoginFailure(name: string, from: string, reason: string, at: number = simulationNowMs()): void {
     const updated = this.mutateSilent(name, a => a.withFailedLogin(at, from));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.login.failure', this.deviceId, updated, { from, reason, at });
@@ -124,7 +126,7 @@ export class NetworkOsCredentialStore implements IAccountAuthority {
     }
   }
 
-  lock(name: string, reason: string, at: number = Date.now()): NetworkOsAccount | undefined {
+  lock(name: string, reason: string, at: number = simulationNowMs()): NetworkOsAccount | undefined {
     const updated = this.mutateSilent(name, a => a.lock(reason, at));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.locked', this.deviceId, updated, { reason, at });
@@ -132,7 +134,7 @@ export class NetworkOsCredentialStore implements IAccountAuthority {
     return updated;
   }
 
-  unlock(name: string, at: number = Date.now()): NetworkOsAccount | undefined {
+  unlock(name: string, at: number = simulationNowMs()): NetworkOsAccount | undefined {
     const updated = this.mutateSilent(name, a => a.unlock(at));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.unlocked', this.deviceId, updated, { at });

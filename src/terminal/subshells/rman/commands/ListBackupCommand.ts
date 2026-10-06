@@ -5,6 +5,8 @@
  * view (set + pieces + datafiles).
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
@@ -38,11 +40,11 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       const rows = [
         {
           incKey: 1, status: 'PARENT', resetScn: 1,
-          resetTime: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+          resetTime: new Date(simulationNowMs() - 86_400_000).toISOString().slice(0, 10),
         },
         {
           incKey: 2, status: 'CURRENT', resetScn: 1_892_354,
-          resetTime: new Date().toISOString().slice(0, 10),
+          resetTime: simulationDate().toISOString().slice(0, 10),
         },
       ];
       const columns: ReadonlyArray<TableColumn<typeof rows[number]>> = [

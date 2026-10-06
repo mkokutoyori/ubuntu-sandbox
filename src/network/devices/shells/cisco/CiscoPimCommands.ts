@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
@@ -323,8 +325,8 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     const rows = ['PIM Neighbor Table',
       'Neighbor Address  Interface                Uptime/Expires    Ver  DR Prio/Mode'];
     for (const n of neighbors) {
-      const uptime = hms(Date.now() - n.upSinceMs);
-      const expires = hms(Math.max(0, n.helloHoldSec * 1000 - (Date.now() - n.lastHeardMs)));
+      const uptime = hms(simulationNowMs() - n.upSinceMs);
+      const expires = hms(Math.max(0, n.helloHoldSec * 1000 - (simulationNowMs() - n.lastHeardMs)));
       rows.push(`${n.neighborIp.padEnd(18)}${n.iface.padEnd(25)}${(uptime + '/' + expires).padEnd(18)}v2   ${n.drPriority}${n.hasDrPriorityOption ? '' : ' (default)'}`);
     }
     return rows.join('\n');
@@ -428,14 +430,14 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
       ''];
     for (const m of mroutes) {
       const src = m.sourceAddress ?? '*';
-      lines.push(`(${src}, ${m.groupAddress}), ${hms(Date.now() - m.uptimeMs)}/${hms(Math.max(0, m.joinExpiryMs - Date.now()))}, RP ${m.rpAddress ?? '0.0.0.0'}, flags: S`);
+      lines.push(`(${src}, ${m.groupAddress}), ${hms(simulationNowMs() - m.uptimeMs)}/${hms(Math.max(0, m.joinExpiryMs - simulationNowMs()))}, RP ${m.rpAddress ?? '0.0.0.0'}, flags: S`);
       lines.push(`  Incoming interface: ${m.incomingInterface ?? 'Null'}, RPF nbr ${m.upstreamNeighborIp ?? '0.0.0.0'}`);
       lines.push(`  Outgoing interface list:`);
       if (m.outgoingInterfaces.size === 0) {
         lines.push(`    Null`);
       } else {
         for (const oif of m.outgoingInterfaces) {
-          lines.push(`    ${oif}, Forward/${m.entryType === 'star-g' ? 'Sparse' : 'Sparse-Dense'}, ${hms(Date.now() - m.uptimeMs)}/${hms(Math.max(0, m.joinExpiryMs - Date.now()))}`);
+          lines.push(`    ${oif}, Forward/${m.entryType === 'star-g' ? 'Sparse' : 'Sparse-Dense'}, ${hms(simulationNowMs() - m.uptimeMs)}/${hms(Math.max(0, m.joinExpiryMs - simulationNowMs()))}`);
         }
       }
       lines.push('');

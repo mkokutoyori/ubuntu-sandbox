@@ -2,6 +2,8 @@
  * SensitiveAccessRecord — concrete `ISensitiveAccessRecord`.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { ISensitiveAccessRecord, AccessAction, SensitivityClass } from './interfaces';
 
 export class SensitiveAccessRecord implements ISensitiveAccessRecord {
@@ -27,7 +29,7 @@ export class SensitiveAccessRecord implements ISensitiveAccessRecord {
     sensitiveColumns?: string[]; timestamp?: Date;
   }) {
     this.accessId = init.accessId;
-    this.timestamp = init.timestamp ?? new Date();
+    this.timestamp = init.timestamp ?? simulationDate();
     this.sessionId = init.sessionId;
     this.username = init.username.toUpperCase();
     this.action = init.action;

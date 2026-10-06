@@ -15,6 +15,8 @@
  * etc.) the DBA would use in production.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 export interface NetworkAcl {
   readonly aclName: string;
   readonly host: string;
@@ -85,7 +87,7 @@ export class NetworkAclManager {
         host: host.toLowerCase(),
         lowerPort, upperPort, aclOwner: 'SYS',
         aclId: `0000000000000000${this.aclIdSeq.toString(16).toUpperCase()}`,
-        createdAt: new Date(),
+        createdAt: simulationDate(),
       };
       this.acls.push(acl);
       this.aclIdSeq++;

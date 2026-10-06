@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import {
   type TacacsServerAgentConfig, type TacacsPacket, type TacacsUser,
@@ -180,7 +182,7 @@ export class TacacsServerAgent {
       const cmd = this.extractCmd(request.body.args);
       this.config.acctLog.push({
         user: request.body.user, cmd: cmd ?? '',
-        flags: request.body.flags.slice(), ts: Date.now(),
+        flags: request.body.flags.slice(), ts: simulationNowMs(),
       });
       const body: TacacsBody = {
         type: 'tacacs-acct-reply',

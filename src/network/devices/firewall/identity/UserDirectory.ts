@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { NetworkOsAccount } from '../../router/aaa/NetworkOsAccount';
 import { NetworkOsCredentialStore } from '../../router/aaa/NetworkOsCredentialStore';
 import type { IdentitySource } from './IdentityTable';
@@ -59,7 +61,7 @@ export class UserDirectory {
 
   constructor(deps: UserDirectoryDeps) {
     this.credentials = deps.credentials;
-    this.now = deps.now ?? (() => Date.now());
+    this.now = deps.now ?? (() => simulationNowMs());
   }
 
   setUser(user: LocalUser, password?: string): void {

@@ -7,6 +7,8 @@
  * and refreshes whenever the underlying event-fed counters change.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { queryView } from './registry';
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -20,7 +22,7 @@ registerView({
     const sample = queryView('V$SYSMETRIC', ctx);
     if (!sample) return queryResult([], []);
     const rows: (string | number)[][] = [];
-    const now = Date.now();
+    const now = simulationNowMs();
     const buckets = Math.min(60, Math.max(1, Math.floor((now - ctx.runtime.startedAt) / 60_000)));
     for (let b = 0; b < buckets; b++) {
       const end = now - b * 60_000;

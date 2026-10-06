@@ -12,6 +12,8 @@
  * capture is needed (CLI command, replay, snapshot test).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe as BusUnsubscribe } from '@/events/EventBus';
 
 export type CapturedIpsecKind =
@@ -86,7 +88,7 @@ export class IPSecCaptureActor {
     const deviceId = (payload as { deviceId?: string }).deviceId ?? '';
     this.buffer.push({
       kind,
-      timestamp: Date.now(),
+      timestamp: simulationNowMs(),
       deviceId,
       payload: payload as Record<string, unknown>,
     });

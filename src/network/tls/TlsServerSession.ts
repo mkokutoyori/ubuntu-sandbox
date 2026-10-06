@@ -14,6 +14,8 @@
  * fidelity from `EapTlsHandshake.ts`'s 2-RTT model, which this module
  * does not reuse (see `PRD-TLS.md` §2.1.1/§2.1.5/§2.1.6).
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { generateKeyExchange, sharedSecret, isImplementedGroup } from './keyExchange';
@@ -414,7 +416,7 @@ export class TlsServerSession {
       sessionLifetimeSeconds: this.config.sessionTimeoutSeconds ?? this.config.legacySessionStore?.timeoutSeconds ?? DEFAULT_SESSION_TIMEOUT_SECONDS,
       acceptResumedSuite: (name) => usable(legacySuiteByName(name)),
       resolveSuite: legacySuiteByName,
-      now: Date.now,
+      now: simulationNowMs,
       version, suite, clientHelloBytes, clientRandom: clientHello.random, clientVersionWire,
       offeredGroups: clientHello.extensions.supportedGroups, alpn: this.negotiatedAlpnProtocol,
       serverSupportsTls13: this.protocols.includes('1.3'),
@@ -463,7 +465,7 @@ export class TlsServerSession {
   /** Redeems the client's PSK ticket, if offered and valid; null if not offered, unknown, or expired. */
   private resolvePsk(clientHello: ClientHello): RedeemedPsk | null {
     if (!clientHello.extensions.preSharedKey || !this.config.sessionTicketStore) return null;
-    const ticket = this.config.sessionTicketStore.redeem(clientHello.extensions.preSharedKey, Date.now());
+    const ticket = this.config.sessionTicketStore.redeem(clientHello.extensions.preSharedKey, simulationNowMs());
     if (!ticket) return null;
     return { psk: deriveResumptionPsk(ticket), hash: suiteInfo(ticket.cipherSuite).hash };
   }
@@ -659,7 +661,7 @@ export class TlsServerSession {
       ticketNonce: randomNonce('ticket-nonce'),
       cipherSuite: this.negotiatedCipherSuite as CipherSuite,
       ticketLifetime: 7200,
-      issuedAt: Date.now(),
+      issuedAt: simulationNowMs(),
       consumed: false,
     };
     this.config.sessionTicketStore.issue(ticket);

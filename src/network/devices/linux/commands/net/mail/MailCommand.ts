@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { deliverLocalMessage, resolveLocalPart, type MailDropFileSystem } from '@/network/smtp/localDelivery';
 import { splitHeadersAndBody } from '@/network/smtp/envelope';
 
@@ -53,7 +55,7 @@ export function sendMail(
   for (const recipient of recipients) {
     if (deps.isLocalRecipient(recipient)) {
       const owner = deps.resolveRecipientOwner?.(resolveLocalPart(recipient)) ?? { uid: deps.senderUid, gid: deps.senderGid };
-      deliverLocalMessage(deps.vfs, recipient, { envelopeFrom, receivedAt: Date.now(), rawMessage }, owner);
+      deliverLocalMessage(deps.vfs, recipient, { envelopeFrom, receivedAt: simulationNowMs(), rawMessage }, owner);
       delivered.push(recipient);
     } else if (deps.relay) {
       deps.relay(recipient, envelopeFrom, rawMessage);

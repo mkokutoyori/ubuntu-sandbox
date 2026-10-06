@@ -15,6 +15,8 @@
  * genuine LDAP client.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta, type Modification } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
@@ -153,7 +155,7 @@ export class DirectoryStore {
     adminPassword: string,
     opts: { skipSeed?: boolean; sharedSchemaValidator?: SchemaValidator; now?: () => Date } = {},
   ) {
-    this.now = opts.now ?? (() => new Date());
+    this.now = opts.now ?? (() => simulationDate());
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
     this.schemaValidator = opts.sharedSchemaValidator ?? new SchemaValidator();
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
@@ -1379,7 +1381,7 @@ export class DirectoryStore {
 
   /** `Add-KdsRootKey` — the forest-wide secret every gMSA's managed password is derived from in real AD; this simulator only needs its presence (as a real prerequisite `New-ADServiceAccount` enforces), not the actual key-derivation cryptography. */
   addKdsRootKey(): { keyId: string; effectiveTime: string } {
-    this.kdsRootKey = { keyId: generateId(), effectiveTime: new Date().toISOString() };
+    this.kdsRootKey = { keyId: generateId(), effectiveTime: simulationDate().toISOString() };
     return this.kdsRootKey;
   }
 

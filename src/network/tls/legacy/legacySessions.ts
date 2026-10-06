@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { aesGcmEncrypt, aesGcmDecrypt, AES_GCM_TAG_SIZE } from '@/crypto/cipher';
 import { bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import type { LegacyVersion } from './legacyCipherSuites';
@@ -28,7 +30,7 @@ export class LegacySessionStore {
 
   constructor(
     readonly timeoutSeconds: number = DEFAULT_SESSION_TIMEOUT_SECONDS,
-    private readonly clock: () => number = Date.now,
+    private readonly clock: () => number = simulationNowMs,
   ) {}
 
   put(state: LegacySessionState): void {
@@ -57,7 +59,7 @@ export class LegacySessionStore {
 const NONCE_LENGTH = 12;
 
 export class LegacyTicketCodec {
-  constructor(private readonly key: Uint8Array, private readonly clock: () => number = Date.now) {
+  constructor(private readonly key: Uint8Array, private readonly clock: () => number = simulationNowMs) {
     if (key.length !== 32) throw new RangeError('ticket key must be 32 bytes');
   }
 

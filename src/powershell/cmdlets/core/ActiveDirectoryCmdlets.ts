@@ -11,6 +11,8 @@
  * already be a promoted domain controller.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
@@ -565,7 +567,7 @@ export class GetADUserCmdlet implements ICmdlet {
     // maxPasswordAgeDays===0 (either makes the password never expire,
     // matching real AD). PasswordExpired compares PasswordLastSet against
     // the effective policy's max age.
-    const now = ctx.providers.scheduledTasks?.now?.() ?? new Date();
+    const now = ctx.providers.scheduledTasks?.now?.() ?? simulationDate();
     const vue = adView(ctx, USER_DEFAULT_PROPERTIES);
     const withPasswordFields = (u: AdUserInfo): Record<string, PSValue> => {
       const obj = userToPSObject(u);

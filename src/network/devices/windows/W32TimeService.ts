@@ -44,6 +44,8 @@
  * l'exterieur » verifiable au lieu d'etre une phrase.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { isValidIPv4 } from '../../core/ip';
 
@@ -77,14 +79,14 @@ export class W32TimeService {
   private peers: W32Peer[] = [];
   private flags: SyncFromFlags = 'domhier';
   private reliable = false;
-  private demarreALe = Date.now();
+  private demarreALe = simulationNowMs();
 
   constructor(private readonly host: W32TimeHost) {}
 
   getPeers(): readonly W32Peer[] { return this.peers; }
   getFlags(): SyncFromFlags { return this.flags; }
   isReliable(): boolean { return this.reliable; }
-  getUptimeSec(): number { return Math.max(0, Math.floor((Date.now() - this.demarreALe) / 1000)); }
+  getUptimeSec(): number { return Math.max(0, Math.floor((simulationNowMs() - this.demarreALe) / 1000)); }
 
   /**
    * `w32tm /config /manualpeerlist:"..." /syncfromflags:... /reliable:...`

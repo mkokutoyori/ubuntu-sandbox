@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IPAddress } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -81,7 +83,7 @@ export class PrimaryZoneAgent {
   }
 
   private async answerUpdate(query: DnsMessage, raw?: Uint8Array): Promise<DnsMessage> {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Math.floor(simulationNowMs() / 1000);
     const auth = authorizeUpdate(raw, this.updatePolicy, this.keyring, now);
     const reply = (rcode: number): DnsMessage =>
       signIfKeyed(updateResponse(query, rcode), auth, now);
@@ -138,7 +140,7 @@ export class PrimaryZoneAgent {
   }
 
   private answerTransfer(query: DnsMessage, raw?: Uint8Array): DnsMessage | DnsMessage[] {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Math.floor(simulationNowMs() / 1000);
     const auth = authorizeUpdate(raw, this.transferPolicy, this.keyring, now);
     if (auth.rcode !== DnsRcode.NOERROR) {
       return signIfKeyed({

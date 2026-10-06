@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
 import { RSA_MODULUS_DEFAUT, RSA_MODULUS_MAX, RSA_MODULUS_MIN } from './CiscoSecurityCommands';
@@ -74,7 +76,7 @@ export function cryptoKeySpecs(ctx: () => CryptoKeyHost): CommandSpec[] {
         // signature.
         const general = args['usage-keys'] === undefined;
 
-        host.keys().push({ label, modulus, general, generatedAtMs: Date.now() });
+        host.keys().push({ label, modulus, general, generatedAtMs: simulationNowMs() });
         // Generer les cles est ce qui monte le serveur SSH sur IOS, donc
         // l'ecouteur doit suivre : la configuration et le service ne
         // peuvent pas se contredire.

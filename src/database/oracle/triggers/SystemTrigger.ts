@@ -16,6 +16,8 @@
  * `enabled` flag flipped by ALTER TRIGGER … {ENABLE|DISABLE}.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 export type TriggerTiming = 'BEFORE' | 'AFTER';
 export type TriggerEvent =
   | 'STARTUP' | 'SHUTDOWN'
@@ -53,7 +55,7 @@ export class SystemTrigger {
     this.scopeSchema = init.scopeSchema ? init.scopeSchema.toUpperCase() : null;
     this.body = init.body;
     this.enabled = init.enabled ?? true;
-    this.created = init.created ?? new Date();
+    this.created = init.created ?? simulationDate();
   }
 
   /** Does this trigger apply for the given event + (schema, ifScope)? */
@@ -67,7 +69,7 @@ export class SystemTrigger {
   }
 
   /** Stamp a successful firing. */
-  recordFiring(at: Date = new Date()): void {
+  recordFiring(at: Date = simulationDate()): void {
     this.lastFiredAt = at;
     this.fireCount++;
   }

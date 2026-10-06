@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 export type OmfBackupKind =
   | 'datafile-full'
   | 'datafile-incremental-0'
@@ -38,7 +40,7 @@ export function omfDatedDirectory(
   recoveryFileDest: string,
   dbUniqueName: string,
   kind: OmfBackupKind,
-  at: Date = new Date(),
+  at: Date = simulationDate(),
 ): string {
   const pad = (n: number): string => String(n).padStart(2, '0');
   const day = `${at.getFullYear()}_${pad(at.getMonth() + 1)}_${pad(at.getDate())}`;
@@ -51,7 +53,7 @@ export function omfBackupPiecePath(
   dbUniqueName: string,
   kind: OmfBackupKind,
   label: string,
-  at: Date = new Date(),
+  at: Date = simulationDate(),
   unique: string = omfUniqueString(),
 ): string {
   const directory = omfDatedDirectory(recoveryFileDest, dbUniqueName, kind, at);

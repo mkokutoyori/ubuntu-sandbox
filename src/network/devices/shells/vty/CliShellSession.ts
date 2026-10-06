@@ -19,6 +19,8 @@
  * mutable state bag.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 let nextSessionSeq = 1;
 
 export type CliLineKind = 'con' | 'aux' | 'vty';
@@ -149,7 +151,7 @@ export class CliShellSession {
     this._lineRecordId = recordId;
   }
 
-  readonly openedAt: number = Date.now();
+  readonly openedAt: number = simulationNowMs();
 
   // ── Mutable state — snapshot.ed by the shell on every exec ──────
   state: VtySnapshot;

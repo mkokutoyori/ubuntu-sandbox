@@ -2,6 +2,8 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
@@ -683,7 +685,7 @@ export class LinuxCommandExecutor {
       vfs: this.vfs,
       users: this.userMgr,
       logs: this.logMgr,
-      clock: () => Date.now(),
+      clock: () => simulationNowMs(),
       logins: () => this.sessionTable?.list().map((session) => ({ user: session.user })) ?? [],
       auditdRunning: () => this.auditDaemon?.running ?? false,
       hostname: () => kernelHostname(this.vfs),
@@ -1244,7 +1246,7 @@ export class LinuxCommandExecutor {
       () => renderProcLoadavg(loadSnapshot(this.processMgr)));
     this.vfs.registerGeneratedFile('/proc/stat', () => renderProcStat(
       this.processMgr, this.hardware.cpu.logicalCpus,
-      this.lifecycle.uptimeSeconds(), this.lifecycle.bootedAt() ?? new Date()));
+      this.lifecycle.uptimeSeconds(), this.lifecycle.bootedAt() ?? simulationDate()));
   }
 
   /**
@@ -1455,7 +1457,7 @@ export class LinuxCommandExecutor {
       }
       const remoteEvents = (found?.device as { getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; channelType?: string; durationMs?: number }) => void } } } | undefined)
         ?.getSshServerContext?.()?.events;
-      const t0 = Date.now();
+      const t0 = simulationNowMs();
       remoteEvents?.emit({ kind: 'channel_opened', user: remoteUserName, channelType: 'sftp' });
       const session = new SftpInteractiveSession({
         local: new VfsSftpFileSystem(this.vfs, {
@@ -1465,7 +1467,7 @@ export class LinuxCommandExecutor {
         initialLocalCwd: this.cwd,
       });
       session.run(SftpCommandScript.parse(stdin));
-      remoteEvents?.emit({ kind: 'channel_closed', user: remoteUserName, channelType: 'sftp', durationMs: Date.now() - t0 });
+      remoteEvents?.emit({ kind: 'channel_closed', user: remoteUserName, channelType: 'sftp', durationMs: simulationNowMs() - t0 });
       return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
     }
 
@@ -2405,7 +2407,7 @@ export class LinuxCommandExecutor {
     this.logMgr.logAuth('sudo', text, 0);
     if (auth.logfile) {
       const existingCustom = this.vfs.readFile(auth.logfile) ?? '';
-      this.vfs.writeFile(auth.logfile, `${existingCustom}${fmtSyslogTimestamp(new Date())} ${auth.hostname} sudo: ${text}\n`, 0, 0, 0o022);
+      this.vfs.writeFile(auth.logfile, `${existingCustom}${fmtSyslogTimestamp(simulationDate())} ${auth.hostname} sudo: ${text}\n`, 0, 0, 0o022);
     }
   }
 
@@ -2649,7 +2651,7 @@ export class LinuxCommandExecutor {
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
   registerProcess(pid: number, user: string, command: string): void {
-    this._systemProcesses.set(pid, { user, command, startTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) });
+    this._systemProcesses.set(pid, { user, command, startTime: simulationDate().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) });
     // Also surface this in the real process table so ps/top see it.
     // The OS-managed PID differs from the caller-supplied one, so we
     // remember the mapping for unregisterProcess to clean up later.
@@ -5101,7 +5103,7 @@ export class LinuxCommandExecutor {
             currentUser: this.userMgr.currentUser,
             currentTty: 'tty1',
             bootDate: this.lifecycle.bootedAt(),
-            now: new Date(),
+            now: simulationDate(),
           }, args);
           const exit = out.startsWith('who: ') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5115,7 +5117,7 @@ export class LinuxCommandExecutor {
             table: this.sessionTable,
             utmp: this.utmpSync,
             uptimeSeconds: this.lifecycle.uptimeSeconds(),
-            now: new Date(),
+            now: simulationDate(),
           }, args);
           const exit = out.startsWith('w: ') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5130,7 +5132,7 @@ export class LinuxCommandExecutor {
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
             kernelRelease: this.identity.kernel.release,
-            now: new Date(),
+            now: simulationDate(),
           }, args);
           const exit = out.startsWith('last: ') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5144,7 +5146,7 @@ export class LinuxCommandExecutor {
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
             kernelRelease: this.identity.kernel.release,
-            now: new Date(),
+            now: simulationDate(),
           }, args);
           const exit = out.startsWith('lastb: ') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5158,7 +5160,7 @@ export class LinuxCommandExecutor {
             table: this.sessionTable,
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
-            now: new Date(),
+            now: simulationDate(),
             action: this.buildLoginctlAction(this.sessionTable),
           }, args);
           const exit = out.startsWith('Failed to') || out.startsWith('Unknown command') ? 1 : 0;
@@ -5781,7 +5783,7 @@ export class LinuxCommandExecutor {
           return {
             output:
               'SQL*Plus: Release 19.0.0.0.0 - Production on ' +
-              new Date().toUTCString(),
+              simulationDate().toUTCString(),
             exitCode: 0,
           };
         }
@@ -7124,7 +7126,7 @@ export class LinuxCommandExecutor {
 
     const header = 'Username         Port     From             Latest';
     const rows: string[] = [header];
-    const now = Date.now();
+    const now = simulationNowMs();
     const beforeCutoff = beforeDays !== null && Number.isFinite(beforeDays)
       ? now - beforeDays * 86400_000
       : null;
@@ -7391,7 +7393,7 @@ export class LinuxCommandExecutor {
     const r = runWatch(args, {
       hostname,
       now: () => {
-        const d = new Date();
+        const d = simulationDate();
         const pad = (n: number) => String(n).padStart(2, '0');
         return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
       },
@@ -7652,7 +7654,7 @@ export class LinuxCommandExecutor {
 
     if (stateFile && !dryRun) {
       const content = 'logrotate state -- version 2\n'
-        + logs.map((l) => `"${this.vfs.normalizePath(l, this.cwd)}" ${new Date().toISOString().slice(0, 10)}`).join('\n') + '\n';
+        + logs.map((l) => `"${this.vfs.normalizePath(l, this.cwd)}" ${simulationDate().toISOString().slice(0, 10)}`).join('\n') + '\n';
       this.vfs.writeFile(this.vfs.normalizePath(stateFile, this.cwd), content,
         this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
     }
@@ -7677,7 +7679,7 @@ export class LinuxCommandExecutor {
     }
 
     if (opt.dateext) {
-      const d = new Date();
+      const d = simulationDate();
       const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
       this.vfs.writeFile(`${abs}-${stamp}`, content, uid, gid, this.umask);
     } else {

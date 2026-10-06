@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_NETFLOW = 2055;
 export const NETFLOW_V5_MAX_RECORDS = 30;
@@ -91,7 +93,7 @@ export function newRecord(input: {
   protocol: number; bytes?: number; packets?: number; tos?: number;
   nextHopIp?: string; tcpFlags?: number;
 }, nowMs?: number): NetFlowV5Record {
-  const now = nowMs ?? Date.now();
+  const now = nowMs ?? simulationNowMs();
   return {
     sourceIp: input.sourceIp,
     destinationIp: input.destinationIp,

@@ -8,6 +8,8 @@
  * everything else lives here. Adding a function touches only this module.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { FunctionCallExpr, Expression } from '../../engine/parser/ASTNode';
 import { OracleError } from '../../engine/types/DatabaseError';
 import type { CellValue, StorageRow, ColumnMeta as StorageColMeta } from '../../engine/storage/BaseStorage';
@@ -343,8 +345,8 @@ export class ScalarFunctionEvaluator {
       }
 
       // Date functions
-      case 'SYSDATE': return new Date().toISOString().slice(0, 19).replace('T', ' ');
-      case 'SYSTIMESTAMP': return new Date().toISOString();
+      case 'SYSDATE': return simulationDate().toISOString().slice(0, 19).replace('T', ' ');
+      case 'SYSTIMESTAMP': return simulationDate().toISOString();
       case 'TO_CHAR': {
         if (args[0] == null) return null;
         const d = coerceDate(args[0]);
@@ -446,7 +448,7 @@ export class ScalarFunctionEvaluator {
 
       // DBMS_UTILITY functions
       case 'GET_TIME': {
-        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return Date.now() % 2147483647;
+        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return simulationNowMs() % 2147483647;
         return null;
       }
       case 'FORMAT_ERROR_BACKTRACE': {

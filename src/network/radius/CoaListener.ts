@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import {
   type RadiusPacket, type RadiusAttribute,
@@ -112,7 +114,7 @@ export class CoaListener {
   }
 
   private pruneDedupCache(): void {
-    const cutoff = Date.now() - DEDUP_TTL_MS;
+    const cutoff = simulationNowMs() - DEDUP_TTL_MS;
     for (const [key, entry] of this.recentReplies) {
       if (entry.sentAt < cutoff) this.recentReplies.delete(key);
     }
@@ -132,7 +134,7 @@ export class CoaListener {
       attributes: errorCause ? [errorCauseAttr(errorCause)] : [],
     };
     response = withResponseAuthenticator(response, request.authenticator, this.sharedSecret);
-    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.send(inPort, dstIp, clientPort, response);
   }
 

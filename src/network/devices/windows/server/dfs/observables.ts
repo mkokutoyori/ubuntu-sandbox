@@ -4,6 +4,8 @@
  * sync` as it completes (or fails) a pull cycle.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { WritableSignal, type Signal } from '@/events/Signal';
 
 export interface DfsLogEntryVM {
@@ -27,14 +29,14 @@ export class DfsSignalStore {
   readonly stats = new WritableSignal<DfsStatsVM>(EMPTY_STATS);
 
   recordSynced(groupName: string, filesApplied: number): void {
-    const entry: DfsLogEntryVM = { timestamp: Date.now(), kind: 'synced', groupName, detail: `filesApplied=${filesApplied}` };
+    const entry: DfsLogEntryVM = { timestamp: simulationNowMs(), kind: 'synced', groupName, detail: `filesApplied=${filesApplied}` };
     this.log.set([...this.log.get(), entry].slice(-LOG_CAPACITY));
     const stats = this.stats.get();
     this.stats.set({ ...stats, syncsCompleted: stats.syncsCompleted + 1, filesApplied: stats.filesApplied + filesApplied });
   }
 
   recordFailed(groupName: string, error: string): void {
-    const entry: DfsLogEntryVM = { timestamp: Date.now(), kind: 'failed', groupName, detail: error };
+    const entry: DfsLogEntryVM = { timestamp: simulationNowMs(), kind: 'failed', groupName, detail: error };
     this.log.set([...this.log.get(), entry].slice(-LOG_CAPACITY));
     this.stats.set({ ...this.stats.get(), syncsFailed: this.stats.get().syncsFailed + 1 });
   }

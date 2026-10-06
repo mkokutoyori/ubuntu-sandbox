@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   huaweiIrreversibleCipher, huaweiCipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher,
 } from '@/crypto/passwords/huawei';
@@ -34,7 +36,7 @@ export function applyVrpLocalUser(
     }
     next = existing.withSecretRetainingHistory(stored, algo, policy.historyMaxRecords ?? 0);
     if (policy.expireDays) {
-      next = next.withPasswordExpireAt(Date.now() + policy.expireDays * 86_400_000);
+      next = next.withPasswordExpireAt(simulationNowMs() + policy.expireDays * 86_400_000);
     }
   } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
     next = existing.withPrivilege(Number(args[3]) || existing.privilege);

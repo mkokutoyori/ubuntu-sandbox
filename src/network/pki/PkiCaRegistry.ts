@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { CertificateAuthority } from './CertificateAuthority';
 
 /**
@@ -11,7 +13,7 @@ import { CertificateAuthority } from './CertificateAuthority';
  */
 const registry = new Map<string, CertificateAuthority>();
 
-export function getOrCreateCA(key: string, now: number = Date.now()): CertificateAuthority {
+export function getOrCreateCA(key: string, now: number = simulationNowMs()): CertificateAuthority {
   let ca = registry.get(key);
   if (!ca) {
     ca = CertificateAuthority.generate(`CN=${key}`, { now });

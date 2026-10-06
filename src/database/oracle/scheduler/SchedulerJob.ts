@@ -1,3 +1,5 @@
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 export type JobType = 'PLSQL_BLOCK' | 'STORED_PROCEDURE' | 'EXECUTABLE';
 export type JobState = 'DISABLED' | 'SCHEDULED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'BROKEN' | 'STOPPED';
 export type JobRunStatus = 'SUCCEEDED' | 'FAILED' | 'STOPPED';
@@ -50,7 +52,7 @@ export class SchedulerJob {
     this.jobName = init.jobName.toUpperCase();
     this.jobType = init.jobType ?? 'PLSQL_BLOCK';
     this.jobAction = init.jobAction;
-    this.createdAt = new Date();
+    this.createdAt = simulationDate();
     this.startDate = init.startDate ?? null;
     this.repeatInterval = init.repeatInterval ?? null;
     this.endDate = init.endDate ?? null;
@@ -63,13 +65,13 @@ export class SchedulerJob {
     this.maxRunDuration = init.maxRunDuration ?? null;
     this.maxRuns = init.maxRuns ?? null;
     this.maxFailures = init.maxFailures ?? null;
-    this.nextRunDate = this.enabled ? (init.startDate ?? new Date()) : null;
+    this.nextRunDate = this.enabled ? (init.startDate ?? simulationDate()) : null;
   }
 
   enable(): void {
     this.enabled = true;
     if (this.state === 'DISABLED') this.state = 'SCHEDULED';
-    if (this.nextRunDate === null) this.nextRunDate = this.startDate ?? new Date();
+    if (this.nextRunDate === null) this.nextRunDate = this.startDate ?? simulationDate();
   }
 
   disable(): void {
@@ -98,8 +100,8 @@ export class SchedulerJob {
   private computeNextRun(): Date | null {
     if (!this.enabled || !this.repeatInterval) return null;
     const m = this.repeatInterval.toUpperCase().match(/FREQ\s*=\s*(DAILY|HOURLY|MINUTELY|WEEKLY|MONTHLY)/);
-    if (!m) return new Date(Date.now() + 60_000);
-    const base = (this.lastEndDate ?? new Date()).getTime();
+    if (!m) return new Date(simulationNowMs() + 60_000);
+    const base = (this.lastEndDate ?? simulationDate()).getTime();
     const interval = m[1] === 'MINUTELY' ? 60_000
       : m[1] === 'HOURLY' ? 3_600_000
       : m[1] === 'DAILY' ? 86_400_000

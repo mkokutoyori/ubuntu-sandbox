@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { PkiKeyPair, type PkiPrivateKey, type PkiPublicKey } from '@/network/pki/PkiKeyPair';
 import { sha256Hex } from '@/crypto/hash/sha256';
 
@@ -163,6 +165,6 @@ export interface DkimSelector {
 
 export function generateDkimSelector(domain: string, selectorName?: string): DkimSelector {
   const keyPair = PkiKeyPair.generate('rsa');
-  const selector = selectorName ?? `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const selector = selectorName ?? `s${simulationNowMs().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   return { domain, selector, keyPair };
 }

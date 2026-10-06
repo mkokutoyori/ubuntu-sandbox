@@ -14,6 +14,8 @@
  *   user, privileged, config, config-if, config-vlan
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { CiscoShellBase } from './CiscoShellBase';
 import {
   DEFAULT_LOAD_BALANCE, LOAD_BALANCE_METHODS, selectBundleMemberForFlow,
@@ -866,7 +868,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private stpDebugEvents(sw: CiscoSwitch, before: Map<string, import('../../devices/Switch').STPPortState>): string {
-    const stamp = new Date().toISOString().slice(11, 19);
+    const stamp = simulationDate().toISOString().slice(11, 19);
     const lines: string[] = [];
     for (const [port, state] of sw._getSTPStates()) {
       if (before.get(port) === state) continue;
@@ -6259,7 +6261,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         lines.push(
           `${this.abbreviateInterface(m.portName).padEnd(10)}`
           + `${(p ? `${p.systemPriority},${p.systemId}` : 'none').padEnd(27)}`
-          + `${(p ? `${Math.round((Date.now() - m.lastRxMs) / 1000)}s` : '-').padEnd(5)}`
+          + `${(p ? `${Math.round((simulationNowMs() - m.lastRxMs) / 1000)}s` : '-').padEnd(5)}`
           + `${(agent.rateOf(m) ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')}     `
           + `${String(p?.portPriority ?? 0).padEnd(11)}`
           + `${String(p?.key ?? 0).padEnd(10)}`

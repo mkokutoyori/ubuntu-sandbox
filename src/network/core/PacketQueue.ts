@@ -7,6 +7,8 @@
  * - 1.9: Adds proper cleanup and size limiting (prevents memory leaks)
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { ARP_TIMERS } from './constants';
 import {
   getDefaultScheduler,
@@ -93,7 +95,7 @@ export class PacketQueue<TPacket, TAddress extends string> {
       outIface,
       nextHop,
       timer: Symbol('unarmed'),
-      enqueuedAt: Date.now(),
+      enqueuedAt: simulationNowMs(),
       onExpire,
     };
 

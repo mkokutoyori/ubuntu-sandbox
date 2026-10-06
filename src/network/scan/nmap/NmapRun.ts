@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   NMAP_USAGE, NmapImmediateOutput, NmapOptionError, parseNmapArgs,
 } from './NmapOptions';
@@ -52,7 +54,7 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
   const clock: NmapClock = (format, atMs) => host.localTime(format, atMs);
   if (options.fatalAfterBanner !== undefined) {
     return refuse([
-      ...options.warnings, bannerLine(clock, Date.now()), options.fatalAfterBanner, 'QUITTING!',
+      ...options.warnings, bannerLine(clock, simulationNowMs()), options.fatalAfterBanner, 'QUITTING!',
     ].join('\n'));
   }
 

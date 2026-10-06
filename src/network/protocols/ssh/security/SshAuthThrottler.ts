@@ -16,6 +16,8 @@
  * delivers the throttled-event to every subscriber (logger, UI, etc.).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type {
   ISshServerEventBus,
   SshServerEvent,
@@ -48,7 +50,7 @@ export class SshAuthThrottler {
     this.threshold = opts.threshold ?? 5;
     this.windowMs = opts.windowMs ?? 60_000;
     this.blockMs = opts.blockMs ?? 300_000;
-    this.clock = opts.clock ?? Date.now;
+    this.clock = opts.clock ?? simulationNowMs;
     this.unsubscribe = bus.on('auth_failure', (e) => this.handle(e));
   }
 

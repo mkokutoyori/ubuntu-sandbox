@@ -4,6 +4,8 @@
  * which uses Math.random; its output prefix is still deterministic).
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { RmanTag } from '../values/RmanTag';
 import { omfBackupPiecePath } from '@/database/oracle/storage/OracleManagedFiles';
 import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
@@ -45,13 +47,13 @@ export function generatePieceName(
   tag: RmanTag,
   recoveryFileDest: string,
   kind: OmfBackupKind = 'datafile-full',
-  at: Date = new Date(),
+  at: Date = simulationDate(),
 ): string {
   return omfBackupPiecePath(recoveryFileDest, dbName, kind, tag.label, at);
 }
 
 /** DD-MON-YYYY HH:MM:SS — the format RMAN prints. */
-export function formatOracleDate(d: Date = new Date()): string {
+export function formatOracleDate(d: Date = simulationDate()): string {
   const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getDate())}-${months[d.getMonth()]}-${d.getFullYear()} `

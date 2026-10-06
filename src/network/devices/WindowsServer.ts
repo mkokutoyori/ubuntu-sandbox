@@ -16,6 +16,8 @@
  * (P7-P11) all attach here, not to `WindowsPC`.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { WindowsPC } from './WindowsPC';
 import { RoleManager } from './windows/server/RoleManager';
 import { DirectoryStore } from './windows/server/ad/DirectoryStore';
@@ -441,7 +443,7 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: 'Install-ExchangeServer : This computer must be joined to an Active Directory domain before Exchange Server can be installed.' };
     }
     const org = getOrCreateExchangeOrganization(organizationName);
-    org.servers.set(this.getHostname(), { hostname: this.getHostname(), roles: new Set(roles), installedAt: Date.now() });
+    org.servers.set(this.getHostname(), { hostname: this.getHostname(), roles: new Set(roles), installedAt: simulationNowMs() });
     this.exchangeOrgName = organizationName;
     this.startAutodiscoverService();
     this.startExchangeRoleServices(roles);
@@ -954,10 +956,10 @@ export class WindowsServer extends WindowsPC {
     const subject = delivered.message.headers.get('Subject') ?? '';
     const recipients = outcome.redirectTo ? [outcome.redirectTo] : delivered.envelope.to;
     for (const recipient of recipients) {
-      this.deliverToRecipient(recipient, delivered.envelope.from, subject, outcome.finalBody, Date.now());
+      this.deliverToRecipient(recipient, delivered.envelope.from, subject, outcome.finalBody, simulationNowMs());
     }
     for (const bcc of outcome.blindCopyTo) {
-      this.deliverToRecipient(bcc, delivered.envelope.from, subject, outcome.finalBody, Date.now());
+      this.deliverToRecipient(bcc, delivered.envelope.from, subject, outcome.finalBody, simulationNowMs());
     }
     this.recordDagChanges();
   }
@@ -1004,13 +1006,13 @@ export class WindowsServer extends WindowsPC {
   addMailboxDatabaseCopy(dagName: string, database: string, server: string): AdDsOpResult {
     const dag = this.getDatabaseAvailabilityGroup(dagName);
     if (!dag) return { ok: false, message: `Add-MailboxDatabaseCopy : The operation couldn't be performed because object '${dagName}' couldn't be found.` };
-    return dag.addDatabaseCopy(database, server, Date.now());
+    return dag.addDatabaseCopy(database, server, simulationNowMs());
   }
 
   updateMailboxDatabaseCopy(dagName: string, database: string, server: string): AdDsOpResult {
     const dag = this.getDatabaseAvailabilityGroup(dagName);
     if (!dag) return { ok: false, message: `Update-MailboxDatabaseCopy : The operation couldn't be performed because object '${dagName}' couldn't be found.` };
-    return dag.updateCopy(database, server, Date.now());
+    return dag.updateCopy(database, server, simulationNowMs());
   }
 
   getMailboxDatabaseCopyStatus(dagName: string, database?: string): MailboxDatabaseCopy[] {
@@ -1058,12 +1060,12 @@ export class WindowsServer extends WindowsPC {
         latencyMs: 0, failureReason: 'One or both mailboxes could not be found.',
       };
     }
-    const start = Date.now();
+    const start = simulationNowMs();
     const results = this.deliverToRecipient(
       toMailbox.primarySmtpAddress, fromMailbox.primarySmtpAddress, 'Test-Mailflow',
-      'Subject: Test-Mailflow\r\n\r\nThis is a mail flow test message.', Date.now(),
+      'Subject: Test-Mailflow\r\n\r\nThis is a mail flow test message.', simulationNowMs(),
     );
-    const latencyMs = Date.now() - start;
+    const latencyMs = simulationNowMs() - start;
     if (!results.some((r) => r.delivered)) {
       const failureReason = results[0]?.reason === 'quota-exceeded' ? 'Recipient mailbox quota exceeded.' : 'Recipient mailbox unavailable.';
       return { success: false, fromMailbox: fromMailbox.primarySmtpAddress, toMailbox: toMailbox.primarySmtpAddress, latencyMs, failureReason };

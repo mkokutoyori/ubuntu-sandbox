@@ -4,6 +4,8 @@
  * the implicit `ORA$BASE` root edition.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -12,7 +14,7 @@ registerView({
   name: 'DBA_EDITIONS',
   comment: 'Edition-based redefinition root catalogue',
   query({ instance }) {
-    const created = (instance.startupTime ?? new Date()).toISOString();
+    const created = (instance.startupTime ?? simulationDate()).toISOString();
     return queryResult(
       [
         col.str('EDITION_NAME', 128),

@@ -11,6 +11,8 @@
  * `host.*` topics on the bus.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { WritableSignal, type Signal } from '@/events/Signal';
 
 // ── View-models ────────────────────────────────────────────────────────
@@ -112,7 +114,7 @@ export interface ArpEntryLike {
 }
 
 export function projectArpTable(entries: Map<string, ArpEntryLike>): HostArpEntryVM[] {
-  const now = Date.now();
+  const now = simulationNowMs();
   const out: HostArpEntryVM[] = [];
   for (const [ip, entry] of entries) {
     out.push({

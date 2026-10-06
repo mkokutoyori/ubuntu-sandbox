@@ -4,6 +4,8 @@
  * as it issues certificates — same shape as `kerberos/observables.ts`.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { WritableSignal, type Signal } from '@/events/Signal';
 
 export interface AdcsLogEntryVM {
@@ -26,7 +28,7 @@ export class AdcsSignalStore {
 
   recordCertificateIssued(subject: string, templateName: string, serialNumber: string): void {
     const entry: AdcsLogEntryVM = {
-      timestamp: Date.now(), kind: 'certificate-issued', subject,
+      timestamp: simulationNowMs(), kind: 'certificate-issued', subject,
       detail: `template=${templateName} serial=${serialNumber}`,
     };
     this.log.set([...this.log.get(), entry].slice(-LOG_CAPACITY));

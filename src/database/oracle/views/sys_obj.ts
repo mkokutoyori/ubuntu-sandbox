@@ -2,6 +2,8 @@
  * SYS.OBJ$ — base object table (tables, indexes, views), from storage.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
@@ -13,15 +15,15 @@ registerView({
     const rows: (string | number | null)[][] = [];
     let objId = 1000;
     for (const t of storage.getAllTables()) {
-      rows.push([objId++, t.schema, t.name, 2, 'TABLE', 'VALID', new Date().toISOString()]);
+      rows.push([objId++, t.schema, t.name, 2, 'TABLE', 'VALID', simulationDate().toISOString()]);
     }
     for (const schema of storage.getSchemas()) {
       for (const idx of storage.getIndexes(schema)) {
-        rows.push([objId++, schema, idx.name, 1, 'INDEX', 'VALID', new Date().toISOString()]);
+        rows.push([objId++, schema, idx.name, 1, 'INDEX', 'VALID', simulationDate().toISOString()]);
       }
     }
     for (const v of storage.getAllViews()) {
-      rows.push([objId++, v.schema, v.name, 4, 'VIEW', 'VALID', new Date().toISOString()]);
+      rows.push([objId++, v.schema, v.name, 4, 'VIEW', 'VALID', simulationDate().toISOString()]);
     }
     return queryResult(
       [

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@/crypto/encoding';
@@ -239,7 +241,7 @@ export class RadiusServerAgent {
     const terminateCause = terminateCauseAttr
       ? ACCT_TERMINATE_CAUSE_BY_NUMBER.get(Number(terminateCauseAttr.value)) : undefined;
 
-    const now = Date.now();
+    const now = simulationNowMs();
     const existing = this.acctSessions.get(sessionId);
     this.acctSessions.set(sessionId, {
       sessionId, username, nasIp, status,
@@ -381,28 +383,28 @@ export class RadiusServerAgent {
   }
 
   private pruneDedupCache(): void {
-    const cutoff = Date.now() - DEDUP_TTL_MS;
+    const cutoff = simulationNowMs() - DEDUP_TTL_MS;
     for (const [key, entry] of this.recentReplies) {
       if (entry.sentAt < cutoff) this.recentReplies.delete(key);
     }
   }
 
   private pruneChallenges(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const [key, entry] of this.challenges) {
       if (entry.expiresAt < now) this.challenges.delete(key);
     }
   }
 
   private pruneAcctDedupCache(): void {
-    const cutoff = Date.now() - DEDUP_TTL_MS;
+    const cutoff = simulationNowMs() - DEDUP_TTL_MS;
     for (const [key, entry] of this.recentAcctReplies) {
       if (entry.sentAt < cutoff) this.recentAcctReplies.delete(key);
     }
   }
 
   private pruneEapSessions(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const [key, entry] of this.eapSessions) {
       if (entry.expiresAt < now) this.eapSessions.delete(key);
     }
@@ -430,7 +432,7 @@ export class RadiusServerAgent {
         const session = new EapTlsServerSession(this.eapTlsConfig);
         const state = randomOpaqueToken(16);
         const eapIdentifier = (eap.identifier + 1) & 0xff;
-        this.eapTlsSessions.set(state, { session, username, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+        this.eapTlsSessions.set(state, { session, username, expiresAt: simulationNowMs() + CHALLENGE_TTL_MS });
         this.replyEapChallenge(inPort, dstIp, clientPort, request, session.start(eapIdentifier), state, dedupKey);
         return;
       }
@@ -442,7 +444,7 @@ export class RadiusServerAgent {
       const challengeHex = randomOpaqueToken(16);
       const state = randomOpaqueToken(16);
       const eapIdentifier = (eap.identifier + 1) & 0xff;
-      this.eapSessions.set(state, { username, challengeHex, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+      this.eapSessions.set(state, { username, challengeHex, expiresAt: simulationNowMs() + CHALLENGE_TTL_MS });
       const eapRequest: EapPacket = {
         type: 'eap', code: 'request', identifier: eapIdentifier,
         eapType: 'md5-challenge', md5Challenge: challengeHex,
@@ -480,7 +482,7 @@ export class RadiusServerAgent {
   }
 
   private pruneEapTlsSessions(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const [key, entry] of this.eapTlsSessions) {
       if (entry.expiresAt < now) this.eapTlsSessions.delete(key);
     }
@@ -497,7 +499,7 @@ export class RadiusServerAgent {
       this.replyEap(inPort, dstIp, clientPort, request, { type: 'eap', code: 'failure', identifier: eap.identifier }, false, undefined, dedupKey);
       return;
     }
-    ctx.expiresAt = Date.now() + CHALLENGE_TTL_MS;
+    ctx.expiresAt = simulationNowMs() + CHALLENGE_TTL_MS;
     const nextRequest = ctx.session.handle(eap);
     if (ctx.session.result === null) {
       this.replyEapChallenge(inPort, dstIp, clientPort, request, nextRequest, state, dedupKey);
@@ -582,7 +584,7 @@ export class RadiusServerAgent {
     };
     response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
     response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -612,7 +614,7 @@ export class RadiusServerAgent {
     };
     response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
     response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -642,7 +644,7 @@ export class RadiusServerAgent {
     };
     response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
     response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -676,7 +678,7 @@ export class RadiusServerAgent {
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
     const state = randomOpaqueToken(16);
-    this.challenges.set(state, { username: user.username, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+    this.challenges.set(state, { username: user.username, expiresAt: simulationNowMs() + CHALLENGE_TTL_MS });
     let response: RadiusPacket = {
       type: 'radius', code: 'access-challenge', identifier: request.identifier,
       authenticator: '00'.repeat(16),
@@ -684,7 +686,7 @@ export class RadiusServerAgent {
     };
     response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
     response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     // Published before the actual send: delivery is synchronous, so the
     // client may run the rest of the challenge round-trip to completion
     // *inside* this call — publishing after would report this challenge's
@@ -724,7 +726,7 @@ export class RadiusServerAgent {
     // before the Response Authenticator itself is computed over the packet.
     response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
     response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     // Published before the actual send — see the comment in issueChallenge().
     this.getBus().publish({
       topic: 'radius.packet.sent',
@@ -764,7 +766,7 @@ export class RadiusServerAgent {
       authenticator: '00'.repeat(16), attributes: [],
     };
     response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    this.recentAcctReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.recentAcctReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
   }
 
@@ -876,7 +878,7 @@ export class RadiusServerAgent {
     };
     response = withMessageAuthenticator(response, ctx.originalAuthenticator, ctx.nasSecret);
     response = withResponseAuthenticator(response, ctx.originalAuthenticator, ctx.nasSecret);
-    this.recentReplies.set(ctx.dedupKey, { response, sentAt: Date.now() });
+    this.recentReplies.set(ctx.dedupKey, { response, sentAt: simulationNowMs() });
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {

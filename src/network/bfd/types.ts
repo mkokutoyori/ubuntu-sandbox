@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_BFD_CONTROL = 3784;
 export const UDP_PORT_BFD_ECHO = 3785;
@@ -84,7 +86,7 @@ export function defaultSession(iface: string, neighborIp: string): BfdSessionRun
     detectMultiplier: 3,
     remoteMinTxUs: 0, remoteMinRxUs: 0,
     lastHeardMs: 0, lastTxMs: 0,
-    lastTransitionMs: Date.now(),
+    lastTransitionMs: simulationNowMs(),
     adminUp: true,
   };
 }

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
@@ -136,7 +138,7 @@ export class UdldAgent extends ReactiveAgentBase {
       remoteDeviceId: payload.senderDeviceId,
       remotePortId: payload.senderPortId,
       remoteHostname: payload.senderHostname,
-      lastHeardMs: Date.now(),
+      lastHeardMs: simulationNowMs(),
       helloIntervalSec: payload.helloIntervalSec,
       echo: payload.echo.slice(),
     };
@@ -181,7 +183,7 @@ export class UdldAgent extends ReactiveAgentBase {
     if (rt.state === newState) return;
     const oldState = rt.state;
     rt.state = newState;
-    rt.lastTransitionMs = Date.now();
+    rt.lastTransitionMs = simulationNowMs();
     this.getBus().publish({
       topic: 'udld.state.changed',
       payload: {
@@ -286,7 +288,7 @@ export class UdldAgent extends ReactiveAgentBase {
   }
 
   private expireDue(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     const stale: string[] = [];
     for (const [k, n] of this.neighbors) {
       const timeoutMs = this.config.messageTimeoutSec * 1000;

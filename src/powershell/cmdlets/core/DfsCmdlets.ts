@@ -7,6 +7,8 @@
  * (§5 P4), applied to file metadata instead of directory objects.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
@@ -394,7 +396,7 @@ export class GetDfsrStateCmdlet implements ICmdlet {
     requireDfs(ctx, 'Get-DfsrState');
     const computerNameArg = ctx.named['computername'] ?? ctx.positional[0];
     const names = computerNameArg !== undefined ? stringArrayOf(computerNameArg) : [];
-    const now = new Date().toISOString();
+    const now = simulationDate().toISOString();
     return names.map(n => ({ ComputerName: n, State: 'Normal', LastSyncTime: now }) as Record<string, PSValue>) as PSValue;
   }
 }

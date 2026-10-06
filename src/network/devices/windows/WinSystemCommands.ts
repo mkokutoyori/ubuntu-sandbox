@@ -8,6 +8,8 @@
  * WindowsPC instance.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { Port } from '../../hardware/Port';
 import { TimeZone } from '../../core/time/TimeZone';
 import { partsAt } from '../../core/time/TimeZoneRegistry';
@@ -255,7 +257,7 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-export function longDateTime(timezone = 'UTC', atMs = Date.now()): string {
+export function longDateTime(timezone = 'UTC', atMs = simulationNowMs()): string {
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
   const local = partsAt(zone, atMs);
   const hour = local.hour % 12 === 0 ? 12 : local.hour % 12;
@@ -264,14 +266,14 @@ export function longDateTime(timezone = 'UTC', atMs = Date.now()): string {
     + `${hour}:${String(local.minute).padStart(2, '0')}:${String(local.second).padStart(2, '0')} ${meridiem}`;
 }
 
-export function slashedTimestamp(timezone = 'UTC', atMs = Date.now()): string {
+export function slashedTimestamp(timezone = 'UTC', atMs = simulationNowMs()): string {
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
   const local = partsAt(zone, atMs);
   const two = (value: number): string => String(value).padStart(2, '0');
   return `${local.year}/${two(local.month)}/${two(local.day)} ${two(local.hour)}:${two(local.minute)}:${two(local.second)}`;
 }
 
-export function clockTimeWithCentiseconds(timezone = 'UTC', atMs = Date.now()): string {
+export function clockTimeWithCentiseconds(timezone = 'UTC', atMs = simulationNowMs()): string {
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
   const local = partsAt(zone, atMs);
   const centiseconds = String(Math.floor((atMs % 1000) / 10)).padStart(2, '0');

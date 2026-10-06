@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
@@ -119,7 +121,7 @@ export class DtpAgent extends ReactiveAgentBase {
     const oldOp = s.operationalMode;
     s.peerAdminMode = payload.adminMode;
     s.peerMac = payload.neighborMac;
-    s.lastHelloMs = Date.now();
+    s.lastHelloMs = simulationNowMs();
     const newOp = resolveOperationalMode(s.adminMode, s.peerAdminMode);
     s.operationalMode = newOp;
     this.getBus().publish({
@@ -205,7 +207,7 @@ export class DtpAgent extends ReactiveAgentBase {
    * device, unidirectional failure).
    */
   private expireDue(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const [portName, s] of this.config.ports) {
       if (!s.peerAdminMode || !s.lastHelloMs) continue;
       if (now - s.lastHelloMs <= this.peerTimeoutMs()) continue;

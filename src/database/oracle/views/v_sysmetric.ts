@@ -5,6 +5,8 @@
  * window is the last interval (default 15s for "instance" group).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -30,7 +32,7 @@ registerView({
   name: 'V$SYSMETRIC',
   comment: 'Current sample of per-second metrics',
   query({ runtime }) {
-    const intervalS = Math.max(15, Math.floor((Date.now() - runtime.startedAt) / 1000));
+    const intervalS = Math.max(15, Math.floor((simulationNowMs() - runtime.startedAt) / 1000));
     const valueOf = (name: string): number => {
       switch (name) {
         case 'CPU Usage Per Sec': return Math.floor(runtime.counters.executions / intervalS);
@@ -55,7 +57,7 @@ registerView({
         default: return 0;
       }
     };
-    const end = Date.now();
+    const end = simulationNowMs();
     return queryResult(
       [
         col.date('BEGIN_TIME'),

@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { HostCapableDevice } from '@/network';
 import { IPAddress } from '@/network/core/types';
@@ -150,7 +152,7 @@ export function _resetRacCssAgentAttachments(): void {
 
 function writeEvictionLogs(cluster: RacCluster, evicted: RacMember): void {
   const registry = EquipmentRegistry.getInstance();
-  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const timestamp = simulationDate().toISOString().replace('T', ' ').slice(0, 19);
 
   for (const member of cluster.members.values()) {
     if (member.status !== 'ACTIVE' || member.deviceId === evicted.deviceId) continue;

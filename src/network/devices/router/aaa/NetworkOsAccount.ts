@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import {
   huaweiIrreversibleCipher, huaweiDecipher,
@@ -158,7 +160,7 @@ export class NetworkOsAccount {
   }
 
   static create(init: NetworkOsAccountInit): NetworkOsAccount {
-    const now = init.now ?? Date.now();
+    const now = init.now ?? simulationNowMs();
     return new NetworkOsAccount({
       name: init.name,
       view: null,
@@ -229,7 +231,7 @@ export class NetworkOsAccount {
     return new NetworkOsAccount({
       ...this.snapshot(),
       ...patch,
-      updatedAt: now ?? Date.now(),
+      updatedAt: now ?? simulationNowMs(),
     });
   }
 
@@ -342,13 +344,13 @@ export class NetworkOsAccount {
     return this.mutate({ disabled: false }, now);
   }
 
-  isPasswordExpired(now: number = Date.now()): boolean {
+  isPasswordExpired(now: number = simulationNowMs()): boolean {
     if (this.passwordExpireAt !== null && this.passwordExpireAt > 0 && this.passwordExpireAt < now) return true;
     if (this.expireAt !== null && this.expireAt > 0 && this.expireAt < now) return true;
     return false;
   }
 
-  isLoginPermitted(now: number = Date.now()): { ok: boolean; reason?: string } {
+  isLoginPermitted(now: number = simulationNowMs()): { ok: boolean; reason?: string } {
     if (this.disabled) return { ok: false, reason: 'account disabled' };
     if (this.locked) return { ok: false, reason: this.lockReason ?? 'account locked' };
     if (this.isPasswordExpired(now)) return { ok: false, reason: 'account expired' };
@@ -466,7 +468,7 @@ export function publishAccountEvent(
       from: extra.from,
       method: extra.method,
       reason: extra.reason,
-      at: extra.at ?? Date.now(),
+      at: extra.at ?? simulationNowMs(),
     },
   });
 }

@@ -2,6 +2,8 @@
  * V$SERVICEMETRIC — per-service current metric snapshot.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -10,8 +12,8 @@ registerView({
   name: 'V$SERVICEMETRIC',
   comment: 'Per-service current metric',
   query({ runtime }) {
-    const intervalS = Math.max(15, Math.floor((Date.now() - runtime.startedAt) / 1000));
-    const end = Date.now();
+    const intervalS = Math.max(15, Math.floor((simulationNowMs() - runtime.startedAt) / 1000));
+    const end = simulationNowMs();
     const active = [...runtime.services.values()].filter(s => s.active);
     return queryResult(
       [

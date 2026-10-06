@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { OracleDatabase } from '../OracleDatabase';
 import type { TableMeta, StorageRow, CellValue } from '../../engine/storage/BaseStorage';
 
@@ -89,7 +91,7 @@ export class DataPumpEngine {
         format: 'ORACLE-SIM-DATAPUMP',
         version: 1,
         mode,
-        exportedAt: new Date().toISOString(),
+        exportedAt: simulationDate().toISOString(),
         tables: entries,
       },
       report: { lines, tables: entries.length, rows: rowTotal },

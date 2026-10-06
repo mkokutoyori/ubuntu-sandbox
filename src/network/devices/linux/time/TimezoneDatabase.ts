@@ -25,6 +25,8 @@
  * d'abreviation propre (`+01`, `-05`) — c'est ce que `timedatectl`
  * affiche pour `Africa/Casablanca`.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { TimeZone } from '../../../core/time/TimeZone';
 import {
   formatOffsetCompact, isDaylightSavingAt, offsetMinutesAt,
@@ -115,7 +117,7 @@ export function trouverTimezone(nom: string): Timezone | undefined {
     ?? PAR_NOM.get(nom.trim().toLowerCase());
   if (tabulee) return tabulee;
 
-  return { nom: zone.name, abbr: numericAbbreviation(zone, Date.now()) };
+  return { nom: zone.name, abbr: numericAbbreviation(zone, simulationNowMs()) };
 }
 
 /** Les noms, tries — ce que `timedatectl list-timezones` imprime. */

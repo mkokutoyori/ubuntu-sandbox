@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 export interface FrameLineage {
   readonly seq: number;
   readonly at: Date;
@@ -18,7 +20,7 @@ export function lineageOf(frame: { readonly payload?: unknown }): FrameLineage {
   const key = lineageKey(frame);
   let lineage = lineages.get(key);
   if (!lineage) {
-    lineage = { seq: nextSequence++, at: new Date() };
+    lineage = { seq: nextSequence++, at: simulationDate() };
     lineages.set(key, lineage);
   }
   return lineage;

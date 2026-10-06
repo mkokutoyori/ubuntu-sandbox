@@ -14,6 +14,8 @@
  * received by the same machine, and a real capture shows one packet.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { TcpSegmentSentPayload } from '@/network/tcp/events';
 import type { PacketCaptureLog } from './PacketCaptureLog';
@@ -42,7 +44,7 @@ export class TcpdumpCaptureProjection {
     if (p.deviceId !== this.deviceId) return;
     if (p.iface !== LOOPBACK_IFACE) return;
     this.captureLog.capture({
-      at: new Date(),
+      at: simulationDate(),
       srcIp: p.sourceIp,
       srcPort: p.sourcePort,
       dstIp: p.destinationIp,

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { SqlFunctionBundle } from './types';
 
 export const packageFunctions: SqlFunctionBundle = {
@@ -32,7 +34,7 @@ export const packageFunctions: SqlFunctionBundle = {
 
   'DBMS_LOCK.SLEEP': () => null,
 
-  'DBMS_UTILITY.GET_TIME': () => Date.now() % 2147483647,
+  'DBMS_UTILITY.GET_TIME': () => simulationNowMs() % 2147483647,
 
   'DBMS_UTILITY.FORMAT_ERROR_BACKTRACE': () => '',
 

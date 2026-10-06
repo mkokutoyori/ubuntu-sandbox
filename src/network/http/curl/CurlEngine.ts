@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { parseCurlArgs, remoteNameFor, CURL_USER_AGENT, type CurlOptions } from './CurlArgs';
 import { parseCurlUrl, performCurlRequest, type CurlOutcome, type CurlSuccess } from './CurlTransfer';
 import { applyWriteOut, type WriteOutFacts } from './CurlWriteOut';
@@ -139,7 +141,7 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promis
     return { output: stdoutParts.join(''), exitCode: parsed.code, stderr: stderrLines.join('\n') };
   }
 
-  const started = Date.now();
+  const started = simulationNowMs();
   let outcome = await performCurlRequest(host, parsed.url, opts);
   // `--retry N` : N NOUVELLES tentatives après la première, et non N au
   // total — c'est le compte de curl, et se tromper d'un ferait échouer
@@ -149,7 +151,7 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string): Promis
       + `Will retry in 0 seconds. ${opts.retry - essai} retries left.`);
     outcome = await performCurlRequest(host, parsed.url, opts);
   }
-  const elapsed = (Date.now() - started) / 1000;
+  const elapsed = (simulationNowMs() - started) / 1000;
 
   if (opts.verbose) stderrLines.push(...outcome.trace);
   // `-D` écrit les en-têtes REÇUS dans un fichier, quelle que soit la

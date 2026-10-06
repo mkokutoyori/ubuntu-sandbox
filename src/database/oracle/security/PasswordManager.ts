@@ -9,6 +9,8 @@
  *   - PASSWORD EXPIRE: force change on next login
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { PasswordHistoryRecord } from './types';
 
 export type PasswordStatus = 'OPEN' | 'EXPIRED' | 'EXPIRED(GRACE)';
@@ -26,9 +28,9 @@ export class PasswordManager {
   setPassword(username: string, newPassword: string): void {
     const key = username.toUpperCase();
     const existing = this.history.get(key) ?? [];
-    existing.unshift({ password: newPassword, changedAt: new Date() });
+    existing.unshift({ password: newPassword, changedAt: simulationDate() });
     this.history.set(key, existing);
-    this.lastChanged.set(key, new Date());
+    this.lastChanged.set(key, simulationDate());
     this.forceExpired.delete(key);
   }
 
@@ -64,7 +66,7 @@ export class PasswordManager {
 
     if (lifetimeDays === Infinity) return 'OPEN';
 
-    const ageMs = Date.now() - changed.getTime();
+    const ageMs = simulationNowMs() - changed.getTime();
     const ageDays = ageMs / (24 * 60 * 60 * 1000);
 
     if (ageDays > lifetimeDays + graceDays) return 'EXPIRED';
@@ -90,7 +92,7 @@ export class PasswordManager {
     if (reuseTimeDays === Infinity) return false;
     const key = username.toUpperCase();
     const records = this.history.get(key) ?? [];
-    const cutoff = Date.now() - reuseTimeDays * 24 * 60 * 60 * 1000;
+    const cutoff = simulationNowMs() - reuseTimeDays * 24 * 60 * 60 * 1000;
     return records.some(
       r => r.password === candidate && r.changedAt.getTime() > cutoff
     );
@@ -124,7 +126,7 @@ export class PasswordManager {
     if (records.length < 2) return false;          // no prior password
     if (records[1].password !== candidate) return false;
     if (rolloverDays === Infinity) return true;    // UNLIMITED window
-    const ageDays = (Date.now() - records[0].changedAt.getTime()) / (24 * 60 * 60 * 1000);
+    const ageDays = (simulationNowMs() - records[0].changedAt.getTime()) / (24 * 60 * 60 * 1000);
     return ageDays <= rolloverDays;
   }
 

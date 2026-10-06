@@ -15,6 +15,8 @@
  * consomme.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { CookieJar } from '../cookies/CookieJar';
 import type { Cookie } from '../cookies/SetCookie';
 
@@ -46,7 +48,7 @@ export function cookieArgIsLiteral(arg: string): boolean {
  * curl, et un fichier édité à la main ne doit pas rendre la commande
  * inutilisable.
  */
-export function parseNetscapeCookies(texte: string, maintenant = Date.now()): Cookie[] {
+export function parseNetscapeCookies(texte: string, maintenant = simulationNowMs()): Cookie[] {
   const out: Cookie[] = [];
   for (const ligne of texte.split('\n')) {
     const brute = ligne.replace(/\r$/, '');
@@ -120,7 +122,7 @@ export function jarFromArgument(
   arg: string | null,
   hote: string,
   lire: (chemin: string) => string | null,
-  maintenant = Date.now(),
+  maintenant = simulationNowMs(),
 ): CookieJar {
   const jar = new CookieJar();
   if (arg === null) return jar;

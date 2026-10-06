@@ -12,6 +12,8 @@
  * remain deterministic.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { OracleInstance } from '../OracleInstance';
 import { AwrSnapshot, type SqlStatSnapshot, type SysStatSnapshot } from './AwrSnapshot';
 
@@ -35,14 +37,14 @@ export class AwrSnapshotManager {
   };
 
   constructor(private readonly instance: OracleInstance) {
-    this.lastEndInterval = instance.startupTime ?? new Date();
+    this.lastEndInterval = instance.startupTime ?? simulationDate();
   }
 
   // ── DBMS_WORKLOAD_REPOSITORY routines ─────────────────────────────
 
   /** CREATE_SNAPSHOT — capture state now. Returns the new snap_id. */
   createSnapshot(opts: { flushLevel?: 'TYPICAL' | 'ALL' | 'BASIC'; manual?: boolean } = {}): number {
-    const now = new Date();
+    const now = simulationDate();
     const runtime = this.instance.getRuntimeState();
     const startup = this.instance.startupTime ?? now;
 
@@ -132,7 +134,7 @@ export class AwrSnapshotManager {
   // ── Internal ──────────────────────────────────────────────────────
 
   private purgeOld(): void {
-    const cutoff = Date.now() - this.settings.retentionMinutes * 60_000;
+    const cutoff = simulationNowMs() - this.settings.retentionMinutes * 60_000;
     this.snapshots = this.snapshots.filter(s => s.endInterval.getTime() >= cutoff);
   }
 }

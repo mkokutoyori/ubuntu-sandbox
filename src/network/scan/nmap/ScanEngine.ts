@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { DiscoveryProbe, NmapOptions, ScanType } from './NmapOptions';
 import { PathClock } from '@/network/core/time/PathClock';
 import { OS_CLASS_BY_NAME, initialTtlOf, type OsClassRecord } from './NmapProbes';
@@ -627,7 +629,7 @@ export async function scan(
   stopWire?.();
 
   return {
-    startedAt: new Date().toISOString(),
+    startedAt: simulationDate().toISOString(),
     targetsScanned,
     hostsUp: options.listScan ? 0 : hosts.filter((h) => h.up).length,
     hosts,

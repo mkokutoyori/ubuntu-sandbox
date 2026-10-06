@@ -15,6 +15,8 @@
  * - Real packet filtering with counter updates
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import {
   IPAddress, IPv6Address, SubnetMask,
@@ -390,7 +392,7 @@ export class LinuxIptablesManager {
     protocol: string; srcIP: string; srcPort: number;
     dstIP: string; dstPort: number; ageMs: number; replied: boolean;
   }> {
-    const now = Date.now();
+    const now = simulationNowMs();
     const vus = new Set<string>();
     const flux: Array<{
       protocol: string; srcIP: string; srcPort: number;
@@ -434,12 +436,12 @@ export class LinuxIptablesManager {
     const replyKey = tupleKey(
       pkt.protocol, pkt.dstIP, pkt.dstPort, pkt.srcIP, pkt.srcPort,
       pkt.icmpType === undefined ? undefined : icmpReplyType(pkt.icmpType), pkt.icmpId);
-    this.conntrack.set(replyKey, Date.now());
+    this.conntrack.set(replyKey, simulationNowMs());
     // Also track original direction
     const origKey = tupleKey(
       pkt.protocol, pkt.srcIP, pkt.srcPort, pkt.dstIP, pkt.dstPort, pkt.icmpType, pkt.icmpId);
     if (!this.conntrack.has(origKey)) this.conntrackStats.insert++;
-    this.conntrack.set(origKey, Date.now());
+    this.conntrack.set(origKey, simulationNowMs());
     // Periodically clean old entries (keep it simple — clean on every 50th insert)
     if (this.conntrack.size > 200) this.cleanConntrack();
   }
@@ -450,7 +452,7 @@ export class LinuxIptablesManager {
       pkt.protocol, pkt.srcIP, pkt.srcPort, pkt.dstIP, pkt.dstPort, pkt.icmpType, pkt.icmpId);
     const ts = this.conntrack.get(key);
     if (!ts) return false;
-    if (Date.now() - ts > this.CONNTRACK_TIMEOUT) {
+    if (simulationNowMs() - ts > this.CONNTRACK_TIMEOUT) {
       this.conntrack.delete(key);
       return false;
     }
@@ -459,7 +461,7 @@ export class LinuxIptablesManager {
   }
 
   private cleanConntrack(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const [key, ts] of this.conntrack) {
       if (now - ts > this.CONNTRACK_TIMEOUT) this.conntrack.delete(key);
     }
@@ -782,7 +784,7 @@ export class LinuxIptablesManager {
       : per === 'hour' ? 3600000 : 86400000;
     const refillMs = unitMs / (parseInt(parsed?.[1] ?? '3', 10) || 1);
 
-    const now = Date.now();
+    const now = simulationNowMs();
     const bucket = this.limitBuckets.get(rule) ?? { tokens: burst, at: now };
     bucket.tokens = Math.min(burst, bucket.tokens + (now - bucket.at) / refillMs);
     bucket.at = now;
@@ -800,7 +802,7 @@ export class LinuxIptablesManager {
 
     let list = this.recentLists.get(name);
     if (!list) { list = new Map(); this.recentLists.set(name, list); }
-    const now = Date.now();
+    const now = simulationNowMs();
 
     if (m.options.has('--remove')) {
       const known = list.delete(key);

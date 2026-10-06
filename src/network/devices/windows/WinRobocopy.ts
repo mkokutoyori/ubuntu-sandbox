@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { WinFileCommandContext } from './WinFileCommands';
 import type { WinDirEntry, WinFSEntry } from './WindowsFileSystem';
 import { longDateTime, slashedTimestamp } from './WinSystemCommands';
@@ -648,7 +650,7 @@ function finishWithLog(ctx: WinFileCommandContext, options: RobocopyOptions, tex
 }
 
 export function cmdRobocopy(ctx: WinFileCommandContext, args: string[]): string {
-  const started = Date.now();
+  const started = simulationNowMs();
   const parsed = parseArguments(args);
   if (parsed.kind === 'help') {
     ctx.setExitCode(0);
@@ -694,7 +696,7 @@ export function cmdRobocopy(ctx: WinFileCommandContext, args: string[]): string 
   scan(run, source, destination, 0);
 
   if (!options.noSummary) {
-    lines.push('', SECTION_RULE, '', ...summaryRows(run), `   Ended : ${longDateTime(ctx.timezone, Date.now())}`);
+    lines.push('', SECTION_RULE, '', ...summaryRows(run), `   Ended : ${longDateTime(ctx.timezone, simulationNowMs())}`);
   }
   return finishWithLog(ctx, options, lines.join('\n'), run.exit);
 }

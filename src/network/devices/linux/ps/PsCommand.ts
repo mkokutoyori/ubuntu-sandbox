@@ -16,6 +16,8 @@
  * no existing branch needs editing (Open/Closed).
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { LinuxProcessManager, ProcessInfo } from '../LinuxProcessManager';
 import { formatClock, formatCpuTime, formatBsdCpuTime, memPercent } from '../system/ProcFormat';
 
@@ -285,7 +287,7 @@ function commMatches(p: ProcessInfo, name: string): boolean {
 export function transientSelfProcess(ctx: PsContext, comm: string): ProcessInfo {
   const peers = ctx.pm.list();
   const maxPid = peers.reduce((m, p) => Math.max(m, p.pid), 1);
-  const now = new Date();
+  const now = simulationDate();
   return {
     pid: maxPid + 1,
     ppid: ctx.shellPid ?? 1,

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_NTP = 123;
 
@@ -238,7 +240,7 @@ export function createDefaultNtpConfig(): NtpConfig {
     modeControlResponder: false,
     updateCalendar: false,
     disabledInterfaces: new Set(),
-    startedAtMs: Date.now(),
+    startedAtMs: simulationNowMs(),
     logging: false,
     loggingSpelling: 'ntp',
     sntpBroadcastClient: false,

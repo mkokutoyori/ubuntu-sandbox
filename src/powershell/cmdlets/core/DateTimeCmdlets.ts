@@ -3,6 +3,8 @@
  * No system providers required.
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
@@ -34,7 +36,7 @@ import {
 
 function objetZone(z: { id: string; iana: string; nom: string }): PSValue {
   const zone = TimeZone.parse(z.iana);
-  const maintenant = Date.now();
+  const maintenant = simulationNowMs();
   const min = zone ? standardOffsetMinutes(zone, maintenant) : 0;
   const signe = min < 0 ? '-' : '+';
   const abs = Math.abs(min);
@@ -98,11 +100,11 @@ export class GetDateCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const fmt     = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
     const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? null;
-    const now = ctx.providers.scheduledTasks?.now?.() ?? new Date();
+    const now = ctx.providers.scheduledTasks?.now?.() ?? simulationDate();
     let d: Date;
     if (dateArg !== null && dateArg !== undefined) {
       d = new Date(psValueToString(dateArg));
-      if (isNaN(d.getTime())) d = new Date();
+      if (isNaN(d.getTime())) d = simulationDate();
     } else if (['year', 'month', 'day', 'hour', 'minute', 'second']
         .some(k => ctx.named[k] !== undefined)) {
       // -Year/-Month/-Day/... build a date; unspecified parts inherit "now".
@@ -138,7 +140,7 @@ export class SetDateCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const tasks = ctx.providers.scheduledTasks;
-    const now = tasks?.now?.() ?? new Date();
+    const now = tasks?.now?.() ?? simulationDate();
     const adjust = ctx.named['adjust'];
     const dateArg = ctx.named['date'] ?? ctx.positional[0];
     let target: Date;
@@ -269,9 +271,9 @@ export class MeasureCommandCmdlet implements ICmdlet {
       ctx.emitError('Measure-Command requires a script block, e.g. Measure-Command { ... }');
       return makeTimeSpan(0);
     }
-    const start = Date.now();
+    const start = simulationNowMs();
     ctx.invokeBlock(raw as PSScriptBlock);
-    return makeTimeSpan(Date.now() - start);
+    return makeTimeSpan(simulationNowMs() - start);
   }
 }
 

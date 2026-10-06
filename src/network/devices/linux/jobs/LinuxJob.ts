@@ -14,6 +14,8 @@
  * the entity must never emit on its own.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 export type JobState =
   | 'Running'
   | 'Stopped'   // user sent SIGSTOP / SIGTSTP
@@ -96,7 +98,7 @@ export class LinuxJob {
     this.command = init.command;
     this.state = init.state ?? 'Running';
     this.mode = init.mode ?? 'background';
-    this.startTime = init.startTime ?? new Date();
+    this.startTime = init.startTime ?? simulationDate();
     this.controllingTty = init.controllingTty ?? 'pts/0';
     this.user = init.user ?? 'user';
     this.cwd = init.cwd ?? '/';
@@ -137,7 +139,7 @@ export class LinuxJob {
 
   /** Mark this job as completed by signal or exit. */
   complete(opts: { exitCode?: number; signal?: string }): void {
-    this.endTime = new Date();
+    this.endTime = simulationDate();
     if (opts.signal) {
       this.state = 'Killed';
       this.signal = opts.signal;

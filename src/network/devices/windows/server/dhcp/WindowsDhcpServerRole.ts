@@ -16,6 +16,8 @@
  * server usage this PRD targets.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { EndHost } from '@/network/devices/EndHost';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
 import { WindowsDhcpv6 } from './WindowsDhcpv6';
@@ -864,7 +866,7 @@ export class WindowsDhcpServerRole {
 }
 
 const STANDALONE_ENVIRONMENT: DhcpRoleEnvironment = {
-  now: () => Date.now(),
+  now: () => simulationNowMs(),
   adminApReqFor: () => null,
   verifyAdministrator: () => false,
   resolve: () => null,

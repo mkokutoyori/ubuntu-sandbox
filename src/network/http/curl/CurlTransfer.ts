@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { curlDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import { opensslAlertReason } from '@/network/tls/alerts';
 import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
@@ -498,7 +500,7 @@ export async function performCurlRequest(
         const peerAlert = handshake?.peerAlert ?? null;
         const localReason = handshake?.result === 'failure' ? handshake.peerVerificationReason : null;
         const statusProblem = opts.certStatus && result.ok
-          ? judgeCertStatus(handshake?.receivedStaple ?? null, session.peerCertificate, handshake?.peerCertificateChain ?? [], anchors, Date.now())
+          ? judgeCertStatus(handshake?.receivedStaple ?? null, session.peerCertificate, handshake?.peerCertificateChain ?? [], anchors, simulationNowMs())
           : null;
         if (!result.ok || !result.response) {
           if (peerAlert !== null) {

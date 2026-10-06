@@ -13,6 +13,8 @@
  * les atteint.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortTap';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -56,7 +58,7 @@ export class HuaweiDebugService implements TerminalDebugSource {
   }
 
   enable(category: HuaweiDebugCategory, scope?: string): string {
-    this.flags.set(category, { category, enabledAtMs: Date.now(), scope });
+    this.flags.set(category, { category, enabledAtMs: simulationNowMs(), scope });
     return `Info: ${labelDeCategorie(category)} debugging is on.`;
   }
 

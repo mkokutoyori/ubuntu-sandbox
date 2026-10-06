@@ -11,6 +11,8 @@
  * actively-monitored index of that table.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { OracleStorage } from '../OracleStorage';
 
@@ -57,7 +59,7 @@ export class IndexUsageMonitor {
     this.records.set(`${o}.${i}`, {
       owner: o, indexName: i, tableName: idx.tableName.toUpperCase(),
       monitoring: true, used: false,
-      startMonitoring: new Date(), endMonitoring: null,
+      startMonitoring: simulationDate(), endMonitoring: null,
     });
   }
 
@@ -67,7 +69,7 @@ export class IndexUsageMonitor {
     const rec = this.records.get(`${o}.${i}`);
     if (!rec) return;
     rec.monitoring = false;
-    rec.endMonitoring = new Date();
+    rec.endMonitoring = simulationDate();
   }
 
   private onDml(schema: string, table: string): void {

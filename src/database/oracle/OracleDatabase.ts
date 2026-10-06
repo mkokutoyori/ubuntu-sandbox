@@ -9,6 +9,8 @@
  *   - OracleExecutor (statement execution)
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { OracleInstance } from './OracleInstance';
 import { standbyRefusesStatement, ORA_16000 } from './dataguard/StandbyWriteGuard';
 import { mountedRefusesQuery, ORA_01219 } from './MountedStateGuard';
@@ -572,7 +574,7 @@ export class OracleDatabase implements SqlCommandHost {
     const connInfo: ConnectionInfo = {
       username: upperUser,
       schema: upperUser,
-      connectedAt: new Date(),
+      connectedAt: simulationDate(),
       sid,
       serial,
       role: 'NORMAL',
@@ -710,7 +712,7 @@ export class OracleDatabase implements SqlCommandHost {
     const connInfo: ConnectionInfo = {
       username: 'SYS',
       schema: 'SYS',
-      connectedAt: new Date(),
+      connectedAt: simulationDate(),
       sid,
       serial,
       role: 'SYSDBA',
@@ -772,7 +774,7 @@ export class OracleDatabase implements SqlCommandHost {
     const connInfo: ConnectionInfo = {
       username: 'PUBLIC',
       schema: 'PUBLIC',
-      connectedAt: new Date(),
+      connectedAt: simulationDate(),
       sid,
       serial,
       role: 'SYSOPER',
@@ -848,7 +850,7 @@ export class OracleDatabase implements SqlCommandHost {
     const authType = args.role === 'SYSDBA' || args.role === 'SYSOPER' ? 'DATABASE'
       : args.authMethod === 'EXTERNAL' ? 'OS'
       : args.authMethod === 'GLOBAL' ? 'NETWORK' : 'DATABASE';
-    const now = new Date();
+    const now = simulationDate();
     const payload: OracleConnectionTracedPayload = {
       deviceId: this.instance.getDeviceId(),
       sid: this.instance.config.sid,
@@ -1298,7 +1300,7 @@ export class OracleDatabase implements SqlCommandHost {
       updateSent: false,
       heterogeneous: false,
       protocol: 'UNKWN',
-      openedAt: Date.now(),
+      openedAt: simulationNowMs(),
     });
     return opened;
   }
@@ -1683,7 +1685,7 @@ export class OracleDatabase implements SqlCommandHost {
       parameters,
       body,
       sourceLines: sql.split('\n'),
-      created: new Date(),
+      created: simulationDate(),
       status: 'VALID',
     });
   }
@@ -1735,7 +1737,7 @@ export class OracleDatabase implements SqlCommandHost {
       returnType,
       body,
       sourceLines: sql.split('\n'),
-      created: new Date(),
+      created: simulationDate(),
       status: 'VALID',
     });
   }
@@ -1941,7 +1943,7 @@ export class OracleDatabase implements SqlCommandHost {
     this.storedUnits.set(key, {
       schema, name, type: 'PACKAGE', parameters: [],
       body: source, sourceLines: sql.split('\n'),
-      created: new Date(), status: compilation.ok ? 'VALID' : 'INVALID',
+      created: simulationDate(), status: compilation.ok ? 'VALID' : 'INVALID',
     });
 
     if (compilation.ok === false) {
@@ -1983,7 +1985,7 @@ export class OracleDatabase implements SqlCommandHost {
       this.storedUnits.set(bodyUnitKey, {
         schema, name: pkgName, type: 'PACKAGE BODY', parameters: [],
         body: source, sourceLines: sql.split('\n'),
-        created: new Date(), status: 'INVALID',
+        created: simulationDate(), status: 'INVALID',
       });
       this.catalog.setCompilationErrors(schema, pkgName, 'PACKAGE BODY', errors);
       return emptyResult('Warning: Package Body created with compilation errors.');
@@ -2003,7 +2005,7 @@ export class OracleDatabase implements SqlCommandHost {
     this.storedUnits.set(bodyUnitKey, {
       schema, name: pkgName, type: 'PACKAGE BODY', parameters: [],
       body: source, sourceLines: sql.split('\n'),
-      created: new Date(), status: 'VALID',
+      created: simulationDate(), status: 'VALID',
     });
     this.catalog.clearCompilationErrors(schema, pkgName);
     pkg.body = compilation.section;

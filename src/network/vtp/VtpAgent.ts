@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
@@ -142,7 +144,7 @@ export class VtpAgent extends ReactiveAgentBase {
     if (this.config.mode !== 'server' || !this.config.domain) return;
     this.config.revision += 1;
     this.config.lastUpdaterIdentity = this.host.vtpUpdaterIdentity();
-    this.config.lastUpdateTimestamp = Date.now();
+    this.config.lastUpdateTimestamp = simulationNowMs();
     this.advertiseSummary('local-vlan-change');
   }
 

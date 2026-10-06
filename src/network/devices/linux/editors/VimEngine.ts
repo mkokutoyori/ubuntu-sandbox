@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
@@ -612,7 +614,7 @@ export class VimEngine {
       const candidate = `${dir}/.${base}.sw${letter}`;
       if (!this.fs.exists(candidate)) return candidate;
     }
-    return `${dir}/.${base}.sw${Date.now()}`;
+    return `${dir}/.${base}.sw${simulationNowMs()}`;
   }
 
   private replayDotRepeat(): void {

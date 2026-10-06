@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
@@ -26,7 +28,7 @@ export async function sendDynamicUpdate(
 
   const encode = key
     ? (message: Parameters<typeof encodeDnsMessage>[0]) =>
-        signDnsMessage(message, { key, timeSigned: Math.floor(Date.now() / 1000) })
+        signDnsMessage(message, { key, timeSigned: Math.floor(simulationNowMs() / 1000) })
     : encodeDnsMessage;
 
   const response = await queryDnsOverUdp(

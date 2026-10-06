@@ -10,6 +10,8 @@
  * "freshly gathered" appearance.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { OracleStorage } from '../OracleStorage';
 
 export type HistogramKind = 'NONE' | 'FREQUENCY' | 'HEIGHT BALANCED' | 'HYBRID' | 'TOP-FREQUENCY';
@@ -97,7 +99,7 @@ export class StatisticsManager {
     const meta = this.storage.getTableMeta(owner, tableName);
     if (!meta) return false;
     const rows = this.storage.getRows(owner, tableName);
-    const now = new Date();
+    const now = simulationDate();
     const blocks = Math.max(1, Math.ceil(rows.length / 8));
     const avgRowLen = meta.columns.reduce((s, c) => s + (c.dataType.precision ?? 4), 0);
     this.tableStats.set(`${owner}.${tableName}`, new TableStatistics(

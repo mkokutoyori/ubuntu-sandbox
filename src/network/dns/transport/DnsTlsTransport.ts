@@ -19,6 +19,8 @@
  * unit tests in `tls-*.test.ts` — just glued to async socket events
  * instead of a synchronous loop.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IPAddress } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
@@ -48,7 +50,7 @@ export interface DotOptions {
 export function bindDnsTlsServer(host: EndHost, handler: DnsMessageHandler, options: DotOptions = {}): void {
   const alpn = options.alpn ?? DOT_ALPN;
   const ca = getOrCreateCA(DOT_TRUST_ANCHOR_KEY);
-  const now = Date.now();
+  const now = simulationNowMs();
   const issued = ca.issueCertificate({
     subject: `CN=${options.sni ?? host.getHostname()}`, notBefore: now - 1000, notAfter: now + ONE_YEAR_MS,
   });
@@ -123,7 +125,7 @@ export async function queryDnsOverTls(
   const alpn = options.alpn ?? DOT_ALPN;
   const timeoutMs = options.timeoutMs ?? 2000;
   const ca = getOrCreateCA(DOT_TRUST_ANCHOR_KEY);
-  const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => Date.now() });
+  const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => simulationNowMs() });
   const client = new TlsClientSession({ verifier, alpn: [alpn] });
 
   return new Promise<DnsMessage | null>((resolve) => {

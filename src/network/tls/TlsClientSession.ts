@@ -13,6 +13,8 @@
  * the connection — failure at any of these three checks happens before
  * any `application_data` is exchanged.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchangeKeyPair } from './keyExchange';
@@ -376,7 +378,7 @@ export class TlsClientSession {
       enforceStaple: this.config.requestOcspStaple === true || this.config.requireOcspStaple === true,
       requireStaple: this.config.requireOcspStaple === true,
       requestedMaxFragment: isValidMaxFragmentLength(this.config.maxFragmentLength) ? this.config.maxFragmentLength : null,
-      now: Date.now,
+      now: simulationNowMs,
     });
     return this.handleLegacy(incoming);
   }
@@ -585,7 +587,7 @@ export class TlsClientSession {
       ticketNonce: message.ticketNonce,
       cipherSuite: this.negotiatedCipherSuite as CipherSuite,
       ticketLifetime: message.ticketLifetime,
-      issuedAt: Date.now(),
+      issuedAt: simulationNowMs(),
       consumed: false,
     };
   }

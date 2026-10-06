@@ -6,6 +6,8 @@
  * stamps a fresh 19c install.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -14,7 +16,7 @@ registerView({
   name: 'DBA_REGISTRY_HISTORY',
   comment: 'Database install / patch / upgrade history',
   query({ instance }) {
-    const created = instance.startupTime ?? new Date();
+    const created = instance.startupTime ?? simulationDate();
     return queryResult(
       [
         col.date('ACTION_TIME'),

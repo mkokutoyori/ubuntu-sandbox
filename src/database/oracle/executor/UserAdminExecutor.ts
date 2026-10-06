@@ -10,6 +10,8 @@
  * statement family (ORA-01918/01920/01921/02379/02380/28003/28009…).
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { ExecutionContext } from '../../engine/executor/BaseExecutor';
 import { type ResultSet, emptyResult } from '../../engine/executor/ResultSet';
 import type {
@@ -74,9 +76,9 @@ export class UserAdminExecutor {
       defaultTablespace: stmt.defaultTablespace?.toUpperCase() || 'USERS',
       temporaryTablespace: stmt.temporaryTablespace?.toUpperCase() || 'TEMP',
       accountStatus: stmt.accountLocked ? 'LOCKED' : 'OPEN',
-      lockDate: stmt.accountLocked ? new Date() : null,
+      lockDate: stmt.accountLocked ? simulationDate() : null,
       expiryDate: null,
-      created: new Date(),
+      created: simulationDate(),
       profile: profileName,
       authenticationType: authType,
       externalName: stmt.externalName,
@@ -293,7 +295,7 @@ export class UserAdminExecutor {
         username: username.toUpperCase(), kind,
         sessionId: this.deps.getSessionId(),
         performedBy: this.context.currentSchema,
-        detail, timestamp: new Date(),
+        detail, timestamp: simulationDate(),
       },
     });
   }

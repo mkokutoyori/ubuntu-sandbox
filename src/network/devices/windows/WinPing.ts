@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { readIcmpUnreachable } from '@/network/core/icmpUnreachable';
 import type { WinCommandContext, PingResult } from './WinCommandExecutor';
 import { IPAddress } from '../../core/types';
@@ -426,7 +428,7 @@ function formatPingOutput(
     const shown = routeHops.slice(0, opts.timestamp);
     lines.push('');
     lines.push('Timestamp:');
-    const base = Date.now();
+    const base = simulationNowMs();
     shown.forEach((hop, i) => lines.push(`    ${hop} : ${base + i * 10}`));
   }
 

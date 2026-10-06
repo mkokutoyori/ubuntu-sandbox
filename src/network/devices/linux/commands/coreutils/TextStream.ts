@@ -20,6 +20,8 @@
  * queue, et rien ne permet de les distinguer.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 
@@ -432,7 +434,7 @@ export const prCommand = coreutil(
     for (let f = 0; f < got.length; f++) {
       const body = toLines(got[f]).map((l, i) => (numbered ? `${String(i + 1).padStart(5)}\t${l}` : l));
       if (omitHeader) { out.push(...body); continue; }
-      out.push('', '', `${new Date().toDateString()}  ${files[f] ?? ''}  Page 1`, '', '');
+      out.push('', '', `${simulationDate().toDateString()}  ${files[f] ?? ''}  Page 1`, '', '');
       out.push(...body);
       out.push('', '', '', '', '');
     }

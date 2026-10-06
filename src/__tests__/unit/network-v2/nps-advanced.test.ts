@@ -7,6 +7,7 @@
  * simulated SQL table built on this project's own `OracleDatabase`.
  * NAP is explicitly out of scope (§2.2) and never exercised here.
  */
+import { pinClock } from './pinnedClockLab';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, IPAddress, SubnetMask } from '@/network/core/types';
 import { WindowsServer } from '@/network/devices/WindowsServer';
@@ -26,7 +27,7 @@ const ps = (d: WindowsServer) => PowerShellSubShell.create(d).subShell;
 const run = async (sh: ReturnType<typeof ps>, l: string) => (await sh.processLine(l)).output.join('\n');
 
 async function buildLab() {
-  const nps = new WindowsServer('NPS1');
+  const nps = new WindowsServer('NPS1'); pinClock(nps);
   const nas = new CiscoRouter('NAS');
   new Cable('a').connect(nas.getPort('GigabitEthernet0/0')!, nps.getPorts()[0]);
   nas.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));

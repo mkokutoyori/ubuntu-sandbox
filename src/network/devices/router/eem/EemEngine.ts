@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { type IEventBus, type Unsubscribe } from '@/events/EventBus';
 import { ownBusProvider } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
@@ -111,7 +113,7 @@ export class EemEngine {
     this.runningApplets.add(applet.name);
     try {
       applet.recordTriggerCount++;
-      applet.lastTriggeredAtMs = Date.now();
+      applet.lastTriggeredAtMs = simulationNowMs();
       const ordered = [...applet.actions].sort((a, b) => compareActionIds(a.id, b.id));
       for (const action of ordered) {
         await this.executeAction(applet, action);
@@ -157,7 +159,7 @@ export class EemEngine {
    * valeur ferait passer pour résolu ce qui ne l'est pas.
    */
   private substituerVariables(texte: string, applet: EemApplet): string {
-    const pub = applet.lastTriggeredAtMs ?? Date.now();
+    const pub = applet.lastTriggeredAtMs ?? simulationNowMs();
     return texte
       .replace(/\$_event_pub_time\b/g, String(Math.floor(pub / 1000)))
       .replace(/\$_event_type_string\b/g, 'syslog')
@@ -178,7 +180,7 @@ export class EemEngine {
   }
 
   private evaluateTimers(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const applet of this.service.listApplets()) {
       applet.triggers.forEach((trig, index) => {
         if (trig.kind === 'timer.watchdog' || trig.kind === 'timer.countdown') {
@@ -328,7 +330,7 @@ export class EemEngine {
         severityNum: severityNum !== undefined && severityNum >= 0 && severityNum <= 7 ? severityNum : 6,
         tag,
         message,
-        ts: Date.now(),
+        ts: simulationNowMs(),
       },
     });
   }

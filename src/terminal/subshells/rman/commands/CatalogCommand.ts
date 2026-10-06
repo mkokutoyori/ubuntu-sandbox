@@ -9,6 +9,8 @@
  *   CATALOG RECOVERY AREA [NOPROMPT]
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
@@ -77,7 +79,7 @@ export class CatalogCommand implements IRmanCommand<string[]> {
         fileNo:  0,
         level:   0 as 0 | 1,
         ckpScn:  ckp.ok ? ckp.value : Scn.ZERO,
-        ckpTime: Date.now(),
+        ckpTime: simulationNowMs(),
         path,
       })] : [],
     });

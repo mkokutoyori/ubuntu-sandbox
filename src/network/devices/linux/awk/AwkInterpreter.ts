@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type {
   Program, Rule, Stmt, Expr, LValue, FunctionDef, Redirect,
 } from './AwkAst';
@@ -719,7 +721,7 @@ export class AwkInterpreter {
 
   private srand(args: Expr[]): Cell {
     const prev = this.seed;
-    this.seed = args.length ? Math.trunc(toNum(this.eval(args[0]))) : Date.now() & 0x7fffffff;
+    this.seed = args.length ? Math.trunc(toNum(this.eval(args[0]))) : simulationNowMs() & 0x7fffffff;
     return prev;
   }
 }

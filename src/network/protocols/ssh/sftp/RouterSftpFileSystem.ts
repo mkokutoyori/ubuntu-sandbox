@@ -9,6 +9,8 @@
  * router exactly like a real one.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type {
   ISftpFileSystem, SftpDirEntry, SftpFileAttrs, EntryType,
 } from './ISftpFileSystem';
@@ -48,13 +50,13 @@ export class RouterSftpFileSystem implements ISftpFileSystem {
   listDirectory(_path: string): Result<readonly SftpDirEntry[]> {
     const names = this.source.list?.() ?? [];
     return ok(names.map(n => ({
-      name: n, type: 'file' as EntryType, mode: 0o644, uid: 0, gid: 0, size: 0, mtime: Date.now(),
+      name: n, type: 'file' as EntryType, mode: 0o644, uid: 0, gid: 0, size: 0, mtime: simulationNowMs(),
     })));
   }
   stat(path: string): Result<SftpFileAttrs> {
     const data = this.source.read(this.canonical(path));
     if (data === null) return err({ kind: 'IO_ERROR', message: `${path}: not found` } as SshError);
-    return ok({ type: 'file', mode: 0o644, uid: 0, gid: 0, size: data.length, mtime: Date.now() });
+    return ok({ type: 'file', mode: 0o644, uid: 0, gid: 0, size: data.length, mtime: simulationNowMs() });
   }
   writeFile(path: string, content: string): Result<void> {
     if (!this.source.write) return err({ kind: 'IO_ERROR', message: 'read-only' } as SshError);

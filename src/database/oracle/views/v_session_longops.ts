@@ -6,6 +6,8 @@
  * pump, or `DBMS_APPLICATION_INFO.SET_SESSION_LONGOPS`).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -30,7 +32,7 @@ registerView({
       runtime.longops.map(l => {
         const sess = runtime.sessions.get(l.sessionId);
         const ratio = l.totalwork ? l.sofar / l.totalwork : 1;
-        const elapsedS = Math.floor((Date.now() - l.ts) / 1000);
+        const elapsedS = Math.floor((simulationNowMs() - l.ts) / 1000);
         const remaining = ratio > 0 ? Math.floor(elapsedS * (1 - ratio) / ratio) : 0;
         return [
           l.sid, sess?.serial ?? 1, l.opname, l.target,

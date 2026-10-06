@@ -8,6 +8,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { readSshdConfig } from './SshdConfigText';
 import { UBUNTU_2204_SSHD_CONFIG } from './UbuntuSshdConfigFile';
 import { hostnameOf, type HostnameSource } from '@/network/devices/linux/KernelHostname';
@@ -649,7 +651,7 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   recordLogin(user: string, fromIp: string): void {
     this.openPamSession(user, fromIp);
-    const entry: LastLoginEntry = { user, ip: fromIp, at: Date.now() };
+    const entry: LastLoginEntry = { user, ip: fromIp, at: simulationNowMs() };
     let entries: LastLoginEntry[] = [];
     const raw = this.vfs.readFile(LASTLOG_PATH);
     if (raw) {
@@ -695,7 +697,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.appendWtmp({
       user,
       ip: fromIp,
-      at: Date.now(),
+      at: simulationNowMs(),
       type: 'logout',
       tty: 'pts/0',
     });
@@ -740,7 +742,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.appendBtmp({
       user: user || 'invalid user',
       ip: fromIp,
-      at: Date.now(),
+      at: simulationNowMs(),
       reason,
       tty: 'ssh:notty',
     });

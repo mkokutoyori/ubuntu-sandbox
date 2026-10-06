@@ -1,3 +1,5 @@
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { CapturedPacket } from './PacketCaptureLog';
 
 export interface WireSegment {
@@ -40,7 +42,7 @@ export function resetWireBus(): void { bus.reset(); }
 
 export function wireSegmentToCapturedPacket(seg: WireSegment): CapturedPacket {
   return {
-    at: new Date(),
+    at: simulationDate(),
     srcIp: seg.srcIp,
     srcPort: seg.srcPort,
     dstIp: seg.dstIp,

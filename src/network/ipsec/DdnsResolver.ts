@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 const IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)$/;
 
 export interface DdnsResolverConfig {
@@ -22,7 +24,7 @@ export class DdnsResolver {
   get ttlMs(): number { return this.cfg.ttlMs; }
 
   resolve(): string {
-    const now = (this.cfg.now ?? Date.now)();
+    const now = (this.cfg.now ?? simulationNowMs)();
     if (this.cached !== null && (now - this.cachedAt) < this.cfg.ttlMs) {
       return this.cached;
     }

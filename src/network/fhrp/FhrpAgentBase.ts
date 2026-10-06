@@ -13,6 +13,8 @@
  * peer-timeout sweeping (`expireDue`) and which states are allowed
  * to speak (`isSpeakingState`).
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import {
@@ -326,7 +328,7 @@ implements FhrpDataPlane {
   protected preemptDelayElapsed(g: G): boolean {
     const delai = g.preemptDelaySec ?? 0;
     if (delai <= 0) { g.preemptEligibleSinceMs = null; return true; }
-    const now = Date.now();
+    const now = simulationNowMs();
     if (g.preemptEligibleSinceMs == null) {
       g.preemptEligibleSinceMs = now;
       // Le minuteur est arme ici, et il faut que quelque chose le

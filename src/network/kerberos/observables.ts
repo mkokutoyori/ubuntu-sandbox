@@ -7,6 +7,8 @@
  * already covers client-side).
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { WritableSignal, type Signal } from '@/events/Signal';
 
 export interface KerberosLogEntryVM {
@@ -46,7 +48,7 @@ export class KerberosSignalStore {
   recordAsSucceeded(cname: string): void {
     const stats = this.stats.get();
     this.append(
-      { timestamp: Date.now(), kind: 'as-succeeded', cname, detail: 'AS-REP issued' },
+      { timestamp: simulationNowMs(), kind: 'as-succeeded', cname, detail: 'AS-REP issued' },
       { asSucceeded: stats.asSucceeded + 1 },
     );
   }
@@ -54,7 +56,7 @@ export class KerberosSignalStore {
   recordAsFailed(cname: string, errorCode: number): void {
     const stats = this.stats.get();
     this.append(
-      { timestamp: Date.now(), kind: 'as-failed', cname, detail: `KRB-ERROR ${errorCode}` },
+      { timestamp: simulationNowMs(), kind: 'as-failed', cname, detail: `KRB-ERROR ${errorCode}` },
       { asFailed: stats.asFailed + 1 },
     );
   }
@@ -62,7 +64,7 @@ export class KerberosSignalStore {
   recordTgsSucceeded(cname: string, serviceName: string, referral: boolean): void {
     const stats = this.stats.get();
     this.append(
-      { timestamp: Date.now(), kind: referral ? 'tgs-referral' : 'tgs-succeeded', cname, detail: `service=${serviceName}` },
+      { timestamp: simulationNowMs(), kind: referral ? 'tgs-referral' : 'tgs-succeeded', cname, detail: `service=${serviceName}` },
       referral
         ? { tgsSucceeded: stats.tgsSucceeded + 1, tgsReferralsIssued: stats.tgsReferralsIssued + 1 }
         : { tgsSucceeded: stats.tgsSucceeded + 1 },
@@ -72,7 +74,7 @@ export class KerberosSignalStore {
   recordTgsFailed(cname: string, serviceName: string, errorCode: number): void {
     const stats = this.stats.get();
     this.append(
-      { timestamp: Date.now(), kind: 'tgs-failed', cname, detail: `service=${serviceName} KRB-ERROR ${errorCode}` },
+      { timestamp: simulationNowMs(), kind: 'tgs-failed', cname, detail: `service=${serviceName} KRB-ERROR ${errorCode}` },
       { tgsFailed: stats.tgsFailed + 1 },
     );
   }
@@ -80,7 +82,7 @@ export class KerberosSignalStore {
   recordDelegationGranted(delegatingService: string, onBehalfOf: string, targetService: string): void {
     const stats = this.stats.get();
     this.append(
-      { timestamp: Date.now(), kind: 'delegation-granted', cname: onBehalfOf, detail: `${delegatingService} -> ${targetService}` },
+      { timestamp: simulationNowMs(), kind: 'delegation-granted', cname: onBehalfOf, detail: `${delegatingService} -> ${targetService}` },
       { delegationsGranted: stats.delegationsGranted + 1 },
     );
   }
@@ -88,7 +90,7 @@ export class KerberosSignalStore {
   recordDelegationDenied(delegatingService: string, targetService: string): void {
     const stats = this.stats.get();
     this.append(
-      { timestamp: Date.now(), kind: 'delegation-denied', cname: delegatingService, detail: `${delegatingService} -> ${targetService}` },
+      { timestamp: simulationNowMs(), kind: 'delegation-denied', cname: delegatingService, detail: `${delegatingService} -> ${targetService}` },
       { delegationsDenied: stats.delegationsDenied + 1 },
     );
   }

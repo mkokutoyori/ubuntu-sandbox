@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const ETHERTYPE_UDLD = 0x0111;
 export const UDLD_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
@@ -81,7 +83,7 @@ export function createDefaultUdldConfig(): UdldConfig {
 export function defaultPortRuntime(port: string, mode: UdldMode): UdldPortRuntime {
   return {
     port, mode, state: 'unknown', retries: 0,
-    lastTransitionMs: Date.now(),
+    lastTransitionMs: simulationNowMs(),
   };
 }
 

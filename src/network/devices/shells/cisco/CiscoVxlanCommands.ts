@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { VxlanAgent } from '../../../vxlan/VxlanAgent';
@@ -104,7 +106,7 @@ export function registerVxlanShowCommands(trie: CommandTrie, ctx: ShowCtx): void
     const rows = ['Interface  Peer-IP          VNI       State  LearnType  Uptime    Pkts-In   Pkts-Out'];
     for (const p of peers) {
       const iface = Array.from(a.getConfig().interfaces.values()).find((i) => i.vnis.has(p.vni))?.name ?? 'nve1';
-      const age = p.lastSeenMs > 0 ? hms(Date.now() - p.lastSeenMs) : 'never';
+      const age = p.lastSeenMs > 0 ? hms(simulationNowMs() - p.lastSeenMs) : 'never';
       rows.push(`${iface.padEnd(11)}${p.remoteVtepIp.padEnd(17)}${String(p.vni).padEnd(10)}${'Up'.padEnd(7)}${'CP'.padEnd(11)}${age.padEnd(10)}${String(p.packetsIn).padEnd(10)}${p.packetsOut}`);
     }
     return rows.join('\n');
@@ -141,7 +143,7 @@ export function registerVxlanShowCommands(trie: CommandTrie, ctx: ShowCtx): void
     if (!a) return '';
     const rows = ['Vni       Mac Address       Remote-VTEP       Age'];
     for (const e of a.listMacTable()) {
-      const age = e.lastSeenMs > 0 ? hms(Date.now() - e.lastSeenMs) : 'never';
+      const age = e.lastSeenMs > 0 ? hms(simulationNowMs() - e.lastSeenMs) : 'never';
       rows.push(`${String(e.vni).padEnd(10)}${e.mac.padEnd(18)}${e.remoteVtepIp.padEnd(18)}${age}`);
     }
     return rows.join('\n');

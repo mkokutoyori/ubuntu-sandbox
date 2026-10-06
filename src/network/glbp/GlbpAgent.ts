@@ -4,6 +4,8 @@
  * forwarders), the three load-balancing modes, and the UDP/3222
  * TLV wire format.
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import {
   type GlbpConfig, type GlbpGroupRuntime, type GlbpPacket,
   type GlbpAvgState, type GlbpForwarder, type GlbpLoadBalancing,
@@ -247,14 +249,14 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
         if (compareCandidate(peer, me) < 0 && (g.preempt || hello.priority > g.priority)) {
           g.avgIp = payload.senderIp;
           g.avgPriority = hello.priority;
-          g.lastHeardAvgMs = Date.now();
+          g.lastHeardAvgMs = simulationNowMs();
         }
       } else {
         if (!g.avgIp || compareCandidate(peer, { priority: g.avgPriority, ip: g.avgIp }) < 0) {
           g.avgIp = payload.senderIp;
           g.avgPriority = hello.priority;
         }
-        g.lastHeardAvgMs = Date.now();
+        g.lastHeardAvgMs = simulationNowMs();
       }
       if (oldAvgIp !== g.avgIp) {
         Logger.info(this.host.id, 'glbp:avg',
@@ -293,7 +295,7 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
     if (existing) {
       existing.priority = hello.priority;
       existing.weighting = hello.weighting;
-      existing.lastHeardMs = Date.now();
+      existing.lastHeardMs = simulationNowMs();
       // A live owner forwards for its virtual MAC: hearing its hello
       // moves the AVF out of listen/init, so the AVG's load balancing
       // actually rotates over every forwarder (and revives it after a
@@ -319,7 +321,7 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
       f = {
         forwarderNumber: a.forwarderNumber, vmac: a.vmac,
         ownerIp: a.ownerIp, priority: a.priority, weighting: a.weighting,
-        state: 'listen', lastHeardMs: Date.now(),
+        state: 'listen', lastHeardMs: simulationNowMs(),
       };
       g.forwarders.set(a.forwarderNumber, f);
     } else {
@@ -327,7 +329,7 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
       f.ownerIp = a.ownerIp;
       f.priority = a.priority;
       f.weighting = a.weighting;
-      f.lastHeardMs = Date.now();
+      f.lastHeardMs = simulationNowMs();
     }
     const myIp = this.myIpFor(g);
     if (a.ownerIp === myIp) {
@@ -360,7 +362,7 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
     const f: GlbpForwarder = {
       forwarderNumber: n, vmac, ownerIp,
       priority: 100, weighting: 100,
-      state: 'active', lastHeardMs: Date.now(),
+      state: 'active', lastHeardMs: simulationNowMs(),
     };
     g.forwarders.set(n, f);
     this.getBus().publish({
@@ -479,7 +481,7 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
       this.assignForwarderFor(g, myIp);
     }
     if (oldState !== newState) {
-      g.lastTransitionMs = Date.now();
+      g.lastTransitionMs = simulationNowMs();
       this.getBus().publish({
         topic: 'glbp.avg.changed',
         payload: {
@@ -501,7 +503,7 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
 
   // ── AVG + AVF expiry ─────────────────────────────────────────────
   protected expireDue(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const g of this.config.groups.values()) {
       if (g.avgIp && g.avgState !== 'active' && now - g.lastHeardAvgMs > g.holdSec * 1000) {
         g.avgIp = null;

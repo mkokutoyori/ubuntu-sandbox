@@ -8,6 +8,8 @@
  * deployments would have DBAs adding more via `SECDEMO.MARK_SENSITIVE`.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { ISensitiveObject, SensitivityClass, SensitiveObjectRegistryView } from './interfaces';
 
 export class SensitiveObject implements ISensitiveObject {
@@ -28,7 +30,7 @@ export class SensitiveObject implements ISensitiveObject {
     this.classification = init.classification;
     this.sensitiveColumns = (init.sensitiveColumns ?? []).map(c => c.toUpperCase());
     this.description = init.description ?? '';
-    this.registeredAt = init.registeredAt ?? new Date();
+    this.registeredAt = init.registeredAt ?? simulationDate();
   }
 }
 

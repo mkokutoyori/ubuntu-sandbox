@@ -4,6 +4,8 @@
  * `RdpSessionTable` as sessions establish and close.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { WritableSignal, type Signal } from '@/events/Signal';
 
 export interface RdpLogEntryVM {
@@ -26,7 +28,7 @@ export class RdpSignalStore {
 
   recordSessionEstablished(sessionId: number, userName: string, clientAddress: string): void {
     const entry: RdpLogEntryVM = {
-      timestamp: Date.now(), kind: 'session-established',
+      timestamp: simulationNowMs(), kind: 'session-established',
       detail: `session=${sessionId} user=${userName} client=${clientAddress}`,
     };
     this.log.set([...this.log.get(), entry].slice(-LOG_CAPACITY));
@@ -34,7 +36,7 @@ export class RdpSignalStore {
   }
 
   recordSessionClosed(sessionId: number): void {
-    const entry: RdpLogEntryVM = { timestamp: Date.now(), kind: 'session-closed', detail: `session=${sessionId}` };
+    const entry: RdpLogEntryVM = { timestamp: simulationNowMs(), kind: 'session-closed', detail: `session=${sessionId}` };
     this.log.set([...this.log.get(), entry].slice(-LOG_CAPACITY));
     this.stats.set({ ...this.stats.get(), sessionsClosed: this.stats.get().sessionsClosed + 1 });
   }

@@ -8,6 +8,8 @@
  * PRD-Windows-Server-Advanced.md §5 P1 — AS exchange only (no PA-DATA
  * types beyond PA-ENC-TIMESTAMP, no TGS-REQ yet — that's §5 P2).
  */
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { parseTLV } from '@/network/devices/windows/server/ad/ldap/Ber';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
@@ -37,6 +39,7 @@ export interface KdcContext {
   store: DirectoryStore;
   /** Device id of this KDC — only used for event payloads (PRD-Windows-Server-Advanced.md §5 P12), defaults to the realm name if omitted. */
   deviceId?: string;
+  nowMs?: () => number;
   /** Event bus to publish `kerberos.*` events on (§5 P12) — a `KerberosSignalRefreshActor` subscribing elsewhere is what actually feeds a `KerberosSignalStore`; defaults to the process-wide default bus. */
   bus?: IEventBus;
   /** Writes the real Windows Security-log entry (4768/4769/4771/4772) an AS/TGS exchange produces on a real DC — optional so a KDC used purely for the protocol engine (no device-level event log) still works. */
@@ -53,6 +56,10 @@ export class KdcSessionHandler {
 
   constructor(private readonly ctx: KdcContext) {}
 
+  private nowSeconds(): number {
+    return Math.floor((this.ctx.nowMs ?? simulationNowMs)() / 1000);
+  }
+
   register(socket: TcpSocket): void {
     socket.onData((data) => {
       if (!(data instanceof Uint8Array)) return;
@@ -65,7 +72,7 @@ export class KdcSessionHandler {
 
   private sendError(socket: TcpSocket, req: KdcReq, errorCode: number, eText?: string): void {
     socket.send(encodeKrbError({
-      stime: Math.floor(Date.now() / 1000), susec: 0, errorCode,
+      stime: this.nowSeconds(), susec: 0, errorCode,
       realm: this.ctx.store.getRealm(), sname: req.reqBody.sname, eText,
     }));
   }
@@ -85,7 +92,7 @@ export class KdcSessionHandler {
     this.sendError(socket, req, errorCode, eText);
     if (errorCode === KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED) return;
     this.bus().publish({ topic: 'kerberos.as.failed', payload: { ...this.kdcRef(), cname, errorCode } });
-    const eventId = errorCode === KrbErrorCode.KDC_ERR_PREAUTH_FAILED ? 4771 : 4772;
+    const eventId = errorCode === KrbErrorCode.KDC_ERR_PREAUTH_FAILED || errorCode === KrbErrorCode.KRB_AP_ERR_SKEW ? 4771 : 4772;
     this.ctx.writeSecurityEvent?.(eventId, 'FailureAudit',
       `Kerberos pre-authentication failed.\n\nAccount Information:\n\tSecurity ID:\t\t${cname}\n\tAccount Name:\t\t${cname}\n\nStatus:\t\t\t${kerberosStatusHex(errorCode)}`,
       { TargetUserName: cname, Status: kerberosStatusHex(errorCode) });
@@ -132,7 +139,12 @@ export class KdcSessionHandler {
       return;
     }
     if (paEncTs) {
-      if (!this.verifyPreAuth(paEncTs.value, clientKey)) {
+      const preAuth = this.verifyPreAuth(paEncTs.value, clientKey);
+      if (preAuth === 'skew') {
+        this.failAs(socket, req, cnameStr, KrbErrorCode.KRB_AP_ERR_SKEW, 'Clock skew too great');
+        return;
+      }
+      if (preAuth === 'invalid') {
         if (isUser) this.ctx.store.recordBadPasswordAttempt(sam);
         this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_PREAUTH_FAILED, 'Pre-authentication information was invalid');
         return;
@@ -149,7 +161,7 @@ export class KdcSessionHandler {
 
     const sessionKey = randomSessionKey();
     const sessionKeyValue = new TextEncoder().encode(sessionKey);
-    const now = Math.floor(Date.now() / 1000);
+    const now = this.nowSeconds();
     const endtime = Math.min(req.reqBody.till, now + TICKET_LIFETIME_SECONDS);
     const renewTill = now + RENEWABLE_LIFETIME_SECONDS;
     const flags = { ...NO_TICKET_FLAGS, initial: true, preAuthent: paEncTs !== undefined, renewable: true, forwardable: true };
@@ -183,14 +195,14 @@ export class KdcSessionHandler {
   }
 
   /** RFC 4120 §5.2.7.2: decrypt PA-ENC-TIMESTAMP with the client's key and check it's within the allowed clock skew. */
-  private verifyPreAuth(paValue: Uint8Array, clientKey: string): boolean {
+  private verifyPreAuth(paValue: Uint8Array, clientKey: string): 'valid' | 'invalid' | 'skew' {
     try {
       const encData = decodeEncryptedData(parseTLV(paValue, 0));
       const plaintext = decryptWithUsage(clientKey, KU_PA_ENC_TIMESTAMP, encData.cipher);
       const ts = decodePaEncTsEnc(plaintext);
-      return Math.abs(Math.floor(Date.now() / 1000) - ts) <= CLOCK_SKEW_SECONDS;
+      return Math.abs(this.nowSeconds() - ts) <= CLOCK_SKEW_SECONDS ? 'valid' : 'skew';
     } catch {
-      return false;
+      return 'invalid';
     }
   }
 
@@ -253,7 +265,7 @@ export class KdcSessionHandler {
       this.failTgs(socket, req, '', KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Decryption failed');
       return;
     }
-    const now = Math.floor(Date.now() / 1000);
+    const now = this.nowSeconds();
     if (ticketPart.endtime < now) {
       this.failTgs(socket, req, ticketPart.cname.nameString.join('/'), KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED);
       return;
@@ -264,7 +276,11 @@ export class KdcSessionHandler {
       const authenticator = decodeAuthenticator(decryptWithUsage(ticketSessionKey, KU_TGS_REQ_AUTHENTICATOR, apReq.authenticator.cipher));
       const validCname = authenticator.cname.nameString.join('/') === ticketPart.cname.nameString.join('/');
       const validSkew = Math.abs(now - authenticator.ctime) <= CLOCK_SKEW_SECONDS;
-      if (!validCname || !validSkew) throw new Error('authenticator mismatch');
+      if (validCname && !validSkew) {
+        this.failTgs(socket, req, ticketPart.cname.nameString.join('/'), KrbErrorCode.KRB_AP_ERR_SKEW, 'Clock skew too great');
+        return;
+      }
+      if (!validCname) throw new Error('authenticator mismatch');
     } catch {
       this.failTgs(socket, req, ticketPart.cname.nameString.join('/'), KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Authenticator verification failed');
       return;
@@ -404,7 +420,7 @@ export class KdcSessionHandler {
     }
     const targetKey = stringToKey(targetSecret, realm);
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = this.nowSeconds();
     const sessionKey = randomSessionKey();
     const sessionKeyValue = new TextEncoder().encode(sessionKey);
     const endtime = Math.min(req.reqBody.till, evidencePart.endtime);

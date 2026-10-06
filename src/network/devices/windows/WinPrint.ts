@@ -6,6 +6,8 @@
  * dump-driven scenarios see the expected line and the queue grows.
  */
 
+import { simulationDate } from '@/network/core/SystemClock';
+
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 
@@ -52,7 +54,7 @@ export function cmdPrint(ctx: WinCommandContext, args: string[]): string {
       id: queue.length + 1,
       document: f,
       owner: 'Administrator',
-      submittedAt: new Date(),
+      submittedAt: simulationDate(),
       size: 1024,
       status: 'Printing',
     });

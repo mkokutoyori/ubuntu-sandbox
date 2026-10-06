@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
@@ -122,7 +124,7 @@ export class BfdAgent {
     s.remoteDiag = payload.diagnostic;
     s.remoteMinTxUs = payload.desiredMinTxIntervalUs;
     s.remoteMinRxUs = payload.requiredMinRxIntervalUs;
-    s.lastHeardMs = Date.now();
+    s.lastHeardMs = simulationNowMs();
 
     const next = this.fsmNext(s.state, payload.state, s.adminUp);
     if (next !== s.state) {
@@ -154,7 +156,7 @@ export class BfdAgent {
     const oldState = s.state;
     s.state = newState;
     s.localDiag = diag;
-    s.lastTransitionMs = Date.now();
+    s.lastTransitionMs = simulationNowMs();
     this.getBus().publish({
       topic: 'bfd.session.changed',
       payload: {
@@ -209,7 +211,7 @@ export class BfdAgent {
       ttl: 255, tos: 0xc0,
     });
     this.host.sendIpv4FrameArpAware(s.iface, ipPkt, destination);
-    s.lastTxMs = Date.now();
+    s.lastTxMs = simulationNowMs();
     this.getBus().publish({
       topic: 'bfd.packet.sent',
       payload: {
@@ -227,7 +229,7 @@ export class BfdAgent {
     this.scheduler = s;
     if (this.txTimer === null) {
       this.txTimer = s.setInterval(() => {
-        const now = Date.now();
+        const now = simulationNowMs();
         for (const sess of this.config.sessions.values()) {
           if (!this.shouldEmit(sess)) continue;
           const interval = negotiatedTxIntervalMs(sess);
@@ -247,7 +249,7 @@ export class BfdAgent {
   }
 
   private expireDue(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const s of this.config.sessions.values()) {
       if (s.state !== 'up' && s.state !== 'init') continue;
       if (s.lastHeardMs === 0) continue;

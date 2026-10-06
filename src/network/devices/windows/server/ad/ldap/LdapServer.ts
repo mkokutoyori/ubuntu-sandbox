@@ -46,6 +46,7 @@ export interface LdapBindCheck {
 export interface LdapKerberosContext {
   realm: string;
   serviceSecret: string;
+  clockMs?: () => number;
 }
 
 export interface LdapServerContext {

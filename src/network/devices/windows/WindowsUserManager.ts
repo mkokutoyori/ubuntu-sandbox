@@ -10,6 +10,8 @@
  *   - Built-in groups matching real Windows defaults
  */
 
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus } from '@/events/EventBus';
 import type { WindowsAccountChange } from './events';
 import type { WindowsAccountsPolicy } from './security/WindowsAccountsPolicy';
@@ -152,7 +154,7 @@ export class WindowsUserManager {
       name: 'Administrator', fullName: '', description: 'Built-in account for administering the computer/domain',
       sid: WELL_KNOWN_SIDS['Administrator'], enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
-      passwordLastSet: new Date(), lastLogon: null, builtIn: true,
+      passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
     this.passwords.set('administrator', 'admin');
@@ -161,7 +163,7 @@ export class WindowsUserManager {
       name: 'Guest', fullName: '', description: 'Built-in account for guest access to the computer/domain',
       sid: WELL_KNOWN_SIDS['Guest'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
-      passwordLastSet: new Date(), lastLogon: null, builtIn: true,
+      passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
 
@@ -169,7 +171,7 @@ export class WindowsUserManager {
       name: 'DefaultAccount', fullName: '', description: 'A user account managed by the system.',
       sid: WELL_KNOWN_SIDS['DefaultAccount'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
-      passwordLastSet: new Date(), lastLogon: null, builtIn: true,
+      passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
 
@@ -177,7 +179,7 @@ export class WindowsUserManager {
       name: 'User', fullName: '', description: '',
       sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
-      passwordLastSet: new Date(), lastLogon: new Date(), builtIn: false,
+      passwordLastSet: simulationDate(), lastLogon: simulationDate(), builtIn: false,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
     this.passwords.set('user', 'user');
@@ -189,7 +191,7 @@ export class WindowsUserManager {
         name: u, fullName: '', description: '',
         sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
         passwordRequired: true, userMayChangePassword: true,
-        passwordLastSet: new Date(), lastLogon: null, builtIn: false,
+        passwordLastSet: simulationDate(), lastLogon: null, builtIn: false,
         passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
       });
       this.passwords.set(u.toLowerCase(), u);
@@ -342,7 +344,7 @@ export class WindowsUserManager {
       name, fullName: opts.fullName ?? '', description: opts.description ?? '',
       sid, enabled: true, password: opts.noPassword ? '' : 'x',
       passwordRequired: !opts.noPassword, userMayChangePassword: true,
-      passwordLastSet: new Date(), lastLogon: null, builtIn: false,
+      passwordLastSet: simulationDate(), lastLogon: null, builtIn: false,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
     if (!opts.noPassword) {
@@ -409,7 +411,7 @@ export class WindowsUserManager {
           user.passwordHistory = [current, ...user.passwordHistory].slice(0, historyLength);
         }
         this.passwords.set(name.toLowerCase(), value);
-        user.passwordLastSet = new Date();
+        user.passwordLastSet = simulationDate();
         this.publishAccount(user.name, 'password-reset');
         break;
       }
@@ -453,7 +455,7 @@ export class WindowsUserManager {
   isLockedOut(name: string): boolean {
     const user = this.users.get(name.toLowerCase());
     if (!user?.lockedUntil) return false;
-    if (user.lockedUntil.getTime() > Date.now()) return true;
+    if (user.lockedUntil.getTime() > simulationNowMs()) return true;
     user.lockedUntil = null;
     user.failedLogonCount = 0;
     return false;
@@ -471,7 +473,7 @@ export class WindowsUserManager {
   /** Whether the account's password is past `net accounts /maxpwage`. */
   isPasswordExpired(name: string): boolean {
     const expiresAt = this.passwordExpiresAt(name);
-    return expiresAt !== null && expiresAt < Date.now();
+    return expiresAt !== null && expiresAt < simulationNowMs();
   }
 
   /**
@@ -539,7 +541,7 @@ export class WindowsUserManager {
         const threshold = this.policy?.snapshot().lockoutThreshold ?? 0;
         if (threshold > 0 && user.failedLogonCount >= threshold) {
           const durationMinutes = this.policy?.snapshot().lockoutDurationMinutes ?? 30;
-          user.lockedUntil = new Date(Date.now() + durationMinutes * 60_000);
+          user.lockedUntil = new Date(simulationNowMs() + durationMinutes * 60_000);
           this.publishAccount(user.name, 'locked-out');
         }
       }
@@ -680,7 +682,7 @@ export class WindowsUserManager {
         password: '',
         passwordRequired: false,
         userMayChangePassword: true,
-        passwordLastSet: new Date(),
+        passwordLastSet: simulationDate(),
         lastLogon: null,
         builtIn: false,
         passwordHistory: [],

@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { VxlanAgent } from '../../../vxlan/VxlanAgent';
@@ -94,7 +96,7 @@ export function registerHuaweiVxlanDisplayCommands(trie: CommandTrie, ctx: ShowC
     ];
     for (const p of peers) {
       const iface = Array.from(a.getConfig().interfaces.values()).find((i) => i.vnis.has(p.vni))?.name ?? 'Nve1';
-      const age = p.lastSeenMs > 0 ? hms(Date.now() - p.lastSeenMs) : 'never';
+      const age = p.lastSeenMs > 0 ? hms(simulationNowMs() - p.lastSeenMs) : 'never';
       rows.push(
         `${p.remoteVtepIp.padEnd(17)}${String(p.vni).padEnd(11)}${iface.padEnd(12)}${age.padEnd(10)}${String(p.packetsIn).padEnd(10)}${p.packetsOut}`,
       );
@@ -108,7 +110,7 @@ export function registerHuaweiVxlanDisplayCommands(trie: CommandTrie, ctx: ShowC
     if (!a) return '';
     const rows = ['VNI        MAC Address        Remote-VTEP       Age'];
     for (const e of a.listMacTable()) {
-      const age = e.lastSeenMs > 0 ? hms(Date.now() - e.lastSeenMs) : 'never';
+      const age = e.lastSeenMs > 0 ? hms(simulationNowMs() - e.lastSeenMs) : 'never';
       rows.push(`${String(e.vni).padEnd(11)}${e.mac.padEnd(19)}${e.remoteVtepIp.padEnd(18)}${age}`);
     }
     if (rows.length === 1) rows.push('No VXLAN MAC entries.');

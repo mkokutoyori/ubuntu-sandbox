@@ -1,3 +1,5 @@
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+
 import { ZoneStore } from '@/network/dns/zone/ZoneStore';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
@@ -134,7 +136,7 @@ export class Bind9Service {
   /** `rndc dumpdb [-all]` — dumps every loaded zone's records, real `named_dump.db`-style, via the existing Bind9Files API. */
   dumpDatabase(): OperationResult {
     if (!this.running || !this.store) return { ok: false, error: 'not running' };
-    const lines: string[] = [';', `; Dumped at ${new Date().toUTCString()}`, ';'];
+    const lines: string[] = [';', `; Dumped at ${simulationDate().toUTCString()}`, ';'];
     for (const zone of this.store.listZones()) {
       lines.push(`; Zone dump of '${zone.origin || '.'}'`);
       for (const rr of zone.allRecords()) lines.push(formatRecordLine(rr));
@@ -156,7 +158,7 @@ export class Bind9Service {
     if (!this.running) return { ok: false, error: 'not running' };
     const anchors = this.config?.trustAnchors ?? [];
     const lines = [
-      ';', `; Secure roots as of ${new Date().toUTCString()}`, ';',
+      ';', `; Secure roots as of ${simulationDate().toUTCString()}`, ';',
       ...(!this.dnssecValidationEnabled
         ? [' DNSSEC validation is disabled; no secure roots.']
         : anchors.length === 0
@@ -489,7 +491,7 @@ export class Bind9Service {
     if (question && isTransferQuery(query)) {
       const transferAcl = this.zoneFor(question.qname)?.allowTransfer
         ?? config.options.allowTransfer;
-      const now = Math.floor(Date.now() / 1000);
+      const now = Math.floor(simulationNowMs() / 1000);
       const auth = authorizeUpdate(raw, 'none', this.keyring, now);
       if (auth.rcode !== DnsRcode.NOERROR) {
         const refused = this.refuse(query, recursionAllowed);
@@ -519,7 +521,7 @@ export class Bind9Service {
   }
 
   private handleUpdate(query: DnsMessage, sourceIP?: IPAddress, raw?: Uint8Array): DnsMessage {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Math.floor(simulationNowMs() / 1000);
     const auth = authorizeUpdate(raw, 'none', this.keyring, now);
     const reply = (rcode: number): DnsMessage =>
       signIfKeyed(updateResponse(query, rcode), auth, now);

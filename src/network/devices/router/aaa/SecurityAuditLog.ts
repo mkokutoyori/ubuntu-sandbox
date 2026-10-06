@@ -1,3 +1,5 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { NetworkOsAccountEventEnvelope } from './NetworkOsAccount';
 
@@ -31,7 +33,7 @@ export class SecurityAuditLog {
     this.deviceId = opts.deviceId;
     this.bus = opts.bus;
     this.capacity = opts.capacity ?? 1000;
-    this.now = opts.now ?? Date.now;
+    this.now = opts.now ?? simulationNowMs;
     this.attach();
   }
 

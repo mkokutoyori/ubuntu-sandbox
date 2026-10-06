@@ -9,6 +9,8 @@
  *   - DPD (Dead Peer Detection via link-down events)
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
+
 import { findIpsecTransform } from './transforms';
 import {
   IPAddress, SubnetMask,
@@ -1692,7 +1694,7 @@ export class IPSecEngine implements IProtocolEngine {
     if (msg.notify === 'R-U-THERE') {
       const sa = this.ikeSADB.get(srcIp) ?? this.ikev2SADB.get(srcIp);
       if (!sa) return;
-      sa.lastDPDActivity = Date.now();
+      sa.lastDPDActivity = simulationNowMs();
       if (this.debugIsakmp || this.debugIkev2) {
         Logger.info(this.deviceRef().deviceId, 'debug:isakmp',
           `ISAKMP: DPD R-U-THERE seq ${msg.seq} from ${srcIp} — sending ACK`);
@@ -1715,7 +1717,7 @@ export class IPSecEngine implements IProtocolEngine {
    */
   runDPDCheck(): string[] {
     const events: string[] = [];
-    const now = Date.now();
+    const now = simulationNowMs();
 
     if (this.dpdConfig) {
       const intervalMs = this.dpdConfig.interval * 1000;
@@ -1869,7 +1871,7 @@ export class IPSecEngine implements IProtocolEngine {
    * Here we simply create a new IKE SA and migrate Child SAs.
    */
   recheckIKESALifetimes(): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     const toRekey: string[] = [];
 
     for (const [peerIP, ikeSA] of this.ikeSADB) {
@@ -1911,8 +1913,8 @@ export class IPSecEngine implements IProtocolEngine {
     const newSA: IKE_SA = {
       ...oldSA,
       spi: spiHex(randomSPI()),
-      created: Date.now(),
-      lastDPDActivity: Date.now(),
+      created: simulationNowMs(),
+      lastDPDActivity: simulationNowMs(),
       dpdTimeouts: 0,
     };
     this.ikeSADB.set(peerIP, newSA);
@@ -1936,8 +1938,8 @@ export class IPSecEngine implements IProtocolEngine {
     const newSA: IKEv2_SA = {
       ...oldSA,
       spiLocal: spiHex(randomSPI()),
-      created: Date.now(),
-      lastDPDActivity: Date.now(),
+      created: simulationNowMs(),
+      lastDPDActivity: simulationNowMs(),
       dpdTimeouts: 0,
     };
     this.ikev2SADB.set(peerIP, newSA);
@@ -2109,7 +2111,7 @@ export class IPSecEngine implements IProtocolEngine {
       mode,
       cryptoKeys,
       outboundSeqNum: 0,
-      created: Date.now(),
+      created: simulationNowMs(),
       lifetime,
       pktsEncaps: 0,
       pktsDecaps: 0,
@@ -2268,7 +2270,7 @@ export class IPSecEngine implements IProtocolEngine {
       // Only the authorized sender can encrypt
       if (localIPs.includes(msa.senderAddress)) {
         // Check lifetime
-        const elapsedSec = Math.floor((Date.now() - msa.created) / 1000);
+        const elapsedSec = Math.floor((simulationNowMs() - msa.created) / 1000);
         if (elapsedSec >= msa.lifetime) continue; // expired
         return msa;
       }
@@ -2671,7 +2673,7 @@ export class IPSecEngine implements IProtocolEngine {
    */
   private isSAExpired(sa: IPSec_SA): boolean {
     // Time-based expiration
-    const elapsedSec = Math.floor((Date.now() - sa.created) / 1000);
+    const elapsedSec = Math.floor((simulationNowMs() - sa.created) / 1000);
     if (elapsedSec >= sa.lifetime) return true;
 
     // Volume-based expiration (kilobytes)
@@ -2972,7 +2974,7 @@ export class IPSecEngine implements IProtocolEngine {
     sa.pathMTU = newMTU;
     const overhead = computeIPSecOverhead(sa.hasESP, sa.hasAH);
     sa.ipMTU = Math.max(0, newMTU - overhead);
-    sa.pathMTULastUpdated = Date.now();
+    sa.pathMTULastUpdated = simulationNowMs();
 
     if (this.debugIpsec) {
       Logger.info(this.router.id, 'debug:ipsec',
@@ -2986,7 +2988,7 @@ export class IPSecEngine implements IProtocolEngine {
    * than ageThresholdMs, reset it to DEFAULT_PATH_MTU.
    */
   agePathMTU(ageThresholdMs: number = 600000): void {
-    const now = Date.now();
+    const now = simulationNowMs();
     for (const [, sas] of this.ipsecSADB) {
       for (const sa of sas) {
         if (sa.pathMTU < DEFAULT_PATH_MTU && (now - sa.pathMTULastUpdated) > ageThresholdMs) {
@@ -3050,7 +3052,7 @@ export class IPSecEngine implements IProtocolEngine {
         fragments: [],
         totalDataLength: -1,
         timer,
-        created: Date.now(),
+        created: simulationNowMs(),
       };
       this.fragBuffer.set(key, group);
     }
@@ -3408,7 +3410,7 @@ export class IPSecEngine implements IProtocolEngine {
     policy: IkePolicyProposal; lifetime: number; natT: boolean;
     exchangeMode: 'main' | 'aggressive';
   }): IKE_SA {
-    const now = Date.now();
+    const now = simulationNowMs();
     return {
       peerIP: p.peerIP, localIP: p.localIP, status: 'QM_IDLE',
       encryption: p.policy.encryption, hash: p.policy.hash, group: p.policy.group,
@@ -3425,7 +3427,7 @@ export class IPSecEngine implements IProtocolEngine {
     transforms: string[]; aclName: string; pfsGroup?: string; natT: boolean;
     outIface: string; hasESP: boolean; hasAH: boolean;
   }): IPSec_SA {
-    const now = Date.now();
+    const now = simulationNowMs();
     const overhead = p.mode === 'Tunnel'
       ? computeIPSecOverhead(p.hasESP, p.hasAH)
       : (p.hasESP ? ESP_OVERHEAD_BASE : 0) + (p.hasAH ? AH_OVERHEAD_BASE : 0);
@@ -3596,16 +3598,16 @@ export class IPSecEngine implements IProtocolEngine {
     const sa = this.ikeSADB.get(srcIp);
     if (sa) {
       sa.spi = spiHex(randomSPI());
-      sa.created = Date.now();
-      sa.lastDPDActivity = Date.now();
+      sa.created = simulationNowMs();
+      sa.lastDPDActivity = simulationNowMs();
       sa.dpdTimeouts = 0;
       return;
     }
     const v2sa = this.ikev2SADB.get(srcIp);
     if (v2sa) {
       v2sa.spiLocal = spiHex(randomSPI());
-      v2sa.created = Date.now();
-      v2sa.lastDPDActivity = Date.now();
+      v2sa.created = simulationNowMs();
+      v2sa.lastDPDActivity = simulationNowMs();
       v2sa.dpdTimeouts = 0;
     }
   }
@@ -3802,11 +3804,11 @@ export class IPSecEngine implements IProtocolEngine {
         spiLocal: responderSpi, spiRemote: offer.initiatorSpi, role: 'Responder',
         proposalUsed: chosenIkev2!.propName, encryptionUsed: chosenIkev2!.enc,
         integrityUsed: chosenIkev2!.int, dhGroupUsed: chosenIkev2!.grp,
-        created: Date.now(), natT,
+        created: simulationNowMs(), natT,
         lifetime: this.resolveIkev2Lifetime(peerEntry),
         dpdEnabled: !!ikev2Dpd,
         dpdIntervalSec: ikev2Dpd?.interval, dpdRetries: ikev2Dpd?.retry, dpdMode: ikev2Dpd?.mode,
-        lastDPDActivity: Date.now(), dpdTimeouts: 0,
+        lastDPDActivity: simulationNowMs(), dpdTimeouts: 0,
       });
     } else {
       const useAggr = offer.exchangeMode === 'aggressive' || this.aggressiveMode;
@@ -3912,11 +3914,11 @@ export class IPSecEngine implements IProtocolEngine {
         spiLocal: pending.offer.initiatorSpi, spiRemote: accept.responderSpi, role: 'Initiator',
         proposalUsed: accept.chosenIkev2.propName, encryptionUsed: accept.chosenIkev2.enc,
         integrityUsed: accept.chosenIkev2.int, dhGroupUsed: accept.chosenIkev2.grp,
-        created: Date.now(), natT: accept.natT,
+        created: simulationNowMs(), natT: accept.natT,
         lifetime: this.resolveIkev2Lifetime(pending.entry),
         dpdEnabled: !!ikev2Dpd,
         dpdIntervalSec: ikev2Dpd?.interval, dpdRetries: ikev2Dpd?.retry, dpdMode: ikev2Dpd?.mode,
-        lastDPDActivity: Date.now(), dpdTimeouts: 0,
+        lastDPDActivity: simulationNowMs(), dpdTimeouts: 0,
       });
     } else if (accept.chosenPolicy) {
       this.ikeSADB.set(srcIp, this.buildIkeSAStruct({
@@ -4038,7 +4040,7 @@ export class IPSecEngine implements IProtocolEngine {
       peerIP, localIP: '',
       status: 'MM_NO_STATE',
       encryption: '', hash: '', group: 0, lifetime: 0,
-      created: Date.now(),
+      created: simulationNowMs(),
       spi: spiHex(randomSPI()),
       role: 'initiator',
       natT: false,
@@ -4095,7 +4097,7 @@ export class IPSecEngine implements IProtocolEngine {
       }
       extra.push(`   Exchange mode: ${sa.exchangeMode || 'main'}`);
       extra.push(`   Encryption: ${sa.encryption}, Hash: ${sa.hash}, DH Group: ${sa.group}`);
-      extra.push(`   Lifetime: ${sa.lifetime}s, created ${Math.floor((Date.now() - sa.created) / 1000)}s ago`);
+      extra.push(`   Lifetime: ${sa.lifetime}s, created ${Math.floor((simulationNowMs() - sa.created) / 1000)}s ago`);
       if (sa.natT) {
         extra.push(`   NAT-T: enabled, port 4500`);
         extra.push(`   NAT-T keepalive interval: ${this.natKeepaliveInterval}s`);
@@ -4235,7 +4237,7 @@ export class IPSecEngine implements IProtocolEngine {
     const extra: string[] = [];
     for (const [, sas] of this.ipsecSADB) {
       for (const sa of sas) {
-        const elapsedSec = Math.floor((Date.now() - sa.created) / 1000);
+        const elapsedSec = Math.floor((simulationNowMs() - sa.created) / 1000);
         const remainingSec = Math.max(0, sa.lifetime - elapsedSec);
         const usedKB = Math.floor((sa.bytesEncaps + sa.bytesDecaps) / 1024);
         const remainingKB = Math.max(0, sa.lifetimeKB - usedKB);
@@ -4449,7 +4451,7 @@ export class IPSecEngine implements IProtocolEngine {
       extra.push(`  Status     : ${sa.status}`);
       extra.push(`  Auth method: pre-share`);
       if (sa.natT) extra.push(`  NAT-T      : enabled (port 4500)`);
-      extra.push(`  Lifetime: ${sa.lifetime}s, created ${Math.floor((Date.now() - sa.created) / 1000)}s ago`);
+      extra.push(`  Lifetime: ${sa.lifetime}s, created ${Math.floor((simulationNowMs() - sa.created) / 1000)}s ago`);
       if (sa.dpdEnabled) {
         extra.push(`  DPD: enabled, interval ${sa.dpdIntervalSec}s, retries ${sa.dpdRetries}${sa.dpdMode === 'on-demand' ? ' (on-demand)' : ''}`);
       }
@@ -4661,7 +4663,7 @@ export class IPSecEngine implements IProtocolEngine {
       lines.push(`    #pkts encaps: ${msa.pktsEncaps}, #pkts decaps: ${msa.pktsDecaps}`);
       lines.push(`    #send errors: ${msa.sendErrors}, #recv errors: ${msa.recvErrors}`);
 
-      const elapsedSec = Math.floor((Date.now() - msa.created) / 1000);
+      const elapsedSec = Math.floor((simulationNowMs() - msa.created) / 1000);
       const remainingSec = Math.max(0, msa.lifetime - elapsedSec);
       lines.push(`    SA lifetime: ${msa.lifetime}s, remaining: ${remainingSec}s`);
       lines.push(`    Outbound sequence number: ${msa.outboundSeqNum}`);
