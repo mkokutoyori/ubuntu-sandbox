@@ -613,6 +613,7 @@ export class LinuxCommandExecutor {
   private jobTable = new LinuxJobTable();
   private clockPort: HostClockPort = defaultHostClockPort();
   private bootMonotonicMs = this.clockPort.monotonic();
+  private readonly wallNow = (): number => this.clockPort.wall();
   private cronEngine?: CronEngine;
   private cronStarted = false;
   private cronCursorMs = 0;
@@ -660,6 +661,7 @@ export class LinuxCommandExecutor {
     this.lifecycle = lifecycle ?? new HostLifecycle();
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
+    this.vfs.setClock(this.wallNow);
     this.mountTable = MountTable.fromHardware(this.hardware.storage);
     const rootPartition = this.hardware.storage
       .flatMap((d) => d.partitions).find((p) => p.mountPoint === '/');
@@ -667,6 +669,7 @@ export class LinuxCommandExecutor {
     this.vfs.setReadOnlyResolver((p) => this.mountTable.isReadOnly(p));
     this.seedSetuidBinaries();
     this.userMgr = new LinuxUserManager(this.vfs);
+    this.userMgr.setClock(this.wallNow);
     // Project the lastlog registry onto the canonical /var/log/lastlog file
     // so the filesystem view stays coherent with the in-memory registry.
     this.lastlog.attachVfs(this.vfs);
@@ -675,6 +678,7 @@ export class LinuxCommandExecutor {
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
+    this.logMgr.setClock(this.wallNow);
     this.pam = new LinuxPam({
       vfs: this.vfs,
       users: this.userMgr,
@@ -694,8 +698,10 @@ export class LinuxCommandExecutor {
     this.sudoPam = new SudoPamSessions(this.pam, () => ({ uid: this.userMgr.currentUid, euid: 0, loginName: this.loginName() }));
     this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
     this.auditLog = new LinuxAuditLog(this.vfs);
+    this.auditLog.setClock(this.wallNow);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
     this.processMgr = new LinuxProcessManager();
+    this.processMgr.setClock(this.wallNow);
     // Lets a trapped signal actually run its handler before kill() applies
     // the default action — see LinuxProcessManager.trapHandlerHook.
     this.processMgr.attachSignalTrapHandler((pid, signal) => {
@@ -713,6 +719,7 @@ export class LinuxCommandExecutor {
       return 'handled';
     });
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer }, this.dynamicUsers);
+    this.serviceMgr.setClock(this.wallNow);
     this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
     this.auditRules.bindActorContextProvider(() => this.snapshotActor());
     this.isServer = isServer;

@@ -140,6 +140,37 @@ eux echouera.
 
 ## Pile TCP/IP
 
+### [arp] une resolution sans reponse n'emet qu'UNE requete par sonde
+**Mesure** : `ping -c 2 -W 1 10.0.0.99` depuis un poste dont le voisin n'existe
+pas emet une requete ARP par sonde, espacees d'une seconde (l'intervalle du
+ping), puis `Destination Host Unreachable` aussitot. Linux emet
+`mcast_solicit` = 3 requetes espacees de `retrans_time_ms` = 1000
+(`/proc/sys/net/ipv4/neigh/default/`, ip-sysctl.rst) avant d'echouer, soit
+environ 3 s avant le premier `Destination Host Unreachable`.
+**Pourquoi ce n'est pas ferme** : `resolveARP` -> `probeArp` attend un
+evenement sur le delai d'attente de l'ordonnanceur ; le faire passer par une
+machine d'etats de voisin (INCOMPLETE -> FAILED) touche `resolveARP`,
+`resolveNDP` et le chemin d'erreur de `ping`. L'attente doit alors faire
+avancer l'horloge de la machine (`PathClock.wait`), comme le calendrier de
+DISCOVER du client DHCP.
+
+### [horloge] des lecteurs du temps bruts subsistent
+**Mesure** : 566 sites `Date.now()` / `new Date()` hors tests sous
+`src/network` (105 dans `devices/linux`, 55 dans `devices/windows`, 46 dans
+`devices/router`, 41 dans `devices/shells`, 37 dans `protocols/ssh`). Ils
+valent l'heure de la machine tant qu'on ne pose pas l'horloge ni n'attend :
+apres `sudo date -s "2030-01-01 12:00:00"`, les dates des fichiers, le
+journal, syslog, auth.log, `chage -l`, `uptime -s`, `dir` et `Get-Date`
+suivent l'horloge de la machine (`probe-horloge-vues-coherentes`), mais le
+`START` de `ps` des processus de demarrage et les dates de `last` / `who`
+(enregistrements utmp) gardent l'heure reelle. Sur un vrai noyau, `ps`
+suit (btime recalcule), `last` non.
+**Pourquoi ce n'est pas ferme** : chaque sous-systeme prend l'horloge par un
+`setClock` (VFS, journal, processus, services, comptes, audit, systeme de
+fichiers Windows) ; les 566 restants n'ont pas de machine sous la main
+(fonctions libres, tables statiques) et demandent le meme port etroit.
+
+
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
 La zone d'options existe desormais (RFC 791 §3.1), et Record Route comme
 le routage par la source sont honores par `Router`. L'option Timestamp

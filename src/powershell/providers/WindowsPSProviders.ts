@@ -2791,6 +2791,11 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
   now(): Date {
     return this.pc.simulatedDate();
   }
+  setNow(epochMs: number): boolean {
+    if (!this.pc.getUserManager().isCurrentUserAdmin()) return false;
+    this.pc.setSystemTime(epochMs);
+    return true;
+  }
 }
 
 // ── Disks / volumes (read-only seeded data) ───────────────────────────────

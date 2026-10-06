@@ -3,6 +3,7 @@
  * and /var/log/ files for the Linux simulator.
  */
 
+import { simulationNowMs } from '../../core/SystemClock';
 import { kernelHostname } from './KernelHostname';
 import { VirtualFileSystem } from './VirtualFileSystem';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
@@ -131,10 +132,14 @@ export class LinuxLogManager {
 
   private readonly bootFacts: KernelBootFacts;
 
+  private nowMs: () => number = simulationNowMs;
+
+  setClock(now: () => number): void { this.nowMs = now; }
+
   constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts) {
     this.bootFacts = facts ?? defaultKernelBootFacts();
     this.kernelRelease = this.bootFacts.kernelRelease;
-    this.bootTime = new Date(Date.now() - 30_000);
+    this.bootTime = new Date(simulationNowMs() - 30_000);
     this.bootId = this.generateBootId();
     this.populateBootMessages();
   }
@@ -475,7 +480,7 @@ export class LinuxLogManager {
     // wall-clock time and would surface as "events that haven't
     // happened yet" relative to `date(1)`. Real journalctl only ever
     // returns entries it has already received.
-    const nowMs = Date.now();
+    const nowMs = this.nowMs();
     entries = entries.filter((e) => e.timestamp.getTime() <= nowMs);
 
     if (entries.length === 0) return '-- No entries --';
@@ -632,7 +637,7 @@ export class LinuxLogManager {
   }): void {
     this.monotonicCounter += 1000;
     const entry: JournalEntry = {
-      timestamp: new Date(),
+      timestamp: new Date(this.nowMs()),
       monotonicUsec: this.monotonicCounter,
       priority: opts.priority,
       facility: opts.facility,
@@ -814,16 +819,16 @@ export class LinuxLogManager {
 
   private parseJournalTime(spec: string): number {
     const s = spec.trim().toLowerCase();
-    if (s === '' || s === 'now') return Date.now();
+    if (s === '' || s === 'now') return this.nowMs();
     const ago = s.match(/^(\d+)\s*(second|minute|hour|day|week)s?\s*(ago)?$/);
     if (ago) {
       const mult: Record<string, number> = {
         second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
       };
-      return Date.now() - parseInt(ago[1], 10) * mult[ago[2]];
+      return this.nowMs() - parseInt(ago[1], 10) * mult[ago[2]];
     }
     const t = Date.parse(spec);
-    return isNaN(t) ? Date.now() : t;
+    return isNaN(t) ? this.nowMs() : t;
   }
 
   private readonly followSubs = new Set<{ unit: string; priority: number; pid: number; listener: (line: string) => void }>();
@@ -976,7 +981,7 @@ export class LinuxLogManager {
 
   private cmdListBoots(): string {
     const ts = fmtHumanDate(this.bootTime);
-    const now = fmtHumanDate(new Date());
+    const now = fmtHumanDate(new Date(this.nowMs()));
     return ` 0 ${this.bootId} ${ts}—${now}`;
   }
 

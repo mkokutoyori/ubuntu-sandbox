@@ -500,6 +500,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.dhcpClient.setAddressConflictChecker((iface, ip) => this.addressAnsweredOnLink(iface, ip));
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
+    this.fs.setClock(() => this.getSystemClockMs());
     this.seedVolumesFromHardware();
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);

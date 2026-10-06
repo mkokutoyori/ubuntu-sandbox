@@ -12,6 +12,7 @@
  * have them recognized after `systemctl daemon-reload`.
  */
 
+import { simulationNowMs } from '../../core/SystemClock';
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
 import type { IEventBus } from '@/events/EventBus';
@@ -595,6 +596,10 @@ export type ServiceLifecycleListener = (
 ) => void;
 
 export class LinuxServiceManager {
+  private nowMs: () => number = simulationNowMs;
+
+  setClock(now: () => number): void { this.nowMs = now; }
+
   /** Loaded units indexed by short name (without .service suffix). */
   private units = new Map<string, LinuxService>();
   /** Lifecycle listeners (BRD SSH-07-R6: sshd reloads its config on restart). */
@@ -774,7 +779,7 @@ export class LinuxServiceManager {
 
   private readonly timerScheduler = new TimerScheduler();
 
-  timerTick(now: Date = new Date()): void {
+  timerTick(now: Date = new Date(this.nowMs())): void {
     for (const service of this.timerScheduler.due(now)) this.start(service);
   }
 
@@ -873,7 +878,7 @@ export class LinuxServiceManager {
     if (!binding || binding.sockets.length === 0) return;
     const port = binding.sockets[0].port;
     const source = u.portOverride ? u.portOverride.source : 'config';
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const now = new Date(this.nowMs()).toISOString().replace('T', ' ').slice(0, 19);
     const line = `${now} systemd[1]: ${u.name}.service: bound port ${port} (source: ${source})\n`;
     const path = '/var/log/messages';
     if (!this.vfs.exists('/var/log')) this.vfs.mkdirp('/var/log', 0o755, 0, 0);
@@ -948,7 +953,7 @@ export class LinuxServiceManager {
   private completeDelayedActivation(name: string): void {
     const u = this.units.get(name);
     if (!u || u.state !== 'activating') { this.pendingReadiness.delete(name); return; }
-    u.activeSince = new Date();
+    u.activeSince = new Date(this.nowMs());
     u.state = 'active';
     this.pendingReadiness.delete(name);
     this.emitStateChanged(u.name, 'activating', 'active');
@@ -1393,7 +1398,7 @@ export class LinuxServiceManager {
   private activate(u: LinuxService): OperationResult {
     const prev = u.state;
     if (unitSuffix(u.name) !== 'service') {
-      u.activeSince = new Date();
+      u.activeSince = new Date(this.nowMs());
       u.state = 'active';
       if (unitSuffix(u.name) === 'timer') {
         this.timerScheduler.arm({
@@ -1433,7 +1438,7 @@ export class LinuxServiceManager {
       rss: profile.rss,
     });
     u.mainPid = proc.pid;
-    u.activeSince = new Date();
+    u.activeSince = new Date(this.nowMs());
     u.state = 'active';
     this.writeRuntimeArtifacts(u);
     this.emitStateChanged(u.name, prev, 'active');

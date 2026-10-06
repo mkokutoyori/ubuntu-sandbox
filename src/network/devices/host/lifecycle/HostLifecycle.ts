@@ -47,8 +47,11 @@ export class HostLifecycle {
     this.bootCount = 1;
   }
 
-  bindClock(clock: () => number): void {
+  private wall: (() => number) | null = null;
+
+  bindClock(clock: () => number, wall?: () => number): void {
     this.clock = clock;
+    this.wall = wall ?? null;
   }
 
   /** Attach the owning device's event bus so transitions become observable. */
@@ -89,7 +92,9 @@ export class HostLifecycle {
 
   /** Wall-clock of the last boot, or null while powered off. */
   bootedAt(): Date | null {
-    return this.bootedAtMs === null ? null : new Date(this.bootedAtMs);
+    if (this.bootedAtMs === null) return null;
+    if (this.wall === null) return new Date(this.bootedAtMs);
+    return new Date(this.wall() - (this.clock() - this.bootedAtMs));
   }
 
   /** Uptime in whole seconds — zero while powered off. */

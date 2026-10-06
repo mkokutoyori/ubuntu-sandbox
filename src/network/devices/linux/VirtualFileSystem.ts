@@ -3,6 +3,7 @@
  * Supports files, directories, symlinks, hard links, FIFOs, and special devices.
  */
 
+import { simulationNowMs } from '../../core/SystemClock';
 import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
 import { VfsPath, type PathActor } from './VfsPath';
@@ -100,6 +101,10 @@ export interface VfsWriteEvent {
 }
 
 export class VirtualFileSystem {
+  private nowMs: () => number = simulationNowMs;
+
+  setClock(now: () => number): void { this.nowMs = now; }
+
   private inodes: Map<number, INode> = new Map();
   private nextInodeId = 1;
   /** Per-path subscribers — see `onWrite()`. */
@@ -413,7 +418,7 @@ export class VirtualFileSystem {
 
   private allocInode(type: FileType, permissions: number, uid: number, gid: number): INode {
     const id = this.nextInodeId++;
-    const now = Date.now();
+    const now = this.nowMs();
     const inode: INode = {
       id,
       type,
@@ -619,7 +624,7 @@ export class VirtualFileSystem {
         if (!this.fitsBytes(content.length - existing.size)) return null; // ENOSPC
         existing.content = content;
         existing.size = content.length;
-        existing.mtime = Date.now();
+        existing.mtime = this.nowMs();
         return existing;
       }
       return null; // Can't overwrite non-file
@@ -632,7 +637,7 @@ export class VirtualFileSystem {
     inode.content = content;
     inode.size = content.length;
     parentInode.children.set(basename, inode.id);
-    parentInode.mtime = Date.now();
+    parentInode.mtime = this.nowMs();
     return inode;
   }
 
@@ -686,8 +691,8 @@ export class VirtualFileSystem {
   touch(path: string, uid: number, gid: number, umask: number): boolean {
     const existing = this.resolveInode(path);
     if (existing) {
-      existing.mtime = Date.now();
-      existing.atime = Date.now();
+      existing.mtime = this.nowMs();
+      existing.atime = this.nowMs();
       return true;
     }
     if (this.isVirtualTree(path)) return false;
@@ -718,7 +723,7 @@ export class VirtualFileSystem {
     }
 
     if (inode.type !== 'file') return null;
-    inode.atime = Date.now();
+    inode.atime = this.nowMs();
     // Generated pseudo-files (procfs) are produced fresh on every read.
     return inode.generator ? inode.generator() : inode.content;
   }
@@ -818,7 +823,7 @@ export class VirtualFileSystem {
         inode.content = content;
       }
       inode.size = declaredSizeBytes ?? inode.content.length;
-      inode.mtime = Date.now();
+      inode.mtime = this.nowMs();
       this.emitWrite({
         path: this.canonicalKey(path),
         previous,
@@ -950,7 +955,7 @@ export class VirtualFileSystem {
     if (child.immutable) return false;
 
     parentInode.children.delete(basename);
-    parentInode.mtime = Date.now();
+    parentInode.mtime = this.nowMs();
 
     child.linkCount--;
     if (child.linkCount <= 0) {
@@ -979,7 +984,7 @@ export class VirtualFileSystem {
     dirInode.children.set('..', parentInode.id);
     parentInode.children.set(basename, dirInode.id);
     parentInode.linkCount++;
-    parentInode.mtime = Date.now();
+    parentInode.mtime = this.nowMs();
     return true;
   }
 
@@ -1008,7 +1013,7 @@ export class VirtualFileSystem {
 
     parentInode.children.delete(basename);
     parentInode.linkCount--;
-    parentInode.mtime = Date.now();
+    parentInode.mtime = this.nowMs();
     this.inodes.delete(inode.id);
     return true;
   }
@@ -1077,7 +1082,7 @@ export class VirtualFileSystem {
     inode.target = target;
     inode.size = target.length;
     parentInode.children.set(basename, inode.id);
-    parentInode.mtime = Date.now();
+    parentInode.mtime = this.nowMs();
     return true;
   }
 
@@ -1093,7 +1098,7 @@ export class VirtualFileSystem {
 
     parentInode.children.set(basename, targetInode.id);
     targetInode.linkCount++;
-    parentInode.mtime = Date.now();
+    parentInode.mtime = this.nowMs();
     return true;
   }
 
@@ -1103,7 +1108,7 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode) return false;
     inode.permissions = mode;
-    inode.ctime = Date.now();
+    inode.ctime = this.nowMs();
     return true;
   }
 
@@ -1113,7 +1118,7 @@ export class VirtualFileSystem {
     if (!inode) return false;
     if (!inode.aclUsers) inode.aclUsers = new Map();
     inode.aclUsers.set(user, perms & 0o7);
-    inode.ctime = Date.now();
+    inode.ctime = this.nowMs();
     return true;
   }
 
@@ -1123,7 +1128,7 @@ export class VirtualFileSystem {
     if (!inode) return false;
     if (!inode.aclGroups) inode.aclGroups = new Map();
     inode.aclGroups.set(group, perms & 0o7);
-    inode.ctime = Date.now();
+    inode.ctime = this.nowMs();
     return true;
   }
 
@@ -1132,7 +1137,7 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode?.aclUsers) return false;
     const had = inode.aclUsers.delete(user);
-    if (had) inode.ctime = Date.now();
+    if (had) inode.ctime = this.nowMs();
     return had;
   }
 
@@ -1141,7 +1146,7 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode?.aclGroups) return false;
     const had = inode.aclGroups.delete(group);
-    if (had) inode.ctime = Date.now();
+    if (had) inode.ctime = this.nowMs();
     return had;
   }
 
@@ -1183,7 +1188,7 @@ export class VirtualFileSystem {
     if (!inode) return false;
     inode.uid = uid;
     if (gid !== undefined) inode.gid = gid;
-    inode.ctime = Date.now();
+    inode.ctime = this.nowMs();
     return true;
   }
 
@@ -1191,7 +1196,7 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode) return false;
     inode.gid = gid;
-    inode.ctime = Date.now();
+    inode.ctime = this.nowMs();
     return true;
   }
 
@@ -1253,7 +1258,7 @@ export class VirtualFileSystem {
 
     // Remove from old parent
     srcParentInode.children.delete(srcBasename);
-    srcParentInode.mtime = Date.now();
+    srcParentInode.mtime = this.nowMs();
 
     // If something exists at dst, remove it
     const existingId = dstParentInode.children.get(dstBasename);
@@ -1267,7 +1272,7 @@ export class VirtualFileSystem {
 
     // Add to new parent
     dstParentInode.children.set(dstBasename, srcId);
-    dstParentInode.mtime = Date.now();
+    dstParentInode.mtime = this.nowMs();
 
     // Update .. reference if directory
     const srcNode = this.inodes.get(srcId);
@@ -1289,7 +1294,7 @@ export class VirtualFileSystem {
 
     const inode = this.allocInode('fifo', permissions, uid, gid);
     parentInode.children.set(basename, inode.id);
-    parentInode.mtime = Date.now();
+    parentInode.mtime = this.nowMs();
     return true;
   }
 
@@ -1373,7 +1378,7 @@ export class VirtualFileSystem {
 
     if (options.mtime !== undefined) {
       const days = Math.abs(options.mtime);
-      const threshold = Date.now() - days * 86400000;
+      const threshold = this.nowMs() - days * 86400000;
       if (options.mtime < 0) {
         // -mtime -N: modified within N days
         if (inode.mtime < threshold) return false;

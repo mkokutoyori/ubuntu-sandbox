@@ -12,6 +12,7 @@
  * new consumers (audit panels, toasts, supervisors) subscribe to the bus.
  */
 
+import { simulationNowMs } from '../../core/SystemClock';
 import { kernelHostname } from './KernelHostname';
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { uptimeHeader } from './system/SystemInfo';
@@ -87,6 +88,10 @@ export interface UseraddOptions {
 }
 
 export class LinuxUserManager {
+  private nowMs: () => number = simulationNowMs;
+
+  setClock(now: () => number): void { this.nowMs = now; }
+
   private users: Map<string, LinuxUserAccount> = new Map();
   private groups: Map<string, LinuxGroup> = new Map();
   /** Plaintext password store for simulation (username → password) */
@@ -187,7 +192,7 @@ export class LinuxUserManager {
   }
 
   private daysSinceEpoch(): number {
-    return daysSinceEpochOf();
+    return daysSinceEpochOf(this.nowMs());
   }
 
   private addUser(u: LinuxUserAccount): void {
@@ -630,6 +635,8 @@ export class LinuxUserManager {
       minDays: aging.minDays,
       maxDays: aging.maxDays,
       warnDays: aging.warnDays,
+      lastChange: this.daysSinceEpoch(),
+      createdAt: this.nowMs(),
     });
     this.addUser(account);
 
@@ -1317,11 +1324,11 @@ export class LinuxUserManager {
   }
 
   who(): string {
-    return `${this.currentUser}  pts/0  ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+    return `${this.currentUser}  pts/0  ${new Date(this.nowMs()).toISOString().slice(0, 16).replace('T', ' ')}`;
   }
 
   w(uptimeSeconds = 0): string {
-    const now = new Date();
+    const now = new Date(this.nowMs());
     const time = now.toTimeString().slice(0, 8);
     return [
       uptimeHeader(1, uptimeSeconds),
@@ -1385,7 +1392,7 @@ export class LinuxUserManager {
     if (limit > 0) rows = rows.slice(0, limit);
 
     const lines: string[] = [];
-    const now = new Date();
+    const now = new Date(this.nowMs());
     const headDate = formatLastDate(now);
     const headTime = now.toTimeString().slice(0, 5);
 

@@ -1150,7 +1150,7 @@ export abstract class EndHost extends Equipment {
     );
     this.hardware.identify(this.name);
     this.lifecycle = new HostLifecycle(this.getMonotonicClockMs());
-    this.lifecycle.bindClock(() => this.getMonotonicClockMs());
+    this.lifecycle.bindClock(() => this.getMonotonicClockMs(), () => this.getSystemClockMs());
     this.lifecycle.attachBus(this.getBus(), this.id, name);
     this.identity = String(type).includes('windows')
       ? (String(type).includes('server') ? SystemIdentity.windowsServer() : SystemIdentity.windows())

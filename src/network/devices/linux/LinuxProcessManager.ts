@@ -15,6 +15,7 @@
  * Inversion + Observer).
  */
 
+import { simulationNowMs } from '../../core/SystemClock';
 import type { IEventBus } from '@/events/EventBus';
 import type { LinuxProcessServiceDomainEvent } from './events';
 import type { OSProcess } from '../os/OSProcess';
@@ -140,6 +141,10 @@ const KERNEL_THREADS: ReadonlyArray<{ comm: string; state: ProcessState }> = [
 ];
 
 export class LinuxProcessManager {
+  private nowMs: () => number = simulationNowMs;
+
+  setClock(now: () => number): void { this.nowMs = now; }
+
   private processes = new Map<number, ProcessInfo>();
   private nextPid = 2;
   /** Reactive sink — null until a device attaches its bus. */
@@ -192,7 +197,7 @@ export class LinuxProcessManager {
       comm,
       args,
       state: 'S',
-      startTime: new Date(),
+      startTime: new Date(this.nowMs()),
       cpuTime: 0,
       vsize: opts.vsize ?? 10240,
       rss: opts.rss ?? 4096,
@@ -638,7 +643,7 @@ export class LinuxProcessManager {
       comm: 'systemd',
       args: [],
       state: 'S',
-      startTime: new Date(),
+      startTime: new Date(this.nowMs()),
       cpuTime: 0,
       vsize: 169000,
       rss: 13000,
@@ -663,7 +668,7 @@ export class LinuxProcessManager {
       comm: '[kthreadd]',
       args: [],
       state: 'S',
-      startTime: new Date(),
+      startTime: new Date(this.nowMs()),
       cpuTime: 0,
       vsize: 0,
       rss: 0,
@@ -690,7 +695,7 @@ export class LinuxProcessManager {
         comm: kt.comm,
         args: [],
         state: kt.state,
-        startTime: new Date(),
+        startTime: new Date(this.nowMs()),
         cpuTime: 0,
         vsize: 0,
         rss: 0,
