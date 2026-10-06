@@ -141,6 +141,15 @@ export function decodeMessages(bytes: Uint8Array): TlsHandshakeMessage[] {
   return splitHandshakeMessages(bytes).map((entry) => decodeTls13Message(entry.type, entry.body));
 }
 
+export interface RawHandshakeMessage {
+  readonly message: TlsHandshakeMessage;
+  readonly raw: Uint8Array;
+}
+
+export function decodeMessagesRaw(bytes: Uint8Array): RawHandshakeMessage[] {
+  return splitHandshakeMessages(bytes).map((entry) => ({ message: decodeTls13Message(entry.type, entry.body), raw: entry.raw }));
+}
+
 let nonceCounter = 0;
 
 /** Deterministic-but-unique nonce generator, same shape as `EapTlsHandshake.randomNonce`. */

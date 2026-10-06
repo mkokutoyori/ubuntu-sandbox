@@ -74,11 +74,12 @@ export function encodeInnerPlaintext(inner: InnerPlaintext): Uint8Array {
 }
 
 export function decodeInnerPlaintext(bytes: Uint8Array): InnerPlaintext {
-  if (bytes.length === 0) throw new Error('decodeInnerPlaintext: empty payload has no content-type trailer');
-  const typeCode = bytes[bytes.length - 1];
-  const contentType = CONTENT_TYPE_FROM_CODE[typeCode];
-  if (!contentType) throw new Error(`decodeInnerPlaintext: unknown content-type code ${typeCode}`);
-  return { content: bytes.slice(0, bytes.length - 1), contentType };
+  let end = bytes.length - 1;
+  while (end >= 0 && bytes[end] === 0) end--;
+  if (end < 0) throw new Error('decodeInnerPlaintext: no content-type trailer (empty or all padding)');
+  const contentType = CONTENT_TYPE_FROM_CODE[bytes[end]];
+  if (!contentType) throw new Error(`decodeInnerPlaintext: unknown content-type code ${bytes[end]}`);
+  return { content: bytes.slice(0, end), contentType };
 }
 
 /**
@@ -97,21 +98,33 @@ export function fragmentAsRecords(
   maxFragmentSize: number = MAX_TLS_RECORD_LENGTH,
 ): TlsRecord[] {
   if (!protectedMode) return fragmentPlaintext(contentType, plaintext, maxFragmentSize);
-  const wrapped = encodeInnerPlaintext({ content: plaintext, contentType });
-  return fragmentPlaintext('application_data', wrapped, maxFragmentSize);
+  return fragmentPlaintext(contentType, plaintext, maxFragmentSize).map((record) => ({
+    contentType: 'application_data' as const,
+    legacyVersion: record.legacyVersion,
+    fragment: encodeInnerPlaintext({ content: record.fragment, contentType }),
+  }));
 }
 
 export function reassembleRecords(
   records: readonly TlsRecord[],
   protectedMode: boolean,
 ): { contentType: ContentType; plaintext: Uint8Array } {
-  const { contentType, plaintext } = reassembleFragments(records);
-  if (!protectedMode) return { contentType, plaintext };
-  if (contentType !== 'application_data') {
-    throw new Error('reassembleRecords: a protected record must be outwardly labeled application_data');
+  if (!protectedMode) return reassembleFragments(records);
+  if (records.length === 0) throw new Error('reassembleRecords: no records to reassemble');
+  const inners = records.map((record) => {
+    if (record.contentType !== 'application_data') {
+      throw new Error('reassembleRecords: a protected record must be outwardly labeled application_data');
+    }
+    return decodeInnerPlaintext(record.fragment);
+  });
+  const contentType = inners[0].contentType;
+  if (inners.some((inner) => inner.contentType !== contentType)) {
+    throw new Error('reassembleRecords: records with mixed content types cannot belong to the same message');
   }
-  const inner = decodeInnerPlaintext(plaintext);
-  return { contentType: inner.contentType, plaintext: inner.content };
+  const plaintext = new Uint8Array(inners.reduce((sum, inner) => sum + inner.content.length, 0));
+  let offset = 0;
+  for (const inner of inners) { plaintext.set(inner.content, offset); offset += inner.content.length; }
+  return { contentType, plaintext };
 }
 
 /**

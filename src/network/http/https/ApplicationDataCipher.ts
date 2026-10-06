@@ -55,9 +55,10 @@ export function encryptApplicationData(
   }
   const k = keys(traffic);
   const limit = typeof traffic === 'string' ? undefined : traffic.maxFragment;
+  const base = typeof traffic === 'string' ? 0 : traffic.sequenceBase ?? 0;
   const records = fragmentAsRecords('application_data', plaintext, true, limit);
   let seq = startSeq;
-  const encrypted = records.map((record): TlsRecord => sealRecord(k, seq++, record));
+  const encrypted = records.map((record): TlsRecord => sealRecord(k, base + seq++, record));
   return { records: encrypted, nextSeq: seq };
 }
 
@@ -102,10 +103,11 @@ export function decryptApplicationData(
     return { plaintext: reassembleFragments(opened).plaintext, nextSeq: legacySeq };
   }
   const k = keys(traffic);
+  const base = typeof traffic === 'string' ? 0 : traffic.sequenceBase ?? 0;
   let seq = startSeq;
   const decrypted: TlsRecord[] = [];
   for (const record of records) {
-    const clair = openRecord(k, seq++, record);
+    const clair = openRecord(k, base + seq++, record);
     // Refuser le lot entier plutôt que d'en livrer la moitié : c'est ce
     // que fait un vrai TLS, qui ferme la connexion.
     if (clair === null) throw new BadRecordMacError();

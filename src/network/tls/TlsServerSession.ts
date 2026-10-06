@@ -28,10 +28,11 @@ import {
   type ClientHello, type ServerHello, type HelloRetryRequest, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
   type NewSessionTicket, type KeyUpdate, type TlsHandshakeMessage,
-  encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
+  encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, decodeMessagesRaw, randomNonce,
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { randomHex } from './legacy/LegacyHandshake';
+import { sealFlight, openFlight, withoutChangeCipherSpec, COMPATIBILITY_CHANGE_CIPHER_SPEC } from './handshakeProtection';
 import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
@@ -186,6 +187,7 @@ export class TlsServerSession {
    * Finished computation.
    */
   clientHandshakeTrafficSecret: string | null = null;
+  private serverApplicationSequenceBase = 0;
   serverHandshakeTrafficSecret: string | null = null;
   /** Stable per-connection correlator for `events.ts` payloads (§2.1.12). */
   readonly sessionId = randomNonce('tls-session');
@@ -264,6 +266,7 @@ export class TlsServerSession {
     return {
       secret: this.serverApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite,
       maxFragment: ceiling === undefined ? negotiated : Math.min(negotiated, ceiling),
+      sequenceBase: this.serverApplicationSequenceBase,
     };
   }
 
@@ -601,23 +604,28 @@ export class TlsServerSession {
     this.serverApplicationTrafficSecret = applicationPhase.serverApplicationTrafficSecret;
 
     this.state = 'awaiting-client-final';
+    const sealed = sealFlight(handshakePhase.serverHandshakeTrafficSecret, negotiatedSuite, 0, encodeMessages(bundle));
     return [
       ...fragmentAsRecords('handshake', serverHelloBytes, false),
-      ...fragmentAsRecords('handshake', encodeMessages(bundle), true),
+      ...(clientHello.legacyExtensions?.sessionId ? [COMPATIBILITY_CHANGE_CIPHER_SPEC] : []),
+      ...sealed.records,
     ];
   }
 
   private handleClientFinal(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
-    const { contentType, plaintext } = reassembleRecords(incoming, true);
-    if (contentType !== 'handshake') return this.reject('decode_error');
-    const messages = decodeMessages(plaintext);
+    const opened = openFlight(this.clientHandshakeTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, withoutChangeCipherSpec(incoming));
+    if (opened === null) return this.reject('bad_record_mac');
+    if (opened.contentType !== 'handshake') return this.reject('unexpected_message');
+    const received = decodeMessagesRaw(opened.plaintext);
+    const messages = received.map((entry) => entry.message);
+    const rawOf = (message: TlsHandshakeMessage): Uint8Array => received.find((entry) => entry.message === message)!.raw;
 
     if (this.config.requestClientCert) {
       const certificate = messages.find((m): m is CertificateMessage => m.kind === 'certificate');
       const certificateVerify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify');
       const policy = this.config.clientCertPolicy;
       if (!certificate) return this.reject('unexpected_message');
-      this.transcript.push(encodeHandshakeMessage(certificate));
+      this.transcript.push(rawOf(certificate));
       if (certificate.certificateList.length === 0 || !certificateVerify) {
         if (!allowsMissingCertificate(policy)) return this.reject('certificate_required');
         this.peerVerificationReason = 'no-certificate';
@@ -642,7 +650,7 @@ export class TlsServerSession {
         const preVerify = certificateVerifyContent('client', transcriptHash(this.transcript, this.hash));
         if (certificateVerify.signatureAlgorithm !== schemeForKey(leafCert.publicKey.algorithm)) return this.reject('illegal_parameter');
         if (!verifyCertificateVerify(leafCert.publicKey, preVerify, certificateVerify.signatureAlgorithm, certificateVerify.signature)) return this.reject('decrypt_error');
-        this.transcript.push(encodeHandshakeMessage(certificateVerify));
+        this.transcript.push(rawOf(certificateVerify));
       }
     }
 
@@ -650,7 +658,7 @@ export class TlsServerSession {
     if (!finished) return this.reject('unexpected_message');
     const expected = computeFinished(this.clientHandshakeTrafficSecret!, transcriptHash(this.transcript, this.hash), this.hash);
     if (finished.verifyData !== expected) return this.reject('decrypt_error');
-    this.transcript.push(encodeHandshakeMessage(finished));
+    this.transcript.push(rawOf(finished));
     this.resumptionMasterSecret = expandLabel(this.masterSecret!, 'res master', transcriptHash(this.transcript, this.hash), this.hash);
     this.state = 'done';
     this.result = 'accept';
@@ -677,7 +685,9 @@ export class TlsServerSession {
       kind: 'new_session_ticket', ticketLifetime: ticket.ticketLifetime, ticketAgeAdd: randomHex(4),
       ticketNonce: ticket.ticketNonce, ticket: ticket.ticket, extensions: { earlyData: this.config.earlyData !== false },
     };
-    return fragmentAsRecords('handshake', encodeHandshakeMessage(newSessionTicket), true);
+    const sealedTicket = sealFlight(this.serverApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, encodeHandshakeMessage(newSessionTicket));
+    this.serverApplicationSequenceBase = sealedTicket.nextSeq;
+    return sealedTicket.records;
   }
 
   /**
