@@ -116,6 +116,13 @@ export function decryptApplicationData(
     }
     decrypted.push(clair);
   }
-  const { plaintext } = reassembleRecords(decrypted, true);
+  const parts: Uint8Array[] = [];
+  for (const record of decrypted) {
+    const inner = reassembleRecords([record], true);
+    if (inner.contentType === 'application_data') parts.push(inner.plaintext);
+  }
+  const plaintext = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { plaintext.set(part, offset); offset += part.length; }
   return { plaintext, nextSeq: seq };
 }

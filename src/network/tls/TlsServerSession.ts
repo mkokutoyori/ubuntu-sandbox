@@ -32,7 +32,7 @@ import {
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { randomHex } from './legacy/LegacyHandshake';
-import { sealFlight, openFlight, withoutChangeCipherSpec, COMPATIBILITY_CHANGE_CIPHER_SPEC } from './handshakeProtection';
+import { sealFlight, openLeadingHandshake, withoutChangeCipherSpec, COMPATIBILITY_CHANGE_CIPHER_SPEC } from './handshakeProtection';
 import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
@@ -188,6 +188,13 @@ export class TlsServerSession {
    */
   clientHandshakeTrafficSecret: string | null = null;
   private serverApplicationSequenceBase = 0;
+  private trailingRecords: readonly TlsRecord[] = [];
+
+  takeTrailingRecords(): readonly TlsRecord[] {
+    const taken = this.trailingRecords;
+    this.trailingRecords = [];
+    return taken;
+  }
   serverHandshakeTrafficSecret: string | null = null;
   /** Stable per-connection correlator for `events.ts` payloads (§2.1.12). */
   readonly sessionId = randomNonce('tls-session');
@@ -414,6 +421,7 @@ export class TlsServerSession {
     const extensions = clientHello.legacyExtensions ?? { sessionId: '', extendedMasterSecret: false, renegotiationInfo: null, sessionTicket: null };
     this.legacy = new LegacyServerHandshake({
       clientExtensions: extensions,
+      clientSignatureAlgorithms: clientHello.extensions.signatureAlgorithms,
       statusStaple: clientHello.extensions.statusRequest ? resolveStaple(this.config.ocspStaple, this.credentials.cert) ?? null : null,
       maxFragmentLength: this.negotiatedMaxFragmentLength,
       extendedMasterSecret: this.config.extendedMasterSecret !== false,
@@ -477,7 +485,7 @@ export class TlsServerSession {
   }
 
   private handleSecondClientHello(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
-    const { contentType, plaintext: clientHelloBytes } = reassembleRecords(incoming, false);
+    const { contentType, plaintext: clientHelloBytes } = reassembleRecords(withoutChangeCipherSpec(incoming), false);
     if (contentType !== 'handshake') return this.reject('decode_error');
     const clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;
     if (!this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) return this.reject('handshake_failure');
@@ -613,9 +621,10 @@ export class TlsServerSession {
   }
 
   private handleClientFinal(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
-    const opened = openFlight(this.clientHandshakeTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, withoutChangeCipherSpec(incoming));
+    const protectedRecords = withoutChangeCipherSpec(incoming);
+    const opened = openLeadingHandshake(this.clientHandshakeTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, protectedRecords);
     if (opened === null) return this.reject('bad_record_mac');
-    if (opened.contentType !== 'handshake') return this.reject('unexpected_message');
+    this.trailingRecords = protectedRecords.slice(opened.consumed);
     const received = decodeMessagesRaw(opened.plaintext);
     const messages = received.map((entry) => entry.message);
     const rawOf = (message: TlsHandshakeMessage): Uint8Array => received.find((entry) => entry.message === message)!.raw;

@@ -153,6 +153,7 @@ export interface LegacyServerSetup {
   readonly securityLevel: number;
   readonly clientCertPolicy: ClientCertPolicy | undefined;
   readonly clientExtensions: LegacyClientExtensions;
+  readonly clientSignatureAlgorithms: readonly string[];
   readonly extendedMasterSecret: boolean;
   readonly sessionStore?: LegacySessionStore;
   readonly ticketCodec?: LegacyTicketCodec;
@@ -271,17 +272,18 @@ export class LegacyServerHandshake {
       const params = this.generateParams();
       if (params === null) return this.reject('handshake_failure');
       const signed = keyExchangeSignedData(this.setup.clientRandom, this.serverRandom, params);
+      const scheme = signatureAlgorithmName(this.setup.serverPrivateKey, version, this.setup.clientSignatureAlgorithms);
       const serverKeyExchange: ServerKeyExchange = {
         kind: 'server_key_exchange', params,
-        signatureAlgorithm: signatureAlgorithmName(this.setup.serverPrivateKey.algorithm, version),
-        signature: signLegacy(this.setup.serverPrivateKey, version, signed),
+        signatureAlgorithm: scheme,
+        signature: signLegacy(this.setup.serverPrivateKey, version, signed, scheme),
       };
       bundle.push(serverKeyExchange);
     }
     if (this.setup.requestClientCert) {
       const request: LegacyCertificateRequest = {
         kind: 'legacy_certificate_request', certificateTypes: ['rsa_sign', 'ecdsa_sign'],
-        signatureAlgorithms: version === '1.2' ? ['rsa_pkcs1_sha256', 'ecdsa_secp256r1_sha256'] : [],
+        signatureAlgorithms: version === '1.2' ? ['rsa_pss_rsae_sha256', 'rsa_pkcs1_sha256', 'ecdsa_secp256r1_sha256'] : [],
       };
       bundle.push(request);
     }
@@ -451,7 +453,7 @@ export class LegacyServerHandshake {
     for (const message of bundle) {
       if (message.kind === 'legacy_certificate_verify' && verifiedLeaf !== null) {
         const signed = concat(...this.messages);
-        if (!verifyLegacy(verifiedLeaf.publicKey, version, signed, (message as LegacyCertificateVerify).signature)) {
+        if (!verifyLegacy(verifiedLeaf.publicKey, version, signed, (message as LegacyCertificateVerify).signature, (message as LegacyCertificateVerify).signatureAlgorithm)) {
           return this.reject('decrypt_error');
         }
       }
@@ -680,7 +682,7 @@ export class LegacyClientHandshake {
     } else {
       const params = serverKeyExchange!.params;
       const signed = keyExchangeSignedData(setup.clientRandom, serverHello.random, params);
-      if (!verifyLegacy(leaf.publicKey, version, signed, serverKeyExchange!.signature)) return this.fail('decrypt_error');
+      if (!verifyLegacy(leaf.publicKey, version, signed, serverKeyExchange!.signature, serverKeyExchange!.signatureAlgorithm)) return this.fail('decrypt_error');
       if (suite.keyExchange === 'DHE_RSA') {
         if (params.type !== 'dh') return this.fail('illegal_parameter');
         const p = modpFromHex(params.p);
@@ -719,9 +721,11 @@ export class LegacyClientHandshake {
     this.messages.push(encodeLegacyMessage(clientKeyExchange, this.wire));
     const sessionHashMessages = [...this.messages];
     if (certificateRequest && setup.clientCert && setup.clientPrivateKey) {
+      const scheme = signatureAlgorithmName(setup.clientPrivateKey, version, certificateRequest.signatureAlgorithms);
       const verify: LegacyCertificateVerify = {
         kind: 'legacy_certificate_verify',
-        signature: signLegacy(setup.clientPrivateKey, version, concat(...this.messages)),
+        ...(version === '1.2' ? { signatureAlgorithm: scheme } : {}),
+        signature: signLegacy(setup.clientPrivateKey, version, concat(...this.messages), scheme),
       };
       out.push(verify);
       this.messages.push(encodeLegacyMessage(verify, this.wire));

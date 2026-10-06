@@ -18,6 +18,7 @@ import {
 
 const LEGACY_VERSION_TLS12 = 0x0303;
 const PSK_BINDER_LENGTH = 32;
+const EMPTY_RENEGOTIATION_INFO_SCSV = 0x00ff;
 const EARLY_DATA_TICKET_LIMIT = 0x4000;
 
 function extension(writer: TlsWriter, type: number, fill: (body: TlsWriter) => void): void {
@@ -200,6 +201,7 @@ export function decodeClientHello(reader: TlsReader): ClientHello {
       }
     });
   }
+  if (renegotiationInfo === null && legacyCipherSuites.includes(EMPTY_RENEGOTIATION_INFO_SCSV)) renegotiationInfo = '';
   const legacyExtensions: LegacyClientExtensions | undefined =
     sessionId.length > 0 || extendedMasterSecret || renegotiationInfo !== null || sessionTicket !== null
       ? { sessionId: bytesToHex(sessionId), extendedMasterSecret, renegotiationInfo, sessionTicket }

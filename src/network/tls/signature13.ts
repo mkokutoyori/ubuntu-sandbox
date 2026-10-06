@@ -7,6 +7,8 @@ export type Tls13SignatureScheme = 'rsa_pss_rsae_sha256' | 'ecdsa_secp256r1_sha2
 
 export const SUPPORTED_SIGNATURE_SCHEMES: readonly Tls13SignatureScheme[] = ['rsa_pss_rsae_sha256', 'ecdsa_secp256r1_sha256'];
 
+export const CLIENT_HELLO_SIGNATURE_SCHEMES: readonly string[] = ['rsa_pss_rsae_sha256', 'rsa_pkcs1_sha256', 'ecdsa_secp256r1_sha256'];
+
 const PSS_SALT_LENGTH = 32;
 
 export function schemeForKey(algorithm: 'rsa' | 'ecdsa'): Tls13SignatureScheme {

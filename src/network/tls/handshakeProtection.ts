@@ -48,3 +48,30 @@ export function openFlight(
 export const COMPATIBILITY_CHANGE_CIPHER_SPEC: TlsRecord = {
   contentType: 'change_cipher_spec', legacyVersion: 0x0303, fragment: Uint8Array.of(1),
 };
+
+export interface LeadingHandshake {
+  readonly plaintext: Uint8Array;
+  readonly consumed: number;
+}
+
+export function openLeadingHandshake(
+  secret: string, suite: CipherSuite, startSeq: number, records: readonly TlsRecord[],
+): LeadingHandshake | null {
+  const keys = deriveRecordKeys(secret, suite);
+  const parts: Uint8Array[] = [];
+  for (let index = 0; index < records.length; index++) {
+    const plain = openRecord(keys, startSeq + index, records[index]);
+    if (plain === null) return index === 0 ? null : { plaintext: concatParts(parts), consumed: index };
+    const { contentType, plaintext } = reassembleRecords([{ ...plain, contentType: 'application_data' }], true);
+    if (contentType !== 'handshake') return index === 0 ? null : { plaintext: concatParts(parts), consumed: index };
+    parts.push(plaintext);
+  }
+  return { plaintext: concatParts(parts), consumed: records.length };
+}
+
+function concatParts(parts: readonly Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { out.set(part, offset); offset += part.length; }
+  return out;
+}

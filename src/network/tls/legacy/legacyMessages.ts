@@ -56,6 +56,7 @@ export interface ClientKeyExchange {
 
 export interface LegacyCertificateVerify {
   readonly kind: 'legacy_certificate_verify';
+  readonly signatureAlgorithm?: string;
   readonly signature: string;
 }
 

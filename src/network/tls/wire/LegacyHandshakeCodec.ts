@@ -79,7 +79,20 @@ export function serverKeyExchangeParametersBytes(params: KeyExchangeParams): Uin
   return writer.toBytes();
 }
 
+const RECEIVED = new WeakMap<object, { readonly raw: Uint8Array; readonly snapshot: string }>();
+
+function remember<T extends object>(message: T, raw: Uint8Array): T {
+  RECEIVED.set(message, { raw, snapshot: JSON.stringify(message) });
+  return message;
+}
+
 export function encodeLegacyMessage(message: Message, context: LegacyWireContext = {}): Uint8Array {
+  const received = RECEIVED.get(message);
+  if (received !== undefined && JSON.stringify(message) === received.snapshot) return received.raw;
+  return encodeFresh(message, context);
+}
+
+function encodeFresh(message: Message, context: LegacyWireContext): Uint8Array {
   const kind = (message as { kind: string }).kind;
   switch (kind) {
     case 'legacy_server_hello': {
@@ -140,7 +153,7 @@ export function encodeLegacyMessage(message: Message, context: LegacyWireContext
     case 'legacy_certificate_verify': {
       const verify = message as LegacyCertificateVerify;
       return handshake(HANDSHAKE_TYPE.certificateVerify, (body) => {
-        if (context.version === '1.2') body.u16(signatureSchemeCode(verify.signature.startsWith('ecdsa:') ? 'ecdsa_secp256r1_sha256' : 'rsa_pkcs1_sha256'));
+        if (context.version === '1.2') body.u16(signatureSchemeCode(verify.signatureAlgorithm ?? (verify.signature.startsWith('ecdsa:') ? 'ecdsa_secp256r1_sha256' : 'rsa_pkcs1_sha256')));
         body.vector(2, (signature) => signature.bytes(signatureBytes(verify.signature)));
       });
     }
@@ -203,7 +216,8 @@ function decodeKeyExchangeParams(body: TlsReader, keyExchange: KeyExchangeKind |
 export function decodeLegacyMessages(bytes: Uint8Array, initial: LegacyWireContext = {}): { kind: string }[] {
   let context: LegacyWireContext = initial;
   const out: { kind: string }[] = [];
-  for (const { type, body } of splitHandshakeMessages(bytes)) {
+  for (const { type, body, raw } of splitHandshakeMessages(bytes)) {
+    const before = out.length;
     switch (type) {
       case HANDSHAKE_TYPE.serverHello: {
         const hello = decodeServerHello(body);
@@ -257,7 +271,7 @@ export function decodeLegacyMessages(bytes: Uint8Array, initial: LegacyWireConte
       case HANDSHAKE_TYPE.certificateVerify: {
         const algorithm = context.version === '1.2' ? signatureSchemeName(body.u16()) : null;
         const ecdsa = algorithm !== null ? algorithm.startsWith('ecdsa') : isEcdsaKeyExchange(context.keyExchange);
-        out.push({ kind: 'legacy_certificate_verify', signature: signatureText(body.vector(2).rest(), ecdsa) } as LegacyCertificateVerify);
+        out.push({ kind: 'legacy_certificate_verify', ...(algorithm !== null ? { signatureAlgorithm: algorithm } : {}), signature: signatureText(body.vector(2).rest(), ecdsa) } as LegacyCertificateVerify);
         break;
       }
       case HANDSHAKE_TYPE.finished: out.push({ kind: 'legacy_finished', verifyData: bytesToHex(body.rest()) } as LegacyFinished); break;
@@ -268,6 +282,7 @@ export function decodeLegacyMessages(bytes: Uint8Array, initial: LegacyWireConte
       }
       default: throw new TlsDecodeError(`unsupported handshake type ${type}`);
     }
+    if (out.length > before) remember(out[out.length - 1], raw);
   }
   return out;
 }

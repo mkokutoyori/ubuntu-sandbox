@@ -31,7 +31,7 @@ import {
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
-import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
+import { signCertificateVerify, verifyCertificateVerify, CLIENT_HELLO_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { DEFAULT_CIPHER_SUITES, parseTls13Ciphersuites } from './cipherSuites';
 import { tls13CipherPermitted } from './legacy/securityPolicy';
@@ -49,7 +49,7 @@ import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
 import { isValidMaxFragmentLength, DEFAULT_MAX_FRAGMENT } from './maxFragment';
 import type { ResumableLegacySession } from './legacy/legacySessions';
 import { randomHex } from './legacy/LegacyHandshake';
-import { sealFlight, openFlight, withoutChangeCipherSpec } from './handshakeProtection';
+import { sealFlight, openFlight, openLeadingHandshake, withoutChangeCipherSpec } from './handshakeProtection';
 
 export interface TlsClientConfig {
   readonly verifier: CertificateVerifier;
@@ -180,7 +180,7 @@ export class TlsClientSession {
     // serveur le choisirait, et il faudrait alors soit abandonner plus
     // tard, soit fabriquer un secret. Le filtre est là pour que la
     // question ne se pose jamais.
-    this.supportedGroups = (config.supportedGroups ?? ['x25519']).filter(isImplementedGroup);
+    this.supportedGroups = (config.supportedGroups ?? ['x25519', 'secp256r1']).filter(isImplementedGroup);
     this.pskInput = config.resumptionTicket ? deriveResumptionPsk(config.resumptionTicket) : ZERO_IKM;
   }
 
@@ -279,7 +279,7 @@ export class TlsClientSession {
       extensions: {
         supportedVersions: this.offersTls13() ? this.withGrease(this.versions, GREASE_NAME) : [], keyShare: this.clientKeyShare,
         supportedGroups: this.withGrease(this.supportedGroups, GREASE_NAME),
-        signatureAlgorithms: this.withGrease(SUPPORTED_SIGNATURE_SCHEMES, GREASE_NAME),
+        signatureAlgorithms: this.withGrease(CLIENT_HELLO_SIGNATURE_SCHEMES, GREASE_NAME),
         alpn: this.config.alpn ? this.withGrease(this.config.alpn, GREASE_NAME) : undefined,
         serverName: this.config.serverName,
         ...(this.config.requestOcspStaple || this.config.requireOcspStaple || this.config.collectOcspStaple ? { statusRequest: true } : {}),
@@ -572,15 +572,15 @@ export class TlsClientSession {
    * and stores it in `receivedTicket`, ready to configure a future
    * `TlsClientSession`'s `resumptionTicket`.
    */
-  receiveSessionTicket(records: readonly TlsRecord[]): void {
-    if (this.result !== 'success' || !this.resumptionMasterSecret || !this.negotiatedCipherSuite || this.ticketAttempted) return;
+  receiveSessionTicket(records: readonly TlsRecord[]): number {
+    if (this.result !== 'success' || !this.resumptionMasterSecret || !this.negotiatedCipherSuite || this.ticketAttempted) return 0;
     this.ticketAttempted = true;
-    const opened = openFlight(this.serverApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, this.serverApplicationSequenceBase, records);
-    if (opened === null || opened.contentType !== 'handshake') return;
+    const opened = openLeadingHandshake(this.serverApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, this.serverApplicationSequenceBase, records);
+    if (opened === null) return 0;
+    this.serverApplicationSequenceBase += opened.consumed;
     const message = decodeHandshakeMessage(opened.plaintext) as NewSessionTicket;
-    if (message.kind !== 'new_session_ticket') return;
-    this.serverApplicationSequenceBase = opened.nextSeq;
-    if (message.ticketLifetime > MAX_TICKET_LIFETIME_SECONDS) return;
+    if (message.kind !== 'new_session_ticket') return opened.consumed;
+    if (message.ticketLifetime > MAX_TICKET_LIFETIME_SECONDS) return opened.consumed;
     this.receivedTicket = {
       ticket: message.ticket,
       resumptionMasterSecret: this.resumptionMasterSecret,
@@ -590,6 +590,7 @@ export class TlsClientSession {
       issuedAt: simulationNowMs(),
       consumed: false,
     };
+    return opened.consumed;
   }
 
   /**

@@ -101,11 +101,14 @@ export class HttpsServerSession {
       pending = maillon;
     };
 
-    const unsubscribe = attachTlsRecordPump(socket, (records) => {
+    const unsubscribe = attachTlsRecordPump(socket, (arrived) => {
+      let records = arrived;
       if (tls.result !== 'accept') {
         const reply = tls.handle(records);
         if (reply && reply.length > 0) socket.write(bytesToBinaryString(encodeRecords(reply)));
-        return;
+        if ((tls.result as string | null) !== 'accept') return;
+        records = tls.takeTrailingRecords();
+        if (records.length === 0) return;
       }
 
       const { plaintext: requestBytes, nextSeq: clientNextSeq } = decryptApplicationData(
