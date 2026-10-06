@@ -8,7 +8,7 @@ import {
 } from './types';
 import {
   IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
+  type EthernetFrame, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { calculerMacNtp, verifierMacNtp } from './auth';
@@ -22,7 +22,7 @@ import {
   disciplinerHorloge, appliquerDecision, creerEtatHorloge,
   type EtatHorloge, type DecisionDiscipline, type ReglagesDiscipline,
 } from './discipline';
-import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
+import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface NtpHost {
   readonly id: string;
@@ -31,8 +31,7 @@ export interface NtpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
-  sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendUdpDatagram(request: UdpSendRequest): boolean;
 }
 
 export interface NtpAssociationOptions {
@@ -91,9 +90,9 @@ export class NtpAgent {
     }
   }
 
-  setServerMode(on: boolean): void {
+  setServerMode(on: boolean, advertiseLocalClock = true): void {
     this.config.serverMode = on;
-    if (on && this.config.localStratum === 16) {
+    if (on && advertiseLocalClock && this.config.localStratum === 16) {
       this.config.localStratum = 8;
       this.config.refIdentifier = 'LOCL';
     }
@@ -461,7 +460,7 @@ export class NtpAgent {
       rxTimestampMs: now, txTimestampMs: now,
       keyId: request.keyId,
     };
-    this.sendNtp(inPort, srcIp, peerIp, reply);
+    this.sendNtp(srcIp, peerIp, reply);
     this.getBus().publish({
       topic: 'ntp.peer.responded',
       payload: {
@@ -487,7 +486,7 @@ export class NtpAgent {
       rxTimestampMs: now, txTimestampMs: now,
       keyId: request.keyId,
     };
-    this.sendNtp(inPort, srcIp, clientIp, reply);
+    this.sendNtp(srcIp, clientIp, reply);
     this.getBus().publish({
       topic: 'ntp.server.responded',
       payload: {
@@ -537,7 +536,7 @@ export class NtpAgent {
     // Il part SANS passer par la signature : `signer` ne trouverait
     // aucune cle numero zero, mais l'ecrire ici rend l'intention
     // explicite — un crypto-NAK non signe est ce qui le definit.
-    this.sendNtp(inPort, srcIp, clientIp, nak);
+    this.sendNtp(srcIp, clientIp, nak);
   }
 
   /**
@@ -785,10 +784,6 @@ export class NtpAgent {
   private poll(serverIp: string): void {
     const a = this.config.associations.get(serverIp);
     if (!a) return;
-    const sourcePort = this.findEgressPort(serverIp);
-    if (!sourcePort) return;
-    const srcIp = this.sourceIpFor(a, sourcePort.port);
-    if (!srcIp) return;
     const now = Date.now();
     a.lastPollMs = now;
     const mode: NtpMode = a.mode === 'symmetric-active' ? 'symmetric-active' : 'client';
@@ -800,7 +795,7 @@ export class NtpAgent {
       origTimestampMs: 0, rxTimestampMs: 0, txTimestampMs: now,
       keyId: a.keyId,
     };
-    this.sendNtp(sourcePort.name, srcIp, new IPAddress(serverIp), request);
+    this.sendNtp(this.namedSource(a), new IPAddress(serverIp), request);
     this.getBus().publish({
       topic: 'ntp.packet.sent',
       payload: {
@@ -810,67 +805,34 @@ export class NtpAgent {
     });
   }
 
-  private sourceIpFor(
-    association: NtpAssociation, egressPort: import('../hardware/Port').Port,
-  ): IPAddress | null {
-    const declaree = association.sourceInterface || this.config.sourceInterface;
-    const nommee = declaree
-      ? this.host.getPort(declaree)?.getIPAddress() ?? null
-      : null;
-    return nommee ?? egressPort.getIPAddress();
+  private namedSource(association?: NtpAssociation): IPAddress | undefined {
+    const declared = association?.sourceInterface || this.config.sourceInterface;
+    return declared ? this.host.getPort(declared)?.getIPAddress() ?? undefined : undefined;
   }
 
-  private findEgressPort(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
-  }
-
-  private sendNtp(portName: string, srcIp: IPAddress, dstIp: IPAddress, brut: NtpPacket): void {
-    const port = this.host.getPort(portName);
-    if (!port) return;
-    this.config.counters.sent++;
-    if (brut.mode in this.config.counters.sentByMode) {
-      this.config.counters.sentByMode[brut.mode]++;
-    }
+  private sendNtp(srcIp: IPAddress | undefined, dstIp: IPAddress, brut: NtpPacket): void {
     // La signature vit ICI plutot qu'a chacun des trois appelants :
     // requete, reponse de serveur et reponse symetrique doivent porter
     // le meme condensé, et trois endroits finiraient par diverger.
     const payload = this.signer(brut);
-    this.emettreUdp(portName, port, srcIp, dstIp, payload, 48,
-      `${portName}|${dstIp.toString()}`);
+    if (!this.emettreUdp(srcIp, dstIp, payload, 48, dstIp.toString())) return;
+    this.config.counters.sent++;
+    if (brut.mode in this.config.counters.sentByMode) {
+      this.config.counters.sentByMode[brut.mode]++;
+    }
   }
 
   private emettreUdp(
-    portName: string, port: import('../hardware/Port').Port,
-    srcIp: IPAddress, dstIp: IPAddress,
+    srcIp: IPAddress | undefined, dstIp: IPAddress,
     payload: unknown, payloadBytes: number, key: string,
-  ): void {
-    const ipPkt = buildUdpOverIpv4(srcIp, {
-      destination: dstIp,
-      destinationPort: UDP_PORT_NTP, sourcePort: UDP_PORT_NTP,
-      payload, payloadBytes, source: srcIp,
-    });
-    if (this.emitting.has(key)) return;
+  ): boolean {
+    if (this.emitting.has(key)) return false;
     this.emitting.add(key);
     try {
-      this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
+      return this.host.sendUdpDatagram({
+        destination: dstIp, destinationPort: UDP_PORT_NTP, sourcePort: UDP_PORT_NTP,
+        payload, payloadBytes, ...(srcIp ? { source: srcIp } : {}),
+      });
     } finally { this.emitting.delete(key); }
   }
 
@@ -1057,7 +1019,7 @@ export class NtpAgent {
       associationId: req.associationId, offset: 0,
       count: data.length, data,
     };
-    this.envoyerControle(inPort, srcIp, dstIp, reponse);
+    this.envoyerControle(srcIp, dstIp, reponse);
   }
 
   /** La derniere reponse de controle recue — ce que lit `ntpq`. */
@@ -1074,10 +1036,6 @@ export class NtpAgent {
   controlQuery(
     cibleIp: string, opcode: number, associationId = 0,
   ): NtpControlPacket | null {
-    const sortie = this.findEgressPort(cibleIp);
-    if (!sortie) return null;
-    const srcIp = sortie.port.getIPAddress();
-    if (!srcIp) return null;
     this.derniereReponseControle = null;
     const req: NtpControlPacket = {
       type: 'ntp-control', leapIndicator: 0, version: 4,
@@ -1085,7 +1043,7 @@ export class NtpAgent {
       opcode, sequence: ++this.sequenceControle, status: 0,
       associationId, offset: 0, count: 0, data: '',
     };
-    this.envoyerControle(sortie.name, srcIp, new IPAddress(cibleIp), req);
+    this.envoyerControle(this.namedSource(), new IPAddress(cibleIp), req);
     const rep = this.derniereReponseControle;
     // Une reponse qui ne repond pas a CETTE requete n'en est pas une :
     // sans ce controle, une reponse en retard serait prise pour celle-ci.
@@ -1096,14 +1054,11 @@ export class NtpAgent {
   private sequenceControle = 0;
 
   private envoyerControle(
-    portName: string, srcIp: IPAddress, dstIp: IPAddress, pkt: NtpControlPacket,
+    srcIp: IPAddress | undefined, dstIp: IPAddress, pkt: NtpControlPacket,
   ): void {
-    const port = this.host.getPort(portName);
-    if (!port) return;
+    if (!this.emettreUdp(srcIp, dstIp, pkt, 12 + pkt.data.length, `ctl|${dstIp.toString()}`)) return;
     this.config.counters.sent++;
     this.config.counters.sentControl++;
-    this.emettreUdp(portName, port, srcIp, dstIp, pkt, 12 + pkt.data.length,
-      `ctl|${portName}|${dstIp.toString()}`);
   }
 
   /** L'identifiant qu'une vue doit afficher pour une association. */

@@ -626,8 +626,7 @@ export class Firewall extends Equipment {
       },
       port: (iface) => this.getPort(iface),
       ports: () => [...this.getPorts().values()],
-      sendArpAware: (iface, ipPkt, nextHopIP) =>
-        this.sendIpv4FrameArpAware(iface, ipPkt, nextHopIP),
+      sendUdpDatagram: (request) => this.sendUdpDatagram(request),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       sessions: () => this.vdoms.names().map((vdom) => ({ vdom, table: this.getVdom(vdom).sessions })),
       connectedRoutes: () => this.interfaces.connectedRoutes(),

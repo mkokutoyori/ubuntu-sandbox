@@ -63,10 +63,15 @@ export function nativeOutputValue(output: string): PSValue {
   return lines.length === 1 ? lines[0] : lines;
 }
 
-export const CMD_NOT_RECOGNIZED = /is not recognized as an internal or external command/;
+const CMD_NOT_RECOGNIZED = /^'([^']*)' is not recognized as an internal or external command/;
+
+export function nativeNotRecognized(command: string, answer: string): boolean {
+  const named = CMD_NOT_RECOGNIZED.exec(answer);
+  return named !== null && named[1].toLowerCase() === command.toLowerCase();
+}
 
 export function translateNativeAnswer(command: string, answer: string): string {
-  return CMD_NOT_RECOGNIZED.test(answer) ? commandNotFoundMessage(command) : answer;
+  return nativeNotRecognized(command, answer) ? commandNotFoundMessage(command) : answer;
 }
 
 export function isNativeProgramName(name: string): boolean {

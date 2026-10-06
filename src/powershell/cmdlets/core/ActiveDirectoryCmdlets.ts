@@ -25,7 +25,7 @@ import type {
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
-import { parseCredentialArg } from './RemotingCmdlets';
+import { namedCredential } from './RemotingCmdlets';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
 import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import { OU_PROPERTIES, OU_PROPERTY_PARAMETERS } from '@/network/devices/windows/server/ad/adOrganizationalUnit';
@@ -58,9 +58,9 @@ function auditSinkFor(ctx: CmdletContext): WindowsSecurityAudit | null {
 
 /** The acting user for the audit trail: the `-Credential "user:pass"` principal when delegated, else Administrator. */
 function subjectUserOf(ctx: CmdletContext): string {
-  const raw = ctx.named['credential'];
-  if (raw === undefined) return 'Administrator';
-  const { username } = parseCredentialArg(psValueToString(raw));
+  const credential = namedCredential(ctx, 'credential');
+  if (!credential) return 'Administrator';
+  const { username } = credential;
   return username.includes('\\') ? username.split('\\').pop()! : username;
 }
 
@@ -380,8 +380,8 @@ export class InstallADDSDomainControllerCmdlet implements ICmdlet {
       ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: DomainName.');
       return null;
     }
-    const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
-    if (!credentialRaw) {
+    const credential = namedCredential(ctx, 'credential');
+    if (!credential) {
       ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: Credential.');
       return null;
     }
@@ -391,7 +391,7 @@ export class InstallADDSDomainControllerCmdlet implements ICmdlet {
       ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: SafeModeAdministratorPassword.');
       return null;
     }
-    const { username, password: credentialPassword } = parseCredentialArg(credentialRaw);
+    const { username, password: credentialPassword } = credential;
     const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
     const res = ad.installDomainController(domainName, netbiosName, server, username, credentialPassword, password, { installDns: installDnsOf(ctx) });
     if (!res.ok) { ctx.emitError(res.message); return null; }
@@ -1514,8 +1514,7 @@ export class SetADAccountPasswordCmdlet implements ICmdlet {
 
 function remoteTargetOf(ctx: CmdletContext): RemoteDirectoryTarget | undefined {
   if (ctx.named['server'] === undefined) return undefined;
-  const raw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
-  const { username, password } = raw ? parseCredentialArg(raw) : { username: 'Administrator', password: 'admin' };
+  const { username, password } = namedCredential(ctx, 'credential') ?? { username: 'Administrator', password: 'admin' };
   const server = psValueToString(ctx.named['server']);
   const suffix = server.includes('.') && IPAddress.tryParse(server) === null
     ? server.split('.').slice(1).join('.') : undefined;
@@ -1931,8 +1930,8 @@ export class NewADDomainCmdlet implements ICmdlet {
       ctx.emitError('New-ADDomain : Cannot process command because of one or more missing mandatory parameters: ParentDomainName.');
       return null;
     }
-    const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
-    if (!credentialRaw) {
+    const credential = namedCredential(ctx, 'credential');
+    if (!credential) {
       ctx.emitError('New-ADDomain : Cannot process command because of one or more missing mandatory parameters: Credential.');
       return null;
     }
@@ -1946,7 +1945,7 @@ export class NewADDomainCmdlet implements ICmdlet {
       ctx.emitError('New-ADDomain : Cannot process command because of one or more missing mandatory parameters: SafeModeAdministratorPassword.');
       return null;
     }
-    const { username, password: credentialPassword } = parseCredentialArg(credentialRaw);
+    const { username, password: credentialPassword } = credential;
     const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
     const res = ad.newDomain(newDomainName, netbiosName, parentDomainName, server, username, credentialPassword, password, { installDns: installDnsOf(ctx) });
     if (!res.ok) { ctx.emitError(res.message); return null; }
@@ -2049,8 +2048,8 @@ export class NewADTrustCmdlet implements ICmdlet {
       ctx.emitError('New-ADTrust : Cannot process command because of one or more missing mandatory parameters: Server.');
       return null;
     }
-    const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
-    if (!credentialRaw) {
+    const credential = namedCredential(ctx, 'credential');
+    if (!credential) {
       ctx.emitError('New-ADTrust : Cannot process command because of one or more missing mandatory parameters: Credential.');
       return null;
     }
@@ -2058,7 +2057,7 @@ export class NewADTrustCmdlet implements ICmdlet {
     const direction = (TRUST_DIRECTIONS as readonly string[]).includes(directionRaw)
       ? (directionRaw as AdTrustInfo['direction']) : 'Bidirectional';
     const transitive = ctx.named['transitive'] === undefined ? true : Boolean(ctx.named['transitive']);
-    const { username, password } = parseCredentialArg(credentialRaw);
+    const { username, password } = credential;
 
     const res = ad.newTrust(target, server, direction, transitive, username, password);
     if (!res.ok) { ctx.emitError(res.message); return null; }

@@ -30,7 +30,7 @@ export interface DomainSession {
  * callers can fall back to local-account handling instead of silently
  * misrouting a local logon attempt into a domain dial.
  */
-export function parseDomainQualifiedUser(raw: string, membership: DomainMembership): { sam: string } | null {
+export function parseDomainQualifiedUser(raw: string, membership: Pick<DomainMembership, 'dnsName' | 'netbiosName'>): { sam: string } | null {
   const backslash = raw.indexOf('\\');
   if (backslash !== -1) {
     const netbios = raw.slice(0, backslash);

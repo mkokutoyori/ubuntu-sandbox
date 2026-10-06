@@ -275,6 +275,10 @@ const TASK_TICK_MS = 60_000;
  */
 function w32ReferenceId(ref: string): string {
   if (!ref || ref === '.INIT.') return '0x00000000 (unspecified)';
+  if (/^[A-Za-z0-9]{1,4}$/.test(ref)) {
+    const hex = Array.from(ref.padEnd(4, '\0')).map((c) => c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')).join('');
+    return `0x${hex} (source name:  ${ref})`;
+  }
   if (IPAddress.tryParse(ref) === null) return `0x00000000 (${ref})`;
   const hex = ref.split('.')
     .map((o) => parseInt(o, 10).toString(16).toUpperCase().padStart(2, '0')).join('');
@@ -902,30 +906,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // TCP LDAP server on port 389 (RFC 4511) — real AD DS directory queries
     // (PRD-Windows-Server.md §5 P5). Refuses (drops) the connection until
     // `Install-ADDSForest` promotes this server to a domain controller.
-    this.getTcpStack().listen(389, {
-      onAccept: (socket) => {
-        const store = this.getDirectoryStore();
-        if (!store) { socket.close(); return; }
-        const serviceSecret = store.getComputerSecret(this.getHostname());
-        if (!this.ldapStartTlsIdentity) this.ldapStartTlsIdentity = selfSignedLdapCert(store.getRealm());
-        const forest = getForestForDomain(store.dnsName);
-        const otherDomainRoots = forest
-          ? forest.listDomains()
-            .filter(d => d.dnsName.toLowerCase() !== store.dnsName.toLowerCase())
-            .map(d => d.dnsName.split('.').map(p => `DC=${p}`).join(','))
-          : [];
-        new LdapServerHandler({
-          tree: store.getTree(), auth: store.getBindCheck(),
-          kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
-          startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
-          otherForestDomainRoots: () => otherDomainRoots,
-          serverIdentity: () => ({
-            hostname: this.getHostname(), dnsName: store.dnsName,
-            site: store.siteForDc(this.getHostname()),
-          }),
-        }).register(socket);
-      },
-    });
+    for (const [port, implicitTls] of [[389, false], [3268, false], [636, true], [3269, true]] as const) {
+      this.getTcpStack().listen(port, { onAccept: (socket) => this.serveLdap(socket, implicitTls) });
+    }
 
     // TCP KDC listener on port 88 (RFC 4120 §7.2.1) — real AS-REQ/AS-REP
     // Kerberos exchange (PRD-Windows-Server-Advanced.md §5 P1). Refuses
@@ -4827,6 +4810,30 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   getDirectoryStore(): import('./windows/server/ad/DirectoryStore').DirectoryStore | null { return null; }
 
+  private serveLdap(socket: TcpSocket, implicitTls: boolean): void {
+    const store = this.getDirectoryStore();
+    if (!store) { socket.close(); return; }
+    const serviceSecret = store.getComputerSecret(this.getHostname());
+    if (!this.ldapStartTlsIdentity) this.ldapStartTlsIdentity = selfSignedLdapCert(store.getRealm());
+    const forest = getForestForDomain(store.dnsName);
+    const otherDomainRoots = forest
+      ? forest.listDomains()
+        .filter(d => d.dnsName.toLowerCase() !== store.dnsName.toLowerCase())
+        .map(d => d.dnsName.split('.').map(p => `DC=${p}`).join(','))
+      : [];
+    new LdapServerHandler({
+      tree: store.getTree(), auth: store.getBindCheck(),
+      kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
+      startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
+      implicitTls,
+      otherForestDomainRoots: () => otherDomainRoots,
+      serverIdentity: () => ({
+        hostname: this.getHostname(), dnsName: store.dnsName,
+        site: store.siteForDc(this.getHostname()),
+      }),
+    }).register(socket);
+  }
+
   /**
    * DNS Server role (PRD-Windows-Server.md §5 P7) — null until
    * `Install-WindowsFeature DNS` on a `WindowsServer`; always null on a
@@ -5780,7 +5787,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         sourceDomaine: () => {
           const store = this.getDirectoryStore();
           const pdc = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-          return store && pdc ? `${pdc}.${store.dnsName}` : null;
+          return store && pdc && pdc !== this.getHostname() ? store.ipForDc(pdc) : null;
         },
       });
     }
@@ -5789,15 +5796,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** Le nom de la source affichee : une adresse, un FQDN, ou l'horloge locale. */
   private w32Source(): string {
+    const w32 = this.getW32Time();
+    const store = this.getDirectoryStore();
+    if (store && w32.getFlags() === 'domhier') {
+      const pdc = store.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+      return pdc && pdc !== this.getHostname() ? `${pdc}.${store.dnsName},0x9` : 'Local CMOS Clock';
+    }
     const cfg = this.getNtpAgent().getConfig();
+    if (cfg.refIdentifier === 'LOCL' && this.getNtpAgent().isSynced()) return 'Local CMOS Clock';
     if (cfg.refIdentifier && cfg.refIdentifier !== '.INIT.' && this.getNtpAgent().isSynced()) {
       return cfg.refIdentifier;
-    }
-    const w32 = this.getW32Time();
-    if (w32.getFlags() === 'domhier') {
-      const store = this.getDirectoryStore();
-      const pdc = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-      if (store && pdc) return `${pdc}.${store.dnsName},0x9`;
     }
     const premier = w32.getPeers()[0];
     return premier ? `${premier.hote},${premier.drapeau}` : 'Local CMOS Clock';
@@ -5928,7 +5936,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const synced = agent.isSynced();
     return [
       `Leap Indicator: 0(no warning)`,
-      `Stratum: ${synced ? cfg.localStratum : 0} (${synced ? 'secondary reference - syncd by (S)NTP' : 'unspecified'})`,
+      `Stratum: ${synced ? cfg.localStratum : 0} (${!synced ? 'unspecified' : cfg.localStratum === 1 ? 'primary reference - syncd by radio clock' : 'secondary reference - syncd by (S)NTP'})`,
       `Precision: -23 (119.209ns per tick)`,
       `Root Delay: ${((best ? Math.abs(best.delayMs) : 0) / 1000).toFixed(7)}s`,
       `Root Dispersion: ${((best ? best.dispersionMs : 0) / 1000).toFixed(7)}s`,

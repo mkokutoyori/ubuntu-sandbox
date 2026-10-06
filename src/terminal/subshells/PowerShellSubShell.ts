@@ -14,7 +14,7 @@ import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import { PromiseInputBroker as PromiseInputBrokerPS } from '@/shell/input';
 import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
-import { NativeCommandNeedsAsync, translateNativeAnswer, CMD_NOT_RECOGNIZED } from '@/powershell/nativeAsync';
+import { NativeCommandNeedsAsync, translateNativeAnswer, nativeNotRecognized } from '@/powershell/nativeAsync';
 import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 import { powershellInputIsIncomplete } from '@/powershell/lexer/PSInputCompleteness';
@@ -22,7 +22,7 @@ import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProvid
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
-import { parseCredentialArg } from '@/powershell/cmdlets/core/RemotingCmdlets';
+import { credentialFromValue } from '@/powershell/cmdlets/core/RemotingCmdlets';
 import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
 import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import { scanWords, type WordScan } from '@/terminal/completion/words';
@@ -285,7 +285,9 @@ export class PowerShellSubShell implements ISubShell {
     const found = findHostByAddress(targetIp.toString());
     if (!found || found.poweredOff || found.interfaceDown) return fail();
 
-    const credential = credMatch ? parseCredentialArg(credMatch[1]) : { username: this.device.getUserManager().currentUser, password: '' };
+    const credential = credMatch
+      ? credentialFromValue(credMatch[1].startsWith('$') ? this.interp.getVariable(credMatch[1].slice(1)) : credMatch[1])
+      : { username: this.device.getUserManager().currentUser, password: '' };
     const dial = this.device.dialWinRm(targetIp.toString(), credential.username, credential.password);
     if (!dial.ok) return fail();
 
@@ -312,7 +314,7 @@ export class PowerShellSubShell implements ISubShell {
         this.interp.provideNativeResult({
           output: translateNativeAnswer(e.command, answer.output),
           exitCode: answer.exitCode,
-          notRecognized: CMD_NOT_RECOGNIZED.test(answer.output),
+          notRecognized: nativeNotRecognized(e.command, answer.output),
         });
       }
     }

@@ -14,6 +14,7 @@
  * coexist with any legacy per-port FHRP config the switch may inherit.
  */
 
+import type { UdpEgressHost } from '../../layers/transport/UdpEgress';
 import type { EthernetFrame } from '../../core/types';
 import { sendOnNamedInterface } from '../../layers/internet/Ipv4Egress';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
@@ -77,12 +78,13 @@ export function makeSwitchVrrpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHo
  * PHYSIQUES (il y suit les liens), NTP a besoin des SVI. Les fondre
  * casserait l'un des deux.
  */
-export function makeSwitchNtpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHost {
+export function makeSwitchNtpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHost & UdpEgressHost {
   const base = makeSwitchVrrpHost(sw, bridge);
   return {
     ...base,
     getPorts: () => sw.getSvis()
       .map((svi) => makeVlanifSyntheticPort(sw, bridge, svi.vlan, `Vlanif${svi.vlan}`)),
+    sendUdpDatagram: (request) => sw.sendUdpDatagram(request),
   };
 }
 

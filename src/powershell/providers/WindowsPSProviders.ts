@@ -423,17 +423,10 @@ class WindowsRoleAdapter implements IRoleProvider {
   }
 }
 
-// ── SMB adapter (Server Manager — WindowsServer only, gated on FS-FileServer) ──
+// ── SMB adapter ──
 
 class WindowsSmbAdapter implements ISmbProvider {
   constructor(private readonly pc: WindowsPC) {}
-
-  /** `New-SmbShare`/`Remove-SmbShare` only exist once the FS-FileServer role is installed (PRD-Windows-Server.md §8 acceptance criterion 2) — checked live on every call. `Get-SmbShare`/`Get-SmbSession` (and `net share`) are not gated this way, matching real Windows. */
-  private requireRole(): void {
-    if (!this.pc.getRoleManager()?.isInstalled('FS-FileServer')) {
-      throw new Error(commandNotFoundMessage('New-SmbShare'));
-    }
-  }
 
   private toShareInfo(view: { name: string; path: string; description: string; special: boolean }): SmbShareInfo {
     return { name: view.name, path: view.path, description: view.description, special: view.special };
@@ -447,7 +440,6 @@ class WindowsSmbAdapter implements ISmbProvider {
     return s ? this.toShareInfo(this.pc.smbShares.toView(s)) : null;
   }
   newShare(name: string, path: string, opts?: { description?: string; fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }) {
-    this.requireRole();
     const permissions = new Map<string, 'Full' | 'Change' | 'Read'>();
     for (const p of opts?.fullAccess ?? []) permissions.set(p, 'Full');
     for (const p of opts?.changeAccess ?? []) permissions.set(p, 'Change');
@@ -461,7 +453,6 @@ class WindowsSmbAdapter implements ISmbProvider {
     return res;
   }
   removeShare(name: string) {
-    this.requireRole();
     return this.pc.smbShares.remove(name);
   }
   listSessions(): SmbSessionInfo[] {

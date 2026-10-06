@@ -25,6 +25,12 @@ function creerServeurWindows(name = 'DC01'): WindowsServer {
   return s;
 }
 
+async function promouvoirForet(winDc: WindowsServer): Promise<void> {
+  const ps = pwsh(winDc);
+  await ps('Install-WindowsFeature -Name AD-Domain-Services');
+  await ps(`Install-ADDSForest -DomainName "corp.local" -Force ${MDP_SAFE_MODE}`);
+}
+
 const MDP_SAFE_MODE = '-SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd!" -AsPlainText -Force)';
 
 // Topologie d'Entreprise Hybride Windows & Linux :
@@ -143,24 +149,27 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     });
 
     it('304. Handshake LDAPS chiffré (TCP 636) à travers le pare-feu vers Windows Server', async () => {
-      const { linuxPc } = await creerLaboHybride();
+      const { linuxPc, winDc } = await creerLaboHybride();
+      await promouvoirForet(winDc);
       const res = await linuxPc.executeCommand('openssl s_client -connect 10.10.10.10:636 -brief </dev/null');
       expect(res).not.toMatch(/connect:errno/i);
     });
 
     it('305. Requête Global Catalog Active Directory (TCP 3268) traversant le commutateur de distribution', async () => {
-      const { winPc } = await creerLaboHybride();
+      const { winPc, winDc } = await creerLaboHybride();
+      await promouvoirForet(winDc);
       const gcTest = await pwsh(winPc)('Test-NetConnection -ComputerName 10.10.10.10 -Port 3268');
       expect(gcTest).toMatch(/TcpTestSucceeded\s*:\s*True/i);
     });
 
     it('306. Jonction au Domaine : Windows PC rejoint corp.local à travers le commutateur et le pare-feu', async () => {
       const { winPc, winDc } = await creerLaboHybride();
-      const psDc = pwsh(winDc);
-      await psDc('Install-WindowsFeature -Name AD-Domain-Services');
-      await psDc(`Install-ADDSForest -DomainName "corp.local" -Force ${MDP_SAFE_MODE}`);
-      const join = await pwsh(winPc)('Add-Computer -DomainName "corp.local" -Restart:$false');
+      await promouvoirForet(winDc);
+      const ps = pwsh(winPc);
+      await ps('Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ServerAddresses 10.10.10.10');
+      const join = await ps(`$cred = New-Object System.Management.Automation.PSCredential("CORP\\Administrator", (ConvertTo-SecureString "P@ssw0rd!" -AsPlainText -Force)); Add-Computer -DomainName "corp.local" -Credential $cred -Restart:$false`);
       expect(join).not.toMatch(/failed|error/i);
+      expect(await ps('(Get-WmiObject Win32_ComputerSystem).Domain')).toBe('corp.local');
     });
 
     it('307. Accès aux partages d\'infrastructure AD (SYSVOL et NETLOGON) via port 445 traversant', async () => {
@@ -170,7 +179,8 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     });
 
     it('308. Synchronisation horaire du domaine : Windows PC cale son horloge sur DC01 (UDP 123 w32time)', async () => {
-      const { winPc } = await creerLaboHybride();
+      const { winPc, winDc } = await creerLaboHybride();
+      await promouvoirForet(winDc);
       const ntp = await cmd(winPc, 'w32tm /stripchart /computer:10.10.10.10 /samples:1 /dataonly');
       expect(ntp).not.toMatch(/error/i);
     });
@@ -279,7 +289,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     it('320. OpenSSH Server sur Windows Server : Linux PC s\'y connecte et exécute cmd.exe à distance', async () => {
       const { linuxPc, winDc } = await creerLaboHybride();
       await pwsh(winDc)('Start-Service sshd');
-      const res = await linuxPc.executeCommand('ssh -o StrictHostKeyChecking=no Administrator@10.10.10.10 "cmd.exe /c echo SSH_TO_WINDOWS_OK"');
+      const res = await linuxPc.executeCommand('sshpass -p admin ssh -o StrictHostKeyChecking=no Administrator@10.10.10.10 "cmd.exe /c echo SSH_TO_WINDOWS_OK"');
       expect(res).toContain('SSH_TO_WINDOWS_OK');
     });
 
@@ -417,6 +427,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     it('336. Rôle DNS Windows Server déployé et interrogé en direct par Linux PC (dig @10.10.10.10)', async () => {
       const { linuxPc, winDc } = await creerLaboHybride();
       await pwsh(winDc)('Install-WindowsFeature -Name DNS');
+      await pwsh(winDc)('Add-DnsServerPrimaryZone -Name "corp.local" -ZoneFile "corp.local.dns"');
       await pwsh(winDc)('Add-DnsServerResourceRecordA -ZoneName "corp.local" -Name "srv1" -IPv4Address "10.10.10.10"');
       const dns = await linuxPc.executeCommand('dig @10.10.10.10 srv1.corp.local +short');
       expect(dns.trim()).toBe('10.10.10.10');
@@ -425,6 +436,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     it('337. Dynamic DNS (DDNS) : Linux PC enregistre dynamiquement son adresse A dans la zone DNS Windows', async () => {
       const { linuxPc, winDc } = await creerLaboHybride();
       await pwsh(winDc)('Install-WindowsFeature -Name DNS');
+      await pwsh(winDc)('Add-DnsServerPrimaryZone -Name "corp.local" -ZoneFile "corp.local.dns" -DynamicUpdate NonsecureAndSecure');
       await linuxPc.executeCommand('nsupdate <<EOF\nserver 10.10.10.10\nupdate add linux-hote.corp.local 86400 A 192.168.1.10\nsend\nEOF');
       const check = await pwsh(winDc)('Get-DnsServerResourceRecord -ZoneName "corp.local" -Name "linux-hote"');
       expect(check).toMatch(/192\.168\.1\.10/);
@@ -447,11 +459,15 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     });
 
     it('340. Serveur DHCP Windows Server : distribution d\'un bail IP avec passerelle vers Windows PC', async () => {
-      const { winDc, winPc } = await creerLaboHybride();
+      const { winDc, winPc, fw } = await creerLaboHybride();
       await pwsh(winDc)('Install-WindowsFeature -Name DHCP');
       await pwsh(winDc)('Add-DhcpServerv4Scope -Name "LAN" -StartRange 192.168.1.100 -EndRange 192.168.1.200 -SubnetMask 255.255.255.0');
+      await pwsh(winDc)('Set-DhcpServerv4OptionValue -ScopeId 192.168.1.0 -Router 192.168.1.1');
+      await taper(fw, ['config system interface', 'edit port1', 'set dhcp-relay-service enable', 'set dhcp-relay-ip "10.10.10.10"', 'next', 'end']);
+      await cmd(winPc, 'netsh interface ip set address "Ethernet0" dhcp');
       const renew = await cmd(winPc, 'ipconfig /renew');
-      expect(renew).toMatch(/192\.168\.1\./);
+      expect(renew).toMatch(/IPv4 Address[ .]*: 192\.168\.1\.1\d\d/);
+      expect(renew).toMatch(/Default Gateway[ .]*: 192\.168\.1\.1/);
     });
 
     it('341. DHCP Relay FortiGate vers Windows Server : les broadcasts LAN sont convertis en unicast vers 10.10.10.10', async () => {
@@ -466,11 +482,16 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     });
 
     it('342. DHCP Option 15 (Domain Name) & Option 6 (DNS) validées sur le client Linux via Windows DHCP', async () => {
-      const { linuxPc, winDc } = await creerLaboHybride();
-      await pwsh(winDc)('Set-DhcpServerv4OptionValue -ScopeId 192.168.1.0 -OptionId 15 -Value "corp.local"');
-      await linuxPc.executeCommand('dhclient -r eth0 && dhclient -1 eth0');
+      const { linuxPc, winDc, fw } = await creerLaboHybride();
+      await pwsh(winDc)('Install-WindowsFeature -Name DHCP');
+      await pwsh(winDc)('Add-DhcpServerv4Scope -Name "LAN" -StartRange 192.168.1.100 -EndRange 192.168.1.200 -SubnetMask 255.255.255.0');
+      await pwsh(winDc)('Set-DhcpServerv4OptionValue -ScopeId 192.168.1.0 -Router 192.168.1.1 -DnsServer 10.10.10.10 -DnsDomain corp.local');
+      await taper(fw, ['config system interface', 'edit port1', 'set dhcp-relay-service enable', 'set dhcp-relay-ip "10.10.10.10"', 'next', 'end']);
+      await linuxPc.executeCommand('ip addr flush dev eth0');
+      await linuxPc.executeCommand('dhclient eth0');
       const resolv = await linuxPc.executeCommand('cat /etc/resolv.conf');
-      expect(resolv).toMatch(/corp\.local|10\.10\.10\.10/);
+      expect(resolv).toMatch(/search corp\.local/);
+      expect(resolv).toMatch(/nameserver 10\.10\.10\.10/);
     });
   });
 
@@ -488,7 +509,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
       const { linuxPc, winDc } = await creerLaboHybride();
       await cmd(winDc, 'netsh advfirewall firewall add rule name="BlockLinux" dir=in action=block remoteip=192.168.1.10');
       const res = await linuxPc.executeCommand('curl -sS --connect-timeout 1 http://10.10.10.10/');
-      expect(res).toMatch(/Connection timed out|refused/i);
+      expect(res).toMatch(/Timeout was reached|Connection refused/i);
     });
 
     it('345. Windows Event Log Forwarding (Syslog) : Alerte de connexion réussie (Event ID 4624) reçue par le SIEM Linux', async () => {

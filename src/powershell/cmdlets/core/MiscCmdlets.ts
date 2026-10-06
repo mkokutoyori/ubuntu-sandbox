@@ -14,7 +14,7 @@ import {
   PROCESS_POLICY_VARIABLE, effectiveExecutionPolicy, matchExecutionPolicy,
   matchExecutionPolicyScope, storedPolicy, writeExecutionPolicy,
 } from '@/powershell/executionPolicy';
-import { parseCredentialArg } from './RemotingCmdlets';
+import { namedCredential } from './RemotingCmdlets';
 import { makePSCredential } from '@/powershell/credential/PSCredential';
 import { wildcardMatches, wildcardToRegex, hasWildcard } from '@/powershell/runtime/PSWildcard';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
@@ -513,9 +513,7 @@ export class InvokeCommandCmdlet implements ICmdlet {
     const argumentList = argListRaw === undefined || argListRaw === null
       ? []
       : (Array.isArray(argListRaw) ? argListRaw : [argListRaw]);
-    const credentialRaw = ctx.named['credential'];
-    const credential = credentialRaw !== undefined && credentialRaw !== null
-      ? parseCredentialArg(psValueToString(credentialRaw)) : undefined;
+    const credential = namedCredential(ctx, 'credential');
 
     const remoting = ctx.providers.remoting;
     if (!remoting) {
@@ -852,12 +850,7 @@ export class NewPSDriveCmdlet implements ICmdlet {
         ctx.emitError(`New-PSDrive : This computer cannot map a network drive.`);
         return null;
       }
-      const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
-      const separator = credentialRaw.indexOf(':');
-      const credential = separator > 0
-        ? { username: credentialRaw.slice(0, separator), password: credentialRaw.slice(separator + 1) }
-        : undefined;
-      const mapped = smb.mapDrive(name.endsWith(':') ? name : `${name}:`, root, credential);
+      const mapped = smb.mapDrive(name.endsWith(':') ? name : `${name}:`, root, namedCredential(ctx, 'credential'));
       if (!mapped.ok) {
         ctx.emitError(`New-PSDrive : ${mapped.error ?? 'The network path was not found.'}`);
         return null;

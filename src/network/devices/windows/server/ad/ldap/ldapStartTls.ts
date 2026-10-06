@@ -16,10 +16,9 @@ import { selfSignedServiceCertificate } from '@/network/pki/SelfSignedCertificat
 export const selfSignedLdapCert = selfSignedServiceCertificate;
 
 /** Feeds one incoming wire chunk into an in-progress server-side handshake and sends back any reply flight. */
-export function stepServerHandshake(tls: TlsServerSession, socket: TcpSocket, data: Uint8Array): void {
-  const incoming = decodeRecords(data);
-  const nextFlight = tls.handle(incoming);
-  if (nextFlight && nextFlight.length > 0) socket.send(encodeRecords(nextFlight));
+export function stepServerHandshake(tls: TlsServerSession, data: Uint8Array): Uint8Array | null {
+  const nextFlight = tls.handle(decodeRecords(data));
+  return nextFlight && nextFlight.length > 0 ? encodeRecords(nextFlight) : null;
 }
 
 /**
