@@ -8,11 +8,12 @@
  * formatting so `uptime` and `w` cannot drift apart again.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { HostLifecycle } from '../../host/lifecycle';
 import type { KernelInfo } from '../../host/identity';
-import { formatOffsetCompact, utcMsForLocal } from '../../../core/time/TimeZoneRegistry';
+import { formatOffsetCompact } from '../../../core/time/TimeZoneRegistry';
+import { parseGnuDate } from '../../../core/time/GnuDateInput';
 import { TimeZone } from '../../../core/time/TimeZone';
 import { abreviationA, decalageA } from '../time/TimezoneDatabase';
 import { IDLE_LOAD_AVERAGE } from './LoadAverage';
@@ -67,9 +68,14 @@ function uptimeClause(uptimeSeconds: number): string {
  * `uptimeSeconds` comes from the host's {@link HostLifecycle}, and the
  * load from {@link IDLE_LOAD_AVERAGE} — la seule ecriture de ce fait.
  */
-export function uptimeHeader(users = 1, uptimeSeconds = 0): string {
-  const now = simulationDate();
-  return ` ${hhmmss(now)} up ${uptimeClause(uptimeSeconds)},  ${users} user${users !== 1 ? 's' : ''}, ` +
+export interface UptimeClockView {
+  readonly nowMs: number;
+  readonly zone?: string;
+}
+
+export function uptimeHeader(users = 1, uptimeSeconds = 0, view?: UptimeClockView): string {
+  const stamp = formatLocalTime('%H:%M:%S', view?.nowMs ?? simulationNowMs(), view?.zone);
+  return ` ${stamp} up ${uptimeClause(uptimeSeconds)},  ${users} user${users !== 1 ? 's' : ''}, ` +
     ` load average: ${IDLE_LOAD_AVERAGE}`;
 }
 
@@ -77,7 +83,7 @@ export function uptimeHeader(users = 1, uptimeSeconds = 0): string {
  * `uptime` — rendered live from the host's {@link HostLifecycle} so it tracks
  * real boot time and resets on power-cycle / reboot.
  */
-export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
+export function cmdUptime(args: string[], lifecycle: HostLifecycle, view?: UptimeClockView): string {
   const seconds = lifecycle.uptimeSeconds();
   const valid = new Set(['-p', '--pretty', '-s', '--since', '-h', '--help', '-V', '--version']);
   for (const a of args) {
@@ -88,10 +94,9 @@ export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
   }
   if (args.includes('-s') || args.includes('--since')) {
     const boot = lifecycle.bootedAt() ?? simulationDate();
-    return `${boot.getUTCFullYear()}-${two(boot.getUTCMonth() + 1)}-${two(boot.getUTCDate())} ` +
-      `${hhmmss(boot)}`;
+    return formatLocalTime('%Y-%m-%d %H:%M:%S', boot.getTime(), view?.zone);
   }
-  return uptimeHeader(1, seconds);
+  return uptimeHeader(1, seconds, view);
 }
 
 /**
@@ -222,57 +227,10 @@ function strftime(fmt: string, d: Date, rendu: DateRendering = UTC_RENDERING): s
   return fmt.replace(/%([YyCmdejHkIlMSpPaAbhBwuUVNZzFTRrDcxXnts%])/g, (_, c) => map[c] ?? `%${c}`);
 }
 
-/**
- * Parse a `-d`/`--date=` argument. Real coreutils accepts a huge
- * grammar; we cover the common shapes used in scripts:
- *   - ISO timestamps: `2026-05-19`, `2026-05-19T10:00:00`, `2026-05-19 10:00:00`
- *   - Unix epoch: `@1716115200`
- *   - Relative: `now`, `today`, `yesterday`, `tomorrow`
- *   - Anything Date.parse() recognises (e.g. `May 19 2026 16:32:55 UTC`)
- * Returns null when the string can't be parsed — the caller mirrors
- * coreutils' "date: invalid date '<x>'" error in that case.
- */
 function parseDateSpec(spec: string, nowMs: number, timezone?: string): Date | null {
-  const s = spec.trim();
-  if (!s || s === 'now') return new Date(nowMs);
-  if (s === 'today') {
-    const d = new Date(nowMs);
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
-  }
-  if (s === 'yesterday') {
-    const d = new Date(nowMs);
-    d.setUTCDate(d.getUTCDate() - 1);
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
-  }
-  if (s === 'tomorrow') {
-    const d = new Date(nowMs);
-    d.setUTCDate(d.getUTCDate() + 1);
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
-  }
-  if (s.startsWith('@')) {
-    const seconds = parseInt(s.slice(1), 10);
-    return isNaN(seconds) ? null : new Date(seconds * 1000);
-  }
-  const relative = /^(-)?\s*(\d+)\s*(second|minute|hour|day|week)s?(\s+ago)?$/i.exec(s);
-  if (relative) {
-    const isPast = relative[1] === '-' || !!relative[4];
-    const amount = parseInt(relative[2], 10);
-    const unitMs: Record<string, number> = {
-      second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
-    };
-    const ms = amount * unitMs[relative[3].toLowerCase()];
-    return new Date(nowMs + (isPast ? -ms : ms));
-  }
-  const explicit = Date.parse(s);
-  const hasZoneDesignator = /(\bUTC|\bGMT|Z|[+-]\d{2}:?\d{2})$/i.test(s);
-  if (hasZoneDesignator) return isNaN(explicit) ? null : new Date(explicit);
-  const wallMs = Date.parse(`${s} UTC`);
-  if (isNaN(wallMs)) return isNaN(explicit) ? null : new Date(explicit);
   const zone = timezone === undefined ? null : TimeZone.parse(timezone);
-  return new Date(zone === null ? wallMs : utcMsForLocal(zone, wallMs));
+  const parsed = parseGnuDate(spec, { nowMs, zone });
+  return parsed === null ? null : new Date(parsed);
 }
 
 export interface DateRendering {

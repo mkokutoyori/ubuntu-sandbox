@@ -2,6 +2,7 @@
  * File operation commands: touch, ls, cat, cp, mv, rm, mkdir, rmdir, ln, echo, pwd, cd, tee
  */
 
+import { formatLsTime, parseLsTimeStyle, parseTouchDate, parseTouchStamp, type LsTimeStyle } from './time/FileTimes';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
@@ -49,20 +50,92 @@ export interface ShellContext {
    *  this exact environment instead of the interactive session's. */
   envOverride?: Record<string, string>;
   openRefusal?: (absPath: string) => string | null;
+  zone?: string;
+  nowMs?: () => number;
 }
 
 export function cmdTouch(ctx: ShellContext, args: string[]): string {
   const errors: string[] = [];
-  for (const arg of args) {
-    if (arg.startsWith('-')) continue;
+  const nowMs = ctx.nowMs?.() ?? simulationNowMs();
+  let setAccess = false;
+  let setModify = false;
+  let noCreate = false;
+  let stampMs: number | null = null;
+  const targets: string[] = [];
+  const bad = (message: string): string => `touch: ${message}`;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--') { targets.push(...args.slice(i + 1)); break; }
+    if (arg.startsWith('--')) {
+      const [name, inline] = arg.slice(2).split(/=(.*)/s, 2);
+      if (name === 'no-create') noCreate = true;
+      else if (name === 'date') {
+        const spec = inline ?? args[++i] ?? '';
+        const parsed = parseTouchDate(spec, ctx.zone, nowMs);
+        if (parsed === null) return bad(`invalid date format '${spec}'`);
+        stampMs = parsed;
+      } else if (name === 'reference') {
+        const ref = inline ?? args[++i] ?? '';
+        const inode = ctx.vfs.resolveInode(ctx.vfs.normalizePath(ref, ctx.cwd));
+        if (!inode) return bad(`failed to get attributes of '${ref}': No such file or directory`);
+        stampMs = inode.mtime;
+      } else if (name === 'time') {
+        const which = inline ?? args[++i] ?? '';
+        if (/^(atime|access|use)$/.test(which)) setAccess = true;
+        else if (/^(mtime|modify)$/.test(which)) setModify = true;
+      }
+      continue;
+    }
+    if (arg.length > 1 && arg.startsWith('-')) {
+      for (let k = 1; k < arg.length; k++) {
+        const flag = arg[k];
+        if (flag === 'a') setAccess = true;
+        else if (flag === 'm') setModify = true;
+        else if (flag === 'c') noCreate = true;
+        else if (flag === 'd' || flag === 't' || flag === 'r') {
+          const operand = arg.slice(k + 1) || args[++i] || '';
+          if (flag === 'd') {
+            const parsed = parseTouchDate(operand, ctx.zone, nowMs);
+            if (parsed === null) return bad(`invalid date format '${operand}'`);
+            stampMs = parsed;
+          } else if (flag === 't') {
+            const parsed = parseTouchStamp(operand, ctx.zone, nowMs);
+            if (parsed === null) return bad(`invalid date format '${operand}'`);
+            stampMs = parsed;
+          } else {
+            const inode = ctx.vfs.resolveInode(ctx.vfs.normalizePath(operand, ctx.cwd));
+            if (!inode) return bad(`failed to get attributes of '${operand}': No such file or directory`);
+            stampMs = inode.mtime;
+          }
+          break;
+        }
+      }
+      continue;
+    }
+    targets.push(arg);
+  }
+
+  if (targets.length === 0) return 'touch: missing file operand\nTry \'touch --help\' for more information.';
+  const both = !setAccess && !setModify;
+  for (const arg of targets) {
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
     const existed = ctx.vfs.exists(path);
-    ctx.vfs.touch(path, ctx.uid, ctx.gid, ctx.umask);
-    if (!existed && !ctx.vfs.exists(path)) {
-      errors.push(ctx.vfs.freeInodes() === 0
-        ? `touch: cannot touch '${arg}': No space left on device`
-        : `touch: cannot touch '${arg}': No such file or directory`);
+    if (!existed && noCreate) continue;
+    if (!existed) {
+      ctx.vfs.touch(path, ctx.uid, ctx.gid, ctx.umask);
+      if (!ctx.vfs.exists(path)) {
+        errors.push(ctx.vfs.freeInodes() === 0
+          ? `touch: cannot touch '${arg}': No space left on device`
+          : `touch: cannot touch '${arg}': No such file or directory`);
+        continue;
+      }
     }
+    const at = stampMs ?? nowMs;
+    ctx.vfs.setTimes(path, {
+      atime: both || setAccess ? at : undefined,
+      mtime: both || setModify ? at : undefined,
+    });
   }
   return errors.join('\n');
 }
@@ -81,6 +154,7 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   // isatty(STDOUT_FILENO) check.
   let onePerLine = ctx.isPiped === true;
   let useColor = ctx.color === true;
+  const timing: LsTiming = { field: 'mtime', style: null, reverse: false };
   const paths: string[] = [];
 
   for (const arg of args) {
@@ -97,12 +171,27 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
           case 'd': dirOnly = true; break;
           case 'F': classify = true; break;
           case '1': onePerLine = true; break;
+          case 'r': timing.reverse = true; break;
+          case 'c': timing.field = 'ctime'; break;
+          case 'u': timing.field = 'atime'; break;
         }
       }
     } else if (arg.startsWith('--')) {
       if (arg === '--color' || arg === '--color=always' || arg === '--color=yes') useColor = true;
       else if (arg === '--color=never' || arg === '--color=no' || arg === '--color=none') useColor = false;
       else if (arg === '--color=auto') useColor = ctx.color === true;
+      else if (arg === '--reverse') timing.reverse = true;
+      else if (arg === '--full-time') { longFormat = true; timing.style = 'full-iso'; }
+      else if (arg.startsWith('--time-style=')) {
+        const style = parseLsTimeStyle(arg.slice('--time-style='.length));
+        if (style === null) return `ls: invalid argument '${arg.slice('--time-style='.length)}' for '--time-style'`;
+        timing.style = style;
+      } else if (arg.startsWith('--time=')) {
+        const which = arg.slice('--time='.length);
+        if (/^(atime|access|use)$/.test(which)) timing.field = 'atime';
+        else if (/^(ctime|status)$/.test(which)) timing.field = 'ctime';
+        else if (which === 'mtime' || which === 'modify') timing.field = 'mtime';
+      }
     } else {
       paths.push(arg);
     }
@@ -133,11 +222,11 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
 
       if (inode.type !== 'directory' || dirOnly) {
         // Show single file/dir entry
-        const opts: LsOpts = { longFormat, showInode, classify, onePerLine, useColor };
+        const opts: LsOpts = { timing, longFormat, showInode, classify, onePerLine, useColor };
         allOutput.push(formatEntry(ctx, p, inode, absPath, opts));
       } else {
         const result = listDir(ctx, absPath, p, longFormat, showAll, showInode,
-          sortBySize, sortByTime, recursive, classify, onePerLine, useColor);
+          sortBySize, sortByTime, recursive, classify, onePerLine, useColor, timing);
         allOutput.push(result);
       }
     }
@@ -146,7 +235,14 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   return allOutput.join('\n').trimEnd();
 }
 
+interface LsTiming {
+  field: 'mtime' | 'atime' | 'ctime';
+  style: LsTimeStyle | null;
+  reverse: boolean;
+}
+
 interface LsOpts {
+  timing: LsTiming;
   longFormat: boolean;
   showInode: boolean;
   classify: boolean;
@@ -157,7 +253,8 @@ interface LsOpts {
 function listDir(ctx: ShellContext, absPath: string, displayPath: string,
   longFormat: boolean, showAll: boolean, showInode: boolean,
   sortBySize: boolean, sortByTime: boolean, recursive: boolean,
-  classify: boolean = false, onePerLine: boolean = false, useColor: boolean = false): string {
+  classify: boolean = false, onePerLine: boolean = false, useColor: boolean = false,
+  timing: LsTiming = { field: 'mtime', style: null, reverse: false }): string {
   const entries = ctx.vfs.listDirectory(absPath);
   if (!entries) return `ls: cannot access '${displayPath}': No such file or directory`;
   if (ctx.uid !== 0 && !ctx.vfs.path(absPath, '/', actorOf(ctx)).canRead()) {
@@ -170,12 +267,13 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
   if (sortBySize) {
     filtered.sort((a, b) => b.inode.size - a.inode.size);
   } else if (sortByTime) {
-    filtered.sort((a, b) => b.inode.mtime - a.inode.mtime);
+    filtered.sort((a, b) => (b.inode[timing.field] - a.inode[timing.field]) || a.name.localeCompare(b.name));
   } else {
     filtered.sort((a, b) => a.name.localeCompare(b.name));
   }
+  if (timing.reverse) filtered.reverse();
 
-  const opts: LsOpts = { longFormat, showInode, classify, onePerLine, useColor };
+  const opts: LsOpts = { timing, longFormat, showInode, classify, onePerLine, useColor };
   const lines: string[] = [];
 
   if (recursive) {
@@ -247,7 +345,7 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
         const childDisplay = displayPath === '.' ? entry.name : displayPath + '/' + entry.name;
         lines.push('');
         lines.push(listDir(ctx, childPath, childDisplay, longFormat, showAll, showInode,
-          sortBySize, sortByTime, recursive, classify, onePerLine, useColor));
+          sortBySize, sortByTime, recursive, classify, onePerLine, useColor, timing));
       }
     }
   }
@@ -333,28 +431,6 @@ function colorName(name: string, inode: INode, useColor = true): string {
   }
 }
 
-/**
- * Format a date like real `ls -l`:
- * - Within the last 6 months: "Mon DD HH:MM"
- * - Older: "Mon DD  YYYY"
- */
-function formatLsDate(mtime: number): string {
-  const date = new Date(mtime);
-  const now = simulationNowMs();
-  const sixMonths = 6 * 30 * 24 * 60 * 60 * 1000;
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const mon = monthNames[date.getMonth()];
-  const day = date.getDate().toString().padStart(2);
-
-  if (now - mtime < sixMonths) {
-    const hh = date.getHours().toString().padStart(2, '0');
-    const mm = date.getMinutes().toString().padStart(2, '0');
-    return `${mon} ${day} ${hh}:${mm}`;
-  } else {
-    return `${mon} ${day}  ${date.getFullYear()}`;
-  }
-}
-
 function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath: string,
   opts: LsOpts, maxLinks: number, maxOwner: number, maxGroup: number, maxSize: number): string {
   let line = '';
@@ -366,7 +442,7 @@ function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath:
   const perms = ctx.vfs.formatPermissions(inode);
   const owner = ctx.userMgr.uidToName(inode.uid);
   const group = ctx.userMgr.gidToName(inode.gid);
-  const dateStr = formatLsDate(inode.mtime);
+  const dateStr = formatLsTime(opts.timing.style, inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs());
 
   const coloredName = colorName(name, inode, opts.useColor ?? false);
   line += `${perms} ${String(inode.linkCount).padStart(maxLinks)} ${owner.padEnd(maxOwner)} ${group.padEnd(maxGroup)} ${String(inode.size).padStart(maxSize)} ${dateStr} ${coloredName}`;

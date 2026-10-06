@@ -1965,8 +1965,10 @@ export function registerDisplayCommands(
       new Date(dev.getSystemClockMs()),
       dev.getManagementService().getClock());
   });
-  trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
-  trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());
+  trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage(
+    new Date(getRouter().getSystemClockMs()), getRouter().getManagementService().getClock()));
+  trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage(
+    new Date(getRouter().getSystemClockMs()), getRouter().getManagementService().getClock()));
   trie.register('display users', 'Display user sessions', () => commonDisplayUsers(getRouter()));
   trie.register('display device', 'Display device status', () =>
     commonDisplayDevice(getRouter().getHostname(), AR2220_HARDWARE_PROFILE));
@@ -1976,7 +1978,8 @@ export function registerDisplayCommands(
   trie.register('display license', 'Display license information', () => commonDisplayLicense());
   trie.registerGreedy('display logbuffer', 'Display log buffer', (args) => {
     if (args.length === 0) {
-      return getState().renderLogbuffer?.() ?? commonDisplayLogbuffer();
+      return getState().renderLogbuffer?.() ?? commonDisplayLogbuffer(
+        new Date(getRouter().getSystemClockMs()), getRouter().getManagementService().getClock());
     }
     if (args[0]?.toLowerCase() !== 'level') {
       return `Error: Unrecognized command found at '^' position.`;
@@ -1991,7 +1994,8 @@ export function registerDisplayCommands(
     const rang = /^[0-8]$/.test(args[1]) ? Number(args[1]) : null;
     const seuil = rang === null ? normVrpSeverity(args[1]) : VRP_SEVERITIES[rang];
     if (!seuil) return `Error: Wrong parameter found at '^' position.`;
-    return getState().renderLogbuffer?.(VRP_SEVERITIES.indexOf(seuil)) ?? commonDisplayLogbuffer();
+    return getState().renderLogbuffer?.(VRP_SEVERITIES.indexOf(seuil)) ?? commonDisplayLogbuffer(
+      new Date(getRouter().getSystemClockMs()), getRouter().getManagementService().getClock());
   });
   trie.addCompletionKeywords('display logbuffer', [
     { keyword: 'level', description: 'Lowest severity to display' },

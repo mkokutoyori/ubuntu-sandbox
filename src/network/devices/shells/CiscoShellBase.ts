@@ -5731,8 +5731,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   timeRangeClockMs(): number {
-    const device = this.d() as unknown as { getSystemClockMs?: () => number };
-    return device.getSystemClockMs?.() ?? simulationNowMs();
+    const device = this.d() as unknown as {
+      localClock?: () => { localMs: number };
+      getSystemClockMs?: () => number;
+    };
+    return device.localClock?.().localMs ?? device.getSystemClockMs?.() ?? simulationNowMs();
   }
 
   /**

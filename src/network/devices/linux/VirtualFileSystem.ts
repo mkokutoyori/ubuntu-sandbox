@@ -36,6 +36,10 @@ export interface RemoteMountPort {
   rename(from: string, to: string): boolean;
 }
 
+export type FindTimeTest =
+  | { readonly kind: 'age'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly unit: 'day' | 'min'; readonly op: '+' | '-' | '='; readonly n: number }
+  | { readonly kind: 'newer'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly thanMs: number };
+
 export interface INode {
   id: number;
   type: FileType;
@@ -688,6 +692,15 @@ export class VirtualFileSystem {
       || normalized === '/sys' || normalized.startsWith('/sys/');
   }
 
+  setTimes(path: string, times: { atime?: number; mtime?: number }): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode) return false;
+    if (times.atime !== undefined) inode.atime = times.atime;
+    if (times.mtime !== undefined) inode.mtime = times.mtime;
+    inode.ctime = this.nowMs();
+    return true;
+  }
+
   touch(path: string, uid: number, gid: number, umask: number): boolean {
     const existing = this.resolveInode(path);
     if (existing) {
@@ -1312,7 +1325,7 @@ export class VirtualFileSystem {
     empty?: boolean;
     user?: number;
     group?: number;
-    mtime?: number; // -N means modified within N days
+    timeTests?: readonly FindTimeTest[];
     /** Match {@link sizeSpec} — `{ op: '+'|'-'|'=', value: bytes }`. */
     size?: { op: '+' | '-' | '='; value: number };
     /** Maximum descent depth — startPath itself is depth 0. */
@@ -1376,17 +1389,7 @@ export class VirtualFileSystem {
     if (options.user !== undefined && inode.uid !== options.user) return false;
     if (options.group !== undefined && inode.gid !== options.group) return false;
 
-    if (options.mtime !== undefined) {
-      const days = Math.abs(options.mtime);
-      const threshold = this.nowMs() - days * 86400000;
-      if (options.mtime < 0) {
-        // -mtime -N: modified within N days
-        if (inode.mtime < threshold) return false;
-      } else {
-        // -mtime +N: modified more than N days ago
-        if (inode.mtime > threshold) return false;
-      }
-    }
+    if (options.timeTests !== undefined && !this.matchesFindTimes(inode, options.timeTests)) return false;
 
     if (options.size !== undefined) {
       const fileSize = inode.size;
@@ -1396,6 +1399,23 @@ export class VirtualFileSystem {
       if (options.size.op === '=' && fileSize !== target) return false;
     }
 
+    return true;
+  }
+
+  private matchesFindTimes(inode: INode, tests: readonly FindTimeTest[]): boolean {
+    const now = this.nowMs();
+    for (const test of tests) {
+      const stamp = inode[test.field];
+      if (test.kind === 'newer') {
+        if (!(stamp > test.thanMs)) return false;
+        continue;
+      }
+      const ageSeconds = Math.max(0, Math.floor((now - stamp) / 1000));
+      const age = test.unit === 'day' ? Math.floor(ageSeconds / 86_400) : Math.ceil(ageSeconds / 60);
+      if (test.op === '+' && !(age > test.n)) return false;
+      if (test.op === '-' && !(age < test.n)) return false;
+      if (test.op === '=' && age !== test.n) return false;
+    }
     return true;
   }
 

@@ -1,3 +1,4 @@
+import { formatLocalTime } from './SystemInfo';
 /**
  * ProcFormat — shared process-metrics formatting utilities.
  *
@@ -14,8 +15,8 @@ function two(n: number): string {
 }
 
 /** Wall-clock HH:MM used for the STIME / START columns. */
-export function formatClock(d: Date): string {
-  return `${two(d.getHours())}:${two(d.getMinutes())}`;
+export function formatClock(d: Date, zone?: string): string {
+  return formatLocalTime('%H:%M', d.getTime(), zone);
 }
 
 /**

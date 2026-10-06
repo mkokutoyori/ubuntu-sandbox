@@ -6,6 +6,7 @@
  * scripts that parse the output keep working.
  */
 
+import { formatLocalTime } from './system/SystemInfo';
 import { simulationDate } from '@/network/core/SystemClock';
 
 import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
@@ -38,6 +39,7 @@ export interface ProcessCmdContext {
   tty: string;
   /** PID of the interactive `-bash`, so `ps -p $$` resolves. */
   shellPid?: number;
+  zone?: string;
   /** PID of whoever is currently executing this command (`currentBashPid()`);
    *  used by `nice <cmd>`, which applies to the calling process, not `shellPid`. */
   currentPid?: number;
@@ -453,13 +455,10 @@ function unitProcessLine(u: ServiceUnit): string | null {
   return `    Process: ExecStart=${u.execStart} (${cause})`;
 }
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function formatTimerDate(d: Date | null): string {
+function formatTimerDate(d: Date | null, zone?: string): string {
   if (!d) return 'n/a';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${DAY_NAMES[d.getUTCDay()]} ${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
-    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
+  return formatLocalTime('%a %Y-%m-%d %H:%M:%S %Z', d.getTime(), zone);
 }
 
 function formatTimerDelta(later: Date | null, earlier: Date | null): string {
@@ -854,7 +853,7 @@ export function cmdSystemctl(rawArgs: string[], sm: LinuxServiceManager, color =
     }
 
     case 'list-timers': {
-      const now = simulationDate();
+      const now = sm.clockDate();
       // `list-timers mon.timer` ne montre que celui-là — l'argument était
       // accepté puis ignoré, et la commande répondait toute la table.
       const wanted = operands.map((o) => (o.includes('.') ? o : `${o}.timer`));
@@ -870,9 +869,9 @@ export function cmdSystemctl(rawArgs: string[], sm: LinuxServiceManager, color =
       ];
       for (const t of timers) {
         lines.push([
-          formatTimerDate(t.next).padEnd(30),
+          formatTimerDate(t.next, sm.zone()).padEnd(30),
           formatTimerDelta(t.next, now).padEnd(10),
-          formatTimerDate(t.last).padEnd(30),
+          formatTimerDate(t.last, sm.zone()).padEnd(30),
           formatTimerDelta(now, t.last).padEnd(10),
           t.unit.padEnd(unitWidth),
           fullUnitName(t.activates),

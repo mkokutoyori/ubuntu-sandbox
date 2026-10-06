@@ -1,3 +1,6 @@
+import { TimeZone } from '../../../core/time/TimeZone';
+import { offsetMinutesAt, utcMsForLocal } from '../../../core/time/TimeZoneRegistry';
+
 /**
  * `OnCalendar=` — les événements calendaires de `systemd.time(7)`.
  *
@@ -199,33 +202,35 @@ function smallest(field: Field, min: number, max: number, above: number): number
  * se compte en centaines d'essais. La borne de cinq ans est arbitraire
  * mais couvre tout ce qu'un timer réel exprime.
  */
-export function nextCalendarElapse(spec: CalendarSpec, after: Date): Date | null {
+export function nextCalendarElapse(spec: CalendarSpec, after: Date, zone?: string): Date | null {
   const HORIZON_DAYS = 366 * 5;
-  const cursor = new Date(after.getTime());
-  cursor.setMilliseconds(0);
+  const fuseau = zone === undefined ? null : TimeZone.parse(zone);
+  const wallStart = after.getTime() + (fuseau === null ? 0 : offsetMinutesAt(fuseau, after.getTime()) * 60_000);
+  const cursor = new Date(wallStart);
+  cursor.setUTCMilliseconds(0);
 
   for (let day = 0; day <= HORIZON_DAYS; day++) {
     const probe = new Date(cursor.getTime());
-    probe.setDate(probe.getDate() + day);
-    if (day > 0) probe.setHours(0, 0, 0, 0);
+    probe.setUTCDate(probe.getUTCDate() + day);
+    if (day > 0) probe.setUTCHours(0, 0, 0, 0);
 
-    if (!matches(spec.years, probe.getFullYear())) continue;
-    if (!matches(spec.months, probe.getMonth() + 1)) continue;
-    if (!matches(spec.days, probe.getDate())) continue;
-    if (!matches(spec.weekdays, probe.getDay())) continue;
+    if (!matches(spec.years, probe.getUTCFullYear())) continue;
+    if (!matches(spec.months, probe.getUTCMonth() + 1)) continue;
+    if (!matches(spec.days, probe.getUTCDate())) continue;
+    if (!matches(spec.weekdays, probe.getUTCDay())) continue;
 
-    // Le même jour, on ne peut pas remonter avant l'heure de départ.
-    const floorH = day === 0 ? probe.getHours() : 0;
+    const floorH = day === 0 ? probe.getUTCHours() : 0;
     for (let h = smallest(spec.hours, 0, 23, floorH); h !== null; h = smallest(spec.hours, 0, 23, h + 1)) {
-      const floorM = day === 0 && h === probe.getHours() ? probe.getMinutes() : 0;
+      const floorM = day === 0 && h === probe.getUTCHours() ? probe.getUTCMinutes() : 0;
       for (let m = smallest(spec.minutes, 0, 59, floorM); m !== null; m = smallest(spec.minutes, 0, 59, m + 1)) {
-        const sameMinute = day === 0 && h === probe.getHours() && m === probe.getMinutes();
-        const floorS = sameMinute ? probe.getSeconds() + 1 : 0;
+        const sameMinute = day === 0 && h === probe.getUTCHours() && m === probe.getUTCMinutes();
+        const floorS = sameMinute ? probe.getUTCSeconds() + 1 : 0;
         const s = smallest(spec.seconds, 0, 59, floorS);
         if (s === null) continue;
-        const found = new Date(probe.getTime());
-        found.setHours(h, m, s, 0);
-        if (found.getTime() > after.getTime()) return found;
+        const wall = new Date(probe.getTime());
+        wall.setUTCHours(h, m, s, 0);
+        const found = fuseau === null ? wall.getTime() : utcMsForLocal(fuseau, wall.getTime());
+        if (found > after.getTime()) return new Date(found);
       }
     }
   }
@@ -233,10 +238,10 @@ export function nextCalendarElapse(spec: CalendarSpec, after: Date): Date | null
 }
 
 /** Raccourci : analyse puis calcule, pour les appelants qui ont la chaîne. */
-export function nextElapseOf(expression: string | undefined, after: Date): Date | null {
+export function nextElapseOf(expression: string | undefined, after: Date, zone?: string): Date | null {
   if (!expression) return null;
   const spec = parseCalendar(expression);
-  return spec === null ? null : nextCalendarElapse(spec, after);
+  return spec === null ? null : nextCalendarElapse(spec, after, zone);
 }
 
 /**

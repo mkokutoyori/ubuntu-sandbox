@@ -1319,7 +1319,7 @@ export abstract class LinuxMachine extends EndHost
   private deliverCronMail(recipient: string, body: string): void {
     const entry = this.executor.userMgr.getUser(recipient);
     const host = this.getHostname();
-    const envelope = `From cron@${host}  ${formatCtime(this.executor.simulatedDate())}\n`;
+    const envelope = `From cron@${host}  ${formatCtime(this.executor.simulatedDate(), this.executor.identity.timezone)}\n`;
     this.executor.vfs.writeFile(`/var/mail/${recipient}`, envelope + body + '\n', entry?.uid ?? 0, entry?.gid ?? 0, 0o022, true);
   }
 
@@ -1518,7 +1518,8 @@ export abstract class LinuxMachine extends EndHost
         return () => this.udpClose(port);
       },
       hostname: () => this.getHostname(),
-      maintenant: () => simulationNowMs(),
+      maintenant: () => this.getSystemClockMs(),
+      fuseau: () => this.executor.identity.timezone,
     });
     this.executor.registerServiceSocketServer('rsyslog', this.rsyslogService);
     this.executor.rsyslogService = this.rsyslogService;
@@ -2479,7 +2480,8 @@ export abstract class LinuxMachine extends EndHost
         table: this.sessionTable,
         utmp: this.utmpSync,
         uptimeSeconds: this.executor.lifecycle.uptimeSeconds(),
-        now: simulationDate(),
+        now: this.executor.simulatedDate(),
+        zone: this.executor.localZone(),
       }, argv.slice(1));
     }
     if (cmd === 'who') {
@@ -2489,7 +2491,8 @@ export abstract class LinuxMachine extends EndHost
         currentUser: this.executor.userMgr.currentUser,
         currentTty: 'tty1',
         bootDate: this.executor.lifecycle.bootedAt(),
-        now: simulationDate(),
+        now: this.executor.simulatedDate(),
+        zone: this.executor.localZone(),
       }, argv.slice(1));
     }
     if (cmd === 'last') {
@@ -2498,7 +2501,8 @@ export abstract class LinuxMachine extends EndHost
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
         kernelRelease: this.executor.identity.kernel.release,
-        now: simulationDate(),
+        zone: this.executor.localZone(),
+        now: this.executor.simulatedDate(),
       }, argv.slice(1));
     }
     if (cmd === 'loginctl') {
@@ -2506,7 +2510,8 @@ export abstract class LinuxMachine extends EndHost
         table: this.sessionTable,
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
-        now: simulationDate(),
+        now: this.executor.simulatedDate(),
+        zone: this.executor.localZone(),
         action: this.buildLoginctlAction(),
       }, argv.slice(1));
     }

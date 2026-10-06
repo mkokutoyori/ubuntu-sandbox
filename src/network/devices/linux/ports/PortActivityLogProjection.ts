@@ -12,6 +12,8 @@
  * the log: the port projection announces, this projection reacts.
  */
 
+import { abreviationA } from '../time/TimezoneDatabase';
+import { simulationNowMs } from '@/network/core/SystemClock';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { LinuxLogManager } from '../LinuxLogManager';
 import type { PortBoundPayload, PortReleasedPayload } from '../events';
@@ -72,7 +74,7 @@ export class PortActivityLogProjection {
       bus.subscribe('dhcp.client.state-changed', (e) => this.onDhcpClientState(e.payload)),
       bus.subscribe('host.icmp.echo-failed', (e) => this.onIcmpEchoFailed(e.payload)),
       bus.subscribe('host.lifecycle.transitioned', (e) => this.onLifecycleChanged(e.payload)),
-      bus.subscribe('host.identity.changed', (e) => this.onHostnameChanged(e.payload)),
+      bus.subscribe('host.identity.changed', (e) => this.onIdentityChanged(e.payload)),
       bus.subscribe('linux.service.masked', (e) => this.onServiceMasked(e.payload)),
       bus.subscribe('linux.service.unmasked', (e) => this.onServiceUnmasked(e.payload)),
       bus.subscribe('linux.process.signalled', (e) => this.onProcessSignalled(e.payload)),
@@ -121,12 +123,14 @@ export class PortActivityLogProjection {
       `Reached lifecycle state ${p.newState ?? '?'} (was ${p.oldState ?? '?'}).`);
   }
 
-  private onHostnameChanged(p: {
-    deviceId: string; oldHostname?: string; newHostname?: string;
+  private onIdentityChanged(p: {
+    deviceId: string; field?: string; from?: string; to?: string;
   }): void {
     if (p.deviceId !== this.deviceId) return;
-    this.logManager.logDaemon('systemd-hostnamed',
-      `Hostname set to <${p.newHostname ?? '?'}> (was <${p.oldHostname ?? '?'}>)`);
+    if (p.field === 'timezone' && p.to !== undefined) {
+      this.logManager.logDaemon('systemd-timedated',
+        `Changed time zone to '${p.to}' (${abreviationA(p.to, simulationNowMs())}).`);
+    }
   }
 
   private onIpv6Added(p: { deviceId: string; portName: string; ipv6?: string }): void {

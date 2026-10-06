@@ -252,6 +252,7 @@ interface RemoteExecLike {
     resolveInode?: (p: string, followSymlinks?: boolean) => { uid: number; gid: number; permissions: number } | null;
   };
   userMgr: { getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined };
+  identity?: { timezone?: string };
 }
 
 /** Outcome of SSH authentication-method negotiation. */
@@ -1379,7 +1380,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // en dur, avec une autre version et un autre noyau : une seule
   // connexion en affichait donc deux, contradictoires.
   if (printLastLog) {
-    lines.push(`Last login: ${fmtHumanDate(simulationDate())} from ${opts.sourceIp}`);
+    lines.push(`Last login: ${fmtHumanDate(simulationDate(), remoteExec?.identity.timezone)} from ${opts.sourceIp}`);
   }
   if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   const relayedShell = opts.shellRelay?.() ?? null;

@@ -172,6 +172,50 @@ un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
 
+### [bash] `cmd > fichier` ecrit la sortie d'une commande du registre sans retour a la ligne final
+**Mesure** : `date > /tmp/z; wc -l /tmp/z` rend `0`, `uname >> f; uname >> f; cat f` rend
+`LinuxLinux`, `ls /etc/hostname > c; wc -c < c` rend `13`, `id -un > d` rend `4`. En tube
+(`date | wc -l` = 1) ou a l'ecran la ligne est terminee, parce que l'interpreteur appelle
+`ensureTrailingNewline` ; sur une redirection vers un fichier il ecrit la sortie TELLE QUELLE
+(« binary-safe »). Les commandes du registre rendent leur texte sans `\n` final, `echo` et `cat`
+avec. Consequence visible dans tous les labs de cron : `* * * * * date >> /tmp/cron.log` empile
+des dates sur une seule ligne.
+**Pourquoi ce n'est pas ferme** : ajouter `\n` quand il manque casserait `printf 'abc' > f` et
+`echo -n` (octet pour octet) ; la bonne cle est une declaration par commande (`LinuxCommand`
+dit si sa sortie est un flux brut), pas une heuristique sur le contenu.
+
+### [bash] une affectation en prefixe n'atteint pas `bash -c` / `sh -c`
+**Mesure** : `FOO=3` puis `FOO=5 bash -c 'echo $FOO'` rend `3` ; `FOO=7 sh -c 'echo $FOO'` rend la
+valeur precedente. `env` voit bien le prefixe (`FOO=8 env | grep FOO`). Le sous-shell lit la table
+du shell parent et non l'environnement enfant que `childEnvironment` construit. L'affectation en
+prefixe ne persiste plus (corrige avec ce lot), donc ce defaut ne peut plus etre masque par la fuite.
+
+### [powershell] le fuseau du processus regit encore `Get-Date`, `dir`, `net user`, `systeminfo` et le journal
+**Mesure** (meme banc que Linux : la meme suite sous `TZ=UTC` puis `TZ=Pacific/Auckland`, machine
+en UTC) : 8 des 35 sorties Windows/PowerShell different — `Get-Date` et `(Get-Date).Hour`,
+`Get-ChildItem ... LastWriteTime`, `Get-EventLog ... TimeGenerated`, `dir C:\`, `dir C:\Windows`,
+`net user Administrator` (Password last set), `systeminfo` (System Boot Time). `date /t`, `time /t`
+et `%time%` sont corrects. Le meme banc releve des commandes absentes ou vides : `Get-Date -Format o`
+et `-Format u` rendent le format lui-meme, `[DateTime]::Now`, `[DateTimeOffset]::Now`,
+`[TimeZoneInfo]::Local.Id`, `(Get-CimInstance Win32_OperatingSystem).LastBootUpTime`,
+`Get-LocalUser ... LastLogon`, `Get-Process ... StartTime` rendent vide ; `Get-Uptime`, `tzutil`,
+`quser`, `eventcreate` sont inconnus.
+**Pourquoi ce n'est pas ferme** : le `DateTime` de PowerShell est un `Date` JavaScript lu par ses
+accesseurs locaux (une cinquantaine de sites dans `src/powershell` et `devices/windows`) ; le
+rendre muni du fuseau de sa machine est un chantier propre, pas une retouche.
+
+### [oracle] `SYSDATE` / `SYSTIMESTAMP` lisent les accesseurs locaux d'un `Date`
+**Mesure** : 40 sites `getHours()` / `getDate()` dans `database/oracle/functions` ; la base n'a pas de
+fuseau de session ni de `DBTIMEZONE`, donc `SELECT SYSDATE FROM dual` suit le navigateur.
+**Pourquoi ce n'est pas ferme** : `ALTER SESSION SET TIME_ZONE` et `DBTIMEZONE` sont des briques a
+construire avant que le fuseau ait ou aller.
+
+### [fichiers] `touch -d/-t/-r`, `ls --time-style`/`--full-time`, `stat -c %y` ne sont pas lus
+**Mesure** : `touch -d "2 days ago" f` ne change pas l'heure du fichier ; `ls -l --full-time`
+et `--time-style=long-iso` rendent le format court ; `stat -c "%y %Y" f` rend la chaine
+`%y %Y` telle quelle. Aucun lab de rotation ou de purge (`find -mtime +N`, `tmpreaper`) ne peut donc
+vieillir un fichier.
+
 ### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
 **Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
 de soixante secondes (`ip neigh` -> `STALE`) puis utilisee par un

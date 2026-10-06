@@ -25,8 +25,19 @@ interface ArmedTimer {
 export class TimerScheduler {
   private readonly armed = new Map<string, ArmedTimer>();
 
+  constructor(private readonly zone: () => string | undefined = () => undefined) {}
+
   arm(spec: TimerSpec, now: Date): void {
     this.armed.set(spec.unit, { spec, next: this.initialElapse(spec, now), last: null });
+  }
+
+  rearmCalendars(now: Date): void {
+    for (const timer of this.armed.values()) {
+      const { spec } = timer;
+      const hasSpan = spec.onActiveSec !== undefined || spec.onBootSec !== undefined || spec.onUnitActiveSec !== undefined;
+      if (spec.onCalendar === undefined || hasSpan) continue;
+      timer.next = nextElapseOf(spec.onCalendar, now, this.zone());
+    }
   }
 
   disarm(unit: string): void {
@@ -58,7 +69,7 @@ export class TimerScheduler {
     const candidates: number[] = [];
     const span = spec.onActiveSec ?? spec.onBootSec ?? spec.onUnitActiveSec;
     if (span !== undefined) candidates.push(now.getTime() + span * 1000);
-    const calendar = nextElapseOf(spec.onCalendar, now);
+    const calendar = nextElapseOf(spec.onCalendar, now, this.zone());
     if (calendar !== null) candidates.push(calendar.getTime());
     return candidates.length > 0 ? new Date(Math.min(...candidates)) : null;
   }
@@ -68,7 +79,7 @@ export class TimerScheduler {
     if (spec.onUnitActiveSec !== undefined) {
       candidates.push(firedAt.getTime() + spec.onUnitActiveSec * 1000);
     }
-    const calendar = nextElapseOf(spec.onCalendar, firedAt);
+    const calendar = nextElapseOf(spec.onCalendar, firedAt, this.zone());
     if (calendar !== null) candidates.push(calendar.getTime());
     return candidates.length > 0 ? new Date(Math.min(...candidates)) : null;
   }
