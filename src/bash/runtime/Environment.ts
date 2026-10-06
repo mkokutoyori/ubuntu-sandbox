@@ -199,6 +199,12 @@ export class Environment {
     this.exported.delete(name);
   }
 
+  withdrawScalar(name: string): void {
+    name = this.resolveName(name);
+    const owner = this.localNames.has(name) ? this : this.resolveSetTarget(name);
+    owner.vars.delete(name);
+  }
+
   /** Check if a variable is set (including empty string). */
   isSet(name: string): boolean {
     return this.get(name) !== undefined || this.lookupArray(name) !== undefined;

@@ -736,6 +736,30 @@ export class BashInterpreter {
   }
 
   private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
+    const restorePrefixAssignments = this.capturePrefixAssignments(rawNode);
+    try {
+      yield* this.runSimpleCommand(rawNode, pipeInput);
+    } finally {
+      restorePrefixAssignments();
+    }
+  }
+
+  private capturePrefixAssignments(node: SimpleCommand): () => void {
+    if (node.words.length === 0 || absorbsAssignments(node)) return () => {};
+    const previous = node.assignments
+      .filter((assign) => assign.arrayElements === undefined && assign.subscript === undefined)
+      .map((assign) => ({ name: assign.name, value: this.env.get(assign.name) }));
+    if (previous.length === 0) return () => {};
+    return () => {
+      for (const { name, value } of previous.reverse()) {
+        if (this.env.isReadonly(name)) continue;
+        if (value === undefined) this.env.withdrawScalar(name);
+        else this.env.set(name, value);
+      }
+    };
+  }
+
+  private *runSimpleCommand(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
     yield* this.fireSignalTrap('DEBUG');
     const node = this.materializeProcSubs(rawNode);
 
@@ -770,11 +794,11 @@ export class BashInterpreter {
     // scope — bash's `local` semantics. We compute the head word once
     // (cheap literal check) and have `applyAssignment` skip the
     // parent-walk by declaring each name local first.
-    const headWord = node.words[0];
-    const headName = headWord && headWord.type === 'LiteralWord' ? headWord.value : '';
+    const headName = literalHeadName(node);
     const declScope = isDeclScopingCommand(headName);
-    const markReadonly = headName === 'readonly';
-    const markExport = headName === 'export';
+    const declarationFlags = declScope ? literalFlagLetters(node) : '';
+    const markReadonly = headName === 'readonly' || declarationFlags.includes('r');
+    const markExport = headName === 'export' || declarationFlags.includes('x');
 
     const namerefDecl = declScope && node.words.some(
       w => w.type === 'LiteralWord' && /^-[a-zA-Z]*n[a-zA-Z]*$/.test(w.value),
@@ -1675,6 +1699,24 @@ function isUnconditional(condition: CommandList, expectTrue: boolean): boolean {
 
 function isDeclScopingCommand(name: string): boolean {
   return name === 'local' || name === 'declare' || name === 'typeset';
+}
+
+function literalHeadName(node: SimpleCommand): string {
+  const head = node.words[0];
+  return head && head.type === 'LiteralWord' ? head.value : '';
+}
+
+function literalFlagLetters(node: SimpleCommand): string {
+  let letters = '';
+  for (const word of node.words.slice(1)) {
+    if (word.type === 'LiteralWord' && /^-[A-Za-z]+$/.test(word.value)) letters += word.value.slice(1);
+  }
+  return letters;
+}
+
+function absorbsAssignments(node: SimpleCommand): boolean {
+  const head = literalHeadName(node);
+  return isDeclScopingCommand(head) || head === 'readonly' || head === 'export';
 }
 
 /** Glob-style match used by `[[ … ]]`'s `==` / `!=`. */
