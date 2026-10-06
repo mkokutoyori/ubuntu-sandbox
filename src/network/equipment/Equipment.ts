@@ -24,6 +24,7 @@ import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { EventBus, type IEventBus } from '@/events/EventBus';
 import { OwnedScheduler, getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { SystemClock, schedulerWallClock } from '../core/SystemClock';
+import { PathClock } from '../core/time/PathClock';
 
 export abstract class Equipment {
   readonly id: string;
@@ -129,6 +130,7 @@ export abstract class Equipment {
   getSystemClock(): SystemClock { return this.systemClock; }
   getSystemClockMs(): number { return this.systemClock.now(); }
   _setSystemClock(epochMs: number): void { this.systemClock.set(epochMs); }
+  _stepSystemClock(deltaMs: number): void { this.systemClock.step(deltaMs); }
 
   /** Optional bus override (Phase 2 of the reactive refactor). */
   private busOverride: IEventBus | null = null;
@@ -196,6 +198,21 @@ export abstract class Equipment {
 
   protected ownsLocalUnicast(_iface: string, _destination: MACAddress): boolean {
     return false;
+  }
+
+  private frozenWall: { readonly cascade: number; readonly ms: number } | null = null;
+
+  protected observationMicros(): number {
+    const cascade = PathClock.cascadeId();
+    if (cascade === null) return Math.round(this.systemClock.now() * 1000);
+    if (this.frozenWall?.cascade !== cascade) {
+      this.frozenWall = { cascade, ms: this.systemClock.now() - PathClock.horizon() };
+    }
+    return Math.round((this.frozenWall.ms + PathClock.now()) * 1000);
+  }
+
+  protected observationTime(): Date {
+    return new Date(Math.floor(this.observationMicros() / 1000));
   }
 
   attachCapture(tap: FrameTap, iface?: string): DetachTap {
@@ -346,7 +363,7 @@ export abstract class Equipment {
       this.handleFrame(portName, frame);
     });
     port.attachTap((tapped) => {
-      this.captureTap.emit(tapped.iface, tapped.direction, tapped.frame);
+      this.captureTap.emit(tapped.iface, tapped.direction, tapped.frame, () => this.observationMicros());
     });
     this.ports.set(port.getName(), port);
   }

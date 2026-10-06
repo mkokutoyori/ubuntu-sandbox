@@ -21,6 +21,8 @@
  *   - INIT-REBOOT: Reuse last known lease after reboot (RFC 2131 §3.2)
  */
 
+import { PathClock } from '../core/time/PathClock';
+import { ISC_DISCOVER_INTERVALS_SECONDS } from './DhcpClientPersonality';
 import { DHCPServer } from './DHCPServer';
 import { encodeNetbiosNodeType } from './DHCPPacket';
 import {
@@ -186,7 +188,7 @@ export class DHCPClient implements IProtocolEngine {
 
   private personality: DhcpClientPersonality = {
     alwaysSendsClientIdentifier: false, parameterRequestList: DEFAULT_PARAMETER_REQUEST_LIST,
-    sendsFqdn: true, optionOrder: [],
+    sendsFqdn: true, optionOrder: [], discoverIntervalsSeconds: ISC_DISCOVER_INTERVALS_SECONDS,
   };
 
   setPersonality(personality: DhcpClientPersonality): void { this.personality = personality; }
@@ -354,8 +356,17 @@ export class DHCPClient implements IProtocolEngine {
   setVendorClass(value: string | null): void { this.vendorClass = value; }
 
   private broadcastFlag = true;
+  private broadcastFlagToggles = false;
 
-  setBroadcastFlag(value: boolean): void { this.broadcastFlag = value; }
+  setBroadcastFlag(value: boolean): void {
+    this.broadcastFlag = value;
+    this.broadcastFlagToggles = false;
+  }
+
+  setBroadcastFlagToggling(initial: boolean): void {
+    this.broadcastFlag = initial;
+    this.broadcastFlagToggles = true;
+  }
 
   private readonly identifierOverrides = new Map<string, string>();
   private readonly renewTimeOverrides = new Map<string, number>();
@@ -413,7 +424,7 @@ export class DHCPClient implements IProtocolEngine {
     state.logs.push(`INIT state - starting DHCP on ${iface}`);
     if (verbose) {
       if (!options.fromInitReboot) lines.push(...dhclientBanner(iface, mac));
-      lines.push(`DHCPDISCOVER on ${iface} to 255.255.255.255 port 67 interval 3 ${xidText(state.xid)}`);
+      lines.push(`DHCPDISCOVER on ${iface} to 255.255.255.255 port 67 interval ${this.personality.discoverIntervalsSeconds[0]} ${xidText(state.xid)}`);
     }
 
     const channels = this.channelsFor(iface);
@@ -435,21 +446,21 @@ export class DHCPClient implements IProtocolEngine {
       payload: { ...this.deviceRef(), iface, xid: state.xid },
     });
 
-    for (const channel of channels) {
-      const result = channel.processDiscover({
-        clientMAC: mac,
-        xid: state.xid,
-        clientIdentifier,
-        vendorClass: this.vendorClass ?? undefined,
-        ...this.clientIdentity(),
-      });
-      if (result) {
-        // XID validation (RFC 2131 §3.1): response xid must match our xid
+    const discoverRound = (secs: number): (DHCPOfferResult & { channel: DhcpServerChannel }) | null => {
+      for (const channel of channels) {
+        const result = channel.processDiscover({
+          clientMAC: mac,
+          xid: state.xid,
+          clientIdentifier,
+          secs,
+          vendorClass: this.vendorClass ?? undefined,
+          ...this.clientIdentity(),
+        });
+        if (!result) continue;
         if (result.xid !== state.xid) {
           state.logs.push(`DHCPOFFER XID mismatch (expected ${state.xid}, got ${result.xid}) - ignoring`);
           continue;
         }
-        offer = { ...result, channel };
         this.offersReceived++;
         this.getBus().publish({
           topic: 'dhcp.offer.received',
@@ -461,9 +472,33 @@ export class DHCPClient implements IProtocolEngine {
             leaseTimeSec: result.pool.leaseDuration,
           },
         });
-        break;
+        return { ...result, channel };
+      }
+      return null;
+    };
+
+    const intervals = this.personality.discoverIntervalsSeconds;
+    const budgetMs = (options.timeout ?? intervals.reduce((total, seconds) => total + seconds, 0)) * 1000;
+    const initialFlag = this.broadcastFlag;
+    let elapsedMs = 0;
+    for (let round = 0; ; round++) {
+      offer = discoverRound(Math.floor(elapsedMs / 1000));
+      if (offer !== null) break;
+      const waitMs = Math.min((intervals[Math.min(round, intervals.length - 1)] ?? 0) * 1000, budgetMs - elapsedMs);
+      PathClock.wait(waitMs);
+      elapsedMs += waitMs;
+      if (round + 1 >= intervals.length || elapsedMs >= budgetMs) break;
+      if (round === 0 && this.broadcastFlagToggles) this.broadcastFlag = !initialFlag;
+      this.discoversSent++;
+      this.getBus().publish({
+        topic: 'dhcp.discover.sent',
+        payload: { ...this.deviceRef(), iface, xid: state.xid },
+      });
+      if (verbose) {
+        lines.push(`DHCPDISCOVER on ${iface} to 255.255.255.255 port 67 interval ${intervals[round + 1]} ${xidText(state.xid)}`);
       }
     }
+    if (offer === null && this.broadcastFlagToggles) this.broadcastFlag = initialFlag;
 
     if (!offer) {
       this.noOffersFallback(iface, state, lines, verbose);

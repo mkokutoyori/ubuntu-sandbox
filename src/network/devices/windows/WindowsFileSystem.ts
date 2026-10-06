@@ -9,6 +9,7 @@
  *   - NTFS-style ACLs (owner + access control entries)
  */
 
+import { simulationNowMs } from '../../core/SystemClock';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { normalizeWindowsPath } from './windowsPath';
 import { WINDOWS_PROGRAMS } from './WinPrograms';
@@ -115,6 +116,10 @@ export class WindowsFileSystem {
   /** Capacity for the system drive (C:) — 100 GB. */
   private readonly SYSTEM_DRIVE_CAPACITY = 107_374_182_400;
 
+  private nowMs: () => number = simulationNowMs;
+
+  setClock(now: () => number): void { this.nowMs = now; }
+
   constructor(hostname: string = 'DESKTOP') {
     this.hostname = hostname;
     this.initializeDefaultFS(hostname);
@@ -123,7 +128,7 @@ export class WindowsFileSystem {
   /** Monotonic "now": wall-clock, but never equal to / behind the
    *  previous call so file mtimes preserve creation order. */
   private now(): Date {
-    const ms = Math.max(Date.now(), this.lastTickMs + 1);
+    const ms = Math.max(this.nowMs(), this.lastTickMs + 1);
     this.lastTickMs = ms;
     return new Date(ms);
   }

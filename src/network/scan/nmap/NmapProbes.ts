@@ -1,4 +1,5 @@
 import type { Equipment } from '@/network/equipment/Equipment';
+import { PathClock } from '@/network/core/time/PathClock';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import type { ScanProbeShape, StatelessProbeDetail } from '@/network/tcp/TcpStack';
 import {
@@ -131,10 +132,10 @@ export function linkNeighbourOf(
   // `to.srtt` est alimente par la sonde de decouverte quelle qu'elle
   // soit, ARP comprise : c'est l'aller-retour de CETTE sonde que la
   // ligne d'etat annonce, et non une constante.
-  const started = performance.now();
+  const started = PathClock.now();
   const measured = (mac: { toString(): string } | null) => ({
     mac: mac ? mac.toString() : null,
-    rttMs: mac ? performance.now() - started : undefined,
+    rttMs: mac ? PathClock.now() - started : undefined,
   });
   if (ip.includes(':')) {
     let target: IPv6Address;
@@ -182,9 +183,9 @@ function connectDiscovery(
   host: ScanHost, ip: string, ports: readonly number[] = DISCOVERY_PORTS,
 ): Discovery {
   for (const port of ports) {
-    const started = performance.now();
+    const started = PathClock.now();
     const outcome = host.tcpOutcome(ip, port);
-    const latencyMs = performance.now() - started;
+    const latencyMs = PathClock.now() - started;
     if (outcome === 'open') return { up: true, latencyMs, reason: 'syn-ack', reasonPort: port };
     if (outcome === 'refused') return { up: true, latencyMs, reason: 'conn-refused', reasonPort: port };
   }
@@ -195,9 +196,9 @@ function tcpPingDiscovery(
   host: ScanHost, ip: string, ports: readonly number[], flags: ScanProbeFlags,
 ): Discovery {
   for (const port of ports) {
-    const started = performance.now();
+    const started = PathClock.now();
     const { reply, ttl } = host.scanProbe(ip, port, flags);
-    const latencyMs = performance.now() - started;
+    const latencyMs = PathClock.now() - started;
     if (reply === 'syn-ack') return { up: true, latencyMs, ttl, reason: 'syn-ack', reasonPort: port };
     if (reply === 'rst' || reply === 'rst-window') {
       return { up: true, latencyMs, ttl, reason: 'reset', reasonPort: port };
@@ -210,9 +211,9 @@ function udpPingDiscovery(
   host: ScanHost, ip: string, ports: readonly number[],
 ): Discovery {
   for (const port of ports) {
-    const started = performance.now();
+    const started = PathClock.now();
     const { state, replyTtl: ttl } = probeUdpPort(host, ip, port);
-    const latencyMs = performance.now() - started;
+    const latencyMs = PathClock.now() - started;
     if (state === 'closed') return { up: true, latencyMs, ttl, reason: 'port-unreach', reasonPort: port };
     if (state === 'open') return { up: true, latencyMs, ttl, reason: 'udp-response', reasonPort: port };
   }

@@ -88,7 +88,7 @@ async function fortiLab(server: readonly string[], range: readonly [string, stri
 
 async function lease(plug: (host: LinuxPC) => { host: LinuxPC; cable: Cable }, name: string) {
   const plugged = plug(new LinuxPC('linux-pc', name));
-  await type(plugged.host, ['sudo dhclient eth0']);
+  await type(plugged.host, ['sudo dhclient -t 1 eth0']);
   const address = /inet (\d+\.\d+\.\d+\.\d+)/.exec(await plugged.host.executeCommand('ip -4 addr show eth0'))?.[1];
   return { ...plugged, address };
 }

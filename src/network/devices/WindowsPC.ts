@@ -114,7 +114,9 @@ import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
-import { HostClock } from './host/lifecycle/HostClock';
+import { defaultHostClockPort, type HostClockPort } from '../core/time/HostClockPort';
+import { PathClock } from '../core/time/PathClock';
+import { windowsClockOrigin } from '../core/time/ClockOrigin';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue, type RegistryValueChange } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
@@ -475,20 +477,30 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Live inbound SMB sessions (`Get-SmbSession` / `net session`). */
   readonly smbSessions: SmbSessionTable = new SmbSessionTable();
 
-  private readonly clock = new HostClock();
-  private readonly wallEpoch = new Date(2026, 5, 20).getTime();
+  private clockPort: HostClockPort = defaultHostClockPort();
+  private bootMonotonicMs = this.clockPort.monotonic();
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
     // Windows (Vista+) uses the strong host model on IPv4: packets are only
     // accepted when addressed to the ingress interface (RFC 1122 §3.3.4.2).
     this.hostModel = 'strong';
+    this.clockPort = {
+      monotonic: () => this.getMonotonicClockMs(),
+      wall: () => this.getSystemClockMs(),
+      step: (deltaMs) => PathClock.wait(deltaMs),
+      set: (epochMs) => this._setSystemClock(epochMs),
+    };
+    this.bootMonotonicMs = this.clockPort.monotonic();
+    const origin = windowsClockOrigin();
+    if (origin !== null) this._setSystemClock(origin);
     this.dhcpClient.setVendorClass('MSFT 5.0');
-    this.dhcpClient.setBroadcastFlag(true);
+    this.dhcpClient.setBroadcastFlagToggling(false);
     this.dhcpClient.setPersonality(WINDOWS_DHCP_CLIENT_PERSONALITY);
     this.dhcpClient.setAddressConflictChecker((iface, ip) => this.addressAnsweredOnLink(iface, ip));
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
+    this.fs.setClock(() => this.getSystemClockMs());
     this.seedVolumesFromHardware();
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);
@@ -751,7 +763,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   private startScheduledTaskTicker(): void {
     if (this.taskTimer !== null) return;
-    this.taskTimer = this.hostTimers.setInterval(() => this.scheduledTaskTick(), TASK_TICK_MS);
+    this.taskTimer = this.hostTimers.setInterval(() => this.runDueWork(TASK_TICK_MS), TASK_TICK_MS);
   }
 
   /** Un tour d'horloge du planificateur. Exposé pour que les tests le
@@ -3131,6 +3143,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           return { output, exitCode: this.commandExitStatus };
         },
         timeZone: () => this.identity.timezone,
+        nowMs: () => this.simulatedDate().getTime(),
         readInputLine: prompt => this.readCommandInput(prompt),
         inputIsInteractive: () => this._activeShellSession?.inputReader != null,
       }));
@@ -4049,15 +4062,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   simulatedDate(): Date {
-    return new Date(this.wallEpoch + this.clock.now());
+    return new Date(this.clockPort.wall());
   }
 
   simulatedNow(): number {
-    return this.clock.now();
+    return this.clockPort.monotonic() - this.bootMonotonicMs;
+  }
+
+  setSystemTime(epochMs: number): void {
+    this.clockPort.set(epochMs);
+  }
+
+  stepClock(deltaMs: number): void {
+    if (deltaMs > 0) this.clockPort.step(deltaMs);
   }
 
   advanceTime(ms: number): void {
-    this.clock.advance(ms);
+    this.stepClock(ms);
+    this.runDueWork(ms);
+  }
+
+  private runDueWork(ms: number): void {
     this.procMgr.advanceTime(ms);
     this.fireDueScheduledTasks();
     this.runBackgroundGroupPolicyRefresh(ms);
@@ -4278,11 +4303,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private cmdDate(args: string[]): string {
-    return WinSys.cmdDate(args, this.identity.timezone);
+    return WinSys.cmdDate(args, this.identity.timezone, this.simulatedDate().getTime());
   }
 
   private cmdTime(args: string[]): string {
-    return WinSys.cmdTime(args, this.identity.timezone);
+    return WinSys.cmdTime(args, this.identity.timezone, this.simulatedDate().getTime());
   }
 
   private cmdStart(args: string[]): string {

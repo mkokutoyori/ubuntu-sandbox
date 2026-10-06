@@ -134,7 +134,32 @@ const DAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
 export class SetDateCmdlet implements ICmdlet {
   readonly name = 'set-date';
   readonly aliases = [] as const;
-  execute(_ctx: CmdletContext): PSValue { return null; }
+  readonly parameters = ['Date', 'Adjust'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const tasks = ctx.providers.scheduledTasks;
+    const now = tasks?.now?.() ?? new Date();
+    const adjust = ctx.named['adjust'];
+    const dateArg = ctx.named['date'] ?? ctx.positional[0];
+    let target: Date;
+    if (adjust !== undefined && typeof adjust === 'object' && adjust !== null && 'TotalMilliseconds' in (adjust as Record<string, PSValue>)) {
+      target = new Date(now.getTime() + Number((adjust as Record<string, PSValue>).TotalMilliseconds));
+    } else if (dateArg !== undefined && dateArg !== null) {
+      target = new Date(psValueToString(dateArg));
+      if (isNaN(target.getTime())) {
+        ctx.emitError(`Set-Date : Cannot bind parameter 'Date'. Cannot convert value "${psValueToString(dateArg)}" to type "System.DateTime".`);
+        return null;
+      }
+    } else {
+      ctx.emitError('Set-Date : Cannot process command because of one or more missing mandatory parameters: Date.');
+      return null;
+    }
+    if (tasks?.setNow?.(target.getTime()) !== true) {
+      ctx.emitError('Set-Date : Cannot set the system time: A required privilege is not held by the client.');
+      return null;
+    }
+    return makePSDate(target);
+  }
 }
 
 export function makePSDate(d: Date): PSValue {

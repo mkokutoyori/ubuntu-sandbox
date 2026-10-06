@@ -23,6 +23,7 @@
  */
 
 import type { LinuxPam } from './linux/pam/LinuxPam';
+import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
@@ -362,6 +363,12 @@ export abstract class LinuxMachine extends EndHost
     this.enableUdpLite();
     this.initDefaultSockets(profile.isServer);
     this.executor.setLocalDevice(this);
+    this.executor.bindClock({
+      monotonic: () => this.getMonotonicClockMs(),
+      wall: () => this.getSystemClockMs(),
+      step: (deltaMs) => PathClock.wait(deltaMs),
+      set: (epochMs) => this._setSystemClock(epochMs),
+    });
     this.executor.bindKernelHostname({
       read: () => this.getHostname(),
       write: (name) => this.setKernelHostname(name),
@@ -4957,7 +4964,7 @@ export abstract class LinuxMachine extends EndHost
     if (wantPort) {
       unsubs.push(attachOrderedCapture(
         this,
-        (tapped) => sink(decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, tapped.at)),
+        (tapped) => sink(decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, tapped.at, tapped.atMicros)),
         iface === 'any' ? undefined : iface));
     }
 
@@ -4965,10 +4972,10 @@ export abstract class LinuxMachine extends EndHost
       const accept = (toIp: string) => iface === 'lo' || toIp.startsWith('127.');
       unsubs.push(bus.subscribeWhere('host.icmp.echo-sent',
         (p) => p.deviceId === id && accept(p.toIp),
-        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-request', new Date()))));
+        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-request', this.observationTime()))));
       unsubs.push(bus.subscribeWhere('host.icmp.echo-reply',
         (p) => p.deviceId === id && accept(p.toIp),
-        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-reply', new Date()))));
+        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-reply', this.observationTime()))));
     }
 
     if (!this.vlanSubInterfaces.has(iface)) {

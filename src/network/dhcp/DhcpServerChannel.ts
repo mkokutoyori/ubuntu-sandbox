@@ -98,6 +98,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
 
   processDiscover(params: DHCPDiscoverParams): DHCPOfferResult | null {
     const discover = DHCPPacket.createDiscover(params.clientMAC, params.xid, params.broadcast ?? true);
+    discover.secs = params.secs ?? 0;
     if (params.requestedIP) discover.setOption(DHCP_OPTION.REQUESTED_IP, params.requestedIP);
     if (params.hostName) discover.setOption(DHCP_OPTION.HOST_NAME, params.hostName);
     applyClientIdentity(discover, params);

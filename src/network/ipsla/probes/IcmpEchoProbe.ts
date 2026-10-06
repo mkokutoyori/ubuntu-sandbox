@@ -1,4 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
+import { PathClock } from '@/network/core/time/PathClock';
+import { elapsedWholeMs } from './ElapsedMs';
 import type { IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
@@ -48,7 +50,7 @@ export async function sendIcmpv6Echo(request: {
   replyWait.catch(() => {});
   failureWait.catch(() => {});
 
-  const startedAt = scheduler.now();
+  const startedAt = PathClock.now();
   const sent = host.sendIcmpv6Echo({
     destination, identifier, sequence,
     dataSize: Math.max(0, config.requestDataSize),
@@ -77,7 +79,7 @@ export async function sendIcmpv6Echo(request: {
       };
     }
     return {
-      returnCode: 'ok', rttMs: scheduler.now() - startedAt,
+      returnCode: 'ok', rttMs: elapsedWholeMs(startedAt),
       diagText: '', respondingAddress: destination,
     };
   } catch (err) {
@@ -143,7 +145,7 @@ export async function sendIcmpEcho(request: IcmpEchoRequest): Promise<SlaProbeOu
     { tos: config.tos },
   );
 
-  const startedAt = scheduler.now();
+  const startedAt = PathClock.now();
   host.sendFrame(egress.iface, {
     srcMAC: egress.sourceMac,
     dstMAC: egress.destinationMac,
@@ -158,7 +160,7 @@ export async function sendIcmpEcho(request: IcmpEchoRequest): Promise<SlaProbeOu
 
   try {
     const settled = await Promise.race([replyOutcome, failureOutcome]);
-    const elapsed = Math.max(0, scheduler.now() - startedAt);
+    const elapsed = elapsedWholeMs(startedAt);
     if (settled.kind === 'failure') {
       return {
         returnCode: 'dropped',

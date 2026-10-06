@@ -17,6 +17,7 @@
  * emitted) so the event trace mirrors real equipment.
  */
 
+import { simulationNowMs } from '../../../core/SystemClock';
 import type { IEventBus } from '@/events/EventBus';
 import type { HostPowerState } from '../events';
 
@@ -37,11 +38,20 @@ export class HostLifecycle {
   private deviceId = '';
   private hostname: string | undefined;
 
-  constructor(now: number = Date.now()) {
+  private clock: () => number = simulationNowMs;
+
+  constructor(now: number = simulationNowMs()) {
     // A simulated host is instantiated already powered on and running.
     this.bootedAtMs = now;
     this.lastTransitionMs = now;
     this.bootCount = 1;
+  }
+
+  private wall: (() => number) | null = null;
+
+  bindClock(clock: () => number, wall?: () => number): void {
+    this.clock = clock;
+    this.wall = wall ?? null;
   }
 
   /** Attach the owning device's event bus so transitions become observable. */
@@ -82,24 +92,26 @@ export class HostLifecycle {
 
   /** Wall-clock of the last boot, or null while powered off. */
   bootedAt(): Date | null {
-    return this.bootedAtMs === null ? null : new Date(this.bootedAtMs);
+    if (this.bootedAtMs === null) return null;
+    if (this.wall === null) return new Date(this.bootedAtMs);
+    return new Date(this.wall() - (this.clock() - this.bootedAtMs));
   }
 
   /** Uptime in whole seconds — zero while powered off. */
-  uptimeSeconds(now: number = Date.now()): number {
+  uptimeSeconds(now: number = this.clock()): number {
     if (this.bootedAtMs === null || this.state === 'off') return 0;
     return Math.max(0, Math.floor((now - this.bootedAtMs) / MS_PER_SECOND));
   }
 
   /** Uptime in whole minutes. */
-  uptimeMinutes(now: number = Date.now()): number {
+  uptimeMinutes(now: number = this.clock()): number {
     return Math.floor(this.uptimeSeconds(now) / SECONDS_PER_MINUTE);
   }
 
   // ─── Transitions ───────────────────────────────────────────────────────
 
   /** Power the host on: `off → booting → running`. No-op when already on. */
-  powerOn(now: number = Date.now()): void {
+  powerOn(now: number = this.clock()): void {
     if (this.state !== 'off') return;
     this.transition('booting', now);
     this.bootedAtMs = now;
@@ -108,14 +120,14 @@ export class HostLifecycle {
   }
 
   /** Hard power-off: any state → `off`. No-op when already off. */
-  powerOff(now: number = Date.now()): void {
+  powerOff(now: number = this.clock()): void {
     if (this.state === 'off') return;
     this.transition('off', now);
     this.bootedAtMs = null;
   }
 
   /** Graceful shutdown: `running → halting → off`. No-op when already off. */
-  shutdown(now: number = Date.now()): void {
+  shutdown(now: number = this.clock()): void {
     if (this.state === 'off') return;
     this.transition('halting', now);
     this.transition('off', now);
@@ -123,7 +135,7 @@ export class HostLifecycle {
   }
 
   /** Reboot: `→ rebooting → running`, resetting the boot clock. */
-  reboot(now: number = Date.now()): void {
+  reboot(now: number = this.clock()): void {
     if (this.state === 'off') {
       this.powerOn(now);
       return;
@@ -135,13 +147,13 @@ export class HostLifecycle {
   }
 
   /** Suspend to RAM: `running → suspended`. */
-  suspend(now: number = Date.now()): void {
+  suspend(now: number = this.clock()): void {
     if (this.state !== 'running') return;
     this.transition('suspended', now);
   }
 
   /** Resume from suspend: `suspended → running`. */
-  resume(now: number = Date.now()): void {
+  resume(now: number = this.clock()): void {
     if (this.state !== 'suspended') return;
     this.transition('running', now);
   }

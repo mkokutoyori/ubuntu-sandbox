@@ -1572,6 +1572,7 @@ export interface IScheduledTaskProvider {
   unregisterTask(name: string): string;
   /** The device's own simulated clock — anchors trigger `-At` times. */
   now?(): Date;
+  setNow?(epochMs: number): boolean;
   /**
    * Change one task in place — what `Enable-`, `Disable-` and
    * `Set-ScheduledTask` do. Returns an error message, or `''`.

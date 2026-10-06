@@ -5,8 +5,13 @@ import { cmdDate } from '../../system/SystemInfo';
 export const dateCommand: LinuxCommand = {
   name: 'date',
   needsNetworkContext: true,
-  usage: 'date [-d DATESPEC] [+FORMAT]',
+  usage: 'date [-d DATESPEC] [-s DATESPEC] [-u] [+FORMAT]',
   run(ctx: LinuxCommandContext, args: string[]): string {
-    return cmdDate(args, ctx.executor.identity.timezone);
+    const executor = ctx.executor;
+    return cmdDate(args, executor.identity.timezone, {
+      nowMs: executor.simulatedDate().getTime(),
+      mayStepClock: executor.userMgr.currentUid === 0,
+      setClock: (epochMs) => executor.setSystemTime(epochMs),
+    });
   },
 };

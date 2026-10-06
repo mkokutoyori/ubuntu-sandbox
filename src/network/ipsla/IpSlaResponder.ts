@@ -1,4 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
+import { PathClock } from '@/network/core/time/PathClock';
 import { ownBusProvider } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { IPAddress, type UDPPacket } from '../core/types';
@@ -219,7 +220,7 @@ export class IpSlaResponder {
     this.expirePorts();
     const entry = this.ports.get(udp.destinationPort);
     if (!entry) return false;
-    const receivedAt = this.getScheduler().now();
+    const receivedAt = PathClock.now();
     if (request.sequence > entry.highestSequenceSeen) {
       entry.highestSequenceSeen = request.sequence;
     }
@@ -230,7 +231,7 @@ export class IpSlaResponder {
       sequence: request.sequence,
       sentAtMs: request.sentAtMs,
       receivedAtResponderMs: receivedAt,
-      transmittedAtResponderMs: this.getScheduler().now(),
+      transmittedAtResponderMs: PathClock.now(),
       highestSequenceSeen: entry.highestSequenceSeen,
       receivedSequences: [...entry.receivedSequences],
       clockSynchronized: this.host.isClockSynchronized(),

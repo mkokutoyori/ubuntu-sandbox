@@ -100,6 +100,7 @@ export interface DhcpClientPersonality {
   readonly parameterRequestList: readonly number[];
   readonly sendsFqdn: boolean;
   readonly optionOrder: readonly number[];
+  readonly discoverIntervalsSeconds: readonly number[];
 }
 
 /** Parameters sent in DHCPDISCOVER (client → server) */
@@ -122,6 +123,7 @@ export interface DHCPDiscoverParams {
   vendorClass?: string;
   /** RFC 2131 §4.1 BROADCAST flag: ask the server to answer by broadcast. */
   broadcast?: boolean;
+  secs?: number;
   relayInformation?: DhcpRelayInformation;
   /** Option 55: Parameter Request List (option codes client wants) */
   parameterRequestList: readonly number[];

@@ -13,6 +13,7 @@
  * and the model never drift.
  */
 
+import { simulationNowMs } from '../../../core/SystemClock';
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 
 /** Canonical audit-subsystem filesystem locations. */
@@ -74,6 +75,10 @@ export interface AuditQuery {
 }
 
 export class LinuxAuditLog {
+  private nowMs: () => number = simulationNowMs;
+
+  setClock(now: () => number): void { this.nowMs = now; }
+
   private readonly records: LinuxAuditRecord[] = [];
   private serialCounter = 0;
 
@@ -98,7 +103,7 @@ export class LinuxAuditLog {
   recordEvent(parts: Array<{ type: string; fields?: Record<string, string | number> }>): LinuxAuditRecord[] {
     if (parts.length === 0) return [];
     const serial = ++this.serialCounter;
-    const ts = Date.now();
+    const ts = this.nowMs();
     const out: LinuxAuditRecord[] = [];
     for (const p of parts) {
       const entry = new LinuxAuditRecord(p.type, serial, p.fields ?? {}, ts);

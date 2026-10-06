@@ -80,7 +80,7 @@ import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
 import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
-import { HostClock } from '../host/lifecycle/HostClock';
+import { defaultHostClockPort, type HostClockPort } from '../../core/time/HostClockPort';
 import { KernelModuleTable } from './kernel/KernelModuleTable';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
@@ -611,9 +611,9 @@ export class LinuxCommandExecutor {
   private shellPpid = 0;
   /** Per-shell job control table; populated by `cmd &`. */
   private jobTable = new LinuxJobTable();
-  /** Simulated host clock — drives background-job completion over time. */
-  private readonly clock = new HostClock();
-  private readonly wallEpoch = Date.now();
+  private clockPort: HostClockPort = defaultHostClockPort();
+  private bootMonotonicMs = this.clockPort.monotonic();
+  private readonly wallNow = (): number => this.clockPort.wall();
   private cronEngine?: CronEngine;
   private cronStarted = false;
   private cronCursorMs = 0;
@@ -661,6 +661,7 @@ export class LinuxCommandExecutor {
     this.lifecycle = lifecycle ?? new HostLifecycle();
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
+    this.vfs.setClock(this.wallNow);
     this.mountTable = MountTable.fromHardware(this.hardware.storage);
     const rootPartition = this.hardware.storage
       .flatMap((d) => d.partitions).find((p) => p.mountPoint === '/');
@@ -668,6 +669,7 @@ export class LinuxCommandExecutor {
     this.vfs.setReadOnlyResolver((p) => this.mountTable.isReadOnly(p));
     this.seedSetuidBinaries();
     this.userMgr = new LinuxUserManager(this.vfs);
+    this.userMgr.setClock(this.wallNow);
     // Project the lastlog registry onto the canonical /var/log/lastlog file
     // so the filesystem view stays coherent with the in-memory registry.
     this.lastlog.attachVfs(this.vfs);
@@ -676,6 +678,7 @@ export class LinuxCommandExecutor {
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
+    this.logMgr.setClock(this.wallNow);
     this.pam = new LinuxPam({
       vfs: this.vfs,
       users: this.userMgr,
@@ -695,8 +698,10 @@ export class LinuxCommandExecutor {
     this.sudoPam = new SudoPamSessions(this.pam, () => ({ uid: this.userMgr.currentUid, euid: 0, loginName: this.loginName() }));
     this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
     this.auditLog = new LinuxAuditLog(this.vfs);
+    this.auditLog.setClock(this.wallNow);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
     this.processMgr = new LinuxProcessManager();
+    this.processMgr.setClock(this.wallNow);
     // Lets a trapped signal actually run its handler before kill() applies
     // the default action — see LinuxProcessManager.trapHandlerHook.
     this.processMgr.attachSignalTrapHandler((pid, signal) => {
@@ -714,6 +719,7 @@ export class LinuxCommandExecutor {
       return 'handled';
     });
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer }, this.dynamicUsers);
+    this.serviceMgr.setClock(this.wallNow);
     this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
     this.auditRules.bindActorContextProvider(() => this.snapshotActor());
     this.isServer = isServer;
@@ -2855,6 +2861,7 @@ export class LinuxCommandExecutor {
     let captured = '';
     let exitCode = 0;
     let parked = false;
+    this.waitScopes.push(0);
     try {
       this.withProcessIdentity(proc.pid, () => {
         const r = this.executeCoreWithResult(cmdLine, true);
@@ -2866,7 +2873,7 @@ export class LinuxCommandExecutor {
           this.processMgr.setState(proc.pid, 'S');
         }
       });
-    } catch { /* background failures are silent */ }
+    } catch { /* background failures are silent */ } finally { this.waitScopes.pop(); }
     // The job's own command (e.g. `nc -l` binding a socket) runs *after*
     // syncProcPids() already materialized its fresh /proc/<pid>/fd/ — so
     // anything it opens during that run is invisible until refreshed here.
@@ -2894,7 +2901,7 @@ export class LinuxCommandExecutor {
     // auto-completes — only actually signalling it removes it.
     if (!parked) {
       job.durationMs = parseBackgroundDurationMs(cmdLine);
-      job.completesAt = this.clock.now() + job.durationMs;
+      job.completesAt = this.logicalNow() + job.durationMs;
     }
     job.capturedOutput = captured;
     job.exitCode = exitCode;
@@ -2903,17 +2910,41 @@ export class LinuxCommandExecutor {
 
   /** Current simulated-clock time in milliseconds. */
   simulatedNow(): number {
-    return this.clock.now();
+    return this.logicalNow();
+  }
+
+  bindClock(port: HostClockPort): void {
+    this.clockPort = port;
+    this.bootMonotonicMs = port.monotonic();
+  }
+
+  private logicalNow(): number {
+    return this.clockPort.monotonic() - this.bootMonotonicMs;
+  }
+
+  setSystemTime(epochMs: number): void {
+    this.clockPort.set(epochMs);
+  }
+
+  stepClock(deltaMs: number): void {
+    if (deltaMs > 0) this.clockPort.step(deltaMs);
+  }
+
+  private readonly waitScopes: number[] = [];
+
+  private spendSeconds(seconds: number): void {
+    if (this.waitScopes.length > 0) this.waitScopes[this.waitScopes.length - 1] += seconds;
+    else this.stepClock(seconds * 1000);
   }
 
   /** L'heure de la machine simulée, pas celle du navigateur. */
   simulatedDate(): Date {
-    return new Date(this.wallEpoch + this.clock.now());
+    return new Date(this.clockPort.wall());
   }
 
   advanceTime(ms: number): void {
-    const before = this.clock.now();
-    this.clock.advance(ms);
+    const before = this.logicalNow();
+    this.stepClock(ms);
     this.processMgr.accrueCpu(ms);
     this.reapDueBackgroundJobs();
     this.fireDueAtJobs();
@@ -2935,7 +2966,7 @@ export class LinuxCommandExecutor {
         const hostname = kernelHostname(this.vfs);
         deliverLocalMessage(
           this.vfs, recipient,
-          { envelopeFrom: `cron@${hostname}`, receivedAt: this.wallEpoch + this.clock.now(), rawMessage: body },
+          { envelopeFrom: `cron@${hostname}`, receivedAt: this.clockPort.wall(), rawMessage: body },
           { uid: entry?.uid ?? 0, gid: entry?.gid ?? 0 },
         );
       },
@@ -2976,9 +3007,9 @@ export class LinuxCommandExecutor {
       engine.start();
     }
     let guard = 0;
-    while (this.cronCursorMs + 60_000 <= this.clock.now() && guard++ < 20_000) {
+    while (this.cronCursorMs + 60_000 <= this.logicalNow() && guard++ < 20_000) {
       this.cronCursorMs += 60_000;
-      engine.tick(new Date(this.wallEpoch + this.cronCursorMs));
+      engine.tick(new Date(this.clockPort.wall() - (this.logicalNow() - this.cronCursorMs)));
     }
   }
 
@@ -3039,7 +3070,7 @@ export class LinuxCommandExecutor {
    * actually removed — matching a real unreaped child.
    */
   private reapDueBackgroundJobs(): void {
-    const now = this.clock.now();
+    const now = this.logicalNow();
     for (const job of this.jobTable.list()) {
       if (job.notified && job.isFinished()) {
         this.processMgr.reap(job.pid);
@@ -3061,7 +3092,7 @@ export class LinuxCommandExecutor {
 
   private drainFinishedJobNotices(): string[] {
     const out: string[] = [];
-    const now = this.clock.now();
+    const now = this.logicalNow();
     for (const job of this.jobTable.list()) {
       if (!job.isFinished() || job.notified) continue;
       if (job.completesAt === undefined || job.completesAt > now) continue;
@@ -3094,7 +3125,7 @@ export class LinuxCommandExecutor {
     let last = 0;
     for (const job of targets) {
       if (job.completesAt !== undefined) {
-        this.clock.advanceTo(job.completesAt);
+        this.stepClock(job.completesAt - this.logicalNow());
         this.completeBackgroundJob(job);
         last = job.exitCode ?? 0;
         this.processMgr.reap(job.pid);
@@ -5367,7 +5398,10 @@ export class LinuxCommandExecutor {
       // but never blocks; the simulator advances time logically.
       case 'sleep': {
         const r = runSleep(args);
-        if (r.exitCode === 0) this.sessionHoldSeconds += r.seconds;
+        if (r.exitCode === 0) {
+          this.sessionHoldSeconds += r.seconds;
+          this.spendSeconds(r.seconds);
+        }
         return { output: r.output, exitCode: r.exitCode };
       }
       // `timeout <N> <cmd ...>` — run the inner command. In real life
@@ -7901,18 +7935,32 @@ export class LinuxCommandExecutor {
     const parsed = parseTimeoutInvocation(args);
     if ('error' in parsed) return { output: parsed.error, exitCode: TIMEOUT_EXIT_CANCELED };
     const heldBefore = this.sessionHoldSeconds;
-    const result = this.dispatchFromInterpreter(parsed.command, this._cmdEnv);
+    this.waitScopes.push(0);
+    let result: { output: string; exitCode: number; stderr?: string };
+    let spent = 0;
+    try {
+      result = this.dispatchFromInterpreter(parsed.command, this._cmdEnv);
+    } finally {
+      spent = this.waitScopes.pop() ?? 0;
+    }
     const held = this.sessionHoldSeconds - heldBefore;
-    if (parsed.durationSeconds === 0 || held <= parsed.durationSeconds) return result;
+    if (parsed.durationSeconds === 0 || held <= parsed.durationSeconds) {
+      this.spendSeconds(spent);
+      return result;
+    }
     const notices = [timeoutNotice(parsed, parsed.signal)];
     let killedBy: Signal | null = null;
     if (TERMINATING_SIGNALS.has(parsed.signal)) {
       killedBy = parsed.signal;
       this.sessionHoldSeconds = heldBefore + parsed.durationSeconds;
+      this.spendSeconds(Math.min(spent, parsed.durationSeconds));
     } else if (parsed.killAfterSeconds > 0 && held > parsed.durationSeconds + parsed.killAfterSeconds) {
       killedBy = 'SIGKILL';
       notices.push(timeoutNotice(parsed, 'SIGKILL'));
       this.sessionHoldSeconds = heldBefore + parsed.durationSeconds + parsed.killAfterSeconds;
+      this.spendSeconds(Math.min(spent, parsed.durationSeconds + parsed.killAfterSeconds));
+    } else {
+      this.spendSeconds(spent);
     }
     const exitCode = killedBy === null
       ? (parsed.preserveStatus ? result.exitCode : TIMEOUT_EXIT_TIMEDOUT)

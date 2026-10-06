@@ -653,11 +653,11 @@ describe('Cable', () => {
       expect(delay).toBeCloseTo(0.0005, 5); // in milliseconds
     });
 
-    it('should use faster propagation for fiber (~3.3ns/m)', () => {
+    it('should use faster propagation for fiber (~4.9ns/m, n = 1.47)', () => {
       const cable = new Cable('c1', { cableType: 'fiber-single', lengthMeters: 1000 });
-      // 1000m * 3.3ns/m = 3300ns = 0.0033ms
+      // 1000m * 4.9ns/m = 4900ns = 0.0049ms
       const delay = cable.getPropagationDelay();
-      expect(delay).toBeCloseTo(0.0033, 4);
+      expect(delay).toBeCloseTo(0.0049, 4);
     });
 
     it('should reject length exceeding max for cable type', () => {

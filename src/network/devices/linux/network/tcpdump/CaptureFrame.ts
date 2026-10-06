@@ -51,6 +51,7 @@ export interface CaptureTcpFlags {
 
 export interface CaptureFrame {
   at: Date;
+  atMicros?: number;
   iface: string;
   direction: CaptureDirection;
   linkType: string;
@@ -389,10 +390,12 @@ export function decodeEthernetFrame(
   iface: string,
   direction: CaptureDirection,
   at: Date,
+  atMicros?: number,
 ): CaptureFrame {
   const tag = dot1qTagOf(frame);
   const base: CaptureFrame = {
     at,
+    atMicros,
     iface,
     direction,
     linkType: 'EN10MB',

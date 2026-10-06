@@ -16,7 +16,8 @@
  *   Port A → Cable.transmit(frame, portA) → Port B.receiveFrame(frame)
  */
 
-import { EthernetFrame } from '../core/types';
+import { EthernetFrame, ethernetFrameBytes } from '../core/types';
+import { PathClock } from '../core/time/PathClock';
 import { Logger } from '../core/Logger';
 import { Port } from './Port';
 import { markCongestionExperienced, netemIsActive, type NetemSpec } from './Netem';
@@ -31,12 +32,14 @@ interface CableSpec {
   propagationNsPerM: number; // nanoseconds per meter
 }
 
+const PREAMBLE_AND_SFD_BYTES = 8;
+
 const CABLE_SPECS: Record<CableType, CableSpec> = {
   'cat5e':        { maxSpeed: 1000,   maxLength: 100,   propagationNsPerM: 5.0 },
   'cat6':         { maxSpeed: 10000,  maxLength: 100,   propagationNsPerM: 5.0 },
   'cat6a':        { maxSpeed: 10000,  maxLength: 100,   propagationNsPerM: 5.0 },
-  'fiber-single': { maxSpeed: 100000, maxLength: 80000, propagationNsPerM: 3.3 },
-  'fiber-multi':  { maxSpeed: 10000,  maxLength: 2000,  propagationNsPerM: 3.3 },
+  'fiber-single': { maxSpeed: 100000, maxLength: 80000, propagationNsPerM: 4.9 },
+  'fiber-multi':  { maxSpeed: 10000,  maxLength: 2000,  propagationNsPerM: 4.9 },
   'crossover':    { maxSpeed: 1000,   maxLength: 100,   propagationNsPerM: 5.0 },
   'serial':       { maxSpeed: 10,     maxLength: 15,    propagationNsPerM: 5.0 },
 };
@@ -96,12 +99,6 @@ export class Cable {
   private readonly spec: CableSpec;
   private packetLossRate: number = 0;
   private corruptionRate: number = 0;
-  /** `tc qdisc ... netem delay <ms>` — added to `getPropagationDelay()`'s
-   *  physical-distance figure. Like that figure, this is exposed as
-   *  metadata for RTT reporting (ping) rather than an actual async delay
-   *  injected into frame delivery — `Cable.transmit()` stays synchronous
-   *  on the hot data-plane path; only the one consumer that reports a
-   *  wall-clock-shaped number to the user (ping's RTT) adds it in. */
   private artificialDelayMs: number = 0;
   private stats: CableStats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0, framesMarked: 0 };
   private readonly egressNetem = new Map<Port, NetemSpec>();
@@ -151,7 +148,6 @@ export class Cable {
     return (this.lengthMeters * this.spec.propagationNsPerM) / 1_000_000;
   }
 
-  /** `tc qdisc ... netem delay` — see the field's own doc comment. */
   getArtificialDelayMs(): number { return this.artificialDelayMs; }
   setArtificialDelayMs(ms: number): void { this.artificialDelayMs = Math.max(0, ms); }
 
@@ -188,11 +184,13 @@ export class Cable {
     return marked;
   }
 
-  roundTripDelayMs(fromPort: Port): number {
-    const toPort = fromPort === this.portA ? this.portB : this.portA;
-    return this.artificialDelayMs
-      + (this.egressNetem.get(fromPort)?.delayMs ?? 0)
-      + (toPort === null ? 0 : this.egressNetem.get(toPort)?.delayMs ?? 0);
+  transitDelayMs(frame: EthernetFrame, fromPort: Port): number {
+    const bitsOnTheWire = (ethernetFrameBytes(frame) + PREAMBLE_AND_SFD_BYTES) * 8;
+    const serializationMs = bitsOnTheWire / (fromPort.getNegotiatedSpeed() * 1000);
+    return this.getPropagationDelay()
+      + serializationMs
+      + this.artificialDelayMs
+      + (this.egressNetem.get(fromPort)?.delayMs ?? 0);
   }
 
   isDegraded(): boolean {
@@ -377,12 +375,6 @@ export class Cable {
 
   // ─── Frame Transmission ────────────────────────────────────────
 
-  /**
-   * Transmit a frame from one port to the other.
-   * Frame is delivered synchronously — propagation delay is exposed as metadata
-   * for RTT calculation but doesn't introduce actual async delay (preserves
-   * simulation determinism).
-   */
   transmit(frame: EthernetFrame, fromPort: Port): boolean {
     if (!this.isUp) {
       this.getBus().publish({
@@ -449,6 +441,7 @@ export class Cable {
 
     const bus = this.getBus();
     const propagationMs = this.getPropagationDelay();
+    const transitMs = this.transitDelayMs(frame, fromPort);
     const fromRef = this.portRefOf(fromPort);
     const toRef = this.portRefOf(targetPort);
 
@@ -463,13 +456,10 @@ export class Cable {
       },
     });
 
-    // Phase 3: delivery stays synchronous to preserve current call-stack
-    // semantics for tests. Phase 6 will migrate to scheduler-driven async
-    // delivery (`scheduler.setTimeout(deliver, propagationMs)`).
     Cable.deliveryDepth++;
     Cable.cascadeFrames++;
     try {
-      targetPort.receiveFrame(frame);
+      PathClock.carry(transitMs, () => targetPort.receiveFrame(frame));
     } finally {
       Cable.deliveryDepth--;
     }
