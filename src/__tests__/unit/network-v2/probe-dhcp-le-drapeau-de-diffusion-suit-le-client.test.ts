@@ -255,7 +255,7 @@ describe('the Windows broadcast flag toggle (Windows 7 and later)', () => {
       processDiscover: (params) => {
         seen.push(params.broadcast);
         if (params.broadcast !== flag) return null;
-        const pool = createDefaultPoolConfig();
+        const pool = createDefaultPoolConfig('probe');
         return { type: 'OFFER', xid: params.xid, ip: '10.5.0.50', serverIdentifier: '10.5.0.1', pool } as unknown as ReturnType<DhcpServerChannel['processDiscover']>;
       },
       processRequestWithNak: () => null,
