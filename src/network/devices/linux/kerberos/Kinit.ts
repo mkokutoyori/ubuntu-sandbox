@@ -223,7 +223,7 @@ async function renewCredential(
     const client = host.dialKdc(ip, address.port);
     if (client === null) continue;
     exchange = client.renewExchange(
-      ticket, new TextDecoder().decode(credential.key), principalName(PrincipalNameType.NT_PRINCIPAL, ...principal.components),
+      ticket, credential.key, principalName(PrincipalNameType.NT_PRINCIPAL, ...principal.components),
       principal.realm, credential.renewTill,
     );
     break;

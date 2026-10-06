@@ -34,7 +34,7 @@ import { encodeTLV, parseAll, parseTLV, type BerNode } from '@/network/devices/w
 import { aesCtsDecrypt, aesCtsEncrypt } from '@/crypto/cipher';
 import { nFold } from '@/crypto/kdf';
 import {
-  AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96, KerberosIntegrityError, checksum, decrypt,
+  AES128_PROFILE, AES256_PROFILE, KerberosIntegrityError, checksum, decrypt,
   decryptWithConfounder, deriveKey, encrypt, stringToKey, type AesProfile,
 } from '@/network/kerberos/enctype/aesCtsHmacSha1';
 import { loadJson } from './openldap-replay-support';
@@ -132,22 +132,22 @@ describe('AES-CTS (CBC-CS3) round trips', () => {
 
 describe('string-to-key matches the keys the real KDC stores', () => {
   it.each(capture.stringToKey)('aes256 for $password with salt $salt', (vector) => {
-    expect(hex(stringToKey(AES256_CTS_HMAC_SHA1_96, vector.password, vector.salt))).toBe(vector.aes256);
+    expect(hex(stringToKey(AES256_PROFILE, vector.password, vector.salt))).toBe(vector.aes256);
   });
 
   it.each(capture.stringToKey)('aes128 for $password with salt $salt', (vector) => {
-    expect(hex(stringToKey(AES128_CTS_HMAC_SHA1_96, vector.password, vector.salt))).toBe(vector.aes128);
+    expect(hex(stringToKey(AES128_PROFILE, vector.password, vector.salt))).toBe(vector.aes128);
   });
 
   it('a different salt gives a different key', () => {
     const vector = capture.stringToKey[0];
-    expect(hex(stringToKey(AES256_CTS_HMAC_SHA1_96, vector.password, `${vector.salt}x`))).not.toBe(vector.aes256);
+    expect(hex(stringToKey(AES256_PROFILE, vector.password, `${vector.salt}x`))).not.toBe(vector.aes256);
   });
 });
 
 describe('the real authentication-service exchange of bob', () => {
   const [firstRequest, preauthRequired, secondRequest, reply] = capture.asExchange.map(message);
-  const profile = AES256_CTS_HMAC_SHA1_96;
+  const profile = AES256_PROFILE;
 
   it('the lab is sound: the captured exchange has the four messages of RFC 4120 in order', () => {
     expect(capture.asExchange.map(applicationTagOf)).toEqual([10, 30, 10, 11]);
@@ -207,7 +207,7 @@ describe('the real authentication-service exchange of bob', () => {
 
 describe('the real ticket-granting exchange for ldap/vm', () => {
   const [request, reply] = capture.tgsExchange.map(message);
-  const profile = AES256_CTS_HMAC_SHA1_96;
+  const profile = AES256_PROFILE;
 
   function sessionKeyOfTicketGrantingTicket(): Uint8Array {
     const [, , , asReply] = capture.asExchange.map(message);
@@ -262,16 +262,16 @@ describe('the real ticket-granting exchange for ldap/vm', () => {
 describe('derived keys and checksums', () => {
   it('derives distinct keys per constant and keeps the key length', () => {
     const base = key('bob-aes256');
-    const first = deriveKey(AES256_CTS_HMAC_SHA1_96, base, new TextEncoder().encode('one'));
-    const second = deriveKey(AES256_CTS_HMAC_SHA1_96, base, new TextEncoder().encode('two'));
+    const first = deriveKey(AES256_PROFILE, base, new TextEncoder().encode('one'));
+    const second = deriveKey(AES256_PROFILE, base, new TextEncoder().encode('two'));
     expect(first).toHaveLength(32);
     expect(hex(first)).not.toBe(hex(second));
   });
 
   it('a checksum is twelve octets and depends on the key usage', () => {
     const data = new TextEncoder().encode('message');
-    const one = checksum(AES256_CTS_HMAC_SHA1_96, key('bob-aes256'), 25, data);
-    const two = checksum(AES256_CTS_HMAC_SHA1_96, key('bob-aes256'), 23, data);
+    const one = checksum(AES256_PROFILE, key('bob-aes256'), 25, data);
+    const two = checksum(AES256_PROFILE, key('bob-aes256'), 23, data);
     expect(one).toHaveLength(12);
     expect(hex(one)).not.toBe(hex(two));
   });

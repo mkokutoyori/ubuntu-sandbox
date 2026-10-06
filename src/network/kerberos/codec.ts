@@ -12,17 +12,18 @@
  */
 import {
   encodeTLV, concat, parseTLV, parseAll, encodeInteger, decodeInteger,
-  encodeOctetString, decodeOctetString, encodeSequence,
+  decodeOctetString, encodeSequence,
   encodeContextConstructed, encodeApplication, UNIVERSAL_TAG,
   type ParsedTLV,
 } from '@/network/devices/windows/server/ad/ldap/Ber';
 import {
   type PrincipalName, type EncryptionKey, type EncryptedData, type TicketFlags, NO_TICKET_FLAGS,
   type Ticket, type EncTicketPart, type PaData, type KdcReqBody, type KdcReq,
-  type EncKdcRepPart, type KdcRep, type KrbError, type Authenticator, type ApReq,
+  type EncKdcRepPart, type KdcRep, type KrbError, type Authenticator, type ApReq, type EtypeInfo2Entry,
 } from './types';
 
 const GENERALIZED_TIME_TAG = 0x18;
+const GENERAL_STRING_TAG = 0x1b;
 const BIT_STRING_TAG = 0x03;
 const KRB_PVNO = 5;
 
@@ -39,6 +40,10 @@ function fieldsOf(sequenceContent: Uint8Array): Map<number, ParsedTLV> {
     if (node.tagClass === 'context') map.set(node.tagNumber, parseTLV(node.content, 0));
   }
   return map;
+}
+
+function encodeKerberosString(text: string): Uint8Array {
+  return encodeTLV('universal', GENERAL_STRING_TAG, false, new TextEncoder().encode(text));
 }
 
 function rawOctetString(bytes: Uint8Array): Uint8Array {
@@ -98,7 +103,7 @@ export function ticketFlagsToHex(flags: TicketFlags): string {
 function encodePrincipalName(p: PrincipalName): Uint8Array {
   return encodeSequence([
     explicit(0, encodeInteger(p.nameType)),
-    explicit(1, encodeSequence(p.nameString.map(encodeOctetString))),
+    explicit(1, encodeSequence(p.nameString.map(encodeKerberosString))),
   ]);
 }
 
@@ -162,6 +167,24 @@ export function decodePaDataSeq(node: ParsedTLV): PaData[] {
   return parseAll(node.content).map(decodePaData);
 }
 
+export function encodeEtypeInfo2(entries: readonly EtypeInfo2Entry[]): Uint8Array {
+  return encodeSequence(entries.map((entry) => encodeSequence([
+    explicit(0, encodeInteger(entry.etype)),
+    ...(entry.salt === undefined ? [] : [explicit(1, encodeKerberosString(entry.salt))]),
+  ])));
+}
+
+export function decodeEtypeInfo2(bytes: Uint8Array): EtypeInfo2Entry[] {
+  return parseAll(parseTLV(bytes, 0).content).map((entry) => {
+    const fields = fieldsOf(entry.content);
+    const salt = fields.get(1);
+    return {
+      etype: decodeInteger(fields.get(0)!.content),
+      salt: salt === undefined ? undefined : new TextDecoder().decode(salt.content),
+    };
+  });
+}
+
 /** RFC 4120 §5.2.7.2 — PA-ENC-TS-ENC, the plaintext encrypted for PA-ENC-TIMESTAMP. */
 export function encodePaEncTsEnc(patimestamp: number): Uint8Array {
   return encodeSequence([explicit(0, encodeKerberosTime(patimestamp))]);
@@ -177,7 +200,7 @@ export function decodePaEncTsEnc(bytes: Uint8Array): number {
 export function encodeTicket(t: Ticket): Uint8Array {
   const body = encodeSequence([
     explicit(0, encodeInteger(t.tktVno)),
-    explicit(1, encodeOctetString(t.realm)),
+    explicit(1, encodeKerberosString(t.realm)),
     explicit(2, encodePrincipalName(t.sname)),
     explicit(3, encodeEncryptedData(t.encPart)),
   ]);
@@ -208,7 +231,7 @@ export function encodeEncTicketPart(e: EncTicketPart): Uint8Array {
   const parts = [
     explicit(0, encodeTicketFlags(e.flags)),
     explicit(1, encodeEncryptionKey(e.key)),
-    explicit(2, encodeOctetString(e.crealm)),
+    explicit(2, encodeKerberosString(e.crealm)),
     explicit(3, encodePrincipalName(e.cname)),
     explicit(4, encodeTransitedEncoding()),
     explicit(5, encodeKerberosTime(e.authtime)),
@@ -258,7 +281,7 @@ function decodeBitmask32(content: Uint8Array): number {
 function encodeKdcReqBody(b: KdcReqBody): Uint8Array {
   const parts = [explicit(0, encodeBitmask32(b.kdcOptions))];
   if (b.cname) parts.push(explicit(1, encodePrincipalName(b.cname)));
-  parts.push(explicit(2, encodeOctetString(b.realm)));
+  parts.push(explicit(2, encodeKerberosString(b.realm)));
   parts.push(explicit(3, encodePrincipalName(b.sname)));
   parts.push(explicit(5, encodeKerberosTime(b.till)));
   if (b.rtime !== undefined) parts.push(explicit(6, encodeKerberosTime(b.rtime)));
@@ -320,7 +343,7 @@ export function encodeKdcRep(rep: KdcRep): Uint8Array {
     explicit(1, encodeInteger(REP_MSG_TYPE[rep.msgType])),
   ];
   if (rep.padata.length > 0) parts.push(explicit(2, encodePaDataSeq(rep.padata)));
-  parts.push(explicit(3, encodeOctetString(rep.crealm)));
+  parts.push(explicit(3, encodeKerberosString(rep.crealm)));
   parts.push(explicit(4, encodePrincipalName(rep.cname)));
   parts.push(explicit(5, encodeTicket(rep.ticket)));
   parts.push(explicit(6, encodeEncryptedData(rep.encPart)));
@@ -359,7 +382,7 @@ export function encodeEncKdcRepPart(msgType: KdcRep['msgType'], e: EncKdcRepPart
   if (e.starttime !== undefined) parts.push(explicit(6, encodeKerberosTime(e.starttime)));
   parts.push(explicit(7, encodeKerberosTime(e.endtime)));
   if (e.renewTill !== undefined) parts.push(explicit(8, encodeKerberosTime(e.renewTill)));
-  parts.push(explicit(9, encodeOctetString(e.srealm)));
+  parts.push(explicit(9, encodeKerberosString(e.srealm)));
   parts.push(explicit(10, encodePrincipalName(e.sname)));
   return encodeApplication(REP_ENC_PART_APP_TAG[msgType], true, encodeSequence(parts));
 }
@@ -392,10 +415,11 @@ export function encodeKrbError(err: KrbError): Uint8Array {
     explicit(4, encodeKerberosTime(err.stime)),
     explicit(5, encodeInteger(err.susec)),
     explicit(6, encodeInteger(err.errorCode)),
-    explicit(9, encodeOctetString(err.realm)),
+    explicit(9, encodeKerberosString(err.realm)),
     explicit(10, encodePrincipalName(err.sname)),
   ];
-  if (err.eText !== undefined) parts.push(explicit(11, encodeOctetString(err.eText)));
+  if (err.eText !== undefined) parts.push(explicit(11, encodeKerberosString(err.eText)));
+  if (err.eData !== undefined) parts.push(explicit(12, rawOctetString(err.eData)));
   return encodeApplication(30, true, encodeSequence(parts));
 }
 
@@ -404,6 +428,7 @@ export function decodeKrbError(bytes: Uint8Array): KrbError {
   const seq = parseTLV(app.content, 0);
   const fields = fieldsOf(seq.content);
   const eTextNode = fields.get(11);
+  const eDataNode = fields.get(12);
   return {
     stime: decodeKerberosTime(fields.get(4)!.content),
     susec: decodeInteger(fields.get(5)!.content),
@@ -411,7 +436,35 @@ export function decodeKrbError(bytes: Uint8Array): KrbError {
     realm: decodeOctetString(fields.get(9)!.content),
     sname: decodePrincipalName(fields.get(10)!),
     eText: eTextNode ? decodeOctetString(eTextNode.content) : undefined,
+    eData: eDataNode ? eDataNode.content : undefined,
   };
+}
+
+export function frameForTcp(message: Uint8Array): Uint8Array {
+  const framed = new Uint8Array(4 + message.length);
+  new DataView(framed.buffer).setUint32(0, message.length, false);
+  framed.set(message, 4);
+  return framed;
+}
+
+export class TcpMessageReader {
+  private pending = new Uint8Array(0);
+
+  push(bytes: Uint8Array): Uint8Array[] {
+    const joined = new Uint8Array(this.pending.length + bytes.length);
+    joined.set(this.pending, 0);
+    joined.set(bytes, this.pending.length);
+    const messages: Uint8Array[] = [];
+    let offset = 0;
+    while (joined.length - offset >= 4) {
+      const length = new DataView(joined.buffer, joined.byteOffset + offset, 4).getUint32(0, false);
+      if (joined.length - offset - 4 < length) break;
+      messages.push(joined.slice(offset + 4, offset + 4 + length));
+      offset += 4 + length;
+    }
+    this.pending = joined.slice(offset);
+    return messages;
+  }
 }
 
 /** RFC 4120 §5.10 — every KDC reply on the wire is either a KDC-REP or a KRB-ERROR; the application tag alone disambiguates. */
@@ -426,7 +479,7 @@ export function isKrbError(bytes: Uint8Array): boolean {
 export function encodeAuthenticator(a: Authenticator): Uint8Array {
   const body = encodeSequence([
     explicit(0, encodeInteger(KRB_PVNO)),
-    explicit(1, encodeOctetString(a.crealm)),
+    explicit(1, encodeKerberosString(a.crealm)),
     explicit(2, encodePrincipalName(a.cname)),
     explicit(4, encodeInteger(a.cusec)),
     explicit(5, encodeKerberosTime(a.ctime)),

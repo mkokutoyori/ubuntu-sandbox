@@ -23,7 +23,7 @@ import { attributeToWire } from './LdapWireSyntax';
 import {
   SORT_REQUEST_OID, SORT_RESPONSE_OID, DOMAIN_SCOPE_OID, decodeSortKeys, encodeSortResponse, type SortKey,
 } from './LdapSortControl';
-import { verifyApReq } from '@/network/kerberos/ApReqVerifier';
+import { verifyApReq, type KerberosServiceIdentity } from '@/network/kerberos/ApReqVerifier';
 import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
@@ -47,11 +47,7 @@ export interface LdapBindCheck {
  * Authenticator. Omitted (`undefined`) on hosts with no `DirectoryStore`
  * (mirrors the port-389 listener itself being gated on that).
  */
-export interface LdapKerberosContext {
-  realm: string;
-  serviceSecret: string;
-  clockMs?: () => number;
-}
+export type LdapKerberosContext = KerberosServiceIdentity;
 
 export interface LdapServerContext {
   tree: DirectoryTree;

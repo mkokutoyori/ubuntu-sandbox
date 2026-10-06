@@ -11,11 +11,11 @@ export interface AesProfile {
   readonly checksumType: number;
 }
 
-export const AES128_CTS_HMAC_SHA1_96: AesProfile = {
+export const AES128_PROFILE: AesProfile = {
   etype: 17, name: 'aes128-cts-hmac-sha1-96', keyBytes: 16, checksumType: 15,
 };
 
-export const AES256_CTS_HMAC_SHA1_96: AesProfile = {
+export const AES256_PROFILE: AesProfile = {
   etype: 18, name: 'aes256-cts-hmac-sha1-96', keyBytes: 32, checksumType: 16,
 };
 
@@ -39,8 +39,8 @@ export class KerberosIntegrityError extends Error {
 }
 
 export function profileOfEtype(etype: number): AesProfile | null {
-  if (etype === AES128_CTS_HMAC_SHA1_96.etype) return AES128_CTS_HMAC_SHA1_96;
-  if (etype === AES256_CTS_HMAC_SHA1_96.etype) return AES256_CTS_HMAC_SHA1_96;
+  if (etype === AES128_PROFILE.etype) return AES128_PROFILE;
+  if (etype === AES256_PROFILE.etype) return AES256_PROFILE;
   return null;
 }
 

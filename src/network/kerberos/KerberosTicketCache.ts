@@ -11,7 +11,7 @@ export interface CachedTicket {
   readonly clientPrincipal: string; // e.g. "alice @ LAB.LOCAL"
   readonly serverPrincipal: string; // e.g. "krbtgt/LAB.LOCAL @ LAB.LOCAL"
   readonly ticket: Ticket;
-  readonly sessionKey: string;
+  readonly sessionKey: Uint8Array;
   readonly encKdcRepPart: EncKdcRepPart;
 }
 

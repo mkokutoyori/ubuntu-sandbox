@@ -84,7 +84,7 @@ describe('LDAP GSSAPI SASL bind — real AP-REQ credentials over TCP/389', () =>
     );
 
     const forgedApReq = buildApReq(
-      tgsResult.ticket!, 'wrong-session-key',
+      tgsResult.ticket!, new Uint8Array(32).fill(7),
       principalName(PrincipalNameType.NT_PRINCIPAL, 'alice'), 'LAB.LOCAL', KU_AP_REQ_AUTHENTICATOR,
     );
 

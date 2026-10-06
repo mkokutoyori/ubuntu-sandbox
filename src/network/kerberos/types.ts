@@ -72,9 +72,15 @@ export interface PaData {
   readonly value: Uint8Array;
 }
 
+export interface EtypeInfo2Entry {
+  readonly etype: number;
+  readonly salt?: string;
+}
+
 // RFC 4120 §7.5.2 — the only padata-type values this simulator produces/reads.
 export const PA_TGS_REQ = 1;
 export const PA_ENC_TIMESTAMP = 2;
+export const PA_ETYPE_INFO2 = 19;
 
 export const KDC_OPT_FORWARDABLE = 1 << 30;
 export const KDC_OPT_PROXIABLE = 1 << 28;
@@ -137,6 +143,7 @@ export const enum KrbErrorCode {
   KDC_ERR_CLIENT_REVOKED = 18,
   KDC_ERR_PREAUTH_FAILED = 24,
   KDC_ERR_PREAUTH_REQUIRED = 25,
+  KRB_AP_ERR_BAD_INTEGRITY = 31,
   KRB_AP_ERR_TKT_EXPIRED = 32,
   KRB_AP_ERR_SKEW = 37,
   KDC_ERR_POLICY = 65,
@@ -149,6 +156,7 @@ export interface KrbError {
   readonly realm: string;
   readonly sname: PrincipalName;
   readonly eText?: string;
+  readonly eData?: Uint8Array;
 }
 
 // RFC 4120 §5.5.1 — Authenticator/AP-REQ, the TGS exchange's proof that the
