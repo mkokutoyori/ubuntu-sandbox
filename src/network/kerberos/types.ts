@@ -76,12 +76,19 @@ export interface PaData {
 export const PA_TGS_REQ = 1;
 export const PA_ENC_TIMESTAMP = 2;
 
+export const KDC_OPT_FORWARDABLE = 1 << 30;
+export const KDC_OPT_PROXIABLE = 1 << 28;
+export const KDC_OPT_RENEWABLE = 1 << 23;
+export const KDC_OPT_RENEWABLE_OK = 1 << 4;
+export const KDC_OPT_RENEW = 1 << 1;
+
 export interface KdcReqBody {
   readonly kdcOptions: number;
   readonly cname?: PrincipalName;
   readonly realm: string;
   readonly sname: PrincipalName;
   readonly till: number;
+  readonly rtime?: number;
   readonly nonce: number;
   readonly etype: readonly number[];
   /**

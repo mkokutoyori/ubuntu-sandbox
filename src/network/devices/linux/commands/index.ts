@@ -39,6 +39,7 @@ import { nmapCommand } from './net/Nmap';
 import { hping3Command } from './net/Hping3';
 import { snmpwalkCommand } from './net/Snmpwalk';
 import { ldapsearchCommand } from './net/Ldapsearch';
+import { kdestroyCommand, kinitCommand, klistCommand } from './net/Kinit';
 import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
 import { sshCommand } from './net/Ssh';
@@ -179,6 +180,9 @@ export {
   hping3Command,
   snmpwalkCommand,
   ldapsearchCommand,
+  kinitCommand,
+  klistCommand,
+  kdestroyCommand,
   curlCommand,
   scpCommand,
   sshCommand,
@@ -339,6 +343,9 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   hping3Command,
   snmpwalkCommand,
   ldapsearchCommand,
+  kinitCommand,
+  klistCommand,
+  kdestroyCommand,
   curlCommand,
   scpCommand,
   sshCommand,

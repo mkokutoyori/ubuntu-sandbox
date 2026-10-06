@@ -66,25 +66,31 @@ const FLAG_BITS: ReadonlyArray<[keyof TicketFlags, number]> = [
   ['renewable', 8], ['initial', 9], ['preAuthent', 10], ['hwAuthent', 11],
 ];
 
-function encodeTicketFlags(flags: TicketFlags): Uint8Array {
+export function ticketFlagsToBits(flags: TicketFlags): number {
   let bits = 0;
   for (const [key, bitIndex] of FLAG_BITS) if (flags[key]) bits |= (1 << (31 - bitIndex));
-  const content = new Uint8Array([0, (bits >>> 24) & 0xff, (bits >>> 16) & 0xff, (bits >>> 8) & 0xff, bits & 0xff]);
-  return encodeTLV('universal', BIT_STRING_TAG, false, content);
+  return bits >>> 0;
 }
 
-function decodeTicketFlags(content: Uint8Array): TicketFlags {
-  const bits = (content[1] << 24) | (content[2] << 16) | (content[3] << 8) | content[4];
+export function ticketFlagsFromBits(bits: number): TicketFlags {
   const flags = { ...NO_TICKET_FLAGS };
   for (const [key, bitIndex] of FLAG_BITS) (flags as Record<string, boolean>)[key] = (bits & (1 << (31 - bitIndex))) !== 0;
   return flags;
 }
 
+function encodeTicketFlags(flags: TicketFlags): Uint8Array {
+  const bits = ticketFlagsToBits(flags);
+  const content = new Uint8Array([0, (bits >>> 24) & 0xff, (bits >>> 16) & 0xff, (bits >>> 8) & 0xff, bits & 0xff]);
+  return encodeTLV('universal', BIT_STRING_TAG, false, content);
+}
+
+function decodeTicketFlags(content: Uint8Array): TicketFlags {
+  return ticketFlagsFromBits((content[1] << 24) | (content[2] << 16) | (content[3] << 8) | content[4]);
+}
+
 /** The real klist-style hex rendering of a `TicketFlags` set (e.g. `0x40e10000`) — for `klist`'s output, not part of the wire codec proper. */
 export function ticketFlagsToHex(flags: TicketFlags): string {
-  let bits = 0;
-  for (const [key, bitIndex] of FLAG_BITS) if (flags[key]) bits |= (1 << (31 - bitIndex));
-  return '0x' + (bits >>> 0).toString(16).padStart(8, '0');
+  return '0x' + ticketFlagsToBits(flags).toString(16).padStart(8, '0');
 }
 
 // ─── PrincipalName (RFC 4120 §5.2.2) ─────────────────────────────────────────
@@ -255,6 +261,7 @@ function encodeKdcReqBody(b: KdcReqBody): Uint8Array {
   parts.push(explicit(2, encodeOctetString(b.realm)));
   parts.push(explicit(3, encodePrincipalName(b.sname)));
   parts.push(explicit(5, encodeKerberosTime(b.till)));
+  if (b.rtime !== undefined) parts.push(explicit(6, encodeKerberosTime(b.rtime)));
   parts.push(explicit(7, encodeInteger(b.nonce)));
   parts.push(explicit(8, encodeSequence(b.etype.map(encodeInteger))));
   if (b.additionalTickets && b.additionalTickets.length > 0) {
@@ -268,12 +275,14 @@ function decodeKdcReqBody(node: ParsedTLV): KdcReqBody {
   const kdcOptions = decodeBitmask32(fields.get(0)!.content);
   const cnameNode = fields.get(1);
   const additionalTicketsNode = fields.get(11);
+  const rtimeNode = fields.get(6);
   return {
     kdcOptions,
     cname: cnameNode ? decodePrincipalName(cnameNode) : undefined,
     realm: decodeOctetString(fields.get(2)!.content),
     sname: decodePrincipalName(fields.get(3)!),
     till: decodeKerberosTime(fields.get(5)!.content),
+    rtime: rtimeNode ? decodeKerberosTime(rtimeNode.content) : undefined,
     nonce: decodeInteger(fields.get(7)!.content),
     etype: parseAll(fields.get(8)!.content).map((n) => decodeInteger(n.content)),
     additionalTickets: additionalTicketsNode ? parseAll(additionalTicketsNode.content).map(decodeTicketFromNode) : undefined,

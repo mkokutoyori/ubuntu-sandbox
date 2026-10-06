@@ -20,6 +20,7 @@ import {
 } from './codec';
 import {
   principalName, PrincipalNameType, PA_ENC_TIMESTAMP, PA_TGS_REQ, KrbErrorCode,
+  KDC_OPT_FORWARDABLE, KDC_OPT_PROXIABLE, KDC_OPT_RENEWABLE, KDC_OPT_RENEWABLE_OK, KDC_OPT_RENEW,
   type KdcReq, type Ticket, type EncKdcRepPart, type PrincipalName,
 } from './types';
 import {
@@ -48,8 +49,11 @@ export function buildApReq(
 
 export interface KerberosConnectResult { ok: boolean; error?: string; client?: KerberosClient }
 
+export type PasswordSource = string | (() => string | null);
+
 export interface AsExchangeResult {
   ok: boolean;
+  passwordUnavailable?: boolean;
   errorCode?: number;
   eText?: string;
   sessionKey?: string;
@@ -64,6 +68,25 @@ export type TgsExchangeResult = AsExchangeResult;
 // expires" sentinel) — the KDC's own ticket-lifetime policy, not the
 // client's request, is what actually governs the granted endtime.
 const TICKET_REQUEST_LIFETIME_SECONDS = 24 * 3600;
+const RENEWABLE_REQUEST_LIFETIME_SECONDS = 7 * 24 * 3600;
+
+export interface AsRequestOptions {
+  readonly forwardable?: boolean;
+  readonly proxiable?: boolean;
+  readonly renewable?: boolean;
+  readonly renewableOk?: boolean;
+  readonly lifetimeSeconds?: number;
+  readonly renewableLifetimeSeconds?: number;
+}
+
+function kdcOptionsOf(options: AsRequestOptions): number {
+  let bits = 0;
+  if (options.forwardable ?? true) bits |= KDC_OPT_FORWARDABLE;
+  if (options.proxiable ?? false) bits |= KDC_OPT_PROXIABLE;
+  if (options.renewable ?? true) bits |= KDC_OPT_RENEWABLE;
+  if (options.renewableOk ?? false) bits |= KDC_OPT_RENEWABLE_OK;
+  return bits;
+}
 
 export class KerberosClient {
   private nextNonce = 1;
@@ -81,14 +104,25 @@ export class KerberosClient {
   }
 
   /** RFC 4120 §3.1 — the full AS exchange for `username`/`password` against `realm`, requesting a ticket for `serviceName` (defaults to the realm's own krbtgt, i.e. a plain TGT). */
-  asExchange(username: string, password: string, realm: string, serviceName: string = 'krbtgt'): AsExchangeResult {
+  asExchange(
+    username: string, password: PasswordSource, realm: string, serviceName: string | readonly string[] = 'krbtgt',
+    options: AsRequestOptions = {},
+  ): AsExchangeResult {
     const cname = principalName(PrincipalNameType.NT_PRINCIPAL, username);
-    const sname = principalName(PrincipalNameType.NT_SRV_INST, serviceName, realm);
+    const sname = typeof serviceName === 'string'
+      ? principalName(PrincipalNameType.NT_SRV_INST, serviceName, realm)
+      : principalName(PrincipalNameType.NT_SRV_INST, ...serviceName);
     const nonce = this.nextNonce++;
-    const till = Math.floor(this.clockMs() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
+    const now = Math.floor(this.clockMs() / 1000);
+    const till = now + (options.lifetimeSeconds ?? TICKET_REQUEST_LIFETIME_SECONDS);
+    const rtime = now + (options.renewableLifetimeSeconds ?? RENEWABLE_REQUEST_LIFETIME_SECONDS);
+    const kdcOptions = kdcOptionsOf(options);
     const baseReq: KdcReq = {
       msgType: 'AS-REQ', padata: [],
-      reqBody: { kdcOptions: 0, cname, realm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
+      reqBody: {
+        kdcOptions, cname, realm, sname, till, rtime: (kdcOptions & KDC_OPT_RENEWABLE) !== 0 ? rtime : undefined,
+        nonce, etype: [AES256_CTS_HMAC_SHA1_96],
+      },
     };
 
     const firstReply = this.roundTrip(encodeKdcReq(baseReq));
@@ -100,7 +134,9 @@ export class KerberosClient {
       return { ok: false, errorCode: firstErr.errorCode, eText: firstErr.eText };
     }
 
-    const clientKey = stringToKey(password, realm);
+    const secret = typeof password === 'string' ? password : password();
+    if (secret === null) return { ok: false, passwordUnavailable: true };
+    const clientKey = stringToKey(secret, realm);
     const tsCipher = encryptWithUsage(clientKey, KU_PA_ENC_TIMESTAMP, encodePaEncTsEnc(Math.floor(this.clockMs() / 1000)));
     const paValue = encodeEncryptedData({ etype: AES256_CTS_HMAC_SHA1_96, cipher: tsCipher });
     const reqWithPa: KdcReq = { ...baseReq, padata: [{ type: PA_ENC_TIMESTAMP, value: paValue }] };
@@ -111,12 +147,17 @@ export class KerberosClient {
       const err = decodeKrbError(secondReply);
       return { ok: false, errorCode: err.errorCode, eText: err.eText };
     }
-    return this.finishFromRep(secondReply, password, realm, nonce);
+    return this.finishFromRep(secondReply, secret, realm, nonce);
   }
 
-  private finishFromRep(bytes: Uint8Array, password: string, realm: string, nonce: number): AsExchangeResult {
-    const clientKey = stringToKey(password, realm);
-    return this.decodeRep(bytes, clientKey, KU_AS_REP_ENC_PART, nonce);
+  private finishFromRep(bytes: Uint8Array, password: PasswordSource, realm: string, nonce: number): AsExchangeResult {
+    const secret = typeof password === 'string' ? password : password();
+    if (secret === null) return { ok: false, passwordUnavailable: true };
+    try {
+      return this.decodeRep(bytes, stringToKey(secret, realm), KU_AS_REP_ENC_PART, nonce);
+    } catch {
+      return { ok: false, errorCode: KrbErrorCode.KDC_ERR_PREAUTH_FAILED, eText: 'Decrypt integrity check failed' };
+    }
   }
 
   private decodeRep(bytes: Uint8Array, key: string, usage: number, nonce: number): AsExchangeResult {
@@ -144,10 +185,10 @@ export class KerberosClient {
    * UNKNOWN (see `kerberos/crossRealm.ts`).
    */
   tgsExchange(
-    tgt: Ticket, tgtSessionKey: string, cname: PrincipalName, crealm: string, serviceName: string,
+    tgt: Ticket, tgtSessionKey: string, cname: PrincipalName, crealm: string, serviceName: string | readonly string[],
     targetRealm: string = crealm,
   ): TgsExchangeResult {
-    const sname = principalName(PrincipalNameType.NT_SRV_HST, serviceName);
+    const sname = principalName(PrincipalNameType.NT_SRV_HST, ...(typeof serviceName === 'string' ? [serviceName] : serviceName));
     const nonce = this.nextNonce++;
     const till = Math.floor(this.clockMs() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
     const paValue = buildApReq(tgt, tgtSessionKey, cname, crealm, KU_TGS_REQ_AUTHENTICATOR, this.clockMs());
@@ -156,13 +197,27 @@ export class KerberosClient {
       msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],
       reqBody: { kdcOptions: 0, realm: targetRealm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
     };
+    return this.finishTgs(req, tgtSessionKey, nonce);
+  }
+
+  renewExchange(ticket: Ticket, sessionKey: string, cname: PrincipalName, crealm: string, till: number): TgsExchangeResult {
+    const nonce = this.nextNonce++;
+    const req: KdcReq = {
+      msgType: 'TGS-REQ',
+      padata: [{ type: PA_TGS_REQ, value: buildApReq(ticket, sessionKey, cname, crealm, KU_TGS_REQ_AUTHENTICATOR, this.clockMs()) }],
+      reqBody: { kdcOptions: KDC_OPT_RENEW, realm: ticket.realm, sname: ticket.sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
+    };
+    return this.finishTgs(req, sessionKey, nonce);
+  }
+
+  private finishTgs(req: KdcReq, sessionKey: string, nonce: number): TgsExchangeResult {
     const reply = this.roundTrip(encodeKdcReq(req));
     if (!reply) return { ok: false, eText: 'no reply from KDC' };
     if (isKrbError(reply)) {
       const err = decodeKrbError(reply);
       return { ok: false, errorCode: err.errorCode, eText: err.eText };
     }
-    return this.decodeRep(reply, tgtSessionKey, KU_TGS_REP_ENC_PART, nonce);
+    return this.decodeRep(reply, sessionKey, KU_TGS_REP_ENC_PART, nonce);
   }
 
   /**
@@ -193,13 +248,7 @@ export class KerberosClient {
         additionalTickets: [evidenceTicket],
       },
     };
-    const reply = this.roundTrip(encodeKdcReq(req));
-    if (!reply) return { ok: false, eText: 'no reply from KDC' };
-    if (isKrbError(reply)) {
-      const err = decodeKrbError(reply);
-      return { ok: false, errorCode: err.errorCode, eText: err.eText };
-    }
-    return this.decodeRep(reply, serviceTgtSessionKey, KU_TGS_REP_ENC_PART, nonce);
+    return this.finishTgs(req, serviceTgtSessionKey, nonce);
   }
 }
 

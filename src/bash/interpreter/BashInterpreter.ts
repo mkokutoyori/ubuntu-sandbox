@@ -206,6 +206,7 @@ export class BashInterpreter {
    * this lets a caller's `2>` redirection peel stderr off coherently.
    */
   private stderrParts: string[] = [];
+  private readonly stderrShownInOutput = new WeakMap<string[], Set<number>>();
   /** Set by a bare `exec >> file 2>> errfile` — see visitSimpleCommandWithInput. */
   private execRedirect: { stdout?: { path: string; append: boolean }; stderr?: { path: string; append: boolean } } | null = null;
   /** >0 while running a stage inside a multi-command pipeline — see `runPipelineStages`. */
@@ -632,13 +633,24 @@ export class BashInterpreter {
     if (pipeInput) this.output.push(pipeInput);
     // Every stage's fd 2 bypasses the pipe and reaches the terminal
     // directly, like real concurrent processes sharing the inherited fd 2.
-    const pipelineStderr = this.stderrParts.slice(stderrMarker).map(ensureTrailingNewline).join('');
+    const shownStderr = this.stderrShownInOutput.get(this.stderrParts);
+    const pipelineStderr = this.stderrParts
+      .slice(stderrMarker)
+      .filter((_, offset) => !shownStderr?.has(stderrMarker + offset))
+      .map(ensureTrailingNewline)
+      .join('');
     if (pipelineStderr) this.output.push(pipelineStderr);
     if (this.isPipefail()) {
       const nonZero = stageCodes.filter(c => c !== 0);
       this.env.lastExitCode = nonZero.length > 0 ? nonZero[nonZero.length - 1] : 0;
     }
     if (node.negated) this.env.lastExitCode = this.env.lastExitCode === 0 ? 1 : 0;
+  }
+
+  private markStderrShown(index: number): void {
+    const shown = this.stderrShownInOutput.get(this.stderrParts) ?? new Set<number>();
+    shown.add(index);
+    this.stderrShownInOutput.set(this.stderrParts, shown);
   }
 
   private *visitCommand(node: Command): Effects<void> {
@@ -910,10 +922,13 @@ export class BashInterpreter {
         // and must not leak into the next stage's stdin (see
         // `runPipelineStages`).
         explicitStderr = result.stderr;
-        const terminalView = !hasAnyRedirect && this.pipelineDepth === 0 ? result.interleaved : undefined;
+        const terminalView = !hasAnyRedirect && !this.nonLastPipelineStage ? result.interleaved : undefined;
         if (terminalView !== undefined) {
           if (terminalView) this.output.push(ensureTrailingNewline(terminalView));
-          if (result.stderr) this.stderrParts.push(result.stderr);
+          if (result.stderr) {
+            this.stderrParts.push(result.stderr);
+            this.markStderrShown(this.stderrParts.length - 1);
+          }
         } else {
           if (result.output) {
             this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));

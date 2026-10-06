@@ -20,6 +20,7 @@ import {
 } from './codec';
 import {
   NO_TICKET_FLAGS, PA_ENC_TIMESTAMP, PA_TGS_REQ, KrbErrorCode,
+  KDC_OPT_FORWARDABLE, KDC_OPT_PROXIABLE, KDC_OPT_RENEWABLE, KDC_OPT_RENEWABLE_OK, KDC_OPT_RENEW,
   type KdcReq, type KdcRep, type Ticket, type EncTicketPart, type EncKdcRepPart, type PrincipalName,
 } from './types';
 import {
@@ -33,7 +34,14 @@ import { BusHolder } from '@/events/BusHolder';
 
 const TICKET_LIFETIME_SECONDS = 10 * 3600; // AD's default domain Kerberos policy: "Maximum lifetime for user ticket" = 10 hours
 const RENEWABLE_LIFETIME_SECONDS = 7 * 24 * 3600; // AD's default: "Maximum lifetime for user ticket renewal" = 7 days
-const CLOCK_SKEW_SECONDS = 5 * 60; // RFC 4120 §5.2.7.2's usual 5-minute default
+const CLOCK_SKEW_SECONDS = 5 * 60;
+const HOST_SERVICE_CLASSES: ReadonlySet<string> = new Set([
+  'alerter', 'appmgmt', 'cisvc', 'clipsrv', 'browser', 'dhcp', 'dnscache', 'replicator', 'eventlog', 'eventsystem',
+  'policyagent', 'oakley', 'dmserver', 'dns', 'mcsvc', 'fax', 'msiserver', 'ias', 'messenger', 'netlogon', 'netman',
+  'netdde', 'netddedsm', 'nmagent', 'plugplay', 'protectedstorage', 'rasman', 'rpclocator', 'rpc', 'rpcss',
+  'remoteaccess', 'rsvp', 'samss', 'scardsvr', 'scesrv', 'seclogon', 'scm', 'dcom', 'cifs', 'spooler', 'snmp',
+  'schedule', 'tapisrv', 'trksvr', 'trkwks', 'ups', 'time', 'wins', 'www', 'http', 'w3svc', 'iisadmin', 'msdtc',
+]); // RFC 4120 §5.2.7.2's usual 5-minute default
 
 export interface KdcContext {
   store: DirectoryStore;
@@ -105,6 +113,24 @@ export class KdcSessionHandler {
     this.bus().publish({ topic: 'kerberos.tgs.failed', payload: { ...this.kdcRef(), cname, serviceName, errorCode } });
   }
 
+  private serviceKeyFor(sname: PrincipalName, realm: string): string | null {
+    const first = sname.nameString[0];
+    let secret: string | null;
+    if (first === 'krbtgt') secret = this.ctx.store.getUserSecret('krbtgt');
+    else if (sname.nameString.length >= 2) secret = this.computerSecretForServicePrincipal(sname.nameString);
+    else secret = this.ctx.store.getComputerSecret(first);
+    return secret === null ? null : stringToKey(secret, realm);
+  }
+
+  private computerSecretForServicePrincipal(parts: readonly string[]): string | null {
+    const [serviceClass, ...rest] = parts;
+    const direct = this.ctx.store.findComputerByServicePrincipal(parts.join('/'));
+    const aliased = direct ?? (HOST_SERVICE_CLASSES.has(serviceClass.toLowerCase())
+      ? this.ctx.store.findComputerByServicePrincipal(['HOST', ...rest].join('/'))
+      : null);
+    return aliased === null ? null : this.ctx.store.getComputerSecret(aliased);
+  }
+
   private handleAsReq(socket: TcpSocket, req: KdcReq): void {
     const cname = req.reqBody.cname;
     if (!cname || cname.nameString.length === 0) {
@@ -152,19 +178,25 @@ export class KdcSessionHandler {
       if (isUser) this.ctx.store.resetBadPasswordCount(sam);
     }
 
-    const krbtgtSecret = this.ctx.store.getUserSecret('krbtgt');
-    if (krbtgtSecret === null) {
+    const requestedService = req.reqBody.sname;
+    const serviceKey = this.serviceKeyFor(requestedService, realm);
+    if (serviceKey === null) {
       this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
       return;
     }
-    const krbtgtKey = stringToKey(krbtgtSecret, realm);
 
     const sessionKey = randomSessionKey();
     const sessionKeyValue = new TextEncoder().encode(sessionKey);
     const now = this.nowSeconds();
     const endtime = Math.min(req.reqBody.till, now + TICKET_LIFETIME_SECONDS);
-    const renewTill = now + RENEWABLE_LIFETIME_SECONDS;
-    const flags = { ...NO_TICKET_FLAGS, initial: true, preAuthent: paEncTs !== undefined, renewable: true, forwardable: true };
+    const options = req.reqBody.kdcOptions;
+    const renewable = (options & KDC_OPT_RENEWABLE) !== 0
+      || ((options & KDC_OPT_RENEWABLE_OK) !== 0 && req.reqBody.till > now + TICKET_LIFETIME_SECONDS);
+    const renewTill = renewable ? Math.min(req.reqBody.rtime ?? req.reqBody.till, now + RENEWABLE_LIFETIME_SECONDS) : undefined;
+    const flags = {
+      ...NO_TICKET_FLAGS, initial: true, preAuthent: paEncTs !== undefined, renewable,
+      forwardable: (options & KDC_OPT_FORWARDABLE) !== 0, proxiable: (options & KDC_OPT_PROXIABLE) !== 0,
+    };
 
     const encTicketPart: EncTicketPart = {
       flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
@@ -172,7 +204,7 @@ export class KdcSessionHandler {
     };
     const ticket: Ticket = {
       tktVno: 5, realm, sname: req.reqBody.sname,
-      encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher: encryptWithUsage(krbtgtKey, KU_TICKET, encodeEncTicketPart(encTicketPart)) },
+      encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher: encryptWithUsage(serviceKey, KU_TICKET, encodeEncTicketPart(encTicketPart)) },
     };
 
     const encKdcRepPart: EncKdcRepPart = {
@@ -266,7 +298,8 @@ export class KdcSessionHandler {
       return;
     }
     const now = this.nowSeconds();
-    if (ticketPart.endtime < now) {
+    const renewing = (req.reqBody.kdcOptions & KDC_OPT_RENEW) !== 0;
+    if (ticketPart.endtime < now && !renewing) {
       this.failTgs(socket, req, ticketPart.cname.nameString.join('/'), KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED);
       return;
     }
@@ -303,6 +336,11 @@ export class KdcSessionHandler {
       return;
     }
 
+    if (renewing) {
+      this.handleRenew(socket, req, apReq.ticket, ticketPart, ticketDecryptKey, now);
+      return;
+    }
+
     const sessionKey = randomSessionKey();
     const sessionKeyValue = new TextEncoder().encode(sessionKey);
     const endtime = Math.min(req.reqBody.till, ticketPart.endtime);
@@ -328,14 +366,13 @@ export class KdcSessionHandler {
       sname = referralPrincipal(targetRealm);
       serviceKey = deriveInterrealmKey(trust.interrealmKey, realm, targetRealm);
     } else {
-      const serviceName = req.reqBody.sname.nameString[0];
-      const serviceSecret = serviceName === 'krbtgt' ? this.ctx.store.getUserSecret('krbtgt') : this.ctx.store.getComputerSecret(serviceName);
-      if (serviceSecret === null) {
+      const resolvedKey = this.serviceKeyFor(req.reqBody.sname, realm);
+      if (resolvedKey === null) {
         this.failTgs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
         return;
       }
       sname = req.reqBody.sname;
-      serviceKey = stringToKey(serviceSecret, realm);
+      serviceKey = resolvedKey;
     }
 
     const encTicketPart: EncTicketPart = {
@@ -376,6 +413,53 @@ export class KdcSessionHandler {
     this.ctx.writeSecurityEvent?.(4769, 'SuccessAudit',
       `A Kerberos service ticket was requested.\n\nAccount Information:\n\tAccount Name:\t\t${cnameStr}\n\nService Information:\n\tService Name:\t\t${snameStr}\n\nNetwork Information:\n\tTarget Domain Name:\t${targetDomainName}`,
       { TargetUserName: cnameStr, TargetDomainName: targetDomainName, ServiceName: snameStr, Status: '0x0' });
+  }
+
+  private handleRenew(socket: TcpSocket, req: KdcReq, presented: Ticket, ticketPart: EncTicketPart, ticketKey: string, now: number): void {
+    const cnameStr = ticketPart.cname.nameString.join('/');
+    const renewTill = ticketPart.renewTill;
+    if (!ticketPart.flags.renewable || renewTill === undefined) {
+      this.failTgs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_BADOPTION);
+      return;
+    }
+    if (renewTill < now) {
+      this.failTgs(socket, req, cnameStr, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED);
+      return;
+    }
+    const requested = req.reqBody.sname.nameString.join('/');
+    const sname = presented.sname;
+    if (requested !== sname.nameString.join('/')) {
+      this.failTgs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_BADOPTION);
+      return;
+    }
+    const previousLifetime = ticketPart.endtime - (ticketPart.starttime ?? ticketPart.authtime);
+    const endtime = Math.min(renewTill, now + previousLifetime, req.reqBody.till);
+    const sessionKeyValue = new TextEncoder().encode(randomSessionKey());
+    const encTicketPart: EncTicketPart = {
+      flags: ticketPart.flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
+      crealm: ticketPart.crealm, cname: ticketPart.cname, authtime: ticketPart.authtime, starttime: now, endtime, renewTill,
+    };
+    const ticket: Ticket = {
+      tktVno: 5, realm: presented.realm, sname,
+      encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher: encryptWithUsage(ticketKey, KU_TICKET, encodeEncTicketPart(encTicketPart)) },
+    };
+    const encKdcRepPart: EncKdcRepPart = {
+      key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
+      nonce: req.reqBody.nonce, flags: ticketPart.flags, authtime: ticketPart.authtime, starttime: now, endtime, renewTill,
+      srealm: presented.realm, sname,
+    };
+    const rep: KdcRep = {
+      msgType: 'TGS-REP', padata: [], crealm: ticketPart.crealm, cname: ticketPart.cname, ticket,
+      encPart: {
+        etype: AES256_CTS_HMAC_SHA1_96,
+        cipher: encryptWithUsage(new TextDecoder().decode(ticketPart.key.keyValue), KU_TGS_REP_ENC_PART, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
+      },
+    };
+    socket.send(encodeKdcRep(rep));
+    this.bus().publish({
+      topic: 'kerberos.tgs.succeeded',
+      payload: { ...this.kdcRef(), cname: cnameStr, serviceName: sname.nameString.join('/'), referral: false },
+    });
   }
 
   /**
