@@ -291,7 +291,7 @@ describe('§P3 — clés, CSR et certificats', () => {
     expect(lointain).toBe('1');
   });
 
-  it('`-text` déclare que la clé est simulée, là où elle se lit', async () => {
+  it('`-text` affiche le vrai module et le vrai exposant de la clé', async () => {
     const srv = machine();
     await srv.executeCommand(
       'openssl req -x509 -newkey rsa:2048 -keyout /tmp/k6 -out /tmp/t.crt '
@@ -301,9 +301,9 @@ describe('§P3 — clés, CSR et certificats', () => {
 
     expect(out).toContain('Certificate:');
     expect(out).toContain('Subject: CN = texte');
-    // §5 P3 : un module inventé affiché sans mention enseignerait une
-    // fausse confiance.
-    expect(out).toContain('simulated key material');
+    expect(out).toContain('Public-Key: (2048 bit)');
+    expect(out).toContain('Exponent: 65537 (0x10001)');
+    expect(out).not.toContain('simulated key material');
   });
 
   it('`-addext subjectAltName` voyage jusqu\'au certificat', async () => {

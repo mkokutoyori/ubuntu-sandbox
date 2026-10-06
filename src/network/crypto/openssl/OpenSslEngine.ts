@@ -33,7 +33,7 @@ import { materialToP256Public } from '@/crypto/ecc';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { signCertificate, type X509Certificate } from '@/network/pki/X509Certificate';
 import { encodeCertificate, canonicalSerial, sameSerial } from '@/network/pki/der/X509Der';
-import { opensslDistinguishedName, splitDistinguishedName } from '@/network/pki/der/DistinguishedName';
+import { opensslDistinguishedName, slashDistinguishedName, splitDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import {
   certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
@@ -53,6 +53,8 @@ import {
 } from '@/network/tls/legacy/legacyCipherSuites';
 import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
+import { publicKeyTextLines, signatureTextLines, certificateRequestText } from './OpenSslText';
+import { verifyCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { opensslHelpLines } from './OpenSslHelp';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
@@ -300,8 +302,38 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
 // ─── req ────────────────────────────────────────────────────────────
 
+function readRequest(host: OpenSslHost, opts: Map<string, string | true>, path: string): OpenSslResult {
+  const text = host.readFile(path);
+  if (text === null) return fail(`Can't open "${path}" for reading, No such file or directory`);
+  const csr = pemToCsr(text);
+  if (!csr) return fail('Unable to load X509 request');
+
+  let verification = '';
+  if (opts.has('-verify')) {
+    verification = verifyCertificateRequest(csr)
+      ? 'Certificate request self-signature verify OK'
+      : 'Certificate request self-signature verify failure';
+  }
+  const lines: string[] = [];
+  if (opts.has('-text')) lines.push(...certificateRequestText(csr));
+  if (opts.has('-subject')) lines.push(`subject=${opensslDistinguishedName(csr.subject)}`);
+  if (opts.has('-modulus')) lines.push(`Modulus=${modulusHex(csr.publicKey.material)?.toUpperCase() ?? ''}`);
+  if (opts.has('-pubkey')) lines.push(publicKeyToPem(csr.publicKey).trimEnd());
+  if (!opts.has('-noout')) lines.push(csrToPem(csr).trimEnd());
+  const output = lines.join('\n');
+  const out = opts.get('-out');
+  if (typeof out === 'string' && output !== '') {
+    return host.writeFile(out, `${output}\n`) ? { output: '', stderr: verification, exitCode: 0 } : fail(`${out}: cannot write`);
+  }
+  return { output, stderr: verification, exitCode: 0 };
+}
+
 function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('req', argv);
+  const requestPath = opts.get('-in');
+  if (typeof requestPath === 'string' && !opts.has('-new') && !opts.has('-newkey') && !opts.has('-x509')) {
+    return readRequest(host, opts, requestPath);
+  }
 
   const subjBrut = opts.get('-subj');
   if (typeof subjBrut !== 'string') {
@@ -463,15 +495,7 @@ function renderText(cert: X509Certificate): string[] {
     `            Not Before: ${opensslDate(cert.notBefore)}`,
     `            Not After : ${opensslDate(cert.notAfter)}`,
     `        Subject: ${opensslDistinguishedName(cert.subject)}`,
-    '        Subject Public Key Info:',
-    `            Public Key Algorithm: rsaEncryption`,
-    '                RSA Public-Key: (2048 bit)',
-    '                Modulus:',
-    // §5 P3 : la simulation se déclare là où elle est lue, pas en note
-    // de bas de page. Un module inventé affiché sans mention
-    // enseignerait une fausse confiance.
-    '                    <simulated key material — this build does not compute',
-    '                     real RSA moduli; see docs/PRD-OpenSSL.md §3.2>',
+    ...publicKeyTextLines(cert.publicKey),
   ];
   const ext = cert.extensions;
   const critical = new Set(ext?.criticalExtensions ?? []);
@@ -495,6 +519,7 @@ function renderText(cert: X509Certificate): string[] {
       ...ext.authorityInfoAccess.map((a) => `                ${a.method === 'OCSP' ? 'OCSP' : 'CA Issuers'} - URI:${a.uri}`));
   }
   if (lines.length > 0) l.push('        X509v3 extensions:', ...lines);
+  l.push(...signatureTextLines(cert.signatureAlgorithm, cert.signature));
   return l;
 }
 
@@ -530,6 +555,7 @@ function signCsr(
 ): OpenSslResult {
   const csr = pemToCsr(texteCsr);
   if (!csr) return fail('unable to load certificate request');
+  if (!verifyCertificateRequest(csr)) return fail('Certificate request self-signature did not match the contents');
 
   const cheminCa = opts.get('-CA');
   const cheminCaKey = opts.get('-CAkey');
@@ -1171,6 +1197,7 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (texteCsr === null) return fail(`unable to load certificate request: ${cheminCsr}`);
   const csr = pemToCsr(texteCsr);
   if (!csr) return fail('unable to load certificate request');
+  if (!verifyCertificateRequest(csr)) return fail('Signature did not match the certificate request');
 
   const serieCourante = Number.parseInt(host.readFile(CA_SERIAL)?.trim() ?? '1000', 16);
   const serie = (serieCourante + 1).toString(16).toUpperCase().padStart(4, '0');
@@ -1227,7 +1254,7 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     expiration: dateIndex(cert.notAfter),
     revocation: '',
     serie,
-    sujet: `/${csr.subject.replace(/ = /g, '=').replace(/, /g, '/')}`,
+    sujet: slashDistinguishedName(csr.subject),
   });
   ecrireIndex(host, index);
 

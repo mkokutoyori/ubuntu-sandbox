@@ -38,14 +38,14 @@ function wholeSeconds(epochMs: number): number {
   return Math.floor(epochMs / 1000) * 1000;
 }
 
-function canonicalName(entry: string): string {
+export function canonicalGeneralName(entry: string): string {
   if (/^(DNS|IP|email|URI):/s.test(entry)) return entry;
   return IPAddress.tryParse(entry) || IPv6Address.tryParse(entry) ? `IP:${entry}` : `DNS:${entry}`;
 }
 
 export function normalizeCertificateFields(fields: X509CertificateFields): X509CertificateFields {
   const extensions = fields.extensions && fields.extensions.subjectAltName
-    ? { ...fields.extensions, subjectAltName: Object.freeze(fields.extensions.subjectAltName.map(canonicalName)) }
+    ? { ...fields.extensions, subjectAltName: Object.freeze(fields.extensions.subjectAltName.map(canonicalGeneralName)) }
     : fields.extensions;
   return {
     ...fields,

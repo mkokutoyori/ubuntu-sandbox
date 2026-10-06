@@ -23,7 +23,8 @@ import {
 import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
 import { pbkdf2 } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
-import type { X509Certificate } from './X509Certificate';
+import type { X509Certificate, X509CertificateFields } from './X509Certificate';
+import { encodeCertificateRequest, decodeCertificateRequest } from './der/CsrDer';
 import { encodeCertificate, decodeCertificate } from './der/X509Der';
 import { encryptPrivateKeyPkcs8, decryptPrivateKeyPkcs8 } from './der/EncryptedKeyDer';
 import {
@@ -42,6 +43,7 @@ export type PemLabel =
   | 'ENCRYPTED PRIVATE KEY'
   | 'PUBLIC KEY'
   | 'CERTIFICATE REQUEST'
+  | 'NEW CERTIFICATE REQUEST'
   | 'X509 CRL'
   | 'OCSP REQUEST'
   | 'OCSP RESPONSE'
@@ -55,7 +57,7 @@ export interface CertificateRequest {
   readonly publicKey: PkiPublicKey;
   readonly signatureAlgorithm: 'sha256WithRSAEncryption' | 'ecdsa-with-SHA256';
   readonly signature: string;
-  readonly extensions?: Readonly<{ subjectAltName?: readonly string[] }>;
+  readonly extensions?: X509CertificateFields['extensions'];
 }
 
 function armour(label: PemLabel, payload: unknown): string {
@@ -242,12 +244,21 @@ export function pemToPublicKey(pem: string): PkiPublicKey | null {
 // ─── Demandes de signature ──────────────────────────────────────────
 
 export function csrToPem(csr: CertificateRequest): string {
-  return armour('CERTIFICATE REQUEST', csr);
+  return armourBytes('CERTIFICATE REQUEST', encodeCertificateRequest(csr));
 }
 
 export function pemToCsr(pem: string): CertificateRequest | null {
-  const o = unarmour(pem, 'CERTIFICATE REQUEST') as CertificateRequest | null;
-  return o && typeof o.subject === 'string' ? o : null;
+  const bytes = unarmourBytes(pem, 'CERTIFICATE REQUEST') ?? unarmourBytes(pem, 'NEW CERTIFICATE REQUEST');
+  if (bytes === null) return null;
+  try {
+    if (bytes[0] === 0x7b) {
+      const legacy = JSON.parse(bytesToUtf8(bytes)) as CertificateRequest;
+      return typeof legacy.subject === 'string' ? legacy : null;
+    }
+    return decodeCertificateRequest(bytes);
+  } catch {
+    return null;
+  }
 }
 
 // ─── Liste de révocation ────────────────────────────────────────────
