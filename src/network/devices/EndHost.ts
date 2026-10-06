@@ -6,7 +6,7 @@
  * - IPv4 packet handling with proper encapsulation (RFC 791)
  * - ICMP echo request/reply (RFC 792)
  * - Default gateway for inter-subnet communication
- * - Real RTT measurement using performance.now()
+ * - Real RTT measurement using PathClock.now()
  *
  * Subclasses (LinuxPC, WindowsPC) only implement terminal commands
  * and OS-specific output formatting.
@@ -18,6 +18,7 @@
  *          └─ ICMP Packet (protocol 1)
  */
 
+import { PathClock } from '../core/time/PathClock';
 import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply } from '../icmp/IcmpEcho';
@@ -4322,7 +4323,7 @@ export abstract class EndHost extends Equipment {
     const id = opts?.ident ?? this.allocateEchoIdent();
 
     const targetIpStr = targetIP.toString();
-    const sentAt = performance.now();
+    const sentAt = PathClock.now();
     const useTtl = ttl ?? this.defaultTTL;
 
     // Phase 5.6: settle through the bus instead of a pendingPings Map.
@@ -4390,8 +4391,8 @@ export abstract class EndHost extends Equipment {
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason);
-      const artificialDelayMs = port.getCable()?.roundTripDelayMs(port) ?? 0;
-      const rtt = performance.now() - sentAt + artificialDelayMs;
+      const rtt = PathClock.now() - sentAt;
+      if (rtt > timeoutMs) throw new Error('timeout');
       return {
         success: true,
         rttMs: rtt,
@@ -4780,7 +4781,7 @@ export abstract class EndHost extends Equipment {
     const unsubReply = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
       const p = e.payload;
       if (p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq) {
-        reply = { rttMs: performance.now() - sentAt, ttl: p.ttl };
+        reply = { rttMs: PathClock.now() - sentAt, ttl: p.ttl };
       }
     });
     const unsubFailed = this.getBus().subscribe('host.icmp.echo-failed', (e) => {
@@ -4793,7 +4794,7 @@ export abstract class EndHost extends Equipment {
 
     const icmp: ICMPPacket = { type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize: 56 };
     const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, 64);
-    const sentAt = performance.now();
+    const sentAt = PathClock.now();
 
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,
@@ -5066,7 +5067,7 @@ export abstract class EndHost extends Equipment {
   ): TraceProbeOutcome {
     const flags = noFlags();
     flags.syn = true;
-    const sentAt = performance.now();
+    const sentAt = PathClock.now();
     const detail = this.tcpv2.scanProbeDetail(targetIP.toString(), port, flags, {
       ttl,
       dontFragment: socket.dontFragment === true,
@@ -5075,7 +5076,7 @@ export abstract class EndHost extends Equipment {
       ...(socket.sourceIp === undefined ? {} : { sourceIp: socket.sourceIp.toString() }),
       ...(socket.sourcePort === undefined ? {} : { sourcePort: socket.sourcePort }),
     });
-    const rttMs = performance.now() - sentAt;
+    const rttMs = PathClock.now() - sentAt;
     if (detail.reply === 'syn-ack' || detail.reply === 'rst' || detail.reply === 'rst-window') {
       return { timeout: false, reached: true, ip: targetIP.toString(), rttMs };
     }
@@ -5134,7 +5135,7 @@ export abstract class EndHost extends Equipment {
     quotesProbe: (pl: HostIcmpUnreachablePayload) => boolean,
     send: () => void,
   ): Promise<{ payload: HostIcmpUnreachablePayload; rttMs: number } | null> {
-    const sentAt = performance.now();
+    const sentAt = PathClock.now();
     const answer = waitForEvent(
       this.getBus(),
       'host.icmp.unreachable',
@@ -5145,7 +5146,7 @@ export abstract class EndHost extends Equipment {
     send();
     try {
       const payload = await answer;
-      return { payload, rttMs: performance.now() - sentAt };
+      return { payload, rttMs: PathClock.now() - sentAt };
     } catch (err) {
       if (err instanceof WaitForEventTimeoutError) return null;
       throw err;
@@ -5299,7 +5300,7 @@ export abstract class EndHost extends Equipment {
         const id = this.pingIdCounter;
         const seq = p + 1;
         const targetIpStr = targetIP.toString();
-        const sentAt = performance.now();
+        const sentAt = PathClock.now();
 
         // Phase 5.6: traceroute also settles via the bus.
         const replyP = waitForEvent(
@@ -5333,7 +5334,7 @@ export abstract class EndHost extends Equipment {
 
         const replyOutcome = replyP.then((pl) => ({
           ip: pl.fromIp,
-          rttMs: performance.now() - sentAt,
+          rttMs: PathClock.now() - sentAt,
           timeout: false, reached: true,
           unreachable: undefined as boolean | undefined,
           icmpCode: undefined as number | undefined,
@@ -5343,7 +5344,7 @@ export abstract class EndHost extends Equipment {
           const isUnreachable = pl.reason.includes('Destination unreachable');
           return {
             ip: pl.fromIp,
-            rttMs: performance.now() - sentAt,
+            rttMs: PathClock.now() - sentAt,
             timeout: false, reached: false,
             unreachable: isUnreachable,
             icmpCode: codeMatch ? parseInt(codeMatch[1], 10) : undefined,
@@ -5353,7 +5354,7 @@ export abstract class EndHost extends Equipment {
         replyOutcome.catch(() => {});
         failOutcome.catch(() => {});
 
-        const probe = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
+        const answered = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
           if (err instanceof WaitForEventTimeoutError) {
             return { timeout: true, reached: false } as {
               ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
@@ -5362,6 +5363,9 @@ export abstract class EndHost extends Equipment {
           }
           throw err;
         });
+        const probe = answered.rttMs !== undefined && answered.rttMs > timeoutMs
+          ? { timeout: true, reached: false } as typeof answered
+          : answered;
 
         probes.push({
           responded: !probe.timeout,
@@ -6073,7 +6077,7 @@ export abstract class EndHost extends Equipment {
     const id = this.ping6IdCounter;
 
     const targetIpStr = targetIP.toString();
-    const sentAt = performance.now();
+    const sentAt = PathClock.now();
 
     const replyPromise = waitForEvent(
       this.getBus(),
@@ -6110,8 +6114,8 @@ export abstract class EndHost extends Equipment {
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason);
-      const artificialDelayMs = port.getCable()?.roundTripDelayMs(port) ?? 0;
-      const rtt = performance.now() - sentAt + artificialDelayMs;
+      const rtt = PathClock.now() - sentAt;
+      if (rtt > timeoutMs) throw new Error('timeout');
       return {
         success: true,
         rttMs: rtt,

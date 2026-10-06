@@ -1,4 +1,5 @@
 import type { DiscoveryProbe, NmapOptions, ScanType } from './NmapOptions';
+import { PathClock } from '@/network/core/time/PathClock';
 import { OS_CLASS_BY_NAME, initialTtlOf, type OsClassRecord } from './NmapProbes';
 import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
@@ -266,7 +267,7 @@ function tcpResult(
   trace?: TraceContext,
 ): ProbedPort {
   const kind = statelessKindOf(options.scanType);
-  const sent = performance.now();
+  const sent = PathClock.now();
   const stateless = kind && probes.statelessOutcome
     ? withDecoys(options, (shape) =>
       probes.statelessOutcome!(ip, port, kind, options.scanFlags, shape))
@@ -292,7 +293,7 @@ function tcpResult(
     state = outcome === 'open' ? 'open' : outcome === 'refused' ? 'closed' : 'filtered';
     reason = TCP_SCAN_REASON[outcome];
   }
-  const rttMs = reason === 'no-response' ? undefined : performance.now() - sent;
+  const rttMs = reason === 'no-response' ? undefined : PathClock.now() - sent;
   let service = serviceName(port, 'tcp');
   let version: string | undefined;
   if (options.versionScan && state === 'open' && versionScanAllowed(options, port)) {
@@ -311,9 +312,9 @@ function tcpResult(
 function udpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): ProbedPort {
-  const sent = performance.now();
+  const sent = PathClock.now();
   const { state, replyTtl } = probes.udpState(ip, port, options.probeShape);
-  const rttMs = state === 'open|filtered' ? undefined : performance.now() - sent;
+  const rttMs = state === 'open|filtered' ? undefined : PathClock.now() - sent;
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
   let service = serviceName(port, 'udp');
   let version: string | undefined;

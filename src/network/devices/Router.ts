@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import { PathClock } from '../core/time/PathClock';
 import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../dhcp/DhcpRelay';
 import { Equipment } from '../equipment/Equipment';
@@ -5697,7 +5698,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (hooks?.shouldStop?.()) break;
       this.pingIdCounter++;
       const id = this.pingIdCounter;
-      const sentAt = performance.now();
+      const sentAt = PathClock.now();
       const reply = waitForEvent(
         this.getBus(), 'host.icmp.echo-reply',
         (p) => p.deviceId === this.id && p.fromIp === targetStr && p.id === id && p.seq === seq,
@@ -5728,10 +5729,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           });
           continue;
         }
-        rows.push({
-          success: true, rttMs: performance.now() - sentAt,
-          ttl: winner.r.ttl, seq, fromIP: targetStr,
-        });
+        const rtt = PathClock.now() - sentAt;
+        if (rtt > timeoutMs) {
+          rows.push({ success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' });
+          continue;
+        }
+        rows.push({ success: true, rttMs: rtt, ttl: winner.r.ttl, seq, fromIP: targetStr });
       } catch {
         rows.push({ success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' });
       }
@@ -5777,7 +5780,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.pingIdCounter++;
         const id = this.pingIdCounter;
         const seq = p + 1;
-        const sentAt = performance.now();
+        const sentAt = PathClock.now();
 
         const replyP = waitForEvent(
           this.getBus(), 'host.icmp.echo-reply',
@@ -5791,11 +5794,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           { timeoutMs, scheduler: this.getRouterScheduler() },
         );
         const replyOutcome = replyP.then((pl) => ({
-          ip: pl.fromIp, rttMs: performance.now() - sentAt,
+          ip: pl.fromIp, rttMs: PathClock.now() - sentAt,
           timeout: false, reached: true, unreachable: undefined as boolean | undefined,
         }));
         const failOutcome = failP.then((pl) => ({
-          ip: pl.fromIp, rttMs: performance.now() - sentAt,
+          ip: pl.fromIp, rttMs: PathClock.now() - sentAt,
           timeout: false, reached: false, unreachable: pl.reason === 'unreachable',
         }));
         replyOutcome.catch(() => {});
@@ -5803,7 +5806,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
         this.ipv6Engine.sendEchoRequest(egress, targetIP, id, seq, 56, hopLimit);
 
-        const probe = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
+        const answered = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
           if (err instanceof WaitForEventTimeoutError) {
             return { timeout: true, reached: false } as {
               ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
@@ -5812,6 +5815,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           }
           throw err;
         });
+        const probe = answered.rttMs !== undefined && answered.rttMs > timeoutMs
+          ? { timeout: true, reached: false } as typeof answered
+          : answered;
 
         probes.push({
           responded: !probe.timeout, rttMs: probe.rttMs,
@@ -5894,7 +5900,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         const id = this.pingIdCounter;
         const seq = p + 1;
         const targetIpStr = targetIP.toString();
-        const sentAt = performance.now();
+        const sentAt = PathClock.now();
 
         // Phase 5.9: traceroute settles via the bus.
         const replyP = waitForEvent(
@@ -5925,13 +5931,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
         const replyOutcome = replyP.then((pl) => ({
           ip: pl.fromIp,
-          rttMs: performance.now() - sentAt,
+          rttMs: PathClock.now() - sentAt,
           timeout: false, reached: true,
           unreachable: undefined as boolean | undefined,
         }));
         const failOutcome = failP.then((pl) => ({
           ip: pl.fromIp,
-          rttMs: performance.now() - sentAt,
+          rttMs: PathClock.now() - sentAt,
           timeout: false, reached: false,
           unreachable: pl.reason.includes('Destination unreachable'),
         }));
@@ -5939,7 +5945,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         replyOutcome.catch(() => {});
         failOutcome.catch(() => {});
 
-        const probe = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
+        const answered = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
           if (err instanceof WaitForEventTimeoutError) {
             return { timeout: true, reached: false } as {
               ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
@@ -5948,6 +5954,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           }
           throw err;
         });
+        const probe = answered.rttMs !== undefined && answered.rttMs > timeoutMs
+          ? { timeout: true, reached: false } as typeof answered
+          : answered;
 
         probes.push({
           responded: !probe.timeout,
@@ -5981,7 +5990,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private async udpTraceProbe(
     destinationPort: number, timeoutMs: number, send: () => void,
   ): Promise<{ probe: TracerouteProbe; reached: boolean }> {
-    const sentAt = performance.now();
+    const sentAt = PathClock.now();
     const answer = waitForEvent(
       this.getBus(),
       'host.icmp.unreachable',
@@ -5992,7 +6001,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     send();
     try {
       const reply = await answer;
-      const probe: TracerouteProbe = { responded: true, rttMs: performance.now() - sentAt, ip: reply.fromIp };
+      const probe: TracerouteProbe = { responded: true, rttMs: PathClock.now() - sentAt, ip: reply.fromIp };
       if (reply.code === 'ttl-exceeded') return { probe, reached: false };
       if (reply.code === 'port-unreachable') return { probe, reached: true };
       return { probe: { ...probe, unreachable: true, code: reply.code }, reached: false };
@@ -6055,7 +6064,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const id = this.pingIdCounter;
 
     const targetIpStr = targetIP.toString();
-    const sentAt = performance.now();
+    const sentAt = PathClock.now();
 
     // Phase 5.8: settle via the reactive bus instead of pendingPings.
     const replyPromise = waitForEvent(
@@ -6137,7 +6146,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
               : 'timeout';
         throw err;
       }
-      const rtt = performance.now() - sentAt;
+      const rtt = PathClock.now() - sentAt;
+      if (rtt > timeoutMs) {
+        this.emitIcmpEchoTimeout({ toIp: targetIpStr, id, seq });
+        throw new Error('timeout');
+      }
       return {
         success: true,
         rttMs: rtt,

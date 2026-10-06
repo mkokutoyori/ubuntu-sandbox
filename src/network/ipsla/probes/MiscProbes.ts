@@ -1,4 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
+import { PathClock } from '@/network/core/time/PathClock';
+import { elapsedWholeMs } from './ElapsedMs';
 import type { IScheduler } from '@/events/Scheduler';
 import { IPAddress } from '../../core/types';
 import { decodeDnsMessage, encodeDnsMessage } from '../../dns/wire/DnsMessageCodec';
@@ -34,9 +36,9 @@ export async function runTcpConnectProbe(
       diagText: 'No destination port configured', respondingAddress: null,
     };
   }
-  const startedAt = scheduler.now();
+  const startedAt = PathClock.now();
   const result = await host.connectTcp(destination.toString(), port, config.timeoutMs);
-  const elapsed = Math.max(0, scheduler.now() - startedAt);
+  const elapsed = elapsedWholeMs(startedAt);
   if (result.refused) {
     return {
       returnCode: 'dropped', rttMs: null,
@@ -79,7 +81,7 @@ export async function runHttpProbe(
     };
   }
 
-  const dnsStartedAt = scheduler.now();
+  const dnsStartedAt = PathClock.now();
   let targetIp = parsed.host;
   let dnsRtt = 0;
   if (!IPAddress.tryParse(parsed.host)) {
@@ -91,7 +93,7 @@ export async function runHttpProbe(
       };
     }
     targetIp = resolved;
-    dnsRtt = Math.max(0, scheduler.now() - dnsStartedAt);
+    dnsRtt = elapsedWholeMs(dnsStartedAt);
   }
 
   const destination = IPAddress.tryParse(targetIp);
@@ -109,9 +111,9 @@ export async function runHttpProbe(
     };
   }
 
-  const connectStartedAt = scheduler.now();
+  const connectStartedAt = PathClock.now();
   const result = host.fetchHttp(targetIp, parsed.port, parsed.path, 'GET');
-  const transactionRtt = Math.max(0, scheduler.now() - connectStartedAt);
+  const transactionRtt = elapsedWholeMs(connectStartedAt);
   const totalRtt = dnsRtt + transactionRtt;
 
   if (!result.ok) {
@@ -182,7 +184,7 @@ export async function runDnsProbe(
   };
 
   const sourcePort = transport.allocateSourcePort();
-  const startedAt = scheduler.now();
+  const startedAt = PathClock.now();
 
   const response = await new Promise<DnsMessage | null>((resolve) => {
     let settled = false;
@@ -214,7 +216,7 @@ export async function runDnsProbe(
       diagText: `No response from ${server}`, respondingAddress: null,
     };
   }
-  const elapsed = Math.max(0, scheduler.now() - startedAt);
+  const elapsed = elapsedWholeMs(startedAt);
   if (response.flags.rcode !== DnsRcode.NOERROR) {
     return {
       returnCode: 'applicationSpecific', rttMs: elapsed,

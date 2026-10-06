@@ -1,4 +1,5 @@
 import type { IScheduler } from '@/events/Scheduler';
+import { PathClock } from '@/network/core/time/PathClock';
 import { IPAddress } from '../../core/types';
 import type {
   IpSlaHost, SlaJitterMeasurement, SlaOperationConfig, SlaProbeOutcome,
@@ -145,7 +146,7 @@ export async function runUdpProbe(request: UdpProbeRequest): Promise<SlaProbeOut
         t1: reply.sentAtMs,
         t2: reply.receivedAtResponderMs,
         t3: reply.transmittedAtResponderMs,
-        t4: scheduler.now(),
+        t4: PathClock.now(),
         clockSynchronized: reply.clockSynchronized,
         receivedSequences: reply.receivedSequences ?? [],
         verifyPattern: reply.verifyPattern,
@@ -158,7 +159,7 @@ export async function runUdpProbe(request: UdpProbeRequest): Promise<SlaProbeOut
         type: 'ipsla-probe-request',
         operationId: config.id,
         sequence,
-        sentAtMs: scheduler.now(),
+        sentAtMs: PathClock.now(),
         payloadSize: config.requestDataSize,
         verifyPattern: config.verifyData ? verificationPattern(config.id, sequence) : null,
       };

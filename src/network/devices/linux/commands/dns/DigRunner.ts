@@ -1,5 +1,5 @@
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
-import { getDefaultScheduler } from '@/events/Scheduler';
+import { PathClock } from '@/network/core/time/PathClock';
 import { DnsClass, RRType } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
@@ -319,9 +319,9 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
   const port = invocation.port ?? 53;
   let server = invocation.server;
 
-  const rootStartedAt = getDefaultScheduler().now();
+  const rootStartedAt = PathClock.now();
   const rootMessage = await query(server, '.', 'NS', timeoutMs, { recursionDesired: false, port: invocation.port });
-  const rootElapsedMs = getDefaultScheduler().now() - rootStartedAt;
+  const rootElapsedMs = PathClock.now() - rootStartedAt;
   let nsRecords: ResourceRecord<NsRecordData>[] = [];
   let glue: readonly ResourceRecord<ResourceRecordData>[] = [];
   if (rootMessage && (rootMessage.answers.length > 0 || rootMessage.authorities.length > 0)) {
@@ -345,12 +345,12 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
       server = nextServer;
     }
 
-    const hopStartedAt = getDefaultScheduler().now();
+    const hopStartedAt = PathClock.now();
     const message = await query(
       server, invocation.domain, invocation.qtype, timeoutMs,
       { recursionDesired: false, port: invocation.port ?? undefined },
     );
-    const hopElapsedMs = getDefaultScheduler().now() - hopStartedAt;
+    const hopElapsedMs = PathClock.now() - hopStartedAt;
     if (!message) {
       lines.push(';; connection timed out; no servers could be reached');
       return lines.join('\n');
@@ -391,9 +391,9 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
     qclass: invocation.qclass,
   };
   let message: DnsMessage | null = null;
-  let startedAt = getDefaultScheduler().now();
+  let startedAt = PathClock.now();
   for (let attempt = 0; attempt < Math.max(1, invocation.tries); attempt++) {
-    startedAt = getDefaultScheduler().now();
+    startedAt = PathClock.now();
     message = await query(
       invocation.server, invocation.domain, invocation.qtype,
       invocation.timeoutSeconds * 1000, options,
@@ -412,13 +412,13 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
   }
 
   if (invocation.qtype === 'AXFR' || invocation.qtype === 'IXFR') {
-    return transferOutput(invocation, message, getDefaultScheduler().now() - startedAt);
+    return transferOutput(invocation, message, PathClock.now() - startedAt);
   }
   if (invocation.short) return shortOutput(message.answers);
   if (invocation.noAll && invocation.showAnswer) {
     return message.answers.filter(isDisplayableRecord).map(formatRecordLine).join('\n');
   }
-  return fullOutput(invocation, message, getDefaultScheduler().now() - startedAt);
+  return fullOutput(invocation, message, PathClock.now() - startedAt);
 }
 
 /** Reads a `dig -f <file>` batch file: one query per non-empty, non-comment line. */

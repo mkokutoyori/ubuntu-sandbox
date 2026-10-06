@@ -9,6 +9,7 @@ export interface TappedFrame {
   readonly frame: EthernetFrame;
   readonly seq: number;
   readonly at: Date;
+  readonly atMicros: number;
 }
 
 export type FrameTap = (tapped: TappedFrame) => void;
@@ -25,10 +26,11 @@ export class TapPoint {
 
   get size(): number { return this.taps.size; }
 
-  emit(iface: string, direction: FrameDirection, frame: EthernetFrame): void {
+  emit(iface: string, direction: FrameDirection, frame: EthernetFrame, observedAtMicros?: () => number): void {
     if (this.taps.size === 0) return;
     const { seq, at } = lineageOf(frame);
-    const tapped: TappedFrame = { iface, direction, frame, seq, at };
+    const atMicros = observedAtMicros?.() ?? at.getTime() * 1000;
+    const tapped: TappedFrame = { iface, direction, frame, seq, at: new Date(Math.floor(atMicros / 1000)), atMicros };
     for (const tap of [...this.taps]) tap(tapped);
   }
 }

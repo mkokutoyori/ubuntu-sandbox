@@ -1,4 +1,5 @@
 import { OwnedScheduler, getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { PathClock } from './time/PathClock';
 
 export class SystemClock {
   private overrideMs: number | null = null;
@@ -48,6 +49,6 @@ export function schedulerWallClock(
       origin = reading;
     }
     lastReading = reading;
-    return epochAtOrigin + (reading - origin);
+    return epochAtOrigin + (reading - origin) + PathClock.horizon();
   };
 }

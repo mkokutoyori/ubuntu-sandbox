@@ -12,6 +12,7 @@ import { beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/deviceNameCounters';
 import { Logger } from '@/network/core/Logger';
+import { PathClock } from '@/network/core/time/PathClock';
 import { __setDefaultEventBus } from '@/events/EventBus';
 import { __setDefaultScheduler } from '@/events/Scheduler';
 import { resetFaultRegistry } from '@/network/faults/FaultRegistry';
@@ -25,6 +26,7 @@ beforeEach(() => {
   resetCounters();
   resetDeviceCounters();
   Logger.reset();
+  PathClock.reset();
   __setDefaultEventBus(null);
   __setDefaultScheduler(null);
   // The fault registry is a topology-wide singleton like the ones above:

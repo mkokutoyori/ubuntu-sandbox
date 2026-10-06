@@ -19,8 +19,8 @@ export interface CookedInterfaces {
 }
 
 export class TcpdumpRenderState {
-  prev: Date | null = null;
-  first: Date | null = null;
+  prev: CaptureFrame | null = null;
+  first: CaptureFrame | null = null;
   count = 0;
   readonly conversations = new Map<string, { seq: number; ack: number }>();
 
@@ -111,22 +111,25 @@ export function footer(captured: number, received: number): string[] {
   ];
 }
 
-function fraction(date: Date, nano: boolean): string {
-  const ms = String(date.getMilliseconds()).padStart(3, '0');
-  return nano ? `${ms}000000` : `${ms}000`;
+function microsOf(frame: CaptureFrame): number {
+  return frame.atMicros ?? frame.at.getTime() * 1000;
 }
 
-function clockOf(date: Date, nano: boolean): string {
-  return date.toTimeString().slice(0, 8) + '.' + fraction(date, nano);
+function fraction(micros: number, nano: boolean): string {
+  const us = String(micros % 1_000_000).padStart(6, '0');
+  return nano ? `${us}000` : us;
 }
 
-function elapsed(deltaMs: number, nano: boolean): string {
-  const whole = Math.floor(deltaMs / 1000);
+function clockOf(frame: CaptureFrame, nano: boolean): string {
+  return frame.at.toTimeString().slice(0, 8) + '.' + fraction(microsOf(frame), nano);
+}
+
+function elapsed(deltaMicros: number, nano: boolean): string {
+  const whole = Math.floor(deltaMicros / 1_000_000);
   const hh = String(Math.floor(whole / 3600) % 24).padStart(2, '0');
   const mm = String(Math.floor((whole % 3600) / 60)).padStart(2, '0');
   const ss = String(whole % 60).padStart(2, '0');
-  const ms = String(deltaMs % 1000).padStart(3, '0');
-  return ` ${hh}:${mm}:${ss}.${nano ? `${ms}000000` : `${ms}000`} `;
+  return ` ${hh}:${mm}:${ss}.${fraction(deltaMicros, nano)} `;
 }
 
 function timestamp(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
@@ -135,22 +138,22 @@ function timestamp(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRende
     case 'none':
       return '';
     case 'epoch':
-      return `${Math.floor(frame.at.getTime() / 1000)}.${fraction(frame.at, nano)} `;
+      return `${Math.floor(microsOf(frame) / 1_000_000)}.${fraction(microsOf(frame), nano)} `;
     case 'delta': {
-      const reference = state.prev ?? frame.at;
-      return elapsed(Math.max(0, frame.at.getTime() - reference.getTime()), nano);
+      const reference = state.prev ?? frame;
+      return elapsed(Math.max(0, microsOf(frame) - microsOf(reference)), nano);
     }
     case 'since-first': {
-      const reference = state.first ?? frame.at;
-      return elapsed(Math.max(0, frame.at.getTime() - reference.getTime()), nano);
+      const reference = state.first ?? frame;
+      return elapsed(Math.max(0, microsOf(frame) - microsOf(reference)), nano);
     }
     case 'datetime': {
       const d = frame.at;
       const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      return `${date} ${clockOf(d, nano)} `;
+      return `${date} ${clockOf(frame, nano)} `;
     }
     default:
-      return `${clockOf(frame.at, nano)} `;
+      return `${clockOf(frame, nano)} `;
   }
 }
 
@@ -564,8 +567,8 @@ export function formatFrame(
   frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState,
 ): string {
   const ts = timestamp(frame, opt, state);
-  state.prev = frame.at;
-  state.first ??= frame.at;
+  state.prev = frame;
+  state.first ??= frame;
   state.count++;
   const number = opt.packetNumbers ? `${String(state.count).padStart(5, ' ')}  ` : '';
   const cooked = state.cooked;

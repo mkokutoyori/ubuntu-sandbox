@@ -24,6 +24,7 @@ import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { EventBus, type IEventBus } from '@/events/EventBus';
 import { OwnedScheduler, getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { SystemClock, schedulerWallClock } from '../core/SystemClock';
+import { PathClock } from '../core/time/PathClock';
 
 export abstract class Equipment {
   readonly id: string;
@@ -198,6 +199,21 @@ export abstract class Equipment {
     return false;
   }
 
+  private frozenWall: { readonly cascade: number; readonly ms: number } | null = null;
+
+  protected observationMicros(): number {
+    const cascade = PathClock.cascadeId();
+    if (cascade === null) return Math.round(this.systemClock.now() * 1000);
+    if (this.frozenWall?.cascade !== cascade) {
+      this.frozenWall = { cascade, ms: this.systemClock.now() - PathClock.horizon() };
+    }
+    return Math.round((this.frozenWall.ms + PathClock.now()) * 1000);
+  }
+
+  protected observationTime(): Date {
+    return new Date(Math.floor(this.observationMicros() / 1000));
+  }
+
   attachCapture(tap: FrameTap, iface?: string): DetachTap {
     return this.captureTap.attach((tapped) => {
       if (iface !== undefined && tapped.iface !== iface) return;
@@ -346,7 +362,7 @@ export abstract class Equipment {
       this.handleFrame(portName, frame);
     });
     port.attachTap((tapped) => {
-      this.captureTap.emit(tapped.iface, tapped.direction, tapped.frame);
+      this.captureTap.emit(tapped.iface, tapped.direction, tapped.frame, () => this.observationMicros());
     });
     this.ports.set(port.getName(), port);
   }

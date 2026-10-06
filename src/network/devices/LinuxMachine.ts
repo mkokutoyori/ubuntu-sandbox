@@ -4957,7 +4957,7 @@ export abstract class LinuxMachine extends EndHost
     if (wantPort) {
       unsubs.push(attachOrderedCapture(
         this,
-        (tapped) => sink(decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, tapped.at)),
+        (tapped) => sink(decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, tapped.at, tapped.atMicros)),
         iface === 'any' ? undefined : iface));
     }
 
@@ -4965,10 +4965,10 @@ export abstract class LinuxMachine extends EndHost
       const accept = (toIp: string) => iface === 'lo' || toIp.startsWith('127.');
       unsubs.push(bus.subscribeWhere('host.icmp.echo-sent',
         (p) => p.deviceId === id && accept(p.toIp),
-        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-request', new Date()))));
+        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-request', this.observationTime()))));
       unsubs.push(bus.subscribeWhere('host.icmp.echo-reply',
         (p) => p.deviceId === id && accept(p.toIp),
-        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-reply', new Date()))));
+        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-reply', this.observationTime()))));
     }
 
     if (!this.vlanSubInterfaces.has(iface)) {

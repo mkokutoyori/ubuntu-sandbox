@@ -38,8 +38,8 @@
  * le compteur de sortie ; `markCongestionExperienced` (une copie de la trame
  * avec CE, l'en-tete IPv4 recalcule, la meme position dans la file de
  * capture) ; l'evenement `cable.frame.marked` et `CableStats.framesMarked` ;
- * `tc` lit et ecrit cette table par interface ; le RTT d'un ping ajoute le
- * delai des DEUX sorties (`roundTripDelayMs`), le test de la liaison RAC lit
+ * `tc` lit et ecrit cette table par interface ; le RTT d'un ping est la somme
+ * des delais de trajet des DEUX sorties (`Cable.transitDelayMs`, lu sur l'horloge de trajet), le test de la liaison RAC lit
  * `isDegraded()` ; l'export de topologie ecrit la qdisc de chaque extremite.
  * La perte, la corruption et le delai du CABLE (`setPacketLossRate`,
  * `setCorruptionRate`, `setArtificialDelayMs`) restent la propriete du cable,
@@ -163,8 +163,10 @@ describe('tc netem acts on the egress of the interface it names, nowhere else', 
     const l = await lab();
     await l.a.executeCommand('sudo tc qdisc add dev eth0 root netem delay 200ms');
     await l.b.executeCommand('sudo tc qdisc add dev eth0 root netem delay 100ms');
-    expect(l.cable.roundTripDelayMs(l.a.getPort('eth0')!)).toBe(300);
-    expect(l.cable.roundTripDelayMs(l.b.getPort('eth0')!)).toBe(300);
+    const out = String(await l.a.executeCommand('ping -c 1 192.168.1.2'));
+    const rtt = Number(/time=([\d.]+) ms/.exec(out)![1]);
+    expect(rtt).toBeGreaterThanOrEqual(300);
+    expect(rtt).toBeLessThan(301);
   });
 });
 
