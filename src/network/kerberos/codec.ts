@@ -19,7 +19,7 @@ import {
 import {
   type PrincipalName, type EncryptionKey, type EncryptedData, type TicketFlags, NO_TICKET_FLAGS,
   type Ticket, type EncTicketPart, type PaData, type KdcReqBody, type KdcReq,
-  type EncKdcRepPart, type KdcRep, type KrbError, type Authenticator, type ApReq, type EtypeInfo2Entry,
+  type EncKdcRepPart, type KdcRep, type KrbError, type Authenticator, type ApReq, type ApRep, type EncApRepPart, type EtypeInfo2Entry,
 } from './types';
 
 const GENERALIZED_TIME_TAG = 0x18;
@@ -473,29 +473,75 @@ export function isKrbError(bytes: Uint8Array): boolean {
 }
 
 // ─── Authenticator / AP-REQ (RFC 4120 §5.5.1) ───────────────────────────────
-// cksum/subkey/seq-number/authorization-data omitted — no cross-realm
-// authorization data or session-key renegotiation modeled yet (PRD scope).
 
 export function encodeAuthenticator(a: Authenticator): Uint8Array {
-  const body = encodeSequence([
+  const parts = [
     explicit(0, encodeInteger(KRB_PVNO)),
     explicit(1, encodeKerberosString(a.crealm)),
     explicit(2, encodePrincipalName(a.cname)),
-    explicit(4, encodeInteger(a.cusec)),
-    explicit(5, encodeKerberosTime(a.ctime)),
-  ]);
-  return encodeApplication(2, true, body);
+  ];
+  if (a.cksum !== undefined) {
+    parts.push(explicit(3, encodeSequence([
+      explicit(0, encodeInteger(a.cksum.type)),
+      explicit(1, rawOctetString(a.cksum.checksum)),
+    ])));
+  }
+  parts.push(explicit(4, encodeInteger(a.cusec)), explicit(5, encodeKerberosTime(a.ctime)));
+  if (a.subkey !== undefined) parts.push(explicit(6, encodeEncryptionKey(a.subkey)));
+  if (a.seqNumber !== undefined) parts.push(explicit(7, encodeInteger(a.seqNumber)));
+  return encodeApplication(2, true, encodeSequence(parts));
 }
 
 export function decodeAuthenticator(bytes: Uint8Array): Authenticator {
   const app = parseTLV(bytes, 0);
   const seq = parseTLV(app.content, 0);
   const fields = fieldsOf(seq.content);
+  const cksum = fields.get(3);
+  const subkey = fields.get(6);
+  const seqNumber = fields.get(7);
+  const cksumFields = cksum === undefined ? undefined : fieldsOf(cksum.content);
   return {
     crealm: decodeOctetString(fields.get(1)!.content),
     cname: decodePrincipalName(fields.get(2)!),
+    cksum: cksumFields === undefined
+      ? undefined
+      : { type: decodeInteger(cksumFields.get(0)!.content), checksum: cksumFields.get(1)!.content },
     cusec: decodeInteger(fields.get(4)!.content),
     ctime: decodeKerberosTime(fields.get(5)!.content),
+    subkey: subkey === undefined ? undefined : decodeEncryptionKey(subkey),
+    seqNumber: seqNumber === undefined ? undefined : decodeInteger(seqNumber.content),
+  };
+}
+
+export function encodeApRep(rep: ApRep): Uint8Array {
+  return encodeApplication(15, true, encodeSequence([
+    explicit(0, encodeInteger(KRB_PVNO)),
+    explicit(1, encodeInteger(15)),
+    explicit(2, encodeEncryptedData(rep.encPart)),
+  ]));
+}
+
+export function decodeApRep(bytes: Uint8Array): ApRep {
+  const fields = fieldsOf(parseTLV(parseTLV(bytes, 0).content, 0).content);
+  return { encPart: decodeEncryptedData(fields.get(2)!) };
+}
+
+export function encodeEncApRepPart(part: EncApRepPart): Uint8Array {
+  const parts = [explicit(0, encodeKerberosTime(part.ctime)), explicit(1, encodeInteger(part.cusec))];
+  if (part.subkey !== undefined) parts.push(explicit(2, encodeEncryptionKey(part.subkey)));
+  if (part.seqNumber !== undefined) parts.push(explicit(3, encodeInteger(part.seqNumber)));
+  return encodeApplication(27, true, encodeSequence(parts));
+}
+
+export function decodeEncApRepPart(bytes: Uint8Array): EncApRepPart {
+  const fields = fieldsOf(parseTLV(parseTLV(bytes, 0).content, 0).content);
+  const subkey = fields.get(2);
+  const seqNumber = fields.get(3);
+  return {
+    ctime: decodeKerberosTime(fields.get(0)!.content),
+    cusec: decodeInteger(fields.get(1)!.content),
+    subkey: subkey === undefined ? undefined : decodeEncryptionKey(subkey),
+    seqNumber: seqNumber === undefined ? undefined : decodeInteger(seqNumber.content),
   };
 }
 
