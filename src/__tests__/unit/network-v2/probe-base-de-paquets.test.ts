@@ -123,7 +123,7 @@ describe('la base de paquets décrit la machine', () => {
   it('la table couvre ce que la machine livre, et rien de plus', () => {
     const orphelines = shippedCommands().filter(n => packageOfCommand(n) === undefined);
     expect(orphelines).toEqual([]);
-    const vides = PACKAGE_DB.filter(p => packageProvides(p.name).length === 0);
+    const vides = PACKAGE_DB.filter(p => packageProvides(p.name).length === 0 && (p.programFiles ?? []).length === 0);
     expect(vides.map(p => p.name)).toEqual([]);
   });
 

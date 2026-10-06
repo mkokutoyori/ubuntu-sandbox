@@ -1779,7 +1779,7 @@ export class LdapSession {
       }
       const created = SaslClientConn.create('ldap', saslhost, {
         plugins: this.saslHost.plugins(), clientFqdn: this.saslHost.hostname(), hostname: this.saslHost.hostname(),
-        random: (length) => this.saslHost!.random(length),
+        random: (length) => this.saslHost!.random(length), gss: this.saslHost.gss?.() ?? null,
       });
       if (created.conn === null) {
         this.errno = LdapRc.LOCAL_ERROR;
@@ -1794,7 +1794,7 @@ export class LdapSession {
       let prompts: SaslInteract[] | null = null;
       let pmech: string | null = null;
       do {
-        const started = ctx.start(mechs, prompts);
+        const started = await ctx.start(mechs, prompts);
         saslrc = started.rc;
         prompts = started.prompts;
         ccred = started.out;
@@ -1833,7 +1833,7 @@ export class LdapSession {
       let prompts: SaslInteract[] | null = null;
       do {
         if (scred === null) this.log.debug(LdapDebug.TRACE, 'ldap_int_sasl_bind: no data in step!\n');
-        const stepped = ctx.step(scred, prompts);
+        const stepped = await ctx.step(scred, prompts);
         saslrc = stepped.rc;
         prompts = stepped.prompts;
         ccred = stepped.out;

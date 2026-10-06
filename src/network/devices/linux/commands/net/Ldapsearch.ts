@@ -13,6 +13,9 @@ import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { TlsRequireCert } from '@/network/ldap/openldap/ldapOptions';
 import { SASL_PLUGIN_DIRECTORY, loadClientPlugins } from '@/network/ldap/openldap/sasl/saslPlugins';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
+import { Krb5Context } from '../../kerberos/Krb5Context';
+import { Krb5GssClient } from '../../kerberos/Krb5GssClient';
+import { linuxKrb5Host } from '../../kerberos/Krb5LinuxHost';
 
 
 class ClientChannel implements LdapChannel {
@@ -151,6 +154,10 @@ function linuxLdapToolHost(ctx: LinuxCommandContext, stdin: string | undefined):
       plugins: () => loadClientPlugins(vfs.listDirectory(SASL_PLUGIN_DIRECTORY)?.map((entry) => entry.name) ?? null),
       hostname: () => kernelHostname(vfs),
       random: (length) => crypto.getRandomValues(new Uint8Array(length)),
+      gss() {
+        const host = linuxKrb5Host(ctx);
+        return new Krb5GssClient(host, new Krb5Context(host));
+      },
     },
     lookupDomainHosts: () => null,
   };

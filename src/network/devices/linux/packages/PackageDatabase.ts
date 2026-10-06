@@ -17,6 +17,7 @@
  */
 
 import { commandsOfPackage } from '../commands/LinuxCommandPackages';
+import { LIBSASL2_MODULES_GSSAPI_PLUGINS, pluginFilePaths } from '../../../ldap/openldap/sasl/saslFiles';
 
 export interface PackageEntry {
   readonly name: string;
@@ -27,6 +28,8 @@ export interface PackageEntry {
   /** Les unités systemd que ce paquet livre, s'il en a. */
   readonly units?: readonly string[];
   readonly files?: readonly string[];
+  /** Les fichiers de programme que `remove` retire (contrairement à `files`, qui sont de la configuration et ne partent qu'à `purge`). */
+  readonly programFiles?: readonly string[];
 }
 
 const CATALOGUE: readonly PackageEntry[] = [
@@ -87,6 +90,9 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'basic programs to authenticate using MIT Kerberos', },
   { name: 'ldap-utils', version: '2.5.18+dfsg-0ubuntu0.22.04.2', arch: 'amd64',
     summary: 'OpenLDAP utilities', },
+  { name: 'libsasl2-modules-gssapi-mit', version: '2.1.27+dfsg2-3ubuntu1.2', arch: 'amd64',
+    summary: 'Cyrus SASL - pluggable authentication modules (GSSAPI)',
+    programFiles: pluginFilePaths(LIBSASL2_MODULES_GSSAPI_PLUGINS) },
   { name: 'libuser', version: '1:0.62~dfsg-0.1ubuntu2', arch: 'amd64',
     summary: 'user and group account administration library', },
   { name: 'lldpd', version: '1.0.16-1', arch: 'amd64',

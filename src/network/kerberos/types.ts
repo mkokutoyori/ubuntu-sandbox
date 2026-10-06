@@ -87,6 +87,7 @@ export const KDC_OPT_PROXIABLE = 1 << 28;
 export const KDC_OPT_RENEWABLE = 1 << 23;
 export const KDC_OPT_RENEWABLE_OK = 1 << 4;
 export const KDC_OPT_RENEW = 1 << 1;
+export const KDC_OPT_CANONICALIZE = 1 << 16;
 
 export interface KdcReqBody {
   readonly kdcOptions: number;

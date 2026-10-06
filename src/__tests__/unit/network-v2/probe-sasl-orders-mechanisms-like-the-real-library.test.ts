@@ -80,12 +80,12 @@ function environment(plugins: readonly ClientMechanism[]) {
   return { plugins, clientFqdn: 'vm', hostname: 'vm', random: (length: number) => new Uint8Array(length) };
 }
 
-function startedWith(server: string, plugins: readonly ClientMechanism[], configure: (conn: SaslClientConn) => void = () => {}) {
+async function startedWith(server: string, plugins: readonly ClientMechanism[], configure: (conn: SaslClientConn) => void = () => {}) {
   const created = SaslClientConn.create('ldap', 'dc.corp.local', environment(plugins));
   const conn = created.conn!;
   conn.setSecProps(defaultSecurityProperties());
   configure(conn);
-  return conn.start(server, null);
+  return await conn.start(server, null);
 }
 
 describe('the client mechanism list is ordered like libsasl2', () => {
@@ -98,27 +98,27 @@ describe('the client mechanism list is ordered like libsasl2', () => {
     expect(orderMechanisms(LOAD_ORDER).map((mech) => mech.name)).toEqual(REAL_ORDER);
   });
 
-  it('with the default security properties the first offered mechanism that passes wins', () => {
-    const outcome = startedWith('PLAIN LOGIN CRAM-MD5 DIGEST-MD5', LOAD_ORDER);
+  it('with the default security properties the first offered mechanism that passes wins', async () => {
+    const outcome = await startedWith('PLAIN LOGIN CRAM-MD5 DIGEST-MD5', LOAD_ORDER);
     expect(outcome.mech).toBe('DIGEST-MD5');
   });
 
-  it('a server list holding only plaintext mechanisms finds none under the default noplain', () => {
-    const outcome = startedWith('PLAIN LOGIN ANONYMOUS', LOAD_ORDER);
+  it('a server list holding only plaintext mechanisms finds none under the default noplain', async () => {
+    const outcome = await startedWith('PLAIN LOGIN ANONYMOUS', LOAD_ORDER);
     expect(outcome.rc).toBe(SaslRc.NOMECH);
   });
 
-  it('with the security properties set to none the strongest plaintext mechanism is taken', () => {
-    const outcome = startedWith('PLAIN LOGIN ANONYMOUS', LOAD_ORDER, (conn) => {
+  it('with the security properties set to none the strongest plaintext mechanism is taken', async () => {
+    const outcome = await startedWith('PLAIN LOGIN ANONYMOUS', LOAD_ORDER, (conn) => {
       conn.setSecProps({ ...defaultSecurityProperties(), securityFlags: 0 });
     });
     expect(outcome.mech).toBe('PLAIN');
   });
 
-  it('a mechanism that needs the server name is skipped when none is known', () => {
+  it('a mechanism that needs the server name is skipped when none is known', async () => {
     const created = SaslClientConn.create('ldap', null, environment(LOAD_ORDER));
     const conn = created.conn!;
     conn.setSecProps({ ...defaultSecurityProperties(), securityFlags: 0 });
-    expect(conn.start('GSSAPI DIGEST-MD5 CRAM-MD5', null).mech).toBe('CRAM-MD5');
+    expect((await conn.start('GSSAPI DIGEST-MD5 CRAM-MD5', null)).mech).toBe('CRAM-MD5');
   });
 });

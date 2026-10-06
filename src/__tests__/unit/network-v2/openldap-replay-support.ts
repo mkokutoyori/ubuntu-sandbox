@@ -3,6 +3,7 @@ import { runLdapsearch, type LdapToolHost } from '@/network/ldap/openldap/ldapse
 import { loadClientPlugins } from '@/network/ldap/openldap/sasl/saslPlugins';
 import type { LdapChannel, ChannelRead, ConnectOutcome } from '@/network/ldap/openldap/ldapChannel';
 import { parseTLV } from '@/network/devices/windows/server/ad/ldap/Ber';
+import type { GssClientEnvironment } from '@/network/kerberos/gssapi/GssClientEnvironment';
 
 export interface RecordedConnection {
   readonly port: number;
@@ -45,7 +46,7 @@ export function loadJson<T>(name: string): T {
   return JSON.parse(readFileSync(`src/__tests__/unit/network-v2/${name}`, 'utf8')) as T;
 }
 
-function splitPdus(bytes: Uint8Array): Uint8Array[] {
+export function splitPdus(bytes: Uint8Array): Uint8Array[] {
   const pdus: Uint8Array[] = [];
   let offset = 0;
   while (offset < bytes.length) {
@@ -212,6 +213,8 @@ export interface ReplayOptions {
   readonly files: Readonly<Record<string, string>>;
   readonly saslPlugins?: readonly string[];
   readonly randomBytes?: Uint8Array;
+  readonly random?: (length: number) => Uint8Array;
+  readonly gss?: GssClientEnvironment;
 }
 
 export interface ReplayOutcome {
@@ -248,7 +251,9 @@ export async function replay(scenario: Scenario, options: ReplayOptions): Promis
     sasl: {
       plugins: () => loadClientPlugins(options.saslPlugins ?? ['libanonymous.so', 'libcrammd5.so', 'libdigestmd5.so', 'liblogin.so', 'libntlm.so', 'libplain.so', 'libscram.so']),
       hostname: () => 'vm',
-      random: (length) => (options.randomBytes ?? recordedClientRandom(scenario, length))?.slice(0, length) ?? new Uint8Array(length),
+      random: (length) => options.random?.(length)
+        ?? (options.randomBytes ?? recordedClientRandom(scenario, length))?.slice(0, length) ?? new Uint8Array(length),
+      gss: () => options.gss ?? null,
     },
     lookupDomainHosts: () => null,
   };

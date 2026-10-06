@@ -2,9 +2,9 @@ import { Getopt, GETOPT_END } from '@/network/ldap/openldap/getopt';
 import type { Ccache, CcacheCredential } from '@/network/kerberos/ccache/FileCcache';
 import { AES256_CTS_HMAC_SHA1_96 } from '@/network/kerberos/crypto';
 import { Krb5Context } from './Krb5Context';
-import { FileCredentialCache, ccachePathOf, fromCcachePrincipal, isConfigurationCredential, parseCcacheName } from './Krb5Ccache';
+import { FileCredentialCache, ccachePathOf, fromCcachePrincipal, isConfigurationCredential, parseCcacheName, ticketOfCredential } from './Krb5Ccache';
 import { formatKlistTime } from './Krb5Duration';
-import { unparsePrincipal } from './Krb5Principal';
+import { unparsePrincipal, type Krb5Principal } from './Krb5Principal';
 import { KLIST_USAGE, emit, outputOf, type ToolOutput } from './Krb5ToolOutput';
 import type { Krb5Host } from './Krb5Host';
 
@@ -72,6 +72,15 @@ function credentialLines(
     text += credential.addresses.length === 0
       ? '\tAddresses: (none)\n'
       : `\tAddresses: ${credential.addresses.map((address) => Array.from(address.data).join('.')).join(', ')}\n`;
+  }
+  const ticket = ticketOfCredential(credential);
+  if (ticket !== null) {
+    const issuedFor: Krb5Principal = { nameType: ticket.sname.nameType, realm: ticket.realm, components: ticket.sname.nameString };
+    const requested = fromCcachePrincipal(credential.server);
+    const same = issuedFor.realm === requested.realm
+      && issuedFor.components.length === requested.components.length
+      && issuedFor.components.every((component, index) => component === requested.components[index]);
+    if (!same) text += `\tTicket server: ${unparsePrincipal(issuedFor)}\n`;
   }
   return text;
 }
@@ -157,7 +166,7 @@ export async function runKlist(host: Krb5Host, args: readonly string[]): Promise
   }
   if (cache === null) return noCache(path);
   if (flags.silent) {
-    out.exitCode = cache.credentials.some((credential) => isValidTgt(credential, host.nowSeconds())) ? 0 : 1;
+    out.exitCode = cache.credentials.some((credential) => isValidTgt(credential, Math.floor(host.nowMicroseconds() / 1_000_000))) ? 0 : 1;
     return out;
   }
   emit(out, 'stdout', listCache(cache, `${parsedName.type}:${path}`, {

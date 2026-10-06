@@ -3,6 +3,7 @@ import {
   type ClientMechanism, type ClientMechanismSession, type SaslClientParams, type SaslInteract,
   type SaslOutParams, type SaslSecurityProperties, type StepOutcome,
 } from './saslTypes';
+import type { GssClientEnvironment } from '@/network/kerberos/gssapi/GssClientEnvironment';
 
 const ERROR_STRINGS: Readonly<Record<number, string>> = {
   [SaslRc.CONTINUE]: 'another step is needed in authentication',
@@ -95,6 +96,7 @@ export function orderMechanisms(plugins: readonly ClientMechanism[]): ClientMech
 
 export interface SaslHostEnvironment {
   plugins(): readonly ClientMechanism[];
+  gss?(): GssClientEnvironment | null;
   hostname(): string;
   random(length: number): Uint8Array;
 }
@@ -104,6 +106,7 @@ export interface SaslClientEnvironment {
   readonly clientFqdn: string;
   readonly hostname: string;
   readonly random: (length: number) => Uint8Array;
+  readonly gss?: GssClientEnvironment | null;
 }
 
 const CALLBACK_IDS = new Set<number>([
@@ -218,6 +221,7 @@ export class SaslClientConn {
       externalSsf: this.externalSsf,
       oparams: this.oparams,
       random: this.environment.random,
+      gss: this.environment.gss ?? null,
       seterror: (message: string) => this.seterror(SaslRc.FAIL, message),
       canonUser: (user, flags) => this.canonUser(user, flags),
       getSimple: (id, required, prompts) => {
@@ -258,9 +262,9 @@ export class SaslClientConn {
     };
   }
 
-  start(
+  async start(
     mechlist: string | null, prompts: SaslInteract[] | null,
-  ): { rc: number; mech: string | null; out: Uint8Array | null; prompts: SaslInteract[] | null } {
+  ): Promise<{ rc: number; mech: string | null; out: Uint8Array | null; prompts: SaslInteract[] | null }> {
     if (mechlist === null) {
       this.seterror(SaslRc.BADPARAM, 'Parameter error in cyrus-sasl-2.1.28/lib/client.c near line 727');
       return { rc: SaslRc.BADPARAM, mech: null, out: null, prompts: null };
@@ -306,13 +310,13 @@ export class SaslClientConn {
     if ((best.features & SaslFeat.SERVER_FIRST) !== 0) {
       return { rc: SaslRc.CONTINUE, mech: mechName, out: null, prompts: null };
     }
-    const stepped = this.dostep(null, null);
+    const stepped = await this.dostep(null, null);
     return { ...stepped, mech: mechName };
   }
 
-  private dostep(
+  private async dostep(
     serverIn: Uint8Array | null, prompts: SaslInteract[] | null,
-  ): { rc: number; mech: string | null; out: Uint8Array | null; prompts: SaslInteract[] | null } {
+  ): Promise<{ rc: number; mech: string | null; out: Uint8Array | null; prompts: SaslInteract[] | null }> {
     const mechName = this.mech === null ? null : this.mech.name;
     if (this.session === null || this.params === null) {
       return { rc: SaslRc.BADPARAM, mech: mechName, out: null, prompts: null };
@@ -321,7 +325,7 @@ export class SaslClientConn {
       this.seterror(SaslRc.FAIL, 'attempting client step after doneflag');
       return { rc: SaslRc.FAIL, mech: mechName, out: null, prompts: null };
     }
-    const outcome: StepOutcome = this.session.step(this.params, serverIn, prompts);
+    const outcome: StepOutcome = await this.session.step(this.params, serverIn, prompts);
     if (outcome.rc === SaslRc.INTERACT && outcome.prompts !== undefined) {
       return { rc: SaslRc.INTERACT, mech: mechName, out: null, prompts: outcome.prompts };
     }
@@ -339,10 +343,10 @@ export class SaslClientConn {
     return { rc, mech: mechName, out, prompts: null };
   }
 
-  step(
+  async step(
     serverIn: Uint8Array | null, prompts: SaslInteract[] | null,
-  ): { rc: number; out: Uint8Array | null; prompts: SaslInteract[] | null } {
-    const stepped = this.dostep(serverIn, prompts);
+  ): Promise<{ rc: number; out: Uint8Array | null; prompts: SaslInteract[] | null }> {
+    const stepped = await this.dostep(serverIn, prompts);
     return { rc: stepped.rc, out: stepped.out, prompts: stepped.prompts };
   }
 

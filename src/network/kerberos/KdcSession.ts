@@ -360,7 +360,10 @@ export class KdcSessionHandler {
 
     const sessionKeyValue = randomSessionKey();
     const endtime = Math.min(req.reqBody.till, ticketPart.endtime);
-    const flags = { ...NO_TICKET_FLAGS, renewable: ticketPart.flags.renewable };
+    const renewable = (req.reqBody.kdcOptions & KDC_OPT_RENEWABLE) !== 0
+      && ticketPart.flags.renewable && ticketPart.renewTill !== undefined;
+    const flags = { ...NO_TICKET_FLAGS, renewable };
+    const renewTill = renewable ? ticketPart.renewTill : undefined;
 
     /**
      * RFC 4120 §3.3.3 — the client wants a ticket for a realm other than
@@ -393,7 +396,7 @@ export class KdcSessionHandler {
 
     const encTicketPart: EncTicketPart = {
       flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
-      crealm: ticketPart.crealm, cname: ticketPart.cname, authtime: ticketPart.authtime, starttime: now, endtime,
+      crealm: ticketPart.crealm, cname: ticketPart.cname, authtime: ticketPart.authtime, starttime: now, endtime, renewTill,
     };
     const ticket: Ticket = {
       tktVno: 5, realm, sname,
@@ -402,7 +405,7 @@ export class KdcSessionHandler {
 
     const encKdcRepPart: EncKdcRepPart = {
       key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
-      nonce: req.reqBody.nonce, flags, authtime: ticketPart.authtime, starttime: now, endtime,
+      nonce: req.reqBody.nonce, flags, authtime: ticketPart.authtime, starttime: now, endtime, renewTill,
       srealm: realm, sname,
     };
     const rep: KdcRep = {

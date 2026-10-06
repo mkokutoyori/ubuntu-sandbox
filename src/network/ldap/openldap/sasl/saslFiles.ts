@@ -10,3 +10,7 @@ export const LIBSASL2_MODULES_GSSAPI_PLUGINS: readonly string[] = ['libgs2', 'li
 export function pluginFileNames(plugin: string): readonly string[] {
   return [`${plugin}.so`, `${plugin}.so.2`, `${plugin}.so.${SASL_PLUGIN_VERSION}`];
 }
+
+export function pluginFilePaths(plugins: readonly string[]): readonly string[] {
+  return plugins.flatMap((plugin) => pluginFileNames(plugin).map((name) => `${SASL_PLUGIN_DIRECTORY}/${name}`));
+}

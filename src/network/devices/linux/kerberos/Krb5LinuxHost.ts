@@ -2,6 +2,7 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
 import type { LinuxCommandContext } from '../commands/LinuxCommandContext';
 import { readResolverIP } from '../commands/dns/resolverIP';
+import { forwardHostOfAsync, reverseNameOfAsync } from '../network/ReverseName';
 import type { Krb5Host, SrvRecord } from './Krb5Host';
 
 function bytesOfLatin1(text: string): Uint8Array {
@@ -35,11 +36,13 @@ export function linuxKrb5Host(ctx: LinuxCommandContext): Krb5Host {
     listDirectory: (path) => vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
     uid: () => users.currentUid,
     userName: () => users.currentUser,
-    nowSeconds: () => Math.floor(ctx.executor.simulatedDate().getTime() / 1000),
+    nowMicroseconds: () => ctx.executor.simulatedDate().getTime() * 1000,
     async resolve(name) {
       const address = await ctx.net.resolveHostname(name);
       return address === null ? null : address.toString();
     },
+    forward: (name) => forwardHostOfAsync(ctx.executor.nss, name),
+    reverse: (address) => reverseNameOfAsync(ctx.executor.nss, address),
     async querySrv(name): Promise<readonly SrvRecord[]> {
       const resolver = readResolverIP(ctx.executor);
       if (resolver === '') return [];

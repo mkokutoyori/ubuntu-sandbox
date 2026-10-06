@@ -202,7 +202,7 @@ export class KerberosClient {
    */
   tgsExchange(
     tgt: Ticket, tgtSessionKey: Uint8Array, cname: PrincipalName, crealm: string, serviceName: string | readonly string[],
-    targetRealm: string = crealm,
+    targetRealm: string = crealm, kdcOptions = 0,
   ): TgsExchangeResult {
     const sname = principalName(PrincipalNameType.NT_SRV_HST, ...(typeof serviceName === 'string' ? [serviceName] : serviceName));
     const nonce = this.nextNonce();
@@ -211,7 +211,7 @@ export class KerberosClient {
 
     const req: KdcReq = {
       msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],
-      reqBody: { kdcOptions: 0, realm: targetRealm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
+      reqBody: { kdcOptions, realm: targetRealm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
     };
     return this.finishTgs(req, tgtSessionKey, nonce);
   }

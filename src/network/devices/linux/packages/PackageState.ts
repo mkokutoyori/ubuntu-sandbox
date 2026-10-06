@@ -23,7 +23,7 @@ const STATUS_FIELD: Readonly<Record<DpkgState, string>> = {
 
 function shippedByImage(host: PackageStateHost, entry: InstalledPackage): boolean {
   const units = entry.units ?? [];
-  const files = entry.files ?? [];
+  const files = [...(entry.files ?? []), ...(entry.programFiles ?? [])];
   if (units.length === 0 && files.length === 0) return entry.installed;
   return units.every((unit) => host.serviceMgr.hasUnitFile(unit))
     && files.every((file) => host.vfs.exists(file));

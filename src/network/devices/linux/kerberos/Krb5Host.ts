@@ -7,6 +7,11 @@ export interface SrvRecord {
   readonly weight: number;
 }
 
+export interface ForwardLookup {
+  readonly address: string;
+  readonly canonicalName: string;
+}
+
 export interface Krb5Host {
   environment(name: string): string | null;
   readText(path: string): string | null;
@@ -17,8 +22,10 @@ export interface Krb5Host {
   listDirectory(path: string): readonly string[] | null;
   uid(): number;
   userName(): string;
-  nowSeconds(): number;
+  nowMicroseconds(): number;
   resolve(name: string): Promise<string | null>;
+  forward(name: string): Promise<ForwardLookup | null>;
+  reverse(address: string): Promise<string | null>;
   querySrv(name: string): Promise<readonly SrvRecord[]>;
   dialKdc(address: string, port: number): KerberosClient | null;
 }

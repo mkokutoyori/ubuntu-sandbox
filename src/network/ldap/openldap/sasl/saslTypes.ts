@@ -1,3 +1,5 @@
+import type { GssClientEnvironment } from '@/network/kerberos/gssapi/GssClientEnvironment';
+
 export const SaslRc = {
   CONTINUE: 1,
   OK: 0,
@@ -143,6 +145,7 @@ export interface SaslClientParams {
   readonly externalSsf: number;
   readonly oparams: SaslOutParams;
   readonly random: (length: number) => Uint8Array;
+  readonly gss: GssClientEnvironment | null;
   seterror(message: string): void;
   canonUser(user: string, flags: number): number;
   getSimple(id: number, required: boolean, prompts: SaslInteract[] | null): { rc: number; value: Uint8Array | null };
@@ -151,7 +154,7 @@ export interface SaslClientParams {
 }
 
 export interface ClientMechanismSession {
-  step(params: SaslClientParams, serverIn: Uint8Array | null, prompts: SaslInteract[] | null): StepOutcome;
+  step(params: SaslClientParams, serverIn: Uint8Array | null, prompts: SaslInteract[] | null): StepOutcome | Promise<StepOutcome>;
 }
 
 export interface ClientMechanism {

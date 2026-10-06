@@ -3,6 +3,7 @@ import { anonymousMechanism } from './mechanisms/anonymous';
 import { cramMd5Mechanism } from './mechanisms/cramMd5';
 import { createDigestMd5Mechanisms } from './digest/digestMd5';
 import { externalMechanism } from './mechanisms/external';
+import { gssapiMechanism } from './mechanisms/gssapi';
 import { loginMechanism } from './mechanisms/login';
 import { ntlmMechanism } from './mechanisms/ntlm';
 import { plainMechanism } from './mechanisms/plain';
@@ -14,6 +15,7 @@ const PLUGIN_MECHANISMS: Readonly<Record<string, () => readonly ClientMechanism[
   'libanonymous.so': () => [anonymousMechanism],
   'libcrammd5.so': () => [cramMd5Mechanism],
   'libdigestmd5.so': createDigestMd5Mechanisms,
+  'libgssapiv2.so': () => [gssapiMechanism],
   'liblogin.so': () => [loginMechanism],
   'libntlm.so': () => [ntlmMechanism],
   'libplain.so': () => [plainMechanism],

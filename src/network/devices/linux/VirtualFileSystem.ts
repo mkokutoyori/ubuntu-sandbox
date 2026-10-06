@@ -9,7 +9,7 @@ import { OS_RELEASE } from './system/SystemInfo';
 import { VfsPath, type PathActor } from './VfsPath';
 import { AT_DENY_USINE } from './jobs/AtPermissions';
 import { SYSTEM_CONFIG_DEFAULTS, SYSTEM_CONFIG_DIRECTORY, SYSTEM_CONFIG_FILE } from '../../ldap/openldap/ldapOptions';
-import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFileNames } from '../../ldap/openldap/sasl/saslFiles';
+import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from '../../ldap/openldap/sasl/saslFiles';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
@@ -321,9 +321,7 @@ export class VirtualFileSystem {
       0o666, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt(SYSTEM_CONFIG_FILE, SYSTEM_CONFIG_DEFAULTS, 0o644, 0, 0);
-    for (const plugin of LIBSASL2_MODULES_PLUGINS) {
-      for (const name of pluginFileNames(plugin)) this.createFileAt(`${SASL_PLUGIN_DIRECTORY}/${name}`, '\x7fELF', 0o644, 0, 0);
-    }
+    for (const path of pluginFilePaths(LIBSASL2_MODULES_PLUGINS)) this.createFileAt(path, '\x7fELF', 0o644, 0, 0);
     this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
     this.createFileAt('/etc/lsb-release',
       'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +
