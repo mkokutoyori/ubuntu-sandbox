@@ -11,8 +11,8 @@ import {
   aesCbcEncrypt, aesCbcDecrypt, aesEncryptBlock, aesDecryptBlock, tripleDesCbcEncrypt, tripleDesCbcDecrypt,
   tripleDesEncryptBlock, tripleDesDecryptBlock, chacha20Xor,
 } from '@/crypto/cipher';
-import { pbkdf2 } from '@/crypto/kdf';
-import { md5, SHA256 } from '@/crypto/hash';
+import { pbkdf2, evpBytesToKey } from '@/crypto/kdf';
+import { SHA256 } from '@/crypto/hash';
 import {
   bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
@@ -163,29 +163,6 @@ export const ENC_KNOWN_UNIMPLEMENTED = [
 ];
 
 const MAGIC = 'Salted__';
-
-/**
- * openssl's historical derivation (`EVP_BytesToKey`), used when `-pbkdf2`
- * is not asked for. It is weak, and that is precisely what openssl 3
- * reproaches its own default with: reproducing it lets us SHOW the
- * difference instead of talking about it.
- */
-function evpBytesToKey(password: Uint8Array, salt: Uint8Array, total: number): Uint8Array {
-  const out = new Uint8Array(total);
-  let filled = 0;
-  let previous = new Uint8Array(0);
-  while (filled < total) {
-    const input = new Uint8Array(previous.length + password.length + salt.length);
-    input.set(previous, 0);
-    input.set(password, previous.length);
-    input.set(salt, previous.length + password.length);
-    previous = md5(input);
-    const n = Math.min(previous.length, total - filled);
-    out.set(previous.subarray(0, n), filled);
-    filled += n;
-  }
-  return out;
-}
 
 function passwordFrom(host: OpenSslHost, opts: Map<string, string | true>): string | null {
   const k = opts.get('-k');

@@ -20,15 +20,15 @@
 import {
   bytesToBase64, base64ToBytes, utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
-import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
-import { pbkdf2 } from '@/crypto/kdf';
+import { aesCbcEncrypt, aesCbcDecrypt, tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '@/crypto/cipher';
+import { pbkdf2, evpBytesToKey } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate, X509CertificateFields } from './X509Certificate';
 import { der, children, expectTag, integerValue, parseDer, TAG } from './der/Asn1';
 import { encodeCrl, decodeCrl } from './der/CrlDer';
 import { encodeCertificateRequest, decodeCertificateRequest } from './der/CsrDer';
 import { encodeCertificate, decodeCertificate } from './der/X509Der';
-import { encryptPrivateKeyPkcs8, decryptPrivateKeyPkcs8 } from './der/EncryptedKeyDer';
+import { encryptPrivateKeyPkcs8, decryptPrivateKeyPkcs8, type KeyEncryptionCipher } from './der/EncryptedKeyDer';
 import {
   encodePrivateKeyPkcs8, decodePrivateKeyPkcs8, encodeRsaPrivateKeyPkcs1, decodeRsaPrivateKeyPkcs1,
   encodeEcPrivateKeySec1, decodeEcPrivateKeySec1, encodePublicKeySpki, decodePublicKeySpki,
@@ -222,11 +222,69 @@ export function pemToPrivateKey(pem: string): PkiPrivateKey | null {
  */
 export function encryptedPrivateKeyToPem(
   key: PkiPrivateKey, passphrase: string, random: (n: number) => Uint8Array,
+  cipher: KeyEncryptionCipher = 'aes-256-cbc',
 ): string {
-  return armourBytes('ENCRYPTED PRIVATE KEY', encryptPrivateKeyPkcs8(key, passphrase, random));
+  return armourBytes('ENCRYPTED PRIVATE KEY', encryptPrivateKeyPkcs8(key, passphrase, random, undefined, cipher));
+}
+
+const TRADITIONAL_CIPHERS: Readonly<Record<string, { readonly keyLength: number; readonly ivLength: number }>> = {
+  'AES-128-CBC': { keyLength: 16, ivLength: 16 },
+  'AES-192-CBC': { keyLength: 24, ivLength: 16 },
+  'AES-256-CBC': { keyLength: 32, ivLength: 16 },
+  'DES-EDE3-CBC': { keyLength: 24, ivLength: 8 },
+};
+
+function traditionalSeal(name: string, key: Uint8Array, iv: Uint8Array, data: Uint8Array): Uint8Array {
+  if (name === 'DES-EDE3-CBC') {
+    const pad = 8 - (data.length % 8);
+    const padded = new Uint8Array(data.length + pad);
+    padded.set(data, 0);
+    padded.fill(pad, data.length);
+    return tripleDesCbcEncrypt(key, iv, padded);
+  }
+  return aesCbcEncrypt(key, iv, data);
+}
+
+function traditionalOpen(name: string, key: Uint8Array, iv: Uint8Array, data: Uint8Array): Uint8Array {
+  if (name !== 'DES-EDE3-CBC') return aesCbcDecrypt(key, iv, data);
+  const padded = tripleDesCbcDecrypt(key, iv, data);
+  const pad = padded[padded.length - 1];
+  if (pad === 0 || pad > 8) throw new Error('bad padding');
+  for (let i = padded.length - pad; i < padded.length; i++) if (padded[i] !== pad) throw new Error('bad padding');
+  return padded.subarray(0, padded.length - pad);
+}
+
+export function traditionalEncryptedKeyToPem(
+  key: PkiPrivateKey, passphrase: string, cipher: KeyEncryptionCipher, random: (n: number) => Uint8Array,
+): string {
+  const name = cipher.toUpperCase();
+  const spec = TRADITIONAL_CIPHERS[name];
+  const iv = random(spec.ivLength);
+  const derived = evpBytesToKey(utf8ToBytes(passphrase), iv.subarray(0, 8), spec.keyLength);
+  const plain = key.algorithm === 'ecdsa' ? encodeEcPrivateKeySec1(key.material) : encodeRsaPrivateKeyPkcs1(key.material);
+  const body = bytesToBase64(traditionalSeal(name, derived, iv, plain));
+  const lines = body.match(/.{1,64}/g) ?? [];
+  const label = key.algorithm === 'ecdsa' ? 'EC PRIVATE KEY' : 'RSA PRIVATE KEY';
+  return `-----BEGIN ${label}-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: ${name},${bytesToHex(iv).toUpperCase()}\n\n${lines.join('\n')}\n-----END ${label}-----\n`;
+}
+
+function traditionalEncryptedKeyFromPem(pem: string, passphrase: string): PkiPrivateKey | null {
+  const match = /-----BEGIN (RSA|EC) PRIVATE KEY-----\s*Proc-Type: 4,ENCRYPTED\s*DEK-Info: ([A-Z0-9-]+),([0-9A-Fa-f]+)\s*([\s\S]*?)-----END \1 PRIVATE KEY-----/.exec(pem);
+  if (!match) return null;
+  const spec = TRADITIONAL_CIPHERS[match[2]];
+  if (!spec) return null;
+  try {
+    const iv = hexToBytes(match[3]);
+    const derived = evpBytesToKey(utf8ToBytes(passphrase), iv.subarray(0, 8), spec.keyLength);
+    const plain = traditionalOpen(match[2], derived, iv, base64ToBytes(match[4].replace(/\s+/g, '')));
+    return match[1] === 'EC' ? decodeEcPrivateKeySec1(plain) : decodeRsaPrivateKeyPkcs1(plain);
+  } catch {
+    return null;
+  }
 }
 
 export function pemToEncryptedPrivateKey(pem: string, passphrase: string): PkiPrivateKey | null {
+  if (pem.includes('Proc-Type: 4,ENCRYPTED')) return traditionalEncryptedKeyFromPem(pem, passphrase);
   const bytes = unarmourBytes(pem, 'ENCRYPTED PRIVATE KEY');
   return bytes === null ? null : decryptPrivateKeyPkcs8(bytes, passphrase);
 }
@@ -238,7 +296,7 @@ export function pemToPrivateKeyWithPassphrase(pem: string, passphrase: string | 
 }
 
 export function isEncryptedPrivateKeyPem(pem: string): boolean {
-  return pem.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----');
+  return pem.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----') || pem.includes('Proc-Type: 4,ENCRYPTED');
 }
 
 export function publicKeyToPem(key: PkiPublicKey): string {

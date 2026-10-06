@@ -39,8 +39,9 @@ import {
   certToPem, pemToCert as strictPemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey as strictPemToPrivateKey, publicKeyToPem,
   pemToPublicKey as strictPemToPublicKey, csrToPem, pemToCsr as strictPemToCsr, crlToPem, pemToCrl as strictPemToCrl, type CertificateRequest,
   derFromPem, isDerText, armourDer, type PemLabel,
-  encryptedPrivateKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem, pemToPrivateKeyWithPassphrase,
+  encryptedPrivateKeyToPem, traditionalEncryptedKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem, pemToPrivateKeyWithPassphrase,
 } from '@/network/pki/pem';
+import type { KeyEncryptionCipher } from '@/network/pki/der/EncryptedKeyDer';
 
 function inputPem(text: string, label: PemLabel): string {
   return isDerText(text) ? armourDer(text, label) : text;
@@ -1597,6 +1598,15 @@ function phraseDePasse(valeur: string | true | undefined, host?: OpenSslHost): s
   return null;
 }
 
+const PKCS8_V2_CIPHERS: Readonly<Record<string, KeyEncryptionCipher | undefined>> = {
+  'aes-128-cbc': 'aes-128-cbc', 'aes128': 'aes-128-cbc', 'aes-192-cbc': 'aes-192-cbc', 'aes192': 'aes-192-cbc',
+  'aes-256-cbc': 'aes-256-cbc', 'aes256': 'aes-256-cbc', 'des-ede3-cbc': 'des-ede3-cbc', 'des3': 'des-ede3-cbc',
+};
+
+const KEY_CIPHER_FOR_FLAG: Readonly<Record<string, KeyEncryptionCipher | undefined>> = {
+  '-aes128': 'aes-128-cbc', '-aes192': 'aes-192-cbc', '-aes256': 'aes-256-cbc', '-des3': 'des-ede3-cbc',
+};
+
 const CIPHER_FLAGS: readonly string[] = [
   '-aes128', '-aes192', '-aes256', '-des3', '-camellia128', '-camellia192', '-camellia256',
   '-aria128', '-aria192', '-aria256',
@@ -1605,12 +1615,15 @@ const CIPHER_FLAGS: readonly string[] = [
 function privateKeyPem(
   host: OpenSslHost, key: PkiPrivateKey, opts: Map<string, string | true>, traditional = false,
 ): { readonly pem: string } | { readonly error: string } {
-  const wantsCipher = CIPHER_FLAGS.some((flag) => opts.has(flag));
-  const encrypt = wantsCipher || (opts.has('-passout') && !opts.has('-nodes') && !opts.has('-noenc'));
+  const requested = CIPHER_FLAGS.find((flag) => opts.has(flag));
+  const encrypt = requested !== undefined || (opts.has('-passout') && !opts.has('-nodes') && !opts.has('-noenc'));
   if (!encrypt) return { pem: privateKeyToPem(key, traditional) };
   const passout = phraseDePasse(opts.get('-passout'), host);
   if (passout === null) return { error: 'unable to write key\nopenssl: a passphrase source is required: -passout pass:... or file:...' };
-  return { pem: encryptedPrivateKeyToPem(key, passout, (n) => host.randomBytes(n)) };
+  const cipher = requested === undefined ? 'aes-256-cbc' as const : KEY_CIPHER_FOR_FLAG[requested];
+  if (cipher === undefined) return { error: `unable to write key\nopenssl: '${requested?.slice(1)}' is not implemented in this simulator` };
+  if (traditional) return { pem: traditionalEncryptedKeyToPem(key, passout, cipher, (n) => host.randomBytes(n)) };
+  return { pem: encryptedPrivateKeyToPem(key, passout, (n) => host.randomBytes(n), cipher) };
 }
 
 function privateKeyFrom(
@@ -1655,7 +1668,14 @@ function runPkcs8(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (passout === null) {
       return fail('unable to write key\nopenssl: pkcs8 -topk8: use -nocrypt, or -passout pass:...');
     }
-    pem = encryptedPrivateKeyToPem(cle, passout, (n) => host.randomBytes(n));
+    const v2 = opts.get('-v2');
+    let cipher: KeyEncryptionCipher = 'aes-256-cbc';
+    if (typeof v2 === 'string') {
+      const named = PKCS8_V2_CIPHERS[v2.toLowerCase()];
+      if (named === undefined) return fail(`Unknown cipher ${v2}`);
+      cipher = named;
+    }
+    pem = encryptedPrivateKeyToPem(cle, passout, (n) => host.randomBytes(n), cipher);
   } else {
     // `-topk8` demande la forme PKCS#8 ; sans lui, openssl fait l'inverse.
     pem = privateKeyToPem(cle, !opts.has('-topk8'));
