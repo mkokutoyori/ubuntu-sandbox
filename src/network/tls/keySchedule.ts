@@ -134,6 +134,19 @@ export function deriveKeySchedule(
 }
 
 /**
+ * RFC 8446 §4.2.11.2 — the PSK binder: a Finished-style HMAC, under
+ * `binder_key = Derive-Secret(Early Secret, "res binder" | "ext binder", "")`,
+ * over the transcript through the ClientHello truncated before its binders list.
+ */
+export function computePskBinder(
+  psk: string, partialTranscriptHash: string, hash: Tls13Hash = 'sha256', kind: 'res' | 'ext' = 'res',
+): string {
+  const earlySecret = extractSecret('', psk, hash);
+  const binderKey = expandLabel(earlySecret, kind === 'res' ? 'res binder' : 'ext binder', emptyTranscript(hash), hash);
+  return computeFinished(binderKey, partialTranscriptHash, hash);
+}
+
+/**
  * Le `verify_data` d'un message Finished, tel que le §4.4.4 le définit :
  * `HMAC(finished_key, Transcript-Hash(...))` avec `finished_key =
  * HKDF-Expand-Label(BaseKey, "finished", "", Hash.length)`. L'étape

@@ -10,6 +10,7 @@
  * not a mandated algorithm), so this is a legitimate simplification rather
  * than a missing mandatory feature.
  */
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { CipherSuite } from './types';
 import { expandLabel } from './keySchedule';
 import { suiteInfo } from './suite13';
@@ -18,6 +19,8 @@ export interface SessionTicket {
   readonly ticket: string;
   readonly resumptionMasterSecret: string;
   readonly ticketNonce: string;
+  readonly ticketAgeAdd?: string;
+  readonly peerCertificates?: readonly X509Certificate[];
   readonly cipherSuite: CipherSuite;
   readonly ticketLifetime: number;
   readonly issuedAt: number;
@@ -39,6 +42,11 @@ export class SessionTicketStore {
 
   issue(ticket: SessionTicket): void {
     this.tickets.set(ticket.ticket, ticket);
+  }
+
+  peek(ticketId: string, nowMs: number): SessionTicket | null {
+    const ticket = this.tickets.get(ticketId);
+    return ticket && isTicketFresh(ticket, nowMs) ? ticket : null;
   }
 
   /** Looks up and consumes a ticket; returns null if unknown, expired, or already used. */

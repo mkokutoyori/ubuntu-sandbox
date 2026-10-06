@@ -23,7 +23,14 @@ export interface ClientHelloExtensions {
   readonly alpn?: readonly string[];
   readonly pskKeyExchangeModes?: readonly string[];
   readonly preSharedKey?: string;
+  readonly pskOffers?: readonly PskOffer[];
   readonly earlyData?: boolean;
+}
+
+export interface PskOffer {
+  readonly identity: string;
+  readonly obfuscatedAge: number;
+  readonly binder: string;
 }
 
 export interface LegacyClientExtensions {
@@ -47,6 +54,7 @@ export interface ServerHelloExtensions {
   readonly supportedVersions: string;
   readonly keyShare?: string;
   readonly preSharedKey?: string;
+  readonly pskSelectedIdentity?: number;
 }
 
 export interface ServerHello {

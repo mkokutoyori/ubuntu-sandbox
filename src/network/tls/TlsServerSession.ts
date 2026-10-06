@@ -33,7 +33,7 @@ import {
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { randomHex } from './legacy/LegacyHandshake';
 import { sealFlight, openLeadingHandshake, withoutChangeCipherSpec, COMPATIBILITY_CHANGE_CIPHER_SPEC } from './handshakeProtection';
-import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
+import { collapseFirstClientHello, deriveKeySchedule, computePskBinder, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { DEFAULT_CIPHER_SUITES, parseTls13Ciphersuites, selectCipherSuite } from './cipherSuites';
@@ -153,6 +153,8 @@ export const DEFAULT_SERVER_PROTOCOLS: readonly TlsProtocolVersion[] = ['1.3', '
 interface RedeemedPsk {
   readonly psk: string;
   readonly hash: Tls13Hash;
+  readonly index: number;
+  readonly identity: string;
 }
 
 function groupOf(keyShare: string): string {
@@ -345,7 +347,9 @@ export class TlsServerSession {
     this.negotiatedVersion = '1.3';
 
     if (this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) {
-      return this.proceedWithServerFlight(clientHello, this.resolvePsk(clientHello), rest);
+      const redeemed = this.resolvePsk(clientHello, clientHelloBytes);
+      if (redeemed === 'binder_mismatch') return this.reject('decrypt_error');
+      return this.proceedWithServerFlight(clientHello, redeemed, rest);
     }
 
     const mutualGroup = this.supportedGroups.find((g) => clientHello.extensions.supportedGroups.includes(g));
@@ -477,11 +481,26 @@ export class TlsServerSession {
   }
 
   /** Redeems the client's PSK ticket, if offered and valid; null if not offered, unknown, or expired. */
-  private resolvePsk(clientHello: ClientHello): RedeemedPsk | null {
-    if (!clientHello.extensions.preSharedKey || !this.config.sessionTicketStore) return null;
-    const ticket = this.config.sessionTicketStore.redeem(clientHello.extensions.preSharedKey, simulationNowMs());
-    if (!ticket) return null;
-    return { psk: deriveResumptionPsk(ticket), hash: suiteInfo(ticket.cipherSuite).hash };
+  private resolvePsk(clientHello: ClientHello, clientHelloBytes: Uint8Array): RedeemedPsk | 'binder_mismatch' | null {
+    const store = this.config.sessionTicketStore;
+    const offers = clientHello.extensions.pskOffers
+      ?? (clientHello.extensions.preSharedKey ? [{ identity: clientHello.extensions.preSharedKey, obfuscatedAge: 0, binder: '' }] : []);
+    if (offers.length === 0 || !store) return null;
+    if (!(clientHello.extensions.pskKeyExchangeModes ?? []).includes('psk_dhe_ke')) return null;
+    const bindersLength = 2 + offers.reduce((total, offer) => total + 1 + offer.binder.length / 2, 0);
+    const partial = clientHelloBytes.subarray(0, clientHelloBytes.length - bindersLength);
+    const now = simulationNowMs();
+    for (const [index, offer] of offers.entries()) {
+      const candidate = store.peek(offer.identity, now);
+      if (!candidate) continue;
+      const hash = suiteInfo(candidate.cipherSuite).hash;
+      const psk = deriveResumptionPsk(candidate);
+      if (offer.binder !== computePskBinder(psk, transcriptHash([partial], hash), hash)) return 'binder_mismatch';
+      const ticket = store.redeem(offer.identity, now);
+      if (!ticket) continue;
+      return { psk, hash, index, identity: offer.identity };
+    }
+    return null;
   }
 
   private handleSecondClientHello(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
@@ -529,6 +548,7 @@ export class TlsServerSession {
       extensions: {
         supportedVersions: '1.3', keyShare: serverKeyShare,
         preSharedKey: pskAccepted ? 'accepted' : undefined,
+        ...(pskAccepted ? { pskSelectedIdentity: redeemed.index } : {}),
       },
     };
     const serverHelloBytes = encodeHandshakeMessage(serverHello);
@@ -552,7 +572,7 @@ export class TlsServerSession {
       this.sessionResumed = true;
       this.emit({
         topic: 'tls.session.resumed',
-        payload: { sessionId: this.sessionId, role: 'server', ticket: clientHello.extensions.preSharedKey! },
+        payload: { sessionId: this.sessionId, role: 'server', ticket: redeemed!.identity },
       });
     }
 
@@ -567,7 +587,7 @@ export class TlsServerSession {
     bundle.push(encryptedExtensions);
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
 
-    if (this.config.requestClientCert) {
+    if (this.config.requestClientCert && !this.sessionResumed) {
       const certificateRequest: CertificateRequest = {
         kind: 'certificate_request', certificateRequestContext: '', signatureAlgorithms: SUPPORTED_SIGNATURE_SCHEMES,
       };
@@ -575,25 +595,28 @@ export class TlsServerSession {
       this.transcript.push(encodeHandshakeMessage(certificateRequest));
     }
 
-    const staple = clientHello.extensions.statusRequest ? resolveStaple(this.config.ocspStaple, this.credentials.cert) : undefined;
-    const certificate: CertificateMessage = {
-      kind: 'certificate', certificateList: [this.credentials.cert, ...this.credentials.chain],
-      ...(staple ? { ocspStaple: staple } : {}),
-    };
-    bundle.push(certificate);
-    this.transcript.push(encodeHandshakeMessage(certificate));
+    if (!this.sessionResumed) {
+      const staple = clientHello.extensions.statusRequest ? resolveStaple(this.config.ocspStaple, this.credentials.cert) : undefined;
+      const certificate: CertificateMessage = {
+        kind: 'certificate', certificateList: [this.credentials.cert, ...this.credentials.chain],
+        ...(staple ? { ocspStaple: staple } : {}),
+      };
+      bundle.push(certificate);
+      this.transcript.push(encodeHandshakeMessage(certificate));
 
-    const serverSignature = signCertificateVerify(
-      this.credentials.privateKey, certificateVerifyContent('server', transcriptHash(this.transcript, this.hash)),
-    );
-    if (serverSignature === null || !clientHello.extensions.signatureAlgorithms.includes(serverSignature.scheme)) {
-      return this.reject('handshake_failure');
+      const serverSignature = signCertificateVerify(
+        this.credentials.privateKey, certificateVerifyContent('server', transcriptHash(this.transcript, this.hash)),
+      );
+      if (serverSignature === null || !clientHello.extensions.signatureAlgorithms.includes(serverSignature.scheme)) {
+        return this.reject('handshake_failure');
+      }
+      const certificateVerify: CertificateVerify = {
+        kind: 'certificate_verify', signatureAlgorithm: serverSignature.scheme, signature: serverSignature.signature,
+      };
+      bundle.push(certificateVerify);
+      this.transcript.push(encodeHandshakeMessage(certificateVerify));
+
     }
-    const certificateVerify: CertificateVerify = {
-      kind: 'certificate_verify', signatureAlgorithm: serverSignature.scheme, signature: serverSignature.signature,
-    };
-    bundle.push(certificateVerify);
-    this.transcript.push(encodeHandshakeMessage(certificateVerify));
 
     const finished: Finished = {
       kind: 'finished',
@@ -680,10 +703,12 @@ export class TlsServerSession {
     });
 
     if (!this.config.sessionTicketStore) return null;
+    const ticketAgeAdd = randomHex(4);
     const ticket: SessionTicket = {
       ticket: randomHex(16),
       resumptionMasterSecret: this.resumptionMasterSecret!,
       ticketNonce: randomHex(8),
+      ticketAgeAdd,
       cipherSuite: this.negotiatedCipherSuite as CipherSuite,
       ticketLifetime: 7200,
       issuedAt: simulationNowMs(),
@@ -691,7 +716,7 @@ export class TlsServerSession {
     };
     this.config.sessionTicketStore.issue(ticket);
     const newSessionTicket: NewSessionTicket = {
-      kind: 'new_session_ticket', ticketLifetime: ticket.ticketLifetime, ticketAgeAdd: randomHex(4),
+      kind: 'new_session_ticket', ticketLifetime: ticket.ticketLifetime, ticketAgeAdd,
       ticketNonce: ticket.ticketNonce, ticket: ticket.ticket, extensions: { earlyData: this.config.earlyData !== false },
     };
     const sealedTicket = sealFlight(this.serverApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, encodeHandshakeMessage(newSessionTicket));

@@ -8,7 +8,7 @@ import { HELLO_RETRY_REQUEST_RANDOM } from '../types';
 import type {
   ClientHello, ServerHello, HelloRetryRequest, EncryptedExtensionsMessage, CertificateRequest,
   CertificateMessage, CertificateVerify, Finished, NewSessionTicket, KeyUpdate, TlsHandshakeMessage,
-  LegacyClientExtensions,
+  LegacyClientExtensions, PskOffer,
 } from '../messages';
 import { TlsReader, TlsWriter, TlsDecodeError } from './TlsBytes';
 import {
@@ -106,10 +106,12 @@ export function encodeClientHello(hello: ClientHello): Uint8Array {
         extension(inner, EXTENSION.keyShare, (e) => e.vector(2, (list) => { if (ext.keyShare !== '') writeKeyShareEntry(list, ext.keyShare); }));
       }
       if (ext.earlyData) extension(inner, EXTENSION.earlyData, () => undefined);
-      if (ext.preSharedKey !== undefined) {
+      const offers = ext.pskOffers ?? (ext.preSharedKey !== undefined
+        ? [{ identity: ext.preSharedKey, obfuscatedAge: 0, binder: '00'.repeat(PSK_BINDER_LENGTH) }] : []);
+      if (offers.length > 0) {
         extension(inner, EXTENSION.preSharedKey, (e) => {
-          e.vector(2, (identities) => identities.vector(2, (identity) => identity.hex(ext.preSharedKey!)).u32(0));
-          e.vector(2, (binders) => binders.vector(1, (binder) => binder.bytes(new Uint8Array(PSK_BINDER_LENGTH))));
+          e.vector(2, (identities) => { for (const offer of offers) identities.vector(2, (identity) => identity.hex(offer.identity)).u32(offer.obfuscatedAge); });
+          e.vector(2, (binders) => { for (const offer of offers) binders.vector(1, (binder) => binder.hex(offer.binder)); });
         });
       }
     });
@@ -139,6 +141,7 @@ export function decodeClientHello(reader: TlsReader): ClientHello {
   let alpn: string[] | undefined;
   let pskKeyExchangeModes: string[] | undefined;
   let preSharedKey: string | undefined;
+  let pskOffers: PskOffer[] | undefined;
   let earlyData: boolean | undefined;
   let extendedMasterSecret = false;
   let renegotiationInfo: string | null = null;
@@ -195,7 +198,13 @@ export function decodeClientHello(reader: TlsReader): ClientHello {
         case EXTENSION.earlyData: earlyData = true; break;
         case EXTENSION.preSharedKey: {
           const identities = body.vector(2);
-          preSharedKey = bytesToHex(identities.vector(2).rest());
+          const parsed: { identity: string; obfuscatedAge: number }[] = [];
+          while (!identities.done) parsed.push({ identity: bytesToHex(identities.vector(2).rest()), obfuscatedAge: identities.u32() });
+          const binderList = body.vector(2);
+          const binders: string[] = [];
+          while (!binderList.done) binders.push(bytesToHex(binderList.vector(1).rest()));
+          pskOffers = parsed.map((entry, index) => ({ ...entry, binder: binders[index] ?? '' }));
+          preSharedKey = pskOffers[0]?.identity;
           break;
         }
         default: break;
@@ -219,6 +228,7 @@ export function decodeClientHello(reader: TlsReader): ClientHello {
       ...(alpn !== undefined ? { alpn } : {}),
       ...(pskKeyExchangeModes !== undefined ? { pskKeyExchangeModes } : {}),
       ...(preSharedKey !== undefined ? { preSharedKey } : {}),
+      ...(pskOffers !== undefined ? { pskOffers } : {}),
       ...(earlyData !== undefined ? { earlyData } : {}),
     },
   };
@@ -233,7 +243,7 @@ export function encodeServerHello(hello: ServerHello): Uint8Array {
     body.vector(2, (inner) => {
       extension(inner, EXTENSION.supportedVersions, (e) => e.u16(versionCode(hello.extensions.supportedVersions)));
       if (hello.extensions.keyShare !== undefined) extension(inner, EXTENSION.keyShare, (e) => writeKeyShareEntry(e, hello.extensions.keyShare!));
-      if (hello.extensions.preSharedKey !== undefined) extension(inner, EXTENSION.preSharedKey, (e) => e.u16(0));
+      if (hello.extensions.preSharedKey !== undefined) extension(inner, EXTENSION.preSharedKey, (e) => e.u16(hello.extensions.pskSelectedIdentity ?? 0));
     });
   });
 }
@@ -260,13 +270,14 @@ export function decodeServerHello(reader: TlsReader): ServerHello | HelloRetryRe
   let keyShare: string | undefined;
   let selectedGroup: string | undefined;
   let preSharedKey: string | undefined;
+  let pskSelectedIdentity: number | undefined;
   eachExtension(reader.vector(2), (type, body) => {
     if (type === EXTENSION.supportedVersions) supportedVersions = versionName(body.u16());
     else if (type === EXTENSION.keyShare) {
       if (body.remaining === 2) selectedGroup = groupName(body.u16());
       else keyShare = readKeyShareEntry(body);
     } else if (type === EXTENSION.preSharedKey) {
-      body.u16();
+      pskSelectedIdentity = body.u16();
       preSharedKey = 'accepted';
     }
   });
@@ -283,6 +294,7 @@ export function decodeServerHello(reader: TlsReader): ServerHello | HelloRetryRe
       supportedVersions,
       ...(keyShare !== undefined ? { keyShare } : {}),
       ...(preSharedKey !== undefined ? { preSharedKey } : {}),
+      ...(pskSelectedIdentity !== undefined ? { pskSelectedIdentity } : {}),
     },
   };
 }

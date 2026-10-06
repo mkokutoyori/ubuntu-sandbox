@@ -30,7 +30,8 @@ import {
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, decodeMessagesRaw, randomNonce,
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
-import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
+import { hashLength } from './hkdf';
+import { collapseFirstClientHello, deriveKeySchedule, computePskBinder, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, CLIENT_HELLO_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { DEFAULT_CIPHER_SUITES, parseTls13Ciphersuites } from './cipherSuites';
@@ -222,6 +223,8 @@ export class TlsClientSession {
     return this.legacy?.resumed ?? false;
   }
 
+  pskResumed = false;
+
   private withGrease<T>(values: readonly T[], grease: T): readonly T[] {
     return this.config.grease === true ? [grease, ...values] : values;
   }
@@ -285,15 +288,36 @@ export class TlsClientSession {
         ...(this.config.requestOcspStaple || this.config.requireOcspStaple || this.config.collectOcspStaple ? { statusRequest: true } : {}),
         ...(isValidMaxFragmentLength(this.config.maxFragmentLength) ? { maxFragmentLength: this.config.maxFragmentLength } : {}),
         preSharedKey: ticket?.ticket,
+        ...(ticket ? { pskOffers: [{ identity: ticket.ticket, obfuscatedAge: this.obfuscatedTicketAge(ticket), binder: '00'.repeat(hashLength(suiteInfo(ticket.cipherSuite).hash)) }] } : {}),
         pskKeyExchangeModes: ticket ? ['psk_dhe_ke'] : undefined,
         earlyData: ticket && this.config.earlyData ? true : undefined,
       },
     };
-    const clientHelloBytes = encodeHandshakeMessage(clientHello);
+    const clientHelloBytes = ticket ? this.bindClientHello(clientHello, ticket) : encodeHandshakeMessage(clientHello);
     this.lastClientHelloBytes = clientHelloBytes;
     this.transcript.push(clientHelloBytes);
     this.state = 'awaiting-server-flight';
     return fragmentAsRecords('handshake', clientHelloBytes, false);
+  }
+
+  private obfuscatedTicketAge(ticket: SessionTicket): number {
+    const ageAdd = Number.parseInt(ticket.ticketAgeAdd ?? '0', 16);
+    return (Math.max(0, simulationNowMs() - ticket.issuedAt) + ageAdd) >>> 0;
+  }
+
+  private bindClientHello(clientHello: ClientHello, ticket: SessionTicket): Uint8Array {
+    const hash = suiteInfo(ticket.cipherSuite).hash;
+    const placeholder = encodeHandshakeMessage(clientHello);
+    const bindersLength = 2 + 1 + hashLength(hash);
+    const partial = placeholder.subarray(0, placeholder.length - bindersLength);
+    const prefix = [...this.transcript];
+    if (this.retried) collapseFirstClientHello(prefix, hash);
+    const binder = computePskBinder(this.pskInput, transcriptHash([...prefix, partial], hash), hash);
+    const offer = clientHello.extensions.pskOffers![0];
+    return encodeHandshakeMessage({
+      ...clientHello,
+      extensions: { ...clientHello.extensions, pskOffers: [{ ...offer, binder }] },
+    });
   }
 
   /** Feeds the server's flight in; returns the client's next flight, or null on failure. */
@@ -447,6 +471,7 @@ export class TlsClientSession {
     this.clientHandshakeTrafficSecret = handshakePhase.clientHandshakeTrafficSecret;
     this.serverHandshakeTrafficSecret = handshakePhase.serverHandshakeTrafficSecret;
     const sessionResumed = Boolean(serverHello.extensions.preSharedKey);
+    this.pskResumed = sessionResumed;
     if (sessionResumed) {
       this.emit({
         topic: 'tls.session.resumed',
@@ -466,7 +491,8 @@ export class TlsClientSession {
     const certificate = messages.find((m): m is CertificateMessage => m.kind === 'certificate');
     const certificateVerify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify');
     const serverFinished = messages.find((m): m is Finished => m.kind === 'finished');
-    if (!encryptedExtensions || !certificate || !certificateVerify || !serverFinished) return this.fail('unexpected_message');
+    if (!encryptedExtensions || !serverFinished) return this.fail('unexpected_message');
+    if (sessionResumed ? certificate || certificateVerify : !certificate || !certificateVerify) return this.fail('unexpected_message');
 
     if (encryptedExtensions.extensions.alpn === GREASE_NAME) return this.fail('illegal_parameter');
     this.negotiatedAlpnProtocol = encryptedExtensions.extensions.alpn ?? null;
@@ -478,40 +504,51 @@ export class TlsClientSession {
     }
     this.earlyDataAccepted = encryptedExtensions.extensions.earlyData ?? false;
 
-    const leafCert = certificate.certificateList[0];
-    if (!leafCert) return this.fail('certificate_unknown');
-    this.peerCertificate = leafCert;
-    this.peerCertificateChain = certificate.certificateList;
-    this.receivedStaple = certificate.ocspStaple ?? null;
-    const verification = this.config.verifier.verify(
-      leafCert, this.config.serverName, certificate.certificateList.slice(1), 'serverAuth', this.policy.securityLevel,
-    );
-    this.peerVerified = verification.ok !== false;
-    if (verification.ok === false) {
-      this.peerVerificationReason = verification.reason;
-      if (!this.config.allowUntrustedPeer) {
-        this.lastAlert = certificateAlert(verification.reason);
-        this.state = 'done';
-        this.result = 'failure';
-        this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
-        this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
-        return null;
+    if (!sessionResumed) {
+      const leafCert = certificate!.certificateList[0];
+      if (!leafCert) return this.fail('certificate_unknown');
+      this.peerCertificate = leafCert;
+      this.peerCertificateChain = certificate!.certificateList;
+      this.receivedStaple = certificate!.ocspStaple ?? null;
+      const verification = this.config.verifier.verify(
+        leafCert, this.config.serverName, certificate!.certificateList.slice(1), 'serverAuth', this.policy.securityLevel,
+      );
+      this.peerVerified = verification.ok !== false;
+      if (verification.ok === false) {
+        this.peerVerificationReason = verification.reason;
+        if (!this.config.allowUntrustedPeer) {
+          this.lastAlert = certificateAlert(verification.reason);
+          this.state = 'done';
+          this.result = 'failure';
+          this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
+          this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
+          return null;
+        }
+      }
+
+      const stapleProblem = stapleAlert(
+        this.config.verifier, leafCert, certificate!.certificateList.slice(1), certificate!.ocspStaple,
+        this.config.requireOcspStaple === true,
+      );
+      if (stapleProblem !== null && (this.config.requestOcspStaple || this.config.requireOcspStaple)) return this.fail(stapleProblem);
+      this.transcript.push(rawOf(encryptedExtensions));
+      if (certificateRequest) this.transcript.push(rawOf(certificateRequest));
+      this.transcript.push(rawOf(certificate!));
+
+      const preVerify = certificateVerifyContent('server', transcriptHash(this.transcript, this.hash));
+      if (certificateVerify!.signatureAlgorithm !== schemeForKey(leafCert.publicKey.algorithm)) return this.fail('illegal_parameter');
+      if (!verifyCertificateVerify(leafCert.publicKey, preVerify, certificateVerify!.signatureAlgorithm, certificateVerify!.signature)) return this.fail('decrypt_error');
+      this.transcript.push(rawOf(certificateVerify!));
+
+    } else {
+      this.transcript.push(rawOf(encryptedExtensions));
+      const earlier = this.config.resumptionTicket?.peerCertificates;
+      if (earlier !== undefined && earlier.length > 0) {
+        this.peerCertificate = earlier[0];
+        this.peerCertificateChain = earlier;
+        this.peerVerified = true;
       }
     }
-
-    const stapleProblem = stapleAlert(
-      this.config.verifier, leafCert, certificate.certificateList.slice(1), certificate.ocspStaple,
-      this.config.requireOcspStaple === true,
-    );
-    if (stapleProblem !== null && (this.config.requestOcspStaple || this.config.requireOcspStaple)) return this.fail(stapleProblem);
-    this.transcript.push(rawOf(encryptedExtensions));
-    if (certificateRequest) this.transcript.push(rawOf(certificateRequest));
-    this.transcript.push(rawOf(certificate));
-
-    const preVerify = certificateVerifyContent('server', transcriptHash(this.transcript, this.hash));
-    if (certificateVerify.signatureAlgorithm !== schemeForKey(leafCert.publicKey.algorithm)) return this.fail('illegal_parameter');
-    if (!verifyCertificateVerify(leafCert.publicKey, preVerify, certificateVerify.signatureAlgorithm, certificateVerify.signature)) return this.fail('decrypt_error');
-    this.transcript.push(rawOf(certificateVerify));
 
     const preFinished = transcriptHash(this.transcript, this.hash);
     const expectedServerFinished = computeFinished(handshakePhase.serverHandshakeTrafficSecret, preFinished, this.hash);
@@ -585,6 +622,8 @@ export class TlsClientSession {
       ticket: message.ticket,
       resumptionMasterSecret: this.resumptionMasterSecret,
       ticketNonce: message.ticketNonce,
+      ticketAgeAdd: message.ticketAgeAdd,
+      ...(this.peerCertificate ? { peerCertificates: this.peerCertificateChain.length > 0 ? this.peerCertificateChain : [this.peerCertificate] } : {}),
       cipherSuite: this.negotiatedCipherSuite as CipherSuite,
       ticketLifetime: message.ticketLifetime,
       issuedAt: simulationNowMs(),
