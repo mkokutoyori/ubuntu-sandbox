@@ -72,7 +72,9 @@ import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
 import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
-import { LinuxIpv4Settings, LINUX_IPV4_KNOBS, type KernelIpFacts } from './linux/LinuxIpv4Settings';
+import {
+  LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, type KernelIpFacts,
+} from './linux/LinuxIpv4Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
@@ -228,6 +230,7 @@ import type { PamDialogue } from './linux/pam/PamDialogue';
 import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 import { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
 import type { SshKeygenTerminal } from '@/network/protocols/ssh/SshKeygenCommand';
+import { SSHD_LISTEN_BACKLOG } from './linux/ports/ListenBacklogs';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -270,6 +273,7 @@ function readUpstreamAnswer(
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   private readonly ipv4Settings = new LinuxIpv4Settings();
+  private readonly coreSettings = new LinuxCoreSettings();
   protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
   getKernelIpFacts(): KernelIpFacts { return this.ipv4Settings.kernelIpFacts(this.ipForwardEnabled); }
   protected override dhcpIpEmission(): DhcpIpEmission { return ISC_DHCP_EMISSION; }
@@ -280,6 +284,7 @@ export abstract class LinuxMachine extends EndHost
   protected override get tcpOptionPolicy(): TcpOptionPolicy { return this.ipv4Settings.optionPolicy; }
   protected override get tcpRestartsAfterIdle(): boolean { return this.ipv4Settings.restartsAfterIdle; }
   protected override get tcpRetryPolicy(): TcpRetryPolicy { return this.ipv4Settings.retryPolicy; }
+  protected override get tcpListenBacklogLimit(): number { return this.coreSettings.listenBacklogLimit; }
 
   /** Active profile — describes the "flavor" of this Linux machine. */
   public readonly profile: LinuxProfile;
@@ -408,6 +413,12 @@ export abstract class LinuxMachine extends EndHost
         () => `${this.ipv4Settings.get(knob.name)}\n`,
         (text) => this.ipv4Settings.write(knob.name, text));
     }
+    this.executor.vfs.mkdirp('/proc/sys/net/core', 0o755, 0, 0);
+    for (const knob of LINUX_CORE_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/core/${knob.name}`,
+        () => `${this.coreSettings.get(knob.name)}\n`,
+        (text) => this.coreSettings.write(knob.name, text));
+    }
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
       () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`,
       (text) => {
@@ -447,8 +458,7 @@ export abstract class LinuxMachine extends EndHost
     // TIME-WAIT during a real handshake/close, and feed the per-device
     // packet log so `tcpdump` shows the SYN/SYN-ACK/ACK/FIN bytes the
     // simulated stack actually exchanges.
-    new TcpSocketStateProjection(this.getBus(), this.socketTable, this.id);
-    new TcpdumpCaptureProjection(this.getBus(), this.executor.captureLog, this.id);
+    this.bindTcpProjections();
     this.syncHostnameFiles(this.hostname);
 
     // 3. Network façade (closes over protected EndHost members)
@@ -1333,6 +1343,17 @@ export abstract class LinuxMachine extends EndHost
     super.setEventBus(bus);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.dhcpd?.getEngine().setEventBus(this.getBus());
+    this.bindTcpProjections();
+  }
+
+  private tcpSocketProjection: TcpSocketStateProjection | null = null;
+  private tcpdumpProjection: TcpdumpCaptureProjection | null = null;
+
+  private bindTcpProjections(): void {
+    this.tcpSocketProjection?.dispose();
+    this.tcpdumpProjection?.dispose();
+    this.tcpSocketProjection = new TcpSocketStateProjection(this.getBus(), this.socketTable, this.id);
+    this.tcpdumpProjection = new TcpdumpCaptureProjection(this.getBus(), this.executor.captureLog, this.id);
   }
 
   override setHardware(profile: HardwareProfile): void {
@@ -1891,6 +1912,7 @@ export abstract class LinuxMachine extends EndHost
       for (const addr of LinuxMachine.SSHD_ADDRESSES) {
         try {
           stack.listen(port, {
+            backlog: SSHD_LISTEN_BACKLOG,
             identity: { pid, processName: 'sshd' },
             onAccept: (socket) => {
               stack.setSocketOwner(socket, pid);
@@ -2018,6 +2040,7 @@ export abstract class LinuxMachine extends EndHost
     bus.subscribe('linux.process.exited', (e) => {
       const payload = e.payload as { pid: number; comm: string };
       const { pid, comm } = payload;
+      this.executor.releaseSshClient(pid);
       const stack = this.getTcpStack();
       const toUnbind: Array<{ protocol: SocketProtocol; localAddress: string; localPort: number; state: string }> = [];
       for (const sock of this.socketTable.getAll()) {
@@ -3688,6 +3711,7 @@ export abstract class LinuxMachine extends EndHost
           if (cmd.runWithStatusSync) {
             const result = cmd.runWithStatusSync(this.buildCommandContext(), cmdArgs);
             this.executor.lastExitCode = result.exitCode;
+            if (result.interleaved !== undefined) return result.interleaved;
             return [result.output, result.stderr].filter((s) => s).join('\n');
           }
           if (cmd.runWithStatus) {

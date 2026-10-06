@@ -44,10 +44,11 @@ export class HttpsServerSession {
    * owner while the cleartext port next to it has one — the two views of
    * the same machine disagreeing about the same server.
    */
-  start(identity?: ListenerIdentity): void {
+  start(identity?: ListenerIdentity, backlog?: number): void {
     this.listener = this.tcpStack.listen(this.port, {
       onAccept: (socket) => this.handleConnection(socket),
       identity,
+      backlog,
     });
   }
 

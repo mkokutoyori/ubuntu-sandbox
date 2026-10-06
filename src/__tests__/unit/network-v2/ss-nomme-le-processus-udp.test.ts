@@ -82,7 +82,7 @@ describe('`ss -lunp` nomme le processus derriere une socket UDP', () => {
 
     const vu = await srv.executeCommand('ss -lunp');
 
-    expect(ligneDuPort(vu, 53)).toMatch(/users:\(\("systemd-resolved",pid=\d+/);
+    expect(ligneDuPort(vu, 53)).toMatch(/users:\(\("systemd-resolve",pid=\d+/);
     expect(ligneDuPort(vu, 1812)).toMatch(/users:\(\("freeradius",pid=\d+/);
   });
 

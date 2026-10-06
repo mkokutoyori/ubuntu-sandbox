@@ -11,6 +11,8 @@ import {
   DSCP_CODEPOINTS, DiffServField, HopLimit, TimeToLive, TtlFloor,
 } from '../../../../core/IpHeaderFields';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
+import { OPENBSD_NETCAT_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
+import type { TcpListenOptions } from '../../../../tcp/TcpStack';
 
 const OPTSTRING = '46C:cDde:FH:hI:i:K:klM:m:NnO:o:P:p:q:R:rSs:T:tUuV:vW:w:X:x:Z:z';
 const INT_MAX = 2147483647;
@@ -421,17 +423,12 @@ function openTcpListener(
   ctx: LinuxCommandContext, port: number, ownerUid: number, settings: SocketSettings,
 ): boolean {
   const device = localDeviceOf(ctx) as unknown as {
-    getTcpStack?: () => {
-      listen(
-        localPort: number,
-        opts: { onAccept: (socket: unknown) => void; ownerUid?: number } & SocketSettings,
-      ): unknown;
-    };
+    getTcpStack?: () => { listen(localPort: number, opts: TcpListenOptions): unknown };
   } | null;
   const stack = device?.getTcpStack?.();
   if (!stack) return true;
   try {
-    stack.listen(port, { onAccept: () => undefined, ownerUid, ...settings });
+    stack.listen(port, { onAccept: () => undefined, ownerUid, backlog: OPENBSD_NETCAT_LISTEN_BACKLOG, ...settings });
     return true;
   } catch {
     return false;

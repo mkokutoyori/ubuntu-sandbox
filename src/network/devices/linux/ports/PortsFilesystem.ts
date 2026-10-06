@@ -1,19 +1,8 @@
-/**
- * PortsFilesystem — keeps the on-disk view of the port subsystem coherent.
- *
- * Exposes `/proc/net/tcp`, `/proc/net/udp` and `/proc/net/snmp` — the kernel
- * socket tables surfaced as procfs files, *generated on every read* from the
- * live {@link SocketTable}, so they never go stale as services bind / unbind.
- * (`/etc/services` is seeded separately at device construction from the
- * canonical SystemFiles list — the single source of truth `getent services`
- * reads back.)
- *
- * Separated from the SocketTable itself (Single Responsibility): the table
- * reasons about sockets, this class reasons about their file representation.
- */
-
 import type { VirtualFileSystem } from '../VirtualFileSystem';
-import type { SocketTable, SocketEntry, SocketState } from '../../../core/SocketTable';
+import type { KernelSocketRow } from '../network/KernelSocketRows';
+import {
+  renderProcNetTcp, renderProcNetUdp, renderProcNetRaw, renderProcNetUnix, renderProcNetSockstat, renderProcNetSockstat6,
+} from './ProcNetTables';
 import { newProtocolCounters, type ProtocolCounters } from '../../../layers/internet/ProtocolCounters';
 import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts } from '../LinuxIpv4Settings';
 
@@ -21,47 +10,38 @@ import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts } from '../LinuxIpv4Sett
 export const PORT_PATHS = {
   services: '/etc/services',
   procNetTcp: '/proc/net/tcp',
+  procNetTcp6: '/proc/net/tcp6',
   procNetUdp: '/proc/net/udp',
+  procNetUdp6: '/proc/net/udp6',
   procNetUdpLite: '/proc/net/udplite',
+  procNetUdpLite6: '/proc/net/udplite6',
+  procNetRaw: '/proc/net/raw',
+  procNetRaw6: '/proc/net/raw6',
+  procNetUnix: '/proc/net/unix',
   procNetSnmp: '/proc/net/snmp',
+  procNetSockstat: '/proc/net/sockstat',
+  procNetSockstat6: '/proc/net/sockstat6',
   procNetDir: '/proc/net',
 } as const;
-
-/** TCP states mapped to the hex codes the kernel writes in `/proc/net/tcp`. */
-const PROC_STATE_HEX: Record<SocketState, string> = {
-  ESTABLISHED: '01',
-  SYN_SENT: '02',
-  SYN_RECEIVED: '03',
-  FIN_WAIT_1: '04',
-  FIN_WAIT_2: '05',
-  TIME_WAIT: '06',
-  CLOSED: '07',
-  CLOSE_WAIT: '08',
-  LAST_ACK: '09',
-  LISTEN: '0A',
-  CLOSING: '0B',
-};
 
 export class PortsFilesystem {
   constructor(private readonly vfs: VirtualFileSystem) {}
 
-  /**
-   * Register `/proc/net/tcp` and `/proc/net/udp` as generated files: their
-   * content is produced from the socket table on every read.
-   */
   registerProcNet(
-    socketTable: SocketTable, counters?: () => ProtocolCounters, kernel?: () => KernelIpFacts,
+    rows: () => KernelSocketRow[], counters?: () => ProtocolCounters, kernel?: () => KernelIpFacts,
   ): void {
     this.vfs.mkdirp(PORT_PATHS.procNetDir, 0o555, 0, 0);
-    this.vfs.registerGeneratedFile(PORT_PATHS.procNetTcp, () =>
-      renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'tcp')),
-    );
-    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdp, () =>
-      renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'udp')),
-    );
-    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdpLite, () =>
-      renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'udplite')),
-    );
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetTcp, () => renderProcNetTcp(rows(), 4));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetTcp6, () => renderProcNetTcp(rows(), 6));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdp, () => renderProcNetUdp(rows(), 4, 'udp'));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdp6, () => renderProcNetUdp(rows(), 6, 'udp'));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdpLite, () => renderProcNetUdp(rows(), 4, 'udplite'));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdpLite6, () => renderProcNetUdp(rows(), 6, 'udplite'));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetRaw, () => renderProcNetRaw(4));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetRaw6, () => renderProcNetRaw(6));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUnix, () => renderProcNetUnix());
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetSockstat, () => renderProcNetSockstat(rows()));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetSockstat6, () => renderProcNetSockstat6(rows()));
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetSnmp, () =>
       renderProcNetSnmp(linuxSnmpSnapshot(counters?.(), kernel?.())),
     );
@@ -107,44 +87,4 @@ export function renderProcNetSnmp(snapshot: LinuxSnmpSnapshot): string {
     `UdpLite: ${c.udpLiteInDatagrams} ${c.udpLiteNoPorts} ${c.udpLiteInErrors} ${c.udpLiteOutDatagrams} 0 0 ${c.udpLiteInCsumErrors} 0`,
     '',
   ].join('\n');
-}
-
-// ─── /proc/net rendering ──────────────────────────────────────────────────
-
-/** Render a `/proc/net/{tcp,udp}` table from a list of socket entries. */
-function renderProcNet(sockets: SocketEntry[]): string {
-  const header =
-    '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when ' +
-    'retrnsmt   uid  timeout inode';
-  const rows = sockets.map((sock, index) => {
-    const local = `${ipToHex(sock.localAddress)}:${portToHex(sock.localPort)}`;
-    const remote = `${ipToHex(sock.remoteAddress)}:${portToHex(sock.remotePort)}`;
-    const st = PROC_STATE_HEX[sock.state] ?? '07';
-    const sl = String(index).padStart(4);
-    return (
-      `${sl}: ${local} ${remote} ${st} 00000000:00000000 00:00000000 ` +
-      `00000000     0        0 ${sock.id} 1 0000000000000000 100 0 0 10 0`
-    );
-  });
-  return [header, ...rows, ''].join('\n');
-}
-
-/**
- * Encode a dotted-quad IPv4 address as the little-endian 8-hex-digit string
- * the kernel writes in procfs (e.g. `127.0.0.53` → `3500007F`).
- */
-function ipToHex(address: string): string {
-  const octets = address.split('.').map((o) => parseInt(o, 10));
-  if (octets.length !== 4 || octets.some((o) => Number.isNaN(o))) {
-    return '00000000';
-  }
-  return octets
-    .reverse()
-    .map((o) => o.toString(16).toUpperCase().padStart(2, '0'))
-    .join('');
-}
-
-/** Encode a port number as a 4-digit uppercase hex string. */
-function portToHex(port: number): string {
-  return port.toString(16).toUpperCase().padStart(4, '0');
 }

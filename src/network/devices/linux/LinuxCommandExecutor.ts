@@ -110,7 +110,7 @@ import {
 } from './nfs/NfsCommands';
 import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
-import { cmdNetstat, cmdWget } from './LinuxNetCommands';
+import { cmdWget, renderNetstatInterfaces, renderNetstatRoutes, renderNetstatStatistics } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -127,6 +127,11 @@ import {
 } from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts, type KernelIpFactsSource } from './LinuxIpv4Settings';
+import {
+  kernelSocketRows, socketIdsOwnedBy, type KernelSocketRow, type ProcessDirectory,
+} from './network/KernelSocketRows';
+import { destroyKernelSocket, type SocketDestroyOutcome } from './network/KernelSocketDestroy';
+import { SocketCookies } from './network/SocketCookies';
 import { newProtocolCounters, type ProtocolCounters } from '@/network/layers/internet/ProtocolCounters';
 import type { KernelBootFacts } from './boot/KernelBootLog';
 import { ServicePortProjection } from './ports/ServicePortProjection';
@@ -137,7 +142,7 @@ import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
 import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
-import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
+import { LinuxProcessManager, kernelComm, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
 import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
@@ -1052,18 +1057,18 @@ export class LinuxCommandExecutor {
       this.vfs.mkdirp(`/proc/${pid}`, 0o555, 0, 0);
       this.vfs.registerGeneratedFile(`/proc/${pid}/comm`, () => {
         const p = this.processMgr.get(pid);
-        return p ? `${p.comm}\n` : '';
+        return p ? `${kernelComm(p.comm)}\n` : '';
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/cmdline`, () => {
         const p = this.processMgr.get(pid);
-        // Real /proc/<pid>/cmdline NUL-separates args, then a trailing NUL.
-        return p ? p.args.join('\0') + '\0' : '';
+        if (!p || p.command.startsWith('[')) return '';
+        return [p.command.split(/\s+/)[0], ...p.args].join('\0') + '\0';
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/status`, () => {
         const p = this.processMgr.get(pid);
         if (!p) return '';
         return [
-          `Name:\t${p.comm}`,
+          `Name:\t${kernelComm(p.comm)}`,
           `State:\t${p.state} (${stateLabel(p.state)})`,
           `Tgid:\t${p.pid}`,
           `Pid:\t${p.pid}`,
@@ -1080,7 +1085,7 @@ export class LinuxCommandExecutor {
         const p = this.processMgr.get(pid);
         if (!p) return '';
         return [
-          p.pid, `(${p.comm})`, p.state, p.ppid, p.pgid, p.sid, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0,
+          p.pid, `(${kernelComm(p.comm)})`, p.state, p.ppid, p.pgid, p.sid, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0,
           p.priority, p.nice, 0, 0, 0, p.vsize * 1024, p.rss,
         ].join(' ') + '\n';
       });
@@ -1170,7 +1175,7 @@ export class LinuxCommandExecutor {
       pid,
       tty: p?.tty,
       openFiles: p?.openFiles,
-      socketIds: (this.socketTable?.listByPid(pid) ?? []).map((s) => s.id),
+      socketIds: this.socketTable === null ? [] : socketIdsOwnedBy(this.socketTable, this.socketProcesses(), pid),
     };
   }
 
@@ -1207,7 +1212,7 @@ export class LinuxCommandExecutor {
     return { loginuid: NONE, sessionid: NONE };
   }
 
-  private cgroupPathFor(pid: number): string {
+  cgroupPathFor(pid: number): string {
     const a = this.auditAttrs(pid);
     if (a.loginuid !== 4294967295 && a.sessionid !== 4294967295) {
       return `/user.slice/user-${a.loginuid}.slice/session-${a.sessionid}.scope`;
@@ -1805,6 +1810,7 @@ export class LinuxCommandExecutor {
       ? await this.relayShellOverWire(
         session, offeredPassword === undefined && stdinPwd ? 1 : 0, true)
       : null;
+    const client = this.sshClientProcess(args, target?.forksToBackground === true);
     try {
       return this.finishSshClientResult(runSshClient({
         ...opts,
@@ -1813,6 +1819,7 @@ export class LinuxCommandExecutor {
         wirePeerIp: this.machineAnswering(session) ?? undefined,
         wireNotices: interactif ? wire.notices : undefined,
         shellRelay: () => relayedShell,
+        clientProcess: client.pid,
         forwardingSession: {
           session,
           clientHost: this.localDevice as unknown as { getTcpStack(): TcpStack },
@@ -1831,8 +1838,61 @@ export class LinuxCommandExecutor {
       }), true);
     } finally {
       if (target?.holdOnly === true) this.forwarding?.holdOpen(session);
-      if (!this.forwarding?.holds(session)) session.disconnect();
+      if (this.forwarding?.holds(session)) {
+        this.handSshSessionTo(session, client.pid());
+      } else {
+        session.disconnect();
+        client.retire();
+      }
     }
+  }
+
+  private sshClientProcess(
+    args: readonly string[], detached: boolean,
+  ): { readonly pid: () => number; readonly retire: () => void } {
+    let pid: number | null = null;
+    return {
+      pid: () => {
+        if (pid === null) pid = this.spawnSshClient(args, detached);
+        return pid;
+      },
+      retire: () => {
+        if (pid === null) return;
+        this.processMgr.exit(pid, 0);
+        this.processMgr.reap(pid);
+      },
+    };
+  }
+
+  private spawnSshClient(args: readonly string[], detached: boolean): number {
+    const c = this.ctx();
+    return this.processMgr.spawn({
+      command: ['ssh', ...args].join(' '),
+      comm: 'ssh',
+      user: this.userMgr.currentUser,
+      uid: c.uid,
+      gid: c.gid,
+      ppid: detached ? 1 : this.currentBashPid(),
+      tty: detached ? '?' : 'pts/0',
+      cwd: this.cwd,
+    }).pid;
+  }
+
+  private handSshSessionTo(session: SshSession, pid: number): void {
+    this.forwarding?.adopt(session, pid);
+    const endpoint = session.localEndpoint;
+    if (endpoint === null || this.socketTable === null) return;
+    const connection = this.socketTable.getAll().find((entry) => entry.protocol === 'tcp'
+      && entry.state === 'ESTABLISHED'
+      && entry.localAddress === endpoint.ip && entry.localPort === endpoint.port);
+    if (connection === undefined) return;
+    connection.pid = pid;
+    connection.processName = 'ssh';
+    connection.uid = this.userMgr.currentUid;
+  }
+
+  releaseSshClient(pid: number): void {
+    this.forwarding?.closeOwnedBy(pid);
   }
 
   private machineAnswering(session: SshSession): string | null {
@@ -1972,8 +2032,8 @@ export class LinuxCommandExecutor {
     return r.status === 'SUCCESS' && r.entry ? r.entry.name : null;
   }
 
-  resolveServicePort(name: string): number | null {
-    const r = this.nss.lookup<NssServiceEntry>('services', s => s.getservbyname?.(name));
+  resolveServicePort(name: string, proto?: string): number | null {
+    const r = this.nss.lookup<NssServiceEntry>('services', s => s.getservbyname?.(name, proto));
     return r.status === 'SUCCESS' && r.entry ? r.entry.port : null;
   }
 
@@ -2489,11 +2549,14 @@ export class LinuxCommandExecutor {
     // `-L`/`-R`/`-D` tunnels surface through `ss` / `netstat`.
     const ownStack = (this.localDevice as { getTcpStack?: () => TcpStack } | null)?.getTcpStack?.();
     this.forwarding = new SshForwardingTable(table, ownStack);
+    this.forwarding.onClientReleased((pid) => {
+      if (this.processMgr.get(pid)) this.processMgr.exit(pid, 0);
+    });
     // Now that the socket table exists, expose /proc/net/{tcp,udp} as
     // generated files that always reflect the live table. `/etc/services`
     // is seeded once at construction from the canonical SystemFiles list.
     const portsFs = new PortsFilesystem(this.vfs);
-    portsFs.registerProcNet(table, () => this.protocolCounters(), () => this.kernelIpFacts());
+    portsFs.registerProcNet(() => this.kernelSocketRows(), () => this.protocolCounters(), () => this.kernelIpFacts());
   }
 
   /** The SSH port-forwarding table — `-R` listeners are bound here too. */
@@ -2570,6 +2633,52 @@ export class LinuxCommandExecutor {
       rootFsType: racine?.fsType ?? 'ext4',
       adapters: hw.adapters.map((a) => ({ name: a.name, driver: a.driver, busInfo: a.busInfo })),
     };
+  }
+
+  private socketProcesses(): ProcessDirectory {
+    return {
+      get: (pid) => this.processMgr.get(pid),
+      firstWithName: (comm) => this.processMgr.list({ comm })[0]?.pid,
+      socketDescriptorsOf: (pid) => {
+        const sockets = new Map<number, number>();
+        for (const descriptor of openDescriptors(this.descriptorSourcesFor(pid))) {
+          const inode = /^socket:\[(\d+)\]$/.exec(descriptor.target)?.[1];
+          if (inode !== undefined && !sockets.has(Number(inode))) sockets.set(Number(inode), descriptor.fd);
+        }
+        return sockets;
+      },
+    };
+  }
+
+  kernelSocketRows(): KernelSocketRow[] {
+    if (this.socketTable === null) return [];
+    return kernelSocketRows({
+      table: this.socketTable,
+      stack: this.tcpStackOfHost(),
+      processes: this.socketProcesses(),
+    });
+  }
+
+  private tcpStackOfHost(): TcpStack | null {
+    const holder = this.localDevice as { getTcpStack?: () => TcpStack } | null;
+    return holder?.getTcpStack?.() ?? null;
+  }
+
+  readonly socketCookies = new SocketCookies();
+
+  destroySocket(row: KernelSocketRow): SocketDestroyOutcome {
+    return destroyKernelSocket(row, this.tcpStackOfHost(), this.userMgr.currentUid === 0);
+  }
+
+  netstatTable(kind: 'routes' | 'interfaces' | 'statistics'): string {
+    if (kind === 'routes') return renderNetstatRoutes(this.ipNetworkCtx);
+    if (kind === 'interfaces') return renderNetstatInterfaces(this.ipNetworkCtx);
+    return renderNetstatStatistics(this.protocolCounters(), this.kernelIpFacts());
+  }
+
+  terminalColumns(): number | null {
+    const columns = Number.parseInt(this.envOverride?.COLUMNS ?? this.env.get('COLUMNS') ?? '', 10);
+    return Number.isFinite(columns) && columns > 0 ? columns : null;
   }
 
   protocolCounters(): ProtocolCounters {
@@ -5555,7 +5664,6 @@ export class LinuxCommandExecutor {
       // 05, constat A8). A `case` here used to shadow that hook with a
       // second, independently-drifted implementation that only a script
       // (`bash script.sh`) could reach.
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (name) => this.processMgr.list({ comm: name })[0]?.pid, this.protocolCounters(), this.kernelIpFacts()), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       case 'dstat': {
         const parsed = parseDstatArgs(args);
@@ -7808,30 +7916,23 @@ export class LinuxCommandExecutor {
       }
     }
 
-    if (this.socketTable) {
-      for (const s of this.socketTable.getAll()) {
-        if (filterPid !== null && s.pid !== filterPid) continue;
-        if (filterUser !== null) {
-          const proc = s.pid ? this.processMgr.get(s.pid) : null;
-          if (!proc || proc.user !== filterUser) continue;
-        }
-        if (filterInet) {
-          if (filterInet.proto && s.protocol !== filterInet.proto) continue;
-          if (filterInet.port !== undefined && s.localPort !== filterInet.port) continue;
-        }
-        const ipv = s.localAddress.includes(':') ? 'IPv6' : 'IPv4';
-        const peer = s.state === 'LISTEN' || s.state === 'CLOSED'
-          ? '*:*'
-          : `${s.remoteAddress}:${s.remotePort}`;
-        const target = s.state === 'LISTEN'
-          ? `*:${s.localPort} (LISTEN)`
-          : `${s.localAddress}:${s.localPort}->${peer} (${s.state})`;
-        const comm = (s.processName ?? 'unknown').slice(0, 10);
-        const pid = String(s.pid ?? 0).padStart(5);
-        const proc = s.pid ? this.processMgr.get(s.pid) : null;
-        const user = (proc?.user ?? 'root').padEnd(6);
-        lines.push(`${comm.padEnd(10)} ${pid}  ${user} ${String(s.id + 3).padStart(3)}u  ${ipv} ${String(nodeSeq++).padStart(5)}      0t0  ${s.protocol.toUpperCase()} ${target}`);
+    for (const row of this.kernelSocketRows()) {
+      const { entry, owner } = row;
+      if (owner === null || owner.fd === null) continue;
+      if (row.state === 'TIME_WAIT' || row.state === 'SYN_RECEIVED') continue;
+      if (filterPid !== null && owner.pid !== filterPid) continue;
+      const user = this.userMgr.uidToName(owner.uid);
+      if (filterUser !== null && user !== filterUser) continue;
+      if (filterInet) {
+        if (filterInet.proto && entry.protocol !== filterInet.proto) continue;
+        if (filterInet.port !== undefined && entry.localPort !== filterInet.port) continue;
       }
+      const ipv = entry.localAddress.includes(':') ? 'IPv6' : 'IPv4';
+      const local = entry.localAddress === '0.0.0.0' || entry.localAddress === '::' ? '*' : entry.localAddress;
+      const target = entry.remoteAddress === '*'
+        ? `${local}:${entry.localPort}${entry.protocol === 'tcp' ? ' (LISTEN)' : ''}`
+        : `${local}:${entry.localPort}->${entry.remoteAddress}:${entry.remotePort} (${row.state})`;
+      lines.push(`${owner.name.slice(0, 9).padEnd(10)} ${String(owner.pid).padStart(5)}  ${user.padEnd(6)} ${String(owner.fd).padStart(3)}u  ${ipv} ${String(entry.id).padStart(5)}      0t0  ${entry.protocol.toUpperCase()} ${target}`);
     }
 
     // Log files whose name was removed while rsyslog still holds them open

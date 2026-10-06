@@ -270,6 +270,24 @@ Un test qui échoue si une nouvelle divergence apparaît. Sans lui, P1 et P2
 se déferont au premier ajout : c'est exactement ainsi que ce défaut est né
 et s'est reproduit cinq fois.
 
+### P4 — Une connexion, plusieurs vues : les files, les minuteries, le propriétaire
+
+P1 à P3 ont rendu les *ports* cohérents ; elles laissaient chaque vue (`ss`, `netstat`, `/proc/net/*`, `lsof`,
+`/proc/<pid>/fd`) tenir sa propre copie du reste d'une connexion : files, minuterie, `tcp_info`, uid, inode,
+descripteur. Mesuré sur `origin/mandeng 75c5280d8` avec une connexion qui retenait 785 octets non lus, `ss`
+imprimait `Recv-Q 0`, `-o`, `-e` et `-i` étaient acceptés sans effet, `/proc/net/tcp` donnait l'uid 0 à une
+prise du résolveur, `netstat` imprimait la colonne `PID/Program name` sans `-p`.
+
+Les vues lisent désormais une seule jointure, `KernelSocketRows` : la `SocketTable` dit qui tient la prise
+(pid, uid, nom, descripteur), la pile dit ce que la prise est (files, minuterie, `tcp_info`). `ss` est un
+portage d'iproute2 5.15, `netstat` un portage de net-tools 2.10 sur `/proc/net/*`, et les rendus de
+`/proc/net/{tcp,tcp6,udp,udp6,udplite,raw,raw6,unix,sockstat,sockstat6}` suivent le noyau 5.15. Une prise sans
+processus vivant derrière elle n'a pas de propriétaire affiché : le propriétaire est un fait de la table des
+processus, pas une étiquette de la table des sockets : un service qui veut être nommé par `ss -p` doit avoir
+un vrai processus (le listener TNS d'Oracle, qui écoute dès l'amorçage sans processus `tnslsnr`, n'est donc
+pas nommé tant qu'aucun processus ne le tient). `probe-ss-netstat-proc-net-une-seule-verite` est le garde-fou
+de ce croisement.
+
 ## 7. Hors périmètre
 
 - **UDP.** Même structure (`udpBindAddress` vs table), mais un socket UDP

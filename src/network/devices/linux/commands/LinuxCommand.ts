@@ -196,7 +196,7 @@ export interface LinuxCommand {
     ctx: LinuxCommandContext,
     args: string[],
     stdin?: string,
-  ): { output: string; exitCode: number; stderr?: string };
+  ): { output: string; exitCode: number; stderr?: string; interleaved?: string };
 
   /**
    * Optional tab-completion callback. Called when the user presses TAB

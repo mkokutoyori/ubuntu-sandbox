@@ -134,6 +134,7 @@ export interface SshClientOpts {
    */
   localForwarding?: SshForwardingTable;
   forwardingSession?: ForwardingSession;
+  clientProcess?: () => number;
   wirePeerIp?: string;
   /**
    * The local machine's ssh-agent — when `-A` (agent forwarding) is used,
@@ -596,6 +597,7 @@ export interface WireExecTarget {
   identities: string[];
   command: string;
   holdOnly: boolean;
+  forksToBackground: boolean;
   strict: StrictHostKeyChecking;
   authentication: SshClientAuthentication;
   algorithms: SshAlgorithmPreferences;
@@ -626,6 +628,7 @@ export function wireExecTarget(
     host, user, port: clientPort(flags), identities,
     command: joinRemoteCommand(positional.slice(1)),
     holdOnly: flags.includes('-N'),
+    forksToBackground: flags.includes('-f'),
     strict: parseStrictHostKeyChecking(asked) ?? 'accept-new',
     authentication: sshClientAuthentication(sshOptionValues(flags)),
     algorithms: sshClientAlgorithms(sshOptionValues(flags)),
@@ -692,6 +695,7 @@ function setupPortForwards(opts: SshClientOpts, flags: string[]): string {
   if (forwards.length === 0) return '';
   const table = opts.localForwarding;
   const carrier = opts.forwardingSession;
+  const clientProcess = opts.clientProcess;
   let diagnostics = '';
   let localRequested = 0;
   let localOpened = 0;
@@ -703,8 +707,8 @@ function setupPortForwards(opts: SshClientOpts, flags: string[]): string {
       continue;
     }
     localRequested++;
-    if (table === undefined || carrier === undefined) continue;
-    const opening = table.openLocal(fwd, carrier.session, SSH_CLIENT_FORWARD_PID, opts.sourceUid);
+    if (table === undefined || carrier === undefined || clientProcess === undefined) continue;
+    const opening = table.openLocal(fwd, carrier.session, clientProcess(), opts.sourceUid);
     if (opening !== 'opened') {
       diagnostics += localListenerFailure(fwd.bindAddress, fwd.listenPort, opening).map((l) => `${l}\n`).join('');
       continue;

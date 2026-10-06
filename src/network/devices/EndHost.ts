@@ -33,7 +33,7 @@ import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters }
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
-import { TcpStack, type TcpOptionPolicy, type TcpMibSink } from '../tcp/TcpStack';
+import { TcpStack, TCP_SOMAXCONN, type TcpOptionPolicy, type TcpMibSink } from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
@@ -650,6 +650,7 @@ export abstract class EndHost extends Equipment {
   protected get tcpOptionPolicy(): TcpOptionPolicy { return { sack: true, timestamps: true, windowScaling: true }; }
   protected get tcpRestartsAfterIdle(): boolean { return true; }
   protected get tcpRetryPolicy(): TcpRetryPolicy { return RFC_RETRY_POLICY; }
+  protected get tcpListenBacklogLimit(): number { return TCP_SOMAXCONN; }
 
   // ─── Reactive plumbing (Phase 5) ──────────────────────────────────
   /** Owns scheduler-driven timers (ARP aging, echo waits). */
@@ -1137,6 +1138,7 @@ export abstract class EndHost extends Equipment {
       optionPolicy: () => this.tcpOptionPolicy,
       restartsAfterIdle: () => this.tcpRestartsAfterIdle,
       retryPolicy: () => this.tcpRetryPolicy,
+      listenBacklogLimit: () => this.tcpListenBacklogLimit,
       mib: this.tcpMib,
       nowMs: () => this.getSystemClockMs(),
     };

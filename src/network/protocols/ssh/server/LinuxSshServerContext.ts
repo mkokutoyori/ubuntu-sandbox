@@ -65,6 +65,7 @@ import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
 import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import { createEditorSession } from '@/network/devices/linux/editors/EditorView';
 import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
+import { SSHD_LISTEN_BACKLOG } from '@/network/devices/linux/ports/ListenBacklogs';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -399,6 +400,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     const stack = this.device.getTcpStack();
     try {
       const listener = stack.listen(request.port, {
+        backlog: SSHD_LISTEN_BACKLOG,
         onAccept: (socket) => request.onConnection(socketStream(socket)),
         ownerUid: request.user.uid,
         identity: { pid: this.device.sshdPid(), processName: 'sshd' },

@@ -18,7 +18,10 @@ export function initialCongestionWindow(mss: number): number {
   return 4 * mss;
 }
 
+export const TCP_CONGESTION_ALGORITHM = 'reno';
+
 export class TcpCongestionControl {
+  readonly algorithm = TCP_CONGESTION_ALGORITHM;
   cwnd: number;
   ssthresh: number = Number.MAX_SAFE_INTEGER;
   private dupAckCount = 0;

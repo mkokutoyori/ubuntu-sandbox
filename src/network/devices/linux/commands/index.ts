@@ -55,6 +55,7 @@ import {
   a2ensiteCommand, a2dissiteCommand, a2enmodCommand, a2dismodCommand,
 } from './net/A2enmod';
 import { ssCommand } from './net/Ss';
+import { netstatCommand } from './net/Netstat';
 import { ncCommand } from './net/Nc';
 import { tcCommand } from './net/Tc';
 import { radtestCommand } from './net/Radtest';
@@ -196,6 +197,7 @@ export {
   a2enmodCommand,
   a2dismodCommand,
   ssCommand,
+  netstatCommand,
   ncCommand,
   tcCommand,
   radtestCommand,
@@ -355,6 +357,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   a2enmodCommand,
   a2dismodCommand,
   ssCommand,
+  netstatCommand,
   ncCommand,
   tcCommand,
   radtestCommand,

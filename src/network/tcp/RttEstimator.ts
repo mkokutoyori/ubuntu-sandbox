@@ -40,6 +40,8 @@ export class RttEstimator {
   private rtoMs: number;
   private srttMs: number | null = null;
   private rttvarMs: number | null = null;
+  private backoffs = 0;
+  private minSampleMs: number | null = null;
 
   constructor(
     private readonly initialRtoMs: number = TCP_INITIAL_RTO_MS,
@@ -59,8 +61,25 @@ export class RttEstimator {
     return this.srttMs !== null;
   }
 
+  get smoothedMs(): number {
+    return this.srttMs ?? 0;
+  }
+
+  get variationMs(): number {
+    return this.rttvarMs ?? 0;
+  }
+
+  get minimumMs(): number | null {
+    return this.minSampleMs;
+  }
+
+  get backoffCount(): number {
+    return this.backoffs;
+  }
+
   /** A retransmission timer fired — double the RTO (capped), per RFC 6298 §5.5 (Karn's algorithm: back off regardless of SRTT until a clean sample arrives). */
   backoff(): number {
+    this.backoffs++;
     this.rtoMs = Math.min(this.rtoMs * 2, this.maxRtoMs);
     return this.rtoMs;
   }
@@ -76,6 +95,8 @@ export class RttEstimator {
    * tell which transmission it actually acknowledges.
    */
   sample(rttMs: number): void {
+    this.backoffs = 0;
+    if (this.minSampleMs === null || rttMs < this.minSampleMs) this.minSampleMs = rttMs;
     if (this.srttMs === null || this.rttvarMs === null) {
       // RFC 6298 §2.2 — first measurement.
       this.srttMs = rttMs;

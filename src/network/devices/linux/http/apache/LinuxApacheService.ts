@@ -23,6 +23,7 @@ import {
   APACHE_ACCESS_LOG, APACHE_ERROR_LOG, APACHE_MODS_ENABLED, APACHE_CONF_PATH, APACHE_CONF_ENABLED,
   apacheNotFoundPage, apacheForbiddenPage, apacheBadRequestPage, apacheMisdirectedPage,
 } from './ApacheFiles';
+import { APACHE_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
 
 /**
  * apache2 (docs/PRD-Manquements.md §M4a) — the server that was missing.
@@ -180,7 +181,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
         (req, peer) => this.respond(spec.port, req, peer),
       );
     try {
-      session.start(identity);
+      session.start(identity, APACHE_LISTEN_BACKLOG);
     } catch {
       return false;
     }
