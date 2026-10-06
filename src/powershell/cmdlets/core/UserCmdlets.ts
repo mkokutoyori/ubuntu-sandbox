@@ -30,6 +30,7 @@ function userToPSObject(u: UserInfo): Record<string, PSValue> {
     Enabled:          u.enabled,
     PasswordRequired: u.passwordRequired,
     LastLogon:        u.lastLogon,
+    PasswordLastSet:  u.passwordLastSet ?? null,
   };
 }
 

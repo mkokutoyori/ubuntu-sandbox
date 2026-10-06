@@ -6,6 +6,7 @@
  * classes the simulator actually supports.
  */
 
+import { cimRowToObject, machineDate } from '@/powershell/runtime/dotnetDateTime';
 import { simulationDate } from '@/network/core/SystemClock';
 
 import type { ICmdlet } from '../ICmdlet';
@@ -139,7 +140,7 @@ export class RegisterScheduledTaskCmdlet implements ICmdlet {
     let runAt: Date | undefined;
     let intervalMs: number | undefined;
     if (trigger) {
-      const deviceNow = tasks.now?.() ?? simulationDate();
+      const deviceNow = machineDate(ctx.providers);
       // `Get-Date` now reflects the device's own simulated clock (not real
       // wall time), so a `-At (Get-Date)` argument already IS the correct
       // simulated instant — no rebasing against the real clock needed.
@@ -395,7 +396,7 @@ function parseTriggerAt(raw: PSValue | undefined, ctx: CmdletContext): Date | un
   if (raw === undefined) return undefined;
   if (raw instanceof Date) return raw;
   const text = psValueToString(raw).trim();
-  const now = ctx.providers.scheduledTasks?.now?.() ?? simulationDate();
+  const now = machineDate(ctx.providers);
   const clock = /^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(am|pm)?$/i.exec(text);
   if (clock) {
     let hour = Number(clock[1]);
@@ -769,7 +770,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     // Les classes adossees a l'inventaire materiel : une seule
     // declaration les porte, et `wmic` la lit aussi.
     const hardwareClass = ctx.providers.wmi?.instances(className);
-    if (hardwareClass) return hardwareClass as unknown as PSValue;
+    if (hardwareClass) return hardwareClass.map((row) => cimRowToObject(row, ctx.providers)) as unknown as PSValue;
     if (className === 'win32_operatingsystem') {
       const registry = ctx.providers.registry;
       const values = registry?.getItemPropertyValues?.(CURRENT_VERSION_KEY) ?? {};

@@ -18,6 +18,8 @@
  *   - net localgroup <name> <user> /delete → remove member
  */
 
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import type { WindowsUserManager } from './WindowsUserManager';
 import type { DirectoryStore } from './server/ad/DirectoryStore';
 
@@ -30,6 +32,7 @@ function netError(message: string): string {
 export interface NetUserContext {
   hostname: string;
   userManager: WindowsUserManager;
+  timezone?: string;
   /** Non-null only on a promoted DC (`Install-ADDSForest` succeeded) — backs `net user /domain` (PRD-Windows-Server.md §5 P5). */
   directoryStore?: DirectoryStore | null;
 }
@@ -221,6 +224,10 @@ function formatUserList(ctx: NetUserContext): string {
   return lines.join('\n');
 }
 
+function userDate(d: Date, zone?: string): string {
+  return formatDotNetDate(ZonedDate.in(d.getTime(), zone), 'M/d/yyyy');
+}
+
 function formatUserDetails(ctx: NetUserContext, username: string): string {
   const user = ctx.userManager.getUser(username);
   if (!user) return 'The user name could not be found.\n\nMore help is available by typing NET HELPMSG 2221.';
@@ -237,9 +244,9 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   lines.push(`Account active               ${user.enabled ? 'Yes' : 'No'}`);
   lines.push(`Account expires              Never`);
   lines.push(``);
-  lines.push(`Password last set            ${user.passwordLastSet.toLocaleDateString('en-US')}`);
+  lines.push(`Password last set            ${userDate(user.passwordLastSet, ctx.timezone)}`);
   lines.push(`Password expires             Never`);
-  lines.push(`Password changeable          ${user.passwordLastSet.toLocaleDateString('en-US')}`);
+  lines.push(`Password changeable          ${userDate(user.passwordLastSet, ctx.timezone)}`);
   lines.push(`Password required            ${user.passwordRequired ? 'Yes' : 'No'}`);
   lines.push(`User may change password     ${user.userMayChangePassword ? 'Yes' : 'No'}`);
   lines.push(``);
@@ -247,7 +254,7 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   lines.push(`Logon script`);
   lines.push(`User profile`);
   lines.push(`Home directory`);
-  lines.push(`Last logon                   ${user.lastLogon ? user.lastLogon.toLocaleDateString('en-US') : 'Never'}`);
+  lines.push(`Last logon                   ${user.lastLogon ? userDate(user.lastLogon, ctx.timezone) : 'Never'}`);
   lines.push(``);
   lines.push(`Logon hours allowed          All`);
   lines.push(``);

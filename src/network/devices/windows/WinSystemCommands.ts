@@ -8,6 +8,9 @@
  * WindowsPC instance.
  */
 
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { likeDate } from '@/powershell/runtime/dotnetDateTime';
+import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { Port } from '../../hardware/Port';
@@ -62,6 +65,8 @@ export interface WinSystemContext {
   readonly os: { prettyName: string; version: string };
   /** Boot timestamp, when the host lifecycle reports one. */
   bootedAt(): Date | null;
+  readonly timezone?: string;
+  nowMs?(): number;
   readonly hardware: {
     manufacturer: string;
     productName: string;
@@ -144,7 +149,7 @@ export function cmdSysteminfo(ctx: WinSystemContext): string {
   lines.push(`OS Build Type:             Multiprocessor Free`);
   const bootedAt = ctx.bootedAt();
   if (bootedAt) {
-    lines.push(`System Boot Time:          ${bootedAt.toLocaleString('en-US')}`);
+    lines.push(`System Boot Time:          ${formatDotNetDate(ZonedDate.in(bootedAt.getTime(), ctx.timezone), 'M/d/yyyy, h:mm:ss tt')}`);
   }
   lines.push(`System Manufacturer:       ${ctx.hardware.manufacturer}`);
   lines.push(`System Model:              ${ctx.hardware.productName}`);
@@ -392,7 +397,7 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     const recurUnit = sc === 'MINUTE' ? 60_000 : sc === 'HOURLY' ? 3_600_000 : sc === 'DAILY' ? 86_400_000 : 0;
     if (recurUnit > 0) {
       task.intervalMs = mo * recurUnit;
-      task.runAt = st ? parseSchtasksTime(st, base) : new Date(base.getTime() + task.intervalMs);
+      task.runAt = st ? parseSchtasksTime(st, base) : likeDate(base, base.getTime() + task.intervalMs);
     } else if (sc === 'WEEKLY') {
       // Une hebdomadaire tombe un jour nommé ; sans `/d`, le vrai retient
       // le jour de la création.
@@ -553,9 +558,9 @@ const WEEKDAY_ABBR = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 function nextWeekday(day: string | undefined, st: string | undefined, base: Date): Date {
   const target = day ? WEEKDAY_ABBR.indexOf(day) : base.getDay();
-  const at = st ? parseSchtasksTime(st, base) : new Date(base);
+  const at = st ? parseSchtasksTime(st, base) : likeDate(base, base.getTime());
   if (target < 0) return at;
-  const out = new Date(at);
+  const out = likeDate(at, at.getTime());
   // `parseSchtasksTime` a déjà pu basculer au lendemain si l'heure était
   // passée ; on avance ensuite jusqu'au bon jour.
   while (out.getDay() !== target) out.setDate(out.getDate() + 1);
@@ -563,7 +568,7 @@ function nextWeekday(day: string | undefined, st: string | undefined, base: Date
 }
 
 function nextMonthly(dayOfMonth: number, st: string | undefined, base: Date): Date {
-  const out = new Date(base);
+  const out = likeDate(base, base.getTime());
   out.setDate(Math.min(Math.max(dayOfMonth, 1), 31));
   if (st) {
     const t = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(st);
@@ -577,8 +582,8 @@ function nextMonthly(dayOfMonth: number, st: string | undefined, base: Date): Da
 
 function parseSchtasksTime(st: string, base: Date): Date {
   const m = st.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!m) return new Date(base);
-  const d = new Date(base);
+  if (!m) return likeDate(base, base.getTime());
+  const d = likeDate(base, base.getTime());
   d.setHours(Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : 0, 0);
   if (d.getTime() <= base.getTime()) d.setDate(d.getDate() + 1);
   return d;

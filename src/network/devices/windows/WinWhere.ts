@@ -168,7 +168,7 @@ function render(ctx: WinFileCommandContext, path: string, options: WhereOptions)
   if (!options.details) return shown;
   const entry = ctx.fs.resolve(ctx.fs.normalizePath(path, ctx.cwd));
   if (entry === null || entry.type !== 'file') return shown;
-  return `${String(entry.size).padStart(10)}  ${fileDateTime(entry.mtime)}  ${shown}`;
+  return `${String(entry.size).padStart(10)}  ${fileDateTime(entry.mtime, ctx.timezone)}  ${shown}`;
 }
 
 export function cmdWhere(ctx: WinFileCommandContext, args: string[]): string {

@@ -19,6 +19,7 @@ export type ProcessSession = 'Services' | 'Console';
 
 export interface WindowsProcess {
   pid: number;
+  startedAtMs?: number;
   name: string;
   ppid: number;
   /**
@@ -217,7 +218,7 @@ export class WindowsProcessManager {
     hostedServices: string[] = []
   ): void {
     this.processes.set(pid, {
-      pid, name, ppid, session, sessionId, owner,
+      pid, startedAtMs: this.nowMs(), name, ppid, session, sessionId, owner,
       handles, npmK, pmK, wsK, cpuSec,
       threads: Math.max(1, Math.round(handles / 15)),
       cpuPercent: Math.min(100, cpuSec * 2),
@@ -290,7 +291,7 @@ export class WindowsProcessManager {
   } = {}): WindowsProcess {
     const pid = this.allocatePid();
     const proc: WindowsProcess = {
-      pid, name, ppid,
+      pid, startedAtMs: this.nowMs(), name, ppid,
       session: opts.session ?? 'Services',
       sessionId: opts.sessionId ?? 0,
       owner,

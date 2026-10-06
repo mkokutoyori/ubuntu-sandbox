@@ -190,31 +190,27 @@ valeur precedente. `env` voit bien le prefixe (`FOO=8 env | grep FOO`). Le sous-
 du shell parent et non l'environnement enfant que `childEnvironment` construit. L'affectation en
 prefixe ne persiste plus (corrige avec ce lot), donc ce defaut ne peut plus etre masque par la fuite.
 
-### [powershell] le fuseau du processus regit encore `Get-Date`, `dir`, `net user`, `systeminfo` et le journal
-**Mesure** (meme banc que Linux : la meme suite sous `TZ=UTC` puis `TZ=Pacific/Auckland`, machine
-en UTC) : 8 des 35 sorties Windows/PowerShell different — `Get-Date` et `(Get-Date).Hour`,
-`Get-ChildItem ... LastWriteTime`, `Get-EventLog ... TimeGenerated`, `dir C:\`, `dir C:\Windows`,
-`net user Administrator` (Password last set), `systeminfo` (System Boot Time). `date /t`, `time /t`
-et `%time%` sont corrects. Le meme banc releve des commandes absentes ou vides : `Get-Date -Format o`
-et `-Format u` rendent le format lui-meme, `[DateTime]::Now`, `[DateTimeOffset]::Now`,
-`[TimeZoneInfo]::Local.Id`, `(Get-CimInstance Win32_OperatingSystem).LastBootUpTime`,
-`Get-LocalUser ... LastLogon`, `Get-Process ... StartTime` rendent vide ; `Get-Uptime`, `tzutil`,
-`quser`, `eventcreate` sont inconnus.
-**Pourquoi ce n'est pas ferme** : le `DateTime` de PowerShell est un `Date` JavaScript lu par ses
-accesseurs locaux (une cinquantaine de sites dans `src/powershell` et `devices/windows`) ; le
-rendre muni du fuseau de sa machine est un chantier propre, pas une retouche.
+### [windows] `tzutil`, `quser` et `eventcreate` sont inconnus
+**Mesure** : `tzutil /g`, `quser` et `eventcreate /t information /id 100 /l application /d x` repondent
+« not recognized » sur une machine Windows simulee. Le fuseau se lit et s'ecrit deja par `Get-TimeZone` /
+`Set-TimeZone` sur la meme table ; il ne manque que la commande cmd.
+**Pourquoi ce n'est pas ferme** : le libelle d'erreur de `tzutil /s <zone inconnue>` n'est pas
+atteignable depuis cet environnement et en inventer un serait pire que l'absence ; `quser` demande une table
+de sessions interactives que la machine ne tient pas, `eventcreate` une ecriture dans le journal par la
+voie de `Write-EventLog`.
+
+### [powershell] membres des nombres et mise en page de `TimeSpan`
+**Mesure** : `[Math]::Pi.ToString()` rend vide (les membres des nombres ne sont pas branches, sans
+rapport avec le temps) ; `New-TimeSpan` s'affiche en `__type : TimeSpan ...` au lieu des champs
+`Days / Hours / Minutes / Seconds / Milliseconds / Ticks` de PowerShell 5.1.
+**Pourquoi ce n'est pas ferme** : la mise en page par defaut d'un `TimeSpan` n'est pas verifiable sur
+transcription ici.
 
 ### [oracle] `SYSDATE` / `SYSTIMESTAMP` lisent les accesseurs locaux d'un `Date`
 **Mesure** : 40 sites `getHours()` / `getDate()` dans `database/oracle/functions` ; la base n'a pas de
 fuseau de session ni de `DBTIMEZONE`, donc `SELECT SYSDATE FROM dual` suit le navigateur.
 **Pourquoi ce n'est pas ferme** : `ALTER SESSION SET TIME_ZONE` et `DBTIMEZONE` sont des briques a
 construire avant que le fuseau ait ou aller.
-
-### [fichiers] `touch -d/-t/-r`, `ls --time-style`/`--full-time`, `stat -c %y` ne sont pas lus
-**Mesure** : `touch -d "2 days ago" f` ne change pas l'heure du fichier ; `ls -l --full-time`
-et `--time-style=long-iso` rendent le format court ; `stat -c "%y %Y" f` rend la chaine
-`%y %Y` telle quelle. Aucun lab de rotation ou de purge (`find -mtime +N`, `tmpreaper`) ne peut donc
-vieillir un fichier.
 
 ### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
 **Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
