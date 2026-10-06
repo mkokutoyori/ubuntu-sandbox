@@ -43,6 +43,7 @@ export interface LinuxPlannerDevice {
     workPhone: string, homePhone: string, other: string,
   ): void;
   userExists?(user: string): boolean;
+  readTextFile?(path: string): string | null;
 }
 
 export interface PasswordInvoker {
@@ -363,7 +364,7 @@ export function buildLinuxInteractionPlan(
   }
 
   if (parts[0] === 'openssl') {
-    return buildOpensslInteractionPlan(trimmed);
+    return buildOpensslInteractionPlan(trimmed, device);
   }
 
   // `useradd` is intentionally absent — non-interactive on real systems.

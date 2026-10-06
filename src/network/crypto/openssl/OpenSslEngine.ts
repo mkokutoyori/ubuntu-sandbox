@@ -533,18 +533,27 @@ function signCsr(
 
   const cheminCa = opts.get('-CA');
   const cheminCaKey = opts.get('-CAkey');
-  if (typeof cheminCa !== 'string' || typeof cheminCaKey !== 'string') {
-    return fail('openssl: x509 -req: -CA and -CAkey are required');
+  const cheminSignKey = opts.get('-signkey');
+  let ca: X509Certificate | null;
+  let caKey: PkiPrivateKey | null;
+  if (typeof cheminCa === 'string' && typeof cheminCaKey === 'string') {
+    const texteCa = host.readFile(cheminCa);
+    const texteCaKey = host.readFile(cheminCaKey);
+    if (texteCa === null) return fail(`Can't open "${cheminCa}" for reading, No such file or directory`);
+    if (texteCaKey === null) return fail(`Can't open "${cheminCaKey}" for reading, No such file or directory`);
+    ca = pemToCert(texteCa);
+    caKey = privateKeyFrom(host, texteCaKey, opts);
+    if (!ca) return fail('unable to load certificate');
+    if (!caKey) return fail('unable to load CA Private Key');
+  } else if (typeof cheminSignKey === 'string') {
+    const texteKey = host.readFile(cheminSignKey);
+    if (texteKey === null) return fail(`Can't open "${cheminSignKey}" for reading, No such file or directory`);
+    caKey = privateKeyFrom(host, texteKey, opts);
+    if (!caKey) return fail('unable to load Private Key');
+    ca = { subject: csr.subject, issuer: csr.subject, publicKey: csr.publicKey, serialNumber: '' } as unknown as X509Certificate;
+  } else {
+    return fail('openssl: x509 -req: -CA and -CAkey, or -signkey, are required');
   }
-  const texteCa = host.readFile(cheminCa);
-  const texteCaKey = host.readFile(cheminCaKey);
-  if (texteCa === null) return fail(`Can't open "${cheminCa}" for reading, No such file or directory`);
-  if (texteCaKey === null) return fail(`Can't open "${cheminCaKey}" for reading, No such file or directory`);
-
-  const ca = pemToCert(texteCa);
-  const caKey = privateKeyFrom(host, texteCaKey, opts);
-  if (!ca) return fail('unable to load certificate');
-  if (!caKey) return fail('unable to load CA Private Key');
 
   const jours = Number(opts.get('-days') ?? 30);
   const loaded = extensionsFromFile(host, opts, csr, ca);
