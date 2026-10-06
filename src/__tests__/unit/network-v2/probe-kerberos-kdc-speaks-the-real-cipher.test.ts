@@ -16,11 +16,19 @@
  * nonce de la capture : sa reponse est celle que le vrai KDC a donnee a une
  * autre requete, ce qui prouve la lecture de l'AS-REP reel (champs de MIT
  * absents du simulateur : last-req, key-expiration), du sel annonce et du
- * dechiffrement, pas l'egalite des requetes.
+ * dechiffrement, pas l'egalite des requetes. Dans l'autre sens, le KDC du
+ * simulateur recoit les deux AS-REQ que le vrai kinit a envoyes (dont le
+ * PA-ENC-TIMESTAMP chiffre par le vrai client avec la cle de bob) et rend
+ * un AS-REP que la cle du vrai KDC dechiffre.
+ *
+ * Verifie hors du depot (pont de socket, non livre : il exige les binaires
+ * MIT) : le vrai `kinit`, `klist`, `kvno` et `kinit -R` obtiennent un TGT,
+ * des billets de service ldap/ et host/ et un renouvellement aupres du KDC du
+ * simulateur, et un mauvais mot de passe donne « Password incorrect ».
  *
  * Mesure avant correction (chiffrement par flux XOR, sans sel, sans cadrage) :
  * le fichier ne se charge pas, le profil `enctype` n'existant pas dans le
- * depot d'origine, et les 8 cas tombent. Le temoin (« le laboratoire est
+ * depot d'origine, et les 9 cas tombent. Le temoin (« le laboratoire est
  * sain ») ne se lit donc pas avant non plus ; il garde le cas le plus simple
  * (un TGT obtenu) au cote des cas qui le contraignent.
  */
@@ -34,9 +42,10 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { KerberosClient, dialKdc } from '@/network/kerberos/KerberosClient';
+import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import {
   TcpMessageReader, decodeEncKdcRepPart, decodeEncTicketPart, decodeEtypeInfo2, decodeKdcRep, decodeKrbError,
-  decodeKdcReq, decodePaDataSeq, encodeKdcReq, frameForTcp,
+  decodeEncryptedData, decodeKdcReq, decodePaDataSeq, encodeKdcReq, frameForTcp,
 } from '@/network/kerberos/codec';
 import { parseTLV } from '@/network/devices/windows/server/ad/ldap/Ber';
 import { AES256_PROFILE, decrypt, stringToKey } from '@/network/kerberos/enctype/aesCtsHmacSha1';
@@ -81,6 +90,33 @@ const hex = (value: Uint8Array): string => Buffer.from(value).toString('hex');
 const KU_TICKET = 2;
 const KU_AS_REP_ENC_PART = 3;
 const KDC_ADDRESS = '192.168.50.10';
+
+async function buildCorpLan(): Promise<WindowsServer> {
+  const dc = new WindowsServer('DC1');
+  dc.setCurrentUser('Administrator');
+  await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+  await run(ps(dc), 'Install-ADDSForest -DomainName corp.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+  await run(ps(dc), 'New-ADUser -Enabled $true -Name bob -AccountPassword (ConvertTo-SecureString "bobpw" -AsPlainText -Force)');
+  return dc;
+}
+
+function answers(handler: KdcSessionHandler, requests: readonly Uint8Array[]): Uint8Array[] {
+  const replies: Uint8Array[] = [];
+  const reader = new TcpMessageReader();
+  let listener: ((data: Uint8Array) => void) | null = null;
+  handler.register({
+    onData(callback: (data: Uint8Array) => void) {
+      listener = callback;
+      return () => { listener = null; };
+    },
+    send(message: Uint8Array) {
+      for (const reply of reader.push(message)) replies.push(reply);
+    },
+    close() {},
+  } as unknown as TcpSocket);
+  for (const request of requests) listener!(frameForTcp(request));
+  return replies;
+}
 
 describe('the controller KDC and the Kerberos client use the real cipher', () => {
   it('the lab is sound: the client obtains a ticket-granting ticket for alice', async () => {
@@ -149,6 +185,25 @@ describe('the controller KDC and the Kerberos client use the real cipher', () =>
     expect(socket.requests).toHaveLength(2);
   });
 
+  it('answers the two requests a real kinit sent to a real krb5kdc for bob, whose key is the one the real KDC stores', async () => {
+    const dc = await buildCorpLan();
+    const [firstRequest, , secondRequest] = capture.asExchange.map(bytes);
+    const stamp = decrypt(
+      AES256_PROFILE, bytes(capture.keys['bob-aes256']), 1,
+      decodeEncryptedDataOf(secondRequest),
+    );
+    const seconds = Date.parse(new TextDecoder().decode(parseTLV(parseTLV(stamp, 0).content, 0).content.subarray(2, 17)).replace(/^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)Z$/, '$1-$2-$3T$4:$5:$6Z'));
+    const handler = new KdcSessionHandler({ store: dc.getDirectoryStore()!, deviceId: 'DC1', nowMs: () => seconds });
+    const [error, reply] = answers(handler, [firstRequest, secondRequest]);
+    const announced = decodePaDataSeq(parseTLV(decodeKrbError(error).eData!, 0)).find((entry) => entry.type === PA_ETYPE_INFO2)!;
+    expect(decodeEtypeInfo2(announced.value)).toEqual([{ etype: 18, salt: 'CORP.LOCALbob' }]);
+    const answered = decodeKdcRep(reply);
+    const opened = decodeEncKdcRepPart(decrypt(AES256_PROFILE, bytes(capture.keys['bob-aes256']), KU_AS_REP_ENC_PART, answered.encPart.cipher));
+    expect(opened.nonce).toBe(decodeKdcReq(secondRequest).reqBody.nonce);
+    expect(opened.sname.nameString).toEqual(['krbtgt', 'CORP.LOCAL']);
+    expect(opened.flags.preAuthent).toBe(true);
+  });
+
   it('the pre-authentication error of a real krb5kdc announces the salt the client then used', () => {
     const [, preauthRequired] = capture.asExchange.map(bytes);
     const error = decodeKrbError(preauthRequired);
@@ -156,6 +211,11 @@ describe('the controller KDC and the Kerberos client use the real cipher', () =>
     expect(decodeEtypeInfo2(announced.value)).toEqual([{ etype: 18, salt: 'CORP.LOCALbob' }]);
   });
 });
+
+function decodeEncryptedDataOf(request: Uint8Array): Uint8Array {
+  const padata = decodeKdcReq(request).padata.find((entry) => entry.type === PA_ENC_TIMESTAMP)!;
+  return decodeEncryptedData(parseTLV(padata.value, 0)).cipher;
+}
 
 async function probeFirstRequest(client: LinuxServer) {
   const conn = client.getTcpStack().connect(KDC_ADDRESS, 88)!;
