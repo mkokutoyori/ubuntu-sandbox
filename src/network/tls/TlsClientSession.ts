@@ -29,6 +29,7 @@ import {
   type NewSessionTicket, type KeyUpdate, type TlsHandshakeMessage,
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, decodeMessagesRaw, randomNonce,
 } from './messages';
+import { sealKeyUpdate, openKeyUpdate } from './keyUpdateRecords';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { hashLength } from './hkdf';
 import { collapseFirstClientHello, deriveKeySchedule, computePskBinder, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
@@ -638,9 +639,8 @@ export class TlsClientSession {
    * must feed it into `receiveKeyUpdate` to stay in sync. `requestUpdate`
    * asks the peer to reciprocate with its own KeyUpdate.
    */
-  sendKeyUpdate(requestUpdate = false): readonly TlsRecord[] {
-    const keyUpdate: KeyUpdate = { kind: 'key_update', requestUpdate };
-    const records = fragmentAsRecords('handshake', encodeHandshakeMessage(keyUpdate), true);
+  sendKeyUpdate(requestUpdate = false, sequence = 0): readonly TlsRecord[] {
+    const records = sealKeyUpdate(this.clientApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, sequence, requestUpdate);
     this.clientApplicationTrafficSecret = nextTrafficSecret(this.clientApplicationTrafficSecret!, this.hash);
     this.emit({
       topic: 'tls.key_update',
@@ -649,22 +649,19 @@ export class TlsClientSession {
     return records;
   }
 
-  /**
-   * RFC 8446 §4.6.3 — processes a peer KeyUpdate: ratchets the matching
-   * receiving secret (`serverApplicationTrafficSecret`) and, if the peer
-   * requested a reciprocal update, returns this side's own KeyUpdate (never
-   * itself setting `requestUpdate`, to avoid an update ping-pong).
-   */
-  receiveKeyUpdate(records: readonly TlsRecord[]): readonly TlsRecord[] | null {
-    const { contentType, plaintext } = reassembleRecords(records, true);
-    if (contentType !== 'handshake') return null;
-    const message = decodeHandshakeMessage(plaintext);
-    if (message.kind !== 'key_update') return null;
+  receiveKeyUpdate(records: readonly TlsRecord[], receiveSequence = 0, sendSequence = 0): readonly TlsRecord[] | null {
+    const message = openKeyUpdate(this.serverApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, receiveSequence, records);
+    if (message === null) return null;
+    this.ratchetReceiving();
+    return message.requestUpdate ? this.sendKeyUpdate(false, sendSequence) : null;
+  }
+
+  ratchetReceiving(): void {
     this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!, this.hash);
+    this.serverApplicationSequenceBase = 0;
     this.emit({
       topic: 'tls.key_update',
-      payload: { sessionId: this.sessionId, role: 'client', direction: 'server-to-client', requestUpdate: message.requestUpdate },
+      payload: { sessionId: this.sessionId, role: 'client', direction: 'server-to-client', requestUpdate: false },
     });
-    return message.requestUpdate ? this.sendKeyUpdate(false) : null;
   }
 }
