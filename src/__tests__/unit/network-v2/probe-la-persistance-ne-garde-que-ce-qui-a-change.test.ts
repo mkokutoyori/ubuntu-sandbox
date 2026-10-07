@@ -27,8 +27,16 @@
  * registre) ne l'est plus, le jumeau d'usine recevant les memes fonctionnalites avant comparaison. Les trois
  * lignes de base locales du registre, des services et du pare-feu Windows sont fermees sur ce jumeau.
  *
- * Discriminee contre l'etat d'avant (`git stash` des sources) : 16 des 18 cas du premier temps tombent, et
- * 4 des 4 cas Oracle / Windows Server du second. Les 2 qui passent des deux cotes sont NOMMES : le temoin
+ * Oracle, troisieme temps. MESURE : apres reouverture, une vue (`ORA-00942`), une sequence (`ORA-02289`), un index,
+ * un tablespace, un role, `ALTER SYSTEM SET open_cursors=500` (restait 300) et `ALTER USER scott ACCOUNT LOCK`
+ * (restait OPEN) etaient perdus : seuls comptes et tables voyageaient. Le DDL de `DBMS_METADATA` n'etait pas
+ * rejouable (`FORCE EDITIONABLE`, `MINVALUE` avant `START`, noms entre guillemets, `PACKAGE BODY`, parametres et
+ * type de retour des fonctions, `START WITH` decale d'un pas, `CREATE SEQUENCE` sans `MINVALUE`/`MAXVALUE`,
+ * `WITH READ ONLY` ignore) : l'analyseur et l'extracteur sont corriges, puis les objets rejoues par ce DDL.
+ *
+ * Discriminee contre l'etat d'avant (`git stash` des sources) : 16 des 18 cas du premier temps tombent, 4 des 4
+ * cas Oracle / Windows Server du second, et les 5 cas du troisieme (objets, DDL rejouable, securite, tablespace
+ * et parametres) pour la partie qui existait avant ce lot. Les 2 qui passent des deux cotes sont NOMMES : le temoin
  * « une machine neuve exportee puis rouverte garde son image » (il prouve que ne pas ecrire l'image ne la
  * perd pas) et « un fichier au format complet d'avant s'ouvre encore » (non-regression : l'importation
  * applique un fichier complet comme un fichier delta).
@@ -42,6 +50,11 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { getOracleDatabase, resetAllOracleInstances } from '@/terminal/commands/database';
+import { OracleDatabase } from '@/database/oracle/OracleDatabase';
+import { EventBus } from '@/events/EventBus';
+import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
+import { captureOracleDelta, restoreOracleDelta } from '@/database/oracle/persistence/OracleStateDelta';
+import { MetadataExtractor } from '@/database/oracle/metadata/MetadataExtractor';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { exportTopology, importTopology } from '@/store/topologySerializer';
 
@@ -253,5 +266,182 @@ describe('Windows Server writes its installed roles and what was configured in t
     expect(await ps('Get-DhcpServerv4Scope')).toContain('10.0.0.100');
     expect(await ps('Get-DhcpServerv4Reservation -ScopeId 10.0.0.0')).toContain('10.0.0.150');
     expect(await ps('Get-DhcpServerv4ExclusionRange -ScopeId 10.0.0.0')).toContain('10.0.0.120');
+  });
+});
+
+describe('Oracle writes the schema objects that differ from a fresh database, and they come back', () => {
+  beforeEach(() => { resetAllOracleInstances(); });
+
+  const DDL = [
+    'CREATE VIEW scott.v_rich AS SELECT ename, sal FROM scott.emp WHERE sal > 2000',
+    'CREATE SEQUENCE scott.seq_lab START WITH 100 INCREMENT BY 5 MINVALUE 10 MAXVALUE 5000 NOCYCLE',
+    'CREATE INDEX scott.ix_lab ON scott.emp (ename)',
+    'CREATE UNIQUE INDEX scott.ux_lab ON scott.dept (dname)',
+    'CREATE SYNONYM scott.syn_emp FOR scott.emp',
+    'CREATE PUBLIC SYNONYM pub_dept FOR scott.dept',
+    'CREATE OR REPLACE FUNCTION scott.f_plus (x IN NUMBER, y IN NUMBER) RETURN NUMBER AS BEGIN RETURN x + y; END',
+    'CREATE OR REPLACE PACKAGE scott.pkg_lab AS FUNCTION g RETURN NUMBER; END pkg_lab',
+    'CREATE OR REPLACE PACKAGE BODY scott.pkg_lab AS FUNCTION g RETURN NUMBER IS BEGIN RETURN 7; END; END pkg_lab',
+    'CREATE OR REPLACE TRIGGER scott.t_lab BEFORE INSERT ON scott.dept FOR EACH ROW BEGIN NULL; END',
+  ];
+
+  async function labServer() {
+    const server = new LinuxServer('linux-server', 'S1');
+    const db = getOracleDatabase(server.getId());
+    const sys = db.connectAsSysdba().executor;
+    for (const statement of DDL) db.executeSql(sys, statement);
+    db.executeSql(sys, 'SELECT scott.seq_lab.NEXTVAL FROM dual');
+    db.executeSql(sys, 'SELECT scott.seq_lab.NEXTVAL FROM dual');
+    db.executeSql(sys, 'DROP INDEX scott.ix_lab');
+    db.executeSql(sys, 'CREATE INDEX scott.ix_lab ON scott.emp (job)');
+    return { server, db, sys };
+  }
+
+  it('each object is written once, in the form a DBA would script it', async () => {
+    const { server } = await labServer();
+    const state = exportOf([server]).devices[0].oracle as { objects: { kind: string; name: string }[] };
+    expect(state.objects.map((o) => `${o.kind}:${o.name}`).sort()).toEqual([
+      'FUNCTION:F_PLUS', 'INDEX:IX_LAB', 'INDEX:UX_LAB', 'PACKAGE:PKG_LAB', 'PACKAGE_BODY:PKG_LAB',
+      'SEQUENCE:SEQ_LAB', 'SYNONYM:PUB_DEPT', 'SYNONYM:SYN_EMP', 'TRIGGER:T_LAB', 'VIEW:V_RICH',
+    ]);
+  });
+
+  it('after reopening, every object works as it did and the sequence goes on where it stopped', async () => {
+    const { server } = await labServer();
+    const { byName } = await roundTrip([server]);
+    const db = getOracleDatabase(byName('S1').getId());
+    const sys = db.connectAsSysdba().executor;
+    const cell = (sql: string) => JSON.stringify((db.executeSql(sys, sql) as { rows: unknown[][] }).rows);
+    expect(cell('SELECT COUNT(*) FROM scott.v_rich')).toBe(cell('SELECT COUNT(*) FROM scott.emp WHERE sal > 2000'));
+    expect(cell('SELECT scott.seq_lab.NEXTVAL FROM dual')).toBe('[[110]]');
+    expect(cell("SELECT index_name FROM all_indexes WHERE owner = 'SCOTT' AND index_name IN ('IX_LAB', 'UX_LAB') ORDER BY 1"))
+      .toBe('[["IX_LAB"],["UX_LAB"]]');
+    expect(db.storage.getAllSynonyms().map((x) => `${x.owner}.${x.name}->${x.tableOwner}.${x.tableName}`).sort())
+      .toEqual(['PUBLIC.PUB_DEPT->SCOTT.DEPT', 'SCOTT.SYN_EMP->SCOTT.EMP']);
+    expect(cell('SELECT scott.f_plus(2, 3) FROM dual')).toBe('[[5]]');
+    expect(db.catalog.getStoredUnits().filter((u) => u.name === 'PKG_LAB').map((u) => u.type).sort())
+      .toEqual(['PACKAGE', 'PACKAGE BODY']);
+    expect(db.catalog.getStoredUnits().find((u) => u.type === 'PACKAGE BODY')?.body).toContain('RETURN 7');
+    expect(db.storage.getAllTriggers().some((t) => t.name === 'T_LAB')).toBe(true);
+    expect(db.storage.getIndexes('SCOTT').find((i) => i.name === 'IX_LAB')?.columns).toEqual(['JOB']);
+  });
+
+  it('a dropped factory object stays dropped', async () => {
+    const server = new LinuxServer('linux-server', 'S1');
+    const db = getOracleDatabase(server.getId());
+    const sys = db.connectAsSysdba().executor;
+    const factoryIndex = db.storage.getIndexes('SCOTT')[0].name;
+    db.executeSql(sys, `DROP INDEX scott.${factoryIndex}`);
+    const { byName } = await roundTrip([server]);
+    const back = getOracleDatabase(byName('S1').getId());
+    expect(back.storage.getIndexes('SCOTT').map((i) => i.name)).not.toContain(factoryIndex);
+  });
+});
+
+describe('what Oracle writes is enough to rebuild each object exactly', () => {
+  const factoryDatabase = () => {
+    const database = new OracleDatabase();
+    database.instance.setEventBus(new EventBus());
+    database.instance.startup();
+    installAllDemoSchemas(database);
+    return database;
+  };
+
+  it('every object restored onto a fresh database scripts back to the same DDL', () => {
+    const source = factoryDatabase();
+    const sys = source.connectAsSysdba().executor;
+    for (const statement of [
+      'CREATE VIEW scott.v1 (n, s) AS SELECT ename, sal FROM scott.emp WITH READ ONLY',
+      'CREATE VIEW scott.v2 AS SELECT * FROM scott.emp WHERE sal > 100 WITH CHECK OPTION',
+      'CREATE SEQUENCE scott.s1 START WITH 7 INCREMENT BY 3 MINVALUE 1 MAXVALUE 900 CYCLE CACHE 5',
+      'CREATE SEQUENCE scott.s2 NOCACHE',
+      'CREATE INDEX scott.i1 ON scott.emp (UPPER(ename))',
+      'CREATE BITMAP INDEX scott.i2 ON scott.emp (job)',
+      'CREATE INDEX scott.i3 ON scott.emp (deptno, job)',
+      'CREATE OR REPLACE TRIGGER scott.tw AFTER UPDATE ON scott.emp FOR EACH ROW WHEN (NEW.sal > 100) BEGIN NULL; END',
+      'CREATE OR REPLACE PROCEDURE scott.pp (a IN NUMBER, b OUT VARCHAR2) AS BEGIN b := TO_CHAR(a); END',
+    ]) source.executeSql(sys, statement);
+
+    const delta = captureOracleDelta(source, factoryDatabase())!;
+    const target = factoryDatabase();
+    restoreOracleDelta(target, JSON.parse(JSON.stringify(delta)));
+
+    const before = new MetadataExtractor(source.storage, source.catalog);
+    const after = new MetadataExtractor(target.storage, target.catalog);
+    const mismatched = (delta.objects ?? [])
+      .filter((o) => before.getDdl(o.kind, o.name, o.owner) !== after.getDdl(o.kind, o.name, o.owner))
+      .map((o) => `${o.kind}:${o.name}`);
+    expect(delta.objects?.length).toBe(9);
+    expect(mismatched).toEqual([]);
+  });
+
+  it('the DDL Oracle scripts is DDL Oracle accepts: quoted names, FORCE EDITIONABLE views, MINVALUE before START', () => {
+    const database = factoryDatabase();
+    const sys = database.connectAsSysdba().executor;
+    database.executeSql(sys, 'CREATE OR REPLACE FORCE EDITIONABLE VIEW "SCOTT"."VQ" AS SELECT ename FROM scott.emp');
+    database.executeSql(sys, 'CREATE SEQUENCE "SCOTT"."SQ" MINVALUE 5 MAXVALUE 50 INCREMENT BY 5 START WITH 10 CACHE 20 NOORDER NOCYCLE');
+    database.executeSql(sys, 'CREATE OR REPLACE SYNONYM "SCOTT"."SQN" FOR "SCOTT"."EMP"');
+    expect(database.storage.getViewMeta('SCOTT', 'VQ')).toBeDefined();
+    expect(database.storage.getSequence('SCOTT', 'SQ')?.minValue).toBe(5);
+    expect(database.storage.getSequence('SCOTT', 'SQ')?.maxValue).toBe(50);
+    expect(database.storage.getSynonym('SCOTT', 'SQN')?.tableName).toBe('EMP');
+  });
+});
+
+describe('Oracle writes the security, tablespace and parameter changes, and they come back', () => {
+  beforeEach(() => { resetAllOracleInstances(); });
+
+  async function reopenedAfter(changes: string[]) {
+    const server = new LinuxServer('linux-server', 'S1');
+    const db = getOracleDatabase(server.getId());
+    const sys = db.connectAsSysdba().executor;
+    for (const statement of changes) db.executeSql(sys, statement);
+    const { json, byName } = await roundTrip([server]);
+    const back = getOracleDatabase(byName('S1').getId());
+    return { json, back, db };
+  }
+
+  it('an altered account keeps its state, its profile, and the grants and roles around it', async () => {
+    const { json, back } = await reopenedAfter([
+      'CREATE PROFILE lab_prof LIMIT FAILED_LOGIN_ATTEMPTS 3',
+      'CREATE ROLE labrole',
+      'GRANT CREATE TABLE TO labrole',
+      'GRANT labrole TO scott',
+      'GRANT SELECT ON hr.employees TO scott',
+      'ALTER USER scott PROFILE lab_prof',
+      'ALTER USER scott ACCOUNT LOCK',
+    ]);
+    const state = json.devices[0].oracle as { users: { record: { username: string } }[] };
+    expect(state.users.map((u) => u.record.username)).toEqual(['SCOTT']);
+    expect(back.catalog.getUser('SCOTT')?.accountStatus).toBe('LOCKED');
+    expect(back.catalog.getUser('SCOTT')?.profile).toBe('LAB_PROF');
+    expect(back.catalog.getProfiles().get('LAB_PROF')?.get('FAILED_LOGIN_ATTEMPTS')).toBe('3');
+    expect(back.catalog.roleExists('LABROLE')).toBe(true);
+    expect(back.catalog.getRoleGrants().some((g) => g.grantee === 'SCOTT' && g.role === 'LABROLE')).toBe(true);
+    expect(back.catalog.hasTablePrivilege('SCOTT', 'SELECT', 'HR', 'EMPLOYEES')).toBe(true);
+    expect(back.catalog.hasSystemPrivilege('SCOTT', 'CREATE TABLE')).toBe(true);
+  });
+
+  it('a revoked factory grant stays revoked, and a dropped role stays dropped', async () => {
+    const server = new LinuxServer('linux-server', 'S1');
+    const probe = getOracleDatabase(server.getId());
+    const factoryGrant = probe.catalog.getRoleGrants().find((g) => g.grantee === 'SCOTT')!;
+    probe.executeSql(probe.connectAsSysdba().executor, `REVOKE ${factoryGrant.role} FROM scott`);
+    const { byName } = await roundTrip([server]);
+    const back = getOracleDatabase(byName('S1').getId());
+    expect(back.catalog.getRoleGrants().some((g) => g.grantee === 'SCOTT' && g.role === factoryGrant.role)).toBe(false);
+  });
+
+  it('a tablespace and a system parameter survive, the parameter in memory and in the spfile', async () => {
+    const { json, back } = await reopenedAfter([
+      "CREATE TABLESPACE lab DATAFILE '/u01/app/oracle/oradata/ORCL/lab01.dbf' SIZE 10M",
+      'ALTER SYSTEM SET open_cursors = 500',
+    ]);
+    const state = json.devices[0].oracle as { tablespaces: { name: string }[]; parameters: { memory: Record<string, string> } };
+    expect(state.tablespaces.map((t) => t.name)).toEqual(['LAB']);
+    expect(state.parameters.memory.open_cursors).toBe('500');
+    expect(back.storage.getTablespace('LAB')?.datafiles[0].path).toContain('lab01.dbf');
+    expect(back.instance.getParameter('open_cursors')).toBe('500');
+    expect(back.instance.getSpfileParameters().get('open_cursors')).toBe('500');
   });
 });

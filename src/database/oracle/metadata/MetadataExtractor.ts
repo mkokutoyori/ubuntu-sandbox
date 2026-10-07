@@ -22,7 +22,7 @@ import type { ColumnMeta, ConstraintMeta, TableMeta, ViewMeta, IndexMeta,
 
 export type MetadataObjectType =
   | 'TABLE' | 'VIEW' | 'INDEX' | 'SEQUENCE' | 'SYNONYM'
-  | 'TRIGGER' | 'USER' | 'ROLE' | 'PROCEDURE' | 'FUNCTION' | 'PACKAGE';
+  | 'TRIGGER' | 'USER' | 'ROLE' | 'PROCEDURE' | 'FUNCTION' | 'PACKAGE' | 'PACKAGE_BODY';
 
 export class MetadataExtractor {
   constructor(
@@ -50,7 +50,8 @@ export class MetadataExtractor {
       case 'ROLE':      return this.roleDdl(n);
       case 'PROCEDURE':
       case 'FUNCTION':
-      case 'PACKAGE':   return this.storedUnitDdl(objectType, o, n);
+      case 'PACKAGE':
+      case 'PACKAGE_BODY': return this.storedUnitDdl(objectType, o, n);
       default:          return null;
     }
   }
@@ -128,7 +129,7 @@ export class MetadataExtractor {
   private renderIndex(owner: string, idx: IndexMeta): string {
     const unique = idx.unique ? 'UNIQUE ' : '';
     const bitmap = idx.bitmap ? 'BITMAP ' : '';
-    const cols = idx.columns.map(c => `"${c}"`).join(', ');
+    const cols = idx.columns.map((c, i) => idx.expressions?.[i] ?? `"${c}"`).join(', ');
     const ts = idx.tablespace ? `\n  TABLESPACE "${idx.tablespace}"` : '';
     return `  CREATE ${bitmap}${unique}INDEX "${owner}"."${idx.name}"\n  ON "${owner}"."${idx.tableName}" (${cols})${ts};`;
   }
@@ -139,7 +140,7 @@ export class MetadataExtractor {
     const cache = s.cache > 1 ? ` CACHE ${s.cache}` : ' NOCACHE';
     const cycle = s.cycle ? ' CYCLE' : ' NOCYCLE';
     return `  CREATE SEQUENCE "${owner}"."${s.name}" MINVALUE ${s.minValue} MAXVALUE ${s.maxValue}`
-      + ` INCREMENT BY ${s.incrementBy} START WITH ${s.currentValue}${cache}${cycle};`;
+      + ` INCREMENT BY ${s.incrementBy} START WITH ${s.currentValue + s.incrementBy}${cache} NOORDER${cycle};`;
   }
 
   private synonymDdl(owner: string, name: string): string | null {
@@ -147,7 +148,8 @@ export class MetadataExtractor {
     if (!s) return null;
     const pub = s.isPublic ? 'PUBLIC ' : '';
     const link = s.dbLink ? `@"${s.dbLink}"` : '';
-    return `  CREATE OR REPLACE ${pub}SYNONYM "${owner}"."${s.name}" FOR "${s.tableOwner}"."${s.tableName}"${link};`;
+    const qualified = s.isPublic ? `"${s.name}"` : `"${owner}"."${s.name}"`;
+    return `  CREATE OR REPLACE ${pub}SYNONYM ${qualified} FOR "${s.tableOwner}"."${s.tableName}"${link};`;
   }
 
   private triggerDdl(owner: string, name: string): string | null {
@@ -183,10 +185,12 @@ export class MetadataExtractor {
     return `  CREATE ROLE "${name}";`;
   }
 
-  private storedUnitDdl(kind: 'PROCEDURE' | 'FUNCTION' | 'PACKAGE', owner: string, name: string): string | null {
+  private storedUnitDdl(kind: 'PROCEDURE' | 'FUNCTION' | 'PACKAGE' | 'PACKAGE_BODY', owner: string, name: string): string | null {
+    const unitType = kind === 'PACKAGE_BODY' ? 'PACKAGE BODY' : kind;
     const u = this.catalog.getStoredUnits().find(x =>
-      x.schema.toUpperCase() === owner && x.name.toUpperCase() === name && x.type.toUpperCase().startsWith(kind));
+      x.schema.toUpperCase() === owner && x.name.toUpperCase() === name && x.type.toUpperCase() === unitType);
     if (!u) return null;
+    if (u.sourceLines.length > 0) return `  ${u.sourceLines.join('\n')};`;
     return `  CREATE OR REPLACE ${u.type} "${owner}"."${u.name}" AS\n${u.body};`;
   }
 

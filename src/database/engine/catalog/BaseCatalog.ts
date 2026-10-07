@@ -61,6 +61,8 @@ export abstract class BaseCatalog {
   /** System privilege grants (DBA_SYS_PRIVS). */
   getSysPrivilegeGrants(): ReadonlyArray<CatalogPrivilege> { return this.sysPrivileges; }
 
+  getTablePrivilegeGrants(): ReadonlyArray<CatalogPrivilege> { return this.tabPrivileges; }
+
   // ── User management ──────────────────────────────────────────────
 
   createUser(user: CatalogUser): void {

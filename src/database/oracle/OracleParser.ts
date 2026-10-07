@@ -455,8 +455,9 @@ export class OracleParser extends BaseParser {
 
   private parseSchemaPrefix(): string | undefined {
     // Look ahead for schema.name pattern
-    if (this.check(TokenType.IDENTIFIER) && this.peekNext()?.type === TokenType.DOT) {
-      const schema = this.advance().value;
+    if ((this.check(TokenType.IDENTIFIER) || this.check(TokenType.QUOTED_IDENTIFIER))
+        && this.peekNext()?.type === TokenType.DOT) {
+      const schema = this.expectIdentifier();
       this.advance(); // consume .
       return schema;
     }

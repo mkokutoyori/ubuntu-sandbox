@@ -3768,7 +3768,7 @@ export class OracleExecutor extends BaseExecutor {
       name: stmt.name.toUpperCase(),
       currentValue: (stmt.startWith ?? 1) - (stmt.incrementBy ?? 1),
       incrementBy: stmt.incrementBy ?? 1,
-      minValue: 1,
+      minValue: typeof stmt.minValue === 'number' ? stmt.minValue : 1,
       maxValue: stmt.maxValue === 'NOMAXVALUE' ? Number.MAX_SAFE_INTEGER : (typeof stmt.maxValue === 'number' ? stmt.maxValue : 999999999),
       cache: stmt.cache === 'NOCACHE' ? 0 : (typeof stmt.cache === 'number' ? stmt.cache : 20),
       cycle: stmt.cycle ?? false,

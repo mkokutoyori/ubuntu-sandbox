@@ -2157,7 +2157,7 @@ export class OracleDatabase implements SqlCommandHost {
       return emptyResult('Trigger created.');
     }
     const match = sql.match(
-      /^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)(?:\s+OR\s+(INSERT|UPDATE|DELETE))?(?:\s+OR\s+(INSERT|UPDATE|DELETE))?\s+ON\s+(?:(\w+)\.)?(\w+)(?:\s+FOR\s+EACH\s+ROW)?\s*([\s\S]*)$/i
+      /^CREATE\s+(OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?TRIGGER\s+(?:"?(\w+)"?\.)?"?(\w+)"?\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)(?:\s+OR\s+(INSERT|UPDATE|DELETE))?(?:\s+OR\s+(INSERT|UPDATE|DELETE))?\s+ON\s+(?:"?(\w+)"?\.)?"?(\w+)"?(?:\s+FOR\s+EACH\s+ROW)?\s*([\s\S]*)$/i
     );
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 

@@ -11,6 +11,7 @@ import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
+import { captureOracleDelta, restoreOracleDelta, type OracleDelta } from '@/database/oracle/persistence/OracleStateDelta';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf } from '@/database/oracle/storage/ControlFileImage';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
@@ -25,8 +26,6 @@ import { EventBus, type IEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
 import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
-import { DataPumpEngine } from '@/database/oracle/datapump/DataPumpEngine';
-import type { CatalogUser } from '@/database/engine/catalog/BaseCatalog';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 import { resolveRacMembership, joinOrCreateCluster, resetRacClusterRegistry } from '@/database/oracle/rac/RacClusterRegistry';
 import { attachRacCssAgent, _resetRacCssAgentAttachments } from '@/database/oracle/rac/RacCssAgent';
@@ -432,12 +431,7 @@ export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | 
  * dump restored into a database with no accounts would import nothing
  * and say so table by table.
  */
-export interface OracleTopologyState {
-  users: Array<{ record: CatalogUser; password?: string }>;
-  dump: unknown;
-  droppedUsers?: string[];
-  droppedTables?: Array<{ schema: string; name: string }>;
-}
+export type OracleTopologyState = OracleDelta;
 
 function factoryOracleDatabase(): OracleDatabase {
   const factory = new OracleDatabase();
@@ -445,11 +439,6 @@ function factoryOracleDatabase(): OracleDatabase {
   factory.instance.startup();
   installAllDemoSchemas(factory);
   return factory;
-}
-
-function accountSignature(record: CatalogUser, password: string | undefined): string {
-  const { created: _created, ...rest } = record;
-  return JSON.stringify({ record: rest, password });
 }
 
 /**
@@ -461,55 +450,12 @@ function accountSignature(record: CatalogUser, password: string | undefined): st
  */
 export function captureOracleState(deviceId: string): OracleTopologyState | null {
   const db = getRegisteredOracleDatabase(deviceId);
-  if (!db) return null;
-  const factory = factoryOracleDatabase();
-  const factoryAccounts = new Map(factory.catalog.getAllUsers().map((record) =>
-    [record.username, accountSignature(record, factory.catalog.getStoredPassword(record.username))]));
-  const live = db.catalog.getAllUsers().map((record) => ({
-    record,
-    password: db.catalog.getStoredPassword(record.username),
-  }));
-  const users = live.filter((u) => factoryAccounts.get(u.record.username) !== accountSignature(u.record, u.password));
-  const liveNames = new Set(live.map((u) => u.record.username));
-  const droppedUsers = [...factoryAccounts.keys()].filter((name) => !liveNames.has(name));
-
-  const factoryTables = new Map(new DataPumpEngine(factory).export({ full: true }).dump.tables
-    .map((t) => [`${t.schema}.${t.name}`, JSON.stringify(t)]));
-  const { dump } = new DataPumpEngine(db).export({ full: true });
-  const tables = dump.tables.filter((t) => factoryTables.get(`${t.schema}.${t.name}`) !== JSON.stringify(t));
-  const liveTables = new Set(dump.tables.map((t) => `${t.schema}.${t.name}`));
-  const droppedTables = [...factoryTables.keys()]
-    .filter((key) => !liveTables.has(key))
-    .map((key) => ({ schema: key.slice(0, key.indexOf('.')), name: key.slice(key.indexOf('.') + 1) }));
-
-  if (users.length + tables.length + droppedUsers.length + droppedTables.length === 0) return null;
-  const state: OracleTopologyState = { users, dump: { ...dump, tables } };
-  if (droppedUsers.length > 0) state.droppedUsers = droppedUsers;
-  if (droppedTables.length > 0) state.droppedTables = droppedTables;
-  return state;
+  return db ? captureOracleDelta(db, factoryOracleDatabase()) : null;
 }
 
 /** Rebuild the database a topology file describes, accounts first. */
 export function restoreOracleState(deviceId: string, state: OracleTopologyState): void {
-  const db = getOracleDatabase(deviceId);
-  for (const { schema, name } of state.droppedTables ?? []) {
-    if (db.storage.tableExists(schema, name)) db.storage.dropTable(schema, name);
-  }
-  for (const username of state.droppedUsers ?? []) {
-    if (db.catalog.userExists(username)) db.catalog.dropUser(username);
-  }
-  for (const u of state.users) {
-    if (!db.catalog.userExists(u.record.username)) db.catalog.createUser(u.record);
-    // The secret travels too: recreating an account under a different
-    // password would leave a lab whose `connect scott/tiger` no longer
-    // works, which is worse than not restoring the account at all.
-    if (u.password !== undefined) db.catalog.setPassword(u.record.username, u.password);
-  }
-  const parsed = DataPumpEngine.parse(JSON.stringify(state.dump));
-  // REPLACE, not SKIP: the freshly-booted instance already carries the
-  // demo schemas, so a saved table of the same name must overwrite the
-  // stock one rather than be quietly skipped.
-  if (parsed) new DataPumpEngine(db).import(parsed, { tableExistsAction: 'REPLACE' });
+  restoreOracleDelta(getOracleDatabase(deviceId), state);
 }
 
 export function removeOracleDatabase(deviceId: string): void {
