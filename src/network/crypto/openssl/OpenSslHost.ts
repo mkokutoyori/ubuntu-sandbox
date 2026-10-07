@@ -1,5 +1,6 @@
 import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
@@ -24,6 +25,13 @@ export type TlsPeerProbe =
       readonly received?: Uint8Array; readonly chain?: readonly X509Certificate[];
       readonly details?: TlsHandshakeDetails }
   | { readonly ok: false; readonly reason: string; readonly alert?: string | null };
+
+export interface TlsServeSettings {
+  readonly chain: readonly X509Certificate[];
+  readonly privateKey: PkiPrivateKey;
+  readonly protocols?: readonly TlsProtocolVersion[];
+  readonly cipherList?: string;
+}
 
 export interface TlsPeerProbeOptions {
   readonly versions?: readonly TlsProtocolVersion[];
@@ -79,6 +87,17 @@ export interface OpenSslHost {
    * `false` quand le port est pris.
    */
   serveHttp?(port: number, handler: (body: string) => { readonly status: number; readonly body: string }): boolean;
+
+  /**
+   * Ouvre une écoute TLS qui reste ouverte après la commande (`openssl s_server`).
+   * `false` quand le port est pris.
+   */
+  serveTls?(
+    port: number, tls: TlsServeSettings,
+    respond: (method: string, target: string) => { readonly status: number; readonly contentType: string; readonly body: string },
+  ): boolean;
+
+  workingDirectory?(): string;
 
   /** Résolution par `/etc/hosts` — synchrone, pour la même raison. */
   resolveHost(nom: string): string | null;

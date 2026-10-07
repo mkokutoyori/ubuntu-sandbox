@@ -9,6 +9,7 @@ import { OPENSSL_VERSION } from '@/network/crypto/openssl/opensslVersion';
 import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
+import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { createRequest, createResponse } from '@/network/http/semantics/types';
 
@@ -80,6 +81,23 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         const outcome = handler(bytesText(req.body));
         const response = createResponse(outcome.status, outcome.status === 200 ? 'OK' : 'Bad Request');
         response.headers.set('Content-Type', 'application/ocsp-response');
+        response.body = fileTextToBytes(outcome.body);
+        return response;
+      }).start({ processName: 'openssl' });
+      return true;
+    },
+    workingDirectory: () => ctx.executor.getCwd(),
+    serveTls: (port, tls, respond) => {
+      const stack = ctx.net.getTcpStack();
+      if (stack.listListeners().some((l) => l.localPort === port)) return false;
+      new HttpsServerSession(stack, port, {
+        serverCert: tls.chain[0], serverChain: tls.chain.slice(1), serverPrivateKey: tls.privateKey,
+        ...(tls.protocols ? { protocols: tls.protocols } : {}),
+        ...(tls.cipherList ? { cipherList: tls.cipherList } : {}),
+      }, (req) => {
+        const outcome = respond(req.method ?? 'GET', req.target ?? '/');
+        const response = createResponse(outcome.status, outcome.status === 200 ? 'ok' : 'Not Found');
+        response.headers.set('Content-Type', outcome.contentType);
         response.body = fileTextToBytes(outcome.body);
         return response;
       }).start({ processName: 'openssl' });

@@ -62,7 +62,7 @@ const VALUED: Readonly<Record<string, readonly string[]>> = {
   verify: ['-CAfile', '-CApath', '-untrusted', '-purpose', '-attime', '-CRLfile'],
   ca: ['-cert', '-keyfile', '-days', '-subj', '-infiles', '-revoke', '-extfile', '-extensions', '-crl_reason', '-crldays', '-crlhours'],
   s_client: ['-connect', '-servername', '-CAfile', '-verify', '-port', '-cipher', '-alpn'],
-  s_server: ['-accept', '-cert', '-key', '-port'],
+  s_server: ['-accept', '-cert', '-key', '-port', '-cipher', '-WWWdir'],
   crl: ['-CAfile'],
   dhparam: ['-inform', '-outform'],
   ocsp: ['-issuer', '-cert', '-serial', '-url', '-port', '-index', '-CA', '-rsigner', '-rkey', '-reqin', '-reqout', '-respin', '-respout', '-VAfile', '-nmin', '-ndays', '-header', '-timeout', '-CAfile'],

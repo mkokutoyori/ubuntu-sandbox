@@ -656,9 +656,9 @@ describe('§P7 — s_client ouvre une vraie connexion', () => {
       .toContain('malformed -connect argument');
   });
 
-  it('`s_server` reste refusé, honnêtement', async () => {
+  it('`s_server` sans certificat échoue comme openssl, par le fichier par défaut absent', async () => {
     const { client } = reseau();
     const out = await client.executeCommand('openssl s_server -accept 4433');
-    expect(out).toContain('is not implemented in this simulator');
+    expect(out).toContain('Can\'t open "server.pem" for reading');
   });
 });

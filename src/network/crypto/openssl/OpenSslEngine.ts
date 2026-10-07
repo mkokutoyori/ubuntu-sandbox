@@ -1942,6 +1942,50 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   return ok(lignes.join('\n'));
 }
 
+function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+  const { opts } = parseArgs('s_server', argv);
+  const accept = opts.get('-accept') ?? opts.get('-port') ?? '4433';
+  const port = Number(typeof accept === 'string' ? accept.slice(accept.lastIndexOf(':') + 1) : NaN);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return fail(`Error parsing -accept argument ${String(accept)}`, 1);
+  const certPath = typeof opts.get('-cert') === 'string' ? opts.get('-cert') as string : 'server.pem';
+  const keyPath = typeof opts.get('-key') === 'string' ? opts.get('-key') as string : certPath;
+  const certText = host.readFile(certPath);
+  if (certText === null) return fail(`Can't open "${certPath}" for reading, No such file or directory`, 1);
+  const chain = pemToCertChain(certText);
+  const keyText = host.readFile(keyPath);
+  if (keyText === null) return fail(`Can't open "${keyPath}" for reading, No such file or directory`, 1);
+  const privateKey = pemToPrivateKey(keyText);
+  if (chain.length === 0 || privateKey === null) return fail('Error getting private key or certificate', 1);
+  const mode = opts.has('-www') ? 'www' : opts.has('-WWW') ? 'WWW' : opts.has('-HTTP') ? 'HTTP' : null;
+  if (mode === null) {
+    return fail('openssl: s_server: interactive mode reads application data from a terminal; use -www, -WWW or -HTTP', 1);
+  }
+  const forced = (['-tls1_3', '-tls1_2', '-tls1_1', '-tls1'] as const).find((flag) => opts.has(flag));
+  const versionOf: Record<string, TlsProtocolVersion> = { '-tls1_3': '1.3', '-tls1_2': '1.2', '-tls1_1': '1.1', '-tls1': '1.0' };
+  const protocols: readonly TlsProtocolVersion[] | undefined = forced ? [versionOf[forced]] : opts.has('-no_tls1_3') ? ['1.2'] : undefined;
+  const cipherSpec = opts.get('-cipher');
+  if (typeof cipherSpec === 'string') {
+    const list = createCipherList(cipherSpec, { isAvailable: isImplementedCipher });
+    if (list.ok === false) return fail(`Error setting cipher list\n${list.error}`, 1);
+  }
+  const root = (host.workingDirectory?.() ?? '.').replace(/\/+$/, '');
+  const served = host.serveTls?.(port, {
+    chain, privateKey, ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+  }, (method, target) => {
+    if (mode === 'www') {
+      return { status: 200, contentType: 'text/html', body: `<HTML><BODY BGCOLOR="#ffffff">\n<pre>\n\ns_server -accept ${port} -www \n</pre></BODY></HTML>\n` };
+    }
+    const path = decodeURIComponent(target.split('?')[0]).replace(/^\/+/, '');
+    const content = method === 'GET' && !path.includes('..') ? host.readFile(`${root}/${path === '' ? 'index.html' : path}`) : null;
+    return content === null
+      ? { status: 404, contentType: 'text/plain', body: `Error opening '${path}'\n` }
+      : { status: 200, contentType: 'text/plain', body: content };
+  });
+  if (served === undefined) return fail('openssl: s_server: cannot listen on this host', 1);
+  if (served === false) return fail(`bind: Address already in use\nbind:errno=98`, 1);
+  return ok('Using default temp DH parameters\nACCEPT');
+}
+
 function runHelp(): OpenSslResult {
   return { output: '', stderr: opensslHelpLines().join('\n'), exitCode: 0 };
 }
@@ -1970,6 +2014,7 @@ export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslR
   if (sub === 'x509') return runX509(host, reste);
   if (sub === 'verify') return runVerify(host, reste);
   if (sub === 's_client') return runSClient(host, reste);
+  if (sub === 's_server') return runSServer(host, reste);
   if (sub === 'ec') return runEc(host, reste);
   if (sub === 'ecparam') return runEcparam(host, reste);
   if (sub === 'pkcs8') return runPkcs8(host, reste);
