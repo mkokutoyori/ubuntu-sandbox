@@ -1850,9 +1850,9 @@ export function runSClient(host: OpenSslHost, argv: readonly string[], interacti
     return fail(`${nom}:${port}\nconnect:errno=-2\nunable to resolve host`);
   }
 
-  const verdict = host.tcpConnect(ip, port);
-  if (verdict !== 'open') {
-    return fail(`connect:errno=${errnoNumber(connectErrno(verdict))}`, 1);
+  if (host.tlsPeerCertificate === undefined) {
+    const verdict = host.tcpConnect(ip, port);
+    if (verdict !== 'open') return fail(`connect:errno=${errnoNumber(connectErrno(verdict))}`, 1);
   }
 
   const lignes: string[] = ['CONNECTED(00000003)'];
@@ -1900,6 +1900,11 @@ export function runSClient(host: OpenSslHost, argv: readonly string[], interacti
   };
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
+
+  if (sonde && sonde.ok === false && sonde.reason === 'connection refused') {
+    const verdict = host.tcpConnect(ip, port);
+    if (verdict !== 'open') return fail(`connect:errno=${errnoNumber(connectErrno(verdict))}`, 1);
+  }
 
   const echecPoignee = sonde && sonde.ok === false
     ? (sonde.reason ?? 'handshake failed') : null;

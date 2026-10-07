@@ -26,8 +26,21 @@ export interface TlsPeerChannelPort {
   close(): void;
 }
 
+export interface TlsServerStatistics {
+  readonly itemsInCache: number;
+  readonly accepts: number;
+  readonly acceptsFinished: number;
+  readonly renegotiates: number;
+  readonly cacheHits: number;
+  readonly cacheMisses: number;
+  readonly cacheSize: number;
+}
+
 export interface TlsStreamServerPort {
   send(text: string): boolean;
+  sendClear(text: string): boolean;
+  connectionVersion(): string | null;
+  statistics(): TlsServerStatistics;
   renegotiate(requestClientCertificate: boolean): boolean;
   keyUpdate(requestUpdate: boolean): boolean;
   closeConnection(): void;

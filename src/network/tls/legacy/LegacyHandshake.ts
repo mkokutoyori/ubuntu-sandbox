@@ -226,6 +226,10 @@ export class LegacyServerHandshake {
   get negotiatedSuite(): LegacySuiteDefinition { return this.suite; }
 
   get wasResumed(): boolean { return this.resumed; }
+  get resumptionOffered(): boolean {
+    const client = this.setup.clientExtensions;
+    return client.sessionId !== '' || (client.sessionTicket !== null && client.sessionTicket !== '');
+  }
 
   private helloExtensions(): LegacyServerHello['extensions'] {
     const client = this.setup.clientExtensions;

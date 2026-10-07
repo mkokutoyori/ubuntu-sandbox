@@ -84,6 +84,10 @@ export class TlsServerChannel {
     this.emit(sealed.records);
   }
 
+  writeClear(bytes: Uint8Array): void {
+    this.socket.write(bytesToBinaryString(bytes));
+  }
+
   requestRenegotiation(options: { readonly requestClientCertificate?: boolean; readonly clientCertPolicy?: ClientCertPolicy; readonly cipherList?: string } = {}): boolean {
     const hello = this.tls.requestRenegotiation(this.serverSequence, options);
     if (hello === null) return false;

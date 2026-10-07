@@ -272,6 +272,12 @@ export class TlsServerSession {
     return modpGroup(this.config.dhGroupId ?? 14) ?? modpGroup(14)!;
   }
 
+  private pskOffered = false;
+
+  get resumptionMissed(): boolean {
+    return !this.sessionReused && (this.legacy ? this.legacy.resumptionOffered : this.pskOffered);
+  }
+
   get sessionReused(): boolean {
     return this.legacy ? this.legacy.wasResumed : this.sessionResumed;
   }
@@ -617,6 +623,7 @@ export class TlsServerSession {
     const store = this.config.sessionTicketStore;
     const offers = clientHello.extensions.pskOffers
       ?? (clientHello.extensions.preSharedKey ? [{ identity: clientHello.extensions.preSharedKey, obfuscatedAge: 0, binder: '' }] : []);
+    if (offers.length > 0) this.pskOffered = true;
     if (offers.length === 0 || !store) return null;
     if (!(clientHello.extensions.pskKeyExchangeModes ?? []).includes('psk_dhe_ke')) return null;
     const bindersLength = 2 + offers.reduce((total, offer) => total + 1 + offer.binder.length / 2, 0);

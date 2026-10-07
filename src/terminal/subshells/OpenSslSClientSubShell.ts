@@ -36,9 +36,6 @@ export class OpenSslSClientSubShell implements ISubShell {
       if (this.version === '1.3') return reply(['openssl: s_client: renegotiation does not exist in TLS 1.3, use K for a key update']);
       return reply(this.channel.renegotiate() ? ['RENEGOTIATING'] : ['RENEGOTIATING', 'openssl: s_client: renegotiation refused by the server']);
     }
-    if (line === 'B') {
-      return reply(['openssl: s_client: command B (heartbeat) is not available in this simulator']);
-    }
     const answer = bytesToFileText(this.channel.exchange(fileTextToBytes(`${line}\n`)));
     return reply(answer === '' ? [] : answer.replace(/\r?\n$/, '').split(/\r?\n/));
   }

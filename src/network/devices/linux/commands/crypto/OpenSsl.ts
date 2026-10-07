@@ -95,6 +95,12 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
       const stack = ctx.net.getTcpStack();
       if (stack.listListeners().some((l) => l.localPort === port)) return false;
       let current: TlsServerChannel | null = null;
+      const counters = { accepts: 0, finished: 0, renegotiates: 0, hits: 0, misses: 0 };
+      const settle = (channel: TlsServerChannel): void => {
+        counters.renegotiates += channel.session.renegotiations;
+        if (channel.session.sessionReused) counters.hits++;
+        else if (channel.session.resumptionMissed) counters.misses++;
+      };
       const config = {
         serverCert: tls.chain[0], serverChain: tls.chain.slice(1), serverPrivateKey: tls.privateKey,
         ...(tls.protocols ? { protocols: tls.protocols } : {}),
@@ -108,19 +114,30 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
       stack.listen(port, {
         identity: { processName: 'openssl' },
         onAccept: (socket) => {
+          counters.accepts++;
           const channel: TlsServerChannel = new TlsServerChannel(socket, new TlsServerSession(config as never), {
-            onHandshakeComplete: () => events.accepted(),
+            onHandshakeComplete: () => { counters.finished++; events.accepted(); },
             onData: (bytes) => events.data(bytesText(bytes)),
           });
           current = channel;
           socket.onClose(() => {
             if (current === channel) current = null;
+            settle(channel);
             events.closed();
           });
         },
       });
       return {
-        send: (text) => { if (current === null) return false; current.write(fileTextToBytes(text)); return true; },
+        send: (text) => { if (current === null || current.session.result !== 'accept') return false; current.write(fileTextToBytes(text)); return true; },
+        sendClear: (text) => { if (current === null) return false; current.writeClear(fileTextToBytes(text)); return true; },
+        connectionVersion: () => (current === null ? null : current.session.negotiatedVersion),
+        statistics: () => ({
+          itemsInCache: 0, accepts: counters.accepts, acceptsFinished: counters.finished,
+          renegotiates: counters.renegotiates + (current?.session.renegotiations ?? 0),
+          cacheHits: counters.hits + (current?.session.sessionReused ? 1 : 0),
+          cacheMisses: counters.misses + (current?.session.resumptionMissed ? 1 : 0),
+          cacheSize: 128,
+        }),
         renegotiate: (requestClientCertificate) => current !== null && current.requestRenegotiation({ requestClientCertificate }),
         keyUpdate: (requestUpdate) => {
           if (current === null || current.session.negotiatedVersion !== '1.3') return false;
