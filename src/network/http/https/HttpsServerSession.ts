@@ -9,7 +9,7 @@ import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { createResponse, type HttpMessage } from '../semantics/types';
 import type { Http1RequestHandler } from '../http1/Http1ServerSession';
-import { parseRequest, encodeResponse } from '../http1/Http1Wire';
+import { parseRequest, encodeResponse, HttpRequestAssembler } from '../http1/Http1Wire';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { encodeRecords, attachTlsRecordPump, bytesToBinaryString } from './TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from './ApplicationDataCipher';
@@ -102,6 +102,7 @@ export class HttpsServerSession {
       pending = maillon;
     };
 
+    const assembler = new HttpRequestAssembler();
     const unsubscribe = attachTlsRecordPump(socket, (arrived) => {
       let records = arrived;
       if (tls.result !== 'accept') {
@@ -126,7 +127,9 @@ export class HttpsServerSession {
       if (peerKeyUpdates && requestBytes.length === 0) return;
 
       const requestId = randomRequestId();
-      const parsed = parseRequest(decoder.decode(requestBytes));
+      const completeRequest = assembler.push(decoder.decode(requestBytes));
+      if (completeRequest === null) return;
+      const parsed = parseRequest(completeRequest);
 
       const emit = (response: HttpMessage, shouldClose: boolean): void => {
         this.applyHsts(response);

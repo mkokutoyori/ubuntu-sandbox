@@ -85,6 +85,7 @@ import { FtpClientSession } from '@/network/ftp/FtpClientSession';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
+import { OpenSslSClientSubShell } from '@/terminal/subshells/OpenSslSClientSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
@@ -1624,7 +1625,22 @@ export class LinuxTerminalSession extends TerminalSession {
     try {
       const shell = this.ensureRootBash();
       if (shell) {
-        const result = await shell.processLine(trimmed);
+        const interactiveExecutor = (this.device as { executor?: { interactiveTerminal: boolean; takeInteractiveHandoff(): import('@/network/devices/linux/commands/crypto/InteractiveHandoff').TlsClientHandoff | null } }).executor;
+        if (interactiveExecutor) interactiveExecutor.interactiveTerminal = true;
+        let result;
+        try {
+          result = await shell.processLine(trimmed);
+        } finally {
+          if (interactiveExecutor) interactiveExecutor.interactiveTerminal = false;
+        }
+        const handoff = interactiveExecutor?.takeInteractiveHandoff() ?? null;
+        if (handoff) {
+          for (const line of result.output) this.addLine(line);
+          this.activeSubShell = new OpenSslSClientSubShell(handoff.channel, handoff.version);
+          this._inputBuf = '';
+          this.notify();
+          return;
+        }
         // Shell explicitly asked for a clear (clear / cls / reset), OR
         // ANSI clear-screen sequence — wipe scrollback like a real tty.
         const joined = result.output.join('\n');
