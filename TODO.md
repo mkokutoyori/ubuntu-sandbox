@@ -1760,17 +1760,6 @@ trafic que la machine ÉMET elle-même — un routeur chiffre ce qu'il
 ACHEMINE (`forwardPacket`), un poste chiffrerait ce qu'il produit, et ce
 chemin-là n'a aucun crochet aujourd'hui.
 
-### [ipsec] `diagnose debug application ike -1` ne trace rien
-L'etape 10 du TP 17 fait lire le journal IKE pour reconnaitre un echec de
-phase 1. `diagnose debug application ike` n'existe pas : le refus est
-observable par `diagnose vpn ike gateway list` (`IKE SA: created 0/0`) et
-par `get vpn ipsec tunnel summary`, mais pas par une trace ligne a ligne.
-**Mesure** : un secret partage discordant donne `IKE SA: created 0/0` et
-aucune ligne de trace.
-**Report** : il faudrait un canal de trace par application dans le moteur
-IKE partage, que ni Cisco ni Huawei n'ont ici non plus — c'est un sujet
-commun aux trois constructeurs, pas une commande FortiOS.
-
 ### [identite] `diagnose firewall auth list` ne rend pas la ligne `flag(...)`
 Une vraie machine ecrit `flag(10): auth` ou `flag(30): radius idle` — un
 masque de bits decrivant l'etat de la session d'authentification. La vue
