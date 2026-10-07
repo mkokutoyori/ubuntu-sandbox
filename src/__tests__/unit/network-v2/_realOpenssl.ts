@@ -50,14 +50,24 @@ export interface ClientRun {
   readonly response: string;
 }
 
-export async function runSimClient(port: number, client: TlsClientSession, request = 'GET / HTTP/1.0\r\n\r\n', timeoutMs = 4000): Promise<ClientRun> {
+export async function runSimClient(
+  port: number, client: TlsClientSession, request = 'GET / HTTP/1.0\r\n\r\n', timeoutMs = 4000,
+  options: { readonly renegotiateBeforeRequest?: boolean } = {},
+): Promise<ClientRun> {
   const steps: string[] = [];
   const socket = net.connect(port, '127.0.0.1');
   await new Promise<void>((resolve) => socket.on('connect', () => resolve()));
   let pending = new Uint8Array(0);
   let serverSequence = 0;
+  let clientSequence = 0;
   let response = '';
   let sentRequest = false;
+  const sendRequest = (): void => {
+    sentRequest = true;
+    const sealed = encryptApplicationData(client.clientTraffic(), clientSequence, utf8ToBytes(request));
+    clientSequence = sealed.nextSeq;
+    socket.write(encodeRecords(sealed.records));
+  };
   const outcome = new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, timeoutMs);
     const done = (): void => { clearTimeout(timer); resolve(); };
@@ -73,17 +83,35 @@ export async function runSimClient(port: number, client: TlsClientSession, reque
         if (out && out.length > 0) socket.write(encodeRecords(out));
         if (client.result === 'failure') return done();
         if (client.result === 'success' && !sentRequest) {
-          sentRequest = true;
-          socket.write(encodeRecords(encryptApplicationData(client.clientTraffic(), 0, utf8ToBytes(request)).records));
+          if (options.renegotiateBeforeRequest && !client.renegotiating && client.renegotiations === 0) {
+            const hello = client.startRenegotiation(serverSequence, clientSequence);
+            if (hello && hello.length > 0) socket.write(encodeRecords([...hello]));
+            return;
+          }
+          sendRequest();
+        }
+        return;
+      }
+      if (client.renegotiating) {
+        const answer = client.handleRenegotiation(records, serverSequence, clientSequence);
+        if (answer && answer.length > 0) socket.write(encodeRecords([...answer]));
+        if (client.takeRenegotiationCompleted()) {
+          serverSequence = 0; clientSequence = 0;
+          steps.push('renegotiation completed');
+          if (!sentRequest) sendRequest();
         }
         return;
       }
       const consumed = client.receivedTicket === null ? client.receiveSessionTicket(records) : 0;
-      const applicationRecords = records.slice(consumed).filter((record: TlsRecord) => record.contentType === 'application_data');
+      const applicationRecords = records.slice(consumed).filter((record: TlsRecord) => record.contentType === 'application_data' || record.contentType === 'handshake');
       if (applicationRecords.length === 0) return;
       try {
         const opened = decryptApplicationData(client.serverTraffic(), serverSequence, applicationRecords);
         serverSequence = opened.nextSeq;
+        if (opened.renegotiation) {
+          const answer = client.handleRenegotiation(opened.renegotiation.records, opened.renegotiation.sequence, clientSequence);
+          if (answer && answer.length > 0) { socket.write(encodeRecords([...answer])); clientSequence += answer.length; }
+        }
         response += bytesToUtf8(opened.plaintext);
         steps.push(`application data: ${opened.plaintext.length} bytes`);
       } catch (error) {
@@ -102,6 +130,7 @@ export interface BridgedServer {
   readonly port: number;
   readonly steps: string[];
   stop(): void;
+  requestRenegotiation(): boolean;
 }
 
 export async function startSimServer(
@@ -109,11 +138,21 @@ export async function startSimServer(
   onAccepted?: (session: TlsServerSession) => void,
 ): Promise<BridgedServer> {
   const steps: string[] = [];
+  const live: { send: () => boolean }[] = [];
   const server = net.createServer((socket) => {
     const tls = makeServer();
     let pending = new Uint8Array(0);
     let clientSequence = 0;
     let serverSequence = 0;
+    live.push({
+      send: () => {
+        const request = tls.requestRenegotiation(serverSequence);
+        if (request === null) return false;
+        serverSequence += request.length;
+        socket.write(encodeRecords([...request]));
+        return true;
+      },
+    });
     socket.on('data', (data) => {
       const joined = new Uint8Array(pending.length + data.length);
       joined.set(pending); joined.set(data, pending.length);
@@ -165,7 +204,10 @@ export async function startSimServer(
     socket.on('error', () => undefined);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  return { port: (server.address() as net.AddressInfo).port, steps, stop: () => { server.close(); } };
+  return {
+    port: (server.address() as net.AddressInfo).port, steps, stop: () => { server.close(); },
+    requestRenegotiation: () => live.length > 0 && live[live.length - 1].send(),
+  };
 }
 
 export interface RealClientRun {

@@ -175,6 +175,9 @@ export class TlsClientSession {
   private suiteOverride: readonly CipherSuite[] | null = null;
   private readonly policy: ResolvedLegacyPolicy;
   private legacy: LegacyClientHandshake | null = null;
+  private renegotiationHandshake: LegacyClientHandshake | null = null;
+  private renegotiationCompleted = false;
+  renegotiations = 0;
   private lastClientHelloBytes: Uint8Array = new Uint8Array(0);
   private hash: Tls13Hash = 'sha256';
   private retried = false;
@@ -422,6 +425,94 @@ export class TlsClientSession {
       now: simulationNowMs,
     });
     return this.handleLegacy(incoming);
+  }
+
+  get renegotiating(): boolean {
+    return this.renegotiationHandshake !== null;
+  }
+
+  takeRenegotiationCompleted(): boolean {
+    const completed = this.renegotiationCompleted;
+    this.renegotiationCompleted = false;
+    return completed;
+  }
+
+  startRenegotiation(receiveSequence: number, sendSequence: number): readonly TlsRecord[] | null {
+    const current = this.legacy;
+    if (current === null || current.traffic === null || this.result !== 'success' || this.renegotiationHandshake !== null) return null;
+    const version = current.negotiatedVersion!;
+    this.clientRandom = newHelloRandom();
+    const extensions: LegacyClientExtensions = {
+      sessionId: '', extendedMasterSecret: this.config.extendedMasterSecret !== false,
+      renegotiationInfo: current.clientVerifyData, sessionTicket: '',
+    };
+    const hello: ClientHello = {
+      kind: 'client_hello', legacyVersion: version, random: this.clientRandom, cipherSuites: [],
+      legacyCipherSuites: this.legacySuiteDefinitions().map((definition) => definition.code),
+      legacyExtensions: extensions,
+      extensions: {
+        supportedVersions: [], keyShare: '', supportedGroups: this.supportedGroups,
+        signatureAlgorithms: CLIENT_HELLO_SIGNATURE_SCHEMES,
+        alpn: this.config.alpn, serverName: this.config.serverName,
+      },
+    };
+    const helloBytes = encodeHandshakeMessage(hello);
+    this.lastClientHelloBytes = helloBytes;
+    const records = fragmentAsRecords('handshake', helloBytes, false).map((record) => ({ ...record, legacyVersion: PROTOCOL_VERSION_WIRE[version] }));
+    const sealed = records.map((record, index) => current.traffic!.outbound.seal(sendSequence + index, record));
+    this.renegotiationHandshake = new LegacyClientHandshake({
+      offeredVersions: [version], offeredSuites: this.legacySuiteDefinitions().map((definition) => definition.name),
+      offeredGroups: this.supportedGroups, clientHelloBytes: helloBytes,
+      clientRandom: this.clientRandom, clientVersionWire: PROTOCOL_VERSION_WIRE[version],
+      offersTls13: false, verifier: this.config.verifier,
+      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.config.serverName,
+      clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
+      securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
+      clientExtensions: extensions, session: null,
+      allowUnsafeRenegotiation: false,
+      requestStatus: false, enforceStaple: false, requireStaple: false,
+      requestedMaxFragment: isValidMaxFragmentLength(this.config.maxFragmentLength) ? this.config.maxFragmentLength : null,
+      now: simulationNowMs,
+      renegotiation: {
+        inbound: current.traffic.inbound, outbound: current.traffic.outbound,
+        inboundSequence: receiveSequence, outboundSequence: sendSequence + sealed.length,
+        clientVerifyData: current.clientVerifyData, serverVerifyData: current.serverVerifyData,
+      },
+    });
+    return sealed;
+  }
+
+  handleRenegotiation(
+    records: readonly TlsRecord[], receiveSequence: number, sendSequence: number,
+  ): readonly TlsRecord[] | null {
+    const handshake = this.renegotiationHandshake;
+    if (handshake === null) {
+      const current = this.legacy;
+      if (current === null || current.traffic === null || this.result !== 'success' || records.length === 0) return null;
+      const plain = current.traffic.inbound.open(receiveSequence, records[0]);
+      if (plain === null) return this.fail('bad_record_mac');
+      const isHelloRequest = plain.contentType === 'handshake' && plain.fragment.length === 4 && plain.fragment.every((byte) => byte === 0);
+      return isHelloRequest ? this.startRenegotiation(receiveSequence + 1, sendSequence) : null;
+    }
+    const flight = handshake.handle(records);
+    if (handshake.result === 'success') {
+      this.legacy = handshake;
+      this.renegotiationHandshake = null;
+      this.renegotiationCompleted = true;
+      this.renegotiations++;
+      this.peerCertificate = handshake.peerCertificate;
+      this.peerCertificateChain = handshake.peerCertificateChain;
+      this.peerVerified = handshake.peerVerified;
+      this.peerVerificationReason = handshake.peerVerificationReason;
+      this.negotiatedCipherSuite = handshake.negotiatedSuite?.name ?? this.negotiatedCipherSuite;
+    } else if (handshake.result === 'failure') {
+      this.renegotiationHandshake = null;
+      this.lastAlert = handshake.lastAlert;
+      this.peerAlert = handshake.peerAlert;
+      this.state = 'done';
+      this.result = 'failure';
+    }
+    return flight;
   }
 
   private handleLegacy(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {

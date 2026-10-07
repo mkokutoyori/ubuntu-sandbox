@@ -120,25 +120,13 @@ export class HttpsClientSession {
     const requestBytes = encoder.encode(encodeRequest(request, opts));
     const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientTraffic(), this.clientSeq, requestBytes);
 
-    let responseRecords: TlsRecord[] | null = null;
-    const unsubscribe = socket.onData((data) => {
-      responseRecords = decodeRecords(binaryStringToBytes(String(data)));
-    });
-    socket.write(bytesToBinaryString(encodeRecords(records)));
-    unsubscribe();
     this.clientSeq = clientNextSeq;
+    const sink = this.openSink(socket, tls);
+    socket.write(bytesToBinaryString(encodeRecords(records)));
+    sink.close();
 
-    if (!responseRecords) return fail('Empty reply from server');
-
-    const { plaintext, nextSeq: serverNextSeq, peerKeyUpdates, peerRequestedKeyUpdate } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
-    this.serverSeq = serverNextSeq;
-    if (peerKeyUpdates) {
-      const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, this.clientSeq);
-      if (reply.length > 0) {
-        socket.write(bytesToBinaryString(encodeRecords([...reply])));
-        this.clientSeq = 0;
-      }
-    }
+    if (!sink.arrived) return fail('Empty reply from server');
+    const plaintext = sink.plaintext;
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
     if (parsed.ok === false) return fail(parsed.reason);
@@ -183,28 +171,16 @@ export class HttpsClientSession {
     const requestBytes = encoder.encode(encodeRequest(request, opts));
     const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientTraffic(), this.clientSeq, requestBytes);
 
-    let responseRecords: TlsRecord[] | null = null;
-    const unsubscribe = socket.onData((data) => {
-      responseRecords = decodeRecords(binaryStringToBytes(String(data)));
-    });
+    this.clientSeq = clientNextSeq;
+    const sink = this.openSink(socket, tls);
     socket.write(bytesToBinaryString(encodeRecords(records)));
-    for (let tour = 0; responseRecords === null && tour < TLS_MICROTASK_BUDGET; tour++) {
+    for (let tour = 0; !sink.arrived && tour < TLS_MICROTASK_BUDGET; tour++) {
       await Promise.resolve();
     }
-    unsubscribe();
-    this.clientSeq = clientNextSeq;
+    sink.close();
 
-    if (!responseRecords) return fail('Empty reply from server');
-
-    const { plaintext, nextSeq: serverNextSeq, peerKeyUpdates, peerRequestedKeyUpdate } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
-    this.serverSeq = serverNextSeq;
-    if (peerKeyUpdates) {
-      const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, this.clientSeq);
-      if (reply.length > 0) {
-        socket.write(bytesToBinaryString(encodeRecords([...reply])));
-        this.clientSeq = 0;
-      }
-    }
+    if (!sink.arrived) return fail('Empty reply from server');
+    const plaintext = sink.plaintext;
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
     if (parsed.ok === false) return fail(parsed.reason);
@@ -219,6 +195,42 @@ export class HttpsClientSession {
     }
     this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: parsed.message.statusCode ?? 0 } });
     return { ok: true, response: parsed.message, alpnProtocol: tls.negotiatedAlpnProtocol };
+  }
+
+  private openSink(socket: TcpSocket, tls: TlsClientSession): { readonly arrived: boolean; readonly plaintext: Uint8Array; close(): void } {
+    let collected = new Uint8Array(0);
+    let arrived = false;
+    const write = (records: readonly TlsRecord[]): void => { socket.write(bytesToBinaryString(encodeRecords([...records]))); };
+    const renegotiate = (records: readonly TlsRecord[], receiveSequence: number): void => {
+      const answer = tls.handleRenegotiation(records, receiveSequence, this.clientSeq);
+      if (answer && answer.length > 0) write(answer);
+      if (tls.takeRenegotiationCompleted()) { this.clientSeq = 0; this.serverSeq = 0; }
+    };
+    const unsubscribe = socket.onData((data) => {
+      const records = decodeRecords(binaryStringToBytes(String(data)));
+      if (tls.renegotiating) {
+        renegotiate(records, this.serverSeq);
+        return;
+      }
+      const opened = decryptApplicationData(tls.serverTraffic(), this.serverSeq, records);
+      this.serverSeq = opened.nextSeq;
+      if (opened.renegotiation) renegotiate(opened.renegotiation.records, opened.renegotiation.sequence);
+      if (opened.peerKeyUpdates) {
+        const reply = tls.applyPeerKeyUpdates(opened.peerKeyUpdates, opened.peerRequestedKeyUpdate === true, this.clientSeq);
+        if (reply.length > 0) { write(reply); this.clientSeq = 0; }
+      }
+      if (opened.plaintext.length > 0) {
+        const joined = new Uint8Array(collected.length + opened.plaintext.length);
+        joined.set(collected); joined.set(opened.plaintext, collected.length);
+        collected = joined;
+        arrived = true;
+      }
+    });
+    return {
+      get arrived() { return arrived; },
+      get plaintext() { return collected; },
+      close: unsubscribe,
+    };
   }
 
   close(): void {

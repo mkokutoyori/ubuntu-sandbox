@@ -12,6 +12,12 @@
  * n'existait pas) ; la valeur du témoin tient à ce qu'il prouve que le laboratoire sert une requête sans « R ».
  * Les détails du fil établis en mesurant : le ChangeCipherSpec de la renégociation est PROTÉGÉ par les clés courantes
  * (RFC 5246 §6.1), et le client réel envoie CKE et CCS/Finished en segments séparés.
+ *
+ * Côté client et HelloRequest (étape suivante) : le client du simulateur renégocie avec un vrai s_server lancé avec
+ * -client_renegotiation, constate l'alerte no_renegotiation du défaut d'openssl 3, suit un HelloRequest lancé par la
+ * commande R d'un vrai s_server, et le serveur du simulateur lance lui-même une renégociation qu'un vrai s_client suit.
+ * Avant ce second correctif (git stash de src/network et src/terminal) 5 cas sur 9 tombent dans ce fichier et 2 sur 8 dans
+ * openssl-s-client-interactive ; les quatre cas de la première étape passent dans les deux états, déjà commités.
  */
 import { describe, it, expect } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -21,7 +27,9 @@ import { join } from 'node:path';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { certToPem } from '@/network/pki/pem';
-import { startSimServer } from './_realOpenssl';
+import { TlsClientSession } from '@/network/tls/TlsClientSession';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import { realCertificate, runSimClient, startSimServer } from './_realOpenssl';
 
 const REPLY = 'HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok';
 
@@ -32,7 +40,7 @@ function simPki() {
   const dir = mkdtempSync(join(tmpdir(), 'reneg-'));
   const caPath = join(dir, 'ca.pem');
   writeFileSync(caPath, certToPem(ca.rootCertificate));
-  return { leaf, caPath };
+  return { ca, leaf, caPath };
 }
 
 async function interactive(port: number, caPath: string, lines: readonly string[], extra: readonly string[] = []): Promise<{ stdout: string; stderr: string }> {
@@ -99,5 +107,87 @@ describe('renégociation TLS ≤ 1.2 ↔ openssl réel', () => {
     expect(run.stderr).toContain('no renegotiation');
     expect(lastSession!.renegotiations).toBe(0);
     expect(run.stdout).not.toContain('\nok');
+  }, 60000);
+});
+
+describe('renégociation TLS ≤ 1.2 : côté client et HelloRequest', () => {
+  it('le client du simulateur renégocie avec un vrai s_server, puis la requête est servie', async () => {
+    const material = realCertificate('real.lab');
+    const port = 14000 + Math.floor(Math.random() * 20000);
+    const child = spawn('openssl', ['s_server', '-accept', String(port), '-cert', material.certificatePath, '-key', material.keyPath, '-www', '-tls1_2', '-client_renegotiation'], { stdio: 'ignore' });
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const verifier = new CertificateVerifier({ trustAnchors: [material.certificate], clock: () => Date.now() });
+    const client = new TlsClientSession({ verifier, serverName: 'real.lab', versions: ['1.2'] } as never);
+    const run = await runSimClient(port, client, 'GET / HTTP/1.0\r\n\r\n', 6000, { renegotiateBeforeRequest: true });
+    child.kill();
+    expect(client.result).toBe('success');
+    expect(client.renegotiations).toBe(1);
+    expect(run.response).toContain('HTTP/1.0 200 ok');
+  }, 60000);
+
+  it("un vrai s_server qui n'autorise pas la renégociation du client (défaut d'openssl 3) répond no_renegotiation : le client simulé le constate", async () => {
+    const material = realCertificate('real.lab');
+    const port = 14000 + Math.floor(Math.random() * 20000);
+    const child = spawn('openssl', ['s_server', '-accept', String(port), '-cert', material.certificatePath, '-key', material.keyPath, '-www', '-tls1_2'], { stdio: 'ignore' });
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const verifier = new CertificateVerifier({ trustAnchors: [material.certificate], clock: () => Date.now() });
+    const client = new TlsClientSession({ verifier, serverName: 'real.lab', versions: ['1.2'] } as never);
+    await runSimClient(port, client, 'GET / HTTP/1.0\r\n\r\n', 6000, { renegotiateBeforeRequest: true });
+    child.kill();
+    expect(client.renegotiations).toBe(0);
+    expect(client.peerAlert?.description).toBe('no_renegotiation');
+  }, 60000);
+
+  it("un vrai s_server lance la renégociation (commande R, HelloRequest) : le client simulé la suit et la poignée de main aboutit", async () => {
+    const material = realCertificate('real.lab');
+    const port = 14000 + Math.floor(Math.random() * 20000);
+    const child = spawn('openssl', ['s_server', '-accept', String(port), '-cert', material.certificatePath, '-key', material.keyPath, '-tls1_2'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stdout.on('data', () => undefined);
+    child.stderr.on('data', () => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const verifier = new CertificateVerifier({ trustAnchors: [material.certificate], clock: () => Date.now() });
+    const client = new TlsClientSession({ verifier, serverName: 'real.lab', versions: ['1.2'] } as never);
+    setTimeout(() => child.stdin.write('R\n'), 1800);
+    const run = await runSimClient(port, client, 'GET / HTTP/1.0\r\n\r\n', 5000);
+    child.kill();
+    expect(client.result).toBe('success');
+    expect(client.renegotiations).toBe(1);
+    expect(run.steps).toContain('renegotiation completed');
+  }, 60000);
+
+  it('sim ↔ sim : le client renégocie, le serveur le suit, la requête passe sous les nouvelles clés', async () => {
+    const pki = simPki();
+    let session: TlsServerSession | null = null;
+    const bridge = await startSimServer(() => { session = new TlsServerSession({ serverCert: pki.leaf.cert, serverPrivateKey: pki.leaf.privateKey } as never); return session; }, () => REPLY);
+    const verifier = new CertificateVerifier({ trustAnchors: [pki.ca.rootCertificate], clock: () => Date.now() });
+    const client = new TlsClientSession({ verifier, serverName: 'sim.lab', versions: ['1.2'] } as never);
+    const run = await runSimClient(bridge.port, client, 'GET / HTTP/1.0\r\n\r\n', 6000, { renegotiateBeforeRequest: true });
+    bridge.stop();
+    expect(client.renegotiations).toBe(1);
+    expect(session!.renegotiations).toBe(1);
+    expect(run.response).toContain('HTTP/1.0 200 OK');
+  }, 60000);
+
+  it('le serveur du simulateur lance la renégociation (HelloRequest) et un vrai s_client la suit', async () => {
+    const pki = simPki();
+    let session: TlsServerSession | null = null;
+    const bridge = await startSimServer(() => { session = new TlsServerSession({ serverCert: pki.leaf.cert, serverPrivateKey: pki.leaf.privateKey } as never); return session; }, () => REPLY);
+    const child = spawn('openssl', ['s_client', '-connect', `127.0.0.1:${bridge.port}`, '-servername', 'sim.lab', '-CAfile', pki.caPath, '-tls1_2'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { out += d; });
+    child.stdin.on('error', () => undefined);
+    const closed = new Promise((resolve) => child.on('close', resolve));
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(bridge.requestRenegotiation()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    child.stdin.write('GET / HTTP/1.0\r\n\r\n');
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    child.stdin.end();
+    await closed;
+    bridge.stop();
+    expect(session!.renegotiations).toBe(1);
+    expect(out).toContain('ok');
+    expect(bridge.steps.join('|')).not.toContain('bad_record_mac');
   }, 60000);
 });
