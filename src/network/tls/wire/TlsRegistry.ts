@@ -71,6 +71,7 @@ export const HANDSHAKE_TYPE = {
   clientHello: 1,
   serverHello: 2,
   newSessionTicket: 4,
+  endOfEarlyData: 5,
   encryptedExtensions: 8,
   certificate: 11,
   serverKeyExchange: 12,

@@ -3,6 +3,7 @@
  * and /var/log/ files for the Linux simulator.
  */
 
+import { formatLocalTime } from './system/SystemInfo';
 import { simulationNowMs } from '../../core/SystemClock';
 import { kernelHostname } from './KernelHostname';
 import { VirtualFileSystem } from './VirtualFileSystem';
@@ -67,37 +68,16 @@ Options:
      --no-pager        Do not pipe output into a pager
   -h --help            Show this help text`;
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-export function fmtSyslogTimestamp(d: Date): string {
-  const mon = MONTHS[d.getMonth()];
-  const day = String(d.getDate()).padStart(2, ' ');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${mon} ${day} ${hh}:${mm}:${ss}`;
+export function fmtSyslogTimestamp(d: Date, zone?: string): string {
+  return formatLocalTime('%b %e %H:%M:%S', d.getTime(), zone);
 }
 
-function fmtIsoTimestamp(d: Date): string {
-  const yyyy = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${yyyy}-${mo}-${dd}T${hh}:${mm}:${ss}+0000`;
+function fmtIsoTimestamp(d: Date, zone?: string): string {
+  return formatLocalTime('%Y-%m-%dT%H:%M:%S%z', d.getTime(), zone);
 }
 
-export function fmtHumanDate(d: Date): string {
-  const day = DAYS[d.getDay()];
-  const mon = MONTHS[d.getMonth()];
-  const dd = String(d.getDate()).padStart(2, ' ');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${day} ${mon} ${dd} ${hh}:${mm}:${ss} ${d.getFullYear()}`;
+export function fmtHumanDate(d: Date, zone?: string): string {
+  return formatLocalTime('%a %b %e %H:%M:%S %Y', d.getTime(), zone);
 }
 
 export class LinuxLogManager {
@@ -135,6 +115,9 @@ export class LinuxLogManager {
   private nowMs: () => number = simulationNowMs;
 
   setClock(now: () => number): void { this.nowMs = now; }
+
+  private zoneName: () => string | undefined = () => undefined;
+  setZone(zone: () => string | undefined): void { this.zoneName = zone; }
 
   constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts) {
     this.bootFacts = facts ?? defaultKernelBootFacts();
@@ -503,7 +486,7 @@ export class LinuxLogManager {
       const first = this.journal[0];
       const last = this.journal[this.journal.length - 1];
       if (first && last) {
-        const header = `-- Logs begin at ${fmtHumanDate(first.timestamp)}, end at ${fmtHumanDate(last.timestamp)}. --`;
+        const header = `-- Logs begin at ${fmtHumanDate(first.timestamp, this.zoneName())}, end at ${fmtHumanDate(last.timestamp, this.zoneName())}. --`;
         return header + '\n' + lines.join('\n');
       }
     }
@@ -577,7 +560,7 @@ export class LinuxLogManager {
     if (opts.raw) return e.message;
     if (opts.humanTime) {
       const ts = new Date(this.bootTime.getTime() + e.offsetSec * 1000);
-      return `[${fmtHumanDate(ts)}] ${e.message}`;
+      return `[${fmtHumanDate(ts, this.zoneName())}] ${e.message}`;
     }
     return `[${e.offsetSec.toFixed(6).padStart(12, ' ')}] ${e.message}`;
   }
@@ -687,7 +670,7 @@ export class LinuxLogManager {
   }
 
   private formatSyslogLine(entry: JournalEntry): string {
-    const ts = fmtSyslogTimestamp(entry.timestamp);
+    const ts = fmtSyslogTimestamp(entry.timestamp, this.zoneName());
     const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
     return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
   }
@@ -852,12 +835,12 @@ export class LinuxLogManager {
   private formatEntry(entry: JournalEntry, format: string, outputFields: string[]): string {
     switch (format) {
       case 'short': {
-        const ts = fmtSyslogTimestamp(entry.timestamp);
+        const ts = fmtSyslogTimestamp(entry.timestamp, this.zoneName());
         const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
         return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
       }
       case 'short-iso': {
-        const ts = fmtIsoTimestamp(entry.timestamp);
+        const ts = fmtIsoTimestamp(entry.timestamp, this.zoneName());
         const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
         return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
       }
@@ -888,7 +871,7 @@ export class LinuxLogManager {
           : JSON.stringify(filtered);
       }
       case 'verbose': {
-        const ts = fmtHumanDate(entry.timestamp);
+        const ts = fmtHumanDate(entry.timestamp, this.zoneName());
         return [
           `${ts} [s=${this.bootId}]`,
           `    PRIORITY=${entry.priority}`,
@@ -980,8 +963,8 @@ export class LinuxLogManager {
   }
 
   private cmdListBoots(): string {
-    const ts = fmtHumanDate(this.bootTime);
-    const now = fmtHumanDate(new Date(this.nowMs()));
+    const ts = fmtHumanDate(this.bootTime, this.zoneName());
+    const now = fmtHumanDate(new Date(this.nowMs()), this.zoneName());
     return ` 0 ${this.bootId} ${ts}—${now}`;
   }
 

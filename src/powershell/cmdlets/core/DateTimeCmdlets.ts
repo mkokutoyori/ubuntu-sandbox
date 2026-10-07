@@ -3,16 +3,21 @@
  * No system providers required.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
+import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
+import { machineDate, parseDateTime } from '@/powershell/runtime/dotnetDateTime';
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { formatLocalTime } from '@/network/devices/linux/system/SystemInfo';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { TimeZone } from '@/network/core/time/TimeZone';
-import { WINDOWS_TIME_ZONES as ZONES_WINDOWS } from '@/network/core/time/WindowsTimeZones';
+import { WINDOWS_TIME_ZONES as ZONES_WINDOWS, windowsStandardOffset, windowsZoneDisplayName, type WindowsTimeZone } from '@/network/core/time/WindowsTimeZones';
 import {
   observesDaylightSaving, standardOffsetMinutes,
 } from '@/network/core/time/TimeZoneRegistry';
@@ -34,19 +39,14 @@ import {
  * vrai applet le refuse.
  */
 
-function objetZone(z: { id: string; iana: string; nom: string }): PSValue {
+function objetZone(z: WindowsTimeZone): PSValue {
   const zone = TimeZone.parse(z.iana);
   const maintenant = simulationNowMs();
-  const min = zone ? standardOffsetMinutes(zone, maintenant) : 0;
-  const signe = min < 0 ? '-' : '+';
-  const abs = Math.abs(min);
-  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
-  const mm = String(abs % 60).padStart(2, '0');
   return {
     Id: z.id,
-    DisplayName: `(UTC${signe}${hh}:${mm}) ${z.nom}`,
+    DisplayName: windowsZoneDisplayName(z, maintenant),
     StandardName: z.id,
-    BaseUtcOffset: `${signe}${hh}:${mm}:00`,
+    BaseUtcOffset: `${windowsStandardOffset(z, maintenant)}:00`,
     SupportsDaylightSavingTime: zone !== null && observesDaylightSaving(zone, maintenant),
   } as unknown as PSValue;
 }
@@ -95,41 +95,47 @@ export class SetTimeZoneCmdlet implements ICmdlet {
 export class GetDateCmdlet implements ICmdlet {
   readonly name = 'get-date';
   readonly aliases = [] as const;
-  readonly parameters = ['Date', 'Format'] as const;
+  readonly parameters = ['Date', 'Format', 'UFormat', 'AsUTC', 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second', 'Millisecond', 'DisplayHint'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const fmt     = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
+    const fmt = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
+    const ufmt = ctx.named['uformat'] ? psValueToString(ctx.named['uformat']) : null;
     const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? null;
-    const now = ctx.providers.scheduledTasks?.now?.() ?? simulationDate();
+    const now = machineDate(ctx.providers);
     let d: Date;
     if (dateArg !== null && dateArg !== undefined) {
-      d = new Date(psValueToString(dateArg));
-      if (isNaN(d.getTime())) d = simulationDate();
-    } else if (['year', 'month', 'day', 'hour', 'minute', 'second']
-        .some(k => ctx.named[k] !== undefined)) {
-      // -Year/-Month/-Day/... build a date; unspecified parts inherit "now".
-      const num = (k: string, def: number) =>
-        ctx.named[k] !== undefined ? Number(ctx.named[k]) : def;
-      d = new Date(
-        num('year',  now.getFullYear()),
-        num('month', now.getMonth() + 1) - 1,
-        num('day',   now.getDate()),
-        num('hour',   now.getHours()),
-        num('minute', now.getMinutes()),
-        num('second', now.getSeconds()),
-      );
+      if (dateArg instanceof Date) d = dateArg;
+      else {
+        const parsed = parseDateTime(psValueToString(dateArg), ctx.providers);
+        if (parsed === null) {
+          ctx.emitError(`Get-Date : Cannot bind parameter 'Date'. Cannot convert value "${psValueToString(dateArg)}" to type "System.DateTime".`);
+          return null;
+        }
+        d = parsed;
+      }
+    } else if (['year', 'month', 'day', 'hour', 'minute', 'second', 'millisecond'].some(k => ctx.named[k] !== undefined)) {
+      const num = (k: string, def: number) => (ctx.named[k] !== undefined ? Number(ctx.named[k]) : def);
+      d = now.withInstant(now.getTime());
+      d.setFullYear(num('year', now.getFullYear()), num('month', now.getMonth() + 1) - 1, num('day', now.getDate()));
+      d.setHours(num('hour', now.getHours()), num('minute', now.getMinutes()), num('second', now.getSeconds()), num('millisecond', now.getMilliseconds()));
     } else {
       d = now;
     }
-    if (fmt !== null) return formatDate(d, fmt);
+    if (ctx.named['asutc'] !== undefined) d = new ZonedDate(d.getTime(), null);
+    if (ufmt !== null) return formatUFormat(ufmt, d);
+    if (fmt !== null) return formatDotNetDate(d, fmt);
     return makePSDate(d);
   }
 }
 
-const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
-const DAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-  'Friday', 'Saturday'];
+function formatUFormat(format: string, d: Date): string {
+  const zone = d instanceof ZonedDate ? (d.zoneOrNull()?.name ?? undefined) : undefined;
+  const offset = d instanceof ZonedDate ? d.offsetMinutes() : 0;
+  const sign = offset < 0 ? '-' : '+';
+  const hours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0');
+  const withOffset = format.replace(/%(.)/g, (whole, ch: string) => (ch === 'Z' ? `${sign}${hours}` : whole));
+  return formatLocalTime(withOffset, d.getTime(), zone);
+}
 
 // ─── Set-Date ─────────────────────────────────────────────────────────────
 
@@ -140,18 +146,19 @@ export class SetDateCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const tasks = ctx.providers.scheduledTasks;
-    const now = tasks?.now?.() ?? simulationDate();
+    const now = machineDate(ctx.providers);
     const adjust = ctx.named['adjust'];
     const dateArg = ctx.named['date'] ?? ctx.positional[0];
     let target: Date;
     if (adjust !== undefined && typeof adjust === 'object' && adjust !== null && 'TotalMilliseconds' in (adjust as Record<string, PSValue>)) {
-      target = new Date(now.getTime() + Number((adjust as Record<string, PSValue>).TotalMilliseconds));
+      target = now.withInstant(now.getTime() + Number((adjust as Record<string, PSValue>).TotalMilliseconds));
     } else if (dateArg !== undefined && dateArg !== null) {
-      target = new Date(psValueToString(dateArg));
-      if (isNaN(target.getTime())) {
+      const parsed = dateArg instanceof Date ? dateArg : parseDateTime(psValueToString(dateArg), ctx.providers);
+      if (parsed === null) {
         ctx.emitError(`Set-Date : Cannot bind parameter 'Date'. Cannot convert value "${psValueToString(dateArg)}" to type "System.DateTime".`);
         return null;
       }
+      target = parsed;
     } else {
       ctx.emitError('Set-Date : Cannot process command because of one or more missing mandatory parameters: Date.');
       return null;
@@ -178,59 +185,20 @@ export function makePSDate(d: Date): PSValue {
   }) as unknown as PSValue;
 }
 
-function formatDate(d: Date, fmt: string): string {
-  const pad2 = (n: number) => String(n).padStart(2, '0');
-  const pad3 = (n: number) => String(n).padStart(3, '0');
-  const h12 = d.getHours() % 12 || 12;
-  // Single-pass token scan (longest-match-first) so `dddd` is not chewed up
-  // by the `dd` rule, etc.
-  const tokens: Array<[RegExp, () => string]> = [
-    [/^yyyy/, () => String(d.getFullYear())],
-    [/^yy/,   () => String(d.getFullYear()).slice(-2)],
-    [/^MMMM/, () => MONTHS_FULL[d.getMonth()]],
-    [/^MMM/,  () => MONTHS_FULL[d.getMonth()].slice(0, 3)],
-    [/^MM/,   () => pad2(d.getMonth() + 1)],
-    [/^M/,    () => String(d.getMonth() + 1)],
-    [/^dddd/, () => DAYS_FULL[d.getDay()]],
-    [/^ddd/,  () => DAYS_FULL[d.getDay()].slice(0, 3)],
-    [/^dd/,   () => pad2(d.getDate())],
-    [/^d/,    () => String(d.getDate())],
-    [/^HH/,   () => pad2(d.getHours())],
-    [/^H/,    () => String(d.getHours())],
-    [/^hh/,   () => pad2(h12)],
-    [/^h/,    () => String(h12)],
-    [/^mm/,   () => pad2(d.getMinutes())],
-    [/^m/,    () => String(d.getMinutes())],
-    [/^ss/,   () => pad2(d.getSeconds())],
-    [/^s/,    () => String(d.getSeconds())],
-    [/^fff/,  () => pad3(d.getMilliseconds())],
-    [/^tt/,   () => (d.getHours() < 12 ? 'AM' : 'PM')],
-  ];
-  let out = '';
-  for (let i = 0; i < fmt.length; ) {
-    const rest = fmt.slice(i);
-    const hit = tokens.find(([re]) => re.test(rest));
-    if (hit) {
-      const m = rest.match(hit[0])![0];
-      out += hit[1]();
-      i += m.length;
-    } else {
-      out += fmt[i];
-      i++;
-    }
-  }
-  return out;
-}
-
 // ─── New-TimeSpan ─────────────────────────────────────────────────────────
 
 export class NewTimespanCmdlet implements ICmdlet {
   readonly name = 'new-timespan';
   readonly displayName = 'New-TimeSpan';
   readonly aliases = [] as const;
-  readonly parameters = ['Days', 'Hours', 'Minutes', 'Seconds'] as const;
+  readonly parameters = ['Days', 'Hours', 'Minutes', 'Seconds', 'Start', 'End'] as const;
 
   execute(ctx: CmdletContext): PSValue {
+    const start = ctx.named['start'] ?? ctx.positional[0];
+    if (start instanceof Date) {
+      const end = ctx.named['end'] ?? ctx.positional[1] ?? new Date(simulationNowMs());
+      return makeTimeSpan((end instanceof Date ? end : new Date(String(end))).getTime() - start.getTime());
+    }
     const days  = Number(ctx.named['days']    ?? 0);
     const hours = Number(ctx.named['hours']   ?? 0);
     const mins  = Number(ctx.named['minutes'] ?? 0);
@@ -238,23 +206,6 @@ export class NewTimespanCmdlet implements ICmdlet {
     const ms    = days * 86400000 + hours * 3600000 + mins * 60000 + secs * 1000;
     return makeTimeSpan(ms);
   }
-}
-
-export function makeTimeSpan(ms: number): Record<string, PSValue> {
-  const total = ms / 1000;
-  return {
-    __type:       'TimeSpan',
-    TotalMilliseconds: ms,
-    TotalSeconds: total,
-    TotalMinutes: total / 60,
-    TotalHours:   total / 3600,
-    TotalDays:    total / 86400,
-    Days:         Math.floor(total / 86400),
-    Hours:        Math.floor((total % 86400) / 3600),
-    Minutes:      Math.floor((total % 3600) / 60),
-    Seconds:      Math.floor(total % 60),
-    Milliseconds: ms % 1000,
-  } as Record<string, PSValue>;
 }
 
 // ─── Measure-Command ──────────────────────────────────────────────────────

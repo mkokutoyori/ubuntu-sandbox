@@ -2,7 +2,7 @@ import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { createResponse, type HttpMessage } from '../semantics/types';
-import { encodeResponse, parseRequest } from './Http1Wire';
+import { encodeResponse, parseRequest, HttpRequestAssembler } from './Http1Wire';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
 
@@ -73,9 +73,12 @@ export class Http1ServerSession {
   }
 
   private handleConnection(socket: TcpSocket): void {
+    const assembler = new HttpRequestAssembler();
     const unsubscribe = socket.onData((data) => {
+      const complete = assembler.push(String(data));
+      if (complete === null) return;
       const requestId = randomRequestId();
-      const parsed = parseRequest(String(data));
+      const parsed = parseRequest(complete);
 
       if (parsed.ok === false) {
         this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method: 'GET', target: '' } });

@@ -66,6 +66,7 @@ export interface ServiceInfo {
 
 export interface ProcessInfo {
   pid: number;
+  startedAtMs?: number;
   name: string;
   ppid: number;
   owner: string;
@@ -89,6 +90,7 @@ export interface UserInfo {
   enabled: boolean;
   passwordRequired: boolean;
   lastLogon: Date | null;
+  passwordLastSet?: Date | null;
 }
 
 export interface GroupInfo {
@@ -1665,7 +1667,7 @@ export interface IVpnProvider {
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[];
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void;
+  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string;
   clearLog(logName: string): string;
   newLog(logName: string, source: string): string;
   limitLog(logName: string, maxSizeKB: number): void;

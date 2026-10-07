@@ -10,6 +10,7 @@
  */
 
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { hostOffsetSpec, hostWallDate } from './time/OracleHostClock';
 
 import { OracleInstance } from './OracleInstance';
 import { standbyRefusesStatement, ORA_16000 } from './dataguard/StandbyWriteGuard';
@@ -200,6 +201,7 @@ export class OracleDatabase implements SqlCommandHost {
       proxyUser: args.proxyUser,
       instance: this.buildInstanceIdentity(),
     });
+    session.timeZone = hostOffsetSpec(this.instance.hostClock());
     session.setEnabledRoles(this.resolveDefaultRoles(args.username.toUpperCase()));
     this.sessions.set(args.sid, session);
     if (args.type !== 'BACKGROUND') {
@@ -869,7 +871,7 @@ export class OracleDatabase implements SqlCommandHost {
       outcome: args.outcome,
       role: args.role,
       timestamp: now,
-      offHours: isOffHours(now),
+      offHours: isOffHours(hostWallDate(this.instance.hostClock())),
     };
     this.instance.getBus().publish({ topic: 'oracle.security.connection-traced', payload });
   }
@@ -1217,6 +1219,7 @@ export class OracleDatabase implements SqlCommandHost {
       put: (t: string) => { buf.pending += t; },
       isServerOutput: () => !!ctx.serverOutput,
       currentSchema: () => ctx.currentSchema ?? 'SYS',
+      oracleClock: () => executor.oracleClock(),
       lookupUnit: (name: string) => this.lookupUnitForPlsql(executor, name),
       resolvePackage: (name: string) => this.resolvePackageHandle(executor, name),
       callBuiltin: (name: string, rawArgs: string) =>
@@ -2248,11 +2251,25 @@ export class OracleDatabase implements SqlCommandHost {
     const routine = builtinPackageRegistry.resolve(fullName);
     if (!routine) return;                  // unknown routine → swallow
 
-    const args = this.splitTopLevelArgs(argString).map(a => this.unquoteLiteral(a));
+    const args = OracleDatabase.bindNamedArguments(
+      this.splitTopLevelArgs(argString), routine.parameters).map(a => this.unquoteLiteral(a));
     const session = executor.getContext().session as import('./security/OracleSession').OracleSession | undefined;
     if (!session) return;
     const result = routine.invoke(args, { session, rawCall: call, services: this.packageServices() });
     if (result !== null) output.push(result);
+  }
+
+  private static bindNamedArguments(parts: string[], parameters: readonly string[] | undefined): string[] {
+    if (parameters === undefined) return parts;
+    const bound: string[] = [];
+    let position = 0;
+    for (const part of parts) {
+      const named = /^([A-Za-z_][A-Za-z0-9_$#]*)\s*=>\s*([\s\S]*)$/.exec(part);
+      if (named === null) { bound[position++] = part; continue; }
+      const index = parameters.findIndex(name => name.toUpperCase() === named[1].toUpperCase());
+      if (index >= 0) bound[index] = named[2].trim();
+    }
+    return bound;
   }
 
   /** Split "a, 'b,c', d(e,f)" on top-level commas. */

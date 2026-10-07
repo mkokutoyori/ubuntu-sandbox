@@ -172,6 +172,67 @@ un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
 
+### [huawei] `undo dhcp enable` est refuse en vue systeme
+**Mesure** : `huawei-config-parity` (« should disable DHCP with undo dhcp enable ») est rouge sur `main` et
+sur toute la chaine de branches : `dhcp enable` passe, `undo dhcp enable` repond
+`Error: Unrecognized command found at '^' position.`. Sans rapport avec l'horloge, vu en passant.
+**Pourquoi ce n'est pas ferme** : le test peut encoder une fausse prémisse (la forme `undo` du
+commutateur global `dhcp enable` n'est pas verifiee sur une transcription VRP) ; il faut la source
+avant de decider entre corriger le moteur et corriger le test.
+
+### [windows] `quser` est inconnu ; libelles d'erreur de `tzutil` et `eventcreate` non attestes
+**Mesure** : `quser` repond « not recognized » sur une machine Windows simulee. `tzutil /g|/l|/s` et
+`eventcreate` existent maintenant, sur le fuseau de l'identite (celui de `Set-TimeZone`) et sur le journal
+que lisent `Get-EventLog` et `wevtutil`.
+**Pourquoi ce n'est pas ferme** : `quser` demande une table de sessions interactives avec heure d'ouverture
+(`RdpSessionTable` n'en porte pas) et une mise en page en colonnes qu'aucune transcription ici ne donne.
+Les phrases `TZUTIL: Invalid time zone X.` et `TZUTIL: Invalid number of arguments for /s.` viennent d'un
+compte rendu secondaire, pas d'une transcription ; les refus d'`eventcreate` (`Invalid Argument/Option`,
+`option is required`) suivent la famille des messages `ERROR:` de Windows sans transcription non plus ;
+`Write-EventLog` dans un journal inconnu garde le libelle du fournisseur (`Cannot open log`), la vraie
+machine dit que le nom de source n'existe pas. `tzutil /s` n'accepte pas le suffixe `_dstoff`, `tzutil /?`
+et `eventcreate /?` ne sont pas ecrits (texte d'aide non source), `eventcreate /s` (journal distant) est
+refuse, la table des fuseaux Windows ne porte que 17 entrees, et ni `tzutil /s` ni `eventcreate` ne
+verifient l'elevation (`Set-TimeZone` non plus).
+
+### [powershell] le runtime n'a qu'un type numerique
+**Mesure** : `(5.0).GetType().Name` et `[double]5` rendent `Int32` (le type est deduit de la valeur) ; `-is [double]`
+accepte tout nombre ; `[int]7/2` et `7/2` sont tous deux des doubles JavaScript. Les formats `.ToString("N2")`,
+`"X"`, `"D5"` et `[Math]::Pi` sont justes.
+**Pourquoi ce n'est pas ferme** : distinguer Int32/Int64/Double demande un type de valeur porte par chaque nombre,
+c'est-a-dire toucher l'evaluateur d'expressions entier, pas un membre.
+
+### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
+**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
+`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
+simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
+FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
+**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
+« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
+meme port d'horloge dans `IRmanOracleContext`.
+
+### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
+**Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
+BYMINUTE et BYSECOND dans le fuseau du serveur. `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`, `BYDATE`, `INCLUDE` /
+`EXCLUDE`, `SCHEDULE_NAME` (calendriers enregistres) et les `*` composes sont refuses avec ORA-27419, faute de
+pouvoir les evaluer.
+**Pourquoi ce n'est pas ferme** : le texte exact de l'erreur de syntaxe d'un `repeat_interval` n'est pas
+atteignable ici (ORA-27419 dit « impossible de determiner une date d'execution valide » et sert aux deux cas) ;
+les cles restantes demandent chacune un evaluateur de plus dans `CalendarExpression`.
+
+### [oracle] `CAST` vers INTERVAL / RAW / LOB et `TO_TIMESTAMP_TZ`
+**Mesure** : `CAST(x AS DATE|TIMESTAMP|TIMESTAMP WITH TIME ZONE|NUMBER|VARCHAR2)` s'evalue maintenant ;
+`CAST(x AS INTERVAL DAY TO SECOND)` et vers `RAW` / `CLOB` repondent ORA-00902, et `TO_TIMESTAMP_TZ`,
+`TO_DSINTERVAL`, `AT TIME ZONE` sont inconnus.
+**Pourquoi ce n'est pas ferme** : le moteur n'a pas de type intervalle (une chaine `n UNIT`) ni de TIMESTAMP
+WITH TIME ZONE autrement que comme chaine `... +hh:mm`.
+
+### [oracle] `V$SESSION_CONTEXT` : `HOST` rend le nom du peripherique, pas `linux-server`
+**Mesure** : `oracle-user-activity` (« reports SESSION_USER, OS_USER, HOST and SERVICE_NAME ») est rouge
+sur `main` : le test cree une session sur un peripherique nomme `vsc-1` et attend `linux-server`.
+**Pourquoi ce n'est pas ferme** : la prémisse du test (le nom du serveur) est a trancher avant de toucher
+le moteur ou le test.
+
 ### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
 **Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
 de soixante secondes (`ip neigh` -> `STALE`) puis utilisee par un

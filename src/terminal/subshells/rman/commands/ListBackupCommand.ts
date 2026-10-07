@@ -5,13 +5,14 @@
  * view (set + pieces + datafiles).
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 import type { BackupSet } from '../catalog/types';
-import { formatOracleDate } from '../core/pureUtils';
+import type { IRmanOracleContext } from '../integration/IRmanOracleContext';
+import { formatOracleDate, rmanWall, rmanWallDay } from '../core/pureUtils';
 import { backupSetLines } from '../core/backupSetReport';
 import { renderTable, type TableColumn, type TableStyle } from '@/network/devices/shells/cli/TextTable';
 
@@ -40,11 +41,11 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       const rows = [
         {
           incKey: 1, status: 'PARENT', resetScn: 1,
-          resetTime: new Date(simulationNowMs() - 86_400_000).toISOString().slice(0, 10),
+          resetTime: rmanWallDay(rmanWall(ctx, simulationNowMs() - 86_400_000)),
         },
         {
           incKey: 2, status: 'CURRENT', resetScn: 1_892_354,
-          resetTime: simulationDate().toISOString().slice(0, 10),
+          resetTime: rmanWallDay(rmanWall(ctx)),
         },
       ];
       const columns: ReadonlyArray<TableColumn<typeof rows[number]>> = [
@@ -65,7 +66,7 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
     if (this.variant === 'ARCHIVELOG') {
       const arc = snap.value.sets.filter(s => s.type === 'ARCHIVELOG');
       if (arc.length === 0) return ok(['', 'no archived log found', '']);
-      return ok(this._detail(arc));
+      return ok(this._detail(arc, ctx));
     }
     if (this.variant === 'EXPIRED') {
       const expired = snap.value.pieces.filter(p => p.status === 'EXPIRED');
@@ -78,7 +79,7 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
     if (this.variant === 'OBSOLETE') {
       const obsolete = policy.findObsolete(snap.value.sets);
       if (obsolete.length === 0) return ok(['', 'no obsolete backups found', '']);
-      return ok(this._detail(obsolete));
+      return ok(this._detail(obsolete, ctx));
     }
     if (this.variant === 'COPY') {
       const copies = snap.value.sets.filter(s => s.type === 'DATAFILECOPY');
@@ -95,17 +96,17 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
     if (sets.length === 0) {
       return ok(['', 'List of Backups', '===============', 'no backup found in the repository', '']);
     }
-    return ok(this.variant === 'SUMMARY' ? this._summary(sets) : this._detail(sets));
+    return ok(this.variant === 'SUMMARY' ? this._summary(sets, ctx) : this._detail(sets, ctx));
   }
 
-  private _summary(sets: ReadonlyArray<BackupSet>): string[] {
+  private _summary(sets: ReadonlyArray<BackupSet>, ctx: IRmanOracleContext): string[] {
     const columns: ReadonlyArray<TableColumn<BackupSet>> = [
       { header: 'Key',             width: 7,  value: set => String(set.bsKey) },
       { header: 'TY',              width: 2,  value: () => 'B' },
       { header: 'LV',              width: 2,  value: lvCode },
       { header: 'S',               width: 1,  value: () => 'A' },
       { header: 'Device Type',     width: 11, value: () => 'DISK' },
-      { header: 'Completion Time', width: 20, value: set => formatOracleDate(new Date(set.completionTime)) },
+      { header: 'Completion Time', width: 20, value: set => formatOracleDate(rmanWall(ctx, set.completionTime)) },
       { header: '#Pieces',         width: 7,  value: set => String(set.pieces.length) },
       { header: '#Copies',         width: 7,  value: () => '1' },
       { header: 'Compressed',      width: 10, value: set => set.pieces.some(p => p.compressed) ? 'YES' : 'NO' },
@@ -115,7 +116,7 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       ...renderTable(sets, columns, RMAN_TABLE), ''];
   }
 
-  private _detail(sets: ReadonlyArray<BackupSet>): string[] {
-    return backupSetLines(sets);
+  private _detail(sets: ReadonlyArray<BackupSet>, ctx: IRmanOracleContext): string[] {
+    return backupSetLines(sets, ctx);
   }
 }

@@ -56,6 +56,7 @@ export class SecurityAuditActor {
     private readonly deviceId: string,
     private readonly journal: AuditJournal,
     private readonly policy: SecurityPolicyConfig = DEFAULT_SECURITY_POLICY,
+    private readonly wallNow: () => Date = () => new Date(simulationNowMs()),
   ) {}
 
   start(): void {
@@ -176,7 +177,7 @@ export class SecurityAuditActor {
         }
 
         // Off-hours DML anomaly.
-        if (action !== 'SELECT' && isOffHours(simulationDate(), this.policy.businessHours)) {
+        if (action !== 'SELECT' && isOffHours(this.wallNow(), this.policy.businessHours)) {
           this.emitAnomaly({
             kind: 'OFF_HOURS_DML', severity: 'MEDIUM',
             username: p.schema, sessionId,
@@ -189,7 +190,7 @@ export class SecurityAuditActor {
         const sens = this.journal.getSensitiveObjectRegistry().lookup(p.schema, p.table);
         if (sens) {
           const accessId = this.journal.allocateSensitiveAccessId();
-          const offHours = isOffHours(simulationDate(), this.policy.businessHours);
+          const offHours = isOffHours(this.wallNow(), this.policy.businessHours);
           this.journal.recordSensitiveAccess(new SensitiveAccessRecord({
             accessId, sessionId, username: p.schema, action,
             objectSchema: sens.schema, objectName: sens.object,

@@ -1523,6 +1523,7 @@ class WindowsProcessAdapter implements IProcessProvider {
 function toProcessInfo(p: import('@/network/devices/windows/WindowsProcessManager').WindowsProcess): ProcessInfo {
   return {
     pid: p.pid,
+    startedAtMs: p.startedAtMs,
     name: p.name,
     ppid: p.ppid,
     owner: p.owner,
@@ -1628,6 +1629,7 @@ function toUserInfo(u: import('@/network/devices/windows/WindowsUserManager').Wi
     enabled: u.enabled,
     passwordRequired: u.passwordRequired,
     lastLogon: u.lastLogon,
+    passwordLastSet: u.passwordLastSet ?? null,
   };
 }
 function toGroupInfo(g: import('@/network/devices/windows/WindowsUserManager').WindowsGroup): GroupInfo {
@@ -1701,8 +1703,8 @@ class WindowsEventLogAdapter implements IEventLogProvider {
       data: e.data,
     }));
   }
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void {
-    this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
+  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string {
+    return this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
   }
   clearLog(logName: string): string {
     const out = this.log.clearEventLog(logName);

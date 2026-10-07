@@ -3,7 +3,8 @@ import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IDhcpServerV6Provider } from '@/powershell/providers/PSProviders';
-import { psValueToString, timeSpanValue } from '@/powershell/runtime/PSExpansion';
+import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { isSwitchOn, timeSpanSeconds } from './DnsServerCmdlets';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import type { DhcpV6ScopeInfo, DhcpV6ScopeRequest } from '@/network/devices/windows/server/dhcp/WindowsDhcpv6';
@@ -27,9 +28,9 @@ function scopeObject(scope: DhcpV6ScopeInfo): Record<string, PSValue> {
   return {
     Prefix: scope.prefix, Name: scope.name, Description: scope.description, State: scope.state,
     Preference: scope.preference,
-    PreferredLifetime: timeSpanValue(scope.preferredLifetime * 1000),
-    ValidLifetime: timeSpanValue(scope.validLifetime * 1000),
-    T1: timeSpanValue(scope.t1 * 1000), T2: timeSpanValue(scope.t2 * 1000),
+    PreferredLifetime: makeTimeSpan(scope.preferredLifetime * 1000),
+    ValidLifetime: makeTimeSpan(scope.validLifetime * 1000),
+    T1: makeTimeSpan(scope.t1 * 1000), T2: makeTimeSpan(scope.t2 * 1000),
   };
 }
 

@@ -68,7 +68,7 @@ describe('§P2 — enc: the round-trip', () => {
     const srv = machine();
     await srv.executeCommand(`sh -c 'printf "x" > /tmp/e.txt'`);
     await srv.executeCommand(
-      'openssl enc -aes-256-cbc -pbkdf2 -a -k good -in /tmp/e.txt -out /tmp/e.b64');
+      'openssl enc -aes-256-cbc -pbkdf2 -a -S 0011223344556677 -k good -in /tmp/e.txt -out /tmp/e.b64');
 
     // Chained with `&&`/`||`, which is how a real script uses it.
     // Deliberately NOT `> /dev/null 2>&1`: `bad decrypt` goes to stderr,
@@ -80,9 +80,9 @@ describe('§P2 — enc: the round-trip', () => {
     // observation, and it is a separate subject from `enc`, which reports
     // on the right stream and with the right exit code either way.
     const good = await srv.executeCommand(
-      `sh -c 'openssl enc -aes-256-cbc -pbkdf2 -a -d -k good -in /tmp/e.b64 && echo PASSED'`);
+      `sh -c 'openssl enc -aes-256-cbc -pbkdf2 -a -d -S 0011223344556677 -k good -in /tmp/e.b64 && echo PASSED'`);
     const bad = await srv.executeCommand(
-      `sh -c 'openssl enc -aes-256-cbc -pbkdf2 -a -d -k wrong -in /tmp/e.b64 || echo FAILED'`);
+      `sh -c 'openssl enc -aes-256-cbc -pbkdf2 -a -d -S 0011223344556677 -k wrong -in /tmp/e.b64 || echo FAILED'`);
 
     expect(good).toContain('PASSED');
     expect(bad).toContain('FAILED');

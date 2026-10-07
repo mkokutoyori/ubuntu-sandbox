@@ -14,7 +14,7 @@ import { errnoNumber } from '@/network/core/Errno';
 import { md4, md5, sha1, sha256, sha512, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
 import { md5Crypt } from '@/crypto/passwords';
 import {
-  bytesToBase64, base64ToBytes, bytesToHex, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
+  bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
@@ -92,7 +92,7 @@ import {
 import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
 import { crlVersionOf } from '@/network/pki/der/CrlDer';
-import { publicKeyTextLines, signatureTextLines, certificateRequestText, peerChainLines } from './OpenSslText';
+import { publicKeyTextLines, signatureTextLines, certificateRequestText, peerChainLines, opensslHexDump } from './OpenSslText';
 import { verifyCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { opensslHelpLines } from './OpenSslHelp';
@@ -1802,13 +1802,26 @@ function finishSClientReport(
   if (version === '1.3') {
     lignes.push('Early data was not sent', `Verify return code: ${code} (${text})`, '---');
   } else {
-    lignes.push('SSL-Session:', `    Protocol  : TLSv${version}`, `    Cipher    : ${suiteName}`, '    Timeout   : 7200 (sec)',
-      `    Verify return code: ${code} (${text})`, '    Extended master secret: yes', '---');
+    const kept = details.legacySession;
+    lignes.push('SSL-Session:', `    Protocol  : TLSv${version}`, `    Cipher    : ${suiteName}`);
+    if (kept) {
+      lignes.push(`    Session-ID: ${kept.state.id.toUpperCase()}`, '    Session-ID-ctx: ', `    Master-Key: ${kept.state.master.toUpperCase()}`,
+        '    PSK identity: None', '    PSK identity hint: None', '    SRP username: None');
+      if (kept.ticket !== null) {
+        lignes.push(`    TLS session ticket lifetime hint: ${kept.state.lifetimeSeconds} (seconds)`, '    TLS session ticket:',
+          ...opensslHexDump(hexToBytes(kept.ticket), '    '), '');
+      }
+      lignes.push(`    Start Time: ${Math.floor(kept.state.createdAt / 1000)}`, '    Timeout   : 7200 (sec)');
+    } else {
+      lignes.push('    Timeout   : 7200 (sec)');
+    }
+    lignes.push(`    Verify return code: ${code} (${text})`, `    Extended master secret: ${kept ? (kept.state.extendedMasterSecret ? 'yes' : 'no') : 'yes'}`, '---');
   }
   if (probe.received !== undefined) {
     if (probe.received.length > 0) lignes.push(bytesToFileText(probe.received));
     return { output: lignes.join('\n'), stderr: 'DONE', exitCode: 0 };
   }
+  if (probe.channel) return { ...ok(lignes.join('\n')), channel: probe.channel, channelVersion: version };
   return ok(lignes.join('\n'));
 }
 
@@ -1818,7 +1831,7 @@ function finishSClientReport(
  * inventer ici : le transport existe, et le verdict rendu est celui du
  * fil.
  */
-function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+export function runSClient(host: OpenSslHost, argv: readonly string[], interactive = false): OpenSslResult {
   const { opts } = parseArgs('s_client', argv);
   const cible = opts.get('-connect');
   if (typeof cible !== 'string') {
@@ -1864,11 +1877,26 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const list = createCipherList(cipherSpec, { isAvailable: isImplementedCipher });
     if (list.ok === false) return fail(`Error setting cipher list\n${list.error}`, 1);
   }
+  let clientCredential: { chain: X509Certificate[]; privateKey: PkiPrivateKey } | undefined;
+  const clientCertPath = opts.get('-cert');
+  if (typeof clientCertPath === 'string') {
+    const certText = host.readFile(clientCertPath);
+    if (certText === null) return fail(`Can't open "${clientCertPath}" for reading, No such file or directory`, 1);
+    const keyPath = typeof opts.get('-key') === 'string' ? opts.get('-key') as string : clientCertPath;
+    const keyText = host.readFile(keyPath);
+    if (keyText === null) return fail(`Can't open "${keyPath}" for reading, No such file or directory`, 1);
+    const key = pemToPrivateKey(keyText);
+    const chain = pemToCertChain(certText);
+    if (key === null || chain.length === 0) return fail('Error getting private key or certificate', 1);
+    clientCredential = { chain, privateKey: key };
+  }
   const probeOptions = {
     versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
     ...(opts.has('-status') ? { requestStatus: true } : {}),
+    ...(clientCredential ? { clientCredential } : {}),
     ...(typeof opts.get('-alpn') === 'string' ? { alpn: (opts.get('-alpn') as string).split(',') } : {}),
-    ...(host.stdin() !== null ? { send: fileTextToBytes(host.stdin()!) } : {}),
+    ...(host.stdin() !== null && !interactive ? { send: fileTextToBytes(host.stdin()!) } : {}),
+    ...(interactive ? { keepOpen: true } : {}),
   };
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
@@ -1969,8 +1997,16 @@ function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (list.ok === false) return fail(`Error setting cipher list\n${list.error}`, 1);
   }
   const root = (host.workingDirectory?.() ?? '.').replace(/\/+$/, '');
+  let clientAuth: { anchors: X509Certificate[]; required: boolean } | undefined;
+  if (opts.has('-Verify') || opts.has('-verify')) {
+    const caPath = opts.get('-CAfile');
+    if (typeof caPath !== 'string') return fail('Error: -Verify/-verify needs -CAfile to locate the trusted certificates', 1);
+    const caText = host.readFile(caPath);
+    if (caText === null) return fail(`Can't open "${caPath}" for reading, No such file or directory`, 1);
+    clientAuth = { anchors: pemToCertChain(caText), required: opts.has('-Verify') };
+  }
   const served = host.serveTls?.(port, {
-    chain, privateKey, ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+    chain, privateKey, ...(clientAuth ? { clientAuth } : {}), ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
   }, (method, target) => {
     if (mode === 'www') {
       return { status: 200, contentType: 'text/html', body: `<HTML><BODY BGCOLOR="#ffffff">\n<pre>\n\ns_server -accept ${port} -www \n</pre></BODY></HTML>\n` };
@@ -1992,7 +2028,7 @@ function runHelp(): OpenSslResult {
 
 // ─── dispatch ───────────────────────────────────────────────────────
 
-export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+export function runOpenSsl(host: OpenSslHost, argv: readonly string[], options: { readonly interactive?: boolean } = {}): OpenSslResult {
   const sub = argv[0];
   if (sub === undefined) return runHelp();
   const reste = argv.slice(1);
@@ -2013,7 +2049,7 @@ export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslR
   if (sub === 'req') return runReq(host, reste);
   if (sub === 'x509') return runX509(host, reste);
   if (sub === 'verify') return runVerify(host, reste);
-  if (sub === 's_client') return runSClient(host, reste);
+  if (sub === 's_client') return runSClient(host, reste, options.interactive === true);
   if (sub === 's_server') return runSServer(host, reste);
   if (sub === 'ec') return runEc(host, reste);
   if (sub === 'ecparam') return runEcparam(host, reste);

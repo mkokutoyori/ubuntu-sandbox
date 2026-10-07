@@ -9,6 +9,8 @@
  */
 
 import type { PSEnvironment, PSValue } from './PSEnvironment';
+import { formatDouble } from './dotnetNumber';
+import { formatTimeSpan, isTimeSpan } from './dotnetTimeSpan';
 
 /** Callback type for evaluating a $(…) sub-expression string. */
 export type SubExprEvaluator = (code: string) => PSValue;
@@ -163,39 +165,10 @@ function resolveVar(name: string, env: PSEnvironment): PSValue {
   return env.get(name);
 }
 
-/** Converts a PSValue to string (matching PowerShell's default formatting). */
-/**
- * Real .NET `TimeSpan.ToString()` default ("c") format: `[-]d.hh:mm:ss`,
- * with the `d.` prefix omitted when there are zero whole days. Shared by
- * every place a `{ __type: 'TimeSpan', TotalMilliseconds, ... }` value
- * (`New-TimeSpan`, `Get-Date` subtraction, Date+TimeSpan arithmetic) needs
- * to render as text — table cells, `psValueToString`, string interpolation.
- */
-export function formatTimeSpanValue(totalMs: number): string {
-  const negative = totalMs < 0;
-  const abs = Math.abs(totalMs);
-  const days    = Math.floor(abs / 86400000);
-  const hours   = Math.floor((abs % 86400000) / 3600000);
-  const minutes = Math.floor((abs % 3600000) / 60000);
-  const seconds = Math.floor((abs % 60000) / 1000);
-  const core = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  const withDays = days !== 0 ? `${days}.${core}` : core;
-  return negative ? `-${withDays}` : withDays;
-}
-
 const displayFormatters = new Map<string, (record: Record<string, PSValue>) => string>();
 
 export function registerPSDisplayFormatter(type: string, format: (record: Record<string, PSValue>) => string): void {
   displayFormatters.set(type, format);
-}
-
-export function timeSpanValue(ms: number): PSValue {
-  return {
-    __type: 'TimeSpan', TotalMilliseconds: ms, TotalSeconds: ms / 1000, TotalMinutes: ms / 60000,
-    TotalHours: ms / 3600000, TotalDays: ms / 86400000, Days: Math.floor(ms / 86400000),
-    Hours: Math.floor((ms % 86400000) / 3600000), Minutes: Math.floor((ms % 3600000) / 60000),
-    Seconds: Math.floor((ms % 60000) / 1000), Milliseconds: ms % 1000,
-  } as unknown as PSValue;
 }
 
 export function registeredDisplay(value: unknown): string | null {
@@ -205,10 +178,11 @@ export function registeredDisplay(value: unknown): string | null {
   return formatter ? formatter(rec) : null;
 }
 
+/** Converts a PSValue to string (matching PowerShell's default formatting). */
 export function psValueToString(value: PSValue): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'boolean') return value ? 'True' : 'False';
-  if (typeof value === 'number') return String(value);
+  if (typeof value === 'number') return formatDouble(value);
   if (typeof value === 'string') return value;
   if (value instanceof Date) {
     // PowerShell short date + short time (en-US): "5/15/2026 11:10 AM".
@@ -228,9 +202,7 @@ export function psValueToString(value: PSValue): string {
     const rec = value as Record<string, PSValue>;
     const registered = registeredDisplay(rec);
     if (registered !== null) return registered;
-    if (rec.__type === 'TimeSpan' && typeof rec.TotalMilliseconds === 'number') {
-      return formatTimeSpanValue(rec.TotalMilliseconds);
-    }
+    if (isTimeSpan(rec)) return formatTimeSpan(rec.TotalMilliseconds as number);
     if (typeof rec.Message === 'string' && 'Exception' in rec && 'CategoryInfo' in rec) {
       return String(rec.Message);
     }

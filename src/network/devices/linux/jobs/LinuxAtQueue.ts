@@ -13,6 +13,8 @@
  * revenait à écrire un planificateur qui ne planifie rien.
  */
 
+import { TimeZone } from '../../../core/time/TimeZone';
+import { partsAt, utcMsForLocal } from '../../../core/time/TimeZoneRegistry';
 import { simulationDate } from '@/network/core/SystemClock';
 
 import { formatCtime } from '../time/ctime';
@@ -83,7 +85,7 @@ const AT_SHELL_WARNING = 'warning: commands will be executed using /bin/sh';
  * Ce qu'il ne reconnaît pas n'est pas ramené silencieusement à
  * maintenant : le vrai répond `Garbled time` et ne met rien au spool.
  */
-export function parseAtTime(spec: string, base: Date = simulationDate()): Date | null {
+export function parseAtTime(spec: string, base: Date = simulationDate(), zone?: string): Date | null {
   const text = spec.trim().toLowerCase();
   if (text === '' || text === 'now') return new Date(base);
 
@@ -101,32 +103,34 @@ export function parseAtTime(spec: string, base: Date = simulationDate()): Date |
     midnight: [0, 0], noon: [12, 0], teatime: [16, 0],
   };
   const named = nomme[text];
-  if (named) return prochainePassage(base, named[0], named[1]);
+  if (named) return prochainePassage(base, named[0], named[1], zone);
 
   const hhmm = text.match(/^(\d{1,2}):(\d{2})$/);
-  if (hhmm) return prochainePassage(base, Number(hhmm[1]), Number(hhmm[2]));
+  if (hhmm) return prochainePassage(base, Number(hhmm[1]), Number(hhmm[2]), zone);
 
   const ampm = text.match(/^(\d{1,2})\s*(am|pm)$/);
   if (ampm) {
     let h = Number(ampm[1]) % 12;
     if (ampm[2] === 'pm') h += 12;
-    return prochainePassage(base, h, 0);
+    return prochainePassage(base, h, 0, zone);
   }
 
   return null;
 }
 
 /** L'heure dite, aujourd'hui si elle est à venir, demain sinon. */
-function prochainePassage(base: Date, heure: number, minute: number): Date {
-  const d = new Date(base);
-  d.setHours(heure, minute, 0, 0);
-  if (d.getTime() <= base.getTime()) d.setDate(d.getDate() + 1);
-  return d;
+function prochainePassage(base: Date, heure: number, minute: number, zone?: string): Date {
+  const fuseau = zone === undefined ? null : TimeZone.parse(zone);
+  const local = partsAt(fuseau ?? TimeZone.UTC, base.getTime());
+  const wallOf = (day: number) => Date.UTC(local.year, local.month - 1, day, heure, minute, 0, 0);
+  const instantOf = (wall: number) => (fuseau === null ? wall : utcMsForLocal(fuseau, wall));
+  const today = instantOf(wallOf(local.day));
+  return new Date(today > base.getTime() ? today : instantOf(wallOf(local.day + 1)));
 }
 
 /** Une ligne d'`atq` : identifiant, heure `ctime`, file, propriétaire. */
-function ligneAtq(j: AtJob): string {
-  return `${j.id}\t${formatCtime(j.runAt)} ${j.queue} ${j.user}`;
+function ligneAtq(j: AtJob, zone?: string): string {
+  return `${j.id}\t${formatCtime(j.runAt, zone)} ${j.queue} ${j.user}`;
 }
 
 export interface AtResult {
@@ -147,8 +151,9 @@ export function cmdAt(
   atdRunning: boolean,
   now: Date = simulationDate(),
   file: 'a' | 'b' = 'a',
+  zone?: string,
 ): AtResult {
-  if (args.includes('-l')) return cmdAtq(queue);
+  if (args.includes('-l')) return cmdAtq(queue, zone);
   if (args.includes('-d') || args.includes('-r')) {
     return cmdAtrm(queue, args.filter((a) => !a.startsWith('-')));
   }
@@ -164,20 +169,20 @@ export function cmdAt(
   // `batch` ne prend pas d'heure : sa file part dès que la charge le
   // permet, ce qui ici veut dire au prochain tour.
   const timeSpec = file === 'b' ? 'now' : args.filter((a) => !a.startsWith('-')).join(' ');
-  const runAt = parseAtTime(timeSpec, now);
+  const runAt = parseAtTime(timeSpec, now, zone);
   if (runAt === null) return { output: 'Garbled time', exitCode: 1 };
 
   if (!command) return { output: 'at: no command to schedule', exitCode: 1 };
 
   const job = queue.enqueue(command, user, runAt, file);
-  const lines = [AT_SHELL_WARNING, `job ${job.id} at ${formatCtime(runAt)}`];
+  const lines = [AT_SHELL_WARNING, `job ${job.id} at ${formatCtime(runAt, zone)}`];
   if (!atdRunning) lines.push(ATD_DOWN);
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
 /** `atq` — liste les tâches en attente. */
-export function cmdAtq(queue: LinuxAtQueue): AtResult {
-  return { output: queue.list().map(ligneAtq).join('\n'), exitCode: 0 };
+export function cmdAtq(queue: LinuxAtQueue, zone?: string): AtResult {
+  return { output: queue.list().map((job) => ligneAtq(job, zone)).join('\n'), exitCode: 0 };
 }
 
 /** `atrm` — retire une ou plusieurs tâches par identifiant. */

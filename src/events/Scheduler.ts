@@ -119,6 +119,16 @@ function drainRunnableWork(): Promise<void> {
 
 export class VirtualTimeScheduler implements IScheduler {
   private currentTime = 0;
+  private pinnedEpochOrigin: number | null = null;
+
+  setEpochOrigin(epochMsAtZero: number): void {
+    this.pinnedEpochOrigin = epochMsAtZero - this.currentTime;
+  }
+
+  epochOrigin(): number | null {
+    return this.pinnedEpochOrigin;
+  }
+
   private nextHandle = 1;
   private nextSeq = 1;
   private readonly tasks: VirtualTask[] = [];

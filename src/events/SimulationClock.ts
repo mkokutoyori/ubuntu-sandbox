@@ -13,6 +13,7 @@ export interface SimulationClockState {
 export interface SimulationClockOptions {
   readonly realNow?: () => number;
   readonly startPump?: (tick: () => void) => () => void;
+  readonly originMs?: number;
 }
 
 type Listener = () => void;
@@ -42,6 +43,7 @@ export class SimulationClock {
   constructor(options: SimulationClockOptions = {}) {
     this.realNow = options.realNow ?? defaultRealNow;
     this.startPump = options.startPump ?? defaultStartPump;
+    if (options.originMs !== undefined) this.scheduler.setEpochOrigin(options.originMs);
   }
 
   getState(): SimulationClockState {

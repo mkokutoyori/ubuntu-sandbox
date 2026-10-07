@@ -14,6 +14,7 @@
  * network/Equipment.
  */
 
+import { parseOracleTimeZone } from '../time/OracleTimeZone';
 import { type ResultSet, emptyResult } from '../../engine/executor/ResultSet';
 import type {
   StartupStatement, ShutdownStatement, AlterSystemStatement,
@@ -149,6 +150,13 @@ export class InstanceAdminExecutor {
       return emptyResult(/\bCANCEL\b/.test(suite)
         ? this.instance.stopManagedRecovery()
         : this.instance.startManagedRecovery());
+    }
+    const databaseZone = /^\s*SET\s+TIME_ZONE\s*=\s*(.+)$/i.exec(stmt.action);
+    if (databaseZone) {
+      const spec = parseOracleTimeZone(databaseZone[1]);
+      if (spec === null) return emptyResult('ORA-01882: timezone region not found');
+      this.instance.requestDatabaseTimeZone(spec);
+      return emptyResult('Database altered.');
     }
     // RENAME FILE 'old' [, 'old2'] TO 'new' [, 'new2']
     // MOVE DATAFILE 'old' TO 'new' [KEEP|REUSE]

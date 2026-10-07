@@ -1,5 +1,5 @@
 import { TimeZone } from './TimeZone';
-import { isDaylightSavingAt } from './TimeZoneRegistry';
+import { isDaylightSavingAt, standardOffsetMinutes } from './TimeZoneRegistry';
 
 export interface WindowsTimeZone {
   readonly id: string;
@@ -34,4 +34,23 @@ export function windowsZoneNameAt(iana: string, atMs: number): string {
   return parsed !== null && isDaylightSavingAt(parsed, atMs)
     ? zone.id.replace(/Standard Time$/, 'Daylight Time')
     : zone.id;
+}
+
+export function windowsZoneById(id: string): WindowsTimeZone | undefined {
+  return WINDOWS_TIME_ZONES.find((z) => z.id.toLowerCase() === id.toLowerCase());
+}
+
+export function windowsZoneOf(iana: string): WindowsTimeZone {
+  return WINDOWS_TIME_ZONES.find((z) => z.iana === iana) ?? WINDOWS_TIME_ZONES[0];
+}
+
+export function windowsStandardOffset(zone: WindowsTimeZone, atMs: number): string {
+  const parsed = TimeZone.parse(zone.iana);
+  const minutes = parsed === null ? 0 : standardOffsetMinutes(parsed, atMs);
+  const abs = Math.abs(minutes);
+  return `${minutes < 0 ? '-' : '+'}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+}
+
+export function windowsZoneDisplayName(zone: WindowsTimeZone, atMs: number): string {
+  return `(UTC${windowsStandardOffset(zone, atMs)}) ${zone.nom}`;
 }

@@ -1,6 +1,8 @@
-import { simulationDate } from '@/network/core/SystemClock';
-
 import type { OracleDatabase } from '../OracleDatabase';
+import { OracleError } from '../../engine/types/DatabaseError';
+import { instantMsOf } from '../functions/dateSupport';
+import { hostZoneOf } from '../time/OracleHostClock';
+import { nextOccurrenceAfter, parseCalendarExpression } from './CalendarExpression';
 import { SchedulerJob, SchedulerJobRun, type SchedulerJobInit } from './SchedulerJob';
 
 export class SchedulerManager {
@@ -11,8 +13,48 @@ export class SchedulerManager {
 
   constructor(private readonly db: OracleDatabase) {}
 
+  private nowMs(): number {
+    return this.db.instance.hostClock().nowMs();
+  }
+
+  private now(): Date {
+    return new Date(this.nowMs());
+  }
+
+  instantOf(text: string | null | undefined): Date | null {
+    const trimmed = (text ?? '').trim();
+    if (trimmed.length === 0) return null;
+    if (/^(SYSDATE|SYSTIMESTAMP|CURRENT_DATE|CURRENT_TIMESTAMP)$/i.test(trimmed)) return this.now();
+    const literal = /^(?:TIMESTAMP|DATE)\s+'([^']*)'$/i.exec(trimmed);
+    const ms = instantMsOf(literal === null ? trimmed : literal[1], hostZoneOf(this.db.instance.hostClock()));
+    return ms === null ? null : new Date(ms);
+  }
+
+  private nextRunFor(job: SchedulerJob, afterMs: number): Date | null {
+    if (!job.enabled) return null;
+    const referenceMs = (job.startDate ?? job.createdAt).getTime();
+    if (job.repeatInterval === null || job.repeatInterval.trim().length === 0) {
+      return job.runCount > 0 ? null : (job.startDate !== null && job.startDate.getTime() > afterMs ? job.startDate : this.now());
+    }
+    const expression = parseCalendarExpression(job.repeatInterval);
+    if (expression === null) {
+      throw new OracleError(27419, 'unable to determine valid execution date from repeat interval');
+    }
+    const notBefore = job.startDate !== null && job.startDate.getTime() > afterMs ? job.startDate.getTime() - 1 : afterMs;
+    const next = nextOccurrenceAfter(expression, notBefore, referenceMs, hostZoneOf(this.db.instance.hostClock()));
+    if (next === null) {
+      throw new OracleError(27419, 'unable to determine valid execution date from repeat interval');
+    }
+    return job.endDate !== null && next > job.endDate.getTime() ? null : new Date(next);
+  }
+
+  private reschedule(job: SchedulerJob): void {
+    job.nextRunDate = this.nextRunFor(job, this.nowMs());
+  }
+
   createJob(init: SchedulerJobInit): SchedulerJob {
-    const job = new SchedulerJob(init);
+    const job = new SchedulerJob({ ...init, createdAt: init.createdAt ?? this.now() });
+    this.reschedule(job);
     this.jobs.set(`${job.owner}.${job.jobName}`, job);
     return job;
   }
@@ -25,6 +67,7 @@ export class SchedulerManager {
     const j = this.lookup(owner, jobName);
     if (!j) return false;
     j.enable();
+    this.reschedule(j);
     return true;
   }
 
@@ -32,6 +75,7 @@ export class SchedulerManager {
     const j = this.lookup(owner, jobName);
     if (!j) return false;
     j.disable();
+    j.nextRunDate = null;
     return true;
   }
 
@@ -42,21 +86,22 @@ export class SchedulerManager {
     switch (attr) {
       case 'JOB_ACTION':       j.jobAction = String(value); break;
       case 'REPEAT_INTERVAL':  j.repeatInterval = value === null ? null : String(value); break;
-      case 'START_DATE':       j.startDate = value instanceof Date ? value : new Date(String(value)); break;
-      case 'END_DATE':         j.endDate = value instanceof Date ? value : new Date(String(value)); break;
+      case 'START_DATE':       j.startDate = value instanceof Date ? value : this.instantOf(String(value)); break;
+      case 'END_DATE':         j.endDate = value instanceof Date ? value : this.instantOf(String(value)); break;
       case 'ENABLED':          if (value) j.enable(); else j.disable(); break;
       case 'COMMENTS':         j.comments = String(value); break;
       case 'MAX_RUN_DURATION': j.maxRunDuration = Number(value); break;
       case 'MAX_RUNS':         j.maxRuns = Number(value); break;
       case 'MAX_FAILURES':     j.maxFailures = Number(value); break;
     }
+    if (attr === 'REPEAT_INTERVAL' || attr === 'START_DATE' || attr === 'END_DATE' || attr === 'ENABLED') this.reschedule(j);
     return true;
   }
 
   runJob(owner: string, jobName: string, useCurrentSession: boolean = true): SchedulerJobRun | null {
     const j = this.lookup(owner, jobName);
     if (!j) return null;
-    const startedAt = simulationDate();
+    const startedAt = this.now();
     j.recordStart(startedAt);
     let status: 'SUCCEEDED' | 'FAILED' = 'SUCCEEDED';
     let errorCode = 0;
@@ -114,8 +159,9 @@ export class SchedulerManager {
       const m = errorMessage.match(/ORA-(\d+)/);
       errorCode = m ? parseInt(m[1], 10) : 600;
     }
-    const endedAt = simulationDate();
+    const endedAt = this.now();
     j.recordEnd(endedAt, status === 'SUCCEEDED');
+    j.nextRunDate = j.state === 'SCHEDULED' ? this.nextRunFor(j, endedAt.getTime()) : null;
     const run = new SchedulerJobRun({
       runId: this.nextRunId++, owner: j.owner, jobName: j.jobName,
       status, startedAt, endedAt, errorCode, errorMessage, output,
@@ -135,7 +181,7 @@ export class SchedulerManager {
     return run;
   }
 
-  sweep(now: Date = simulationDate()): number {
+  sweep(now: Date = this.now()): number {
     let executed = 0;
     for (const j of this.jobs.values()) {
       if (!j.enabled) continue;

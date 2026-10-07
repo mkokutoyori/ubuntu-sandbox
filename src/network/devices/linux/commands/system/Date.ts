@@ -8,7 +8,7 @@ export const dateCommand: LinuxCommand = {
   usage: 'date [-d DATESPEC] [-s DATESPEC] [-u] [+FORMAT]',
   run(ctx: LinuxCommandContext, args: string[]): string {
     const executor = ctx.executor;
-    return cmdDate(args, executor.identity.timezone, {
+    return cmdDate(args, executor.localZone(), {
       nowMs: executor.simulatedDate().getTime(),
       mayStepClock: executor.userMgr.currentUid === 0,
       setClock: (epochMs) => executor.setSystemTime(epochMs),

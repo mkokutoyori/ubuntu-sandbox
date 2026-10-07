@@ -7,6 +7,7 @@ import { makeArgCompleter } from '../completionHelpers';
 import { runOpenSsl } from '@/network/crypto/openssl/OpenSslEngine';
 import { OPENSSL_VERSION } from '@/network/crypto/openssl/opensslVersion';
 import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
@@ -59,6 +60,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         ...(sonde.received ? { received: sonde.received } : {}),
         ...(sonde.chain ? { chain: sonde.chain } : {}),
         ...(sonde.details ? { details: sonde.details } : {}),
+        ...(sonde.channel ? { channel: sonde.channel } : {}),
       };
     },
     httpPost: (ip, port, path, body, headers) => {
@@ -94,6 +96,11 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         serverCert: tls.chain[0], serverChain: tls.chain.slice(1), serverPrivateKey: tls.privateKey,
         ...(tls.protocols ? { protocols: tls.protocols } : {}),
         ...(tls.cipherList ? { cipherList: tls.cipherList } : {}),
+        ...(tls.clientAuth ? {
+          requestClientCert: true,
+          verifier: new CertificateVerifier({ trustAnchors: tls.clientAuth.anchors, clock: () => simulationNowMs() }),
+          clientCertPolicy: tls.clientAuth.required ? 'strict' as const : 'optional' as const,
+        } : {}),
       }, (req) => {
         const outcome = respond(req.method ?? 'GET', req.target ?? '/');
         const response = createResponse(outcome.status, outcome.status === 200 ? 'ok' : 'Not Found');
@@ -152,7 +159,9 @@ export const opensslCommand: LinuxCommand = {
   },
 
   runWithStatusSync(ctx: LinuxCommandContext, args: string[], stdin?: string) {
-    const r = runOpenSsl(linuxOpenSslHost(ctx, stdin), args);
+    const interactive = ctx.executor.interactiveTerminal && stdin === undefined && args[0] === 's_client';
+    const r = runOpenSsl(linuxOpenSslHost(ctx, stdin), args, { interactive });
+    if (r.channel) ctx.executor.offerInteractive({ kind: 'tls-client', channel: r.channel, version: r.channelVersion ?? '1.3' });
     return { output: r.output, exitCode: r.exitCode, stderr: r.stderr };
   },
 };

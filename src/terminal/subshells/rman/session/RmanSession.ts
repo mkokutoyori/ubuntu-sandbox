@@ -23,7 +23,7 @@ import { RemoteRecoveryCatalog } from '../catalog/RemoteRecoveryCatalog';
 import { RmanJobEngine } from '../job/RmanJobEngine';
 import { RmanCommandDispatcher } from '../commands/RmanCommandDispatcher';
 import { ok, err, type Result } from '../core/Result';
-import { formatOracleDate } from '../core/pureUtils';
+import { formatOracleDate, rmanWall } from '../core/pureUtils';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanSession } from './IRmanSession';
 import type { RmanSessionOptions, RmanSessionState } from './types';
@@ -124,6 +124,8 @@ export class RmanSession implements IRmanSession {
   }
 
   get state(): RmanSessionState { return this._state; }
+
+  wallNow(): Date { return rmanWall(this._ctx); }
 
   ownsPendingShutdown(): boolean {
     const owned = this._selfShutdown;
@@ -322,7 +324,7 @@ export class RmanSession implements IRmanSession {
   getBanner(): string[] {
     return [
       '',
-      `Recovery Manager: Release 19.0.0.0.0 - Production on ${formatOracleDate()}`,
+      `Recovery Manager: Release 19.0.0.0.0 - Production on ${formatOracleDate(this.wallNow())}`,
       '',
       'Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.',
       '',

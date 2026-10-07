@@ -2,6 +2,7 @@
  * Permission commands: chmod, chown, chgrp, stat, umask, test, mkfifo
  */
 
+import { formatStatTime } from './time/FileTimes';
 import { ShellContext, expandGlob, actorOf } from './LinuxFileCommands';
 import { INode } from './VirtualFileSystem';
 
@@ -268,7 +269,18 @@ function formatStat(fmt: string, name: string, inode: INode, ctx: ShellContext):
   const group = ctx.userMgr.gidToName(inode.gid);
   const octal = ctx.vfs.formatOctalPermissions(inode);
 
+  const human = (ms: number) => formatStatTime(ms, ctx.zone);
+  const epoch = (ms: number) => String(Math.floor(ms / 1000));
+
   return fmt
+    .replace(/%x/g, human(inode.atime))
+    .replace(/%y/g, human(inode.mtime))
+    .replace(/%z/g, human(inode.ctime))
+    .replace(/%X/g, epoch(inode.atime))
+    .replace(/%Y/g, epoch(inode.mtime))
+    .replace(/%Z/g, epoch(inode.ctime))
+    .replace(/%w/g, '-')
+    .replace(/%W/g, '0')
     .replace(/%n/g, name)
     .replace(/%U/g, owner)
     .replace(/%G/g, group)
@@ -286,9 +298,10 @@ function fullStat(name: string, inode: INode, ctx: ShellContext): string {
   const octal = ctx.vfs.formatOctalPermissions(inode, 4);
   const perms = ctx.vfs.formatPermissions(inode);
   const typeStr = inode.type === 'file' ? 'regular file' : inode.type;
-  const access = new Date(inode.atime).toISOString();
-  const modify = new Date(inode.mtime).toISOString();
-  const change = new Date(inode.ctime).toISOString();
+  const stamp = (ms: number) => formatStatTime(ms, ctx.zone);
+  const access = stamp(inode.atime);
+  const modify = stamp(inode.mtime);
+  const change = stamp(inode.ctime);
 
   return [
     `  File: ${name}`,

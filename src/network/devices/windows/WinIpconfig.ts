@@ -22,6 +22,8 @@
  * omitting the adapter targets every interface.
  */
 
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import type { WinCommandContext } from './WinCommandExecutor';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
@@ -222,8 +224,8 @@ function ipconfigAll(ctx: WinCommandContext): string {
           const dhcpState = ctx.getDHCPState(name);
           if (dhcpState?.lease) {
             const lease = dhcpState.lease;
-            lines.push(`   Lease Obtained. . . . . . . . . . : ${formatWindowsDate(lease.leaseStart)}`);
-            lines.push(`   Lease Expires . . . . . . . . . . : ${formatWindowsDate(lease.expiration)}`);
+            lines.push(`   Lease Obtained. . . . . . . . . . : ${formatWindowsDate(lease.leaseStart, ctx.timezone)}`);
+            lines.push(`   Lease Expires . . . . . . . . . . : ${formatWindowsDate(lease.expiration, ctx.timezone)}`);
           }
         }
 
@@ -515,19 +517,6 @@ function parseAdapterArg(args: string[], switchName: string): string | null {
 
 
 
-function formatWindowsDate(ts: number): string {
-  const d = new Date(ts);
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = ['January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'];
-  const day = days[d.getDay()];
-  const month = months[d.getMonth()];
-  const date = d.getDate();
-  const year = d.getFullYear();
-  const hours = d.getHours();
-  const minutes = d.getMinutes().toString().padStart(2, '0');
-  const seconds = d.getSeconds().toString().padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  const h12 = hours % 12 || 12;
-  return `${day}, ${month} ${date}, ${year} ${h12}:${minutes}:${seconds} ${ampm}`;
+function formatWindowsDate(ts: number, zone?: string): string {
+  return formatDotNetDate(ZonedDate.in(ts, zone), 'dddd, MMMM d, yyyy h:mm:ss tt');
 }

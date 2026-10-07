@@ -5,16 +5,19 @@
  * (signature du pair, clé temporaire, vérification, suite, clé publique, renégociation, ALPN, code de vérification).
  *
  * MESURÉ avant correctif : le bilan (signature du pair, clé temporaire, octets, vérification, suite, clé publique,
- * renégociation, ALPN, code de vérification) était remplacé par quatre lignes, et ALPN http/1.1 était offert d'office
- * alors qu'openssl n'en offre pas sans -alpn. Avant correctif (stash de src/network) 3 cas sur 6 tombent : le bilan
- * TLS 1.3, -alpn et le bilan TLS 1.2. Les trois autres passent dans les deux états : le témoin (le vrai openssl atteint
- * le serveur), et la chaîne et le certificat serveur, déjà alignés par le commit précédent.
+ * renégociation, ALPN, code de vérification) était remplacé par quatre lignes, ALPN http/1.1 était offert d'office
+ * alors qu'openssl n'en offre pas sans -alpn, et le bloc SSL-Session de TLS 1.2 ne portait ni Session-ID, ni
+ * Master-Key, ni ticket, ni Start Time. Avant le dernier correctif (stash de src/network) 3 cas sur 9 tombent : les
+ * rubriques du bloc SSL-Session, le dump du ticket et le dump partiel. Les six autres passent dans les deux états :
+ * le témoin (le vrai openssl atteint le serveur), la chaîne, le certificat serveur, le bilan TLS 1.3, -alpn et le
+ * bilan TLS 1.2, tous déjà alignés par les commits précédents.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { spawn } from 'node:child_process';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { PKI, machine, sh } from './_httpsLab';
 import { startTcpRelay } from './_tcpRelay';
+import { opensslHexDump } from '@/network/crypto/openssl/OpenSslText';
 
 beforeEach(() => { EquipmentRegistry.getInstance().clear(); });
 
@@ -104,4 +107,35 @@ describe('rapport s_client ↔ openssl réel', () => {
     expect(keep(sim).length).toBeGreaterThan(8);
     expect(keep(sim)).toEqual(keep(real));
   }, 40000);
+
+  it('en TLS 1.2 le bloc SSL-Session a les mêmes rubriques, dans le même ordre, que chez openssl', async () => {
+    const srv = await lab();
+    const relay = await startTcpRelay(srv.getTcpStack(), '127.0.0.1', 443);
+    const real = await realClient(relay.port, ['-tls1_2']);
+    relay.stop();
+    const sim = await sh(srv, 'openssl s_client -connect 127.0.0.1:443 -tls1_2 </dev/null');
+    const labels = (report: string): string[] => section(report, 'SSL-Session:', '---')
+      .map((l) => /^ {4}([A-Za-z][A-Za-z -]*?) *:/.exec(l)?.[1]).filter((l): l is string => l !== undefined);
+    expect(labels(real)).toContain('Master-Key');
+    expect(labels(sim)).toEqual(labels(real));
+  }, 40000);
+
+  it('le ticket de session est imprimé en dump hexadécimal 16 octets par ligne, comme BIO_dump', async () => {
+    const srv = await lab();
+    const sim = await sh(srv, 'openssl s_client -connect 127.0.0.1:443 -tls1_2 </dev/null');
+    const dump = sim.split('\n').filter((l) => /^ {4}[0-9a-f]{4} - /.test(l));
+    expect(dump.length).toBeGreaterThan(2);
+    expect(dump[0]).toMatch(/^ {4}0000 - ([0-9a-f]{2} ){7}[0-9a-f]{2}-([0-9a-f]{2} ){7}[0-9a-f]{2} {3}.{16}$/);
+    expect(sim).toMatch(/Master-Key: [0-9A-F]{96}/);
+    expect(sim).toMatch(/^ {4}Session-ID: ([0-9A-F]{64})?$/m);
+    expect(sim).toMatch(/Start Time: \d{10}/);
+  }, 40000);
+
+  it('le dump hexadécimal complète la dernière ligne sans tiret, comme crypto/bio/bio_dump.c', () => {
+    const bytes = Uint8Array.from({ length: 17 }, (_, i) => 0x41 + i);
+    expect(opensslHexDump(bytes, '')).toEqual([
+      '0000 - 41 42 43 44 45 46 47 48-49 4a 4b 4c 4d 4e 4f 50   ABCDEFGHIJKLMNOP',
+      `0010 - 51${' '.repeat(48)}Q`,
+    ]);
+  });
 });

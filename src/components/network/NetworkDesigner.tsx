@@ -18,6 +18,7 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { NetworkLogsPanel } from './NetworkLogsPanel';
 import { Toolbar } from './Toolbar';
 import { HelpDialog } from './HelpDialog';
+import { SettingsDialog } from './SettingsDialog';
 import { SaveTopologyDialog } from './SaveTopologyDialog';
 import { OpenTopologyDialog } from './OpenTopologyDialog';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -54,6 +55,7 @@ export function NetworkDesigner() {
 
   // Help dialog
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Save/Open/Clear-All/Reset dialogs — replace window.prompt/alert/confirm
   // (rapport 09 audit, item #54).
@@ -424,6 +426,7 @@ export function NetworkDesigner() {
         onOpen={handleOpen}
         onReset={handleReset}
         onHelp={() => setHelpOpen(true)}
+        onSettings={() => setSettingsOpen(true)}
         logsOpen={logsOpen}
         onToggleLogs={() => setLogsOpen(o => !o)}
         onUndo={undo}
@@ -432,6 +435,7 @@ export function NetworkDesigner() {
         canRedo={canRedo}
       />
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <SaveTopologyDialog
         open={saveDialogOpen}
         onOpenChange={setSaveDialogOpen}

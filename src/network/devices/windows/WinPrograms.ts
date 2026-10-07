@@ -25,7 +25,7 @@ export const WINDOWS_PROGRAMS: readonly WinProgram[] = [
     ['route.exe', 25600], ['runas.exe', 55808], ['rwinsta.exe', 15360], ['sc.exe', 73728],
     ['schtasks.exe', 244736], ['sfc.exe', 19456], ['shutdown.exe', 28672], ['sort.exe', 28672],
     ['systeminfo.exe', 105472], ['taskkill.exe', 80384], ['tasklist.exe', 79872], ['telnet.exe', 76800],
-    ['tracert.exe', 13312], ['w32tm.exe', 205312], ['wevtutil.exe', 156160], ['where.exe', 22016], ['whoami.exe', 71168],
+    ['tracert.exe', 13312], ['tzutil.exe', 19456], ['eventcreate.exe', 43008], ['w32tm.exe', 205312], ['wevtutil.exe', 156160], ['where.exe', 22016], ['whoami.exe', 71168],
     ['xcopy.exe', 51712],
   ]),
   ...programsIn('C:\\Windows\\System32\\OpenSSH', [

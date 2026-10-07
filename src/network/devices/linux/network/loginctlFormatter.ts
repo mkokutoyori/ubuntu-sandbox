@@ -1,3 +1,4 @@
+import { formatLocalTime } from '../system/SystemInfo';
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
 import type { UtmpSync, UtmpRecord } from './UtmpSync';
@@ -14,6 +15,7 @@ export interface LoginctlContext {
   utmp: UtmpSync | null;
   bootDate: Date | null;
   now: Date;
+  zone?: string;
   action?: LoginctlSessionAction;
 }
 
@@ -63,18 +65,8 @@ function typeOf(s: SshSession): string {
   return s.tty.startsWith('pts/') ? 'tty' : 'tty';
 }
 
-function fmtTimestamp(d: Date): string {
-  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const dow = DAYS[d.getDay()];
-  const y = d.getFullYear();
-  const mon = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  void dow; void mon; void MONTHS;
-  return `${DAYS[d.getDay()]} ${y}-${mon}-${day} ${hh}:${mm}:${ss} UTC`;
+function fmtTimestamp(d: Date, zone?: string): string {
+  return formatLocalTime('%a %Y-%m-%d %H:%M:%S %Z', d.getTime(), zone);
 }
 
 function renderListSessions(ctx: LoginctlContext): string {
@@ -127,7 +119,7 @@ function renderShowSession(ctx: LoginctlContext, id: string): string {
     `Id=${sid}`,
     `User=${s.uid}`,
     `Name=${s.user}`,
-    `Timestamp=${fmtTimestamp(s.loginAt)}`,
+    `Timestamp=${fmtTimestamp(s.loginAt, ctx.zone)}`,
     `TimestampMonotonic=${s.loginAt.getTime() * 1000}`,
     `VTNr=0`,
     `Seat=${seatOf(s)}`,
@@ -160,7 +152,7 @@ function renderShowUser(ctx: LoginctlContext, id: string): string {
     `UID=${match.uid}`,
     `GID=${match.uid}`,
     `Name=${match.user}`,
-    `Timestamp=${fmtTimestamp(match.loginAt)}`,
+    `Timestamp=${fmtTimestamp(match.loginAt, ctx.zone)}`,
     `RuntimePath=/run/user/${match.uid}`,
     `Service=user@${match.uid}.service`,
     `Slice=user-${match.uid}.slice`,

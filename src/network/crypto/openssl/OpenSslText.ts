@@ -110,3 +110,17 @@ export function peerChainLines(chain: readonly X509Certificate[], formatDate: (m
   });
   return lines;
 }
+
+export function opensslHexDump(bytes: Uint8Array, indent: string): string[] {
+  const lines: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 16) {
+    const row = bytes.slice(offset, offset + 16);
+    let hex = '';
+    for (let i = 0; i < 16; i++) {
+      hex += i < row.length ? `${bytesToHex(row.slice(i, i + 1))}${i === 7 ? '-' : ' '}` : '   ';
+    }
+    const ascii = Array.from(row, (b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '.')).join('');
+    lines.push(`${indent}${offset.toString(16).padStart(4, '0')} - ${hex}  ${ascii}`);
+  }
+  return lines;
+}

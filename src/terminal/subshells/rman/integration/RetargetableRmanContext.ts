@@ -19,6 +19,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
 
   get dbId(): DbId { return this._current.dbId; }
   get dbName(): string { return this._current.dbName; }
+  hostZoneName(): string { return this._current.hostZoneName?.() ?? 'UTC'; }
   get vfs(): VfsAdapter { return this._current.vfs; }
 
   getDatafiles(): ReadonlyArray<DatafileInfo> { return this._current.getDatafiles(); }
