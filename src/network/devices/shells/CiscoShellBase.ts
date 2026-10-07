@@ -12,6 +12,12 @@
  *                     Subclasses use this for typed access to device-specific APIs.
  */
 
+import { monitorCaptureSpecs, type MonitorCaptureHost } from './cisco/monitorCaptureSpecs';
+import { resolveCiscoInterfaceName } from './cli-utils';
+import type { FrameSource } from '../../hardware/PortTap';
+import { embeddedCaptureOf } from '@/network/capture/embeddedCaptureOf';
+import type { ACLEngine } from '../router/ACLEngine';
+import type { IPv4Packet } from '../../core/types';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
@@ -5977,6 +5983,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
       ...testAaaSpecs(() => this.testAaaHost()),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
+      ...monitorCaptureSpecs(() => this.monitorCaptureHost()),
     ];
   }
 
@@ -5987,6 +5994,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * la meme classe : c'est ce qui rend une declaration UNIQUE possible.
    * La phrase de repli sert la machine qui n'en a pas encore construit.
    */
+  private monitorCaptureHost(): MonitorCaptureHost {
+    const device = this.d();
+    return {
+      service: () => embeddedCaptureOf(device as unknown as FrameSource),
+      resolveInterface: (text) => resolveCiscoInterfaceName(device.getPortNames(), text),
+      accessListFilter: (name) => {
+        const engine = (device as unknown as { _getACLEngineInternal?: () => ACLEngine })._getACLEngineInternal?.();
+        if (engine === undefined || (engine.findByName(name) === undefined && engine.findById(Number(name)) === undefined)) return null;
+        return (_frame, wire) => {
+          const packet = wire.payload as IPv4Packet | undefined;
+          return packet?.type === 'ipv4' && engine.evaluateACLByName(name, packet, undefined, false) === 'permit';
+        };
+      },
+      exportCapture: (destination, content) => {
+        const name = destination.slice(destination.lastIndexOf('/') + 1).replace(/^[a-z]+:/i, '') || 'capture.pcap';
+        if (/^(flash|bootflash):/i.test(destination) || !destination.includes(':')) {
+          this.fs().write(name, content);
+          return '';
+        }
+        this.fs().write(name, content);
+        const reply = this.copierFichier([`flash:${name}`, destination]);
+        this.fs().remove(name);
+        return reply;
+      },
+      clockText: (at) => {
+        const reading = ciscoClockReading(this.cs(), at.getTime());
+        const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
+        const local = reading.local;
+        const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][local.getUTCMonth()];
+        return `${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}.${pad(local.getUTCMilliseconds(), 3)} `
+          + `${reading.timezone} ${month} ${pad(local.getUTCDate())} ${local.getUTCFullYear()}`;
+      },
+    };
+  }
+
   private showDebuggingHost(): ShowDebuggingHost {
     const service = () => (this.d() as unknown as {
       getDebugService?: () => { format(): string; formatConditions(): string };
