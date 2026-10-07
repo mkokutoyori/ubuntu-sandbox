@@ -31,7 +31,7 @@ export interface HttpsSendResult {
   alpnProtocol?: string | null;
 }
 
-export type HttpsClientConfig = Omit<TlsClientConfig, 'alpn' | 'earlyData'> & { readonly alpn?: readonly string[]; readonly earlyData?: boolean };
+export type HttpsClientConfig = Omit<TlsClientConfig, 'alpn' | 'earlyData'> & { readonly alpn?: readonly string[]; readonly earlyData?: boolean | Uint8Array };
 
 /**
  * RFC 9112 §9.3 — persistent by default, exactly like `Http1ClientSession`;
@@ -74,7 +74,7 @@ export class HttpsClientSession {
     const { earlyData: sendEarly, ...tlsConfig } = this.tlsConfig;
     const tls = new TlsClientSession({
       ...tlsConfig, alpn: tlsConfig.alpn ?? ['http/1.1'],
-      ...(sendEarly === true && earlyRequest !== undefined && tlsConfig.resumptionTicket ? { earlyData: earlyRequest } : {}),
+      ...(sendEarly instanceof Uint8Array ? { earlyData: sendEarly } : sendEarly === true && earlyRequest !== undefined && tlsConfig.resumptionTicket ? { earlyData: earlyRequest } : {}),
     });
     this.lastTls = tls;
     const trailing: TlsRecord[] = [];
