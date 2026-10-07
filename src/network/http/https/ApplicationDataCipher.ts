@@ -69,6 +69,7 @@ export interface DecryptedApplicationData {
   readonly nextSeq: number;
   readonly peerKeyUpdates?: number;
   readonly peerRequestedKeyUpdate?: boolean;
+  readonly renegotiation?: { readonly records: readonly TlsRecord[]; readonly sequence: number };
 }
 
 /**
@@ -98,13 +99,17 @@ export function decryptApplicationData(
   if (isLegacy(traffic)) {
     let legacySeq = startSeq;
     const opened: TlsRecord[] = [];
-    for (const record of records) {
-      const plain = traffic.open(legacySeq++, record);
+    for (const [index, record] of records.entries()) {
+      const plain = traffic.open(legacySeq, record);
       if (plain === null) throw new BadRecordMacError();
       if (plain.fragment.length > traffic.maxFragment) throw new RecordOverflowError();
+      if (plain.contentType === 'handshake') {
+        return { plaintext: joinedPlaintext(opened), nextSeq: legacySeq, renegotiation: { records: records.slice(index), sequence: legacySeq } };
+      }
+      legacySeq++;
       opened.push(plain);
     }
-    return { plaintext: reassembleFragments(opened).plaintext, nextSeq: legacySeq };
+    return { plaintext: joinedPlaintext(opened), nextSeq: legacySeq };
   }
   let current: string | Tls13Traffic = traffic;
   let k = keys(current);
@@ -137,4 +142,8 @@ export function decryptApplicationData(
   let offset = 0;
   for (const part of parts) { plaintext.set(part, offset); offset += part.length; }
   return peerKeyUpdates === 0 ? { plaintext, nextSeq: seq } : { plaintext, nextSeq: seq, peerKeyUpdates, peerRequestedKeyUpdate };
+}
+
+function joinedPlaintext(records: readonly TlsRecord[]): Uint8Array {
+  return records.length === 0 ? new Uint8Array(0) : reassembleFragments(records).plaintext;
 }
