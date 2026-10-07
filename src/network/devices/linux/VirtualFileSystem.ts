@@ -40,6 +40,8 @@ export type FindTimeTest =
   | { readonly kind: 'age'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly unit: 'day' | 'min'; readonly op: '+' | '-' | '='; readonly n: number }
   | { readonly kind: 'newer'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly thanMs: number };
 
+const RELATIME_MAX_AGE_MS = 24 * 3600 * 1000;
+
 export interface INode {
   id: number;
   type: FileType;
@@ -107,7 +109,7 @@ export interface VfsWriteEvent {
 export class VirtualFileSystem {
   private nowMs: () => number = simulationNowMs;
 
-  setClock(now: () => number): void { this.nowMs = now; }
+  setClock(now: () => number): void { this.nowMs = () => Math.floor(now()); }
 
   private inodes: Map<number, INode> = new Map();
   private nextInodeId = 1;
@@ -736,9 +738,16 @@ export class VirtualFileSystem {
     }
 
     if (inode.type !== 'file') return null;
-    inode.atime = this.nowMs();
+    this.touchAccessTimeRelatime(inode);
     // Generated pseudo-files (procfs) are produced fresh on every read.
     return inode.generator ? inode.generator() : inode.content;
+  }
+
+  private touchAccessTimeRelatime(inode: INode): void {
+    const now = this.nowMs();
+    if (inode.atime <= inode.mtime || inode.atime <= inode.ctime || now - inode.atime >= RELATIME_MAX_AGE_MS) {
+      inode.atime = now;
+    }
   }
 
   readFileBytes(path: string, count: number): string {

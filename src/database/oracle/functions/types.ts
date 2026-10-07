@@ -5,6 +5,7 @@ export interface SqlFunctionContext {
   currentSchema: string;
   compare(a: CellValue, b: CellValue): number;
   coerceDate(value: unknown): Date | null;
+  clockText(): { sysdate: string; systimestamp: string };
   formatDate(d: Date): string;
   formatDateWithPattern(d: Date, pattern: string): string;
   parseDateWithPattern(text: string, pattern: string): string;

@@ -14,6 +14,7 @@
  * scripts and DV / Database Security Assessments work as expected.
  */
 
+import { WallDate } from '../functions/dateSupport';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 export type RedactionFunctionType =
@@ -214,7 +215,7 @@ export class DataRedactionManager {
     switch (col.functionType) {
       case 'FULL': {
         if (typeof value === 'number') return 0;
-        if (value instanceof Date) return new Date('1970-01-01');
+        if (value instanceof Date) return new WallDate(0);
         return ' ';
       }
       case 'NULLIFY':
@@ -222,7 +223,7 @@ export class DataRedactionManager {
       case 'RANDOM': {
         if (typeof value === 'number') return Math.floor(Math.random() * 1_000_000);
         if (value instanceof Date) {
-          return new Date(simulationNowMs() - Math.floor(Math.random() * 31536000000));
+          return new WallDate(simulationNowMs() - Math.floor(Math.random() * 31536000000));
         }
         const s = String(value);
         return Array.from(s, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');

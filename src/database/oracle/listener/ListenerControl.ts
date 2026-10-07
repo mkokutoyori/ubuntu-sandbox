@@ -13,7 +13,7 @@
  *  - the lsnrctl transcript bodies (status / services), which used to be
  *    hand-copied in three places with hardcoded counters and uptime.
  */
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { DEFAULT_HOST_CLOCK, hostWallDate, type OracleHostClock } from '../time/OracleHostClock';
 
 import { ORACLE_CONFIG, TNS_ERRORS } from '../OracleConfig';
 import type { InstanceState } from '../OracleInstance';
@@ -65,7 +65,20 @@ export class ListenerControl {
     pdbServices?: () => string[];
     allocatePid?: () => number;
     staticServices?: () => string[];
+    hostClock?: () => OracleHostClock;
   }) {}
+
+  private clock(): OracleHostClock {
+    return this.env.hostClock?.() ?? DEFAULT_HOST_CLOCK;
+  }
+
+  private now(): Date {
+    return new Date(this.clock().nowMs());
+  }
+
+  private wallText(at: Date): string {
+    return formatListenerTimestamp(hostWallDate(this.clock(), at.getTime()));
+  }
 
   private registeredServices(): string[] {
     const sid = this.env.sid();
@@ -93,7 +106,7 @@ export class ListenerControl {
 
   recordScanAttempt(sourceIp: string, event: ListenerScanEvent = 'syn-probe'): void {
     this._scanLog.push({
-      timestamp: simulationDate().toISOString(),
+      timestamp: this.now().toISOString(),
       sourceIp, destinationPort: this._port, event,
     });
   }
@@ -108,10 +121,10 @@ export class ListenerControl {
 
   private recordConnection(sourceIp: string, service: string, result: 'established' | 'refused', returnCode: number): void {
     const entry: ListenerConnectionLogEntry = {
-      timestamp: simulationDate().toISOString(), sourceIp, service: service.toUpperCase(), result, returnCode,
+      timestamp: this.now().toISOString(), sourceIp, service: service.toUpperCase(), result, returnCode,
     };
     this._connectionLog.push(entry);
-    const line = `${formatListenerTimestamp(simulationDate())} * `
+    const line = `${this.wallText(this.now())} * `
       + `(CONNECT_DATA=(SERVICE_NAME=${entry.service})) * `
       + `(ADDRESS=(PROTOCOL=tcp)(HOST=${sourceIp})) * `
       + `${result} * ${returnCode}`;
@@ -126,7 +139,7 @@ export class ListenerControl {
   start(): boolean {
     if (this._running) return false;
     this._running = true;
-    this._startedAt = simulationDate();
+    this._startedAt = this.now();
     this._pid = this.env.allocatePid?.() ?? this._pid;
     return true;
   }
@@ -193,7 +206,7 @@ export class ListenerControl {
 
   /** Real "N days M hr. K min. S sec" uptime from the actual start date. */
   uptime(): string {
-    const ms = this._startedAt ? simulationNowMs() - this._startedAt.getTime() : 0;
+    const ms = this._startedAt ? this.now().getTime() - this._startedAt.getTime() : 0;
     const sec = Math.floor(ms / 1000);
     const days = Math.floor(sec / 86400);
     const hr = Math.floor((sec % 86400) / 3600);
@@ -211,7 +224,7 @@ export class ListenerControl {
       '------------------------',
       'Alias                     LISTENER',
       `Version                   TNSLSNR for Linux: Version ${ver} - Production`,
-      `Start Date                ${this._startedAt!.toISOString().slice(0, 19).replace('T', ' ')}`,
+      `Start Date                ${this.wallText(this._startedAt!)}`,
       `Uptime                    ${this.uptime()}`,
       'Trace Level               off',
       'Security                  ON: Local OS Authentication',

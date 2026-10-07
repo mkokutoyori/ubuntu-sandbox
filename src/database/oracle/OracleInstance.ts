@@ -6,6 +6,10 @@
  */
 
 import { simulationDate } from '@/network/core/SystemClock';
+import {
+  DEFAULT_HOST_CLOCK, hostOffsetSpec, hostWallDate, type OracleHostClock,
+} from './time/OracleHostClock';
+import type { OracleTimeZoneSpec } from './time/OracleTimeZone';
 
 import type { RedoRecord } from './storage/RedoStream';
 import type { UndoRecord } from './transaction/TransactionManager';
@@ -330,6 +334,28 @@ export class OracleInstance {
   private _datafileLister: (() => { fileNo: number; path: string }[]) | null = null;
   setDatafileLister(fn: () => { fileNo: number; path: string }[]): void {
     this._datafileLister = fn;
+  }
+
+  private _hostClock: OracleHostClock = DEFAULT_HOST_CLOCK;
+  private _databaseTimeZone: OracleTimeZoneSpec | null = null;
+
+  setHostClock(clock: OracleHostClock): void {
+    this._hostClock = clock;
+  }
+
+  hostClock(): OracleHostClock {
+    return this._hostClock;
+  }
+
+  private _pendingDatabaseTimeZone: OracleTimeZoneSpec | null = null;
+
+  requestDatabaseTimeZone(spec: OracleTimeZoneSpec): void {
+    this._pendingDatabaseTimeZone = spec;
+  }
+
+  get timeZone(): OracleTimeZoneSpec {
+    this._databaseTimeZone ??= hostOffsetSpec(this._hostClock);
+    return this._databaseTimeZone;
   }
 
   private _hostFileProbe: ((path: string) => boolean | null) | null = null;
@@ -687,7 +713,8 @@ export class OracleInstance {
     this._refreshActor.start();
     this._runtimeStateActor = new OracleRuntimeStateActor(this.getBus(), this._deviceId, this._runtimeState);
     this._runtimeStateActor.start();
-    this._securityAuditActor = new SecurityAuditActor(this.getBus(), this._deviceId, this._auditJournal);
+    this._securityAuditActor = new SecurityAuditActor(
+      this.getBus(), this._deviceId, this._auditJournal, undefined, () => hostWallDate(this._hostClock));
     this._securityAuditActor.start();
     this._userActivity = new UserActivityTracker(this.getBus(), this._deviceId, this._auditJournal);
     this._userActivity.start();
@@ -768,6 +795,11 @@ export class OracleInstance {
   startup(mode?: 'NOMOUNT' | 'MOUNT' | 'RESTRICT' | 'FORCE'): string[] {
     const output: string[] = [];
     const now = simulationDate();
+
+    if (this._state === 'SHUTDOWN' && this._pendingDatabaseTimeZone !== null) {
+      this._databaseTimeZone = this._pendingDatabaseTimeZone;
+      this._pendingDatabaseTimeZone = null;
+    }
 
     if (mode === 'FORCE' && this._state !== 'SHUTDOWN') {
       output.push(...this.shutdown('ABORT'));
@@ -1401,6 +1433,7 @@ export class OracleInstance {
       return procs.length > 0 ? procs[procs.length - 1].pid + 1 : BOOT_LISTENER_PID;
     },
     staticServices: () => this.readStaticListenerServices(),
+    hostClock: () => this._hostClock,
   });
 
   get listener(): ListenerControl { return this._listener; }

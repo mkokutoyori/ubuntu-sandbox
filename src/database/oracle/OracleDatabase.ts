@@ -10,6 +10,7 @@
  */
 
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { hostOffsetSpec, hostWallDate } from './time/OracleHostClock';
 
 import { OracleInstance } from './OracleInstance';
 import { standbyRefusesStatement, ORA_16000 } from './dataguard/StandbyWriteGuard';
@@ -200,6 +201,7 @@ export class OracleDatabase implements SqlCommandHost {
       proxyUser: args.proxyUser,
       instance: this.buildInstanceIdentity(),
     });
+    session.timeZone = hostOffsetSpec(this.instance.hostClock());
     session.setEnabledRoles(this.resolveDefaultRoles(args.username.toUpperCase()));
     this.sessions.set(args.sid, session);
     if (args.type !== 'BACKGROUND') {
@@ -869,7 +871,7 @@ export class OracleDatabase implements SqlCommandHost {
       outcome: args.outcome,
       role: args.role,
       timestamp: now,
-      offHours: isOffHours(now),
+      offHours: isOffHours(hostWallDate(this.instance.hostClock())),
     };
     this.instance.getBus().publish({ topic: 'oracle.security.connection-traced', payload });
   }
@@ -1217,6 +1219,7 @@ export class OracleDatabase implements SqlCommandHost {
       put: (t: string) => { buf.pending += t; },
       isServerOutput: () => !!ctx.serverOutput,
       currentSchema: () => ctx.currentSchema ?? 'SYS',
+      oracleClock: () => executor.oracleClock(),
       lookupUnit: (name: string) => this.lookupUnitForPlsql(executor, name),
       resolvePackage: (name: string) => this.resolvePackageHandle(executor, name),
       callBuiltin: (name: string, rawArgs: string) =>
