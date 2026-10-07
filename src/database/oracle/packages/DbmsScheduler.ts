@@ -22,14 +22,15 @@ function parseOwnerJob(jobName: string, ctx: PackageCallContext): { owner: strin
 
 class CreateJob implements IPackageRoutine {
   readonly fullName = 'DBMS_SCHEDULER.CREATE_JOB';
+  readonly parameters = ['job_name', 'job_type', 'job_action', 'start_date', 'repeat_interval', 'end_date', 'enabled', 'comments'];
   invoke(args: string[], ctx: PackageCallContext): string | null {
     const m = mgr(ctx); if (!m) return null;
     const { owner, jobName } = parseOwnerJob(args[0] ?? '', ctx);
     const jobType = coerceJobType(args[1]);
     const jobAction = args[2] ?? '';
-    const startDate = args[3] ? new Date(args[3]) : null;
+    const startDate = m.instantOf(args[3]);
     const repeatInterval = args[4] ?? null;
-    const endDate = args[5] ? new Date(args[5]) : null;
+    const endDate = m.instantOf(args[5]);
     const enabled = args[6] === 'TRUE' || args[6] === 'true';
     const comments = args[7] ?? '';
     m.createJob({ owner, jobName, jobType, jobAction, startDate, repeatInterval, endDate, enabled, comments });
@@ -39,6 +40,7 @@ class CreateJob implements IPackageRoutine {
 
 class DropJob implements IPackageRoutine {
   readonly fullName = 'DBMS_SCHEDULER.DROP_JOB';
+  readonly parameters = ['job_name', 'force'];
   invoke(args: string[], ctx: PackageCallContext): string | null {
     const m = mgr(ctx); if (!m) return null;
     const { owner, jobName } = parseOwnerJob(args[0] ?? '', ctx);
@@ -48,6 +50,7 @@ class DropJob implements IPackageRoutine {
 
 class EnableJob implements IPackageRoutine {
   readonly fullName = 'DBMS_SCHEDULER.ENABLE';
+  readonly parameters = ['name'];
   invoke(args: string[], ctx: PackageCallContext): string | null {
     const m = mgr(ctx); if (!m) return null;
     const { owner, jobName } = parseOwnerJob(args[0] ?? '', ctx);
@@ -57,6 +60,7 @@ class EnableJob implements IPackageRoutine {
 
 class DisableJob implements IPackageRoutine {
   readonly fullName = 'DBMS_SCHEDULER.DISABLE';
+  readonly parameters = ['name', 'force'];
   invoke(args: string[], ctx: PackageCallContext): string | null {
     const m = mgr(ctx); if (!m) return null;
     const { owner, jobName } = parseOwnerJob(args[0] ?? '', ctx);
@@ -67,6 +71,7 @@ class DisableJob implements IPackageRoutine {
 
 class RunJob implements IPackageRoutine {
   readonly fullName = 'DBMS_SCHEDULER.RUN_JOB';
+  readonly parameters = ['job_name', 'use_current_session'];
   invoke(args: string[], ctx: PackageCallContext): string | null {
     const m = mgr(ctx); if (!m) return null;
     const { owner, jobName } = parseOwnerJob(args[0] ?? '', ctx);
@@ -77,6 +82,7 @@ class RunJob implements IPackageRoutine {
 
 class SetAttribute implements IPackageRoutine {
   readonly fullName = 'DBMS_SCHEDULER.SET_ATTRIBUTE';
+  readonly parameters = ['name', 'attribute', 'value'];
   invoke(args: string[], ctx: PackageCallContext): string | null {
     const m = mgr(ctx); if (!m) return null;
     const { owner, jobName } = parseOwnerJob(args[0] ?? '', ctx);

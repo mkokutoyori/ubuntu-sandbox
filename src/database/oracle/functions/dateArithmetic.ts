@@ -1,4 +1,8 @@
 import { OracleError } from '../../engine/types/DatabaseError';
+import { utcMsForLocal } from '@/network/core/time/TimeZoneRegistry';
+import {
+  formatOracleOffset, oracleOffsetMinutes, parseOracleTimeZone, type OracleTimeZoneSpec,
+} from '../time/OracleTimeZone';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -110,4 +114,28 @@ export function newTime(d: Date, fromZone: string, toZone: string): Date {
     throw new OracleError(1857, 'not a valid time zone');
   }
   return new Date(d.getTime() + (to - from) * 60_000);
+}
+
+const TIMESTAMP_TEXT = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(\.\d+)?$/;
+
+function offsetAtWall(spec: OracleTimeZoneSpec, wallMs: number): number {
+  if (spec.kind === 'offset') return spec.minutes;
+  return oracleOffsetMinutes(spec, utcMsForLocal(spec.zone, wallMs));
+}
+
+export function attachTimeZone(wallText: string, zoneText: string): string {
+  const spec = parseOracleTimeZone(zoneText);
+  if (spec === null) throw new OracleError(1882, 'timezone region not found');
+  const match = TIMESTAMP_TEXT.exec(wallText.trim().replace('T', ' '));
+  if (match === null) throw new OracleError(1830, 'date format picture ends before converting entire input string');
+  const wallMs = Date.parse(`${match[1].replace(' ', 'T')}Z`);
+  return `${match[1]}${match[2] ?? '.000'} ${formatOracleOffset(offsetAtWall(spec, wallMs))}`;
+}
+
+export function extractUtc(zonedText: string): string | null {
+  const match = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(\.\d+)?\s*([+-])(\d{2}):(\d{2})$/.exec(zonedText.trim());
+  if (match === null) return null;
+  const offset = (match[3] === '-' ? -1 : 1) * (Number(match[4]) * 60 + Number(match[5]));
+  const utc = new Date(Date.parse(`${match[1].replace(' ', 'T')}Z`) - offset * 60_000);
+  return `${utc.toISOString().slice(0, 19).replace('T', ' ')}${match[2] ?? '.000'}`;
 }

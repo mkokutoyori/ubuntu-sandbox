@@ -19,7 +19,7 @@ import type { ExecutionContext } from '../../engine/executor/BaseExecutor';
 // scalar evaluator and the PL/SQL interpreter cannot drift apart.
 import { coerceDateValue as coerceDate, formatDateValue as formatDate } from './dateSupport';
 import {
-  addMonths, extractField, lastDay, monthsBetween, newTime, nextDay, truncateDate,
+  addMonths, attachTimeZone, extractField, extractUtc, lastDay, monthsBetween, newTime, nextDay, truncateDate,
 } from './dateArithmetic';
 
 // Re-exported under their historical names for existing consumers.
@@ -240,6 +240,20 @@ export class ScalarFunctionEvaluator {
         if (args[0] == null) return null;
         const base = this.wallDate(args[0]);
         return base ? formatDate(lastDay(base)) : null;
+      }
+      case 'TO_TIMESTAMP': {
+        if (args[0] == null) return null;
+        const wall = this.host.parseOracleDate(String(args[0]), args[1] != null ? String(args[1]).toUpperCase() : 'YYYY-MM-DD HH24:MI:SS');
+        return `${wall}${/\.\d+/.exec(String(args[0]))?.[0] ?? '.000'}`;
+      }
+      case 'FROM_TZ': {
+        if (args[0] == null || args[1] == null) return null;
+        const wall = this.wallDate(args[0]);
+        return wall ? attachTimeZone(`${formatDate(wall)}${/\.\d+/.exec(String(args[0]))?.[0] ?? ''}`, String(args[1])) : null;
+      }
+      case 'SYS_EXTRACT_UTC': {
+        if (args[0] == null) return null;
+        return extractUtc(String(args[0]));
       }
       case 'NEW_TIME': {
         if (args[0] == null || args[1] == null || args[2] == null) return null;

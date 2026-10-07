@@ -2251,11 +2251,25 @@ export class OracleDatabase implements SqlCommandHost {
     const routine = builtinPackageRegistry.resolve(fullName);
     if (!routine) return;                  // unknown routine → swallow
 
-    const args = this.splitTopLevelArgs(argString).map(a => this.unquoteLiteral(a));
+    const args = OracleDatabase.bindNamedArguments(
+      this.splitTopLevelArgs(argString), routine.parameters).map(a => this.unquoteLiteral(a));
     const session = executor.getContext().session as import('./security/OracleSession').OracleSession | undefined;
     if (!session) return;
     const result = routine.invoke(args, { session, rawCall: call, services: this.packageServices() });
     if (result !== null) output.push(result);
+  }
+
+  private static bindNamedArguments(parts: string[], parameters: readonly string[] | undefined): string[] {
+    if (parameters === undefined) return parts;
+    const bound: string[] = [];
+    let position = 0;
+    for (const part of parts) {
+      const named = /^([A-Za-z_][A-Za-z0-9_$#]*)\s*=>\s*([\s\S]*)$/.exec(part);
+      if (named === null) { bound[position++] = part; continue; }
+      const index = parameters.findIndex(name => name.toUpperCase() === named[1].toUpperCase());
+      if (index >= 0) bound[index] = named[2].trim();
+    }
+    return bound;
   }
 
   /** Split "a, 'b,c', d(e,f)" on top-level commas. */

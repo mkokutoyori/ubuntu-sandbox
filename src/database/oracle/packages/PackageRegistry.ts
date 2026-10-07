@@ -60,6 +60,7 @@ export interface PackageCallContext {
 /** Function-style strategy backing one PL/SQL routine. */
 export interface IPackageRoutine {
   readonly fullName: string;          // e.g. "DBMS_SESSION.SET_IDENTIFIER"
+  readonly parameters?: readonly string[];
   invoke(args: string[], ctx: PackageCallContext): string | null;
 }
 

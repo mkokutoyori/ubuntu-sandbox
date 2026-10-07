@@ -54,6 +54,10 @@ export function coerceDateValue(value: unknown, zone: TimeZone | null = null): W
   return wallOfInstant(ms, sign * (Number(designator.slice(1, 3)) * 60 + Number(designator.slice(4, 6))));
 }
 
+export function isInstantText(value: unknown): value is string {
+  return typeof value === 'string' && value.length >= 20 && INSTANT_TEXT.test(value.trim());
+}
+
 export function wallLiteralText(text: string): string {
   const trimmed = text.trim();
   if (!WALL_TEXT.test(trimmed)) return text;

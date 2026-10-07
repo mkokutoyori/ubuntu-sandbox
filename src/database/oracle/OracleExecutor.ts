@@ -42,9 +42,10 @@ import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { collectSelectColumnUsage, BARE_STAR, type SelectColumnUsage } from './security/SelectColumnUsage';
 import { resolveRlsPredicate, type RlsHost, type RlsOperation, type RlsPolicyRecord, type ReferencedColumns } from './security/RlsPredicateApplier';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
+import { attachTimeZone } from './functions/dateArithmetic';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
 import {
-  formatDateWithPattern, parseDateWithPattern, coerceDateValue, instantMsOf, wallLiteralText,
+  formatDateWithPattern, formatDateValue, parseDateWithPattern, coerceDateValue, instantMsOf, isInstantText, wallLiteralText, WallDate,
 } from './functions/dateSupport';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
 import { UserAdminExecutor } from './executor/UserAdminExecutor';
@@ -104,6 +105,10 @@ const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
   'CreateDirectoryStatement', 'DropDirectoryStatement',
 ]);
 
+function isDefaultKeyword(expr: Expression): boolean {
+  return expr.type === 'Identifier' && !expr.table && expr.name.toUpperCase() === 'DEFAULT';
+}
+
 const CLOCK_PSEUDO_COLUMNS: Readonly<Record<string, keyof OracleClockReading>> = {
   SYSDATE: 'sysdate',
   CURRENT_DATE: 'currentDate',
@@ -155,6 +160,36 @@ export class OracleExecutor extends BaseExecutor {
       dbTimeZone: oracleZoneLabel(database),
       sessionTimeZone: oracleZoneLabel(session),
     };
+  }
+
+  private castValue(value: CellValue, target: string): CellValue {
+    if (value === null || value === undefined) return null;
+    if (/^(NUMBER|INTEGER|INT|SMALLINT|FLOAT|DECIMAL|NUMERIC|BINARY_DOUBLE|BINARY_FLOAT|DOUBLE PRECISION|REAL)$/.test(target)) {
+      const number = typeof value === 'number' ? value : Number(String(value).trim());
+      if (Number.isNaN(number)) throw new OracleError(1722, 'invalid number');
+      return number;
+    }
+    const wall = (): WallDate => {
+      const converted = coerceDateValue(value, this.serverZone());
+      if (converted === null) throw new OracleError(1861, 'literal does not match format string');
+      return converted;
+    };
+    if (target === 'DATE') return formatDateValue(wall());
+    if (target === 'TIMESTAMP' || target === 'TIMESTAMP WITH LOCAL TIME ZONE') {
+      return `${formatDateValue(wall())}${/\.\d+/.exec(String(value))?.[0] ?? '.000'}`;
+    }
+    if (target === 'TIMESTAMP WITH TIME ZONE') {
+      if (typeof value === 'string' && /[+-]\d{2}:\d{2}$/.test(value.trim())) return value;
+      return attachTimeZone(`${formatDateValue(wall())}${/\.\d+/.exec(String(value))?.[0] ?? ''}`, this.oracleClock().sessionTimeZone);
+    }
+    if (/^(VARCHAR2|VARCHAR|NVARCHAR2|CHAR|NCHAR)$/.test(target)) {
+      if (value instanceof Date) {
+        const session = this.context.session as { nlsDateFormat?: string } | undefined;
+        return formatDateWithPattern(wall(), session?.nlsDateFormat ?? 'DD-MON-RR');
+      }
+      return String(value);
+    }
+    throw new OracleError(902, 'invalid datatype');
   }
 
   private clockPseudoColumn(name: string): string | undefined {
@@ -2867,6 +2902,7 @@ export class OracleExecutor extends BaseExecutor {
       if (values.length < columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < columns.length && i < values.length; i++) {
         const idx = this.requireColumnIndex(tableMeta, columns[i]);
+        if (isDefaultKeyword(values[i])) continue;
         row[idx] = this.evaluateExpression(values[i], [], []);
         provided.add(idx);
       }
@@ -2874,6 +2910,7 @@ export class OracleExecutor extends BaseExecutor {
       if (values.length > tableMeta.columns.length) throw new OracleError(913, 'too many values');
       if (values.length < tableMeta.columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < values.length && i < tableMeta.columns.length; i++) {
+        if (isDefaultKeyword(values[i])) continue;
         row[i] = this.evaluateExpression(values[i], [], []);
         provided.add(i);
       }
@@ -2918,6 +2955,16 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  private columnDefault(
+    tableMeta: import('../engine/storage/BaseStorage').TableMeta,
+    index: number,
+  ): CellValue {
+    const col = tableMeta.columns[index];
+    if (col.identity) return this.sequenceNextVal(tableMeta.schema, col.identity.sequence);
+    if (col.defaultExpr) return this.evaluateExpression(col.defaultExpr as Expression, [], []);
+    return col.defaultValue !== undefined ? col.defaultValue : null;
+  }
+
   // ── UPDATE ────────────────────────────────────────────────────────
 
   private executeUpdate(stmt: UpdateStatement): ResultSet {
@@ -2945,7 +2992,9 @@ export class OracleExecutor extends BaseExecutor {
         for (const assign of stmt.assignments) {
           const colIdx = this.findColumnIndex(tableMeta, assign.column);
           if (colIdx >= 0) {
-            newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
+            newRow[colIdx] = isDefaultKeyword(assign.value)
+              ? this.columnDefault(tableMeta, colIdx)
+              : this.evaluateExpression(assign.value, row, tableMeta.columns);
           }
         }
         if (checkOption && !checkOption(newRow)) {
@@ -4129,6 +4178,9 @@ export class OracleExecutor extends BaseExecutor {
       case 'ParenExpr':
         return this.evaluateExpression(expr.expr, row, columns);
 
+      case 'CastExpr':
+        return this.castValue(this.evaluateExpression(expr.expr, row, columns), expr.targetType.name.toUpperCase());
+
       case 'SequenceExpr': {
         const seqSchema = expr.schema || this.context.currentSchema;
         return expr.operation === 'NEXTVAL'
@@ -4596,7 +4648,12 @@ export class OracleExecutor extends BaseExecutor {
 
   /** Oracle 3-way comparison — shared with the SQL function registry. */
   private compareValues(a: CellValue, b: CellValue): number {
-    return compareOracleValues(a, b);
+    const instant = (value: CellValue): boolean =>
+      (value instanceof Date && !(value instanceof WallDate)) || isInstantText(value);
+    if (!instant(a) && !instant(b)) return compareOracleValues(a, b);
+    const zone = this.serverZone();
+    const wall = (value: CellValue): CellValue => (instant(value) ? coerceDateValue(value, zone) : value);
+    return compareOracleValues(wall(a), wall(b));
   }
 
   private expandSelectItems(items: SelectItem[], columns: StorageColMeta[]): { name: string; alias?: string; colIndex: number; dataType: import('../engine/catalog/DataType').ColumnDataType; expr?: Expression }[] {

@@ -1,5 +1,3 @@
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
-
 export type JobType = 'PLSQL_BLOCK' | 'STORED_PROCEDURE' | 'EXECUTABLE';
 export type JobState = 'DISABLED' | 'SCHEDULED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'BROKEN' | 'STOPPED';
 export type JobRunStatus = 'SUCCEEDED' | 'FAILED' | 'STOPPED';
@@ -10,6 +8,7 @@ export interface SchedulerJobInit {
   jobType?: JobType;
   jobAction: string;
   startDate?: Date | null;
+  createdAt?: Date;
   repeatInterval?: string | null;
   endDate?: Date | null;
   enabled?: boolean;
@@ -52,7 +51,7 @@ export class SchedulerJob {
     this.jobName = init.jobName.toUpperCase();
     this.jobType = init.jobType ?? 'PLSQL_BLOCK';
     this.jobAction = init.jobAction;
-    this.createdAt = simulationDate();
+    this.createdAt = init.createdAt ?? new Date(0);
     this.startDate = init.startDate ?? null;
     this.repeatInterval = init.repeatInterval ?? null;
     this.endDate = init.endDate ?? null;
@@ -65,13 +64,12 @@ export class SchedulerJob {
     this.maxRunDuration = init.maxRunDuration ?? null;
     this.maxRuns = init.maxRuns ?? null;
     this.maxFailures = init.maxFailures ?? null;
-    this.nextRunDate = this.enabled ? (init.startDate ?? simulationDate()) : null;
+    this.nextRunDate = null;
   }
 
   enable(): void {
     this.enabled = true;
     if (this.state === 'DISABLED') this.state = 'SCHEDULED';
-    if (this.nextRunDate === null) this.nextRunDate = this.startDate ?? simulationDate();
   }
 
   disable(): void {
@@ -94,20 +92,6 @@ export class SchedulerJob {
       this.failureCount++;
       this.state = this.maxFailures && this.failureCount >= this.maxFailures ? 'BROKEN' : (this.repeatInterval ? 'SCHEDULED' : 'FAILED');
     }
-    this.nextRunDate = this.computeNextRun();
-  }
-
-  private computeNextRun(): Date | null {
-    if (!this.enabled || !this.repeatInterval) return null;
-    const m = this.repeatInterval.toUpperCase().match(/FREQ\s*=\s*(DAILY|HOURLY|MINUTELY|WEEKLY|MONTHLY)/);
-    if (!m) return new Date(simulationNowMs() + 60_000);
-    const base = (this.lastEndDate ?? simulationDate()).getTime();
-    const interval = m[1] === 'MINUTELY' ? 60_000
-      : m[1] === 'HOURLY' ? 3_600_000
-      : m[1] === 'DAILY' ? 86_400_000
-      : m[1] === 'WEEKLY' ? 7 * 86_400_000
-      : 30 * 86_400_000;
-    return new Date(base + interval);
   }
 }
 

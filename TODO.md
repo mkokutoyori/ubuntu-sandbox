@@ -205,22 +205,21 @@ FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas
 « maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
 meme port d'horloge dans `IRmanOracleContext`.
 
-### [oracle] `INSERT … VALUES (DEFAULT, …)` stocke NULL, `DBMS_SCHEDULER.CREATE_JOB` lit mal ses arguments nommes
-**Mesure** : `CREATE TABLE t (id NUMBER, d DATE DEFAULT SYSDATE)` puis `INSERT INTO t VALUES (2, DEFAULT)`
-laisse `d` vide (avec la colonne omise, le defaut est bien evalue). `EXEC
-DBMS_SCHEDULER.CREATE_JOB(job_name=>'J1', …, repeat_interval=>'FREQ=DAILY;BYHOUR=3')` cree un travail
-dont `JOB_NAME` vaut `JOB_NAME=>'J1'` et `NEXT_RUN_DATE` est vide : les arguments nommes sont pris pour des
-valeurs positionnelles. Vus en testant les horloges ; sans rapport avec le fuseau.
-**Pourquoi ce n'est pas ferme** : deux defauts distincts du moteur SQL et du paquetage, hors du lot.
+### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
+**Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
+BYMINUTE et BYSECOND dans le fuseau du serveur. `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`, `BYDATE`, `INCLUDE` /
+`EXCLUDE`, `SCHEDULE_NAME` (calendriers enregistres) et les `*` composes sont refuses avec ORA-27419, faute de
+pouvoir les evaluer.
+**Pourquoi ce n'est pas ferme** : le texte exact de l'erreur de syntaxe d'un `repeat_interval` n'est pas
+atteignable ici (ORA-27419 dit « impossible de determiner une date d'execution valide » et sert aux deux cas) ;
+les cles restantes demandent chacune un evaluateur de plus dans `CalendarExpression`.
 
-### [oracle] `FROM_TZ`, `SYS_EXTRACT_UTC` et la comparaison d'un instant a une heure murale
-**Mesure** : `FROM_TZ(CAST(SYSDATE AS TIMESTAMP),'UTC')` et `SYS_EXTRACT_UTC(SYSTIMESTAMP)` repondent
-`ORA-00904: invalid identifier`. Une comparaison `created > SYSDATE - 1` (colonne de catalogue, `Date`
-ordinaire = instant, contre une chaine murale) est decalee du decalage du serveur hors UTC, parce que
-`compareValues` n'a pas de fuseau.
-**Pourquoi ce n'est pas ferme** : le moteur n'a pas de type `TIMESTAMP WITH TIME ZONE` (une chaine
-`…+hh:mm`) et `compareValues` est une fonction pure ; lui passer le fuseau du serveur touche tous ses
-appelants.
+### [oracle] `CAST` vers INTERVAL / RAW / LOB et `TO_TIMESTAMP_TZ`
+**Mesure** : `CAST(x AS DATE|TIMESTAMP|TIMESTAMP WITH TIME ZONE|NUMBER|VARCHAR2)` s'evalue maintenant ;
+`CAST(x AS INTERVAL DAY TO SECOND)` et vers `RAW` / `CLOB` repondent ORA-00902, et `TO_TIMESTAMP_TZ`,
+`TO_DSINTERVAL`, `AT TIME ZONE` sont inconnus.
+**Pourquoi ce n'est pas ferme** : le moteur n'a pas de type intervalle (une chaine `n UNIT`) ni de TIMESTAMP
+WITH TIME ZONE autrement que comme chaine `... +hh:mm`.
 
 ### [oracle] `V$SESSION_CONTEXT` : `HOST` rend le nom du peripherique, pas `linux-server`
 **Mesure** : `oracle-user-activity` (« reports SESSION_USER, OS_USER, HOST and SERVICE_NAME ») est rouge
