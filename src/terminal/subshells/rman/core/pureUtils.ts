@@ -4,7 +4,8 @@
  * which uses Math.random; its output prefix is still deterministic).
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import { ZonedDate } from '@/network/core/time/ZonedDate';
 
 import type { RmanTag } from '../values/RmanTag';
 import { omfBackupPiecePath } from '@/database/oracle/storage/OracleManagedFiles';
@@ -42,18 +43,30 @@ export function formatSize(bytes: number): string {
   return `${bytes}B`;
 }
 
+export function rmanWall(
+  ctx: { hostZoneName?(): string } | undefined,
+  atMs: number = simulationNowMs(),
+): Date {
+  return ZonedDate.in(atMs, ctx?.hostZoneName?.() ?? 'UTC');
+}
+
+export function rmanWallDay(wall: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${wall.getFullYear()}-${pad(wall.getMonth() + 1)}-${pad(wall.getDate())}`;
+}
+
 export function generatePieceName(
   dbName: string,
   tag: RmanTag,
   recoveryFileDest: string,
   kind: OmfBackupKind = 'datafile-full',
-  at: Date = simulationDate(),
+  at: Date = rmanWall(undefined),
 ): string {
   return omfBackupPiecePath(recoveryFileDest, dbName, kind, tag.label, at);
 }
 
 /** DD-MON-YYYY HH:MM:SS — the format RMAN prints. */
-export function formatOracleDate(d: Date = simulationDate()): string {
+export function formatOracleDate(d: Date = rmanWall(undefined)): string {
   const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getDate())}-${months[d.getMonth()]}-${d.getFullYear()} `

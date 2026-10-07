@@ -16,7 +16,7 @@
  * The engine never throws — every error becomes a JOB_FAILED event.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
@@ -37,7 +37,7 @@ import type { DatafileEntry, BackupSet } from '../catalog/types';
 import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
-import { generatePieceName } from '../core/pureUtils';
+import { generatePieceName, rmanWall } from '../core/pureUtils';
 import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
@@ -156,7 +156,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     const deleteInput = params.deleteInput === 'true';
     const compressed = params.compressed === 'true';
     const encrypted  = params.encrypted  === 'true';
-    const tag = params.tag ? RmanTag.of(params.tag) : RmanTag.generate();
+    const tag = params.tag ? RmanTag.of(params.tag) : RmanTag.generate(rmanWall(this._ctx));
     const isControlfile = params.what === 'controlfile';
     const isSpfile      = params.what === 'spfile';
     const isArchivelog  = job.operation === 'BACKUP_ARCHIVELOG';
@@ -571,7 +571,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   ): string {
     if (!format) {
       const dest = this._ctx.getSpfileParam('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA;
-      const path = generatePieceName(this._ctx.dbName, tag, dest, kind);
+      const path = generatePieceName(this._ctx.dbName, tag, dest, kind, rmanWall(this._ctx));
       this._ctx.vfs.ensureDirectory?.(path.slice(0, path.lastIndexOf('/')));
       return path;
     }
@@ -584,7 +584,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       copyNumber:   1,
       logSequence:  1,
       logThread:    1,
-      at:           simulationDate(),
+      at:           rmanWall(this._ctx),
       fileNumber:   seul?.fileNumber,
       tablespace:   seul?.tablespace,
     });
@@ -638,7 +638,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       this._bus.emit({
         type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'preview', pct: 60,
         message: restorePreviewLines(sets, this._archivedLogs(),
-          params.untilScn !== undefined ? Number(params.untilScn) : undefined).join('\n'),
+          params.untilScn !== undefined ? Number(params.untilScn) : undefined, this._ctx).join('\n'),
       });
       return ok(undefined);
     }

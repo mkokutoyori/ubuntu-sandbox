@@ -16,4 +16,5 @@ export interface IRmanSession {
   getBanner(): string[];
   dispose(): void;
   ownsPendingShutdown?(): boolean;
+  wallNow?(): Date;
 }

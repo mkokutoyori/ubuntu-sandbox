@@ -5,7 +5,8 @@
  * inject a deterministic value; user-provided tags are uppercased.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import { ZonedDate } from '@/network/core/time/ZonedDate';
 
 export interface RmanTag {
   readonly _tag:  'RmanTag';
@@ -13,7 +14,7 @@ export interface RmanTag {
 }
 
 export const RmanTag = {
-  generate(now: Date = simulationDate()): RmanTag {
+  generate(now: Date = ZonedDate.in(simulationNowMs(), 'UTC')): RmanTag {
     const pad = (n: number, w = 2) => String(n).padStart(w, '0');
     const label =
       `TAG${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +

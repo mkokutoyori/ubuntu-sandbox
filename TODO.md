@@ -196,15 +196,14 @@ rapport avec le temps) ; `New-TimeSpan` s'affiche en `__type : TimeSpan ...` au 
 **Pourquoi ce n'est pas ferme** : la mise en page par defaut d'un `TimeSpan` n'est pas verifiable sur
 transcription ici.
 
-### [oracle] RMAN lit le fuseau du processus (banniere, TAG, pieces, `LIST BACKUP`)
-**Mesure** : meme suite sous `TZ=UTC` puis `TZ=Pacific/Auckland`, machine en UTC : la banniere
-`Recovery Manager … on 06-OCT-2026 21:42:00` devient `07-OCT-2026 10:42:00`. `RmanTag.generate`,
-`generatePieceName`, `formatOracleDate` et les colonnes `Completion Time` / `Ckp Time` des listes
-lisent `getHours()` / `getDate()` : 34 lectures de `simulationDate()` / `simulationNowMs()` dans
-`src/terminal/subshells/rman`, sans port vers l'horloge de la machine.
-**Pourquoi ce n'est pas ferme** : `IRmanOracleContext` (le port de RMAN vers Oracle) ne porte ni horloge
-ni fuseau, et les formateurs sont des fonctions pures appelees sans contexte ; il faut lui faire
-porter `OracleHostClock` et le passer aux formateurs, ce qui touche une dizaine de fichiers de RMAN.
+### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
+**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
+`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
+simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
+FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
+**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
+« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
+meme port d'horloge dans `IRmanOracleContext`.
 
 ### [oracle] `INSERT … VALUES (DEFAULT, …)` stocke NULL, `DBMS_SCHEDULER.CREATE_JOB` lit mal ses arguments nommes
 **Mesure** : `CREATE TABLE t (id NUMBER, d DATE DEFAULT SYSDATE)` puis `INSERT INTO t VALUES (2, DEFAULT)`

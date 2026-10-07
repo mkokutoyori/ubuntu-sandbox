@@ -181,7 +181,7 @@ export class ReactiveRmanSubShell implements ISubShell {
     switch (e.type) {
       case 'JOB_STARTED':
         this._push('');
-        this._push(`Starting ${this._opLabel(e.operation)} at ${formatOracleDate()}`);
+        this._push(`Starting ${this._opLabel(e.operation)} at ${formatOracleDate(this._session.wallNow?.())}`);
         break;
       case 'CHANNEL_ALLOCATED':
         this._push(`allocated channel: ${e.channelId}`);
@@ -251,7 +251,7 @@ export class ReactiveRmanSubShell implements ISubShell {
         if (e.expired > 0) this._push(`${e.expired} piece(s) marked EXPIRED`);
         break;
       case 'JOB_COMPLETED':
-        this._push(`Finished ${this._opLabel(e.operation)} at ${formatOracleDate()}`);
+        this._push(`Finished ${this._opLabel(e.operation)} at ${formatOracleDate(this._session.wallNow?.())}`);
         this._push('');
         break;
       case 'JOB_FAILED':
@@ -260,7 +260,7 @@ export class ReactiveRmanSubShell implements ISubShell {
         this._push('RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============');
         this._push('RMAN-00571: ===========================================================');
         this._push(
-          `RMAN-03002: failure of ${this._opLabel(e.operation)} command at ${formatOracleDate()}`);
+          `RMAN-03002: failure of ${this._opLabel(e.operation)} command at ${formatOracleDate(this._session.wallNow?.())}`);
         for (const ligne of rmanErrorMessage(e.error).split('\n')) this._push(ligne);
         break;
       // CONNECTED, SESSION_STATE_CHANGED, CATALOG_UPDATED, etc.

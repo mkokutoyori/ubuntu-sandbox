@@ -5,6 +5,7 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { formatOracleDate, rmanWall } from '../core/pureUtils';
 
 import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
@@ -44,7 +45,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
         '-------------------- ------ ------------------ --------------------',
       ];
       for (const s of obsolete) {
-        const ts = new Date(s.completionTime).toISOString();
+        const ts = formatOracleDate(rmanWall(ctx, s.completionTime));
         for (const p of s.pieces) {
           lines.push(`Backup Set           ${String(s.bsKey).padEnd(6)} ${ts}  ${p.path}`);
         }
