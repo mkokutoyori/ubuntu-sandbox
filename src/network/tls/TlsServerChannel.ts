@@ -1,6 +1,7 @@
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import type { TlsRecord } from './recordLayer';
 import type { TlsServerSession } from './TlsServerSession';
+import type { ClientCertPolicy } from './clientAuthPolicy';
 import { encodeRecords, attachTlsRecordPump, bytesToBinaryString } from '../http/https/TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from '../http/https/ApplicationDataCipher';
 
@@ -80,7 +81,7 @@ export class TlsServerChannel {
     this.emit(sealed.records);
   }
 
-  requestRenegotiation(options: { readonly requestClientCertificate?: boolean } = {}): boolean {
+  requestRenegotiation(options: { readonly requestClientCertificate?: boolean; readonly clientCertPolicy?: ClientCertPolicy } = {}): boolean {
     const hello = this.tls.requestRenegotiation(this.serverSequence, options);
     if (hello === null) return false;
     this.serverSequence += hello.length;

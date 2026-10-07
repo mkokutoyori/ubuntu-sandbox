@@ -12,6 +12,7 @@ import type { Http1RequestHandler } from '../http1/Http1ServerSession';
 import { parseRequest, encodeResponse, HttpRequestAssembler } from '../http1/Http1Wire';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
+import type { ClientCertPolicy } from '@/network/tls/clientAuthPolicy';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
 
@@ -19,7 +20,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 export type HttpsServerConfig = Omit<TlsServerConfig, 'alpnProtocols'> & {
-  readonly renegotiateForClientCertificate?: (request: HttpMessage) => boolean;
+  readonly renegotiateForClientCertificate?: (request: HttpMessage) => ClientCertPolicy | null;
   readonly alpnProtocols?: readonly string[];
   /** RFC 6797 — if set, every response carries `Strict-Transport-Security: max-age=<n>`. */
   readonly hstsMaxAgeSeconds?: number;
@@ -103,19 +104,20 @@ export class HttpsServerSession {
     const assembler = new HttpRequestAssembler();
     let deferred: ReturnType<typeof parseRequest> | null = null;
     let unsubscribe: () => void = () => undefined;
+
+    const emit = (response: HttpMessage, shouldClose: boolean): void => {
+      this.applyHsts(response);
+      const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
+      const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
+      channel.write(responseBytes);
+      if (shouldClose) {
+        unsubscribe();
+        socket.close();
+      }
+    };
+
     const runRequest = (parsed: ReturnType<typeof parseRequest>): void => {
       const requestId = randomRequestId();
-      const emit = (response: HttpMessage, shouldClose: boolean): void => {
-        this.applyHsts(response);
-        const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
-        const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
-        channel.write(responseBytes);
-        if (shouldClose) {
-          unsubscribe();
-          socket.close();
-        }
-      };
-
       if (parsed.ok === false) {
         this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method: 'GET', target: '' } });
         this.eventBus?.publish({ topic: 'http.request.failed', payload: { requestId, method: 'GET', target: '', error: parsed.reason } });
@@ -170,10 +172,22 @@ export class HttpsServerSession {
         if (completeRequest === null) return;
         const parsed = parseRequest(completeRequest);
         const gate = this.tlsConfig().renegotiateForClientCertificate;
-        if (parsed.ok && gate !== undefined && gate(parsed.message) && tls.needsClientCertificateRenegotiation) {
-          if (channel.requestRenegotiation({ requestClientCertificate: true })) {
-            deferred = parsed;
-            return;
+        const policy = parsed.ok && gate !== undefined ? gate(parsed.message) : null;
+        if (policy !== null) {
+          const presented = tls.peerCertificate !== null;
+          const satisfied = presented ? tls.peerVerified || policy !== 'strict' : false;
+          if (!satisfied) {
+            if (!presented && tls.needsClientCertificateRenegotiation
+              && channel.requestRenegotiation({ requestClientCertificate: true, clientCertPolicy: policy })) {
+              deferred = parsed;
+              return;
+            }
+            if (policy === 'strict' || presented) {
+              const refusal = createResponse(403, 'Forbidden');
+              refusal.headers.set('Connection', 'close');
+              enqueue(() => emit(refusal, true));
+              return;
+            }
           }
         }
         runRequest(parsed);

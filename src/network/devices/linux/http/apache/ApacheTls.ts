@@ -116,7 +116,9 @@ export function loadVhostTls(
   }
 
   let verifier: CertificateVerifier | null = null;
-  if (settings.verifyClient !== 'none') {
+  const verifiesSomewhere = settings.verifyClient !== 'none'
+    || vhost.directoryAuth.some((entry) => entry.verifyClient !== null && entry.verifyClient !== 'none');
+  if (verifiesSomewhere) {
     const anchorTexts: string[] = [];
     if (settings.caCertificateFile !== null) {
       const text = files.read(settings.caCertificateFile);
