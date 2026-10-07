@@ -19,8 +19,13 @@ import { randomRequestId } from '../events';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+export interface PathTransportRequirement {
+  readonly clientCertPolicy?: ClientCertPolicy;
+  readonly cipherList?: string;
+}
+
 export type HttpsServerConfig = Omit<TlsServerConfig, 'alpnProtocols'> & {
-  readonly renegotiateForClientCertificate?: (request: HttpMessage) => ClientCertPolicy | null;
+  readonly requirePathTransport?: (request: HttpMessage) => PathTransportRequirement | null;
   readonly alpnProtocols?: readonly string[];
   /** RFC 6797 — if set, every response carries `Strict-Transport-Security: max-age=<n>`. */
   readonly hstsMaxAgeSeconds?: number;
@@ -171,18 +176,24 @@ export class HttpsServerSession {
         const completeRequest = assembler.push(decoder.decode(requestBytes));
         if (completeRequest === null) return;
         const parsed = parseRequest(completeRequest);
-        const gate = this.tlsConfig().renegotiateForClientCertificate;
-        const policy = parsed.ok && gate !== undefined ? gate(parsed.message) : null;
-        if (policy !== null) {
+        const gate = this.tlsConfig().requirePathTransport;
+        const need = parsed.ok && gate !== undefined ? gate(parsed.message) : null;
+        if (need !== null) {
+          const policy = need.clientCertPolicy;
           const presented = tls.peerCertificate !== null;
-          const satisfied = presented ? tls.peerVerified || policy !== 'strict' : false;
-          if (!satisfied) {
-            if (!presented && tls.needsClientCertificateRenegotiation
-              && channel.requestRenegotiation({ requestClientCertificate: true, clientCertPolicy: policy })) {
+          const certificateMet = policy === undefined || (presented ? tls.peerVerified || policy !== 'strict' : false);
+          const suiteMet = need.cipherList === undefined || tls.suiteAllowedBy(need.cipherList);
+          if (!certificateMet || !suiteMet) {
+            const options = {
+              ...(policy !== undefined && !presented ? { requestClientCertificate: true, clientCertPolicy: policy } : {}),
+              ...(!suiteMet ? { cipherList: need.cipherList } : {}),
+            };
+            const renegotiable = (policy === undefined || !presented) && tls.canRenegotiate(options);
+            if (renegotiable && channel.requestRenegotiation(options)) {
               deferred = parsed;
               return;
             }
-            if (policy === 'strict' || presented) {
+            if (!suiteMet || policy === 'strict' || presented) {
               const refusal = createResponse(403, 'Forbidden');
               refusal.headers.set('Connection', 'close');
               enqueue(() => emit(refusal, true));

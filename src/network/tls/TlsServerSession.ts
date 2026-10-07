@@ -223,6 +223,7 @@ export class TlsServerSession {
   private renegotiationCompleted = false;
   private renegotiationRequestsClientCertificate = false;
   private renegotiationClientCertPolicy: ClientCertPolicy | undefined = undefined;
+  private renegotiationCipherList: string | undefined = undefined;
   renegotiations = 0;
   private earlyDataAccepted = false;
   private earlyDataOffered = false;
@@ -426,10 +427,12 @@ export class TlsServerSession {
   ): readonly TlsRecord[] | null {
     if (!/^[0-9a-f]{64}$/i.test(clientHello.random)) return this.reject('decode_error');
     const offeredSuites = clientHello.legacyCipherSuites ?? [];
+    const policy = renegotiation !== undefined && this.renegotiationCipherList !== undefined
+      ? resolveLegacyPolicy({ ...this.config, cipherList: this.renegotiationCipherList }) : this.policy;
     const usable = (definition: LegacySuiteDefinition | undefined): boolean =>
-      definition !== undefined && this.policy.suites.includes(definition) && offeredSuites.includes(definition.code) && suiteUsableAt(definition, version)
+      definition !== undefined && policy.suites.includes(definition) && offeredSuites.includes(definition.code) && suiteUsableAt(definition, version)
       && suiteMatchesCertificate(this.credentials.cert, definition);
-    const serverOrder = this.policy.suites;
+    const serverOrder = policy.suites;
     const suite = this.config.preferServerCiphers === false
       ? offeredSuites.map((code) => serverOrder.find((definition) => definition.code === code)).find(
         (definition): definition is LegacySuiteDefinition => definition !== undefined && usable(definition),
@@ -509,19 +512,26 @@ export class TlsServerSession {
     return flight;
   }
 
-  get needsClientCertificateRenegotiation(): boolean {
+  canRenegotiate(options: { readonly requestClientCertificate?: boolean } = {}): boolean {
     return this.legacy !== null && this.legacy.traffic !== null && this.result === 'accept'
-      && this.renegotiationHandshake === null && this.peerCertificate === null && this.config.verifier !== undefined
-      && this.config.allowRenegotiation !== false;
+      && this.renegotiationHandshake === null && this.config.allowRenegotiation !== false
+      && (options.requestClientCertificate !== true || this.config.verifier !== undefined);
+  }
+
+  suiteAllowedBy(cipherList: string): boolean {
+    if (this.negotiatedVersion === '1.3') return true;
+    return resolveLegacyPolicy({ ...this.config, cipherList }).suites.some((definition) => definition.name === this.negotiatedCipherSuite);
   }
 
   requestRenegotiation(
-    sendSequence: number, options: { readonly requestClientCertificate?: boolean; readonly clientCertPolicy?: ClientCertPolicy } = {},
+    sendSequence: number,
+    options: { readonly requestClientCertificate?: boolean; readonly clientCertPolicy?: ClientCertPolicy; readonly cipherList?: string } = {},
   ): readonly TlsRecord[] | null {
     const current = this.legacy;
     if (current === null || current.traffic === null || this.result !== 'accept' || this.renegotiationHandshake !== null) return null;
     this.renegotiationRequestsClientCertificate = options.requestClientCertificate === true;
     this.renegotiationClientCertPolicy = options.clientCertPolicy;
+    this.renegotiationCipherList = options.cipherList;
     const request: TlsRecord = {
       contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[current.negotiatedVersion],
       fragment: Uint8Array.of(0, 0, 0, 0),

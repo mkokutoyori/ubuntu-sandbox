@@ -170,9 +170,13 @@ describe('arité, valeurs, contexte (ap_set_*, ssl_engine_config.c)', () => {
     expect(out).not.toContain('renegotiation');
   });
   it('une autre directive SSL dans une section reste refusée en le disant', async () => {
-    const out = await configtest(machine(), '  <Directory /var/www/html>\n    SSLCipherSuite HIGH\n  </Directory>\n');
+    const out = await configtest(machine(), '  <Directory /var/www/html>\n    SSLHonorCipherOrder on\n  </Directory>\n');
     expect(out).toContain('needs a TLS renegotiation after the handshake');
-    expect(out).toContain('only SSLVerifyClient and SSLVerifyDepth');
+    expect(out).toContain('only SSLVerifyClient, SSLVerifyDepth and SSLCipherSuite');
+  });
+  it('SSLCipherSuite dans <Location> est accepté, une liste invalide est refusée comme au niveau du vhost (AH01898)', async () => {
+    expect(await configtest(machine(), '  <Location /strict>\n    SSLCipherSuite ECDHE-RSA-AES256-GCM-SHA384\n  </Location>\n')).toContain('Syntax OK');
+    expect(await configtest(machine(), '  <Location /strict>\n    SSLCipherSuite ZZZ\n  </Location>\n')).toContain('AH01898: Unable to configure permitted SSL ciphers');
   });
   it('SSLVerifyClient avec un argument invalide dans <Location> : Invalid argument', async () => {
     const out = await configtest(machine(), '  <Location /secure>\n    SSLVerifyClient zorglub\n  </Location>\n');

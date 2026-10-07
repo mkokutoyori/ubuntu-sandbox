@@ -15,6 +15,7 @@
  * here too.
  */
 
+import { resolveLegacyPolicy } from '@/network/tls/legacy/legacyCipherSuites';
 import {
   isApacheSslDirective, checkApacheSslDirective, apacheSslDirectiveSpecs, resolveApacheSsl, sessionCacheProblem,
   parseVerifyClient, type ApacheSslDirective, type ApacheSslSettings, type ApacheVerifyClient,
@@ -27,6 +28,7 @@ export interface ApacheDirectoryAuth {
   readonly pattern: string;
   verifyClient: ApacheVerifyClient | null;
   verifyDepth: number | null;
+  cipherSuite: string | null;
   readonly line: number;
 }
 
@@ -321,14 +323,14 @@ function scanConfigText(
       const name = directive?.[1];
       if (name && /^ssl/i.test(name) && isApacheSslDirective(name)) {
         const inner = sections[sections.length - 1];
-        if (/^sslverify(client|depth)$/i.test(name) && AUTH_SECTIONS.has(inner.kind.toLowerCase())) {
+        if (/^ssl(verify(client|depth)|ciphersuite)$/i.test(name) && AUTH_SECTIONS.has(inner.kind.toLowerCase())) {
           const error = handlers.sectionDirective(inner, name, directive?.[2] ?? '', n);
           if (error) return error;
           continue;
         }
         return {
           message: `apache2: Syntax error on line ${n} of ${path}: ${name} inside a <${inner.kind}> section needs a TLS renegotiation after the handshake; `
-            + 'only SSLVerifyClient and SSLVerifyDepth inside <Location>, <LocationMatch>, <Directory> or <DirectoryMatch> are supported by this simulator',
+            + 'only SSLVerifyClient, SSLVerifyDepth and SSLCipherSuite inside <Location>, <LocationMatch>, <Directory> or <DirectoryMatch> are supported by this simulator',
           line: n,
         };
       }
@@ -461,11 +463,23 @@ export function parseApacheConfig(
     const value = args[0] ?? '';
     let entry = index.get(section);
     if (entry === undefined) {
-      entry = { section: section.kind as ApacheAuthSection, pattern: section.argument, verifyClient: null, verifyDepth: null, line: n };
+      entry = { section: section.kind as ApacheAuthSection, pattern: section.argument, verifyClient: null, verifyDepth: null, cipherSuite: null, line: n };
       index.set(section, entry);
       list.push(entry);
     }
-    if (name.toLowerCase() === 'sslverifyclient') {
+    if (name.toLowerCase() === 'sslciphersuite') {
+      const [first, second] = args;
+      const type = second === undefined ? 'SSL' : first;
+      const text = second === undefined ? first : second;
+      if (type !== 'SSL') {
+        return { message: `AH00526: Syntax error on line ${n} of ${path}:\nprotocol '${type}' not supported`, line: n };
+      }
+      const resolved = resolveLegacyPolicy({ cipherList: `${text}:!aNULL:!eNULL:!EXP` });
+      if (resolved.error !== null) {
+        return { message: `AH01898: Unable to configure permitted SSL ciphers\nSSL Library Error: ${resolved.error}`, line: n };
+      }
+      entry.cipherSuite = `${text}:!aNULL:!eNULL:!EXP`;
+    } else if (name.toLowerCase() === 'sslverifyclient') {
       const parsed = parseVerifyClient(name, value);
       if (parsed.error !== null) return { message: `AH00526: Syntax error on line ${n} of ${path}:\n${parsed.error}`, line: n };
       entry.verifyClient = parsed.mode;
@@ -656,11 +670,16 @@ function sectionMatches(entry: ApacheDirectoryAuth, vhost: ApacheVirtualHost, ur
   }
 }
 
-export function effectiveClientVerify(vhost: ApacheVirtualHost, target: string): ApacheVerifyClient | null {
+export function effectivePathTransport(
+  vhost: ApacheVirtualHost, target: string,
+): { readonly verifyClient: ApacheVerifyClient | null; readonly cipherSuite: string | null } {
   const urlPath = target.split('?')[0].split('#')[0] || '/';
-  let mode: ApacheVerifyClient | null = null;
+  let verifyClient: ApacheVerifyClient | null = null;
+  let cipherSuite: string | null = null;
   for (const entry of vhost.directoryAuth) {
-    if (entry.verifyClient !== null && sectionMatches(entry, vhost, urlPath)) mode = entry.verifyClient;
+    if (!sectionMatches(entry, vhost, urlPath)) continue;
+    if (entry.verifyClient !== null) verifyClient = entry.verifyClient;
+    if (entry.cipherSuite !== null) cipherSuite = entry.cipherSuite;
   }
-  return mode;
+  return { verifyClient, cipherSuite };
 }
