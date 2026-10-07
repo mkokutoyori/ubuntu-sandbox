@@ -16,7 +16,8 @@
  * Côté client et HelloRequest (étape suivante) : le client du simulateur renégocie avec un vrai s_server lancé avec
  * -client_renegotiation, constate l'alerte no_renegotiation du défaut d'openssl 3, suit un HelloRequest lancé par la
  * commande R d'un vrai s_server, et le serveur du simulateur lance lui-même une renégociation qu'un vrai s_client suit.
- * Avant ce second correctif (git stash de src/network et src/terminal) 5 cas sur 9 tombent dans ce fichier et 2 sur 8 dans
+ * Mesuré ensuite : renégocier une session qui a elle-même été reprise (abrégée) fonctionne déjà, ce cas est un témoin qui passe dans les
+ * deux états. Avant ce second correctif (git stash de src/network et src/terminal) 5 cas sur 9 tombent dans ce fichier et 2 sur 8 dans
  * openssl-s-client-interactive ; les quatre cas de la première étape passent dans les deux états, déjà commités.
  */
 import { describe, it, expect } from 'vitest';
@@ -25,6 +26,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
+import { LegacySessionStore } from '@/network/tls/legacy/legacySessions';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { certToPem } from '@/network/pki/pem';
 import { TlsClientSession } from '@/network/tls/TlsClientSession';
@@ -190,4 +192,19 @@ describe('renégociation TLS ≤ 1.2 : côté client et HelloRequest', () => {
     expect(out).toContain('ok');
     expect(bridge.steps.join('|')).not.toContain('bad_record_mac');
   }, 60000);
+
+  it("renégociation d'une session qui a elle-même été reprise (abrégée) : la poignée de main complète suit, la requête est servie", async () => {
+    const pki = simPki();
+    const bridge = await startSimServer(server(pki, { legacySessionStore: new LegacySessionStore() }), () => REPLY);
+    const dir = mkdtempSync(join(tmpdir(), 'reneg-'));
+    const file = join(dir, 'session.pem');
+    await interactive(bridge.port, pki.caPath, ['GET / HTTP/1.0\r\n\r\n'], ['-sess_out', file]);
+    const run = await interactive(bridge.port, pki.caPath, ['R\n', 'GET / HTTP/1.0\r\n\r\n'], ['-sess_in', file]);
+    bridge.stop();
+    expect(run.stdout).toContain('Reused, TLSv1.2');
+    expect(run.stderr + run.stdout).toContain('RENEGOTIATING');
+    expect(lastSession!.renegotiations).toBe(1);
+    expect(run.stdout).toContain('ok');
+    expect(bridge.steps.join('|')).not.toContain('bad_record_mac');
+  }, 90000);
 });
