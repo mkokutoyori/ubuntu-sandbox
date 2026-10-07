@@ -1809,6 +1809,7 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const probeOptions = {
     versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
     ...(opts.has('-status') ? { requestStatus: true } : {}),
+    ...(host.stdin() !== null ? { send: fileTextToBytes(host.stdin()!) } : {}),
   };
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
@@ -1865,6 +1866,10 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       : 'Verification error: unable to get local issuer certificate');
   } else {
     lignes.push(ancre ? 'Verification: OK' : 'Verification: not performed');
+  }
+  if (sonde && sonde.ok && sonde.received !== undefined) {
+    if (sonde.received.length > 0) lignes.push(bytesToFileText(sonde.received));
+    return { output: lignes.join('\n'), stderr: 'DONE', exitCode: 0 };
   }
   return ok(lignes.join('\n'));
 }

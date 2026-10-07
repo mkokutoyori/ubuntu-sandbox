@@ -1,10 +1,11 @@
 import type { TlsProtocolVersion } from './legacy/legacyCipherSuites';
 import { TlsClientSession } from './TlsClientSession';
 import { CertificateVerifier } from '../pki/CertificateVerifier';
-import { runTlsHandshakeOverSocket } from '../http/https/TlsRecordWire';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { X509Certificate } from '../pki/X509Certificate';
 import type { OcspResponseMessage } from '../pki/OcspWire';
+import { encryptApplicationData, decryptApplicationData } from '../http/https/ApplicationDataCipher';
+import { runTlsHandshakeOverSocket, bytesToBinaryString, binaryStringToBytes, encodeRecords, decodeRecords } from '../http/https/TlsRecordWire';
 
 export interface TlsProbeOutcome {
   readonly ok: boolean;
@@ -15,6 +16,7 @@ export interface TlsProbeOutcome {
   readonly alert?: string | null;
   readonly verified: boolean;
   readonly staple?: OcspResponseMessage | null;
+  readonly received?: Uint8Array;
 }
 
 export interface TlsProbeOptions {
@@ -24,6 +26,7 @@ export interface TlsProbeOptions {
   readonly versions?: readonly TlsProtocolVersion[];
   readonly cipherList?: string;
   readonly requestStatus?: boolean;
+  readonly send?: Uint8Array;
 }
 
 export function probeTlsPeer(
@@ -38,6 +41,7 @@ export function probeTlsPeer(
   const session = new TlsClientSession({
     verifier: new CertificateVerifier({ trustAnchors: anchors }),
     serverName: options.servername,
+    ...(options.send !== undefined ? { allowUntrustedPeer: true } : {}),
     alpn: ['http/1.1'],
     ...(options.versions ? { versions: options.versions } : {}),
     ...(options.cipherList ? { cipherList: options.cipherList } : {}),
@@ -56,9 +60,12 @@ export function probeTlsPeer(
 
   const certificate = session.peerCertificate;
   const cipherSuite = session.negotiatedCipherSuite ?? null;
-  const succeeded = session.result === 'success';
+  const succeeded = session.result === 'success' && (options.send === undefined || session.peerVerified);
+  const completed = session.result === 'success';
   const protocolVersion = session.negotiatedVersion;
   const alert = session.lastAlert?.description ?? null;
+  let received: Uint8Array | undefined;
+  if (completed && options.send !== undefined) received = exchangeApplicationData(socket, session, options.send);
   socket.close();
 
   if (certificate === null) {
@@ -68,5 +75,24 @@ export function probeTlsPeer(
       certificate: null, cipherSuite, protocolVersion, alert, verified: false,
     };
   }
-  return { ok: true, certificate, cipherSuite, protocolVersion, alert, verified: succeeded, staple: session.receivedStaple };
+  return { ok: true, certificate, cipherSuite, protocolVersion, alert, verified: succeeded, staple: session.receivedStaple, ...(received ? { received } : {}) };
+}
+
+function exchangeApplicationData(socket: NonNullable<ReturnType<TcpStack['connect']>>, session: TlsClientSession, payload: Uint8Array): Uint8Array {
+  let reply = new Uint8Array(0);
+  let serverSequence = 0;
+  const unsubscribe = socket.onData((data) => {
+    try {
+      const opened = decryptApplicationData(session.serverTraffic(), serverSequence, decodeRecords(binaryStringToBytes(String(data))));
+      serverSequence = opened.nextSeq;
+      const joined = new Uint8Array(reply.length + opened.plaintext.length);
+      joined.set(reply); joined.set(opened.plaintext, reply.length);
+      reply = joined;
+    } catch {
+      return;
+    }
+  });
+  socket.write(bytesToBinaryString(encodeRecords(encryptApplicationData(session.clientTraffic(), 0, payload).records)));
+  unsubscribe();
+  return reply;
 }

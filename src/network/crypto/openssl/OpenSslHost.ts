@@ -19,13 +19,15 @@ import type { TcpWireOutcome } from '@/network/tcp/types';
 export type TlsPeerProbe =
   | { readonly ok: true; readonly certificate: X509Certificate | null;
       readonly cipherSuite: string | null; readonly protocolVersion?: string | null;
-      readonly verified: boolean; readonly staple?: OcspResponseMessage | null }
+      readonly verified: boolean; readonly staple?: OcspResponseMessage | null;
+      readonly received?: Uint8Array }
   | { readonly ok: false; readonly reason: string; readonly alert?: string | null };
 
 export interface TlsPeerProbeOptions {
   readonly versions?: readonly TlsProtocolVersion[];
   readonly cipherList?: string;
   readonly requestStatus?: boolean;
+  readonly send?: Uint8Array;
 }
 
 export interface OpenSslHost {
