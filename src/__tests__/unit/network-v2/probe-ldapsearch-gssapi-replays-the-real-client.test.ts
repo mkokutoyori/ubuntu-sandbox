@@ -6,7 +6,8 @@
  * meme sortie standard, meme sortie d'erreur, meme code de sortie, et le meme
  * cache d'identifiants apres l'execution.
  *
- * Le corpus (`openldap-ldapsearch-gssapi-corpus.json`) a ete capture a travers
+ * Le corpus (`openldap-ldapsearch-gssapi-corpus.json`, avec les traces -d 1, 2,
+ * 4, 16 et 20) a ete capture a travers
  * un relais qui enregistre chaque PDU LDAP et chaque echange avec le KDC. Les
  * entiers aleatoires du client (sous-cle, numero de sequence, confondeurs) et
  * l'heure de l'authentifiant, ainsi que les nonces des requetes au KDC, sont relus en ouvrant la capture avec la cle de
@@ -17,7 +18,7 @@
  * parle pas ; la reponse enregistree est celle que le simulateur decode.
  *
  * Mesure avant la creation du mecanisme (liste de greffons sans `libgssapiv2`) :
- * 18 des 19 cas tombent. Passe avant comme apres `minssf300` : aucun
+ * 21 des 22 cas tombent. Passe avant comme apres `minssf300` : aucun
  * mecanisme ne peut offrir 300 bits, donc « No worthy mechs found » est la
  * reponse du client reel avec ou sans greffon (non-regression). Temoin du
  * laboratoire : « the replay refuses a request that differs from the recorded
@@ -77,7 +78,7 @@ async function run(scenario: GssapiScenario, args: readonly string[]) {
 
 describe('ldapsearch -Y GSSAPI replays the real OpenLDAP client', () => {
   it('the corpus carries the recorded scenarios', () => {
-    expect(corpus.scenarios.length).toBe(19);
+    expect(corpus.scenarios.length).toBe(22);
   });
 
   it('the replay refuses a request that differs from the recorded one', async () => {
