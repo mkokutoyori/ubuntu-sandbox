@@ -21,6 +21,7 @@ import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
 export interface TlsPeerChannelPort {
   exchange(payload: Uint8Array): Uint8Array;
   keyUpdate(requestUpdate: boolean): void;
+  renegotiate(): boolean;
   close(): void;
 }
 

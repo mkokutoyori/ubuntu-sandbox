@@ -5,7 +5,7 @@
  *
  * MESURÉ avant correctif : la commande affichait le rapport puis rendait la main, la connexion était
  * déjà fermée ; aucune ligne tapée ensuite n'atteignait le serveur. Avant correctif (stash de
- * src/network et src/terminal) 5 cas sur 6 tombent ; le témoin (le rapport s'affiche) passe dans les deux états.
+ * src/network et src/terminal) 5 cas sur 6 tombent (série initiale) ; le cas R en TLS 1.2 tombe aussi avant le correctif de renégociation ; le témoin (le rapport s'affiche) passe dans les deux états.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -92,5 +92,23 @@ describe('openssl s_client interactif', () => {
     await type(term, 'openssl s_client -connect 127.0.0.1:443 -tls1_2');
     await type(term, 'k');
     expect(text(term)).toContain('KeyUpdate needs TLS 1.3');
+  });
+
+  it('en TLS 1.2, R renégocie sur la connexion ouverte puis la requête est servie sous les nouvelles clés', async () => {
+    const { term } = await lab();
+    await type(term, 'openssl s_client -connect 127.0.0.1:443 -tls1_2');
+    await type(term, 'R');
+    expect(text(term)).toContain('RENEGOTIATING');
+    expect(text(term)).not.toContain('refused by the server');
+    await type(term, 'GET / HTTP/1.0');
+    await type(term, '');
+    expect(text(term)).toContain('HTTP/1.1 200 OK');
+  });
+
+  it('en TLS 1.3, R rappelle que la renégociation n\'existe pas et renvoie vers K', async () => {
+    const { term } = await lab();
+    await type(term, 'openssl s_client -connect 127.0.0.1:443 -tls1_3');
+    await type(term, 'R');
+    expect(text(term)).toContain('does not exist in TLS 1.3');
   });
 });

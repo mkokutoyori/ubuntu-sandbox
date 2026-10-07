@@ -6,6 +6,7 @@ import type { ResumableLegacySession } from './legacy/legacySessions';
 import type { PkiPrivateKey } from '../pki/PkiKeyPair';
 import type { X509Certificate } from '../pki/X509Certificate';
 import type { OcspResponseMessage } from '../pki/OcspWire';
+import type { TlsRecord } from './recordLayer';
 import { encryptApplicationData, decryptApplicationData } from '../http/https/ApplicationDataCipher';
 import { runTlsHandshakeOverSocket, bytesToBinaryString, binaryStringToBytes, encodeRecords, decodeRecords } from '../http/https/TlsRecordWire';
 
@@ -120,18 +121,35 @@ export class TlsPeerChannel {
 
   constructor(private readonly socket: ProbeSocket, private readonly session: TlsClientSession) {}
 
+  private receive(data: unknown): Uint8Array {
+    const records = decodeRecords(binaryStringToBytes(String(data)));
+    if (this.session.renegotiating) {
+      this.continueRenegotiation(records);
+      return new Uint8Array(0);
+    }
+    const opened = decryptApplicationData(this.session.serverTraffic(), this.serverSequence, records);
+    this.serverSequence = opened.nextSeq;
+    if (opened.renegotiation) this.continueRenegotiation(opened.renegotiation.records, opened.renegotiation.sequence);
+    if (opened.peerKeyUpdates) {
+      const answer = this.session.applyPeerKeyUpdates(opened.peerKeyUpdates, opened.peerRequestedKeyUpdate === true, this.clientSequence);
+      if (answer.length > 0) { this.socket.write(bytesToBinaryString(encodeRecords([...answer]))); this.clientSequence = 0; }
+    }
+    return opened.plaintext;
+  }
+
+  private continueRenegotiation(records: readonly TlsRecord[], receiveSequence = this.serverSequence): void {
+    const answer = this.session.handleRenegotiation(records, receiveSequence, this.clientSequence);
+    if (answer && answer.length > 0) this.socket.write(bytesToBinaryString(encodeRecords([...answer])));
+    if (this.session.takeRenegotiationCompleted()) { this.clientSequence = 0; this.serverSequence = 0; }
+  }
+
   exchange(payload: Uint8Array): Uint8Array {
     let reply = new Uint8Array(0);
     const unsubscribe = this.socket.onData((data) => {
       try {
-        const opened = decryptApplicationData(this.session.serverTraffic(), this.serverSequence, decodeRecords(binaryStringToBytes(String(data))));
-        this.serverSequence = opened.nextSeq;
-        if (opened.peerKeyUpdates) {
-          const answer = this.session.applyPeerKeyUpdates(opened.peerKeyUpdates, opened.peerRequestedKeyUpdate === true, this.clientSequence);
-          if (answer.length > 0) { this.socket.write(bytesToBinaryString(encodeRecords([...answer]))); this.clientSequence = 0; }
-        }
-        const joined = new Uint8Array(reply.length + opened.plaintext.length);
-        joined.set(reply); joined.set(opened.plaintext, reply.length);
+        const plaintext = this.receive(data);
+        const joined = new Uint8Array(reply.length + plaintext.length);
+        joined.set(reply); joined.set(plaintext, reply.length);
         reply = joined;
       } catch {
         return;
@@ -142,6 +160,18 @@ export class TlsPeerChannel {
     this.socket.write(bytesToBinaryString(encodeRecords(sealed.records)));
     unsubscribe();
     return reply;
+  }
+
+  renegotiate(): boolean {
+    const hello = this.session.startRenegotiation(this.serverSequence, this.clientSequence);
+    if (hello === null) return false;
+    this.clientSequence += hello.length;
+    const unsubscribe = this.socket.onData((data) => {
+      try { this.receive(data); } catch { return; }
+    });
+    this.socket.write(bytesToBinaryString(encodeRecords([...hello])));
+    unsubscribe();
+    return !this.session.renegotiating && this.session.renegotiations > 0;
   }
 
   keyUpdate(requestUpdate: boolean): void {

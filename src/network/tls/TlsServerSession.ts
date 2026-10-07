@@ -50,6 +50,7 @@ import {
 import { modpGroup, type ModpGroup } from '@/crypto/dh/modp';
 import { allowsMissingCertificate, continuesAfterVerificationFailure, type ClientCertPolicy } from './clientAuthPolicy';
 import { LegacyServerHandshake, suiteMatchesCertificate, type LegacyRenegotiationContext } from './legacy/LegacyHandshake';
+import { PROTOCOL_VERSION_WIRE } from './legacy/legacyCipherSuites';
 import { legacySuiteByName } from './legacy/legacyCipherSuites';
 import { offeredVersions } from './legacy/versionNegotiation';
 import type { TrafficProtection } from './trafficProtection';
@@ -502,6 +503,16 @@ export class TlsServerSession {
       this.lastAlert = handshake.lastAlert;
     }
     return flight;
+  }
+
+  requestRenegotiation(sendSequence: number): readonly TlsRecord[] | null {
+    const current = this.legacy;
+    if (current === null || current.traffic === null || this.result !== 'accept' || this.renegotiationHandshake !== null) return null;
+    const request: TlsRecord = {
+      contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[current.negotiatedVersion],
+      fragment: Uint8Array.of(0, 0, 0, 0),
+    };
+    return [current.traffic.outbound.seal(sendSequence, request)];
   }
 
   handleRenegotiation(
