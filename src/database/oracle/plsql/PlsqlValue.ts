@@ -1,5 +1,6 @@
 import type { TypeRef, Block, CursorDecl, SubprogramDecl } from './PlsqlAst';
 import { PlsqlException } from './PlsqlException';
+import type { OracleClockReading } from '../time/OracleHostClock';
 
 export type Scalar = number | string | boolean | null | Date;
 
@@ -183,6 +184,7 @@ export interface PlsqlHost {
   put(text: string): void;
   isServerOutput(): boolean;
   currentSchema(): string;
+  oracleClock(): OracleClockReading;
   lookupUnit(name: string): StoredUnitLike | undefined;
   /**
    * Resolve a user-defined package by name ("PKG" or "SCHEMA.PKG").

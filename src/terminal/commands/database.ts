@@ -85,6 +85,12 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // by the FS sync adapter without manual *ToDevice helper calls.
     db.instance.setEventBus(oracleBusFor(deviceId));
     db.instance.setDeviceId(deviceId);
+    const hostWithClock = dev as unknown as {
+      hostWallClock?: () => { nowMs(): number; zoneName(): string };
+    } | null;
+    if (typeof hostWithClock?.hostWallClock === 'function') {
+      db.instance.setHostClock(hostWithClock.hostWallClock());
+    }
     // Device VFS reader for server-side reads (UTL_FILE, external tables,
     // BFILE, CREATE PFILE/SPFILE FROM …) — runs as the `oracle` OS user
     // under host DAC, falling back to the editor path on devices that do
