@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-info-snmp-ntp
-Generated: 2026-09-25T18:32:19.877Z
+Generated: 2026-10-07T12:19:56.968Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP info-center/SNMPv1-3/NTP/LLDP/NQA/sFlow
 Total steps: 233
@@ -119,10 +119,10 @@ Total steps: 233
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-09-25 18:32:19 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-25 18:32:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-25 18:32:19 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-25 18:32:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-07 12:19:56 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-07 12:19:56 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-07 12:19:56 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-07 12:19:56 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [31/233] r1 <R1> display logbuffer summary
   Log buffer: 0 messages.
@@ -396,7 +396,7 @@ Total steps: 233
   Root delay: 0.00 ms
   Root dispersion: 0.00 ms
   Peer dispersion: 0.00 ms
-  Reference time: 18:32:19.913  Sep 25 2026(EE613CB3.E9BA5E35)
+  Reference time: 12:19:57.039  Oct 7 2026(EE70B76D.09FBE76C)
   Source interface: LoopBack0
 
 [95/233] r1 <R1> display ntp-service sessions
@@ -421,8 +421,8 @@ Total steps: 233
    clock offset: 0.0000 ms
 
 [97/233] r1 <R1> display clock
-  2026-09-25 18:32:19
-  Friday
+  2026-10-07 12:19:57
+  Wednesday
   Time Zone(UTC) : UTC
 
 
@@ -639,7 +639,7 @@ Total steps: 233
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [130/233] r1 <R1> display version
   Huawei Versatile Routing Platform Software
@@ -648,7 +648,7 @@ Total steps: 233
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [131/233] r1 <R1> display current-configuration
   #
@@ -799,9 +799,9 @@ Total steps: 233
     Unicast:                    0,  Multicast:                  2
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  11 packets, 750 bytes
+  Output:  7 packets, 494 bytes
     Unicast:                    0,  Multicast:                  5
-    Broadcast:                  6,  Jumbo:                      -
+    Broadcast:                  2,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
       Input bandwidth utilization  :    0%
       Output bandwidth utilization :    0%
@@ -975,7 +975,7 @@ Total steps: 233
   Root delay: 0.00 ms
   Root dispersion: 0.00 ms
   Peer dispersion: 0.00 ms
-  Reference time: 18:32:20.012  Sep 25 2026(EE613CB4.03126E97)
+  Reference time: 12:19:57.224  Oct 7 2026(EE70B76D.39581062)
   Source interface: LoopBack0
 
 [163/233] r1 <R1> display ntp session
@@ -991,8 +991,8 @@ Total steps: 233
   Total sessions: 4
 
 [164/233] r1 <R1> display clock
-  2026-09-25 18:32:20
-  Friday
+  2026-10-07 12:19:57
+  Wednesday
   Time Zone(UTC) : UTC
 
 [165/233] r1 <R1> display lldp neighbor
@@ -1015,13 +1015,13 @@ Total steps: 233
 [167/233] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-09-25 18:32:20
+  CPU Usage Stat. Time : 2026-10-07 12:19:57
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [168/233] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-09-25 18:32:20
+  Memory utilization statistics at 2026-10-07 12:19:57
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1062,10 +1062,10 @@ Total steps: 233
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-09-25 18:32:19 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-25 18:32:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-25 18:32:19 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-25 18:32:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-07 12:19:56 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-07 12:19:56 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-07 12:19:56 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-07 12:19:56 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [173/233] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1278,15 +1278,17 @@ Total steps: 233
   Info: No online-fail record.
 
 [186/233] r1 <R1> display ssh server status
-  SSH server: Disabled
-
-[187/233] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
   SSH authentication retries      : 3 times
   SFTP server                     : Disable
-  STELNET server                  : Enable
+  Stelnet server                  : Disable
+
+[187/233] r1 <R1> display ssh user-information
+  Error: Unrecognized command found at '^' position.
+  display ssh user-information
+          ^
 
 [188/233] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
@@ -1510,7 +1512,9 @@ Total steps: 233
 <empty>
 
 [199/233] r1 [R1] undo dhcp enable
-<empty>
+  Error: Unrecognized command found at '^' position.
+  undo dhcp enable
+            ^
 
 [200/233] r1 [R1] snmp-agent
 <empty>
@@ -1623,37 +1627,42 @@ Total steps: 233
     routing-table  Routing table configuration
 
 [230/233] r1 [Huawei] undo ?
-    acl            Delete Access Control List
-    bfd            Disable BFD globally
-    bgp            Remove BGP
-    command-alias  Disable CLI alias
-    debugging      Disable system debugging functions
-    dns            Domain Name System
-    firewall       Firewall configuration
-    ike            Internet Key Exchange
-    ikev2          Internet Key Exchange version 2
-    info-center    Information center configuration
-    ip             Internet Protocol
-    ipsec          IP Security
-    ipv6           Disable IPv6
-    isis           Remove IS-IS
-    lldp           Link Layer Discovery Protocol
-    local-user     Remove a local user
-    multicast      Disable multicast routing
-    nat            Network Address Translation
-    nqa            Network Quality Analysis
-    nqa-server     Remove an NQA server binding
-    ntp-service    Remove NTP service configuration
-    ospf           Remove OSPF protocol configuration
-    ospfv3         Remove OSPFv3 protocol configuration
-    route-policy   Remove a route-policy
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
-    snmp-agent     Remove SNMP agent configuration
-    stelnet        Disable the STelnet server
-    terminal       Set the terminal line characteristics
-    time-range     Remove a time-range
-    traffic        Display traffic statistics
+    acl                  Delete Access Control List
+    bfd                  Disable BFD globally
+    bgp                  Remove BGP
+    command-alias        Disable CLI alias
+    debugging            Disable system debugging functions
+    dhcpv6               DHCPv6 configuration
+    dns                  Domain Name System
+    firewall             Firewall configuration
+    ike                  Internet Key Exchange
+    ikev2                Internet Key Exchange version 2
+    info-center          Information center configuration
+    information-refresh  Restore the default information refresh interval
+    ip                   Internet Protocol
+    ipsec                IP Security
+    ipv6                 Disable IPv6
+    isis                 Remove IS-IS
+    lldp                 Link Layer Discovery Protocol
+    local-user           Remove a local user
+    multicast            Disable multicast routing
+    nat                  Network Address Translation
+    nqa                  Network Quality Analysis
+    nqa-server           Remove an NQA server binding
+    ntp-service          Remove NTP service configuration
+    ospf                 Remove OSPF protocol configuration
+    ospfv3               Remove OSPFv3 protocol configuration
+    route-policy         Remove a route-policy
+    rsa                  RSA key pair
+    screen-length        Restore default screen length
+    screen-width         Restore default screen width
+    snmp-agent           Remove SNMP agent configuration
+    ssh                  Restore the SSH server defaults
+    stelnet              Disable the STelnet server
+    telnet               Disable the Telnet server
+    terminal             Set the terminal line characteristics
+    time-range           Remove a time-range
+    traffic              Display traffic statistics
 
 [231/233] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)

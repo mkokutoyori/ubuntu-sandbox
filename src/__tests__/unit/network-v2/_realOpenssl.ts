@@ -132,11 +132,22 @@ export async function startSimServer(
         if (trailing.length === 0) return;
         records.splice(0, records.length, ...trailing);
       }
-      const applicationRecords = records.filter((record: TlsRecord) => record.contentType === 'application_data');
+      if (tls.renegotiating) {
+        const answer = tls.handleRenegotiation(records, clientSequence, serverSequence);
+        if (answer && answer.length > 0) socket.write(encodeRecords([...answer]));
+        if (tls.takeRenegotiationCompleted()) { clientSequence = 0; serverSequence = 0; }
+        return;
+      }
+      const applicationRecords = records.filter((record: TlsRecord) => record.contentType === 'application_data' || record.contentType === 'handshake');
       if (applicationRecords.length === 0) return;
       try {
         const opened = decryptApplicationData(tls.clientTraffic(), clientSequence, applicationRecords);
         clientSequence = opened.nextSeq;
+        if (opened.renegotiation) {
+          const answer = tls.handleRenegotiation(opened.renegotiation.records, opened.renegotiation.sequence, serverSequence);
+          if (answer && answer.length > 0) { socket.write(encodeRecords([...answer])); serverSequence += answer.length; }
+          if (opened.plaintext.length === 0) return;
+        }
         if (opened.peerKeyUpdates) {
           const reply = tls.applyPeerKeyUpdates(opened.peerKeyUpdates, opened.peerRequestedKeyUpdate === true, serverSequence);
           if (reply.length > 0) { socket.write(encodeRecords([...reply])); serverSequence = 0; }

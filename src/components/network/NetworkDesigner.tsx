@@ -18,7 +18,7 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { NetworkLogsPanel } from './NetworkLogsPanel';
 import { Toolbar } from './Toolbar';
 import { HelpDialog } from './HelpDialog';
-import { SettingsDialog } from './SettingsDialog';
+import { SettingsDialog } from '@/components/settings';
 import { SaveTopologyDialog } from './SaveTopologyDialog';
 import { OpenTopologyDialog } from './OpenTopologyDialog';
 import { ConfirmDialog } from './ConfirmDialog';

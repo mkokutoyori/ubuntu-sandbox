@@ -43,7 +43,7 @@ export class SimulationClock {
   constructor(options: SimulationClockOptions = {}) {
     this.realNow = options.realNow ?? defaultRealNow;
     this.startPump = options.startPump ?? defaultStartPump;
-    if (options.originMs !== undefined) this.scheduler.setEpochOrigin(options.originMs);
+    this.scheduler.setEpochOrigin(options.originMs ?? Date.now());
   }
 
   getState(): SimulationClockState {

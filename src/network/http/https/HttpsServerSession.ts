@@ -113,10 +113,24 @@ export class HttpsServerSession {
         if (records.length === 0) return;
       }
 
-      const { plaintext: requestBytes, nextSeq: clientNextSeq, peerKeyUpdates, peerRequestedKeyUpdate } = decryptApplicationData(
+      if (tls.renegotiating) {
+        const answer = tls.handleRenegotiation(records, clientSeq, serverSeq);
+        if (answer && answer.length > 0) socket.write(bytesToBinaryString(encodeRecords([...answer])));
+        if (tls.takeRenegotiationCompleted()) { clientSeq = 0; serverSeq = 0; }
+        return;
+      }
+      const { plaintext: requestBytes, nextSeq: clientNextSeq, peerKeyUpdates, peerRequestedKeyUpdate, renegotiation } = decryptApplicationData(
         tls.clientTraffic(), clientSeq, records,
       );
       clientSeq = clientNextSeq;
+      if (renegotiation) {
+        const answer = tls.handleRenegotiation(renegotiation.records, renegotiation.sequence, serverSeq);
+        if (answer && answer.length > 0) {
+          socket.write(bytesToBinaryString(encodeRecords([...answer])));
+          serverSeq += answer.length;
+        }
+        if (requestBytes.length === 0) return;
+      }
       if (peerKeyUpdates) {
         const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, serverSeq);
         if (reply.length > 0) {

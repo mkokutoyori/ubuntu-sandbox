@@ -43,8 +43,7 @@ function readingOf(scheduler: IScheduler): number {
 }
 
 function epochOf(scheduler: IScheduler): number {
-  const pinned = scheduler instanceof VirtualTimeScheduler ? scheduler.epochOrigin() : null;
-  return pinned === null ? Date.now() : pinned + scheduler.now();
+  return scheduler instanceof VirtualTimeScheduler ? virtualOriginOf(scheduler) + scheduler.now() : Date.now();
 }
 
 export function schedulerWallClock(
