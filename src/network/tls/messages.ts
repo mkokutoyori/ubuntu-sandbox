@@ -115,6 +115,10 @@ export interface KeyUpdate {
   readonly requestUpdate: boolean;
 }
 
+export interface EndOfEarlyData {
+  readonly kind: 'end_of_early_data';
+}
+
 export type TlsHandshakeMessage =
   | ClientHello
   | ServerHello
@@ -125,7 +129,8 @@ export type TlsHandshakeMessage =
   | CertificateVerify
   | Finished
   | NewSessionTicket
-  | KeyUpdate;
+  | KeyUpdate
+  | EndOfEarlyData;
 
 export function encodeHandshakeMessage(message: TlsHandshakeMessage): Uint8Array {
   return encodeTls13Message(message);

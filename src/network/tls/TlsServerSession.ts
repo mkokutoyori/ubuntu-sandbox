@@ -33,6 +33,8 @@ import {
 import { sealKeyUpdate, openKeyUpdate } from './keyUpdateRecords';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { randomHex } from './legacy/LegacyHandshake';
+import { deriveRecordKeys, openRecord } from './recordProtection';
+import { EarlyDataReceiver, earlyTrafficSecret } from './earlyData';
 import { sealFlight, openLeadingHandshake, withoutChangeCipherSpec, COMPATIBILITY_CHANGE_CIPHER_SPEC } from './handshakeProtection';
 import { collapseFirstClientHello, deriveKeySchedule, computePskBinder, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
@@ -151,11 +153,15 @@ function serverNameMatches(pattern: string, name: string): boolean {
 
 export const DEFAULT_SERVER_PROTOCOLS: readonly TlsProtocolVersion[] = ['1.3', '1.2'];
 
+const TICKET_AGE_ALLOWANCE_MS = 10_000;
+
 interface RedeemedPsk {
   readonly psk: string;
   readonly hash: Tls13Hash;
   readonly index: number;
   readonly identity: string;
+  readonly cipherSuite: CipherSuite;
+  readonly ageAcceptable: boolean;
 }
 
 function groupOf(keyShare: string): string {
@@ -211,6 +217,10 @@ export class TlsServerSession {
   private hash: Tls13Hash = 'sha256';
   private retried = false;
   private earlyDataAccepted = false;
+  private earlyDataOffered = false;
+  private endOfEarlyDataRecorded = false;
+  private earlyReceiver: EarlyDataReceiver | null = null;
+  private pendingEarlyRecords: readonly TlsRecord[] = [];
   private sessionResumed = false;
   private readonly transcript: Uint8Array[] = [];
   negotiatedMaxFragmentLength: number | null = null;
@@ -499,7 +509,9 @@ export class TlsServerSession {
       if (offer.binder !== computePskBinder(psk, transcriptHash([partial], hash), hash)) return 'binder_mismatch';
       const ticket = store.redeem(offer.identity, now);
       if (!ticket) continue;
-      return { psk, hash, index, identity: offer.identity };
+      const clientAge = ((offer.obfuscatedAge - Number.parseInt(candidate.ticketAgeAdd ?? '0', 16)) >>> 0);
+      const ageAcceptable = Math.abs(clientAge - Math.max(0, now - candidate.issuedAt)) <= TICKET_AGE_ALLOWANCE_MS;
+      return { psk, hash, index, identity: offer.identity, cipherSuite: candidate.cipherSuite, ageAcceptable };
     }
     return null;
   }
@@ -530,9 +542,15 @@ export class TlsServerSession {
     this.negotiateMaxFragment(clientHello);
     const pskAccepted = redeemed !== null && redeemed.hash === this.hash;
     const pskInput = pskAccepted ? redeemed.psk : ZERO_IKM;
-    if (pskAccepted && earlyRecords.length > 0 && this.config.earlyData !== false) {
+    this.earlyDataOffered = clientHello.extensions.earlyData === true;
+    if (pskAccepted && this.earlyDataOffered && !this.retried && this.config.earlyData !== false
+      && redeemed!.cipherSuite === negotiatedSuite && redeemed!.ageAcceptable) {
       this.earlyDataAccepted = true;
-      this.receivedEarlyData = reassembleRecords(earlyRecords, true).plaintext;
+      this.earlyReceiver = new EarlyDataReceiver(
+        earlyTrafficSecret(pskInput, transcriptHash([this.transcript[0]], this.hash), this.hash), negotiatedSuite,
+      );
+      this.pendingEarlyRecords = this.earlyReceiver.feed(withoutChangeCipherSpec(earlyRecords));
+      this.receivedEarlyData = this.earlyReceiver.plaintext;
     }
     this.negotiatedAlpnProtocol = selectAlpnProtocol(clientHello.extensions.alpn, this.alpnProtocols);
     if (this.alpnRefused(clientHello)) return this.reject('no_application_protocol');
@@ -645,7 +663,22 @@ export class TlsServerSession {
   }
 
   private handleClientFinal(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
-    const protectedRecords = withoutChangeCipherSpec(incoming);
+    let protectedRecords: readonly TlsRecord[] = [...this.pendingEarlyRecords, ...withoutChangeCipherSpec(incoming)];
+    this.pendingEarlyRecords = [];
+    if (this.earlyReceiver !== null && !this.earlyReceiver.finished) {
+      protectedRecords = this.earlyReceiver.feed(protectedRecords);
+      this.receivedEarlyData = this.earlyReceiver.plaintext;
+      if (!this.earlyReceiver.finished && protectedRecords.length === 0) return null;
+    }
+    if (this.earlyReceiver?.endOfEarlyDataRaw && !this.endOfEarlyDataRecorded) {
+      this.transcript.push(this.earlyReceiver.endOfEarlyDataRaw);
+      this.endOfEarlyDataRecorded = true;
+    }
+    if (this.earlyDataOffered && !this.earlyDataAccepted) {
+      const probe = deriveRecordKeys(this.clientHandshakeTrafficSecret!, this.negotiatedCipherSuite as CipherSuite);
+      while (protectedRecords.length > 0 && openRecord(probe, 0, protectedRecords[0]) === null) protectedRecords = protectedRecords.slice(1);
+      if (protectedRecords.length === 0) return null;
+    }
     const opened = openLeadingHandshake(this.clientHandshakeTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, protectedRecords);
     if (opened === null) return this.reject('bad_record_mac');
     this.trailingRecords = protectedRecords.slice(opened.consumed);

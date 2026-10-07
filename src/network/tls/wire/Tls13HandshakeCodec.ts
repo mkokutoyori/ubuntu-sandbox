@@ -7,7 +7,7 @@ import { der, children, parseDer, integerMagnitude, unsignedIntegerBytes, concat
 import { HELLO_RETRY_REQUEST_RANDOM } from '../types';
 import type {
   ClientHello, ServerHello, HelloRetryRequest, EncryptedExtensionsMessage, CertificateRequest,
-  CertificateMessage, CertificateVerify, Finished, NewSessionTicket, KeyUpdate, TlsHandshakeMessage,
+  CertificateMessage, CertificateVerify, Finished, NewSessionTicket, KeyUpdate, EndOfEarlyData, TlsHandshakeMessage,
   LegacyClientExtensions, PskOffer,
 } from '../messages';
 import { TlsReader, TlsWriter, TlsDecodeError } from './TlsBytes';
@@ -438,6 +438,14 @@ export function decodeKeyUpdate(reader: TlsReader): KeyUpdate {
   return { kind: 'key_update', requestUpdate: reader.u8() === 1 };
 }
 
+export function encodeEndOfEarlyData(): Uint8Array {
+  return handshake(HANDSHAKE_TYPE.endOfEarlyData, () => undefined);
+}
+
+export function decodeEndOfEarlyData(): EndOfEarlyData {
+  return { kind: 'end_of_early_data' };
+}
+
 export function encodeTls13Message(message: TlsHandshakeMessage): Uint8Array {
   switch (message.kind) {
     case 'client_hello': return encodeClientHello(message);
@@ -450,6 +458,7 @@ export function encodeTls13Message(message: TlsHandshakeMessage): Uint8Array {
     case 'finished': return encodeFinished(message);
     case 'new_session_ticket': return encodeNewSessionTicket(message);
     case 'key_update': return encodeKeyUpdate(message);
+    case 'end_of_early_data': return encodeEndOfEarlyData();
   }
 }
 
@@ -464,6 +473,7 @@ export function decodeTls13Message(type: number, body: TlsReader): TlsHandshakeM
     case HANDSHAKE_TYPE.finished: return decodeFinished(body);
     case HANDSHAKE_TYPE.newSessionTicket: return decodeNewSessionTicket(body);
     case HANDSHAKE_TYPE.keyUpdate: return decodeKeyUpdate(body);
+    case HANDSHAKE_TYPE.endOfEarlyData: return decodeEndOfEarlyData();
     default: throw new TlsDecodeError(`unsupported handshake type ${type}`);
   }
 }
