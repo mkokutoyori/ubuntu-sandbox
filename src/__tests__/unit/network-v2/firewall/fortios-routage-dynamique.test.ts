@@ -67,7 +67,7 @@ function run(sh: FortiShell, ...lines: string[]): string {
 const CONVERGENCE_MS = 45_000;
 
 function trames(fw: FortiGate, protocole: number, port?: number): number {
-  return fw.getPacketCapture().select({ iface: 'any', filter: {}, limit: 0 })
+  return fw.getPacketCapture().select({ iface: 'any', matches: () => true, limit: 0 })
     .filter(entree => entree.direction === 'out')
     .filter(entree => {
       const paquet = entree.frame.payload as {

@@ -7,7 +7,10 @@ export interface DebugFlowFilter {
   saddr?: string;
   daddr?: string;
   port?: number;
+  sport?: number;
+  dport?: number;
   proto?: number;
+  vd?: string;
 }
 
 export interface DebugFlowState {
@@ -59,9 +62,12 @@ export function debugFlowAccepts(
   if (filter.saddr !== undefined && source !== filter.saddr) return false;
   if (filter.daddr !== undefined && destination !== filter.daddr) return false;
   if (filter.proto !== undefined && packet.protocol !== filter.proto) return false;
-  if (filter.port === undefined) return true;
+  if (filter.vd !== undefined && (context.vdom ?? 'root') !== filter.vd) return false;
 
   const ports = portsOf(packet);
+  if (filter.sport !== undefined && ports.source !== filter.sport) return false;
+  if (filter.dport !== undefined && ports.destination !== filter.dport) return false;
+  if (filter.port === undefined) return true;
   return ports.source === filter.port || ports.destination === filter.port;
 }
 

@@ -1,5 +1,4 @@
 import type { EthernetFrame, IPv4Packet, UDPPacket, ICMPPacket } from '../../../core/types';
-import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, ETHERTYPE_ARP, ETHERTYPE_IPV4 } from '../../../core/types';
 import type { TcpSegment } from '../../../tcp/types';
 import { lineageOf, orderedDelivery } from '../../../hardware/FrameLineage';
 
@@ -13,17 +12,9 @@ export interface CapturedFrame {
   readonly frame: EthernetFrame;
 }
 
-export interface CaptureFilter {
-  readonly host?: string;
-  readonly source?: string;
-  readonly destination?: string;
-  readonly port?: number;
-  readonly protocol?: number;
-}
-
 export interface CaptureQuery {
   readonly iface: string;
-  readonly filter: CaptureFilter;
+  readonly matches: (entry: CapturedFrame) => boolean;
   readonly limit: number;
 }
 
@@ -94,76 +85,12 @@ export class PacketCapture {
       lastAt = Math.max(lastAt, stored.at);
       const entry = stored.at === lastAt ? stored : { ...stored, at: lastAt };
       if (query.iface !== 'any' && entry.iface !== query.iface) continue;
-      if (!frameMatches(entry.frame, query.filter)) continue;
+      if (!query.matches(entry)) continue;
       kept.push(entry);
       if (query.limit > 0 && kept.length >= query.limit) break;
     }
     return Object.freeze(kept);
   }
-}
-
-export function parseCaptureFilter(expression: string): CaptureFilter | null {
-  const text = expression.trim().replace(/^['"]|['"]$/g, '').trim();
-  if (text === '' || text.toLowerCase() === 'none') return {};
-
-  const filter: {
-    host?: string; source?: string; destination?: string;
-    port?: number; protocol?: number;
-  } = {};
-  const words = text.split(/\s+/);
-
-  for (let index = 0; index < words.length; index++) {
-    const word = words[index].toLowerCase();
-    if (word === 'and' || word === 'or') continue;
-
-    const value = words[index + 1];
-    switch (word) {
-      case 'host': filter.host = value; index++; break;
-      case 'src': filter.source = nextAddress(words, index); index++; break;
-      case 'dst': filter.destination = nextAddress(words, index); index++; break;
-      case 'port': filter.port = Number.parseInt(value ?? '', 10); index++; break;
-      case 'tcp': filter.protocol = IP_PROTO_TCP; break;
-      case 'udp': filter.protocol = IP_PROTO_UDP; break;
-      case 'icmp': filter.protocol = IP_PROTO_ICMP; break;
-      case 'arp': filter.protocol = -1; break;
-      default: return null;
-    }
-  }
-
-  if (filter.port !== undefined && !Number.isFinite(filter.port)) return null;
-  return Object.freeze(filter);
-}
-
-function nextAddress(words: readonly string[], index: number): string | undefined {
-  const next = words[index + 1];
-  if (next === undefined) return undefined;
-  return next.toLowerCase() === 'host' ? words[index + 2] : next;
-}
-
-export function frameMatches(frame: EthernetFrame, filter: CaptureFilter): boolean {
-  if (filter.protocol === -1) return frame.etherType === ETHERTYPE_ARP;
-  if (frame.etherType !== ETHERTYPE_IPV4) {
-    return filter.host === undefined && filter.source === undefined
-      && filter.destination === undefined && filter.port === undefined
-      && filter.protocol === undefined;
-  }
-
-  const packet = frame.payload as IPv4Packet | undefined;
-  if (packet?.type !== 'ipv4') return false;
-
-  const source = packet.sourceIP.toString();
-  const destination = packet.destinationIP.toString();
-
-  if (filter.host !== undefined && source !== filter.host && destination !== filter.host) {
-    return false;
-  }
-  if (filter.source !== undefined && source !== filter.source) return false;
-  if (filter.destination !== undefined && destination !== filter.destination) return false;
-  if (filter.protocol !== undefined && packet.protocol !== filter.protocol) return false;
-  if (filter.port === undefined) return true;
-
-  const ports = portsOf(packet);
-  return ports.source === filter.port || ports.destination === filter.port;
 }
 
 export function portsOf(packet: IPv4Packet): { source: number; destination: number } {
