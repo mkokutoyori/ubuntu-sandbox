@@ -18,7 +18,9 @@ import {
 } from '@/network/tls/recordProtection';
 import { fragmentAsRecords, fragmentPlaintext, reassembleRecords, reassembleFragments, type TlsRecord } from '@/network/tls/recordLayer';
 import type { TrafficProtection } from '@/network/tls/trafficProtection';
-import type { Tls13Traffic } from '@/network/tls/suite13';
+import { suiteInfo, type Tls13Traffic } from '@/network/tls/suite13';
+import { nextTrafficSecret } from '@/network/tls/keySchedule';
+import { decodeHandshakeMessage } from '@/network/tls/messages';
 
 function isLegacy(traffic: TrafficProtection): traffic is Exclude<TrafficProtection, string | Tls13Traffic> {
   return typeof traffic !== 'string' && 'kind' in traffic && traffic.kind === 'legacy';
@@ -65,6 +67,8 @@ export function encryptApplicationData(
 export interface DecryptedApplicationData {
   readonly plaintext: Uint8Array;
   readonly nextSeq: number;
+  readonly peerKeyUpdates?: number;
+  readonly peerRequestedKeyUpdate?: boolean;
 }
 
 /**
@@ -102,27 +106,35 @@ export function decryptApplicationData(
     }
     return { plaintext: reassembleFragments(opened).plaintext, nextSeq: legacySeq };
   }
-  const k = keys(traffic);
-  const base = typeof traffic === 'string' ? 0 : traffic.sequenceBase ?? 0;
+  let current: string | Tls13Traffic = traffic;
+  let k = keys(current);
+  let base = typeof current === 'string' ? 0 : current.sequenceBase ?? 0;
   let seq = startSeq;
-  const decrypted: TlsRecord[] = [];
+  let peerKeyUpdates = 0;
+  let peerRequestedKeyUpdate = false;
+  const parts: Uint8Array[] = [];
   for (const record of records) {
     const clair = openRecord(k, base + seq++, record);
-    // Refuser le lot entier plutôt que d'en livrer la moitié : c'est ce
-    // que fait un vrai TLS, qui ferme la connexion.
     if (clair === null) throw new BadRecordMacError();
-    if (typeof traffic !== 'string' && traffic.maxFragment !== undefined && clair.fragment.length > traffic.maxFragment + 1) {
+    if (typeof current !== 'string' && current.maxFragment !== undefined && clair.fragment.length > current.maxFragment + 1) {
       throw new RecordOverflowError();
     }
-    decrypted.push(clair);
-  }
-  const parts: Uint8Array[] = [];
-  for (const record of decrypted) {
-    const inner = reassembleRecords([record], true);
+    const inner = reassembleRecords([clair], true);
     if (inner.contentType === 'application_data') parts.push(inner.plaintext);
+    if (inner.contentType === 'handshake' && typeof current !== 'string') {
+      const message = decodeHandshakeMessage(inner.plaintext);
+      if (message.kind === 'key_update') {
+        current = { ...current, secret: nextTrafficSecret(current.secret, suiteInfo(current.suite).hash), sequenceBase: 0 };
+        k = keys(current);
+        base = 0;
+        seq = 0;
+        peerKeyUpdates++;
+        peerRequestedKeyUpdate = message.requestUpdate;
+      }
+    }
   }
   const plaintext = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
   let offset = 0;
   for (const part of parts) { plaintext.set(part, offset); offset += part.length; }
-  return { plaintext, nextSeq: seq };
+  return peerKeyUpdates === 0 ? { plaintext, nextSeq: seq } : { plaintext, nextSeq: seq, peerKeyUpdates, peerRequestedKeyUpdate };
 }

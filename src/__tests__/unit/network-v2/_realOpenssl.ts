@@ -137,6 +137,11 @@ export async function startSimServer(
       try {
         const opened = decryptApplicationData(tls.clientTraffic(), clientSequence, applicationRecords);
         clientSequence = opened.nextSeq;
+        if (opened.peerKeyUpdates) {
+          const reply = tls.applyPeerKeyUpdates(opened.peerKeyUpdates, opened.peerRequestedKeyUpdate === true, serverSequence);
+          if (reply.length > 0) { socket.write(encodeRecords([...reply])); serverSequence = 0; }
+          if (opened.plaintext.length === 0) return;
+        }
         const answer = utf8ToBytes(respond(bytesToUtf8(opened.plaintext)));
         const sealed = encryptApplicationData(tls.serverTraffic(), serverSequence, answer);
         serverSequence = sealed.nextSeq;

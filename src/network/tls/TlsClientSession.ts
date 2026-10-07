@@ -656,6 +656,11 @@ export class TlsClientSession {
     return message.requestUpdate ? this.sendKeyUpdate(false, sendSequence) : null;
   }
 
+  applyPeerKeyUpdates(count: number, replyRequested: boolean, sendSequence: number): readonly TlsRecord[] {
+    for (let index = 0; index < count; index++) this.ratchetReceiving();
+    return replyRequested ? this.sendKeyUpdate(false, sendSequence) : [];
+  }
+
   ratchetReceiving(): void {
     this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!, this.hash);
     this.serverApplicationSequenceBase = 0;

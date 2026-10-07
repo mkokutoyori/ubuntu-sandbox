@@ -112,10 +112,18 @@ export class HttpsServerSession {
         if (records.length === 0) return;
       }
 
-      const { plaintext: requestBytes, nextSeq: clientNextSeq } = decryptApplicationData(
+      const { plaintext: requestBytes, nextSeq: clientNextSeq, peerKeyUpdates, peerRequestedKeyUpdate } = decryptApplicationData(
         tls.clientTraffic(), clientSeq, records,
       );
       clientSeq = clientNextSeq;
+      if (peerKeyUpdates) {
+        const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, serverSeq);
+        if (reply.length > 0) {
+          socket.write(bytesToBinaryString(encodeRecords([...reply])));
+          serverSeq = 0;
+        }
+      }
+      if (peerKeyUpdates && requestBytes.length === 0) return;
 
       const requestId = randomRequestId();
       const parsed = parseRequest(decoder.decode(requestBytes));

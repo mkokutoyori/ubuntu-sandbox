@@ -732,7 +732,7 @@ export class TlsServerSession {
    * asks the peer to reciprocate with its own KeyUpdate.
    */
   sendKeyUpdate(requestUpdate = false, sequence = 0): readonly TlsRecord[] {
-    const records = sealKeyUpdate(this.serverApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, 0, sequence, requestUpdate);
+    const records = sealKeyUpdate(this.serverApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, this.serverApplicationSequenceBase, sequence, requestUpdate);
     this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!, this.hash);
     this.serverApplicationSequenceBase = 0;
     this.emit({
@@ -747,6 +747,11 @@ export class TlsServerSession {
     if (message === null) return null;
     this.ratchetReceiving();
     return message.requestUpdate ? this.sendKeyUpdate(false, sendSequence) : null;
+  }
+
+  applyPeerKeyUpdates(count: number, replyRequested: boolean, sendSequence: number): readonly TlsRecord[] {
+    for (let index = 0; index < count; index++) this.ratchetReceiving();
+    return replyRequested ? this.sendKeyUpdate(false, sendSequence) : [];
   }
 
   ratchetReceiving(): void {
