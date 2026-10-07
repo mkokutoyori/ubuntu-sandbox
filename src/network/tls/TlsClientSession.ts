@@ -655,7 +655,8 @@ export class TlsClientSession {
       if (earlier !== undefined && earlier.length > 0) {
         this.peerCertificate = earlier[0];
         this.peerCertificateChain = earlier;
-        this.peerVerified = true;
+        const stored = this.config.resumptionTicket?.verifyResult;
+        this.peerVerified = stored === undefined || stored === 0;
       }
     }
 
@@ -743,6 +744,8 @@ export class TlsClientSession {
       cipherSuite: this.negotiatedCipherSuite as CipherSuite,
       ticketLifetime: message.ticketLifetime,
       issuedAt: simulationNowMs(),
+      ...(message.extensions.maxEarlyDataSize !== undefined ? { maxEarlyDataSize: message.extensions.maxEarlyDataSize } : {}),
+      ...(this.config.serverName !== undefined ? { serverName: this.config.serverName } : {}),
       consumed: false,
     };
     return opened.consumed;

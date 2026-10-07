@@ -923,6 +923,12 @@ export class LegacyClientHandshake {
     this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.exportedSession = setup.session;
+    const earlier = setup.session.peerCertificates;
+    if (earlier !== undefined && earlier.length > 0) {
+      this.peerCertificate = earlier[0];
+      this.peerCertificateChain = earlier;
+      this.peerVerified = (setup.session.verifyResult ?? 0) === 0;
+    }
     this.state = 'done';
     this.result = 'success';
     return [changeCipherSpec(version), sealed];
@@ -941,6 +947,7 @@ export class LegacyClientHandshake {
         createdAt: this.setup.now(), lifetimeSeconds: lifetime,
       },
       ticket: ticket?.ticket ?? null,
+      ...(this.peerCertificateChain.length > 0 ? { peerCertificates: this.peerCertificateChain } : {}),
     };
   }
 

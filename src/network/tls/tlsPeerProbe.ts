@@ -3,6 +3,7 @@ import type { TlsProtocolVersion } from './legacy/legacyCipherSuites';
 import { TlsClientSession } from './TlsClientSession';
 import { CertificateVerifier } from '../pki/CertificateVerifier';
 import type { TcpStack } from '../tcp/TcpStack';
+import type { SessionTicket } from './sessionTickets';
 import type { ResumableLegacySession } from './legacy/legacySessions';
 import type { PkiPrivateKey } from '../pki/PkiKeyPair';
 import type { X509Certificate } from '../pki/X509Certificate';
@@ -17,6 +18,9 @@ export interface TlsHandshakeDetails {
   readonly alpn: string | null;
   readonly verificationReason: string | null;
   readonly legacySession: ResumableLegacySession | null;
+  readonly ticket: SessionTicket | null;
+  readonly resumed: boolean;
+  readonly earlyData: 'accepted' | 'rejected' | 'not-sent';
 }
 
 export interface TlsProbeOutcome {
@@ -43,6 +47,9 @@ export interface TlsProbeOptions {
   readonly requestStatus?: boolean;
   readonly send?: Uint8Array;
   readonly keepOpen?: boolean;
+  readonly resumptionTicket?: SessionTicket;
+  readonly legacySession?: ResumableLegacySession;
+  readonly earlyData?: Uint8Array;
   readonly alpn?: readonly string[];
   readonly clientCredential?: { readonly chain: readonly X509Certificate[]; readonly privateKey: PkiPrivateKey };
 }
@@ -65,6 +72,9 @@ export function probeTlsPeer(
     ...(options.versions ? { versions: options.versions } : {}),
     ...(options.cipherList ? { cipherList: options.cipherList } : {}),
     ...(options.requestStatus ? { collectOcspStaple: true } : {}),
+    ...(options.resumptionTicket ? { resumptionTicket: options.resumptionTicket } : {}),
+    ...(options.legacySession ? { legacySession: options.legacySession } : {}),
+    ...(options.resumptionTicket && options.earlyData ? { earlyData: options.earlyData } : {}),
   });
 
   let bytesRead = 0;
@@ -109,6 +119,9 @@ export function probeTlsPeer(
       peerSignature: session.peerSignature, serverTempKey: session.serverTempKey, bytesRead, bytesWritten,
       alpn: session.negotiatedAlpnProtocol, verificationReason: session.peerVerificationReason,
       legacySession: session.exportLegacySession(),
+      ticket: session.receivedTicket,
+      resumed: session.pskResumed || session.legacyResumed,
+      earlyData: session.earlyDataAccepted === true && session.pskResumed ? 'accepted' : session.rejectedEarlyData !== null ? 'rejected' : 'not-sent',
     } };
 }
 
