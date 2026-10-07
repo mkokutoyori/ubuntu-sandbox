@@ -1970,7 +1970,10 @@ export function runSClient(host: OpenSslHost, argv: readonly string[], interacti
   return ok(lignes.join('\n'));
 }
 
-function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+function runSServer(
+  host: OpenSslHost, argv: readonly string[],
+  options: { readonly interactive?: boolean; readonly print?: (line: string) => void } = {},
+): OpenSslResult {
   const { opts } = parseArgs('s_server', argv);
   const accept = opts.get('-accept') ?? opts.get('-port') ?? '4433';
   const port = Number(typeof accept === 'string' ? accept.slice(accept.lastIndexOf(':') + 1) : NaN);
@@ -1985,7 +1988,7 @@ function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const privateKey = pemToPrivateKey(keyText);
   if (chain.length === 0 || privateKey === null) return fail('Error getting private key or certificate', 1);
   const mode = opts.has('-www') ? 'www' : opts.has('-WWW') ? 'WWW' : opts.has('-HTTP') ? 'HTTP' : null;
-  if (mode === null) {
+  if (mode === null && options.interactive !== true) {
     return fail('openssl: s_server: interactive mode reads application data from a terminal; use -www, -WWW or -HTTP', 1);
   }
   const forced = (['-tls1_3', '-tls1_2', '-tls1_1', '-tls1'] as const).find((flag) => opts.has(flag));
@@ -2004,6 +2007,20 @@ function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const caText = host.readFile(caPath);
     if (caText === null) return fail(`Can't open "${caPath}" for reading, No such file or directory`, 1);
     clientAuth = { anchors: pemToCertChain(caText), required: opts.has('-Verify') };
+  }
+  if (mode === null) {
+    const print = options.print ?? (() => undefined);
+    const controller = host.serveTlsStream?.(port, {
+      chain, privateKey, ...(clientAuth ? { clientAuth } : {}),
+      ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+    }, {
+      accepted: () => undefined,
+      data: (text) => { for (const line of text.replace(/\r?\n$/, '').split(/\r?\n/)) print(line); },
+      closed: () => { print('shutting down SSL'); print('CONNECTION CLOSED'); print('ACCEPT'); },
+    });
+    if (controller === undefined) return fail('openssl: s_server: cannot listen on this host', 1);
+    if (controller === false) return fail('bind: Address already in use\nbind:errno=98', 1);
+    return { ...ok('Using default temp DH parameters\nACCEPT'), streamServer: controller };
   }
   const served = host.serveTls?.(port, {
     chain, privateKey, ...(clientAuth ? { clientAuth } : {}), ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
@@ -2028,7 +2045,10 @@ function runHelp(): OpenSslResult {
 
 // ─── dispatch ───────────────────────────────────────────────────────
 
-export function runOpenSsl(host: OpenSslHost, argv: readonly string[], options: { readonly interactive?: boolean } = {}): OpenSslResult {
+export function runOpenSsl(
+  host: OpenSslHost, argv: readonly string[],
+  options: { readonly interactive?: boolean; readonly print?: (line: string) => void } = {},
+): OpenSslResult {
   const sub = argv[0];
   if (sub === undefined) return runHelp();
   const reste = argv.slice(1);
@@ -2050,7 +2070,7 @@ export function runOpenSsl(host: OpenSslHost, argv: readonly string[], options: 
   if (sub === 'x509') return runX509(host, reste);
   if (sub === 'verify') return runVerify(host, reste);
   if (sub === 's_client') return runSClient(host, reste, options.interactive === true);
-  if (sub === 's_server') return runSServer(host, reste);
+  if (sub === 's_server') return runSServer(host, reste, options);
   if (sub === 'ec') return runEc(host, reste);
   if (sub === 'ecparam') return runEcparam(host, reste);
   if (sub === 'pkcs8') return runPkcs8(host, reste);

@@ -7,7 +7,12 @@ export class OpenSslSClientSubShell implements ISubShell {
   readonly kind = 'openssl-s_client';
   readonly connection = 'subshell' as const;
 
-  constructor(private readonly channel: TlsPeerChannelPort, private readonly version: string) {}
+  constructor(
+    private readonly channel: TlsPeerChannelPort, private readonly version: string,
+    output: (line: string) => void = () => undefined,
+  ) {
+    channel.onPush((text) => { for (const line of text.replace(/\r?\n$/, '').split(/\r?\n/)) output(line); });
+  }
 
   getPrompt(): string {
     return '';
