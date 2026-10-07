@@ -199,14 +199,99 @@ export class HuaweiDebugService implements TerminalDebugSource {
       this.emit('stp', `STP: Topology change (${p.origin})${p.port ? ` on ${nom(p.port)}` : ''}`);
     }));
 
-    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; icmpType?: string } | null => {
-      const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string } } };
+    this.broadcast.track(bus.subscribe('bfd.session.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('bfd', `BFD: Session with ${p.neighborIp} on ${nom(p.iface)} changed ${p.oldState} -> ${p.newState} (${p.reason})`);
+    }));
+    this.broadcast.track(bus.subscribe('bfd.packet.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('bfd', `BFD: Send control packet to ${p.neighborIp} on ${nom(p.iface)}, state ${p.state}, `
+        + `MyDiscr ${p.myDiscriminator}, YourDiscr ${p.yourDiscriminator}`);
+    }));
+    this.broadcast.track(bus.subscribe('bfd.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('bfd', `BFD: Receive control packet from ${p.neighborIp} on ${nom(p.iface)}, state ${p.remoteState}, `
+        + `MyDiscr ${p.myDiscriminator}, YourDiscr ${p.yourDiscriminator}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('ntp.packet.sent', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('ntp', `NTP: Send ${e.payload.mode} packet to ${e.payload.serverIp}`);
+    }));
+    this.broadcast.track(bus.subscribe('ntp.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('ntp', `NTP: Receive ${e.payload.mode} packet from ${e.payload.fromIp}, stratum ${e.payload.stratum}`);
+    }));
+    this.broadcast.track(bus.subscribe('ntp.synced', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ntp', `NTP: Clock synchronized to ${p.serverIp}, offset ${p.offsetMs}ms, delay ${p.delayMs}ms, stratum ${p.newStratum}`);
+    }));
+    this.broadcast.track(bus.subscribe('ntp.unsynced', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('ntp', `NTP: Clock unsynchronized (${e.payload.reason})`);
+    }));
+
+    this.broadcast.track(bus.subscribe('igmp.packet.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('igmp', `IGMP: Send ${p.messageType} for group ${p.groupAddress} to ${p.destinationIp} on ${nom(p.iface)}`);
+    }));
+    this.broadcast.track(bus.subscribe('igmp.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('igmp', `IGMP: Receive ${p.messageType} for group ${p.groupAddress} from ${p.fromIp} on ${nom(p.iface)}`);
+    }));
+    this.broadcast.track(bus.subscribe('igmp.group.joined', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('igmp', `IGMP: Group ${p.groupAddress} joined on ${nom(p.iface)} by ${p.reporterIp}`);
+    }));
+    this.broadcast.track(bus.subscribe('igmp.group.left', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('igmp', `IGMP: Group ${p.groupAddress} left on ${nom(p.iface)} (${p.reason})`);
+    }));
+
+    this.broadcast.track(bus.subscribe('pim.packet.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('pim', `PIM: Send ${p.messageType} to ${p.destinationIp} on ${nom(p.iface)}`);
+    }));
+    this.broadcast.track(bus.subscribe('pim.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('pim', `PIM: Receive ${p.messageType} from ${p.fromIp} on ${nom(p.iface)}`);
+    }));
+    this.broadcast.track(bus.subscribe('pim.neighbor.added', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('pim', `PIM: Neighbor ${p.neighborIp} added on ${nom(p.iface)}, DR priority ${p.drPriority}`);
+    }));
+    this.broadcast.track(bus.subscribe('pim.neighbor.lost', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('pim', `PIM: Neighbor ${p.neighborIp} lost on ${nom(p.iface)} (${p.reason})`);
+    }));
+    this.broadcast.track(bus.subscribe('pim.dr.changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('pim', `PIM: DR on ${nom(p.iface)} changed ${p.oldDrIp ?? 'none'} -> ${p.newDrIp}`);
+    }));
+
+    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; sport: number; dport: number; icmpType?: string } | null => {
+      const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string; sourcePort?: number; destinationPort?: number } } };
       if (f?.etherType !== 0x0800 || f.payload?.type !== 'ipv4') return null;
       const ip = f.payload;
       return {
         src: ip.sourceIP?.toString?.() ?? '?',
         dst: ip.destinationIP?.toString?.() ?? '?',
         proto: ip.protocol ?? 0,
+        sport: ip.payload?.sourcePort ?? 0,
+        dport: ip.payload?.destinationPort ?? 0,
         icmpType: ip.payload?.type === 'icmp' ? ip.payload.icmpType : undefined,
       };
     };
@@ -230,6 +315,11 @@ export class HuaweiDebugService implements TerminalDebugSource {
       const ip = decodeIp(frame);
       if (!ip) return;
       this.emit('ip-packet', `IP: ${dir} packet, src=${ip.src}, dst=${ip.dst}, proto=${ip.proto}`);
+      if (ip.proto === 6 || ip.proto === 17) {
+        const detail = `${dir} packet, ${ip.src}:${ip.sport} -> ${ip.dst}:${ip.dport}`;
+        if (ip.proto === 6) this.emit('tcp-packet', `TCP: ${detail}`);
+        else this.emit('udp-packet', `UDP: ${detail}`);
+      }
       if (ip.proto === 1) {
         const kind = ip.icmpType === 'echo-reply' ? 'Echo Reply'
           : ip.icmpType === 'echo-request' ? 'Echo Request'

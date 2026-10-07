@@ -346,6 +346,7 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['no', 'Negate a command or set its defaults'],
   ['nqa', 'Network Quality Analysis'],
   ['ntp', 'Network Time Protocol'],
+  ['ntp-service', 'Network Time Protocol service'],
   ['nve', 'Network Virtualization Endpoint'],
   ['ospf', 'Open Shortest Path First'],
   ['ospfv3', 'OSPF version 3 (IPv6)'],
