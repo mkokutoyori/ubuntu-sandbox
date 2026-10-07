@@ -40,6 +40,7 @@ export const LdapResultCode = {
   notAllowedOnNonLeaf: 66,
   entryAlreadyExists: 68,
   referral: 10,
+  saslBindInProgress: 14,
   unavailableCriticalExtension: 12,
   unwillingToPerform: 53,
   other: 80,

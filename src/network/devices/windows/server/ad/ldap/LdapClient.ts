@@ -18,10 +18,15 @@ import { encryptApplicationData, decryptApplicationData } from '@/network/http/h
 import { encodeRecords, decodeRecords } from '@/network/http/https/TlsRecordWire';
 import { driveClientHandshake } from './ldapStartTls';
 import { attributeFromWire } from './LdapWireSyntax';
+import type { GssInitiator } from '@/network/kerberos/gssapi/GssInitiator';
+import { describeGssFailure } from '@/network/kerberos/gssapi/GssStatus';
+import { GssTokenError } from '@/network/kerberos/gssapi/GssSecurityContext';
+import { GssSaslLayer } from '@/network/ldap/gssapi/GssSaslLayer';
+import { LAYER_CONFIDENTIALITY, LAYER_NONE, MAX_BUFFER_FIELD, chooseClientLayer, type LayerPolicy } from '@/network/ldap/gssapi/Rfc4752';
 
 export interface LdapConnectResult { ok: boolean; error?: string; client?: LdapClient; reason?: 'refused' | 'unroutable' | 'unanswered' }
 export interface LdapSearchResultItem { dn: string; attributes: PartialAttribute[] }
-export interface LdapOpResult { ok: boolean; result: LdapResult }
+export interface LdapOpResult { ok: boolean; result: LdapResult; serverSaslCreds?: Uint8Array }
 export interface LdapCompareResult extends LdapOpResult { compareResult?: 'true' | 'false' }
 export interface LdapSearchOutcome {
   ok: boolean; result: LdapResult; entries: LdapSearchResultItem[];
@@ -38,6 +43,7 @@ export class LdapClient {
   private tls: TlsClientSession | null = null;
   private tlsSendSeq = 0;
   private tlsRecvSeq = 0;
+  private saslLayer: { readonly layer: GssSaslLayer; readonly maxSend: number } | null = null;
 
   constructor(private readonly socket: TcpSocket) {}
 
@@ -52,7 +58,7 @@ export class LdapClient {
     const unsubscribe = this.socket.onData((data) => {
       if (!(data instanceof Uint8Array)) return;
       try {
-        const plaintext = this.tls ? this.decryptIncoming(data) : data;
+        const plaintext = this.unprotect(this.tls ? this.decryptIncoming(data) : data);
         const joined = new Uint8Array(pending.length + plaintext.length);
         joined.set(pending, 0);
         joined.set(plaintext, pending.length);
@@ -61,10 +67,33 @@ export class LdapClient {
         for (const message of messages) replies.push(message);
       } catch { /* ignore malformed */ }
     });
-    const bytes = encodeLdapMessage({ messageID, protocolOp: op, controls: controls === undefined ? undefined : [...controls] });
+    const bytes = this.protect(encodeLdapMessage({ messageID, protocolOp: op, controls: controls === undefined ? undefined : [...controls] }));
     this.socket.send(this.tls ? this.encryptOutgoing(bytes) : bytes);
     unsubscribe();
     return { replies, closed: this.socket.state !== 'established' };
+  }
+
+  private protect(bytes: Uint8Array): Uint8Array {
+    if (this.saslLayer === null) return bytes;
+    const { layer, maxSend } = this.saslLayer;
+    const frames: Uint8Array[] = [];
+    for (let offset = 0; offset < bytes.length; offset += maxSend) {
+      frames.push(layer.encode(bytes.subarray(offset, Math.min(bytes.length, offset + maxSend))).data);
+    }
+    const joined = new Uint8Array(frames.reduce((total, frame) => total + frame.length, 0));
+    let position = 0;
+    for (const frame of frames) {
+      joined.set(frame, position);
+      position += frame.length;
+    }
+    return joined;
+  }
+
+  private unprotect(bytes: Uint8Array): Uint8Array {
+    if (this.saslLayer === null) return bytes;
+    const decoded = this.saslLayer.layer.decode(bytes);
+    if (decoded.rc !== 0) throw new Error('SASL security layer: undecodable frame');
+    return decoded.data;
   }
 
   get isEncrypted(): boolean {
@@ -166,11 +195,41 @@ export class LdapClient {
     return { ok: reply.protocolOp.result.resultCode === LdapResultCode.success, result: reply.protocolOp.result };
   }
 
-  /** RFC 4511 §4.2 SASL bind — `credentials` is the mechanism-specific token (a real Kerberos AP-REQ for `GSSAPI`, PRD-Windows-Server-Advanced.md §5 P3). */
-  bindSasl(mechanism: string, credentials: Uint8Array): LdapOpResult {
+  bindSasl(mechanism: string, credentials?: Uint8Array): LdapOpResult {
     const [reply] = this.roundTrip({ kind: 'bindRequest', version: 3, name: '', password: '', sasl: { mechanism, credentials } });
     if (!reply || reply.protocolOp.kind !== 'bindResponse') return { ok: false, result: NO_RESPONSE('bindResponse') };
-    return { ok: reply.protocolOp.result.resultCode === LdapResultCode.success, result: reply.protocolOp.result };
+    const { result, serverSaslCreds } = reply.protocolOp;
+    return { ok: result.resultCode === LdapResultCode.success, result, serverSaslCreds };
+  }
+
+  bindGssapi(initiator: GssInitiator, policy: LayerPolicy): LdapOpResult {
+    const failure = (message: string): LdapOpResult => ({
+      ok: false, result: { resultCode: LdapResultCode.operationsError, matchedDN: '', diagnosticMessage: message },
+    });
+    const first = initiator.step(null);
+    if (first.kind === 'error') return failure(describeGssFailure(first.failure));
+    if (first.kind === 'complete') return failure('GSSAPI without mutual authentication is not an RFC 4752 exchange');
+    const accepted = this.bindSasl('GSSAPI', first.output);
+    if (accepted.result.resultCode !== LdapResultCode.saslBindInProgress) return accepted;
+    const reply = initiator.step(accepted.serverSaslCreds ?? new Uint8Array(0));
+    if (reply.kind === 'error') return failure(describeGssFailure(reply.failure));
+    const offered = this.bindSasl('GSSAPI');
+    if (offered.result.resultCode !== LdapResultCode.saslBindInProgress || offered.serverSaslCreds === undefined) return offered;
+    const context = initiator.securityContext!;
+    let offer: Uint8Array;
+    try {
+      offer = context.unwrap(offered.serverSaslCreds).data;
+    } catch (error) {
+      if (!(error instanceof GssTokenError)) throw error;
+      return failure(error.message);
+    }
+    const chosen = chooseClientLayer(context, initiator.flags, offer, policy, '');
+    if (chosen.kind !== 'chosen') return failure(`no acceptable security layer (${chosen.kind})`);
+    const done = this.bindSasl('GSSAPI', context.wrap(chosen.choiceToken, false));
+    if (!done.ok || chosen.layer === LAYER_NONE) return done;
+    const layer = new GssSaslLayer(context, chosen.layer === LAYER_CONFIDENTIALITY, Math.min(policy.maxBufferSize, MAX_BUFFER_FIELD), () => undefined);
+    this.saslLayer = { layer, maxSend: Math.max(1, chosen.maxOutbuf) };
+    return done;
   }
 
   /** `paging` (RFC 2696) requests one page of up to `size` entries; pass the previous call's `nextCookie` to fetch the following page. Omit for an ordinary unpaginated search (unchanged from before §5 P11). */

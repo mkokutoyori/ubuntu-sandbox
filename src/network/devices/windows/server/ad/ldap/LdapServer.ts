@@ -23,7 +23,13 @@ import { attributeToWire } from './LdapWireSyntax';
 import {
   SORT_REQUEST_OID, SORT_RESPONSE_OID, DOMAIN_SCOPE_OID, decodeSortKeys, encodeSortResponse, type SortKey,
 } from './LdapSortControl';
-import { verifyApReq, type KerberosServiceIdentity } from '@/network/kerberos/ApReqVerifier';
+import { ApReplayCache, type KerberosServiceIdentity } from '@/network/kerberos/ApReqVerifier';
+import { machineSalt, stringToKey } from '@/network/kerberos/crypto';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import { GssapiServerExchange, type EstablishedSecurityLayer } from '@/network/ldap/gssapi/GssapiServerExchange';
+import { GssSaslLayer } from '@/network/ldap/gssapi/GssSaslLayer';
+import { LAYER_CONFIDENTIALITY, LAYER_INTEGRITY, LAYER_NONE, type LayerOffer } from '@/network/ldap/gssapi/Rfc4752';
+import type { GssPeer } from '@/network/kerberos/gssapi/GssAcceptor';
 import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
@@ -94,6 +100,24 @@ function ldapGeneralizedTime(moment: Date): string {
   return `${moment.getUTCFullYear()}${pad(moment.getUTCMonth() + 1)}${pad(moment.getUTCDate())}${pad(moment.getUTCHours())}${pad(moment.getUTCMinutes())}${pad(moment.getUTCSeconds())}.0Z`;
 }
 
+const GSSAPI_LAYER_OFFER: LayerOffer = { layers: LAYER_NONE | LAYER_INTEGRITY | LAYER_CONFIDENTIALITY, maxBuffer: 10_485_760 };
+const replayCaches = new WeakMap<KerberosServiceIdentity, ApReplayCache>();
+
+function replayCacheOf(identity: KerberosServiceIdentity): ApReplayCache {
+  let cache = replayCaches.get(identity);
+  if (cache === undefined) {
+    cache = new ApReplayCache();
+    replayCaches.set(identity, cache);
+  }
+  return cache;
+}
+
+function authorizationIdentityNames(peer: GssPeer): string[] {
+  const user = peer.name.join('/').toLowerCase();
+  const qualified = `${user}@${peer.realm.toLowerCase()}`;
+  return [user, qualified, `u:${user}`, `u:${qualified}`];
+}
+
 const NOT_BOUND: LdapResult = {
   resultCode: LdapResultCode.operationsError, matchedDN: '',
   diagnosticMessage: '000004DC: LdapErr: DSID-0C090A69, comment: In order to perform this operation a successful bind must be completed on the connection., data 0, v4563',
@@ -143,6 +167,8 @@ export class LdapServerHandler {
   /** Whether the *inbound* message currently being handled arrived as TLS application data — read by `reply()` so its response goes back the same way. */
   private replyEncrypted = false;
   private stringWire = false;
+  private gssapi: GssapiServerExchange | null = null;
+  private saslLayer: { readonly layer: GssSaslLayer; readonly maxSend: number } | null = null;
 
   constructor(private readonly ctx: LdapServerContext) {
     if (ctx.implicitTls === true && ctx.startTls) this.tls = new TlsServerSession(ctx.startTls);
@@ -150,7 +176,8 @@ export class LdapServerHandler {
 
   register(socket: TcpSocket): void {
     let pending = new Uint8Array(0);
-    const absorb = (plaintext: Uint8Array): LdapMessage[] => {
+    const absorb = (carried: Uint8Array): LdapMessage[] => {
+      const plaintext = this.unprotect(carried);
       const joined = new Uint8Array(pending.length + plaintext.length);
       joined.set(pending, 0);
       joined.set(plaintext, pending.length);
@@ -186,7 +213,7 @@ export class LdapServerHandler {
   }
 
   private reply(socket: TcpSocket, messageID: number, protocolOp: ProtocolOp, controls?: LdapControl[]): void {
-    const bytes = encodeLdapMessage({ messageID, protocolOp, controls });
+    const bytes = this.protect(encodeLdapMessage({ messageID, protocolOp, controls }));
     if (this.replyEncrypted && this.tls && this.tls.result === 'accept') {
       const { records, nextSeq } = encryptApplicationData(this.tls.serverTraffic(), this.tlsSendSeq, bytes);
       this.tlsSendSeq = nextSeq;
@@ -194,6 +221,29 @@ export class LdapServerHandler {
       return;
     }
     this.transmit(socket, bytes);
+  }
+
+  private protect(bytes: Uint8Array): Uint8Array {
+    if (this.saslLayer === null) return bytes;
+    const { layer, maxSend } = this.saslLayer;
+    const frames: Uint8Array[] = [];
+    for (let offset = 0; offset < bytes.length; offset += maxSend) {
+      frames.push(layer.encode(bytes.subarray(offset, Math.min(bytes.length, offset + maxSend))).data);
+    }
+    const joined = new Uint8Array(frames.reduce((total, frame) => total + frame.length, 0));
+    let position = 0;
+    for (const frame of frames) {
+      joined.set(frame, position);
+      position += frame.length;
+    }
+    return joined;
+  }
+
+  private unprotect(bytes: Uint8Array): Uint8Array {
+    if (this.saslLayer === null) return bytes;
+    const decoded = this.saslLayer.layer.decode(bytes);
+    if (decoded.rc !== 0) throw new Error('SASL security layer: undecodable frame');
+    return decoded.data;
   }
 
   private transmit(socket: TcpSocket, bytes: Uint8Array): void {
@@ -213,6 +263,7 @@ export class LdapServerHandler {
     switch (op.kind) {
       case 'bindRequest': {
         this.authenticated = false;
+        if (op.sasl === undefined) this.gssapi = null;
         if (op.version !== 2 && op.version !== 3) {
           this.bound = false;
           this.reply(socket, msg.messageID, {
@@ -229,14 +280,10 @@ export class LdapServerHandler {
             });
             return;
           }
-          this.bound = this.checkSaslBind(op.sasl);
-          this.authenticated = this.bound;
-          this.reply(socket, msg.messageID, {
-            kind: 'bindResponse',
-            result: this.bound ? ldapResult(LdapResultCode.success) : ldapResult(LdapResultCode.invalidCredentials, '', INVALID_CREDENTIALS_TEXT),
-          });
+          this.bindGssapi(socket, msg.messageID, op.sasl);
           return;
         }
+        this.gssapi = null;
         const anonymous = op.name === '' && op.password === '';
         if (!anonymous && op.password === '') {
           this.bound = false;
@@ -536,17 +583,51 @@ export class LdapServerHandler {
     try { return parseDN(s); } catch { return null; }
   }
 
-  /**
-   * RFC 4511 §4.2 SASL bind, GSSAPI mechanism only: the `credentials` are
-   * a real Kerberos AP-REQ (PRD-Windows-Server-Advanced.md §5 P3) — decrypt
-   * the presented ticket with krbtgt's key, then the Authenticator with
-   * the ticket's session key, and check the Authenticator's principal/
-   * clock skew. No SASL security-layer negotiation (integrity/
-   * confidentiality) is modeled — a single round-trip either grants or
-   * refuses the bind.
-   */
-  private checkSaslBind(sasl: SaslCredentials): boolean {
-    if (sasl.mechanism !== 'GSSAPI' || !this.ctx.kerberos) return false;
-    return verifyApReq(sasl.credentials ?? new Uint8Array(0), this.ctx.kerberos) !== null;
+  private bindGssapi(socket: TcpSocket, messageID: number, sasl: SaslCredentials): void {
+    this.bound = false;
+    const refuse = (): void => {
+      this.gssapi = null;
+      this.reply(socket, messageID, {
+        kind: 'bindResponse', result: ldapResult(LdapResultCode.invalidCredentials, '', INVALID_CREDENTIALS_TEXT),
+      });
+    };
+    const identity = this.ctx.kerberos;
+    if (sasl.mechanism !== 'GSSAPI' || identity === undefined) {
+      refuse();
+      return;
+    }
+    if (this.gssapi === null) {
+      const clock = { nowMicroseconds: (): number => Math.floor((identity.clockMs ?? simulationNowMs)() * 1000) };
+      this.gssapi = new GssapiServerExchange({
+        serviceKey: stringToKey(identity.serviceSecret, machineSalt(identity.realm, identity.hostName)),
+        clock, replayCache: replayCacheOf(identity), offer: GSSAPI_LAYER_OFFER,
+      });
+    }
+    const step = this.gssapi.step(sasl.credentials ?? null);
+    if (step.kind === 'failed') {
+      refuse();
+      return;
+    }
+    if (step.kind === 'continue') {
+      this.reply(socket, messageID, {
+        kind: 'bindResponse', result: ldapResult(LdapResultCode.saslBindInProgress), serverSaslCreds: step.credentials,
+      });
+      return;
+    }
+    if (step.authzid !== '' && !authorizationIdentityNames(step.peer).includes(step.authzid.toLowerCase())) {
+      refuse();
+      return;
+    }
+    this.gssapi = null;
+    this.bound = true;
+    this.authenticated = true;
+    this.reply(socket, messageID, { kind: 'bindResponse', result: ldapResult(LdapResultCode.success) });
+    if (step.layer !== null) this.installSaslLayer(step.layer);
+  }
+
+  private installSaslLayer(established: EstablishedSecurityLayer): void {
+    const layer = new GssSaslLayer(established.context, established.privacy, GSSAPI_LAYER_OFFER.maxBuffer, () => undefined);
+    const maxSend = Math.max(1, established.peerMaxBuffer - established.context.wrapOverhead(true));
+    this.saslLayer = { layer, maxSend };
   }
 }
