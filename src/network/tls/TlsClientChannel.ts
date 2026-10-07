@@ -27,7 +27,10 @@ export class TlsClientChannel {
   }
 
   private receive(data: unknown): void {
-    const records = decodeRecords(binaryStringToBytes(String(data)));
+    this.receiveRecords(decodeRecords(binaryStringToBytes(String(data))));
+  }
+
+  receiveRecords(records: readonly TlsRecord[]): void {
     if (this.session.renegotiating) {
       this.continueRenegotiation(records);
       return;
@@ -86,6 +89,17 @@ export class TlsClientChannel {
     const reply = this.inbox;
     this.inbox = new Uint8Array(0);
     return reply;
+  }
+
+  takeBuffered(): Uint8Array {
+    const taken = this.inbox;
+    this.inbox = new Uint8Array(0);
+    return taken;
+  }
+
+  resendRejectedEarlyData(): Uint8Array | null {
+    const rejected = this.session.rejectedEarlyData;
+    return rejected === null ? null : this.exchange(rejected);
   }
 
   renegotiate(): boolean {

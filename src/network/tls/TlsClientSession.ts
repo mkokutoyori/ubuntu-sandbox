@@ -133,6 +133,9 @@ export class TlsClientSession {
   negotiatedAlpnProtocol: string | null = null;
   /** RFC 8446 §2.3 — whether the server accepted the 0-RTT data offered, if any was sent. */
   earlyDataAccepted: boolean | null = null;
+  get rejectedEarlyData(): Uint8Array | null {
+    return this.earlySecret !== null && this.earlyDataAccepted === false ? this.config.earlyData ?? null : null;
+  }
   private earlySecret: string | null = null;
   private earlySequence = 0;
   /** A ticket received via `receiveSessionTicket()`, ready to resume a future session. */

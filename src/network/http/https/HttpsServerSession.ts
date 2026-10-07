@@ -166,16 +166,11 @@ export class HttpsServerSession {
       else enqueue(() => { settle(produced); });
     };
 
-    const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
-      onRenegotiated: () => {
-        const waiting = deferred;
-        deferred = null;
-        if (waiting !== null) runRequest(waiting);
-      },
-      onData: (requestBytes) => {
+    const handleBytes = (requestBytes: Uint8Array, early: boolean): void => {
         const completeRequest = assembler.push(decoder.decode(requestBytes));
         if (completeRequest === null) return;
         const parsed = parseRequest(completeRequest);
+        if (early && parsed.ok) parsed.message.headers.set('Early-Data', '1');
         const gate = this.tlsConfig().requirePathTransport;
         const need = parsed.ok && gate !== undefined ? gate(parsed.message) : null;
         if (need !== null) {
@@ -202,7 +197,16 @@ export class HttpsServerSession {
           }
         }
         runRequest(parsed);
+    };
+
+    const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
+      onRenegotiated: () => {
+        const waiting = deferred;
+        deferred = null;
+        if (waiting !== null) runRequest(waiting);
       },
+      onEarlyData: (requestBytes) => handleBytes(requestBytes, true),
+      onData: (requestBytes) => handleBytes(requestBytes, false),
     });
     unsubscribe = () => channel.detachOnly();
   }

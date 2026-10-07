@@ -8,6 +8,7 @@ import { encryptApplicationData, decryptApplicationData } from '../http/https/Ap
 export interface TlsServerChannelHandlers {
   onHandshakeComplete?(): void;
   onData(plaintext: Uint8Array): void;
+  onEarlyData?(plaintext: Uint8Array): void;
   onRenegotiated?(): void;
 }
 
@@ -39,6 +40,8 @@ export class TlsServerChannel {
       if (reply && reply.length > 0) this.emit(reply);
       if ((this.tls.result as string | null) !== 'accept') return;
       this.handlers.onHandshakeComplete?.();
+      const early = this.tls.receivedEarlyData;
+      if (early !== null && early.length > 0) this.handlers.onEarlyData?.(early);
       records = this.tls.takeTrailingRecords();
       if (records.length === 0) return;
     }
