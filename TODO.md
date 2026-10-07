@@ -172,6 +172,28 @@ un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
 
+### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
+**Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
+de soixante secondes (`ip neigh` -> `STALE`) puis utilisee par un
+`ping -c 1` reste `STALE` juste apres la reponse ; `getNUDState` ne connait que
+`REACHABLE` (moins de 30 s depuis `timestamp`) et `STALE`. Sur un noyau Linux,
+l'emission vers une entree STALE la passe en `DELAY` (`delay_probe_time`, 5 s),
+puis `PROBE`, puis `REACHABLE` apres la reponse a la sonde unicast.
+**Pourquoi ce n'est pas ferme** : il faut une machine d'etats de voisin
+(INCOMPLETE / REACHABLE / STALE / DELAY / PROBE / FAILED) portee par un
+planificateur, et c'est le meme chantier que l'entree `[arp]` ci-dessus
+(`resolveARP`, `resolveNDP`, chemin d'erreur de `ping`).
+
+### [horloge] le temps de vol des trames s'ajoute a l'horloge de simulation
+**Mesure** : `PathClock.horizon()` est le maximum des arrivees et ne redescend
+jamais ; `schedulerWallClock` et `simulationNowMs` l'ajoutent a l'heure de
+l'ordonnanceur. Pendant un `SimulationClock.advance(45 min)` sur un lot de cinq
+equipements, l'horloge du Windows a avance de 45 min + 35 ms : le bavardage
+STP/ARP fait croitre l'horizon de quelques dizaines de µs par trame.
+**Pourquoi ce n'est pas ferme** : l'horizon est ce qui donne des RTT non nuls
+sans file d'attente ; le plafonner a l'heure de l'ordonnanceur (horizon =
+max(horizon, now)) change tous les RTT de la base et demande une mesure propre.
+
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
 La zone d'options existe desormais (RFC 791 §3.1), et Record Route comme
 le routage par la source sont honores par `Router`. L'option Timestamp
