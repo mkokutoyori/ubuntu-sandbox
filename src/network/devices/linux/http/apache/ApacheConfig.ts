@@ -17,8 +17,18 @@
 
 import {
   isApacheSslDirective, checkApacheSslDirective, apacheSslDirectiveSpecs, resolveApacheSsl, sessionCacheProblem,
-  type ApacheSslDirective, type ApacheSslSettings,
+  parseVerifyClient, type ApacheSslDirective, type ApacheSslSettings, type ApacheVerifyClient,
 } from './ApacheSsl';
+
+export type ApacheAuthSection = 'Location' | 'LocationMatch' | 'Directory' | 'DirectoryMatch';
+
+export interface ApacheDirectoryAuth {
+  readonly section: ApacheAuthSection;
+  readonly pattern: string;
+  verifyClient: ApacheVerifyClient | null;
+  verifyDepth: number | null;
+  readonly line: number;
+}
 
 export interface ApacheFileSource {
   read(path: string): string | null;
@@ -34,6 +44,7 @@ export interface ApacheVirtualHost {
   readonly directoryIndex: readonly string[];
   readonly accessLog: string | null;
   readonly ssl: ApacheSslSettings;
+  readonly directoryAuth: readonly ApacheDirectoryAuth[];
   readonly protocolSet: boolean;
   /** The file it came from, for error messages. */
   readonly source: string;
@@ -265,7 +276,15 @@ interface ScanHandlers {
   closeVirtualHost(): void;
   inVirtualHost(): boolean;
   directive(name: string, rawValue: string, line: number): ApacheConfigError | null;
+  sectionDirective(section: OpenSection, name: string, rawValue: string, line: number): ApacheConfigError | null;
 }
+
+interface OpenSection {
+  readonly kind: string;
+  readonly argument: string;
+}
+
+const AUTH_SECTIONS: ReadonlySet<string> = new Set(['location', 'locationmatch', 'directory', 'directorymatch']);
 
 const NESTED_SECTION_OPEN = /^<(Directory|DirectoryMatch|Location|LocationMatch|Files|FilesMatch|Proxy|ProxyMatch|If|ElseIf|Else|RequireAll|RequireAny|RequireNone|Limit|LimitExcept|IfDefine|IfVersion)(\s[^>]*)?>$/i;
 const NESTED_SECTION_CLOSE = /^<\/(Directory|DirectoryMatch|Location|LocationMatch|Files|FilesMatch|Proxy|ProxyMatch|If|ElseIf|Else|RequireAll|RequireAny|RequireNone|Limit|LimitExcept|IfDefine|IfVersion)>$/i;
@@ -274,7 +293,7 @@ function scanConfigText(
   text: string, path: string, modulesCharges: ReadonlySet<string> | undefined, handlers: ScanHandlers,
 ): ApacheConfigError | null {
   let skipDepth = 0;
-  let nestedDepth = 0;
+  const sections: OpenSection[] = [];
   for (const { n, content } of meaningfulLines(text)) {
     const ifModule = /^<IfModule\s+!?(?:mod_)?([A-Za-z0-9_]+)(?:\.c)?\s*>$/i.exec(content);
     if (ifModule) {
@@ -291,14 +310,25 @@ function scanConfigText(
     }
     if (skipDepth > 0) continue;
 
-    if (NESTED_SECTION_OPEN.test(content)) { nestedDepth++; continue; }
-    if (NESTED_SECTION_CLOSE.test(content)) { if (nestedDepth > 0) nestedDepth--; continue; }
-    if (nestedDepth > 0) {
-      const directive = /^(\w+)/.exec(content)?.[1];
-      if (directive && /^ssl/i.test(directive) && isApacheSslDirective(directive)) {
+    const opened = NESTED_SECTION_OPEN.exec(content);
+    if (opened) {
+      sections.push({ kind: opened[1], argument: (opened[2] ?? '').trim().replace(/^"|"$/g, '') });
+      continue;
+    }
+    if (NESTED_SECTION_CLOSE.test(content)) { sections.pop(); continue; }
+    if (sections.length > 0) {
+      const directive = /^(\w+)(?:\s+(.+))?$/.exec(content);
+      const name = directive?.[1];
+      if (name && /^ssl/i.test(name) && isApacheSslDirective(name)) {
+        const inner = sections[sections.length - 1];
+        if (/^sslverify(client|depth)$/i.test(name) && AUTH_SECTIONS.has(inner.kind.toLowerCase())) {
+          const error = handlers.sectionDirective(inner, name, directive?.[2] ?? '', n);
+          if (error) return error;
+          continue;
+        }
         return {
-          message: `apache2: Syntax error on line ${n} of ${path}: ${directive} inside a <Directory>, <Location> or `
-            + '<Files> section needs a TLS renegotiation after the handshake, which this simulator does not perform',
+          message: `apache2: Syntax error on line ${n} of ${path}: ${name} inside a <${inner.kind}> section needs a TLS renegotiation after the handshake; `
+            + 'only SSLVerifyClient and SSLVerifyDepth inside <Location>, <LocationMatch>, <Directory> or <DirectoryMatch> are supported by this simulator',
           line: n,
         };
       }
@@ -379,6 +409,7 @@ export function parseApacheConfig(
   const listenPorts: number[] = [];
   const vhosts: ApacheVirtualHost[] = [];
   const globalSsl: ApacheSslDirective[] = [];
+  const globalAuth: ApacheDirectoryAuth[] = [];
 
   const ports = src.read(portsPath);
   if (ports === null) {
@@ -422,6 +453,33 @@ export function parseApacheConfig(
     return null;
   };
 
+  const recordSectionAuth = (
+    list: ApacheDirectoryAuth[], index: Map<OpenSection, ApacheDirectoryAuth>, path: string,
+    section: OpenSection, name: string, rawValue: string, n: number,
+  ): ApacheConfigError | null => {
+    const args = splitArguments(expand(rawValue, env));
+    const value = args[0] ?? '';
+    let entry = index.get(section);
+    if (entry === undefined) {
+      entry = { section: section.kind as ApacheAuthSection, pattern: section.argument, verifyClient: null, verifyDepth: null, line: n };
+      index.set(section, entry);
+      list.push(entry);
+    }
+    if (name.toLowerCase() === 'sslverifyclient') {
+      const parsed = parseVerifyClient(name, value);
+      if (parsed.error !== null) return { message: `AH00526: Syntax error on line ${n} of ${path}:\n${parsed.error}`, line: n };
+      entry.verifyClient = parsed.mode;
+    } else {
+      const depth = Number.parseInt(value, 10);
+      if (!Number.isInteger(depth) || depth < 0) {
+        return { message: `AH00526: Syntax error on line ${n} of ${path}:\n${name}: Invalid argument '${value}'`, line: n };
+      }
+      entry.verifyDepth = depth;
+    }
+    return null;
+  };
+  const globalSectionIndex = new Map<OpenSection, ApacheDirectoryAuth>();
+
   for (const path of globalFiles) {
     const text = src.read(path);
     if (text === null) continue;
@@ -437,6 +495,7 @@ export function parseApacheConfig(
         }
         return recordSsl(globalSsl, false, path, name, rawValue, n);
       },
+      sectionDirective: (section, name, rawValue, n) => recordSectionAuth(globalAuth, globalSectionIndex, path, section, name, rawValue, n),
     });
     if (error) return failure(error);
   }
@@ -451,7 +510,9 @@ export function parseApacheConfig(
       port: number; serverName: string | null; aliases: string[];
       root: string; index: string[]; accessLog: string | null;
       ssl: ApacheSslDirective[];
+      auth: ApacheDirectoryAuth[];
     } | null = null;
+    const sectionIndex = new Map<OpenSection, ApacheDirectoryAuth>();
     let sslError: ApacheConfigError | null = null;
 
     const error = scanConfigText(text, path, modulesCharges, {
@@ -462,7 +523,7 @@ export function parseApacheConfig(
         }
         current = {
           port, serverName: null, aliases: [],
-          root: '/var/www/html', index: [...DEFAULT_INDEX], accessLog: null, ssl: [],
+          root: '/var/www/html', index: [...DEFAULT_INDEX], accessLog: null, ssl: [], auth: [],
         };
         return null;
       },
@@ -483,6 +544,7 @@ export function parseApacheConfig(
               directoryIndex: current.index,
               accessLog: current.accessLog,
               ssl: resolved.settings,
+              directoryAuth: [...globalAuth, ...current.auth],
               protocolSet: current.ssl.some((d) => d.name.toLowerCase() === 'sslprotocol'),
               source: path,
             });
@@ -491,6 +553,9 @@ export function parseApacheConfig(
         current = null;
       },
       inVirtualHost: () => current !== null,
+      sectionDirective: (section, name, rawValue, n) => (current
+        ? recordSectionAuth(current.auth, sectionIndex, path, section, name, rawValue, n)
+        : recordSectionAuth(globalAuth, globalSectionIndex, path, section, name, rawValue, n)),
       directive: (directive, rawArgs, n) => {
         if (modulesCharges) {
           const bad = validateApacheDirective(directive, path, n, modulesCharges);
@@ -568,4 +633,34 @@ export function selectVirtualHost(
   // alphabetical order of the files in `sites-enabled`, which is why a real
   // machine uses numeric prefixes (`000-default`).
   return exact ?? onThisPort[0];
+}
+
+function sectionMatches(entry: ApacheDirectoryAuth, vhost: ApacheVirtualHost, urlPath: string): boolean {
+  const regex = (pattern: string, subject: string): boolean => {
+    try { return new RegExp(pattern.replace(/^~\*?\s*/, ''), pattern.startsWith('~*') ? 'i' : '').test(subject); } catch { return false; }
+  };
+  const prefix = (base: string, subject: string): boolean => {
+    const trimmed = base.length > 1 ? base.replace(/\/+$/, '') : '';
+    return trimmed === '' || subject === trimmed || subject.startsWith(`${trimmed}/`);
+  };
+  const root = vhost.documentRoot.replace(/\/+$/, '');
+  switch (entry.section) {
+    case 'Location': return entry.pattern.startsWith('~') ? regex(entry.pattern, urlPath) : prefix(entry.pattern, urlPath);
+    case 'LocationMatch': return regex(entry.pattern, urlPath);
+    case 'Directory': {
+      if (entry.pattern.startsWith('~')) return regex(entry.pattern, `${root}${urlPath}`);
+      if (entry.pattern === root || entry.pattern === `${root}/`) return true;
+      return entry.pattern.startsWith(`${root}/`) && prefix(entry.pattern.slice(root.length), urlPath);
+    }
+    case 'DirectoryMatch': return regex(entry.pattern, `${root}${urlPath}`);
+  }
+}
+
+export function effectiveClientVerify(vhost: ApacheVirtualHost, target: string): ApacheVerifyClient | null {
+  const urlPath = target.split('?')[0].split('#')[0] || '/';
+  let mode: ApacheVerifyClient | null = null;
+  for (const entry of vhost.directoryAuth) {
+    if (entry.verifyClient !== null && sectionMatches(entry, vhost, urlPath)) mode = entry.verifyClient;
+  }
+  return mode;
 }

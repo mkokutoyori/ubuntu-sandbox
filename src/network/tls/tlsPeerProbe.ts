@@ -1,4 +1,4 @@
-import { bytesToFileText } from '@/crypto/encoding';
+import { TlsClientChannel } from './TlsClientChannel';
 import type { TlsProtocolVersion } from './legacy/legacyCipherSuites';
 import { TlsClientSession } from './TlsClientSession';
 import { CertificateVerifier } from '../pki/CertificateVerifier';
@@ -7,9 +7,7 @@ import type { ResumableLegacySession } from './legacy/legacySessions';
 import type { PkiPrivateKey } from '../pki/PkiKeyPair';
 import type { X509Certificate } from '../pki/X509Certificate';
 import type { OcspResponseMessage } from '../pki/OcspWire';
-import type { TlsRecord } from './recordLayer';
-import { encryptApplicationData, decryptApplicationData } from '../http/https/ApplicationDataCipher';
-import { runTlsHandshakeOverSocket, bytesToBinaryString, binaryStringToBytes, encodeRecords, decodeRecords } from '../http/https/TlsRecordWire';
+import { runTlsHandshakeOverSocket } from '../http/https/TlsRecordWire';
 
 export interface TlsHandshakeDetails {
   readonly peerSignature: { readonly digest: string; readonly type: string } | null;
@@ -33,7 +31,7 @@ export interface TlsProbeOutcome {
   readonly received?: Uint8Array;
   readonly chain?: readonly X509Certificate[];
   readonly details?: TlsHandshakeDetails;
-  readonly channel?: TlsPeerChannel;
+  readonly channel?: TlsClientChannel;
 }
 
 export interface TlsProbeOptions {
@@ -92,7 +90,7 @@ export function probeTlsPeer(
   const completed = session.result === 'success';
   const protocolVersion = session.negotiatedVersion;
   const alert = session.lastAlert?.description ?? null;
-  const channel = new TlsPeerChannel(socket, session);
+  const channel = new TlsClientChannel(socket, session);
   let received: Uint8Array | undefined;
   if (completed && options.send !== undefined) received = channel.exchange(options.send);
   const keepOpen = completed && options.keepOpen === true;
@@ -114,90 +112,3 @@ export function probeTlsPeer(
     } };
 }
 
-type ProbeSocket = NonNullable<ReturnType<TcpStack['connect']>>;
-
-export class TlsPeerChannel {
-  private clientSequence = 0;
-  private serverSequence = 0;
-  private inbox = new Uint8Array(0);
-  private collecting = false;
-  private pushHandler: ((text: string) => void) | null = null;
-
-  constructor(private readonly socket: ProbeSocket, private readonly session: TlsClientSession) {
-    socket.onData((data) => {
-      try { this.receive(data); } catch { return; }
-    });
-  }
-
-  onPush(handler: (text: string) => void): void {
-    this.pushHandler = handler;
-  }
-
-  private write(records: readonly TlsRecord[]): void {
-    this.socket.write(bytesToBinaryString(encodeRecords([...records])));
-  }
-
-  private receive(data: unknown): void {
-    const records = decodeRecords(binaryStringToBytes(String(data)));
-    if (this.session.renegotiating) {
-      this.continueRenegotiation(records);
-      return;
-    }
-    const opened = decryptApplicationData(this.session.serverTraffic(), this.serverSequence, records);
-    this.serverSequence = opened.nextSeq;
-    if (opened.renegotiation) this.continueRenegotiation(opened.renegotiation.records, opened.renegotiation.sequence);
-    if (opened.peerKeyUpdates) {
-      const answer = this.session.applyPeerKeyUpdates(opened.peerKeyUpdates, opened.peerRequestedKeyUpdate === true, this.clientSequence);
-      if (answer.length > 0) { this.write(answer); this.clientSequence = 0; }
-    }
-    if (opened.plaintext.length === 0) return;
-    if (this.collecting || this.pushHandler === null) {
-      const joined = new Uint8Array(this.inbox.length + opened.plaintext.length);
-      joined.set(this.inbox); joined.set(opened.plaintext, this.inbox.length);
-      this.inbox = joined;
-    } else {
-      this.pushHandler(bytesToFileText(opened.plaintext));
-    }
-  }
-
-  private continueRenegotiation(records: readonly TlsRecord[], receiveSequence = this.serverSequence): void {
-    const answer = this.session.handleRenegotiation(records, receiveSequence, this.clientSequence);
-    if (answer && answer.length > 0) this.write(answer);
-    if (this.session.takeRenegotiationCompleted()) { this.clientSequence = 0; this.serverSequence = 0; }
-  }
-
-  private collect(act: () => void): Uint8Array {
-    this.inbox = new Uint8Array(0);
-    this.collecting = true;
-    try { act(); } finally { this.collecting = false; }
-    const reply = this.inbox;
-    this.inbox = new Uint8Array(0);
-    return reply;
-  }
-
-  exchange(payload: Uint8Array): Uint8Array {
-    return this.collect(() => {
-      const sealed = encryptApplicationData(this.session.clientTraffic(), this.clientSequence, payload);
-      this.clientSequence = sealed.nextSeq;
-      this.write(sealed.records);
-    });
-  }
-
-  renegotiate(): boolean {
-    const hello = this.session.startRenegotiation(this.serverSequence, this.clientSequence);
-    if (hello === null) return false;
-    this.clientSequence += hello.length;
-    this.collect(() => this.write(hello));
-    return !this.session.renegotiating && this.session.renegotiations > 0;
-  }
-
-  keyUpdate(requestUpdate: boolean): void {
-    const records = this.session.sendKeyUpdate(requestUpdate, this.clientSequence);
-    this.clientSequence = 0;
-    this.collect(() => this.write(records));
-  }
-
-  close(): void {
-    this.socket.close();
-  }
-}

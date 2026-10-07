@@ -49,7 +49,7 @@ function lab(withClientCertificate: boolean) {
   const seen: string[] = [];
   const srv = new HttpsServerSession(server.getTcpStack(), PORT, {
     serverCert: serverCert.cert, serverPrivateKey: serverCert.privateKey, protocols: ['1.2'], verifier: trust,
-    renegotiateForClientCertificate: (request) => (request.target ?? '').startsWith('/secure'),
+    renegotiateForClientCertificate: (request) => ((request.target ?? '').startsWith('/secure') ? 'strict' : null),
   }, (request, peer) => {
     seen.push(`${request.target}:${peer?.tls?.clientCertificate?.subject ?? '-'}`);
     const response = createResponse(200, 'OK');

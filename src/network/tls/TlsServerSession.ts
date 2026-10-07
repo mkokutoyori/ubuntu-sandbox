@@ -222,6 +222,7 @@ export class TlsServerSession {
   private renegotiationHandshake: LegacyServerHandshake | null = null;
   private renegotiationCompleted = false;
   private renegotiationRequestsClientCertificate = false;
+  private renegotiationClientCertPolicy: ClientCertPolicy | undefined = undefined;
   renegotiations = 0;
   private earlyDataAccepted = false;
   private earlyDataOffered = false;
@@ -462,7 +463,8 @@ export class TlsServerSession {
       serverGroups: this.supportedGroups, securityLevel: this.policy.securityLevel, dhGroup: this.dhGroup(),
       requestClientCert: this.config.requestClientCert === true || (renegotiation !== undefined && this.renegotiationRequestsClientCertificate),
       verifier: this.config.verifier,
-      clientCertPolicy: this.config.clientCertPolicy,
+      clientCertPolicy: renegotiation !== undefined && this.renegotiationClientCertPolicy !== undefined
+        ? this.renegotiationClientCertPolicy : this.config.clientCertPolicy,
     });
     if (renegotiation) {
       this.renegotiationHandshake = handshake;
@@ -513,10 +515,13 @@ export class TlsServerSession {
       && this.config.allowRenegotiation !== false;
   }
 
-  requestRenegotiation(sendSequence: number, options: { readonly requestClientCertificate?: boolean } = {}): readonly TlsRecord[] | null {
+  requestRenegotiation(
+    sendSequence: number, options: { readonly requestClientCertificate?: boolean; readonly clientCertPolicy?: ClientCertPolicy } = {},
+  ): readonly TlsRecord[] | null {
     const current = this.legacy;
     if (current === null || current.traffic === null || this.result !== 'accept' || this.renegotiationHandshake !== null) return null;
     this.renegotiationRequestsClientCertificate = options.requestClientCertificate === true;
+    this.renegotiationClientCertPolicy = options.clientCertPolicy;
     const request: TlsRecord = {
       contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[current.negotiatedVersion],
       fragment: Uint8Array.of(0, 0, 0, 0),

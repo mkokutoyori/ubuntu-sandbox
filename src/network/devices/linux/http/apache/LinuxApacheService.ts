@@ -15,7 +15,7 @@ import type { ServiceSocketServer } from '../../ports/ServiceSocketServer';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { NginxHost } from '../nginx/LinuxNginxService';
 import {
-  parseApacheConfig, apacheWarnings, selectVirtualHost, loadedApacheModules,
+  parseApacheConfig, apacheWarnings, selectVirtualHost, effectiveClientVerify, loadedApacheModules,
   type ApacheConfig, type ApacheVirtualHost,
 } from './ApacheConfig';
 import {
@@ -253,6 +253,16 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
       extendedMasterSecret: base.extendedMasterSecret,
       sniCredentials: credentials, ocspStaple: base.staple,
       ...resumption,
+      ...(verifying === undefined && port.vhosts.some((entry) => entry.tls.verifier !== null)
+        ? { verifier: port.vhosts.find((entry) => entry.tls.verifier !== null)!.tls.verifier! }
+        : {}),
+      renegotiateForClientCertificate: (request) => {
+        const vhosts = port.vhosts.map((entry) => entry.vhost);
+        const vhost = selectVirtualHost(this.config, vhosts[0].port, request.headers.get('Host') ?? '', vhosts);
+        const mode = vhost === null ? null : effectiveClientVerify(vhost, request.target ?? '/');
+        if (mode === null || mode === 'none') return null;
+        return mode === 'require' ? 'strict' : mode === 'optional' ? 'optional' : 'optional_no_ca';
+      },
       ...(verifying
         ? {
           requestClientCert: true,

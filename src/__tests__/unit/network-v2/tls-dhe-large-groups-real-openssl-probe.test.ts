@@ -50,11 +50,8 @@ describe('DHE au-delà de 2048 bits ↔ openssl réel', () => {
   it('le client du simulateur négocie DHE-RSA avec un vrai s_server -dhparam de 3072 bits', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dhparam-'));
     const dh = join(dir, 'dh.pem');
-    const generated = spawnSync('openssl', ['dhparam', '-out', dh, '-5', '3072']);
-    if (generated.status !== 0) {
-      const named = spawnSync('openssl', ['genpkey', '-genparam', '-algorithm', 'DH', '-pkeyopt', 'group:ffdhe3072', '-out', dh]);
-      expect(named.status).toBe(0);
-    }
+    const named = spawnSync('openssl', ['genpkey', '-genparam', '-algorithm', 'DH', '-pkeyopt', 'group:ffdhe3072', '-out', dh]);
+    expect(named.status).toBe(0);
     const material = realCertificate('real.lab');
     const port = 14000 + Math.floor(Math.random() * 20000);
     const child = spawn('openssl', ['s_server', '-accept', String(port), '-cert', material.certificatePath, '-key', material.keyPath, '-www', '-tls1_2', '-cipher', `${SUITE}:@SECLEVEL=0`, '-dhparam', dh], { stdio: 'ignore' });
