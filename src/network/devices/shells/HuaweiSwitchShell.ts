@@ -44,6 +44,7 @@ import {
   displayPatchInformation, displayDiagnosticInformation,
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import { huaweiCaptureHost } from './huawei/CapturePacket';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
 import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
@@ -3118,6 +3119,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       { service: () => this.debugService(), platform: 'switch' },
       () => { if (this.swRef) this.swRef._captureStartupConfig(this.displayCurrentConfig(this.swRef)); },
       () => { this.swRef?._eraseStartupConfig(); },
+      huaweiCaptureHost(() => this.swRef),
     );
   }
 

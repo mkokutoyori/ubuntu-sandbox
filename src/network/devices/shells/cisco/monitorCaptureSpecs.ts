@@ -7,6 +7,7 @@ import {
 import type { CaptureFrame } from '@/network/devices/linux/network/tcpdump/CaptureFrame';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { hexGroups, hexRows } from '@/network/capture/HexDump';
 
 export interface MonitorCaptureHost {
   service(): EmbeddedCaptureService;
@@ -132,9 +133,6 @@ function configurationOf(buffer: CaptureBuffer): string {
   return parts.join(' ');
 }
 
-const ASCII = (bytes: readonly number[]): string =>
-  bytes.map((byte) => (byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : '.')).join('');
-
 function dumpFrame(stored: { frame: CaptureFrame }, host: MonitorCaptureHost, ordinal: number): string[] {
   const frame = stored.frame;
   const bytes = frame.raw.slice(frame.rawLinkOffset);
@@ -142,15 +140,13 @@ function dumpFrame(stored: { frame: CaptureFrame }, host: MonitorCaptureHost, or
   const ingress = frame.direction === 'in' ? iosShortInterfaceName(frame.iface) : 'None';
   const egress = frame.direction === 'out' ? iosShortInterfaceName(frame.iface) : 'None';
   const lines = [`${host.clockText(frame.at)} : ${family} | CEF   : ${ingress} None => ${egress} None`, ''];
-  for (let offset = 0; offset < bytes.length; offset += 16) {
-    const row = bytes.slice(offset, offset + 16);
+  for (const row of hexRows(bytes)) {
     const words: string[] = [];
     for (let index = 0; index < 16; index += 4) {
-      const group = row.slice(index, index + 4);
-      words.push(group.map((byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase().padEnd(8, ' '));
+      words.push(hexGroups(row.bytes.slice(index, index + 4), 4, '').toUpperCase().padEnd(8, ' '));
     }
-    const address = (0x0F7CF5D0 + ordinal * 0x100 + offset).toString(16).toUpperCase().padStart(8, '0');
-    lines.push(`${address}: ${words.join(' ')}  ${ASCII(row)}`);
+    const address = (0x0F7CF5D0 + ordinal * 0x100 + row.offset).toString(16).toUpperCase().padStart(8, '0');
+    lines.push(`${address}: ${words.join(' ')}  ${row.ascii}`);
   }
   lines.push('');
   return lines;

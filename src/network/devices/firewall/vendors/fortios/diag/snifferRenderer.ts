@@ -3,6 +3,7 @@ import { ETHERTYPE_ARP, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../
 import type { ARPPacket, ICMPPacket, IPv4Packet } from '../../../../../core/types';
 import { icmpOf, portsOf, type CapturedFrame } from '../../../diag/PacketCapture';
 import { decodeCaptured } from '../../../diag/SnifferFilter';
+import { hexGroups, hexRows } from '@/network/capture/HexDump';
 import type { TcpSegment } from '../../../../../tcp/types';
 
 export type SnifferTimestamps = 'relative' | 'absolute' | 'local';
@@ -66,17 +67,8 @@ function dumpedBytes(entry: CapturedFrame, verbosity: number): readonly number[]
 }
 
 function hexLines(bytes: readonly number[]): string[] {
-  const lines: string[] = [];
-  for (let offset = 0; offset < bytes.length; offset += 16) {
-    const row = bytes.slice(offset, offset + 16);
-    const groups: string[] = [];
-    for (let index = 0; index < row.length; index += 2) {
-      groups.push(row.slice(index, index + 2).map((byte) => byte.toString(16).padStart(2, '0')).join(''));
-    }
-    const text = row.map((byte) => (byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : '.')).join('');
-    lines.push(`0x${offset.toString(16).padStart(4, '0')}   ${groups.join(' ').padEnd(39, ' ')}        ${text}`);
-  }
-  return lines;
+  return hexRows(bytes).map((row) =>
+    `0x${row.offset.toString(16).padStart(4, '0')}   ${hexGroups(row.bytes, 2, ' ').padEnd(39, ' ')}        ${row.ascii}`);
 }
 
 function describe(entry: CapturedFrame): string {
