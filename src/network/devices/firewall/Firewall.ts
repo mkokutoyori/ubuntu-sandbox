@@ -171,6 +171,7 @@ import {
   DNS_PORT, FirewallDnsClient, } from './l3/FirewallDnsClient';
 import { FirewallDdns } from './l3/FirewallDdns';
 import { DhcpDebug } from './l3/DhcpDebug';
+import { ikeDebugLine } from './vpn/IkeDebugLines';
 import { FirewallDnsServer } from './l3/FirewallDnsServer';
 import { transferTransportOf } from '../../dns/transfer/ZoneTransferClient';
 import type { SdwanService } from './sdwan/SdwanService';
@@ -742,8 +743,23 @@ export class Firewall extends Equipment {
       bus.subscribeWhere('dhcp.nak.received', ours, (event) => {
         this.raiseDhcpTrap('nak', event.payload.iface, null);
       }),
+      bus.subscribeAll((event) => {
+        if (!event.topic.startsWith('ipsec.')) return;
+        const payload = event.payload as { deviceId?: string };
+        if (!ours(payload)) return;
+        const line = ikeDebugLine(event, (peer) => this.tunnelNameForPeer(peer));
+        if (line !== null) this.dhcpDebug.emitRaw('ike', line);
+      }),
     ];
     this.detachTrapSources = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
+  }
+
+  private tunnelNameForPeer(peer: string): string {
+    for (const vdom of this.vdoms.names()) {
+      const tunnel = this.getVdom(vdom).tunnels.all().find((entry) => entry.remoteGateway === peer);
+      if (tunnel) return tunnel.name;
+    }
+    return peer;
   }
 
   override setEventBus(bus: IEventBus | null): void {
