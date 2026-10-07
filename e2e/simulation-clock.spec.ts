@@ -12,7 +12,11 @@ async function addDevice(page: Page, type: string, x: number, y: number): Promis
 }
 
 async function pressClock(page: Page, testId: string): Promise<void> {
+  await page.evaluate(() => (document.querySelector('button[title="Settings"]') as HTMLElement).click());
+  await page.locator('[data-testid="settings-dialog"]').waitFor({ state: 'visible', timeout: 15_000 });
   await page.evaluate((id) => (document.querySelector(`[data-testid="${id}"]`) as HTMLElement).click(), testId);
+  await page.keyboard.press('Escape');
+  await page.locator('[data-testid="settings-dialog"]').waitFor({ state: 'hidden', timeout: 15_000 });
 }
 
 async function run(page: Page, command: string): Promise<void> {
@@ -22,7 +26,7 @@ async function run(page: Page, command: string): Promise<void> {
   await input.press('Enter');
 }
 
-test('the toolbar advances every machine and the terminal sees it', async ({ page }) => {
+test('the settings window advances every machine and the terminal sees it', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForStore(page);
   const id = await addDevice(page, 'linux-pc', 300, 300);

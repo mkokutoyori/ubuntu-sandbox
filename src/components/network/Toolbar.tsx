@@ -2,9 +2,8 @@
  * Toolbar - Top toolbar for network designer
  */
 
-import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, ScrollText, Undo2, Redo2 } from 'lucide-react';
+import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, ScrollText, Undo2, Redo2, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { SimulationClockControls } from './SimulationClockControls';
 
 interface ToolbarProps {
   projectName: string;
@@ -17,6 +16,7 @@ interface ToolbarProps {
   onOpen?: () => void;
   onReset?: () => void;
   onHelp?: () => void;
+  onSettings?: () => void;
   logsOpen?: boolean;
   onToggleLogs?: () => void;
   onUndo?: () => void;
@@ -27,7 +27,7 @@ interface ToolbarProps {
 
 export function Toolbar({
   projectName, onProjectNameChange, onClearAll, hasDevices,
-  onExport, onImport, onSave, onOpen, onReset, onHelp,
+  onExport, onImport, onSave, onOpen, onReset, onHelp, onSettings,
   logsOpen, onToggleLogs, onUndo, onRedo, canUndo, canRedo,
 }: ToolbarProps) {
   return (
@@ -82,9 +82,8 @@ export function Toolbar({
         <ToolbarButton icon={RotateCcw} label="Reset" onClick={onReset} />
       </div>
 
-      {/* Right section - Help */}
+      {/* Right section - Logs, Settings, Help */}
       <div className="flex items-center gap-2">
-        <SimulationClockControls />
         {onToggleLogs && (
           <ToolbarButton
             icon={ScrollText}
@@ -93,6 +92,7 @@ export function Toolbar({
             variant={logsOpen ? 'primary' : 'default'}
           />
         )}
+        <ToolbarButton icon={Settings} label="Settings" onClick={onSettings} />
         <ToolbarButton icon={HelpCircle} label="Help" onClick={onHelp} />
       </div>
     </div>

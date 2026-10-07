@@ -20,52 +20,64 @@ export function SimulationClockControls() {
   if (!clock) return null;
 
   return (
-    <div className="flex items-center gap-1" data-testid="simulation-clock">
-      <span className="font-mono text-xs text-foreground/70 px-2" data-testid="simulation-instant">{instant}</span>
-      <button
-        type="button"
-        onClick={() => (state.running ? clock.pause() : clock.play())}
-        className="flex items-center px-2 py-1.5 rounded-lg text-foreground/70 hover:text-foreground hover:bg-white/10"
-        title={state.running ? 'Pause the simulation' : 'Resume the simulation'}
-        aria-label={state.running ? 'Pause the simulation' : 'Resume the simulation'}
-        data-testid="simulation-toggle"
-      >
-        {state.running ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-      </button>
-      {SIMULATION_SPEEDS.map((speed) => (
+    <div className="space-y-4" data-testid="simulation-clock">
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-lg text-foreground" data-testid="simulation-instant">{instant}</span>
         <button
-          key={speed}
           type="button"
-          onClick={() => clock.play(speed)}
-          className={cn(
-            'px-2 py-1 rounded-md text-xs font-mono',
-            state.running && state.speed === speed
-              ? 'bg-primary/20 text-primary'
-              : 'text-foreground/60 hover:text-foreground hover:bg-white/10',
-          )}
-          title={`Run the simulation ${formatSpeed(speed)} faster than real time`}
-          data-testid={`simulation-speed-${speed}`}
+          onClick={() => (state.running ? clock.pause() : clock.play())}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-white/10 border border-white/10"
+          title={state.running ? 'Pause the simulation' : 'Resume the simulation'}
+          aria-label={state.running ? 'Pause the simulation' : 'Resume the simulation'}
+          data-testid="simulation-toggle"
         >
-          {formatSpeed(speed)}
+          {state.running ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          <span>{state.running ? 'Pause' : 'Resume'}</span>
         </button>
-      ))}
-      <div className="w-px h-6 bg-white/10 mx-1" />
-      {SIMULATION_JUMPS.map((jump) => (
-        <button
-          key={jump.label}
-          type="button"
-          disabled={state.advancing}
-          onClick={() => { void clock.advance(jump.ms); }}
-          className={cn(
-            'px-2 py-1 rounded-md text-xs text-foreground/60 hover:text-foreground hover:bg-white/10',
-            state.advancing && 'opacity-40 cursor-not-allowed',
-          )}
-          title={`Advance every device by ${jump.label.slice(1)}`}
-          data-testid={`simulation-jump-${jump.ms}`}
-        >
-          {jump.label}
-        </button>
-      ))}
+      </div>
+      <div>
+        <div className="text-xs text-muted-foreground mb-1">Speed</div>
+        <div className="flex flex-wrap items-center gap-1">
+          {SIMULATION_SPEEDS.map((speed) => (
+            <button
+              key={speed}
+              type="button"
+              onClick={() => clock.play(speed)}
+              className={cn(
+                'px-2 py-1 rounded-md text-xs font-mono',
+                state.running && state.speed === speed
+                  ? 'bg-primary/20 text-primary'
+                  : 'text-foreground/60 hover:text-foreground hover:bg-white/10',
+              )}
+              title={`Run the simulation ${formatSpeed(speed)} faster than real time`}
+              data-testid={`simulation-speed-${speed}`}
+            >
+              {formatSpeed(speed)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="text-xs text-muted-foreground mb-1">Advance every device by</div>
+        <div className="flex flex-wrap items-center gap-1">
+          {SIMULATION_JUMPS.map((jump) => (
+            <button
+              key={jump.label}
+              type="button"
+              disabled={state.advancing}
+              onClick={() => { void clock.advance(jump.ms); }}
+              className={cn(
+                'px-2 py-1 rounded-md text-xs text-foreground/60 hover:text-foreground hover:bg-white/10',
+                state.advancing && 'opacity-40 cursor-not-allowed',
+              )}
+              title={`Advance every device by ${jump.label.slice(1)}`}
+              data-testid={`simulation-jump-${jump.ms}`}
+            >
+              {jump.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
