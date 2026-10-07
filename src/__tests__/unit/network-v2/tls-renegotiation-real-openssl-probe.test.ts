@@ -1,0 +1,103 @@
+/**
+ * La renégociation sécurisée de TLS ≤ 1.2 (RFC 5746) traverse le fil : le client rouvre une poignée de main
+ * complète DANS la connexion chiffrée (ClientHello scellé sous les clés courantes, renegotiation_info =
+ * verify_data du Finished précédent), le serveur répond avec le verify_data concaténé, les deux côtés
+ * changent de clés, puis les données applicatives reprennent à la séquence 0 sous les nouvelles clés.
+ * `s_client` réel déclenche la renégociation par la commande « R ».
+ *
+ * MESURÉ avant correctif : le serveur du simulateur traitait le ClientHello chiffré comme des données applicatives et
+ * répondait par la page, sans jamais renégocier (le compteur `renegotiations` de la session restait à zéro ; une
+ * assertion sur « ok » seule aurait passé à tort, la réponse du laboratoire étant constante). Avant correctif (git stash de
+ * src/network) 4 cas sur 4 tombent, le témoin lui-même pour une raison structurelle (la propriété `renegotiations`
+ * n'existait pas) ; la valeur du témoin tient à ce qu'il prouve que le laboratoire sert une requête sans « R ».
+ * Les détails du fil établis en mesurant : le ChangeCipherSpec de la renégociation est PROTÉGÉ par les clés courantes
+ * (RFC 5246 §6.1), et le client réel envoie CKE et CCS/Finished en segments séparés.
+ */
+import { describe, it, expect } from 'vitest';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { TlsServerSession } from '@/network/tls/TlsServerSession';
+import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
+import { certToPem } from '@/network/pki/pem';
+import { startSimServer } from './_realOpenssl';
+
+const REPLY = 'HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok';
+
+function simPki() {
+  const now = Date.now();
+  const ca = CertificateAuthority.generate('CN=sim.lab CA', { now, algorithm: 'rsa', keyBits: 2048 });
+  const leaf = ca.issueCertificate({ subject: 'CN=sim.lab', subjectAltNames: ['sim.lab'], notBefore: now - 1000, notAfter: now + 30 * 86400_000, keyBits: 2048 });
+  const dir = mkdtempSync(join(tmpdir(), 'reneg-'));
+  const caPath = join(dir, 'ca.pem');
+  writeFileSync(caPath, certToPem(ca.rootCertificate));
+  return { leaf, caPath };
+}
+
+async function interactive(port: number, caPath: string, lines: readonly string[], extra: readonly string[] = []): Promise<{ stdout: string; stderr: string }> {
+  const child = spawn('openssl', ['s_client', '-connect', `127.0.0.1:${port}`, '-servername', 'sim.lab', '-CAfile', caPath, '-tls1_2', ...extra], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (d) => { stdout += d; });
+  child.stderr.on('data', (d) => { stderr += d; });
+  child.stdin.on('error', () => undefined);
+  const closed = new Promise((resolve) => child.on('close', resolve));
+  const timer = setTimeout(() => child.kill(), 12000);
+  for (const line of lines) {
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    child.stdin.write(line);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  child.stdin.end();
+  await closed;
+  clearTimeout(timer);
+  return { stdout, stderr };
+}
+
+let lastSession: TlsServerSession | null = null;
+
+const server = (pki: ReturnType<typeof simPki>, extra: object = {}) =>
+  () => { lastSession = new TlsServerSession({ serverCert: pki.leaf.cert, serverPrivateKey: pki.leaf.privateKey, ...extra } as never); return lastSession; };
+
+describe('renégociation TLS ≤ 1.2 ↔ openssl réel', () => {
+  it('témoin : une requête sans renégociation est servie', async () => {
+    const pki = simPki();
+    const bridge = await startSimServer(server(pki), () => REPLY);
+    const run = await interactive(pki.leaf ? bridge.port : 0, pki.caPath, ['GET / HTTP/1.0\r\n\r\n']);
+    bridge.stop();
+    expect(run.stdout).toContain('ok');
+    expect(lastSession!.renegotiations).toBe(0);
+  }, 60000);
+
+  it('R : le serveur mène la renégociation complète puis sert la requête sous les nouvelles clés', async () => {
+    const pki = simPki();
+    const bridge = await startSimServer(server(pki), () => REPLY);
+    const run = await interactive(bridge.port, pki.caPath, ['R\n', 'GET / HTTP/1.0\r\n\r\n']);
+    bridge.stop();
+    expect(run.stderr + run.stdout).toContain('RENEGOTIATING');
+    expect(lastSession!.renegotiations).toBe(1);
+    expect(run.stdout).toContain('ok');
+    expect(bridge.steps.join('|')).not.toContain('bad_record_mac');
+  }, 60000);
+
+  it('deux renégociations de suite puis une requête', async () => {
+    const pki = simPki();
+    const bridge = await startSimServer(server(pki), () => REPLY);
+    const run = await interactive(bridge.port, pki.caPath, ['R\n', 'R\n', 'GET / HTTP/1.0\r\n\r\n']);
+    bridge.stop();
+    expect(lastSession!.renegotiations).toBe(2);
+    expect(run.stdout).toContain('ok');
+    expect(bridge.steps.join('|')).not.toContain('bad_record_mac');
+  }, 60000);
+
+  it('allowRenegotiation: false : le serveur répond no_renegotiation, que le vrai client traite comme une erreur', async () => {
+    const pki = simPki();
+    const bridge = await startSimServer(server(pki, { allowRenegotiation: false }), () => REPLY);
+    const run = await interactive(bridge.port, pki.caPath, ['R\n', 'GET / HTTP/1.0\r\n\r\n']);
+    bridge.stop();
+    expect(run.stderr).toContain('no renegotiation');
+    expect(lastSession!.renegotiations).toBe(0);
+    expect(run.stdout).not.toContain('\nok');
+  }, 60000);
+});
