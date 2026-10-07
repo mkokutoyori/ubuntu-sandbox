@@ -10,6 +10,7 @@ import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
+import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
 import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
@@ -65,14 +66,16 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         ...(sonde.channel ? { channel: sonde.channel } : {}),
       };
     },
-    httpPost: (ip, port, path, body, headers) => {
+    httpPost: (ip, port, path, body, headers, secure) => {
       const request = createRequest('POST', path);
       request.headers.set('Host', `${ip}:${port}`);
       for (const [name, value] of Object.entries(headers)) request.headers.set(name, value);
       const payload = fileTextToBytes(body);
       request.headers.set('Content-Length', String(payload.length));
       request.body = payload;
-      const session = new Http1ClientSession(ctx.net.getTcpStack(), ip, port);
+      const session = secure === true
+        ? new HttpsClientSession(ctx.net.getTcpStack(), ip, port, { verifier: new CertificateVerifier({ trustAnchors: [] }), allowUntrustedPeer: true } as never)
+        : new Http1ClientSession(ctx.net.getTcpStack(), ip, port);
       const result = session.send(request);
       session.close();
       if (result.ok === false || !result.response) return { ok: false, reason: result.ok === false ? result.error ?? 'no response' : 'no response' };

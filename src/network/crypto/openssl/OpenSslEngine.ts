@@ -1217,13 +1217,14 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if ('exitCode' in answer) return answer;
     response = answer;
   } else if (text('-url') !== null) {
-    const url = /^http:\/\/([^/:]+)(?::(\d+))?(\/.*)?$/.exec(text('-url')!);
+    const url = /^(https?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/.exec(text('-url')!);
     if (!url) return fail(`${text('-url')} Error parsing -url argument`);
-    const address = host.resolveHost(url[1]) ?? url[1];
+    const secure = url[1] === 'https';
+    const address = host.resolveHost(url[2]) ?? url[2];
     if (typeof host.httpPost !== 'function') return fail('openssl: ocsp -url: this platform has no HTTP client');
-    const reply = host.httpPost(address, Number(url[2] ?? 80), url[3] ?? '/', bytesToFileText(encodeOcspRequest(request!)), {
+    const reply = host.httpPost(address, Number(url[3] ?? (secure ? 443 : 80)), url[4] ?? '/', bytesToFileText(encodeOcspRequest(request!)), {
       'Content-Type': OCSP_REQUEST_CONTENT_TYPE,
-    });
+    }, secure);
     if (reply.ok === false) return fail(`Error querying OCSP responder\nconnect:errno=111 (${reply.reason})`);
     try { response = decodeOcspResponse(fileTextToBytes(reply.body)); } catch { return fail('Error querying OCSP responder'); }
   } else if (request !== null) {

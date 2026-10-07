@@ -117,7 +117,7 @@ export interface OpenSslHost {
    * Un POST HTTP/1.1 porté par de vraies trames (`openssl ocsp -url`).
    */
   httpPost?(
-    ip: string, port: number, path: string, body: string, headers: Readonly<Record<string, string>>,
+    ip: string, port: number, path: string, body: string, headers: Readonly<Record<string, string>>, secure?: boolean,
   ): { readonly ok: true; readonly status: number; readonly body: string } | { readonly ok: false; readonly reason: string };
 
   /**

@@ -15,9 +15,8 @@ import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
 import type { ClientCertPolicy } from '@/network/tls/clientAuthPolicy';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export interface PathTransportRequirement {
   readonly clientCertPolicy?: ClientCertPolicy;
@@ -113,7 +112,7 @@ export class HttpsServerSession {
     const emit = (response: HttpMessage, shouldClose: boolean): void => {
       this.applyHsts(response);
       const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
-      const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
+      const responseBytes = binaryStringToBytes(encodeResponse(response, { chunked }));
       channel.write(responseBytes);
       if (shouldClose) {
         unsubscribe();
@@ -167,7 +166,7 @@ export class HttpsServerSession {
     };
 
     const handleBytes = (requestBytes: Uint8Array, early: boolean): void => {
-        const completeRequest = assembler.push(decoder.decode(requestBytes));
+        const completeRequest = assembler.push(bytesToBinaryString(requestBytes));
         if (completeRequest === null) return;
         const parsed = parseRequest(completeRequest);
         if (early && parsed.ok) parsed.message.headers.set('Early-Data', '1');

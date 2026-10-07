@@ -20,9 +20,8 @@ import { HstsStore } from './HstsStore';
 import type { TlsRecord } from '@/network/tls/recordLayer';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export interface HttpsSendResult {
   ok: boolean;
@@ -106,7 +105,7 @@ export class HttpsClientSession {
       return { ok: false, error };
     };
 
-    const requestBytes = encoder.encode(encodeRequest(request, opts));
+    const requestBytes = binaryStringToBytes(encodeRequest(request, opts));
     if (!this.connectIfNeeded(requestBytes) || !this.socket || !this.tls) {
       return fail(`TLS handshake with ${this.targetIp} port ${this.port} failed`);
     }
@@ -117,7 +116,7 @@ export class HttpsClientSession {
     const plaintext = answeredEarly ? this.channel!.takeBuffered() : this.channel!.exchange(requestBytes);
     if (plaintext.length === 0) return fail('Empty reply from server');
 
-    const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
+    const parsed = parseResponse(bytesToBinaryString(plaintext), { suppressBody: request.method === 'HEAD' });
     if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
@@ -151,7 +150,7 @@ export class HttpsClientSession {
       return { ok: false, error };
     };
 
-    const requestBytes = encoder.encode(encodeRequest(request, opts));
+    const requestBytes = binaryStringToBytes(encodeRequest(request, opts));
     if (!this.connectIfNeeded(requestBytes) || !this.socket || !this.tls) {
       return fail(`TLS handshake with ${this.targetIp} port ${this.port} failed`);
     }
@@ -162,7 +161,7 @@ export class HttpsClientSession {
     const plaintext = answeredEarly ? this.channel!.takeBuffered() : await this.channel!.exchangeAsync(requestBytes, TLS_MICROTASK_BUDGET);
     if (plaintext.length === 0) return fail('Empty reply from server');
 
-    const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
+    const parsed = parseResponse(bytesToBinaryString(plaintext), { suppressBody: request.method === 'HEAD' });
     if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
