@@ -1,24 +1,9 @@
 import type { CellValue } from '../../engine/storage/BaseStorage';
-import type { SqlFunctionBundle, SqlFunctionContext } from './types';
+import { truncateDate } from './dateArithmetic';
+import type { SqlFunctionBundle } from './types';
 
 const withNumber = (value: CellValue, fn: (n: number) => CellValue): CellValue =>
   value == null ? null : fn(Number(value));
-
-const truncDate = (d: Date, fmtArg: CellValue, ctx: SqlFunctionContext): string => {
-  const fmt = fmtArg != null ? String(fmtArg).toUpperCase() : 'DD';
-  if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY') {
-    return ctx.formatDate(new Date(d.getFullYear(), 0, 1));
-  }
-  if (fmt === 'MM' || fmt === 'MONTH' || fmt === 'MON') {
-    return ctx.formatDate(new Date(d.getFullYear(), d.getMonth(), 1));
-  }
-  if (fmt === 'DAY' || fmt === 'D' || fmt === 'IW') {
-    return ctx.formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()));
-  }
-  const copy = new Date(d.getTime());
-  copy.setHours(0, 0, 0, 0);
-  return ctx.formatDate(copy);
-};
 
 export const numericFunctions: SqlFunctionBundle = {
   ABS: ([v]) => withNumber(v, Math.abs),
@@ -33,7 +18,7 @@ export const numericFunctions: SqlFunctionBundle = {
   TRUNC: ([v, fmtArg], ctx) => {
     if (v == null) return null;
     const asDate = ctx.coerceDate(v);
-    if (asDate != null) return truncDate(asDate, fmtArg, ctx);
+    if (asDate != null) return ctx.formatDate(truncateDate(asDate, fmtArg != null ? String(fmtArg) : null));
     return Math.trunc(Number(v));
   },
 

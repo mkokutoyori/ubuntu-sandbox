@@ -761,6 +761,13 @@ export abstract class LinuxMachine extends EndHost
     });
   }
 
+  hostWallClock(): { nowMs(): number; zoneName(): string } {
+    return {
+      nowMs: () => this.executor.simulatedDate().getTime(),
+      zoneName: () => this.executor.identity.timezone,
+    };
+  }
+
   private readonly activationSockets = new Map<string, number>();
 
   private openActivationSocket(name: string): void {
@@ -1407,6 +1414,7 @@ export abstract class LinuxMachine extends EndHost
 
     this.vsftpdService = new LinuxVsftpdService({
       vfs,
+      nowMs: () => this.executor.simulatedDate().getTime(),
       tcpStack: () => this.getTcpStack(),
       account: (username) => {
         const entry = this.executor.userMgr.getUser(username);

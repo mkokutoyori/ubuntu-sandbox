@@ -487,9 +487,7 @@ export function cmdCat(ctx: ShellContext, args: string[]): string {
     }
     outputs.push(content);
   }
-  let result = outputs.join('');
-  if (result.endsWith('\n')) result = result.slice(0, -1);
-  return result;
+  return outputs.join('');
 }
 
 function canReadInode(

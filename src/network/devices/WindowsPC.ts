@@ -14,6 +14,8 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { likeDate } from '@/powershell/runtime/dotnetDateTime';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import { WINDOWS_DHCP_CLIENT_PERSONALITY } from '../dhcp/DhcpClientPersonality';
@@ -528,6 +530,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (change) this.auditRegistryChange(change);
     };
     this.syncLinkLocalResponders();
+    this.startScheduledTaskTicker();
   }
 
   // ─── LLMNR / mDNS (client DNS Windows) ──────────────────────────
@@ -3432,7 +3435,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
-      const netCtx2 = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore() };
+      const netCtx2 = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
       if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
       if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
@@ -3676,6 +3679,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       isDHCPConfigured: (ifName: string) => this.isDHCPConfigured(ifName),
       getDHCPState: (ifName: string) => this.dhcpClient.getState(ifName),
+      timezone: this.identity.timezone,
       releaseLease: (ifName: string) => this.dhcpClient.releaseLease(ifName),
       requestLease: (ifName: string, opts: any) => this.dhcpClient.requestLease(ifName, opts),
       renewLease: (ifName: string) => this.dhcpClient.renewLease(ifName),
@@ -3957,7 +3961,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'net' && args.length > 0) {
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
-      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore() };
+      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
       if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
       if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
@@ -3989,6 +3993,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       isAdmin: this.userMgr.isCurrentUserAdmin(),
       os: this.getIdentity().os,
       bootedAt: () => this.getLifecycle().bootedAt() ?? null,
+      nowMs: () => this.simulatedDate().getTime(),
+      timezone: this.identity.timezone,
       hardware: this.hardware,
       adapterIdentityOf: (portName: string) => this.adapterIdentityOf(portName),
       volumes: {
@@ -4061,7 +4067,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   simulatedDate(): Date {
-    return new Date(this.clockPort.wall());
+    return ZonedDate.in(this.clockPort.wall(), this.identity.timezone);
   }
 
   simulatedNow(): number {
@@ -4116,7 +4122,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       let guard = 0;
       while (task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
         task.missedRuns = (task.missedRuns ?? 0) + 1;
-        task.runAt = new Date(task.runAt.getTime() + task.intervalMs);
+        task.runAt = likeDate(task.runAt, task.runAt.getTime() + task.intervalMs);
       }
     }
   }
@@ -4137,7 +4143,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.runScheduledPowerShellScript(task.command);
         if (task.command) this.logTaskRan(task.taskName, task.command);
         task.runAt = task.intervalMs
-          ? new Date(task.runAt.getTime() + task.intervalMs)
+          ? likeDate(task.runAt, task.runAt.getTime() + task.intervalMs)
           : undefined;
       }
     }

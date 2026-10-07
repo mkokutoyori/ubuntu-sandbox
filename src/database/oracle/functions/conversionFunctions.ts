@@ -5,9 +5,9 @@ export const conversionFunctions: SqlFunctionBundle = {
   TO_CHAR: ([value, fmtArg], ctx) => {
     if (value == null) return null;
     const fmt = fmtArg != null ? String(fmtArg).toUpperCase() : null;
-    if (fmt && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-      const d = new Date(value);
-      if (!isNaN(d.getTime())) return ctx.formatDateWithPattern(d, fmt);
+    if (fmt && typeof value === 'string') {
+      const d = ctx.coerceDate(value);
+      if (d !== null) return ctx.formatDateWithPattern(d, fmt);
     }
     return String(value);
   },

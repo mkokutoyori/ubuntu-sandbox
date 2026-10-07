@@ -172,49 +172,62 @@ un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
 
-### [bash] `cmd > fichier` ecrit la sortie d'une commande du registre sans retour a la ligne final
-**Mesure** : `date > /tmp/z; wc -l /tmp/z` rend `0`, `uname >> f; uname >> f; cat f` rend
-`LinuxLinux`, `ls /etc/hostname > c; wc -c < c` rend `13`, `id -un > d` rend `4`. En tube
-(`date | wc -l` = 1) ou a l'ecran la ligne est terminee, parce que l'interpreteur appelle
-`ensureTrailingNewline` ; sur une redirection vers un fichier il ecrit la sortie TELLE QUELLE
-(« binary-safe »). Les commandes du registre rendent leur texte sans `\n` final, `echo` et `cat`
-avec. Consequence visible dans tous les labs de cron : `* * * * * date >> /tmp/cron.log` empile
-des dates sur une seule ligne.
-**Pourquoi ce n'est pas ferme** : ajouter `\n` quand il manque casserait `printf 'abc' > f` et
-`echo -n` (octet pour octet) ; la bonne cle est une declaration par commande (`LinuxCommand`
-dit si sa sortie est un flux brut), pas une heuristique sur le contenu.
+### [huawei] `undo dhcp enable` est refuse en vue systeme
+**Mesure** : `huawei-config-parity` (« should disable DHCP with undo dhcp enable ») est rouge sur `main` et
+sur toute la chaine de branches : `dhcp enable` passe, `undo dhcp enable` repond
+`Error: Unrecognized command found at '^' position.`. Sans rapport avec l'horloge, vu en passant.
+**Pourquoi ce n'est pas ferme** : le test peut encoder une fausse prémisse (la forme `undo` du
+commutateur global `dhcp enable` n'est pas verifiee sur une transcription VRP) ; il faut la source
+avant de decider entre corriger le moteur et corriger le test.
 
-### [bash] une affectation en prefixe n'atteint pas `bash -c` / `sh -c`
-**Mesure** : `FOO=3` puis `FOO=5 bash -c 'echo $FOO'` rend `3` ; `FOO=7 sh -c 'echo $FOO'` rend la
-valeur precedente. `env` voit bien le prefixe (`FOO=8 env | grep FOO`). Le sous-shell lit la table
-du shell parent et non l'environnement enfant que `childEnvironment` construit. L'affectation en
-prefixe ne persiste plus (corrige avec ce lot), donc ce defaut ne peut plus etre masque par la fuite.
+### [windows] `tzutil`, `quser` et `eventcreate` sont inconnus
+**Mesure** : `tzutil /g`, `quser` et `eventcreate /t information /id 100 /l application /d x` repondent
+« not recognized » sur une machine Windows simulee. Le fuseau se lit et s'ecrit deja par `Get-TimeZone` /
+`Set-TimeZone` sur la meme table ; il ne manque que la commande cmd.
+**Pourquoi ce n'est pas ferme** : le libelle d'erreur de `tzutil /s <zone inconnue>` n'est pas
+atteignable depuis cet environnement et en inventer un serait pire que l'absence ; `quser` demande une table
+de sessions interactives que la machine ne tient pas, `eventcreate` une ecriture dans le journal par la
+voie de `Write-EventLog`.
 
-### [powershell] le fuseau du processus regit encore `Get-Date`, `dir`, `net user`, `systeminfo` et le journal
-**Mesure** (meme banc que Linux : la meme suite sous `TZ=UTC` puis `TZ=Pacific/Auckland`, machine
-en UTC) : 8 des 35 sorties Windows/PowerShell different — `Get-Date` et `(Get-Date).Hour`,
-`Get-ChildItem ... LastWriteTime`, `Get-EventLog ... TimeGenerated`, `dir C:\`, `dir C:\Windows`,
-`net user Administrator` (Password last set), `systeminfo` (System Boot Time). `date /t`, `time /t`
-et `%time%` sont corrects. Le meme banc releve des commandes absentes ou vides : `Get-Date -Format o`
-et `-Format u` rendent le format lui-meme, `[DateTime]::Now`, `[DateTimeOffset]::Now`,
-`[TimeZoneInfo]::Local.Id`, `(Get-CimInstance Win32_OperatingSystem).LastBootUpTime`,
-`Get-LocalUser ... LastLogon`, `Get-Process ... StartTime` rendent vide ; `Get-Uptime`, `tzutil`,
-`quser`, `eventcreate` sont inconnus.
-**Pourquoi ce n'est pas ferme** : le `DateTime` de PowerShell est un `Date` JavaScript lu par ses
-accesseurs locaux (une cinquantaine de sites dans `src/powershell` et `devices/windows`) ; le
-rendre muni du fuseau de sa machine est un chantier propre, pas une retouche.
+### [powershell] membres des nombres et mise en page de `TimeSpan`
+**Mesure** : `[Math]::Pi.ToString()` rend vide (les membres des nombres ne sont pas branches, sans
+rapport avec le temps) ; `New-TimeSpan` s'affiche en `__type : TimeSpan ...` au lieu des champs
+`Days / Hours / Minutes / Seconds / Milliseconds / Ticks` de PowerShell 5.1.
+**Pourquoi ce n'est pas ferme** : la mise en page par defaut d'un `TimeSpan` n'est pas verifiable sur
+transcription ici.
 
-### [oracle] `SYSDATE` / `SYSTIMESTAMP` lisent les accesseurs locaux d'un `Date`
-**Mesure** : 40 sites `getHours()` / `getDate()` dans `database/oracle/functions` ; la base n'a pas de
-fuseau de session ni de `DBTIMEZONE`, donc `SELECT SYSDATE FROM dual` suit le navigateur.
-**Pourquoi ce n'est pas ferme** : `ALTER SESSION SET TIME_ZONE` et `DBTIMEZONE` sont des briques a
-construire avant que le fuseau ait ou aller.
+### [oracle] RMAN lit le fuseau du processus (banniere, TAG, pieces, `LIST BACKUP`)
+**Mesure** : meme suite sous `TZ=UTC` puis `TZ=Pacific/Auckland`, machine en UTC : la banniere
+`Recovery Manager … on 06-OCT-2026 21:42:00` devient `07-OCT-2026 10:42:00`. `RmanTag.generate`,
+`generatePieceName`, `formatOracleDate` et les colonnes `Completion Time` / `Ckp Time` des listes
+lisent `getHours()` / `getDate()` : 34 lectures de `simulationDate()` / `simulationNowMs()` dans
+`src/terminal/subshells/rman`, sans port vers l'horloge de la machine.
+**Pourquoi ce n'est pas ferme** : `IRmanOracleContext` (le port de RMAN vers Oracle) ne porte ni horloge
+ni fuseau, et les formateurs sont des fonctions pures appelees sans contexte ; il faut lui faire
+porter `OracleHostClock` et le passer aux formateurs, ce qui touche une dizaine de fichiers de RMAN.
 
-### [fichiers] `touch -d/-t/-r`, `ls --time-style`/`--full-time`, `stat -c %y` ne sont pas lus
-**Mesure** : `touch -d "2 days ago" f` ne change pas l'heure du fichier ; `ls -l --full-time`
-et `--time-style=long-iso` rendent le format court ; `stat -c "%y %Y" f` rend la chaine
-`%y %Y` telle quelle. Aucun lab de rotation ou de purge (`find -mtime +N`, `tmpreaper`) ne peut donc
-vieillir un fichier.
+### [oracle] `INSERT … VALUES (DEFAULT, …)` stocke NULL, `DBMS_SCHEDULER.CREATE_JOB` lit mal ses arguments nommes
+**Mesure** : `CREATE TABLE t (id NUMBER, d DATE DEFAULT SYSDATE)` puis `INSERT INTO t VALUES (2, DEFAULT)`
+laisse `d` vide (avec la colonne omise, le defaut est bien evalue). `EXEC
+DBMS_SCHEDULER.CREATE_JOB(job_name=>'J1', …, repeat_interval=>'FREQ=DAILY;BYHOUR=3')` cree un travail
+dont `JOB_NAME` vaut `JOB_NAME=>'J1'` et `NEXT_RUN_DATE` est vide : les arguments nommes sont pris pour des
+valeurs positionnelles. Vus en testant les horloges ; sans rapport avec le fuseau.
+**Pourquoi ce n'est pas ferme** : deux defauts distincts du moteur SQL et du paquetage, hors du lot.
+
+### [oracle] `FROM_TZ`, `SYS_EXTRACT_UTC` et la comparaison d'un instant a une heure murale
+**Mesure** : `FROM_TZ(CAST(SYSDATE AS TIMESTAMP),'UTC')` et `SYS_EXTRACT_UTC(SYSTIMESTAMP)` repondent
+`ORA-00904: invalid identifier`. Une comparaison `created > SYSDATE - 1` (colonne de catalogue, `Date`
+ordinaire = instant, contre une chaine murale) est decalee du decalage du serveur hors UTC, parce que
+`compareValues` n'a pas de fuseau.
+**Pourquoi ce n'est pas ferme** : le moteur n'a pas de type `TIMESTAMP WITH TIME ZONE` (une chaine
+`…+hh:mm`) et `compareValues` est une fonction pure ; lui passer le fuseau du serveur touche tous ses
+appelants.
+
+### [oracle] `V$SESSION_CONTEXT` : `HOST` rend le nom du peripherique, pas `linux-server`
+**Mesure** : `oracle-user-activity` (« reports SESSION_USER, OS_USER, HOST and SERVICE_NAME ») est rouge
+sur `main` : le test cree une session sur un peripherique nomme `vsc-1` et attend `linux-server`.
+**Pourquoi ce n'est pas ferme** : la prémisse du test (le nom du serveur) est a trancher avant de toucher
+le moteur ou le test.
 
 ### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
 **Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie

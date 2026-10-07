@@ -1,4 +1,5 @@
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { WindowsPC } from '../WindowsPC';
 
@@ -144,10 +145,7 @@ export function formatCounterSet(name: string): string {
 }
 
 function fmtTs(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ` +
-    (d.getHours() < 12 ? 'AM' : 'PM');
+  return formatDotNetDate(d, 'MM/dd/yyyy HH:mm:ss tt');
 }
 
 export function formatCounterSnapshot(hostname: string, snap: CounterSnapshot): string {
@@ -233,5 +231,5 @@ export function sampleCounterSet(
   const expanded: string[] = [];
   for (const c of requested) expanded.push(...expandWildcardCounters(c, dev));
   const samples = expanded.map((p) => sampleCounter(p, dev, rateState));
-  return { ts: simulationDate(), samples };
+  return { ts: dev.simulatedDate(), samples };
 }

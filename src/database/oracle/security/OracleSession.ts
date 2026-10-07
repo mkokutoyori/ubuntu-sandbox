@@ -156,7 +156,7 @@ export class OracleSession {
   nlsDateLanguage: string;
   nlsSort: string;
   nlsTimestampFormat: string;
-  timeZone: OracleTimeZoneSpec;
+  timeZone: OracleTimeZoneSpec | null;
   nlsTimestampTzFormat: string;
   nlsNumericCharacters: string;
 
@@ -227,7 +227,7 @@ export class OracleSession {
     this.nlsCurrency = '$';
     this.nlsCalendar = 'GREGORIAN';
     this.nlsDateFormat = 'DD-MON-RR';
-    this.timeZone = UTC_SPEC;
+    this.timeZone = null;
     this.nlsDateLanguage = 'AMERICAN';
     this.nlsSort = 'BINARY';
     this.nlsTimestampFormat = 'DD-MON-RR HH.MI.SSXFF AM';
@@ -315,7 +315,7 @@ export class OracleSession {
       case 'NLS_CURRENCY':                   return this.nlsCurrency;
       case 'NLS_CALENDAR':                   return this.nlsCalendar;
       case 'NLS_DATE_FORMAT':                return this.nlsDateFormat;
-      case 'SESSION_TIMEZONE':               return oracleZoneLabel(this.timeZone);
+      case 'SESSION_TIMEZONE':               return oracleZoneLabel(this.timeZone ?? UTC_SPEC);
       case 'NLS_DATE_LANGUAGE':              return this.nlsDateLanguage;
       case 'NLS_SORT':                       return this.nlsSort;
 
