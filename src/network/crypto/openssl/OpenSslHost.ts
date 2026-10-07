@@ -20,7 +20,7 @@ export type TlsPeerProbe =
   | { readonly ok: true; readonly certificate: X509Certificate | null;
       readonly cipherSuite: string | null; readonly protocolVersion?: string | null;
       readonly verified: boolean; readonly staple?: OcspResponseMessage | null;
-      readonly received?: Uint8Array }
+      readonly received?: Uint8Array; readonly chain?: readonly X509Certificate[] }
   | { readonly ok: false; readonly reason: string; readonly alert?: string | null };
 
 export interface TlsPeerProbeOptions {

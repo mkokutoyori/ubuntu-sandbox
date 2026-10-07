@@ -92,7 +92,7 @@ import {
 import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
 import { crlVersionOf } from '@/network/pki/der/CrlDer';
-import { publicKeyTextLines, signatureTextLines, certificateRequestText } from './OpenSslText';
+import { publicKeyTextLines, signatureTextLines, certificateRequestText, peerChainLines } from './OpenSslText';
 import { verifyCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { opensslHelpLines } from './OpenSslHelp';
@@ -1826,7 +1826,12 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   lignes.push('Certificate chain');
 
   const presente = sonde && sonde.ok ? sonde.certificate : null;
-  if (presente) {
+  const chaine = sonde && sonde.ok && sonde.chain && sonde.chain.length > 0 ? sonde.chain : null;
+  if (presente && chaine) {
+    lignes.push(...peerChainLines(chaine, opensslDate));
+    lignes.push('---', 'Server certificate', certToPem(presente).trimEnd(),
+      `subject=${opensslDistinguishedName(presente.subject)}`, `issuer=${opensslDistinguishedName(presente.issuer)}`);
+  } else if (presente) {
     lignes.push(` 0 s:${opensslDistinguishedName(presente.subject)}`);
     lignes.push(`   i:${opensslDistinguishedName(presente.issuer)}`);
   } else if (ancre) {

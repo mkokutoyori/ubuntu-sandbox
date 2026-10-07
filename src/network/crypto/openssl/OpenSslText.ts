@@ -1,7 +1,7 @@
 import { bytesToHex, hexToBytes } from '@/crypto/encoding';
 import { materialToPublicKey, bitLength } from '@/crypto/rsa';
 import type { PkiPublicKey } from '@/network/pki/PkiKeyPair';
-import type { X509CertificateFields } from '@/network/pki/X509Certificate';
+import type { X509Certificate, X509CertificateFields } from '@/network/pki/X509Certificate';
 import { opensslDistinguishedName } from '@/network/pki/der/DistinguishedName';
 
 type Extensions = NonNullable<X509CertificateFields['extensions']>;
@@ -96,4 +96,17 @@ export function certificateRequestText(csr: {
     ...(requested.length > 0 ? ['            Requested Extensions:', ...requested] : ['            (none)', '            Requested Extensions:']),
     ...signatureTextLines(csr.signatureAlgorithm, csr.signature),
   ];
+}
+
+export function peerChainLines(chain: readonly X509Certificate[], formatDate: (ms: number) => string): string[] {
+  const lines: string[] = [];
+  chain.forEach((cert, depth) => {
+    const rsa = materialToPublicKey(cert.publicKey.material);
+    const keyText = rsa ? `rsaEncryption, ${bitLength(rsa.n)} (bit)` : `id-ecPublicKey, 256 (bit)`;
+    const sigalg = cert.signatureAlgorithm === 'ecdsa-with-SHA256' ? 'ecdsa-with-SHA256' : 'RSA-SHA256';
+    lines.push(` ${depth} s:${opensslDistinguishedName(cert.subject)}`, `   i:${opensslDistinguishedName(cert.issuer)}`,
+      `   a:PKEY: ${keyText}; sigalg: ${sigalg}`,
+      `   v:NotBefore: ${formatDate(cert.notBefore)}; NotAfter: ${formatDate(cert.notAfter)}`);
+  });
+  return lines;
 }

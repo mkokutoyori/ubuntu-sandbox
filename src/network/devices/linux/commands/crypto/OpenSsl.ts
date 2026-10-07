@@ -56,6 +56,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         cipherSuite: sonde.cipherSuite, protocolVersion: sonde.protocolVersion ?? null, verified: sonde.verified,
         staple: sonde.staple ?? null,
         ...(sonde.received ? { received: sonde.received } : {}),
+        ...(sonde.chain ? { chain: sonde.chain } : {}),
       };
     },
     httpPost: (ip, port, path, body, headers) => {

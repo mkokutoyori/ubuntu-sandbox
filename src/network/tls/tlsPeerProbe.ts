@@ -17,6 +17,7 @@ export interface TlsProbeOutcome {
   readonly verified: boolean;
   readonly staple?: OcspResponseMessage | null;
   readonly received?: Uint8Array;
+  readonly chain?: readonly X509Certificate[];
 }
 
 export interface TlsProbeOptions {
@@ -75,7 +76,7 @@ export function probeTlsPeer(
       certificate: null, cipherSuite, protocolVersion, alert, verified: false,
     };
   }
-  return { ok: true, certificate, cipherSuite, protocolVersion, alert, verified: succeeded, staple: session.receivedStaple, ...(received ? { received } : {}) };
+  return { ok: true, certificate, cipherSuite, protocolVersion, alert, verified: succeeded, staple: session.receivedStaple, ...(received ? { received } : {}), chain: session.peerCertificateChain };
 }
 
 function exchangeApplicationData(socket: NonNullable<ReturnType<TcpStack['connect']>>, session: TlsClientSession, payload: Uint8Array): Uint8Array {
