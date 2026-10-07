@@ -22,7 +22,22 @@ export interface TlsPeerChannelPort {
   exchange(payload: Uint8Array): Uint8Array;
   keyUpdate(requestUpdate: boolean): void;
   renegotiate(): boolean;
+  onPush(handler: (text: string) => void): void;
   close(): void;
+}
+
+export interface TlsStreamServerPort {
+  send(text: string): boolean;
+  renegotiate(requestClientCertificate: boolean): boolean;
+  keyUpdate(requestUpdate: boolean): boolean;
+  closeConnection(): void;
+  stop(): void;
+}
+
+export interface TlsStreamServerEvents {
+  accepted(): void;
+  data(text: string): void;
+  closed(): void;
 }
 
 export type TlsPeerProbe =
@@ -107,6 +122,8 @@ export interface OpenSslHost {
     respond: (method: string, target: string) => { readonly status: number; readonly contentType: string; readonly body: string },
   ): boolean;
 
+  serveTlsStream?(port: number, tls: TlsServeSettings, events: TlsStreamServerEvents): TlsStreamServerPort | false;
+
   workingDirectory?(): string;
 
   /** Résolution par `/etc/hosts` — synchrone, pour la même raison. */
@@ -119,6 +136,7 @@ export interface OpenSslResult {
   exitCode: number;
   channel?: TlsPeerChannelPort;
   channelVersion?: string;
+  streamServer?: TlsStreamServerPort;
 }
 
 export function ok(output = ''): OpenSslResult {

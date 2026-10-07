@@ -10,6 +10,8 @@ import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
+import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
+import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { createRequest, createResponse } from '@/network/http/semantics/types';
@@ -89,6 +91,46 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
       return true;
     },
     workingDirectory: () => ctx.executor.getCwd(),
+    serveTlsStream: (port, tls, events) => {
+      const stack = ctx.net.getTcpStack();
+      if (stack.listListeners().some((l) => l.localPort === port)) return false;
+      let current: TlsServerChannel | null = null;
+      const config = {
+        serverCert: tls.chain[0], serverChain: tls.chain.slice(1), serverPrivateKey: tls.privateKey,
+        ...(tls.protocols ? { protocols: tls.protocols } : {}),
+        ...(tls.cipherList ? { cipherList: tls.cipherList } : {}),
+        ...(tls.clientAuth ? {
+          requestClientCert: true,
+          verifier: new CertificateVerifier({ trustAnchors: tls.clientAuth.anchors, clock: () => simulationNowMs() }),
+          clientCertPolicy: tls.clientAuth.required ? 'strict' as const : 'optional' as const,
+        } : {}),
+      };
+      stack.listen(port, {
+        identity: { processName: 'openssl' },
+        onAccept: (socket) => {
+          const channel: TlsServerChannel = new TlsServerChannel(socket, new TlsServerSession(config as never), {
+            onHandshakeComplete: () => events.accepted(),
+            onData: (bytes) => events.data(bytesText(bytes)),
+          });
+          current = channel;
+          socket.onClose(() => {
+            if (current === channel) current = null;
+            events.closed();
+          });
+        },
+      });
+      return {
+        send: (text) => { if (current === null) return false; current.write(fileTextToBytes(text)); return true; },
+        renegotiate: (requestClientCertificate) => current !== null && current.requestRenegotiation({ requestClientCertificate }),
+        keyUpdate: (requestUpdate) => {
+          if (current === null || current.session.negotiatedVersion !== '1.3') return false;
+          current.keyUpdate(requestUpdate);
+          return true;
+        },
+        closeConnection: () => { current?.close(); },
+        stop: () => { current?.close(); stack.closeListener(port); },
+      };
+    },
     serveTls: (port, tls, respond) => {
       const stack = ctx.net.getTcpStack();
       if (stack.listListeners().some((l) => l.localPort === port)) return false;
@@ -159,9 +201,11 @@ export const opensslCommand: LinuxCommand = {
   },
 
   runWithStatusSync(ctx: LinuxCommandContext, args: string[], stdin?: string) {
-    const interactive = ctx.executor.interactiveTerminal && stdin === undefined && args[0] === 's_client';
-    const r = runOpenSsl(linuxOpenSslHost(ctx, stdin), args, { interactive });
+    const interactive = ctx.executor.interactiveTerminal && stdin === undefined && (args[0] === 's_client' || args[0] === 's_server');
+    const print = ctx.executor.interactiveOutput ?? undefined;
+    const r = runOpenSsl(linuxOpenSslHost(ctx, stdin), args, { interactive, ...(print ? { print } : {}) });
     if (r.channel) ctx.executor.offerInteractive({ kind: 'tls-client', channel: r.channel, version: r.channelVersion ?? '1.3' });
+    if (r.streamServer) ctx.executor.offerInteractive({ kind: 'tls-server', controller: r.streamServer });
     return { output: r.output, exitCode: r.exitCode, stderr: r.stderr };
   },
 };
