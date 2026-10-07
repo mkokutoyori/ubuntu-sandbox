@@ -10,6 +10,7 @@
 import {
   aesCbcEncrypt, aesCbcDecrypt, aesEncryptBlock, aesDecryptBlock, tripleDesCbcEncrypt, tripleDesCbcDecrypt,
   tripleDesEncryptBlock, tripleDesDecryptBlock, chacha20Xor,
+  camelliaEncryptBlock, camelliaDecryptBlock, ariaEncryptBlock, ariaDecryptBlock, sm4EncryptBlock, sm4DecryptBlock,
 } from '@/crypto/cipher';
 import { pbkdf2, evpBytesToKey } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
@@ -69,12 +70,40 @@ function desCbcAlgo(keyLen: number): Algo {
   };
 }
 
-function aesStreamAlgo(keyLen: number, mode: 'ctr' | 'cfb' | 'ofb'): Algo {
+function blockCbcAlgo(keyLen: number, encrypt: BlockFn, decrypt: BlockFn): Algo {
+  return {
+    keyLen, ivLen: 16,
+    seal: (key, iv, data) => {
+      const padded = pkcs7Pad(data, 16);
+      const out = new Uint8Array(padded.length);
+      let previous = iv;
+      for (let i = 0; i < padded.length; i += 16) {
+        const block = padded.slice(i, i + 16).map((byte, j) => byte ^ previous[j]);
+        previous = encrypt(key, block);
+        out.set(previous, i);
+      }
+      return out;
+    },
+    open: (key, iv, data) => {
+      if (data.length === 0 || data.length % 16 !== 0) throw new Error('bad length');
+      const out = new Uint8Array(data.length);
+      let previous = iv;
+      for (let i = 0; i < data.length; i += 16) {
+        const block = data.slice(i, i + 16);
+        out.set(decrypt(key, block).map((byte, j) => byte ^ previous[j]), i);
+        previous = block;
+      }
+      return pkcs7Unpad(out, 16);
+    },
+  };
+}
+
+function blockStreamAlgo(keyLen: number, mode: 'ctr' | 'cfb' | 'ofb', encryptBlock: BlockFn): Algo {
   const run = (key: Uint8Array, iv: Uint8Array, data: Uint8Array, decrypting: boolean): Uint8Array => {
     const out = new Uint8Array(data.length);
     const feedback = new Uint8Array(iv);
     for (let offset = 0; offset < data.length; offset += 16) {
-      const stream = aesEncryptBlock(key, feedback);
+      const stream = encryptBlock(key, feedback);
       const chunk = Math.min(16, data.length - offset);
       for (let i = 0; i < chunk; i++) out[offset + i] = data[offset + i] ^ stream[i];
       if (mode === 'ctr') {
@@ -110,15 +139,15 @@ export const ENC_ALGOS: Readonly<Record<string, Algo>> = {
   'aes-128-ecb': ecbAlgo(16, 16, aesEncryptBlock, aesDecryptBlock),
   'aes-192-ecb': ecbAlgo(24, 16, aesEncryptBlock, aesDecryptBlock),
   'aes-256-ecb': ecbAlgo(32, 16, aesEncryptBlock, aesDecryptBlock),
-  'aes-128-ctr': aesStreamAlgo(16, 'ctr'),
-  'aes-192-ctr': aesStreamAlgo(24, 'ctr'),
-  'aes-256-ctr': aesStreamAlgo(32, 'ctr'),
-  'aes-128-cfb': aesStreamAlgo(16, 'cfb'),
-  'aes-192-cfb': aesStreamAlgo(24, 'cfb'),
-  'aes-256-cfb': aesStreamAlgo(32, 'cfb'),
-  'aes-128-ofb': aesStreamAlgo(16, 'ofb'),
-  'aes-192-ofb': aesStreamAlgo(24, 'ofb'),
-  'aes-256-ofb': aesStreamAlgo(32, 'ofb'),
+  'aes-128-ctr': blockStreamAlgo(16, 'ctr', aesEncryptBlock),
+  'aes-192-ctr': blockStreamAlgo(24, 'ctr', aesEncryptBlock),
+  'aes-256-ctr': blockStreamAlgo(32, 'ctr', aesEncryptBlock),
+  'aes-128-cfb': blockStreamAlgo(16, 'cfb', aesEncryptBlock),
+  'aes-192-cfb': blockStreamAlgo(24, 'cfb', aesEncryptBlock),
+  'aes-256-cfb': blockStreamAlgo(32, 'cfb', aesEncryptBlock),
+  'aes-128-ofb': blockStreamAlgo(16, 'ofb', aesEncryptBlock),
+  'aes-192-ofb': blockStreamAlgo(24, 'ofb', aesEncryptBlock),
+  'aes-256-ofb': blockStreamAlgo(32, 'ofb', aesEncryptBlock),
   'des-ede3-cbc': desCbcAlgo(24),
   'des3': desCbcAlgo(24),
   'des-ede-cbc': desCbcAlgo(16),
@@ -126,6 +155,25 @@ export const ENC_ALGOS: Readonly<Record<string, Algo>> = {
   'des-ede3-ecb': ecbAlgo(24, 8, tripleDesEncryptBlock, tripleDesDecryptBlock),
   'des-ede': ecbAlgo(16, 8, tripleDesEncryptBlock, tripleDesDecryptBlock),
   'des-ede-ecb': ecbAlgo(16, 8, tripleDesEncryptBlock, tripleDesDecryptBlock),
+  'camellia-128-cbc': blockCbcAlgo(16, camelliaEncryptBlock, camelliaDecryptBlock),
+  'camellia-192-cbc': blockCbcAlgo(24, camelliaEncryptBlock, camelliaDecryptBlock),
+  'camellia-256-cbc': blockCbcAlgo(32, camelliaEncryptBlock, camelliaDecryptBlock),
+  'camellia-128-ecb': ecbAlgo(16, 16, camelliaEncryptBlock, camelliaDecryptBlock),
+  'camellia-192-ecb': ecbAlgo(24, 16, camelliaEncryptBlock, camelliaDecryptBlock),
+  'camellia-256-ecb': ecbAlgo(32, 16, camelliaEncryptBlock, camelliaDecryptBlock),
+  'camellia-128-ctr': blockStreamAlgo(16, 'ctr', camelliaEncryptBlock),
+  'camellia-256-ctr': blockStreamAlgo(32, 'ctr', camelliaEncryptBlock),
+  'aria-128-cbc': blockCbcAlgo(16, ariaEncryptBlock, ariaDecryptBlock),
+  'aria-192-cbc': blockCbcAlgo(24, ariaEncryptBlock, ariaDecryptBlock),
+  'aria-256-cbc': blockCbcAlgo(32, ariaEncryptBlock, ariaDecryptBlock),
+  'aria-128-ecb': ecbAlgo(16, 16, ariaEncryptBlock, ariaDecryptBlock),
+  'aria-256-ecb': ecbAlgo(32, 16, ariaEncryptBlock, ariaDecryptBlock),
+  'aria-128-ctr': blockStreamAlgo(16, 'ctr', ariaEncryptBlock),
+  'aria-256-ctr': blockStreamAlgo(32, 'ctr', ariaEncryptBlock),
+  'sm4-cbc': blockCbcAlgo(16, sm4EncryptBlock, sm4DecryptBlock),
+  'sm4': blockCbcAlgo(16, sm4EncryptBlock, sm4DecryptBlock),
+  'sm4-ecb': ecbAlgo(16, 16, sm4EncryptBlock, sm4DecryptBlock),
+  'sm4-ctr': blockStreamAlgo(16, 'ctr', sm4EncryptBlock),
   'chacha20': chacha20Algo(),
 };
 
@@ -157,10 +205,7 @@ export function legacyProviderCipherError(name: string): string | null {
     + `unsupported:../crypto/evp/evp_fetch.c:386:Global default library context, Algorithm (${entry[0]} : ${entry[1]}), Properties ()`;
 }
 
-export const ENC_KNOWN_UNIMPLEMENTED = [
-  'aria-128-cbc', 'aria-192-cbc', 'aria-256-cbc', 'camellia-128-cbc', 'camellia-192-cbc', 'camellia-256-cbc',
-  'sm4-cbc', 'sm4',
-];
+export const ENC_KNOWN_UNIMPLEMENTED: readonly string[] = [];
 
 const MAGIC = 'Salted__';
 

@@ -169,8 +169,8 @@ describe('§P2 — enc: ciphers and key derivation', () => {
   });
 
   it('a cipher openssl knows and this build lacks is named', async () => {
-    const out = await machine().executeCommand('openssl enc -camellia-128-cbc -k pw -in /etc/hostname');
-    expect(out).toContain("'camellia-128-cbc' is not implemented in this simulator");
+    const out = await machine().executeCommand('openssl enc -rc4 -k pw -in /etc/hostname');
+    expect(out).toContain("Error setting cipher RC4");
   });
 
   it('the direct alias `openssl aes-256-cbc` behaves like `enc -aes-256-cbc`', async () => {

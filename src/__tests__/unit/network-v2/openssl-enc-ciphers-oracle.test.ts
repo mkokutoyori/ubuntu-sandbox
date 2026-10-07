@@ -1,7 +1,7 @@
 /**
  * `openssl enc` du simulateur chiffre octet pour octet comme openssl 3.0.13 pour chaque chiffrement
  * du fournisseur par défaut dont les primitives existent : AES (CBC, ECB, CTR, CFB, OFB), 3DES à 2 et
- * 3 clés (CBC et ECB, dont l'alias -des3) et ChaCha20. Le sel est fixé (-S, donc sans en-tête Salted__)
+ * 3 clés (CBC et ECB, dont l'alias -des3), ChaCha20, Camellia, ARIA et SM4 (CBC, ECB, CTR ; primitives écrites contre les vecteurs de la RFC 3713 et l'oracle openssl). Le sel est fixé (-S, donc sans en-tête Salted__)
  * pour que la comparaison soit exacte, et le déchiffrement du binaire d'openssl par le simulateur est
  * vérifié dans l'autre sens. Les chiffrements du fournisseur « legacy » (RC4, DES, RC2, SEED, BF…)
  * sont refusés avec le texte que donne openssl 3.0 par défaut, et les AEAD par « AEAD ciphers not
@@ -35,6 +35,7 @@ function newServer(tag: string): LinuxServer {
 }
 
 const CIPHERS = [
+  'camellia-128-cbc', 'camellia-256-cbc', 'camellia-192-ecb', 'camellia-128-ctr', 'aria-128-cbc', 'aria-192-cbc', 'aria-256-ecb', 'aria-256-ctr', 'sm4-cbc', 'sm4-ecb', 'sm4-ctr',
   'aes-128-cbc', 'aes-256-cbc', 'aes-128-ecb', 'aes-192-ecb', 'aes-256-ecb',
   'aes-128-ctr', 'aes-256-ctr', 'aes-128-cfb', 'aes-256-cfb', 'aes-128-ofb', 'aes-192-ofb',
   'des-ede3-cbc', 'des3', 'des-ede3', 'des-ede', 'des-ede-cbc', 'chacha20',

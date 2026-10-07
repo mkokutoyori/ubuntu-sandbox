@@ -13,3 +13,6 @@ export {
   CHACHA20_POLY1305_TAG_SIZE, CHACHA20_KEY_SIZE, CHACHA20_NONCE_SIZE,
 } from './chacha20Poly1305';
 export { aesCcmEncrypt, aesCcmDecrypt, AES_CCM_NONCE_SIZE } from './aesCcm';
+export { camelliaEncryptBlock, camelliaDecryptBlock, CAMELLIA_BLOCK_SIZE } from './camellia';
+export { ariaEncryptBlock, ariaDecryptBlock, ARIA_BLOCK_SIZE } from './aria';
+export { sm4EncryptBlock, sm4DecryptBlock, SM4_BLOCK_SIZE } from './sm4';
