@@ -20,6 +20,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 export type HttpsServerConfig = Omit<TlsServerConfig, 'alpnProtocols'> & {
+  readonly renegotiateForClientCertificate?: (request: HttpMessage) => boolean;
   readonly alpnProtocols?: readonly string[];
   /** RFC 6797 — if set, every response carries `Strict-Transport-Security: max-age=<n>`. */
   readonly hstsMaxAgeSeconds?: number;
@@ -103,48 +104,10 @@ export class HttpsServerSession {
     };
 
     const assembler = new HttpRequestAssembler();
-    const unsubscribe = attachTlsRecordPump(socket, (arrived) => {
-      let records = arrived;
-      if (tls.result !== 'accept') {
-        const reply = tls.handle(records);
-        if (reply && reply.length > 0) socket.write(bytesToBinaryString(encodeRecords(reply)));
-        if ((tls.result as string | null) !== 'accept') return;
-        records = tls.takeTrailingRecords();
-        if (records.length === 0) return;
-      }
-
-      if (tls.renegotiating) {
-        const answer = tls.handleRenegotiation(records, clientSeq, serverSeq);
-        if (answer && answer.length > 0) socket.write(bytesToBinaryString(encodeRecords([...answer])));
-        if (tls.takeRenegotiationCompleted()) { clientSeq = 0; serverSeq = 0; }
-        return;
-      }
-      const { plaintext: requestBytes, nextSeq: clientNextSeq, peerKeyUpdates, peerRequestedKeyUpdate, renegotiation } = decryptApplicationData(
-        tls.clientTraffic(), clientSeq, records,
-      );
-      clientSeq = clientNextSeq;
-      if (renegotiation) {
-        const answer = tls.handleRenegotiation(renegotiation.records, renegotiation.sequence, serverSeq);
-        if (answer && answer.length > 0) {
-          socket.write(bytesToBinaryString(encodeRecords([...answer])));
-          serverSeq += answer.length;
-        }
-        if (requestBytes.length === 0) return;
-      }
-      if (peerKeyUpdates) {
-        const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, serverSeq);
-        if (reply.length > 0) {
-          socket.write(bytesToBinaryString(encodeRecords([...reply])));
-          serverSeq = 0;
-        }
-      }
-      if (peerKeyUpdates && requestBytes.length === 0) return;
-
+    let deferred: ReturnType<typeof parseRequest> | null = null;
+    let unsubscribe: () => void = () => undefined;
+    const runRequest = (parsed: ReturnType<typeof parseRequest>): void => {
       const requestId = randomRequestId();
-      const completeRequest = assembler.push(decoder.decode(requestBytes));
-      if (completeRequest === null) return;
-      const parsed = parseRequest(completeRequest);
-
       const emit = (response: HttpMessage, shouldClose: boolean): void => {
         this.applyHsts(response);
         const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
@@ -199,6 +162,65 @@ export class HttpsServerSession {
       };
       if (produced instanceof Promise) enqueue(() => produced.then(settle));
       else enqueue(() => { settle(produced); });
+    };
+
+    unsubscribe = attachTlsRecordPump(socket, (arrived) => {
+      let records = arrived;
+      if (tls.result !== 'accept') {
+        const reply = tls.handle(records);
+        if (reply && reply.length > 0) socket.write(bytesToBinaryString(encodeRecords(reply)));
+        if ((tls.result as string | null) !== 'accept') return;
+        records = tls.takeTrailingRecords();
+        if (records.length === 0) return;
+      }
+
+      if (tls.renegotiating) {
+        const answer = tls.handleRenegotiation(records, clientSeq, serverSeq);
+        if (answer && answer.length > 0) socket.write(bytesToBinaryString(encodeRecords([...answer])));
+        if (tls.takeRenegotiationCompleted()) {
+          clientSeq = 0;
+          serverSeq = 0;
+          const waiting = deferred;
+          deferred = null;
+          if (waiting !== null) runRequest(waiting);
+        }
+        return;
+      }
+      const { plaintext: requestBytes, nextSeq: clientNextSeq, peerKeyUpdates, peerRequestedKeyUpdate, renegotiation } = decryptApplicationData(
+        tls.clientTraffic(), clientSeq, records,
+      );
+      clientSeq = clientNextSeq;
+      if (renegotiation) {
+        const answer = tls.handleRenegotiation(renegotiation.records, renegotiation.sequence, serverSeq);
+        if (answer && answer.length > 0) {
+          socket.write(bytesToBinaryString(encodeRecords([...answer])));
+          serverSeq += answer.length;
+        }
+        if (requestBytes.length === 0) return;
+      }
+      if (peerKeyUpdates) {
+        const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, serverSeq);
+        if (reply.length > 0) {
+          socket.write(bytesToBinaryString(encodeRecords([...reply])));
+          serverSeq = 0;
+        }
+      }
+      if (peerKeyUpdates && requestBytes.length === 0) return;
+
+      const completeRequest = assembler.push(decoder.decode(requestBytes));
+      if (completeRequest === null) return;
+      const parsed = parseRequest(completeRequest);
+      const gate = this.tlsConfig().renegotiateForClientCertificate;
+      if (parsed.ok && gate !== undefined && gate(parsed.message) && tls.needsClientCertificateRenegotiation) {
+        const hello = tls.requestRenegotiation(serverSeq, { requestClientCertificate: true });
+        if (hello !== null) {
+          serverSeq += hello.length;
+          socket.write(bytesToBinaryString(encodeRecords([...hello])));
+          deferred = parsed;
+          return;
+        }
+      }
+      runRequest(parsed);
     });
   }
 }
