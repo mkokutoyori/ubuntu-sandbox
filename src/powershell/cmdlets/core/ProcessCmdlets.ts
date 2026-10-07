@@ -49,6 +49,7 @@ function toPSObject(p: ProcessInfo): Record<string, PSValue> {
     Id:             p.pid,
     SI:             p.sessionId,
     ProcessName:    baseName,
+    StartTime:      p.startedAtMs === undefined ? null : new Date(p.startedAtMs),
     Name:           baseName,
     Status:         p.status,
     Owner:          p.owner,

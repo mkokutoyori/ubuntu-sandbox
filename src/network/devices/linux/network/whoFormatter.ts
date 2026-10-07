@@ -1,3 +1,4 @@
+import { formatLocalTime } from '../system/SystemInfo';
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
 import type { UtmpSync, UtmpRecord } from './UtmpSync';
@@ -84,6 +85,7 @@ export interface WhoContext {
   currentTty: string;
   bootDate: Date | null;
   now: Date;
+  zone?: string;
 }
 
 function pad(s: string, w: number): string { return s.padEnd(w); }
@@ -113,13 +115,8 @@ function synthSession(r: UtmpRecord): SshSession {
   } as unknown as SshSession;
 }
 
-function fmtDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${y}-${m}-${day} ${hh}:${mm}`;
+function fmtDate(d: Date, zone?: string): string {
+  return formatLocalTime('%Y-%m-%d %H:%M', d.getTime(), zone);
 }
 
 function idleStr(lastActivity: Date, now: Date): string {
@@ -133,12 +130,12 @@ function idleStr(lastActivity: Date, now: Date): string {
   return `${days}d`;
 }
 
-function renderSession(s: SshSession, opts: WhoOptions, now: Date): string {
+function renderSession(s: SshSession, opts: WhoOptions, now: Date, zone?: string): string {
   const parts: string[] = [];
   parts.push(pad(s.user, 8));
   if (opts.status) parts.push(s.tty === 'tty1' ? '+' : '+');
   parts.push(pad(s.tty, 12));
-  parts.push(fmtDate(s.loginAt));
+  parts.push(fmtDate(s.loginAt, zone));
   if (opts.users) {
     const last = s.lastActivityAt ?? s.loginAt;
     parts.push(pad(idleStr(last, now), 5));
@@ -191,10 +188,10 @@ export function renderWho(ctx: WhoContext, args: string[]): string {
 
   const lines: string[] = [];
   if (opts.heading) lines.push(renderHeading(opts));
-  if (opts.boot && ctx.bootDate) lines.push(`system boot  ${fmtDate(ctx.bootDate)}`);
-  if (opts.runlevel && ctx.bootDate) lines.push(`   run-level 5  ${fmtDate(ctx.bootDate)}`);
+  if (opts.boot && ctx.bootDate) lines.push(`system boot  ${fmtDate(ctx.bootDate, ctx.zone)}`);
+  if (opts.runlevel && ctx.bootDate) lines.push(`   run-level 5  ${fmtDate(ctx.bootDate, ctx.zone)}`);
   if (showSessions) {
-    for (const s of sessions) lines.push(renderSession(s, opts, ctx.now));
+    for (const s of sessions) lines.push(renderSession(s, opts, ctx.now, ctx.zone));
   }
   return lines.join('\n');
 }

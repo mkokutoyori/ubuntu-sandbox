@@ -30,6 +30,7 @@ export interface PsContext {
   tty: string;
   /** PID of the interactive `-bash`, so `ps -p $$` resolves. */
   shellPid?: number;
+  zone?: string;
 }
 
 type FormatPreset = 'default' | 'full' | 'long' | 'aux';
@@ -69,7 +70,7 @@ interface Column {
   header: string;
   align: 'l' | 'r';
   width: number;
-  value(p: ProcessInfo): string;
+  value(p: ProcessInfo, zone?: string): string;
   /** Numeric projection for --sort. */
   num?(p: ProcessInfo): number;
 }
@@ -100,8 +101,8 @@ const COLUMN_REGISTRY: Record<string, Column> = {
   tty: { header: 'TTY', align: 'l', width: 8, value: p => p.tty },
   stat: { header: 'STAT', align: 'l', width: 4, value: p => p.state, },
   s: { header: 'S', align: 'l', width: 1, value: p => p.state },
-  stime: { header: 'STIME', align: 'l', width: 5, value: p => fmtClock(p.startTime) },
-  start: { header: 'START', align: 'l', width: 8, value: p => fmtClock(p.startTime) },
+  stime: { header: 'STIME', align: 'l', width: 5, value: (p, zone) => fmtClock(p.startTime, zone) },
+  start: { header: 'START', align: 'l', width: 8, value: (p, zone) => fmtClock(p.startTime, zone) },
   time: { header: 'TIME', align: 'r', width: 8, value: p => fmtCpu(p.cpuTime), num: p => p.cpuTime },
   bsdtime: { header: 'TIME', align: 'r', width: 6, value: p => fmtBsdCpu(p.cpuTime), num: p => p.cpuTime },
   ni: { header: 'NI', align: 'r', width: 3, value: p => String(p.nice), num: p => p.nice },
@@ -382,7 +383,7 @@ function forestOrder(list: ProcessInfo[]): ProcessInfo[] {
   return ordered;
 }
 
-function renderTable(list: ProcessInfo[], q: PsQuery): string {
+function renderTable(list: ProcessInfo[], q: PsQuery, zone?: string): string {
   const specs: ColumnSpec[] =
     q.columns ?? FORMAT_PRESETS[q.format].map(key => ({ key }));
   const columns = specs.map(s => {
@@ -407,7 +408,7 @@ function renderTable(list: ProcessInfo[], q: PsQuery): string {
   for (const p of list) {
     const indent = q.forest ? '  '.repeat(depthOf(p, byPid)) : '';
     const cells = columns.map(({ col, spec }, idx) => {
-      let v = col ? col.value(p) : '';
+      let v = col ? col.value(p, zone) : '';
       if (q.forest && ['comm', 'ucmd', 'cmd', 'args'].includes(spec.key) && indent) {
         v = `${indent}\\_ ${v}`;
       }
@@ -439,5 +440,5 @@ export function runPs(args: string[], ctx: PsContext): string {
     list = [...list].sort((a, b) => a.pid - b.pid);
   }
 
-  return renderTable(list, q);
+  return renderTable(list, q, ctx.zone);
 }

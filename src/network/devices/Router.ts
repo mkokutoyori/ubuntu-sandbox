@@ -441,7 +441,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const sec = this.securityConfig();
       const tr = sec?.timeRanges.get(name);
       if (!tr) return false;
-      return isTimeRangeActive(tr, now);
+      return isTimeRangeActive(tr, this.wallDateAt(now));
     });
     return e;
   })();
@@ -2199,7 +2199,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         const sec = this.securityConfig();
         const tr = sec?.timeRanges.get(name);
         if (!tr) return false;
-        return isTimeRangeActive(tr, now);
+        return isTimeRangeActive(tr, this.wallDateAt(now));
       },
     };
   }
@@ -4826,6 +4826,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   private _httpService: CiscoHttpService | null = null;
   getDeviceClock(): DeviceClockStore { return this.getManagementService().getClockStore(); }
+
+  private wallDateAt(instant: Date): Date {
+    return new Date(this.getDeviceClock().readingAt(instant.getTime()).localMs);
+  }
 
   localClock(): { localMs: number; offsetMin: number } {
     const lecture = this.getDeviceClock().readingAt(this.getSystemClockMs());

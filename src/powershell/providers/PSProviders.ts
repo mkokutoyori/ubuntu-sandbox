@@ -66,6 +66,7 @@ export interface ServiceInfo {
 
 export interface ProcessInfo {
   pid: number;
+  startedAtMs?: number;
   name: string;
   ppid: number;
   owner: string;
@@ -89,6 +90,7 @@ export interface UserInfo {
   enabled: boolean;
   passwordRequired: boolean;
   lastLogon: Date | null;
+  passwordLastSet?: Date | null;
 }
 
 export interface GroupInfo {

@@ -5,11 +5,16 @@
  */
 
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import type { TimeZone } from '@/network/core/time/TimeZone';
+import { offsetMinutesAt } from '@/network/core/time/TimeZoneRegistry';
+import {
+  hostOffsetSpec, hostZoneOf, type OracleClockReading,
+} from './time/OracleHostClock';
 
 import { BaseExecutor, type ExecutionContext } from '../engine/executor/BaseExecutor';
 import {
   oracleDateText, oracleOffsetMinutes, oracleTimestampText, oracleZoneLabel,
-  UTC_SPEC, type OracleTimeZoneSpec,
+  type OracleTimeZoneSpec,
 } from './time/OracleTimeZone';
 import { ScalarFunctionEvaluator } from './functions/ScalarFunctionEvaluator';
 import { type ResultSet, emptyResult, queryResult, type ColumnMeta, type Row } from '../engine/executor/ResultSet';
@@ -38,7 +43,9 @@ import { collectSelectColumnUsage, BARE_STAR, type SelectColumnUsage } from './s
 import { resolveRlsPredicate, type RlsHost, type RlsOperation, type RlsPolicyRecord, type ReferencedColumns } from './security/RlsPredicateApplier';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
-import { formatDateWithPattern, parseDateWithPattern, coerceDateValue } from './functions/dateSupport';
+import {
+  formatDateWithPattern, parseDateWithPattern, coerceDateValue, instantMsOf, wallLiteralText,
+} from './functions/dateSupport';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
 import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
@@ -97,6 +104,19 @@ const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
   'CreateDirectoryStatement', 'DropDirectoryStatement',
 ]);
 
+const CLOCK_PSEUDO_COLUMNS: Readonly<Record<string, keyof OracleClockReading>> = {
+  SYSDATE: 'sysdate',
+  CURRENT_DATE: 'currentDate',
+  SYSTIMESTAMP: 'systimestamp',
+  CURRENT_TIMESTAMP: 'currentTimestamp',
+  LOCALTIMESTAMP: 'localTimestamp',
+  DBTIMEZONE: 'dbTimeZone',
+  SESSIONTIMEZONE: 'sessionTimeZone',
+};
+const PSEUDO_COLUMN_NAMES: readonly string[] = [...Object.keys(CLOCK_PSEUDO_COLUMNS), 'USER', 'ROWNUM'];
+const DATE_PSEUDO_COLUMNS: ReadonlySet<string> = new Set(['SYSDATE', 'CURRENT_DATE']);
+const TIMESTAMP_PSEUDO_COLUMNS: ReadonlySet<string> = new Set(['SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'LOCALTIMESTAMP']);
+
 export class OracleExecutor extends BaseExecutor {
   declare protected catalog: OracleCatalog;
   declare protected storage: OracleStorage;
@@ -110,37 +130,42 @@ export class OracleExecutor extends BaseExecutor {
     parseOracleDate: (s, f) => this.parseOracleDate(s, f),
     getMetadataDDL: (a) => this.getMetadataDDL(a),
     getContext: () => this.context,
+    serverZone: () => this.serverZone(),
+    clockText: () => this.oracleClock(),
     callStoredFunction: (n, a) =>
       this.commandHost ? this.commandHost.execScalarFunctionCall(this, n, a) : { handled: false, value: null },
     readBfile: (dir, file) => this.readBfileContent(dir, file),
   });
   private _currentRowNum: number = 0;
 
-  private oracleClock(): {
-    sysdate: string; currentDate: string;
-    systimestamp: string; currentTimestamp: string;
-    dbTimeZone: string; sessionTimeZone: string;
-  } {
-    const at = simulationNowMs();
-    const database = this.databaseTimeZone();
-    const session = (this.context.session as { timeZone?: OracleTimeZoneSpec } | undefined)
-      ?.timeZone ?? database;
-    const serverOffset = oracleOffsetMinutes(database, at);
+  oracleClock(): OracleClockReading {
+    const host = this.instance.hostClock();
+    const at = host.nowMs();
+    const hostOffset = offsetMinutesAt(hostZoneOf(host), at);
+    const database = this.instance.timeZone;
+    const session = (this.context.session as { timeZone?: OracleTimeZoneSpec | null } | undefined)
+      ?.timeZone ?? hostOffsetSpec(host);
     const sessionOffset = oracleOffsetMinutes(session, at);
     return {
-      sysdate: oracleDateText(at, serverOffset),
+      sysdate: oracleDateText(at, hostOffset),
       currentDate: oracleDateText(at, sessionOffset),
-      systimestamp: oracleTimestampText(at, serverOffset),
+      systimestamp: oracleTimestampText(at, hostOffset),
       currentTimestamp: oracleTimestampText(at, sessionOffset),
+      localTimestamp: oracleTimestampText(at, sessionOffset).replace(/ [+-]\d{2}:\d{2}$/, ''),
       dbTimeZone: oracleZoneLabel(database),
       sessionTimeZone: oracleZoneLabel(session),
     };
   }
 
-  private databaseTimeZone(): OracleTimeZoneSpec {
-    const instance = (this.context as { instance?: { timeZone?: OracleTimeZoneSpec } }).instance;
-    return instance?.timeZone ?? UTC_SPEC;
+  private clockPseudoColumn(name: string): string | undefined {
+    const key = CLOCK_PSEUDO_COLUMNS[name];
+    return key === undefined ? undefined : this.oracleClock()[key];
   }
+
+  serverZone(): TimeZone {
+    return hostZoneOf(this.instance.hostClock());
+  }
+
   /** Implicit-transaction lifecycle (undo snapshots, savepoints, tx ids). */
   private readonly txn: TransactionManager;
   /** Centralized ORA-01031/00942/01917/01934 privilege decision rules. */
@@ -1003,8 +1028,8 @@ export class OracleExecutor extends BaseExecutor {
       if (!Number.isFinite(scn)) throw new OracleError(8181, 'specified number is not a valid system change number');
       return history.stateAtScn(schema, table, scn);
     }
-    const ms = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
-    if (!Number.isFinite(ms)) throw new OracleError(8186, 'invalid timestamp specified');
+    const ms = instantMsOf(value, this.serverZone());
+    if (ms === null) throw new OracleError(8186, 'invalid timestamp specified');
     return history.stateAtTime(schema, table, ms);
   }
 
@@ -1292,8 +1317,8 @@ export class OracleExecutor extends BaseExecutor {
       // NLS_DATE_FORMAT, not the internal storage string — same pseudo-
       // column type tagging as expandSelectItems() for table-based SELECTs.
       const pseudoName = item.expr.type === 'Identifier' ? item.expr.name.toUpperCase() : null;
-      const dataType = (pseudoName === 'SYSDATE' || pseudoName === 'CURRENT_DATE') ? parseOracleType('DATE')
-        : (pseudoName === 'SYSTIMESTAMP' || pseudoName === 'CURRENT_TIMESTAMP') ? parseOracleType('TIMESTAMP')
+      const dataType = pseudoName !== null && DATE_PSEUDO_COLUMNS.has(pseudoName) ? parseOracleType('DATE')
+        : pseudoName !== null && TIMESTAMP_PSEUDO_COLUMNS.has(pseudoName) ? parseOracleType('TIMESTAMP')
         : parseOracleType('VARCHAR2', 4000);
       columns.push({ name: colName, dataType });
       row.push(value);
@@ -2678,7 +2703,7 @@ export class OracleExecutor extends BaseExecutor {
             projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: result.columns[idx].dataType });
           } else {
             // ORA-00904: column not found in catalog view
-            const knownPseudo = ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'DBTIMEZONE', 'SESSIONTIMEZONE', 'USER', 'ROWNUM'].includes(colName);
+            const knownPseudo = PSEUDO_COLUMN_NAMES.includes(colName);
             if (!knownPseudo) {
               throw new OracleError(904, `"${colName}": invalid identifier`);
             }
@@ -4012,7 +4037,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'Literal':
         if (expr.dataType === 'null') return null;
         if (expr.dataType === 'number') return Number(expr.value);
-        if (expr.dataType === 'date' || expr.dataType === 'timestamp') return new Date(String(expr.value));
+        if (expr.dataType === 'date' || expr.dataType === 'timestamp') return coerceDateValue(wallLiteralText(String(expr.value))) ?? new Date(String(expr.value));
         return String(expr.value ?? '');
 
       case 'Identifier': {
@@ -4050,13 +4075,8 @@ export class OracleExecutor extends BaseExecutor {
           if (fn === 'GETLENGTH') return null;
         }
         // Oracle pseudo-columns
-        const horlogeA = this.oracleClock();
-        if (idName === 'SYSDATE') return horlogeA.sysdate;
-        if (idName === 'CURRENT_DATE') return horlogeA.currentDate;
-        if (idName === 'SYSTIMESTAMP') return horlogeA.systimestamp;
-        if (idName === 'CURRENT_TIMESTAMP') return horlogeA.currentTimestamp;
-        if (idName === 'DBTIMEZONE') return horlogeA.dbTimeZone;
-        if (idName === 'SESSIONTIMEZONE') return horlogeA.sessionTimeZone;
+        const clockValue = this.clockPseudoColumn(idName);
+        if (clockValue !== undefined) return clockValue;
         if (idName === 'USER') return this.context.currentUser;
         if (idName === 'ROWNUM') return this._currentRowNum || 1;
         // ORA-00904: invalid identifier — mirrors real Oracle behavior
@@ -4313,13 +4333,8 @@ export class OracleExecutor extends BaseExecutor {
         }
         // Pseudo-columns
         const name = (expr as IdentifierExpr).name.toUpperCase();
-        const horlogeB = this.oracleClock();
-        if (name === 'SYSDATE') return horlogeB.sysdate;
-        if (name === 'CURRENT_DATE') return horlogeB.currentDate;
-        if (name === 'SYSTIMESTAMP') return horlogeB.systimestamp;
-        if (name === 'CURRENT_TIMESTAMP') return horlogeB.currentTimestamp;
-        if (name === 'DBTIMEZONE') return horlogeB.dbTimeZone;
-        if (name === 'SESSIONTIMEZONE') return horlogeB.sessionTimeZone;
+        const clockValue = this.clockPseudoColumn(name);
+        if (clockValue !== undefined) return clockValue;
         if (name === 'USER') return this.context.currentUser;
         if (name === 'ROWNUM') return this._currentRowNum || 1;
         // ORA-00904: invalid identifier — mirrors real Oracle behavior
@@ -4533,12 +4548,12 @@ export class OracleExecutor extends BaseExecutor {
    * milliseconds, or `null` if the value is not a date.
    */
   private coerceToDateMs(value: CellValue): number | null {
-    if (value instanceof Date) return value.getTime();
+    if (value instanceof Date) return coerceDateValue(value, this.serverZone())?.getTime() ?? null;
     // Comparison demands a full timestamp: a bare YYYY-MM-DD or a pure
     // numeric string ("1", "100") must NOT be treated as a date here.
     if (typeof value !== 'string') return null;
     if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) return null;
-    return coerceDateValue(value)?.getTime() ?? null;
+    return coerceDateValue(value, this.serverZone())?.getTime() ?? null;
   }
 
 
@@ -4618,7 +4633,7 @@ export class OracleExecutor extends BaseExecutor {
           const name = item.expr.name.toUpperCase();
           const table = (item.expr as IdentifierExpr).table?.toUpperCase();
           // Check if it's a known pseudo-column or package reference
-          const knownPseudo = !table && ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'DBTIMEZONE', 'SESSIONTIMEZONE', 'USER', 'ROWNUM'].includes(name);
+          const knownPseudo = !table && PSEUDO_COLUMN_NAMES.includes(name);
           const knownPackage = !!table && ['DBMS_RANDOM', 'DBMS_UTILITY', 'DBMS_LOB'].includes(table);
           if (!knownPseudo && !knownPackage && columns.length > 0) {
             const displayName = table ? `${table}.${name}` : name;
@@ -4627,8 +4642,8 @@ export class OracleExecutor extends BaseExecutor {
           // SYSDATE/CURRENT_DATE are DATE-typed pseudo-columns — tag them
           // as such so the renderer applies NLS_DATE_FORMAT instead of
           // printing the internal YYYY-MM-DD HH:MM:SS storage string.
-          const pseudoType = (name === 'SYSDATE' || name === 'CURRENT_DATE') ? 'DATE'
-            : (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') ? 'TIMESTAMP'
+          const pseudoType = DATE_PSEUDO_COLUMNS.has(name) ? 'DATE'
+            : TIMESTAMP_PSEUDO_COLUMNS.has(name) ? 'TIMESTAMP'
             : 'VARCHAR2';
           result.push({ name: item.alias || name, colIndex: -1, dataType: parseOracleType(pseudoType), expr: item.expr });
         }

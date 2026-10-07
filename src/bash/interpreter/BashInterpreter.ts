@@ -50,6 +50,7 @@ export interface ExternalCommandResult {
   stderr?: string;
   interleaved?: string;
   backgroundPid?: number;
+  lineOriented?: boolean;
 }
 
 /**
@@ -735,7 +736,29 @@ export class BashInterpreter {
     }
   }
 
+  private temporaryAssignmentNames(node: SimpleCommand): string[] {
+    if (node.words.length === 0 || node.assignments.length === 0) return [];
+    const head = node.words[0];
+    const headName = head.type === 'LiteralWord' ? head.value : '';
+    if (isDeclScopingCommand(headName) || headName === 'readonly' || headName === 'export') return [];
+    return node.assignments.map((assign) => assign.name);
+  }
+
   private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
+    const names = this.temporaryAssignmentNames(rawNode);
+    if (names.length === 0) {
+      yield* this.visitSimpleCommandBody(rawNode, pipeInput);
+      return;
+    }
+    const saved = names.map((name) => this.env.snapshotVariable(name));
+    try {
+      yield* this.visitSimpleCommandBody(rawNode, pipeInput);
+    } finally {
+      for (const snapshot of saved) this.env.restoreVariable(snapshot);
+    }
+  }
+
+  private *visitSimpleCommandBody(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
     yield* this.fireSignalTrap('DEBUG');
     const node = this.materializeProcSubs(rawNode);
 
@@ -892,7 +915,7 @@ export class BashInterpreter {
           if (result.stderr) this.stderrParts.push(result.stderr);
         } else {
           if (result.output) {
-            this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
+            this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : ensureTrailingNewline(result.output));
           }
           if (result.stderr) {
             this.stderrParts.push(result.stderr);
@@ -903,7 +926,7 @@ export class BashInterpreter {
         }
       } else if (result.output) {
         // Verbatim on redirect (binary-safe); add trailing newline only when going to the terminal.
-        this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
+        this.output.push(hasAnyRedirect && result.lineOriented !== true ? result.output : ensureTrailingNewline(result.output));
       }
       this.env.lastExitCode = result.exitCode;
     }

@@ -5,7 +5,7 @@
  * so the session class doesn't need to know about Oracle internals.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
+import { hostBannerDate, hostWallIso, hostWallTime } from '@/database/oracle/time/OracleHostClock';
 
 import type { HostCapableDevice } from '@/network';
 import { getOracleDatabase, initOracleFilesystem } from './database';
@@ -32,7 +32,7 @@ export function handleLsnrctl(
   const hostname = device.getHostname();
 
   addLine('');
-  addLine(`${ORACLE_BANNER.LSNRCTL_HEADER} on ${simulationDate().toDateString()}`);
+  addLine(`${ORACLE_BANNER.LSNRCTL_HEADER} on ${hostBannerDate(db.instance.hostClock())}`);
   addLine('');
   addLine(ORACLE_BANNER.COPYRIGHT);
   addLine('');
@@ -241,7 +241,7 @@ export function handleTnsping(
   const serviceName = args[0] || '';
 
   addLine('');
-  addLine(`${ORACLE_BANNER.TNSPING_HEADER} on ${simulationDate().toDateString()}`);
+  addLine(`${ORACLE_BANNER.TNSPING_HEADER} on ${hostBannerDate(db.instance.hostClock())}`);
   addLine('');
   addLine(ORACLE_BANNER.COPYRIGHT);
   addLine('');
@@ -310,7 +310,7 @@ export function handleExpdp(
   const db = getOracleDatabase(device.getId());
 
   addLine('');
-  addLine(`Export: Release ${ORACLE_CONFIG.VERSION}.0 - Production on ${simulationDate().toDateString()}`);
+  addLine(`Export: Release ${ORACLE_CONFIG.VERSION}.0 - Production on ${hostBannerDate(db.instance.hostClock())}`);
   addLine(ORACLE_BANNER.COPYRIGHT);
   addLine('');
 
@@ -367,7 +367,7 @@ export function handleExpdp(
   addLine('******************************************************************************');
   addLine(`Dump file set for ${schemas[0]}.${jobName} is:`);
   addLine(`  ${dumpPath}`);
-  addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${simulationDate().toLocaleTimeString()}`);
+  addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${hostWallTime(db.instance.hostClock())}`);
 
   device.writeFileFromEditor?.(dumpPath, JSON.stringify(dump));
   device.writeFileFromEditor?.(logPath, [
@@ -376,7 +376,7 @@ export function handleExpdp(
     ...report.lines,
     `Tables: ${report.tables}`,
     `Rows: ${report.rows}`,
-    `Completed at ${simulationDate().toISOString()}`,
+    `Completed at ${hostWallIso(db.instance.hostClock())}`,
   ].join('\n'));
 }
 
@@ -397,7 +397,7 @@ export function handleImpdp(
   const db = getOracleDatabase(device.getId());
 
   addLine('');
-  addLine(`Import: Release ${ORACLE_CONFIG.VERSION}.0 - Production on ${simulationDate().toDateString()}`);
+  addLine(`Import: Release ${ORACLE_CONFIG.VERSION}.0 - Production on ${hostBannerDate(db.instance.hostClock())}`);
   addLine(ORACLE_BANNER.COPYRIGHT);
   addLine('');
 
@@ -475,7 +475,7 @@ export function handleImpdp(
   for (const line of report.lines) addLine(line);
 
   addLine('');
-  addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${simulationDate().toLocaleTimeString()}`);
+  addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${hostWallTime(db.instance.hostClock())}`);
 
   const logPath = joinDirectoryPath(dir.path, logfile);
   device.writeFileFromEditor?.(logPath, [
@@ -483,7 +483,7 @@ export function handleImpdp(
     ...report.lines,
     `Tables: ${report.tables}`,
     `Rows: ${report.rows}`,
-    `Completed at ${simulationDate().toISOString()}`,
+    `Completed at ${hostWallIso(db.instance.hostClock())}`,
   ].join('\n'));
 }
 

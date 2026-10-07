@@ -1,4 +1,3 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import type { PortSpec } from '@/network/core/ports/PortNumber';
@@ -131,6 +130,7 @@ export interface VsftpdAccount {
 
 export interface VsftpdHost {
   readonly vfs: VirtualFileSystem;
+  nowMs(): number;
   tcpStack(): TcpStack;
   account(username: string): VsftpdAccount | null;
   groupsOf(username: string): readonly number[];
@@ -185,7 +185,7 @@ export class LinuxVsftpdService implements ServiceSocketServer {
       },
       sessionFor: (username) => this.sessionFor(username, flags, strings),
       permitsWrite: (username, verb) => permitsWrite(flags, isAnonymous(username), verb),
-      listLine: (entry) => this.listLine(entry, simulationNowMs()),
+      listLine: (entry) => this.listLine(entry, this.host.nowMs()),
     };
   }
 

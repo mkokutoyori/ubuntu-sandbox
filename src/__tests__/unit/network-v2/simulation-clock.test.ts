@@ -4,12 +4,13 @@
  * `VirtualTimeScheduler` et le pilotaient a la main. `SimulationClock` en fait un pilote : une
  * pompe temps reel qui avance le planificateur de `ecoule_reel × vitesse`, la pause, et
  * `advance(ms)` qui franchit chaque echeance dans l'ordre. Sonde sur le pilote seul, pompe et
- * heure reelle injectees : les dix cas tombent avant (le module n'existait pas). Le temoin
+ * heure reelle injectees : les onze cas tombent avant (le module n'existait pas). Le temoin
  * qui prouve que le laboratoire est sain est dans `probe-avancer-le-temps-de-l-infra.test.ts`.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { SimulationClock, installSimulationClock, getSimulationClock, __resetSimulationClock } from '@/events/SimulationClock';
 import { getDefaultScheduler } from '@/events/Scheduler';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 function manualClock() {
   let real = 0;
@@ -107,6 +108,16 @@ describe('SimulationClock', () => {
     expect(() => clock.setSpeed(0)).toThrow(RangeError);
     expect(() => clock.setSpeed(Number.NaN)).toThrow(RangeError);
     await expect(clock.advance(-1)).rejects.toThrow(RangeError);
+  });
+
+  it('starts the simulated calendar at the origin it was given', async () => {
+    const clock = installSimulationClock(new SimulationClock({
+      startPump: () => () => undefined,
+      originMs: Date.UTC(2026, 9, 6, 18, 25, 0),
+    }));
+    expect(simulationNowMs()).toBe(Date.UTC(2026, 9, 6, 18, 25, 0));
+    await clock.advance(90_000);
+    expect(simulationNowMs()).toBe(Date.UTC(2026, 9, 6, 18, 26, 30));
   });
 
   it('becomes the default scheduler once installed', () => {

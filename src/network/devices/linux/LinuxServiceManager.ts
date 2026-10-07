@@ -777,7 +777,13 @@ export class LinuxServiceManager {
     return this.jobEngine().isolate(unit.unit.name);
   }
 
-  private readonly timerScheduler = new TimerScheduler();
+  private zoneName: () => string | undefined = () => undefined;
+  setZone(zone: () => string | undefined): void { this.zoneName = zone; }
+  zone(): string | undefined { return this.zoneName(); }
+  clockDate(): Date { return new Date(this.nowMs()); }
+  rearmTimers(): void { this.timerScheduler.rearmCalendars(this.clockDate()); }
+
+  private readonly timerScheduler = new TimerScheduler(() => this.zoneName());
 
   timerTick(now: Date = new Date(this.nowMs())): void {
     for (const service of this.timerScheduler.due(now)) this.start(service);

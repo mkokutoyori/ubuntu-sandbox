@@ -51,11 +51,16 @@ export function displayClock(
   ].join('\n');
 }
 
+function localStamp(now: Date, fuseau?: DeviceClockConfig): string {
+  const localMs = fuseau ? clockReadingAt(fuseau, now.getTime()).localMs : now.getTime();
+  const local = new Date(localMs);
+  return `${local.getUTCFullYear()}-${pad2(local.getUTCMonth() + 1)}-${pad2(local.getUTCDate())}`
+    + ` ${pad2(local.getUTCHours())}:${pad2(local.getUTCMinutes())}:${pad2(local.getUTCSeconds())}`;
+}
+
 /** `display cpu-usage` — steady-state utilisation snapshot. */
-export function displayCpuUsage(now: Date = simulationDate()): string {
-  const stamp =
-    `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}` +
-    ` ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+export function displayCpuUsage(now: Date = simulationDate(), fuseau?: DeviceClockConfig): string {
+  const stamp = localStamp(now, fuseau);
   return [
     'CPU Usage Stat. Cycle: 60 (Second)',
     'CPU Usage            : 11% Max: 38%',
@@ -67,10 +72,8 @@ export function displayCpuUsage(now: Date = simulationDate()): string {
 }
 
 /** `display memory-usage` — pool totals + percentage. */
-export function displayMemoryUsage(now: Date = simulationDate()): string {
-  const stamp =
-    `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}` +
-    ` ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+export function displayMemoryUsage(now: Date = simulationDate(), fuseau?: DeviceClockConfig): string {
+  const stamp = localStamp(now, fuseau);
   return [
     `Memory utilization statistics at ${stamp}`,
     'System Total Memory Is: 536870912 bytes',
@@ -131,10 +134,8 @@ export function displayLicense(): string {
 }
 
 /** `display logbuffer` — informational log ring buffer. */
-export function displayLogbuffer(now: Date = simulationDate()): string {
-  const stamp =
-    `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}` +
-    ` ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+export function displayLogbuffer(now: Date = simulationDate(), fuseau?: DeviceClockConfig): string {
+  const stamp = localStamp(now, fuseau);
   return [
     'Logging buffer configuration and contents: enabled',
     'Allowed max buffer size : 512',

@@ -35,6 +35,11 @@ export interface EnvironmentOptions {
   ppid?: number;
 }
 
+export interface VariableSnapshot {
+  readonly name: string;
+  readonly value: string | undefined;
+}
+
 export class Environment {
   /** Variable storage: name → value. */
   private vars: Map<string, string> = new Map();
@@ -197,6 +202,20 @@ export class Environment {
     this.arrays.delete(name);
     this.assocArrays.delete(name);
     this.exported.delete(name);
+  }
+
+  snapshotVariable(name: string): VariableSnapshot {
+    return { name, value: this.get(name) };
+  }
+
+  restoreVariable(snapshot: VariableSnapshot): void {
+    if (snapshot.value === undefined) this.unsetInAllScopes(snapshot.name);
+    else this.set(snapshot.name, snapshot.value);
+  }
+
+  private unsetInAllScopes(name: string): void {
+    this.unset(name);
+    this.parent?.unsetInAllScopes(name);
   }
 
   /** Check if a variable is set (including empty string). */

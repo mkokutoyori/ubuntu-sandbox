@@ -1597,19 +1597,28 @@ export class PSParser {
       if (this.check(PSTokenType.STATIC_MEMBER)) {
         const pos = this.pos_();
         this.advance();
-        const member = this.advance().value;
-        if (this.check(PSTokenType.LPAREN)) {
+        const [member, ...chain] = this.advance().value.split('.');
+        const typeName = (expr as { typeName?: string }).typeName ?? '';
+        const staticMember = { type: 'StaticMemberExpression' as const, typeName, member, position: pos };
+        if (chain.length === 0 && this.check(PSTokenType.LPAREN)) {
           this.advance();
           const args = this.parseArgumentList();
           this.expect(PSTokenType.RPAREN);
-          // Static method call
-          const typeName = (expr as { typeName?: string }).typeName ?? '';
-          const callee = { type: 'StaticMemberExpression' as const, typeName, member, position: pos };
-          expr = { type: 'InvocationExpression', callee, arguments: args, position: pos };
-        } else {
-          const typeName = (expr as { typeName?: string }).typeName ?? '';
-          expr = { type: 'StaticMemberExpression', typeName, member, position: pos };
+          expr = { type: 'InvocationExpression', callee: staticMember, arguments: args, position: pos };
+          continue;
         }
+        expr = staticMember;
+        chain.forEach((part, index) => {
+          const last = index === chain.length - 1;
+          if (last && this.check(PSTokenType.LPAREN)) {
+            this.advance();
+            const args = this.parseArgumentList();
+            this.expect(PSTokenType.RPAREN);
+            expr = { type: 'InvocationExpression', callee: makeMember(expr, part, false, pos), arguments: args, position: pos };
+          } else {
+            expr = makeMember(expr, part, false, pos);
+          }
+        });
         continue;
       }
 

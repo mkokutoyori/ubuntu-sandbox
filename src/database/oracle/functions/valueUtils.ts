@@ -9,6 +9,7 @@
  */
 
 import type { CellValue } from '../../engine/storage/BaseStorage';
+import { coerceDateValue } from './dateSupport';
 
 const MONTHS_SHORT_INDEX: Record<string, number> = {
   JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11,
@@ -16,7 +17,7 @@ const MONTHS_SHORT_INDEX: Record<string, number> = {
 
 /** Try to parse a value as a Date for implicit conversion (DD-MON-YYYY, DD-MON-RR, ISO, etc.) */
 export function implicitToDate(val: CellValue): Date | null {
-  if (val instanceof Date) return val;
+  if (val instanceof Date) return coerceDateValue(val);
   if (val == null) return null;
   const s = String(val).trim();
   // Try DD-MON-YYYY or DD-MON-YY (Oracle default NLS_DATE_FORMAT)
@@ -26,17 +27,14 @@ export function implicitToDate(val: CellValue): Date | null {
     if (mon !== undefined) {
       let yr = parseInt(oraMatch[3], 10);
       if (yr < 100) yr += yr < 50 ? 2000 : 1900; // RR logic
-      const d = new Date(yr, mon, parseInt(oraMatch[1], 10),
+      const d = new Date(Date.UTC(yr, mon, parseInt(oraMatch[1], 10),
         oraMatch[4] ? parseInt(oraMatch[4], 10) : 0,
         oraMatch[5] ? parseInt(oraMatch[5], 10) : 0,
-        oraMatch[6] ? parseInt(oraMatch[6], 10) : 0);
+        oraMatch[6] ? parseInt(oraMatch[6], 10) : 0));
       if (!isNaN(d.getTime())) return d;
     }
   }
-  // Try ISO / JS-parseable format
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d;
-  return null;
+  return coerceDateValue(s);
 }
 
 /**
