@@ -2,6 +2,7 @@ import type { TlsProtocolVersion } from './legacy/legacyCipherSuites';
 import { TlsClientSession } from './TlsClientSession';
 import { CertificateVerifier } from '../pki/CertificateVerifier';
 import type { TcpStack } from '../tcp/TcpStack';
+import type { ResumableLegacySession } from './legacy/legacySessions';
 import type { PkiPrivateKey } from '../pki/PkiKeyPair';
 import type { X509Certificate } from '../pki/X509Certificate';
 import type { OcspResponseMessage } from '../pki/OcspWire';
@@ -15,6 +16,7 @@ export interface TlsHandshakeDetails {
   readonly bytesWritten: number;
   readonly alpn: string | null;
   readonly verificationReason: string | null;
+  readonly legacySession: ResumableLegacySession | null;
 }
 
 export interface TlsProbeOutcome {
@@ -101,6 +103,7 @@ export function probeTlsPeer(
     details: {
       peerSignature: session.peerSignature, serverTempKey: session.serverTempKey, bytesRead, bytesWritten,
       alpn: session.negotiatedAlpnProtocol, verificationReason: session.peerVerificationReason,
+      legacySession: session.exportLegacySession(),
     } };
 }
 
