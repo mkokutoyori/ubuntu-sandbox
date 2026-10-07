@@ -388,7 +388,7 @@ export class TlsClientSession {
     if (leadMessage.kind === 'server_hello' && leadMessage.extensions.supportedVersions !== '1.3') return this.startLegacy(incoming);
 
     if (leadMessage.kind === 'hello_retry_request') {
-      if (rest.length > 0) return this.fail('unexpected_message');
+      if (withoutChangeCipherSpec(rest).length > 0) return this.fail('unexpected_message');
       if (!this.supportedGroups.includes(leadMessage.selectedGroup)) return this.fail('handshake_failure');
       this.transcript.push(leadBytes);
       this.retried = true;

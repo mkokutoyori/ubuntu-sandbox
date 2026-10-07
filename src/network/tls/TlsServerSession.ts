@@ -492,7 +492,9 @@ export class TlsServerSession {
   }
 
   /** Redeems the client's PSK ticket, if offered and valid; null if not offered, unknown, or expired. */
-  private resolvePsk(clientHello: ClientHello, clientHelloBytes: Uint8Array): RedeemedPsk | 'binder_mismatch' | null {
+  private resolvePsk(
+    clientHello: ClientHello, clientHelloBytes: Uint8Array, prefix: readonly Uint8Array[] = [],
+  ): RedeemedPsk | 'binder_mismatch' | null {
     const store = this.config.sessionTicketStore;
     const offers = clientHello.extensions.pskOffers
       ?? (clientHello.extensions.preSharedKey ? [{ identity: clientHello.extensions.preSharedKey, obfuscatedAge: 0, binder: '' }] : []);
@@ -506,7 +508,7 @@ export class TlsServerSession {
       if (!candidate) continue;
       const hash = suiteInfo(candidate.cipherSuite).hash;
       const psk = deriveResumptionPsk(candidate);
-      if (offer.binder !== computePskBinder(psk, transcriptHash([partial], hash), hash)) return 'binder_mismatch';
+      if (offer.binder !== computePskBinder(psk, transcriptHash([...prefix, partial], hash), hash)) return 'binder_mismatch';
       const ticket = store.redeem(offer.identity, now);
       if (!ticket) continue;
       const clientAge = ((offer.obfuscatedAge - Number.parseInt(candidate.ticketAgeAdd ?? '0', 16)) >>> 0);
@@ -521,8 +523,13 @@ export class TlsServerSession {
     if (contentType !== 'handshake') return this.reject('decode_error');
     const clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;
     if (!this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) return this.reject('handshake_failure');
+    const bindingPrefix = [...this.transcript];
+    const retriedHash = suiteInfo(this.selectCipherSuite(clientHello) ?? 'TLS_AES_128_GCM_SHA256').hash;
+    collapseFirstClientHello(bindingPrefix, retriedHash);
+    const redeemed = this.resolvePsk(clientHello, clientHelloBytes, bindingPrefix);
+    if (redeemed === 'binder_mismatch') return this.reject('decrypt_error');
     this.transcript.push(clientHelloBytes);
-    return this.proceedWithServerFlight(clientHello, null, []);
+    return this.proceedWithServerFlight(clientHello, redeemed, []);
   }
 
   private selectCipherSuite(clientHello: ClientHello): CipherSuite | null {
