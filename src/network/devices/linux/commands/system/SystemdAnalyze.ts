@@ -24,18 +24,16 @@
  *   - une base postérieure à l'échéance donne `… ago`, pas `… left`.
  */
 
+import { formatLocalTime } from '../../system/SystemInfo';
 import type { LinuxCommand } from '../LinuxCommand';
 import {
   parseCalendar, nextCalendarElapse, normalizeCalendar,
 } from '../../systemd/CalendarSpec';
 
-const JOURS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-const deux = (n: number): string => String(n).padStart(2, '0');
 
 /** `Mon 2026-08-03 00:00:00 UTC` — la forme qu'imprime `Next elapse`. */
-function formatElapse(d: Date): string {
-  return `${JOURS[d.getDay()]} ${d.getFullYear()}-${deux(d.getMonth() + 1)}-${deux(d.getDate())}`
-    + ` ${deux(d.getHours())}:${deux(d.getMinutes())}:${deux(d.getSeconds())} UTC`;
+function formatElapse(d: Date, zone?: string): string {
+  return formatLocalTime('%a %Y-%m-%d %H:%M:%S %Z', d.getTime(), zone);
 }
 
 /**
@@ -68,7 +66,7 @@ export function formatTimespan(ms: number): string {
 }
 
 /** Le bloc de quatre lignes que rend une expression calendaire. */
-function analyseCalendar(expression: string, base: Date, iterations: number): string[] {
+function analyseCalendar(expression: string, base: Date, iterations: number, zone?: string): string[] {
   const spec = parseCalendar(expression);
   if (spec === null) {
     return [`Failed to parse calendar specification '${expression}': Invalid argument`];
@@ -80,7 +78,7 @@ function analyseCalendar(expression: string, base: Date, iterations: number): st
 
   let curseur = base;
   for (let i = 0; i < Math.max(1, iterations); i++) {
-    const next = nextCalendarElapse(spec, curseur);
+    const next = nextCalendarElapse(spec, curseur, zone);
     if (next === null) {
       // « never » clôt le bloc : le vrai n'écrit pas de « From now »
       // derrière une échéance qui n'arrivera pas.
@@ -88,8 +86,8 @@ function analyseCalendar(expression: string, base: Date, iterations: number): st
       break;
     }
     lignes.push(i === 0
-      ? `    Next elapse: ${formatElapse(next)}`
-      : `   Iteration #${i + 1}: ${formatElapse(next)}`);
+      ? `    Next elapse: ${formatElapse(next, zone)}`
+      : `   Iteration #${i + 1}: ${formatElapse(next, zone)}`);
     const delta = next.getTime() - base.getTime();
     lignes.push(`       From now: ${formatTimespan(Math.abs(delta))} ${delta >= 0 ? 'left' : 'ago'}`);
     curseur = next;
@@ -168,7 +166,7 @@ export const systemdAnalyzeCommand: LinuxCommand = {
     const blocs: string[][] = [];
     let echec = false;
     for (const expression of reste) {
-      const bloc = analyseCalendar(expression, base, iterations);
+      const bloc = analyseCalendar(expression, base, iterations, ctx.executor.identity.timezone);
       if (bloc[0].startsWith('Failed')) echec = true;
       blocs.push(bloc);
     }

@@ -12,14 +12,8 @@
  * chacun à leur façon, et aucun des deux ne correspondait.
  */
 
-const JOURS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-const MOIS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+import { formatLocalTime } from '../system/SystemInfo';
 
-const deux = (n: number): string => String(n).padStart(2, '0');
-
-export function formatCtime(d: Date): string {
-  const jour = String(d.getDate()).padStart(2, ' ');
-  const heure = `${deux(d.getHours())}:${deux(d.getMinutes())}:${deux(d.getSeconds())}`;
-  return `${JOURS[d.getDay()]} ${MOIS[d.getMonth()]} ${jour} ${heure} ${d.getFullYear()}`;
+export function formatCtime(d: Date, zone?: string): string {
+  return formatLocalTime('%a %b %e %H:%M:%S %Y', d.getTime(), zone);
 }

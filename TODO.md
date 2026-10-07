@@ -172,6 +172,84 @@ un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
 
+### [huawei] `undo dhcp enable` est refuse en vue systeme
+**Mesure** : `huawei-config-parity` (« should disable DHCP with undo dhcp enable ») est rouge sur `main` et
+sur toute la chaine de branches : `dhcp enable` passe, `undo dhcp enable` repond
+`Error: Unrecognized command found at '^' position.`. Sans rapport avec l'horloge, vu en passant.
+**Pourquoi ce n'est pas ferme** : le test peut encoder une fausse prémisse (la forme `undo` du
+commutateur global `dhcp enable` n'est pas verifiee sur une transcription VRP) ; il faut la source
+avant de decider entre corriger le moteur et corriger le test.
+
+### [windows] `tzutil`, `quser` et `eventcreate` sont inconnus
+**Mesure** : `tzutil /g`, `quser` et `eventcreate /t information /id 100 /l application /d x` repondent
+« not recognized » sur une machine Windows simulee. Le fuseau se lit et s'ecrit deja par `Get-TimeZone` /
+`Set-TimeZone` sur la meme table ; il ne manque que la commande cmd.
+**Pourquoi ce n'est pas ferme** : le libelle d'erreur de `tzutil /s <zone inconnue>` n'est pas
+atteignable depuis cet environnement et en inventer un serait pire que l'absence ; `quser` demande une table
+de sessions interactives que la machine ne tient pas, `eventcreate` une ecriture dans le journal par la
+voie de `Write-EventLog`.
+
+### [powershell] membres des nombres et mise en page de `TimeSpan`
+**Mesure** : `[Math]::Pi.ToString()` rend vide (les membres des nombres ne sont pas branches, sans
+rapport avec le temps) ; `New-TimeSpan` s'affiche en `__type : TimeSpan ...` au lieu des champs
+`Days / Hours / Minutes / Seconds / Milliseconds / Ticks` de PowerShell 5.1.
+**Pourquoi ce n'est pas ferme** : la mise en page par defaut d'un `TimeSpan` n'est pas verifiable sur
+transcription ici.
+
+### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
+**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
+`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
+simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
+FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
+**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
+« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
+meme port d'horloge dans `IRmanOracleContext`.
+
+### [oracle] `INSERT … VALUES (DEFAULT, …)` stocke NULL, `DBMS_SCHEDULER.CREATE_JOB` lit mal ses arguments nommes
+**Mesure** : `CREATE TABLE t (id NUMBER, d DATE DEFAULT SYSDATE)` puis `INSERT INTO t VALUES (2, DEFAULT)`
+laisse `d` vide (avec la colonne omise, le defaut est bien evalue). `EXEC
+DBMS_SCHEDULER.CREATE_JOB(job_name=>'J1', …, repeat_interval=>'FREQ=DAILY;BYHOUR=3')` cree un travail
+dont `JOB_NAME` vaut `JOB_NAME=>'J1'` et `NEXT_RUN_DATE` est vide : les arguments nommes sont pris pour des
+valeurs positionnelles. Vus en testant les horloges ; sans rapport avec le fuseau.
+**Pourquoi ce n'est pas ferme** : deux defauts distincts du moteur SQL et du paquetage, hors du lot.
+
+### [oracle] `FROM_TZ`, `SYS_EXTRACT_UTC` et la comparaison d'un instant a une heure murale
+**Mesure** : `FROM_TZ(CAST(SYSDATE AS TIMESTAMP),'UTC')` et `SYS_EXTRACT_UTC(SYSTIMESTAMP)` repondent
+`ORA-00904: invalid identifier`. Une comparaison `created > SYSDATE - 1` (colonne de catalogue, `Date`
+ordinaire = instant, contre une chaine murale) est decalee du decalage du serveur hors UTC, parce que
+`compareValues` n'a pas de fuseau.
+**Pourquoi ce n'est pas ferme** : le moteur n'a pas de type `TIMESTAMP WITH TIME ZONE` (une chaine
+`…+hh:mm`) et `compareValues` est une fonction pure ; lui passer le fuseau du serveur touche tous ses
+appelants.
+
+### [oracle] `V$SESSION_CONTEXT` : `HOST` rend le nom du peripherique, pas `linux-server`
+**Mesure** : `oracle-user-activity` (« reports SESSION_USER, OS_USER, HOST and SERVICE_NAME ») est rouge
+sur `main` : le test cree une session sur un peripherique nomme `vsc-1` et attend `linux-server`.
+**Pourquoi ce n'est pas ferme** : la prémisse du test (le nom du serveur) est a trancher avant de toucher
+le moteur ou le test.
+
+### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
+**Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
+de soixante secondes (`ip neigh` -> `STALE`) puis utilisee par un
+`ping -c 1` reste `STALE` juste apres la reponse ; `getNUDState` ne connait que
+`REACHABLE` (moins de 30 s depuis `timestamp`) et `STALE`. Sur un noyau Linux,
+l'emission vers une entree STALE la passe en `DELAY` (`delay_probe_time`, 5 s),
+puis `PROBE`, puis `REACHABLE` apres la reponse a la sonde unicast.
+**Pourquoi ce n'est pas ferme** : il faut une machine d'etats de voisin
+(INCOMPLETE / REACHABLE / STALE / DELAY / PROBE / FAILED) portee par un
+planificateur, et c'est le meme chantier que l'entree `[arp]` ci-dessus
+(`resolveARP`, `resolveNDP`, chemin d'erreur de `ping`).
+
+### [horloge] le temps de vol des trames s'ajoute a l'horloge de simulation
+**Mesure** : `PathClock.horizon()` est le maximum des arrivees et ne redescend
+jamais ; `schedulerWallClock` et `simulationNowMs` l'ajoutent a l'heure de
+l'ordonnanceur. Pendant un `SimulationClock.advance(45 min)` sur un lot de cinq
+equipements, l'horloge du Windows a avance de 45 min + 35 ms : le bavardage
+STP/ARP fait croitre l'horizon de quelques dizaines de µs par trame.
+**Pourquoi ce n'est pas ferme** : l'horizon est ce qui donne des RTT non nuls
+sans file d'attente ; le plafonner a l'heure de l'ordonnanceur (horizon =
+max(horizon, now)) change tous les RTT de la base et demande une mesure propre.
+
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
 La zone d'options existe desormais (RFC 791 §3.1), et Record Route comme
 le routage par la source sont honores par `Router`. L'option Timestamp

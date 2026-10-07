@@ -2884,8 +2884,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
         new Date(this.swRef?.getSystemClockMs() ?? simulationNowMs()),
         this.swRef?.getManagementService?.().getClock());
     });
-    trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage());
-    trie.register('display memory-usage', 'Display memory usage', () => displayMemoryUsage());
+    trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage(
+      new Date(this.swRef?.getSystemClockMs() ?? simulationNowMs()),
+        this.swRef?.getManagementService?.().getClock()));
+    trie.register('display memory-usage', 'Display memory usage', () => displayMemoryUsage(
+      new Date(this.swRef?.getSystemClockMs() ?? simulationNowMs()),
+        this.swRef?.getManagementService?.().getClock()));
     trie.register('display users', 'Display user sessions', () => displayUsers(this.swRef));
     trie.register('display device', 'Display device status', () =>
       this.swRef ? displayDevice(this.swRef.getHostname()) : '');
@@ -2935,7 +2939,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.register('display elabel', 'Display electronic label', () =>
       this.swRef ? displayElabel(this.swRef.getHostname()) : '');
     trie.register('display license', 'Display license information', () => displayLicense());
-    trie.register('display logbuffer', 'Display log buffer', () => displayLogbuffer());
+    trie.register('display logbuffer', 'Display log buffer', () => displayLogbuffer(
+      new Date(this.swRef?.getSystemClockMs() ?? simulationNowMs()),
+        this.swRef?.getManagementService?.().getClock()));
     trie.register('display trapbuffer', 'Display trap buffer', () => displayTrapbuffer());
     trie.register('display patch-information', 'Display patch information', () =>
       displayPatchInformation());

@@ -68,6 +68,11 @@ export class LinuxRmanContext implements IRmanOracleContext {
     this.vfs    = this._buildVfsAdapter();
   }
 
+  hostZoneName(): string {
+    const device = this._device as unknown as { hostWallClock?: () => { zoneName(): string } };
+    return this._oracle?.instance.hostClock().zoneName() ?? device.hostWallClock?.().zoneName() ?? 'UTC';
+  }
+
   connectTarget(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome {
     const local = this._device as unknown as HostCapableDevice;
     const resolved = resolveOracleConnectTarget(

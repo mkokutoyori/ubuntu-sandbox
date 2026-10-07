@@ -1,4 +1,5 @@
 
+import { formatLocalTime } from '../system/SystemInfo';
 import type { PortSpec } from '../../../core/ports/PortNumber';
 import type { ListenerIdentity } from '../../../tcp/ListenerSocketSink';
 import type { ServiceSocketServer } from '../ports/ServiceSocketServer';
@@ -16,6 +17,7 @@ export interface RsyslogHost {
   ecouterUdp(port: number, onDatagram: (source: string, charge: string) => void): (() => void) | null;
   hostname(): string;
   maintenant(): number;
+  fuseau?(): string | undefined;
 }
 
 const NOM_FACILITE: Record<number, string> = Object.fromEntries(
@@ -137,25 +139,20 @@ export class LinuxRsyslogService implements ServiceSocketServer {
   }
 
   private resoudreChemin(gabarit: string, sourceIp: string, hote: string): string {
-    const d = new Date(this.host.maintenant());
-    const deuxChiffres = (n: number) => String(n).padStart(2, '0');
+    const at = (format: string) => formatLocalTime(format, this.host.maintenant(), this.host.fuseau?.());
     return gabarit
       .replace(/%FROMHOST-IP%/g, sourceIp)
       .replace(/%HOSTNAME%/g, hote)
       .replace(/%FROMHOST%/g, sourceIp)
-      .replace(/%\$YEAR%/g, String(d.getFullYear()))
-      .replace(/%\$MONTH%/g, deuxChiffres(d.getMonth() + 1))
-      .replace(/%\$DAY%/g, deuxChiffres(d.getDate()));
+      .replace(/%\$YEAR%/g, at('%Y'))
+      .replace(/%\$MONTH%/g, at('%m'))
+      .replace(/%\$DAY%/g, at('%d'));
   }
 
   private ligneRecue(sourceIp: string, corps: string): string {
     const m = ENTETE_3164.exec(corps);
     if (m) return `${m[1]} ${m[2]} ${m[3]}`;
-    const d = new Date(this.host.maintenant());
-    const MOIS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const hh = (n: number) => String(n).padStart(2, '0');
-    const horodatage = `${MOIS[d.getMonth()]} ${String(d.getDate()).padStart(2, ' ')} `
-      + `${hh(d.getHours())}:${hh(d.getMinutes())}:${hh(d.getSeconds())}`;
+    const horodatage = formatLocalTime('%b %e %H:%M:%S', this.host.maintenant(), this.host.fuseau?.());
     return `${horodatage} ${sourceIp} ${corps}`;
   }
 }

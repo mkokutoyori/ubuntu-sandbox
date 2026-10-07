@@ -2,6 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { TimeZone } from '@/network/core/time/TimeZone';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
@@ -203,7 +204,7 @@ import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
 import { renderLast, renderLastb } from './network/lastFormatter';
 import { renderLoginctl } from './network/loginctlFormatter';
-import { cmdTty, cmdRunlevel } from './system/SystemInfo';
+import { cmdTty, cmdRunlevel, formatLocalTime } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
@@ -307,6 +308,21 @@ function parseSudoLead(args: readonly string[]): {
     } else break;
   }
   return { flags, user, rest: args.slice(i) };
+}
+
+const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
+  'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'basenc', 'xxd',
+  'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
+  'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
+  'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
+  'sh', 'bash', 'dash', 'env', 'xargs', 'timeout', 'nohup', 'nice', 'ionice', 'time', 'stdbuf',
+  'command', 'exec', 'eval', 'source', '.', 'watch', 'script', 'busybox', 'su', 'runuser', 'chroot',
+]);
+
+function writesLines(argv: readonly string[]): boolean {
+  const lead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
+  const name = lead[0]?.split('/').pop();
+  return name !== undefined && !RAW_STDOUT_COMMANDS.has(name);
 }
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
@@ -687,6 +703,7 @@ export class LinuxCommandExecutor {
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
     this.logMgr.setClock(this.wallNow);
+    this.logMgr.setZone(() => this.identity.timezone);
     this.pam = new LinuxPam({
       vfs: this.vfs,
       users: this.userMgr,
@@ -728,6 +745,7 @@ export class LinuxCommandExecutor {
     });
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer }, this.dynamicUsers);
     this.serviceMgr.setClock(this.wallNow);
+    this.serviceMgr.setZone(() => this.identity.timezone);
     this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
     this.auditRules.bindActorContextProvider(() => this.snapshotActor());
     this.isServer = isServer;
@@ -2468,7 +2486,7 @@ export class LinuxCommandExecutor {
     this.logMgr.logAuth('sudo', text, 0);
     if (auth.logfile) {
       const existingCustom = this.vfs.readFile(auth.logfile) ?? '';
-      this.vfs.writeFile(auth.logfile, `${existingCustom}${fmtSyslogTimestamp(simulationDate())} ${auth.hostname} sudo: ${text}\n`, 0, 0, 0o022);
+      this.vfs.writeFile(auth.logfile, `${existingCustom}${fmtSyslogTimestamp(simulationDate(), this.identity.timezone)} ${auth.hostname} sudo: ${text}\n`, 0, 0, 0o022);
     }
   }
 
@@ -2810,6 +2828,7 @@ export class LinuxCommandExecutor {
       currentUid: this.userMgr.currentUid,
       tty: 'pts/0',
       shellPid: this.shellPid,
+      zone: this.localZone(),
       currentPid: this.currentBashPid(),
       jobs: this.jobTable,
       uptimeSeconds: this.lifecycle.uptimeSeconds(),
@@ -3364,6 +3383,13 @@ export class LinuxCommandExecutor {
     if (inode && inode.type === 'directory') this.cwd = pwd;
   }
 
+  localZone(): string | undefined {
+    const raw = (this._cmdEnv ?? Object.fromEntries(this.env))['TZ'];
+    if (raw === undefined) return this.identity.timezone;
+    const name = raw.replace(/^:/, '');
+    return name !== '' && TimeZone.parse(name) !== null ? name : undefined;
+  }
+
   ctx(outputPiped = false): ShellContext {
     return {
       vfs: this.vfs,
@@ -3376,6 +3402,8 @@ export class LinuxCommandExecutor {
       isPiped: outputPiped,
       envOverride: this.envOverride ?? undefined,
       openRefusal: (absPath: string) => this.openRefusal(absPath),
+      zone: this.localZone(),
+      nowMs: this.wallNow,
     };
   }
 
@@ -3491,6 +3519,7 @@ export class LinuxCommandExecutor {
 
   execute(input: string): string {
     this.executeDepth++;
+    const outerEnv = this._cmdEnv;
     try {
       const top = this.executeDepth === 1;
       let notices: string[] = [];
@@ -3505,6 +3534,7 @@ export class LinuxCommandExecutor {
       return out;
     } finally {
       this.executeDepth--;
+      this._cmdEnv = outerEnv;
     }
   }
 
@@ -3645,6 +3675,7 @@ export class LinuxCommandExecutor {
    */
   async executeAsync(input: string): Promise<string> {
     this.executeDepth++;
+    const outerEnv = this._cmdEnv;
     try {
       const top = this.executeDepth === 1;
       let notices: string[] = [];
@@ -3659,6 +3690,7 @@ export class LinuxCommandExecutor {
       return out;
     } finally {
       this.executeDepth--;
+      this._cmdEnv = outerEnv;
     }
   }
 
@@ -3708,6 +3740,20 @@ export class LinuxCommandExecutor {
   }
 
   private dispatchMaybeNetwork(
+    argv: string[],
+    env?: Record<string, string>,
+    background?: boolean,
+    stdin?: string,
+    outputPiped?: boolean,
+  ): { output: string; exitCode: number; stderr?: string; lineOriented?: boolean } | Promise<{ output: string; exitCode: number; stderr?: string; lineOriented?: boolean }> {
+    const outcome = this.dispatchNetworkAware(argv, env, background, stdin, outputPiped);
+    const lineOriented = writesLines(argv);
+    return outcome instanceof Promise
+      ? outcome.then((result) => ({ ...result, lineOriented }))
+      : { ...outcome, lineOriented };
+  }
+
+  private dispatchNetworkAware(
     argv: string[],
     env?: Record<string, string>,
     background?: boolean,
@@ -4013,7 +4059,7 @@ export class LinuxCommandExecutor {
     const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
     const startupVars = cmd === 'bash'
       ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-      : this.buildEnvVars();
+      : { ...this.commandEnvironment() };
     if (parsed.cmdString !== null) {
       return this.runScriptProcessAsync(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
         runScriptContentAsync(
@@ -4073,6 +4119,17 @@ export class LinuxCommandExecutor {
   }
 
   private dispatchFromInterpreter(
+    argv: string[],
+    env?: Record<string, string>,
+    background?: boolean,
+    outputPiped?: boolean,
+    interpreterStdin?: string,
+  ): { output: string; exitCode: number; backgroundPid?: number; lineOriented?: boolean } {
+    const result = this.dispatchResolved(argv, env, background, outputPiped, interpreterStdin);
+    return { ...result, lineOriented: writesLines(argv) };
+  }
+
+  private dispatchResolved(
     argv: string[],
     env?: Record<string, string>,
     background?: boolean,
@@ -4597,7 +4654,7 @@ export class LinuxCommandExecutor {
    */
   private runBashStartupFiles(login: boolean, interactive: boolean): Record<string, string> {
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`;
-    let vars = this.buildEnvVars();
+    let vars = { ...this.commandEnvironment() };
     // Real bash sets PS1 before sourcing rc files for an interactive shell —
     // /etc/bash.bashrc / ~/.bashrc commonly bail out early on `[ -z "$PS1" ]`.
     if ((login || interactive) && !vars.PS1) {
@@ -5188,10 +5245,10 @@ export class LinuxCommandExecutor {
         const atdActive = this.serviceMgr.status('atd')?.state === 'active';
         return cmdAt(
           this.atQueue, args, stdin ?? '', this.userMgr.currentUser,
-          atdActive, this.simulatedDate(), cmd === 'batch' ? 'b' : 'a',
+          atdActive, this.simulatedDate(), cmd === 'batch' ? 'b' : 'a', this.identity.timezone,
         );
       }
-      case 'atq': return this.atDenied('atq') ?? cmdAtq(this.atQueue);
+      case 'atq': return this.atDenied('atq') ?? cmdAtq(this.atQueue, this.identity.timezone);
       case 'atrm': return this.atDenied('atrm') ?? cmdAtrm(this.atQueue, args);
       case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
@@ -5217,7 +5274,8 @@ export class LinuxCommandExecutor {
             currentUser: this.userMgr.currentUser,
             currentTty: 'tty1',
             bootDate: this.lifecycle.bootedAt(),
-            now: simulationDate(),
+            now: this.simulatedDate(),
+            zone: this.localZone(),
           }, args);
           const exit = out.startsWith('who: ') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5231,7 +5289,8 @@ export class LinuxCommandExecutor {
             table: this.sessionTable,
             utmp: this.utmpSync,
             uptimeSeconds: this.lifecycle.uptimeSeconds(),
-            now: simulationDate(),
+            now: this.simulatedDate(),
+            zone: this.localZone(),
           }, args);
           const exit = out.startsWith('w: ') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5246,7 +5305,8 @@ export class LinuxCommandExecutor {
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
             kernelRelease: this.identity.kernel.release,
-            now: simulationDate(),
+            zone: this.localZone(),
+            now: this.simulatedDate(),
           }, args);
           const exit = out.startsWith('last: ') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5260,7 +5320,8 @@ export class LinuxCommandExecutor {
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
             kernelRelease: this.identity.kernel.release,
-            now: simulationDate(),
+            zone: this.localZone(),
+            now: this.simulatedDate(),
           }, args);
           const exit = out.startsWith('lastb: ') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5274,7 +5335,7 @@ export class LinuxCommandExecutor {
             table: this.sessionTable,
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
-            now: simulationDate(),
+            now: this.simulatedDate(),
             action: this.buildLoginctlAction(this.sessionTable),
           }, args);
           const exit = out.startsWith('Failed to') || out.startsWith('Unknown command') ? 1 : 0;
@@ -5403,7 +5464,7 @@ export class LinuxCommandExecutor {
         const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
         const startupVars = cmd === 'bash'
           ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-          : this.buildEnvVars();
+          : { ...this.commandEnvironment() };
         if (parsed.cmdString !== null) {
           return this.runScriptProcess(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
             runScriptContent(
@@ -5894,9 +5955,7 @@ export class LinuxCommandExecutor {
       case 'sqlplus': {
         if (args.includes('-V') || args.includes('-version')) {
           return {
-            output:
-              'SQL*Plus: Release 19.0.0.0.0 - Production on ' +
-              simulationDate().toUTCString(),
+            output: 'SQL*Plus: Release 19.0.0.0.0 - Production\nVersion 19.3.0.0.0',
             exitCode: 0,
           };
         }
@@ -7506,9 +7565,7 @@ export class LinuxCommandExecutor {
     const r = runWatch(args, {
       hostname,
       now: () => {
-        const d = simulationDate();
-        const pad = (n: number) => String(n).padStart(2, '0');
-        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        return formatLocalTime('%H:%M:%S', this.wallNow(), this.identity.timezone);
       },
       run: (cmdline) => this.dispatchFromInterpreter(cmdline, this._cmdEnv),
     });
@@ -7792,8 +7849,7 @@ export class LinuxCommandExecutor {
     }
 
     if (opt.dateext) {
-      const d = simulationDate();
-      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+      const stamp = formatLocalTime('%Y%m%d', this.wallNow(), this.identity.timezone);
       this.vfs.writeFile(`${abs}-${stamp}`, content, uid, gid, this.umask);
     } else {
       this.shiftBackups(abs, opt);

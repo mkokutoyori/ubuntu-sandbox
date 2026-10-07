@@ -1,3 +1,4 @@
+import { formatLocalTime } from '../system/SystemInfo';
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
 import type { UtmpSync, UtmpRecord } from './UtmpSync';
@@ -89,6 +90,7 @@ export interface LastContext {
    * machine elle-meme.
    */
   kernelRelease: string;
+  zone?: string;
 }
 
 function readSessions(ctx: LastContext): SshSession[] {
@@ -118,20 +120,12 @@ function readRebootEntries(ctx: LastContext): Date[] {
     .sort((a, b) => b.getTime() - a.getTime());
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function fmtTimestamp(d: Date, full: boolean, zone?: string): string {
+  return formatLocalTime(full ? '%a %b %e %H:%M:%S %Y' : '%a %b %e %H:%M', d.getTime(), zone);
+}
 
-function fmtTimestamp(d: Date, full: boolean): string {
-  const dow = DAYS[d.getDay()];
-  const mon = MONTHS[d.getMonth()];
-  const day = String(d.getDate()).padStart(2, ' ');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  if (full) {
-    const ss = String(d.getSeconds()).padStart(2, '0');
-    return `${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${d.getFullYear()}`;
-  }
-  return `${dow} ${mon} ${day} ${hh}:${mm}`;
+function fmtClock(d: Date, zone?: string): string {
+  return formatLocalTime('%H:%M', d.getTime(), zone);
 }
 
 function fmtDuration(secs: number): string {
@@ -145,16 +139,16 @@ function fmtDuration(secs: number): string {
 
 function pad(s: string, w: number): string { return s.padEnd(w); }
 
-function renderRow(s: SshSession, opts: LastOptions, now: Date): string {
+function renderRow(s: SshSession, opts: LastOptions, zone?: string): string {
   const cols: string[] = [pad(s.user, 8), pad(s.tty, 12)];
   if (!opts.nohostname) {
     cols.push(pad(s.fromIp, 16));
   }
-  cols.push(fmtTimestamp(s.loginAt, opts.fulltimes));
+  cols.push(fmtTimestamp(s.loginAt, opts.fulltimes, zone));
   const closed = (s as unknown as { closedAt?: Date | null }).closedAt;
   if (closed) {
     const dur = Math.floor((closed.getTime() - s.loginAt.getTime()) / 1000);
-    cols.push(`- ${String(closed.getHours()).padStart(2, '0')}:${String(closed.getMinutes()).padStart(2, '0')}`);
+    cols.push(`- ${fmtClock(closed, zone)}`);
     cols.push(fmtDuration(dur));
   } else {
     cols.push('  still logged in');
@@ -162,10 +156,10 @@ function renderRow(s: SshSession, opts: LastOptions, now: Date): string {
   return cols.join(' ');
 }
 
-function rebootRow(boot: Date, opts: LastOptions, now: Date, kernelRelease: string): string {
+function rebootRow(boot: Date, opts: LastOptions, now: Date, kernelRelease: string, zone?: string): string {
   const cols: string[] = [pad('reboot', 8), pad('system boot', 12)];
   if (!opts.nohostname) cols.push(pad(kernelRelease, 16));
-  cols.push(fmtTimestamp(boot, opts.fulltimes));
+  cols.push(fmtTimestamp(boot, opts.fulltimes, zone));
   const dur = Math.floor((now.getTime() - boot.getTime()) / 1000);
   cols.push('  still running');
   void dur;
@@ -182,7 +176,7 @@ export function renderLast(ctx: LastContext, args: string[]): string {
   const reboots = readRebootEntries(ctx);
   if (filter && filter === 'reboot') {
     const lines: string[] = [];
-    for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now, ctx.kernelRelease));
+    for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now, ctx.kernelRelease, ctx.zone));
     lines.push('', wtmpFooter(ctx));
     return lines.join('\n');
   }
@@ -191,10 +185,10 @@ export function renderLast(ctx: LastContext, args: string[]): string {
   const limit = opts.limit ?? 10_000;
   sessions = sessions.slice(0, limit);
 
-  const lines: string[] = sessions.map((s) => renderRow(s, opts, ctx.now));
+  const lines: string[] = sessions.map((s) => renderRow(s, opts, ctx.zone));
   if (!filter && reboots.length > 0) {
     if (limit === 10_000 || sessions.length < limit) {
-      for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now, ctx.kernelRelease));
+      for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now, ctx.kernelRelease, ctx.zone));
     }
   }
   lines.push('', wtmpFooter(ctx));
@@ -211,13 +205,7 @@ function wtmpFooter(ctx: LastContext): string {
     }
   }
   if (!when) when = ctx.bootDate ?? ctx.now;
-  const dow = DAYS[when.getDay()];
-  const mon = MONTHS[when.getMonth()];
-  const day = String(when.getDate()).padStart(2, ' ');
-  const hh = String(when.getHours()).padStart(2, '0');
-  const mm = String(when.getMinutes()).padStart(2, '0');
-  const ss = String(when.getSeconds()).padStart(2, '0');
-  return `wtmp begins ${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${when.getFullYear()}`;
+  return `wtmp begins ${formatLocalTime('%a %b %e %H:%M:%S %Y', when.getTime(), ctx.zone)}`;
 }
 
 function helpText(): string {
@@ -277,8 +265,8 @@ export function renderLastb(ctx: LastContext, args: string[]): string {
     ];
     if (!opts.nohostname) cols.push(pad(r.fromIp, 16));
     const at = new Date(r.at);
-    cols.push(fmtTimestamp(at, opts.fulltimes));
-    cols.push(`- ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} (00:00)`);
+    cols.push(fmtTimestamp(at, opts.fulltimes, ctx.zone));
+    cols.push(`- ${fmtClock(at, ctx.zone)} (00:00)`);
     lines.push(cols.join(' '));
   }
   lines.push('', btmpFooter(ctx));
@@ -295,11 +283,5 @@ function btmpFooter(ctx: LastContext): string {
     }
   }
   if (!when) when = ctx.bootDate ?? ctx.now;
-  const dow = DAYS[when.getDay()];
-  const mon = MONTHS[when.getMonth()];
-  const day = String(when.getDate()).padStart(2, ' ');
-  const hh = String(when.getHours()).padStart(2, '0');
-  const mm = String(when.getMinutes()).padStart(2, '0');
-  const ss = String(when.getSeconds()).padStart(2, '0');
-  return `btmp begins ${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${when.getFullYear()}`;
+  return `btmp begins ${formatLocalTime('%a %b %e %H:%M:%S %Y', when.getTime(), ctx.zone)}`;
 }

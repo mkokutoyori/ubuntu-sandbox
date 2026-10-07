@@ -77,6 +77,7 @@ export type ConnectPeerOutcome =
 export interface IRmanOracleContext {
   readonly dbId:    DbId;
   readonly dbName:  string;
+  hostZoneName?(): string;
   readonly vfs:     VfsAdapter;
   getDatafiles():   ReadonlyArray<DatafileInfo>;
   getSpfileParam(name: string): string | undefined;

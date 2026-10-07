@@ -14,8 +14,6 @@
  * Les deux affirmations sont desormais LUES : la synchronisation vient
  * de l'agent NTP, le service de l'unite `chrony`.
  */
-import { simulationNowMs } from '@/network/core/SystemClock';
-
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import {
@@ -33,7 +31,7 @@ function estampille(d: Date): string {
 /** Le rapport de statut, monte sur ce que la machine sait vraiment. */
 function statut(ctx: LinuxCommandContext): string {
   const nomZone = ctx.executor.identity.timezone;
-  const maintenant = simulationNowMs();
+  const maintenant = ctx.executor.simulatedDate().getTime();
   const offsetMin = decalageA(nomZone, maintenant);
   const abbr = abreviationA(nomZone, maintenant);
   const utc = new Date(maintenant);
@@ -75,12 +73,13 @@ export const timedatectlCommand: LinuxCommand = {
         // fuseau avait change.
         if (!zone) return `Failed to set time zone: Invalid time zone '${demande}'`;
         ctx.executor.identity.setTimezone(zone.nom);
+        ctx.executor.serviceMgr.rearmTimers();
         // Les deux fichiers que systemd ecrit vraiment : sans eux,
         // `cat /etc/timezone` contredirait `timedatectl` sur la meme
         // machine.
         ctx.executor.vfs.writeFile('/etc/timezone', `${zone.nom}\n`, 0, 0, 0o022, true);
         ctx.executor.vfs.writeFile('/etc/localtime',
-          `TZif2 ${zone.nom} ${formatOffset(decalageA(zone.nom, simulationNowMs()))}\n`,
+          `TZif2 ${zone.nom} ${formatOffset(decalageA(zone.nom, ctx.executor.simulatedDate().getTime()))}\n`,
           0, 0, 0o022, true);
         return '';
       }
@@ -101,8 +100,8 @@ export const timedatectlCommand: LinuxCommand = {
           `CanNTP=yes`,
           `NTP=${actif ? 'yes' : 'no'}`,
           `NTPSynchronized=${actif && (agent?.isSynced() ?? false) ? 'yes' : 'no'}`,
-          `TimeUSec=${simulationNowMs() * 1000}`,
-          `TimezoneOffset=${decalageA(nomZone, simulationNowMs())}`,
+          `TimeUSec=${ctx.executor.simulatedDate().getTime() * 1000}`,
+          `TimezoneOffset=${decalageA(nomZone, ctx.executor.simulatedDate().getTime())}`,
         ].join('\n');
       }
       default:

@@ -16,7 +16,7 @@
  *   5. Helper utilities
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { PSLexer }  from '@/powershell/lexer/PSLexer';
 import { PSParser } from '@/powershell/parser/PSParser';
@@ -29,6 +29,7 @@ import {
 } from '@/powershell/executionPolicy';
 import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
+import { adoptMachineDates, dateMember, dateTimeStatics, likeDate, parseDateTime, timeZoneInfoStatics } from '@/powershell/runtime/dotnetDateTime';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { nullProviders } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError } from './PSRuntimeError';
@@ -147,20 +148,6 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     empty: '00000000-0000-0000-0000-000000000000' as PSValue,
   } as Record<string, PSValue>,
 
-  datetime: {
-    get now()    { return simulationDate() as unknown as PSValue; },
-    get utcnow() { return simulationDate() as unknown as PSValue; },
-    get today()  { const d = simulationDate(); d.setHours(0,0,0,0); return d as unknown as PSValue; },
-    new: (...a: PSValue[]) => {
-      const n = a.map(Number);
-      return new Date(n[0] ?? 1970, (n[1] ?? 1) - 1, n[2] ?? 1, n[3] ?? 0, n[4] ?? 0, n[5] ?? 0) as unknown as PSValue;
-    },
-    parse:      (s: PSValue) => new Date(String(s)) as unknown as PSValue,
-    parseexact: (s: PSValue) => new Date(String(s)) as unknown as PSValue,
-    minvalue:   new Date(0) as unknown as PSValue,
-    maxvalue:   new Date(8640000000000000) as unknown as PSValue,
-  } as Record<string, PSValue>,
-
   'system.io.path': {
     combine:              (...parts: PSValue[]) => parts.map(String).join('\\') as PSValue,
     getfilename:          (p: PSValue) => { const s = String(p); return s.split(/[\\/]/).pop() ?? s; },
@@ -269,7 +256,6 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
 STATIC_TYPES['system.math'] = STATIC_TYPES['math'];
 STATIC_TYPES['system.text.regularexpressions.regex'] = STATIC_TYPES['regex'];
 STATIC_TYPES['system.guid'] = STATIC_TYPES['guid'];
-STATIC_TYPES['system.datetime'] = STATIC_TYPES['datetime'];
 STATIC_TYPES['io.path'] = STATIC_TYPES['system.io.path'];
 STATIC_TYPES['path'] = STATIC_TYPES['system.io.path'];
 STATIC_TYPES['system.string'] = STATIC_TYPES['string'];
@@ -1534,7 +1520,7 @@ export class PSRuntime {
       case '+':  return this.applyPlus(left, right);
       case '-':
         if (left instanceof Date && right instanceof Date) return this.dateDifference(left, right);
-        if (left instanceof Date) return new Date(left.getTime() - Number(right)) as unknown as PSValue;
+        if (left instanceof Date) return likeDate(left, left.getTime() - Number(right)) as unknown as PSValue;
         return (left as number) - (right as number);
       case '*':  return this.applyMultiply(left, right);
       case '/':  return (left as number) / (right as number);
@@ -1696,6 +1682,12 @@ export class PSRuntime {
     if (tname === 'environment' || tname === 'system.environment') {
       const dyn = this.buildEnvironmentType();
       return this.getMember(dyn as PSValue, node.member.toLowerCase());
+    }
+    if (tname === 'timezoneinfo' || tname === 'system.timezoneinfo') {
+      return this.getMember(timeZoneInfoStatics(this.providers) as PSValue, node.member.toLowerCase());
+    }
+    if (tname === 'datetime' || tname === 'system.datetime') {
+      return this.getMember(dateTimeStatics(this.providers) as PSValue, node.member.toLowerCase());
     }
     if (tname === 'security.principal.windowsidentity' || tname === 'system.security.principal.windowsidentity') {
       return this.getMember({ getcurrent: () => this.currentWindowsIdentity() } as unknown as PSValue, node.member.toLowerCase());
@@ -2835,6 +2827,8 @@ export class PSRuntime {
         result = cmdlet.execute(ctx);
       }
       this.global.set('?', true);
+      result = adoptMachineDates(result, this.providers);
+      for (let i = 0; i < emittedValues.length; i++) emittedValues[i] = adoptMachineDates(emittedValues[i], this.providers);
     } catch (err) {
       this.global.set('?', false);
       if (errorVarName) {
@@ -3022,7 +3016,7 @@ export class PSRuntime {
       case 'guid': case 'system.guid':
         return String(val) as PSValue;
       case 'datetime': case 'system.datetime':
-        return new Date(String(val)) as unknown as PSValue;
+        return (val instanceof Date ? val : parseDateTime(String(val), this.providers)) as unknown as PSValue;
       case 'timespan': case 'system.timespan': {
         const ms = typeof val === 'number' ? val : Number(val);
         return timeSpanValue(ms);
@@ -3064,7 +3058,7 @@ export class PSRuntime {
         : typeof right === 'object' && right !== null
           ? Number((right as Record<string, PSValue>)['TotalMilliseconds'] ?? 0)
           : Number(right);
-      const result = new Date(left.getTime() + ms);
+      const result = likeDate(left, left.getTime() + ms);
       return Object.assign(result, {
         Year: result.getFullYear(), Month: result.getMonth() + 1, Day: result.getDate(),
         Hour: result.getHours(), Minute: result.getMinutes(), Second: result.getSeconds(),
@@ -3301,35 +3295,7 @@ export class PSRuntime {
   }
 
   private getDateMember(d: Date, member: string): PSValue {
-    switch (member) {
-      case 'year':        return d.getFullYear();
-      case 'month':       return d.getMonth() + 1;
-      case 'day':         return d.getDate();
-      case 'hour':        return d.getHours();
-      case 'minute':      return d.getMinutes();
-      case 'second':      return d.getSeconds();
-      case 'millisecond': return d.getMilliseconds();
-      case 'dayofweek':   return d.getDay();
-      case 'dayofyear':   return Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 0).getTime()) / 86400000);
-      case 'ticks':       return d.getTime() * 10000;
-      case 'date':        return new Date(d.getFullYear(), d.getMonth(), d.getDate()) as unknown as PSValue;
-      case 'tostring':    return (fmt?: PSValue) =>
-        fmt !== undefined && fmt !== null && String(fmt) !== ''
-          ? formatDotNetDate(d, String(fmt)) : d.toISOString();
-      case 'tolongdatestring': return () => d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      case 'toshortdatestring': return () => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-      case 'adddays':     return (n: PSValue) => { const r = new Date(d); r.setDate(r.getDate() + Number(n)); return r as unknown as PSValue; };
-      case 'addhours':    return (n: PSValue) => { const r = new Date(d); r.setHours(r.getHours() + Number(n)); return r as unknown as PSValue; };
-      case 'addminutes':  return (n: PSValue) => { const r = new Date(d); r.setMinutes(r.getMinutes() + Number(n)); return r as unknown as PSValue; };
-      case 'addseconds':  return (n: PSValue) => { const r = new Date(d); r.setSeconds(r.getSeconds() + Number(n)); return r as unknown as PSValue; };
-      case 'addmonths':   return (n: PSValue) => { const r = new Date(d); r.setMonth(r.getMonth() + Number(n)); return r as unknown as PSValue; };
-      case 'addyears':    return (n: PSValue) => { const r = new Date(d); r.setFullYear(r.getFullYear() + Number(n)); return r as unknown as PSValue; };
-      case 'subtract':    return (ts: PSValue) => {
-        const ms = (ts as Record<string, PSValue>)?.['TotalMilliseconds'];
-        return d.getTime() - (ms !== undefined ? Number(ms) : 0);
-      };
-      default: return null;
-    }
+    return dateMember(d, member);
   }
 
   private getStringMember(s: string, member: string): PSValue {

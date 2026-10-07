@@ -1,5 +1,10 @@
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+
 export interface WmiHost {
   readonly hostname: string;
+  bootedAt?(): Date | null;
+  nowMs?(): number;
+  readonly timezone?: string;
   readonly os: { prettyName: string; version: string };
   readonly hardware: {
     manufacturer: string;
@@ -151,7 +156,28 @@ function processorRows(host: WmiHost): WmiRow[] {
   }];
 }
 
+const CIM_DATETIME = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\.(\d{6})([+-]\d{3})$/;
+
+export function cimDateTime(epochMs: number, zoneName: string | undefined): string {
+  const wall = ZonedDate.in(epochMs, zoneName);
+  const offset = wall.offsetMinutes();
+  const pad = (n: number, w: number) => String(n).padStart(w, '0');
+  const micros = pad((((epochMs % 1000) + 1000) % 1000) * 1000, 6);
+  return `${pad(wall.getFullYear(), 4)}${pad(wall.getMonth() + 1, 2)}${pad(wall.getDate(), 2)}`
+    + `${pad(wall.getHours(), 2)}${pad(wall.getMinutes(), 2)}${pad(wall.getSeconds(), 2)}.${micros}`
+    + `${offset < 0 ? '-' : '+'}${pad(Math.abs(offset), 3)}`;
+}
+
+export function parseCimDateTime(text: string): number | null {
+  const match = CIM_DATETIME.exec(text);
+  if (match === null) return null;
+  const [, y, mo, d, h, mi, sec, micro, off] = match;
+  const wall = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(sec), Math.floor(Number(micro) / 1000));
+  return wall - Number(off) * 60_000;
+}
+
 function operatingSystemRows(host: WmiHost): WmiRow[] {
+  const booted = host.bootedAt?.();
   const build = /Build (\d+)/.exec(host.os.version)?.[1]
     ?? host.os.version.split(' ')[0].split('.')[2] ?? '';
   return [{
@@ -160,6 +186,8 @@ function operatingSystemRows(host: WmiHost): WmiRow[] {
     CSName: host.hostname.toUpperCase(),
     OSArchitecture: '64-bit',
     Version: host.os.version.split(' ')[0],
+    ...(booted === null || booted === undefined ? {} : { LastBootUpTime: cimDateTime(booted.getTime(), host.timezone) }),
+    ...(host.nowMs === undefined ? {} : { LocalDateTime: cimDateTime(host.nowMs(), host.timezone) }),
   }];
 }
 
@@ -192,7 +220,7 @@ export const WMI_CLASSES: readonly WmiClass[] = [
     'Architecture', 'Manufacturer', 'MaxClockSpeed', 'Name',
     'NumberOfCores', 'NumberOfLogicalProcessors']),
   declare('Win32_OperatingSystem', 'os', operatingSystemRows, [
-    'BuildNumber', 'Caption', 'CSName', 'OSArchitecture', 'Version']),
+    'BuildNumber', 'Caption', 'CSName', 'LastBootUpTime', 'LocalDateTime', 'OSArchitecture', 'Version']),
 ];
 
 /**

@@ -1,4 +1,4 @@
-import { simulationDate } from '@/network/core/SystemClock';
+import { formatLocalTime } from '../system/SystemInfo';
 
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
@@ -77,6 +77,7 @@ export interface WContext {
   utmp: UtmpSync | null;
   uptimeSeconds: number;
   now: Date;
+  zone?: string;
 }
 
 function activeSessions(ctx: WContext): SshSession[] {
@@ -106,10 +107,8 @@ function synthSession(r: UtmpRecord): SshSession {
 
 function pad(s: string, w: number): string { return s.padEnd(w); }
 
-function fmtLogin(d: Date): string {
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+function fmtLogin(d: Date, zone?: string): string {
+  return formatLocalTime('%H:%M', d.getTime(), zone);
 }
 
 function fmtIdle(last: Date, now: Date): string {
@@ -136,12 +135,12 @@ function renderHeader(opts: WOptions): string {
   return cols.map((c) => widths[c] ? pad(c, widths[c]) : c).join(' ');
 }
 
-function renderRow(s: SshSession, opts: WOptions): string {
+function renderRow(s: SshSession, opts: WOptions, zone: string | undefined, now: Date): string {
   const cols: string[] = [pad(s.user, 8), pad(s.tty, 8)];
   if (opts.from) cols.push(pad(s.fromIp, 16));
-  if (!opts.short) cols.push(pad(fmtLogin(s.loginAt), 8));
+  if (!opts.short) cols.push(pad(fmtLogin(s.loginAt, zone), 8));
   const last = s.lastActivityAt ?? s.loginAt;
-  cols.push(pad(fmtIdle(last, simulationDate()), 6));
+  cols.push(pad(fmtIdle(last, now), 6));
   if (!opts.short) {
     cols.push(pad('0.00s', 6));
     cols.push(pad('0.00s', 6));
@@ -161,11 +160,11 @@ export function renderW(ctx: WContext, args: string[]): string {
 
   const lines: string[] = [];
   if (!opts.noHeader) {
-    const header = uptimeHeader(all.length, ctx.uptimeSeconds);
+    const header = uptimeHeader(all.length, ctx.uptimeSeconds, { nowMs: ctx.now.getTime(), zone: ctx.zone });
     lines.push(header);
     lines.push(renderHeader(opts));
   }
-  for (const s of sessions) lines.push(renderRow(s, opts));
+  for (const s of sessions) lines.push(renderRow(s, opts, ctx.zone, ctx.now));
   return lines.join('\n');
 }
 

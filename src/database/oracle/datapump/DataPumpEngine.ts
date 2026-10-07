@@ -1,3 +1,4 @@
+import { WallDate } from '../functions/dateSupport';
 import { simulationDate } from '@/network/core/SystemClock';
 
 import type { OracleDatabase } from '../OracleDatabase';
@@ -179,6 +180,6 @@ function encodeCell(v: CellValue): DumpCell {
 }
 
 function decodeCell(v: DumpCell): CellValue {
-  if (v !== null && typeof v === 'object' && '$date' in v) return new Date(v.$date);
+  if (v !== null && typeof v === 'object' && '$date' in v) return new WallDate(v.$date);
   return v as CellValue;
 }

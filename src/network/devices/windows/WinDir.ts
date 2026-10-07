@@ -1,4 +1,6 @@
 import { simulationDate } from '@/network/core/SystemClock';
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 
 import type { WinFileCommandContext } from './WinFileCommands';
 import { hasWildcard, joinPath, nameMatcher, splitFileSpec } from './WinPathSpec';
@@ -26,6 +28,7 @@ interface DirOptions {
   selection: AttributeSelection | null;
   sort: SortTerm[];
   timeField: TimeField;
+  zone?: string;
 }
 
 interface Row {
@@ -247,21 +250,14 @@ function collect(ctx: WinFileCommandContext, target: Target, options: DirOptions
   return blocks;
 }
 
-export function fileDateTime(d: Date): string {
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  let hh = d.getHours();
-  const ampm = hh >= 12 ? 'PM' : 'AM';
-  hh = hh % 12 || 12;
-  const min = String(d.getMinutes()).padStart(2, '0');
-  return `${mm}/${dd}/${yyyy}  ${String(hh).padStart(2, '0')}:${min} ${ampm}`;
+export function fileDateTime(d: Date, zone?: string): string {
+  return formatDotNetDate(ZonedDate.in(d.getTime(), zone), 'MM/dd/yyyy  hh:mm tt');
 }
 
 const shown = (text: string, options: DirOptions): string => (options.lowercase ? text.toLowerCase() : text);
 
 function rowLine(row: Row, options: DirOptions): string {
-  const date = fileDateTime(options.timeField === 'created' ? row.created : row.written);
+  const date = fileDateTime(options.timeField === 'created' ? row.created : row.written, options.zone);
   const name = shown(row.name, options);
   return row.isDirectory
     ? `${date}${DIRECTORY_MARKER}${name}`
@@ -344,6 +340,7 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
   const parsed = parseArguments(args);
   if (typeof parsed === 'string') return parsed;
   const { options, positionals } = parsed;
+  options.zone = ctx.timezone;
 
   const target = resolveTarget(ctx, positionals);
   if (target === null) return 'File Not Found';

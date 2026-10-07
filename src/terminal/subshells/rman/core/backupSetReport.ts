@@ -1,5 +1,5 @@
 import type { BackupSet } from '../catalog/types';
-import { formatOracleDate, formatSize, formatElapsed } from './pureUtils';
+import { formatOracleDate, formatSize, formatElapsed, rmanWall } from './pureUtils';
 import { renderTable, type TableColumn, type TableStyle } from '@/network/devices/shells/cli/TextTable';
 
 const RMAN_TABLE: TableStyle = { gap: 1, rule: true };
@@ -24,14 +24,14 @@ function levelOf(set: BackupSet): string {
   }
 }
 
-const SET_COLUMNS: ReadonlyArray<TableColumn<BackupSet>> = [
+const setColumns = (wall: WallOf): ReadonlyArray<TableColumn<BackupSet>> => [
   { header: 'BS Key',          width: 7,  value: set => String(set.bsKey) },
   { header: 'Type',                       value: typeOf },
   { header: 'LV',              width: 2,  value: levelOf },
   { header: 'Size',            width: 10, value: set => formatSize(set.sizeBytes) },
   { header: 'Device Type',     width: 11, value: () => 'DISK' },
   { header: 'Elapsed Time',    width: 12, value: set => formatElapsed(set.completionTime - set.startTime) },
-  { header: 'Completion Time',            value: set => formatOracleDate(new Date(set.completionTime)) },
+  { header: 'Completion Time',            value: set => formatOracleDate(wall(set.completionTime)) },
 ];
 
 interface DatafileRow {
@@ -42,12 +42,12 @@ interface DatafileRow {
   readonly path: string;
 }
 
-const DATAFILE_COLUMNS: ReadonlyArray<TableColumn<DatafileRow>> = [
+const datafileColumns = (wall: WallOf): ReadonlyArray<TableColumn<DatafileRow>> => [
   { header: 'File',     width: 4,  align: 'right', value: row => String(row.fileNo) },
   { header: 'LV',       width: 2,  value: row => row.level },
   { header: 'Type',     width: 4,  value: () => 'Full' },
   { header: 'Ckp SCN',  width: 10, value: row => String(row.ckpScn) },
-  { header: 'Ckp Time', width: 20, value: row => formatOracleDate(new Date(row.ckpTime)) },
+  { header: 'Ckp Time', width: 20, value: row => formatOracleDate(wall(row.ckpTime)) },
   { header: 'Name',                value: row => row.path },
 ];
 
@@ -69,9 +69,12 @@ const ARCHIVED_LOG_COLUMNS: ReadonlyArray<TableColumn<ArchivedLogRow>> = [
   { header: 'Name',                value: row => row.path },
 ];
 
-export function backupSetLines(sets: ReadonlyArray<BackupSet>): string[] {
+export type WallOf = (atMs: number) => Date;
+
+export function backupSetLines(sets: ReadonlyArray<BackupSet>, ctx?: { hostZoneName?(): string }): string[] {
+  const wall: WallOf = (atMs) => rmanWall(ctx, atMs);
   const lines: string[] = ['', 'List of Backup Sets', '===================', ''];
-  const table = renderTable(sets, SET_COLUMNS, RMAN_TABLE);
+  const table = renderTable(sets, setColumns(wall), RMAN_TABLE);
   lines.push(table[0], table[1]);
   sets.forEach((set, index) => {
     lines.push(table[index + 2]);
@@ -83,7 +86,7 @@ export function backupSetLines(sets: ReadonlyArray<BackupSet>): string[] {
     }
     if (set.type === 'CONTROLFILE') {
       lines.push('  Control File Included: Ckp SCN: 1892354    Ckp time: '
-        + formatOracleDate(new Date(set.completionTime)));
+        + formatOracleDate(wall(set.completionTime)));
     }
     if (set.datafiles.length > 0) {
       lines.push(`  List of Datafiles in backup set ${set.bsKey}`);
@@ -92,7 +95,7 @@ export function backupSetLines(sets: ReadonlyArray<BackupSet>): string[] {
           fileNo: df.fileNo, level: levelOf(set), ckpScn: df.ckpScn.value,
           ckpTime: df.ckpTime, path: df.path,
         })),
-        DATAFILE_COLUMNS, RMAN_NESTED_TABLE));
+        datafileColumns(wall), RMAN_NESTED_TABLE));
     }
   });
   lines.push('');
@@ -103,13 +106,14 @@ export function restorePreviewLines(
   sets: ReadonlyArray<BackupSet>,
   logs: ReadonlyArray<ArchivedLogRow>,
   untilScn?: number,
+  ctx?: { hostZoneName?(): string },
 ): string[] {
   const checkpoints = sets.flatMap(set => set.datafiles.length > 0
     ? set.datafiles.map(df => df.ckpScn.value)
     : set.pieces.map(piece => piece.checkpointScn.value));
   const recoveryScn = untilScn ?? (checkpoints.length > 0 ? Math.min(...checkpoints) : 0);
   const fuzziness = Math.max(recoveryScn, ...checkpoints, 0);
-  const lines = backupSetLines(sets);
+  const lines = backupSetLines(sets, ctx);
   if (logs.length > 0) {
     lines.push('List of Archived Log Copies for database', '=======================================');
     lines.push(...renderTable(logs, ARCHIVED_LOG_COLUMNS, RMAN_TABLE));

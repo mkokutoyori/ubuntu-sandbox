@@ -8,7 +8,8 @@
  * everything else lives here. Adding a function touches only this module.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import type { TimeZone } from '@/network/core/time/TimeZone';
 
 import type { FunctionCallExpr, Expression } from '../../engine/parser/ASTNode';
 import { OracleError } from '../../engine/types/DatabaseError';
@@ -17,6 +18,9 @@ import type { ExecutionContext } from '../../engine/executor/BaseExecutor';
 // Date parsing/formatting lives in one place — dateSupport — so the SQL
 // scalar evaluator and the PL/SQL interpreter cannot drift apart.
 import { coerceDateValue as coerceDate, formatDateValue as formatDate } from './dateSupport';
+import {
+  addMonths, extractField, lastDay, monthsBetween, newTime, nextDay, truncateDate,
+} from './dateArithmetic';
 
 // Re-exported under their historical names for existing consumers.
 export { coerceDate, formatDate };
@@ -29,6 +33,8 @@ export interface ScalarFunctionHost {
   parseOracleDate(dateStr: string, fmt: string): string;
   getMetadataDDL(args: CellValue[]): CellValue;
   getContext(): ExecutionContext;
+  serverZone(): TimeZone | null;
+  clockText(): { sysdate: string; systimestamp: string };
   /** Optional SQL→PL/SQL bridge for stored functions (SELECT pkg.fn(…)). */
   callStoredFunction?(qualifiedName: string, args: CellValue[]): { handled: boolean; value: CellValue };
   /** Read a BFILE's host content (directory + filename); null when the file is absent. */
@@ -62,6 +68,10 @@ const BUILTIN_PACKAGES = new Set([
 
 export class ScalarFunctionEvaluator {
   constructor(private readonly host: ScalarFunctionHost) {}
+
+  private wallDate(value: CellValue): Date | null {
+    return coerceDate(value, this.host.serverZone());
+  }
 
   evaluate(expr: FunctionCallExpr, row: StorageRow, columns: StorageColMeta[]): CellValue {
     const name = expr.name.toUpperCase();
@@ -205,91 +215,36 @@ export class ScalarFunctionEvaluator {
       case 'ROUND': return args[0] != null ? (args[1] != null ? Number(Number(args[0]).toFixed(Number(args[1]))) : Math.round(Number(args[0]))) : null;
       case 'TRUNC': {
         if (args[0] == null) return null;
-        const asDate = coerceDate(args[0]);
-        if (asDate != null) {
-          const d = new Date(asDate.getTime());
-          const fmt = args[1] != null ? String(args[1]).toUpperCase() : 'DD';
-          if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY' || fmt === 'Y') {
-            return formatDate(new Date(d.getFullYear(), 0, 1));
-          }
-          if (fmt === 'Q') {
-            return formatDate(new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1));
-          }
-          if (fmt === 'MM' || fmt === 'MONTH' || fmt === 'MON') {
-            return formatDate(new Date(d.getFullYear(), d.getMonth(), 1));
-          }
-          if (fmt === 'DAY' || fmt === 'D' || fmt === 'DY') {
-            // First day of week — Sunday under the default (US) NLS territory.
-            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()));
-          }
-          if (fmt === 'IW') {
-            // ISO week starts Monday.
-            const isoDay = (d.getDay() + 6) % 7;
-            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - isoDay));
-          }
-          if (fmt === 'W') {
-            // Same weekday as the first day of the month.
-            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDate() - 1) % 7)));
-          }
-          if (fmt === 'WW') {
-            // Same weekday as January 1st.
-            const jan1 = new Date(d.getFullYear(), 0, 1);
-            const days = Math.floor((d.getTime() - jan1.getTime()) / 86_400_000);
-            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - (days % 7)));
-          }
-          if (fmt === 'HH' || fmt === 'HH12' || fmt === 'HH24') {
-            d.setMinutes(0, 0, 0);
-            return formatDate(d);
-          }
-          if (fmt === 'MI') {
-            d.setSeconds(0, 0);
-            return formatDate(d);
-          }
-          d.setHours(0, 0, 0, 0);
-          return formatDate(d);
-        }
+        const asDate = this.wallDate(args[0]);
+        if (asDate != null) return formatDate(truncateDate(asDate, args[1] != null ? String(args[1]) : null));
         return Math.trunc(Number(args[0]));
       }
       case 'ADD_MONTHS': {
         if (args[0] == null || args[1] == null) return null;
-        const base = coerceDate(args[0]);
-        if (base == null) return null;
-        const month = base.getMonth() + Number(args[1]);
-        const day = base.getDate();
-        base.setDate(1);
-        base.setMonth(month);
-        const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
-        base.setDate(Math.min(day, last));
-        return formatDate(base);
+        const base = this.wallDate(args[0]);
+        return base == null ? null : formatDate(addMonths(base, Number(args[1])));
       }
       case 'MONTHS_BETWEEN': {
         if (args[0] == null || args[1] == null) return null;
-        const a = coerceDate(args[0]);
-        const b = coerceDate(args[1]);
-        if (!a || !b) return null;
-        const months = (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
-        return months + (a.getDate() - b.getDate()) / 31;
+        const a = this.wallDate(args[0]);
+        const b = this.wallDate(args[1]);
+        return a && b ? monthsBetween(a, b) : null;
       }
       case 'NEXT_DAY': {
         if (args[0] == null || args[1] == null) return null;
-        const base = coerceDate(args[0]);
-        if (!base) return null;
-        const dayMap: Record<string, number> = {
-          SUNDAY: 0, SUN: 0, MONDAY: 1, MON: 1, TUESDAY: 2, TUE: 2,
-          WEDNESDAY: 3, WED: 3, THURSDAY: 4, THU: 4, FRIDAY: 5, FRI: 5,
-          SATURDAY: 6, SAT: 6,
-        };
-        const target = dayMap[String(args[1]).toUpperCase().trim()];
-        if (target === undefined) return null;
-        const delta = ((target - base.getDay() + 7) % 7) || 7;
-        base.setDate(base.getDate() + delta);
-        return formatDate(base);
+        const base = this.wallDate(args[0]);
+        const next = base ? nextDay(base, String(args[1])) : null;
+        return next ? formatDate(next) : null;
       }
       case 'LAST_DAY': {
         if (args[0] == null) return null;
-        const base = coerceDate(args[0]);
-        if (!base) return null;
-        return formatDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
+        const base = this.wallDate(args[0]);
+        return base ? formatDate(lastDay(base)) : null;
+      }
+      case 'NEW_TIME': {
+        if (args[0] == null || args[1] == null || args[2] == null) return null;
+        const base = this.wallDate(args[0]);
+        return base ? formatDate(newTime(base, String(args[1]), String(args[2]))) : null;
       }
       // Oracle: MOD(n, 0) returns n (not NaN); REMAINDER(n, 0) is NULL.
       case 'MOD': {
@@ -324,32 +279,16 @@ export class ScalarFunctionEvaluator {
       // EXTRACT(field FROM date) — parsed as EXTRACT(fieldLiteral, sourceExpr)
       case 'EXTRACT': {
         if (args.length < 2 || args[1] == null) return null;
-        const field = String(args[0]).toUpperCase();
-        const dateVal = args[1];
-        let d: Date;
-        if (dateVal instanceof Date) {
-          d = dateVal;
-        } else {
-          d = new Date(String(dateVal));
-          if (isNaN(d.getTime())) return null;
-        }
-        switch (field) {
-          case 'YEAR': return d.getFullYear();
-          case 'MONTH': return d.getMonth() + 1;
-          case 'DAY': return d.getDate();
-          case 'HOUR': return d.getHours();
-          case 'MINUTE': return d.getMinutes();
-          case 'SECOND': return d.getSeconds();
-          default: return null;
-        }
+        const d = this.wallDate(args[1]);
+        return d === null ? null : extractField(d, String(args[0]));
       }
 
       // Date functions
-      case 'SYSDATE': return simulationDate().toISOString().slice(0, 19).replace('T', ' ');
-      case 'SYSTIMESTAMP': return simulationDate().toISOString();
+      case 'SYSDATE': return this.host.clockText().sysdate;
+      case 'SYSTIMESTAMP': return this.host.clockText().systimestamp;
       case 'TO_CHAR': {
         if (args[0] == null) return null;
-        const d = coerceDate(args[0]);
+        const d = this.wallDate(args[0]);
         if (d) {
           const session = this.host.getContext().session as { nlsDateFormat?: string } | undefined;
           const fmt = args[1] != null ? String(args[1]).toUpperCase() : (session?.nlsDateFormat ?? 'DD-MON-RR');

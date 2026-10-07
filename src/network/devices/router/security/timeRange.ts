@@ -63,16 +63,16 @@ export function timeRangeDaySet(days: string): ReadonlySet<number> | null {
   return union;
 }
 
-export function isTimeRangeActive(tr: TimeRange, now: Date): boolean {
+export function isTimeRangeActive(tr: TimeRange, wallNow: Date): boolean {
   if (tr.absolute) {
-    const ts = now.getTime();
+    const ts = wallNow.getTime();
     if (tr.absolute.start && ts < stampToMs(tr.absolute.start)) return false;
     if (tr.absolute.end && ts > stampToMs(tr.absolute.end)) return false;
   }
   if (tr.periodic.length === 0) return true;
 
-  const weekday = now.getDay();
-  const minuteOfDay = now.getHours() * 60 + now.getMinutes();
+  const weekday = wallNow.getUTCDay();
+  const minuteOfDay = wallNow.getUTCHours() * 60 + wallNow.getUTCMinutes();
   for (const p of tr.periodic) {
     const set = timeRangeDaySet(p.days);
     if (!set || !set.has(weekday)) continue;

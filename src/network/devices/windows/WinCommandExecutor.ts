@@ -133,6 +133,7 @@ export interface WinCommandContext {
   // DHCP
   isDHCPConfigured(ifName: string): boolean;
   getDHCPState(ifName: string): any;
+  readonly timezone?: string;
   releaseLease(ifName: string): string;
   requestLease(ifName: string, opts: any): string;
   renewLease(ifName: string): void;

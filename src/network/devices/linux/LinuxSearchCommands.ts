@@ -2,7 +2,10 @@
  * Search commands: find, locate, which, whereis, command
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
 import { ShellContext } from './LinuxFileCommands';
+import { parseTouchDate } from './time/FileTimes';
+import type { FindTimeTest } from './VirtualFileSystem';
 
 /** Parse a `-size` argument: `2k`, `+10M`, `-100c`, `1G`. */
 function parseSizeSpec(raw: string): { op: '+' | '-' | '='; value: number } | null {
@@ -29,7 +32,8 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
   let ipathPat: string | undefined;
   let type: 'f' | 'd' | 'l' | undefined;
   let empty = false;
-  let mtime: number | undefined;
+  const timeTests: FindTimeTest[] = [];
+  let timeError: string | null = null;
   let user: string | undefined;
   let group: string | undefined;
   let execCmd: string | undefined;
@@ -70,7 +74,29 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
         break;
       }
       case '-empty': empty = true; break;
-      case '-mtime': mtime = parseInt(args[++i], 10); break;
+      case '-mtime': case '-atime': case '-ctime': case '-mmin': case '-amin': case '-cmin': {
+        const operand = args[++i] ?? '';
+        const match = /^([+-]?)(\d+)$/.exec(operand);
+        if (match === null) { timeError = `find: invalid argument \`${operand}' to \`${a}'`; break; }
+        timeTests.push({
+          kind: 'age',
+          field: a[1] === 'a' ? 'atime' : a[1] === 'c' ? 'ctime' : 'mtime',
+          unit: a.endsWith('min') ? 'min' : 'day',
+          op: match[1] === '' ? '=' : (match[1] as '+' | '-'),
+          n: Number(match[2]),
+        });
+        break;
+      }
+      case '-newer': case '-anewer': case '-cnewer': {
+        const reference = ctx.vfs.resolveInode(ctx.vfs.normalizePath(args[++i] ?? '', ctx.cwd));
+        if (!reference) { timeError = `find: '${args[i] ?? ''}': No such file or directory`; break; }
+        timeTests.push({
+          kind: 'newer',
+          field: a === '-anewer' ? 'atime' : a === '-cnewer' ? 'ctime' : 'mtime',
+          thanMs: reference.mtime,
+        });
+        break;
+      }
       case '-user': user = args[++i]; break;
       case '-group': group = args[++i]; break;
       case '-size': {
@@ -94,7 +120,24 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
         execCmd = execParts.join(' ');
         break;
       }
-      default: break;
+      default: {
+        const newerXy = /^-newer([acm])([acmt])$/.exec(a);
+        if (newerXy !== null) {
+          const operand = args[++i] ?? '';
+          const field = (letter: string): 'atime' | 'mtime' | 'ctime' => (letter === 'a' ? 'atime' : letter === 'c' ? 'ctime' : 'mtime');
+          let thanMs: number | null;
+          if (newerXy[2] === 't') {
+            thanMs = parseTouchDate(operand, ctx.zone, ctx.nowMs?.() ?? simulationNowMs());
+            if (thanMs === null) { timeError = `find: I cannot figure out how to interpret '${operand}' as a date or time`; break; }
+          } else {
+            const reference = ctx.vfs.resolveInode(ctx.vfs.normalizePath(operand, ctx.cwd));
+            if (!reference) { timeError = `find: '${operand}': No such file or directory`; break; }
+            thanMs = reference[field(newerXy[2])];
+          }
+          timeTests.push({ kind: 'newer', field: field(newerXy[1]), thanMs });
+        }
+        break;
+      }
     }
     // The not flag, once seen, applies to the *next* predicate only.
     if (notNext && a !== '!' && a !== '-not') {
@@ -104,6 +147,7 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
     i++;
   }
 
+  if (timeError !== null) return timeError;
   const absStart = ctx.vfs.normalizePath(startPath, ctx.cwd);
 
   const opts: any = {};
@@ -113,7 +157,7 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
   if (ipathPat) opts.ipath = ipathPat;
   if (type) opts.type = type;
   if (empty) opts.empty = true;
-  if (mtime !== undefined) opts.mtime = mtime;
+  if (timeTests.length > 0) opts.timeTests = timeTests;
   if (size) opts.size = size;
   if (maxdepth !== undefined) opts.maxdepth = maxdepth;
   if (mindepth !== undefined) opts.mindepth = mindepth;

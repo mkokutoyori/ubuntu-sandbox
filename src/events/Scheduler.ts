@@ -105,13 +105,30 @@ interface VirtualTask {
 
 function drainRunnableWork(): Promise<void> {
   return new Promise<void>((resolve) => {
-    if (typeof globalThis.setImmediate === 'function') globalThis.setImmediate(resolve);
-    else globalThis.setTimeout(resolve, 0);
+    if (typeof globalThis.setImmediate === 'function') {
+      globalThis.setImmediate(resolve);
+    } else if (typeof globalThis.MessageChannel === 'function') {
+      const channel = new globalThis.MessageChannel();
+      channel.port1.onmessage = () => { channel.port1.close(); resolve(); };
+      channel.port2.postMessage(null);
+    } else {
+      globalThis.setTimeout(resolve, 0);
+    }
   });
 }
 
 export class VirtualTimeScheduler implements IScheduler {
   private currentTime = 0;
+  private pinnedEpochOrigin: number | null = null;
+
+  setEpochOrigin(epochMsAtZero: number): void {
+    this.pinnedEpochOrigin = epochMsAtZero - this.currentTime;
+  }
+
+  epochOrigin(): number | null {
+    return this.pinnedEpochOrigin;
+  }
+
   private nextHandle = 1;
   private nextSeq = 1;
   private readonly tasks: VirtualTask[] = [];
@@ -200,6 +217,18 @@ export class VirtualTimeScheduler implements IScheduler {
       this.drivingUnsettledWork = false;
     }
     return tracked;
+  }
+
+  async advanceBy(ms: number): Promise<void> {
+    if (ms < 0) throw new Error('VirtualTimeScheduler.advanceBy: ms must be ≥ 0');
+    const target = this.currentTime + ms;
+    while (this.currentTime < target) {
+      await drainRunnableWork();
+      const due = this.msUntilNextTask();
+      const step = due === null ? target - this.currentTime : Math.min(due, target - this.currentTime);
+      this.advance(Math.max(step, 0));
+    }
+    await drainRunnableWork();
   }
 
   /**

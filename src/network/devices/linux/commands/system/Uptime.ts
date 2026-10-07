@@ -7,6 +7,6 @@ export const uptimeCommand: LinuxCommand = {
   needsNetworkContext: true,
   usage: 'uptime [options]',
   run(ctx: LinuxCommandContext, args: string[]): string {
-    return cmdUptime(args, ctx.executor.lifecycle);
+    return cmdUptime(args, ctx.executor.lifecycle, { nowMs: ctx.executor.simulatedDate().getTime(), zone: ctx.executor.localZone() });
   },
 };

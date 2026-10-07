@@ -1,4 +1,4 @@
-import { OwnedScheduler, RealTimeScheduler, getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { OwnedScheduler, RealTimeScheduler, VirtualTimeScheduler, getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { PathClock } from './time/PathClock';
 
 export class SystemClock {
@@ -42,11 +42,16 @@ function readingOf(scheduler: IScheduler): number {
   return scheduler instanceof RealTimeScheduler ? Date.now() : scheduler.now();
 }
 
+function epochOf(scheduler: IScheduler): number {
+  const pinned = scheduler instanceof VirtualTimeScheduler ? scheduler.epochOrigin() : null;
+  return pinned === null ? Date.now() : pinned + scheduler.now();
+}
+
 export function schedulerWallClock(
   scheduler: () => IScheduler = getDefaultScheduler,
 ): () => number {
   let followed = unwrapped(scheduler());
-  let epochAtOrigin = Date.now();
+  let epochAtOrigin = epochOf(followed);
   let origin = readingOf(followed);
   let lastReading = origin;
   return () => {
@@ -70,6 +75,8 @@ export function schedulerWallClock(
 const virtualOrigins = new WeakMap<IScheduler, number>();
 
 function virtualOriginOf(scheduler: IScheduler): number {
+  const pinned = scheduler instanceof VirtualTimeScheduler ? scheduler.epochOrigin() : null;
+  if (pinned !== null) return pinned;
   let origin = virtualOrigins.get(scheduler);
   if (origin === undefined) {
     origin = Date.now() - scheduler.now();
