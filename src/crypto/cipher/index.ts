@@ -2,7 +2,7 @@
 export { aesEncryptBlock, aesDecryptBlock, AES_BLOCK_SIZE } from './aes';
 export { aesCbcEncrypt, aesCbcDecrypt } from './aesCbc';
 export { aesCtsEncrypt, aesCtsDecrypt } from './aesCts';
-export { aesGcmEncrypt, aesGcmDecrypt, AES_GCM_TAG_SIZE, AES_GCM_IV_SIZE } from './aesGcm';
+export { aesGcmEncrypt, aesGcmDecrypt, gcmEncryptWith, gcmDecryptWith, AES_GCM_TAG_SIZE, AES_GCM_IV_SIZE } from './aesGcm';
 export {
   desEncryptBlock, desDecryptBlock, desCbcEncrypt, desCbcDecrypt, DES_BLOCK_SIZE,
   tripleDesEncryptBlock, tripleDesDecryptBlock, tripleDesCbcEncrypt, tripleDesCbcDecrypt,

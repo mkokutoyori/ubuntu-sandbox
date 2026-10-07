@@ -6,7 +6,7 @@
  * directly instead of via GHASH-of-the-IV.
  */
 
-import { aesEncryptBlock, createAesEncryptor, AES_BLOCK_SIZE } from './aes';
+import { createAesEncryptor, AES_BLOCK_SIZE } from './aes';
 
 const TAG_SIZE = 16;
 
@@ -84,11 +84,11 @@ function inc32(block: Uint8Array): Uint8Array {
   return out;
 }
 
-/** GCTR(key, icb, data): AES-CTR keystream XOR, incrementing the low 32 bits each block. */
-function gctr(key: Uint8Array, icb: Uint8Array, data: Uint8Array): Uint8Array {
+export type BlockEncryptor = (block: Uint8Array) => Uint8Array;
+
+function gctr(encryptBlock: BlockEncryptor, icb: Uint8Array, data: Uint8Array): Uint8Array {
   if (data.length === 0) return new Uint8Array(0);
   const out = new Uint8Array(data.length);
-  const encryptBlock = createAesEncryptor(key);
   let cb = icb;
   for (let off = 0; off < data.length; off += AES_BLOCK_SIZE) {
     const ks = encryptBlock(cb);
@@ -99,40 +99,49 @@ function gctr(key: Uint8Array, icb: Uint8Array, data: Uint8Array): Uint8Array {
   return out;
 }
 
-/** Form J0 for a 96-bit IV: IV || 0^31 || 1. */
 function initialCounterBlock(iv: Uint8Array): Uint8Array {
-  if (iv.length !== 12) throw new Error(`AES-GCM: IV must be 12 bytes (got ${iv.length})`);
+  if (iv.length !== 12) throw new Error(`GCM: IV must be 12 bytes (got ${iv.length})`);
   const j0 = new Uint8Array(16);
   j0.set(iv);
   j0[15] = 1;
   return j0;
 }
 
-/** Encrypt `plaintext` under AES-GCM, returning ciphertext and a 16-byte auth tag. */
-export function aesGcmEncrypt(
-  key: Uint8Array, iv: Uint8Array, aad: Uint8Array, plaintext: Uint8Array,
+export function gcmEncryptWith(
+  encryptBlock: BlockEncryptor, iv: Uint8Array, aad: Uint8Array, plaintext: Uint8Array,
 ): { ciphertext: Uint8Array; tag: Uint8Array } {
-  const h = aesEncryptBlock(key, new Uint8Array(16));
+  const h = encryptBlock(new Uint8Array(16));
   const j0 = initialCounterBlock(iv);
-  const ciphertext = gctr(key, inc32(j0), plaintext);
+  const ciphertext = gctr(encryptBlock, inc32(j0), plaintext);
   const s = ghash(h, aad, ciphertext);
-  const tag = xorBytes(s, aesEncryptBlock(key, j0)).slice(0, TAG_SIZE);
+  const tag = xorBytes(s, encryptBlock(j0)).slice(0, TAG_SIZE);
   return { ciphertext, tag };
 }
 
-/** Decrypt AES-GCM ciphertext, verifying the tag. Returns null on any tag mismatch. */
-export function aesGcmDecrypt(
-  key: Uint8Array, iv: Uint8Array, aad: Uint8Array, ciphertext: Uint8Array, tag: Uint8Array,
+export function gcmDecryptWith(
+  encryptBlock: BlockEncryptor, iv: Uint8Array, aad: Uint8Array, ciphertext: Uint8Array, tag: Uint8Array,
 ): Uint8Array | null {
-  const h = aesEncryptBlock(key, new Uint8Array(16));
+  const h = encryptBlock(new Uint8Array(16));
   const j0 = initialCounterBlock(iv);
   const s = ghash(h, aad, ciphertext);
-  const expectedTag = xorBytes(s, aesEncryptBlock(key, j0)).slice(0, TAG_SIZE);
+  const expectedTag = xorBytes(s, encryptBlock(j0)).slice(0, TAG_SIZE);
   if (expectedTag.length !== tag.length) return null;
   let diff = 0;
   for (let i = 0; i < expectedTag.length; i++) diff |= expectedTag[i] ^ tag[i];
   if (diff !== 0) return null;
-  return gctr(key, inc32(j0), ciphertext);
+  return gctr(encryptBlock, inc32(j0), ciphertext);
+}
+
+export function aesGcmEncrypt(
+  key: Uint8Array, iv: Uint8Array, aad: Uint8Array, plaintext: Uint8Array,
+): { ciphertext: Uint8Array; tag: Uint8Array } {
+  return gcmEncryptWith(createAesEncryptor(key), iv, aad, plaintext);
+}
+
+export function aesGcmDecrypt(
+  key: Uint8Array, iv: Uint8Array, aad: Uint8Array, ciphertext: Uint8Array, tag: Uint8Array,
+): Uint8Array | null {
+  return gcmDecryptWith(createAesEncryptor(key), iv, aad, ciphertext, tag);
 }
 
 export const AES_GCM_TAG_SIZE = TAG_SIZE;
