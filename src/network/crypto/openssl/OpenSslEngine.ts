@@ -14,7 +14,7 @@ import { errnoNumber } from '@/network/core/Errno';
 import { md4, md5, sha1, sha256, sha512, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
 import { md5Crypt } from '@/crypto/passwords';
 import {
-  bytesToBase64, base64ToBytes, bytesToHex, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
+  bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
@@ -92,7 +92,7 @@ import {
 import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
 import { crlVersionOf } from '@/network/pki/der/CrlDer';
-import { publicKeyTextLines, signatureTextLines, certificateRequestText, peerChainLines } from './OpenSslText';
+import { publicKeyTextLines, signatureTextLines, certificateRequestText, peerChainLines, opensslHexDump } from './OpenSslText';
 import { verifyCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { opensslHelpLines } from './OpenSslHelp';
@@ -1802,8 +1802,20 @@ function finishSClientReport(
   if (version === '1.3') {
     lignes.push('Early data was not sent', `Verify return code: ${code} (${text})`, '---');
   } else {
-    lignes.push('SSL-Session:', `    Protocol  : TLSv${version}`, `    Cipher    : ${suiteName}`, '    Timeout   : 7200 (sec)',
-      `    Verify return code: ${code} (${text})`, '    Extended master secret: yes', '---');
+    const kept = details.legacySession;
+    lignes.push('SSL-Session:', `    Protocol  : TLSv${version}`, `    Cipher    : ${suiteName}`);
+    if (kept) {
+      lignes.push(`    Session-ID: ${kept.state.id.toUpperCase()}`, '    Session-ID-ctx: ', `    Master-Key: ${kept.state.master.toUpperCase()}`,
+        '    PSK identity: None', '    PSK identity hint: None', '    SRP username: None');
+      if (kept.ticket !== null) {
+        lignes.push(`    TLS session ticket lifetime hint: ${kept.state.lifetimeSeconds} (seconds)`, '    TLS session ticket:',
+          ...opensslHexDump(hexToBytes(kept.ticket), '    '), '');
+      }
+      lignes.push(`    Start Time: ${Math.floor(kept.state.createdAt / 1000)}`, '    Timeout   : 7200 (sec)');
+    } else {
+      lignes.push('    Timeout   : 7200 (sec)');
+    }
+    lignes.push(`    Verify return code: ${code} (${text})`, `    Extended master secret: ${kept ? (kept.state.extendedMasterSecret ? 'yes' : 'no') : 'yes'}`, '---');
   }
   if (probe.received !== undefined) {
     if (probe.received.length > 0) lignes.push(bytesToFileText(probe.received));
