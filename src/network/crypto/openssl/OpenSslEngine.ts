@@ -1864,9 +1864,23 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const list = createCipherList(cipherSpec, { isAvailable: isImplementedCipher });
     if (list.ok === false) return fail(`Error setting cipher list\n${list.error}`, 1);
   }
+  let clientCredential: { chain: X509Certificate[]; privateKey: PkiPrivateKey } | undefined;
+  const clientCertPath = opts.get('-cert');
+  if (typeof clientCertPath === 'string') {
+    const certText = host.readFile(clientCertPath);
+    if (certText === null) return fail(`Can't open "${clientCertPath}" for reading, No such file or directory`, 1);
+    const keyPath = typeof opts.get('-key') === 'string' ? opts.get('-key') as string : clientCertPath;
+    const keyText = host.readFile(keyPath);
+    if (keyText === null) return fail(`Can't open "${keyPath}" for reading, No such file or directory`, 1);
+    const key = pemToPrivateKey(keyText);
+    const chain = pemToCertChain(certText);
+    if (key === null || chain.length === 0) return fail('Error getting private key or certificate', 1);
+    clientCredential = { chain, privateKey: key };
+  }
   const probeOptions = {
     versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
     ...(opts.has('-status') ? { requestStatus: true } : {}),
+    ...(clientCredential ? { clientCredential } : {}),
     ...(typeof opts.get('-alpn') === 'string' ? { alpn: (opts.get('-alpn') as string).split(',') } : {}),
     ...(host.stdin() !== null ? { send: fileTextToBytes(host.stdin()!) } : {}),
   };
@@ -1969,8 +1983,16 @@ function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (list.ok === false) return fail(`Error setting cipher list\n${list.error}`, 1);
   }
   const root = (host.workingDirectory?.() ?? '.').replace(/\/+$/, '');
+  let clientAuth: { anchors: X509Certificate[]; required: boolean } | undefined;
+  if (opts.has('-Verify') || opts.has('-verify')) {
+    const caPath = opts.get('-CAfile');
+    if (typeof caPath !== 'string') return fail('Error: -Verify/-verify needs -CAfile to locate the trusted certificates', 1);
+    const caText = host.readFile(caPath);
+    if (caText === null) return fail(`Can't open "${caPath}" for reading, No such file or directory`, 1);
+    clientAuth = { anchors: pemToCertChain(caText), required: opts.has('-Verify') };
+  }
   const served = host.serveTls?.(port, {
-    chain, privateKey, ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+    chain, privateKey, ...(clientAuth ? { clientAuth } : {}), ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
   }, (method, target) => {
     if (mode === 'www') {
       return { status: 200, contentType: 'text/html', body: `<HTML><BODY BGCOLOR="#ffffff">\n<pre>\n\ns_server -accept ${port} -www \n</pre></BODY></HTML>\n` };

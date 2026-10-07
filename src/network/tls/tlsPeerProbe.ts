@@ -2,6 +2,7 @@ import type { TlsProtocolVersion } from './legacy/legacyCipherSuites';
 import { TlsClientSession } from './TlsClientSession';
 import { CertificateVerifier } from '../pki/CertificateVerifier';
 import type { TcpStack } from '../tcp/TcpStack';
+import type { PkiPrivateKey } from '../pki/PkiKeyPair';
 import type { X509Certificate } from '../pki/X509Certificate';
 import type { OcspResponseMessage } from '../pki/OcspWire';
 import { encryptApplicationData, decryptApplicationData } from '../http/https/ApplicationDataCipher';
@@ -39,6 +40,7 @@ export interface TlsProbeOptions {
   readonly requestStatus?: boolean;
   readonly send?: Uint8Array;
   readonly alpn?: readonly string[];
+  readonly clientCredential?: { readonly chain: readonly X509Certificate[]; readonly privateKey: PkiPrivateKey };
 }
 
 export function probeTlsPeer(
@@ -54,6 +56,7 @@ export function probeTlsPeer(
     verifier: new CertificateVerifier({ trustAnchors: anchors }),
     serverName: options.servername,
     ...(options.send !== undefined ? { allowUntrustedPeer: true } : {}),
+    ...(options.clientCredential ? { clientCert: options.clientCredential.chain[0], clientChain: options.clientCredential.chain.slice(1), clientPrivateKey: options.clientCredential.privateKey } : {}),
     ...(options.alpn && options.alpn.length > 0 ? { alpn: options.alpn } : {}),
     ...(options.versions ? { versions: options.versions } : {}),
     ...(options.cipherList ? { cipherList: options.cipherList } : {}),

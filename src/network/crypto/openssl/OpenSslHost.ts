@@ -31,6 +31,7 @@ export interface TlsServeSettings {
   readonly privateKey: PkiPrivateKey;
   readonly protocols?: readonly TlsProtocolVersion[];
   readonly cipherList?: string;
+  readonly clientAuth?: { readonly anchors: readonly X509Certificate[]; readonly required: boolean };
 }
 
 export interface TlsPeerProbeOptions {
@@ -39,6 +40,7 @@ export interface TlsPeerProbeOptions {
   readonly requestStatus?: boolean;
   readonly send?: Uint8Array;
   readonly alpn?: readonly string[];
+  readonly clientCredential?: { readonly chain: readonly X509Certificate[]; readonly privateKey: PkiPrivateKey };
 }
 
 export interface OpenSslHost {

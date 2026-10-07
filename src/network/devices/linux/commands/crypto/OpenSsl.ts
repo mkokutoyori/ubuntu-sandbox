@@ -7,6 +7,7 @@ import { makeArgCompleter } from '../completionHelpers';
 import { runOpenSsl } from '@/network/crypto/openssl/OpenSslEngine';
 import { OPENSSL_VERSION } from '@/network/crypto/openssl/opensslVersion';
 import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
@@ -94,6 +95,11 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         serverCert: tls.chain[0], serverChain: tls.chain.slice(1), serverPrivateKey: tls.privateKey,
         ...(tls.protocols ? { protocols: tls.protocols } : {}),
         ...(tls.cipherList ? { cipherList: tls.cipherList } : {}),
+        ...(tls.clientAuth ? {
+          requestClientCert: true,
+          verifier: new CertificateVerifier({ trustAnchors: tls.clientAuth.anchors, clock: () => simulationNowMs() }),
+          clientCertPolicy: tls.clientAuth.required ? 'strict' as const : 'optional' as const,
+        } : {}),
       }, (req) => {
         const outcome = respond(req.method ?? 'GET', req.target ?? '/');
         const response = createResponse(outcome.status, outcome.status === 200 ? 'ok' : 'Not Found');

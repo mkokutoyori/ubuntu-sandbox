@@ -4,9 +4,11 @@
  * simulée) ; `-tls1_2` fixe la version, `-cipher` est évalué, un second `s_server` sur le même port
  * est refusé comme « Address already in use ».
  *
- * MESURÉ avant correctif : `s_server` n'était pas une commande du simulateur, aucune écoute ne
- * s'ouvrait. Avant correctif (stash de src/network) 6 cas sur 7 tombent ; le témoin (le certificat
- * et la clé du laboratoire se génèrent) passe dans les deux états.
+ * MESURÉ avant l'ajout de l'authentification du client (-Verify/-verify côté s_server, -cert/-key côté s_client) :
+ * s_server refusait ces options et un client ne pouvait pas présenter de certificat. Avant ce correctif (stash de
+ * src/network) 2 cas sur 10 tombent : -Verify avec le bon certificat client, et -Verify avec une autre autorité.
+ * Les huit autres passent dans les deux états : la série initiale de s_server, déjà commitée, et -verify sans
+ * exiger. Les cas « refusé » ne valent que par le témoin du même laboratoire où le client légitime obtient la page.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -87,5 +89,33 @@ describe('openssl s_server', () => {
     const srv = await lab();
     await sh(srv, `openssl s_server -accept 4433 -cert ${PKI}/s.crt -key ${PKI}/s.key -www`);
     expect(await sh(srv, `openssl s_server -accept 4433 -cert ${PKI}/s.crt -key ${PKI}/s.key -www`)).toContain('Address already in use');
+  });
+
+  it('-Verify exige un certificat client : sans lui la poignée de main échoue, avec lui la page arrive', async () => {
+    const srv = await lab();
+    await sh(srv, `openssl req -x509 -newkey rsa:2048 -keyout ${PKI}/ca.key -out ${PKI}/ca.crt -days 30 -nodes -subj "/CN=Client CA"`);
+    await sh(srv, `openssl req -new -newkey rsa:2048 -nodes -keyout ${PKI}/alice.key -out ${PKI}/alice.csr -subj "/CN=alice"`);
+    await sh(srv, `openssl x509 -req -in ${PKI}/alice.csr -CA ${PKI}/ca.crt -CAkey ${PKI}/ca.key -CAcreateserial -out ${PKI}/alice.crt -days 30`);
+    expect(await sh(srv, `openssl s_server -accept 4435 -cert ${PKI}/s.crt -key ${PKI}/s.key -www -Verify 1 -CAfile ${PKI}/ca.crt`)).toContain('ACCEPT');
+    const without = await sh(srv, `${GET.replace('GET /', 'GET /')} | openssl s_client -connect 127.0.0.1:4435`);
+    const withCert = await sh(srv, `${GET} | openssl s_client -connect 127.0.0.1:4435 -cert ${PKI}/alice.crt -key ${PKI}/alice.key`);
+    expect(without).not.toContain('s_server -accept 4435');
+    expect(withCert).toContain('s_server -accept 4435');
+  });
+
+  it('-Verify refuse un certificat client signé par une autre autorité', async () => {
+    const srv = await lab();
+    await sh(srv, `openssl req -x509 -newkey rsa:2048 -keyout ${PKI}/ca.key -out ${PKI}/ca.crt -days 30 -nodes -subj "/CN=Client CA"`);
+    await sh(srv, `openssl req -x509 -newkey rsa:2048 -keyout ${PKI}/rogue.key -out ${PKI}/rogue.crt -days 30 -nodes -subj "/CN=rogue"`);
+    await sh(srv, `openssl s_server -accept 4435 -cert ${PKI}/s.crt -key ${PKI}/s.key -www -Verify 1 -CAfile ${PKI}/ca.crt`);
+    const out = await sh(srv, `${GET} | openssl s_client -connect 127.0.0.1:4435 -cert ${PKI}/rogue.crt -key ${PKI}/rogue.key`);
+    expect(out).not.toContain('s_server -accept 4435');
+  });
+
+  it('-verify (sans exiger) laisse passer un client sans certificat', async () => {
+    const srv = await lab();
+    await sh(srv, `openssl req -x509 -newkey rsa:2048 -keyout ${PKI}/ca.key -out ${PKI}/ca.crt -days 30 -nodes -subj "/CN=Client CA"`);
+    await sh(srv, `openssl s_server -accept 4435 -cert ${PKI}/s.crt -key ${PKI}/s.key -www -verify 1 -CAfile ${PKI}/ca.crt`);
+    expect(await sh(srv, `${GET} | openssl s_client -connect 127.0.0.1:4435`)).toContain('s_server -accept 4435');
   });
 });
