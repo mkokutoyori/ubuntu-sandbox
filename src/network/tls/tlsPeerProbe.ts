@@ -7,6 +7,15 @@ import type { OcspResponseMessage } from '../pki/OcspWire';
 import { encryptApplicationData, decryptApplicationData } from '../http/https/ApplicationDataCipher';
 import { runTlsHandshakeOverSocket, bytesToBinaryString, binaryStringToBytes, encodeRecords, decodeRecords } from '../http/https/TlsRecordWire';
 
+export interface TlsHandshakeDetails {
+  readonly peerSignature: { readonly digest: string; readonly type: string } | null;
+  readonly serverTempKey: string | null;
+  readonly bytesRead: number;
+  readonly bytesWritten: number;
+  readonly alpn: string | null;
+  readonly verificationReason: string | null;
+}
+
 export interface TlsProbeOutcome {
   readonly ok: boolean;
   readonly reason?: string;
@@ -18,6 +27,7 @@ export interface TlsProbeOutcome {
   readonly staple?: OcspResponseMessage | null;
   readonly received?: Uint8Array;
   readonly chain?: readonly X509Certificate[];
+  readonly details?: TlsHandshakeDetails;
 }
 
 export interface TlsProbeOptions {
@@ -28,6 +38,7 @@ export interface TlsProbeOptions {
   readonly cipherList?: string;
   readonly requestStatus?: boolean;
   readonly send?: Uint8Array;
+  readonly alpn?: readonly string[];
 }
 
 export function probeTlsPeer(
@@ -43,14 +54,21 @@ export function probeTlsPeer(
     verifier: new CertificateVerifier({ trustAnchors: anchors }),
     serverName: options.servername,
     ...(options.send !== undefined ? { allowUntrustedPeer: true } : {}),
-    alpn: ['http/1.1'],
+    ...(options.alpn && options.alpn.length > 0 ? { alpn: options.alpn } : {}),
     ...(options.versions ? { versions: options.versions } : {}),
     ...(options.cipherList ? { cipherList: options.cipherList } : {}),
     ...(options.requestStatus ? { collectOcspStaple: true } : {}),
   });
 
+  let bytesRead = 0;
+  let bytesWritten = 0;
+  const counted = {
+    write: (data: string): unknown => { bytesWritten += data.length; return socket.write(data); },
+    onData: (callback: Parameters<typeof socket.onData>[0]) => socket.onData((data) => { bytesRead += String(data).length; callback(data); }),
+    setNoDelay: (value: boolean) => socket.setNoDelay?.(value),
+  };
   try {
-    runTlsHandshakeOverSocket(socket, session);
+    runTlsHandshakeOverSocket(counted as unknown as Parameters<typeof runTlsHandshakeOverSocket>[0], session);
   } catch (error) {
     socket.close();
     return {
@@ -76,7 +94,11 @@ export function probeTlsPeer(
       certificate: null, cipherSuite, protocolVersion, alert, verified: false,
     };
   }
-  return { ok: true, certificate, cipherSuite, protocolVersion, alert, verified: succeeded, staple: session.receivedStaple, ...(received ? { received } : {}), chain: session.peerCertificateChain };
+  return { ok: true, certificate, cipherSuite, protocolVersion, alert, verified: succeeded, staple: session.receivedStaple, ...(received ? { received } : {}), chain: session.peerCertificateChain,
+    details: {
+      peerSignature: session.peerSignature, serverTempKey: session.serverTempKey, bytesRead, bytesWritten,
+      alpn: session.negotiatedAlpnProtocol, verificationReason: session.peerVerificationReason,
+    } };
 }
 
 function exchangeApplicationData(socket: NonNullable<ReturnType<TcpStack['connect']>>, session: TlsClientSession, payload: Uint8Array): Uint8Array {

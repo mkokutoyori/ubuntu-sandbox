@@ -97,6 +97,8 @@ import { verifyCertificateRequest } from '@/network/pki/CertificateSigningReques
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { opensslHelpLines } from './OpenSslHelp';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
+import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
+import type { TlsPeerProbe } from './OpenSslHost';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 
 import { OPENSSL_VERSION_DATE, OPENSSL_VERSION_TEXT } from './opensslVersion';
@@ -1754,6 +1756,62 @@ function runRehash(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
 const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
 
+const VERIFY_CODES: Readonly<Record<string, readonly [number, string]>> = {
+  expired: [10, 'certificate has expired'],
+  'not-yet-valid': [9, 'certificate is not yet valid'],
+  revoked: [23, 'certificate revoked'],
+  'bad-signature': [7, 'certificate signature failure'],
+  'hostname-mismatch': [62, 'Hostname mismatch'],
+  'not-a-ca': [24, 'invalid CA certificate'],
+  'path-length': [25, 'path length constraint exceeded'],
+  'key-usage': [26, 'unsupported certificate purpose'],
+  purpose: [26, 'unsupported certificate purpose'],
+};
+
+function verifyCodeFor(chain: readonly X509Certificate[], reason: string | null): readonly [number, string] {
+  if (reason === null) return [0, 'ok'];
+  const known = VERIFY_CODES[reason];
+  if (known) return known;
+  const top = chain[chain.length - 1];
+  const selfSigned = top !== undefined && top.subject === top.issuer;
+  if (selfSigned) return chain.length === 1 ? [18, 'self-signed certificate'] : [19, 'self-signed certificate in certificate chain'];
+  return [20, 'unable to get local issuer certificate'];
+}
+
+function finishSClientReport(
+  lignes: string[], probe: Extract<TlsPeerProbe, { ok: true }>, details: TlsHandshakeDetails,
+  leaf: X509Certificate,
+): OpenSslResult {
+  const version = probe.protocolVersion ?? '1.3';
+  const suite = probe.cipherSuite ?? '';
+  const suiteName = legacySuiteByName(suite)?.opensslName ?? suite;
+  const chain = probe.chain && probe.chain.length > 0 ? probe.chain : [leaf];
+  const [code, text] = verifyCodeFor(chain, probe.verified ? null : details.verificationReason ?? 'unknown');
+  lignes.push('No client certificate CA names sent');
+  if (details.peerSignature) {
+    lignes.push(`Peer signing digest: ${details.peerSignature.digest}`, `Peer signature type: ${details.peerSignature.type}`);
+  }
+  if (details.serverTempKey) lignes.push(`Server Temp Key: ${details.serverTempKey}`);
+  lignes.push('---', `SSL handshake has read ${details.bytesRead} bytes and written ${details.bytesWritten} bytes`);
+  lignes.push(code === 0 ? 'Verification: OK' : `Verification error: ${text}`, '---');
+  lignes.push(`New, TLSv${version}, Cipher is ${suiteName}`);
+  const rsa = materialToPublicKey(leaf.publicKey.material);
+  lignes.push(`Server public key is ${rsa ? bitLength(rsa.n) : 256} bit`);
+  lignes.push(`Secure Renegotiation IS ${version === '1.3' ? 'NOT ' : ''}supported`, 'Compression: NONE', 'Expansion: NONE');
+  lignes.push(details.alpn ? `ALPN protocol: ${details.alpn}` : 'No ALPN negotiated');
+  if (version === '1.3') {
+    lignes.push('Early data was not sent', `Verify return code: ${code} (${text})`, '---');
+  } else {
+    lignes.push('SSL-Session:', `    Protocol  : TLSv${version}`, `    Cipher    : ${suiteName}`, '    Timeout   : 7200 (sec)',
+      `    Verify return code: ${code} (${text})`, '    Extended master secret: yes', '---');
+  }
+  if (probe.received !== undefined) {
+    if (probe.received.length > 0) lignes.push(bytesToFileText(probe.received));
+    return { output: lignes.join('\n'), stderr: 'DONE', exitCode: 0 };
+  }
+  return ok(lignes.join('\n'));
+}
+
 /**
  * `s_client -connect hôte:port` — une VRAIE connexion par la pile TCP du
  * simulateur, comme `curl` et `nc` en ouvrent déjà. Il n'y a rien à
@@ -1809,6 +1867,7 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const probeOptions = {
     versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
     ...(opts.has('-status') ? { requestStatus: true } : {}),
+    ...(typeof opts.get('-alpn') === 'string' ? { alpn: (opts.get('-alpn') as string).split(',') } : {}),
     ...(host.stdin() !== null ? { send: fileTextToBytes(host.stdin()!) } : {}),
   };
   const sonde = host.tlsPeerCertificate?.(
@@ -1851,6 +1910,10 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
         ...ocspResponseText(staple),
         '======================================');
     }
+  }
+  const details = sonde && sonde.ok ? sonde.details : undefined;
+  if (echecPoignee === null && sonde && sonde.ok && details && presente) {
+    return finishSClientReport(lignes, sonde, details, presente);
   }
   if (echecPoignee !== null) {
     lignes.push('New, (NONE), Cipher is (NONE)');

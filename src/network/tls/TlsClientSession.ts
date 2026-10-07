@@ -138,6 +138,8 @@ export class TlsClientSession {
   peerCertificateChain: readonly X509Certificate[] = [];
   receivedStaple: OcspResponseMessage | null = null;
   peerVerified = false;
+  peerSignature: { readonly digest: string; readonly type: string } | null = null;
+  serverTempKey: string | null = null;
   peerVerificationReason: string | null = null;
   /**
    * RFC 8446 §7.2 — this side's current application traffic secrets, set
@@ -422,6 +424,8 @@ export class TlsClientSession {
     this.receivedStaple = legacy.receivedStaple;
     this.peerVerified = legacy.peerVerified;
     this.peerVerificationReason = legacy.peerVerificationReason;
+    this.peerSignature = legacy.peerSignature;
+    this.serverTempKey = legacy.serverTempKey;
     this.negotiatedVersion = legacy.negotiatedVersion;
     this.negotiatedCipherSuite = legacy.negotiatedSuite?.name ?? null;
     this.negotiatedAlpnProtocol = legacy.negotiatedAlpn;
@@ -459,6 +463,7 @@ export class TlsClientSession {
     this.hash = suiteInfo(serverHello.cipherSuite).hash;
     if (this.retried) collapseFirstClientHello(this.transcript, this.hash);
 
+    this.serverTempKey = this.keyExchange?.group === 'x25519' ? 'X25519, 253 bits' : 'ECDH, prime256v1, 256 bits';
     const dheSharedSecret = this.keyExchange === null
       ? null
       : sharedSecret(this.keyExchange, serverHello.extensions.keyShare ?? '');
@@ -540,6 +545,7 @@ export class TlsClientSession {
       if (certificateVerify!.signatureAlgorithm !== schemeForKey(leafCert.publicKey.algorithm)) return this.fail('illegal_parameter');
       if (!verifyCertificateVerify(leafCert.publicKey, preVerify, certificateVerify!.signatureAlgorithm, certificateVerify!.signature)) return this.fail('decrypt_error');
       this.transcript.push(rawOf(certificateVerify!));
+      this.peerSignature = { digest: 'SHA256', type: certificateVerify!.signatureAlgorithm.startsWith('ecdsa') ? 'ECDSA' : 'RSA-PSS' };
 
     } else {
       this.transcript.push(rawOf(encryptedExtensions));

@@ -2,6 +2,7 @@ import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import type { TcpWireOutcome } from '@/network/tcp/types';
+import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
 /**
  * docs/PRD-OpenSSL.md §6 — le port étroit que la plateforme remplit.
  *
@@ -20,7 +21,8 @@ export type TlsPeerProbe =
   | { readonly ok: true; readonly certificate: X509Certificate | null;
       readonly cipherSuite: string | null; readonly protocolVersion?: string | null;
       readonly verified: boolean; readonly staple?: OcspResponseMessage | null;
-      readonly received?: Uint8Array; readonly chain?: readonly X509Certificate[] }
+      readonly received?: Uint8Array; readonly chain?: readonly X509Certificate[];
+      readonly details?: TlsHandshakeDetails }
   | { readonly ok: false; readonly reason: string; readonly alert?: string | null };
 
 export interface TlsPeerProbeOptions {
@@ -28,6 +30,7 @@ export interface TlsPeerProbeOptions {
   readonly cipherList?: string;
   readonly requestStatus?: boolean;
   readonly send?: Uint8Array;
+  readonly alpn?: readonly string[];
 }
 
 export interface OpenSslHost {

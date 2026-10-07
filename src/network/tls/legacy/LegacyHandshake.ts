@@ -547,6 +547,8 @@ export class LegacyClientHandshake {
   peerCertificate: X509Certificate | null = null;
   peerCertificateChain: readonly X509Certificate[] = [];
   receivedStaple: OcspResponseMessage | null = null;
+  peerSignature: { readonly digest: string; readonly type: string } | null = null;
+  serverTempKey: string | null = null;
   peerVerified = false;
   peerVerificationReason: string | null = null;
   traffic: LegacyTraffic | null = null;
@@ -683,9 +685,14 @@ export class LegacyClientHandshake {
       const params = serverKeyExchange!.params;
       const signed = keyExchangeSignedData(setup.clientRandom, serverHello.random, params);
       if (!verifyLegacy(leaf.publicKey, version, signed, serverKeyExchange!.signature, serverKeyExchange!.signatureAlgorithm)) return this.fail('decrypt_error');
+      if (version === '1.2') {
+        const pss = serverKeyExchange!.signatureAlgorithm?.startsWith('rsa_pss') === true;
+        this.peerSignature = { digest: 'SHA256', type: leaf.publicKey.algorithm === 'ecdsa' ? 'ECDSA' : pss ? 'RSA-PSS' : 'RSA' };
+      }
       if (suite.keyExchange === 'DHE_RSA') {
         if (params.type !== 'dh') return this.fail('illegal_parameter');
         const p = modpFromHex(params.p);
+        this.serverTempKey = `DH, ${p.toString(2).length} bits`;
         if (!dhPermitted(setup.securityLevel, p.toString(2).length)) return this.fail('handshake_failure');
         const g = modpFromHex(params.g);
         const own = generateModpKeyPair({ id: 0, bits: p.toString(2).length, prime: p, generator: g });
@@ -695,6 +702,7 @@ export class LegacyClientHandshake {
         exchange = { type: 'dh', yc: modpToHex(own.publicKey) };
       } else {
         if (params.type !== 'ecdh') return this.fail('illegal_parameter');
+        this.serverTempKey = params.group === 'x25519' ? 'X25519, 253 bits' : 'ECDH, prime256v1, 256 bits';
         if (!setup.offeredGroups.includes(params.group) || !isImplementedGroup(params.group)) {
           return this.fail('illegal_parameter');
         }
