@@ -10,7 +10,7 @@
 
 import type { Equipment } from './Equipment';
 import type { DeviceType } from '../core/types';
-import { type IEventBus } from '@/events/EventBus';
+import { EventBus, type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';
 
 /**
@@ -58,6 +58,19 @@ export class EquipmentRegistry {
       EquipmentRegistry.instance = new EquipmentRegistry();
     }
     return EquipmentRegistry.instance;
+  }
+
+  static isolated<T>(run: () => T): T {
+    const outer = EquipmentRegistry.instance;
+    const scratch = new EquipmentRegistry();
+    scratch.setEventBus(new EventBus());
+    EquipmentRegistry.instance = scratch;
+    try {
+      return run();
+    } finally {
+      scratch.clear();
+      EquipmentRegistry.instance = outer;
+    }
   }
 
   /** Reset the singleton (for test teardown) */

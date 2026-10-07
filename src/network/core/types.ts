@@ -113,6 +113,15 @@ export class MACAddress {
     macCounter = 0;
   }
 
+  static preservingCounter<T>(run: () => T): T {
+    const saved = macCounter;
+    try {
+      return run();
+    } finally {
+      macCounter = saved;
+    }
+  }
+
   /**
    * Make sure the generator never hands out an address that is already in
    * use — called when a MAC is restored from a saved topology rather than

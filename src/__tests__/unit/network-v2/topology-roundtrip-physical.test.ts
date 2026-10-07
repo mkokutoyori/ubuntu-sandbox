@@ -235,18 +235,12 @@ describe('a reloaded Windows host keeps its files', () => {
       .toBe(before.content);
   });
 
-  it('the image the machine boots with is not written out twice', async () => {
+  it('the image the machine boots with is not written out at all', async () => {
     const win = new WindowsPC('windows-pc', 'WIN');
 
     const json = exportTopology('lab', new Map<string, Equipment>([[win.getId(), win]]), []);
 
-    // The baseline is a bare `WindowsFileSystem`, the same rule the Linux
-    // capture uses: what the DEVICE wrote while booting counts as its
-    // state and is kept, what the FILESYSTEM ships with is skipped. So a
-    // fresh host carries its handful of boot artefacts and not the whole
-    // C: tree.
-    expect((json.devices[0].files ?? []).length).toBeLessThan(20);
-    expect((json.devices[0].files ?? []).some((f) => f.path.includes('ssh_host'))).toBe(true);
+    expect(json.devices[0].files).toBeUndefined();
   });
 });
 

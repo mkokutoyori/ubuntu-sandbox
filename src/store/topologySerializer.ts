@@ -14,7 +14,8 @@
  *                    (accounts + a Data Pump dump)
  *   - Per-host:      default gateway, static routes, static ARP entries,
  *                    every Linux OR Windows file that differs from a
- *                    fresh filesystem
+ *                    freshly built machine of the same type, and every
+ *                    file it no longer has
  *   - Per-Windows-host: the local SAM, the registry (as a diff against a
  *                    pristine hive of the same edition, deletions
  *                    included), and every service whose configuration or
@@ -42,7 +43,6 @@ import type { PortDuplex } from '@/network/core/types';
 import type { NetemSpec } from '@/network/hardware/Netem';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { WindowsUser, WindowsGroup } from '@/network/devices/windows/WindowsUserManager';
 import {
   PSRegistryProvider,
@@ -62,6 +62,7 @@ import {
   type NetFirewallRuleEntry, firewallRuleKey, seedBuiltInFirewallRules,
 } from '@/network/devices/windows/netFirewallRule';
 import { buildConnection, type Connection } from './networkStore';
+import { withFactoryTwin } from './factoryTwin';
 
 /** Surfaced by Save/Export UI (rapport 09, item #55) so the user knows
  *  this before it happens, not after. Kept in sync with the capture
@@ -233,7 +234,7 @@ interface TopologyDeviceExport {
   id: string;
   type: DeviceType;
   name: string;
-  hostname: string;
+  hostname?: string;
   x: number;
   y: number;
   isPoweredOn: boolean;
@@ -284,7 +285,13 @@ interface TopologyDeviceExport {
    * gave a machine where `type C:\\users.txt` listed an account that
    * `net user` did not have.
    */
-  windowsAccounts?: { users: WindowsUser[]; groups: WindowsGroup[] };
+  windowsAccounts?: {
+    users: WindowsUser[];
+    groups: WindowsGroup[];
+    removedUsers?: string[];
+    removedGroups?: string[];
+  };
+  removedPaths?: string[];
   /**
    * The machine's registry, as a diff against a pristine hive of the same
    * edition — the same rule the filesystem capture uses, for the same
@@ -336,10 +343,16 @@ export interface TopologyExport {
 // Pseudo-filesystems: content is either device/runtime-generated (procfs,
 // sysfs) or backed by simulated hardware nodes (/dev) — neither is
 // meaningful to snapshot or safe to write back on import.
-const VFS_SKIP_PREFIXES = ['/proc', '/sys', '/dev'];
+const VFS_SKIP_PREFIXES = ['/proc', '/sys', '/dev', '/run', '/var/run', '/var/log'];
+const WINDOWS_RUNTIME_PREFIXES = ['C:\\Windows\\System32\\winevt'];
 
 function isCapturableVfsPath(path: string): boolean {
   return !VFS_SKIP_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
+function isCapturableWindowsPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return !WINDOWS_RUNTIME_PREFIXES.some((p) => lower === p.toLowerCase() || lower.startsWith(`${p.toLowerCase()}\\`));
 }
 
 /**
@@ -403,17 +416,16 @@ function captureStaticArp(device: EndHost): TopologyStaticArpExport[] {
 /**
  * Capture every regular file whose content differs from a freshly-booted
  * device's — i.e. everything a user actually created or edited, rather
- * than the full default tree (`/bin`, `/usr`, …) `initializeRootFS` always
- * populates identically. `pristine` is a bare `VirtualFileSystem` (no
- * device attached) so this has no registry/topology side effects.
+ * than the image the factory provisions. The baseline is the factory twin
+ * of the same device (`withFactoryTwin`), not a bare filesystem.
  */
 function linuxVfs(device: LinuxMachine): VirtualFileSystem {
   return (device as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
 }
 
-function captureLinuxFiles(device: LinuxMachine): TopologyFileExport[] {
+function captureLinuxFiles(device: LinuxMachine, twin: LinuxMachine): TopologyFileExport[] {
   const vfs = linuxVfs(device);
-  const pristine = new VirtualFileSystem();
+  const pristine = linuxVfs(twin);
   const out: TopologyFileExport[] = [];
   for (const path of vfs.find('/', { type: 'f' })) {
     if (!isCapturableVfsPath(path)) continue;
@@ -430,9 +442,25 @@ function captureLinuxFiles(device: LinuxMachine): TopologyFileExport[] {
   return out;
 }
 
-function captureLinuxDirectories(device: LinuxMachine): TopologyDirectoryExport[] {
+function collapseUnderRemoved(paths: string[], separator: string): string[] {
+  const removed: string[] = [];
+  for (const path of [...paths].sort((a, b) => a.length - b.length)) {
+    if (removed.some((r) => path.startsWith(`${r}${separator}`))) continue;
+    removed.push(path);
+  }
+  return removed;
+}
+
+function captureLinuxRemovals(device: LinuxMachine, twin: LinuxMachine): string[] {
   const vfs = linuxVfs(device);
-  const pristine = new VirtualFileSystem();
+  const missing = linuxVfs(twin).find('/', {}).filter((path) =>
+    path !== '/' && isCapturableVfsPath(path) && !vfs.existsNoFollow(path));
+  return collapseUnderRemoved(missing, '/');
+}
+
+function captureLinuxDirectories(device: LinuxMachine, twin: LinuxMachine): TopologyDirectoryExport[] {
+  const vfs = linuxVfs(device);
+  const pristine = linuxVfs(twin);
   const out: TopologyDirectoryExport[] = [];
   for (const path of vfs.find('/', { type: 'd' })) {
     if (path === '/' || !isCapturableVfsPath(path)) continue;
@@ -459,14 +487,15 @@ function captureLinuxDirectories(device: LinuxMachine): TopologyDirectoryExport[
  * VFS with a different API, which is why this is a second walk rather
  * than a shared one; the RULE is the same, only the traversal differs.
  */
-function captureWindowsFiles(device: WindowsPC): TopologyFileExport[] {
+function captureWindowsFiles(device: WindowsPC, twin: WindowsPC): TopologyFileExport[] {
   const fs = device.getFileSystem();
-  const pristine = new WindowsFileSystem(device.getHostname());
+  const pristine = twin.getFileSystem();
   const out: TopologyFileExport[] = [];
   for (const dir of fs.listDirectoryRecursive('C:\\')) {
     for (const e of dir.entries) {
       if (e.entry.type !== 'file') continue;
       const path = dir.path.endsWith('\\') ? dir.path + e.name : `${dir.path}\\${e.name}`;
+      if (!isCapturableWindowsPath(path)) continue;
       const read = fs.readFile(path);
       if (!read.ok || read.content === undefined) continue;
       const base = pristine.readFile(path);
@@ -477,8 +506,26 @@ function captureWindowsFiles(device: WindowsPC): TopologyFileExport[] {
   return out;
 }
 
-function restoreWindowsFiles(device: WindowsPC, files: TopologyFileExport[]): void {
+function captureWindowsRemovals(device: WindowsPC, twin: WindowsPC): string[] {
   const fs = device.getFileSystem();
+  const missing: string[] = [];
+  for (const dir of twin.getFileSystem().listDirectoryRecursive('C:\\')) {
+    for (const e of dir.entries) {
+      const path = dir.path.endsWith('\\') ? dir.path + e.name : `${dir.path}\\${e.name}`;
+      if (isCapturableWindowsPath(path) && !fs.exists(path)) missing.push(path);
+    }
+  }
+  return collapseUnderRemoved(missing, '\\');
+}
+
+function restoreWindowsFiles(
+  device: WindowsPC, files: TopologyFileExport[], removedPaths: string[] = [],
+): void {
+  const fs = device.getFileSystem();
+  for (const path of removedPaths) {
+    if (fs.rmdirRecursive(path).ok) continue;
+    fs.deleteFile(path);
+  }
   for (const f of files) {
     const parent = f.path.slice(0, f.path.lastIndexOf('\\'));
     if (parent) fs.mkdirp(parent);
@@ -779,12 +826,18 @@ function restoreWindowsTeams(device: WindowsPC, teams: TopologyWindowsTeamExport
   }
 }
 
-function captureLinuxServices(device: LinuxMachine): TopologyLinuxServiceExport[] {
-  return serviceMgrOf(device).list().map((u) => ({
-    name: u.name,
-    enabled: u.enabled as TopologyLinuxServiceExport['enabled'],
-    active: u.state === 'active',
-  }));
+function captureLinuxServices(device: LinuxMachine, twin: LinuxMachine): TopologyLinuxServiceExport[] {
+  const factory = new Map(serviceMgrOf(twin).list().map((u) => [u.name, u]));
+  return serviceMgrOf(device).list()
+    .filter((u) => {
+      const base = factory.get(u.name);
+      return base === undefined || base.enabled !== u.enabled || base.state !== u.state;
+    })
+    .map((u) => ({
+      name: u.name,
+      enabled: u.enabled as TopologyLinuxServiceExport['enabled'],
+      active: u.state === 'active',
+    }));
 }
 
 function restoreLinuxServices(
@@ -889,6 +942,140 @@ function netemOfEnd(
 
 // ── Export ──
 
+const PEM_BLOCK = /-----BEGIN [A-Z ]+-----[\s\S]*?-----END [A-Z ]+-----|^[A-Za-z0-9+/=]{40,}$/gm;
+
+function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
+  const provisioned = (text: string | null | undefined) => (text ?? '').replace(PEM_BLOCK, '<pem>');
+  return provisioned(a) === provisioned(b);
+}
+
+function userSignature(user: WindowsUser): string {
+  const { passwordLastSet: _passwordLastSet, lastLogon: _lastLogon, ...rest } = user;
+  return JSON.stringify(rest);
+}
+
+function groupSignature(group: WindowsGroup): string {
+  return JSON.stringify({ ...group, members: [...group.members].sort() });
+}
+
+function captureWindowsAccounts(
+  device: WindowsPC, twin: WindowsPC,
+): TopologyDeviceExport['windowsAccounts'] | undefined {
+  const mgr = device.getUserManager();
+  const factory = twin.getUserManager();
+  const factoryUsers = new Map(factory.getAllUsers().map((u) => [u.name.toLowerCase(), userSignature(u)]));
+  const factoryGroups = new Map(factory.getAllGroups().map((g) => [g.name.toLowerCase(), groupSignature(g)]));
+  const users = mgr.getAllUsers().filter((u) => factoryUsers.get(u.name.toLowerCase()) !== userSignature(u));
+  const groups = mgr.getAllGroups().filter((g) => factoryGroups.get(g.name.toLowerCase()) !== groupSignature(g));
+  const liveUsers = new Set(mgr.getAllUsers().map((u) => u.name.toLowerCase()));
+  const liveGroups = new Set(mgr.getAllGroups().map((g) => g.name.toLowerCase()));
+  const removedUsers = factory.getAllUsers().map((u) => u.name).filter((n) => !liveUsers.has(n.toLowerCase()));
+  const removedGroups = factory.getAllGroups().map((g) => g.name).filter((n) => !liveGroups.has(n.toLowerCase()));
+  if (users.length + groups.length + removedUsers.length + removedGroups.length === 0) return undefined;
+  const out: NonNullable<TopologyDeviceExport['windowsAccounts']> = { users, groups };
+  if (removedUsers.length > 0) out.removedUsers = removedUsers;
+  if (removedGroups.length > 0) out.removedGroups = removedGroups;
+  return out;
+}
+
+function restoreWindowsAccounts(
+  device: WindowsPC, saved: NonNullable<TopologyDeviceExport['windowsAccounts']>,
+): void {
+  device.getUserManager().restoreAccounts(
+    reviveWindowsUsers(saved.users),
+    saved.groups,
+    { users: saved.removedUsers, groups: saved.removedGroups },
+  );
+}
+
+function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport {
+  const pos = device.getPosition();
+  const entry: TopologyDeviceExport = {
+    id: device.getId(),
+    type: device.getType(),
+    name: device.getName(),
+    x: pos.x,
+    y: pos.y,
+    isPoweredOn: device.getIsPoweredOn(),
+    interfaces: device.getPorts().map(captureInterface),
+  };
+  if (device.getHostname() !== device.getName()) entry.hostname = device.getHostname();
+
+  if (device instanceof EndHost) {
+    const gw = device.getDefaultGateway();
+    if (gw) entry.defaultGateway = gw.toString();
+    const arp = captureStaticArp(device);
+    if (arp.length > 0) entry.staticArp = arp;
+  }
+  if (device instanceof EndHost || device instanceof Router) {
+    const statics = device.getRoutingTable()
+      .filter((r) => r.type === 'static' && r.nextHop);
+    if (statics.length > 0) {
+      entry.staticRoutes = statics.map((r) => ({
+        network: r.network.toString(),
+        mask: r.mask.toString(),
+        nextHop: r.nextHop!.toString(),
+        metric: r.metric,
+      }));
+    }
+  }
+  if (device instanceof LinuxMachine && twin instanceof LinuxMachine) {
+    const files = captureLinuxFiles(device, twin);
+    if (files.length > 0) entry.files = files;
+    const directories = captureLinuxDirectories(device, twin);
+    if (directories.length > 0) entry.directories = directories;
+    const removed = captureLinuxRemovals(device, twin);
+    if (removed.length > 0) entry.removedPaths = removed;
+    const { v4, v6 } = captureIptables(device);
+    if (v4) entry.iptablesRules = v4;
+    if (v6) entry.ip6tablesRules = v6;
+    const bonds = captureLinuxBonds(device);
+    if (bonds.length > 0) entry.linuxBonds = bonds;
+    const services = captureLinuxServices(device, twin);
+    if (services.length > 0) entry.linuxServices = services;
+  }
+  const oracle = captureOracleState(device.getId());
+  if (oracle) entry.oracle = oracle;
+  if (device instanceof WindowsPC && twin instanceof WindowsPC) {
+    const files = captureWindowsFiles(device, twin);
+    if (files.length > 0) entry.files = files;
+    const removed = captureWindowsRemovals(device, twin);
+    if (removed.length > 0) entry.removedPaths = removed;
+    const accounts = captureWindowsAccounts(device, twin);
+    if (accounts) entry.windowsAccounts = accounts;
+    const registry = captureRegistry(device);
+    if (registry) entry.registry = registry;
+    const teams = captureWindowsTeams(device);
+    if (teams.length > 0) entry.windowsTeams = teams;
+    const services = captureWindowsServices(device);
+    if (services.length > 0) entry.windowsServices = services;
+    const firewall = captureWindowsFirewallRules(device);
+    if (firewall) entry.windowsFirewallRules = firewall;
+  }
+  if (device instanceof Switch) {
+    const vlans = captureVlans(device);
+    if (vlans.length > 0) entry.vlans = vlans;
+    const sp = captureSwitchports(device);
+    if (sp.length > 0) entry.switchports = sp;
+  }
+  if (device instanceof Firewall && twin instanceof Firewall) {
+    const text = device.getRunningConfig();
+    if (text && !sameText(text, twin.getRunningConfig())) entry.runningConfigText = text;
+  }
+  if ((device instanceof Router && twin instanceof Router) || (device instanceof Switch && twin instanceof Switch)) {
+    const running = device.getRunningConfig();
+    if (running && !sameText(running, twin.getRunningConfig())) entry.runningConfigText = running;
+    const startup = device instanceof Router
+      ? device.getStartupConfigSnapshot()
+      : (device as Switch).getStartupConfig();
+    const factoryStartup = twin instanceof Router
+      ? twin.getStartupConfigSnapshot()
+      : (twin as Switch).getStartupConfig();
+    if (startup && !sameText(startup, factoryStartup)) entry.startupConfigText = startup;
+  }
+  return entry;
+}
+
 export function exportTopology(
   projectName: string,
   deviceInstances: Map<string, Equipment>,
@@ -897,89 +1084,7 @@ export function exportTopology(
   const devices: TopologyDeviceExport[] = [];
 
   deviceInstances.forEach((device) => {
-    const pos = device.getPosition();
-    const ports = device.getPorts();
-
-    const interfaces = ports.map(captureInterface);
-
-    const entry: TopologyDeviceExport = {
-      id: device.getId(),
-      type: device.getType(),
-      name: device.getName(),
-      hostname: device.getHostname(),
-      x: pos.x,
-      y: pos.y,
-      isPoweredOn: device.getIsPoweredOn(),
-      interfaces,
-    };
-
-    if (device instanceof EndHost) {
-      const gw = device.getDefaultGateway();
-      if (gw) entry.defaultGateway = gw.toString();
-      const arp = captureStaticArp(device);
-      if (arp.length > 0) entry.staticArp = arp;
-    }
-    if (device instanceof EndHost || device instanceof Router) {
-      const statics = device.getRoutingTable()
-        .filter((r) => r.type === 'static' && r.nextHop);
-      if (statics.length > 0) {
-        entry.staticRoutes = statics.map((r) => ({
-          network: r.network.toString(),
-          mask: r.mask.toString(),
-          nextHop: r.nextHop!.toString(),
-          metric: r.metric,
-        }));
-      }
-    }
-    if (device instanceof LinuxMachine) {
-      const files = captureLinuxFiles(device);
-      if (files.length > 0) entry.files = files;
-      const directories = captureLinuxDirectories(device);
-      if (directories.length > 0) entry.directories = directories;
-      const { v4, v6 } = captureIptables(device);
-      if (v4) entry.iptablesRules = v4;
-      if (v6) entry.ip6tablesRules = v6;
-      const bonds = captureLinuxBonds(device);
-      if (bonds.length > 0) entry.linuxBonds = bonds;
-      const services = captureLinuxServices(device);
-      if (services.length > 0) entry.linuxServices = services;
-    }
-    const oracle = captureOracleState(device.getId());
-    if (oracle) entry.oracle = oracle;
-    if (device instanceof WindowsPC) {
-      const files = captureWindowsFiles(device);
-      if (files.length > 0) entry.files = files;
-      const mgr = device.getUserManager();
-      entry.windowsAccounts = { users: mgr.getAllUsers(), groups: mgr.getAllGroups() };
-      const registry = captureRegistry(device);
-      if (registry) entry.registry = registry;
-      const teams = captureWindowsTeams(device);
-      if (teams.length > 0) entry.windowsTeams = teams;
-      const services = captureWindowsServices(device);
-      if (services.length > 0) entry.windowsServices = services;
-      const firewall = captureWindowsFirewallRules(device);
-      if (firewall) entry.windowsFirewallRules = firewall;
-    }
-    if (device instanceof Switch) {
-      const vlans = captureVlans(device);
-      if (vlans.length > 0) entry.vlans = vlans;
-      const sp = captureSwitchports(device);
-      if (sp.length > 0) entry.switchports = sp;
-    }
-    if (device instanceof Firewall) {
-      const texte = device.getRunningConfig();
-      if (texte) entry.runningConfigText = texte;
-    }
-    if (device instanceof Router || device instanceof Switch) {
-      const runningConfigText = device.getRunningConfig();
-      if (runningConfigText) entry.runningConfigText = runningConfigText;
-      const startupConfigText = device instanceof Router
-        ? device.getStartupConfigSnapshot()
-        : device.getStartupConfig();
-      if (startupConfigText) entry.startupConfigText = startupConfigText;
-    }
-
-    devices.push(entry);
+    devices.push(withFactoryTwin(device, (twin) => captureDevice(device, twin)));
   });
 
   const conns: TopologyConnectionExport[] = connections.map((c) => {
@@ -1032,8 +1137,10 @@ function nearestExistingOwner(vfs: VirtualFileSystem, path: string): { uid: numb
 
 function restoreLinuxFiles(
   device: LinuxMachine, files: TopologyFileExport[], directories: TopologyDirectoryExport[] = [],
+  removedPaths: string[] = [],
 ): void {
   const vfs = linuxVfs(device);
+  for (const path of removedPaths) vfs.rmrf(path);
   for (const d of [...directories].sort((a, b) => a.path.length - b.path.length)) {
     const owner = nearestExistingOwner(vfs, d.path);
     if (!vfs.exists(d.path)) vfs.mkdirp(d.path, d.mode, owner.uid, owner.gid);
@@ -1145,7 +1252,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
   for (const devData of json.devices) {
     const device = createDevice(devData.type, devData.x, devData.y, devData.name);
     device.setName(devData.name);
-    device.setHostname(devData.hostname);
+    device.setHostname(devData.hostname ?? devData.name);
 
     if (devData.isPoweredOn) {
       device.powerOn();
@@ -1287,8 +1394,8 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       }
     }
     if (device instanceof LinuxMachine) {
-      if (devData.files || devData.directories) {
-        restoreLinuxFiles(device, devData.files ?? [], devData.directories ?? []);
+      if (devData.removedPaths || devData.files || devData.directories) {
+        restoreLinuxFiles(device, devData.files ?? [], devData.directories ?? [], devData.removedPaths ?? []);
       }
       restoreIptables(device, devData.iptablesRules, devData.ip6tablesRules);
       // After the files, because a unit file the lab wrote has to exist
@@ -1298,13 +1405,10 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {
-      if (devData.files) restoreWindowsFiles(device, devData.files);
-      if (devData.windowsAccounts) {
-        device.getUserManager().restoreAccounts(
-          reviveWindowsUsers(devData.windowsAccounts.users),
-          devData.windowsAccounts.groups,
-        );
+      if (devData.files || devData.removedPaths) {
+        restoreWindowsFiles(device, devData.files ?? [], devData.removedPaths ?? []);
       }
+      if (devData.windowsAccounts) restoreWindowsAccounts(device, devData.windowsAccounts);
       // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\
       // Services\<name>` is a projection of the service table, written by
       // the device itself, so restoring a service rewrites part of the

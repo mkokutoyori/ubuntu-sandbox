@@ -55,6 +55,16 @@ class LoggerSingleton {
   private maxLogs = 10000;
   /** Bus override — falls back to the lazy default singleton. */
   private busOverride: IEventBus | null = null;
+  private mutedDepth = 0;
+
+  silenced<T>(run: () => T): T {
+    this.mutedDepth++;
+    try {
+      return run();
+    } finally {
+      this.mutedDepth--;
+    }
+  }
 
   /**
    * Inject a custom bus (test-only utility). Pass `null` to revert to the
@@ -70,6 +80,7 @@ class LoggerSingleton {
 
   /** Publish a log event */
   log(level: LogLevel, source: string, event: string, message: string, data?: Record<string, unknown>): void {
+    if (this.mutedDepth > 0) return;
     const entry: NetworkLog = {
       timestamp: simulationNowMs(),
       level,
