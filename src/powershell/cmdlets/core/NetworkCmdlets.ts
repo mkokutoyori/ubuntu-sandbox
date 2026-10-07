@@ -17,7 +17,7 @@ import type {
   NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { makeTimeSpan } from './DateTimeCmdlets';
+import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
 import { remoteCimRefusal } from '../cimCommon';
 import {

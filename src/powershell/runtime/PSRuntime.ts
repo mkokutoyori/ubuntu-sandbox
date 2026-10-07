@@ -22,12 +22,13 @@ import { PSLexer }  from '@/powershell/lexer/PSLexer';
 import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
-import { expandString, psValueToString, timeSpanValue } from '@/powershell/runtime/PSExpansion';
+import { expandString, psValueToString } from '@/powershell/runtime/PSExpansion';
 import {
   type ProcessPolicyPort, PROCESS_POLICY_VARIABLE,
   effectiveExecutionPolicy, scriptRefusal,
 } from '@/powershell/executionPolicy';
-import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
+import { isTimeSpan, makeTimeSpan, timeSpanMember, timeSpanStatics } from '@/powershell/runtime/dotnetTimeSpan';
+import { booleanMember, numberMember } from '@/powershell/runtime/dotnetNumber';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { adoptMachineDates, dateMember, dateTimeStatics, likeDate, parseDateTime, timeZoneInfoStatics } from '@/powershell/runtime/dotnetDateTime';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
@@ -393,7 +394,7 @@ export class PSRuntime {
       // e.g. Get-ADDefaultDomainPasswordPolicy's MaxPasswordAge) are a value
       // type like Date — allow them through to table/list formatting rather
       // than falling back to the `Key=Value; ...` inline form.
-      if (t === 'object' && (v as Record<string, unknown>).__type === 'TimeSpan') continue;
+      if (isTimeSpan(v)) continue;
       // Arrays render through renderObjectShort as `{a, b, c}` — that is a
       // legitimate table cell, so allow them. Nested non-Date objects still
       // disqualify the row (Get-Acl's Access keeps Format-List rendering).
@@ -1685,6 +1686,9 @@ export class PSRuntime {
     }
     if (tname === 'timezoneinfo' || tname === 'system.timezoneinfo') {
       return this.getMember(timeZoneInfoStatics(this.providers) as PSValue, node.member.toLowerCase());
+    }
+    if (tname === 'timespan' || tname === 'system.timespan') {
+      return this.getMember(timeSpanStatics() as PSValue, node.member.toLowerCase());
     }
     if (tname === 'datetime' || tname === 'system.datetime') {
       return this.getMember(dateTimeStatics(this.providers) as PSValue, node.member.toLowerCase());
@@ -3018,8 +3022,9 @@ export class PSRuntime {
       case 'datetime': case 'system.datetime':
         return (val instanceof Date ? val : parseDateTime(String(val), this.providers)) as unknown as PSValue;
       case 'timespan': case 'system.timespan': {
-        const ms = typeof val === 'number' ? val : Number(val);
-        return timeSpanValue(ms);
+        if (isTimeSpan(val)) return val as PSValue;
+        if (typeof val === 'string') return (timeSpanStatics().parse as (text: PSValue) => PSValue)(val);
+        return makeTimeSpan(Number(val) / 10_000) as unknown as PSValue;
       }
       case 'version': case 'system.version': {
         const parts = String(val).split('.').map(Number);
@@ -3132,6 +3137,8 @@ export class PSRuntime {
   getMember(obj: PSValue, member: string): PSValue {
     if (obj === null || obj === undefined) return null;
     if (typeof obj === 'string')  return this.getStringMember(obj, member);
+    if (typeof obj === 'number')  return numberMember(obj, member);
+    if (typeof obj === 'boolean') return booleanMember(obj, member);
 
     // ArrayList IS an array with a __list__ sentinel — handle list-style methods first
     if (Array.isArray(obj) && (obj as unknown as Record<string, unknown>)['__list__'] !== undefined) {
@@ -3158,6 +3165,11 @@ export class PSRuntime {
 
     if (typeof obj === 'object') {
       const rec = obj as Record<string, PSValue>;
+
+      if (isTimeSpan(rec)) {
+        const method = timeSpanMember(rec, member);
+        if (method !== null) return method;
+      }
 
       // Direct property wins over synthetic collection members. This keeps
       // `(... | Measure-Object).Count` returning the Count *property* (e.g.

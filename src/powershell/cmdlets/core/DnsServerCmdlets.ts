@@ -5,7 +5,8 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IDnsServerProvider, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsOpResult,
 } from '@/powershell/providers/PSProviders';
-import { psValueToString, registerPSDisplayFormatter, timeSpanValue } from '@/powershell/runtime/PSExpansion';
+import { psValueToString, registerPSDisplayFormatter } from '@/powershell/runtime/PSExpansion';
+import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { RRType } from '@/network/dns/wire/RRType';
 import {
@@ -864,7 +865,7 @@ function zoneAgingObject(dns: IDnsServerProvider, name: string): PSValue {
   return {
     ZoneName: info.name, AgingEnabled: info.agingEnabled,
     AvailForScavengeTime: info.availableForScavengeMs === null ? null : new Date(info.availableForScavengeMs),
-    NoRefreshInterval: timeSpanValue(info.noRefreshSeconds * 1000), RefreshInterval: timeSpanValue(info.refreshSeconds * 1000),
+    NoRefreshInterval: makeTimeSpan(info.noRefreshSeconds * 1000), RefreshInterval: makeTimeSpan(info.refreshSeconds * 1000),
     ScavengeServers: info.scavengeServers,
   };
 }
@@ -912,8 +913,8 @@ export class GetDnsServerScavengingCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const info = requireDns(ctx, 'Get-DnsServerScavenging').getScavenging();
     return {
-      ScavengingState: info.scavengingEnabled, ScavengingInterval: timeSpanValue(info.intervalSeconds * 1000),
-      NoRefreshInterval: timeSpanValue(info.noRefreshSeconds * 1000), RefreshInterval: timeSpanValue(info.refreshSeconds * 1000),
+      ScavengingState: info.scavengingEnabled, ScavengingInterval: makeTimeSpan(info.intervalSeconds * 1000),
+      NoRefreshInterval: makeTimeSpan(info.noRefreshSeconds * 1000), RefreshInterval: makeTimeSpan(info.refreshSeconds * 1000),
       LastScavengeTime: info.lastScavengeMs === null ? null : new Date(info.lastScavengeMs),
     };
   }

@@ -116,7 +116,8 @@ export class WriteEventLogCmdlet implements ICmdlet {
       ctx.emitError('Write-EventLog requires -LogName, -Source, -EventID, -Message');
       return null;
     }
-    log.writeEntry(logName, source, eventId, entryType, message);
+    const refusal = log.writeEntry(logName, source, eventId, entryType, message);
+    if (refusal !== '') ctx.emitError(refusal);
     return null;
   }
 }

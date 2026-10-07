@@ -180,21 +180,27 @@ sur toute la chaine de branches : `dhcp enable` passe, `undo dhcp enable` repond
 commutateur global `dhcp enable` n'est pas verifiee sur une transcription VRP) ; il faut la source
 avant de decider entre corriger le moteur et corriger le test.
 
-### [windows] `tzutil`, `quser` et `eventcreate` sont inconnus
-**Mesure** : `tzutil /g`, `quser` et `eventcreate /t information /id 100 /l application /d x` repondent
-« not recognized » sur une machine Windows simulee. Le fuseau se lit et s'ecrit deja par `Get-TimeZone` /
-`Set-TimeZone` sur la meme table ; il ne manque que la commande cmd.
-**Pourquoi ce n'est pas ferme** : le libelle d'erreur de `tzutil /s <zone inconnue>` n'est pas
-atteignable depuis cet environnement et en inventer un serait pire que l'absence ; `quser` demande une table
-de sessions interactives que la machine ne tient pas, `eventcreate` une ecriture dans le journal par la
-voie de `Write-EventLog`.
+### [windows] `quser` est inconnu ; libelles d'erreur de `tzutil` et `eventcreate` non attestes
+**Mesure** : `quser` repond « not recognized » sur une machine Windows simulee. `tzutil /g|/l|/s` et
+`eventcreate` existent maintenant, sur le fuseau de l'identite (celui de `Set-TimeZone`) et sur le journal
+que lisent `Get-EventLog` et `wevtutil`.
+**Pourquoi ce n'est pas ferme** : `quser` demande une table de sessions interactives avec heure d'ouverture
+(`RdpSessionTable` n'en porte pas) et une mise en page en colonnes qu'aucune transcription ici ne donne.
+Les phrases `TZUTIL: Invalid time zone X.` et `TZUTIL: Invalid number of arguments for /s.` viennent d'un
+compte rendu secondaire, pas d'une transcription ; les refus d'`eventcreate` (`Invalid Argument/Option`,
+`option is required`) suivent la famille des messages `ERROR:` de Windows sans transcription non plus ;
+`Write-EventLog` dans un journal inconnu garde le libelle du fournisseur (`Cannot open log`), la vraie
+machine dit que le nom de source n'existe pas. `tzutil /s` n'accepte pas le suffixe `_dstoff`, `tzutil /?`
+et `eventcreate /?` ne sont pas ecrits (texte d'aide non source), `eventcreate /s` (journal distant) est
+refuse, la table des fuseaux Windows ne porte que 17 entrees, et ni `tzutil /s` ni `eventcreate` ne
+verifient l'elevation (`Set-TimeZone` non plus).
 
-### [powershell] membres des nombres et mise en page de `TimeSpan`
-**Mesure** : `[Math]::Pi.ToString()` rend vide (les membres des nombres ne sont pas branches, sans
-rapport avec le temps) ; `New-TimeSpan` s'affiche en `__type : TimeSpan ...` au lieu des champs
-`Days / Hours / Minutes / Seconds / Milliseconds / Ticks` de PowerShell 5.1.
-**Pourquoi ce n'est pas ferme** : la mise en page par defaut d'un `TimeSpan` n'est pas verifiable sur
-transcription ici.
+### [powershell] le runtime n'a qu'un type numerique
+**Mesure** : `(5.0).GetType().Name` et `[double]5` rendent `Int32` (le type est deduit de la valeur) ; `-is [double]`
+accepte tout nombre ; `[int]7/2` et `7/2` sont tous deux des doubles JavaScript. Les formats `.ToString("N2")`,
+`"X"`, `"D5"` et `[Math]::Pi` sont justes.
+**Pourquoi ce n'est pas ferme** : distinguer Int32/Int64/Double demande un type de valeur porte par chaque nombre,
+c'est-a-dire toucher l'evaluateur d'expressions entier, pas un membre.
 
 ### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
 **Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les

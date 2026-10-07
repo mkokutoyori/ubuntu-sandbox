@@ -15,7 +15,9 @@
  *   formatter) converts back to a display string.
  */
 
-import { formatTimeSpanValue, registeredDisplay } from '@/powershell/runtime/PSExpansion';
+import { registeredDisplay } from '@/powershell/runtime/PSExpansion';
+import { formatDouble } from '@/powershell/runtime/dotnetNumber';
+import { formatTimeSpan, isTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 
 // ─── Core types ──────────────────────────────────────────────────
 
@@ -582,10 +584,7 @@ export function renderPSCellValue(value: unknown): string {
   // A `New-TimeSpan`/`Get-Date` subtraction result — render with real
   // .NET `TimeSpan.ToString()` formatting (`d.hh:mm:ss`) rather than the
   // generic `Key=Value; ...` fallback below.
-  if (typeof value === 'object' && value !== null && (value as Record<string, unknown>).__type === 'TimeSpan'
-      && typeof (value as Record<string, unknown>).TotalMilliseconds === 'number') {
-    return formatTimeSpanValue((value as Record<string, unknown>).TotalMilliseconds as number);
-  }
+  if (isTimeSpan(value)) return formatTimeSpan((value as Record<string, number>).TotalMilliseconds);
   // Plain objects in a cell render as `Key=Value; ...` so users see the
   // shape rather than `[object Object]`. Real PowerShell shows the type
   // name (e.g. `MSFT_NetAdapter`); without ETS metadata we fall back to
@@ -593,6 +592,7 @@ export function renderPSCellValue(value: unknown): string {
   if (typeof value === 'object') {
     return registeredDisplay(value) ?? renderObjectShort(value);
   }
+  if (typeof value === 'number') return formatDouble(value);
   return String(value);
 }
 
@@ -600,10 +600,7 @@ export function renderPSCellValue(value: unknown): string {
 function renderObjectShort(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return `{${value.map(v => renderObjectShort(v)).join(', ')}}`;
-  if (typeof value === 'object' && (value as Record<string, unknown>).__type === 'TimeSpan'
-      && typeof (value as Record<string, unknown>).TotalMilliseconds === 'number') {
-    return formatTimeSpanValue((value as Record<string, unknown>).TotalMilliseconds as number);
-  }
+  if (isTimeSpan(value)) return formatTimeSpan((value as Record<string, number>).TotalMilliseconds);
   const registered = registeredDisplay(value);
   if (registered !== null) return registered;
   if (typeof value === 'object' && !(value instanceof Date)) {

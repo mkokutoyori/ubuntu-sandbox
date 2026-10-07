@@ -26,7 +26,7 @@ import type {
   AdServiceAccountInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { makeTimeSpan } from './DateTimeCmdlets';
+import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { namedCredential } from './RemotingCmdlets';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
 import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';

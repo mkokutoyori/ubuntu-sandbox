@@ -3,10 +3,10 @@ import { TimeZone } from '@/network/core/time/TimeZone';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { parseGnuDate } from '@/network/core/time/GnuDateInput';
 import { isDaylightSavingAt, observesDaylightSaving, offsetMinutesAt, standardOffsetMinutes, utcMsForLocal } from '@/network/core/time/TimeZoneRegistry';
-import { WINDOWS_TIME_ZONES, windowsZoneNameAt } from '@/network/core/time/WindowsTimeZones';
+import { WINDOWS_TIME_ZONES, windowsZoneDisplayName, windowsZoneNameAt, type WindowsTimeZone } from '@/network/core/time/WindowsTimeZones';
 import { PSRuntimeError } from './PSRuntime';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
-import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
+import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { formatDotNetDate } from './dotnetDateFormat';
 import { parseCimDateTime } from '@/network/devices/windows/WmiClasses';
 import type { PSValue } from './PSEnvironment';
@@ -174,14 +174,13 @@ export function cimRowToObject(row: Record<string, string>, providers: PSProvide
   return out;
 }
 
-function zoneInfoObject(entry: { id: string; iana: string; nom: string }, atMs: number): Record<string, PSValue> {
+function zoneInfoObject(entry: WindowsTimeZone, atMs: number): Record<string, PSValue> {
   const zone = TimeZone.parse(entry.iana);
   const standard = zone === null ? 0 : standardOffsetMinutes(zone, atMs);
-  const signed = `${standard < 0 ? '-' : '+'}${String(Math.floor(Math.abs(standard) / 60)).padStart(2, '0')}:${String(Math.abs(standard) % 60).padStart(2, '0')}`;
   const observes = zone !== null && observesDaylightSaving(zone, atMs);
   return {
     Id: entry.id,
-    DisplayName: `(UTC${signed}) ${entry.nom}`,
+    DisplayName: windowsZoneDisplayName(entry, atMs),
     StandardName: windowsZoneNameAt(entry.iana, Date.UTC(new Date(atMs).getUTCFullYear(), 0, 1)),
     DaylightName: observes ? windowsZoneNameAt(entry.iana, Date.UTC(new Date(atMs).getUTCFullYear(), 6, 1)) : entry.id,
     BaseUtcOffset: makeTimeSpan(standard * 60_000),

@@ -20,7 +20,8 @@ import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IDhcpServerProvider, DhcpScopeInfo, DhcpLeaseInfo } from '@/powershell/providers/PSProviders';
-import { psValueToString, timeSpanValue } from '@/powershell/runtime/PSExpansion';
+import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { isSwitchOn, timeSpanSeconds } from './DnsServerCmdlets';
 import type { DhcpFailoverChanges, DhcpFailoverView } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
@@ -579,8 +580,8 @@ function failoverToPSObject(view: DhcpFailoverView): Record<string, PSValue> {
     Name: view.name, ScopeId: view.scopeIds, PrimaryServerIP: view.primaryServerIp, SecondaryServerIP: view.secondaryServerIp,
     PrimaryServerName: view.primaryServerName, SecondaryServerName: view.secondaryServerName, Mode: view.mode,
     LoadBalancePercent: view.loadBalancePercent, ServerRole: view.serverRole, ReservePercent: view.reservePercent,
-    MaxClientLeadTime: timeSpanValue(view.maxClientLeadTimeSeconds * 1000),
-    StateSwitchInterval: timeSpanValue(view.stateSwitchIntervalSeconds * 1000),
+    MaxClientLeadTime: makeTimeSpan(view.maxClientLeadTimeSeconds * 1000),
+    StateSwitchInterval: makeTimeSpan(view.stateSwitchIntervalSeconds * 1000),
     State: view.state, AutoStateTransition: view.autoStateTransition, EnableAuth: view.enableAuth,
   };
 }

@@ -1703,8 +1703,8 @@ class WindowsEventLogAdapter implements IEventLogProvider {
       data: e.data,
     }));
   }
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void {
-    this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
+  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string {
+    return this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
   }
   clearLog(logName: string): string {
     const out = this.log.clearEventLog(logName);

@@ -237,6 +237,8 @@ import { formatLocalTime } from './linux/system/SystemInfo';
 import { windowsZoneNameAt } from '../core/time/WindowsTimeZones';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdAssoc, cmdFtype } from './windows/WinAssoc';
+import { cmdTzutil } from './windows/WinTzutil';
+import { cmdEventcreate } from './windows/WinEventcreate';
 import { cmdDir, fileSummaryLine } from './windows/WinDir';
 import { cmdWhere } from './windows/WinWhere';
 import { programStem } from './windows/WinPrograms';
@@ -3280,6 +3282,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         }, args);
       case 'nbtstat': return this.cmdNbtstat(args);
       case 'w32tm':   return this.cmdW32tm(args);
+      case 'tzutil': {
+        const result = cmdTzutil({
+          timezone: () => this.identity.timezone,
+          setTimezone: (iana) => this.identity.setTimezone(iana),
+          nowMs: () => this.simulatedDate().getTime(),
+        }, args);
+        this.commandExitStatus = result.exitCode;
+        return result.output;
+      }
+      case 'eventcreate': {
+        const result = cmdEventcreate({
+          logNames: () => this.eventLog.getAllLogsStructured().map((log) => log.logName),
+          write: (log, source, id, type, description) => this.eventLog.writeEventLog(log, source, id, type, description),
+        }, args);
+        this.commandExitStatus = result.exitCode;
+        return result.output;
+      }
       case 'wmic':    return this.cmdWmic(args);
       case 'fsutil':  return cmdFsutil(this.buildSystemContext(), args);
       case 'reg':     return this.cmdReg(args);
