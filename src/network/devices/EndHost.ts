@@ -1128,6 +1128,7 @@ export abstract class EndHost extends Equipment {
       sendIpv6FrameNdpAware: (outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address) =>
         this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
       adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
+      filterLocalSegment: (packet: IPv4Packet | IPv6Packet, family: string) => this.filterLocalDelivery(packet, family),
       defaultTtl: (family: string) => family === 'ipv6' ? this.defaultHopLimit : this.defaultTTL,
       pathMtu: (remoteIp: string, linkMtu: number) => {
         const destination = remoteIp.includes(':') ? IPv6Address.tryParse(remoteIp) : IPAddress.tryParse(remoteIp);
@@ -3170,6 +3171,21 @@ export abstract class EndHost extends Equipment {
    * mismatched combination (e.g. configured on a UDP rule) falls back to
    * the default ICMP error rather than silently doing nothing.
    */
+  private filterLocalDelivery(packet: IPv4Packet | IPv6Packet, family: string): boolean {
+    for (const direction of ['out', 'in'] as const) {
+      if (family === 'ipv6') {
+        if (this.firewallFilter6('lo', packet as IPv6Packet, direction) !== 'accept') return false;
+        continue;
+      }
+      const verdict = this.firewallFilter('lo', packet as IPv4Packet, direction);
+      if (verdict === 'accept') continue;
+      if (direction === 'in') this.protocolCounters.ipInDiscards++;
+      if (verdict === 'reject') this.sendICMPReject('lo', packet as IPv4Packet);
+      return false;
+    }
+    return true;
+  }
+
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
     const rejectWith = this.lastRejectWith;
     this.lastRejectWith = null;

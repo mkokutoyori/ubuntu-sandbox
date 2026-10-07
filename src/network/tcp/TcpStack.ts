@@ -246,6 +246,7 @@ export interface TcpHost {
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
   adviseNegative?(nextHopIp: string): void;
+  filterLocalSegment?(packet: IPv4Packet | IPv6Packet, family: IpFamily): boolean;
   defaultTtl?(family: IpFamily): number | undefined;
   pathMtu?(remoteIp: string, linkMtu: number): number;
   ecnPolicy?(): TcpEcnPolicy;
@@ -3170,6 +3171,7 @@ export class TcpStack {
       },
     });
     if (local) {
+      if (this.host.filterLocalSegment?.(l3Packet, family) === false) return;
       const ipv4 = family === 'ipv6' ? undefined : l3Packet as IPv4Packet;
       this.handleSegment(srcIp, dstIp, seg, {
         ttl,

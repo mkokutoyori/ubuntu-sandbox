@@ -144,11 +144,11 @@ function fluxDns(nom: string): InspectedFlow {
 function fluxTls(sni: string): InspectedFlow {
   const hello = encodeMessages([{
     kind: 'client_hello',
-    legacyVersion: '0303',
-    random: 'r',
+    legacyVersion: '1.2',
+    random: '00'.repeat(32),
     cipherSuites: ['TLS_AES_128_GCM_SHA256'],
     extensions: {
-      supportedVersions: ['1.3'], keyShare: 'k',
+      supportedVersions: ['1.3'], keyShare: `x25519:${'00'.repeat(32)}`,
       supportedGroups: ['x25519'], signatureAlgorithms: ['rsa_pss_rsae_sha256'],
       serverName: sni,
     },
