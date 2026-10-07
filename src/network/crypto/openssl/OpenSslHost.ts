@@ -18,12 +18,18 @@ import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
  * rend une clé différente à chaque exécution du même scénario.
  */
 
+export interface TlsPeerChannelPort {
+  exchange(payload: Uint8Array): Uint8Array;
+  keyUpdate(requestUpdate: boolean): void;
+  close(): void;
+}
+
 export type TlsPeerProbe =
   | { readonly ok: true; readonly certificate: X509Certificate | null;
       readonly cipherSuite: string | null; readonly protocolVersion?: string | null;
       readonly verified: boolean; readonly staple?: OcspResponseMessage | null;
       readonly received?: Uint8Array; readonly chain?: readonly X509Certificate[];
-      readonly details?: TlsHandshakeDetails }
+      readonly details?: TlsHandshakeDetails; readonly channel?: TlsPeerChannelPort }
   | { readonly ok: false; readonly reason: string; readonly alert?: string | null };
 
 export interface TlsServeSettings {
@@ -39,6 +45,7 @@ export interface TlsPeerProbeOptions {
   readonly cipherList?: string;
   readonly requestStatus?: boolean;
   readonly send?: Uint8Array;
+  readonly keepOpen?: boolean;
   readonly alpn?: readonly string[];
   readonly clientCredential?: { readonly chain: readonly X509Certificate[]; readonly privateKey: PkiPrivateKey };
 }
@@ -109,6 +116,8 @@ export interface OpenSslResult {
   output: string;
   stderr: string;
   exitCode: number;
+  channel?: TlsPeerChannelPort;
+  channelVersion?: string;
 }
 
 export function ok(output = ''): OpenSslResult {

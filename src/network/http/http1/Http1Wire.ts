@@ -260,3 +260,42 @@ export function parseResponse(raw: string, opts?: Http1ParseResponseOptions): Ht
     },
   };
 }
+
+const REQUEST_LINE_SHAPE = /^[A-Z]{3,7} \S+ HTTP\/1\.[01]$/;
+const REQUEST_LINE_PREFIX = /^[A-Z]{1,7}( \S*( HTTP\/1?\.?[01]?)?)?$/;
+
+function headEnd(raw: string): { end: number; bare: boolean } | null {
+  const crlf = raw.indexOf(CRLF + CRLF);
+  const lf = raw.indexOf('\n\n');
+  if (crlf === -1 && lf === -1) return null;
+  if (crlf !== -1 && (lf === -1 || crlf < lf)) return { end: crlf + 4, bare: false };
+  return { end: lf + 2, bare: true };
+}
+
+export class HttpRequestAssembler {
+  private held = '';
+
+  push(chunk: string): string | null {
+    this.held += chunk;
+    const head = headEnd(this.held);
+    if (head === null) {
+      const firstLine = this.held.split('\n')[0].replace(/\r$/, '');
+      const hasNewline = this.held.includes('\n');
+      const plausible = hasNewline ? REQUEST_LINE_SHAPE.test(firstLine) : REQUEST_LINE_PREFIX.test(firstLine);
+      if (plausible) return null;
+      return this.release();
+    }
+    const headText = this.held.slice(0, head.end);
+    const lengthMatch = /^content-length:\s*(\d+)/im.exec(headText);
+    if (lengthMatch && this.held.length - head.end < Number(lengthMatch[1])) return null;
+    return this.release();
+  }
+
+  private release(): string {
+    const raw = this.held;
+    this.held = '';
+    const head = headEnd(raw);
+    if (head === null || !head.bare) return raw;
+    return raw.slice(0, head.end).replace(/\r?\n/g, CRLF) + raw.slice(head.end);
+  }
+}

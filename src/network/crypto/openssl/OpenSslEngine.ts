@@ -1821,6 +1821,7 @@ function finishSClientReport(
     if (probe.received.length > 0) lignes.push(bytesToFileText(probe.received));
     return { output: lignes.join('\n'), stderr: 'DONE', exitCode: 0 };
   }
+  if (probe.channel) return { ...ok(lignes.join('\n')), channel: probe.channel, channelVersion: version };
   return ok(lignes.join('\n'));
 }
 
@@ -1830,7 +1831,7 @@ function finishSClientReport(
  * inventer ici : le transport existe, et le verdict rendu est celui du
  * fil.
  */
-function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+export function runSClient(host: OpenSslHost, argv: readonly string[], interactive = false): OpenSslResult {
   const { opts } = parseArgs('s_client', argv);
   const cible = opts.get('-connect');
   if (typeof cible !== 'string') {
@@ -1894,7 +1895,8 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     ...(opts.has('-status') ? { requestStatus: true } : {}),
     ...(clientCredential ? { clientCredential } : {}),
     ...(typeof opts.get('-alpn') === 'string' ? { alpn: (opts.get('-alpn') as string).split(',') } : {}),
-    ...(host.stdin() !== null ? { send: fileTextToBytes(host.stdin()!) } : {}),
+    ...(host.stdin() !== null && !interactive ? { send: fileTextToBytes(host.stdin()!) } : {}),
+    ...(interactive ? { keepOpen: true } : {}),
   };
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
@@ -2026,7 +2028,7 @@ function runHelp(): OpenSslResult {
 
 // ─── dispatch ───────────────────────────────────────────────────────
 
-export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+export function runOpenSsl(host: OpenSslHost, argv: readonly string[], options: { readonly interactive?: boolean } = {}): OpenSslResult {
   const sub = argv[0];
   if (sub === undefined) return runHelp();
   const reste = argv.slice(1);
@@ -2047,7 +2049,7 @@ export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslR
   if (sub === 'req') return runReq(host, reste);
   if (sub === 'x509') return runX509(host, reste);
   if (sub === 'verify') return runVerify(host, reste);
-  if (sub === 's_client') return runSClient(host, reste);
+  if (sub === 's_client') return runSClient(host, reste, options.interactive === true);
   if (sub === 's_server') return runSServer(host, reste);
   if (sub === 'ec') return runEc(host, reste);
   if (sub === 'ecparam') return runEcparam(host, reste);

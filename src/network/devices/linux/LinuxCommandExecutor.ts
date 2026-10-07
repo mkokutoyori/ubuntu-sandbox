@@ -3,6 +3,7 @@
  */
 
 import { TimeZone } from '@/network/core/time/TimeZone';
+import type { TlsClientHandoff } from './commands/crypto/InteractiveHandoff';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
@@ -422,6 +423,19 @@ function transferAuthority(
 type SshHostKeyProbe = (ip: string, port: number, hostKeyAlgorithms: readonly string[]) => HostKeyProbeResult | null;
 
 export class LinuxCommandExecutor {
+  interactiveTerminal = false;
+  private interactiveHandoff: TlsClientHandoff | null = null;
+
+  offerInteractive(handoff: TlsClientHandoff): void {
+    this.interactiveHandoff = handoff;
+  }
+
+  takeInteractiveHandoff(): TlsClientHandoff | null {
+    const handoff = this.interactiveHandoff;
+    this.interactiveHandoff = null;
+    return handoff;
+  }
+
   readonly vfs: VirtualFileSystem;
   readonly mountTable: MountTable;
   readonly userMgr: LinuxUserManager;
