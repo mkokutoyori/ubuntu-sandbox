@@ -13,7 +13,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SimulationClock, installSimulationClock, __resetSimulationClock } from '@/events/SimulationClock';
 import { Toolbar } from '@/components/network/Toolbar';
-import { SettingsDialog } from '@/components/network/SettingsDialog';
+import { SettingsDialog } from '@/components/settings';
 
 afterEach(() => { cleanup(); __resetSimulationClock(); });
 
