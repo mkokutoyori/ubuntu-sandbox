@@ -1,4 +1,3 @@
-import { simulationDate } from '@/network/core/SystemClock';
 
 import type {
   Block, Stmt, Expr, Declaration, TypeRef, CallArg, AssignTarget, SubprogramDecl,
@@ -941,7 +940,7 @@ export class PlsqlInterpreter {
     if (slot) return slot.value;
     if (up === 'SQLCODE') return this.sqlcode;
     if (up === 'SQLERRM') return this.sqlerrm;
-    if (up === 'SYSDATE' || up === 'SYSTIMESTAMP' || up === 'CURRENT_DATE' || up === 'CURRENT_TIMESTAMP') return simulationDate();
+    if (up === 'SYSDATE' || up === 'SYSTIMESTAMP' || up === 'CURRENT_DATE' || up === 'CURRENT_TIMESTAMP') return this.clockDate(up);
     if (up === 'USER') return this.host.currentSchema();
     if (up === 'TRUE') return true;
     if (up === 'FALSE') return false;
@@ -1183,7 +1182,7 @@ export class PlsqlInterpreter {
       case 'TO_NUMBER': { const v = ev(0); if (v === null) return h(null); const n = Number(v); if (isNaN(n)) throw new PlsqlException('INVALID_NUMBER', 1722, 'ORA-01722: invalid number'); return h(n); }
       case 'SQLCODE': return h(this.sqlcode);
       case 'SQLERRM': { if (args.length) { const c = num(0); const pre = matchPredefinedException(`ORA-${String(Math.abs(c)).padStart(5, '0')}`); return h(pre ? pre.defaultMessage : `ORA-${String(Math.abs(c)).padStart(5, '0')}: Message ${Math.abs(c)} not found`); } return h(this.sqlerrm); }
-      case 'SYSDATE': case 'CURRENT_DATE': return h(simulationDate());
+      case 'SYSDATE': case 'CURRENT_DATE': return h(this.clockDate(up));
       case 'USER': return h(this.host.currentSchema());
       case 'MOD2': return { handled: false, value: null };
     }
@@ -1201,7 +1200,8 @@ export class PlsqlInterpreter {
 
   private toCellArgument(v: PlsqlValue, preserveValue: boolean): CellValue {
     if (v instanceof PlsqlRecord || v instanceof PlsqlCollection) return null;
-    if (!preserveValue && (v instanceof Date || typeof v === 'boolean')) return this.toText(v);
+    if (!preserveValue && v instanceof Date) return formatDateValue(v);
+    if (!preserveValue && typeof v === 'boolean') return this.toText(v);
     return v as CellValue;
   }
 
@@ -1210,7 +1210,8 @@ export class PlsqlInterpreter {
       currentUser: this.host.currentSchema(),
       currentSchema: this.host.currentSchema(),
       compare: (a, b) => this.cmp(a as PlsqlValue, b as PlsqlValue),
-      coerceDate: coerceDateValue,
+      coerceDate: (value) => coerceDateValue(value),
+      clockText: () => this.host.oracleClock(),
       formatDate: formatDateValue,
       formatDateWithPattern,
       parseDateWithPattern,
@@ -1272,8 +1273,8 @@ export class PlsqlInterpreter {
 
   private cmp(a: PlsqlValue, b: PlsqlValue): number {
     if (a instanceof Date || b instanceof Date) {
-      const ta = a instanceof Date ? a.getTime() : new Date(String(a)).getTime();
-      const tb = b instanceof Date ? b.getTime() : new Date(String(b)).getTime();
+      const ta = a instanceof Date ? a.getTime() : (coerceDateValue(String(a))?.getTime() ?? Number.NaN);
+      const tb = b instanceof Date ? b.getTime() : (coerceDateValue(String(b))?.getTime() ?? Number.NaN);
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     }
     if (typeof a === 'number' || typeof b === 'number') {
@@ -1301,6 +1302,15 @@ export class PlsqlInterpreter {
       else re += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
     return new RegExp(`^${re}$`).test(s);
+  }
+
+  private clockDate(name: string): Date {
+    const clock = this.host.oracleClock();
+    const text = name === 'SYSDATE' ? clock.sysdate
+      : name === 'CURRENT_DATE' ? clock.currentDate
+      : name === 'SYSTIMESTAMP' ? clock.systimestamp
+      : clock.currentTimestamp;
+    return coerceDateValue(text) ?? new Date(Number.NaN);
   }
 
   private toText(v: PlsqlValue): string {

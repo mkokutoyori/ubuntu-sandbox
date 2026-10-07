@@ -5846,9 +5846,7 @@ export class LinuxCommandExecutor {
       case 'sqlplus': {
         if (args.includes('-V') || args.includes('-version')) {
           return {
-            output:
-              'SQL*Plus: Release 19.0.0.0.0 - Production on ' +
-              simulationDate().toUTCString(),
+            output: 'SQL*Plus: Release 19.0.0.0.0 - Production\nVersion 19.3.0.0.0',
             exitCode: 0,
           };
         }

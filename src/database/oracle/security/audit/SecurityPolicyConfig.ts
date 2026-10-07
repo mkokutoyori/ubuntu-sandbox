@@ -49,10 +49,10 @@ export const DEFAULT_SECURITY_POLICY: SecurityPolicyConfig = Object.freeze({
   sodScanIntervalMs: 60 * 60 * 1000,
 });
 
-/** Returns true when the given timestamp is outside business hours. */
-export function isOffHours(at: Date, policy: BusinessHoursPolicy = DEFAULT_BUSINESS_HOURS): boolean {
-  const day = at.getDay();
+/** Returns true when the given server wall-clock time is outside business hours. */
+export function isOffHours(wall: Date, policy: BusinessHoursPolicy = DEFAULT_BUSINESS_HOURS): boolean {
+  const day = wall.getUTCDay();
   if (!policy.daysOfWeek.has(day)) return true;
-  const hour = at.getHours();
+  const hour = wall.getUTCHours();
   return hour < policy.start || hour >= policy.end;
 }

@@ -16,7 +16,8 @@
  *   - PROMPT, ACCEPT (simulated)
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import { hostBannerDate } from '../time/OracleHostClock';
 
 import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
@@ -308,7 +309,7 @@ export class SQLPlusSession {
   getBanner(): string[] {
     return [
       '',
-      'SQL*Plus: Release 19.0.0.0.0 - Production on ' + simulationDate().toDateString(),
+      'SQL*Plus: Release 19.0.0.0.0 - Production on ' + hostBannerDate(this.db.instance.hostClock()),
       'Version 19.3.0.0.0',
       '',
       'Copyright (c) 1982, 2019, Oracle.  All rights reserved.',
@@ -970,6 +971,7 @@ export class SQLPlusSession {
         nullDisplay: this.settings.null_display,
         wrap: this.settings.wrap,
         dateFormat: session?.nlsDateFormat ?? 'DD-MON-RR',
+        serverZone: this.executor?.serverZone(),
       },
       this.columnFormats,
     );

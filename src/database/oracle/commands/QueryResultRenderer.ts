@@ -1,4 +1,5 @@
 import type { ResultSet } from '../../engine/executor/ResultSet';
+import type { TimeZone } from '@/network/core/time/TimeZone';
 import { coerceDateValue, formatDateWithPattern } from '../functions/dateSupport';
 
 export interface ColumnFormat {
@@ -19,6 +20,7 @@ export interface RenderSettings {
   wrap: boolean;
   /** NLS_DATE_FORMAT — applied to DATE columns with no explicit TO_CHAR/COLUMN format. */
   dateFormat: string;
+  serverZone?: TimeZone;
 }
 
 interface RenderColumn {
@@ -121,10 +123,12 @@ export class QueryResultRenderer {
   private renderValue(value: unknown, format: string | undefined, numeric: boolean, isDate: boolean): string {
     if (value === null || value === undefined) return this.settings.nullDisplay;
     if (isDate && !format) {
-      const d = value instanceof Date ? value : coerceDateValue(value);
+      const d = coerceDateValue(value, this.settings.serverZone ?? null);
       if (d) return formatDateWithPattern(d, this.settings.dateFormat);
     }
-    if (value instanceof Date) return formatDateWithPattern(value, this.settings.dateFormat);
+    if (value instanceof Date) {
+      return formatDateWithPattern(coerceDateValue(value, this.settings.serverZone ?? null) ?? value, this.settings.dateFormat);
+    }
     if (numeric && format && typeof value === 'number' && this.isNumericMask(format)) {
       return this.applyNumericMask(value, format);
     }
