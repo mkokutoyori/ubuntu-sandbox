@@ -494,14 +494,6 @@ export function buildTransformSetCommands(trie: CommandTrie, ctx: CiscoShellCont
 // ─── config-crypto-map sub-mode ──────────────────────────────────────
 
 export function buildCryptoMapEntryCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('description', 'Crypto map entry description', (args) => {
-    const mapName = ctx.getSelectedCryptoMap();
-    const seq = ctx.getSelectedCryptoMapSeq();
-    if (!mapName || seq === null) return '% No crypto map selected';
-    const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq) as unknown as Record<string, unknown>;
-    entry.description = args.join(' ');
-    return '';
-  });
   trie.register('reverse-route', 'Add static routes for protected networks', () => {
     const mapName = ctx.getSelectedCryptoMap();
     const seq = ctx.getSelectedCryptoMapSeq();

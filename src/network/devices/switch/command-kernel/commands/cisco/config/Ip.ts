@@ -5,6 +5,8 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { CiscoSwitchGlobalIpDefaultGatewayCommand } from './ip/DefaultGateway';
+import { CiscoSwitchConfigIpDomainNameCommand } from './ip/DomainName';
+import { CiscoSwitchConfigIpNameServerCommand } from './ip/NameServer';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -30,6 +32,8 @@ export class CiscoSwitchGlobalIpCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new CiscoSwitchGlobalIpDefaultGatewayCommand());
+    this.subRegistry.register(() => new CiscoSwitchConfigIpDomainNameCommand());
+    this.subRegistry.register(() => new CiscoSwitchConfigIpNameServerCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

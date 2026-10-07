@@ -1,5 +1,89 @@
 # Changelog
 
+## Cisco routeur + switch — vague batch 7 : 28 commandes exec (privileged) + LLDP + show ip cef/rip — inventaire piloté par les échecs de tests network-v2
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Septième vague, pilotée par un inventaire des commandes réellement
+attendues par les tests `network-v2` qui échouaient sur le socle
+kernel : `terminal length`, `clear counters / mac address-table`,
+`write`, `reload`, `ping`, `copy` (privileged EXEC), `lldp run`
+(config) et `show lldp` / `show ip cef` / `show ip rip [database]`.
+
+### Routeur Cisco (16 nouveaux)
+
+- **privileged (EXEC)** — 6 nouvelles racines : `terminal length`
+  / `terminal monitor` (composite), `clear counters` / `clear mac
+  address-table` (composite), `write`, `reload`, `copy`, `ping`.
+- **config** : `lldp run` / `lldp receive` (composite).
+- **show / ip** (enrichi) : `show ip cef`, `show ip rip [database]`.
+- **show** : `show lldp`.
+
+### Switch Cisco (12 nouveaux)
+
+- **privileged (EXEC)** — 6 nouvelles racines : `terminal length`
+  (composite), `clear counters` / `clear mac address-table`
+  (composite), `write`, `reload`, `copy`, `ping`.
+- **config** : `lldp run` (composite).
+- **show** : `show lldp`.
+
+### Méthode
+
+Voix utilisateur → inventaire :
+- Run des tests `network-v2` (14 fichiers Cisco).
+- Extraction des `executeCommand('...')` échouant → identification des
+  commandes attendues mais non migrées.
+- Rédaction du JSON d'inventaire `batch-v7-inventaire.json`.
+- Génération via `scripts/generate_command.py batch`.
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+
+
+## Cisco routeur + switch — vague batch 6 : 39 commandes câblées (enrichissement composites config/aaa, config/ntp, config/ip, config-if/ip, config-if/no, show/interfaces + nouveaux top-level crypto map / udld / port-channel / show ssh/boot/vtp/dot1x/errdisable/authentication/udld)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Sixième vague. Focus « profondeur » : au lieu d'ajouter des racines,
+on enrichit les composites déjà migrés avec leurs feuilles-sœurs
+manquantes (proxy-arp / redirects / unreachables sous `ip` interface,
+cdp / keepalive / encapsulation / delay / arp sous `no` interface,
+authenticate / authentication-key / trusted-key sous `ntp`, etc.).
+
+### Routeur Cisco (23 nouveaux)
+
+- **config / ip** (enrichi) : `ip cef`, `ip forward-protocol`.
+- **config / ntp** (enrichi) : `ntp authenticate`,
+  `ntp authentication-key`, `ntp trusted-key`.
+- **config / aaa** (enrichi) : `aaa authentication login`.
+- **config-if / ip** (enrichi) : `ip proxy-arp`, `ip redirects`,
+  `ip unreachables`.
+- **config-if / no** (enrichi) : `no cdp`, `no keepalive`,
+  `no encapsulation`, `no delay`, `no arp`.
+- **config-if** (nouveau top-level) : `crypto map`.
+- **show** (nouveaux top-level) : `show buffers`, `show controllers`,
+  `show ssh`, `show boot`.
+
+### Switch Cisco (16 nouveaux)
+
+- **config / ntp** (enrichi) : `ntp authenticate`,
+  `ntp authentication-key`, `ntp trusted-key`.
+- **config / aaa** (enrichi) : `aaa authentication login`.
+- **config** (nouveaux top-level) : `udld {enable|aggressive}`,
+  `port-channel load-balance`.
+- **show / interfaces** (enrichi) : `show interfaces switchport`.
+- **show** (nouveaux top-level) : `show ssh`, `show boot`,
+  `show authentication`, `show errdisable`, `show udld`, `show vtp`,
+  `show dot1x`.
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+
+
 ## Huawei switch + routeur — vague batch 9 de 40 commandes (switch : 10 display leaves + 3 STP interface-view sous-composites + 2 STP system-view + 2 mac-address sous-composites + 6 system-view leaves + reset user-view ; routeur : 5 interface-view leaves ospf/isis/rip/bfd/vrrp + AAA RADIUS/HWTACACS templates push-modes + 4 leaves radius-server-view)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
@@ -67,6 +151,59 @@ les suites Huawei ciblées (204 → 201 failed).
   - Suites Huawei ciblées : **201 failed / 216 passed** (avant vague :
     204/213 → **+3 tests verts** grâce à `ospf enable`/`isis`/
     `authentication-server`/`shared-key`/etc. maintenant reconnus).
+## Cisco routeur + switch — vague batch 5 : 40 commandes + suppression physique des 57 blocs `// MIGRATED (command-kernel)` legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Cinquième vague : câble 40 nouvelles feuilles / composites côté routeur
++ switch, ET nettoie physiquement les 57 blocs `// MIGRATED
+(command-kernel)` commentés en place par `strip-trie.py` — les `trie.
+register(Greedy)?` correspondant aux vagues 1-4 disparaissent
+purement, plus de commentaires « fantômes » dans les shells legacy.
+
+### Routeur Cisco (28 nouveaux)
+
+- **config / ip** (sous-registre existant enrichi) : `ip domain-name`,
+  `ip name-server`, `ip domain-lookup`.
+- **config (global)** : `tftp-server`, `boot`, `clock`, `crypto key
+  generate rsa`, `access-list`, `alias`, `domain`.
+- **show / ip** (sous-registre existant enrichi) : `show ip protocols`,
+  `show ip ospf`, `show ip bgp`, `show ip eigrp`, `show ip nat`.
+- **show** : `show snmp`, `show line`, `show sessions`, `show history`,
+  `show startup-config`, `show vrf`, `show policy-map`, `show class-map`,
+  `show access-lists`, `show route-map`.
+
+### Switch Cisco (12 nouveaux)
+
+- **config / ip** (sous-registre existant enrichi) : `ip domain-name`,
+  `ip name-server`.
+- **config (global)** : `clock`, `boot`, `access-list`, `alias`.
+- **show** : `show snmp`, `show line`, `show history`,
+  `show startup-config`, `show logging`, `show processes`, `show memory`.
+
+### Nettoyage legacy
+
+- `delete-migrated.py` : suppression physique de **57 blocs
+  `// MIGRATED (command-kernel):`** dans `CiscoIOSShell.ts` (5),
+  `CiscoSwitchShell.ts` (5), et 11 fichiers `cisco/*Commands.ts` —
+  plus aucun résidu commenté après la migration.
+
+### Sentinelles rebasculées
+
+- `router-cli-foundation.test.ts` : sentinelle « unmigrated show »
+  passe de `show ip nat translations` (désormais migré) à `show ip
+  mroute` (vue multicast non encore migrée).
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+- Palette network-v2 étendue : rouges pré-existants restent liés à
+  des flux legacy (tab-complétion, prompt hostname interactif) que la
+  nouvelle porte ne modélise pas — non-régression sur les tests qui
+  passaient.
+
+
 
 ## Huawei switch + routeur — vague batch 8 de 40 commandes (switch : storm/mac-limit/port-isolate/loopback-detect/bpdu/traffic-filter/traffic-secure/arp-limit/arp-detect en interface-view, voice-vlan/super-vlan/mux-vlan/arp-security/dhcp/vlan-batch/dtp/gvrp/vtp/cdp/udld/user-interface/aaa/info-center/snmp-agent/ntp-service/acl en system-view, clock/reboot/startup en user-view ; routeur : nqa/track/bfd/dot1x/cdp/lldp/assign/firewall/device-name en system-view, arp-broadcast en interface-view)
 
@@ -125,6 +262,44 @@ place pour de futures leaves radius/hwtacacs côté switch).
     refléter l'expansion du kernel).
   - Suites Huawei ciblées : **204 failed / 213 passed** (inchangé
     vs batch 7 — zéro nouvelle régression).
+## Cisco routeur + switch — vague batch 4 : 27 commandes câblées (HSRP standby, channel-group, OSPF area/redistribute, AAA, show ops matériel — routeur + service-policy/SNMP/AAA/DTP/HSRP/inventory/flash — switch)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Quatrième vague batch-générée. Focus opérateur avancé : HSRP côté
+routeur (`standby` composite + ip/priority/preempt), agrégation
+`channel-group`, OSPF `area {stub|nssa}` + `redistribute`, `aaa
+new-model` (routeur + switch), plus la vue matérielle exec (`show
+flash`/`environment`/`inventory`/`tech-support`) et côté switch
+`service-policy input|output`, `snmp-server {community|host}`, et
+`show {dtp|standby|inventory|flash}`.
+
+### Routeur Cisco (15 nouveaux)
+
+- **config-if** : `standby {ip|priority|preempt}` (HSRP), `channel-group`.
+- **config-router** : `area {stub|nssa}` (OSPF), `redistribute`.
+- **config (global)** : `aaa new-model`.
+- **show** : `show flash`, `show environment`, `show inventory`,
+  `show tech-support`.
+
+### Switch Cisco (12 nouveaux)
+
+- **config-if** : `service-policy {input|output}`.
+- **config (global)** : `snmp-server {community|host}`, `aaa new-model`.
+- **show** : `show dtp`, `show standby`, `show inventory`, `show flash`.
+
+### Câblage bootstrap
+
+- `createCiscoRouterHostShell.ts` : imports + register sur `showSub`,
+  `configRegistry`, `configIfRegistry`, `configRouterRegistry`.
+- `createCiscoSwitchHostShell.ts` : imports + register sur `showSub`,
+  `configRegistry`, `configIfRegistry`.
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+
 
 ## Linux — Wave 6 : `passwd`/`chpasswd`/`usermod`/`userdel`/`deluser`/`groupadd`/`groupmod`/`groupdel`/`gpasswd`/`lsof`/`ausearch`/`aureport`/`auditctl`/`mount`/`umount`/`findmnt`/`crontab`/`atq`/`atrm`/`runlevel`
 
@@ -269,6 +444,50 @@ inchangés vs batch 6).
   - Suites Huawei ciblées : **204 failed / 213 passed** (inchangé
     vs batch 6 — zéro nouvelle régression, zéro nouveau vert car ces
     commandes n'apparaissent pas dans les cas de test actuels).
+## Cisco routeur + switch — vague batch 3 : 32 commandes câblées (config-if fine-tuning + config-router timers/distance + config-line UX + show ops/mls)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Troisième vague batch-générée. Focus : compléter les leaves opérateur
+manquants sur config-if (arp/duplex/speed/hold-queue), config-router
+(distance/timers basic), config-line (exec-timeout/history size/logging
+synchronous/privilege level), plus la vue exec côté ops (show
+memory/processes/logging/ntp status+associations). Switch : mls
+qos trust, storm-control, ntp server, mac address-table static, show
+port-security, show spanning-tree.
+
+### Routeur Cisco (22 nouveaux)
+
+- **config-if** : `duplex`, `speed`, `hold-queue`, `arp timeout`.
+- **config-router** : `distance`, `timers basic`.
+- **config-line** : `exec-timeout`, `history size`, `logging synchronous`,
+  `privilege level`.
+- **show** : `show memory`, `show processes`, `show logging`,
+  `show ntp {status|associations}`.
+
+### Switch Cisco (10 nouveaux)
+
+- **config-if** : `storm-control`, `mls qos trust`.
+- **config (global)** : `ntp server`, `mac address-table static`.
+- **show** : `show port-security`, `show spanning-tree`.
+
+### Câblage bootstrap
+
+- `createCiscoRouterHostShell.ts` : imports + register sur `showSub`,
+  `configIfRegistry`, `configRouterRegistry`, `configLineRegistry`
+  (nouveaux composites `arp`/`timers`/`history`/`logging`/`privilege`/
+  `ntp` avec leur sous-registre déjà rempli côté classe composite).
+- `createCiscoSwitchHostShell.ts` : imports + register sur `showSub`,
+  `configRegistry`, `configIfRegistry` (nouveaux composites `mls`,
+  `ntp`, `mac`).
+- `switch-cli-foundation.test.ts` : la sentinelle « unmigrated show »
+  passe de `show port-security` (désormais migré) à `show environment`
+  pour rester rouge tant qu'on n'a pas migré cette vue.
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
 
 ## Huawei routeur — vague batch 6 de 40 commandes (BGP peer/router-id/default, OSPF silent-interface/bandwidth-reference/lsdb/routing, IPsec policy view + application, DHCP snooping, HTTP server, SNMP target-host/trap/group, telnet/tracert/terminal/reset, route-policy apply cost/local-pref/community/as-path, loopback-detect, voice-vlan, sftp/ftp/user-interface)
 
@@ -459,6 +678,53 @@ introduites par la vague).
     (`HuaweiNATCommands.ts`, `HuaweiPolicyCommands.ts`,
     `HuaweiOspfCommands.ts`, `HuaweiVRPShell.ts`) — dépendance :
     implémentation métier des leaves d'abord.
+## Cisco routeur + switch — vague batch 2 : 40 commandes câblées (config global + config-if/ip / no + config-router + show)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième vague massive de scaffolding + câblage bootstrap, générée
+via `scripts/generate_command.py batch` puis wiring à la main dans les
+`createCiscoRouterHostShell.ts` / `createCiscoSwitchHostShell.ts`.
+Complémentaire de la vague 1 — même méthode, aucune régression sur la
+suite `command-kernel` (354/354 verts) et amélioration marginale sur la
+palette network-v2 (−4 tests rouges par rapport au baseline).
+
+### Nouveautés routeur Cisco
+
+- **config (global)** : `banner motd`, `enable secret`,
+  `enable password`, `service password-encryption`,
+  `service timestamps`, `snmp-server community`, `snmp-server host`.
+- **config-if / ip** : `ip helper-address`, `ip nat inside`,
+  `ip nat outside`, `ip access-group`.
+- **config-if / no** : `no mtu`, `no bandwidth`.
+- **config-router** : `auto-summary`, `maximum-paths`,
+  `default-information originate`.
+- **show** (exec) : `show clock`, `show cdp neighbors`, `show users`.
+
+### Nouveautés switch Cisco
+
+- **config (global)** : `vtp domain`, `vtp mode`, `vtp password`,
+  `banner motd`, `enable secret`, `errdisable recovery`, `logging`.
+- **show** (exec) : `show clock`, `show cdp neighbors`.
+
+### Câblage bootstrap
+
+- `createCiscoRouterHostShell.ts` : nouveaux imports + register dans
+  `showSub`, `configRegistry`, `configRouterRegistry` ; composites
+  `Ip.ts` (config-if) et `No.ts` (config-if) enrichis de leurs
+  sous-feuilles ; `default-information` = composite avec
+  `default-information/Originate` en enfant.
+- `createCiscoSwitchHostShell.ts` : nouveaux imports + register dans
+  `showSub` et `configRegistry` (7 nouveaux enregistrements config
+  global, 2 nouveaux show).
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+- Palette network-v2 étendue (14 fichiers Cisco routeur/switch de
+  référence) : 260 échecs vs. 264 baseline (pré-existants — commandes
+  legacy `show` non encore migrées interceptées par la nouvelle porte).
 
 ## Cisco routeur + switch — 40 commandes batch-générées via `scripts/generate_command.py`
 

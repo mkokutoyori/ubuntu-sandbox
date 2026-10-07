@@ -44,12 +44,6 @@ export function buildKeyChainSubmode(
     ctx.setMode('config-keychain-key' as CiscoShellMode);
     return '';
   });
-  trie.registerGreedy('description', 'Key chain description', (args) => {
-    const chain = ctx.getSelectedKeyChain();
-    if (!chain) return '';
-    ctx.getKeyChains().ensureChain(chain).description = args.join(' ');
-    return '';
-  });
   trie.registerGreedy('no key', 'Remove a key from this chain', (args) => {
     const chain = ctx.getSelectedKeyChain();
     if (!chain) return '';

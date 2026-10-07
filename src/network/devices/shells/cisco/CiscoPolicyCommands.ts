@@ -102,10 +102,6 @@ export function buildPolicyConfig(
     c.set = c.set.filter(l => !l.toLowerCase().startsWith(pattern));
     return '';
   });
-  routeMapTrie.registerGreedy('description', 'Route-map description', (args) => {
-    const c = clause(); if (c) c.description = args.join(' ');
-    return '';
-  });
 }
 
 export function registerPolicyShow(

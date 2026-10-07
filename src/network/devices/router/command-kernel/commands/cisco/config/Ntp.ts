@@ -4,7 +4,10 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
+import { CiscoRouterConfigNtpAuthenticateCommand } from './ntp/Authenticate';
+import { CiscoRouterConfigNtpAuthenticationKeyCommand } from './ntp/AuthenticationKey';
 import { CiscoRouterNtpServerCommand } from './ntp/Server';
+import { CiscoRouterConfigNtpTrustedKeyCommand } from './ntp/TrustedKey';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -30,6 +33,9 @@ export class CiscoRouterConfigNtpCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new CiscoRouterNtpServerCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigNtpAuthenticateCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigNtpAuthenticationKeyCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigNtpTrustedKeyCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

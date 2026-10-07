@@ -3,8 +3,15 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { CiscoRouterConfigIfNoArpCommand } from './no/Arp';
+import { CiscoRouterConfigIfNoBandwidthCommand } from './no/Bandwidth';
+import { CiscoRouterConfigIfNoCdpCommand } from './no/Cdp';
+import { CiscoRouterConfigIfNoDelayCommand } from './no/Delay';
 import { CiscoRouterNoDescriptionCommand } from './no/Description';
+import { CiscoRouterConfigIfNoEncapsulationCommand } from './no/Encapsulation';
 import { CiscoRouterConfigIfNoIpCommand } from './no/Ip';
+import { CiscoRouterConfigIfNoKeepaliveCommand } from './no/Keepalive';
+import { CiscoRouterConfigIfNoMtuCommand } from './no/Mtu';
 import { CiscoRouterNoShutdownCommand } from './no/Shutdown';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
@@ -33,6 +40,13 @@ export class CiscoRouterConfigIfNoCommand extends BaseCommand {
     this.subRegistry.register(() => new CiscoRouterNoShutdownCommand());
     this.subRegistry.register(() => new CiscoRouterConfigIfNoIpCommand());
     this.subRegistry.register(() => new CiscoRouterNoDescriptionCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoMtuCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoBandwidthCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoCdpCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoKeepaliveCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoEncapsulationCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoDelayCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoArpCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

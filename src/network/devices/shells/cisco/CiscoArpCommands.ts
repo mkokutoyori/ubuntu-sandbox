@@ -129,9 +129,6 @@ export function registerArpShowCommands(
   trie: CommandTrie,
   getProvider: () => ARPProvider,
 ): void {
-  trie.registerGreedy('show arp', 'Display ARP table', (args) =>
-    showArp(getProvider(), args.length > 0 ? args : undefined),
-  );
   trie.registerGreedy('show ip arp', 'Display ARP table', (args) =>
     showArp(getProvider(), args.length > 0 ? args : undefined),
   );
