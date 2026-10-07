@@ -51,6 +51,7 @@ import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import { isValidMaxFragmentLength, DEFAULT_MAX_FRAGMENT } from './maxFragment';
 import type { ResumableLegacySession } from './legacy/legacySessions';
 import { randomHex } from './legacy/LegacyHandshake';
+import { earlyTrafficSecret, sealEarlyData, sealEndOfEarlyData } from './earlyData';
 import { sealFlight, openFlight, openLeadingHandshake, withoutChangeCipherSpec } from './handshakeProtection';
 
 export interface TlsClientConfig {
@@ -132,6 +133,8 @@ export class TlsClientSession {
   negotiatedAlpnProtocol: string | null = null;
   /** RFC 8446 §2.3 — whether the server accepted the 0-RTT data offered, if any was sent. */
   earlyDataAccepted: boolean | null = null;
+  private earlySecret: string | null = null;
+  private earlySequence = 0;
   /** A ticket received via `receiveSessionTicket()`, ready to resume a future session. */
   receivedTicket: SessionTicket | null = null;
   peerCertificate: X509Certificate | null = null;
@@ -267,8 +270,13 @@ export class TlsClientSession {
     if (this.policy.error !== null) { this.fail('handshake_failure'); return []; }
     this.clientRandom = newHelloRandom();
     const records = this.sendClientHello(this.supportedGroups[0]);
-    if (!this.config.resumptionTicket || !this.config.earlyData) return records;
-    return [...records, ...fragmentAsRecords('application_data', this.config.earlyData, true)];
+    const ticket = this.config.resumptionTicket;
+    if (!ticket || !this.config.earlyData) return records;
+    const hash = suiteInfo(ticket.cipherSuite).hash;
+    this.earlySecret = earlyTrafficSecret(this.pskInput, transcriptHash([this.lastClientHelloBytes], hash), hash);
+    const early = sealEarlyData(this.earlySecret, ticket.cipherSuite, this.config.earlyData, 0);
+    this.earlySequence = early.nextSequence;
+    return [...records, ...early.records];
   }
 
   private sendClientHello(group: string): readonly TlsRecord[] {
@@ -380,7 +388,7 @@ export class TlsClientSession {
     if (leadMessage.kind === 'server_hello' && leadMessage.extensions.supportedVersions !== '1.3') return this.startLegacy(incoming);
 
     if (leadMessage.kind === 'hello_retry_request') {
-      if (rest.length > 0) return this.fail('unexpected_message');
+      if (withoutChangeCipherSpec(rest).length > 0) return this.fail('unexpected_message');
       if (!this.supportedGroups.includes(leadMessage.selectedGroup)) return this.fail('handshake_failure');
       this.transcript.push(leadBytes);
       this.retried = true;
@@ -590,6 +598,13 @@ export class TlsClientSession {
       }
     }
 
+    const endOfEarlyData: TlsRecord[] = [];
+    if (this.earlySecret !== null && this.earlyDataAccepted === true) {
+      const ticketSuite = this.config.resumptionTicket!.cipherSuite;
+      if (serverHello.cipherSuite !== ticketSuite) return this.fail('illegal_parameter');
+      this.transcript.push(encodeHandshakeMessage({ kind: 'end_of_early_data' }));
+      endOfEarlyData.push(...sealEndOfEarlyData(this.earlySecret, ticketSuite, this.earlySequence));
+    }
     const clientFinished: Finished = {
       kind: 'finished',
       verifyData: computeFinished(handshakePhase.clientHandshakeTrafficSecret, transcriptHash(this.transcript, this.hash), this.hash),
@@ -607,7 +622,7 @@ export class TlsClientSession {
         protocolVersion: '1.3', alpnProtocol: this.negotiatedAlpnProtocol, resumed: sessionResumed,
       },
     });
-    return sealFlight(handshakePhase.clientHandshakeTrafficSecret, serverHello.cipherSuite, 0, encodeMessages(finalBundle)).records;
+    return [...endOfEarlyData, ...sealFlight(handshakePhase.clientHandshakeTrafficSecret, serverHello.cipherSuite, 0, encodeMessages(finalBundle)).records];
   }
 
   /**
