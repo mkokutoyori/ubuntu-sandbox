@@ -202,16 +202,20 @@ accepte tout nombre ; `[int]7/2` et `7/2` sont tous deux des doubles JavaScript.
 **Pourquoi ce n'est pas ferme** : distinguer Int32/Int64/Double demande un type de valeur porte par chaque nombre,
 c'est-a-dire toucher l'evaluateur d'expressions entier, pas un membre.
 
-### [persistance] un routeur ou un commutateur modifie ecrit sa configuration en entier, et trois lignes de base d'usine subsistent
-**Mesure** : un `CiscoRouter` neuf n'ecrit plus rien, mais une seule adresse configuree fait ecrire tout le
-`running-config` (environ 600 octets) au lieu des lignes qui different du jumeau d'usine. Les MAC des ports
-(identite de la carte) sont ecrites pour chaque equipement, 65 octets par port.
-**Pourquoi ce n'est pas ferme** : le texte de configuration est rejoue par la CLI dans l'ordre ; en garder un
-extrait par difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations).
-Il faut un diff structure par bloc de mode. Et `captureRegistry`, `captureWindowsServices`,
-`captureWindowsFirewallRules` gardent chacune leur propre ligne de base (ruche vierge, gestionnaire de
-services neuf, regles integrees) a cote du jumeau d'usine `withFactoryTwin` que tout le reste utilise : trois
-ecritures d'un meme fait, a ramener sur le jumeau.
+### [persistance] ce que la sauvegarde ne sait toujours pas ecrire, et une configuration modifiee ecrite en entier
+**Mesure** : (1) un `CiscoRouter` modifie ecrit tout son `running-config` (environ 600 octets) au lieu des
+lignes qui different du jumeau d'usine ; les MAC des ports sont ecrites pour chaque equipement (65 octets par
+port). (2) Oracle : seuls utilisateurs et tables (Data Pump) voyagent. Apres une reouverture, une vue
+(`ORA-00942`), une sequence (`ORA-02289`), un index, un tablespace, un role, `ALTER SYSTEM SET open_cursors=500`
+(reste 300) et `ALTER USER scott ACCOUNT LOCK` (reste OPEN) sont perdus. (3) Windows Server : seuls les roles
+installes, les zones DNS (primaire, secondaire, redirecteur) et les etendues DHCP IPv4 (reservations,
+exclusions, options, etat) voyagent ; Active Directory, IIS (sites, pools), ADCS, NPS, DFS, WSUS, impression,
+cluster, Exchange, le bail DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
+**Pourquoi ce n'est pas ferme** : (1) le texte de configuration est rejoue par la CLI dans l'ordre ; un extrait par
+difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations) : il faut un diff
+par bloc de mode. (2) `DataPumpEngine` n'exporte que des tables ; les autres objets demandent chacun un
+extracteur de DDL sur le catalogue. (3) Chaque role demande un `RolePersister` (`src/store/windowsServerRoles.ts`,
+une entree par role) ; l'annuaire AD est le plus gros et suppose de rejouer un magasin d'objets entier.
 
 ### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
 **Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les

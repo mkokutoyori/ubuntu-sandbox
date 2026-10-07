@@ -16,16 +16,32 @@
  * est ecrit — fichier cree ou edite, fichier SUPPRIME (`removedPaths`, avant on ne savait pas ecrire
  * une suppression), unite systemd modifiee, compte cree ou supprime — et revient a l'importation.
  *
- * Discriminee contre l'etat d'avant (`git stash` des sources) : 16 des 18 cas tombent. Les 2 qui passent des
- * deux cotes sont NOMMES : le temoin « une machine neuve exportee puis rouverte garde son image » (il
- * prouve que ne pas ecrire l'image ne la perd pas) et « un fichier au format complet d'avant s'ouvre
- * encore » (non-regression : l'importation applique un fichier complet comme un fichier delta).
+ * Oracle et Windows Server (meme principe, deuxieme temps). MESURE : un `linux-server` dont la base n'a
+ * pas ete touchee ecrivait 305 327 octets (24 tables de demonstration et 6 comptes, que `installAllDemoSchemas`
+ * recree a chaque boot), puis 63 Ko de fichiers d'image Oracle ; apres comparaison a une base d'usine il
+ * reste 0. A l'inverse, un Windows Server dont on avait installe DNS, DHCP et IIS puis cree une zone et une
+ * etendue ne gardait AUCUN role : a la reouverture `Get-DnsServerResourceRecord` repondait « not recognized »
+ * (le role n'etait plus installe), et ni la zone ni l'etendue ne revenaient. Les fonctionnalites installees
+ * (`RoleManager`), les zones DNS (par le fichier de zone que le role ecrit deja) et les etendues DHCP sont
+ * maintenant ecrites ; ce que l'installation d'un role provisionne (service, site par defaut, entrees de
+ * registre) ne l'est plus, le jumeau d'usine recevant les memes fonctionnalites avant comparaison. Les trois
+ * lignes de base locales du registre, des services et du pare-feu Windows sont fermees sur ce jumeau.
+ *
+ * Discriminee contre l'etat d'avant (`git stash` des sources) : 16 des 18 cas du premier temps tombent, et
+ * 4 des 4 cas Oracle / Windows Server du second. Les 2 qui passent des deux cotes sont NOMMES : le temoin
+ * « une machine neuve exportee puis rouverte garde son image » (il prouve que ne pas ecrire l'image ne la
+ * perd pas) et « un fichier au format complet d'avant s'ouvre encore » (non-regression : l'importation
+ * applique un fichier complet comme un fichier delta).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createDevice, Logger, MACAddress, IPAddress, SubnetMask, type Equipment } from '@/network';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { LinuxServer } from '@/network/devices/LinuxServer';
+import { WindowsServer } from '@/network/devices/WindowsServer';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
+import { getOracleDatabase, resetAllOracleInstances } from '@/terminal/commands/database';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { exportTopology, importTopology } from '@/store/topologySerializer';
 
@@ -154,5 +170,88 @@ describe('what changed is written, and comes back', () => {
     const device = [...reopened.deviceInstances.values()][0] as LinuxPC;
     expect(await device.executeCommand('cat /srv/old.txt')).toContain('legacy');
     expect(await device.executeCommand('ls /usr/bin/sudo')).toContain('/usr/bin/sudo');
+  });
+});
+
+describe('Oracle writes only the accounts and tables that differ from a fresh database', () => {
+  beforeEach(() => { resetAllOracleInstances(); });
+
+  it('an untouched database writes nothing', () => {
+    const server = new LinuxServer('linux-server', 'S1');
+    getOracleDatabase(server.getId());
+    const [entry] = exportOf([server]).devices;
+    expect(entry.oracle).toBeUndefined();
+    expect(JSON.stringify(entry).length).toBeLessThan(2_500);
+  });
+
+  it('a changed row, a new table, a new account and a dropped table are written, and come back', async () => {
+    const server = new LinuxServer('linux-server', 'S1');
+    const db = getOracleDatabase(server.getId());
+    const sys = db.connectAsSysdba().executor;
+    const run = (sql: string) => db.executeSql(sys, sql);
+    run("UPDATE scott.emp SET sal = 9999 WHERE ename = 'KING'");
+    run('CREATE TABLE scott.lab_notes (id NUMBER, note VARCHAR2(40))');
+    run("INSERT INTO scott.lab_notes VALUES (1, 'kept')");
+    run('CREATE USER labuser IDENTIFIED BY lab123');
+    run('DROP TABLE scott.bonus');
+
+    const { json } = await roundTrip([server]);
+    const state = json.devices[0].oracle as { users: { record: { username: string } }[]; dump: { tables: { name: string }[] }; droppedTables?: { name: string }[] };
+    expect(state.users.map((u) => u.record.username)).toEqual(['LABUSER']);
+    expect(state.dump.tables.map((t) => t.name).sort()).toEqual(['EMP', 'LAB_NOTES']);
+    expect(state.droppedTables?.map((t) => t.name)).toEqual(['BONUS']);
+
+    const reopened = [...(await importTopology(JSON.parse(JSON.stringify(json)))).deviceInstances.values()][0];
+    const back = getOracleDatabase(reopened.getId());
+    const s2 = back.connectAsSysdba().executor;
+    expect(JSON.stringify(back.executeSql(s2, "SELECT sal FROM scott.emp WHERE ename = 'KING'"))).toContain('9999');
+    expect(JSON.stringify(back.executeSql(s2, 'SELECT note FROM scott.lab_notes'))).toContain('kept');
+    expect(back.catalog.userExists('LABUSER')).toBe(true);
+    expect(back.storage.tableExists('SCOTT', 'BONUS')).toBe(false);
+    expect(back.storage.tableExists('HR', 'EMPLOYEES')).toBe(true);
+  });
+});
+
+describe('Windows Server writes its installed roles and what was configured in them', () => {
+  const shellOf = (server: WindowsServer) => {
+    server.setCurrentUser('Administrator');
+    const shell = PowerShellSubShell.create(server).subShell;
+    return async (line: string): Promise<string> => (await shell.processLine(line)).output.join('\n');
+  };
+
+  async function configuredServer() {
+    const server = new WindowsServer('WS1');
+    const ps = shellOf(server);
+    await ps('Install-WindowsFeature DNS -IncludeManagementTools');
+    await ps('Install-WindowsFeature DHCP');
+    await ps('Install-WindowsFeature Web-Server');
+    await ps('Add-DnsServerPrimaryZone -Name lab.local -ZoneFile lab.local.dns');
+    await ps('Add-DnsServerResourceRecordA -Name www -ZoneName lab.local -IPv4Address 10.0.0.5');
+    await ps('Add-DhcpServerv4Scope -Name Lab -StartRange 10.0.0.100 -EndRange 10.0.0.200 -SubnetMask 255.255.255.0');
+    await ps('Add-DhcpServerv4Reservation -ScopeId 10.0.0.0 -IPAddress 10.0.0.150 -ClientId 00-11-22-33-44-55');
+    await ps('Add-DhcpServerv4ExclusionRange -ScopeId 10.0.0.0 -StartRange 10.0.0.120 -EndRange 10.0.0.130');
+    return server;
+  }
+
+  it('what installing a role provisions is not written twice: features, roles and the zone file only', async () => {
+    const server = await configuredServer();
+    const [entry] = exportOf([server]).devices;
+    expect(Object.keys(entry).filter((key) => !IDENTITY_KEYS.includes(key)).sort())
+      .toEqual(['files', 'windowsFeatures', 'windowsRoles']);
+    expect((entry.files as { path: string }[]).map((f) => f.path)).toEqual(['C:\\Windows\\System32\\dns\\lab.local.dns']);
+    expect(entry.windowsFeatures?.installed).toEqual(['DNS', 'DHCP', 'Web-Server']);
+    expect(JSON.stringify(entry).length).toBeLessThan(3_000);
+  });
+
+  it('the roles, the zone with its record and the DHCP scope come back after reopening', async () => {
+    const server = await configuredServer();
+    const { byName } = await roundTrip([server]);
+    const reopened = byName('WS1') as WindowsServer;
+    const ps = shellOf(reopened);
+    expect(await ps('Get-WindowsFeature | Where-Object Installed | Select-Object -ExpandProperty Name')).toContain('Web-Server');
+    expect(await ps('Get-DnsServerResourceRecord -ZoneName lab.local -Name www')).toContain('10.0.0.5');
+    expect(await ps('Get-DhcpServerv4Scope')).toContain('10.0.0.100');
+    expect(await ps('Get-DhcpServerv4Reservation -ScopeId 10.0.0.0')).toContain('10.0.0.150');
+    expect(await ps('Get-DhcpServerv4ExclusionRange -ScopeId 10.0.0.0')).toContain('10.0.0.120');
   });
 });

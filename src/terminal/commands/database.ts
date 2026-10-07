@@ -21,7 +21,7 @@ import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
 import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
 import { detachedBus } from '@/events/BusHolder';
-import type { IEventBus } from '@/events/EventBus';
+import { EventBus, type IEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
 import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
@@ -435,28 +435,69 @@ export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | 
 export interface OracleTopologyState {
   users: Array<{ record: CatalogUser; password?: string }>;
   dump: unknown;
+  droppedUsers?: string[];
+  droppedTables?: Array<{ schema: string; name: string }>;
+}
+
+function factoryOracleDatabase(): OracleDatabase {
+  const factory = new OracleDatabase();
+  factory.instance.setEventBus(new EventBus());
+  factory.instance.startup();
+  installAllDemoSchemas(factory);
+  return factory;
+}
+
+function accountSignature(record: CatalogUser, password: string | undefined): string {
+  const { created: _created, ...rest } = record;
+  return JSON.stringify({ record: rest, password });
 }
 
 /**
- * Capture, WITHOUT booting an instance on a device that never had one.
- * `getOracleDatabase` provisions and starts a database on first access,
- * so using it here would give every Linux host in a topology an Oracle
- * installation it never had.
+ * Capture only what differs from a freshly provisioned database, WITHOUT
+ * booting an instance on a device that never had one. `getOracleDatabase`
+ * provisions and starts a database on first access, so using it here would
+ * give every Linux host in a topology an Oracle installation it never had.
+ * Returns null when the database is exactly the one the factory builds.
  */
 export function captureOracleState(deviceId: string): OracleTopologyState | null {
   const db = getRegisteredOracleDatabase(deviceId);
   if (!db) return null;
-  const users = db.catalog.getAllUsers().map((record) => ({
+  const factory = factoryOracleDatabase();
+  const factoryAccounts = new Map(factory.catalog.getAllUsers().map((record) =>
+    [record.username, accountSignature(record, factory.catalog.getStoredPassword(record.username))]));
+  const live = db.catalog.getAllUsers().map((record) => ({
     record,
     password: db.catalog.getStoredPassword(record.username),
   }));
+  const users = live.filter((u) => factoryAccounts.get(u.record.username) !== accountSignature(u.record, u.password));
+  const liveNames = new Set(live.map((u) => u.record.username));
+  const droppedUsers = [...factoryAccounts.keys()].filter((name) => !liveNames.has(name));
+
+  const factoryTables = new Map(new DataPumpEngine(factory).export({ full: true }).dump.tables
+    .map((t) => [`${t.schema}.${t.name}`, JSON.stringify(t)]));
   const { dump } = new DataPumpEngine(db).export({ full: true });
-  return { users, dump };
+  const tables = dump.tables.filter((t) => factoryTables.get(`${t.schema}.${t.name}`) !== JSON.stringify(t));
+  const liveTables = new Set(dump.tables.map((t) => `${t.schema}.${t.name}`));
+  const droppedTables = [...factoryTables.keys()]
+    .filter((key) => !liveTables.has(key))
+    .map((key) => ({ schema: key.slice(0, key.indexOf('.')), name: key.slice(key.indexOf('.') + 1) }));
+
+  if (users.length + tables.length + droppedUsers.length + droppedTables.length === 0) return null;
+  const state: OracleTopologyState = { users, dump: { ...dump, tables } };
+  if (droppedUsers.length > 0) state.droppedUsers = droppedUsers;
+  if (droppedTables.length > 0) state.droppedTables = droppedTables;
+  return state;
 }
 
 /** Rebuild the database a topology file describes, accounts first. */
 export function restoreOracleState(deviceId: string, state: OracleTopologyState): void {
   const db = getOracleDatabase(deviceId);
+  for (const { schema, name } of state.droppedTables ?? []) {
+    if (db.storage.tableExists(schema, name)) db.storage.dropTable(schema, name);
+  }
+  for (const username of state.droppedUsers ?? []) {
+    if (db.catalog.userExists(username)) db.catalog.dropUser(username);
+  }
   for (const u of state.users) {
     if (!db.catalog.userExists(u.record.username)) db.catalog.createUser(u.record);
     // The secret travels too: recreating an account under a different
@@ -467,8 +508,7 @@ export function restoreOracleState(deviceId: string, state: OracleTopologyState)
   const parsed = DataPumpEngine.parse(JSON.stringify(state.dump));
   // REPLACE, not SKIP: the freshly-booted instance already carries the
   // demo schemas, so a saved table of the same name must overwrite the
-  // stock one rather than be quietly skipped — otherwise the lab's data
-  // is the one thing the reload throws away.
+  // stock one rather than be quietly skipped.
   if (parsed) new DataPumpEngine(db).import(parsed, { tableExistsAction: 'REPLACE' });
 }
 

@@ -44,14 +44,8 @@ import type { NetemSpec } from '@/network/hardware/Netem';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsUser, WindowsGroup } from '@/network/devices/windows/WindowsUserManager';
-import {
-  PSRegistryProvider,
-  WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY,
-} from '@/network/devices/windows/PSRegistryProvider';
-import {
-  WindowsServiceManager,
-  type WindowsService,
-} from '@/network/devices/windows/WindowsServiceManager';
+import type { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
+import type { WindowsService } from '@/network/devices/windows/WindowsServiceManager';
 import {
   captureOracleState, restoreOracleState, type OracleTopologyState,
 } from '@/terminal/commands/database';
@@ -59,10 +53,14 @@ import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { bondOptionLines } from '@/network/devices/linux/net/LinuxBonding';
 import { Firewall } from '@/network/devices/firewall/Firewall';
 import {
-  type NetFirewallRuleEntry, firewallRuleKey, seedBuiltInFirewallRules,
+  type NetFirewallRuleEntry, firewallRuleKey,
 } from '@/network/devices/windows/netFirewallRule';
 import { buildConnection, type Connection } from './networkStore';
 import { withFactoryTwin } from './factoryTwin';
+import {
+  captureWindowsServerRoles, restoreWindowsServerRoles, type WindowsServerRolesState,
+} from './windowsServerRoles';
+import { WindowsServer } from '@/network/devices/WindowsServer';
 
 /** Surfaced by Save/Export UI (rapport 09, item #55) so the user knows
  *  this before it happens, not after. Kept in sync with the capture
@@ -292,6 +290,8 @@ interface TopologyDeviceExport {
     removedGroups?: string[];
   };
   removedPaths?: string[];
+  windowsFeatures?: { installed: string[]; removed?: string[] };
+  windowsRoles?: WindowsServerRolesState;
   /**
    * The machine's registry, as a diff against a pristine hive of the same
    * edition — the same rule the filesystem capture uses, for the same
@@ -346,8 +346,18 @@ export interface TopologyExport {
 const VFS_SKIP_PREFIXES = ['/proc', '/sys', '/dev', '/run', '/var/run', '/var/log'];
 const WINDOWS_RUNTIME_PREFIXES = ['C:\\Windows\\System32\\winevt'];
 
+const ORACLE_INSTANCE_ARTEFACT = new RegExp([
+  '^/u01/app/oracle/(oradata|admin|diag|fast_recovery_area|cfgtoollogs)/',
+  '^/u01/app/oracle/product/[^/]+/[^/]+/dbs/orapw',
+  '^/u01/app/oracle/product/[^/]+/[^/]+/bin/dbstart$',
+  '^/etc/systemd/system/(multi-user\\.target\\.wants/)?oracle-(database|listener)-[^/]+\\.service$',
+].join('|'));
+
+const ORACLE_INSTANCE_UNIT = /^oracle-(database|listener)-[^/]+$/;
+
 function isCapturableVfsPath(path: string): boolean {
-  return !VFS_SKIP_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+  return !VFS_SKIP_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))
+    && !ORACLE_INSTANCE_ARTEFACT.test(path);
 }
 
 function isCapturableWindowsPath(path: string): boolean {
@@ -534,30 +544,6 @@ function restoreWindowsFiles(
 }
 
 /**
- * A hive as the machine shipped it, to diff the live one against.
- *
- * Two things make it what a fresh machine of the same kind holds, and
- * both matter. The seeded values differ between a client and a server
- * install (build number, edition, `InstallationType`), which is what the
- * product identity carries — diffing a server against a client hive
- * would report those as operator changes and write them into every
- * topology file. And `HKLM:\SYSTEM\CurrentControlSet\Services\<name>` is
- * not seeded at all: the device projects it from the service table at
- * boot, so a bare hive would report the whole subtree as new. Running
- * the very same projection (`projectServiceIntoRegistry`) over a factory
- * service manager is what makes the baseline honest.
- */
-function pristineRegistry(device: WindowsPC): PSRegistryProvider {
-  const reg = new PSRegistryProvider(
-    device.getDeviceType() === 'windows-server'
-      ? WINDOWS_SERVER_PRODUCT_IDENTITY
-      : WINDOWS_CLIENT_PRODUCT_IDENTITY,
-  );
-  new WindowsServiceManager().attachRegistrySink(reg);
-  return reg;
-}
-
-/**
  * Walk a hive through the very same public surface `reg query /s` uses —
  * `listSubkeyNames` + `getItemPropertyValues` — so the capture can only
  * ever see what an operator could have seen.
@@ -571,9 +557,9 @@ function walkRegistry(
   for (const sub of reg.listSubkeyNames(path)) walkRegistry(reg, `${path}\\${sub}`, visit);
 }
 
-function captureRegistry(device: WindowsPC): TopologyRegistryExport | undefined {
+function captureRegistry(device: WindowsPC, twin: WindowsPC): TopologyRegistryExport | undefined {
   const live = device.registry;
-  const base = pristineRegistry(device);
+  const base = twin.registry;
 
   const out: TopologyRegistryExport = {};
   const keys: string[] = [];
@@ -639,14 +625,13 @@ function restoreRegistry(device: WindowsPC, data: TopologyRegistryExport): void 
 /**
  * What `sc config`/`sc create` changed about a service, and nothing else.
  *
- * The comparison is against a factory `WindowsServiceManager`, not
+ * The comparison is against the factory twin's service manager, not
  * against a hardcoded list here — the seeded services are its business,
  * and a second copy of them in this file would drift the first time one
  * is added.
  */
-function captureWindowsFirewallRules(device: WindowsPC): TopologyFirewallExport | null {
-  const factory = new Map<string, NetFirewallRuleEntry>();
-  seedBuiltInFirewallRules(factory);
+function captureWindowsFirewallRules(device: WindowsPC, twin: WindowsPC): TopologyFirewallExport | null {
+  const factory = twin.firewallRules;
   const rules: NetFirewallRuleEntry[] = [];
   for (const rule of device.firewallRules.values()) {
     const base = factory.get(firewallRuleKey(rule.name));
@@ -664,8 +649,8 @@ function restoreWindowsFirewallRules(device: WindowsPC, exported: TopologyFirewa
   for (const rule of exported.rules) device.firewallRules.set(firewallRuleKey(rule.name), { ...rule });
 }
 
-function captureWindowsServices(device: WindowsPC): TopologyWindowsServiceExport[] {
-  const base = new WindowsServiceManager();
+function captureWindowsServices(device: WindowsPC, twin: WindowsPC): TopologyWindowsServiceExport[] {
+  const base = twin.getServiceManager();
   const out: TopologyWindowsServiceExport[] = [];
 
   for (const svc of device.getServiceManager().getAllServices()) {
@@ -829,6 +814,7 @@ function restoreWindowsTeams(device: WindowsPC, teams: TopologyWindowsTeamExport
 function captureLinuxServices(device: LinuxMachine, twin: LinuxMachine): TopologyLinuxServiceExport[] {
   const factory = new Map(serviceMgrOf(twin).list().map((u) => [u.name, u]));
   return serviceMgrOf(device).list()
+    .filter((u) => !ORACLE_INSTANCE_UNIT.test(u.name))
     .filter((u) => {
       const base = factory.get(u.name);
       return base === undefined || base.enabled !== u.enabled || base.state !== u.state;
@@ -988,6 +974,25 @@ function restoreWindowsAccounts(
   );
 }
 
+function installedFeatures(device: WindowsServer): string[] {
+  return device.getRoleManager().listFeatures().filter((f) => f.installState === 'Installed').map((f) => f.name);
+}
+
+function captureWindowsFeatures(device: WindowsServer, twin: WindowsServer): TopologyDeviceExport['windowsFeatures'] | undefined {
+  const factory = new Set(installedFeatures(twin));
+  const live = installedFeatures(device);
+  const installed = live.filter((name) => !factory.has(name));
+  const removed = [...factory].filter((name) => !live.includes(name));
+  if (installed.length + removed.length === 0) return undefined;
+  return removed.length > 0 ? { installed, removed } : { installed };
+}
+
+function restoreWindowsFeatures(device: WindowsServer, saved: NonNullable<TopologyDeviceExport['windowsFeatures']>): void {
+  const roles = device.getRoleManager();
+  for (const name of saved.removed ?? []) roles.uninstall(name, true);
+  for (const name of saved.installed) roles.install(name, {}, true);
+}
+
 function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport {
   const pos = device.getPosition();
   const entry: TopologyDeviceExport = {
@@ -1037,19 +1042,28 @@ function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport
   const oracle = captureOracleState(device.getId());
   if (oracle) entry.oracle = oracle;
   if (device instanceof WindowsPC && twin instanceof WindowsPC) {
+    if (device instanceof WindowsServer && twin instanceof WindowsServer) {
+      const features = captureWindowsFeatures(device, twin);
+      if (features) {
+        entry.windowsFeatures = features;
+        restoreWindowsFeatures(twin, features);
+      }
+      const roles = captureWindowsServerRoles(device);
+      if (roles) entry.windowsRoles = roles;
+    }
     const files = captureWindowsFiles(device, twin);
     if (files.length > 0) entry.files = files;
     const removed = captureWindowsRemovals(device, twin);
     if (removed.length > 0) entry.removedPaths = removed;
     const accounts = captureWindowsAccounts(device, twin);
     if (accounts) entry.windowsAccounts = accounts;
-    const registry = captureRegistry(device);
+    const registry = captureRegistry(device, twin);
     if (registry) entry.registry = registry;
     const teams = captureWindowsTeams(device);
     if (teams.length > 0) entry.windowsTeams = teams;
-    const services = captureWindowsServices(device);
+    const services = captureWindowsServices(device, twin);
     if (services.length > 0) entry.windowsServices = services;
-    const firewall = captureWindowsFirewallRules(device);
+    const firewall = captureWindowsFirewallRules(device, twin);
     if (firewall) entry.windowsFirewallRules = firewall;
   }
   if (device instanceof Switch) {
@@ -1409,6 +1423,8 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
         restoreWindowsFiles(device, devData.files ?? [], devData.removedPaths ?? []);
       }
       if (devData.windowsAccounts) restoreWindowsAccounts(device, devData.windowsAccounts);
+      if (devData.windowsFeatures && device instanceof WindowsServer) restoreWindowsFeatures(device, devData.windowsFeatures);
+      if (devData.windowsRoles && device instanceof WindowsServer) restoreWindowsServerRoles(device, devData.windowsRoles);
       // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\
       // Services\<name>` is a projection of the service table, written by
       // the device itself, so restoring a service rewrites part of the
