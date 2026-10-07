@@ -15,6 +15,7 @@ import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type {
   TcpStateChangedPayload,
   TcpConnectionClosedPayload,
+  TcpSocketOwnedPayload,
 } from '@/network/tcp/events';
 import type { TcpState } from '@/network/tcp/types';
 import type { SocketState, SocketTable } from '@/network/core/SocketTable';
@@ -33,6 +34,10 @@ const STATE_MAP: Record<TcpState, SocketState | null> = {
   'time-wait':    'TIME_WAIT',
 };
 
+export function socketStateOfTcp(state: TcpState): SocketState | null {
+  return STATE_MAP[state];
+}
+
 export class TcpSocketStateProjection {
   private readonly subscriptions: Unsubscribe[] = [];
 
@@ -44,6 +49,7 @@ export class TcpSocketStateProjection {
     this.subscriptions.push(
       bus.subscribe('tcp.state.changed', (e) => this.onStateChanged(e.payload)),
       bus.subscribe('tcp.connection.closed', (e) => this.onClosed(e.payload)),
+      bus.subscribe('tcp.socket.owned', (e) => this.onOwned(e.payload)),
     );
   }
 
@@ -72,6 +78,16 @@ export class TcpSocketStateProjection {
       remotePort: p.remotePort,
       state: mapped,
     });
+  }
+
+  private onOwned(p: TcpSocketOwnedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.socketTable.setConnectionOwner({
+      protocol: 'tcp',
+      localPort: p.localPort,
+      remoteAddress: p.remoteIp,
+      remotePort: p.remotePort,
+    }, p.pid);
   }
 
   private onClosed(p: TcpConnectionClosedPayload): void {

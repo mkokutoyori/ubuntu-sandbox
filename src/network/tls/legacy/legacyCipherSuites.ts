@@ -17,7 +17,8 @@ export const PROTOCOL_VERSIONS_BY_PREFERENCE: readonly TlsProtocolVersion[] = ['
 export type KeyExchangeKind = 'ECDHE_RSA' | 'ECDHE_ECDSA' | 'DHE_RSA' | 'RSA';
 export type BulkCipher =
   | 'AES_128_GCM' | 'AES_256_GCM' | 'AES_128_CBC' | 'AES_256_CBC' | '3DES_EDE_CBC'
-  | 'AES_128_CCM' | 'AES_256_CCM' | 'AES_128_CCM_8' | 'AES_256_CCM_8' | 'CHACHA20_POLY1305';
+  | 'AES_128_CCM' | 'AES_256_CCM' | 'AES_128_CCM_8' | 'AES_256_CCM_8' | 'CHACHA20_POLY1305'
+  | 'CAMELLIA_128_CBC' | 'CAMELLIA_256_CBC' | 'ARIA_128_GCM' | 'ARIA_256_GCM';
 export type MacHash = 'SHA1' | 'SHA256' | 'SHA384' | 'AEAD';
 export type PrfHash = 'SHA256' | 'SHA384';
 
@@ -38,6 +39,7 @@ const BULK: Readonly<Record<string, BulkCipher>> = {
   '3DES': '3DES_EDE_CBC', AES128: 'AES_128_CBC', AES256: 'AES_256_CBC', AES128GCM: 'AES_128_GCM',
   AES256GCM: 'AES_256_GCM', AES128CCM: 'AES_128_CCM', AES256CCM: 'AES_256_CCM',
   AES128CCM8: 'AES_128_CCM_8', AES256CCM8: 'AES_256_CCM_8', CHACHA20: 'CHACHA20_POLY1305',
+  CAMELLIA128: 'CAMELLIA_128_CBC', CAMELLIA256: 'CAMELLIA_256_CBC', ARIA128GCM: 'ARIA_128_GCM', ARIA256GCM: 'ARIA_256_GCM',
 };
 
 function toDefinition(cipher: OpensslCipher): LegacySuiteDefinition {
@@ -75,6 +77,7 @@ export function legacySuiteByCode(code: number): LegacySuiteDefinition | undefin
 const IMPLEMENTED_BULK: ReadonlySet<BulkCipher> = new Set<BulkCipher>([
   'AES_128_GCM', 'AES_256_GCM', 'AES_128_CBC', 'AES_256_CBC', '3DES_EDE_CBC',
   'AES_128_CCM', 'AES_256_CCM', 'AES_128_CCM_8', 'AES_256_CCM_8', 'CHACHA20_POLY1305',
+  'CAMELLIA_128_CBC', 'CAMELLIA_256_CBC', 'ARIA_128_GCM', 'ARIA_256_GCM',
 ]);
 
 export function isImplementedLegacySuite(definition: LegacySuiteDefinition): boolean {

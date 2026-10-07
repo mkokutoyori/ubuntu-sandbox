@@ -86,7 +86,7 @@ export interface DirectoryEntry {
   replMeta: EntryReplMeta | null;
 }
 
-export type SearchScope = 'base' | 'one' | 'sub';
+export type SearchScope = 'base' | 'one' | 'sub' | 'children';
 
 export interface TreeOpResult { ok: boolean; message: string; }
 
@@ -114,7 +114,10 @@ function rdnKey(dn: DistinguishedName): string {
 }
 
 export function entryAttributeSource(entry: DirectoryEntry): AttributeSource {
-  return { get: (attr: string) => entry.attributes.get(attrKey(attr)) };
+  return {
+    get: (attr: string) => entry.attributes.get(attrKey(attr)),
+    dnComponents: () => entry.dn.flatMap(rdn => rdn.map(ava => ({ type: ava.type, value: ava.value }))),
+  };
 }
 
 export class DirectoryTree {
@@ -182,6 +185,10 @@ export class DirectoryTree {
     }
     this.rememberAttributeNames(Object.keys(attributes));
     const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: this.stampFor() };
+    if (!entry.attributes.has('objectguid')) {
+      entry.attributes.set('objectguid', [globalThis.crypto.randomUUID()]);
+      this.rememberAttributeNames(['objectGUID']);
+    }
     parent.children.set(rdnKey(dn), entry);
     this.byDn.set(this.dnIndexKey(dn), entry);
     return { ok: true, message: '' };
@@ -287,7 +294,7 @@ export class DirectoryTree {
       : existing.filter(v => v.toLowerCase() !== groupDn.toLowerCase());
     if (next.length === 0) member.attributes.delete(MEMBER_OF_ATTRIBUTE);
     else member.attributes.set(MEMBER_OF_ATTRIBUTE, next);
-    this.rememberAttributeNames([MEMBER_OF_ATTRIBUTE]);
+    this.rememberAttributeNames(['memberOf']);
     if (op === 'delete') this.linkDeadlines.delete(linkIndexKey(groupDn, memberDn));
   }
 
@@ -397,6 +404,14 @@ export class DirectoryTree {
       candidates.push(base);
     } else if (scope === 'one') {
       candidates.push(...base.children.values());
+    } else if (scope === 'children') {
+      const walkChildren = (e: DirectoryEntry): void => {
+        for (const c of e.children.values()) {
+          candidates.push(c);
+          walkChildren(c);
+        }
+      };
+      walkChildren(base);
     } else {
       const walk = (e: DirectoryEntry): void => {
         candidates.push(e);

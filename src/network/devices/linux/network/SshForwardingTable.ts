@@ -16,6 +16,29 @@ interface LiveForward {
 
 export class SshForwardingTable {
   private readonly active: LiveForward[] = [];
+  private readonly owners = new Map<SshSession, number>();
+  private released: (pid: number) => void = () => undefined;
+
+  onClientReleased(listener: (pid: number) => void): void {
+    this.released = listener;
+  }
+
+  adopt(session: SshSession, pid: number): void {
+    this.owners.set(session, pid);
+  }
+
+  closeOwnedBy(pid: number): boolean {
+    const sessions = [...this.owners].filter(([, owner]) => owner === pid).map(([session]) => session);
+    for (const session of sessions) {
+      this.owners.delete(session);
+      for (const live of this.active.filter((candidate) => candidate.session === session)) {
+        this.active.splice(this.active.indexOf(live), 1);
+        live.stop();
+      }
+      session.disconnect();
+    }
+    return sessions.length > 0;
+  }
 
   constructor(
     private readonly sockets: SocketTable,
@@ -37,7 +60,10 @@ export class SshForwardingTable {
         localPort: fwd.listenPort, remoteHost: fwd.destHost!, remotePort: fwd.destPort!, sshHost: '',
       }, { bindAddress: fwd.bindAddress, identity });
     const opening = forwarder.register(ownerUid);
-    if (opening === 'opened') this.active.push({ fwd, session, stop: () => forwarder.dispose() });
+    if (opening === 'opened') {
+      this.active.push({ fwd, session, stop: () => forwarder.dispose() });
+      this.owners.set(session, pid);
+    }
     return opening;
   }
 
@@ -80,6 +106,7 @@ export class SshForwardingTable {
   }
 
   clear(): void {
+    this.owners.clear();
     for (const live of this.active.splice(0)) {
       live.stop();
       live.session.disconnect();
@@ -87,6 +114,10 @@ export class SshForwardingTable {
   }
 
   private releaseIfUnused(session: SshSession): void {
-    if (!this.active.some((live) => live.session === session)) session.disconnect();
+    if (this.active.some((live) => live.session === session)) return;
+    session.disconnect();
+    const owner = this.owners.get(session);
+    this.owners.delete(session);
+    if (owner !== undefined) this.released(owner);
   }
 }

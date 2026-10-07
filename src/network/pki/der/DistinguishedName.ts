@@ -104,3 +104,7 @@ export function opensslDistinguishedName(text: string): string {
 export function curlDistinguishedName(text: string): string {
   return splitDistinguishedName(text).map(({ type, value }) => `${type}=${value}`).join('; ');
 }
+
+export function slashDistinguishedName(text: string): string {
+  return `/${splitDistinguishedName(text).map(({ type, value }) => `${type}=${value}`).join('/')}`;
+}

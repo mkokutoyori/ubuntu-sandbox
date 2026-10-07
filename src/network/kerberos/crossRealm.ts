@@ -15,7 +15,7 @@ import { principalName, PrincipalNameType, type PrincipalName, type Ticket } fro
 import { dialKdc, type TgsExchangeResult } from './KerberosClient';
 
 /** Both realms must derive the identical interrealm encryption key from the shared trust secret regardless of which side is "local" — order-independent salt. */
-export function deriveInterrealmKey(secret: string, realmA: string, realmB: string): string {
+export function deriveInterrealmKey(secret: string, realmA: string, realmB: string): Uint8Array {
   const pair = [realmA.toUpperCase(), realmB.toUpperCase()].sort().join(':');
   return stringToKey(secret, `interrealm:${pair}`);
 }
@@ -40,7 +40,7 @@ export function isReferralPrincipal(name: PrincipalName): boolean {
  */
 export function crossRealmTgsExchange(
   tcpStack: TcpStack, localKdcAddress: string, remoteKdcAddress: string,
-  tgt: Ticket, tgtSessionKey: string, cname: PrincipalName, crealm: string,
+  tgt: Ticket, tgtSessionKey: Uint8Array, cname: PrincipalName, crealm: string,
   remoteRealm: string, serviceName: string,
 ): TgsExchangeResult {
   const localConn = dialKdc(tcpStack, localKdcAddress);

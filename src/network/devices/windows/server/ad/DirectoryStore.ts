@@ -1801,7 +1801,12 @@ export class DirectoryStore {
       sAMAccountName: [`${name}$`],
       userAccountControl: [String(UAC.SERVER_TRUST_ACCOUNT)],
       userPassword: [machineSecret],
-      servicePrincipalName: [`HOST/${name}`, `HOST/${name}.${this.dnsName}`],
+      servicePrincipalName: [
+        `ldap/${name}`, `ldap/${name}.${this.dnsName}`, `ldap/${name}.${this.dnsName}/${this.dnsName}`,
+        `GC/${name}.${this.dnsName}/${this.dnsName}`,
+        `HOST/${name}`, `HOST/${name}.${this.dnsName}`,
+        `RestrictedKrbHost/${name}`, `RestrictedKrbHost/${name}.${this.dnsName}`,
+      ],
     });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
@@ -1843,6 +1848,14 @@ export class DirectoryStore {
     const entry = this.findComputerEntry(name);
     if (!entry) return false;
     return isEnabledFromUac(entry.attributes.get('useraccountcontrol')) && firstOf(entry.attributes.get('userpassword')) === secret;
+  }
+
+  findComputerByServicePrincipal(servicePrincipal: string): string | null {
+    const wanted = servicePrincipal.toLowerCase();
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'present', attr: 'servicePrincipalName' })
+      .filter((candidate) => hasObjectClass(candidate, 'computer') && !isSoftDeleted(candidate)
+        && (candidate.attributes.get('serviceprincipalname') ?? []).some((value) => value.toLowerCase() === wanted));
+    return entry === undefined ? null : firstOf(entry.attributes.get('cn')) || null;
   }
 
   /** The computer account's long-term secret — for `KdcSession` to derive a machine principal's Kerberos key from (mirrors `getUserSecret`). */
@@ -1963,6 +1976,12 @@ export class DirectoryStore {
   getBindCheck(): LdapBindCheck {
     return {
       checkBind: (name, password) => {
+        const qualified = /^([^\\=]+)\\(.+)$/.exec(name);
+        if (qualified !== null) {
+          const domain = qualified[1].toLowerCase();
+          if (domain !== this.netbiosName.toLowerCase() && domain !== this.dnsName.toLowerCase()) return false;
+          name = qualified[2];
+        }
         const sam = this.resolveIdentity(name);
         return this.checkPassword(sam, password) || this.checkComputerSecret(sam.replace(/\$$/, ''), password);
       },

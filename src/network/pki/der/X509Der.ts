@@ -25,6 +25,13 @@ export const OID = {
   authorityInfoAccess: '1.3.6.1.5.5.7.1.1',
   ocsp: '1.3.6.1.5.5.7.48.1',
   caIssuers: '1.3.6.1.5.5.7.48.2',
+  extensionRequest: '1.2.840.113549.1.9.14',
+  crlNumber: '2.5.29.20',
+  sha1: '1.3.14.3.2.26',
+  sha256: '2.16.840.1.101.3.4.2.1',
+  ocspBasic: '1.3.6.1.5.5.7.48.1.1',
+  ocspNonce: '1.3.6.1.5.5.7.48.1.2',
+  reasonCode: '2.5.29.21',
 } as const;
 
 export const EXTENDED_KEY_USAGE_OIDS: Readonly<Record<string, string>> = {
@@ -42,7 +49,7 @@ const KEY_USAGE_ORDER = [
   'keyCertSign', 'cRLSign', 'encipherOnly', 'decipherOnly',
 ] as const;
 
-type Extensions = NonNullable<X509CertificateFields['extensions']>;
+export type Extensions = NonNullable<X509CertificateFields['extensions']>;
 type SignatureAlgorithm = X509CertificateFields['signatureAlgorithm'];
 
 export function canonicalSerial(text: string): string {
@@ -59,13 +66,13 @@ function serialInteger(text: string): Uint8Array {
   return unsignedIntegerBytes(hexToBytes(canonicalSerial(text)));
 }
 
-function algorithmIdentifier(algorithm: SignatureAlgorithm): Uint8Array {
+export function algorithmIdentifier(algorithm: SignatureAlgorithm): Uint8Array {
   return algorithm === 'ecdsa-with-SHA256'
     ? der.sequence(der.oid(OID.ecdsaWithSHA256))
     : der.sequence(der.oid(OID.sha256WithRSAEncryption), der.null());
 }
 
-function algorithmFrom(node: DerNode): SignatureAlgorithm {
+export function algorithmFrom(node: DerNode): SignatureAlgorithm {
   const oid = oidValue(children(node)[0]);
   if (oid === OID.sha256WithRSAEncryption) return 'sha256WithRSAEncryption';
   if (oid === OID.ecdsaWithSHA256) return 'ecdsa-with-SHA256';
@@ -170,11 +177,11 @@ function keyUsageBits(usage: readonly string[]): Uint8Array {
   return der.bitString(bytes, unused);
 }
 
-function extension(oid: string, critical: boolean, value: Uint8Array): Uint8Array {
+export function extension(oid: string, critical: boolean, value: Uint8Array): Uint8Array {
   return der.sequence(der.oid(oid), ...(critical ? [der.boolean(true)] : []), der.octetString(value));
 }
 
-function encodeExtensions(extensions: Extensions): Uint8Array | null {
+export function encodeExtensionSequence(extensions: Extensions): Uint8Array | null {
   const critical = new Set(extensions.criticalExtensions ?? []);
   const out: Uint8Array[] = [];
   if (extensions.basicConstraints) {
@@ -219,13 +226,18 @@ function encodeExtensions(extensions: Extensions): Uint8Array | null {
     ));
     out.push(extension(OID.authorityInfoAccess, critical.has('authorityInfoAccess'), der.sequence(...entries)));
   }
-  return out.length === 0 ? null : der.explicit(3, der.sequence(...out));
+  return out.length === 0 ? null : der.sequence(...out);
 }
 
-function decodeExtensions(wrapper: DerNode): Extensions {
+function encodeExtensions(extensions: Extensions): Uint8Array | null {
+  const sequence = encodeExtensionSequence(extensions);
+  return sequence === null ? null : der.explicit(3, sequence);
+}
+
+export function decodeExtensionSequence(sequence: DerNode): Extensions {
   const result: { -readonly [K in keyof Extensions]: Extensions[K] } = {};
   const critical: string[] = [];
-  for (const entry of children(children(wrapper)[0])) {
+  for (const entry of children(sequence)) {
     const parts = children(entry);
     const oid = oidValue(parts[0]);
     const isCritical = parts.length === 3 && parts[1].content[0] !== 0;
@@ -296,6 +308,10 @@ function decodeExtensions(wrapper: DerNode): Extensions {
   return result;
 }
 
+function decodeExtensions(wrapper: DerNode): Extensions {
+  return decodeExtensionSequence(children(wrapper)[0]);
+}
+
 export function encodeTbsCertificate(fields: X509CertificateFields): Uint8Array {
   const extensions = fields.extensions ? encodeExtensions(fields.extensions) : null;
   return der.sequence(
@@ -310,7 +326,7 @@ export function encodeTbsCertificate(fields: X509CertificateFields): Uint8Array 
   );
 }
 
-function signatureToDer(algorithm: SignatureAlgorithm, signature: string): Uint8Array {
+export function signatureToDer(algorithm: SignatureAlgorithm, signature: string): Uint8Array {
   if (signature === '') return new Uint8Array(0);
   const colon = signature.indexOf(':');
   const body = hexToBytes(signature.slice(colon + 1));
@@ -318,7 +334,7 @@ function signatureToDer(algorithm: SignatureAlgorithm, signature: string): Uint8
   return der.sequence(unsignedIntegerBytes(body.slice(0, 32)), unsignedIntegerBytes(body.slice(32)));
 }
 
-function signatureFromDer(algorithm: SignatureAlgorithm, bytes: Uint8Array): string {
+export function signatureFromDer(algorithm: SignatureAlgorithm, bytes: Uint8Array): string {
   if (algorithm !== 'ecdsa-with-SHA256') return `rsa:${bytesToHex(bytes)}`;
   const [r, s] = children(parseDer(bytes));
   const pad = (value: Uint8Array): Uint8Array => concatBytes([new Uint8Array(32 - value.length), value]);
@@ -329,6 +345,23 @@ const RECEIVED_TBS = new WeakMap<object, Uint8Array>();
 
 export function tbsBytesOf(cert: X509CertificateFields): Uint8Array {
   return RECEIVED_TBS.get(cert) ?? encodeTbsCertificate(cert);
+}
+
+function tbsFieldNodes(cert: X509CertificateFields): DerNode[] {
+  const fields = children(parseDer(tbsBytesOf(cert)));
+  return fields[0].tag === contextTag(0, true) ? fields.slice(1) : fields;
+}
+
+export function issuerNameDerOf(cert: X509CertificateFields): Uint8Array {
+  return tbsFieldNodes(cert)[2].raw;
+}
+
+export function subjectNameDerOf(cert: X509CertificateFields): Uint8Array {
+  return tbsFieldNodes(cert)[4].raw;
+}
+
+export function subjectPublicKeyBitsOf(key: PkiPublicKey): Uint8Array {
+  return bitStringBytes(children(parseDer(encodeSubjectPublicKeyInfo(key)))[1]).bytes;
 }
 
 export function encodeCertificate(cert: X509Certificate): Uint8Array {

@@ -210,7 +210,7 @@ describe('searchResultReference — a DN outside this domain in a multi-domain f
     expect(result.references[0]).toContain('OU=Users,DC=child,DC=lab,DC=local');
   });
 
-  it('an unrelated out-of-tree DN with no matching forest domain still returns a plain (empty) success', () => {
+  it('an unrelated out-of-tree DN with no matching forest domain answers with a referral to its DNS name', () => {
     const { srv, client } = buildLan();
     const tree = new DirectoryTree('DC=lab,DC=local', { objectClass: ['top', 'domain'] });
     srv.getTcpStack().listen(389, {
@@ -224,8 +224,9 @@ describe('searchResultReference — a DN outside this domain in a multi-domain f
     ldap.bind(ADMIN_DN, 'P@ssw0rd');
 
     const result = ldap.search('DC=unrelated,DC=example', 'sub', parseFilter('(cn=*)'));
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.result.resultCode).toBe(LdapResultCode.referral);
+    expect(result.result.referral).toEqual(['ldap://unrelated.example/DC=unrelated,DC=example']);
     expect(result.entries).toHaveLength(0);
-    expect(result.references).toHaveLength(0);
   });
 });

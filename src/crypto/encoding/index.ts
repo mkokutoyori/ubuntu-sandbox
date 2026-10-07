@@ -26,6 +26,54 @@ export function bytesToUtf8(bytes: Uint8Array): string {
   return textDecoder.decode(bytes);
 }
 
+const ESCAPE_BASE = 0xdc00;
+
+export function bytesToFileText(bytes: Uint8Array): string {
+  const out: string[] = [];
+  let i = 0;
+  const escape = (byte: number): void => { out.push(String.fromCharCode(ESCAPE_BASE + byte)); };
+  while (i < bytes.length) {
+    const lead = bytes[i];
+    if (lead < 0x80) { out.push(String.fromCharCode(lead)); i++; continue; }
+    let length = 0;
+    let minimum = 0;
+    let codePoint = 0;
+    if (lead >= 0xc2 && lead <= 0xdf) { length = 2; minimum = 0x80; codePoint = lead & 0x1f; }
+    else if (lead >= 0xe0 && lead <= 0xef) { length = 3; minimum = 0x800; codePoint = lead & 0x0f; }
+    else if (lead >= 0xf0 && lead <= 0xf4) { length = 4; minimum = 0x10000; codePoint = lead & 0x07; }
+    let valid = length > 0 && i + length <= bytes.length;
+    for (let k = 1; valid && k < length; k++) {
+      const next = bytes[i + k];
+      if ((next & 0xc0) !== 0x80) valid = false;
+      else codePoint = (codePoint << 6) | (next & 0x3f);
+    }
+    if (valid && (codePoint < minimum || codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff))) valid = false;
+    if (!valid) { escape(lead); i++; continue; }
+    out.push(String.fromCodePoint(codePoint));
+    i += length;
+  }
+  return out.join('');
+}
+
+export function fileTextToBytes(text: string): Uint8Array {
+  const out: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const unit = text.charCodeAt(i);
+    if (unit < 0x80) { out.push(unit); continue; }
+    if (unit >= ESCAPE_BASE + 0x80 && unit <= ESCAPE_BASE + 0xff) { out.push(unit - ESCAPE_BASE); continue; }
+    let codePoint = unit;
+    if (unit >= 0xd800 && unit <= 0xdbff && i + 1 < text.length) {
+      const low = text.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) { codePoint = 0x10000 + ((unit - 0xd800) << 10) + (low - 0xdc00); i++; }
+    }
+    if (codePoint >= 0xd800 && codePoint <= 0xdfff) codePoint = 0xfffd;
+    if (codePoint < 0x800) out.push(0xc0 | (codePoint >> 6), 0x80 | (codePoint & 0x3f));
+    else if (codePoint < 0x10000) out.push(0xe0 | (codePoint >> 12), 0x80 | ((codePoint >> 6) & 0x3f), 0x80 | (codePoint & 0x3f));
+    else out.push(0xf0 | (codePoint >> 18), 0x80 | ((codePoint >> 12) & 0x3f), 0x80 | ((codePoint >> 6) & 0x3f), 0x80 | (codePoint & 0x3f));
+  }
+  return Uint8Array.from(out);
+}
+
 export function bytesToBinaryString(bytes: Uint8Array): string {
   let out = '';
   for (const b of bytes) out += String.fromCharCode(b);

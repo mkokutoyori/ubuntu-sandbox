@@ -12,6 +12,8 @@
  * Avant correctif, 3 des 6 cas tombent ; les trois témoins (ALPN en
  * commun, ALPN non demandé, ticket de 7200 s) passent dans les deux états.
  */
+import { sealFlight } from '@/network/tls/handshakeProtection';
+import type { CipherSuite } from '@/network/tls/types';
 import { describe, it, expect } from 'vitest';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -78,9 +80,9 @@ describe('RFC 8446 §4.6.1 — durée de vie des tickets', () => {
     const { client, server } = lab(undefined, []);
     drive(client, server);
     const ticket: NewSessionTicket = {
-      kind: 'new_session_ticket', ticketLifetime: lifetime, ticketAgeAdd: 'a', ticketNonce: 'n', ticket: 't', extensions: {},
+      kind: 'new_session_ticket', ticketLifetime: lifetime, ticketAgeAdd: '0a0a0a0a', ticketNonce: '01', ticket: '74', extensions: {},
     };
-    client.receiveSessionTicket(fragmentAsRecords('handshake', encodeHandshakeMessage(ticket), true));
+    client.receiveSessionTicket(sealFlight((server.serverTraffic() as { secret: string }).secret, server.negotiatedCipherSuite as CipherSuite, 0, encodeHandshakeMessage(ticket)).records);
     return client;
   }
 

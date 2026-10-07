@@ -1,0 +1,959 @@
+{
+ "chains": [
+  {
+   "name": "first-session",
+   "steps": [
+    {
+     "name": "klist-none",
+     "argv": [
+      "klist"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "klist: No credentials cache found (filename: /tmp/krb5cc_0)\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kdestroy-none",
+     "argv": [
+      "kdestroy"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kdestroy: No credentials cache found while destroying cache\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-ok-v",
+     "argv": [
+      "kinit",
+      "-V",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: alice@CORP.LOCAL\nAuthenticated to Kerberos v5\n",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-after",
+     "argv": [
+      "klist"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 14:56:42  10/07/26 00:56:42  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 14:56:42\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-e",
+     "argv": [
+      "klist",
+      "-e"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 14:56:42  10/07/26 00:56:42  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 14:56:42, Etype (skey, tkt): aes256-cts-hmac-sha1-96, aes256-cts-hmac-sha1-96 \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-f",
+     "argv": [
+      "klist",
+      "-f"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 14:56:42  10/07/26 00:56:42  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 14:56:42, Flags: RI\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-A",
+     "argv": [
+      "klist",
+      "-A"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 14:56:42  10/07/26 00:56:42  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 14:56:42\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-s",
+     "argv": [
+      "klist",
+      "-s"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-l",
+     "argv": [
+      "klist",
+      "-l"
+     ],
+     "stdin": "",
+     "stdout": "Principal name                 Cache name\n--------------                 ----------\nalice@CORP.LOCAL               FILE:/tmp/krb5cc_0\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-c",
+     "argv": [
+      "klist",
+      "-c",
+      "FILE:/tmp/krb5cc_0"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 14:56:42  10/07/26 00:56:42  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 14:56:42\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-bad-cache",
+     "argv": [
+      "klist",
+      "-c",
+      "FILE:/tmp/nosuchcache"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "klist: No credentials cache found (filename: /tmp/nosuchcache)\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kdestroy-ok",
+     "argv": [
+      "kdestroy"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-after-destroy",
+     "argv": [
+      "klist"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "klist: No credentials cache found (filename: /tmp/krb5cc_0)\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-wrong",
+     "argv": [
+      "kinit",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "bad\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "kinit: Password incorrect while getting initial credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-unknown",
+     "argv": [
+      "kinit",
+      "bob@CORP.LOCAL"
+     ],
+     "stdin": "x\n",
+     "stdout": "",
+     "stderr": "kinit: Client 'bob@CORP.LOCAL' not found in Kerberos database while getting initial credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-eof",
+     "argv": [
+      "kinit",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "kinit: Cannot read password while getting initial credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-noprinc",
+     "argv": [
+      "kinit"
+     ],
+     "stdin": "x\n",
+     "stdout": "",
+     "stderr": "kinit: Client 'root@CORP.LOCAL' not found in Kerberos database while getting initial credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-life",
+     "argv": [
+      "kinit",
+      "-l",
+      "1h",
+      "-r",
+      "2d",
+      "-f",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-life-f",
+     "argv": [
+      "klist",
+      "-f",
+      "-e"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 14:56:42  10/06/26 15:56:42  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/08/26 14:56:42, Flags: FRI\n\tEtype (skey, tkt): aes256-cts-hmac-sha1-96, aes256-cts-hmac-sha1-96 \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-renew",
+     "argv": [
+      "kinit",
+      "-R"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-renewed",
+     "argv": [
+      "klist"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 14:56:42  10/06/26 15:56:42  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/08/26 14:56:42\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-bad-opt",
+     "argv": [
+      "kinit",
+      "-Z"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kinit: invalid option -- 'Z'\nUsage: kinit [-V] [-l lifetime] [-s start_time] [-r renewable_life]\n\t[-f | -F] [-p | -P] [-n] [-a | -A] [-C] [-E]\n\t[--request-pac | --no-request-pac]\n\t[-v] [-R] [-k [-i|-t keytab_file]] [-c cachename]\n\t[-S service_name] [-I input_ccache] [-T ticket_armor_cache]\n\t[-X <attribute>[=<value>]] [principal]\n\n    options:\n\t-V verbose\n\t-l lifetime\n\t-s start time\n\t-r renewable lifetime\n\t-f forwardable\n\t-F not forwardable\n\t-p proxiable\n\t-P not proxiable\n\t-n anonymous\n\t-a include addresses\n\t-A do not include addresses\n\t-v validate\n\t-R renew\n\t-C canonicalize\n\t-E client is enterprise principal name\n\t-k use keytab\n\t-i use default client keytab (with -k)\n\t-t filename of keytab to use\n\t-c Kerberos 5 cache name\n\t-S service\n\t-I input credential cache\n\t-T armor credential cache\n\t-X <attribute>[=<value>]\n\t--{,no}-request-pac request KDC include/exclude a PAC\n",
+     "exitCode": 2
+    },
+    {
+     "name": "klist-bad-opt",
+     "argv": [
+      "klist",
+      "-Z"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "klist: invalid option -- 'Z'\nUsage: klist [-e] [-V] [[-c] [-l] [-A] [-d] [-f] [-s] [-a [-n]]] [-k [-i] [-t] [-K]] [-C] [name]\n\t-c specifies credentials cache\n\t-k specifies keytab\n\t   (Default is credentials cache)\n\t-i uses default client keytab if no name given\n\t-l lists credential caches in collection\n\t-A shows content of all credential caches\n\t-e shows the encryption type\n\t-V shows the Kerberos version and exits\n\toptions for credential caches:\n\t\t-d shows the submitted authorization data types\n\t\t-f shows credentials flags\n\t\t-s sets exit status based on valid tgt existence\n\t\t-a displays the address list\n\t\t\t-n do not reverse-resolve\n\toptions for keytabs:\n\t\t-t shows keytab entry timestamps\n\t\t-K shows keytab entry keys\n\t\t-C includes configuration data entries\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kdestroy-bad-opt",
+     "argv": [
+      "kdestroy",
+      "-Z"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kdestroy: invalid option -- 'Z'\nUsage: kdestroy [-A] [-q] [-c cache_name] [-p princ_name]\n\t-A destroy all credential caches in collection\n\t-q quiet mode\n\t-c specify name of credentials cache\n\t-p specify principal name within collection\n",
+     "exitCode": 2
+    },
+    {
+     "name": "kinit-realm-less",
+     "argv": [
+      "kinit",
+      "alice"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-realmless",
+     "argv": [
+      "klist"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 14:56:42  10/07/26 00:56:42  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 14:56:42\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kdestroy-q",
+     "argv": [
+      "kdestroy",
+      "-q"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    }
+   ]
+  },
+  {
+   "name": "renewal",
+   "steps": [
+    {
+     "name": "kinit-R-ok-setup",
+     "argv": [
+      "kinit",
+      "-l",
+      "2h",
+      "-r",
+      "1d",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-R-ok",
+     "argv": [
+      "kinit",
+      "-R"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-R-V",
+     "argv": [
+      "kinit",
+      "-R",
+      "-V"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Using principal: alice@CORP.LOCAL\nInitialized cache\nStored credentials\nAuthenticated to Kerberos v5\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-R-principal",
+     "argv": [
+      "kinit",
+      "-R",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-R-other",
+     "argv": [
+      "kinit",
+      "-R",
+      "bob@CORP.LOCAL"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kinit: Matching credential not found (filename: /tmp/krb5cc_0) while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-R-badcache",
+     "argv": [
+      "kinit",
+      "-R",
+      "-c",
+      "FILE:/tmp/nosuch"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kinit: No credentials cache found (filename: /tmp/nosuch) while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-R-service",
+     "argv": [
+      "kinit",
+      "-R",
+      "-S",
+      "ldap/localhost"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kinit: Matching credential not found (filename: /tmp/krb5cc_0) while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kdestroy-for-R",
+     "argv": [
+      "kdestroy"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-R-nocache",
+     "argv": [
+      "kinit",
+      "-R"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kinit: No credentials cache found (filename: /tmp/krb5cc_0) while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-nonrenewable-setup",
+     "argv": [
+      "kinit",
+      "-l",
+      "1h",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-nonrenewable",
+     "argv": [
+      "klist",
+      "-f"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 19:36:34  10/06/26 20:36:34  krbtgt/CORP.LOCAL@CORP.LOCAL\n\tFlags: I\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-R-nonrenewable",
+     "argv": [
+      "kinit",
+      "-R"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kinit: KDC can't fulfill requested option while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-F-setup",
+     "argv": [
+      "kinit",
+      "-F",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-F",
+     "argv": [
+      "klist",
+      "-f"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 19:36:34  10/07/26 05:36:34  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 19:36:34, Flags: RI\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-f-setup",
+     "argv": [
+      "kinit",
+      "-f",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-f2",
+     "argv": [
+      "klist",
+      "-f"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 19:36:34  10/07/26 05:36:34  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 19:36:34, Flags: FRI\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-c-setup",
+     "argv": [
+      "kinit",
+      "-c",
+      "FILE:/tmp/krb5cc_other",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-c-other",
+     "argv": [
+      "klist",
+      "-c",
+      "FILE:/tmp/krb5cc_other"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_other\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 19:36:34  10/07/26 05:36:34  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 19:36:34\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-l-two",
+     "argv": [
+      "klist",
+      "-l"
+     ],
+     "stdin": "",
+     "stdout": "Principal name                 Cache name\n--------------                 ----------\nalice@CORP.LOCAL               FILE:/tmp/krb5cc_0\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-A-two",
+     "argv": [
+      "klist",
+      "-A"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 19:36:34  10/07/26 05:36:34  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 19:36:34\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-V-c",
+     "argv": [
+      "kinit",
+      "-V",
+      "-c",
+      "FILE:/tmp/krb5cc_other2",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "Using specified cache: FILE:/tmp/krb5cc_other2\nUsing principal: alice@CORP.LOCAL\nAuthenticated to Kerberos v5\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-badprinc",
+     "argv": [
+      "kinit",
+      "alice@@"
+     ],
+     "stdin": "x\n",
+     "stdout": "",
+     "stderr": "kinit: Malformed representation of principal when parsing name alice@@\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-realm-unknown",
+     "argv": [
+      "kinit",
+      "alice@NOPE.REALM"
+     ],
+     "stdin": "x\n",
+     "stdout": "",
+     "stderr": "kinit: Cannot find KDC for realm \"NOPE.REALM\" while getting initial credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-two-operands",
+     "argv": [
+      "kinit",
+      "alice",
+      "bob"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Extra arguments (starting with \"bob\").\nUsage: kinit [-V] [-l lifetime] [-s start_time] [-r renewable_life]\n\t[-f | -F] [-p | -P] [-n] [-a | -A] [-C] [-E]\n\t[--request-pac | --no-request-pac]\n\t[-v] [-R] [-k [-i|-t keytab_file]] [-c cachename]\n\t[-S service_name] [-I input_ccache] [-T ticket_armor_cache]\n\t[-X <attribute>[=<value>]] [principal]\n\n    options:\n\t-V verbose\n\t-l lifetime\n\t-s start time\n\t-r renewable lifetime\n\t-f forwardable\n\t-F not forwardable\n\t-p proxiable\n\t-P not proxiable\n\t-n anonymous\n\t-a include addresses\n\t-A do not include addresses\n\t-v validate\n\t-R renew\n\t-C canonicalize\n\t-E client is enterprise principal name\n\t-k use keytab\n\t-i use default client keytab (with -k)\n\t-t filename of keytab to use\n\t-c Kerberos 5 cache name\n\t-S service\n\t-I input credential cache\n\t-T armor credential cache\n\t-X <attribute>[=<value>]\n\t--{,no}-request-pac request KDC include/exclude a PAC\n",
+     "exitCode": 2
+    },
+    {
+     "name": "kdestroy-c",
+     "argv": [
+      "kdestroy",
+      "-c",
+      "FILE:/tmp/krb5cc_other"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kdestroy-A",
+     "argv": [
+      "kdestroy",
+      "-A"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "klist-after-A",
+     "argv": [
+      "klist",
+      "-A"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 1
+    }
+   ]
+  },
+  {
+   "name": "verbose",
+   "steps": [
+    {
+     "name": "kinit-RV-nocache",
+     "argv": [
+      "kinit",
+      "-R",
+      "-V"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: root@CORP.LOCAL\nkinit: No credentials cache found (filename: /tmp/krb5cc_0) while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-RV-other-setup",
+     "argv": [
+      "kinit",
+      "-r",
+      "1d",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-RV-other",
+     "argv": [
+      "kinit",
+      "-R",
+      "-V",
+      "bob@CORP.LOCAL"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: bob@CORP.LOCAL\nkinit: Matching credential not found (filename: /tmp/krb5cc_0) while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-RV-explicit",
+     "argv": [
+      "kinit",
+      "-R",
+      "-V",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: alice@CORP.LOCAL\nInitialized cache\nStored credentials\nAuthenticated to Kerberos v5\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-RV-c",
+     "argv": [
+      "kinit",
+      "-R",
+      "-V",
+      "-c",
+      "FILE:/tmp/krb5cc_0"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Using specified cache: FILE:/tmp/krb5cc_0\nUsing principal: alice@CORP.LOCAL\nInitialized cache\nStored credentials\nAuthenticated to Kerberos v5\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-RV-badcache",
+     "argv": [
+      "kinit",
+      "-R",
+      "-V",
+      "-c",
+      "FILE:/tmp/nosuch"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Using specified cache: FILE:/tmp/nosuch\nUsing principal: root@CORP.LOCAL\nkinit: No credentials cache found (filename: /tmp/nosuch) while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-nonrenew-setup",
+     "argv": [
+      "kinit",
+      "-l",
+      "1h",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-RV-nonrenewable",
+     "argv": [
+      "kinit",
+      "-R",
+      "-V"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Using principal: alice@CORP.LOCAL\nkinit: KDC can't fulfill requested option while renewing credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-V-wrong",
+     "argv": [
+      "kinit",
+      "-V",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "bad\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: alice@CORP.LOCAL\nkinit: Password incorrect while getting initial credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kinit-V-unknown",
+     "argv": [
+      "kinit",
+      "-V",
+      "bob@CORP.LOCAL"
+     ],
+     "stdin": "x\n",
+     "stdout": "",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: bob@CORP.LOCAL\nkinit: Client 'bob@CORP.LOCAL' not found in Kerberos database while getting initial credentials\n",
+     "exitCode": 1
+    }
+   ]
+  },
+  {
+   "name": "existing-cache",
+   "steps": [
+    {
+     "name": "kinit-V-first",
+     "argv": [
+      "kinit",
+      "-V",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: alice@CORP.LOCAL\nAuthenticated to Kerberos v5\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-V-again",
+     "argv": [
+      "kinit",
+      "-V"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "Using principal: alice@CORP.LOCAL\nAuthenticated to Kerberos v5\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-V-again-sameprinc",
+     "argv": [
+      "kinit",
+      "-V",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: alice@CORP.LOCAL\nAuthenticated to Kerberos v5\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-V-other-princ",
+     "argv": [
+      "kinit",
+      "-V",
+      "bob@CORP.LOCAL"
+     ],
+     "stdin": "x\n",
+     "stdout": "",
+     "stderr": "Using default cache: /tmp/krb5cc_0\nUsing principal: bob@CORP.LOCAL\nkinit: Client 'bob@CORP.LOCAL' not found in Kerberos database while getting initial credentials\n",
+     "exitCode": 1
+    },
+    {
+     "name": "klist-after-failed-other",
+     "argv": [
+      "klist"
+     ],
+     "stdin": "",
+     "stdout": "Ticket cache: FILE:/tmp/krb5cc_0\nDefault principal: alice@CORP.LOCAL\n\nValid starting     Expires            Service principal\n10/06/26 19:41:05  10/07/26 05:41:05  krbtgt/CORP.LOCAL@CORP.LOCAL\n\trenew until 10/07/26 19:41:05\n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kinit-V-dircache",
+     "argv": [
+      "kinit",
+      "-V",
+      "-c",
+      "FILE:/tmp/krb5cc_dir"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "",
+     "stderr": "Using specified cache: FILE:/tmp/krb5cc_dir\nUsing principal: root@CORP.LOCAL\nkinit: Client 'root@CORP.LOCAL' not found in Kerberos database while getting initial credentials\n",
+     "exitCode": 1,
+     "before": "mkdir /tmp/krb5cc_dir"
+    }
+   ]
+  },
+  {
+   "name": "destroy-and-extra-operands",
+   "steps": [
+    {
+     "name": "kdp-setup",
+     "argv": [
+      "kinit",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "alicepw\n",
+     "stdout": "Password for alice@CORP.LOCAL: \n",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kdestroy-p-other",
+     "argv": [
+      "kdestroy",
+      "-p",
+      "bob@CORP.LOCAL"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kdestroy: Matching credential not found while finding cache for bob@CORP.LOCAL\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kdestroy-p-same",
+     "argv": [
+      "kdestroy",
+      "-p",
+      "alice@CORP.LOCAL"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kdestroy-p-after",
+     "argv": [
+      "klist"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "klist: No credentials cache found (filename: /tmp/krb5cc_0)\n",
+     "exitCode": 1
+    },
+    {
+     "name": "kdestroy-c-none",
+     "argv": [
+      "kdestroy",
+      "-c",
+      "FILE:/tmp/nosuchcache"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kdestroy: No credentials cache found while destroying cache\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kdestroy-twice-1",
+     "argv": [
+      "kdestroy"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "kdestroy: No credentials cache found while destroying cache\n",
+     "exitCode": 0
+    },
+    {
+     "name": "kdestroy-A-none",
+     "argv": [
+      "kdestroy",
+      "-A"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "",
+     "exitCode": 0
+    },
+    {
+     "name": "kdestroy-extra",
+     "argv": [
+      "kdestroy",
+      "extra"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Usage: kdestroy [-A] [-q] [-c cache_name] [-p princ_name]\n\t-A destroy all credential caches in collection\n\t-q quiet mode\n\t-c specify name of credentials cache\n\t-p specify principal name within collection\n",
+     "exitCode": 2
+    },
+    {
+     "name": "klist-extra",
+     "argv": [
+      "klist",
+      "extra",
+      "extra2"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Extra arguments (starting with \"extra2\").\nUsage: klist [-e] [-V] [[-c] [-l] [-A] [-d] [-f] [-s] [-a [-n]]] [-k [-i] [-t] [-K]] [-C] [name]\n\t-c specifies credentials cache\n\t-k specifies keytab\n\t   (Default is credentials cache)\n\t-i uses default client keytab if no name given\n\t-l lists credential caches in collection\n\t-A shows content of all credential caches\n\t-e shows the encryption type\n\t-V shows the Kerberos version and exits\n\toptions for credential caches:\n\t\t-d shows the submitted authorization data types\n\t\t-f shows credentials flags\n\t\t-s sets exit status based on valid tgt existence\n\t\t-a displays the address list\n\t\t\t-n do not reverse-resolve\n\toptions for keytabs:\n\t\t-t shows keytab entry timestamps\n\t\t-K shows keytab entry keys\n\t\t-C includes configuration data entries\n",
+     "exitCode": 1
+    },
+    {
+     "name": "klist-name",
+     "argv": [
+      "klist",
+      "-c",
+      "FILE:/tmp/krb5cc_0",
+      "alice"
+     ],
+     "stdin": "",
+     "stdout": "",
+     "stderr": "Extra arguments (starting with \"alice\").\nUsage: klist [-e] [-V] [[-c] [-l] [-A] [-d] [-f] [-s] [-a [-n]]] [-k [-i] [-t] [-K]] [-C] [name]\n\t-c specifies credentials cache\n\t-k specifies keytab\n\t   (Default is credentials cache)\n\t-i uses default client keytab if no name given\n\t-l lists credential caches in collection\n\t-A shows content of all credential caches\n\t-e shows the encryption type\n\t-V shows the Kerberos version and exits\n\toptions for credential caches:\n\t\t-d shows the submitted authorization data types\n\t\t-f shows credentials flags\n\t\t-s sets exit status based on valid tgt existence\n\t\t-a displays the address list\n\t\t\t-n do not reverse-resolve\n\toptions for keytabs:\n\t\t-t shows keytab entry timestamps\n\t\t-K shows keytab entry keys\n\t\t-C includes configuration data entries\n",
+     "exitCode": 1
+    }
+   ]
+  }
+ ]
+}

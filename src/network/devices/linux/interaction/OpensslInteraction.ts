@@ -223,6 +223,60 @@ function pkcs8Plan(tokens: readonly string[]): CommandInteractionPlan | null {
   };
 }
 
+const SIGN_PROMPT = 'Sign the certificate? [y/n]:';
+const COMMIT_PROMPT = '1 out of 1 certificate requests certified, commit? [y/n]';
+const NOT_SIGNED = 'CERTIFICATE WILL NOT BE CERTIFIED';
+const NOT_COMMITTED = 'CERTIFICATION CANCELED';
+
+function isYes(values: ReadonlyMap<string, string>, name: string): boolean {
+  return /^\s*[yY]/.test(values.get(name) ?? '');
+}
+
+function caSigningPlan(tokens: readonly string[], device: OpensslPlannerDevice): CommandInteractionPlan | null {
+  const flags = new Set(tokens);
+  const standalone = ['-batch', '-revoke', '-gencrl', '-updatedb', '-status', '-help', '-spkac', '-ss_cert'];
+  if (standalone.some((flag) => flags.has(flag)) || !(flags.has('-in') || flags.has('-infiles'))) return null;
+  const keyPath = flags.has('-passin') ? undefined : tokens[tokens.indexOf('-keyfile') + 1];
+  const keyText = keyPath === undefined ? null : device.readTextFile?.(keyPath) ?? null;
+  const asksKeyPassPhrase = keyText !== null && isEncryptedPrivateKeyPem(keyText);
+  let passin: string[] = [];
+  const pipeline = (answers: string, extra: readonly string[]): string =>
+    `printf '%s' ${shellQuote(answers)} | ${[...tokens, ...passin, ...extra].map(shellQuote).join(' ')}`;
+  return {
+    steps: [
+      ...(asksKeyPassPhrase ? secretSteps(`Enter pass phrase for ${keyPath}:`, 'key_pass_phrase', 0, false) : []),
+      {
+        kind: 'run',
+        run: async (rt: InteractionRuntime) => {
+          if (asksKeyPassPhrase) passin = ['-passin', `pass:${rt.values.get('key_pass_phrase') ?? ''}`];
+          const preview = await rt.exec(pipeline('n\n', []));
+          const at = preview.indexOf(SIGN_PROMPT);
+          if (at < 0) { rt.values.set('ca_failed', '1'); if (preview) rt.output(preview); return; }
+          rt.output(preview.slice(0, at).replace(/\n$/, ''));
+        },
+      },
+      { kind: 'branch', to: (values) => (values.get('ca_failed') === '1' ? 'ca_end' : null) },
+      { kind: 'text', prompt: SIGN_PROMPT, allowEmpty: true, storeAs: 'ca_sign' },
+      { kind: 'branch', to: (values) => (isYes(values, 'ca_sign') ? null : 'ca_refused') },
+      { kind: 'output', lines: [''] },
+      { kind: 'text', prompt: COMMIT_PROMPT, allowEmpty: true, storeAs: 'ca_commit' },
+      {
+        kind: 'run',
+        run: async (rt: InteractionRuntime) => {
+          if (!isYes(rt.values, 'ca_commit')) { rt.output(NOT_COMMITTED); return; }
+          const done = await rt.exec(pipeline('', ['-batch']));
+          const at = done.indexOf('Write out database');
+          rt.output(at < 0 ? done : done.slice(at));
+        },
+      },
+      { kind: 'branch', to: () => 'ca_end' },
+      { kind: 'label', name: 'ca_refused' },
+      { kind: 'output', lines: [NOT_SIGNED] },
+      { kind: 'label', name: 'ca_end' },
+    ],
+  };
+}
+
 const KEY_FILE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   rsa: ['-in'], pkey: ['-in'], ec: ['-in'], pkcs8: ['-in'],
   req: ['-key'], x509: ['-signkey', '-CAkey'], ca: ['-keyfile'],
@@ -261,6 +315,7 @@ export function buildOpensslInteractionPlan(
   if (sub === 'enc') return encryptionPlan(tokens);
   if (sub !== undefined && ENC_ALGOS[sub] !== undefined) return encryptionPlan(tokens, sub);
   if (sub === 'passwd') return passwdPlan(tokens);
+  if (sub === 'ca') return caSigningPlan(tokens, device) ?? encryptedKeyPlan(tokens, device);
   if (sub === 'genrsa') return genrsaPlan(tokens);
   if (sub === 'pkcs8') return pkcs8Plan(tokens) ?? encryptedKeyPlan(tokens, device);
   return encryptedKeyPlan(tokens, device);

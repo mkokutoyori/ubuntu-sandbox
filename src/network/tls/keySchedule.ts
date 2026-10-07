@@ -12,7 +12,7 @@
  * server) are exact structural properties, testable without any real
  * cryptography.
  */
-import { bytesToHex } from '@/crypto/encoding';
+import { bytesToHex, hexToBytes, utf8ToBytes } from '@/crypto/encoding';
 import {
   extractHex, expandLabelHex, HASH_LEN, toBytes, hashFunction, hashLength, type Tls13Hash,
 } from './hkdf';
@@ -134,6 +134,19 @@ export function deriveKeySchedule(
 }
 
 /**
+ * RFC 8446 §4.2.11.2 — the PSK binder: a Finished-style HMAC, under
+ * `binder_key = Derive-Secret(Early Secret, "res binder" | "ext binder", "")`,
+ * over the transcript through the ClientHello truncated before its binders list.
+ */
+export function computePskBinder(
+  psk: string, partialTranscriptHash: string, hash: Tls13Hash = 'sha256', kind: 'res' | 'ext' = 'res',
+): string {
+  const earlySecret = extractSecret('', psk, hash);
+  const binderKey = expandLabel(earlySecret, kind === 'res' ? 'res binder' : 'ext binder', emptyTranscript(hash), hash);
+  return computeFinished(binderKey, partialTranscriptHash, hash);
+}
+
+/**
  * Le `verify_data` d'un message Finished, tel que le §4.4.4 le définit :
  * `HMAC(finished_key, Transcript-Hash(...))` avec `finished_key =
  * HKDF-Expand-Label(BaseKey, "finished", "", Hash.length)`. L'étape
@@ -162,8 +175,14 @@ export function nextTrafficSecret(secret: string, hash: Tls13Hash = 'sha256'): s
  * Sans ce préfixe, une signature produite ailleurs sur le même condensé
  * (autre protocole, autre côté) serait rejouable ici.
  */
-export function certificateVerifyContent(role: 'server' | 'client', transcript: string): string {
-  return `${' '.repeat(64)}TLS 1.3, ${role} CertificateVerify\u0000${transcript}`;
+export function certificateVerifyContent(role: 'server' | 'client', transcript: string): Uint8Array {
+  const context = utf8ToBytes(`TLS 1.3, ${role} CertificateVerify`);
+  const hash = hexToBytes(transcript);
+  const out = new Uint8Array(64 + context.length + 1 + hash.length);
+  out.fill(0x20, 0, 64);
+  out.set(context, 64);
+  out.set(hash, 64 + context.length + 1);
+  return out;
 }
 
 const MESSAGE_HASH_HANDSHAKE_TYPE = 254;

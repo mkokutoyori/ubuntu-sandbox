@@ -21,6 +21,7 @@ export class TcpEcn {
   private negotiation: Negotiation = 'off';
   private echoing = false;
   private cwrPending = false;
+  private markedDataSeen = false;
   private reductionEnd: number | null = null;
   holdTimer: symbol | null = null;
 
@@ -30,6 +31,14 @@ export class TcpEcn {
 
   get echoingCongestion(): boolean {
     return this.echoing;
+  }
+
+  get markedSeen(): boolean {
+    return this.markedDataSeen;
+  }
+
+  reductionInProgress(sendUnacked: number): boolean {
+    return this.reductionEnd !== null && seqLt(sendUnacked, this.reductionEnd);
   }
 
   get holdingNewData(): boolean {
@@ -71,6 +80,7 @@ export class TcpEcn {
   noteArrival(flags: TcpFlags, codepoint: EcnCodepoint, carriesData: boolean): boolean {
     if (!this.negotiated) return false;
     let promptAck = false;
+    if (carriesData && (codepoint.capable || codepoint.congestionExperienced)) this.markedDataSeen = true;
     if (flags.cwr) {
       this.echoing = false;
       promptAck = carriesData;

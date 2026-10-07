@@ -1,3 +1,4 @@
+import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 
@@ -89,18 +90,18 @@ export const xxdCommand: LinuxCommand = {
       } else {
         return 'xxd: usage: xxd -r [-l length] [-s offset] FILE';
       }
-      return new TextDecoder('utf-8').decode(xxdReverse(dumpText));
+      return bytesToFileText(xxdReverse(dumpText));
     }
 
     let bytes: Uint8Array;
     if (isStdin) {
-      bytes = new TextEncoder().encode(stdin);
+      bytes = fileTextToBytes(stdin);
     } else {
       if (!arg) return 'xxd: usage: xxd [-l length] [-s offset] FILE';
       const absPath = ctx.executor.vfs.normalizePath(arg, ctx.executor.getCwd());
       const content = ctx.executor.vfs.readFile(absPath);
       if (content === null) return `xxd: ${arg}: No such file or directory`;
-      bytes = new TextEncoder().encode(content);
+      bytes = fileTextToBytes(content);
     }
     if (offset > 0) bytes = bytes.subarray(Math.min(offset, bytes.length));
     if (length !== undefined) bytes = bytes.subarray(0, Math.max(0, length));

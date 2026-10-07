@@ -87,7 +87,7 @@ describe('Kerberos TGS exchange — real TGS-REQ/TGS-REP over a real TCP/88 wire
     const asResult = kerb.asExchange('alice', 'alicepw', 'LAB.LOCAL');
 
     const tgsResult = kerb.tgsExchange(
-      asResult.ticket!, 'not-the-real-session-key',
+      asResult.ticket!, new Uint8Array(32).fill(7),
       { nameType: 1, nameString: ['alice'] }, 'LAB.LOCAL', 'DC1',
     );
     expect(tgsResult.ok).toBe(false);

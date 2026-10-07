@@ -19,13 +19,14 @@ import {
   LegacyRecordProtection, deriveKeyBlock, finishedVerifyData, masterSecret, extendedMasterSecret, handshakeHash,
 } from './legacyCrypto';
 import {
-  decodeLegacyMessages, encodeLegacyBundle, encodeLegacyMessage,
+  decodeLegacyMessages, encodeLegacyBundle, encodeLegacyMessage, type LegacyWireContext,
   type ClientKeyExchange, type KeyExchangeParams, type LegacyCertificate, type LegacyCertificateRequest,
   type LegacyCertificateVerify, type LegacyFinished, type LegacyServerHello, type ServerHelloDone,
   type ServerKeyExchange, type LegacyNewSessionTicket, type LegacyCertificateStatus,
 } from './legacyMessages';
 import type { LegacyClientExtensions } from '../messages';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import { serverKeyExchangeParametersBytes } from '../wire/LegacyHandshakeCodec';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import { stapleAlert } from '../ocspStapling';
 import {
   LegacySessionStore, LegacyTicketCodec, type LegacySessionState, type ResumableLegacySession,
@@ -86,12 +87,9 @@ function reassembleHandshake(records: readonly TlsRecord[]): Uint8Array | null {
   return concat(...records.map((record) => record.fragment));
 }
 
-function parametersBytes(params: KeyExchangeParams): Uint8Array {
-  return utf8ToBytes(JSON.stringify(params));
-}
 
 function keyExchangeSignedData(clientRandom: string, serverRandom: string, params: KeyExchangeParams): Uint8Array {
-  return concat(hexToBytes(clientRandom), hexToBytes(serverRandom), parametersBytes(params));
+  return concat(hexToBytes(clientRandom), hexToBytes(serverRandom), serverKeyExchangeParametersBytes(params));
 }
 
 export interface LegacyTraffic {
@@ -155,11 +153,12 @@ export interface LegacyServerSetup {
   readonly securityLevel: number;
   readonly clientCertPolicy: ClientCertPolicy | undefined;
   readonly clientExtensions: LegacyClientExtensions;
+  readonly clientSignatureAlgorithms: readonly string[];
   readonly extendedMasterSecret: boolean;
   readonly sessionStore?: LegacySessionStore;
   readonly ticketCodec?: LegacyTicketCodec;
   readonly sessionLifetimeSeconds: number;
-  readonly statusStaple: SignedOcspResponse | null;
+  readonly statusStaple: OcspResponseMessage | null;
   readonly maxFragmentLength: number | null;
   readonly acceptResumedSuite: (name: string) => boolean;
   readonly resolveSuite: (name: string) => LegacySuiteDefinition | undefined;
@@ -197,6 +196,8 @@ export class LegacyServerHandshake {
       : setup.version === '1.2' ? DOWNGRADE_TAIL_TLS12 : DOWNGRADE_TAIL_TLS11_OR_LOWER;
     this.serverRandom = randomHex(RANDOM_BYTES - 8) + tail;
   }
+
+  private get wire(): LegacyWireContext { return { version: this.setup.version, keyExchange: this.suite.keyExchange, group: this.ecdhe?.group }; }
 
   get negotiatedVersion(): LegacyVersion { return this.setup.version; }
 
@@ -271,25 +272,26 @@ export class LegacyServerHandshake {
       const params = this.generateParams();
       if (params === null) return this.reject('handshake_failure');
       const signed = keyExchangeSignedData(this.setup.clientRandom, this.serverRandom, params);
+      const scheme = signatureAlgorithmName(this.setup.serverPrivateKey, version, this.setup.clientSignatureAlgorithms);
       const serverKeyExchange: ServerKeyExchange = {
         kind: 'server_key_exchange', params,
-        signatureAlgorithm: signatureAlgorithmName(this.setup.serverPrivateKey.algorithm, version),
-        signature: signLegacy(this.setup.serverPrivateKey, version, signed),
+        signatureAlgorithm: scheme,
+        signature: signLegacy(this.setup.serverPrivateKey, version, signed, scheme),
       };
       bundle.push(serverKeyExchange);
     }
     if (this.setup.requestClientCert) {
       const request: LegacyCertificateRequest = {
         kind: 'legacy_certificate_request', certificateTypes: ['rsa_sign', 'ecdsa_sign'],
-        signatureAlgorithms: version === '1.2' ? ['rsa_pkcs1_sha256', 'ecdsa_secp256r1_sha256'] : [],
+        signatureAlgorithms: version === '1.2' ? ['rsa_pss_rsae_sha256', 'rsa_pkcs1_sha256', 'ecdsa_secp256r1_sha256'] : [],
       };
       bundle.push(request);
     }
     const done: ServerHelloDone = { kind: 'server_hello_done' };
     bundle.push(done);
 
-    for (const message of bundle) this.messages.push(encodeLegacyMessage(message));
-    return handshakeRecords(version, encodeLegacyBundle(bundle));
+    for (const message of bundle) this.messages.push(encodeLegacyMessage(message, this.wire));
+    return handshakeRecords(version, encodeLegacyBundle(bundle, this.wire));
   }
 
   private startAbbreviated(state: LegacySessionState, id: string): readonly TlsRecord[] | null {
@@ -304,7 +306,7 @@ export class LegacyServerHandshake {
       kind: 'legacy_server_hello', version, random: this.serverRandom, sessionId: id,
       cipherSuite: suite.name, compressionMethod: 'null', extensions: this.helloExtensions(),
     };
-    this.messages.push(encodeLegacyMessage(serverHello));
+    this.messages.push(encodeLegacyMessage(serverHello, this.wire));
     const master = hexToBytes(state.master);
     this.resumedMaster = master;
     const derived = protectionsFromMaster(version, suite, master, this.setup.clientRandom, this.serverRandom);
@@ -315,14 +317,14 @@ export class LegacyServerHandshake {
       verifyData: bytesToHex(finishedVerifyData(version, suite.prf, master, 'server', this.messages)),
     };
     const sealed = outbound.seal(0, {
-      contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[version], fragment: encodeLegacyMessage(finished),
+      contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[version], fragment: encodeLegacyMessage(finished, this.wire),
     });
-    this.messages.push(encodeLegacyMessage(finished));
+    this.messages.push(encodeLegacyMessage(finished, this.wire));
     outbound.sequenceBase = 1;
     this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.state = 'awaiting-resumed-finished';
-    return [...handshakeRecords(version, encodeLegacyBundle([serverHello])), changeCipherSpec(version), sealed];
+    return [...handshakeRecords(version, encodeLegacyBundle([serverHello], this.wire)), changeCipherSpec(version), sealed];
   }
 
   private finishResumed(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
@@ -332,7 +334,7 @@ export class LegacyServerHandshake {
     if (!record || record.contentType !== 'handshake') return this.reject('unexpected_message');
     const opened = this.traffic!.inbound.open(0, record);
     if (opened === null) return this.reject('bad_record_mac');
-    const finished = decodeLegacyMessages(opened.fragment)[0] as LegacyFinished | undefined;
+    const finished = decodeLegacyMessages(opened.fragment, this.wire)[0] as LegacyFinished | undefined;
     if (!finished || finished.kind !== 'legacy_finished') return this.reject('unexpected_message');
     const expected = bytesToHex(finishedVerifyData(version, this.suite.prf, this.resumedMaster!, 'client', this.messages));
     if (finished.verifyData !== expected) return this.reject('decrypt_error');
@@ -411,7 +413,7 @@ export class LegacyServerHandshake {
     const { leading, rest } = splitLeadingContentType(incoming, 'handshake');
     const bundleBytes = reassembleHandshake(leading);
     if (bundleBytes === null) return this.reject('unexpected_message');
-    const bundle = decodeLegacyMessages(bundleBytes);
+    const bundle = decodeLegacyMessages(bundleBytes, this.wire);
 
     let certificate: LegacyCertificate | undefined;
     let keyExchange: ClientKeyExchange | undefined;
@@ -451,11 +453,11 @@ export class LegacyServerHandshake {
     for (const message of bundle) {
       if (message.kind === 'legacy_certificate_verify' && verifiedLeaf !== null) {
         const signed = concat(...this.messages);
-        if (!verifyLegacy(verifiedLeaf.publicKey, version, signed, (message as LegacyCertificateVerify).signature)) {
+        if (!verifyLegacy(verifiedLeaf.publicKey, version, signed, (message as LegacyCertificateVerify).signature, (message as LegacyCertificateVerify).signatureAlgorithm)) {
           return this.reject('decrypt_error');
         }
       }
-      this.messages.push(encodeLegacyMessage(message));
+      this.messages.push(encodeLegacyMessage(message, this.wire));
       if (message.kind === 'client_key_exchange') sessionHash = handshakeHash(version, suite.prf, this.messages);
     }
 
@@ -472,11 +474,11 @@ export class LegacyServerHandshake {
     if (!finishedRecord || finishedRecord.contentType !== 'handshake') return this.reject('unexpected_message');
     const opened = inbound.open(0, finishedRecord);
     if (opened === null) return this.reject('bad_record_mac');
-    const finished = decodeLegacyMessages(opened.fragment)[0] as LegacyFinished | undefined;
+    const finished = decodeLegacyMessages(opened.fragment, this.wire)[0] as LegacyFinished | undefined;
     if (!finished || finished.kind !== 'legacy_finished') return this.reject('unexpected_message');
     const expected = bytesToHex(finishedVerifyData(version, suite.prf, derived.master, 'client', this.messages));
     if (finished.verifyData !== expected) return this.reject('decrypt_error');
-    this.messages.push(encodeLegacyMessage(finished));
+    this.messages.push(encodeLegacyMessage(finished, this.wire));
 
     const state: LegacySessionState = {
       id: this.sessionId !== '' ? this.sessionId : randomHex(32), version, suiteName: suite.name,
@@ -489,8 +491,8 @@ export class LegacyServerHandshake {
         kind: 'legacy_new_session_ticket', lifetimeHint: this.setup.sessionLifetimeSeconds,
         ticket: this.setup.ticketCodec!.seal(state),
       };
-      this.messages.push(encodeLegacyMessage(ticketMessage));
-      prefix.push(...handshakeRecords(version, encodeLegacyBundle([ticketMessage])));
+      this.messages.push(encodeLegacyMessage(ticketMessage, this.wire));
+      prefix.push(...handshakeRecords(version, encodeLegacyBundle([ticketMessage], this.wire)));
     }
     const serverFinished: LegacyFinished = {
       kind: 'legacy_finished',
@@ -498,7 +500,7 @@ export class LegacyServerHandshake {
     };
     const sealed = outbound.seal(0, {
       contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[version],
-      fragment: encodeLegacyMessage(serverFinished),
+      fragment: encodeLegacyMessage(serverFinished, this.wire),
     });
     inbound.sequenceBase = 1;
     outbound.sequenceBase = 1;
@@ -544,7 +546,9 @@ export class LegacyClientHandshake {
   lastAlert: TlsAlert | null = null;
   peerCertificate: X509Certificate | null = null;
   peerCertificateChain: readonly X509Certificate[] = [];
-  receivedStaple: SignedOcspResponse | null = null;
+  receivedStaple: OcspResponseMessage | null = null;
+  peerSignature: { readonly digest: string; readonly type: string } | null = null;
+  serverTempKey: string | null = null;
   peerVerified = false;
   peerVerificationReason: string | null = null;
   traffic: LegacyTraffic | null = null;
@@ -565,6 +569,10 @@ export class LegacyClientHandshake {
 
   constructor(private readonly setup: LegacyClientSetup) {
     this.messages.push(setup.clientHelloBytes);
+  }
+
+  private get wire(): LegacyWireContext {
+    return { version: this.negotiatedVersion ?? undefined, keyExchange: this.negotiatedSuite?.keyExchange };
   }
 
   private fail(description: AlertDescription): null {
@@ -596,7 +604,7 @@ export class LegacyClientHandshake {
     const { leading, rest: trailing } = splitLeadingContentType(incoming, 'handshake');
     const bytes = reassembleHandshake(leading);
     if (bytes === null) return this.fail('unexpected_message');
-    const bundle = decodeLegacyMessages(bytes);
+    const bundle = decodeLegacyMessages(bytes, this.wire);
     const serverHello = bundle.find((m): m is LegacyServerHello => m.kind === 'legacy_server_hello');
     const certificate = bundle.find((m): m is LegacyCertificate => m.kind === 'legacy_certificate');
     const serverKeyExchange = bundle.find((m): m is ServerKeyExchange => m.kind === 'server_key_exchange');
@@ -676,10 +684,15 @@ export class LegacyClientHandshake {
     } else {
       const params = serverKeyExchange!.params;
       const signed = keyExchangeSignedData(setup.clientRandom, serverHello.random, params);
-      if (!verifyLegacy(leaf.publicKey, version, signed, serverKeyExchange!.signature)) return this.fail('decrypt_error');
+      if (!verifyLegacy(leaf.publicKey, version, signed, serverKeyExchange!.signature, serverKeyExchange!.signatureAlgorithm)) return this.fail('decrypt_error');
+      if (version === '1.2') {
+        const pss = serverKeyExchange!.signatureAlgorithm?.startsWith('rsa_pss') === true;
+        this.peerSignature = { digest: 'SHA256', type: leaf.publicKey.algorithm === 'ecdsa' ? 'ECDSA' : pss ? 'RSA-PSS' : 'RSA' };
+      }
       if (suite.keyExchange === 'DHE_RSA') {
         if (params.type !== 'dh') return this.fail('illegal_parameter');
         const p = modpFromHex(params.p);
+        this.serverTempKey = `DH, ${p.toString(2).length} bits`;
         if (!dhPermitted(setup.securityLevel, p.toString(2).length)) return this.fail('handshake_failure');
         const g = modpFromHex(params.g);
         const own = generateModpKeyPair({ id: 0, bits: p.toString(2).length, prime: p, generator: g });
@@ -689,6 +702,7 @@ export class LegacyClientHandshake {
         exchange = { type: 'dh', yc: modpToHex(own.publicKey) };
       } else {
         if (params.type !== 'ecdh') return this.fail('illegal_parameter');
+        this.serverTempKey = params.group === 'x25519' ? 'X25519, 253 bits' : 'ECDH, prime256v1, 256 bits';
         if (!setup.offeredGroups.includes(params.group) || !isImplementedGroup(params.group)) {
           return this.fail('illegal_parameter');
         }
@@ -700,7 +714,7 @@ export class LegacyClientHandshake {
       }
     }
 
-    for (const message of bundle) this.messages.push(encodeLegacyMessage(message));
+    for (const message of bundle) this.messages.push(encodeLegacyMessage(message, this.wire));
 
     const out: object[] = [];
     if (certificateRequest) {
@@ -708,19 +722,21 @@ export class LegacyClientHandshake {
         kind: 'legacy_certificate', certificateList: setup.clientCert ? [setup.clientCert, ...(setup.clientChain ?? [])] : [],
       };
       out.push(clientCertificate);
-      this.messages.push(encodeLegacyMessage(clientCertificate));
+      this.messages.push(encodeLegacyMessage(clientCertificate, this.wire));
     }
     const clientKeyExchange: ClientKeyExchange = { kind: 'client_key_exchange', exchange };
     out.push(clientKeyExchange);
-    this.messages.push(encodeLegacyMessage(clientKeyExchange));
+    this.messages.push(encodeLegacyMessage(clientKeyExchange, this.wire));
     const sessionHashMessages = [...this.messages];
     if (certificateRequest && setup.clientCert && setup.clientPrivateKey) {
+      const scheme = signatureAlgorithmName(setup.clientPrivateKey, version, certificateRequest.signatureAlgorithms);
       const verify: LegacyCertificateVerify = {
         kind: 'legacy_certificate_verify',
-        signature: signLegacy(setup.clientPrivateKey, version, concat(...this.messages)),
+        ...(version === '1.2' ? { signatureAlgorithm: scheme } : {}),
+        signature: signLegacy(setup.clientPrivateKey, version, concat(...this.messages), scheme),
       };
       out.push(verify);
-      this.messages.push(encodeLegacyMessage(verify));
+      this.messages.push(encodeLegacyMessage(verify, this.wire));
     }
 
     const sessionHash = this.usedEms ? handshakeHash(version, suite.prf, sessionHashMessages) : null;
@@ -733,14 +749,14 @@ export class LegacyClientHandshake {
     };
     const sealed = outbound.seal(0, {
       contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[version],
-      fragment: encodeLegacyMessage(finished),
+      fragment: encodeLegacyMessage(finished, this.wire),
     });
-    this.messages.push(encodeLegacyMessage(finished));
+    this.messages.push(encodeLegacyMessage(finished, this.wire));
     outbound.sequenceBase = 1;
     this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.state = 'awaiting-server-finished';
-    return [...handshakeRecords(version, encodeLegacyBundle(out)), changeCipherSpec(version), sealed];
+    return [...handshakeRecords(version, encodeLegacyBundle(out, this.wire)), changeCipherSpec(version), sealed];
   }
 
   private applyFragmentLimit(inbound: LegacyRecordProtection, outbound: LegacyRecordProtection): void {
@@ -760,7 +776,7 @@ export class LegacyClientHandshake {
     if (serverEms !== state.extendedMasterSecret) return this.fail('handshake_failure');
     this.resumed = true;
     this.usedEms = serverEms;
-    this.messages.push(encodeLegacyMessage(serverHello));
+    this.messages.push(encodeLegacyMessage(serverHello, this.wire));
     const master = hexToBytes(state.master);
     this.derived = { ...protectionsFromMaster(version, suite, master, setup.clientRandom, serverHello.random) };
     const outbound = this.derived.clientWrite();
@@ -770,11 +786,11 @@ export class LegacyClientHandshake {
     if (!record || record.contentType !== 'handshake') return this.fail('unexpected_message');
     const opened = inbound.open(0, record);
     if (opened === null) return this.fail('bad_record_mac');
-    const serverFinished = decodeLegacyMessages(opened.fragment)[0] as LegacyFinished | undefined;
+    const serverFinished = decodeLegacyMessages(opened.fragment, this.wire)[0] as LegacyFinished | undefined;
     if (!serverFinished || serverFinished.kind !== 'legacy_finished') return this.fail('unexpected_message');
     const expected = bytesToHex(finishedVerifyData(version, suite.prf, master, 'server', this.messages));
     if (serverFinished.verifyData !== expected) return this.fail('decrypt_error');
-    this.messages.push(encodeLegacyMessage(serverFinished));
+    this.messages.push(encodeLegacyMessage(serverFinished, this.wire));
     inbound.sequenceBase = 1;
 
     const finished: LegacyFinished = {
@@ -782,7 +798,7 @@ export class LegacyClientHandshake {
       verifyData: bytesToHex(finishedVerifyData(version, suite.prf, master, 'client', this.messages)),
     };
     const sealed = outbound.seal(0, {
-      contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[version], fragment: encodeLegacyMessage(finished),
+      contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[version], fragment: encodeLegacyMessage(finished, this.wire),
     });
     outbound.sequenceBase = 1;
     this.applyFragmentLimit(inbound, outbound);
@@ -814,12 +830,12 @@ export class LegacyClientHandshake {
     const suite = this.negotiatedSuite!;
     const { leading, rest } = splitLeadingContentType(incoming, 'handshake');
     if (leading.length > 0) {
-      const ticketBundle = decodeLegacyMessages(reassembleHandshake(leading)!);
+      const ticketBundle = decodeLegacyMessages(reassembleHandshake(leading)!, this.wire);
       for (const message of ticketBundle) {
         if (message.kind !== 'legacy_new_session_ticket') return this.fail('unexpected_message');
         const nst = message as LegacyNewSessionTicket;
         this.receivedTicket = { ticket: nst.ticket, lifetimeHint: nst.lifetimeHint };
-        this.messages.push(encodeLegacyMessage(nst));
+        this.messages.push(encodeLegacyMessage(nst, this.wire));
       }
     }
     if (!isChangeCipherSpec(rest[0])) return this.fail('unexpected_message');
@@ -827,7 +843,7 @@ export class LegacyClientHandshake {
     if (!record || record.contentType !== 'handshake') return this.fail('unexpected_message');
     const opened = this.traffic!.inbound.open(0, record);
     if (opened === null) return this.fail('bad_record_mac');
-    const finished = decodeLegacyMessages(opened.fragment)[0] as LegacyFinished | undefined;
+    const finished = decodeLegacyMessages(opened.fragment, this.wire)[0] as LegacyFinished | undefined;
     if (!finished || finished.kind !== 'legacy_finished') return this.fail('unexpected_message');
     const expected = bytesToHex(finishedVerifyData(version, suite.prf, this.derived!.master, 'server', this.messages));
     if (finished.verifyData !== expected) return this.fail('decrypt_error');

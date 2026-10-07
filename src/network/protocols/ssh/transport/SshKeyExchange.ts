@@ -11,9 +11,10 @@ import { modPow } from '@/crypto/rsa/rsa';
 import { SshReader, SshWriter } from '../wire/SshDataTypes';
 import { SSH_MSG_KEXINIT } from './SshMessageNumbers';
 
-export type RandomSource = (n: number) => Uint8Array;
+import { systemRandom, type RandomSource } from '@/crypto/random';
 
-export const systemRandom: RandomSource = (n) => globalThis.crypto.getRandomValues(new Uint8Array(n));
+export { systemRandom };
+export type { RandomSource };
 
 export type KexValueEncoding = 'string' | 'mpint';
 

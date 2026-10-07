@@ -109,6 +109,12 @@ export interface ProcessFilter {
   serviceName?: string;
 }
 
+export const TASK_COMM_LEN = 16;
+
+export function kernelComm(comm: string): string {
+  return comm.slice(0, TASK_COMM_LEN - 1);
+}
+
 /** PID 1 — init/systemd is special and cannot be killed. */
 const INIT_PID = 1;
 

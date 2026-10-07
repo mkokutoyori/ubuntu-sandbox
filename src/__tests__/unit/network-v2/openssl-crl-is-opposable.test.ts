@@ -42,7 +42,7 @@ async function autorite(nom: string): Promise<{ srv: LinuxServer; serie: string 
   await srv.executeCommand(
     'openssl req -new -key /tmp/w.key -out /tmp/w.csr -subj "/CN=www.lab"');
   await srv.executeCommand(
-    'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+    'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
     + '-in /tmp/w.csr -out /tmp/w.crt -days 90');
   const serie = (await srv.executeCommand('openssl x509 -in /tmp/w.crt -noout -serial'))
     .trim().replace('serial=', '');
@@ -51,7 +51,7 @@ async function autorite(nom: string): Promise<{ srv: LinuxServer; serie: string 
 
 async function publierCrl(srv: LinuxServer, chemin: string): Promise<void> {
   await srv.executeCommand(
-    'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+    'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
     + `-gencrl -out ${chemin}`);
 }
 
@@ -70,7 +70,7 @@ describe('révoquer a un effet', () => {
   it('après révocation et republication, il est refusé', async () => {
     const { srv } = await autorite('C2');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
     await publierCrl(srv, '/tmp/lab.crl');
 
     const out = await srv.executeCommand(
@@ -82,7 +82,7 @@ describe('révoquer a un effet', () => {
   it('sans -crl_check, la CRL ne s\'invite pas : openssl ne la consulte que si on le demande', async () => {
     const { srv } = await autorite('C3');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
     await publierCrl(srv, '/tmp/lab.crl');
 
     expect(await srv.executeCommand('openssl verify -CAfile /etc/ssl/CA/ca.crt /tmp/w.crt'))
@@ -104,7 +104,7 @@ describe('la liste porte la signature de son autorité', () => {
   it('une CRL fabriquée par une autre CA du même nom est refusée', async () => {
     const { srv } = await autorite('C5');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
     await publierCrl(srv, '/tmp/vraie.crl');
 
     // Une autorité homonyme, avec son propre index, publie sa propre
@@ -115,7 +115,7 @@ describe('la liste porte la signature de son autorité', () => {
       'openssl req -x509 -newkey rsa:1024 -keyout /tmp/rogue/ca.key '
       + '-out /tmp/rogue/ca.crt -days 365 -nodes -subj "/CN=Lab Root CA"');
     await srv.executeCommand(
-      'openssl ca -cert /tmp/rogue/ca.crt -keyfile /tmp/rogue/ca.key -gencrl -out /tmp/fausse.crl');
+      'openssl ca -batch -cert /tmp/rogue/ca.crt -keyfile /tmp/rogue/ca.key -gencrl -out /tmp/fausse.crl');
 
     const out = await srv.executeCommand(
       'openssl verify -crl_check -CAfile /etc/ssl/CA/ca.crt -CRLfile /tmp/fausse.crl /tmp/w.crt');
@@ -138,7 +138,7 @@ describe('ce que la liste affiche vient de ce qu\'elle contient', () => {
   it('la série révoquée y figure', async () => {
     const { srv, serie } = await autorite('C7');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
     await publierCrl(srv, '/tmp/lab.crl');
 
     const texte = await srv.executeCommand('openssl crl -in /tmp/lab.crl -noout -text');
@@ -149,7 +149,7 @@ describe('ce que la liste affiche vient de ce qu\'elle contient', () => {
   it('et sa date de révocation s\'écrit comme toutes les dates d\'openssl', async () => {
     const { srv } = await autorite('C8');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
     await publierCrl(srv, '/tmp/lab.crl');
 
     // Elle sortait au format interne de l'index (`260806083012Z`), qui

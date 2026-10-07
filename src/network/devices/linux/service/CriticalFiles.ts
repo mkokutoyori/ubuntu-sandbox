@@ -185,7 +185,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   date: '/bin/date', uname: '/bin/uname', hostname: '/bin/hostname',
   ps: '/bin/ps', kill: '/bin/kill', tee: '/usr/bin/tee', find: '/usr/bin/find',
   xargs: '/usr/bin/xargs', tar: '/bin/tar', gzip: '/bin/gzip', curl: '/usr/bin/curl',
-  openssl: '/usr/bin/openssl',
+  openssl: '/usr/bin/openssl', ldapsearch: '/usr/bin/ldapsearch',
   'update-ca-certificates': '/usr/sbin/update-ca-certificates',
   // Le temps (`docs/PRD-NTP-Tutoriel.md` §4). `chronyd` est un binaire a
   // part entiere plutot qu'un alias : c'est lui que l'unite lance, donc

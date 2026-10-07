@@ -192,7 +192,8 @@ import { logonDomainUser, lookupDomainGroups } from './windows/domain/DomainLogo
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
 import { GROUP_POLICY_SYSTEM_KEY, backgroundRefreshDisabled, refreshDelayMs } from './windows/domain/GroupPolicyRefresh';
 import { resetComputerSecretOverWire, removeComputerAccountOverWire, renameComputerAccountOverWire } from './windows/domain/ComputerSecureChannelClient';
-import { randomSessionKey } from '@/network/kerberos/crypto';
+import { randomSecret } from '@/network/kerberos/crypto';
+import type { KerberosServiceIdentity } from '@/network/kerberos/ApReqVerifier';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
 import { SmtpClientSession } from '@/network/smtp/SmtpClientSession';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
@@ -1282,14 +1283,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     });
   }
 
-  private kerberosServiceIdentity(): { realm: string; serviceSecret: string; clockMs: () => number } | undefined {
+  private kerberosServiceIdentity(): KerberosServiceIdentity | undefined {
     const store = this.getDirectoryStore();
     if (store) {
       const secret = store.getComputerSecret(this.getHostname());
-      return secret !== null ? { realm: store.getRealm(), serviceSecret: secret, clockMs: () => this.getSystemClockMs() } : undefined;
+      return secret !== null
+        ? { realm: store.getRealm(), serviceSecret: secret, hostName: this.getHostname(), clockMs: () => this.getSystemClockMs() }
+        : undefined;
     }
     return this.domainMembership
-      ? { realm: this.domainMembership.dnsName.toUpperCase(), serviceSecret: this.domainMembership.machineSecret, clockMs: () => this.getSystemClockMs() }
+      ? {
+        realm: this.domainMembership.dnsName.toUpperCase(), serviceSecret: this.domainMembership.machineSecret,
+        hostName: this.getHostname(), clockMs: () => this.getSystemClockMs(),
+      }
       : undefined;
   }
 
@@ -1458,7 +1464,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   resetSecureChannel(credentialUser: string, credentialPassword: string, dcAddressOverride?: string): { ok: boolean; message: string } {
     if (!this.domainMembership) return { ok: false, message: 'The computer is not joined to a domain.' };
-    const newSecret = randomSessionKey();
+    const newSecret = randomSecret();
     const result = resetComputerSecretOverWire(
       this.getTcpStack(), dcAddressOverride || this.domainMembership.dcAddress, this.domainMembership.dnsName,
       this.getHostname(), newSecret, credentialUser, credentialPassword,
@@ -4847,7 +4853,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       : [];
     new LdapServerHandler({
       tree: store.getTree(), auth: store.getBindCheck(),
-      kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret, clockMs: () => this.getSystemClockMs() } : undefined,
+      kerberos: serviceSecret !== null
+        ? { realm: store.getRealm(), serviceSecret, hostName: this.getHostname(), clockMs: () => this.getSystemClockMs() }
+        : undefined,
       startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
       implicitTls,
       otherForestDomainRoots: () => otherDomainRoots,

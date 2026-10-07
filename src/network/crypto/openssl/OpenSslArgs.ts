@@ -50,7 +50,7 @@ export const REAL_OPENSSL_SUBCOMMANDS: ReadonlySet<string> = new Set([
  * quelqu'un écrit `openssl x509 -in c.pem -noout`.
  */
 const VALUED: Readonly<Record<string, readonly string[]>> = {
-  '*': ['-in', '-out', '-keyout', '-key', '-passin', '-passout', '-pass', '-md', '-config'],
+  '*': ['-in', '-out', '-keyout', '-key', '-passin', '-passout', '-pass', '-md', '-config', '-inform', '-outform', '-keyform'],
   dgst: ['-hmac', '-mac', '-macopt', '-sigopt', '-signature'],
   enc: ['-k', '-kfile', '-K', '-iv', '-S', '-iter'],
   passwd: ['-salt'],
@@ -60,9 +60,9 @@ const VALUED: Readonly<Record<string, readonly string[]>> = {
   req: ['-days', '-subj', '-newkey', '-addext', '-extensions', '-reqexts'],
   x509: ['-days', '-CA', '-CAkey', '-CAserial', '-checkend', '-ext', '-set_serial', '-signkey', '-extfile', '-extensions'],
   verify: ['-CAfile', '-CApath', '-untrusted', '-purpose', '-attime', '-CRLfile'],
-  ca: ['-cert', '-keyfile', '-days', '-subj', '-infiles', '-revoke', '-extfile', '-extensions'],
-  s_client: ['-connect', '-servername', '-CAfile', '-verify', '-port', '-cipher'],
-  s_server: ['-accept', '-cert', '-key', '-port'],
+  ca: ['-cert', '-keyfile', '-days', '-subj', '-infiles', '-revoke', '-extfile', '-extensions', '-crl_reason', '-crldays', '-crlhours'],
+  s_client: ['-connect', '-servername', '-CAfile', '-verify', '-port', '-cipher', '-alpn'],
+  s_server: ['-accept', '-cert', '-key', '-port', '-cipher', '-WWWdir'],
   crl: ['-CAfile'],
   dhparam: ['-inform', '-outform'],
   ocsp: ['-issuer', '-cert', '-serial', '-url', '-port', '-index', '-CA', '-rsigner', '-rkey', '-reqin', '-reqout', '-respin', '-respout', '-VAfile', '-nmin', '-ndays', '-header', '-timeout', '-CAfile'],
@@ -78,7 +78,7 @@ const VALUED: Readonly<Record<string, readonly string[]>> = {
   // `-topk8` et `-nocrypt` sont des drapeaux nus : les déclarer ici leur
   // ferait avaler le `-in` qui suit. `-passin`/`-passout` en revanche
   // prennent une valeur (`pass:secret`).
-  pkcs8: ['-passin', '-passout'],
+  pkcs8: ['-passin', '-passout', '-v2'],
   kdf: ['-kdfopt', '-keylen'],
   mac: ['-macopt', '-digest'],
 };

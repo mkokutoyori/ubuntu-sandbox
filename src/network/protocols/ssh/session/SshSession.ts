@@ -156,6 +156,10 @@ export class SshSession implements ISshSession {
     return this._state.kind === 'connected';
   }
 
+  get localEndpoint(): { readonly ip: string; readonly port: number } | null {
+    return this.conn === null ? null : { ip: this.conn.localIp, port: this.conn.localPort };
+  }
+
   async connect(
     opts: SshConnectOptions,
   ): Promise<Result<SshConnectionInfo>> {

@@ -24,6 +24,7 @@ export const LdapResultCode = {
   success: 0,
   operationsError: 1,
   protocolError: 2,
+  sizeLimitExceeded: 4,
   compareFalse: 5,
   compareTrue: 6,
   authMethodNotSupported: 7,
@@ -39,6 +40,9 @@ export const LdapResultCode = {
   notAllowedOnNonLeaf: 66,
   entryAlreadyExists: 68,
   referral: 10,
+  saslBindInProgress: 14,
+  unavailableCriticalExtension: 12,
+  unwillingToPerform: 53,
   other: 80,
 } as const;
 export type LdapResultCodeValue = typeof LdapResultCode[keyof typeof LdapResultCode];
@@ -47,16 +51,17 @@ export interface LdapResult {
   resultCode: number;
   matchedDN: string;
   diagnosticMessage: string;
+  referral?: string[];
 }
 
-export interface PartialAttribute { type: string; values: string[] }
+export interface PartialAttribute { type: string; values: string[]; valueBytes?: Uint8Array[] }
 
 /** RFC 4511 §4.2 AuthenticationChoice — `simple [0] OCTET STRING` (password) or `sasl [3] SaslCredentials` (GSSAPI/Kerberos, PRD-Windows-Server-Advanced.md §5 P3). `sasl` is undefined for a simple bind. */
-export interface SaslCredentials { mechanism: string; credentials: Uint8Array }
+export interface SaslCredentials { mechanism: string; credentials?: Uint8Array }
 
 export type ProtocolOp =
-  | { kind: 'bindRequest'; version: number; name: string; password: string; sasl?: SaslCredentials }
-  | { kind: 'bindResponse'; result: LdapResult }
+  | { kind: 'bindRequest'; version: number; name: string; password: string; credentials?: Uint8Array; sasl?: SaslCredentials }
+  | { kind: 'bindResponse'; result: LdapResult; serverSaslCreds?: Uint8Array }
   | { kind: 'unbindRequest' }
   | {
       kind: 'searchRequest'; baseObject: string; scope: SearchScope; derefAliases: number;
@@ -77,7 +82,8 @@ export type ProtocolOp =
   | { kind: 'modifyDNRequest'; entry: string; newRdn: string; deleteOldRdn: boolean; newSuperior?: string }
   | { kind: 'modifyDNResponse'; result: LdapResult }
   | { kind: 'extendedRequest'; requestName: string; requestValue?: Uint8Array }
-  | { kind: 'extendedResponse'; result: LdapResult; responseName?: string };
+  | { kind: 'extendedResponse'; result: LdapResult; responseName?: string; responseValue?: Uint8Array }
+  | { kind: 'intermediateResponse'; responseName?: string; responseValue?: Uint8Array };
 
 /** RFC 4511 §4.14.1 — StartTLS's request OID, the only `extendedRequest` this simulator issues/serves. */
 export const START_TLS_OID = '1.3.6.1.4.1.1466.20037';
@@ -115,22 +121,26 @@ const APP_TAG = {
   compareRequest: 14, compareResponse: 15,
   abandonRequest: 16,
   searchResultReference: 19,
-  extendedRequest: 23, extendedResponse: 24,
+  extendedRequest: 23, extendedResponse: 24, intermediateResponse: 25,
 } as const;
 
-const SCOPE_TO_NUM: Record<SearchScope, number> = { base: 0, one: 1, sub: 2 };
-const NUM_TO_SCOPE: Record<number, SearchScope> = { 0: 'base', 1: 'one', 2: 'sub' };
+const SCOPE_TO_NUM: Record<SearchScope, number> = { base: 0, one: 1, sub: 2, children: 3 };
+const NUM_TO_SCOPE: Record<number, SearchScope> = { 0: 'base', 1: 'one', 2: 'sub', 3: 'children' };
 const MODOP_TO_NUM: Record<ModOperation, number> = { add: 0, delete: 1, replace: 2 };
 const NUM_TO_MODOP: Record<number, ModOperation> = { 0: 'add', 1: 'delete', 2: 'replace' };
 
 // ── LDAPResult — COMPONENTS OF, inlined into the enclosing response SEQUENCE ─
 
 function encodeLdapResult(r: LdapResult): Uint8Array[] {
-  return [
+  const parts = [
     encodeEnumerated(r.resultCode),
     encodeOctetString(r.matchedDN),
     encodeOctetString(r.diagnosticMessage),
   ];
+  if (r.referral !== undefined && r.referral.length > 0) {
+    parts.push(encodeContextConstructed(3, r.referral.map(encodeOctetString)));
+  }
+  return parts;
 }
 
 /** Decodes the 3 leading LDAPResult fields from `nodes` starting at `idx`; returns the index just past them. */
@@ -138,7 +148,14 @@ function decodeLdapResult(nodes: BerNode[], idx: number): { result: LdapResult; 
   const resultCode = decodeInteger(nodes[idx].content);
   const matchedDN = decodeOctetString(nodes[idx + 1].content);
   const diagnosticMessage = decodeOctetString(nodes[idx + 2].content);
-  return { result: { resultCode, matchedDN, diagnosticMessage }, next: idx + 3 };
+  let next = idx + 3;
+  const referralNode = nodes[next];
+  if (referralNode && referralNode.tagClass === 'context' && referralNode.tagNumber === 3) {
+    const referral = parseAll(referralNode.content).map(u => decodeOctetString(u.content));
+    next++;
+    return { result: { resultCode, matchedDN, diagnosticMessage, referral }, next };
+  }
+  return { result: { resultCode, matchedDN, diagnosticMessage }, next };
 }
 
 // ── PartialAttribute / AttributeList ─────────────────────────────────────────
@@ -146,15 +163,22 @@ function decodeLdapResult(nodes: BerNode[], idx: number): { result: LdapResult; 
 function encodePartialAttribute(a: PartialAttribute): Uint8Array {
   return encodeSequence([
     encodeOctetString(a.type),
-    encodeSet(a.values.map(encodeOctetString)),
+    encodeSet(a.valueBytes !== undefined ? a.valueBytes.map(encodeRawOctetString) : a.values.map(encodeOctetString)),
   ]);
+}
+
+function isTextRoundTrip(bytes: Uint8Array): boolean {
+  const reencoded = new TextEncoder().encode(decodeOctetString(bytes));
+  return reencoded.length === bytes.length && reencoded.every((byte, index) => byte === bytes[index]);
 }
 
 function decodePartialAttribute(node: BerNode): PartialAttribute {
   const [typeNode, valsNode] = parseAll(node.content);
   const type = decodeOctetString(typeNode.content);
-  const values = parseAll(valsNode.content).map(v => decodeOctetString(v.content));
-  return { type, values };
+  const valueNodes = parseAll(valsNode.content);
+  const values = valueNodes.map(v => decodeOctetString(v.content));
+  if (valueNodes.every(v => isTextRoundTrip(v.content))) return { type, values };
+  return { type, values, valueBytes: valueNodes.map(v => v.content) };
 }
 
 // ── protocolOp encode ────────────────────────────────────────────────────────
@@ -167,11 +191,16 @@ export function encodeProtocolOp(op: ProtocolOp): Uint8Array {
         encodeOctetString(op.name),
         // AuthenticationChoice ::= CHOICE { simple [0] OCTET STRING, sasl [3] SaslCredentials }.
         op.sasl
-          ? encodeContextConstructed(3, [encodeOctetString(op.sasl.mechanism), encodeRawOctetString(op.sasl.credentials)])
-          : encodeContextPrimitiveString(0, op.password),
+          ? encodeContextConstructed(3, op.sasl.credentials === undefined
+            ? [encodeOctetString(op.sasl.mechanism)]
+            : [encodeOctetString(op.sasl.mechanism), encodeRawOctetString(op.sasl.credentials)])
+          : op.credentials !== undefined ? encodeContextPrimitive(0, op.credentials) : encodeContextPrimitiveString(0, op.password),
       ]));
     case 'bindResponse':
-      return encodeApplication(APP_TAG.bindResponse, true, concat(encodeLdapResult(op.result)));
+      return encodeApplication(APP_TAG.bindResponse, true, concat([
+        ...encodeLdapResult(op.result),
+        ...(op.serverSaslCreds !== undefined ? [encodeContextPrimitive(7, op.serverSaslCreds)] : []),
+      ]));
     case 'unbindRequest':
       return encodeApplication(APP_TAG.unbindRequest, false, new Uint8Array(0));
     case 'searchRequest':
@@ -244,6 +273,12 @@ export function encodeProtocolOp(op: ProtocolOp): Uint8Array {
       return encodeApplication(APP_TAG.extendedResponse, true, concat([
         ...encodeLdapResult(op.result),
         ...(op.responseName !== undefined ? [encodeContextPrimitiveString(10, op.responseName)] : []),
+        ...(op.responseValue !== undefined ? [encodeContextPrimitive(11, op.responseValue)] : []),
+      ]));
+    case 'intermediateResponse':
+      return encodeApplication(APP_TAG.intermediateResponse, true, concat([
+        ...(op.responseName !== undefined ? [encodeContextPrimitiveString(0, op.responseName)] : []),
+        ...(op.responseValue !== undefined ? [encodeContextPrimitive(1, op.responseValue)] : []),
       ]));
   }
 }
@@ -259,15 +294,23 @@ export function decodeProtocolOp(node: BerNode): ProtocolOp {
       const authChoice = parts[2];
       if (authChoice.tagNumber === 3) {
         const [mechNode, credNode] = parseAll(authChoice.content);
-        const sasl: SaslCredentials = { mechanism: decodeOctetString(mechNode.content), credentials: credNode.content };
+        const sasl: SaslCredentials = credNode === undefined
+          ? { mechanism: decodeOctetString(mechNode.content) }
+          : { mechanism: decodeOctetString(mechNode.content), credentials: credNode.content };
         return { kind: 'bindRequest', version, name, password: '', sasl };
       }
       const password = decodeOctetString(authChoice.content); // AuthenticationChoice simple [0]
-      return { kind: 'bindRequest', version, name, password };
+      return isTextRoundTrip(authChoice.content)
+        ? { kind: 'bindRequest', version, name, password }
+        : { kind: 'bindRequest', version, name, password, credentials: authChoice.content };
     }
     case APP_TAG.bindResponse: {
-      const { result } = decodeLdapResult(parseAll(node.content), 0);
-      return { kind: 'bindResponse', result };
+      const parts = parseAll(node.content);
+      const { result, next } = decodeLdapResult(parts, 0);
+      const credsNode = parts[next];
+      const serverSaslCreds = credsNode && credsNode.tagClass === 'context' && credsNode.tagNumber === 7
+        ? credsNode.content : undefined;
+      return { kind: 'bindResponse', result, serverSaslCreds };
     }
     case APP_TAG.unbindRequest:
       return { kind: 'unbindRequest' };
@@ -366,7 +409,18 @@ export function decodeProtocolOp(node: BerNode): ProtocolOp {
       const responseNameNode = parts[next];
       const responseName = responseNameNode && responseNameNode.tagClass === 'context' && responseNameNode.tagNumber === 10
         ? decodeOctetString(responseNameNode.content) : undefined;
-      return { kind: 'extendedResponse', result, responseName };
+      const valueNode = parts.find(p => p.tagClass === 'context' && p.tagNumber === 11);
+      return { kind: 'extendedResponse', result, responseName, responseValue: valueNode?.content };
+    }
+    case APP_TAG.intermediateResponse: {
+      const parts = parseAll(node.content);
+      const nameNode = parts.find(p => p.tagClass === 'context' && p.tagNumber === 0);
+      const valueNode = parts.find(p => p.tagClass === 'context' && p.tagNumber === 1);
+      return {
+        kind: 'intermediateResponse',
+        responseName: nameNode ? decodeOctetString(nameNode.content) : undefined,
+        responseValue: valueNode?.content,
+      };
     }
     default:
       throw new Error(`LdapMessage: unknown protocolOp APPLICATION tag ${node.tagNumber}`);

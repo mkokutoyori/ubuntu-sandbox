@@ -13,6 +13,10 @@
  * main complète sans cache conclut avec un sessionId vide ; un serveur sans
  * EMS n'envoie pas l'extension) passent dans les deux états.
  */
+import { legacySuiteByName } from '@/network/tls/legacy/legacyCipherSuites';
+import { decodeHandshakeMessage, encodeHandshakeMessage } from '@/network/tls/messages';
+import { decodeLegacyMessages, encodeLegacyBundle } from '@/network/tls/legacy/legacyMessages';
+import type { ClientHello } from '@/network/tls/messages';
 import { describe, it, expect } from 'vitest';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -49,8 +53,7 @@ function connect(
 }
 
 function json(record: TlsRecord): { kind: string; [key: string]: unknown }[] {
-  const parsed = JSON.parse(bytesToUtf8(record.fragment));
-  return Array.isArray(parsed) ? parsed : [parsed];
+  return decodeLegacyMessages(record.fragment) as { kind: string; [key: string]: unknown }[];
 }
 
 function exchange(client: TlsClientSession, server: TlsServerSession): void {
@@ -71,9 +74,9 @@ describe('extended_master_secret (RFC 7627) et renegotiation_info (RFC 5746)', (
 
   it('par défaut les deux extensions sont offertes et renvoyées', () => {
     const { up, down } = connect({}, {});
-    const hello = JSON.parse(bytesToUtf8(up[0][0].fragment));
-    expect(hello.legacyExtensions.extendedMasterSecret).toBe(true);
-    expect(hello.legacyExtensions.renegotiationInfo).toBe('');
+    const hello = decodeHandshakeMessage(up[0][0].fragment) as ClientHello;
+    expect(hello.legacyExtensions!.extendedMasterSecret).toBe(true);
+    expect(hello.legacyExtensions!.renegotiationInfo).toBe('');
     const serverHello = json(down[0][0]).find((m) => m.kind === 'legacy_server_hello') as unknown as { extensions: Record<string, unknown> };
     expect(serverHello.extensions.extendedMasterSecret).toBe(true);
     expect(serverHello.extensions.renegotiationInfo).toBe('');
@@ -89,9 +92,9 @@ describe('extended_master_secret (RFC 7627) et renegotiation_info (RFC 5746)', (
   it('RFC 5746 §3.5 : un ClientHello initial à renegotiation_info non vide est refusé', () => {
     const { server } = connect({}, {}, (records, direction) => {
       if (direction !== 'up' || records[0].contentType !== 'handshake') return records;
-      const hello = JSON.parse(bytesToUtf8(records[0].fragment));
-      hello.legacyExtensions.renegotiationInfo = 'abcd';
-      return [{ ...records[0], fragment: utf8ToBytes(JSON.stringify(hello)) }];
+      const hello = decodeHandshakeMessage(records[0].fragment) as ClientHello;
+      const tampered = { ...hello, legacyExtensions: { ...hello.legacyExtensions!, renegotiationInfo: 'abcd' } };
+      return [{ ...records[0], fragment: encodeHandshakeMessage(tampered) }];
     });
     expect(server.result).toBe('reject');
     expect(server.lastAlert?.description).toBe('handshake_failure');
@@ -99,9 +102,11 @@ describe('extended_master_secret (RFC 7627) et renegotiation_info (RFC 5746)', (
 
   function stripRenegotiation(records: readonly TlsRecord[], direction: 'up' | 'down'): readonly TlsRecord[] {
     if (direction !== 'down' || records[0].contentType !== 'handshake') return records;
-    const bundle = json(records[0]) as { kind: string; extensions?: Record<string, unknown> }[];
-    for (const message of bundle) if (message.kind === 'legacy_server_hello') delete message.extensions!.renegotiationInfo;
-    return [{ ...records[0], fragment: utf8ToBytes(JSON.stringify(bundle)) }, ...records.slice(1)];
+    const bundle = json(records[0]) as { kind: string; cipherSuite?: string; extensions?: Record<string, unknown> }[];
+    const hello = bundle.find((message) => message.kind === 'legacy_server_hello')!;
+    delete hello.extensions!.renegotiationInfo;
+    const keyExchange = legacySuiteByName(hello.cipherSuite!)?.keyExchange;
+    return [{ ...records[0], fragment: encodeLegacyBundle(bundle, { version: '1.2', keyExchange }) }, ...records.slice(1)];
   }
 
   it('RFC 5746 §4.1 : un client abandonne devant un serveur sans renegotiation_info', () => {

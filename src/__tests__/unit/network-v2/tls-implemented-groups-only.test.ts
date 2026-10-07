@@ -25,6 +25,7 @@
  * indiscernables, les deux se soldant par un échec.
  */
 
+import { decodeHandshakeMessage } from '@/network/tls/messages';
 import { describe, it, expect } from 'vitest';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -65,7 +66,7 @@ function jouer(client: TlsClientSession, server: TlsServerSession): void {
 }
 
 function decoder(record: TlsRecord): Record<string, unknown> {
-  return JSON.parse(new TextDecoder().decode(record.fragment));
+  return decodeHandshakeMessage(record.fragment) as unknown as Record<string, unknown>;
 }
 
 describe('la table des groupes dit la vérité', () => {

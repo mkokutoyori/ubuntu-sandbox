@@ -58,10 +58,11 @@ export class Http1ServerSession {
     private readonly eventBus?: IEventBus,
   ) {}
 
-  start(identity?: ListenerIdentity): void {
+  start(identity?: ListenerIdentity, backlog?: number): void {
     this.listener = this.tcpStack.listen(this.port, {
       onAccept: (socket) => this.handleConnection(socket),
       identity,
+      backlog,
     });
   }
 

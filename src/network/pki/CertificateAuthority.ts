@@ -148,6 +148,8 @@ export class CertificateAuthority {
       nextUpdate: now + validityMs,
       signatureAlgorithm: this.rootCertificate.signatureAlgorithm,
       revoked: Object.freeze([...this.revoked.values()]),
+      crlNumber: this.crlNumber,
+      ...(this.rootCertificate.extensions?.subjectKeyIdentifier ? { authorityKeyIdentifier: this.rootCertificate.extensions.subjectKeyIdentifier } : {}),
     }, this.rootKey);
   }
 }

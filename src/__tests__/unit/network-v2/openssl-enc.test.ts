@@ -8,6 +8,7 @@
  * returning noise.
  */
 
+import { fileTextToBytes } from '@/crypto/encoding';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -58,7 +59,7 @@ describe('§P2 — enc: the round-trip', () => {
       + ' -in /tmp/s.txt -out /tmp/s.b64');
 
     const out = await srv.executeCommand(
-      'openssl enc -aes-256-cbc -pbkdf2 -a -d -k wrongpw -in /tmp/s.b64');
+      'openssl enc -aes-256-cbc -pbkdf2 -a -d -S 0011223344556677 -k wrongpw -in /tmp/s.b64');
 
     expect(out).toContain('bad decrypt');
   });
@@ -168,8 +169,8 @@ describe('§P2 — enc: ciphers and key derivation', () => {
   });
 
   it('a cipher openssl knows and this build lacks is named', async () => {
-    const out = await machine().executeCommand('openssl enc -chacha20 -k pw -in /etc/hostname');
-    expect(out).toContain("'chacha20' is not implemented in this simulator");
+    const out = await machine().executeCommand('openssl enc -rc4 -k pw -in /etc/hostname');
+    expect(out).toContain("Error setting cipher RC4");
   });
 
   it('the direct alias `openssl aes-256-cbc` behaves like `enc -aes-256-cbc`', async () => {
@@ -186,18 +187,16 @@ describe('§P2 — enc: ciphers and key derivation', () => {
 });
 
 describe('§P2 — enc: honest refusals', () => {
-  it('raw binary output is refused, saying WHY', async () => {
+  it('raw binary output is written as real bytes: Salted__ then the salt then AES-CBC', async () => {
     const srv = machine();
     await srv.executeCommand(`sh -c 'printf "x" > /tmp/b.txt'`);
 
-    const out = await srv.executeCommand(
-      'openssl enc -aes-256-cbc -pbkdf2 -k pw -in /tmp/b.txt -out /tmp/b.bin');
+    await srv.executeCommand('openssl enc -aes-256-cbc -pbkdf2 -k pw -in /tmp/b.txt -out /tmp/b.bin');
 
-    // This simulator's filesystem stores text: writing arbitrary bytes
-    // would lose them SILENTLY on decryption. The refusal names the cause
-    // and the option that lifts it.
-    expect(out).toContain('raw binary output cannot be stored');
-    expect(out).toContain('-a');
+    const bytes = fileTextToBytes(srv.readTextFile('/tmp/b.bin') ?? '');
+    expect(String.fromCharCode(...bytes.subarray(0, 8))).toBe('Salted__');
+    expect(bytes.length).toBe(32);
+    expect(await srv.executeCommand('openssl enc -d -aes-256-cbc -pbkdf2 -k pw -in /tmp/b.bin')).toBe('x');
   });
 
   it('with no password it refuses instead of encrypting with nothing', async () => {

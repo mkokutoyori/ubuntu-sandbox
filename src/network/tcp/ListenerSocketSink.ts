@@ -30,6 +30,6 @@ export interface ListenerIdentity {
 }
 
 export interface ListenerSocketSink {
-  announce(localIp: string, localPort: number, identity: ListenerIdentity): void;
+  announce(localIp: string, localPort: number, identity: ListenerIdentity, boundDevice?: string): void;
   withdraw(localIp: string, localPort: number): void;
 }

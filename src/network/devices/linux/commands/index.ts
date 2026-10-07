@@ -38,6 +38,8 @@ import { rndcCommand } from './dns/Rndc';
 import { nmapCommand } from './net/Nmap';
 import { hping3Command } from './net/Hping3';
 import { snmpwalkCommand } from './net/Snmpwalk';
+import { ldapsearchCommand } from './net/Ldapsearch';
+import { kdestroyCommand, kinitCommand, klistCommand } from './net/Kinit';
 import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
 import { sshCommand } from './net/Ssh';
@@ -54,6 +56,7 @@ import {
   a2ensiteCommand, a2dissiteCommand, a2enmodCommand, a2dismodCommand,
 } from './net/A2enmod';
 import { ssCommand } from './net/Ss';
+import { netstatCommand } from './net/Netstat';
 import { ncCommand } from './net/Nc';
 import { tcCommand } from './net/Tc';
 import { radtestCommand } from './net/Radtest';
@@ -176,6 +179,10 @@ export {
   nmapCommand,
   hping3Command,
   snmpwalkCommand,
+  ldapsearchCommand,
+  kinitCommand,
+  klistCommand,
+  kdestroyCommand,
   curlCommand,
   scpCommand,
   sshCommand,
@@ -194,6 +201,7 @@ export {
   a2enmodCommand,
   a2dismodCommand,
   ssCommand,
+  netstatCommand,
   ncCommand,
   tcCommand,
   radtestCommand,
@@ -334,6 +342,10 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nmapCommand,
   hping3Command,
   snmpwalkCommand,
+  ldapsearchCommand,
+  kinitCommand,
+  klistCommand,
+  kdestroyCommand,
   curlCommand,
   scpCommand,
   sshCommand,
@@ -352,6 +364,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   a2enmodCommand,
   a2dismodCommand,
   ssCommand,
+  netstatCommand,
   ncCommand,
   tcCommand,
   radtestCommand,

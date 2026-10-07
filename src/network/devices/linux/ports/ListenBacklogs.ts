@@ -1,0 +1,5 @@
+export const SSHD_LISTEN_BACKLOG = 128;
+export const NGINX_LISTEN_BACKLOG = 511;
+export const APACHE_LISTEN_BACKLOG = 511;
+export const VSFTPD_LISTEN_BACKLOG = 32;
+export const OPENBSD_NETCAT_LISTEN_BACKLOG = 1;

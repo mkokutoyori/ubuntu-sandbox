@@ -38,8 +38,16 @@ export const LINUX_IPV4_KNOBS: readonly KernelByteKnob[] = [
   { name: 'tcp_retries2', initial: 15, minimum: 0, maximum: 255 },
 ];
 
-export class LinuxIpv4Settings {
-  private readonly values = new Map<string, number>(LINUX_IPV4_KNOBS.map((knob) => [knob.name, knob.initial]));
+export const LINUX_CORE_KNOBS: readonly KernelByteKnob[] = [
+  { name: 'somaxconn', initial: 4096, minimum: 0, maximum: 2_147_483_647 },
+];
+
+export class KernelKnobStore {
+  private readonly values: Map<string, number>;
+
+  constructor(private readonly knobs: readonly KernelByteKnob[]) {
+    this.values = new Map(knobs.map((knob) => [knob.name, knob.initial]));
+  }
 
   has(name: string): boolean {
     return this.values.has(name);
@@ -50,7 +58,7 @@ export class LinuxIpv4Settings {
   }
 
   set(name: string, value: number): boolean {
-    const knob = LINUX_IPV4_KNOBS.find((candidate) => candidate.name === name);
+    const knob = this.knobs.find((candidate) => candidate.name === name);
     if (knob === undefined || value < knob.minimum || value > knob.maximum) return false;
     this.values.set(name, value);
     return true;
@@ -59,6 +67,22 @@ export class LinuxIpv4Settings {
   write(name: string, text: string): boolean {
     const value = text.trim();
     return /^\d+$/.test(value) && this.set(name, Number(value));
+  }
+}
+
+export class LinuxCoreSettings extends KernelKnobStore {
+  constructor() {
+    super(LINUX_CORE_KNOBS);
+  }
+
+  get listenBacklogLimit(): number {
+    return this.get('somaxconn');
+  }
+}
+
+export class LinuxIpv4Settings extends KernelKnobStore {
+  constructor() {
+    super(LINUX_IPV4_KNOBS);
   }
 
   get ecnPolicy(): TcpEcnPolicy {

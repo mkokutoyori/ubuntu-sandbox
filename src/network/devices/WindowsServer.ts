@@ -33,7 +33,7 @@ import { WindowsDfsrRole } from './windows/server/dfs/DfsReplicationGroup';
 import { ClusterService, type ClusterPeerConfig } from './windows/server/cluster/ClusterService';
 import { WindowsWsusRole } from './windows/server/wsus/WsusRole';
 import { WindowsPrintServerRole } from './windows/server/print/PrintServerRole';
-import { randomSessionKey } from '@/network/kerberos/crypto';
+import { randomSecret } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { locateDomainController } from './windows/domain/DcLocator';
 import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
@@ -391,7 +391,7 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { now: () => this.simulatedDate() });
     this.directoryStore.domainMode = domainLevel.domainMode;
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
-    this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
+    this.directoryStore.ensureKrbtgtPrincipal(randomSecret());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
     this.directoryStore.ensureDefaultSiteLink();
     this.directoryStore.assignServerToSite(this.getHostname(), DEFAULT_SITE_NAME, this.getInterfaces().find(p => p.getIPAddress() !== null)?.getIPAddress()?.toString());
@@ -1113,7 +1113,7 @@ export class WindowsServer extends WindowsPC {
 
     this.directoryStore = new DirectoryStore(newDomainDnsName, netbios, safeModeAdminPassword, { sharedSchemaValidator: join.schemaValidator, now: () => this.simulatedDate() });
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
-    this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
+    this.directoryStore.ensureKrbtgtPrincipal(randomSecret());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
     this.directoryStore.ensureDefaultSiteLink();
     this.directoryStore.assignServerToSite(this.getHostname(), DEFAULT_SITE_NAME, this.getInterfaces().find(p => p.getIPAddress() !== null)?.getIPAddress()?.toString());
@@ -1209,7 +1209,7 @@ export class WindowsServer extends WindowsPC {
     const remoteNetbiosName = crossRefSearch.entries[0]?.attributes
       .find(a => a.type.toLowerCase() === 'netbiosname')?.values[0];
 
-    const interrealmSecret = randomSessionKey();
+    const interrealmSecret = randomSecret();
     const localAdd = this.directoryStore.addTrust(remoteRealm, direction, transitive, interrealmSecret, remoteNetbiosName);
     if (!localAdd.ok) {
       conn.client.unbind();
@@ -1282,7 +1282,7 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: 'netdom trust : This computer is not configured as a domain controller.' };
     }
     const localRealm = this.directoryStore.getRealm();
-    const newSecret = randomSessionKey();
+    const newSecret = randomSecret();
     const localReset = this.directoryStore.resetTrustSecret(remoteRealm, newSecret);
     if (!localReset.ok) return { ok: false, message: `netdom trust : ${localReset.message}` };
     if (remoteDcAddress && credentialUser !== undefined && credentialPassword !== undefined) {

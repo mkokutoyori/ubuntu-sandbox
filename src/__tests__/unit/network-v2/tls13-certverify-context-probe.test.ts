@@ -28,6 +28,9 @@ import {
 } from '@/network/tls/messages';
 import { transcriptHash, certificateVerifyContent } from '@/network/tls/keySchedule';
 import { suiteInfo } from '@/network/tls/suite13';
+import { openFlight, sealFlight } from '@/network/tls/handshakeProtection';
+import type { CipherSuite } from '@/network/tls/types';
+import { hexToBytes } from '@/crypto/encoding';
 
 const NOW = Date.now();
 
@@ -40,7 +43,7 @@ function flight() {
   const hello = client.start();
   const down = server.handle(hello) as TlsRecord[];
   const [serverHelloRecord, ...bundleRecords] = down;
-  const messages = decodeMessages(reassembleRecords(bundleRecords, true).plaintext);
+  const messages = decodeMessages(openFlight(server.serverHandshakeTrafficSecret!, server.negotiatedCipherSuite as CipherSuite, 0, bundleRecords)!.plaintext);
   return { leaf, hello, serverHelloRecord, messages, client, down, hash: suiteInfo(server.negotiatedCipherSuite).hash };
 }
 
@@ -68,7 +71,7 @@ describe('RFC 8446 §4.4.3 — contexte de CertificateVerify', () => {
       ...messages.filter((m) => m.kind === 'encrypted_extensions').map(encodeHandshakeMessage),
       encodeHandshakeMessage(certificate),
     ], suiteHash);
-    expect(verifyCertificateVerify(leaf.cert.publicKey, hash, verify.signatureAlgorithm, verify.signature)).toBe(false);
+    expect(verifyCertificateVerify(leaf.cert.publicKey, hexToBytes(hash), verify.signatureAlgorithm, verify.signature)).toBe(false);
     expect(verifyCertificateVerify(leaf.cert.publicKey, certificateVerifyContent('client', hash), verify.signatureAlgorithm, verify.signature)).toBe(false);
   });
 
@@ -101,9 +104,10 @@ describe('RFC 8446 §4.2.3 — RSA-PSS dans CertificateVerify', () => {
     const client = new TlsClientSession({ verifier });
     const down = server.handle(client.start())!;
     const [serverHello, ...bundleRecords] = down;
-    const messages = decodeMessages(reassembleRecords(bundleRecords, true).plaintext);
+    const suite = server.negotiatedCipherSuite as CipherSuite;
+    const messages = decodeMessages(openFlight(server.serverHandshakeTrafficSecret!, suite, 0, bundleRecords)!.plaintext);
     const forged = messages.map((m) => (m.kind === 'certificate_verify' ? { ...m, signatureAlgorithm: 'rsa_pkcs1_sha256' } : m));
-    const records = fragmentAsRecords('handshake', encodeMessages(forged), true);
+    const records = sealFlight(server.serverHandshakeTrafficSecret!, suite, 0, encodeMessages(forged)).records;
     client.handle([serverHello, ...records]);
     expect(client.lastAlert?.description).toBe('illegal_parameter');
   });

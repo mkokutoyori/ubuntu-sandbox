@@ -116,11 +116,12 @@ export function bindDnsUdpServer(
   port: number = DNS_PORT,
   processName: string = 'dns',
   address?: string,
+  boundDevice?: string,
 ): void {
   if (port === DNS_PORT && address === undefined) host.getSocketTable().unbind('udp', '127.0.0.53', port);
   const bind = (listener: Parameters<EndHost['udpBind']>[1]): void => {
     if (address === undefined) host.udpBind(port, listener, processName);
-    else host.udpBindAddress(address, port, listener, processName);
+    else host.udpBindAddress(address, port, listener, processName, boundDevice);
   };
   bind(({ sourceIP, udp }) => {
     if (!(udp.payload instanceof Uint8Array)) return;

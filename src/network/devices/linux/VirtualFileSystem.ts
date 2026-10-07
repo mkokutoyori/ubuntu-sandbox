@@ -1,3 +1,4 @@
+import { bytesToFileText } from '@/crypto/encoding';
 /**
  * Inode-based Virtual File System for Linux device simulation.
  * Supports files, directories, symlinks, hard links, FIFOs, and special devices.
@@ -8,6 +9,8 @@ import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
 import { VfsPath, type PathActor } from './VfsPath';
 import { AT_DENY_USINE } from './jobs/AtPermissions';
+import { SYSTEM_CONFIG_DEFAULTS, SYSTEM_CONFIG_DIRECTORY, SYSTEM_CONFIG_FILE } from '../../ldap/openldap/ldapOptions';
+import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from '../../ldap/openldap/sasl/saslFiles';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
@@ -230,7 +233,8 @@ export class VirtualFileSystem {
       '/usr/games', '/usr/include', '/usr/libexec', '/usr/src',
       '/etc/ssl', '/etc/ssl/certs', '/etc/ssl/private',
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly', '/etc/cron.d',
-      '/etc/sudoers.d',
+      '/etc/sudoers.d', SYSTEM_CONFIG_DIRECTORY,
+      '/usr/lib/x86_64-linux-gnu', SASL_PLUGIN_DIRECTORY,
       '/etc/ufw', '/etc/ufw/applications.d',
       '/etc/iptables',
       '/etc/network', '/etc/network/interfaces.d', '/etc/network/if-up.d',
@@ -317,6 +321,8 @@ export class VirtualFileSystem {
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
       0o666, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
+    this.createFileAt(SYSTEM_CONFIG_FILE, SYSTEM_CONFIG_DEFAULTS, 0o644, 0, 0);
+    for (const path of pluginFilePaths(LIBSASL2_MODULES_PLUGINS)) this.createFileAt(path, '\x7fELF', 0o644, 0, 0);
     this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
     this.createFileAt('/etc/lsb-release',
       'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +
@@ -712,12 +718,9 @@ export class VirtualFileSystem {
         case 'null': return '';
         case 'zero': return '\0'.repeat(1024);
         case 'urandom': {
-          // Return pseudo-random bytes
-          let s = '';
-          for (let i = 0; i < 1024; i++) {
-            s += String.fromCharCode(Math.floor(Math.random() * 256));
-          }
-          return s;
+          const bytes = new Uint8Array(1024);
+          for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+          return bytesToFileText(bytes);
         }
       }
     }
@@ -737,11 +740,9 @@ export class VirtualFileSystem {
         case 'null': return '';
         case 'zero': return '\0'.repeat(count);
         case 'urandom': {
-          let s = '';
-          for (let i = 0; i < count; i++) {
-            s += String.fromCharCode(Math.floor(Math.random() * 256));
-          }
-          return s;
+          const bytes = new Uint8Array(count);
+          for (let i = 0; i < count; i++) bytes[i] = Math.floor(Math.random() * 256);
+          return bytesToFileText(bytes);
         }
       }
     }

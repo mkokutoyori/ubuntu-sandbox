@@ -6,6 +6,8 @@
  * fold case on both the attribute type and value.
  */
 
+import { parseDn as parseLdapDn } from '@/network/ldap/openldap/ldapDn';
+
 export interface AttributeTypeAndValue {
   readonly type: string;
   readonly value: string;
@@ -33,68 +35,12 @@ export function escapeDNValue(value: string): string {
   return out;
 }
 
-/** Parse one escaped/quoted attribute value, returning the unescaped value and the position after it. */
-function parseValue(s: string, start: number): { value: string; next: number } {
-  let i = start;
-  let out = '';
-  if (s[i] === '"') {
-    i++;
-    while (i < s.length && s[i] !== '"') {
-      if (s[i] === '\\' && i + 1 < s.length) { out += s[i + 1]; i += 2; }
-      else { out += s[i]; i++; }
-    }
-    if (s[i] !== '"') throw new Error(`LdapDN: unterminated quoted value in "${s}"`);
-    i++; // closing quote
-    return { value: out, next: i };
-  }
-  while (i < s.length && s[i] !== ',' && s[i] !== '+') {
-    if (s[i] === '\\') {
-      const hex = s.slice(i + 1, i + 3);
-      if (/^[0-9a-fA-F]{2}$/.test(hex)) { out += String.fromCharCode(parseInt(hex, 16)); i += 3; continue; }
-      if (i + 1 < s.length) { out += s[i + 1]; i += 2; continue; }
-      throw new Error(`LdapDN: dangling escape in "${s}"`);
-    }
-    out += s[i];
-    i++;
-  }
-  return { value: out.trim(), next: i };
-}
-
-/** Find the `=` that ends an attribute-type token, stopping at an unescaped `,`/`+` (malformed) or end of string. */
-function findUnescapedEquals(s: string, start: number): number {
-  for (let i = start; i < s.length; i++) {
-    if (s[i] === '\\') { i++; continue; }
-    if (s[i] === '=') return i;
-    if (s[i] === ',' || s[i] === '+') return -1;
-  }
-  return -1;
-}
-
 /** Parse a formatted DN string ("CN=bob,CN=Users,DC=lab,DC=local") into structured RDNs. */
 export function parseDN(dn: string): DistinguishedName {
-  const trimmed = dn.trim();
-  if (trimmed === '') return [];
-  const rdns: Rdn[] = [];
-  let i = 0;
-  while (i < trimmed.length) {
-    const avas: AttributeTypeAndValue[] = [];
-    for (;;) {
-      const eq = findUnescapedEquals(trimmed, i);
-      if (eq === -1) throw new Error(`LdapDN: malformed RDN (missing '=') in "${dn}"`);
-      const type = trimmed.slice(i, eq).trim();
-      if (!type) throw new Error(`LdapDN: empty attribute type in "${dn}"`);
-      const { value, next } = parseValue(trimmed, eq + 1);
-      avas.push({ type, value });
-      i = next;
-      if (trimmed[i] === '+') { i++; continue; }
-      break;
-    }
-    rdns.push(avas);
-    if (trimmed[i] === ',') { i++; continue; }
-    if (i < trimmed.length) throw new Error(`LdapDN: unexpected character at position ${i} in "${dn}"`);
-    break;
-  }
-  return rdns;
+  const parsed = parseLdapDn(dn.trim());
+  if (parsed === null) throw new Error(`LdapDN: malformed DN "${dn}"`);
+  const decoder = new TextDecoder();
+  return parsed.map((rdn) => rdn.map((ava) => ({ type: ava.attribute, value: decoder.decode(ava.value) })));
 }
 
 export function formatDN(dn: DistinguishedName): string {

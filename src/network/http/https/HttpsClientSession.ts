@@ -130,8 +130,15 @@ export class HttpsClientSession {
 
     if (!responseRecords) return fail('Empty reply from server');
 
-    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
+    const { plaintext, nextSeq: serverNextSeq, peerKeyUpdates, peerRequestedKeyUpdate } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
     this.serverSeq = serverNextSeq;
+    if (peerKeyUpdates) {
+      const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, this.clientSeq);
+      if (reply.length > 0) {
+        socket.write(bytesToBinaryString(encodeRecords([...reply])));
+        this.clientSeq = 0;
+      }
+    }
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
     if (parsed.ok === false) return fail(parsed.reason);
@@ -189,8 +196,15 @@ export class HttpsClientSession {
 
     if (!responseRecords) return fail('Empty reply from server');
 
-    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
+    const { plaintext, nextSeq: serverNextSeq, peerKeyUpdates, peerRequestedKeyUpdate } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
     this.serverSeq = serverNextSeq;
+    if (peerKeyUpdates) {
+      const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, this.clientSeq);
+      if (reply.length > 0) {
+        socket.write(bytesToBinaryString(encodeRecords([...reply])));
+        this.clientSeq = 0;
+      }
+    }
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
     if (parsed.ok === false) return fail(parsed.reason);

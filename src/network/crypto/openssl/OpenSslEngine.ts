@@ -11,38 +11,76 @@
 
 import { connectErrno } from '@/network/tcp/types';
 import { errnoNumber } from '@/network/core/Errno';
-import { md4, md5Hex, sha1Hex, sha256Hex, sha512Hex, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
-import { hmacHex } from '@/crypto/mac';
+import { md4, md5, sha1, sha256, sha512, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
 import { md5Crypt } from '@/crypto/passwords';
 import {
-  bytesToBase64, base64ToBytes, bytesToHex, utf8ToBytes, bytesToUtf8,
+  bytesToBase64, base64ToBytes, bytesToHex, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
-import { modpGroup } from '@/crypto/dh/modp';
+import { modpGroup, namedGroupOf } from '@/crypto/dh/modp';
 import { isProbablePrime } from '@/crypto/rsa';
-import { dhParametersToPem, pemToDhParameters, type DhParameters } from '@/network/pki/pem';
+import { dhParametersToPem, pemToDhParameters as strictPemToDhParameters, type DhParameters } from '@/network/pki/pem';
 import {
-  buildOcspResponse, verifyOcspResponse, ocspTimeIsValid, OCSP_RESPONSE_STATUS_CODE, OCSP_REQUEST_CONTENT_TYPE,
+  buildOcspResponse, verifyOcspResponse, ocspTimeIsValid, ocspCertIdFor, ocspCertIdForSerial, sameCertId,
+  ocspReasonCode, ocspReasonName, OCSP_RESPONSE_STATUS_CODE, OCSP_REQUEST_CONTENT_TYPE,
   type OcspCertId, type OcspRequestMessage, type OcspResponseMessage, type OcspStatusSource,
 } from '@/network/pki/OcspWire';
-import { ocspRequestToPem, pemToOcspRequest, ocspResponseToPem, pemToOcspResponse } from '@/network/pki/pem';
+import { encodeOcspRequest, decodeOcspRequest, encodeOcspResponse, decodeOcspResponse } from '@/network/pki/der/OcspDer';
+import { hmac } from '@/crypto/mac';
 import { parseOpensslConfig, buildExtensions, type CertificateExtensions } from './X509v3Config';
 import { materialToP256Public } from '@/crypto/ecc';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { signCertificate, type X509Certificate } from '@/network/pki/X509Certificate';
 import { encodeCertificate, canonicalSerial, sameSerial } from '@/network/pki/der/X509Der';
-import { opensslDistinguishedName } from '@/network/pki/der/DistinguishedName';
+import { opensslDistinguishedName, slashDistinguishedName, splitDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import {
-  certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
-  pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
-  encryptedPrivateKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem, pemToPrivateKeyWithPassphrase,
+  certToPem, pemToCert as strictPemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey as strictPemToPrivateKey, publicKeyToPem,
+  pemToPublicKey as strictPemToPublicKey, csrToPem, pemToCsr as strictPemToCsr, crlToPem, pemToCrl as strictPemToCrl, type CertificateRequest,
+  derFromPem, isDerText, armourDer, type PemLabel,
+  encryptedPrivateKeyToPem, traditionalEncryptedKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem, pemToPrivateKeyWithPassphrase,
 } from '@/network/pki/pem';
+import type { KeyEncryptionCipher } from '@/network/pki/der/EncryptedKeyDer';
+
+function inputPem(text: string, label: PemLabel): string {
+  return isDerText(text) ? armourDer(text, label) : text;
+}
+
+function pemToCert(text: string): X509Certificate | null { return strictPemToCert(inputPem(text, 'CERTIFICATE')); }
+function pemToCsr(text: string): CertificateRequest | null { return strictPemToCsr(inputPem(text, 'CERTIFICATE REQUEST')); }
+function pemToCrl(text: string): CertificateRevocationList | null { return strictPemToCrl(inputPem(text, 'X509 CRL')); }
+function pemToDhParameters(text: string): DhParameters | null { return strictPemToDhParameters(inputPem(text, 'DH PARAMETERS')); }
+function pemToPublicKey(text: string): PkiPublicKey | null { return strictPemToPublicKey(inputPem(text, 'PUBLIC KEY')); }
+
+function privateKeyInput(text: string): string {
+  if (!isDerText(text)) return text;
+  for (const label of ['PRIVATE KEY', 'RSA PRIVATE KEY', 'EC PRIVATE KEY'] as const) {
+    const candidate = armourDer(text, label);
+    if (strictPemToPrivateKey(candidate)) return candidate;
+  }
+  return armourDer(text, 'ENCRYPTED PRIVATE KEY');
+}
+
+function pemToPrivateKey(text: string): PkiPrivateKey | null { return strictPemToPrivateKey(privateKeyInput(text)); }
+
+function wantsDer(opts: Map<string, string | true>): boolean {
+  const form = opts.get('-outform');
+  return typeof form === 'string' && form.toUpperCase() === 'DER';
+}
+
+function emitDer(host: OpenSslHost, opts: Map<string, string | true>, lines: readonly string[], der: string, message = ''): OpenSslResult {
+  const out = opts.get('-out');
+  if (typeof out === 'string') {
+    return host.writeFile(out, der) ? { output: lines.join('\n'), stderr: message, exitCode: 0 } : fail(`${out}: cannot write`);
+  }
+  return { output: [...lines, der].join('\n'), stderr: message, exitCode: 0 };
+}
+import type { PkiPublicKey } from '@/network/pki/PkiKeyPair';
 import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
-import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
+import { CertificateRevocationList, type RevokedEntry } from '@/network/pki/CertificateRevocationList';
 import { MANDATORY_CIPHER_SUITES } from '@/network/tls/cipherSuites';
 import {
   createCipherList, cipherDescription, tls13Description, DEFAULT_CIPHER_RULE as DEFAULT_CIPHER_LIST,
@@ -53,19 +91,24 @@ import {
 } from '@/network/tls/legacy/legacyCipherSuites';
 import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
+import { crlVersionOf } from '@/network/pki/der/CrlDer';
+import { publicKeyTextLines, signatureTextLines, certificateRequestText, peerChainLines } from './OpenSslText';
+import { verifyCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { opensslHelpLines } from './OpenSslHelp';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
+import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
+import type { TlsPeerProbe } from './OpenSslHost';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 
 import { OPENSSL_VERSION_DATE, OPENSSL_VERSION_TEXT } from './opensslVersion';
 
 const DIGESTS: Readonly<Record<string, { label: string; fn: (s: string) => string }>> = {
-  md4: { label: 'MD4', fn: (s) => bytesToHex(md4(utf8ToBytes(s))) },
-  md5: { label: 'MD5', fn: md5Hex },
-  sha1: { label: 'SHA1', fn: sha1Hex },
-  sha256: { label: 'SHA2-256', fn: sha256Hex },
-  sha512: { label: 'SHA2-512', fn: sha512Hex },
+  md4: { label: 'MD4', fn: (s) => bytesToHex(md4(fileTextToBytes(s))) },
+  md5: { label: 'MD5', fn: (s) => bytesToHex(md5(fileTextToBytes(s))) },
+  sha1: { label: 'SHA1', fn: (s) => bytesToHex(sha1(fileTextToBytes(s))) },
+  sha256: { label: 'SHA2-256', fn: (s) => bytesToHex(sha256(fileTextToBytes(s))) },
+  sha512: { label: 'SHA2-512', fn: (s) => bytesToHex(sha512(fileTextToBytes(s))) },
 };
 
 /** Ce qu'openssl connaît et que ce build n'offre pas — §8.2/§8.3. */
@@ -140,7 +183,7 @@ function runDgst(host: OpenSslHost, argv: readonly string[], forced?: string): O
     // and output size both matter in RFC 2104), hence the object rather
     // than its name.
     const empreinte = typeof hmacKey === 'string'
-      ? hmacHex(HMAC_HASHES[algo] ?? SHA256, hmacKey, contenu)
+      ? bytesToHex(hmac(HMAC_HASHES[algo] ?? SHA256, utf8ToBytes(hmacKey), fileTextToBytes(contenu)))
       : d.fn(contenu);
 
     if (opts.has('-r')) {
@@ -192,18 +235,18 @@ function runBase64(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   let sortie: string;
   if (opts.has('-d')) {
     try {
-      sortie = bytesToUtf8(base64ToBytes(entree.replace(/\s+/g, '')));
+      sortie = bytesToFileText(base64ToBytes(entree.replace(/\s+/g, '')));
     } catch {
       return fail('error in base64');
     }
   } else {
-    const b64 = bytesToBase64(utf8ToBytes(entree));
+    const b64 = bytesToBase64(fileTextToBytes(entree));
     sortie = opts.has('-A') ? b64 : (b64.match(/.{1,64}/g) ?? []).join('\n');
   }
 
   const out = opts.get('-out');
   if (typeof out === 'string') {
-    return host.writeFile(out, sortie + '\n') ? ok() : fail(`${out}: cannot write`);
+    return host.writeFile(out, opts.has('-d') ? sortie : sortie + '\n') ? ok() : fail(`${out}: cannot write`);
   }
   return ok(sortie);
 }
@@ -239,7 +282,7 @@ function runGenRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const paire = PkiKeyPair.generate('rsa', bits);
   const written = privateKeyPem(host, paire.privateKey, opts, opts.has('-traditional'));
   if ('error' in written) return fail(written.error);
-  const pem = written.pem;
+  const pem = wantsDer(opts) ? derFromPem(written.pem) ?? written.pem : written.pem;
   const out = opts.get('-out');
   const trace = `Generating RSA private key, ${bits} bit long modulus (2 primes)`;
   if (typeof out === 'string') {
@@ -281,15 +324,20 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     lignes.push(`Modulus=${modulusHex(cle.material) ?? ''}`);
   }
 
+  let der: string | null = null;
   if (!opts.has('-noout')) {
+    let pem: string;
     if (opts.has('-pubout')) {
-      lignes.push(publicKeyToPem({ algorithm: cle.algorithm, material: publicPartOf(cle.material) }));
+      pem = publicKeyToPem({ algorithm: cle.algorithm, material: publicPartOf(cle.material) });
     } else {
       const written = privateKeyPem(host, cle, opts);
       if ('error' in written) return fail(written.error);
-      lignes.push(written.pem);
+      pem = written.pem;
     }
+    if (wantsDer(opts)) der = derFromPem(pem);
+    else lignes.push(pem);
   }
+  if (der !== null) return emitDer(host, opts, lignes, der, 'writing RSA key');
   const sortie = lignes.join('\n');
   const out = opts.get('-out');
   if (typeof out === 'string') {
@@ -300,8 +348,39 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
 // ─── req ────────────────────────────────────────────────────────────
 
+function readRequest(host: OpenSslHost, opts: Map<string, string | true>, path: string): OpenSslResult {
+  const text = host.readFile(path);
+  if (text === null) return fail(`Can't open "${path}" for reading, No such file or directory`);
+  const csr = pemToCsr(text);
+  if (!csr) return fail('Unable to load X509 request');
+
+  let verification = '';
+  if (opts.has('-verify')) {
+    verification = verifyCertificateRequest(csr)
+      ? 'Certificate request self-signature verify OK'
+      : 'Certificate request self-signature verify failure';
+  }
+  const lines: string[] = [];
+  if (opts.has('-text')) lines.push(...certificateRequestText(csr));
+  if (opts.has('-subject')) lines.push(`subject=${opensslDistinguishedName(csr.subject)}`);
+  if (opts.has('-modulus')) lines.push(`Modulus=${modulusHex(csr.publicKey.material)?.toUpperCase() ?? ''}`);
+  if (opts.has('-pubkey')) lines.push(publicKeyToPem(csr.publicKey).trimEnd());
+  if (!opts.has('-noout') && wantsDer(opts)) return emitDer(host, opts, lines, derFromPem(csrToPem(csr)) ?? '', verification);
+  if (!opts.has('-noout')) lines.push(csrToPem(csr).trimEnd());
+  const output = lines.join('\n');
+  const out = opts.get('-out');
+  if (typeof out === 'string' && output !== '') {
+    return host.writeFile(out, `${output}\n`) ? { output: '', stderr: verification, exitCode: 0 } : fail(`${out}: cannot write`);
+  }
+  return { output, stderr: verification, exitCode: 0 };
+}
+
 function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('req', argv);
+  const requestPath = opts.get('-in');
+  if (typeof requestPath === 'string' && !opts.has('-new') && !opts.has('-newkey') && !opts.has('-x509')) {
+    return readRequest(host, opts, requestPath);
+  }
 
   const subjBrut = opts.get('-subj');
   if (typeof subjBrut !== 'string') {
@@ -376,15 +455,16 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       keyPair: { publicKey: publique, privateKey: cle },
       extensions: built.extensions,
     });
-    const pem = certToPem(cert);
+    const pem = wantsDer(opts) ? derFromPem(certToPem(cert)) ?? '' : certToPem(cert);
     if (typeof out === 'string') {
       return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);
     }
     return ok(pem);
   }
 
-  const pem = csrToPem(
+  const requestPem = csrToPem(
     buildCertificateRequest(sujet, { publicKey: publique, privateKey: cle }, altNames));
+  const pem = wantsDer(opts) ? derFromPem(requestPem) ?? '' : requestPem;
   if (typeof out === 'string') {
     return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);
   }
@@ -436,6 +516,7 @@ function runX509(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     };
   }
 
+  if (!opts.has('-noout') && wantsDer(opts)) return emitDer(host, opts, lignes, derFromPem(certToPem(cert)) ?? '');
   if (!opts.has('-noout')) lignes.push(certToPem(cert).trimEnd());
 
   const sortie = lignes.join('\n');
@@ -463,15 +544,7 @@ function renderText(cert: X509Certificate): string[] {
     `            Not Before: ${opensslDate(cert.notBefore)}`,
     `            Not After : ${opensslDate(cert.notAfter)}`,
     `        Subject: ${opensslDistinguishedName(cert.subject)}`,
-    '        Subject Public Key Info:',
-    `            Public Key Algorithm: rsaEncryption`,
-    '                RSA Public-Key: (2048 bit)',
-    '                Modulus:',
-    // §5 P3 : la simulation se déclare là où elle est lue, pas en note
-    // de bas de page. Un module inventé affiché sans mention
-    // enseignerait une fausse confiance.
-    '                    <simulated key material — this build does not compute',
-    '                     real RSA moduli; see docs/PRD-OpenSSL.md §3.2>',
+    ...publicKeyTextLines(cert.publicKey),
   ];
   const ext = cert.extensions;
   const critical = new Set(ext?.criticalExtensions ?? []);
@@ -495,6 +568,7 @@ function renderText(cert: X509Certificate): string[] {
       ...ext.authorityInfoAccess.map((a) => `                ${a.method === 'OCSP' ? 'OCSP' : 'CA Issuers'} - URI:${a.uri}`));
   }
   if (lines.length > 0) l.push('        X509v3 extensions:', ...lines);
+  l.push(...signatureTextLines(cert.signatureAlgorithm, cert.signature));
   return l;
 }
 
@@ -530,6 +604,7 @@ function signCsr(
 ): OpenSslResult {
   const csr = pemToCsr(texteCsr);
   if (!csr) return fail('unable to load certificate request');
+  if (!verifyCertificateRequest(csr)) return fail('Certificate request self-signature did not match the contents');
 
   const cheminCa = opts.get('-CA');
   const cheminCaKey = opts.get('-CAkey');
@@ -712,10 +787,13 @@ function labeledBignum(label: string, value: bigint): string[] {
 
 function dhParametersText(parameters: DhParameters): string {
   const bits = parameters.prime.toString(2).length;
+  const named = namedGroupOf(parameters.prime, parameters.generator);
   const lines = [
     `DH Parameters: (${bits} bit)`,
-    ...labeledBignum('P:   ', parameters.prime),
-    ...labeledBignum('G:   ', parameters.generator),
+    ...(named !== undefined ? [`GROUP: ${named}`] : [
+      ...labeledBignum('P:   ', parameters.prime),
+      ...labeledBignum('G:   ', parameters.generator),
+    ]),
   ];
   return lines.map((line) => `    ${line}`).join('\n');
 }
@@ -752,6 +830,9 @@ function runDhparam(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const safe = isProbablePrime(parameters.prime, 8) && isProbablePrime((parameters.prime - 1n) / 2n, 8);
     if (!safe) return fail('Error, invalid parameters generated');
     messages.push('DH parameters appear to be ok.');
+  }
+  if (!opts.has('-noout') && wantsDer(opts)) {
+    return emitDer(host, opts, chunks, derFromPem(dhParametersToPem(parameters)) ?? '', messages.join('\n'));
   }
   if (!opts.has('-noout')) chunks.push(dhParametersToPem(parameters).replace(/\n$/, ''));
   const body = chunks.join('\n');
@@ -830,6 +911,16 @@ function runInfo(argv: readonly string[]): OpenSslResult {
 
 const CA_INDEX = '/etc/ssl/CA/index.txt';
 const CA_SERIAL = '/etc/ssl/CA/serial';
+const CA_CRL_NUMBER = '/etc/ssl/CA/crlnumber';
+const CRL_REASON_NAMES = [
+  'unspecified', 'keyCompromise', 'CACompromise', 'affiliationChanged', 'superseded',
+  'cessationOfOperation', 'certificateHold', 'removeFromCRL',
+] as const;
+const CRL_REASON_TEXT: Readonly<Record<string, string>> = {
+  unspecified: 'Unspecified', keyCompromise: 'Key Compromise', cACompromise: 'CA Compromise',
+  affiliationChanged: 'Affiliation Changed', superseded: 'Superseded',
+  cessationOfOperation: 'Cessation Of Operation', certificateHold: 'Certificate Hold', removeFromCRL: 'Remove From CRL',
+};
 
 /**
  * Une entrée de l'index d'openssl-ca, au format réel :
@@ -898,16 +989,66 @@ function repeatedOption(argv: readonly string[], name: string): string[] {
   return out;
 }
 
+const OCSP_STATUS_NAMES: Readonly<Record<OcspResponseMessage['status'], string>> = {
+  successful: 'successful', malformedRequest: 'malformedrequest', internalError: 'internalerror',
+  tryLater: 'trylater', sigRequired: 'sigrequired', unauthorized: 'unauthorized',
+};
+
+function upperHex(hex: string): string {
+  return hex.toUpperCase();
+}
+
+function nonceText(nonce: string): string {
+  return upperHex(`04${(nonce.length / 2).toString(16).padStart(2, '0')}${nonce}`);
+}
+
+function certIdText(id: OcspCertId, indent: string): string[] {
+  return [
+    `${indent}Certificate ID:`,
+    `${indent}  Hash Algorithm: ${id.hashAlgorithm}`,
+    `${indent}  Issuer Name Hash: ${upperHex(id.issuerNameHash)}`,
+    `${indent}  Issuer Key Hash: ${upperHex(id.issuerKeyHash)}`,
+    `${indent}  Serial Number: ${shownSerial(id.serialNumber)}`,
+  ];
+}
+
+function ocspRequestText(request: OcspRequestMessage): string[] {
+  const lines = ['OCSP Request Data:', '    Version: 1 (0x0)', '    Requestor List:'];
+  for (const id of request.ids) lines.push(...certIdText(id, '        '));
+  if (request.nonce !== undefined) lines.push('    Request Extensions:', '        OCSP Nonce: ', `            ${nonceText(request.nonce)}`);
+  return lines;
+}
+
+function compatNames(lines: readonly string[]): string[] {
+  return lines.map((line) => line.replace(/^(\s+(?:Issuer|Subject): )(.*)$/, (_, prefix: string, value: string) => (
+    `${prefix}${value.replace(/ = /g, '=')}`)));
+}
+
 function ocspResponseText(response: OcspResponseMessage): string[] {
-  const lines = ['OCSP Response Data:', `    OCSP Response Status: ${response.status} (0x${OCSP_RESPONSE_STATUS_CODE[response.status].toString(16)})`];
-  if (response.status === 'successful') {
-    lines.push('    Response Type: Basic OCSP Response', '    Version: 1 (0x0)',
-      `    Responder Id: ${response.responder ?? ''}`, `    Produced At: ${opensslDate(response.producedAt ?? 0)}`, '    Responses:');
-    for (const single of response.singles) {
-      lines.push('    Certificate ID:', `      Issuer: ${opensslDistinguishedName(single.tbs.issuer)}`, `      Serial Number: ${shownSerial(single.tbs.serialNumber)}`,
-        `    Cert Status: ${single.tbs.status}`, `    This Update: ${opensslDate(single.tbs.thisUpdate)}`,
-        `    Next Update: ${opensslDate(single.tbs.nextUpdate)}`);
+  const lines = ['OCSP Response Data:', `    OCSP Response Status: ${OCSP_STATUS_NAMES[response.status]} (0x${OCSP_RESPONSE_STATUS_CODE[response.status].toString(16)})`];
+  if (response.status !== 'successful') return lines;
+  const responder = response.responder === undefined ? ''
+    : 'name' in response.responder ? opensslDistinguishedName(response.responder.name) : upperHex(response.responder.keyHash);
+  lines.push('    Response Type: Basic OCSP Response', '    Version: 1 (0x0)',
+    `    Responder Id: ${responder}`, `    Produced At: ${opensslDate(response.producedAt ?? 0)}`, '    Responses:');
+  for (const single of response.singles) {
+    lines.push(...certIdText(single.certId, '    '), `    Cert Status: ${single.status}`);
+    if (single.status === 'revoked') {
+      lines.push(`    Revocation Time: ${opensslDate(single.revokedAt ?? 0)}`);
+      if (single.revocationReason !== undefined) {
+        lines.push(`    Revocation Reason: ${ocspReasonName(single.revocationReason)} (0x${single.revocationReason.toString(16)})`);
+      }
     }
+    lines.push(`    This Update: ${opensslDate(single.thisUpdate)}`);
+    if (single.nextUpdate !== undefined) lines.push(`    Next Update: ${opensslDate(single.nextUpdate)}`);
+  }
+  lines.push('');
+  if (response.nonce !== undefined) lines.push('    Response Extensions:', '        OCSP Nonce: ', `            ${nonceText(response.nonce)}`);
+  if (response.signatureAlgorithm !== undefined && response.signature !== undefined) {
+    lines.push(...signatureTextLines(response.signatureAlgorithm, response.signature));
+  }
+  for (const certificate of response.responderCertificates ?? []) {
+    lines.push(...compatNames(renderText(certificate)), certToPem(certificate).trimEnd());
   }
   return lines;
 }
@@ -936,7 +1077,11 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const nmin = text('-nmin');
   const ndays = text('-ndays');
-  const validityMs = nmin !== null ? Number(nmin) * 60_000 : ndays !== null ? Number(ndays) * 86_400_000 : undefined;
+  const validityMs = nmin !== null ? Number(nmin) * 60_000 : ndays !== null ? Number(ndays) * 86_400_000 : null;
+  const readDer = (path: string, what: string): Uint8Array | OpenSslResult => {
+    const content = read(path, what);
+    return typeof content === 'string' ? fileTextToBytes(content) : content;
+  };
 
   const respondTo = (request: OcspRequestMessage): OcspResponseMessage | OpenSslResult => {
     const indexPath = text('-index');
@@ -959,30 +1104,37 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       lookup: (id) => {
         const entry = entries.find((e) => sameSerial(e.serie, id.serialNumber));
         if (!entry) return { status: 'unknown' };
-        if (entry.etat === 'R') return { status: 'revoked', revokedAt: dateDepuisIndex(entry.revocation.split(',')[0]) };
+        if (entry.etat === 'R') {
+          const [date, reason] = entry.revocation.split(',');
+          const code = reason === undefined ? undefined : ocspReasonCode(reason);
+          return { status: 'revoked', revokedAt: dateDepuisIndex(date), ...(code !== undefined ? { revocationReason: code } : {}) };
+        }
         return { status: 'good' };
       },
     };
     return buildOcspResponse(
-      request, source, { name: signerCert.subject, key, certificate: signerCert },
-      { now, validityMs, caSubject: ca.subject },
+      request, source, { key, certificate: signerCert, identifyByKey: opts.has('-resp_key_id') },
+      { now, validityMs, issuer: ca, includeCertificates: !opts.has('-resp_no_certs') },
     );
   };
 
   const summary = (response: OcspResponseMessage, request: OcspRequestMessage | null, names: readonly string[]): { text: string[]; ok: boolean } => {
     const lines: string[] = [];
     let ok = true;
-    response.singles.forEach((single, index) => {
-      const name = names[index] ?? shownSerial(single.tbs.serialNumber);
-      lines.push(`${name}: ${single.tbs.status}`);
-      lines.push(`\tThis Update: ${opensslDate(single.tbs.thisUpdate)}`);
-      lines.push(`\tNext Update: ${opensslDate(single.tbs.nextUpdate)}`);
-      if (single.tbs.status === 'revoked' && single.tbs.revokedAt !== undefined) {
-        lines.push(`\tRevocation Time: ${opensslDate(single.tbs.revokedAt)}`);
+    if (request === null || names.length === 0) return { text: lines, ok };
+    request.ids.forEach((id, index) => {
+      const name = names[index] ?? shownSerial(id.serialNumber);
+      const single = response.singles.find((candidate) => sameCertId(candidate.certId, id));
+      if (!single) { lines.push(`${name}: ERROR: No Status found.`); ok = false; return; }
+      const valid = ocspTimeIsValid(single, now, 5 * 60_000, null);
+      lines.push(`${name}: ${valid ? '' : 'WARNING: Status times invalid.\n'}${single.status}`);
+      lines.push(`\tThis Update: ${opensslDate(single.thisUpdate)}`);
+      if (single.nextUpdate !== undefined) lines.push(`\tNext Update: ${opensslDate(single.nextUpdate)}`);
+      if (single.status === 'revoked') {
+        if (single.revocationReason !== undefined) lines.push(`\tReason: ${ocspReasonName(single.revocationReason)}`);
+        lines.push(`\tRevocation Time: ${opensslDate(single.revokedAt ?? 0)}`);
       }
-      if (!ocspTimeIsValid(single, now, 5 * 60_000, null)) { lines.push('WARNING: Status times invalid.'); ok = false; }
     });
-    void request;
     return { text: lines, ok };
   };
 
@@ -993,13 +1145,18 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const number = Number(port);
     if (!Number.isInteger(number) || number < 1 || number > 65535) return fail(`Illegal -port value ${port}`);
     if (typeof host.serveHttp !== 'function') return fail('openssl: ocsp -port: this platform cannot hold a listener');
-    const probe = respondTo({ ids: [{ issuer: '', serialNumber: '' }] });
+    const probe = respondTo({ ids: [{ hashAlgorithm: 'sha1', issuerNameHash: '', issuerKeyHash: '', serialNumber: '00' }] });
     if ('exitCode' in probe) return probe;
     const opened = host.serveHttp(number, (body) => {
-      const request = pemToOcspRequest(body);
-      if (!request) return { status: 200, body: ocspResponseToPem({ status: 'malformedRequest', singles: [] }) };
+      const encoded = (response: OcspResponseMessage): string => bytesToFileText(encodeOcspResponse(response));
+      let request: OcspRequestMessage;
+      try {
+        request = decodeOcspRequest(fileTextToBytes(body));
+      } catch {
+        return { status: 200, body: encoded({ status: 'malformedRequest', singles: [] }) };
+      }
       const answer = respondTo(request);
-      return { status: 200, body: ocspResponseToPem('exitCode' in answer ? { status: 'internalError', singles: [] } : answer) };
+      return { status: 200, body: encoded('exitCode' in answer ? { status: 'internalError', singles: [] } : answer) };
     });
     if (!opened) return fail(`Error setting up accept BIO\nAddress already in use`);
     stderr.push(`Waiting for OCSP client connections...`);
@@ -1011,9 +1168,9 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const reqin = text('-reqin');
   const respin = text('-respin');
   if (reqin !== null) {
-    const content = read(reqin, 'request'); if (typeof content !== 'string') return content;
-    request = pemToOcspRequest(content);
-    if (!request) return fail('Error reading OCSP request');
+    const content = readDer(reqin, 'request'); if (!(content instanceof Uint8Array)) return content;
+    try { request = decodeOcspRequest(content); } catch { return fail('Error reading OCSP request'); }
+    names = request.ids.map((id) => shownSerial(id.serialNumber));
   } else if (respin === null || text('-issuer') !== null) {
     const issuerPath = text('-issuer');
     const certPaths = repeatedOption(argv, '-cert');
@@ -1028,13 +1185,13 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       const content = read(path, 'certificate'); if (typeof content !== 'string') return content;
       const cert = pemToCert(content);
       if (!cert) return fail('Error loading certificate');
-      ids.push({ issuer: issuer.subject, serialNumber: canonicalSerial(cert.serialNumber) });
+      ids.push(ocspCertIdFor(cert, issuer));
       names.push(path);
     }
     for (const serial of serials) {
       const clean = serial.replace(/^0x/i, '').toLowerCase();
       if (!/^[0-9a-f]+$/.test(clean)) return fail(`Error converting serial number ${serial}`);
-      ids.push({ issuer: issuer.subject, serialNumber: canonicalSerial(clean) });
+      ids.push(ocspCertIdForSerial(canonicalSerial(clean), issuer));
       names.push(serial);
     }
     const nonce = opts.has('-no_nonce') || respin !== null ? undefined : bytesToHex(host.randomBytes(16));
@@ -1043,14 +1200,14 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (request !== null && names.length === 0) names = request.ids.map((id) => shownSerial(id.serialNumber));
 
   const reqout = text('-reqout');
-  if (reqout !== null && request !== null && !host.writeFile(reqout, ocspRequestToPem(request))) return fail(`${reqout}: cannot write`);
+  if (request !== null && (opts.has('-text') || opts.has('-req_text'))) out.push(...ocspRequestText(request));
+  if (reqout !== null && request !== null && !host.writeFile(reqout, bytesToFileText(encodeOcspRequest(request)))) return fail(`${reqout}: cannot write`);
 
   let response: OcspResponseMessage | null = null;
   const respout = text('-respout');
   if (respin !== null) {
-    const content = read(respin, 'response'); if (typeof content !== 'string') return content;
-    response = pemToOcspResponse(content);
-    if (!response) return fail('Error reading OCSP response');
+    const content = readDer(respin, 'response'); if (!(content instanceof Uint8Array)) return content;
+    try { response = decodeOcspResponse(content); } catch { return fail('Error reading OCSP response'); }
   } else if (text('-index') !== null && (reqin !== null)) {
     const answer = respondTo(request!);
     if ('exitCode' in answer) return answer;
@@ -1060,22 +1217,23 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (!url) return fail(`${text('-url')} Error parsing -url argument`);
     const address = host.resolveHost(url[1]) ?? url[1];
     if (typeof host.httpPost !== 'function') return fail('openssl: ocsp -url: this platform has no HTTP client');
-    const reply = host.httpPost(address, Number(url[2] ?? 80), url[3] ?? '/', ocspRequestToPem(request!), {
+    const reply = host.httpPost(address, Number(url[2] ?? 80), url[3] ?? '/', bytesToFileText(encodeOcspRequest(request!)), {
       'Content-Type': OCSP_REQUEST_CONTENT_TYPE,
     });
     if (reply.ok === false) return fail(`Error querying OCSP responder\nconnect:errno=111 (${reply.reason})`);
-    response = pemToOcspResponse(reply.body);
-    if (!response) return fail('Error querying OCSP responder');
+    try { response = decodeOcspResponse(fileTextToBytes(reply.body)); } catch { return fail('Error querying OCSP responder'); }
+  } else if (request !== null) {
+    return finish(0);
   } else {
     return fail('Need an OCSP response: use -respin, -url or a local responder (-index with -reqin)');
   }
 
-  if (respout !== null && !host.writeFile(respout, ocspResponseToPem(response))) return fail(`${respout}: cannot write`);
+  if (respout !== null && !host.writeFile(respout, bytesToFileText(encodeOcspResponse(response)))) return fail(`${respout}: cannot write`);
+  if (opts.has('-text') || opts.has('-resp_text')) out.push(...ocspResponseText(response));
   if (response.status !== 'successful') {
-    out.push(`Responder Error: ${response.status} (${OCSP_RESPONSE_STATUS_CODE[response.status]})`);
+    stderr.push(`Responder Error: ${OCSP_STATUS_NAMES[response.status]} (${OCSP_RESPONSE_STATUS_CODE[response.status]})`);
     return finish(1);
   }
-  if (opts.has('-text')) out.push(...ocspResponseText(response));
   if (reqin !== null && text('-index') !== null && respin === null) return finish(0);
 
   let code = 0;
@@ -1093,6 +1251,19 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const printed = summary(response, request, names);
   out.push(...printed.text);
   return finish(printed.ok ? code : 1);
+}
+
+const LONG_ATTRIBUTE_NAMES: Readonly<Record<string, string>> = {
+  C: 'countryName', ST: 'stateOrProvinceName', L: 'localityName', O: 'organizationName',
+  OU: 'organizationalUnitName', CN: 'commonName', emailAddress: 'emailAddress', DC: 'domainComponent',
+  serialNumber: 'serialNumber', title: 'title', SN: 'surname', GN: 'givenName', street: 'streetAddress', UID: 'userId',
+};
+
+function subjectAttributeLines(subject: string): string[] {
+  return splitDistinguishedName(subject).map(({ type, value }) => {
+    const kind = type === 'C' || type === 'serialNumber' ? 'PRINTABLE' : type === 'DC' || type === 'emailAddress' ? 'IA5STRING' : 'ASN.1 12';
+    return `${(LONG_ATTRIBUTE_NAMES[type] ?? type).padEnd(22)}:${kind}:'${value}'`;
+  });
 }
 
 function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
@@ -1121,10 +1292,16 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (!cert) return fail('unable to load certificate');
     const entree = index.find((e) => sameSerial(e.serie, cert.serialNumber));
     if (!entree) return fail(`ERROR:Serial number ${shownSerial(cert.serialNumber)} is not in the index`);
+    const reasonText = opts.get('-crl_reason');
+    let reason: string | undefined;
+    if (typeof reasonText === 'string') {
+      reason = CRL_REASON_NAMES.find((name) => name.toLowerCase() === reasonText.toLowerCase());
+      if (reason === undefined) return fail(`Unknown CRL reason ${reasonText}`);
+    }
     entree.etat = 'R';
-    entree.revocation = dateIndex(host.now());
+    entree.revocation = reason ? `${dateIndex(host.now())},${reason}` : dateIndex(host.now());
     ecrireIndex(host, index);
-    return { output: '', stderr: `Revoking Certificate ${shownSerial(cert.serialNumber)}.\nData Base Updated`, exitCode: 0 };
+    return { output: '', stderr: `Revoking Certificate ${shownSerial(cert.serialNumber)}.\nDatabase updated`, exitCode: 0 };
   }
 
   // ── publication de la CRL ──
@@ -1134,15 +1311,35 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     // personne : n'importe qui pouvait en écrire une, et rien ne pouvait
     // la distinguer de celle de l'autorité. C'est ce qui manquait pour
     // que `verify -crl_check` puisse exister.
+    const crlDays = Number(opts.get('-crldays') ?? 0);
+    const crlHours = Number(opts.get('-crlhours') ?? 0);
+    const nextUpdateMs = crlDays === 0 && crlHours === 0
+      ? 30 * 24 * 3600 * 1000
+      : (crlDays * 24 + crlHours) * 3600 * 1000;
+    const crlNumberText = host.readFile(CA_CRL_NUMBER);
+    const crlNumber = crlNumberText === null ? undefined : Number.parseInt(crlNumberText.trim() || '0', 16);
+    if (crlNumber !== undefined && Number.isNaN(crlNumber)) return fail('error while loading CRL number');
     const crl = CertificateRevocationList.sign({
       version: 2,
       issuer: ca.subject,
       thisUpdate: host.now(),
-      nextUpdate: host.now() + 30 * 24 * 3600 * 1000,
+      nextUpdate: host.now() + nextUpdateMs,
       signatureAlgorithm: 'sha256WithRSAEncryption',
-      revoked: index.filter((e) => e.etat === 'R')
-        .map((e) => ({ serialNumber: canonicalSerial(e.serie), revocationDate: dateDepuisIndex(e.revocation) })),
+      revoked: index.filter((e) => e.etat === 'R').map((e) => {
+        const [date, reason] = e.revocation.split(',');
+        const reasonCode = reason === undefined ? undefined
+          : (reason === 'CACompromise' ? 'cACompromise' : reason) as RevokedEntry['reasonCode'];
+        return {
+          serialNumber: canonicalSerial(e.serie),
+          revocationDate: dateDepuisIndex(date),
+          ...(reasonCode ? { reasonCode } : {}),
+        };
+      }),
+      ...(crlNumber !== undefined ? { crlNumber } : {}),
     }, cleCa);
+    if (crlNumber !== undefined) {
+      host.writeFile(CA_CRL_NUMBER, `${(crlNumber + 1).toString(16).toUpperCase().padStart(2, '0')}\n`);
+    }
     const pem = crlToPem(crl);
     const out = opts.get('-out');
     if (typeof out === 'string') {
@@ -1158,10 +1355,14 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (texteCsr === null) return fail(`unable to load certificate request: ${cheminCsr}`);
   const csr = pemToCsr(texteCsr);
   if (!csr) return fail('unable to load certificate request');
+  if (!verifyCertificateRequest(csr)) return fail('Signature did not match the certificate request');
 
+  const evenHex = (value: number): string => {
+    const digits = value.toString(16).toUpperCase();
+    return digits.length % 2 === 1 ? `0${digits}` : digits;
+  };
   const serieCourante = Number.parseInt(host.readFile(CA_SERIAL)?.trim() ?? '1000', 16);
-  const serie = (serieCourante + 1).toString(16).toUpperCase().padStart(4, '0');
-  host.writeFile(CA_SERIAL, serie + '\n');
+  const serie = evenHex(serieCourante);
 
   const caExtensions = extensionsFromFile(host, opts, csr, ca);
   if ('error' in caExtensions) return fail(caExtensions.error);
@@ -1179,26 +1380,85 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   };
   const cert: X509Certificate = signCertificate(champs, cleCa);
 
+  const batch = opts.has('-batch');
+  const typed = (host.stdin() ?? '').split('\n');
+  if (typed[typed.length - 1] === '') typed.pop();
+  const nextAnswer = (): string | null => typed.shift() ?? null;
+  let trace = [
+    `Using configuration from ${typeof opts.get('-config') === 'string' ? opts.get('-config') : '/usr/lib/ssl/openssl.cnf'}`,
+    'Check that the request matches the signature',
+    'Signature ok',
+    "The Subject's Distinguished Name is as follows",
+    ...subjectAttributeLines(csr.subject),
+    `Certificate is to be certified until ${opensslDate(cert.notAfter)} (${jours} days)`,
+  ].join('\n') + '\n';
+  const declined = (prompt: string, refusal: string): OpenSslResult | null => {
+    trace += prompt;
+    const answer = nextAnswer();
+    if (answer !== null && /^[yY]/.test(answer)) return null;
+    trace += answer === null ? `${refusal}: I/O error` : refusal;
+    return { output: '', stderr: trace, exitCode: 0 };
+  };
+  if (!batch) {
+    const refused = declined('Sign the certificate? [y/n]:', 'CERTIFICATE WILL NOT BE CERTIFIED');
+    if (refused !== null) return refused;
+  }
+  trace += '\n';
+  if (!batch) {
+    const refused = declined('\n1 out of 1 certificate requests certified, commit? [y/n]', 'CERTIFICATION CANCELED');
+    if (refused !== null) return refused;
+  }
+  trace += `Write out database with 1 new entries\nDatabase updated`;
+
+  host.writeFile(CA_SERIAL, evenHex(serieCourante + 1) + '\n');
   index.push({
     etat: 'V',
     expiration: dateIndex(cert.notAfter),
     revocation: '',
     serie,
-    sujet: `/${csr.subject.replace(/ = /g, '=').replace(/, /g, '/')}`,
+    sujet: slashDistinguishedName(csr.subject),
   });
   ecrireIndex(host, index);
 
   const pem = certToPem(cert);
   const out = opts.get('-out');
-  const trace = `Check that the request matches the signature\nSignature ok\n`
-    + `Certificate is to be certified until ${opensslDate(cert.notAfter)}\n`
-    + `\n1 out of 1 certificate requests certified, commit? [y/n]y\n\nWrite out database with 1 new entries\nData Base Updated`;
+  const text = trace;
   if (typeof out === 'string') {
     return host.writeFile(out, pem)
-      ? { output: '', stderr: trace, exitCode: 0 }
+      ? { output: '', stderr: text, exitCode: 0 }
       : fail(`${out}: cannot write`);
   }
-  return { output: pem, stderr: trace, exitCode: 0 };
+  return { output: pem, stderr: text, exitCode: 0 };
+}
+
+function crlText(crl: CertificateRevocationList): string[] {
+  const lines = [
+    'Certificate Revocation List (CRL):',
+    `        Version ${crlVersionOf(crl)} (0x${crlVersionOf(crl) - 1})`,
+    `        Signature Algorithm: ${crl.signatureAlgorithm}`,
+    `        Issuer: ${opensslDistinguishedName(crl.issuer)}`,
+    `        Last Update: ${opensslDate(crl.thisUpdate)}`,
+    `        Next Update: ${opensslDate(crl.nextUpdate)}`,
+  ];
+  const extensions: string[] = [];
+  if (crl.authorityKeyIdentifier !== undefined) {
+    extensions.push('            X509v3 Authority Key Identifier: ', `                ${crl.authorityKeyIdentifier}`);
+  }
+  if (crl.crlNumber !== undefined) extensions.push('            X509v3 CRL Number: ', `                ${crl.crlNumber}`);
+  if (extensions.length > 0) lines.push('        CRL extensions:', ...extensions);
+  if (crl.revoked.length === 0) {
+    lines.push('No Revoked Certificates.');
+  } else {
+    lines.push('Revoked Certificates:');
+    for (const entry of crl.revoked) {
+      lines.push(`    Serial Number: ${shownSerial(entry.serialNumber)}`, `        Revocation Date: ${opensslDate(entry.revocationDate)}`);
+      if (entry.reasonCode) {
+        lines.push('        CRL entry extensions:', '            X509v3 CRL Reason Code: ', `                ${CRL_REASON_TEXT[entry.reasonCode]}`);
+      }
+    }
+  }
+  lines.push(...signatureTextLines(crl.signatureAlgorithm, crl.signature));
+  return lines;
 }
 
 function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
@@ -1215,25 +1475,12 @@ function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (opts.has('-lastupdate')) lignes.push(`lastUpdate=${opensslDate(crl.thisUpdate)}`);
   if (opts.has('-nextupdate')) lignes.push(`nextUpdate=${opensslDate(crl.nextUpdate)}`);
   if (opts.has('-text')) {
-    lignes.push('Certificate Revocation List (CRL):');
-    lignes.push('        Version 2 (0x1)');
-    lignes.push(`        Issuer: ${opensslDistinguishedName(crl.issuer)}`);
-    lignes.push(`        Last Update: ${opensslDate(crl.thisUpdate)}`);
-    lignes.push(`        Next Update: ${opensslDate(crl.nextUpdate)}`);
-    if (crl.revoked.length === 0) {
-      lignes.push('No Revoked Certificates.');
-    } else {
-      lignes.push('Revoked Certificates:');
-      for (const r of crl.revoked) {
-        lignes.push(`    Serial Number: ${shownSerial(r.serialNumber)}`);
-        // La date de révocation s'affiche comme toutes les autres dates
-        // d'openssl. Elle sortait jusqu'ici au format de l'index
-        // (`260806083012Z`), qui n'apparaît nulle part ailleurs.
-        lignes.push(`        Revocation Date: ${opensslDate(r.revocationDate)}`);
-      }
-    }
+    lignes.push(...crlText(crl));
   }
+  if (!opts.has('-noout') && wantsDer(opts)) return emitDer(host, opts, lignes, derFromPem(crlToPem(crl)) ?? '');
   if (!opts.has('-noout')) lignes.push(crlToPem(crl).trimEnd());
+  const crlOut = opts.get('-out');
+  if (typeof crlOut === 'string') return host.writeFile(crlOut, `${lignes.join('\n')}\n`) ? ok() : fail(`${crlOut}: cannot write`);
   return ok(lignes.join('\n'));
 }
 
@@ -1314,14 +1561,24 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     lignes.push(`ASN1 OID: ${COURBE_IMPLEMENTEE}`);
     lignes.push('NIST CURVE: P-256');
   }
+  let der: string | null = null;
   if (!opts.has('-noout')) {
+    let pem: string;
     if (opts.has('-pubout')) {
-      lignes.push(publicKeyToPem({ algorithm: 'ecdsa', material: publicPartOf(cle.material) }));
+      pem = publicKeyToPem({ algorithm: 'ecdsa', material: publicPartOf(cle.material) });
     } else {
       const written = privateKeyPem(host, cle, opts, true);
       if ('error' in written) return fail(written.error);
-      lignes.push(written.pem);
+      pem = written.pem;
     }
+    if (wantsDer(opts)) der = derFromPem(pem);
+    else lignes.push(pem);
+  }
+  if (der !== null) return emitDer(host, opts, lignes, der, 'read EC key');
+  const ecOut = opts.get('-out');
+  if (typeof ecOut === 'string') {
+    const written = lignes.filter((line) => line !== 'read EC key').join('\n');
+    return host.writeFile(ecOut, `${written}\n`) ? { output: '', stderr: 'read EC key', exitCode: 0 } : fail(`${ecOut}: cannot write`);
   }
   return ok(lignes.join('\n'));
 }
@@ -1343,6 +1600,15 @@ function phraseDePasse(valeur: string | true | undefined, host?: OpenSslHost): s
   return null;
 }
 
+const PKCS8_V2_CIPHERS: Readonly<Record<string, KeyEncryptionCipher | undefined>> = {
+  'aes-128-cbc': 'aes-128-cbc', 'aes128': 'aes-128-cbc', 'aes-192-cbc': 'aes-192-cbc', 'aes192': 'aes-192-cbc',
+  'aes-256-cbc': 'aes-256-cbc', 'aes256': 'aes-256-cbc', 'des-ede3-cbc': 'des-ede3-cbc', 'des3': 'des-ede3-cbc',
+};
+
+const KEY_CIPHER_FOR_FLAG: Readonly<Record<string, KeyEncryptionCipher | undefined>> = {
+  '-aes128': 'aes-128-cbc', '-aes192': 'aes-192-cbc', '-aes256': 'aes-256-cbc', '-des3': 'des-ede3-cbc',
+};
+
 const CIPHER_FLAGS: readonly string[] = [
   '-aes128', '-aes192', '-aes256', '-des3', '-camellia128', '-camellia192', '-camellia256',
   '-aria128', '-aria192', '-aria256',
@@ -1351,18 +1617,21 @@ const CIPHER_FLAGS: readonly string[] = [
 function privateKeyPem(
   host: OpenSslHost, key: PkiPrivateKey, opts: Map<string, string | true>, traditional = false,
 ): { readonly pem: string } | { readonly error: string } {
-  const wantsCipher = CIPHER_FLAGS.some((flag) => opts.has(flag));
-  const encrypt = wantsCipher || (opts.has('-passout') && !opts.has('-nodes') && !opts.has('-noenc'));
+  const requested = CIPHER_FLAGS.find((flag) => opts.has(flag));
+  const encrypt = requested !== undefined || (opts.has('-passout') && !opts.has('-nodes') && !opts.has('-noenc'));
   if (!encrypt) return { pem: privateKeyToPem(key, traditional) };
   const passout = phraseDePasse(opts.get('-passout'), host);
   if (passout === null) return { error: 'unable to write key\nopenssl: a passphrase source is required: -passout pass:... or file:...' };
-  return { pem: encryptedPrivateKeyToPem(key, passout, (n) => host.randomBytes(n)) };
+  const cipher = requested === undefined ? 'aes-256-cbc' as const : KEY_CIPHER_FOR_FLAG[requested];
+  if (cipher === undefined) return { error: `unable to write key\nopenssl: '${requested?.slice(1)}' is not implemented in this simulator` };
+  if (traditional) return { pem: traditionalEncryptedKeyToPem(key, passout, cipher, (n) => host.randomBytes(n)) };
+  return { pem: encryptedPrivateKeyToPem(key, passout, (n) => host.randomBytes(n), cipher) };
 }
 
 function privateKeyFrom(
   host: OpenSslHost, text: string, opts: Map<string, string | true>,
 ): PkiPrivateKey | null {
-  return pemToPrivateKeyWithPassphrase(text, phraseDePasse(opts.get('-passin'), host));
+  return pemToPrivateKeyWithPassphrase(privateKeyInput(text), phraseDePasse(opts.get('-passin'), host));
 }
 
 /**
@@ -1382,14 +1651,15 @@ function runPkcs8(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (texte === null) return fail(`Can't open "${chemin}" for reading, No such file or directory`);
 
   const passin = phraseDePasse(opts.get('-passin'));
-  let cle = pemToPrivateKey(texte);
-  if (!cle && isEncryptedPrivateKeyPem(texte)) {
+  const keyText = privateKeyInput(texte);
+  let cle = pemToPrivateKey(keyText);
+  if (!cle && isEncryptedPrivateKeyPem(keyText)) {
     if (passin === null) {
       // Sans terminal, un vrai openssl ne peut pas demander la phrase et
       // échoue ici plutôt que de rendre une clé.
       return fail('unable to load key\nopenssl: pkcs8: an encrypted key needs -passin pass:...');
     }
-    cle = pemToEncryptedPrivateKey(texte, passin);
+    cle = pemToEncryptedPrivateKey(keyText, passin);
     if (!cle) return fail('unable to load key\nbad decrypt');
   }
   if (!cle) return fail('unable to load key');
@@ -1400,11 +1670,19 @@ function runPkcs8(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (passout === null) {
       return fail('unable to write key\nopenssl: pkcs8 -topk8: use -nocrypt, or -passout pass:...');
     }
-    pem = encryptedPrivateKeyToPem(cle, passout, (n) => host.randomBytes(n));
+    const v2 = opts.get('-v2');
+    let cipher: KeyEncryptionCipher = 'aes-256-cbc';
+    if (typeof v2 === 'string') {
+      const named = PKCS8_V2_CIPHERS[v2.toLowerCase()];
+      if (named === undefined) return fail(`Unknown cipher ${v2}`);
+      cipher = named;
+    }
+    pem = encryptedPrivateKeyToPem(cle, passout, (n) => host.randomBytes(n), cipher);
   } else {
     // `-topk8` demande la forme PKCS#8 ; sans lui, openssl fait l'inverse.
     pem = privateKeyToPem(cle, !opts.has('-topk8'));
   }
+  if (wantsDer(opts)) pem = derFromPem(pem) ?? pem;
 
   const out = opts.get('-out');
   if (typeof out === 'string') {
@@ -1478,6 +1756,62 @@ function runRehash(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
 const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
 
+const VERIFY_CODES: Readonly<Record<string, readonly [number, string]>> = {
+  expired: [10, 'certificate has expired'],
+  'not-yet-valid': [9, 'certificate is not yet valid'],
+  revoked: [23, 'certificate revoked'],
+  'bad-signature': [7, 'certificate signature failure'],
+  'hostname-mismatch': [62, 'Hostname mismatch'],
+  'not-a-ca': [24, 'invalid CA certificate'],
+  'path-length': [25, 'path length constraint exceeded'],
+  'key-usage': [26, 'unsupported certificate purpose'],
+  purpose: [26, 'unsupported certificate purpose'],
+};
+
+function verifyCodeFor(chain: readonly X509Certificate[], reason: string | null): readonly [number, string] {
+  if (reason === null) return [0, 'ok'];
+  const known = VERIFY_CODES[reason];
+  if (known) return known;
+  const top = chain[chain.length - 1];
+  const selfSigned = top !== undefined && top.subject === top.issuer;
+  if (selfSigned) return chain.length === 1 ? [18, 'self-signed certificate'] : [19, 'self-signed certificate in certificate chain'];
+  return [20, 'unable to get local issuer certificate'];
+}
+
+function finishSClientReport(
+  lignes: string[], probe: Extract<TlsPeerProbe, { ok: true }>, details: TlsHandshakeDetails,
+  leaf: X509Certificate,
+): OpenSslResult {
+  const version = probe.protocolVersion ?? '1.3';
+  const suite = probe.cipherSuite ?? '';
+  const suiteName = legacySuiteByName(suite)?.opensslName ?? suite;
+  const chain = probe.chain && probe.chain.length > 0 ? probe.chain : [leaf];
+  const [code, text] = verifyCodeFor(chain, probe.verified ? null : details.verificationReason ?? 'unknown');
+  lignes.push('No client certificate CA names sent');
+  if (details.peerSignature) {
+    lignes.push(`Peer signing digest: ${details.peerSignature.digest}`, `Peer signature type: ${details.peerSignature.type}`);
+  }
+  if (details.serverTempKey) lignes.push(`Server Temp Key: ${details.serverTempKey}`);
+  lignes.push('---', `SSL handshake has read ${details.bytesRead} bytes and written ${details.bytesWritten} bytes`);
+  lignes.push(code === 0 ? 'Verification: OK' : `Verification error: ${text}`, '---');
+  lignes.push(`New, TLSv${version}, Cipher is ${suiteName}`);
+  const rsa = materialToPublicKey(leaf.publicKey.material);
+  lignes.push(`Server public key is ${rsa ? bitLength(rsa.n) : 256} bit`);
+  lignes.push(`Secure Renegotiation IS ${version === '1.3' ? 'NOT ' : ''}supported`, 'Compression: NONE', 'Expansion: NONE');
+  lignes.push(details.alpn ? `ALPN protocol: ${details.alpn}` : 'No ALPN negotiated');
+  if (version === '1.3') {
+    lignes.push('Early data was not sent', `Verify return code: ${code} (${text})`, '---');
+  } else {
+    lignes.push('SSL-Session:', `    Protocol  : TLSv${version}`, `    Cipher    : ${suiteName}`, '    Timeout   : 7200 (sec)',
+      `    Verify return code: ${code} (${text})`, '    Extended master secret: yes', '---');
+  }
+  if (probe.received !== undefined) {
+    if (probe.received.length > 0) lignes.push(bytesToFileText(probe.received));
+    return { output: lignes.join('\n'), stderr: 'DONE', exitCode: 0 };
+  }
+  return ok(lignes.join('\n'));
+}
+
 /**
  * `s_client -connect hôte:port` — une VRAIE connexion par la pile TCP du
  * simulateur, comme `curl` et `nc` en ouvrent déjà. Il n'y a rien à
@@ -1533,6 +1867,8 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const probeOptions = {
     versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
     ...(opts.has('-status') ? { requestStatus: true } : {}),
+    ...(typeof opts.get('-alpn') === 'string' ? { alpn: (opts.get('-alpn') as string).split(',') } : {}),
+    ...(host.stdin() !== null ? { send: fileTextToBytes(host.stdin()!) } : {}),
   };
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
@@ -1549,7 +1885,12 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   lignes.push('Certificate chain');
 
   const presente = sonde && sonde.ok ? sonde.certificate : null;
-  if (presente) {
+  const chaine = sonde && sonde.ok && sonde.chain && sonde.chain.length > 0 ? sonde.chain : null;
+  if (presente && chaine) {
+    lignes.push(...peerChainLines(chaine, opensslDate));
+    lignes.push('---', 'Server certificate', certToPem(presente).trimEnd(),
+      `subject=${opensslDistinguishedName(presente.subject)}`, `issuer=${opensslDistinguishedName(presente.issuer)}`);
+  } else if (presente) {
     lignes.push(` 0 s:${opensslDistinguishedName(presente.subject)}`);
     lignes.push(`   i:${opensslDistinguishedName(presente.issuer)}`);
   } else if (ancre) {
@@ -1566,9 +1907,13 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       lignes.push('OCSP response: no response sent');
     } else {
       lignes.push('OCSP response: ', '======================================',
-        ...ocspResponseText({ status: 'successful', responder: staple.tbs.issuer, producedAt: staple.tbs.thisUpdate, singles: [staple] }),
+        ...ocspResponseText(staple),
         '======================================');
     }
+  }
+  const details = sonde && sonde.ok ? sonde.details : undefined;
+  if (echecPoignee === null && sonde && sonde.ok && details && presente) {
+    return finishSClientReport(lignes, sonde, details, presente);
   }
   if (echecPoignee !== null) {
     lignes.push('New, (NONE), Cipher is (NONE)');
@@ -1590,7 +1935,55 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   } else {
     lignes.push(ancre ? 'Verification: OK' : 'Verification: not performed');
   }
+  if (sonde && sonde.ok && sonde.received !== undefined) {
+    if (sonde.received.length > 0) lignes.push(bytesToFileText(sonde.received));
+    return { output: lignes.join('\n'), stderr: 'DONE', exitCode: 0 };
+  }
   return ok(lignes.join('\n'));
+}
+
+function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+  const { opts } = parseArgs('s_server', argv);
+  const accept = opts.get('-accept') ?? opts.get('-port') ?? '4433';
+  const port = Number(typeof accept === 'string' ? accept.slice(accept.lastIndexOf(':') + 1) : NaN);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return fail(`Error parsing -accept argument ${String(accept)}`, 1);
+  const certPath = typeof opts.get('-cert') === 'string' ? opts.get('-cert') as string : 'server.pem';
+  const keyPath = typeof opts.get('-key') === 'string' ? opts.get('-key') as string : certPath;
+  const certText = host.readFile(certPath);
+  if (certText === null) return fail(`Can't open "${certPath}" for reading, No such file or directory`, 1);
+  const chain = pemToCertChain(certText);
+  const keyText = host.readFile(keyPath);
+  if (keyText === null) return fail(`Can't open "${keyPath}" for reading, No such file or directory`, 1);
+  const privateKey = pemToPrivateKey(keyText);
+  if (chain.length === 0 || privateKey === null) return fail('Error getting private key or certificate', 1);
+  const mode = opts.has('-www') ? 'www' : opts.has('-WWW') ? 'WWW' : opts.has('-HTTP') ? 'HTTP' : null;
+  if (mode === null) {
+    return fail('openssl: s_server: interactive mode reads application data from a terminal; use -www, -WWW or -HTTP', 1);
+  }
+  const forced = (['-tls1_3', '-tls1_2', '-tls1_1', '-tls1'] as const).find((flag) => opts.has(flag));
+  const versionOf: Record<string, TlsProtocolVersion> = { '-tls1_3': '1.3', '-tls1_2': '1.2', '-tls1_1': '1.1', '-tls1': '1.0' };
+  const protocols: readonly TlsProtocolVersion[] | undefined = forced ? [versionOf[forced]] : opts.has('-no_tls1_3') ? ['1.2'] : undefined;
+  const cipherSpec = opts.get('-cipher');
+  if (typeof cipherSpec === 'string') {
+    const list = createCipherList(cipherSpec, { isAvailable: isImplementedCipher });
+    if (list.ok === false) return fail(`Error setting cipher list\n${list.error}`, 1);
+  }
+  const root = (host.workingDirectory?.() ?? '.').replace(/\/+$/, '');
+  const served = host.serveTls?.(port, {
+    chain, privateKey, ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+  }, (method, target) => {
+    if (mode === 'www') {
+      return { status: 200, contentType: 'text/html', body: `<HTML><BODY BGCOLOR="#ffffff">\n<pre>\n\ns_server -accept ${port} -www \n</pre></BODY></HTML>\n` };
+    }
+    const path = decodeURIComponent(target.split('?')[0]).replace(/^\/+/, '');
+    const content = method === 'GET' && !path.includes('..') ? host.readFile(`${root}/${path === '' ? 'index.html' : path}`) : null;
+    return content === null
+      ? { status: 404, contentType: 'text/plain', body: `Error opening '${path}'\n` }
+      : { status: 200, contentType: 'text/plain', body: content };
+  });
+  if (served === undefined) return fail('openssl: s_server: cannot listen on this host', 1);
+  if (served === false) return fail(`bind: Address already in use\nbind:errno=98`, 1);
+  return ok('Using default temp DH parameters\nACCEPT');
 }
 
 function runHelp(): OpenSslResult {
@@ -1621,6 +2014,7 @@ export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslR
   if (sub === 'x509') return runX509(host, reste);
   if (sub === 'verify') return runVerify(host, reste);
   if (sub === 's_client') return runSClient(host, reste);
+  if (sub === 's_server') return runSServer(host, reste);
   if (sub === 'ec') return runEc(host, reste);
   if (sub === 'ecparam') return runEcparam(host, reste);
   if (sub === 'pkcs8') return runPkcs8(host, reste);

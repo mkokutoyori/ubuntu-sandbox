@@ -73,6 +73,14 @@ export interface TcpConnectionClosedPayload extends TcpDeviceRef {
   passive: boolean;
 }
 
+export interface TcpSocketOwnedPayload extends TcpDeviceRef {
+  localIp: string;
+  localPort: number;
+  remoteIp: string;
+  remotePort: number;
+  pid: number;
+}
+
 export interface TcpListenerChangedPayload extends TcpDeviceRef {
   localIp: string;
   localPort: number;
@@ -129,6 +137,7 @@ export type TcpDomainEvent =
   | { topic: 'tcp.state.changed'; payload: TcpStateChangedPayload }
   | { topic: 'tcp.connection.opened'; payload: TcpConnectionOpenedPayload }
   | { topic: 'tcp.connection.closed'; payload: TcpConnectionClosedPayload }
+  | { topic: 'tcp.socket.owned'; payload: TcpSocketOwnedPayload }
   | { topic: 'tcp.listener.changed'; payload: TcpListenerChangedPayload }
   | { topic: 'tcp.segment.dropped'; payload: TcpSegmentDroppedPayload }
   | { topic: 'tcp.retransmit'; payload: TcpRetransmitPayload }

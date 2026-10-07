@@ -34,6 +34,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { Logger } from '@/network/core/Logger';
+import { spawnSocketOwner } from '../../support/socketOwner';
 
 beforeEach(() => {
   resetCounters();
@@ -509,14 +510,14 @@ describe('SP-11 — Linux netstat: dynamic output from socket table', () => {
 
   it('netstat shows sshd as process name for port 22', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const out = await pc.executeCommand('netstat -tlnp');
+    const out = await pc.executeCommand('sudo netstat -tlnp');
     expect(out).toMatch(/sshd/);
   });
 
   it('netstat shows dynamically bound port after table.bind()', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    pc.getSocketTable().bind('tcp', '0.0.0.0', 8080, 1234, 'nginx');
-    const out = await pc.executeCommand('netstat -tlnp');
+    pc.getSocketTable().bind('tcp', '0.0.0.0', 8080, spawnSocketOwner(pc, 'nginx'), 'nginx');
+    const out = await pc.executeCommand('sudo netstat -tlnp');
     expect(out).toContain(':8080');
     expect(out).toContain('nginx');
   });

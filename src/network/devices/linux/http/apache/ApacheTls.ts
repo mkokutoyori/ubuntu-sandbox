@@ -203,8 +203,8 @@ export function loadVhostTls(
         cacheMs: settings.staplingStandardCacheTimeout * 1000,
       });
       staple = (cert) => {
-        const found = client.lookup(cert);
-        return found.ok ? found.single : null;
+        const found = client.lookup(cert, issuer);
+        return found.ok ? found.response : null;
       };
     }
   }

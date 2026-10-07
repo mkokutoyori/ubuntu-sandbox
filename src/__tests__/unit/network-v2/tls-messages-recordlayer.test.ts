@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import {
-  encodeHandshakeMessage, decodeHandshakeMessage, randomNonce,
+  encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
   type ClientHello, type ServerHello, type HelloRetryRequest, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
   type NewSessionTicket, type KeyUpdate,
@@ -12,24 +12,22 @@ import {
 } from '@/network/tls/recordLayer';
 import { HELLO_RETRY_REQUEST_RANDOM, MAX_TLS_RECORD_LENGTH, TLS_LEGACY_RECORD_VERSION } from '@/network/tls/types';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 
-function fakeCert(subject: string): X509Certificate {
-  return {
-    version: 3, serialNumber: '1', subject, issuer: 'CN=test-ca',
-    notBefore: 0, notAfter: 1e12,
-    publicKey: { algorithm: 'rsa', material: 'n' },
-    signatureAlgorithm: 'sha256WithRSAEncryption',
-    signature: 'sig',
-  };
+const hex = (bytes: number): string => '0123456789abcdef'.repeat(bytes).slice(0, bytes * 2);
+
+function certificateFor(subject: string): X509Certificate {
+  const ca = CertificateAuthority.generate('CN=test-ca', { now: Date.UTC(2026, 0, 1) });
+  return ca.issueCertificate({ subject, notBefore: Date.UTC(2026, 0, 1), notAfter: Date.UTC(2027, 0, 1) }).cert;
 }
 
 describe('TLS 1.3 handshake messages — encode/decode round-trip', () => {
   it('round-trips a ClientHello', () => {
     const msg: ClientHello = {
-      kind: 'client_hello', legacyVersion: '1.2', random: randomNonce('cli'),
+      kind: 'client_hello', legacyVersion: '1.2', random: hex(32),
       cipherSuites: ['TLS_AES_128_GCM_SHA256', 'TLS_CHACHA20_POLY1305_SHA256'],
       extensions: {
-        supportedVersions: ['1.3'], keyShare: 'x25519:abc', supportedGroups: ['x25519'],
+        supportedVersions: ['1.3'], keyShare: `x25519:${hex(32)}`, supportedGroups: ['x25519'],
         signatureAlgorithms: ['ecdsa_secp256r1_sha256'], serverName: 'example.test',
         alpn: ['h2', 'http/1.1'],
       },
@@ -40,15 +38,15 @@ describe('TLS 1.3 handshake messages — encode/decode round-trip', () => {
 
   it('round-trips a ServerHello', () => {
     const msg: ServerHello = {
-      kind: 'server_hello', random: randomNonce('srv'), cipherSuite: 'TLS_AES_128_GCM_SHA256',
-      extensions: { supportedVersions: '1.3', keyShare: 'x25519:def' },
+      kind: 'server_hello', random: hex(32), cipherSuite: 'TLS_AES_128_GCM_SHA256',
+      extensions: { supportedVersions: '1.3', keyShare: `x25519:${hex(32)}` },
     };
     expect(decodeHandshakeMessage(encodeHandshakeMessage(msg))).toEqual(msg);
   });
 
   it('round-trips a HelloRetryRequest with the RFC 8446 §4.1.3 magic random', () => {
     const msg: HelloRetryRequest = {
-      kind: 'hello_retry_request', random: HELLO_RETRY_REQUEST_RANDOM, selectedGroup: 'secp256r1',
+      kind: 'hello_retry_request', random: HELLO_RETRY_REQUEST_RANDOM, selectedGroup: 'secp256r1', cipherSuite: 'TLS_AES_128_GCM_SHA256',
     };
     const decoded = decodeHandshakeMessage(encodeHandshakeMessage(msg)) as HelloRetryRequest;
     expect(decoded.random).toBe(HELLO_RETRY_REQUEST_RANDOM);
@@ -68,24 +66,24 @@ describe('TLS 1.3 handshake messages — encode/decode round-trip', () => {
   });
 
   it('round-trips a Certificate carrying a real X509Certificate shape', () => {
-    const msg: CertificateMessage = { kind: 'certificate', certificateList: [fakeCert('CN=server'), fakeCert('CN=intermediate')] };
+    const msg: CertificateMessage = { kind: 'certificate', certificateList: [certificateFor('CN=server'), certificateFor('CN=intermediate')] };
     expect(decodeHandshakeMessage(encodeHandshakeMessage(msg))).toEqual(msg);
   });
 
   it('round-trips CertificateVerify', () => {
-    const msg: CertificateVerify = { kind: 'certificate_verify', signature: 'sig-over-transcript' };
+    const msg: CertificateVerify = { kind: 'certificate_verify', signatureAlgorithm: 'rsa_pss_rsae_sha256', signature: hex(256) };
     expect(decodeHandshakeMessage(encodeHandshakeMessage(msg))).toEqual(msg);
   });
 
   it('round-trips Finished', () => {
-    const msg: Finished = { kind: 'finished', verifyData: 'mac-over-transcript' };
+    const msg: Finished = { kind: 'finished', verifyData: hex(32) };
     expect(decodeHandshakeMessage(encodeHandshakeMessage(msg))).toEqual(msg);
   });
 
   it('round-trips NewSessionTicket', () => {
     const msg: NewSessionTicket = {
-      kind: 'new_session_ticket', ticketLifetime: 7200, ticketAgeAdd: 'add-1', ticketNonce: 'nonce-1',
-      ticket: 'opaque-ticket', extensions: { earlyData: true },
+      kind: 'new_session_ticket', ticketLifetime: 7200, ticketAgeAdd: hex(4), ticketNonce: hex(8),
+      ticket: hex(16), extensions: { earlyData: true },
     };
     expect(decodeHandshakeMessage(encodeHandshakeMessage(msg))).toEqual(msg);
   });
@@ -93,6 +91,32 @@ describe('TLS 1.3 handshake messages — encode/decode round-trip', () => {
   it('round-trips KeyUpdate', () => {
     const msg: KeyUpdate = { kind: 'key_update', requestUpdate: true };
     expect(decodeHandshakeMessage(encodeHandshakeMessage(msg))).toEqual(msg);
+  });
+});
+
+describe('TLS 1.3 handshake messages — wire layout (RFC 8446 §4)', () => {
+  it('Finished : type 20, longueur sur trois octets, puis verify_data brut', () => {
+    const bytes = encodeHandshakeMessage({ kind: 'finished', verifyData: hex(32) });
+    expect(Array.from(bytes.slice(0, 4))).toEqual([20, 0, 0, 32]);
+    expect(bytes.length).toBe(36);
+  });
+
+  it('ClientHello : type 1, legacy_version 0x0303, random sur 32 octets, suites sur deux octets', () => {
+    const bytes = encodeHandshakeMessage({
+      kind: 'client_hello', legacyVersion: '1.2', random: hex(32), cipherSuites: ['TLS_AES_128_GCM_SHA256'],
+      extensions: { supportedVersions: ['1.3'], keyShare: `x25519:${hex(32)}`, supportedGroups: ['x25519'], signatureAlgorithms: ['rsa_pss_rsae_sha256'] },
+    });
+    expect(bytes[0]).toBe(1);
+    expect((bytes[4] << 8) | bytes[5]).toBe(0x0303);
+    expect(Buffer.from(bytes.slice(6, 38)).toString('hex')).toBe(hex(32));
+    expect(Array.from(bytes.slice(39, 45))).toEqual([0, 2, 0x13, 0x01, 1, 0]);
+  });
+
+  it('plusieurs messages se concatènent tels quels (pas de JSON)', () => {
+    const a = encodeHandshakeMessage({ kind: 'finished', verifyData: hex(32) });
+    const bundle = encodeMessages([{ kind: 'finished', verifyData: hex(32) }, { kind: 'key_update', requestUpdate: false }]);
+    expect(Array.from(bundle.slice(0, a.length))).toEqual(Array.from(a));
+    expect(decodeMessages(bundle)).toHaveLength(2);
   });
 });
 

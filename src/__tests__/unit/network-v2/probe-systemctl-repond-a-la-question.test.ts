@@ -200,7 +200,7 @@ describe('un demon n a qu un pid, quelle que soit la vue', () => {
 
     const parPs = /^\s*(\d+)\s/.exec((await pc.executeCommand('ps -e')).split('\n')
       .find((l) => l.includes('sshd')) ?? '')?.[1] ?? '<absent>';
-    const parSs = /users:\(\("sshd",pid=(\d+)/.exec(await pc.executeCommand('ss -tlnp'))?.[1] ?? '<absent>';
+    const parSs = /users:\(\("sshd",pid=(\d+)/.exec(await pc.executeCommand('sudo ss -tlnp'))?.[1] ?? '<absent>';
     const parStatus = /Main PID: (\d+) \(sshd\)/.exec(await pc.executeCommand('systemctl status ssh'))?.[1] ?? '<absent>';
 
     expect(parPs).toMatch(/^\d+$/);
@@ -213,8 +213,8 @@ describe('un demon n a qu un pid, quelle que soit la vue', () => {
 
     const parPs = /^\s*(\d+)\s/.exec((await pc.executeCommand('ps -e')).split('\n')
       .find((l) => l.includes('systemd-resolved')) ?? '')?.[1] ?? '<absent>';
-    const parSs = /users:\(\("systemd-resolved",pid=(\d+)/
-      .exec(await pc.executeCommand('ss -tlnp'))?.[1] ?? '<absent>';
+    const parSs = /users:\(\("systemd-resolve",pid=(\d+)/
+      .exec(await pc.executeCommand('sudo ss -tlnp'))?.[1] ?? '<absent>';
 
     expect(parPs).toMatch(/^\d+$/);
     expect(parSs).toBe(parPs);

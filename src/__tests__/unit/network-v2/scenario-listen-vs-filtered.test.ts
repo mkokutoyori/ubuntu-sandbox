@@ -8,6 +8,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { spawnSocketOwner } from '../../support/socketOwner';
 
 interface FlatLab {
   client: LinuxPC;
@@ -71,7 +72,7 @@ async function buildRouted(): Promise<RoutedLab> {
 function installListener(server: LinuxServer, port: number): void {
   server.getTcpStack().listen(port, {
     onAccept: () => undefined,
-    identity: { pid: 4242, processName: 'myapp' },
+    identity: { pid: spawnSocketOwner(server, 'myapp'), processName: 'myapp' },
   });
 }
 

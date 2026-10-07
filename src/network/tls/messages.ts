@@ -5,11 +5,12 @@
  * real ASN.1/DER-encoded TLS record, and signature/MAC fields are opaque
  * strings computed elsewhere (key schedule, PKI) rather than real crypto.
  */
-import { utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import type { CipherSuite } from './types';
 import { HELLO_RETRY_REQUEST_RANDOM } from './types';
+import { encodeTls13Message, decodeTls13Message, splitHandshakeMessages } from './wire/Tls13HandshakeCodec';
+import { TlsDecodeError } from './wire/TlsBytes';
 
 export interface ClientHelloExtensions {
   readonly supportedVersions: readonly string[];
@@ -22,7 +23,14 @@ export interface ClientHelloExtensions {
   readonly alpn?: readonly string[];
   readonly pskKeyExchangeModes?: readonly string[];
   readonly preSharedKey?: string;
+  readonly pskOffers?: readonly PskOffer[];
   readonly earlyData?: boolean;
+}
+
+export interface PskOffer {
+  readonly identity: string;
+  readonly obfuscatedAge: number;
+  readonly binder: string;
 }
 
 export interface LegacyClientExtensions {
@@ -46,11 +54,13 @@ export interface ServerHelloExtensions {
   readonly supportedVersions: string;
   readonly keyShare?: string;
   readonly preSharedKey?: string;
+  readonly pskSelectedIdentity?: number;
 }
 
 export interface ServerHello {
   readonly kind: 'server_hello';
   readonly random: string;
+  readonly sessionIdEcho?: string;
   readonly cipherSuite: CipherSuite;
   readonly extensions: ServerHelloExtensions;
 }
@@ -59,6 +69,8 @@ export interface HelloRetryRequest {
   readonly kind: 'hello_retry_request';
   readonly random: typeof HELLO_RETRY_REQUEST_RANDOM;
   readonly selectedGroup: string;
+  readonly cipherSuite?: CipherSuite;
+  readonly sessionIdEcho?: string;
 }
 
 export interface EncryptedExtensionsMessage {
@@ -75,7 +87,7 @@ export interface CertificateRequest {
 export interface CertificateMessage {
   readonly kind: 'certificate';
   readonly certificateList: readonly X509Certificate[];
-  readonly ocspStaple?: SignedOcspResponse;
+  readonly ocspStaple?: OcspResponseMessage;
 }
 
 export interface CertificateVerify {
@@ -116,26 +128,34 @@ export type TlsHandshakeMessage =
   | KeyUpdate;
 
 export function encodeHandshakeMessage(message: TlsHandshakeMessage): Uint8Array {
-  return utf8ToBytes(JSON.stringify(message));
+  return encodeTls13Message(message);
 }
 
 export function decodeHandshakeMessage(bytes: Uint8Array): TlsHandshakeMessage {
-  return JSON.parse(bytesToUtf8(bytes)) as TlsHandshakeMessage;
+  const [first] = splitHandshakeMessages(bytes);
+  if (first === undefined) throw new TlsDecodeError('empty handshake message');
+  return decodeTls13Message(first.type, first.body);
 }
 
-/**
- * Several handshake messages can share the same flight of records (e.g. the
- * server's EncryptedExtensions/Certificate/CertificateVerify/Finished all
- * travel together once protection is active). Bundled as a JSON array
- * rather than individually length-prefixed, consistent with this module's
- * "message = JSON blob" abstraction level.
- */
 export function encodeMessages(messages: readonly TlsHandshakeMessage[]): Uint8Array {
-  return utf8ToBytes(JSON.stringify(messages));
+  const parts = messages.map(encodeTls13Message);
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { out.set(part, offset); offset += part.length; }
+  return out;
 }
 
 export function decodeMessages(bytes: Uint8Array): TlsHandshakeMessage[] {
-  return JSON.parse(bytesToUtf8(bytes)) as TlsHandshakeMessage[];
+  return splitHandshakeMessages(bytes).map((entry) => decodeTls13Message(entry.type, entry.body));
+}
+
+export interface RawHandshakeMessage {
+  readonly message: TlsHandshakeMessage;
+  readonly raw: Uint8Array;
+}
+
+export function decodeMessagesRaw(bytes: Uint8Array): RawHandshakeMessage[] {
+  return splitHandshakeMessages(bytes).map((entry) => ({ message: decodeTls13Message(entry.type, entry.body), raw: entry.raw }));
 }
 
 let nonceCounter = 0;

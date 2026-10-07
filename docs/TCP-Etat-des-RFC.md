@@ -103,6 +103,7 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
 | MUST-57 SYN adressé à une diffusion ou à un groupe jeté en silence, MUST-63 SYN de source invalide ignoré | Fait : source nulle, de diffusion (limitée ou dirigée), de groupe, martienne ou notre propre adresse | `probe-tcp-open-and-listen-rules`, `probe-tcp-n-arpe-pas-le-non-specifie` |
 | MUST-12 l'application est informée d'une fermeture ou d'un abandon | Fait : la fin du pair est annoncée, l'application décide quand fermer son sens ; un RST la prévient | `probe-tcp-half-close` |
 | SHLD-2 un RST peut porter des données | Fait | `probe-tcp-rfc9293-requirements` |
+| ABORT (§3.10.5) | Fait : RST dans SYN-RECEIVED, ESTABLISHED, FIN-WAIT-1, FIN-WAIT-2 et CLOSE-WAIT ; SYN-SENT, CLOSING, LAST-ACK et TIME-WAIT suppriment le TCB sans rien émettre, comme `tcp_need_reset` au noyau | `probe-tcp-abort-par-etat` |
 | MUST-13 TIME-WAIT 2 MSL, redémarré par un FIN retransmis | Fait ; un second `close()` ne l'évapore plus | `probe-tcp-fin-wait-states`, `probe-tcp-half-close`, `scenario-time-wait-reuse` |
 | MAY-2 un SYN neuf rouvre depuis TIME-WAIT | Fait : l'ISN neuf dépasse le `sendNext` de l'incarnation précédente | `probe-tcp-open-and-listen-rules` |
 | MAY-1 fermeture « half-duplex » où `close()` interdit la lecture, SHLD-3 RST quand des données non lues sont perdues | Non retenu : la pile suit la variante full-duplex de §3.6.1, `close()` n'envoie que le FIN ; `allowHalfOpen` est faux par défaut comme dans `net.Socket` | `probe-tcp-half-close` |
@@ -171,6 +172,37 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   l'abandon à 127 s, un SYN-ACK abandonné à 63 s, des données à la première échéance qui atteint 924,6 s, R1 à 3 s,
   RTO de 200 ms au départ, plafond à 120 s ; `/proc/net/snmp` et `netstat -s` disent `Forwarding`, `DefaultTTL`,
   `RtoMin` et `RtoMax` d'après ces mêmes réglages.
+- **Vues de la pile (Linux).** Une connexion n'a qu'une vérité, celle de la pile ; `ss`, `netstat`,
+  `/proc/net/{tcp,tcp6,udp,udp6,udplite,raw,raw6,unix,sockstat,sockstat6}`, `/proc/<pid>/fd` et `lsof -i` la
+  lisent par la même jointure (`KernelSocketRows` : la `SocketTable` dit le propriétaire, le pid, l'inode et le
+  descripteur, les prises de la pile disent les files, le temporisateur et `tcp_info`), si bien qu'une
+  connexion qui retient 785 octets non lus les montre dans Recv-Q de `ss`, de `netstat` et de
+  `/proc/net/tcp` à la fois (`probe-ss-netstat-proc-net-une-seule-verite`). `ss` est un portage d'iproute2 5.15
+  (`misc/ss.c`, `misc/ssfilter.y`) : sélection par état, famille, table et expression (`sport = :ssh and not
+  dst 10.0.0.0/8`, `-F` fichier), le moteur de colonnes du terminal et du tube (`probe-ss-colonnes-oracle`,
+  comparé au code compilé de `ss.c`), `-o` (`timer:(on,1.234ms,2)`), `-e` (`uid`, `ino`, `sk`, `cgroup`,
+  `v6only`), `-i`, `-p` (`users:(("sshd",pid=22,fd=3))`, que seul root voit pour les processus d'autrui), `-s`,
+  `-H`, `-O`, `--tos`, `--cgroup`, `--inet-sockopt` et `-K` (`SOCK_DESTROY`, le `tcp_abort` et l'`udp_abort` du
+  noyau 5.15 : la connexion est remise à zéro et le pair la perd aussi, une écoute est fermée, une requête
+  SYN-RECV est abandonnée sans RST, l'UDP répond succès, seul TIME-WAIT est refusé en silence ; un utilisateur
+  est refusé, deux fois par table comme iproute2 qui retente avec AF_UNSPEC).
+  `netstat` est un portage de net-tools 2.10, qui lit `/proc/net/*` comme l'outil réel (`-a -l -n -e -p -o -W
+  -t -u -w -x -4 -6`, les mots et les codes de sortie de net-tools). Le nom de commande est celui du noyau,
+  quinze caractères, et `/proc/<pid>/cmdline` commence par argv[0], ce que lit `netstat -p`. Une prise n'a de
+  propriétaire que si un processus vivant la tient : sans processus derrière un descripteur, `ss -p`,
+  `netstat -p` et `lsof` n'inventent ni pid ni nom, et un tunnel `ssh -f -N -L` est un vrai processus `ssh`
+  (détaché du shell avec `-f`, enfant du shell sans lui) que `ps` liste, qui tient l'écoute et la connexion, et
+  dont le `kill` ferme l'une et l'autre (`probe-ssh-client-est-un-processus`).
+- **Écoute liée à un périphérique (Linux).** Une écoute peut être liée à un périphérique (`SO_BINDTODEVICE`) : la
+  pile ne lui livre que ce qui arrive sur lui (`lo` pour une livraison locale), un périphérique inconnu est refusé
+  (`ENODEV`), et `ss` l'écrit après l'adresse locale, `127.0.0.53%lo:53` pour le stub de systemd-resolved en TCP
+  comme en UDP, que `ss ... dev lo` sélectionne ; `netstat` et `/proc/net/tcp` n'en montrent aucun, comme au noyau
+  (`probe-ecoute-liee-a-un-peripherique`).
+- **Files d'écoute (Linux).** Une écoute garde le `backlog` que son programme a passé à `listen()`, borné par
+  `net.core.somaxconn` (4096, lisible et inscriptible par `sysctl` comme par `/proc/sys`), et `ss -l` le
+  montre dans Send-Q : sshd 128, nginx et apache 511, vsftpd 32, `nc -l` 1, le résolveur local 4096
+  (`probe-tcp-listener-backlog`). Recv-Q d'une écoute est la file des connexions prêtes que `accept()` n'a pas
+  prises : les services du dépôt acceptent dès l'établissement, elle vaut donc 0 et ne déborde jamais.
 - **Windows** : TTL 128 ; n'envoie ni n'accepte ECN (configuration par défaut) ; aucune commande
   `netsh int tcp` ni `Set-NetTCPSetting` n'existe. La documentation en ligne de `Set-NetTCPSetting` donne les
   plages (MinRto de 20 à 300 ms, RTO initial de 300 à 3000 ms, 2 à 8 retransmissions de SYN) mais pas les
@@ -197,7 +229,9 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   (RFC 6675 §6, facultatif). Après une expiration un pair sans SACK reçoit dans l'ordre tout ce qui était en
   vol, y compris ce qu'il avait déjà (retransmissions inutiles de la RFC 6582 §4).
 - **Délai de livraison nul.** La livraison des trames est synchrone, le RTT vaut 0 ms en temps virtuel ;
-  les temporisateurs (RTO, ACK retardé, sonde) tournent sur l'ordonnanceur virtuel.
+  les temporisateurs (RTO, ACK retardé, sonde) tournent sur l'ordonnanceur virtuel. L'horloge de trajet
+  (`PathClock`) donne un temps de vol à `ping`, `traceroute`, `nmap`, `dig` et aux sondes IP SLA et NQA ;
+  l'estimateur de RTT de la pile TCP échantillonne l'ordonnanceur et ne la lit pas encore.
 - **ECN.** Ni AccECN ni les extensions de la RFC 8311 ; un seul ACK immédiat là où
   `tcp_enter_quickack_mode` en émet deux ; aucun contrôle de congestion qui exige ECN
   (`tcp_ca_needs_ecn`) ; pas de drapeau ECN par route ; VXLAN ne suit pas la RFC 6040 (son agent ne reçoit
@@ -215,13 +249,26 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   (`close()` n'y est que l'envoi du FIN). Il en va de même de `tcp_keepalive_*` (aucune application du dépôt
   n'active SO_KEEPALIVE) et de `tcp_congestion_control`. Le RTO d'une machine Linux part de 200 ms
   (`TCP_RTO_MIN`, plancher sur le terme de variance) ; ne sont pas construits la fenêtre `mdev_max` du
-  noyau (la variance retenue est le maximum sur un RTT), l'arrondi au jiffy (4 ms à HZ = 250, d'où les
-  `rto:204` de `ss -i`), la sonde de queue (`tcp_early_retrans` = 3 : pour une connexion SACK en état Open
+  noyau (la variance retenue est le maximum sur un RTT), l'arrondi au jiffy du RTO dans la pile (4 ms à
+  HZ = 250 : `ss -i` l'applique à l'impression, la pile arme sa minuterie au millième près), la sonde de
+  queue (`tcp_early_retrans` = 3 : pour une connexion SACK en état Open
   le noyau envoie la première retransmission à 2 × SRTT + 200 ms, un seul paquet en vol, au même instant
   que le RTO ici, la suite diffère). La sonde de fenêtre nulle d'une machine Linux est celle du noyau (ACK de zéro octet à
   SND.UNA − 1, attente en `base << backoff`) ; ne sont pas construits la seconde sonde qu'il envoie quand un
   pointeur urgent est dans l'intervalle et le cas d'une fenêtre qui se ferme avec des données en vol.
 - **Source route.** Voir MUST-51 à MUST-53 ci-dessus.
-- **TCP_INFO.** `ss -i` n'imprime ni `ecn`, ni `ecnseen`, ni la fenêtre de congestion.
+- **TCP_INFO et `ss`.** `ss -i` imprime ce que la pile tient des champs de `tcp_get_info` (`rto`, `rtt`, `ato`,
+  `mss`, `pmtu`, `rcvmss`, `advmss`, `cwnd`, `ssthresh`, `bytes_sent`, `bytes_acked`, `bytes_received`,
+  `segs_out`, `segs_in`, `data_segs_out`, `data_segs_in`, `send`, `lastsnd`, `lastrcv`, `lastack`, `delivered`,
+  `unacked`, `retrans`, `lost`, `sacked`, `reordering`, `rcv_space`, `rcv_ssthresh`, `minrtt`, avec `ecn` et
+  `ecnseen` sous `-o` ou `-e`), arrondis comme le noyau (le RTO au jiffy de 4 ms à l'impression, le RTT en
+  microsecondes, `lastsnd`, `lastrcv` et `lastack` en millisecondes entières) ; `probe-ss-formats` compare
+  les nombres au `printf` de `ss.c` compilé. Ne sont pas construits : `ss -m` (il lit `sk_rcvbuf`, `sk_sndbuf`
+  et la taille réelle des tampons, que la pile ne tient pas ; il est refusé en le disant), `pacing_rate`,
+  `delivery_rate`, `busy` et `rcv_rtt` (aucun pacer, et le RTT que la pile échantillonne vaut 0 en temps
+  virtuel), les tables AF_UNIX, netlink et packet de `ss`, `-D`, `-E` et `-N`, et côté `netstat` `-g` et `-M` (qui disent que la machine ne les supporte pas)
+  et `-c` (un seul cliché). L'algorithme annoncé est `reno` et la fenêtre initiale celle de la RFC 5681 (3
+  segments) là où un noyau 5.15 annonce `cubic` et 10 segments ; l'ATO est de 200 ms là où le noyau part de
+  40 ms.
 - **Anciens documents.** `docs/PRD-TCP.md` décrit l'état du 6 juillet ; ses lacunes (absence de RTO, de
   contrôle de flux, de congestion, d'options) sont fermées, ce bilan fait foi.

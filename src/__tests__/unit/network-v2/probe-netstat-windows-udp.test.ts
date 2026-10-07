@@ -177,8 +177,8 @@ describe('le demon nomme est celui de la plateforme', () => {
     const pc = new LinuxPC('linux-pc', 'L', 0, 0);
     pc.powerOn();
 
-    const sortie = await taper(pc, 'ss -lunp');
+    const sortie = await taper(pc, 'sudo ss -lunp');
 
-    expect(sortie).toContain('systemd-resolved');
+    expect(sortie).toContain('systemd-resolve');
   });
 });

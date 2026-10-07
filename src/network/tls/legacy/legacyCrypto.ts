@@ -3,6 +3,7 @@ import type { HashAlgorithm } from '@/crypto/hash';
 import { hmac } from '@/crypto/mac';
 import {
   aesEncryptBlock, aesDecryptBlock, aesGcmEncrypt, aesGcmDecrypt, AES_GCM_TAG_SIZE,
+  camelliaEncryptBlock, camelliaDecryptBlock, ariaEncryptBlock, gcmEncryptWith, gcmDecryptWith,
   aesCcmEncrypt, aesCcmDecrypt, chacha20Poly1305Encrypt, chacha20Poly1305Decrypt,
 } from '@/crypto/cipher';
 import { tripleDesEncryptBlock, tripleDesDecryptBlock } from '@/crypto/cipher/des';
@@ -96,6 +97,10 @@ function cipherShape(suite: LegacySuiteDefinition): CipherShape {
     case 'AES_128_CCM': case 'AES_128_CCM_8': return { encKeyLength: 16, blockSize: 0, fixedIvLength: 4 };
     case 'AES_256_CCM': case 'AES_256_CCM_8': return { encKeyLength: 32, blockSize: 0, fixedIvLength: 4 };
     case 'CHACHA20_POLY1305': return { encKeyLength: 32, blockSize: 0, fixedIvLength: 12 };
+    case 'ARIA_128_GCM': return { encKeyLength: 16, blockSize: 0, fixedIvLength: 4 };
+    case 'ARIA_256_GCM': return { encKeyLength: 32, blockSize: 0, fixedIvLength: 4 };
+    case 'CAMELLIA_128_CBC': return { encKeyLength: 16, blockSize: 16, fixedIvLength: 16 };
+    case 'CAMELLIA_256_CBC': return { encKeyLength: 32, blockSize: 16, fixedIvLength: 16 };
     case 'AES_128_CBC': return { encKeyLength: 16, blockSize: 16, fixedIvLength: 16 };
     case 'AES_256_CBC': return { encKeyLength: 32, blockSize: 16, fixedIvLength: 16 };
     case '3DES_EDE_CBC': return { encKeyLength: 24, blockSize: 8, fixedIvLength: 8 };
@@ -186,15 +191,19 @@ export class LegacyRecordProtection {
   }
 
   private blockEncrypt(block: Uint8Array): Uint8Array {
-    return this.suite.cipher === '3DES_EDE_CBC'
-      ? tripleDesEncryptBlock(this.keys.encKey, block)
-      : aesEncryptBlock(this.keys.encKey, block);
+    switch (this.suite.cipher) {
+      case '3DES_EDE_CBC': return tripleDesEncryptBlock(this.keys.encKey, block);
+      case 'CAMELLIA_128_CBC': case 'CAMELLIA_256_CBC': return camelliaEncryptBlock(this.keys.encKey, block);
+      default: return aesEncryptBlock(this.keys.encKey, block);
+    }
   }
 
   private blockDecrypt(block: Uint8Array): Uint8Array {
-    return this.suite.cipher === '3DES_EDE_CBC'
-      ? tripleDesDecryptBlock(this.keys.encKey, block)
-      : aesDecryptBlock(this.keys.encKey, block);
+    switch (this.suite.cipher) {
+      case '3DES_EDE_CBC': return tripleDesDecryptBlock(this.keys.encKey, block);
+      case 'CAMELLIA_128_CBC': case 'CAMELLIA_256_CBC': return camelliaDecryptBlock(this.keys.encKey, block);
+      default: return aesDecryptBlock(this.keys.encKey, block);
+    }
   }
 
   seal(seq: number, record: TlsRecord): TlsRecord {
@@ -216,6 +225,7 @@ export class LegacyRecordProtection {
       case 'CHACHA20_POLY1305': return chacha20Poly1305Encrypt(this.keys.encKey, nonce, aad, plain);
       case 'AES_128_CCM': case 'AES_256_CCM': case 'AES_128_CCM_8': case 'AES_256_CCM_8':
         return aesCcmEncrypt(this.keys.encKey, nonce, aad, plain, this.aeadTagLength());
+      case 'ARIA_128_GCM': case 'ARIA_256_GCM': return gcmEncryptWith((block) => ariaEncryptBlock(this.keys.encKey, block), nonce, aad, plain);
       default: return aesGcmEncrypt(this.keys.encKey, nonce, aad, plain);
     }
   }
@@ -225,6 +235,7 @@ export class LegacyRecordProtection {
       case 'CHACHA20_POLY1305': return chacha20Poly1305Decrypt(this.keys.encKey, nonce, aad, cipher, tag);
       case 'AES_128_CCM': case 'AES_256_CCM': case 'AES_128_CCM_8': case 'AES_256_CCM_8':
         return aesCcmDecrypt(this.keys.encKey, nonce, aad, cipher, tag);
+      case 'ARIA_128_GCM': case 'ARIA_256_GCM': return gcmDecryptWith((block) => ariaEncryptBlock(this.keys.encKey, block), nonce, aad, cipher, tag);
       default: return aesGcmDecrypt(this.keys.encKey, nonce, aad, cipher, tag);
     }
   }

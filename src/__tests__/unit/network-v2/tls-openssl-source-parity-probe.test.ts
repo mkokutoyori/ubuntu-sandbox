@@ -16,6 +16,10 @@
  * passent dans les deux états : TLS 1.0 au niveau 1 par défaut, une clé de
  * 1024 bits au niveau 1, et la signature ECDSA/SHA-256 de TLS 1.2.
  */
+import { decodeHandshakeMessage, encodeHandshakeMessage } from '@/network/tls/messages';
+import { decodeLegacyMessages, encodeLegacyBundle } from '@/network/tls/legacy/legacyMessages';
+import { serverKeyExchangeParametersBytes } from '@/network/tls/wire/LegacyHandshakeCodec';
+import type { KeyExchangeParams } from '@/network/tls/legacy/legacyMessages';
 import { describe, it, expect } from 'vitest';
 import { createPublicKey, verify as nodeVerify } from 'node:crypto';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
@@ -109,7 +113,7 @@ describe('niveau de sécurité (ssl_cert.c)', () => {
 
   it('au niveau 3, une suite sans confidentialité persistante n\'est plus offerte', () => {
     const { client } = lab({ versions: ['1.2'], cipherList: 'ALL:@SECLEVEL=3' }, {});
-    const hello = JSON.parse(bytesToUtf8(client.start()[0].fragment)) as { legacyCipherSuites: number[] };
+    const hello = decodeHandshakeMessage(client.start()[0].fragment) as unknown as { legacyCipherSuites: number[] };
     expect(hello.legacyCipherSuites).not.toContain(0x009c);
     expect(hello.legacyCipherSuites).toContain(0xc02f);
   });
@@ -151,8 +155,8 @@ describe('ServerKeyExchange ECDSA avant TLS 1.2 (RFC 4492 §5.4)', () => {
     );
     const wire = drive(client, server);
     expect(client.result).toBe('success');
-    const hello = JSON.parse(bytesToUtf8(wire.up[0][0].fragment));
-    const bundle = JSON.parse(bytesToUtf8(wire.down[0][0].fragment)) as { kind: string; random?: string; params?: unknown; signature?: string }[];
+    const hello = decodeHandshakeMessage(wire.up[0][0].fragment) as unknown as { random: string };
+    const bundle = decodeLegacyMessages(wire.down[0][0].fragment) as unknown as { kind: string; random?: string; params?: KeyExchangeParams; signature?: string }[];
     return {
       leaf, clientRandom: hello.random as string,
       serverRandom: bundle.find((m) => m.kind === 'legacy_server_hello')!.random!,
@@ -171,7 +175,7 @@ describe('ServerKeyExchange ECDSA avant TLS 1.2 (RFC 4492 §5.4)', () => {
       });
       const signed = Buffer.concat([
         Buffer.from(parts.clientRandom, 'hex'), Buffer.from(parts.serverRandom, 'hex'),
-        Buffer.from(utf8ToBytes(JSON.stringify(parts.ske.params))),
+        Buffer.from(serverKeyExchangeParametersBytes(parts.ske.params!)),
       ]);
       const signature = Buffer.from(hexToBytes(parts.ske.signature!.slice('ecdsa:'.length)));
       expect(nodeVerify(digest, signed, { key, dsaEncoding: 'ieee-p1363' }, signature)).toBe(true);

@@ -16,7 +16,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
-import { encodeKdcReq, isKrbError, decodeKrbError } from '@/network/kerberos/codec';
+import { encodeKdcReq, frameForTcp, isKrbError, decodeKrbError, TcpMessageReader } from '@/network/kerberos/codec';
 import { principalName, PrincipalNameType, KrbErrorCode } from '@/network/kerberos/types';
 
 beforeEach(() => {
@@ -83,8 +83,9 @@ describe('Kerberos AS exchange — real KDC-REQ/KDC-REP over a real TCP/88 wire'
     expect(socket?.state).toBe('established');
 
     let reply: Uint8Array | null = null;
-    socket!.onData((data) => { if (data instanceof Uint8Array) reply = data; });
-    socket!.send(encodeKdcReq({
+    const reader = new TcpMessageReader();
+    socket!.onData((data) => { if (data instanceof Uint8Array) for (const message of reader.push(data)) reply = message; });
+    socket!.send(frameForTcp(encodeKdcReq({
       msgType: 'AS-REQ', padata: [],
       reqBody: {
         kdcOptions: 0,
@@ -95,7 +96,7 @@ describe('Kerberos AS exchange — real KDC-REQ/KDC-REP over a real TCP/88 wire'
         nonce: 999,
         etype: [18],
       },
-    }));
+    })));
 
     expect(reply).not.toBeNull();
     expect(isKrbError(reply!)).toBe(true);

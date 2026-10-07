@@ -26,6 +26,7 @@ import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './
 import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
 import { clientCertificateVerdict } from './NginxSsl';
 import { findServerByName, serverNameMatches, type ServerNameEntry } from './NginxServerNames';
+import { NGINX_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
 
 export interface NginxHostFs extends NginxFileSource {
   exists(path: string): boolean;
@@ -289,7 +290,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
         (req, peer) => this.respond(spec.port, req, peer),
       );
     try {
-      session.start(identity);
+      session.start(identity, NGINX_LISTEN_BACKLOG);
     } catch {
       return false;
     }

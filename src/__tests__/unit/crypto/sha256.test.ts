@@ -6,7 +6,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sha256, sha256Hex, SHA256 } from '@/crypto/hash';
+import { sha224, sha256, sha256Hex, SHA224, SHA256 } from '@/crypto/hash';
+import { bytesToHex } from '@/crypto/encoding';
 import { utf8ToBytes } from '@/crypto/encoding';
 
 describe('sha256Hex — FIPS 180-4 / NIST vectors', () => {
@@ -75,5 +76,27 @@ describe('SHA256 algorithm descriptor', () => {
   it('digest() matches the standalone function', () => {
     const msg = utf8ToBytes('descriptor');
     expect(Array.from(SHA256.digest(msg))).toEqual(Array.from(sha256(msg)));
+  });
+});
+
+describe('sha224 — FIPS 180-4 vectors', () => {
+  it.each([
+    ['', 'd14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f'],
+    ['abc', '23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7'],
+    ['abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq', '75388b16512776cc5dba5da1fd890150b0c6455cb4f58b1952522525'],
+    ['The quick brown fox jumps over the lazy dog', '730e109bd7a8a32b1cb9d9a09aa2325d2430587ddbc0c38bad911525'],
+  ])('sha224(%j)', (input, expected) => {
+    expect(bytesToHex(sha224(new TextEncoder().encode(input)))).toBe(expected);
+  });
+
+  it('hashes one million "a" characters', () => {
+    expect(bytesToHex(sha224(new TextEncoder().encode('a'.repeat(1_000_000))))).toBe(
+      '20794655980c91d8bbb4c1ea97618a4bf03f42581948b2ee4ee7ad67',
+    );
+  });
+
+  it('declares a 28-byte digest over 64-byte blocks', () => {
+    expect(SHA224.digestSize).toBe(28);
+    expect(SHA224.blockSize).toBe(64);
   });
 });

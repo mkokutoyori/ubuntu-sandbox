@@ -1,11 +1,13 @@
 import type { PkiPublicKey } from './PkiKeyPair';
 import { PkiKeyPair } from './PkiKeyPair';
-import { sameSerial } from './der/X509Der';
+import { sameSerial, canonicalSerial } from './der/X509Der';
+import { canonicalDistinguishedName } from './der/DistinguishedName';
+import { tbsBytesOfCrl, rememberReceivedTbs } from './der/CrlDer';
 
 export interface RevokedEntry {
   readonly serialNumber: string;
   readonly revocationDate: number;
-  readonly reasonCode?: 'unspecified' | 'keyCompromise' | 'cACompromise' | 'affiliationChanged' | 'superseded' | 'cessationOfOperation';
+  readonly reasonCode?: 'unspecified' | 'keyCompromise' | 'cACompromise' | 'affiliationChanged' | 'superseded' | 'cessationOfOperation' | 'certificateHold' | 'removeFromCRL';
 }
 
 export interface CrlFields {
@@ -15,6 +17,8 @@ export interface CrlFields {
   readonly nextUpdate: number;
   readonly signatureAlgorithm: 'sha256WithRSAEncryption' | 'ecdsa-with-SHA256';
   readonly revoked: readonly RevokedEntry[];
+  readonly crlNumber?: number;
+  readonly authorityKeyIdentifier?: string;
 }
 
 export class CertificateRevocationList implements CrlFields {
@@ -24,6 +28,8 @@ export class CertificateRevocationList implements CrlFields {
   readonly nextUpdate: number;
   readonly signatureAlgorithm: 'sha256WithRSAEncryption' | 'ecdsa-with-SHA256';
   readonly revoked: readonly RevokedEntry[];
+  readonly crlNumber?: number;
+  readonly authorityKeyIdentifier?: string;
   readonly signature: string;
 
   private constructor(fields: CrlFields, signature: string) {
@@ -32,18 +38,27 @@ export class CertificateRevocationList implements CrlFields {
     this.nextUpdate = fields.nextUpdate;
     this.signatureAlgorithm = fields.signatureAlgorithm;
     this.revoked = fields.revoked;
+    if (fields.crlNumber !== undefined) this.crlNumber = fields.crlNumber;
+    if (fields.authorityKeyIdentifier !== undefined) this.authorityKeyIdentifier = fields.authorityKeyIdentifier;
     this.signature = signature;
   }
 
-  static tbs(fields: CrlFields): string {
-    return JSON.stringify({
-      v: fields.version,
-      i: fields.issuer,
-      tu: fields.thisUpdate,
-      nu: fields.nextUpdate,
-      alg: fields.signatureAlgorithm,
-      r: fields.revoked.map(r => [r.serialNumber, r.revocationDate, r.reasonCode ?? null]),
-    });
+  static normalize(fields: CrlFields): CrlFields {
+    return {
+      ...fields,
+      issuer: canonicalDistinguishedName(fields.issuer),
+      thisUpdate: Math.floor(fields.thisUpdate / 1000) * 1000,
+      nextUpdate: Math.floor(fields.nextUpdate / 1000) * 1000,
+      revoked: fields.revoked.map((entry) => ({
+        ...entry,
+        serialNumber: canonicalSerial(entry.serialNumber),
+        revocationDate: Math.floor(entry.revocationDate / 1000) * 1000,
+      })),
+    };
+  }
+
+  static tbs(fields: CrlFields): Uint8Array {
+    return tbsBytesOfCrl(fields);
   }
 
   /**
@@ -55,28 +70,24 @@ export class CertificateRevocationList implements CrlFields {
    * ce qui viderait `isValidSignature` de son sens. Une CRL venue d'un
    * fichier garde sa signature, bonne ou mauvaise.
    */
-  static fromParsed(fields: CrlFields, signature: string): CertificateRevocationList {
-    return new CertificateRevocationList(fields, signature);
+  static fromParsed(fields: CrlFields, signature: string, receivedTbs?: Uint8Array): CertificateRevocationList {
+    const crl = new CertificateRevocationList(fields, signature);
+    if (receivedTbs) rememberReceivedTbs(crl, receivedTbs);
+    return crl;
   }
 
   static sign(fields: CrlFields, signerKey: { algorithm: 'rsa' | 'ecdsa'; material: string }): CertificateRevocationList {
-    const sig = PkiKeyPair.sign(signerKey, CertificateRevocationList.tbs(fields));
-    return new CertificateRevocationList(fields, sig);
+    const normalized = CertificateRevocationList.normalize(fields);
+    const sig = PkiKeyPair.sign(signerKey, CertificateRevocationList.tbs(normalized));
+    return new CertificateRevocationList(normalized, sig);
   }
 
   isValidSignature(issuerPublicKey: PkiPublicKey): boolean {
-    return PkiKeyPair.verify(issuerPublicKey, CertificateRevocationList.tbs({
-      version: this.version,
-      issuer: this.issuer,
-      thisUpdate: this.thisUpdate,
-      nextUpdate: this.nextUpdate,
-      signatureAlgorithm: this.signatureAlgorithm,
-      revoked: this.revoked,
-    }), this.signature);
+    return PkiKeyPair.verify(issuerPublicKey, tbsBytesOfCrl(this), this.signature);
   }
 
   contains(serialNumber: string): boolean {
-    return this.revoked.some(r => sameSerial(r.serialNumber, serialNumber));
+    return this.revoked.some(r => r.reasonCode !== 'removeFromCRL' && sameSerial(r.serialNumber, serialNumber));
   }
 
   isFresh(now: number): boolean {

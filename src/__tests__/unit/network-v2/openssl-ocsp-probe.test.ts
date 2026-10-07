@@ -27,9 +27,9 @@ async function pki(srv: LinuxServer): Promise<void> {
   await srv.executeCommand(`openssl req -x509 -newkey rsa:1024 -keyout ${CA}/ca.key -out ${CA}/ca.crt -days 365 -nodes -subj "/CN=Lab CA"`);
   for (const name of ['good', 'bad']) {
     await srv.executeCommand(`openssl req -new -newkey rsa:1024 -nodes -keyout /tmp/${name}.key -out /tmp/${name}.csr -subj "/CN=${name}.lab"`);
-    await srv.executeCommand(`openssl ca -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -in /tmp/${name}.csr -out /tmp/${name}.crt -days 30`);
+    await srv.executeCommand(`openssl ca -batch -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -in /tmp/${name}.csr -out /tmp/${name}.crt -days 30`);
   }
-  await srv.executeCommand(`openssl ca -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -revoke /tmp/bad.crt`);
+  await srv.executeCommand(`openssl ca -batch -cert ${CA}/ca.crt -keyfile ${CA}/ca.key -revoke /tmp/bad.crt`);
 }
 
 const ISSUER = `-issuer ${CA}/ca.crt`;
@@ -44,7 +44,7 @@ describe('répondeur local (-reqin / -index / -respout) et vérification (-respi
   it('good : requête, réponse signée, « Response verify OK », « good », This Update / Next Update', async () => {
     const srv = new LinuxServer('linux-server', 'O2'); srv.powerOn(); await pki(srv);
     await srv.executeCommand(`openssl ocsp ${ISSUER} -cert /tmp/good.crt -reqout /tmp/q.req`);
-    await srv.executeCommand(`openssl ocsp -reqin /tmp/q.req ${RESPONDER} -respout /tmp/r.resp`);
+    await srv.executeCommand(`openssl ocsp -reqin /tmp/q.req ${RESPONDER} -ndays 4 -respout /tmp/r.resp`);
     const out = await srv.executeCommand(`openssl ocsp ${ISSUER} -cert /tmp/good.crt -respin /tmp/r.resp -CAfile ${CA}/ca.crt 2>&1`);
     expect(out).toContain('Response verify OK');
     expect(out).toContain('/tmp/good.crt: good');

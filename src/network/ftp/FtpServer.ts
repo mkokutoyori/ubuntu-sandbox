@@ -30,10 +30,11 @@ export class FtpServer {
     private readonly port: number = FTP_CONTROL_PORT,
   ) {}
 
-  start(identity?: ListenerIdentity): void {
+  start(identity?: ListenerIdentity, backlog?: number): void {
     this.listener = this.tcpStack.listen(this.port, {
       onAccept: (socket) => this.handleConnection(socket),
       identity,
+      backlog,
     });
   }
 

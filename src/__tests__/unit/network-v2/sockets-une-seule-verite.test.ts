@@ -18,6 +18,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { spawnSocketOwner } from '../../support/socketOwner';
 
 beforeEach(() => {
   EquipmentRegistry.getInstance().clear();
@@ -79,7 +80,7 @@ describe('§P1 — une écoute réelle se voit dans ss', () => {
 
     srv.getTcpStack().listen(7777, {
       onAccept: () => undefined,
-      identity: { pid: 4242, processName: 'monservice' },
+      identity: { pid: spawnSocketOwner(srv, 'monservice'), processName: 'monservice' },
     });
 
     const out = await srv.executeCommand('ss -ltnp');

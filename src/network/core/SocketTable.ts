@@ -47,6 +47,8 @@ export interface SocketEntry {
   pid?: number;
   /** Human-readable process name (optional) */
   processName?: string;
+  uid?: number;
+  boundDevice?: string;
   /**
    * Application-layer greeting the service writes as the first bytes on a
    * fresh TCP connection (e.g. `SSH-2.0-...\r\n`, `220 mail.example.com\r\n`).
@@ -101,7 +103,7 @@ export class SocketTable {
     pid?: number,
     processName?: string,
     banner?: string,
-    options?: { reuseAddr?: boolean; ownerUid?: number },
+    options?: { reuseAddr?: boolean; ownerUid?: number; boundDevice?: string },
   ): SocketEntry {
     if (localPort !== 0 && options?.ownerUid !== undefined && this.bindingPolicy !== null
       && !this.bindingPolicy.permits(localPort, { uid: options.ownerUid })) {
@@ -137,6 +139,8 @@ export class SocketTable {
       pid,
       processName,
       banner,
+      uid: options?.ownerUid,
+      boundDevice: options?.boundDevice,
     };
 
     this.sockets.set(this.idCounter, entry);
@@ -336,6 +340,24 @@ export class SocketTable {
       if (entry.remoteAddress !== params.remoteAddress) continue;
       if (entry.remotePort !== params.remotePort) continue;
       this.sockets.delete(id);
+      return true;
+    }
+    return false;
+  }
+
+  setConnectionOwner(params: {
+    protocol: SocketProtocol;
+    localPort: number;
+    remoteAddress: string;
+    remotePort: number;
+  }, pid: number): boolean {
+    for (const entry of this.sockets.values()) {
+      if (entry.remoteAddress === '*') continue;
+      if (entry.protocol !== params.protocol) continue;
+      if (entry.localPort !== params.localPort) continue;
+      if (entry.remoteAddress !== params.remoteAddress) continue;
+      if (entry.remotePort !== params.remotePort) continue;
+      entry.pid = pid;
       return true;
     }
     return false;

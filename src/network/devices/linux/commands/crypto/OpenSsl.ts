@@ -1,4 +1,5 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -8,17 +9,12 @@ import { OPENSSL_VERSION } from '@/network/crypto/openssl/opensslVersion';
 import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
+import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { createRequest, createResponse } from '@/network/http/semantics/types';
 
-function textBytes(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
-
 function bytesText(bytes: Uint8Array | null): string {
-  return bytes === null ? '' : Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+  return bytes === null ? '' : bytesToFileText(bytes);
 }
 
 /**
@@ -60,14 +56,18 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         ok: true, certificate: sonde.certificate,
         cipherSuite: sonde.cipherSuite, protocolVersion: sonde.protocolVersion ?? null, verified: sonde.verified,
         staple: sonde.staple ?? null,
+        ...(sonde.received ? { received: sonde.received } : {}),
+        ...(sonde.chain ? { chain: sonde.chain } : {}),
+        ...(sonde.details ? { details: sonde.details } : {}),
       };
     },
     httpPost: (ip, port, path, body, headers) => {
       const request = createRequest('POST', path);
       request.headers.set('Host', `${ip}:${port}`);
       for (const [name, value] of Object.entries(headers)) request.headers.set(name, value);
-      request.headers.set('Content-Length', String(body.length));
-      request.body = textBytes(body);
+      const payload = fileTextToBytes(body);
+      request.headers.set('Content-Length', String(payload.length));
+      request.body = payload;
       const session = new Http1ClientSession(ctx.net.getTcpStack(), ip, port);
       const result = session.send(request);
       session.close();
@@ -81,7 +81,24 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         const outcome = handler(bytesText(req.body));
         const response = createResponse(outcome.status, outcome.status === 200 ? 'OK' : 'Bad Request');
         response.headers.set('Content-Type', 'application/ocsp-response');
-        response.body = textBytes(outcome.body);
+        response.body = fileTextToBytes(outcome.body);
+        return response;
+      }).start({ processName: 'openssl' });
+      return true;
+    },
+    workingDirectory: () => ctx.executor.getCwd(),
+    serveTls: (port, tls, respond) => {
+      const stack = ctx.net.getTcpStack();
+      if (stack.listListeners().some((l) => l.localPort === port)) return false;
+      new HttpsServerSession(stack, port, {
+        serverCert: tls.chain[0], serverChain: tls.chain.slice(1), serverPrivateKey: tls.privateKey,
+        ...(tls.protocols ? { protocols: tls.protocols } : {}),
+        ...(tls.cipherList ? { cipherList: tls.cipherList } : {}),
+      }, (req) => {
+        const outcome = respond(req.method ?? 'GET', req.target ?? '/');
+        const response = createResponse(outcome.status, outcome.status === 200 ? 'ok' : 'Not Found');
+        response.headers.set('Content-Type', outcome.contentType);
+        response.body = fileTextToBytes(outcome.body);
         return response;
       }).start({ processName: 'openssl' });
       return true;

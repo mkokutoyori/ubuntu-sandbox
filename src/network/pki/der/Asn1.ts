@@ -59,6 +59,7 @@ export const der = {
   oid: (dotted: string): Uint8Array => tlv(TAG.OID, oidContent(dotted)),
   bitString: (bytes: Uint8Array, unusedBits = 0): Uint8Array => tlv(TAG.BIT_STRING, concatBytes([Uint8Array.of(unusedBits), bytes])),
   time: (epochMs: number): Uint8Array => encodeTime(epochMs),
+  generalizedTime: (epochMs: number): Uint8Array => encodeGeneralizedTime(epochMs),
 };
 
 function integerContent(value: bigint): Uint8Array {
@@ -109,6 +110,13 @@ function encodeTime(epochMs: number): Uint8Array {
   const rest = `${twoDigits(date.getUTCMonth() + 1)}${twoDigits(date.getUTCDate())}${twoDigits(date.getUTCHours())}${twoDigits(date.getUTCMinutes())}${twoDigits(date.getUTCSeconds())}Z`;
   if (year >= 1950 && year < 2050) return tlv(TAG.UTC_TIME, utf8ToBytes(`${twoDigits(year % 100)}${rest}`));
   return tlv(TAG.GENERALIZED_TIME, utf8ToBytes(`${String(year).padStart(4, '0')}${rest}`));
+}
+
+function encodeGeneralizedTime(epochMs: number): Uint8Array {
+  const date = new Date(Math.floor(epochMs / 1000) * 1000);
+  const text = `${String(date.getUTCFullYear()).padStart(4, '0')}${twoDigits(date.getUTCMonth() + 1)}${twoDigits(date.getUTCDate())}`
+    + `${twoDigits(date.getUTCHours())}${twoDigits(date.getUTCMinutes())}${twoDigits(date.getUTCSeconds())}Z`;
+  return tlv(TAG.GENERALIZED_TIME, utf8ToBytes(text));
 }
 
 export interface DerNode {

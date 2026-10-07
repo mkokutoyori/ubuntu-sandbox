@@ -1,7 +1,6 @@
-import { utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { LegacyVersion } from './legacyCipherSuites';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 
 export interface LegacyServerHello {
   readonly kind: 'legacy_server_hello';
@@ -57,6 +56,7 @@ export interface ClientKeyExchange {
 
 export interface LegacyCertificateVerify {
   readonly kind: 'legacy_certificate_verify';
+  readonly signatureAlgorithm?: string;
   readonly signature: string;
 }
 
@@ -67,7 +67,7 @@ export interface LegacyFinished {
 
 export interface LegacyCertificateStatus {
   readonly kind: 'legacy_certificate_status';
-  readonly response: SignedOcspResponse;
+  readonly response: OcspResponseMessage;
 }
 
 export interface LegacyNewSessionTicket {
@@ -82,15 +82,4 @@ export type LegacyHandshakeMessage =
   | LegacyServerHello | LegacyCertificate | ServerKeyExchange | LegacyCertificateRequest
   | ServerHelloDone | ClientKeyExchange | LegacyCertificateVerify | LegacyFinished;
 
-export function encodeLegacyMessage(message: object): Uint8Array {
-  return utf8ToBytes(JSON.stringify(message));
-}
-
-export function decodeLegacyMessages(bytes: Uint8Array): { kind: string }[] {
-  const parsed = JSON.parse(bytesToUtf8(bytes)) as unknown;
-  return (Array.isArray(parsed) ? parsed : [parsed]) as { kind: string }[];
-}
-
-export function encodeLegacyBundle(messages: readonly object[]): Uint8Array {
-  return utf8ToBytes(JSON.stringify(messages));
-}
+export { encodeLegacyMessage, decodeLegacyMessages, encodeLegacyBundle, type LegacyWireContext } from '../wire/LegacyHandshakeCodec';

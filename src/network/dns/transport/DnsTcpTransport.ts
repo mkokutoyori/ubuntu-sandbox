@@ -21,10 +21,11 @@ export function bindDnsTcpServer(
   host: EndHost,
   handler: DnsStreamHandler,
   port: number = DNS_PORT,
-  options: { address?: string; processName?: string } = {},
+  options: { address?: string; processName?: string; boundDevice?: string } = {},
 ): void {
   host.getTcpStack().listen(port, {
     identity: { processName: options.processName ?? 'dnsmasq' },
+    ...(options.boundDevice === undefined ? {} : { boundDevice: options.boundDevice }),
     onAccept: (socket: TcpSocket) => {
       const reader = new DnsStreamReader();
       let idle: ReturnType<typeof setTimeout> | null = null;

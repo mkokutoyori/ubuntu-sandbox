@@ -206,6 +206,7 @@ export class BashInterpreter {
    * this lets a caller's `2>` redirection peel stderr off coherently.
    */
   private stderrParts: string[] = [];
+  private readonly stderrShownInOutput = new WeakMap<string[], Set<number>>();
   /** Set by a bare `exec >> file 2>> errfile` — see visitSimpleCommandWithInput. */
   private execRedirect: { stdout?: { path: string; append: boolean }; stderr?: { path: string; append: boolean } } | null = null;
   /** >0 while running a stage inside a multi-command pipeline — see `runPipelineStages`. */
@@ -632,13 +633,24 @@ export class BashInterpreter {
     if (pipeInput) this.output.push(pipeInput);
     // Every stage's fd 2 bypasses the pipe and reaches the terminal
     // directly, like real concurrent processes sharing the inherited fd 2.
-    const pipelineStderr = this.stderrParts.slice(stderrMarker).map(ensureTrailingNewline).join('');
+    const shownStderr = this.stderrShownInOutput.get(this.stderrParts);
+    const pipelineStderr = this.stderrParts
+      .slice(stderrMarker)
+      .filter((_, offset) => !shownStderr?.has(stderrMarker + offset))
+      .map(ensureTrailingNewline)
+      .join('');
     if (pipelineStderr) this.output.push(pipelineStderr);
     if (this.isPipefail()) {
       const nonZero = stageCodes.filter(c => c !== 0);
       this.env.lastExitCode = nonZero.length > 0 ? nonZero[nonZero.length - 1] : 0;
     }
     if (node.negated) this.env.lastExitCode = this.env.lastExitCode === 0 ? 1 : 0;
+  }
+
+  private markStderrShown(index: number): void {
+    const shown = this.stderrShownInOutput.get(this.stderrParts) ?? new Set<number>();
+    shown.add(index);
+    this.stderrShownInOutput.set(this.stderrParts, shown);
   }
 
   private *visitCommand(node: Command): Effects<void> {
@@ -736,6 +748,30 @@ export class BashInterpreter {
   }
 
   private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
+    const restorePrefixAssignments = this.capturePrefixAssignments(rawNode);
+    try {
+      yield* this.runSimpleCommand(rawNode, pipeInput);
+    } finally {
+      restorePrefixAssignments();
+    }
+  }
+
+  private capturePrefixAssignments(node: SimpleCommand): () => void {
+    if (node.words.length === 0 || absorbsAssignments(node)) return () => {};
+    const previous = node.assignments
+      .filter((assign) => assign.arrayElements === undefined && assign.subscript === undefined)
+      .map((assign) => ({ name: assign.name, value: this.env.get(assign.name) }));
+    if (previous.length === 0) return () => {};
+    return () => {
+      for (const { name, value } of previous.reverse()) {
+        if (this.env.isReadonly(name)) continue;
+        if (value === undefined) this.env.withdrawScalar(name);
+        else this.env.set(name, value);
+      }
+    };
+  }
+
+  private *runSimpleCommand(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
     yield* this.fireSignalTrap('DEBUG');
     const node = this.materializeProcSubs(rawNode);
 
@@ -770,11 +806,11 @@ export class BashInterpreter {
     // scope — bash's `local` semantics. We compute the head word once
     // (cheap literal check) and have `applyAssignment` skip the
     // parent-walk by declaring each name local first.
-    const headWord = node.words[0];
-    const headName = headWord && headWord.type === 'LiteralWord' ? headWord.value : '';
+    const headName = literalHeadName(node);
     const declScope = isDeclScopingCommand(headName);
-    const markReadonly = headName === 'readonly';
-    const markExport = headName === 'export';
+    const declarationFlags = declScope ? literalFlagLetters(node) : '';
+    const markReadonly = headName === 'readonly' || declarationFlags.includes('r');
+    const markExport = headName === 'export' || declarationFlags.includes('x');
 
     const namerefDecl = declScope && node.words.some(
       w => w.type === 'LiteralWord' && /^-[a-zA-Z]*n[a-zA-Z]*$/.test(w.value),
@@ -886,10 +922,13 @@ export class BashInterpreter {
         // and must not leak into the next stage's stdin (see
         // `runPipelineStages`).
         explicitStderr = result.stderr;
-        const terminalView = !hasAnyRedirect && this.pipelineDepth === 0 ? result.interleaved : undefined;
+        const terminalView = !hasAnyRedirect && !this.nonLastPipelineStage ? result.interleaved : undefined;
         if (terminalView !== undefined) {
           if (terminalView) this.output.push(ensureTrailingNewline(terminalView));
-          if (result.stderr) this.stderrParts.push(result.stderr);
+          if (result.stderr) {
+            this.stderrParts.push(result.stderr);
+            this.markStderrShown(this.stderrParts.length - 1);
+          }
         } else {
           if (result.output) {
             this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
@@ -1675,6 +1714,24 @@ function isUnconditional(condition: CommandList, expectTrue: boolean): boolean {
 
 function isDeclScopingCommand(name: string): boolean {
   return name === 'local' || name === 'declare' || name === 'typeset';
+}
+
+function literalHeadName(node: SimpleCommand): string {
+  const head = node.words[0];
+  return head && head.type === 'LiteralWord' ? head.value : '';
+}
+
+function literalFlagLetters(node: SimpleCommand): string {
+  let letters = '';
+  for (const word of node.words.slice(1)) {
+    if (word.type === 'LiteralWord' && /^-[A-Za-z]+$/.test(word.value)) letters += word.value.slice(1);
+  }
+  return letters;
+}
+
+function absorbsAssignments(node: SimpleCommand): boolean {
+  const head = literalHeadName(node);
+  return isDeclScopingCommand(head) || head === 'readonly' || head === 'export';
 }
 
 /** Glob-style match used by `[[ … ]]`'s `==` / `!=`. */

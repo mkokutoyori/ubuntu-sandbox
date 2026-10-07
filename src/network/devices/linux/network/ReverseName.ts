@@ -33,20 +33,33 @@ export function reverseNameOf(nss: NameServiceSwitch, ip: string): string | null
   }
 }
 
+export interface ForwardHost {
+  readonly address: string;
+  readonly canonicalName: string;
+}
+
 /** L'autre sens, par la meme chaine : ce que `getaddrinfo` repond. */
-export async function forwardAddressOfAsync(
+export async function forwardHostOfAsync(
   nss: NameServiceSwitch, name: string,
-): Promise<string | null> {
+): Promise<ForwardHost | null> {
   try {
     const r = await nss.lookupAsync<NssHostEntry[]>(
       'hosts',
       (s) => s.gethostbynameAsync?.(name, 2) ?? s.gethostbyname?.(name, 2),
     );
     if (r.status !== 'SUCCESS') return null;
-    return r.entry?.[0]?.address ?? null;
+    const first = r.entry?.[0];
+    if (first === undefined || !first.address) return null;
+    return { address: first.address, canonicalName: first.canonicalName || name };
   } catch {
     return null;
   }
+}
+
+export async function forwardAddressOfAsync(
+  nss: NameServiceSwitch, name: string,
+): Promise<string | null> {
+  return (await forwardHostOfAsync(nss, name))?.address ?? null;
 }
 
 export async function reverseNameOfAsync(

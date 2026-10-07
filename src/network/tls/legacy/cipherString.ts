@@ -20,10 +20,16 @@ const E_AES128CCM8 = 0x00010000;
 const E_AES256CCM8 = 0x00020000;
 const E_CHACHA20 = 0x00080000;
 const E_NULL = 0x00000020;
+const E_CAMELLIA128 = 0x00000100;
+const E_CAMELLIA256 = 0x00000200;
+const E_ARIA128GCM = 0x00100000;
+const E_ARIA256GCM = 0x00200000;
+const E_CAMELLIA = E_CAMELLIA128 | E_CAMELLIA256;
+const E_ARIAGCM = E_ARIA128GCM | E_ARIA256GCM;
 const E_AESGCM = E_AES128GCM | E_AES256GCM;
 const E_AESCCM = E_AES128CCM | E_AES256CCM | E_AES128CCM8 | E_AES256CCM8;
 const E_AES = E_AES128 | E_AES256 | E_AESGCM | E_AESCCM;
-const E_CBC = E_3DES;
+const E_CBC = E_3DES | E_CAMELLIA;
 
 const M_SHA1 = 0x02;
 const M_SHA256 = 0x10;
@@ -47,7 +53,8 @@ export const TLS1_3_VERSION = 0x0304;
 const ENC_BITS: Readonly<Record<OpensslEnc, number>> = {
   '3DES': E_3DES, AES128: E_AES128, AES256: E_AES256, AES128GCM: E_AES128GCM, AES256GCM: E_AES256GCM,
   AES128CCM: E_AES128CCM, AES256CCM: E_AES256CCM, AES128CCM8: E_AES128CCM8, AES256CCM8: E_AES256CCM8,
-  CHACHA20: E_CHACHA20,
+  CHACHA20: E_CHACHA20, CAMELLIA128: E_CAMELLIA128, CAMELLIA256: E_CAMELLIA256,
+  ARIA128GCM: E_ARIA128GCM, ARIA256GCM: E_ARIA256GCM,
 };
 
 const MKEY_BITS = { RSA: K_RSA, DHE: K_DHE, ECDHE: K_ECDHE } as const;
@@ -143,6 +150,13 @@ const GROUP_ALIASES: readonly Alias[] = [
   { name: 'AESCCM', enc: E_AESCCM },
   { name: 'AESCCM8', enc: E_AES128CCM8 | E_AES256CCM8 },
   { name: 'CHACHA20', enc: E_CHACHA20 },
+  { name: 'CAMELLIA128', enc: E_CAMELLIA128 },
+  { name: 'CAMELLIA256', enc: E_CAMELLIA256 },
+  { name: 'CAMELLIA', enc: E_CAMELLIA },
+  { name: 'ARIA128', enc: E_ARIA128GCM },
+  { name: 'ARIA256', enc: E_ARIA256GCM },
+  { name: 'ARIA', enc: E_ARIAGCM },
+  { name: 'ARIAGCM', enc: E_ARIAGCM },
   { name: 'CBC', enc: E_CBC },
   { name: 'SHA1', mac: M_SHA1 },
   { name: 'SHA', mac: M_SHA1 },
@@ -499,11 +513,12 @@ function pad(text: string, width: number): string {
 const ENC_LABEL: Readonly<Record<OpensslEnc, string>> = {
   '3DES': '3DES(168)', AES128: 'AES(128)', AES256: 'AES(256)', AES128GCM: 'AESGCM(128)', AES256GCM: 'AESGCM(256)',
   AES128CCM: 'AESCCM(128)', AES256CCM: 'AESCCM(256)', AES128CCM8: 'AESCCM8(128)', AES256CCM8: 'AESCCM8(256)',
-  CHACHA20: 'CHACHA20/POLY1305(256)',
+  CHACHA20: 'CHACHA20/POLY1305(256)', CAMELLIA128: 'Camellia(128)', CAMELLIA256: 'Camellia(256)',
+  ARIA128GCM: 'ARIAGCM(128)', ARIA256GCM: 'ARIAGCM(256)',
 };
 
 export function cipherDescription(cipher: OpensslCipher): string {
-  const version = cipher.minTls === TLS1_VERSION ? 'TLSv1.0' : protocolString(cipher.minTls);
+  const version = protocolString(cipher.minTls);
   const kx = cipher.entry.mkey === 'RSA' ? 'RSA' : cipher.entry.mkey === 'DHE' ? 'DH' : 'ECDH';
   return `${pad(cipher.name, 30)} ${pad(version, 7)} Kx=${pad(kx, 8)} Au=${pad(cipher.entry.auth, 5)} `
     + `Enc=${pad(ENC_LABEL[cipher.entry.enc], 22)} Mac=${pad(cipher.entry.mac, 4)}\n`;

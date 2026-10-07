@@ -72,9 +72,22 @@ export interface PaData {
   readonly value: Uint8Array;
 }
 
+export interface EtypeInfo2Entry {
+  readonly etype: number;
+  readonly salt?: string;
+}
+
 // RFC 4120 §7.5.2 — the only padata-type values this simulator produces/reads.
 export const PA_TGS_REQ = 1;
 export const PA_ENC_TIMESTAMP = 2;
+export const PA_ETYPE_INFO2 = 19;
+
+export const KDC_OPT_FORWARDABLE = 1 << 30;
+export const KDC_OPT_PROXIABLE = 1 << 28;
+export const KDC_OPT_RENEWABLE = 1 << 23;
+export const KDC_OPT_RENEWABLE_OK = 1 << 4;
+export const KDC_OPT_RENEW = 1 << 1;
+export const KDC_OPT_CANONICALIZE = 1 << 16;
 
 export interface KdcReqBody {
   readonly kdcOptions: number;
@@ -82,6 +95,7 @@ export interface KdcReqBody {
   readonly realm: string;
   readonly sname: PrincipalName;
   readonly till: number;
+  readonly rtime?: number;
   readonly nonce: number;
   readonly etype: readonly number[];
   /**
@@ -130,7 +144,10 @@ export const enum KrbErrorCode {
   KDC_ERR_CLIENT_REVOKED = 18,
   KDC_ERR_PREAUTH_FAILED = 24,
   KDC_ERR_PREAUTH_REQUIRED = 25,
+  KRB_AP_ERR_BAD_INTEGRITY = 31,
   KRB_AP_ERR_TKT_EXPIRED = 32,
+  KRB_AP_ERR_REPEAT = 34,
+  KRB_AP_ERR_BADMATCH = 36,
   KRB_AP_ERR_SKEW = 37,
   KDC_ERR_POLICY = 65,
 }
@@ -142,23 +159,42 @@ export interface KrbError {
   readonly realm: string;
   readonly sname: PrincipalName;
   readonly eText?: string;
+  readonly eData?: Uint8Array;
 }
 
-// RFC 4120 §5.5.1 — Authenticator/AP-REQ, the TGS exchange's proof that the
-// client already holds the ticket it's presenting (cksum/subkey/seq-number/
-// authorization-data omitted, per PRD scope — no cross-realm authorization
-// data or session-key renegotiation modeled yet).
+export interface AuthenticatorChecksum {
+  readonly type: number;
+  readonly checksum: Uint8Array;
+}
+
+export const AP_OPT_USE_SESSION_KEY = 1 << 30;
+export const AP_OPT_MUTUAL_REQUIRED = 1 << 29;
+
 export interface Authenticator {
   readonly crealm: string;
   readonly cname: PrincipalName;
-  readonly ctime: number; // epoch seconds
+  readonly cksum?: AuthenticatorChecksum;
+  readonly ctime: number;
   readonly cusec: number;
+  readonly subkey?: EncryptionKey;
+  readonly seqNumber?: number;
 }
 
 export interface ApReq {
   readonly apOptions: number;
   readonly ticket: Ticket;
-  readonly authenticator: EncryptedData; // encrypts an Authenticator
+  readonly authenticator: EncryptedData;
+}
+
+export interface ApRep {
+  readonly encPart: EncryptedData;
+}
+
+export interface EncApRepPart {
+  readonly ctime: number;
+  readonly cusec: number;
+  readonly subkey?: EncryptionKey;
+  readonly seqNumber?: number;
 }
 
 export function principalName(nameType: number, ...parts: string[]): PrincipalName {

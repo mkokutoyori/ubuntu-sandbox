@@ -60,8 +60,13 @@ const PROVISIONERS: Readonly<Record<string, (host: PackageHost) => void>> = {
   vsftpd: provisionVsftpd,
 };
 
+const PROGRAM_FILE_CONTENT = '\x7fELF';
+
 export function installPackage(host: PackageHost, entry: PackageEntry): void {
   PROVISIONERS[entry.name]?.(host);
+  for (const file of entry.programFiles ?? []) {
+    if (!host.vfs.exists(file)) host.vfs.createFileAt(file, PROGRAM_FILE_CONTENT, 0o644, 0, 0);
+  }
   const units = entry.units ?? [];
   for (const unit of units) host.serviceMgr.installPackagedUnit(unit);
   host.serviceMgr.daemonReload();
@@ -80,6 +85,9 @@ export function removePackage(host: PackageHost, entry: PackageEntry, purge: boo
     host.serviceMgr.removePackagedUnit(unit);
   }
   host.serviceMgr.daemonReload();
+  for (const file of entry.programFiles ?? []) {
+    if (host.vfs.exists(file)) host.vfs.deleteFile(file);
+  }
   if (purge) {
     for (const file of entry.files ?? []) {
       if (host.vfs.exists(file)) host.vfs.deleteFile(file);

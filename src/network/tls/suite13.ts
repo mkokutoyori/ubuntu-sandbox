@@ -27,6 +27,7 @@ export interface Tls13Traffic {
   readonly secret: string;
   readonly suite: CipherSuite;
   readonly maxFragment?: number;
+  readonly sequenceBase?: number;
 }
 
 export function suiteInfo(name: string | null | undefined): Tls13SuiteInfo {

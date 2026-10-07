@@ -2010,13 +2010,13 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
     {
       name: 'ss -tlnp shows sshd listening on port 22 with PID/program',
       on: l => l.pc1,
-      cmd: 'ss -tlnp',
+      cmd: 'sudo ss -tlnp',
       contains: [/0\.0\.0\.0:22.*sshd/, /pid=\d+/],
     },
     {
       name: 'netstat -tlnp shows the same sshd listener',
       on: l => l.pc1,
-      cmd: 'netstat -tlnp',
+      cmd: 'sudo netstat -tlnp',
       contains: [/0\.0\.0\.0:22.*LISTEN.*sshd/],
     },
     {

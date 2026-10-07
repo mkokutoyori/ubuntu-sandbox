@@ -291,7 +291,7 @@ describe('§P3 — clés, CSR et certificats', () => {
     expect(lointain).toBe('1');
   });
 
-  it('`-text` déclare que la clé est simulée, là où elle se lit', async () => {
+  it('`-text` affiche le vrai module et le vrai exposant de la clé', async () => {
     const srv = machine();
     await srv.executeCommand(
       'openssl req -x509 -newkey rsa:2048 -keyout /tmp/k6 -out /tmp/t.crt '
@@ -301,9 +301,9 @@ describe('§P3 — clés, CSR et certificats', () => {
 
     expect(out).toContain('Certificate:');
     expect(out).toContain('Subject: CN = texte');
-    // §5 P3 : un module inventé affiché sans mention enseignerait une
-    // fausse confiance.
-    expect(out).toContain('simulated key material');
+    expect(out).toContain('Public-Key: (2048 bit)');
+    expect(out).toContain('Exponent: 65537 (0x10001)');
+    expect(out).not.toContain('simulated key material');
   });
 
   it('`-addext subjectAltName` voyage jusqu\'au certificat', async () => {
@@ -381,7 +381,7 @@ describe('§P5 — la PKI de labo : ca, révocation, CRL', () => {
     const srv = await autorite('CA1');
 
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
       + '-in /tmp/w.csr -out /tmp/w.crt -days 90');
 
     const sujet = await srv.executeCommand('openssl x509 -in /tmp/w.crt -noout -subject -issuer');
@@ -398,7 +398,7 @@ describe('§P5 — la PKI de labo : ca, révocation, CRL', () => {
   it('le certificat signé par la CA se vérifie contre elle', async () => {
     const srv = await autorite('CA2');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
       + '-in /tmp/w.csr -out /tmp/w.crt -days 90');
 
     const out = await srv.executeCommand('openssl verify -CAfile /etc/ssl/CA/ca.crt /tmp/w.crt');
@@ -408,18 +408,18 @@ describe('§P5 — la PKI de labo : ca, révocation, CRL', () => {
   it('`-revoke` change l\'état dans l\'index, et `-gencrl` le publie', async () => {
     const srv = await autorite('CA3');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
       + '-in /tmp/w.csr -out /tmp/w.crt -days 90');
     const serie = (await srv.executeCommand('openssl x509 -in /tmp/w.crt -noout -serial'))
       .trim().replace('serial=', '');
 
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/w.crt');
 
     expect(await srv.executeCommand('cat /etc/ssl/CA/index.txt')).toMatch(/^R\t/);
 
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
       + '-gencrl -out /tmp/lab.crl');
 
     // La CRL et l'index ne peuvent pas se contredire : `-gencrl` LIT
@@ -432,11 +432,11 @@ describe('§P5 — la PKI de labo : ca, révocation, CRL', () => {
   it('une CRL sans révocation le dit, au lieu d\'une liste vide muette', async () => {
     const srv = await autorite('CA4');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
       + '-in /tmp/w.csr -out /tmp/w.crt -days 90');
 
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
       + '-gencrl -out /tmp/vide.crl');
 
     expect(await srv.executeCommand('openssl crl -in /tmp/vide.crl -noout -text'))
@@ -450,7 +450,7 @@ describe('§P5 — la PKI de labo : ca, révocation, CRL', () => {
       + '-days 30 -nodes -subj "/CN=etranger"');
 
     const out = await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/etranger.crt');
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key -revoke /tmp/etranger.crt');
 
     expect(out).toContain('is not in the index');
   });
@@ -458,10 +458,10 @@ describe('§P5 — la PKI de labo : ca, révocation, CRL', () => {
   it('la CRL nomme son émetteur', async () => {
     const srv = await autorite('CA6');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
       + '-in /tmp/w.csr -out /tmp/w.crt -days 90');
     await srv.executeCommand(
-      'openssl ca -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
+      'openssl ca -batch -cert /etc/ssl/CA/ca.crt -keyfile /etc/ssl/CA/ca.key '
       + '-gencrl -out /tmp/i.crl');
 
     expect((await srv.executeCommand('openssl crl -in /tmp/i.crl -noout -issuer')).trim())
@@ -656,9 +656,9 @@ describe('§P7 — s_client ouvre une vraie connexion', () => {
       .toContain('malformed -connect argument');
   });
 
-  it('`s_server` reste refusé, honnêtement', async () => {
+  it('`s_server` sans certificat échoue comme openssl, par le fichier par défaut absent', async () => {
     const { client } = reseau();
     const out = await client.executeCommand('openssl s_server -accept 4433');
-    expect(out).toContain('is not implemented in this simulator');
+    expect(out).toContain('Can\'t open "server.pem" for reading');
   });
 });

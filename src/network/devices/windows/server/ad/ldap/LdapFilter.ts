@@ -6,7 +6,7 @@
 
 import {
   type BerNode, parseTLV, parseAll,
-  encodeContextPrimitiveString, encodeContextConstructed, encodeSequence,
+  encodeContextPrimitive, encodeContextPrimitiveString, encodeContextConstructed, encodeSequence,
   encodeOctetString, decodeOctetString,
 } from './Ber';
 
@@ -19,111 +19,16 @@ export type LdapFilter =
   | { kind: 'greaterOrEqual'; attr: string; value: string }
   | { kind: 'lessOrEqual'; attr: string; value: string }
   | { kind: 'present'; attr: string }
-  | { kind: 'approxMatch'; attr: string; value: string };
+  | { kind: 'approxMatch'; attr: string; value: string }
+  | { kind: 'extensibleMatch'; matchingRule?: string; attr?: string; value: string; dnAttributes: boolean };
 
-// ── RFC 4515 string parser ───────────────────────────────────────────────────
-
-/** Unescape a filter value's `\XX` hex-pair escapes (RFC 4515 §3). */
-function unescapeFilterValue(s: string): string {
-  let out = '';
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\') {
-      const hex = s.slice(i + 1, i + 3);
-      if (/^[0-9a-fA-F]{2}$/.test(hex)) { out += String.fromCharCode(parseInt(hex, 16)); i += 2; continue; }
-    }
-    out += s[i];
-  }
-  return out;
-}
-
-export function escapeFilterValue(s: string): string {
-  return s.replace(/[\\*()\0]/g, (c) => `\\${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
-}
-
-function parseFilterAt(s: string, pos: number): { filter: LdapFilter; next: number } {
-  if (s[pos] !== '(') throw new Error(`LdapFilter: expected '(' at position ${pos} in "${s}"`);
-  let i = pos + 1;
-  const op = s[i];
-
-  if (op === '&' || op === '|') {
-    i++;
-    const filters: LdapFilter[] = [];
-    while (s[i] !== ')') {
-      const r = parseFilterAt(s, i);
-      filters.push(r.filter);
-      i = r.next;
-    }
-    return { filter: { kind: op === '&' ? 'and' : 'or', filters }, next: i + 1 };
-  }
-  if (op === '!') {
-    i++;
-    const r = parseFilterAt(s, i);
-    if (s[r.next] !== ')') throw new Error(`LdapFilter: expected ')' after NOT filter in "${s}"`);
-    return { filter: { kind: 'not', filter: r.filter }, next: r.next + 1 };
-  }
-
-  // item: attr <op> value, terminated by the matching ')'
-  const close = s.indexOf(')', i);
-  if (close === -1) throw new Error(`LdapFilter: unterminated filter in "${s}"`);
-  const body = s.slice(i, close);
-  const item = parseFilterItem(body);
-  return { filter: item, next: close + 1 };
-}
-
-function parseFilterItem(body: string): LdapFilter {
-  const geIdx = body.indexOf('>=');
-  const leIdx = body.indexOf('<=');
-  const apIdx = body.indexOf('~=');
-  if (geIdx !== -1) return { kind: 'greaterOrEqual', attr: body.slice(0, geIdx), value: unescapeFilterValue(body.slice(geIdx + 2)) };
-  if (leIdx !== -1) return { kind: 'lessOrEqual', attr: body.slice(0, leIdx), value: unescapeFilterValue(body.slice(leIdx + 2)) };
-  if (apIdx !== -1) return { kind: 'approxMatch', attr: body.slice(0, apIdx), value: unescapeFilterValue(body.slice(apIdx + 2)) };
-
-  const eqIdx = body.indexOf('=');
-  if (eqIdx === -1) throw new Error(`LdapFilter: malformed filter item "${body}"`);
-  const attr = body.slice(0, eqIdx);
-  const rawValue = body.slice(eqIdx + 1);
-
-  if (rawValue === '*') return { kind: 'present', attr };
-  if (rawValue.includes('*')) {
-    const parts = rawValue.split('*').map(unescapeFilterValue);
-    const initial = parts[0] !== '' ? parts[0] : undefined;
-    const final = parts[parts.length - 1] !== '' ? parts[parts.length - 1] : undefined;
-    const any = parts.slice(1, -1).filter(p => p !== '');
-    return { kind: 'substrings', attr, initial, any, final };
-  }
-  return { kind: 'equalityMatch', attr, value: unescapeFilterValue(rawValue) };
-}
-
-/** Parse an RFC 4515 filter string, e.g. `(&(objectClass=user)(sAMAccountName=bob))`. */
-export function parseFilter(s: string): LdapFilter {
-  const trimmed = s.trim();
-  const { filter, next } = parseFilterAt(trimmed, 0);
-  if (next !== trimmed.length) throw new Error(`LdapFilter: trailing content after filter in "${s}"`);
-  return filter;
-}
-
-export function formatFilter(f: LdapFilter): string {
-  switch (f.kind) {
-    case 'and': return `(&${f.filters.map(formatFilter).join('')})`;
-    case 'or': return `(|${f.filters.map(formatFilter).join('')})`;
-    case 'not': return `(!${formatFilter(f.filter)})`;
-    case 'equalityMatch': return `(${f.attr}=${escapeFilterValue(f.value)})`;
-    case 'greaterOrEqual': return `(${f.attr}>=${escapeFilterValue(f.value)})`;
-    case 'lessOrEqual': return `(${f.attr}<=${escapeFilterValue(f.value)})`;
-    case 'approxMatch': return `(${f.attr}~=${escapeFilterValue(f.value)})`;
-    case 'present': return `(${f.attr}=*)`;
-    case 'substrings': {
-      const mid = f.any.map(a => `${escapeFilterValue(a)}*`).join('');
-      return `(${f.attr}=${f.initial ? escapeFilterValue(f.initial) : ''}*${mid}${f.final ? escapeFilterValue(f.final) : ''})`;
-    }
-  }
-}
+export { parseFilter, formatFilter, escapeFilterValue } from './LdapFilterString';
 
 // ── BER CHOICE encode/decode (RFC 4511 §4.5.1) ───────────────────────────────
 
 const FILTER_TAG = {
   and: 0, or: 1, not: 2, equalityMatch: 3, substrings: 4,
-  greaterOrEqual: 5, lessOrEqual: 6, present: 7, approxMatch: 8,
+  greaterOrEqual: 5, lessOrEqual: 6, present: 7, approxMatch: 8, extensibleMatch: 9,
 } as const;
 
 function encodeAVA(tagNumber: number, attr: string, value: string): Uint8Array {
@@ -140,6 +45,14 @@ export function encodeFilter(f: LdapFilter): Uint8Array {
     case 'lessOrEqual': return encodeAVA(FILTER_TAG.lessOrEqual, f.attr, f.value);
     case 'approxMatch': return encodeAVA(FILTER_TAG.approxMatch, f.attr, f.value);
     case 'present': return encodeContextPrimitiveString(FILTER_TAG.present, f.attr);
+    case 'extensibleMatch': {
+      const parts: Uint8Array[] = [];
+      if (f.matchingRule !== undefined) parts.push(encodeContextPrimitiveString(1, f.matchingRule));
+      if (f.attr !== undefined) parts.push(encodeContextPrimitiveString(2, f.attr));
+      parts.push(encodeContextPrimitiveString(3, f.value));
+      if (f.dnAttributes) parts.push(encodeContextPrimitive(4, new Uint8Array([0xff])));
+      return encodeContextConstructed(FILTER_TAG.extensibleMatch, parts);
+    }
     case 'substrings': {
       const subs: Uint8Array[] = [];
       if (f.initial !== undefined) subs.push(encodeContextPrimitiveString(0, f.initial));
@@ -170,6 +83,19 @@ export function decodeFilter(node: BerNode): LdapFilter {
       : tag === FILTER_TAG.lessOrEqual ? 'lessOrEqual' : 'approxMatch';
     return { kind, attr, value } as LdapFilter;
   }
+  if (tag === FILTER_TAG.extensibleMatch) {
+    let matchingRule: string | undefined;
+    let attr: string | undefined;
+    let value = '';
+    let dnAttributes = false;
+    for (const part of parseAll(node.content)) {
+      if (part.tagNumber === 1) matchingRule = decodeOctetString(part.content);
+      else if (part.tagNumber === 2) attr = decodeOctetString(part.content);
+      else if (part.tagNumber === 3) value = decodeOctetString(part.content);
+      else if (part.tagNumber === 4) dnAttributes = part.content.length > 0 && part.content[0] !== 0;
+    }
+    return { kind: 'extensibleMatch', matchingRule, attr, value, dnAttributes };
+  }
   if (tag === FILTER_TAG.substrings) {
     const [attrNode, subsNode] = parseAll(node.content);
     const attr = decodeOctetString(attrNode.content);
@@ -190,6 +116,7 @@ export function decodeFilter(node: BerNode): LdapFilter {
 export interface AttributeSource {
   /** Case-insensitive lookup of an attribute's values (may be multi-valued). */
   get(attr: string): string[] | undefined;
+  dnComponents?(): readonly { type: string; value: string }[];
 }
 
 function matchesSubstring(value: string, f: Extract<LdapFilter, { kind: 'substrings' }>): boolean {
@@ -214,8 +141,53 @@ function matchesSubstring(value: string, f: Extract<LdapFilter, { kind: 'substri
   return true;
 }
 
+export const MATCHING_RULE = {
+  caseIgnoreMatch: '2.5.13.2',
+  caseExactMatch: '2.5.13.5',
+  bitAnd: '1.2.840.113556.1.4.803',
+  bitOr: '1.2.840.113556.1.4.804',
+} as const;
+
+function bigIntOf(text: string): bigint | null {
+  return /^\s*[+-]?\d+\s*$/.test(text) ? BigInt(text.trim()) : null;
+}
+
+function matchesExtensible(f: Extract<LdapFilter, { kind: 'extensibleMatch' }>, entry: AttributeSource): boolean {
+  if (f.attr === undefined) return false;
+  const wanted = f.attr.toLowerCase();
+  const candidates = [...(entry.get(f.attr) ?? [])];
+  if (f.dnAttributes) {
+    for (const component of entry.dnComponents?.() ?? []) {
+      if (component.type.toLowerCase() === wanted) candidates.push(component.value);
+    }
+  }
+  const rule = f.matchingRule;
+  if (rule === undefined || rule === MATCHING_RULE.caseIgnoreMatch || rule.toLowerCase() === 'caseignorematch') {
+    return candidates.some(value => value.toLowerCase() === f.value.toLowerCase());
+  }
+  if (rule === MATCHING_RULE.caseExactMatch || rule.toLowerCase() === 'caseexactmatch') {
+    return candidates.some(value => value === f.value);
+  }
+  const mask = bigIntOf(f.value);
+  if (mask === null) return false;
+  if (rule === MATCHING_RULE.bitAnd) {
+    return candidates.some(value => {
+      const bits = bigIntOf(value);
+      return bits !== null && (bits & mask) === mask;
+    });
+  }
+  if (rule === MATCHING_RULE.bitOr) {
+    return candidates.some(value => {
+      const bits = bigIntOf(value);
+      return bits !== null && (bits & mask) !== 0n;
+    });
+  }
+  return false;
+}
+
 export function evaluateFilter(f: LdapFilter, entry: AttributeSource): boolean {
   switch (f.kind) {
+    case 'extensibleMatch': return matchesExtensible(f, entry);
     case 'and': return f.filters.every(sub => evaluateFilter(sub, entry));
     case 'or': return f.filters.some(sub => evaluateFilter(sub, entry));
     case 'not': return !evaluateFilter(f.filter, entry);

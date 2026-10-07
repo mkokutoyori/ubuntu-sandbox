@@ -1,7 +1,9 @@
 import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import type { OcspResponseMessage } from '@/network/pki/OcspWire';
 import type { TcpWireOutcome } from '@/network/tcp/types';
+import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
 /**
  * docs/PRD-OpenSSL.md §6 — le port étroit que la plateforme remplit.
  *
@@ -19,13 +21,24 @@ import type { TcpWireOutcome } from '@/network/tcp/types';
 export type TlsPeerProbe =
   | { readonly ok: true; readonly certificate: X509Certificate | null;
       readonly cipherSuite: string | null; readonly protocolVersion?: string | null;
-      readonly verified: boolean; readonly staple?: SignedOcspResponse | null }
+      readonly verified: boolean; readonly staple?: OcspResponseMessage | null;
+      readonly received?: Uint8Array; readonly chain?: readonly X509Certificate[];
+      readonly details?: TlsHandshakeDetails }
   | { readonly ok: false; readonly reason: string; readonly alert?: string | null };
+
+export interface TlsServeSettings {
+  readonly chain: readonly X509Certificate[];
+  readonly privateKey: PkiPrivateKey;
+  readonly protocols?: readonly TlsProtocolVersion[];
+  readonly cipherList?: string;
+}
 
 export interface TlsPeerProbeOptions {
   readonly versions?: readonly TlsProtocolVersion[];
   readonly cipherList?: string;
   readonly requestStatus?: boolean;
+  readonly send?: Uint8Array;
+  readonly alpn?: readonly string[];
 }
 
 export interface OpenSslHost {
@@ -74,6 +87,17 @@ export interface OpenSslHost {
    * `false` quand le port est pris.
    */
   serveHttp?(port: number, handler: (body: string) => { readonly status: number; readonly body: string }): boolean;
+
+  /**
+   * Ouvre une écoute TLS qui reste ouverte après la commande (`openssl s_server`).
+   * `false` quand le port est pris.
+   */
+  serveTls?(
+    port: number, tls: TlsServeSettings,
+    respond: (method: string, target: string) => { readonly status: number; readonly contentType: string; readonly body: string },
+  ): boolean;
+
+  workingDirectory?(): string;
 
   /** Résolution par `/etc/hosts` — synchrone, pour la même raison. */
   resolveHost(nom: string): string | null;
