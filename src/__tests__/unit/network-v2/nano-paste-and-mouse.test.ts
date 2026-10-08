@@ -137,15 +137,15 @@ describe('Scénario — clic souris repositionne le curseur (offset display → 
     const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'ab\n' });
     const nano = new NanoEngine(fs, '/tmp/x.txt', 'ab\n', false);
     nano.moveCursorToDisplayOffset(999);
-    expect(nano.cursorLine).toBe(0);
-    expect(nano.cursorCol).toBe(2);
+    expect(nano.cursorLine).toBe(1);
+    expect(nano.cursorCol).toBe(0);
   });
 
   it('un caractère de contrôle avant le point de clic (^A = 2 colonnes affichées) décale le mapping vers la position réelle', () => {
     const content = 'x\x01y\n'; // displayContent: "x^Ay" (4 display chars, 3 raw chars)
     const fs = new InMemoryEditorFsContext({ '/tmp/ctrl.txt': content });
     const nano = new NanoEngine(fs, '/tmp/ctrl.txt', content, false);
-    expect(nano.displayContent).toBe('x^Ay');
+    expect(nano.displayContent).toBe('x^Ay\n');
     // Display offset 3 is right after "^A" (2 display chars) + "x" (1) = the "y".
     nano.moveCursorToDisplayOffset(3);
     expect(nano.cursorLine).toBe(0);

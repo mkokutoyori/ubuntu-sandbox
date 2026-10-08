@@ -38,3 +38,17 @@ export function scrollCaretIntoView(
     ta.scrollTop = bottom - viewport;
   }
 }
+
+export function scrollColumnIntoView(ta: HTMLTextAreaElement, caret: HTMLElement | null): void {
+  if (!caret) return;
+  const left = caret.offsetLeft;
+  const width = caret.offsetWidth;
+  const viewport = ta.clientWidth;
+  if (viewport <= 0 || width <= 0) return;
+  const margin = width * 4;
+  if (left < ta.scrollLeft) {
+    ta.scrollLeft = Math.max(0, left - margin);
+  } else if (left + width > ta.scrollLeft + viewport) {
+    ta.scrollLeft = left + width - viewport + margin;
+  }
+}

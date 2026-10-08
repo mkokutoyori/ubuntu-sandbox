@@ -53,14 +53,14 @@ describe('Scénario — PageDown (^V et la touche PageDown) avance d\'une page',
     expect(nano2.cursorLine).toBe(nano1.cursorLine);
   });
 
-  it('PageDown près de la fin clampe à la dernière ligne, sans erreur', () => {
+  it('PageDown près de la fin s\'arrête sur la ligne vide finale de nano, sans erreur', () => {
     const content = longBuffer(10);
     const fs = new InMemoryEditorFsContext({ '/tmp/small.txt': content });
     const nano = new NanoEngine(fs, '/tmp/small.txt', content, false);
     ctrl(nano, 'v');
-    expect(nano.cursorLine).toBe(9);
+    expect(nano.cursorLine).toBe(10);
     ctrl(nano, 'v'); // no-op, already at the end
-    expect(nano.cursorLine).toBe(9);
+    expect(nano.cursorLine).toBe(10);
   });
 
   it('fonctionne aussi en mode vue (-v) : la navigation n\'est jamais bloquée en lecture seule', () => {
@@ -157,14 +157,14 @@ describe('Scénario — Go To Line (^_ et M-G)', () => {
     expect(nano.cursorCol).toBe(2);
   });
 
-  it('une ligne au-delà de la fin du fichier clampe à la dernière ligne', () => {
+  it('une ligne au-delà de la fin du fichier clampe à la ligne vide finale de nano', () => {
     const content = longBuffer(10);
     const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': content });
     const nano = new NanoEngine(fs, '/tmp/x.txt', content, false);
     ctrl(nano, '_');
     typeText(nano, '9999');
     press(nano, 'Enter');
-    expect(nano.cursorLine).toBe(9);
+    expect(nano.cursorLine).toBe(10);
   });
 
   it('une entrée non numérique annule sans déplacer le curseur', () => {

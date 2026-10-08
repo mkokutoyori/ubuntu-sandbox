@@ -64,11 +64,11 @@ describe('Scénario — `nano +N fichier` positionne le curseur à la ligne N à
     expect(nano.cursorCol).toBe(2);
   });
 
-  it('une ligne au-delà de la fin du fichier clampe à la dernière ligne', async () => {
+  it('une ligne au-delà de la fin du fichier clampe à la ligne vide finale de nano (mesuré : nano +99 sur 10 lignes -> ligne 11)', async () => {
     const content = longFile(10);
     const fsCtx = new LinuxEditorFsContext(pc);
     const nano = new NanoEngine(fsCtx, '/tmp/x.txt', content, false, false, { line: 9999 });
-    expect(nano.cursorLine).toBe(9);
+    expect(nano.cursorLine).toBe(10);
   });
 
   it('sans +N, le curseur démarre en (0,0) comme avant', () => {
