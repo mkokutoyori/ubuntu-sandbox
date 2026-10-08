@@ -757,11 +757,10 @@ export class LinuxCommandExecutor {
     // install ships these). Each is created only when missing so an
     // operator's runtime edits survive a reboot.
     if (this.vfs.readFile('/etc/logrotate.conf') == null) {
-      this.vfs.writeFile('/etc/logrotate.conf',
-        '# see "man logrotate" for details\nweekly\nrotate 4\ncreate\n\n'
-        + '/var/log/syslog\n/var/log/auth.log\n{\n\trotate 4\n\tweekly\n\tmissingok\n\tnotifempty\n}\n\n'
-        + 'include /etc/logrotate.d\n', 0, 0, 0o022);
+      this.vfs.writeFile('/etc/logrotate.conf', "# see \"man logrotate\" for details\n\n# global options do not affect preceding include directives\n\n# rotate log files weekly\nweekly\n\n# use the adm group by default, since this is the owning group\n# of /var/log/syslog.\nsu root adm\n\n# keep 4 weeks worth of backlogs\nrotate 4\n\n# create new (empty) log files after rotating old ones\ncreate\n\n# use date as a suffix of the rotated file\n#dateext\n\n# uncomment this if you want your log files compressed\n#compress\n\n# packages drop log rotation information into this directory\ninclude /etc/logrotate.d\n\n# system-specific logs may also be configured here.\n", 0, 0, 0o022);
       this.vfs.mkdirp('/etc/logrotate.d', 0o755, 0, 0);
+      this.vfs.writeFile('/etc/logrotate.d/btmp', "# no packages own btmp -- we'll rotate it here\n/var/log/btmp {\n    missingok\n    monthly\n    create 0660 root utmp\n    rotate 1\n}\n", 0, 0, 0o022);
+      this.vfs.writeFile('/etc/logrotate.d/wtmp', "# no packages own wtmp -- we'll rotate it here\n/var/log/wtmp {\n    missingok\n    monthly\n    create 0664 root utmp\n    minsize 1M\n    rotate 1\n}\n", 0, 0, 0o022);
     }
     if (this.vfs.readFile('/etc/services')  == null) this.vfs.writeFile('/etc/services',  ETC_SERVICES,  0, 0, 0o022);
     if (this.vfs.readFile('/etc/protocols') == null) this.vfs.writeFile('/etc/protocols', ETC_PROTOCOLS, 0, 0, 0o022);
