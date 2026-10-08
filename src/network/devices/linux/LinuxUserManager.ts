@@ -656,7 +656,8 @@ export class LinuxUserManager {
     }
 
     // Create home directory (`-m` requested and not vetoed by `-M`).
-    if (opts.m && !opts.M) {
+    const homeCreated = !!opts.m && !opts.M;
+    if (homeCreated) {
       this.vfs.mkdirp(home, 0o755, uid, gid);
     }
 
@@ -674,6 +675,7 @@ export class LinuxUserManager {
         kind: account.kind,
         supplementaryGroups: joinedGroups,
         userPrivateGroupCreated,
+        homeCreated,
       },
     });
     return '';
@@ -767,18 +769,21 @@ export class LinuxUserManager {
     if (!user) return `userdel: user '${username}' does not exist`;
 
     // Remove from all groups
+    const memberOf: string[] = [];
     for (const g of this.groups.values()) {
+      if (g.members.includes(username)) memberOf.push(g.name);
       g.removeMember(username);
       g.admins = g.admins.filter(a => a !== username);
     }
 
     // Remove user's personal group if it exists and is empty
     const personalGroup = this.groups.get(username);
-    if (personalGroup && personalGroup.members.length === 0) {
+    const privateGroupRemoved = !!personalGroup && personalGroup.members.length === 0;
+    if (personalGroup && privateGroupRemoved) {
       this.groups.delete(username);
       this.publish({
         topic: 'linux.iam.group.deleted',
-        payload: { deviceId: this.deviceId, groupName: personalGroup.name, gid: personalGroup.gid },
+        payload: { deviceId: this.deviceId, groupName: personalGroup.name, gid: personalGroup.gid, userPrivateGroup: true },
       });
     }
 
@@ -792,7 +797,7 @@ export class LinuxUserManager {
     this.syncToFilesystem();
     this.publish({
       topic: 'linux.iam.user.deleted',
-      payload: { deviceId: this.deviceId, username, uid: user.uid, homeRemoved: removeHome },
+      payload: { deviceId: this.deviceId, username, uid: user.uid, homeRemoved: removeHome, privateGroupRemoved, memberOf },
     });
     return '';
   }
@@ -1166,7 +1171,7 @@ export class LinuxUserManager {
     this.syncToFilesystem();
     this.publish({
       topic: 'linux.iam.group.deleted',
-      payload: { deviceId: this.deviceId, groupName: name, gid: group.gid },
+      payload: { deviceId: this.deviceId, groupName: name, gid: group.gid, userPrivateGroup: false },
     });
     return '';
   }

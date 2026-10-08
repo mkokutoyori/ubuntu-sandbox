@@ -3,6 +3,7 @@ import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxServiceManager } from '../LinuxServiceManager';
 import type { ServiceLifecyclePayload, ProcessSignalledPayload } from '../events';
 import type { LinuxAuditLog } from './LinuxAuditLog';
+import { AUDIT_UNSET } from './AuditUserMessage';
 import type { LinuxAuditRules } from './LinuxAuditRules';
 
 export type AuditdState = 'running' | 'stopped' | 'suspended';
@@ -95,7 +96,7 @@ export class LinuxAuditDaemon {
     if (p.comm !== 'auditd' && p.pid !== mainPid) return;
     if (p.signal === 'SIGHUP') this.runReload();
     else if (p.signal === 'SIGTERM' || p.signal === 'SIGKILL') this.runStop();
-    else if (p.signal === 'SIGUSR1') this.deps.auditLog.record('DAEMON_ROTATE', { op: 'rotate', uid: 0, res: 'success' });
+    else if (p.signal === 'SIGUSR1') this.deps.auditLog.record('DAEMON_ROTATE', { op: 'rotate-logs', auid: AUDIT_UNSET, uid: 0, ses: AUDIT_UNSET, pid: p.pid, subj: 'unconfined', res: 'success' });
   }
 
   private runStart(): void {
@@ -104,12 +105,14 @@ export class LinuxAuditDaemon {
     this.evaluateDiskSpace();
     this.deps.auditLog.record('DAEMON_START', {
       op: 'start',
-      ver: '3.0',
+      ver: '3.1.2',
       format: this.config.logFormat.toLowerCase(),
       kernel: this.deps.kernelRelease(),
-      auid: 0,
+      auid: AUDIT_UNSET,
       pid: this.deps.serviceMgr.status('auditd')?.mainPid ?? 1,
       uid: 0,
+      ses: AUDIT_UNSET,
+      subj: 'unconfined',
       res: 'success',
     });
   }
@@ -119,9 +122,11 @@ export class LinuxAuditDaemon {
     this.state = 'stopped';
     this.deps.auditLog.record('DAEMON_END', {
       op: 'terminate',
-      auid: 0,
-      pid: this.deps.serviceMgr.status('auditd')?.mainPid ?? 1,
+      auid: AUDIT_UNSET,
       uid: 0,
+      ses: AUDIT_UNSET,
+      pid: this.deps.serviceMgr.status('auditd')?.mainPid ?? 1,
+      subj: 'unconfined',
       res: 'success',
     });
   }
@@ -132,9 +137,10 @@ export class LinuxAuditDaemon {
     this.evaluateDiskSpace();
     this.deps.auditLog.record('DAEMON_CONFIG', {
       op: 'reconfigure',
-      auid: 0,
+      state: 'changed',
+      auid: AUDIT_UNSET,
       pid: this.deps.serviceMgr.status('auditd')?.mainPid ?? 1,
-      uid: 0,
+      subj: 'unconfined',
       res: 'success',
     });
   }

@@ -1,6 +1,8 @@
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxAuditLog } from './LinuxAuditLog';
 import { AUDIT_PATHS } from './LinuxAuditLog';
+import { encodeValue, ttyForAudit } from './AuditUserMessage';
+import { x86SyscallNumber } from './tools/AuditSyscallTables';
 
 export type AuditWatchPerm = 'r' | 'w' | 'x' | 'a';
 export type AuditAction = 'always' | 'never';
@@ -98,6 +100,7 @@ export interface AuditActorContext {
   exe: string;
   tty: string;
   success: boolean;
+  cwd?: string;
 }
 
 const OK: RuleOpResult = { ok: true };
@@ -489,13 +492,19 @@ export class LinuxAuditRules {
   private fire(syscall: string, path: string | undefined, key?: string, ctxArg?: AuditActorContext): void {
     if (this.enabledFlag === 0) return;
     const ctx = ctxArg ?? this.actorContextProvider?.() ?? DEFAULT_ACTOR;
-    const exit = ctx.success ? 0 : -13;
+    const exit = ctx.success ? (writingSyscall(syscall) ? 3 : 0) : -13;
+    const number = x86SyscallNumber(syscall);
+    const inode = path !== undefined ? this.vfs.resolveInode(path) : null;
+    const flags = writingSyscall(syscall) ? '241' : '0';
     const syscallFields: Record<string, string | number> = {
       arch: 'c000003e',
-      syscall,
+      syscall: number ?? 0,
       success: ctx.success ? 'yes' : 'no',
       exit,
-      a0: '0', a1: '0', a2: '0', a3: '0',
+      a0: syscall.endsWith('at') || syscall === 'openat' ? 'ffffff9c' : '0',
+      a1: '0',
+      a2: flags,
+      a3: writingSyscall(syscall) ? '1b6' : '0',
       items: path !== undefined ? 1 : 0,
       ppid: ctx.ppid,
       pid: ctx.pid,
@@ -503,33 +512,35 @@ export class LinuxAuditRules {
       uid: ctx.uid,
       gid: ctx.gid,
       euid: ctx.euid,
-      egid: ctx.egid,
       suid: ctx.euid,
-      sgid: ctx.egid,
       fsuid: ctx.euid,
+      egid: ctx.egid,
+      sgid: ctx.egid,
       fsgid: ctx.egid,
-      tty: ctx.tty,
-      ses: '1',
+      tty: ttyForAudit(ctx.tty).replace('/', ''),
+      ses: 1,
       comm: ctx.comm,
       exe: ctx.exe,
-      key: key ?? '(none)',
-      res: ctx.success ? 'success' : 'failed',
+      subj: 'unconfined',
+      key: key ?? '(null)',
     };
     const parts: Array<{ type: string; fields?: Record<string, string | number> }> =
-      [{ type: 'SYSCALL', fields: syscallFields }];
+      [{ type: 'SYSCALL', fields: syscallFields }, { type: 'CWD', fields: { cwd: ctx.cwd ?? '/' } }];
     if (path !== undefined) {
       parts.push({ type: 'PATH', fields: {
         item: 0,
         name: path,
-        inode: '0',
-        dev: '00:00',
-        mode: '0100644',
-        ouid: 0,
-        ogid: 0,
+        inode: inode?.id ?? 0,
+        dev: 'fd:00',
+        mode: inode ? `0${((inode.type === 'directory' ? 0o40000 : 0o100000) | inode.permissions).toString(8)}` : '00',
+        ouid: inode?.uid ?? 0,
+        ogid: inode?.gid ?? 0,
         rdev: '00:00',
         nametype: writingSyscall(syscall) ? 'NORMAL' : 'PARENT',
+        cap_fp: 0, cap_fi: 0, cap_fe: 0, cap_fver: 0, cap_frootid: 0,
       } });
     }
+    parts.push({ type: 'PROCTITLE', fields: { proctitle: encodeValue(ctx.comm) } });
     this.auditLog.recordEvent(parts);
   }
 }

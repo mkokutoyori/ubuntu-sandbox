@@ -51,6 +51,9 @@ export class LinuxAuditRecord {
 
   /** True when the record carries `res=success`. */
   get succeeded(): boolean {
+    const msg = this.fields.msg;
+    if (typeof msg === 'string') return /(?:^| )res=success\b/.test(msg);
+    if (this.fields.success !== undefined) return this.fields.success === 'yes';
     return String(this.fields.res ?? '') === 'success';
   }
 
@@ -156,13 +159,13 @@ export class LinuxAuditLog {
 /** Quote an audit field value when it contains whitespace. */
 const ALWAYS_QUOTED: ReadonlySet<string> = new Set([
   'key', 'name', 'exe', 'comm', 'dir', 'path', 'file',
-  'subj', 'subj_user', 'subj_role', 'subj_type',
-  'obj_user', 'obj_role', 'obj_type', 'tty', 'cwd',
-  'cmdline', 'proctitle',
+  'cwd', 'cmdline',
 ]);
 
 function formatField(key: string, value: string | number): string {
   const text = String(value);
+  if (key === 'msg') return `msg='${text}'`;
+  if (text === '(null)') return `${key}=(null)`;
   if (ALWAYS_QUOTED.has(key)) return `${key}="${text}"`;
   if (/\s/.test(text)) return `${key}="${text}"`;
   return `${key}=${text}`;

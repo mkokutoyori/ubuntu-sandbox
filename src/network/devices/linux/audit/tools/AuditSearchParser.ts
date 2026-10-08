@@ -142,6 +142,7 @@ export class AuditEvent {
 export interface ParseEnvironment {
   userName(uid: number): string | null;
   flags: SearchFlags;
+  debug?: (message: string) => void;
 }
 
 function lookupUid(env: ParseEnvironment, uid: number): string | null {
@@ -1545,6 +1546,8 @@ function parseKernel(msg: string, s: SearchItems, env: ParseEnvironment): number
   return 0;
 }
 
+const NOTHING_TO_PARSE: ReadonlySet<number> = new Set([2000, 1401, 1309, 1311, 1312, 1313, 1314, 1315, 1317, 1321, 1322, 1323, 1327, 1337, 1339]);
+
 export function extractSearchItems(event: AuditEvent, env: ParseEnvironment): number {
   let ret = 0;
   const s = event.s;
@@ -1577,8 +1580,15 @@ export function extractSearchItems(event: AuditEvent, env: ParseEnvironment): nu
     else if (type >= AUDIT.INTEGRITY_DATA && type <= AUDIT.INTEGRITY_RULE) ret = parseIntegrity(msg, s, env);
     else if (type === AUDIT.NETFILTER_CFG || type === AUDIT.EVENT_LISTENER) ret = parseKernel(msg, s, env);
     else if (type === AUDIT.TTY) ret = parseTty(msg, s, env);
-    else ret = 0;
-    if (ret !== 0) break;
+    else if (NOTHING_TO_PARSE.has(type) || (type >= 1329 && type <= 1334)) ret = 0;
+    else {
+      ret = 0;
+      env.debug?.(`Unparsed type:${type}\n - skipped`);
+    }
+    if (ret !== 0) {
+      env.debug?.(`Malformed event skipped, rc=${ret}. ${msg}\n`);
+      break;
+    }
   }
   return ret;
 }

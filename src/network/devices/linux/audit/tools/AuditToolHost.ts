@@ -24,6 +24,13 @@ export interface AuditToolHost {
   dateStyle(): DateStyle;
 }
 
+export interface AuditSearchHost extends AuditToolHost {
+  userUid(name: string): number | null;
+  groupGid(name: string): number | null;
+  deviceAndInode(path: string): { dev: number; ino: number } | null;
+  writeFile(path: string, content: string): boolean;
+}
+
 export class ExitSignal extends Error {
   constructor(readonly code: number) {
     super(`exit ${code}`);

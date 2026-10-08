@@ -59,3 +59,18 @@ export function unescapeHex(text: string, from: number): string | null {
   const used = terminated >= 0 ? bytes.slice(0, terminated) : bytes;
   return new TextDecoder().decode(Uint8Array.from(used));
 }
+
+function parseInteger(text: string): bigint {
+  const match = /^\s*([+-]?)(\d+)/.exec(text);
+  if (!match) return 0n;
+  const magnitude = BigInt(match[2]);
+  return match[1] === '-' ? -magnitude : magnitude;
+}
+
+export function strtoulUint32(text: string): number {
+  return Number(BigInt.asUintN(32, parseInteger(text)));
+}
+
+export function strtollNumber(text: string): number {
+  return Number(BigInt.asIntN(64, parseInteger(text)));
+}

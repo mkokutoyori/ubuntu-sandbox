@@ -82,7 +82,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('ln -s /etc/passwd /tmp/watched_dir/passwd_sym');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
       expect(auditLog).toContain('key="symlink_watch"');
-      expect(auditLog).toContain('syscall=symlink');
+      expect(auditLog).toContain('syscall=88');
     });
 
     it('5. should watch a symbolic link file itself instead of its target', async () => {
@@ -178,7 +178,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -w /tmp/trunc.txt -p w -k trunc_watch');
       await pc.executeCommand('truncate -s 0 /tmp/trunc.txt');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('syscall=truncate');
+      expect(auditLog).toContain('syscall=76');
     });
 
     it('14. should track filesystem changes done via sed inline substitutions (inode replacement)', async () => {
@@ -201,7 +201,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('rmdir /tmp/toremove');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
       expect(auditLog).toContain('key="rm_dir_watch"');
-      expect(auditLog).toContain('syscall=rmdir');
+      expect(auditLog).toContain('syscall=84');
     });
 
     it('16. should log file access when using standard file editors (nano/vim simulation)', async () => {
@@ -253,7 +253,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -w /tmp/perms.txt -p a -k perms_watch');
       await pc.executeCommand('chmod 755 /tmp/perms.txt');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('syscall=chmod');
+      expect(auditLog).toContain('syscall=90');
     });
 
     it('21. should log owner changes explicitly with chown syscall parameters', async () => {
@@ -262,7 +262,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -w /tmp/owner.txt -p a -k owner_watch');
       await pc.executeCommand('chown user:user /tmp/owner.txt');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('syscall=chown');
+      expect(auditLog).toContain('syscall=92');
     });
 
     it('22. should watch changes on files containing space characters inside filenames', async () => {
@@ -360,7 +360,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -a always,exit -S execve -k exec_tracking');
       await pc.executeCommand('whoami');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('syscall=execve');
+      expect(auditLog).toContain('syscall=59');
     });
 
     it('33. should include login user ID (auid) in execution records even when running under sudo (euid=0)', async () => {
@@ -378,7 +378,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('kill -9 9999'); // Mock trigger
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
       expect(auditLog).toContain('key="process_kills"');
-      expect(auditLog).toContain('syscall=kill');
+      expect(auditLog).toContain('syscall=62');
     });
 
     it('35. should log pam session validation errors with failed status on incorrect login inputs', async () => {

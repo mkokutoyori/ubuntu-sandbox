@@ -5,6 +5,7 @@
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { runAusearch } from './audit/tools/AusearchTool';
 import { runAureport } from './audit/tools/AureportTool';
 import { auditToolHost } from './audit/tools/LinuxAuditToolHost';
 
@@ -124,10 +125,11 @@ import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
 import type { SocketTable } from '../../core/SocketTable';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
+import { acctMessageFields, grantorsOf, type AuditSender } from './audit/AuditUserMessage';
 import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
 import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
-import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
+import { cmdAuditctl } from './audit/AuditCommands';
 import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
 import {
   STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
@@ -1305,7 +1307,7 @@ export class LinuxCommandExecutor {
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
     this.auditTrail?.dispose();
-    this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId);
+    this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId, () => this.auditSender());
     this.fsAuditProjection?.dispose();
     this.fsAuditProjection = new FileSystemAuditProjection(bus, this.auditRules, deviceId);
     this.serviceMgr.registerConfigCheck('auditd', () => this.checkAuditdConfig());
@@ -4778,6 +4780,12 @@ export class LinuxCommandExecutor {
     }
   }
 
+  private auditSender(): AuditSender {
+    const cur = this.userMgr.currentUid;
+    const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : cur;
+    return { pid: this.shellPid ?? 1, uid: cur, auid: loginUid, ses: 1 };
+  }
+
   private snapshotActor(): import('./audit/LinuxAuditRules').AuditActorContext {
     const cur = this.userMgr.currentUid;
     const gid = this.userMgr.currentGid;
@@ -4803,6 +4811,7 @@ export class LinuxCommandExecutor {
       exe,
       tty: 'pts/0',
       success: this.lastExitCode === 0,
+      cwd: this.cwd,
     };
   }
 
@@ -4834,17 +4843,6 @@ export class LinuxCommandExecutor {
       success, exit: success ? 0 : -13,
     };
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
-  }
-
-  resolveAusearchUserArgs(args: string[]): string[] {
-    const out = [...args];
-    for (let i = 0; i < out.length - 1; i++) {
-      if ((out[i] === '-u' || out[i] === '-ua' || out[i] === '-ui') && !/^\d+$/.test(out[i + 1])) {
-        const u = this.userMgr.getUser(out[i + 1]);
-        if (u) out[i + 1] = String(u.uid);
-      }
-    }
-    return out;
   }
 
   handleAuditctl(args: string[]): { output: string; exitCode: number } {
@@ -5282,7 +5280,10 @@ export class LinuxCommandExecutor {
       }
       case 'atq': return this.atDenied('atq') ?? cmdAtq(this.atQueue, this.identity.timezone);
       case 'atrm': return this.atDenied('atrm') ?? cmdAtrm(this.atQueue, args);
-      case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
+      case 'ausearch': {
+        const result = runAusearch(auditToolHost(this), args, stdin ?? null);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
       case 'aureport': {
         const result = runAureport(auditToolHost(this), args, stdin ?? null);
         const shaped = { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
@@ -6802,32 +6803,36 @@ export class LinuxCommandExecutor {
       session.end();
       this.logMgr.logAuth('su', `FAILED SU (to ${user.username}) ${previous.user} on ${SU_TTY_NAME}`, pid);
       if (code === PamReturn.AUTH_ERR || code === PamReturn.USER_UNKNOWN || code === PamReturn.MAXTRIES) {
-        const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : previous.uid;
-        this.auditLog.record('USER_AUTH', {
-          pid: this.shellPid ?? 1, uid: previous.uid, auid: loginUid, ses: 1,
-          msg: `op=PAM_authentication grantors=? acct="${user.username}" exe="/bin/su" hostname=? addr=? terminal=pts/0 res=failed`,
-          acct: user.username, res: 'failed',
-        });
+        this.recordPamAccount('USER_AUTH', 'authentication', session, user.username, false);
       }
       return { ok: false, result: { output: `${refusal}su: ${pamStrError(code)}`, exitCode: 1 } };
     }
 
     this.logMgr.logAuth('su', `(to ${user.username}) ${previous.user} on ${SU_TTY_NAME}`, pid);
+    this.recordPamAccount('USER_AUTH', 'authentication', session, user.username, true);
+    this.recordPamAccount('USER_ACCT', 'accounting', session, user.username, true);
+    this.recordPamAccount('CRED_ACQ', 'setcred', session, user.username, true);
     session.openSession();
     const messages = session.sessionMessages.join('');
-    this.recordPamSession('USER_START', user.username, user.uid, previous.uid, 'PAM_session_open');
+    this.recordPamAccount('USER_START', 'session_open', session, user.username, true);
 
     if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
       session.closeSession();
+      this.recordPamAccount('USER_END', 'session_close', session, user.username, true);
+      this.recordPamAccount('CRED_DISP', 'setcred', session, user.username, true);
       session.end();
-      this.recordPamSession('USER_END', user.username, user.uid, previous.uid, 'PAM_session_close');
       const notice = this.vfs.readFile('/etc/nologin.txt');
       return { ok: false, result: { output: `${messages}${notice === null ? 'This account is currently not available.' : notice.replace(/\n+$/, '')}`, exitCode: 1 } };
     }
 
     this.suStack.push({
       ...previous,
-      release: () => { session.closeSession(); session.end(); },
+      release: () => {
+        session.closeSession();
+        this.recordPamAccount('USER_END', 'session_close', session, user.username, true);
+        this.recordPamAccount('CRED_DISP', 'setcred', session, user.username, true);
+        session.end();
+      },
     });
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
@@ -6837,10 +6842,7 @@ export class LinuxCommandExecutor {
     return {
       ok: true,
       messages,
-      restore: () => {
-        this.popSuFrame();
-        this.recordPamSession('USER_END', user.username, user.uid, previous.uid, 'PAM_session_close');
-      },
+      restore: () => { this.popSuFrame(); },
     };
   }
 
@@ -6915,12 +6917,13 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private recordPamSession(type: 'USER_START' | 'USER_END', acct: string, uid: number, byUid: number, op: string): void {
-    this.auditLog.record(type, {
-      pid: this.shellPid ?? 1, uid: byUid, auid: byUid, ses: 1,
-      msg: `op=${op} grantors=pam_unix acct="${acct}" exe="/bin/su" hostname=? addr=? terminal=pts/0 PAM_session=${op} res=success`,
-      acct, res: 'success',
-    });
+  private recordPamAccount(
+    type: string, stage: string, session: PamServiceSession, acct: string, success: boolean,
+  ): void {
+    const grantors = grantorsOf(session.transaction.handle.moduleResults);
+    this.auditLog.record(type, acctMessageFields(this.auditSender(), {
+      op: `PAM:${stage} grantors=${grantors}`, name: acct, id: null, exe: '/usr/bin/su', tty: '/dev/pts/0', success,
+    }));
   }
 
   /** Handle exit/logout — pops su stack if in su session */
