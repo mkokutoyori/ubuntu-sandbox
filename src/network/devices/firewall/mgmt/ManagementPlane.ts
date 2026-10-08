@@ -1,7 +1,7 @@
 import type { IPv4Packet } from '../../../core/types';
 import { withinMask, type AccessMatrix } from '../authz/AccessMatrix';
 import {
-  adminHasNoPassword, adminTrustsSource, applyAdminAccount, authenticateAdmin,
+  adminAcceptsPublicKey, adminHasNoPassword, adminTrustsSource, applyAdminAccount, authenticateAdmin,
   type AdminAccountDraft,
 } from '../identity/AdminAccounts';
 import { PasswordHistory } from '../identity/PasswordHistory';
@@ -169,6 +169,11 @@ export class ManagementPlane {
 
   authenticate(name: string, password: string, source?: string): boolean {
     return authenticateAdmin(this.access, this.secrets, name, password, source);
+  }
+
+  acceptsPublicKey(name: string, material: string, source: string): boolean {
+    if (this.lockout.isLockedOut(name)) return false;
+    return adminAcceptsPublicKey(this.access, name, material, source);
   }
 
   trustsSource(name: string, source: string): boolean {

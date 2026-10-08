@@ -666,6 +666,7 @@ export interface FortiAdminPatch {
   readonly profile: string;
   readonly vdoms: readonly string[];
   readonly trustHosts: readonly FortiTrustHostPatch[];
+  readonly sshPublicKeys?: readonly string[];
   readonly comments?: string;
 }
 

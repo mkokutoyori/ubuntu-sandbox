@@ -13,6 +13,8 @@ function endpointsOf(socket: TcpStream): PeerEndpoints {
   };
 }
 
+export type AdminAccessKind = 'login-success' | 'login-failed' | 'logout';
+
 export interface AdminLoginFacts {
   readonly username: string;
   readonly transport: AdminTransport;
@@ -55,6 +57,7 @@ export interface FirewallCliServerDeps {
   ports(): ManagementPorts;
   createCli(user: string, origin: string): ManagementCli | null;
   authenticate(user: string, password: string, source: string): boolean;
+  acceptsPublicKey(user: string, material: string, source: string): boolean;
   knownAdmin(user: string): boolean;
   refuseSource(source: string): boolean;
   idleTimeoutMs(): number | null;
@@ -62,7 +65,7 @@ export interface FirewallCliServerDeps {
   runningConfig(): string;
   onLogin(session: AdminLoginFacts): void;
   onLogout(user: string): void;
-  onAuthFailure(user: string, source: string): void;
+  onAuthFailure(failure: AdminLoginFacts): void;
   bannerLines(stage: LoginBannerStage): readonly string[];
 }
 
@@ -199,8 +202,13 @@ class FirewallSshServerContext implements ISshServerContext {
     this.deps.onLogin({ username: user, transport: 'ssh', ...this.peer });
   }
 
-  recordAuthFailure(user: string, fromIp: string): void {
-    this.deps.onAuthFailure(user, fromIp);
+  recordLogout(user: string): void {
+    this.deps.onLogout(user);
+  }
+
+  recordAuthFailure(user: string, _fromIp: string, method: string): void {
+    if (method === 'publickey') return;
+    this.deps.onAuthFailure({ username: user, transport: 'ssh', ...this.peer });
   }
 
   buildUserContext(username: string): SshUserContext | null {
@@ -219,9 +227,12 @@ class FirewallSshServerContext implements ISshServerContext {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
         return this.deps.authenticate(user, password, this.peer.remote.ip);
       },
-      checkPublicKey: () => false,
+      checkPublicKey: (user, material) => {
+        attemptsLeft = Math.max(0, attemptsLeft - 1);
+        return this.deps.acceptsPublicKey(user, material, this.peer.remote.ip);
+      },
       getAttemptsRemaining: () => attemptsLeft,
-      getAvailableMethods: (): readonly AuthMethodType[] => ['password'],
+      getAvailableMethods: (): readonly AuthMethodType[] => ['publickey', 'password'],
     };
   }
 }
@@ -261,7 +272,7 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
   authenticate(username: string | null, password: string): boolean {
     if (username === null) return false;
     const accepted = this.deps.authenticate(username, password, this.peer.remote.ip);
-    if (!accepted) this.deps.onAuthFailure(username, this.peer.remote.ip);
+    if (!accepted) this.deps.onAuthFailure({ username, transport: 'telnet', ...this.peer });
     return accepted;
   }
 

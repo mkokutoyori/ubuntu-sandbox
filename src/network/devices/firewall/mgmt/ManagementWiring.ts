@@ -55,6 +55,7 @@ export interface ManagementHost {
   sshIdentification(): string | undefined;
   createManagementCli(user: string, origin: string): ManagementCli | null;
   authenticateAdmin(user: string, password: string, source: string): boolean;
+  adminAcceptsPublicKey(user: string, material: string, source: string): boolean;
   leaveCluster(iface: string, ip: string, mask: string): string;
   setDevicePriority(priority: number): string;
   knownAdmin(user: string): boolean;
@@ -63,7 +64,7 @@ export interface ManagementHost {
   runningConfig(): string;
   onManagementLogin(session: AdminLoginFacts): void;
   onAdminLogout(user: string): void;
-  onManagementAuthFailure(user: string, source: string): void;
+  onManagementAuthFailure(failure: AdminLoginFacts): void;
   loginBannerLines(stage: LoginBannerStage): readonly string[];
   adminHttpsRedirect(): boolean;
   adminServerCertificate(): AdminServerCertificate | undefined;
@@ -170,6 +171,8 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     createCli: (user, origin) => host.createManagementCli(user, origin),
     authenticate: (user, password, source) =>
       host.authenticateAdmin(user, password, source),
+    acceptsPublicKey: (user, material, source) =>
+      host.adminAcceptsPublicKey(user, material, source),
     knownAdmin: (user) => host.knownAdmin(user),
     refuseSource: (source) => host.refuseManagementSource(source),
     idleTimeoutMs: () => host.managementIdleTimeoutMs(),
@@ -177,7 +180,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     runningConfig: () => host.runningConfig(),
     onLogin: (session) => { host.onManagementLogin(session); },
     onLogout: (user) => { host.onAdminLogout(user); },
-    onAuthFailure: (user, source) => { host.onManagementAuthFailure(user, source); },
+    onAuthFailure: (failure) => { host.onManagementAuthFailure(failure); },
     bannerLines: (stage) => host.loginBannerLines(stage),
   });
 

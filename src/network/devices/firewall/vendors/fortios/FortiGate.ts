@@ -13,6 +13,8 @@ import { FORTI_FIRMWARE, fortiFirmwareVersion, fortiVersionSuffix } from './Fort
 import type { FirewallSnmpIdentity } from '../../mgmt/FirewallSnmp';
 import { sessionFamily } from '../../session/SessionFamily';
 import { dhcpServerId } from '../../l3/FirewallDhcp';
+import type { AdminAccessKind, AdminLoginFacts } from '../../mgmt/FirewallCliServer';
+import { adminAccessLog } from './log/trafficLog';
 
 const FACTORY_ADMIN = 'admin';
 
@@ -33,6 +35,20 @@ export class FortiGate extends Firewall {
       });
     }
     return this.adminApp;
+  }
+
+  protected override logAdminAccess(kind: AdminAccessKind, facts: AdminLoginFacts): void {
+    const account = this.getAccessMatrix().getAdmin(facts.username);
+    this.getLogStore().append(adminAccessLog({
+      now: this.now(),
+      kind,
+      user: facts.username,
+      knownUser: account !== undefined,
+      transport: facts.transport,
+      source: facts.remote.ip,
+      destination: facts.local.ip,
+      profile: account?.profile,
+    }));
   }
 
   protected override snmpIdentity(): FirewallSnmpIdentity {

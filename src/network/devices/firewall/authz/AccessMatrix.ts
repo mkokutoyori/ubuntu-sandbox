@@ -49,6 +49,7 @@ export interface AdminAccount {
   readonly profile: string;
   readonly vdoms: readonly string[];
   readonly trustHosts: readonly TrustHost[];
+  readonly sshPublicKeys: readonly string[];
   readonly remoteAuth: boolean;
   readonly remoteGroup?: string;
   readonly comments?: string;
