@@ -42,6 +42,7 @@ function sshdRun(ctx: LinuxCommandContext, args: string[]): { output: string; ex
     }
     const verdict = validateSshdConfig(raw, absPath);
     if (!verdict.ok) return { output: verdict.errors.join('\n'), exitCode: 1 };
+    if (ctx.executor.userMgr.currentUid !== 0) return { output: 'sshd: no hostkeys available -- exiting.', exitCode: 1 };
     if (testOnly) return { output: '', exitCode: 0 };
     const cfg = SshdServerConfig.parse(readSshdConfig(ctx.executor.vfs, absPath));
     const lines = [

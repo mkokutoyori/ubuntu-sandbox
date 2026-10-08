@@ -1644,7 +1644,7 @@ export class LinuxCommandExecutor {
       return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
     }
 
-    const { fs: wireFs, denial } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities, cmd === 'scp' ? 'scp' : 'sftp');
+    const { fs: wireFs, denial, release } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities, cmd === 'scp' ? 'scp' : 'sftp');
     const unauthenticated = (): { output: string; exitCode: number } | null => (
       !wireFs && this.tcpConnector
         ? { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
@@ -1661,7 +1661,11 @@ export class LinuxCommandExecutor {
         local: { fs: localFs, cwd: this.cwd },
         resolveRemote: (host) => wireFs ?? this.resolveRemoteSftpFs(host, remoteUser),
       });
-      return session.run();
+      try {
+        return await session.run();
+      } finally {
+        release?.();
+      }
     }
 
     // sftp
@@ -1691,6 +1695,7 @@ export class LinuxCommandExecutor {
       initialRemoteCwd: remoteFs.initialCwd?.() ?? undefined,
     });
     session.run(SftpCommandScript.parse(stdin));
+    release?.();
     return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
   }
 
@@ -1757,7 +1762,7 @@ export class LinuxCommandExecutor {
   private async tryOpenWireSftpFs(
     host: string, user: string, password: string, port = 22, identities: string[] = [],
     command: 'scp' | 'sftp' = 'sftp',
-  ): Promise<{ fs: ISftpFileSystem | null; denial?: string }> {
+  ): Promise<{ fs: ISftpFileSystem | null; denial?: string; release?: () => void }> {
     const { session, denial } = await this.connectWireSsh(host, user, password, port, identities);
     if (!session) return { fs: null, denial };
     const channelResult = session.openSftpChannel();
@@ -1769,7 +1774,7 @@ export class LinuxCommandExecutor {
         denial: command === 'scp' ? 'scp: Connection closed' : 'subsystem request failed on channel 0\nConnection closed',
       };
     }
-    return { fs: new WireSftpFileSystem(channelResult.value) };
+    return { fs: new WireSftpFileSystem(channelResult.value), release: () => session.disconnect() };
   }
 
   private async relayShellOverWire(
@@ -2323,6 +2328,15 @@ export class LinuxCommandExecutor {
    * public key into the remote user's ~/.ssh/authorized_keys so subsequent
    * logins can use public-key authentication.
    */
+  private newestFirstPublicKeys(sshDirectory: string): string[] {
+    const names = (this.vfs.listDirectory(sshDirectory) ?? [])
+      .map((entry) => entry.name)
+      .filter((name) => /^id.*\.pub$/.test(name) && !name.endsWith('-cert.pub'));
+    const stamped = names.map((name) => ({ name, mtime: this.vfs.lstat(`${sshDirectory}/${name}`)?.mtime ?? 0 }));
+    stamped.sort((a, b) => b.mtime - a.mtime || (a.name < b.name ? -1 : 1));
+    return stamped.map((entry) => `${sshDirectory}/${entry.name}`);
+  }
+
   private runSshCopyId(args: string[]): { output: string; exitCode: number } {
     let identity: string | null = null;
     let target: string | null = null;
@@ -2341,11 +2355,7 @@ export class LinuxCommandExecutor {
     const home = this.sshHomeDir();
     const pubCandidates = identity
       ? [identity.endsWith('.pub') ? identity : `${identity}.pub`]
-      : [
-          `${home}/.ssh/id_ed25519.pub`,
-          `${home}/.ssh/id_rsa.pub`,
-          `${home}/.ssh/id_ecdsa.pub`,
-        ];
+      : this.newestFirstPublicKeys(`${home}/.ssh`);
     let pubKey: string | null = null;
     let pubSource = pubCandidates[0];
     for (const c of pubCandidates) {
