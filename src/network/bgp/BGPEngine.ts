@@ -43,6 +43,7 @@ export interface BgpNeighborCfg {
   activated: boolean;
   /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
   weight?: number;
+  shutdown?: boolean;
 }
 export interface BGPConfig {
   asn: number;
@@ -259,7 +260,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
    * no matching `neighbor` statement ⇒ no peering).
    */
   acceptInbound(link: BgpPeerLink): void {
-    if (!this.isEnabled() || !this.config.neighbors.has(link.neighborIp)) {
+    if (!this.isEnabled() || !this.config.neighbors.has(link.neighborIp)
+      || this.config.neighbors.get(link.neighborIp)?.shutdown === true) {
       link.transport.close();
       return;
     }
@@ -290,8 +292,17 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     for (const ip of [...this.connectRetry.keys()]) {
       if (!this.config.neighbors.has(ip)) this.clearConnectRetry(ip);
     }
-    for (const ip of this.config.neighbors.keys()) {
-      if (this.peers.has(ip)) continue;
+    for (const [ip, cfg] of this.config.neighbors) {
+      if (cfg.shutdown !== true) continue;
+      const ps = this.peers.get(ip);
+      if (ps) {
+        this.closeAndAnnounce(ip, ps, CEASE_SUBCODE.ADMINISTRATIVE_SHUTDOWN);
+        this.peers.delete(ip);
+      }
+      this.clearConnectRetry(ip);
+    }
+    for (const [ip, cfg] of this.config.neighbors) {
+      if (this.peers.has(ip) || cfg.shutdown === true) continue;
       // RFC 4271 §8.2.2: while the ConnectRetryTimer runs, the FSM sits in
       // Active and does NOT re-dial — the timer is what paces attempts.
       // Dialling here on every convergence was the whole problem: with
@@ -309,7 +320,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
    * else will try again until it fires.
    */
   private tryConnect(ip: string): boolean {
-    if (!this.isEnabled() || !this.config.neighbors.has(ip)) return false;
+    if (!this.isEnabled() || !this.config.neighbors.has(ip)
+      || this.config.neighbors.get(ip)?.shutdown === true) return false;
     const link = this.wire?.connect(ip) ?? null;
     if (!link) {
       // Not a reachable cabled peer: the FSM never leaves Idle, but it
