@@ -100,6 +100,9 @@ import { cmdIostat } from './system/Iostat';
 import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
+import { runLogrotate } from './logrotate/Logrotate';
+import { VfsLogrotateSystem } from './logrotate/VfsLogrotateSystem';
+import { gunzipText, gzipText } from './coreutils/ArchiveCommands';
 import type { LinuxNfsService } from './nfs/LinuxNfsService';
 import { MOUNTD_PORT } from './nfs/LinuxNfsService';
 import type { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
@@ -335,22 +338,6 @@ const SETUID_ROOT_BINARIES: readonly string[] = [
   'passwd', 'su', 'sudo', 'chsh', 'chfn', 'newgrp', 'gpasswd',
   'ping', 'mount', 'umount', 'crontab',
 ];
-
-interface LogrotateOpts {
-  rotate: number;
-  schedule: string;
-  compress: boolean;
-  delaycompress: boolean;
-  copytruncate: boolean;
-  missingok: boolean;
-  nocreate: boolean;
-  dateext: boolean;
-  size: number | null;
-  sharedscripts: boolean;
-  postrotate: string | null;
-  prerotate: string | null;
-  create: { mode: number; uid: number; gid: number } | null;
-}
 
 function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; perms: number } | null {
   const m = /^([ug])(?::([^:]*))?(?::([rwx-]{0,3}))?$/.exec(entry);
@@ -3932,7 +3919,7 @@ export class LinuxCommandExecutor {
       identity: { pid: number; ppid: number },
       bridge: (argv: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number },
     ) => ScriptResult,
-  ): { output: string; exitCode: number } {
+  ): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const ppid = this.currentBashPid();
     const proc = this.processMgr.spawn({
       command,
@@ -3966,10 +3953,18 @@ export class LinuxCommandExecutor {
         throw new DaemonParkSignal(result.output, result.interp);
       }
       if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
-      return { output: result.output, exitCode: result.exitCode };
+      return LinuxCommandExecutor.separateStreams(result);
     } finally {
       this.bashPids.pop();
     }
+  }
+
+  private static separateStreams(result: ScriptResult): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const stderr = result.stderr ?? '';
+    if (stderr === '') return { output: result.output, exitCode: result.exitCode };
+    const errorLines = new Set(stderr.split('\n').filter((line) => line.length > 0));
+    const stdoutOnly = result.output.split('\n').filter((line) => !errorLines.has(line)).join('\n');
+    return { output: stdoutOnly, exitCode: result.exitCode, stderr, interleaved: result.output };
   }
 
   /**
@@ -3989,7 +3984,7 @@ export class LinuxCommandExecutor {
       bridge: (argv: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) =>
         { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }>,
     ) => Promise<ScriptResult>,
-  ): Promise<{ output: string; exitCode: number }> {
+  ): Promise<{ output: string; exitCode: number; stderr?: string; interleaved?: string }> {
     const ppid = this.currentBashPid();
     const proc = this.processMgr.spawn({
       command,
@@ -4018,7 +4013,7 @@ export class LinuxCommandExecutor {
         throw new DaemonParkSignal(result.output, result.interp);
       }
       if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
-      return { output: result.output, exitCode: result.exitCode };
+      return LinuxCommandExecutor.separateStreams(result);
     } finally {
       this.bashPids.pop();
     }
@@ -4049,8 +4044,11 @@ export class LinuxCommandExecutor {
       }
       i++;
     }
-    const arg0 = login ? '-bash' : cmd;
-    return { arg0, cmdString, scriptArgv: args.slice(i), login, interactive };
+    const defaultArg0 = login ? '-bash' : cmd;
+    if (cmdString !== null) {
+      return { arg0: args[i] ?? defaultArg0, cmdString, scriptArgv: args.slice(i + 1), login, interactive };
+    }
+    return { arg0: defaultArg0, cmdString, scriptArgv: args.slice(i), login, interactive };
   }
 
   /**
@@ -7786,171 +7784,46 @@ export class LinuxCommandExecutor {
     return this.getPathCompletions(word);
   }
 
-  /** `lsof` — list open files, honoring -p PID, -u USER, -i :PORT, -i :proto. */
   cmdLogrotate(args: string[]): { output: string; exitCode: number } {
-    let force = false;
-    let dryRun = false;
-    let stateFile: string | null = null;
-    const confPaths: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-f' || a === '--force') force = true;
-      else if (a === '-d' || a === '--debug') dryRun = true;
-      else if (a === '-v' || a === '--verbose' || a === '-m' || a === '--mail') { /* ignore */ }
-      else if (a === '-s' || a === '--state') stateFile = args[++i] ?? null;
-      else if (!a.startsWith('-')) confPaths.push(a);
-    }
-    if (confPaths.length === 0) confPaths.push('/etc/logrotate.conf');
+    const system = new VfsLogrotateSystem({
+      vfs: this.vfs,
+      cwd: () => this.cwd,
+      umask: () => this.umask,
+      uid: () => this.userMgr.currentUid,
+      gid: () => this.userMgr.currentGid,
+      pid: () => this.currentBashPid(),
+      nowMs: () => this.wallNow(),
+      zone: () => this.identity.timezone,
+      lookupUser: (name) => this.userMgr.getUser(name)?.uid ?? null,
+      lookupGroup: (name) => this.userMgr.getGroup(name)?.gid ?? null,
+      userExists: (uid) => this.userMgr.getUserByUid(uid) !== undefined,
+      groupExists: (gid) => this.userMgr.getGroupByGid(gid) !== undefined,
+      homeDirectory: () => this.userMgr.getUser(this.userMgr.currentUser)?.home ?? null,
+      shell: (command) => {
+        const output = this.execute(command);
+        return { output, exitCode: this.lastExitCode };
+      },
+      deviceOf: (path) => this.deviceOf(path),
+      gzip: {
+        compress: (content, name, mtimeMs) => gzipText(content, name, mtimeMs),
+        decompress: (content) => gunzipText(content),
+      },
+    });
+    return runLogrotate(system, args);
+  }
 
-    const logs: string[] = [];
-    const opt: LogrotateOpts = {
-      rotate: 4, schedule: 'weekly', compress: false, delaycompress: false,
-      copytruncate: false, missingok: false, nocreate: false, dateext: false,
-      size: null, sharedscripts: false, postrotate: null, prerotate: null, create: null,
-    };
-    for (const cp of confPaths) {
-      const abs = this.vfs.normalizePath(cp, this.cwd);
-      const raw = this.vfs.readFile(abs);
-      if (raw === null) return { output: `error: cannot open configuration file ${cp}: No such file or directory`, exitCode: 1 };
-      const err = this.parseLogrotateConf(raw, abs, logs, opt);
-      if (err) return { output: err, exitCode: 1 };
-    }
-    if (logs.length === 0) return { output: '', exitCode: 0 };
-
-    const out: string[] = [];
-    let anyRotated = false;
-    for (const log of logs) {
-      const abs = this.vfs.normalizePath(log, this.cwd);
-      if (dryRun) { out.push(`considering log ${abs}`); continue; }
-      if (!this.vfs.exists(abs)) {
-        if (opt.missingok) continue;
-        return { output: `error: ${abs} does not exist, skipping`, exitCode: 1 };
+  private deviceOf(path: string): number {
+    let best = 0;
+    let bestLength = -1;
+    this.mountTable.list().forEach((entry, index) => {
+      const target = entry.target;
+      const covers = target === '/' || path === target || path.startsWith(`${target}/`);
+      if (covers && target.length > bestLength) {
+        best = index;
+        bestLength = target.length;
       }
-      if (!this.shouldRotateLog(abs, opt, force)) continue;
-      if (opt.prerotate && !opt.sharedscripts) {
-        this.execute(opt.prerotate);
-        if (this.lastExitCode !== 0) continue;
-      }
-      this.rotateOneLog(abs, opt);
-      anyRotated = true;
-      if (opt.postrotate && !opt.sharedscripts) this.execute(opt.postrotate);
-    }
-    if (!dryRun && opt.sharedscripts && anyRotated && opt.postrotate) this.execute(opt.postrotate);
-
-    if (stateFile && !dryRun) {
-      const content = 'logrotate state -- version 2\n'
-        + logs.map((l) => `"${this.vfs.normalizePath(l, this.cwd)}" ${simulationDate().toISOString().slice(0, 10)}`).join('\n') + '\n';
-      this.vfs.writeFile(this.vfs.normalizePath(stateFile, this.cwd), content,
-        this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
-    }
-    return { output: out.join('\n'), exitCode: 0 };
-  }
-
-  private shouldRotateLog(abs: string, opt: LogrotateOpts, force: boolean): boolean {
-    if (force) return true;
-    if (opt.size !== null) return (this.vfs.readFile(abs) ?? '').length >= opt.size;
-    return false; // schedule-based: never due within a fresh boot window
-  }
-
-  private rotateOneLog(abs: string, opt: LogrotateOpts): void {
-    const content = this.vfs.readFile(abs) ?? '';
-    const uid = this.userMgr.currentUid;
-    const gid = this.userMgr.currentGid;
-
-    if (opt.copytruncate) {
-      this.vfs.writeFile(`${abs}.1`, content, uid, gid, this.umask);
-      this.vfs.writeFile(abs, '', uid, gid, this.umask);
-      return;
-    }
-
-    if (opt.dateext) {
-      const stamp = formatLocalTime('%Y%m%d', this.wallNow(), this.identity.timezone);
-      this.vfs.writeFile(`${abs}-${stamp}`, content, uid, gid, this.umask);
-    } else {
-      this.shiftBackups(abs, opt);
-      const compressed = opt.compress && !opt.delaycompress;
-      this.vfs.writeFile(`${abs}.1${compressed ? '.gz' : ''}`, content, uid, gid, this.umask);
-    }
-
-    this.vfs.deleteFile(abs);
-    if (!opt.nocreate) {
-      const c = opt.create;
-      this.vfs.createFileAt(abs, '', c ? c.mode : 0o640, c ? c.uid : 0, c ? c.gid : 4);
-    }
-  }
-
-  private shiftBackups(abs: string, opt: LogrotateOpts): void {
-    for (const suffix of ['', '.gz']) this.vfs.deleteFile(`${abs}.${opt.rotate}${suffix}`);
-    for (let i = opt.rotate - 1; i >= 1; i--) {
-      for (const suffix of ['', '.gz']) {
-        const src = `${abs}.${i}${suffix}`;
-        if (this.vfs.exists(src)) {
-          this.vfs.writeFile(`${abs}.${i + 1}${suffix}`, this.vfs.readFile(src) ?? '', 0, 4, this.umask);
-          this.vfs.deleteFile(src);
-        }
-      }
-    }
-  }
-
-  private parseLogrotateConf(raw: string, confPath: string, logs: string[], opt: LogrotateOpts): string | null {
-    const accepted = new Set(['notifempty', 'ifempty', 'olddir', 'noolddir', 'su', 'include',
-      'maxage', 'minsize', 'dateformat', 'extension', 'compresscmd', 'uncompresscmd', 'compressext',
-      'force', 'copy', 'nocopy', 'nosharedscripts', 'start', 'mail', 'nomail', 'shred', 'noshred',
-      'dateyesterday', 'maxsize', 'firstaction', 'lastaction', 'compressoptions']);
-    const lines = raw.replace(/\\n/g, '\n').split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      let line = lines[i].trim();
-      if (!line || line.startsWith('#') || line === '{' || line === '}') continue;
-      if (line.startsWith('/')) {
-        line = line.replace(/\s*\{$/, '').trim();
-        for (const p of line.split(/\s+/)) if (p.startsWith('/')) logs.push(p);
-        continue;
-      }
-      const tok = line.replace(/=/g, ' ').split(/\s+/).filter(Boolean);
-      const key = tok[0];
-      switch (key) {
-        case 'rotate': opt.rotate = parseInt(tok[1], 10) || opt.rotate; break;
-        case 'daily': opt.schedule = 'daily'; break;
-        case 'weekly': opt.schedule = 'weekly'; break;
-        case 'monthly': opt.schedule = 'monthly'; break;
-        case 'yearly': opt.schedule = 'yearly'; break;
-        case 'compress': opt.compress = true; break;
-        case 'nocompress': opt.compress = false; break;
-        case 'delaycompress': opt.delaycompress = true; break;
-        case 'copytruncate': opt.copytruncate = true; break;
-        case 'missingok': opt.missingok = true; break;
-        case 'nomissingok': opt.missingok = false; break;
-        case 'nocreate': opt.nocreate = true; break;
-        case 'create': opt.create = this.parseLogrotateCreate(tok.slice(1)); opt.nocreate = false; break;
-        case 'dateext': opt.dateext = true; break;
-        case 'size': opt.size = this.parseLogrotateSize(tok[1]); break;
-        case 'sharedscripts': opt.sharedscripts = true; break;
-        case 'postrotate': { const body: string[] = []; i++; while (i < lines.length && lines[i].trim() !== 'endscript') body.push(lines[i++]); opt.postrotate = body.join('\n'); break; }
-        case 'prerotate': { const body: string[] = []; i++; while (i < lines.length && lines[i].trim() !== 'endscript') body.push(lines[i++]); opt.prerotate = body.join('\n'); break; }
-        default:
-          if (accepted.has(key)) break;
-          return `error: ${confPath}:${i + 1} bad line, unknown option '${key}'`;
-      }
-    }
-    return null;
-  }
-
-  private parseLogrotateCreate(toks: string[]): { mode: number; uid: number; gid: number } {
-    let mode = 0o640, uid = 0, gid = 0;
-    if (toks[0] && /^[0-7]+$/.test(toks[0])) mode = parseInt(toks[0], 8);
-    const owner = toks[1] ? this.userMgr.getUser(toks[1]) : null;
-    if (owner) uid = owner.uid;
-    const grp = toks[2] ? this.userMgr.getGroup(toks[2]) : undefined;
-    if (grp) gid = grp.gid;
-    return { mode, uid, gid };
-  }
-
-  private parseLogrotateSize(v: string): number {
-    const m = /^(\d+)\s*([kKmMgG]?)/.exec(v ?? '');
-    if (!m) return 0;
-    const n = parseInt(m[1], 10);
-    const unit = m[2].toLowerCase();
-    return unit === 'k' ? n * 1024 : unit === 'm' ? n * 1024 * 1024 : unit === 'g' ? n * 1024 * 1024 * 1024 : n;
+    });
+    return best;
   }
 
   private cmdLsof(args: string[]): string {
