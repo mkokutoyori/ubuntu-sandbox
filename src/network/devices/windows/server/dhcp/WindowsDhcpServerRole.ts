@@ -755,6 +755,11 @@ export class WindowsDhcpServerRole {
     return { ok: true, message: '' };
   }
 
+  listCustomExclusionRanges(): Array<{ start: string; end: string }> {
+    const generated = new Set([...this.outsideExclusions.values()].flat().map((r) => `${r.start}-${r.end}`));
+    return this.listExclusionRanges().filter((r) => !generated.has(`${r.start}-${r.end}`));
+  }
+
   listExclusionRanges(): Array<{ start: string; end: string }> {
     return this.engine.getExcludedRanges().map(r => ({ start: r.start, end: r.end }));
   }

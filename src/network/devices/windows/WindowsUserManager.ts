@@ -252,7 +252,13 @@ export class WindowsUserManager {
    * (renamed, disabled, whatever the lab did to it) is the one that must
    * win.
    */
-  restoreAccounts(users: readonly WindowsUser[], groups: readonly WindowsGroup[]): void {
+  restoreAccounts(
+    users: readonly WindowsUser[],
+    groups: readonly WindowsGroup[],
+    removed: { users?: readonly string[]; groups?: readonly string[] } = {},
+  ): void {
+    for (const name of removed.users ?? []) this.users.delete(name.toLowerCase());
+    for (const name of removed.groups ?? []) this.groups.delete(name.toLowerCase());
     for (const u of users) this.addUser(u);
     for (const g of groups) this.addGroup(g);
   }

@@ -165,9 +165,22 @@ describe('arité, valeurs, contexte (ap_set_*, ssl_engine_config.c)', () => {
   it('un répertoire absent : « directory ... does not exist »', async () => {
     expect(await configtest(machine(), '  SSLCACertificatePath /nope\n')).toContain("SSLCACertificatePath: directory '/nope' does not exist");
   });
-  it('SSLVerifyClient dans <Directory> exige une renégociation que ce simulateur ne fait pas : refusé en le disant', async () => {
+  it('SSLVerifyClient dans <Directory> est accepté : la renégociation est faite à l\'accès au chemin', async () => {
     const out = await configtest(machine(), '  <Directory /var/www/html>\n    SSLVerifyClient require\n  </Directory>\n');
-    expect(out).toContain('needs a TLS renegotiation after the handshake, which this simulator does not perform');
+    expect(out).not.toContain('renegotiation');
+  });
+  it('une autre directive SSL dans une section reste refusée en le disant', async () => {
+    const out = await configtest(machine(), '  <Directory /var/www/html>\n    SSLHonorCipherOrder on\n  </Directory>\n');
+    expect(out).toContain('needs a TLS renegotiation after the handshake');
+    expect(out).toContain('only SSLVerifyClient, SSLVerifyDepth and SSLCipherSuite');
+  });
+  it('SSLCipherSuite dans <Location> est accepté, une liste invalide est refusée comme au niveau du vhost (AH01898)', async () => {
+    expect(await configtest(machine(), '  <Location /strict>\n    SSLCipherSuite ECDHE-RSA-AES256-GCM-SHA384\n  </Location>\n')).toContain('Syntax OK');
+    expect(await configtest(machine(), '  <Location /strict>\n    SSLCipherSuite ZZZ\n  </Location>\n')).toContain('AH01898: Unable to configure permitted SSL ciphers');
+  });
+  it('SSLVerifyClient avec un argument invalide dans <Location> : Invalid argument', async () => {
+    const out = await configtest(machine(), '  <Location /secure>\n    SSLVerifyClient zorglub\n  </Location>\n');
+    expect(out).toContain("SSLVerifyClient: Invalid argument 'zorglub'");
   });
   it('témoin : une directive hors mod_ssl reste jugée comme avant', async () => {
     expect(await configtest(machine(), '  Zorglub on\n')).toContain("Invalid command 'Zorglub'");

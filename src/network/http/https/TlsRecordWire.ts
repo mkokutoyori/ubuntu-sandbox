@@ -121,7 +121,7 @@ export function attachTlsRecordPump(
 export interface TlsRecordHandler {
   handle(records: readonly TlsRecord[]): readonly TlsRecord[] | null;
   readonly result: string | null;
-  receiveSessionTicket?(records: readonly TlsRecord[]): void;
+  receiveSessionTicket?(records: readonly TlsRecord[]): number;
 }
 
 export interface TlsHandshakeDriver extends TlsRecordHandler {
@@ -132,9 +132,9 @@ export interface TlsHandshakeDriver extends TlsRecordHandler {
 export { bytesToBinaryString, binaryStringToBytes };
 
 export function runTlsHandshakeOverSocket(
-  socket: TlsHandshakeSocket, tls: TlsHandshakeDriver,
+  socket: TlsHandshakeSocket, tls: TlsHandshakeDriver, trailing?: (records: readonly TlsRecord[]) => void,
 ): void {
-  const unsubscribe = pumpTlsHandshake(socket, tls);
+  const unsubscribe = pumpTlsHandshake(socket, tls, trailing);
   try {
     socket.write(bytesToBinaryString(encodeRecords(tls.start())));
   } finally {
@@ -143,11 +143,11 @@ export function runTlsHandshakeOverSocket(
 }
 
 export function pumpTlsHandshake(
-  socket: TlsHandshakeSocket, tls: TlsRecordHandler,
+  socket: TlsHandshakeSocket, tls: TlsRecordHandler, trailing?: (records: readonly TlsRecord[]) => void,
 ): () => void {
   return attachTlsRecordPump(socket, (records) => {
     if (tls.result !== null) {
-      if (tls.result === 'success') tls.receiveSessionTicket?.(records);
+      if (tls.result === 'success' && (tls.receiveSessionTicket?.(records) ?? 0) === 0) trailing?.(records);
       return;
     }
     const nextFlight = tls.handle(records);

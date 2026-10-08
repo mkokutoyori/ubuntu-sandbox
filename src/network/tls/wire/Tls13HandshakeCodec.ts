@@ -412,7 +412,7 @@ export function encodeNewSessionTicket(message: NewSessionTicket): Uint8Array {
     body.vector(1, (inner) => inner.hex(message.ticketNonce));
     body.vector(2, (inner) => inner.hex(message.ticket));
     body.vector(2, (inner) => {
-      if (message.extensions.earlyData) extension(inner, EXTENSION.earlyData, (e) => e.u32(EARLY_DATA_TICKET_LIMIT));
+      if (message.extensions.earlyData) extension(inner, EXTENSION.earlyData, (e) => e.u32(message.extensions.maxEarlyDataSize ?? EARLY_DATA_TICKET_LIMIT));
     });
   });
 }
@@ -422,11 +422,11 @@ export function decodeNewSessionTicket(reader: TlsReader): NewSessionTicket {
   const ticketAgeAdd = reader.hex(4);
   const ticketNonce = bytesToHex(reader.vector(1).rest());
   const ticket = bytesToHex(reader.vector(2).rest());
-  let earlyData: boolean | undefined;
-  eachExtension(reader.vector(2), (type) => { if (type === EXTENSION.earlyData) earlyData = true; });
+  let maxEarlyDataSize: number | undefined;
+  eachExtension(reader.vector(2), (type, body) => { if (type === EXTENSION.earlyData) maxEarlyDataSize = body.u32(); });
   return {
     kind: 'new_session_ticket', ticketLifetime, ticketAgeAdd, ticketNonce, ticket,
-    extensions: earlyData ? { earlyData } : {},
+    extensions: maxEarlyDataSize !== undefined ? { earlyData: true, maxEarlyDataSize } : {},
   };
 }
 

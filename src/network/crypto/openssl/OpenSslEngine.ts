@@ -98,6 +98,10 @@ import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs
 import { opensslHelpLines } from './OpenSslHelp';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
 import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
+import { sslSessionFromPem, sslSessionToPem } from '@/network/tls/sslSession';
+import { sslSessionToResumable, ticketToSslSession, legacyToSslSession } from '@/network/tls/sslSessionBridge';
+import type { SessionTicket } from '@/network/tls/sessionTickets';
+import type { ResumableLegacySession } from '@/network/tls/legacy/legacySessions';
 import type { TlsPeerProbe } from './OpenSslHost';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 
@@ -1213,13 +1217,14 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if ('exitCode' in answer) return answer;
     response = answer;
   } else if (text('-url') !== null) {
-    const url = /^http:\/\/([^/:]+)(?::(\d+))?(\/.*)?$/.exec(text('-url')!);
+    const url = /^(https?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/.exec(text('-url')!);
     if (!url) return fail(`${text('-url')} Error parsing -url argument`);
-    const address = host.resolveHost(url[1]) ?? url[1];
+    const secure = url[1] === 'https';
+    const address = host.resolveHost(url[2]) ?? url[2];
     if (typeof host.httpPost !== 'function') return fail('openssl: ocsp -url: this platform has no HTTP client');
-    const reply = host.httpPost(address, Number(url[2] ?? 80), url[3] ?? '/', bytesToFileText(encodeOcspRequest(request!)), {
+    const reply = host.httpPost(address, Number(url[3] ?? (secure ? 443 : 80)), url[4] ?? '/', bytesToFileText(encodeOcspRequest(request!)), {
       'Content-Type': OCSP_REQUEST_CONTENT_TYPE,
-    });
+    }, secure);
     if (reply.ok === false) return fail(`Error querying OCSP responder\nconnect:errno=111 (${reply.reason})`);
     try { response = decodeOcspResponse(fileTextToBytes(reply.body)); } catch { return fail('Error querying OCSP responder'); }
   } else if (request !== null) {
@@ -1794,13 +1799,13 @@ function finishSClientReport(
   if (details.serverTempKey) lignes.push(`Server Temp Key: ${details.serverTempKey}`);
   lignes.push('---', `SSL handshake has read ${details.bytesRead} bytes and written ${details.bytesWritten} bytes`);
   lignes.push(code === 0 ? 'Verification: OK' : `Verification error: ${text}`, '---');
-  lignes.push(`New, TLSv${version}, Cipher is ${suiteName}`);
+  lignes.push(`${details.resumed ? 'Reused' : 'New'}, TLSv${version}, Cipher is ${suiteName}`);
   const rsa = materialToPublicKey(leaf.publicKey.material);
   lignes.push(`Server public key is ${rsa ? bitLength(rsa.n) : 256} bit`);
   lignes.push(`Secure Renegotiation IS ${version === '1.3' ? 'NOT ' : ''}supported`, 'Compression: NONE', 'Expansion: NONE');
   lignes.push(details.alpn ? `ALPN protocol: ${details.alpn}` : 'No ALPN negotiated');
   if (version === '1.3') {
-    lignes.push('Early data was not sent', `Verify return code: ${code} (${text})`, '---');
+    lignes.push(`Early data was ${details.earlyData === 'not-sent' ? 'not sent' : details.earlyData}`, `Verify return code: ${code} (${text})`, '---');
   } else {
     const kept = details.legacySession;
     lignes.push('SSL-Session:', `    Protocol  : TLSv${version}`, `    Cipher    : ${suiteName}`);
@@ -1850,9 +1855,9 @@ export function runSClient(host: OpenSslHost, argv: readonly string[], interacti
     return fail(`${nom}:${port}\nconnect:errno=-2\nunable to resolve host`);
   }
 
-  const verdict = host.tcpConnect(ip, port);
-  if (verdict !== 'open') {
-    return fail(`connect:errno=${errnoNumber(connectErrno(verdict))}`, 1);
+  if (host.tlsPeerCertificate === undefined) {
+    const verdict = host.tcpConnect(ip, port);
+    if (verdict !== 'open') return fail(`connect:errno=${errnoNumber(connectErrno(verdict))}`, 1);
   }
 
   const lignes: string[] = ['CONNECTED(00000003)'];
@@ -1890,8 +1895,30 @@ export function runSClient(host: OpenSslHost, argv: readonly string[], interacti
     if (key === null || chain.length === 0) return fail('Error getting private key or certificate', 1);
     clientCredential = { chain, privateKey: key };
   }
+  let resumeTicket: SessionTicket | undefined;
+  let resumeLegacy: ResumableLegacySession | undefined;
+  const sessionInPath = opts.get('-sess_in');
+  if (typeof sessionInPath === 'string') {
+    const sessionText = host.readFile(sessionInPath);
+    const loaded = sessionText === null ? null : sslSessionFromPem(sessionText);
+    if (loaded === null) return fail(`Can't open session file ${sessionInPath}`, 1);
+    const resumable = sslSessionToResumable(loaded);
+    if (resumable.kind === 'unsupported') return fail(`Can't use session file ${sessionInPath}: ${resumable.reason}`, 1);
+    if (resumable.kind === 'tls13') resumeTicket = resumable.ticket;
+    else resumeLegacy = resumable.session;
+  }
+  let earlyData: Uint8Array | undefined;
+  const earlyPath = opts.get('-early_data');
+  if (typeof earlyPath === 'string') {
+    const earlyText = host.readFile(earlyPath);
+    if (earlyText === null) return fail(`Can't open "${earlyPath}" for reading, No such file or directory`, 1);
+    earlyData = fileTextToBytes(earlyText);
+  }
   const probeOptions = {
-    versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+    versions: resumeTicket ? ['1.3' as const] : resumeLegacy ? [resumeLegacy.state.version] : versions,
+    ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+    ...(resumeTicket ? { resumptionTicket: resumeTicket, ...(earlyData && (resumeTicket.maxEarlyDataSize ?? 0) > 0 ? { earlyData } : {}) } : {}),
+    ...(resumeLegacy ? { legacySession: resumeLegacy } : {}),
     ...(opts.has('-status') ? { requestStatus: true } : {}),
     ...(clientCredential ? { clientCredential } : {}),
     ...(typeof opts.get('-alpn') === 'string' ? { alpn: (opts.get('-alpn') as string).split(',') } : {}),
@@ -1900,6 +1927,11 @@ export function runSClient(host: OpenSslHost, argv: readonly string[], interacti
   };
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
+
+  if (sonde && sonde.ok === false && sonde.reason === 'connection refused') {
+    const verdict = host.tcpConnect(ip, port);
+    if (verdict !== 'open') return fail(`connect:errno=${errnoNumber(connectErrno(verdict))}`, 1);
+  }
 
   const echecPoignee = sonde && sonde.ok === false
     ? (sonde.reason ?? 'handshake failed') : null;
@@ -1941,6 +1973,21 @@ export function runSClient(host: OpenSslHost, argv: readonly string[], interacti
   }
   const details = sonde && sonde.ok ? sonde.details : undefined;
   if (echecPoignee === null && sonde && sonde.ok && details && presente) {
+    const sessionOutPath = opts.get('-sess_out');
+    if (typeof sessionOutPath === 'string') {
+      const sessionChain = sonde.chain && sonde.chain.length > 0 ? sonde.chain : [presente];
+      const context = {
+        peer: presente,
+        verifyResult: resumeTicket?.verifyResult ?? verifyCodeFor(sessionChain, sonde.verified ? null : details.verificationReason ?? 'unknown')[0],
+        ...(typeof nomServeur === 'string' ? { serverName: nomServeur } : {}),
+        ...(details.alpn ? { alpn: details.alpn } : {}),
+      };
+      const stored = details.ticket ? ticketToSslSession(details.ticket, context)
+        : details.legacySession ? legacyToSslSession(details.legacySession, context) : null;
+      if (stored !== null && !host.writeFile(sessionOutPath, sslSessionToPem(stored))) {
+        return fail(`Can't open "${sessionOutPath}" for writing`, 1);
+      }
+    }
     return finishSClientReport(lignes, sonde, details, presente);
   }
   if (echecPoignee !== null) {
@@ -1970,7 +2017,10 @@ export function runSClient(host: OpenSslHost, argv: readonly string[], interacti
   return ok(lignes.join('\n'));
 }
 
-function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+function runSServer(
+  host: OpenSslHost, argv: readonly string[],
+  options: { readonly interactive?: boolean; readonly print?: (line: string) => void } = {},
+): OpenSslResult {
   const { opts } = parseArgs('s_server', argv);
   const accept = opts.get('-accept') ?? opts.get('-port') ?? '4433';
   const port = Number(typeof accept === 'string' ? accept.slice(accept.lastIndexOf(':') + 1) : NaN);
@@ -1985,7 +2035,7 @@ function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const privateKey = pemToPrivateKey(keyText);
   if (chain.length === 0 || privateKey === null) return fail('Error getting private key or certificate', 1);
   const mode = opts.has('-www') ? 'www' : opts.has('-WWW') ? 'WWW' : opts.has('-HTTP') ? 'HTTP' : null;
-  if (mode === null) {
+  if (mode === null && options.interactive !== true) {
     return fail('openssl: s_server: interactive mode reads application data from a terminal; use -www, -WWW or -HTTP', 1);
   }
   const forced = (['-tls1_3', '-tls1_2', '-tls1_1', '-tls1'] as const).find((flag) => opts.has(flag));
@@ -2004,6 +2054,20 @@ function runSServer(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const caText = host.readFile(caPath);
     if (caText === null) return fail(`Can't open "${caPath}" for reading, No such file or directory`, 1);
     clientAuth = { anchors: pemToCertChain(caText), required: opts.has('-Verify') };
+  }
+  if (mode === null) {
+    const print = options.print ?? (() => undefined);
+    const controller = host.serveTlsStream?.(port, {
+      chain, privateKey, ...(clientAuth ? { clientAuth } : {}),
+      ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+    }, {
+      accepted: () => undefined,
+      data: (text) => { for (const line of text.replace(/\r?\n$/, '').split(/\r?\n/)) print(line); },
+      closed: () => { print('shutting down SSL'); print('CONNECTION CLOSED'); print('ACCEPT'); },
+    });
+    if (controller === undefined) return fail('openssl: s_server: cannot listen on this host', 1);
+    if (controller === false) return fail('bind: Address already in use\nbind:errno=98', 1);
+    return { ...ok('Using default temp DH parameters\nACCEPT'), streamServer: controller };
   }
   const served = host.serveTls?.(port, {
     chain, privateKey, ...(clientAuth ? { clientAuth } : {}), ...(protocols ? { protocols } : {}), ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
@@ -2028,7 +2092,10 @@ function runHelp(): OpenSslResult {
 
 // ─── dispatch ───────────────────────────────────────────────────────
 
-export function runOpenSsl(host: OpenSslHost, argv: readonly string[], options: { readonly interactive?: boolean } = {}): OpenSslResult {
+export function runOpenSsl(
+  host: OpenSslHost, argv: readonly string[],
+  options: { readonly interactive?: boolean; readonly print?: (line: string) => void } = {},
+): OpenSslResult {
   const sub = argv[0];
   if (sub === undefined) return runHelp();
   const reste = argv.slice(1);
@@ -2050,7 +2117,7 @@ export function runOpenSsl(host: OpenSslHost, argv: readonly string[], options: 
   if (sub === 'x509') return runX509(host, reste);
   if (sub === 'verify') return runVerify(host, reste);
   if (sub === 's_client') return runSClient(host, reste, options.interactive === true);
-  if (sub === 's_server') return runSServer(host, reste);
+  if (sub === 's_server') return runSServer(host, reste, options);
   if (sub === 'ec') return runEc(host, reste);
   if (sub === 'ecparam') return runEcparam(host, reste);
   if (sub === 'pkcs8') return runPkcs8(host, reste);

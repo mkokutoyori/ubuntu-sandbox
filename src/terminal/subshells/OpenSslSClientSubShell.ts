@@ -7,7 +7,12 @@ export class OpenSslSClientSubShell implements ISubShell {
   readonly kind = 'openssl-s_client';
   readonly connection = 'subshell' as const;
 
-  constructor(private readonly channel: TlsPeerChannelPort, private readonly version: string) {}
+  constructor(
+    private readonly channel: TlsPeerChannelPort, private readonly version: string,
+    output: (line: string) => void = () => undefined,
+  ) {
+    channel.onPush((text) => { for (const line of text.replace(/\r?\n$/, '').split(/\r?\n/)) output(line); });
+  }
 
   getPrompt(): string {
     return '';
@@ -27,8 +32,9 @@ export class OpenSslSClientSubShell implements ISubShell {
       this.channel.keyUpdate(line === 'K');
       return reply(['KEYUPDATE']);
     }
-    if (line === 'R' || line === 'r' || line === 'B') {
-      return reply([`openssl: s_client: command ${line} is not available in this simulator`]);
+    if (line === 'R' || line === 'r') {
+      if (this.version === '1.3') return reply(['openssl: s_client: renegotiation does not exist in TLS 1.3, use K for a key update']);
+      return reply(this.channel.renegotiate() ? ['RENEGOTIATING'] : ['RENEGOTIATING', 'openssl: s_client: renegotiation refused by the server']);
     }
     const answer = bytesToFileText(this.channel.exchange(fileTextToBytes(`${line}\n`)));
     return reply(answer === '' ? [] : answer.replace(/\r?\n$/, '').split(/\r?\n/));

@@ -23,7 +23,19 @@ export type HuaweiDebugCategory =
   | 'stp'
   | 'vrrp'
   | 'bgp'
-  | 'rip';
+  | 'bgp-update'
+  | 'nat'
+  | 'lldp'
+  | 'aaa'
+  | 'radius'
+  | 'hwtacacs'
+  | 'rip'
+  | 'bfd'
+  | 'ntp'
+  | 'igmp'
+  | 'pim'
+  | 'tcp-packet'
+  | 'udp-packet';
 
 export type HuaweiDebugPlatform = 'router' | 'switch';
 
@@ -49,7 +61,19 @@ export const HUAWEI_DEBUG_CATALOG: readonly HuaweiDebugSpec[] = [
   { category: 'stp', words: ['stp'], label: 'STP', platforms: ['switch'] },
   { category: 'vrrp', words: ['vrrp'], label: 'VRRP', platforms: ['router'] },
   { category: 'bgp', words: ['bgp'], label: 'BGP', platforms: ['router'] },
+  { category: 'aaa', words: ['aaa', 'all'], label: 'AAA', platforms: TOUTES },
+  { category: 'radius', words: ['radius', 'all'], label: 'RADIUS', platforms: TOUTES },
+  { category: 'hwtacacs', words: ['hwtacacs', 'all'], label: 'HWTACACS', platforms: TOUTES },
+  { category: 'lldp', words: ['lldp', 'all'], label: 'LLDP', platforms: TOUTES },
+  { category: 'nat', words: ['nat', 'all'], label: 'NAT', platforms: ['router'] },
+  { category: 'bgp-update', words: ['bgp', 'update'], label: 'BGP update', platforms: ['router'] },
   { category: 'rip', words: ['rip'], label: 'RIP', platforms: ['router'] },
+  { category: 'bfd', words: ['bfd', 'all'], label: 'BFD', platforms: TOUTES },
+  { category: 'ntp', words: ['ntp-service', 'all'], label: 'NTP', platforms: TOUTES },
+  { category: 'igmp', words: ['igmp', 'all'], label: 'IGMP', platforms: TOUTES },
+  { category: 'pim', words: ['pim', 'all'], label: 'PIM', platforms: TOUTES },
+  { category: 'tcp-packet', words: ['tcp', 'packet'], label: 'TCP packet', platforms: TOUTES },
+  { category: 'udp-packet', words: ['udp', 'packet'], label: 'UDP packet', platforms: TOUTES },
 ];
 
 /**

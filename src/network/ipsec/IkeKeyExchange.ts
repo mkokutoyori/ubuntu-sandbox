@@ -35,7 +35,7 @@ export function implementedIkeGroups(): readonly number[] {
   const curves = Object.keys(IKE_GROUP_NAMES)
     .map(key => Number.parseInt(key, 10))
     .filter(group => IMPLEMENTED_GROUPS.includes(IKE_GROUP_NAMES[group]));
-  const modp = [1, 2, 5, 14, 15, 16].filter(group => modpGroup(group) !== undefined);
+  const modp = [1, 2, 5, 14, 15, 16, 17, 18].filter(group => modpGroup(group) !== undefined);
   return Object.freeze([...modp, ...curves].sort((a, b) => a - b));
 }
 

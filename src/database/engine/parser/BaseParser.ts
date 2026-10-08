@@ -516,11 +516,12 @@ export abstract class BaseParser {
     const pos = this.current().position;
     this.expectKeyword('CREATE');
     const orReplace = this.matchKeyword('OR') ? (this.expectKeyword('REPLACE'), true) : false;
+    const force = this.parseCreateViewModifiers();
 
     if (this.matchKeyword('TABLE') || (this.matchKeyword('GLOBAL') && (this.expectKeyword('TEMPORARY'), this.expectKeyword('TABLE'), true))) {
       return this.parseCreateTable(pos, orReplace);
     }
-    if (this.matchKeyword('VIEW')) return this.parseCreateView(pos, orReplace);
+    if (this.matchKeyword('VIEW')) return this.parseCreateView(pos, orReplace, force);
     if (this.matchKeyword('INDEX')) return this.parseCreateIndex(pos, false, false);
     if (this.matchKeyword('UNIQUE')) { this.expectKeyword('INDEX'); return this.parseCreateIndex(pos, true, false); }
     if (this.matchKeyword('BITMAP')) { this.expectKeyword('INDEX'); return this.parseCreateIndex(pos, false, true); }
@@ -534,6 +535,28 @@ export abstract class BaseParser {
     if (dialectResult) return dialectResult;
 
     throw this.error(`Unsupported CREATE target: ${this.current().value}`);
+  }
+
+  private matchModifierWord(word: string): boolean {
+    if (!this.checkIdentifierOrKeyword(word)) return false;
+    this.advance();
+    return true;
+  }
+
+  private parseCreateViewModifiers(): boolean {
+    let force = false;
+    for (;;) {
+      if (this.checkIdentifierOrKeyword('NO') && this.peekNext()?.value.toUpperCase() === 'FORCE') {
+        this.advance(); this.advance(); force = false;
+      } else if (this.matchModifierWord('FORCE')) {
+        force = true;
+      } else if (this.matchModifierWord('EDITIONABLE') || this.matchModifierWord('NONEDITIONABLE')
+          || this.matchModifierWord('EDITIONING')) {
+        continue;
+      } else {
+        return force;
+      }
+    }
   }
 
   /** Override for dialect-specific CREATE targets. */
@@ -925,7 +948,7 @@ export abstract class BaseParser {
     return c;
   }
 
-  protected parseCreateView(pos: import('../lexer/Token').SourcePosition, orReplace: boolean): import('./ASTNode').CreateViewStatement {
+  protected parseCreateView(pos: import('../lexer/Token').SourcePosition, orReplace: boolean, force = false): import('./ASTNode').CreateViewStatement {
     let schema: string | undefined;
     let name = this.expectIdentifier();
     if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
@@ -936,8 +959,23 @@ export abstract class BaseParser {
     }
     this.expectKeyword('AS');
     const query = this.parseSelect();
-    const withCheckOption = this.matchKeyword('WITH') ? (this.expectKeyword('CHECK'), this.expectKeyword('OPTION'), true) : false;
-    return { type: 'CreateViewStatement', position: pos, orReplace: orReplace || undefined, schema, name, columns, query, withCheckOption: withCheckOption || undefined };
+    let withCheckOption = false;
+    let withReadOnly = false;
+    if (this.matchKeyword('WITH')) {
+      if (this.matchKeyword('READ')) {
+        this.expectKeyword('ONLY');
+        withReadOnly = true;
+      } else {
+        this.expectKeyword('CHECK');
+        this.expectKeyword('OPTION');
+        withCheckOption = true;
+      }
+    }
+    return {
+      type: 'CreateViewStatement', position: pos, orReplace: orReplace || undefined, force: force || undefined,
+      schema, name, columns, query,
+      withCheckOption: withCheckOption || undefined, withReadOnly: withReadOnly || undefined,
+    };
   }
 
   protected parseCreateIndex(pos: import('../lexer/Token').SourcePosition, unique: boolean, bitmap: boolean): import('./ASTNode').CreateIndexStatement {
@@ -998,18 +1036,31 @@ export abstract class BaseParser {
     let name = this.expectIdentifier();
     if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
     let startWith: number | undefined, incrementBy: number | undefined;
+    let minValue: number | 'NOMINVALUE' | undefined, maxValue: number | 'NOMAXVALUE' | undefined;
     let cache: number | 'NOCACHE' | undefined;
     let cycle: boolean | undefined;
+    let order: boolean | undefined;
+    const signedNumber = (): number => {
+      const negative = this.check(TokenType.ARITHMETIC_OP) && this.current().value === '-' && (this.advance(), true);
+      const value = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+      return negative ? -value : value;
+    };
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
-      if (this.matchKeyword('START')) { this.expectKeyword('WITH'); startWith = Number(this.expect(TokenType.NUMBER_LITERAL).value); }
-      else if (this.matchKeyword('INCREMENT')) { this.expectKeyword('BY'); incrementBy = Number(this.expect(TokenType.NUMBER_LITERAL).value); }
+      if (this.matchKeyword('START')) { this.expectKeyword('WITH'); startWith = signedNumber(); }
+      else if (this.matchKeyword('INCREMENT')) { this.expectKeyword('BY'); incrementBy = signedNumber(); }
+      else if (this.matchKeyword('MINVALUE')) { minValue = signedNumber(); }
+      else if (this.matchModifierWord('NOMINVALUE')) { minValue = 'NOMINVALUE'; }
+      else if (this.matchKeyword('MAXVALUE')) { maxValue = signedNumber(); }
+      else if (this.matchModifierWord('NOMAXVALUE')) { maxValue = 'NOMAXVALUE'; }
+      else if (this.matchModifierWord('ORDER')) { order = true; }
+      else if (this.matchModifierWord('NOORDER')) { order = false; }
       else if (this.matchKeyword('CACHE')) { cache = Number(this.expect(TokenType.NUMBER_LITERAL).value); }
       else if (this.matchKeyword('NOCACHE')) { cache = 'NOCACHE'; }
       else if (this.matchKeyword('CYCLE')) { cycle = true; }
       else if (this.matchKeyword('NOCYCLE')) { cycle = false; }
       else break;
     }
-    return { type: 'CreateSequenceStatement', position: pos, schema, name, startWith, incrementBy, cache, cycle };
+    return { type: 'CreateSequenceStatement', position: pos, schema, name, startWith, incrementBy, minValue, maxValue, cache, cycle, order };
   }
 
   protected parseCreateUser(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').CreateUserStatement {

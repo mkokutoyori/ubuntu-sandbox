@@ -14,27 +14,14 @@ import type { HttpMessage } from '../semantics/types';
 import { encodeRequest, parseResponse, type Http1EncodeOptions } from '../http1/Http1Wire';
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { TlsRecord } from '@/network/tls/recordLayer';
-import { encodeRecords, decodeRecords, runTlsHandshakeOverSocket } from './TlsRecordWire';
-import { encryptApplicationData, decryptApplicationData } from './ApplicationDataCipher';
+import { runTlsHandshakeOverSocket } from './TlsRecordWire';
+import { TlsClientChannel } from '@/network/tls/TlsClientChannel';
 import { HstsStore } from './HstsStore';
+import type { TlsRecord } from '@/network/tls/recordLayer';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
-
-function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export interface HttpsSendResult {
   ok: boolean;
@@ -43,7 +30,7 @@ export interface HttpsSendResult {
   alpnProtocol?: string | null;
 }
 
-export type HttpsClientConfig = Omit<TlsClientConfig, 'alpn'> & { readonly alpn?: readonly string[] };
+export type HttpsClientConfig = Omit<TlsClientConfig, 'alpn' | 'earlyData'> & { readonly alpn?: readonly string[]; readonly earlyData?: boolean | Uint8Array };
 
 /**
  * RFC 9112 §9.3 — persistent by default, exactly like `Http1ClientSession`;
@@ -54,8 +41,7 @@ export class HttpsClientSession {
   private socket: TcpSocket | null = null;
   private tls: TlsClientSession | null = null;
   private lastTls: TlsClientSession | null = null;
-  private clientSeq = 0;
-  private serverSeq = 0;
+  private channel: TlsClientChannel | null = null;
   readonly hstsStore: HstsStore;
 
   constructor(
@@ -70,21 +56,28 @@ export class HttpsClientSession {
   }
 
 
+  private earlyPending = false;
+
   adopt(socket: TcpSocket): void {
     this.socket = socket;
     this.tls = null;
   }
 
-  private connectIfNeeded(): boolean {
+  private connectIfNeeded(earlyRequest?: Uint8Array): boolean {
     if (this.socket && this.socket.state === 'established' && this.tls?.result === 'success') return true;
 
     const adopted = this.socket?.state === 'established' && this.tls === null ? this.socket : null;
     const socket = adopted ?? this.tcpStack.connect(this.targetIp, this.port);
     if (!socket || socket.state !== 'established') return false;
 
-    const tls = new TlsClientSession({ ...this.tlsConfig, alpn: this.tlsConfig.alpn ?? ['http/1.1'] });
+    const { earlyData: sendEarly, ...tlsConfig } = this.tlsConfig;
+    const tls = new TlsClientSession({
+      ...tlsConfig, alpn: tlsConfig.alpn ?? ['http/1.1'],
+      ...(sendEarly instanceof Uint8Array ? { earlyData: sendEarly } : sendEarly === true && earlyRequest !== undefined && tlsConfig.resumptionTicket ? { earlyData: earlyRequest } : {}),
+    });
     this.lastTls = tls;
-    runTlsHandshakeOverSocket(socket, tls);
+    const trailing: TlsRecord[] = [];
+    runTlsHandshakeOverSocket(socket, tls, (records) => { trailing.push(...records); });
 
     if (tls.result !== 'success') {
       socket.close();
@@ -95,8 +88,9 @@ export class HttpsClientSession {
 
     this.socket = socket;
     this.tls = tls;
-    this.clientSeq = 0;
-    this.serverSeq = 0;
+    this.channel = new TlsClientChannel(socket, tls);
+    this.earlyPending = tls.earlyDataAccepted === true;
+    if (trailing.length > 0) this.channel.receiveRecords(trailing);
     return true;
   }
 
@@ -111,43 +105,25 @@ export class HttpsClientSession {
       return { ok: false, error };
     };
 
-    if (!this.connectIfNeeded() || !this.socket || !this.tls) {
+    const requestBytes = binaryStringToBytes(encodeRequest(request, opts));
+    if (!this.connectIfNeeded(requestBytes) || !this.socket || !this.tls) {
       return fail(`TLS handshake with ${this.targetIp} port ${this.port} failed`);
     }
-    const socket = this.socket;
     const tls = this.tls;
 
-    const requestBytes = encoder.encode(encodeRequest(request, opts));
-    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientTraffic(), this.clientSeq, requestBytes);
+    const answeredEarly = this.earlyPending;
+    this.earlyPending = false;
+    const plaintext = answeredEarly ? this.channel!.takeBuffered() : this.channel!.exchange(requestBytes);
+    if (plaintext.length === 0) return fail('Empty reply from server');
 
-    let responseRecords: TlsRecord[] | null = null;
-    const unsubscribe = socket.onData((data) => {
-      responseRecords = decodeRecords(binaryStringToBytes(String(data)));
-    });
-    socket.write(bytesToBinaryString(encodeRecords(records)));
-    unsubscribe();
-    this.clientSeq = clientNextSeq;
-
-    if (!responseRecords) return fail('Empty reply from server');
-
-    const { plaintext, nextSeq: serverNextSeq, peerKeyUpdates, peerRequestedKeyUpdate } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
-    this.serverSeq = serverNextSeq;
-    if (peerKeyUpdates) {
-      const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, this.clientSeq);
-      if (reply.length > 0) {
-        socket.write(bytesToBinaryString(encodeRecords([...reply])));
-        this.clientSeq = 0;
-      }
-    }
-
-    const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
+    const parsed = parseResponse(bytesToBinaryString(plaintext), { suppressBody: request.method === 'HEAD' });
     if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
     if (hsts) this.hstsStore.record(this.targetIp, hsts, simulationNowMs());
 
     if (parsed.message.headers.get('Connection')?.toLowerCase() === 'close') {
-      socket.close();
+      this.socket.close();
       this.socket = null;
       this.tls = null;
     }
@@ -174,46 +150,25 @@ export class HttpsClientSession {
       return { ok: false, error };
     };
 
-    if (!this.connectIfNeeded() || !this.socket || !this.tls) {
+    const requestBytes = binaryStringToBytes(encodeRequest(request, opts));
+    if (!this.connectIfNeeded(requestBytes) || !this.socket || !this.tls) {
       return fail(`TLS handshake with ${this.targetIp} port ${this.port} failed`);
     }
-    const socket = this.socket;
     const tls = this.tls;
 
-    const requestBytes = encoder.encode(encodeRequest(request, opts));
-    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientTraffic(), this.clientSeq, requestBytes);
+    const answeredEarly = this.earlyPending;
+    this.earlyPending = false;
+    const plaintext = answeredEarly ? this.channel!.takeBuffered() : await this.channel!.exchangeAsync(requestBytes, TLS_MICROTASK_BUDGET);
+    if (plaintext.length === 0) return fail('Empty reply from server');
 
-    let responseRecords: TlsRecord[] | null = null;
-    const unsubscribe = socket.onData((data) => {
-      responseRecords = decodeRecords(binaryStringToBytes(String(data)));
-    });
-    socket.write(bytesToBinaryString(encodeRecords(records)));
-    for (let tour = 0; responseRecords === null && tour < TLS_MICROTASK_BUDGET; tour++) {
-      await Promise.resolve();
-    }
-    unsubscribe();
-    this.clientSeq = clientNextSeq;
-
-    if (!responseRecords) return fail('Empty reply from server');
-
-    const { plaintext, nextSeq: serverNextSeq, peerKeyUpdates, peerRequestedKeyUpdate } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
-    this.serverSeq = serverNextSeq;
-    if (peerKeyUpdates) {
-      const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, this.clientSeq);
-      if (reply.length > 0) {
-        socket.write(bytesToBinaryString(encodeRecords([...reply])));
-        this.clientSeq = 0;
-      }
-    }
-
-    const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
+    const parsed = parseResponse(bytesToBinaryString(plaintext), { suppressBody: request.method === 'HEAD' });
     if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
     if (hsts) this.hstsStore.record(this.targetIp, hsts, simulationNowMs());
 
     if (parsed.message.headers.get('Connection')?.toLowerCase() === 'close') {
-      socket.close();
+      this.socket.close();
       this.socket = null;
       this.tls = null;
     }

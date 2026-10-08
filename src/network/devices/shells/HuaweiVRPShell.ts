@@ -46,6 +46,7 @@ import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/hu
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import { huaweiCaptureHost } from './huawei/CapturePacket';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { applyVrpLocalUser } from './huawei/huaweiLocalUser';
 import {
@@ -1569,7 +1570,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' });
+    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' }, undefined, undefined, huaweiCaptureHost(() => this.r()));
     t.registerGreedy('header', 'Configure login/shell banner', (args) => {
       const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
       if (typeof router._setSshBanner === 'function') {
@@ -1843,7 +1844,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' });
+    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' }, undefined, undefined, huaweiCaptureHost(() => this.r()));
 
     const applyLldp = (fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void => {
       const ag = (getRouter() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();

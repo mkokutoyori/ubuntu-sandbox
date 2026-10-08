@@ -21,7 +21,36 @@ import type { TlsHandshakeDetails } from '@/network/tls/tlsPeerProbe';
 export interface TlsPeerChannelPort {
   exchange(payload: Uint8Array): Uint8Array;
   keyUpdate(requestUpdate: boolean): void;
+  renegotiate(): boolean;
+  onPush(handler: (text: string) => void): void;
   close(): void;
+}
+
+export interface TlsServerStatistics {
+  readonly itemsInCache: number;
+  readonly accepts: number;
+  readonly acceptsFinished: number;
+  readonly renegotiates: number;
+  readonly cacheHits: number;
+  readonly cacheMisses: number;
+  readonly cacheSize: number;
+}
+
+export interface TlsStreamServerPort {
+  send(text: string): boolean;
+  sendClear(text: string): boolean;
+  connectionVersion(): string | null;
+  statistics(): TlsServerStatistics;
+  renegotiate(requestClientCertificate: boolean): boolean;
+  keyUpdate(requestUpdate: boolean): boolean;
+  closeConnection(): void;
+  stop(): void;
+}
+
+export interface TlsStreamServerEvents {
+  accepted(): void;
+  data(text: string): void;
+  closed(): void;
 }
 
 export type TlsPeerProbe =
@@ -88,7 +117,7 @@ export interface OpenSslHost {
    * Un POST HTTP/1.1 porté par de vraies trames (`openssl ocsp -url`).
    */
   httpPost?(
-    ip: string, port: number, path: string, body: string, headers: Readonly<Record<string, string>>,
+    ip: string, port: number, path: string, body: string, headers: Readonly<Record<string, string>>, secure?: boolean,
   ): { readonly ok: true; readonly status: number; readonly body: string } | { readonly ok: false; readonly reason: string };
 
   /**
@@ -106,6 +135,8 @@ export interface OpenSslHost {
     respond: (method: string, target: string) => { readonly status: number; readonly contentType: string; readonly body: string },
   ): boolean;
 
+  serveTlsStream?(port: number, tls: TlsServeSettings, events: TlsStreamServerEvents): TlsStreamServerPort | false;
+
   workingDirectory?(): string;
 
   /** Résolution par `/etc/hosts` — synchrone, pour la même raison. */
@@ -118,6 +149,7 @@ export interface OpenSslResult {
   exitCode: number;
   channel?: TlsPeerChannelPort;
   channelVersion?: string;
+  streamServer?: TlsStreamServerPort;
 }
 
 export function ok(output = ''): OpenSslResult {

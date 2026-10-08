@@ -10,6 +10,9 @@ import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
+import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
+import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
+import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { createRequest, createResponse } from '@/network/http/semantics/types';
@@ -63,14 +66,16 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         ...(sonde.channel ? { channel: sonde.channel } : {}),
       };
     },
-    httpPost: (ip, port, path, body, headers) => {
+    httpPost: (ip, port, path, body, headers, secure) => {
       const request = createRequest('POST', path);
       request.headers.set('Host', `${ip}:${port}`);
       for (const [name, value] of Object.entries(headers)) request.headers.set(name, value);
       const payload = fileTextToBytes(body);
       request.headers.set('Content-Length', String(payload.length));
       request.body = payload;
-      const session = new Http1ClientSession(ctx.net.getTcpStack(), ip, port);
+      const session = secure === true
+        ? new HttpsClientSession(ctx.net.getTcpStack(), ip, port, { verifier: new CertificateVerifier({ trustAnchors: [] }), allowUntrustedPeer: true } as never)
+        : new Http1ClientSession(ctx.net.getTcpStack(), ip, port);
       const result = session.send(request);
       session.close();
       if (result.ok === false || !result.response) return { ok: false, reason: result.ok === false ? result.error ?? 'no response' : 'no response' };
@@ -89,6 +94,63 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
       return true;
     },
     workingDirectory: () => ctx.executor.getCwd(),
+    serveTlsStream: (port, tls, events) => {
+      const stack = ctx.net.getTcpStack();
+      if (stack.listListeners().some((l) => l.localPort === port)) return false;
+      let current: TlsServerChannel | null = null;
+      const counters = { accepts: 0, finished: 0, renegotiates: 0, hits: 0, misses: 0 };
+      const settle = (channel: TlsServerChannel): void => {
+        counters.renegotiates += channel.session.renegotiations;
+        if (channel.session.sessionReused) counters.hits++;
+        else if (channel.session.resumptionMissed) counters.misses++;
+      };
+      const config = {
+        serverCert: tls.chain[0], serverChain: tls.chain.slice(1), serverPrivateKey: tls.privateKey,
+        ...(tls.protocols ? { protocols: tls.protocols } : {}),
+        ...(tls.cipherList ? { cipherList: tls.cipherList } : {}),
+        ...(tls.clientAuth ? {
+          requestClientCert: true,
+          verifier: new CertificateVerifier({ trustAnchors: tls.clientAuth.anchors, clock: () => simulationNowMs() }),
+          clientCertPolicy: tls.clientAuth.required ? 'strict' as const : 'optional' as const,
+        } : {}),
+      };
+      stack.listen(port, {
+        identity: { processName: 'openssl' },
+        onAccept: (socket) => {
+          counters.accepts++;
+          const channel: TlsServerChannel = new TlsServerChannel(socket, new TlsServerSession(config as never), {
+            onHandshakeComplete: () => { counters.finished++; events.accepted(); },
+            onData: (bytes) => events.data(bytesText(bytes)),
+          });
+          current = channel;
+          socket.onClose(() => {
+            if (current === channel) current = null;
+            settle(channel);
+            events.closed();
+          });
+        },
+      });
+      return {
+        send: (text) => { if (current === null || current.session.result !== 'accept') return false; current.write(fileTextToBytes(text)); return true; },
+        sendClear: (text) => { if (current === null) return false; current.writeClear(fileTextToBytes(text)); return true; },
+        connectionVersion: () => (current === null ? null : current.session.negotiatedVersion),
+        statistics: () => ({
+          itemsInCache: 0, accepts: counters.accepts, acceptsFinished: counters.finished,
+          renegotiates: counters.renegotiates + (current?.session.renegotiations ?? 0),
+          cacheHits: counters.hits + (current?.session.sessionReused ? 1 : 0),
+          cacheMisses: counters.misses + (current?.session.resumptionMissed ? 1 : 0),
+          cacheSize: 128,
+        }),
+        renegotiate: (requestClientCertificate) => current !== null && current.requestRenegotiation({ requestClientCertificate }),
+        keyUpdate: (requestUpdate) => {
+          if (current === null || current.session.negotiatedVersion !== '1.3') return false;
+          current.keyUpdate(requestUpdate);
+          return true;
+        },
+        closeConnection: () => { current?.close(); },
+        stop: () => { current?.close(); stack.closeListener(port); },
+      };
+    },
     serveTls: (port, tls, respond) => {
       const stack = ctx.net.getTcpStack();
       if (stack.listListeners().some((l) => l.localPort === port)) return false;
@@ -159,9 +221,11 @@ export const opensslCommand: LinuxCommand = {
   },
 
   runWithStatusSync(ctx: LinuxCommandContext, args: string[], stdin?: string) {
-    const interactive = ctx.executor.interactiveTerminal && stdin === undefined && args[0] === 's_client';
-    const r = runOpenSsl(linuxOpenSslHost(ctx, stdin), args, { interactive });
+    const interactive = ctx.executor.interactiveTerminal && stdin === undefined && (args[0] === 's_client' || args[0] === 's_server');
+    const print = ctx.executor.interactiveOutput ?? undefined;
+    const r = runOpenSsl(linuxOpenSslHost(ctx, stdin), args, { interactive, ...(print ? { print } : {}) });
     if (r.channel) ctx.executor.offerInteractive({ kind: 'tls-client', channel: r.channel, version: r.channelVersion ?? '1.3' });
+    if (r.streamServer) ctx.executor.offerInteractive({ kind: 'tls-server', controller: r.streamServer });
     return { output: r.output, exitCode: r.exitCode, stderr: r.stderr };
   },
 };

@@ -258,7 +258,7 @@ describe('les groupes Diffie-Hellman offerts sont ceux qu`on calcule', () => {
   });
 
   it('un groupe sans implementation est refuse en nommant ce qui existe', () => {
-    const refus = dhGroupRefusal(18);
+    const refus = dhGroupRefusal(22);
 
     expect(refus).not.toBeNull();
     expect(refus).toContain('RFC 3526');
@@ -272,14 +272,14 @@ describe('les groupes Diffie-Hellman offerts sont ceux qu`on calcule', () => {
     const aide = run(sh, 'set dhgrp ?');
 
     expect(aide).toContain('14');
-    expect(aide).not.toMatch(/^18\s/m);
+    expect(aide).not.toMatch(/^22\s/m);
   });
 
   it('un groupe non calculable est refuse par la CLI', () => {
     const { sh } = shell();
 
     const dit = run(sh, 'config vpn ipsec phase1-interface', 'edit "T"',
-      'set dhgrp 18');
+      'set dhgrp 22');
 
     expect(dit).toContain('Command fail');
   });

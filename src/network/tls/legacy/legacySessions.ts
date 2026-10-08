@@ -3,6 +3,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import { aesGcmEncrypt, aesGcmDecrypt, AES_GCM_TAG_SIZE } from '@/crypto/cipher';
 import { bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import type { LegacyVersion } from './legacyCipherSuites';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 
 export interface LegacySessionState {
   readonly id: string;
@@ -17,6 +18,8 @@ export interface LegacySessionState {
 export interface ResumableLegacySession {
   readonly state: LegacySessionState;
   readonly ticket: string | null;
+  readonly peerCertificates?: readonly X509Certificate[];
+  readonly verifyResult?: number;
 }
 
 export const DEFAULT_SESSION_TIMEOUT_SECONDS = 300;

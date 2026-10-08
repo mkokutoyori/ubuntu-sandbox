@@ -86,6 +86,7 @@ import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { OpenSslSClientSubShell } from '@/terminal/subshells/OpenSslSClientSubShell';
+import { OpenSslSServerSubShell } from '@/terminal/subshells/OpenSslSServerSubShell';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
@@ -1625,18 +1626,30 @@ export class LinuxTerminalSession extends TerminalSession {
     try {
       const shell = this.ensureRootBash();
       if (shell) {
-        const interactiveExecutor = (this.device as { executor?: { interactiveTerminal: boolean; takeInteractiveHandoff(): import('@/network/devices/linux/commands/crypto/InteractiveHandoff').TlsClientHandoff | null } }).executor;
-        if (interactiveExecutor) interactiveExecutor.interactiveTerminal = true;
+        const interactiveExecutor = (this.device as { executor?: {
+          interactiveTerminal: boolean;
+          interactiveOutput: ((line: string) => void) | null;
+          takeInteractiveHandoff(): import('@/network/devices/linux/commands/crypto/InteractiveHandoff').InteractiveHandoff | null;
+        } }).executor;
+        if (interactiveExecutor) {
+          interactiveExecutor.interactiveTerminal = true;
+          interactiveExecutor.interactiveOutput = (line) => { this.addLine(line); this.notify(); };
+        }
         let result;
         try {
           result = await shell.processLine(trimmed);
         } finally {
-          if (interactiveExecutor) interactiveExecutor.interactiveTerminal = false;
+          if (interactiveExecutor) {
+            interactiveExecutor.interactiveTerminal = false;
+            interactiveExecutor.interactiveOutput = null;
+          }
         }
         const handoff = interactiveExecutor?.takeInteractiveHandoff() ?? null;
         if (handoff) {
           for (const line of result.output) this.addLine(line);
-          this.activeSubShell = new OpenSslSClientSubShell(handoff.channel, handoff.version);
+          this.activeSubShell = handoff.kind === 'tls-client'
+            ? new OpenSslSClientSubShell(handoff.channel, handoff.version, (line) => { this.addLine(line); this.notify(); })
+            : new OpenSslSServerSubShell(handoff.controller);
           this._inputBuf = '';
           this.notify();
           return;

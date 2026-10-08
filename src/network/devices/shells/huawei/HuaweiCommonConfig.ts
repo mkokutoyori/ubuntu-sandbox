@@ -8,6 +8,7 @@
  * truth so HuaweiSwitchShell and HuaweiVRPShell don't duplicate it (DRY).
  */
 
+import { parseCapturePacket, CAPTURE_NEEDS_TERMINAL, type CapturePacketHost } from './CapturePacket';
 import type { CommandTrie } from '../CommandTrie';
 import type { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
 import {
@@ -69,8 +70,17 @@ export function registerHuaweiCommonMgmt(
   debug?: { service: () => HuaweiDebugService | null; platform: HuaweiDebugPlatform },
   onSave?: () => void,
   onResetSaved?: () => void,
+  capture?: CapturePacketHost,
 ): void {
   if (debug) registerHuaweiDebugging(trie, debug.service, debug.platform);
+  if (capture) {
+    trie.registerGreedy('capture-packet interface', 'Capture packets on an interface', (args, raw) => {
+      const parsed = parseCapturePacket(['interface', ...args], raw ?? `capture-packet interface ${args.join(' ')}`, capture);
+      return parsed.ok === false ? parsed.error : CAPTURE_NEEDS_TERMINAL;
+    });
+    trie.setCanonicalDescription('capture-packet', 'Capture packets');
+    trie.describeArgs('capture-packet interface', [{ name: 'interface-name', type: 'WORD', description: 'Interface to capture on' }]);
+  }
   trie.registerGreedy('save', 'Save current configuration', () => {
     onSave?.();
     return saveConfiguration();

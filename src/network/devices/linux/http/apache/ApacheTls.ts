@@ -116,7 +116,9 @@ export function loadVhostTls(
   }
 
   let verifier: CertificateVerifier | null = null;
-  if (settings.verifyClient !== 'none') {
+  const verifiesSomewhere = settings.verifyClient !== 'none'
+    || vhost.directoryAuth.some((entry) => entry.verifyClient !== null && entry.verifyClient !== 'none');
+  if (verifiesSomewhere) {
     const anchorTexts: string[] = [];
     if (settings.caCertificateFile !== null) {
       const text = files.read(settings.caCertificateFile);
@@ -156,6 +158,7 @@ export function loadVhostTls(
           ...DEFAULT_OCSP_POLICY, responderUrl: settings.ocspDefaultResponder,
           overrideResponder: settings.ocspOverrideResponder, trusted: responderTrust,
           verifySignature: !settings.ocspNoVerify, useNonce: settings.ocspUseRequestNonce,
+          cacheMs: 0, timeoutMs: settings.ocspResponderTimeout * 1000, proxyUrl: settings.ocspProxyUrl,
           skewMs: settings.ocspResponseTimeSkew * 1000,
           maxAgeMs: settings.ocspResponseMaxAge < 0 ? null : settings.ocspResponseMaxAge * 1000,
         })),
@@ -198,14 +201,16 @@ export function loadVhostTls(
     } else if (wire) {
       const client = new OcspClient(wire, {
         ...DEFAULT_OCSP_POLICY, responderUrl: url, overrideResponder: true, trusted: [issuer],
-        useNonce: false, skewMs: settings.staplingResponseTimeSkew * 1000,
+        useNonce: false, verifySignature: false, skewMs: settings.staplingResponseTimeSkew * 1000,
         maxAgeMs: settings.staplingResponseMaxAge < 0 ? null : settings.staplingResponseMaxAge * 1000,
         cacheMs: settings.staplingStandardCacheTimeout * 1000,
+        timeoutMs: settings.staplingResponderTimeout * 1000, proxyUrl: settings.ocspProxyUrl,
       });
-      staple = (cert) => {
-        const found = client.lookup(cert, issuer);
-        return found.ok ? found.response : null;
+      const policy = {
+        returnErrors: settings.staplingReturnResponderErrors, fakeTryLater: settings.staplingFakeTryLater,
+        errorCacheMs: settings.staplingErrorCacheTimeout * 1000,
       };
+      staple = (cert) => client.stapleFor(cert, issuer, policy);
     }
   }
 

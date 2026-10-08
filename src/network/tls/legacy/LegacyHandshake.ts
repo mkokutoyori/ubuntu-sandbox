@@ -9,7 +9,7 @@ import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { allowsMissingCertificate, continuesAfterVerificationFailure, type ClientCertPolicy } from '../clientAuthPolicy';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from '../alerts';
+import { alertFromRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from '../alerts';
 import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchangeKeyPair } from '../keyExchange';
 import { fragmentPlaintext, splitLeadingContentType, type TlsRecord } from '../recordLayer';
 import {
@@ -226,6 +226,10 @@ export class LegacyServerHandshake {
   get negotiatedSuite(): LegacySuiteDefinition { return this.suite; }
 
   get wasResumed(): boolean { return this.resumed; }
+  get resumptionOffered(): boolean {
+    const client = this.setup.clientExtensions;
+    return client.sessionId !== '' || (client.sessionTicket !== null && client.sessionTicket !== '');
+  }
 
   private helloExtensions(): LegacyServerHello['extensions'] {
     const client = this.setup.clientExtensions;
@@ -604,6 +608,7 @@ export interface LegacyClientSetup {
   readonly enforceStaple: boolean;
   readonly requestedMaxFragment: number | null;
   readonly now: () => number;
+  readonly renegotiation?: LegacyRenegotiationContext;
 }
 
 type ClientLegacyState = 'awaiting-server-flight' | 'awaiting-server-finished' | 'done';
@@ -619,11 +624,17 @@ export class LegacyClientHandshake {
   peerVerified = false;
   peerVerificationReason: string | null = null;
   traffic: LegacyTraffic | null = null;
+  peerAlert: TlsAlert | null = null;
   negotiatedVersion: LegacyVersion | null = null;
   negotiatedSuite: LegacySuiteDefinition | null = null;
   negotiatedAlpn: string | null = null;
   negotiatedMaxFragment: number | null = null;
 
+  clientVerifyData = '';
+  serverVerifyData = '';
+  private inboundSequence = 0;
+  private outboundSequence = 0;
+  private pendingServerFinish: readonly TlsRecord[] = [];
   private state: ClientLegacyState = 'awaiting-server-flight';
   private readonly messages: Uint8Array[] = [];
   private derived: DerivedKeys | null = null;
@@ -636,6 +647,26 @@ export class LegacyClientHandshake {
 
   constructor(private readonly setup: LegacyClientSetup) {
     this.messages.push(setup.clientHelloBytes);
+    this.inboundSequence = setup.renegotiation?.inboundSequence ?? 0;
+    this.outboundSequence = setup.renegotiation?.outboundSequence ?? 0;
+  }
+
+  private protectOutgoing(records: readonly TlsRecord[]): readonly TlsRecord[] {
+    const context = this.setup.renegotiation;
+    if (context === undefined) return records;
+    return records.map((record) => context.outbound.seal(this.outboundSequence++, record));
+  }
+
+  private openIncoming(records: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const context = this.setup.renegotiation;
+    if (context === undefined) return records;
+    const opened: TlsRecord[] = [];
+    for (const record of records) {
+      const plain = context.inbound.open(this.inboundSequence++, record);
+      if (plain === null) return null;
+      opened.push(plain);
+    }
+    return opened;
   }
 
   private get wire(): LegacyWireContext {
@@ -644,6 +675,16 @@ export class LegacyClientHandshake {
 
   private fail(description: AlertDescription): null {
     this.lastAlert = fatalAlert(description);
+    this.state = 'done';
+    this.result = 'failure';
+    return null;
+  }
+
+  private failFromPeerAlert(records: readonly TlsRecord[]): null {
+    const alert = records.length > 0 && records[0].contentType === 'alert' ? alertFromRecord(records[0]) : null;
+    if (alert === null) return this.fail('unexpected_message');
+    this.peerAlert = alert;
+    this.lastAlert = alert;
     this.state = 'done';
     this.result = 'failure';
     return null;
@@ -668,9 +709,14 @@ export class LegacyClientHandshake {
   }
 
   private handleServerFlight(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    if (this.setup.renegotiation !== undefined) {
+      const opened = this.openIncoming(incoming);
+      if (opened === null) return this.fail('bad_record_mac');
+      incoming = opened;
+    }
     const { leading, rest: trailing } = splitLeadingContentType(incoming, 'handshake');
     const bytes = reassembleHandshake(leading);
-    if (bytes === null) return this.fail('unexpected_message');
+    if (bytes === null) return this.failFromPeerAlert(incoming);
     const bundle = decodeLegacyMessages(bytes, this.wire);
     const serverHello = bundle.find((m): m is LegacyServerHello => m.kind === 'legacy_server_hello');
     const certificate = bundle.find((m): m is LegacyCertificate => m.kind === 'legacy_certificate');
@@ -705,7 +751,10 @@ export class LegacyClientHandshake {
     const offeredEms = setup.clientExtensions.extendedMasterSecret;
     const serverEms = serverHello.extensions.extendedMasterSecret === true;
     if (serverEms && !offeredEms) return this.fail('unsupported_extension');
-    if (setup.clientExtensions.renegotiationInfo !== null) {
+    if (setup.renegotiation !== undefined) {
+      const echoed = serverHello.extensions.renegotiationInfo;
+      if (echoed !== `${setup.renegotiation.clientVerifyData}${setup.renegotiation.serverVerifyData}`) return this.fail('handshake_failure');
+    } else if (setup.clientExtensions.renegotiationInfo !== null) {
       const echoed = serverHello.extensions.renegotiationInfo;
       if (echoed === undefined && !setup.allowUnsafeRenegotiation) return this.fail('handshake_failure');
       if (echoed !== undefined && echoed !== '') return this.fail('handshake_failure');
@@ -819,11 +868,12 @@ export class LegacyClientHandshake {
       fragment: encodeLegacyMessage(finished, this.wire),
     });
     this.messages.push(encodeLegacyMessage(finished, this.wire));
+    this.clientVerifyData = finished.verifyData;
     outbound.sequenceBase = 1;
     this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.state = 'awaiting-server-finished';
-    return [...handshakeRecords(version, encodeLegacyBundle(out, this.wire)), changeCipherSpec(version), sealed];
+    return [...this.protectOutgoing([...handshakeRecords(version, encodeLegacyBundle(out, this.wire)), changeCipherSpec(version)]), sealed];
   }
 
   private applyFragmentLimit(inbound: LegacyRecordProtection, outbound: LegacyRecordProtection): void {
@@ -858,12 +908,14 @@ export class LegacyClientHandshake {
     const expected = bytesToHex(finishedVerifyData(version, suite.prf, master, 'server', this.messages));
     if (serverFinished.verifyData !== expected) return this.fail('decrypt_error');
     this.messages.push(encodeLegacyMessage(serverFinished, this.wire));
+    this.serverVerifyData = serverFinished.verifyData;
     inbound.sequenceBase = 1;
 
     const finished: LegacyFinished = {
       kind: 'legacy_finished',
       verifyData: bytesToHex(finishedVerifyData(version, suite.prf, master, 'client', this.messages)),
     };
+    this.clientVerifyData = finished.verifyData;
     const sealed = outbound.seal(0, {
       contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[version], fragment: encodeLegacyMessage(finished, this.wire),
     });
@@ -871,6 +923,12 @@ export class LegacyClientHandshake {
     this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.exportedSession = setup.session;
+    const earlier = setup.session.peerCertificates;
+    if (earlier !== undefined && earlier.length > 0) {
+      this.peerCertificate = earlier[0];
+      this.peerCertificateChain = earlier;
+      this.peerVerified = (setup.session.verifyResult ?? 0) === 0;
+    }
     this.state = 'done';
     this.result = 'success';
     return [changeCipherSpec(version), sealed];
@@ -889,12 +947,25 @@ export class LegacyClientHandshake {
         createdAt: this.setup.now(), lifetimeSeconds: lifetime,
       },
       ticket: ticket?.ticket ?? null,
+      ...(this.peerCertificateChain.length > 0 ? { peerCertificates: this.peerCertificateChain } : {}),
     };
   }
 
   private handleServerFinished(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     const version = this.negotiatedVersion!;
     const suite = this.negotiatedSuite!;
+    if (this.setup.renegotiation !== undefined) {
+      const gathered = [...this.pendingServerFinish, ...incoming];
+      const spec = gathered.findIndex((record) => record.contentType === 'change_cipher_spec');
+      if (spec === -1 || spec === gathered.length - 1) {
+        this.pendingServerFinish = gathered;
+        return null;
+      }
+      this.pendingServerFinish = [];
+      const opened = this.openIncoming(gathered.slice(0, spec + 1));
+      if (opened === null) return this.fail('bad_record_mac');
+      incoming = [...opened, ...gathered.slice(spec + 1)];
+    }
     const { leading, rest } = splitLeadingContentType(incoming, 'handshake');
     if (leading.length > 0) {
       const ticketBundle = decodeLegacyMessages(reassembleHandshake(leading)!, this.wire);
@@ -914,8 +985,9 @@ export class LegacyClientHandshake {
     if (!finished || finished.kind !== 'legacy_finished') return this.fail('unexpected_message');
     const expected = bytesToHex(finishedVerifyData(version, suite.prf, this.derived!.master, 'server', this.messages));
     if (finished.verifyData !== expected) return this.fail('decrypt_error');
+    this.serverVerifyData = finished.verifyData;
     this.traffic!.inbound.sequenceBase = 1;
-    this.recordSession(this.derived!.master);
+    if (this.setup.renegotiation === undefined) this.recordSession(this.derived!.master);
     this.state = 'done';
     this.result = 'success';
     return null;

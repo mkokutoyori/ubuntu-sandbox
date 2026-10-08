@@ -107,7 +107,7 @@ export interface NewSessionTicket {
   readonly ticketAgeAdd: string;
   readonly ticketNonce: string;
   readonly ticket: string;
-  readonly extensions: { readonly earlyData?: boolean };
+  readonly extensions: { readonly earlyData?: boolean; readonly maxEarlyDataSize?: number };
 }
 
 export interface KeyUpdate {

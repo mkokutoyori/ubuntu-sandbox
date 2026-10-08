@@ -202,6 +202,33 @@ accepte tout nombre ; `[int]7/2` et `7/2` sont tous deux des doubles JavaScript.
 **Pourquoi ce n'est pas ferme** : distinguer Int32/Int64/Double demande un type de valeur porte par chaque nombre,
 c'est-a-dire toucher l'evaluateur d'expressions entier, pas un membre.
 
+### [persistance] ce que la sauvegarde ne sait toujours pas ecrire, et une configuration modifiee ecrite en entier
+**Mesure** : (1) un `CiscoRouter` modifie ecrit tout son `running-config` (environ 600 octets) au lieu des
+lignes qui different du jumeau d'usine ; les MAC des ports sont ecrites pour chaque equipement (65 octets par
+port). (2) Oracle : voyagent les comptes, roles, profils, privileges (systeme, objet, role, colonne), tablespaces,
+parametres, tables (Data Pump) et vues, sequences, index, synonymes, triggers, procedures, fonctions, paquetages ;
+ne voyagent pas les vues materialisees, liens de base, repertoires, types objet, taches DBMS_SCHEDULER,
+commentaires, politiques d'audit, VPD/RLS, TDE, Data Vault, partitions de tables (Data Pump ne les porte pas),
+ni les donnees d'une table temporaire. (3) Windows Server : seuls les roles installes, les zones DNS et les
+etendues DHCP IPv4 voyagent ; Active Directory, IIS (sites, pools), ADCS, NPS, DFS, WSUS, impression, cluster,
+Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
+**Pourquoi ce n'est pas ferme** : (1) le texte de configuration est rejoue par la CLI dans l'ordre ; un extrait par
+difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations) : il faut un diff
+par bloc de mode. (2) Chaque famille d'objets Oracle demande une section dans `OracleStateDelta.ts` (une entree,
+un enumerateur sur le catalogue et sa restitution). (3) Chaque role Windows demande un `RolePersister`
+(`src/store/windowsServerRoles.ts`) ; l'annuaire AD est le plus gros et suppose de rejouer un magasin d'objets entier.
+
+### [oracle] synonymes stockes mais jamais resolus, fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse
+**Mesure** : apres `CREATE SYNONYM scott.a1 FOR scott.emp`, `SELECT COUNT(*) FROM scott.a1` rend ORA-00942 (idem
+pour un synonyme public) : le synonyme est stocke et liste, aucune resolution de nom ne le consulte.
+`SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et
+`pkg.g()` est refuse par l'analyseur. `ALTER TRIGGER scott.t DISABLE` rend `Unsupported ALTER target: TRIGGER`.
+`CREATE FORCE VIEW` est lu mais jamais evalue : une vue sur une table absente est toujours creee, sans l'ORA-00942
+du `NOFORCE` par defaut.
+**Pourquoi ce n'est pas ferme** : la resolution d'un nom de table est eparpillee dans l'executeur (SELECT, INSERT,
+UPDATE, DELETE, DDL) ; y brancher les synonymes (schema courant puis PUBLIC, chaine bornee) est un changement
+transverse a part entiere, de meme que l'appel d'une fonction de paquetage depuis une expression SQL.
+
 ### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
 **Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
 `Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
@@ -1732,17 +1759,6 @@ IKE sur 500/4500 côté hôte, et surtout un point d'accroche ESP sur le
 trafic que la machine ÉMET elle-même — un routeur chiffre ce qu'il
 ACHEMINE (`forwardPacket`), un poste chiffrerait ce qu'il produit, et ce
 chemin-là n'a aucun crochet aujourd'hui.
-
-### [ipsec] `diagnose debug application ike -1` ne trace rien
-L'etape 10 du TP 17 fait lire le journal IKE pour reconnaitre un echec de
-phase 1. `diagnose debug application ike` n'existe pas : le refus est
-observable par `diagnose vpn ike gateway list` (`IKE SA: created 0/0`) et
-par `get vpn ipsec tunnel summary`, mais pas par une trace ligne a ligne.
-**Mesure** : un secret partage discordant donne `IKE SA: created 0/0` et
-aucune ligne de trace.
-**Report** : il faudrait un canal de trace par application dans le moteur
-IKE partage, que ni Cisco ni Huawei n'ont ici non plus — c'est un sujet
-commun aux trois constructeurs, pas une commande FortiOS.
 
 ### [identite] `diagnose firewall auth list` ne rend pas la ligne `flag(...)`
 Une vraie machine ecrit `flag(10): auth` ou `flag(30): radius idle` — un

@@ -11,15 +11,20 @@ import { createResponse, type HttpMessage } from '../semantics/types';
 import type { Http1RequestHandler } from '../http1/Http1ServerSession';
 import { parseRequest, encodeResponse, HttpRequestAssembler } from '../http1/Http1Wire';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
-import { encodeRecords, attachTlsRecordPump, bytesToBinaryString } from './TlsRecordWire';
-import { encryptApplicationData, decryptApplicationData } from './ApplicationDataCipher';
+import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
+import type { ClientCertPolicy } from '@/network/tls/clientAuthPolicy';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+
+export interface PathTransportRequirement {
+  readonly clientCertPolicy?: ClientCertPolicy;
+  readonly cipherList?: string;
+}
 
 export type HttpsServerConfig = Omit<TlsServerConfig, 'alpnProtocols'> & {
+  readonly requirePathTransport?: (request: HttpMessage) => PathTransportRequirement | null;
   readonly alpnProtocols?: readonly string[];
   /** RFC 6797 — if set, every response carries `Strict-Transport-Security: max-age=<n>`. */
   readonly hstsMaxAgeSeconds?: number;
@@ -72,8 +77,6 @@ export class HttpsServerSession {
   private handleConnection(socket: TcpSocket): void {
     const config = this.tlsConfig();
     const tls = new TlsServerSession({ ...config, alpnProtocols: config.alpnProtocols ?? ['http/1.1'] });
-    let clientSeq = 0;
-    let serverSeq = 0;
     /*
      * File des réponses de CETTE connexion. Un gestionnaire asynchrone ne
      * doit pas pouvoir doubler le précédent : `serverSeq` est le compteur
@@ -103,61 +106,22 @@ export class HttpsServerSession {
     };
 
     const assembler = new HttpRequestAssembler();
-    const unsubscribe = attachTlsRecordPump(socket, (arrived) => {
-      let records = arrived;
-      if (tls.result !== 'accept') {
-        const reply = tls.handle(records);
-        if (reply && reply.length > 0) socket.write(bytesToBinaryString(encodeRecords(reply)));
-        if ((tls.result as string | null) !== 'accept') return;
-        records = tls.takeTrailingRecords();
-        if (records.length === 0) return;
-      }
+    let deferred: ReturnType<typeof parseRequest> | null = null;
+    let unsubscribe: () => void = () => undefined;
 
-      if (tls.renegotiating) {
-        const answer = tls.handleRenegotiation(records, clientSeq, serverSeq);
-        if (answer && answer.length > 0) socket.write(bytesToBinaryString(encodeRecords([...answer])));
-        if (tls.takeRenegotiationCompleted()) { clientSeq = 0; serverSeq = 0; }
-        return;
+    const emit = (response: HttpMessage, shouldClose: boolean): void => {
+      this.applyHsts(response);
+      const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
+      const responseBytes = binaryStringToBytes(encodeResponse(response, { chunked }));
+      channel.write(responseBytes);
+      if (shouldClose) {
+        unsubscribe();
+        socket.close();
       }
-      const { plaintext: requestBytes, nextSeq: clientNextSeq, peerKeyUpdates, peerRequestedKeyUpdate, renegotiation } = decryptApplicationData(
-        tls.clientTraffic(), clientSeq, records,
-      );
-      clientSeq = clientNextSeq;
-      if (renegotiation) {
-        const answer = tls.handleRenegotiation(renegotiation.records, renegotiation.sequence, serverSeq);
-        if (answer && answer.length > 0) {
-          socket.write(bytesToBinaryString(encodeRecords([...answer])));
-          serverSeq += answer.length;
-        }
-        if (requestBytes.length === 0) return;
-      }
-      if (peerKeyUpdates) {
-        const reply = tls.applyPeerKeyUpdates(peerKeyUpdates, peerRequestedKeyUpdate === true, serverSeq);
-        if (reply.length > 0) {
-          socket.write(bytesToBinaryString(encodeRecords([...reply])));
-          serverSeq = 0;
-        }
-      }
-      if (peerKeyUpdates && requestBytes.length === 0) return;
+    };
 
+    const runRequest = (parsed: ReturnType<typeof parseRequest>): void => {
       const requestId = randomRequestId();
-      const completeRequest = assembler.push(decoder.decode(requestBytes));
-      if (completeRequest === null) return;
-      const parsed = parseRequest(completeRequest);
-
-      const emit = (response: HttpMessage, shouldClose: boolean): void => {
-        this.applyHsts(response);
-        const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
-        const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
-        const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls.serverTraffic(), serverSeq, responseBytes);
-        serverSeq = serverNextSeq;
-        socket.write(bytesToBinaryString(encodeRecords(records)));
-        if (shouldClose) {
-          unsubscribe();
-          socket.close();
-        }
-      };
-
       if (parsed.ok === false) {
         this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method: 'GET', target: '' } });
         this.eventBus?.publish({ topic: 'http.request.failed', payload: { requestId, method: 'GET', target: '', error: parsed.reason } });
@@ -199,6 +163,50 @@ export class HttpsServerSession {
       };
       if (produced instanceof Promise) enqueue(() => produced.then(settle));
       else enqueue(() => { settle(produced); });
+    };
+
+    const handleBytes = (requestBytes: Uint8Array, early: boolean): void => {
+        const completeRequest = assembler.push(bytesToBinaryString(requestBytes));
+        if (completeRequest === null) return;
+        const parsed = parseRequest(completeRequest);
+        if (early && parsed.ok) parsed.message.headers.set('Early-Data', '1');
+        const gate = this.tlsConfig().requirePathTransport;
+        const need = parsed.ok && gate !== undefined ? gate(parsed.message) : null;
+        if (need !== null) {
+          const policy = need.clientCertPolicy;
+          const presented = tls.peerCertificate !== null;
+          const certificateMet = policy === undefined || (presented ? tls.peerVerified || policy !== 'strict' : false);
+          const suiteMet = need.cipherList === undefined || tls.suiteAllowedBy(need.cipherList);
+          if (!certificateMet || !suiteMet) {
+            const options = {
+              ...(policy !== undefined && !presented ? { requestClientCertificate: true, clientCertPolicy: policy } : {}),
+              ...(!suiteMet ? { cipherList: need.cipherList } : {}),
+            };
+            const renegotiable = (policy === undefined || !presented) && tls.canRenegotiate(options);
+            if (renegotiable && channel.requestRenegotiation(options)) {
+              deferred = parsed;
+              return;
+            }
+            if (!suiteMet || policy === 'strict' || presented) {
+              const refusal = createResponse(403, 'Forbidden');
+              refusal.headers.set('Connection', 'close');
+              enqueue(() => emit(refusal, true));
+              return;
+            }
+          }
+        }
+        runRequest(parsed);
+    };
+
+    const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
+      onRenegotiated: () => {
+        const waiting = deferred;
+        deferred = null;
+        if (waiting !== null) runRequest(waiting);
+      },
+      onEarlyData: (requestBytes) => handleBytes(requestBytes, true),
+      onData: (requestBytes) => handleBytes(requestBytes, false),
     });
+    unsubscribe = () => channel.detachOnly();
   }
 }

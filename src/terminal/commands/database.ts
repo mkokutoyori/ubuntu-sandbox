@@ -11,6 +11,7 @@ import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
+import { captureOracleDelta, restoreOracleDelta, type OracleDelta } from '@/database/oracle/persistence/OracleStateDelta';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf } from '@/database/oracle/storage/ControlFileImage';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
@@ -21,12 +22,10 @@ import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
 import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
 import { detachedBus } from '@/events/BusHolder';
-import type { IEventBus } from '@/events/EventBus';
+import { EventBus, type IEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
 import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
-import { DataPumpEngine } from '@/database/oracle/datapump/DataPumpEngine';
-import type { CatalogUser } from '@/database/engine/catalog/BaseCatalog';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 import { resolveRacMembership, joinOrCreateCluster, resetRacClusterRegistry } from '@/database/oracle/rac/RacClusterRegistry';
 import { attachRacCssAgent, _resetRacCssAgentAttachments } from '@/database/oracle/rac/RacCssAgent';
@@ -432,44 +431,31 @@ export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | 
  * dump restored into a database with no accounts would import nothing
  * and say so table by table.
  */
-export interface OracleTopologyState {
-  users: Array<{ record: CatalogUser; password?: string }>;
-  dump: unknown;
+export type OracleTopologyState = OracleDelta;
+
+function factoryOracleDatabase(): OracleDatabase {
+  const factory = new OracleDatabase();
+  factory.instance.setEventBus(new EventBus());
+  factory.instance.startup();
+  installAllDemoSchemas(factory);
+  return factory;
 }
 
 /**
- * Capture, WITHOUT booting an instance on a device that never had one.
- * `getOracleDatabase` provisions and starts a database on first access,
- * so using it here would give every Linux host in a topology an Oracle
- * installation it never had.
+ * Capture only what differs from a freshly provisioned database, WITHOUT
+ * booting an instance on a device that never had one. `getOracleDatabase`
+ * provisions and starts a database on first access, so using it here would
+ * give every Linux host in a topology an Oracle installation it never had.
+ * Returns null when the database is exactly the one the factory builds.
  */
 export function captureOracleState(deviceId: string): OracleTopologyState | null {
   const db = getRegisteredOracleDatabase(deviceId);
-  if (!db) return null;
-  const users = db.catalog.getAllUsers().map((record) => ({
-    record,
-    password: db.catalog.getStoredPassword(record.username),
-  }));
-  const { dump } = new DataPumpEngine(db).export({ full: true });
-  return { users, dump };
+  return db ? captureOracleDelta(db, factoryOracleDatabase()) : null;
 }
 
 /** Rebuild the database a topology file describes, accounts first. */
 export function restoreOracleState(deviceId: string, state: OracleTopologyState): void {
-  const db = getOracleDatabase(deviceId);
-  for (const u of state.users) {
-    if (!db.catalog.userExists(u.record.username)) db.catalog.createUser(u.record);
-    // The secret travels too: recreating an account under a different
-    // password would leave a lab whose `connect scott/tiger` no longer
-    // works, which is worse than not restoring the account at all.
-    if (u.password !== undefined) db.catalog.setPassword(u.record.username, u.password);
-  }
-  const parsed = DataPumpEngine.parse(JSON.stringify(state.dump));
-  // REPLACE, not SKIP: the freshly-booted instance already carries the
-  // demo schemas, so a saved table of the same name must overwrite the
-  // stock one rather than be quietly skipped — otherwise the lab's data
-  // is the one thing the reload throws away.
-  if (parsed) new DataPumpEngine(db).import(parsed, { tableExistsAction: 'REPLACE' });
+  restoreOracleDelta(getOracleDatabase(deviceId), state);
 }
 
 export function removeOracleDatabase(deviceId: string): void {

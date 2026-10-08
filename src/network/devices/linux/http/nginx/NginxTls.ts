@@ -156,6 +156,8 @@ export function loadServerTls(
         responder: new WireOcspResponder(new OcspClient(wire, {
           ...DEFAULT_OCSP_POLICY, responderUrl: settings.ocspResponder === '' ? null : settings.ocspResponder,
           overrideResponder: settings.ocspResponder !== '', trusted: anchors,
+          cacheMs: settings.ocspCache !== null && settings.ocspCache !== 'off' ? 3_600_000 : 0, cacheUntilNextUpdate: true,
+          ...(settings.ocspCache?.startsWith('shared:') ? { cacheZone: settings.ocspCache.split(':')[1] } : {}),
         })),
         scope: settings.ocsp === 'leaf' ? 'leaf' as const : 'chain' as const, missingOk: false,
       }
