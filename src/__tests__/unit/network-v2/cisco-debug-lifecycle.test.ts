@@ -115,7 +115,7 @@ describe('`no debug X` disarms exactly `debug X`', () => {
 describe('an unknown keyword is refused, never turned into another debug', () => {
   it('`debug ip <unknown>` no longer arms a packet capture', async () => {
     const r = await bareRouter();
-    for (const c of ['debug ip zzz', 'debug ip rip events', 'debug ip bgp updates']) {
+    for (const c of ['debug ip zzz', 'debug ip rip events', 'debug ip bgp zzz']) {
       expect(await r.executeCommand(c), c).toMatch(/Invalid input/);
       expect(await r.executeCommand('show debugging'), c).toBe('No debug flags are enabled');
     }

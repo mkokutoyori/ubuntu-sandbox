@@ -10,6 +10,7 @@ export type DebugCategory =
   | 'ip.rip'
   | 'ip.eigrp'
   | 'ip.bgp'
+  | 'ip.bgp.updates'
   | 'ip.routing'
   | 'ip.icmp'
   | 'ip.packet'
@@ -55,6 +56,7 @@ import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortT
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
+import type { BgpUpdateTracedPayload } from '@/network/bgp/events';
 
 const OSPF_TYPE_NAMES: Readonly<Record<number, string>> = {
   1: 'Hello', 2: 'Data Description', 3: 'LS Request', 4: 'LS Update', 5: 'LS Ack',
@@ -108,7 +110,7 @@ const DEBUG_CATEGORIES: ReadonlySet<string> = new Set<string>([
   'crypto.isakmp', 'crypto.ipsec',
   'ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
   'ip.ospf.packet', 'ip.ospf.lsa-generation',
-  'ip.rip', 'ip.eigrp', 'ip.bgp', 'ip.routing', 'ip.icmp', 'ip.packet',
+  'ip.rip', 'ip.eigrp', 'ip.bgp', 'ip.bgp.updates', 'ip.routing', 'ip.icmp', 'ip.packet',
   'ip.tcp', 'ip.udp', 'ip.nat', 'ip.arp', 'interface', 'ip.dhcp.server',
   'ip.ssh', 'ip.domain', 'ip.nhrp', 'standby', 'vrrp', 'glbp', 'track',
   'ip.sla.trace', 'ip.sla.error',
@@ -765,6 +767,28 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('ip.bgp', `BGP: ${p.neighborIp} went from ${p.oldState} to ${p.newState}`);
     }));
 
+    const bgpUpdate = (direction: 'sent' | 'received') => (e: { payload: BgpUpdateTracedPayload }): void => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      const verb = direction === 'sent' ? 'send' : 'rcvd';
+      const peer = p.neighborIp;
+      if (p.announced.length > 0) {
+        const attributes = [
+          p.origin === null ? null : `origin ${p.origin}`,
+          `path ${p.asPath.join(' ')}`.trim(),
+          p.nextHop === null ? null : `next hop ${p.nextHop}`,
+          p.med === null ? null : `metric ${p.med}`,
+          p.localPref === null ? null : `localpref ${p.localPref}`,
+        ].filter((part): part is string => part !== null && part !== 'path');
+        this.emit('ip.bgp.updates', `BGP(0): ${peer} ${verb} UPDATE w/ attr: ${attributes.join(', ')}`);
+        for (const prefix of p.announced) this.emit('ip.bgp.updates', `BGP(0): ${peer} ${verb} UPDATE ${prefix}`);
+      }
+      for (const prefix of p.withdrawn) {
+        this.emit('ip.bgp.updates', `BGP(0): ${peer} ${verb} UPDATE ${prefix} -- withdrawn`);
+      }
+    };
+    this.broadcast.track(bus.subscribe('bgp.update.sent', bgpUpdate('sent')));
+    this.broadcast.track(bus.subscribe('bgp.update.received', bgpUpdate('received')));
     this.broadcast.track(bus.subscribe('port.security.violation', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as unknown as { portName?: string; mac?: { toString(): string }; action?: string };
@@ -986,6 +1010,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.rip': return 'RIP protocol';
       case 'ip.eigrp': return 'EIGRP';
       case 'ip.bgp': return 'BGP';
+      case 'ip.bgp.updates': return 'BGP updates';
       case 'ip.routing': return 'IP routing';
       case 'ip.icmp': return 'ICMP packet';
       case 'ip.packet': return 'IP packet';
@@ -1064,7 +1089,7 @@ export class RouterDebugService implements TerminalDebugSource {
       'ip.ospf.packet', 'ip.ospf.lsa-generation']],
     ['RIP', ['ip.rip']],
     ['EIGRP', ['ip.eigrp']],
-    ['BGP', ['ip.bgp']],
+    ['BGP', ['ip.bgp', 'ip.bgp.updates']],
     ['PIM', ['ip.pim']],
     ['NHRP', ['ip.nhrp']],
     ['DHCP', ['ip.dhcp.server']],

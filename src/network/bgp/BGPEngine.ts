@@ -384,9 +384,24 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     this.advertiseTo(ip);
   }
 
+  private traceUpdate(topic: 'bgp.update.sent' | 'bgp.update.received', ip: string, update: BgpUpdateMessage): void {
+    const prefix = (n: BgpNlri): string => `${n.network}/${n.prefixLength}`;
+    this.bus?.publish({
+      topic,
+      payload: {
+        deviceId: this.deviceId, neighborIp: ip,
+        announced: update.announced.map(prefix), withdrawn: update.withdrawn.map(prefix),
+        origin: update.attributes?.origin ?? null, asPath: update.attributes?.asPath ?? [],
+        nextHop: update.attributes?.nextHop ?? null,
+        med: update.attributes?.med ?? null, localPref: update.attributes?.localPref ?? null,
+      },
+    });
+  }
+
   private onUpdate(ip: string, update: BgpUpdateMessage): void {
     const ps = this.peers.get(ip);
     if (!ps) return;
+    this.traceUpdate('bgp.update.received', ip, update);
     for (const w of update.withdrawn) {
       ps.adjRibIn.delete(`${w.network}/${this.maskOf(w)}`);
     }
@@ -603,15 +618,19 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       const serial = JSON.stringify(attrs);
       if (ps.adjRibOut.get(key)?.serial === serial) continue;
       ps.adjRibOut.set(key, { nlri, serial });
-      ps.session.sendUpdate({
+      const announcement: BgpUpdateMessage = {
         type: 'bgp', message: 'update', withdrawn: [], announced: [nlri], attributes: attrs,
-      });
+      };
+      ps.session.sendUpdate(announcement);
+      this.traceUpdate('bgp.update.sent', ip, announcement);
       ps.tableVersionSent = this.tableVersion;
     }
     if (withdrawn.length > 0) {
-      ps.session.sendUpdate({
+      const withdrawal: BgpUpdateMessage = {
         type: 'bgp', message: 'update', withdrawn, announced: [],
-      });
+      };
+      ps.session.sendUpdate(withdrawal);
+      this.traceUpdate('bgp.update.sent', ip, withdrawal);
       ps.tableVersionSent = this.tableVersion;
     }
   }

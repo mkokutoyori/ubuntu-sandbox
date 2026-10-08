@@ -3880,6 +3880,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         disable: () => svc()?.disable('standby') ?? '',
       },
       {
+        path: ['debug', 'ip', 'bgp', 'updates'], description: 'BGP updates',
+        undoDescription: 'Disable BGP updates debug',
+        categories: ['ip.bgp.updates'],
+        enable: () => svc()?.enable('ip.bgp.updates') ?? 'BGP updates debugging is on',
+        disable: () => svc()?.disable('ip.bgp.updates') ?? '',
+      },
+      {
         path: ['debug', 'eigrp'], description: 'Debug EIGRP',
         undoDescription: 'Disable EIGRP debug',
         categories: ['ip.eigrp'],

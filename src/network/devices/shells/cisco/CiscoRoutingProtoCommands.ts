@@ -245,6 +245,9 @@ export function buildRouterSubmodeOn(
     }
     const proc = bgp();
     if (proc) proc.networks = proc.networks.filter((n) => n.split(/\s+/)[0] !== args[0]);
+    const engineConfig = bgpEng().getConfig();
+    engineConfig.networks = engineConfig.networks.filter((n) => n.network !== args[0]);
+    converge();
     return '';
   });
 
