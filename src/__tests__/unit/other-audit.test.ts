@@ -483,7 +483,7 @@ describe('Linux Audit Trail System Suite', () => {
       const pc = await setupAuditedPC();
       await pc.executeCommand('su user -c "whoami"');
       const output = await pc.executeCommand('aureport -l');
-      expect(output).toContain('Login Summary Report');
+      expect(output).toContain('Login Report');
     });
 
     it('54. should record target exit values correctly inside execution audits', async () => {
@@ -1032,85 +1032,85 @@ describe('Linux Audit Trail System Suite', () => {
     it('125. should show summary of anomalies inside aureport -a', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -a');
-      expect(output).toContain('Anomaly Summary Report');
+      expect(output).toContain('AVC Report');
     });
 
     it('126. should show summary of configuration alerts on aureport -c', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -c');
-      expect(output).toContain('Config Summary Report');
+      expect(output).toContain('Config Change Report');
     });
 
     it('127. should show summary of system failures on aureport -e', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -e');
-      expect(output).toContain('Event Summary Report');
+      expect(output).toContain('Event Report');
     });
 
     it('128. should show summary of file operations on aureport -f', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -f');
-      expect(output).toContain('File Summary Report');
+      expect(output).toContain('File Report');
     });
 
     it('129. should show summary of group accounts operations on aureport -g', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -g');
-      expect(output).toContain('Group ID Summary Report');
+      expect(output).toContain('-g is an unsupported option');
     });
 
     it('130. should show summary of host origins on aureport -h', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -h');
-      expect(output).toContain('Host Summary Report');
+      expect(output).toContain('Host Report');
     });
 
     it('131. should show summary of security integrations on aureport -i', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -i');
-      expect(output).toContain('Interpreter Summary Report');
+      expect(output).toContain('Summary Report');
     });
 
     it('132. should show summary of system logins on aureport -l', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -l');
-      expect(output).toContain('Login Summary Report');
+      expect(output).toContain('Login Report');
     });
 
     it('133. should show summary of MAC labels validations on aureport -m', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -m');
-      expect(output).toContain('MAC Summary Report');
+      expect(output).toContain('Account Modifications Report');
     });
 
     it('134. should show summary of process execution IDs on aureport -p', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -p');
-      expect(output).toContain('PID Summary Report');
+      expect(output).toContain('Process ID Report');
     });
 
     it('135. should show summary of system calls frequencies on aureport -s', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -s');
-      expect(output).toContain('Syscall Summary Report');
+      expect(output).toContain('Syscall Report');
     });
 
     it('136. should show summary of active terminals on aureport -t', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -t');
-      expect(output).toContain('Terminal Summary Report');
+      expect(output).toContain('Log Time Range Report');
     });
 
     it('137. should show summary of user IDs on aureport -u', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -u');
-      expect(output).toContain('User ID Summary Report');
+      expect(output).toContain('User ID Report');
     });
 
     it('138. should show summary of executables files on aureport -x', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -x');
-      expect(output).toContain('Executable Summary Report');
+      expect(output).toContain('Executable Report');
     });
 
     it('139. should support printing results matching specific exit failure codes via ausearch --success no', async () => {
@@ -1170,7 +1170,7 @@ describe('Linux Audit Trail System Suite', () => {
     it('147. should show summary of active system keys frequencies on aureport -k', async () => {
       const pc = await setupAuditedPC();
       const output = await pc.executeCommand('aureport -k');
-      expect(output).toContain('Key Summary Report');
+      expect(output).toContain('Key Report');
     });
 
     it('148. should deny unprivileged users access to run ausearch tools', async () => {

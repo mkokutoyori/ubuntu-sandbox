@@ -5,6 +5,8 @@
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { runAureport } from './audit/tools/AureportTool';
+import { auditToolHost } from './audit/tools/LinuxAuditToolHost';
 
 import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
@@ -5281,7 +5283,11 @@ export class LinuxCommandExecutor {
       case 'atq': return this.atDenied('atq') ?? cmdAtq(this.atQueue, this.identity.timezone);
       case 'atrm': return this.atDenied('atrm') ?? cmdAtrm(this.atQueue, args);
       case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
-      case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
+      case 'aureport': {
+        const result = runAureport(auditToolHost(this), args, stdin ?? null);
+        const shaped = { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+        return shaped;
+      }
       case 'auditctl': return this.handleAuditctl(args);
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
