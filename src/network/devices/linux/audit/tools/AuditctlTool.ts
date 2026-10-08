@@ -1,6 +1,6 @@
 import { K } from './AuditKernelConstants';
 import {
-  CString, EAU, MACH, RuleBuildState, RuleData, actionToName, addWatchDir, determineMachine, elfToMachine, errnoToName,
+  CString, EAU, MACH, RuleBuildState, RuleData, actionToName, carriesString, addWatchDir, determineMachine, elfToMachine, errnoToName,
   flagToName, fieldToName, fstypeToName, machineToElf, machineToName, msgTypeToName, nameToFlag, nameToSyscall, numberToErrmsg,
   operatorToSymbol, ruleFieldPair, ruleInterfieldCompare, ruleSyscallByName, ruleUringByName, syscallToName, uringOpToName,
   updateWatchPerms, type LibEnv,
@@ -578,8 +578,7 @@ export class Auditctl {
         const keyText = rule.bufferText(offset, rule.values[i]);
         if (keyText.includes(this.key)) return true;
       }
-      if ((field >= K.AUDIT_SUBJ_USER && field <= K.AUDIT_OBJ_LEV_HIGH && field !== K.AUDIT_PPID) || field === K.AUDIT_WATCH
-        || field === K.AUDIT_DIR || field === K.AUDIT_FILTERKEY || field === K.AUDIT_EXE) offset += rule.values[i];
+      if (carriesString(field)) offset += rule.values[i];
     }
     return false;
   }
@@ -1539,8 +1538,3 @@ export function runAuditctl(host: AuditctlHost, argv: string[]): ToolResult {
   }
   return { stdout: out.stdout, stderr: out.stderr, exitCode, interleaved: out.interleaved };
 }
-
-void MACH;
-void nameToSyscall;
-void determineMachine;
-void strtolBig;

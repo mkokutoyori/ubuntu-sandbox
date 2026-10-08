@@ -19,7 +19,7 @@ const ACCOUNT_MANAGEMENT = [
   'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'faillock',
 ] as const;
 
-const AUDIT_TOOLS = ['ausearch', 'aureport', 'auditctl', 'logrotate'] as const;
+const AUDIT_TOOLS = ['ausearch', 'aureport', 'auditctl', 'augenrules', 'logrotate'] as const;
 
 // `chage`/`iptables`/`ip6tables` are dispatched purely through the
 // LinuxCommand registry (see `commands/iam/Chage.ts`, `commands/net/`);

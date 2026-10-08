@@ -129,7 +129,9 @@ import { acctMessageFields, grantorsOf, type AuditSender } from './audit/AuditUs
 import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
 import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
-import { cmdAuditctl } from './audit/AuditCommands';
+import { runAuditctl } from './audit/tools/AuditctlTool';
+import { runAugenrules } from './audit/tools/AugenrulesTool';
+import { auditctlHost, augenrulesHost } from './audit/tools/LinuxAuditctlHost';
 import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
 import {
   STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
@@ -262,7 +264,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Users and groups
   'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-  'faillock', 'ausearch', 'aureport', 'auditctl', 'pwck', 'grpck', 'visudo',
+  'faillock', 'ausearch', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
   'login', 'logout', 'logname', 'users', 'lid', 'members', 'newgrp',
   // Lookup
@@ -752,7 +754,6 @@ export class LinuxCommandExecutor {
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer }, this.dynamicUsers);
     this.serviceMgr.setClock(this.wallNow);
     this.serviceMgr.setZone(() => this.identity.timezone);
-    this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
     this.auditRules.bindActorContextProvider(() => this.snapshotActor());
     this.isServer = isServer;
 
@@ -1332,6 +1333,7 @@ export class LinuxCommandExecutor {
       serviceMgr: this.serviceMgr,
       freeSpaceMb: () => this.auditFreeSpaceMb(),
       kernelRelease: () => this.identity.kernel.release,
+      loadRules: () => { this.handleAugenrules(['--load']); },
     });
     // Keep the PAM password-policy config files coherent with the policy
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
@@ -4802,9 +4804,9 @@ export class LinuxCommandExecutor {
     return {
       pid: this.shellPid ?? 1,
       ppid: this.shellPpid ?? 1,
-      uid: loginUid,
+      uid: cur,
       euid,
-      gid: loginUid,
+      gid,
       egid: euid === 0 ? 0 : gid,
       auid: loginUid,
       comm,
@@ -4845,24 +4847,14 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
   }
 
-  handleAuditctl(args: string[]): { output: string; exitCode: number } {
-    if (!this.serviceMgr.status('auditd') || this.serviceMgr.status('auditd')?.state !== 'active') {
-      if (args[0] === '-s' || args[0] === '--status') {
-        return { output: 'auditctl: error: cannot connect to audit daemon (auditd stopped)', exitCode: 1 };
-      }
-    }
-    if (this.auditDaemon?.suspended && (args[0] === '-w' || args[0] === '-a' || args[0] === '-A')) {
-      return { output: `auditctl: audit logging is suspended (${this.auditDaemon.spaceLeftAction}): low disk space`, exitCode: 1 };
-    }
-    if (args[0] === '-R') {
-      const file = args[1];
-      if (!file) return { output: "auditctl: invalid: missing file argument", exitCode: 1 };
-      const content = this.vfs.readFile(this.vfs.normalizePath(file, this.ctx().cwd));
-      if (content === null) return { output: `auditctl: Unable to read ${file}: No such file or directory`, exitCode: 1 };
-      this.auditRules.loadRulesText(content);
-      return { output: '', exitCode: 0 };
-    }
-    return cmdAuditctl(this.auditRules, args);
+  handleAuditctl(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const result = runAuditctl(auditctlHost(this, false), args);
+    return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  handleAugenrules(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const result = runAugenrules(augenrulesHost(this), args);
+    return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
   }
 
   setCommandHead(name: string): void { this.currentCommandHead = name; }
@@ -5290,6 +5282,7 @@ export class LinuxCommandExecutor {
         return shaped;
       }
       case 'auditctl': return this.handleAuditctl(args);
+      case 'augenrules': return this.handleAugenrules(args);
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };

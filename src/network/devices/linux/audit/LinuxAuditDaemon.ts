@@ -4,6 +4,7 @@ import type { LinuxServiceManager } from '../LinuxServiceManager';
 import type { ServiceLifecyclePayload, ProcessSignalledPayload } from '../events';
 import type { LinuxAuditLog } from './LinuxAuditLog';
 import { AUDIT_UNSET } from './AuditUserMessage';
+import { K } from './tools/AuditKernelConstants';
 import type { LinuxAuditRules } from './LinuxAuditRules';
 
 export type AuditdState = 'running' | 'stopped' | 'suspended';
@@ -43,6 +44,7 @@ export interface AuditdDeps {
   serviceMgr: LinuxServiceManager;
   freeSpaceMb: () => number;
   kernelRelease: () => string;
+  loadRules: () => void;
 }
 
 export class LinuxAuditDaemon {
@@ -101,7 +103,7 @@ export class LinuxAuditDaemon {
 
   private runStart(): void {
     this.loadConfig();
-    this.loadRules();
+    this.registerWithKernel();
     this.evaluateDiskSpace();
     this.deps.auditLog.record('DAEMON_START', {
       op: 'start',
@@ -115,11 +117,26 @@ export class LinuxAuditDaemon {
       subj: 'unconfined',
       res: 'success',
     });
+    this.deps.rules.runAsDaemon(() => this.deps.loadRules());
+  }
+
+  private registerWithKernel(): void {
+    const kernel = this.deps.rules.kernel;
+    this.deps.rules.runAsDaemon(() => {
+      if (kernel.status.enabled < 2) {
+        kernel.request(K.AUDIT_SET, 0, {
+          kind: 'status',
+          status: { ...kernel.status, mask: K.AUDIT_STATUS_ENABLED, enabled: 1 },
+        });
+      }
+    });
+    kernel.status.pid = this.deps.serviceMgr.status('auditd')?.mainPid ?? 0;
   }
 
   private runStop(): void {
     if (this.state === 'stopped') return;
     this.state = 'stopped';
+    this.deps.rules.kernel.status.pid = 0;
     this.deps.auditLog.record('DAEMON_END', {
       op: 'terminate',
       auid: AUDIT_UNSET,
@@ -133,7 +150,6 @@ export class LinuxAuditDaemon {
 
   private runReload(): void {
     this.loadConfig();
-    this.loadRules();
     this.evaluateDiskSpace();
     this.deps.auditLog.record('DAEMON_CONFIG', {
       op: 'reconfigure',
@@ -156,17 +172,6 @@ export class LinuxAuditDaemon {
       return;
     }
     this.state = 'running';
-  }
-
-  private loadRules(): void {
-    this.deps.rules.loadFromDisk();
-    const rulesD = '/etc/audit/rules.d';
-    const entries = this.deps.vfs.listDirectory(rulesD) ?? [];
-    for (const entry of entries) {
-      if (entry.inode.type !== 'file' || !entry.name.endsWith('.rules')) continue;
-      const content = this.deps.vfs.readFile(`${rulesD}/${entry.name}`);
-      if (content !== null) this.deps.rules.loadRulesText(content);
-    }
   }
 
   private loadConfig(): void {

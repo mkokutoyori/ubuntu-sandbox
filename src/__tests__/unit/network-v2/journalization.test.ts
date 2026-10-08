@@ -905,7 +905,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('124. should show watch details with precise syscall rules matching (auditctl -S)', async () => {
       const pc = setupLinuxHost();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -k file_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('open');
     });
@@ -916,7 +916,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       await pc.executeCommand('touch /tmp/removable.txt');
       await pc.executeCommand('rm /tmp/removable.txt');
       const output = await pc.executeCommand('ausearch -k delete_tracking');
-      expect(output).toContain('unlink');
+      expect(output).toContain('syscall=87');
     });
 
     it('126. should query audit metrics restricted by timestamp via ausearch -ts', async () => {

@@ -1,5 +1,5 @@
 import { K } from './AuditKernelConstants';
-import { MAX_FIELDS, RuleData } from './AuditctlLib';
+import { MAX_FIELDS, RuleData, carriesString } from './AuditctlLib';
 
 export const EPERM = 1;
 export const ENOENT = 2;
@@ -159,8 +159,7 @@ export class AuditKernelState {
         if (path[0] !== '/') return -EINVAL;
         if (!this.environment.pathExists(dirnameOf(path))) return -ENOENT;
       }
-      if (field === K.AUDIT_WATCH || field === K.AUDIT_DIR || field === K.AUDIT_FILTERKEY || field === K.AUDIT_EXE
-        || (field >= K.AUDIT_SUBJ_USER && field <= K.AUDIT_OBJ_LEV_HIGH && field !== K.AUDIT_PPID)) offset += rule.values[i];
+      if (carriesString(field)) offset += rule.values[i];
       if (field === K.AUDIT_PERM && list !== K.AUDIT_FILTER_EXIT && list !== K.AUDIT_FILTER_EXCLUDE) return -EINVAL;
     }
     return 0;

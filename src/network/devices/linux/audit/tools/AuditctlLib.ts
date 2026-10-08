@@ -384,6 +384,8 @@ const STRING_FIELDS: ReadonlySet<number> = new Set([
   K.AUDIT_SUBJ_USER, K.AUDIT_SUBJ_ROLE, K.AUDIT_SUBJ_TYPE, K.AUDIT_SUBJ_SEN, K.AUDIT_SUBJ_CLR, K.AUDIT_FILTERKEY, K.AUDIT_EXE,
 ]);
 
+export const carriesString = (field: number): boolean => STRING_FIELDS.has(field);
+
 const PATH_MAX = 4096;
 const IORING_OP_LAST = 64;
 const AF_MAX = 46;
@@ -464,7 +466,7 @@ export function ruleFieldPair(env: LibEnv, state: RuleBuildState, rule: RuleData
     if (isDigit(v[0])) rule.values[at] = toU32(strtolBig(v, 0));
     else if (nameToMsgType(v) > 0) rule.values[at] = nameToMsgType(v);
     else return -EAU.MSGTYPEUNKNOWN;
-  } else if (STRING_FIELDS.has(field) || (field >= K.AUDIT_SUBJ_USER && field <= K.AUDIT_OBJ_LEV_HIGH && field !== K.AUDIT_PPID)) {
+  } else if (carriesString(field)) {
     if (field === K.AUDIT_OBJ_USER || field === K.AUDIT_OBJ_ROLE || field === K.AUDIT_OBJ_TYPE || field === K.AUDIT_OBJ_LEV_LOW
       || field === K.AUDIT_OBJ_LEV_HIGH || field === K.AUDIT_WATCH || field === K.AUDIT_DIR) {
       if (flags !== K.AUDIT_FILTER_EXIT) return -EAU.EXITONLY;

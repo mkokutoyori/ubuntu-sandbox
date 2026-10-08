@@ -1,92 +1,19 @@
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxAuditLog } from './LinuxAuditLog';
 import { AUDIT_PATHS } from './LinuxAuditLog';
-import { encodeValue, ttyForAudit } from './AuditUserMessage';
+import { AUDIT_UNSET, encodeValue, ttyForAudit, userMessageFields } from './AuditUserMessage';
+import {
+  X86_64_ARCH, decodeRule, fieldsMatch, maskCoversSyscall, pathCriteriaMatch, permissionBit,
+  type AuditEvent, type DecodedRule,
+} from './AuditRuleMatcher';
+import { compileRules } from './tools/AugenrulesTool';
+import { K } from './tools/AuditKernelConstants';
+import { msgTypeToName, nameToMsgType, type RuleData } from './tools/AuditctlLib';
 import { x86SyscallNumber } from './tools/AuditSyscallTables';
+import { AuditKernelState, newStatus } from './tools/AuditKernelState';
 
-export type AuditWatchPerm = 'r' | 'w' | 'x' | 'a';
-export type AuditAction = 'always' | 'never';
-export type AuditFilter = 'task' | 'exit' | 'user' | 'exclude';
-export type AuditFieldOp = '=' | '!=' | '<' | '>' | '<=' | '>=';
-
-export interface AuditField {
-  name: string;
-  op: AuditFieldOp;
-  value: string;
-}
-
-export interface AuditWatch {
-  path: string;
-  perms: string;
-  key?: string;
-  inode?: number;
-}
-
-export interface AuditSyscallRule {
-  action: AuditAction;
-  filter: AuditFilter;
-  syscalls: string[];
-  fields: AuditField[];
-  key?: string;
-}
-
-export type AuditFailureMode = 0 | 1 | 2;
 export type AuditEnabled = 0 | 1 | 2;
-
-const KNOWN_SYSCALLS: ReadonlySet<string> = new Set([
-  'all',
-  'read', 'write', 'open', 'openat', 'close', 'stat', 'lstat', 'fstat', 'newfstatat',
-  'creat', 'unlink', 'unlinkat', 'rename', 'renameat', 'renameat2',
-  'mkdir', 'mkdirat', 'rmdir', 'symlink', 'symlinkat', 'link', 'linkat', 'readlink',
-  'chmod', 'fchmod', 'fchmodat', 'chown', 'fchown', 'lchown', 'fchownat',
-  'truncate', 'ftruncate', 'access', 'faccessat', 'utime', 'utimes', 'utimensat',
-  'mount', 'umount', 'umount2', 'pivot_root', 'chroot',
-  'execve', 'execveat', 'fork', 'vfork', 'clone', 'clone3', 'exit', 'exit_group',
-  'kill', 'tkill', 'tgkill', 'wait4', 'waitid',
-  'setuid', 'setgid', 'setreuid', 'setregid', 'setresuid', 'setresgid',
-  'setfsuid', 'setfsgid', 'setpgid', 'setsid', 'setgroups', 'capset',
-  'socket', 'connect', 'accept', 'accept4', 'bind', 'listen', 'sendto', 'recvfrom',
-  'sendmsg', 'recvmsg', 'shutdown', 'setsockopt', 'getsockopt',
-  'init_module', 'finit_module', 'delete_module',
-  'ptrace', 'reboot', 'sethostname', 'setdomainname',
-  'settimeofday', 'gettimeofday', 'clock_settime', 'clock_gettime',
-  'adjtimex', 'time', 'stime',
-  'epoll_create', 'epoll_wait', 'select', 'pselect6', 'poll', 'ppoll',
-  'pipe', 'pipe2', 'dup', 'dup2', 'dup3', 'fcntl',
-]);
-
-const KNOWN_ARCHES: ReadonlySet<string> = new Set(['b32', 'b64']);
-
-const KNOWN_FIELDS: ReadonlySet<string> = new Set([
-  'arch', 'uid', 'gid', 'euid', 'egid', 'auid', 'suid', 'sgid', 'fsuid', 'fsgid',
-  'pid', 'ppid', 'path', 'dir', 'perm', 'success', 'exit', 'msgtype', 'inode',
-  'devmajor', 'devminor', 'obj_user', 'obj_role', 'obj_type', 'subj_user',
-  'subj_role', 'subj_type', 'subj_sen', 'subj_clr', 'key',
-  'exe', 'comm', 'ses', 'sessionid', 'fstype', 'a0', 'a1', 'a2', 'a3',
-  'filetype', 'gid', 'egid',
-]);
-
-const MAX_VALID_SYSCALL_ID = 600;
-
-const SYSCALL_ALIASES: Record<string, string[]> = {
-  open: ['open', 'openat'],
-  openat: ['open', 'openat'],
-  chmod: ['chmod', 'fchmod', 'fchmodat'],
-  chown: ['chown', 'fchown', 'lchown', 'fchownat'],
-  unlink: ['unlink', 'unlinkat'],
-  rename: ['rename', 'renameat', 'renameat2'],
-  mkdir: ['mkdir', 'mkdirat'],
-};
-
-const FILTER_KEYWORDS: ReadonlySet<string> = new Set(['task', 'exit', 'user', 'exclude']);
-const ACTION_KEYWORDS: ReadonlySet<string> = new Set(['always', 'never']);
-
-const MAX_KEY_LEN = 128;
-
-export interface RuleOpResult {
-  ok: boolean;
-  error?: string;
-}
+export type AuditFailureMode = 0 | 1 | 2;
 
 export interface AuditActorContext {
   pid: number;
@@ -103,23 +30,51 @@ export interface AuditActorContext {
   cwd?: string;
 }
 
-const OK: RuleOpResult = { ok: true };
-const fail = (error: string): RuleOpResult & { ok: false } => ({ ok: false, error });
-const LOCKED_MSG = 'error: audit system is in immutable mode (locked), cannot change rules until reboot';
+const SYSCALL_ALIASES: Record<string, string[]> = {
+  open: ['open', 'openat'],
+  openat: ['open', 'openat'],
+  chmod: ['chmod', 'fchmod', 'fchmodat'],
+  chown: ['chown', 'fchown', 'lchown', 'fchownat'],
+  unlink: ['unlink', 'unlinkat'],
+  rename: ['rename', 'renameat', 'renameat2'],
+  mkdir: ['mkdir', 'mkdirat'],
+};
+
+const DEFAULT_RULES_D = [
+  '## First rule - delete all',
+  '-D',
+  '',
+  '## Increase the buffers to survive stress events.',
+  '## Make this bigger for busy systems',
+  '-b 8192',
+  '',
+  '## This determine how long to wait in burst of events',
+  '--backlog_wait_time 60000',
+  '',
+  '## Set failure mode to syslog',
+  '-f 1',
+  '',
+].join('\n');
+
+const FD_RETURNING: ReadonlySet<string> = new Set(['open', 'openat', 'openat2', 'creat']);
+const DIRFD_FIRST: ReadonlySet<string> = new Set([
+  'openat', 'openat2', 'mkdirat', 'unlinkat', 'fchmodat', 'fchownat', 'newfstatat', 'readlinkat', 'mknodat', 'utimensat', 'faccessat',
+]);
+
+const DEFAULT_ACTOR: AuditActorContext = {
+  pid: 1, ppid: 0, uid: 0, euid: 0, gid: 0, egid: 0, auid: 0,
+  comm: 'kernel', exe: '/sbin/init', tty: '(none)', success: true,
+};
+
+const AUDIT_DEVICE = 0xfd00;
 
 export class LinuxAuditRules {
-  private readonly watches: AuditWatch[] = [];
-  private readonly syscallRules: AuditSyscallRule[] = [];
-  private readonly writeUnsubs = new Map<AuditWatch, () => void>();
-
-  private enabledFlag: AuditEnabled = 1;
-  private failureFlag: AuditFailureMode = 1;
-  private rateLimit = 0;
-  private backlogLimit = 8192;
-  private locked = false;
-
-  private auditdPidProvider: (() => number | undefined) | null = null;
+  readonly kernel: AuditKernelState;
+  private readonly watchedInodes = new Map<RuleData, number>();
+  private readonly writeHooks: Array<{ rule: RuleData; unsubscribe: () => void }> = [];
   private actorContextProvider: (() => AuditActorContext) | null = null;
+  private rateWindowSecond = -1;
+  private rateWindowCount = 0;
 
   constructor(
     private readonly auditLog: LinuxAuditLog,
@@ -130,374 +85,232 @@ export class LinuxAuditRules {
     if (!this.vfs.exists(AUDIT_PATHS.config)) {
       this.vfs.writeFile(AUDIT_PATHS.config, defaultAuditdConf(), 0, 0, 0o037);
     }
-    if (!this.vfs.exists(AUDIT_PATHS.rules)) {
-      this.vfs.writeFile(AUDIT_PATHS.rules, '## auditctl-managed rules\n', 0, 0, 0o037);
-    }
     if (!this.vfs.exists('/etc/audit/rules.d/audit.rules')) {
-      this.vfs.writeFile('/etc/audit/rules.d/audit.rules',
-        '## persistent audit rules — loaded by augenrules at boot\n', 0, 0, 0o037);
+      this.vfs.writeFile('/etc/audit/rules.d/audit.rules', DEFAULT_RULES_D, 0, 0, 0o037);
     }
-  }
-
-  bindAuditdPidProvider(provider: () => number | undefined): void {
-    this.auditdPidProvider = provider;
+    if (!this.vfs.exists(AUDIT_PATHS.rules)) {
+      this.vfs.writeFile(AUDIT_PATHS.rules, compileRules([DEFAULT_RULES_D]), 0, 0, 0o037);
+    }
+    this.kernel = new AuditKernelState({ pathExists: (path) => this.vfs.exists(path) });
+    this.kernel.observer = {
+      ruleChanged: (op, rule, ok) => this.onRuleChanged(op, rule, ok),
+      configChanged: (name, oldValue, newValue, ok) => this.onConfigChanged(name, oldValue, newValue, ok),
+      userMessage: (type, text) => this.onUserMessage(type, text),
+    };
+    this.auditLog.setAdmission((type) => this.admit(type));
   }
 
   bindActorContextProvider(provider: () => AuditActorContext): void {
     this.actorContextProvider = provider;
   }
 
-  get enabled(): AuditEnabled { return this.enabledFlag; }
-  get failure(): AuditFailureMode { return this.failureFlag; }
-  get rate(): number { return this.rateLimit; }
-  get backlog(): number { return this.backlogLimit; }
-  get isLocked(): boolean { return this.locked; }
+  get enabled(): AuditEnabled { return this.kernel.status.enabled as AuditEnabled; }
+  get failure(): AuditFailureMode { return this.kernel.status.failure as AuditFailureMode; }
+  get rate(): number { return this.kernel.status.rateLimit; }
+  get backlog(): number { return this.kernel.status.backlogLimit; }
+  get isLocked(): boolean { return this.kernel.status.enabled === 2; }
 
-  setEnabled(value: AuditEnabled): RuleOpResult {
-    if (this.locked && value !== 2) return fail(LOCKED_MSG);
-    this.enabledFlag = value;
-    if (value === 2) this.locked = true;
-    return OK;
+  private daemonActive = false;
+
+  runAsDaemon<T>(action: () => T): T {
+    const previous = this.daemonActive;
+    this.daemonActive = true;
+    try {
+      return action();
+    } finally {
+      this.daemonActive = previous;
+    }
   }
 
-  setFailure(mode: AuditFailureMode): RuleOpResult {
-    if (this.locked) return fail(LOCKED_MSG);
-    this.failureFlag = mode;
-    return OK;
+  private session(): number {
+    return this.daemonActive ? AUDIT_UNSET : 1;
   }
 
-  setRateLimit(rate: number): RuleOpResult {
-    if (this.locked) return fail(LOCKED_MSG);
-    if (!Number.isInteger(rate) || rate < 0) return fail('invalid rate: must be a non-negative integer');
-    this.rateLimit = rate;
-    return OK;
+  private actor(): AuditActorContext {
+    if (this.daemonActive) return { ...DEFAULT_ACTOR, auid: AUDIT_UNSET, comm: 'auditd', exe: '/usr/sbin/auditd' };
+    return this.actorContextProvider?.() ?? DEFAULT_ACTOR;
   }
 
-  setBacklogLimit(limit: number): RuleOpResult {
-    if (this.locked) return fail(LOCKED_MSG);
-    if (!Number.isInteger(limit) || limit < 0) return fail('invalid backlog limit: must be a non-negative integer');
-    this.backlogLimit = limit;
-    return OK;
+  private onRuleChanged(op: 'add_rule' | 'remove_rule', rule: RuleData, ok: boolean): void {
+    if (!ok) return;
+    const decoded = decodeRule(rule);
+    if (op === 'add_rule') this.hookWatch(rule, decoded);
+    else this.unhookWatch(rule);
+    const actor = this.actor();
+    this.auditLog.record('CONFIG_CHANGE', {
+      auid: actor.auid, ses: this.session(), subj: 'unconfined', op, key: decoded.key ?? '(null)', list: decoded.list, res: 1,
+    });
   }
 
-  deleteAll(): RuleOpResult {
-    if (this.locked) return fail(LOCKED_MSG);
-    for (const unsub of this.writeUnsubs.values()) unsub();
-    this.writeUnsubs.clear();
-    this.watches.length = 0;
-    this.syscallRules.length = 0;
-    this.persist();
-    return OK;
+  private onConfigChanged(name: string, oldValue: number, newValue: number, ok: boolean): void {
+    const actor = this.actor();
+    this.auditLog.record('CONFIG_CHANGE', {
+      op: 'set', [name]: newValue, old: oldValue, auid: actor.auid, ses: this.session(), subj: 'unconfined', res: ok ? 1 : 0,
+    });
+  }
+
+  private onUserMessage(type: number, text: string): void {
+    const actor = this.actor();
+    this.auditLog.record(msgTypeToName(type) ?? 'USER', userMessageFields(
+      { pid: actor.pid, uid: actor.uid, auid: actor.auid, ses: this.session() }, text,
+    ));
+  }
+
+  private hookWatch(rule: RuleData, decoded: DecodedRule): void {
+    if (decoded.watchPath === null || decoded.list !== K.AUDIT_FILTER_EXIT) return;
+    const inode = this.vfs.resolveInode(decoded.watchPath);
+    if (inode) this.watchedInodes.set(rule, inode.id);
+    const writes = ((decoded.permission ?? 0) & (K.AUDIT_PERM_WRITE | K.AUDIT_PERM_ATTR)) !== 0;
+    if (!writes) return;
+    const path = decoded.watchPath;
+    const unsubscribe = this.vfs.onWrite(path, () => this.onAccess(path, 'w', 'open'));
+    this.writeHooks.push({ rule, unsubscribe });
+  }
+
+  private unhookWatch(rule: RuleData): void {
+    for (let i = this.writeHooks.length - 1; i >= 0; i--) {
+      if (!this.writeHooks[i].rule.sameAs(rule)) continue;
+      this.writeHooks[i].unsubscribe();
+      this.writeHooks.splice(i, 1);
+    }
+    for (const stored of [...this.watchedInodes.keys()]) if (stored.sameAs(rule)) this.watchedInodes.delete(stored);
+  }
+
+  deleteAll(): void {
+    if (this.isLocked) return;
+    for (const hook of this.writeHooks) hook.unsubscribe();
+    this.writeHooks.length = 0;
+    this.watchedInodes.clear();
+    this.kernel.clearRules();
   }
 
   rebootReset(): void {
-    this.locked = false;
-    this.enabledFlag = 1;
+    for (const hook of this.writeHooks) hook.unsubscribe();
+    this.writeHooks.length = 0;
+    this.watchedInodes.clear();
+    this.kernel.clearRules();
+    this.kernel.status = newStatus();
+    this.kernel.features = { vers: this.kernel.features.vers, mask: this.kernel.features.mask, features: 0, lock: 0 };
   }
 
-  addWatch(path: string, permsRaw: string | undefined, key?: string): RuleOpResult {
-    if (this.locked) return fail(LOCKED_MSG);
-    if (!path) return fail('invalid: missing path argument');
-    if (!path.startsWith('/')) return fail(`invalid path: must be absolute (got '${path}')`);
-    const slash = path.lastIndexOf('/');
-    const parent = slash <= 0 ? '/' : path.slice(0, slash);
-    if (!this.vfs.exists(parent)) {
-      return fail(`error: no such file or directory: parent '${parent}' does not exist`);
+  private admit(typeName: string): boolean {
+    const type = nameToMsgType(typeName);
+    if (type > 0) {
+      if (!this.passesFilter(K.AUDIT_FILTER_EXCLUDE, type)) return false;
+      const userOrigin = (type >= K.AUDIT_FIRST_USER_MSG && type <= K.AUDIT_LAST_USER_MSG)
+        || (type >= K.AUDIT_FIRST_USER_MSG2 && type <= K.AUDIT_LAST_USER_MSG2) || type === K.AUDIT_USER;
+      if (userOrigin && !this.passesFilter(K.AUDIT_FILTER_USER, type)) return false;
     }
-
-    const perms = canonPerms(permsRaw ?? 'rwxa');
-    if (perms === null) return fail(`invalid permission flag: ${permsRaw}`);
-    const keyErr = validateKey(key);
-    if (keyErr) return fail(keyErr);
-
-    if (this.watches.some((w) => w.path === path && w.perms === perms)) {
-      return fail('invalid: rule already exists');
-    }
-
-    for (let idx = this.watches.length - 1; idx >= 0; idx--) {
-      if (this.watches[idx].path !== path) continue;
-      this.writeUnsubs.get(this.watches[idx])?.();
-      this.writeUnsubs.delete(this.watches[idx]);
-      this.watches.splice(idx, 1);
-    }
-
-    const watch: AuditWatch = { path, perms, key, inode: this.vfs.resolveInode(path)?.id };
-    this.watches.push(watch);
-    if (/[wa]/.test(perms)) {
-      const unsub = this.vfs.onWrite(path, () => this.fire('open', path, key));
-      this.writeUnsubs.set(watch, unsub);
-    }
-    this.persist();
-    return OK;
+    return this.passesRateLimit();
   }
 
-  removeWatch(path: string, permsRaw?: string): RuleOpResult {
-    if (this.locked) return fail(LOCKED_MSG);
-    if (!path) return fail('audit rule needs a path');
-    const perms = permsRaw !== undefined ? canonPerms(permsRaw) : null;
-    if (permsRaw !== undefined && perms === null) return fail(`Permission ${permsRaw} isn't supported`);
-
-    const initial = this.watches.length;
-    for (let i = this.watches.length - 1; i >= 0; i--) {
-      const w = this.watches[i];
-      if (w.path !== path) continue;
-      if (perms !== null && w.perms !== perms) continue;
-      this.writeUnsubs.get(w)?.();
-      this.writeUnsubs.delete(w);
-      this.watches.splice(i, 1);
-    }
-    if (this.watches.length === initial) {
-      return fail(`No rules: no such rule for path ${path}`);
-    }
-    this.persist();
-    return OK;
-  }
-
-  addSyscallRule(
-    actionRaw: string,
-    filterRaw: string,
-    syscallsRaw: string[],
-    fieldsRaw: string[],
-    key: string | undefined,
-    position: 'append' | 'prepend',
-  ): RuleOpResult {
-    if (this.locked) return fail(LOCKED_MSG);
-
-    if (!ACTION_KEYWORDS.has(actionRaw)) return fail(`invalid action: ${actionRaw}`);
-    if (!FILTER_KEYWORDS.has(filterRaw)) return fail(`invalid filter: ${filterRaw}`);
-
-    const syscalls: string[] = [];
-    for (const s of syscallsRaw) {
-      if (/^-?\d+$/.test(s)) {
-        const n = parseInt(s, 10);
-        if (n < 0) return fail(`invalid syscall id: must be non-negative (got '${s}')`);
-        if (n > MAX_VALID_SYSCALL_ID) return fail(`invalid syscall id: ${n} exceeds maximum (${MAX_VALID_SYSCALL_ID})`);
-        syscalls.push(s);
-        continue;
-      }
-      if (/[*?\[\]]/.test(s)) return fail(`invalid syscall name: shell glob characters not allowed (got '${s}')`);
-      if (!KNOWN_SYSCALLS.has(s)) return fail(`unknown syscall: '${s}'`);
-      syscalls.push(s);
-    }
-
-    const fields: AuditField[] = [];
-    for (const raw of fieldsRaw) {
-      const parsed = parseField(raw);
-      if (!parsed.ok) return parsed;
-      fields.push(parsed.field);
-    }
-
-    const rule: AuditSyscallRule = {
-      action: actionRaw as AuditAction,
-      filter: filterRaw as AuditFilter,
-      syscalls,
-      fields,
-      key,
-    };
-    if (position === 'prepend') this.syscallRules.unshift(rule);
-    else this.syscallRules.push(rule);
-    this.persist();
-    return OK;
-  }
-
-  deleteSyscallRule(
-    actionRaw: string,
-    filterRaw: string,
-    syscallsRaw: string[],
-    fieldsRaw: string[],
-    key: string | undefined,
-  ): RuleOpResult {
-    if (this.locked) return fail(LOCKED_MSG);
-
-    if (!ACTION_KEYWORDS.has(actionRaw)) return fail(`invalid action: ${actionRaw}`);
-    if (!FILTER_KEYWORDS.has(filterRaw)) return fail(`invalid filter: ${filterRaw}`);
-
-    const fields: AuditField[] = [];
-    for (const raw of fieldsRaw) {
-      const parsed = parseField(raw);
-      if (!parsed.ok) return parsed;
-      fields.push(parsed.field);
-    }
-    const wantSyscalls = [...syscallsRaw].sort().join(',');
-    const wantFields = serializeFields(fields);
-    for (let i = 0; i < this.syscallRules.length; i++) {
-      const r = this.syscallRules[i];
-      if (r.action !== actionRaw) continue;
-      if (r.filter !== filterRaw) continue;
-      if ([...r.syscalls].sort().join(',') !== wantSyscalls) continue;
-      if (serializeFields(r.fields) !== wantFields) continue;
-      if ((r.key ?? undefined) !== (key ?? undefined)) continue;
-      this.syscallRules.splice(i, 1);
-      this.persist();
-      return OK;
-    }
-    return fail('error: no rule matching that criteria');
-  }
-
-  list(): string {
-    if (this.watches.length === 0 && this.syscallRules.length === 0) return 'No rules';
-    const lines: string[] = [];
-    for (const r of this.syscallRules) lines.push(renderSyscallRule(r));
-    for (const w of this.watches) lines.push(renderWatch(w));
-    return lines.join('\n');
-  }
-
-  status(): string {
-    const pid = this.auditdPidProvider?.() ?? 0;
-    return [
-      `enabled ${this.enabledFlag}`,
-      `failure ${this.failureFlag}`,
-      `pid ${pid}`,
-      `rate_limit ${this.rateLimit}`,
-      `backlog_limit ${this.backlogLimit}`,
-      `lost 0`,
-      `backlog ${this.auditLog.all().length}`,
-    ].join('\n');
-  }
-
-  private persist(): void {
-    const lines: string[] = [
-      '## auditctl-managed rules',
-      '-D',
-      `-b ${this.backlogLimit}`,
-      `-f ${this.failureFlag}`,
-      `-r ${this.rateLimit}`,
-    ];
-    for (const r of this.syscallRules) lines.push(renderSyscallRule(r));
-    for (const w of this.watches) lines.push(renderWatch(w));
-    if (this.enabledFlag === 2) lines.push('-e 2');
-    this.vfs.writeFile(AUDIT_PATHS.rules, lines.join('\n') + '\n', 0, 0, 0o037);
-  }
-
-  loadFromDisk(): void {
-    const content = this.vfs.readFile(AUDIT_PATHS.rules);
-    if (content === null) return;
-    this.loadRulesText(content);
-  }
-
-  loadRulesText(content: string): void {
-    for (const raw of content.split('\n')) {
-      const line = raw.trim();
-      if (!line || line.startsWith('#')) continue;
-      const parts = tokenize(line);
-      if (parts.length === 0) continue;
-      const head = parts[0];
-      try {
-        if (head === '-D') this.deleteAll();
-        else if (head === '-e' && parts[1]) this.setEnabled(parseInt(parts[1], 10) as AuditEnabled);
-        else if (head === '-f' && parts[1]) this.setFailure(parseInt(parts[1], 10) as AuditFailureMode);
-        else if (head === '-r' && parts[1]) this.setRateLimit(parseInt(parts[1], 10));
-        else if (head === '-b' && parts[1]) this.setBacklogLimit(parseInt(parts[1], 10));
-        else if (head === '-w') this.replayWatch(parts);
-        else if (head === '-a' || head === '-A') this.replaySyscall(parts, head === '-A' ? 'prepend' : 'append');
-      } catch {  }
-    }
-  }
-
-  private replayWatch(parts: string[]): void {
-    const path = parts[1];
-    let perms: string | undefined;
-    let key: string | undefined;
-    for (let i = 2; i < parts.length; i++) {
-      if (parts[i] === '-p' && parts[i + 1]) { perms = parts[++i]; }
-      else if (parts[i] === '-k' && parts[i + 1]) { key = parts[++i]; }
-    }
-    this.addWatch(path, perms, key);
-  }
-
-  private replaySyscall(parts: string[], position: 'append' | 'prepend'): void {
-    const spec = (parts[1] ?? '').split(',');
-    const action = spec[0] ?? 'always';
-    const filter = spec[1] ?? 'exit';
-    const syscalls: string[] = [];
-    const fields: string[] = [];
-    let key: string | undefined;
-    for (let i = 2; i < parts.length; i++) {
-      if (parts[i] === '-S' && parts[i + 1]) syscalls.push(parts[++i]);
-      else if (parts[i] === '-F' && parts[i + 1]) fields.push(parts[++i]);
-      else if (parts[i] === '-k' && parts[i + 1]) key = parts[++i];
-    }
-    this.addSyscallRule(action, filter, syscalls, fields, key, position);
-  }
-
-  onAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint?: string, ctx?: AuditActorContext): void {
-    if (this.enabledFlag === 0) return;
-    if (this.isExcludedByNeverDir(path)) return;
-    const isDelete = syscallHint !== undefined && DELETE_SYSCALLS.has(syscallHint);
-    const accessedInode = this.vfs.resolveInode(path)?.id;
-    for (const w of this.watches) {
-      const permMatch = w.perms.includes(perm) || (isDelete && w.perms.includes('d'));
-      if (!permMatch) continue;
-      const pathMatch = path === w.path || path.startsWith(w.path.replace(/\/?$/, '/'));
-      const inodeMatch = path !== w.path
-        && w.inode !== undefined && accessedInode !== undefined
-        && accessedInode === w.inode;
-      if (pathMatch || inodeMatch) {
-        const syscall = syscallHint ?? defaultSyscallFor(perm);
-        this.fire(syscall, path, w.key, ctx);
-      }
-    }
-  }
-
-  onAccessIndirect(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint: string, ctx?: AuditActorContext): void {
-    if (this.enabledFlag === 0) return;
-    if (this.isExcludedByNeverDir(path)) return;
-    const accessedInode = this.vfs.resolveInode(path)?.id;
-    for (const w of this.watches) {
-      if (!w.perms.includes(perm)) continue;
-      if (path === w.path) continue;
-      const descendant = path.startsWith(w.path.replace(/\/?$/, '/'));
-      const inodeMatch = w.inode !== undefined && accessedInode !== undefined && accessedInode === w.inode;
-      if (descendant || inodeMatch) this.fire(syscallHint, path, w.key, ctx);
-    }
-  }
-
-  onSyscall(syscall: string, path?: string, ctx?: AuditActorContext): void {
-    if (this.enabledFlag === 0) return;
-    const family = SYSCALL_ALIASES[syscall] ?? [syscall];
-    const matches = (r: AuditSyscallRule): boolean =>
-      (r.syscalls.includes('all') || family.some((s) => r.syscalls.includes(s)))
-      && this.matchesFields(r, path);
-    if (this.syscallRules.some((r) => r.action === 'never' && matches(r))) return;
-    if (this.isExcludedByNeverDir(path)) return;
-    for (const r of this.syscallRules) {
-      if (r.action === 'never') continue;
-      if (matches(r)) this.fire(syscall, path, r.key, ctx);
-    }
-  }
-
-  
-  private isExcludedByNeverDir(path: string | undefined): boolean {
-    if (path === undefined) return false;
-    for (const r of this.syscallRules) {
-      if (r.action !== 'never') continue;
-      for (const f of r.fields) {
-        if ((f.name === 'dir' || f.name === 'path') && f.op === '=' &&
-            (path === f.value || path.startsWith(f.value.replace(/\/?$/, '/')))) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  private matchesFields(rule: AuditSyscallRule, path: string | undefined): boolean {
-    for (const f of rule.fields) {
-      if (f.name === 'path' && path !== undefined && f.op === '=' && path !== f.value) return false;
-      if (f.name === 'dir' && path !== undefined && f.op === '=' && !path.startsWith(f.value.replace(/\/?$/, '/')) && path !== f.value) return false;
+  private passesFilter(list: number, type: number): boolean {
+    const actor = this.actor();
+    const event = this.eventFor('', undefined, actor);
+    for (const rule of this.kernel.lists[list]) {
+      const decoded = decodeRule(rule);
+      const typeFields = decoded.fields.filter((entry) => entry.field === K.AUDIT_MSGTYPE);
+      const others = { ...decoded, fields: decoded.fields.filter((entry) => entry.field !== K.AUDIT_MSGTYPE) };
+      const typeOk = typeFields.every((entry) => (entry.operator === K.AUDIT_EQUAL ? entry.value === type : entry.operator === K.AUDIT_NOT_EQUAL ? entry.value !== type : false));
+      if (!typeOk || !fieldsMatch(others, event)) continue;
+      return rule.action !== K.AUDIT_NEVER;
     }
     return true;
   }
 
+  private passesRateLimit(): boolean {
+    const limit = this.kernel.status.rateLimit;
+    if (limit <= 0) return true;
+    const second = Math.floor(this.auditLog.currentTimeMs() / 1000);
+    if (second !== this.rateWindowSecond) {
+      this.rateWindowSecond = second;
+      this.rateWindowCount = 0;
+    }
+    if (this.rateWindowCount >= limit) {
+      this.kernel.status.lost++;
+      return false;
+    }
+    this.rateWindowCount++;
+    return true;
+  }
+
+  private eventFor(syscall: string, path: string | undefined, actor: AuditActorContext): AuditEvent {
+    const inode = path !== undefined ? this.vfs.resolveInode(path) : null;
+    const args = syscallArguments(syscall, path).map((hex) => parseInt(hex, 16));
+    return {
+      syscall, path,
+      pid: actor.pid, ppid: actor.ppid, uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, session: 1,
+      exit: actor.success ? (FD_RETURNING.has(syscall) ? 3 : 0) : -13,
+      success: actor.success, exe: actor.exe, arguments: args,
+      inode: inode ? { dev: AUDIT_DEVICE, ino: inode.id, uid: inode.uid, gid: inode.gid, permissions: inode.permissions } : undefined,
+    };
+  }
+
+  private exitRules(): Array<{ source: RuleData; decoded: DecodedRule }> {
+    return this.kernel.lists[K.AUDIT_FILTER_EXIT].map((source) => ({ source, decoded: decodeRule(source) }));
+  }
+
+  private firstMatch(
+    event: AuditEvent,
+    family: readonly string[],
+    accept: (decoded: DecodedRule) => boolean,
+  ): { source: RuleData; decoded: DecodedRule } | null {
+    for (const entry of this.exitRules()) {
+      const { source, decoded } = entry;
+      if (!accept(decoded)) continue;
+      if (!maskCoversSyscall(decoded.mask, family)) continue;
+      if (!pathCriteriaMatch(decoded, event, this.watchedInodes.get(source))) continue;
+      if (!fieldsMatch(decoded, event)) continue;
+      return entry;
+    }
+    return null;
+  }
+
+  onAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint?: string, ctx?: AuditActorContext): void {
+    if (this.kernel.status.enabled === 0) return;
+    const syscall = syscallHint ?? defaultSyscallFor(perm);
+    const actor = ctx ?? this.actor();
+    const event = this.eventFor(syscall, path, actor);
+    const bit = permissionBit(perm);
+    const hit = this.firstMatch(event, SYSCALL_ALIASES[syscall] ?? [syscall],
+      (decoded) => decoded.permission === null
+        ? decoded.action === K.AUDIT_NEVER
+        : (decoded.permission & bit) !== 0 && (decoded.watchPath !== null || decoded.dirPath !== null));
+    if (hit === null || hit.source.action === K.AUDIT_NEVER) return;
+    this.fire(syscall, path, hit.decoded.key, actor);
+  }
+
+  onAccessIndirect(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint: string, ctx?: AuditActorContext): void {
+    if (this.kernel.status.enabled === 0) return;
+    const actor = ctx ?? this.actor();
+    const event = this.eventFor(syscallHint, path, actor);
+    const bit = permissionBit(perm);
+    const hit = this.firstMatch(event, SYSCALL_ALIASES[syscallHint] ?? [syscallHint],
+      (decoded) => decoded.permission !== null && (decoded.permission & bit) !== 0 && decoded.watchPath !== null
+        && decoded.watchPath !== path);
+    if (hit === null || hit.source.action === K.AUDIT_NEVER) return;
+    this.fire(syscallHint, path, hit.decoded.key, actor);
+  }
+
+  onSyscall(syscall: string, path?: string, ctx?: AuditActorContext): void {
+    if (this.kernel.status.enabled === 0) return;
+    const actor = ctx ?? this.actor();
+    const event = this.eventFor(syscall, path, actor);
+    const hit = this.firstMatch(event, SYSCALL_ALIASES[syscall] ?? [syscall], (decoded) => decoded.permission === null);
+    if (hit === null || hit.source.action === K.AUDIT_NEVER) return;
+    this.fire(syscall, path, hit.decoded.key, actor);
+  }
+
   private fire(syscall: string, path: string | undefined, key?: string, ctxArg?: AuditActorContext): void {
-    if (this.enabledFlag === 0) return;
-    const ctx = ctxArg ?? this.actorContextProvider?.() ?? DEFAULT_ACTOR;
+    if (this.kernel.status.enabled === 0) return;
+    const ctx = ctxArg ?? this.actor();
     const exit = ctx.success ? (FD_RETURNING.has(syscall) ? 3 : 0) : -13;
     const number = x86SyscallNumber(syscall);
     const inode = path !== undefined ? this.vfs.resolveInode(path) : null;
     const args = syscallArguments(syscall, path);
     const syscallFields: Record<string, string | number> = {
-      arch: 'c000003e',
+      arch: X86_64_ARCH.toString(16),
       syscall: number ?? 0,
       success: ctx.success ? 'yes' : 'no',
       exit,
@@ -545,22 +358,12 @@ export class LinuxAuditRules {
   }
 }
 
-const DEFAULT_ACTOR: AuditActorContext = {
-  pid: 1, ppid: 0, uid: 0, euid: 0, gid: 0, egid: 0, auid: 0,
-  comm: 'kernel', exe: '/sbin/init', tty: '(none)', success: true,
-};
-
 function defaultSyscallFor(perm: 'r' | 'w' | 'x' | 'a'): string {
   if (perm === 'x') return 'execve';
   if (perm === 'w') return 'open';
   if (perm === 'a') return 'chmod';
   return 'openat';
 }
-
-const FD_RETURNING: ReadonlySet<string> = new Set(['open', 'openat', 'openat2', 'creat']);
-const DIRFD_FIRST: ReadonlySet<string> = new Set([
-  'openat', 'openat2', 'mkdirat', 'unlinkat', 'fchmodat', 'fchownat', 'newfstatat', 'readlinkat', 'mknodat', 'utimensat', 'faccessat',
-]);
 
 function pointerFor(path: string | undefined, salt: number): string {
   let h = 2166136261;
@@ -588,78 +391,6 @@ function writingSyscall(syscall: string): boolean {
     'chown', 'fchown', 'mkdir', 'mkdirat', 'rmdir', 'unlink', 'unlinkat',
     'rename', 'renameat', 'renameat2', 'symlink', 'symlinkat', 'link', 'linkat',
     'truncate', 'ftruncate'].includes(syscall);
-}
-
-const DELETE_SYSCALLS: ReadonlySet<string> = new Set([
-  'unlink', 'unlinkat', 'rmdir', 'rename', 'renameat', 'renameat2',
-]);
-
-function canonPerms(input: string): string | null {
-  if (input.length === 0) return null;
-  const seen = new Set<string>();
-  for (const ch of input) {
-    if (ch !== 'r' && ch !== 'w' && ch !== 'x' && ch !== 'a' && ch !== 'd') return null;
-    seen.add(ch);
-  }
-  let out = '';
-  for (const ch of ['r', 'w', 'x', 'a', 'd'] as const) if (seen.has(ch)) out += ch;
-  return out;
-}
-
-function validateKey(key: string | undefined): string | null {
-  if (key === undefined) return null;
-  if (key.length === 0) return 'invalid key: must not be empty';
-  if (key.length > MAX_KEY_LEN) return `invalid key: length exceeds ${MAX_KEY_LEN}-character limit`;
-  if (!/^[\x20-\x7e]+$/.test(key)) return 'invalid key: non-ASCII characters not allowed';
-  return null;
-}
-
-interface FieldParseOk { ok: true; field: AuditField; error?: undefined }
-function parseField(raw: string): FieldParseOk | (RuleOpResult & { ok: false }) {
-  const ops: AuditFieldOp[] = ['!=', '<=', '>=', '=', '<', '>'];
-  let op: AuditFieldOp | null = null;
-  let opIdx = -1;
-  for (const candidate of ops) {
-    const idx = raw.indexOf(candidate);
-    if (idx > 0 && (opIdx === -1 || idx < opIdx)) {
-      op = candidate;
-      opIdx = idx;
-    }
-  }
-  if (op === null) return fail(`-F: invalid filter expression: ${raw}`);
-
-  const name = raw.slice(0, opIdx);
-  const value = raw.slice(opIdx + op.length);
-  if (value.includes('=')) return fail(`-F: invalid operator in: ${raw}`);
-  if (!KNOWN_FIELDS.has(name)) return fail(`-F: unknown field: ${name}`);
-
-  if (name === 'arch' && !KNOWN_ARCHES.has(value)) {
-    return fail(`-F: unknown architecture: ${value}`);
-  }
-  if (name === 'fstype' && !/^0x[0-9a-fA-F]+$/.test(value)) {
-    return fail(`-F: invalid fstype: must be hex (got '${value}')`);
-  }
-  return { ok: true, field: { name, op, value } };
-}
-
-function serializeFields(fields: readonly AuditField[]): string {
-  return [...fields].map((f) => `${f.name}${f.op}${f.value}`).sort().join('|');
-}
-
-function renderSyscallRule(r: AuditSyscallRule): string {
-  const head = `-a ${r.action},${r.filter}`;
-  const sc = r.syscalls.map((s) => ` -S ${s}`).join('');
-  const fl = r.fields.map((f) => ` -F ${f.name}${f.op}${f.value}`).join('');
-  const k = r.key ? ` -k ${r.key}` : '';
-  return `${head}${sc}${fl}${k}`;
-}
-
-function renderWatch(w: AuditWatch): string {
-  return `-w ${w.path} -p ${w.perms}${w.key ? ` -k ${w.key}` : ''}`;
-}
-
-function tokenize(line: string): string[] {
-  return line.split(/\s+/).filter(Boolean);
 }
 
 function defaultAuditdConf(): string {

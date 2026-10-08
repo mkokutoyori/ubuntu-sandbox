@@ -113,7 +113,7 @@ describe('Linux auditctl Command Suite', () => {
       await pc.executeCommand('auditctl -w /etc/passwd -p wa');
       await pc.executeCommand('auditctl -w /etc/shadow -p wa');
       const delOutput = await pc.executeCommand('auditctl -D');
-      expect(delOutput.toLowerCase()).toContain('deleted');
+      expect(delOutput).toBe('No rules');
       const list = await pc.executeCommand('auditctl -l');
       expect(list.toLowerCase()).toContain('no rules');
     });
@@ -127,7 +127,7 @@ describe('Linux auditctl Command Suite', () => {
     it('13. should reject watch deletion if target path was never monitored', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -W /etc/nonexistent_path');
-      expect(output.toLowerCase()).toMatch(/not found|does not exist|no rules/);
+      expect(output).toBe('Error sending delete rule data request (No such file or directory)\nThere was an error while processing parameters');
     });
 
     it('14. should accept single-quotes around paths during watch rules creation', async () => {
@@ -193,18 +193,18 @@ describe('Linux auditctl Command Suite', () => {
       expect(list).toContain(longKey);
     });
 
-    it('23. should reject watch rules if filter key exceeds 128 characters limit', async () => {
+    it('23. should reject watch rules if filter key exceeds 256 characters limit', async () => {
       const pc = await setupLinuxPC();
-      const tooLongKey = 'K'.repeat(150);
+      const tooLongKey = 'K'.repeat(300);
       const output = await pc.executeCommand(`auditctl -w /etc/passwd -p wa -k ${tooLongKey}`);
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('key option exceeds size limit\nThere was an error while processing parameters');
     });
 
     it('24. should support watch deletes omitting keys (W path -p perms)', async () => {
       const pc = await setupLinuxPC();
       await pc.executeCommand('auditctl -w /etc/passwd -p wa -k key_val');
       const delOutput = await pc.executeCommand('auditctl -W /etc/passwd -p wa');
-      expect(delOutput.trim()).toBe('');
+      expect(delOutput).toContain('Error sending delete rule data request (No such file or directory)');
     });
 
     it('25. should execute successfully and return status 0 on basic watch additions', async () => {
@@ -220,7 +220,7 @@ describe('Linux auditctl Command Suite', () => {
     it('26. should add append rule targeting always,exit filter action (auditctl -a)', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -k file_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('always,exit');
     });
@@ -228,7 +228,7 @@ describe('Linux auditctl Command Suite', () => {
     it('27. should prepend rule targeting always,exit filter action (auditctl -A)', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -A always,exit -S unlink -k file_delete');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('unlink');
     });
@@ -259,7 +259,7 @@ describe('Linux auditctl Command Suite', () => {
     it('31. should filter syscall rules by effective user ID (-F uid=0)', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F uid=0 -k root_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('uid=0');
     });
@@ -267,7 +267,7 @@ describe('Linux auditctl Command Suite', () => {
     it('32. should filter syscall rules by effective group ID (-F gid=1000)', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F gid=1000 -k user_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('gid=1000');
     });
@@ -275,7 +275,7 @@ describe('Linux auditctl Command Suite', () => {
     it('33. should filter syscall rules by success return states (-F success=0)', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F success=0 -k failed_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('success=0');
     });
@@ -320,7 +320,7 @@ describe('Linux auditctl Command Suite', () => {
     it('39. should support field filtering based on system PID (-F pid=1)', async () => {
       const pc = await setupLinuxHost();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F pid=1 -k init_watch');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('40. should support field filtering based on path references (-F path=/etc/issue)', async () => {
@@ -346,7 +346,7 @@ describe('Linux auditctl Command Suite', () => {
       const pc = await setupLinuxPC();
       // Cisco IOS and Linux auditctl allow multiple -S flags in one append command
       const output = await pc.executeCommand('auditctl -a always,exit -S open -S close -k open_close_calls');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('44. should restrict numerical syscall parameters to positive integer limits', async () => {
@@ -358,7 +358,7 @@ describe('Linux auditctl Command Suite', () => {
     it('45. should allow filter rules targeting exit code statuses (-F exit=-13)', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F exit=-13 -k open_permission_denied');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('46. should reject field filters if operator syntax has errors (-F uid==0)', async () => {
@@ -370,13 +370,13 @@ describe('Linux auditctl Command Suite', () => {
     it('47. should accept inequality filters inside system configuration scopes (-F uid!=1000)', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F uid!=1000');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('48. should support filtering rules based on login uids (-F auid=1000)', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F auid=1000');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('49. should reject syscall configuration if -S switch is parsed without arguments', async () => {
@@ -406,7 +406,7 @@ describe('Linux auditctl Command Suite', () => {
     it('52. should configure backlog limit explicitly via auditctl -b', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -b 8192');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('backlog_limit 8192');
     });
@@ -426,7 +426,7 @@ describe('Linux auditctl Command Suite', () => {
     it('55. should enable audit engine using auditctl -e 1', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -e 1');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('enabled 1');
     });
@@ -434,7 +434,7 @@ describe('Linux auditctl Command Suite', () => {
     it('56. should disable audit engine using auditctl -e 0', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -e 0');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('enabled 0');
     });
@@ -442,7 +442,7 @@ describe('Linux auditctl Command Suite', () => {
     it('57. should lock audit system state configurations using auditctl -e 2', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -e 2');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('enabled 2');
     });
@@ -451,7 +451,7 @@ describe('Linux auditctl Command Suite', () => {
       const pc = await setupLinuxPC();
       await pc.executeCommand('auditctl -e 2');
       const output = await pc.executeCommand('auditctl -w /etc/passwd -p wa');
-      expect(output.toLowerCase()).toMatch(/locked|error|cannot change/);
+      expect(output).toBe('The audit system is in immutable mode, no rule changes allowed');
     });
 
     it('59. should prevent unlocking audit configurations once locked until next reboot', async () => {
@@ -472,7 +472,7 @@ describe('Linux auditctl Command Suite', () => {
     it('61. should set rate limit on messages per second using auditctl -r', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -r 100');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('rate_limit 100');
     });
@@ -486,7 +486,7 @@ describe('Linux auditctl Command Suite', () => {
     it('63. should set failure flag parameters to silent mode via auditctl -f 0', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -f 0');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('failure 0');
     });
@@ -494,7 +494,7 @@ describe('Linux auditctl Command Suite', () => {
     it('64. should set failure flag parameters to printk mode via auditctl -f 1', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -f 1');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('failure 1');
     });
@@ -502,7 +502,7 @@ describe('Linux auditctl Command Suite', () => {
     it('65. should set failure flag parameters to panic mode via auditctl -f 2', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -f 2');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('failure 2');
     });
@@ -513,10 +513,10 @@ describe('Linux auditctl Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
-    it('67. should show help screen output on auditctl --help', async () => {
+    it('67. should reject --help as an invalid option like the real auditctl', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl --help');
-      expect(output.toLowerCase()).toContain('options');
+      expect(output).toBe('Option --help is invalid\nThere was an error while processing parameters');
     });
 
     it('68. should show help screen output on auditctl -h', async () => {
@@ -543,7 +543,7 @@ describe('Linux auditctl Command Suite', () => {
       const pc = await setupLinuxPC();
       await pc.executeCommand('auditctl -e 1');
       const output = await pc.executeCommand('auditctl -e 1');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
     });
 
     it('72. should preserve rate limit configurations across multiple rule creation cycles', async () => {
@@ -557,7 +557,7 @@ describe('Linux auditctl Command Suite', () => {
     it('73. should support zero parameter arguments on rate limit configurations (unlimited)', async () => {
       const pc = await setupLinuxHost();
       const output = await pc.executeCommand('auditctl -r 0');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('rate_limit 0');
     });
@@ -658,13 +658,13 @@ describe('Linux auditctl Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/error|no such file|does not exist/);
     });
 
-    it('89. should handle duplicate watch additions by replacing old properties statically', async () => {
+    it('89. should keep both watches when the same path is added with different properties', async () => {
       const pc = await setupLinuxHost();
       await pc.executeCommand('auditctl -w /etc/issue -p r -k issue_read');
       await pc.executeCommand('auditctl -w /etc/issue -p wa -k issue_write');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('issue_write');
-      expect(list).not.toContain('issue_read');
+      expect(list).toContain('issue_read');
     });
 
     it('90. should reject syscall append commands if filter operator parameters have typos', async () => {
@@ -673,10 +673,10 @@ describe('Linux auditctl Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
-    it('91. should reject watch rules if permission flags are completely empty (-p "")', async () => {
+    it('91. should accept an empty permission string like the real auditctl (-p "")', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl -w /etc/passwd -p ""');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('');
     });
 
     it('92. should support rule deletions if key parameters match filter criteria explicitly', async () => {
@@ -710,7 +710,7 @@ describe('Linux auditctl Command Suite', () => {
     it('96. should handle blank command inputs gracefully', async () => {
       const pc = await setupLinuxPC();
       const output = await pc.executeCommand('auditctl ""');
-      expect(output.toLowerCase()).toContain('usage');
+      expect(output).toBe('There was an error while processing parameters');
     });
 
     it('97. should support showing status summaries inside locked state configurations (read-only allowed)', async () => {

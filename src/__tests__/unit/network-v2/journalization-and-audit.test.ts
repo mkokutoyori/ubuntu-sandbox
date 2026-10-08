@@ -15,8 +15,8 @@ import { describe, it, expect } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxAuditLog, LinuxAuditRecord } from '@/network/devices/linux/audit/LinuxAuditLog';
 import { AuditTrailProjection } from '@/network/devices/linux/audit/AuditTrailProjection';
-import { cmdAuditctl } from '@/network/devices/linux/audit/AuditCommands';
 import { LinuxAuditRules } from '@/network/devices/linux/audit/LinuxAuditRules';
+import { LinuxPC } from '@/network/devices/LinuxPC';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { EventBus } from '@/events/EventBus';
 import { WindowsServiceManager } from '@/network/devices/windows/WindowsServiceManager';
@@ -154,8 +154,10 @@ describe('ausearch / aureport / auditctl', () => {
     return log;
   }
 
-  it('auditctl -s shows the subsystem status', () => {
-    expect(cmdAuditctl(new LinuxAuditRules(seeded(), new VirtualFileSystem()), ['-s']).output).toContain('enabled 1');
+  it('auditctl -s shows the subsystem status', async () => {
+    const pc = new LinuxPC('SecurityHost', 0, 0);
+    await pc.executeCommand('sudo su -');
+    expect(await pc.executeCommand('auditctl -s')).toContain('enabled 1');
   });
 });
 

@@ -230,8 +230,7 @@ describe('Linux Audit Trail System Suite', () => {
       const pc = await setupAuditedPC();
       await pc.executeCommand('auditctl -w /etc/hosts -p w -k hosts_write_only');
       await pc.executeCommand('cat /etc/hosts'); // read action
-      const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).not.toContain('hosts_write_only');
+      expect(await pc.executeCommand('ausearch -m SYSCALL -k hosts_write_only')).toContain('<no matches>');
     });
 
     it('24. should include command executable path (exe) in audit output', async () => {
@@ -697,7 +696,7 @@ describe('Linux Audit Trail System Suite', () => {
       const pc = await setupAuditedPC();
       // a0=0 indicates standard stdin parameters, verify runs without crash
       const output = await pc.executeCommand('auditctl -a always,exit -S write -F a0=0 -k stdin_write');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('79. should log system clock adjustments via settimeofday syscall rules', async () => {
@@ -734,8 +733,7 @@ describe('Linux Audit Trail System Suite', () => {
       const pc = await setupAuditedPC();
       await pc.executeCommand('auditctl -a always,exit -S mkdir -k fs_mkdir_only');
       await pc.executeCommand('touch /tmp/new_file_only.txt');
-      const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).not.toContain('fs_mkdir_only');
+      expect(await pc.executeCommand('ausearch -m SYSCALL -k fs_mkdir_only')).toContain('<no matches>');
     });
 
     it('84. should include original parent process execution name (comm) inside network socket connection logs', async () => {

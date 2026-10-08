@@ -83,6 +83,12 @@ export class LinuxAuditLog {
 
   setClock(now: () => number): void { this.nowMs = now; }
 
+  private admission: (type: string) => boolean = () => true;
+
+  setAdmission(admission: (type: string) => boolean): void { this.admission = admission; }
+
+  currentTimeMs(): number { return this.nowMs(); }
+
   private readonly records: LinuxAuditRecord[] = [];
   private serialCounter = 0;
 
@@ -98,6 +104,7 @@ export class LinuxAuditLog {
    * The serial number is allocated monotonically, as the kernel does.
    */
   record(type: string, fields: Record<string, string | number> = {}): LinuxAuditRecord {
+    if (!this.admission(type)) return new LinuxAuditRecord(type, 0, fields, this.nowMs());
     const entry = new LinuxAuditRecord(type, ++this.serialCounter, fields);
     this.records.push(entry);
     this.materialize();
@@ -105,11 +112,12 @@ export class LinuxAuditLog {
   }
 
   recordEvent(parts: Array<{ type: string; fields?: Record<string, string | number> }>): LinuxAuditRecord[] {
-    if (parts.length === 0) return [];
+    const admitted = parts.filter((p) => this.admission(p.type));
+    if (admitted.length === 0) return [];
     const serial = ++this.serialCounter;
     const ts = this.nowMs();
     const out: LinuxAuditRecord[] = [];
-    for (const p of parts) {
+    for (const p of admitted) {
       const entry = new LinuxAuditRecord(p.type, serial, p.fields ?? {}, ts);
       this.records.push(entry);
       out.push(entry);

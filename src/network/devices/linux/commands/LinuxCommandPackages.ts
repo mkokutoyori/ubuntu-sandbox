@@ -12,7 +12,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   apache2: 'apache2', apachectl: 'apache2', apache2ctl: 'apache2',
   a2ensite: 'apache2', a2dissite: 'apache2', a2enmod: 'apache2', a2dismod: 'apache2',
   at: 'at', atq: 'at', atrm: 'at',
-  auditctl: 'auditd', ausearch: 'auditd', aureport: 'auditd',
+  auditctl: 'auditd', augenrules: 'auditd', ausearch: 'auditd', aureport: 'auditd',
   bash: 'bash', sh: 'bash',
   named: 'bind9',
   chronyd: 'chrony', chronyc: 'chrony',
