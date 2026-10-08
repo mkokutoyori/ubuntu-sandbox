@@ -1,3 +1,4 @@
+import { parsePipeFilter, applyPipeFilter } from '../../../shells/cli-utils';
 import {
   subnetAddress, hostAddress, rangeAddress, type AddressObject,
 } from '../../model/AddressObject';
@@ -307,6 +308,9 @@ export class AsaShell implements AsaShowHost {
   execute(rawLine: string): string {
     const line = rawLine.trim();
     if (line.length === 0) return '';
+
+    const piped = parsePipeFilter(line);
+    if (piped.filter) return applyPipeFilter(this.execute(piped.cmd), piped.filter);
 
     if (line.endsWith('?')) {
       return this.help(line.slice(0, -1)).join('\n') || ASA_INVALID_INPUT;

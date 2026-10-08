@@ -9,6 +9,7 @@
  *   - Tab completion
  */
 
+import { findEquipmentByIp } from '@/shell/hostResolution';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
@@ -140,7 +141,6 @@ import type { TcpConnector } from '@/network/tcp/types';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 import { localListenerFailure, NO_LOCAL_FORWARDING, remoteForwardFailure } from '@/network/protocols/ssh/ForwardOpening';
 
@@ -4084,23 +4084,6 @@ function homeDirectoryOn(device: Equipment, user: string): string {
   return device instanceof LinuxMachine
     ? device.homeDirectoryOf(user)
     : user === 'root' ? '/root' : `/home/${user}`;
-}
-
-function findEquipmentByIp(targetIp: string): Equipment | null {
-  const all = EquipmentRegistry.getInstance().getAll();
-  for (const eq of all) {
-    const portsObj = (eq as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
-    if (!portsObj) continue;
-    for (const port of portsObj.values()) {
-      const ip = port.getIPAddress?.();
-      if (ip && ip.toString() === targetIp) {
-        if (typeof (eq as unknown as { executeCommand?: unknown }).executeCommand === 'function') {
-          return eq;
-        }
-      }
-    }
-  }
-  return null;
 }
 
 function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {

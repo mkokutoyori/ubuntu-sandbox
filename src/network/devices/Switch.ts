@@ -2914,8 +2914,13 @@ export abstract class Switch extends Equipment {
     return this._getVtyLineConfig().all()[0];
   }
 
-  createVtyShell(): TelnetVtyShell {
+  createVtyShell(user?: string): TelnetVtyShell & { getCompletions(line: string): string[] } {
     const shell = this.createShell();
+    const account = user === undefined ? undefined : this.getCredentialStore().lookup(user);
+    const sessionShell = shell as unknown as {
+      beginExecSession?: (lvl: number, u?: string, vue?: string | null) => void;
+    };
+    sessionShell.beginExecSession?.(account?.privilege ?? 1, user, account?.view ?? null);
     let ended = false;
     return {
       execute: (rawInput: string): string => {
@@ -2924,6 +2929,7 @@ export abstract class Switch extends Equipment {
         return output;
       },
       getPrompt: () => shell.getPrompt(this),
+      getCompletions: (line: string) => shell.tabCandidates(line, this),
       lastEndedSession: () => ended,
     };
   }
