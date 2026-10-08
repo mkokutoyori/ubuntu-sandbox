@@ -18,7 +18,15 @@
  * ecrits en majuscules avec un souligne (`PASS_ADD`), ecriture d'IOS
  * reprise de memoire.
  *
- * Avant le correctif : 3 des 5 cas tombent (git stash de src/network).
+ * Defaut voisin, trouve en relisant l'abonnement RADIUS : une
+ * authentification REFUSEE (radius.auth.completed, accepted = false) etait
+ * tracee `Access-Accept` / `status = PASS`, car l'abonnement ignorait le
+ * champ `accepted`. Il le lit maintenant.
+ *
+ * Avant le correctif : 4 des 7 cas tombent contre la base d avant le premier
+ * correctif de ce fichier, dont 1 seul (RADIUS refuse) contre le commit qui l a
+ * precede (git stash de src/network).
+ * Passe aussi des deux cotes le temoin RADIUS accepte.
  * Passent des deux cotes le TEMOIN « sans debug aaa authorization, un
  * evenement d'autorisation ne trace rien » et « un evenement d'un autre
  * equipement est ignore » : le premier prouve que le laboratoire publie
@@ -94,6 +102,27 @@ describe('debug aaa authorization', () => {
     const out = l.lines.join('\n');
     expect(out).toContain('TAC+: authentication for user alice by 10.0.0.9: pass');
     expect(out).toContain('TAC+: authorization for user alice by 10.0.0.9: pass-add');
+  });
+
+  it('WITNESS : une authentification RADIUS acceptee reste tracee Access-Accept / PASS', async () => {
+    const l = await lab();
+    await l.router.executeCommand('debug radius');
+    await l.router.executeCommand('debug aaa authentication');
+    l.publish('radius.auth.completed', { serverIp: '10.0.0.7', username: 'alice', accepted: true, identifier: 1, reason: null });
+    const out = l.lines.join('\n');
+    expect(out).toContain('RADIUS: Received Access-Accept for user alice from 10.0.0.7');
+    expect(out).toContain("AAA/AUTHEN: status = PASS for user 'alice'");
+  });
+
+  it('une authentification RADIUS refusee n est plus tracee comme acceptee', async () => {
+    const l = await lab();
+    await l.router.executeCommand('debug radius');
+    await l.router.executeCommand('debug aaa authentication');
+    l.publish('radius.auth.completed', { serverIp: '10.0.0.7', username: 'alice', accepted: false, identifier: 2, reason: 'bad-password' });
+    const out = l.lines.join('\n');
+    expect(out).toContain('RADIUS: Received Access-Reject for user alice from 10.0.0.7');
+    expect(out).toContain("AAA/AUTHEN: status = FAIL for user 'alice'");
+    expect(out).not.toContain('Access-Accept');
   });
 
   it('un evenement d un autre equipement est ignore', async () => {

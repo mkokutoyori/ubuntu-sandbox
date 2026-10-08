@@ -906,30 +906,28 @@ export class RouterDebugService implements TerminalDebugSource {
 
     this.broadcast.track(bus.subscribe('radius.auth.completed', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { username?: string; serverIp?: string };
+      const p = e.payload;
       this.emit('radius',
-        `RADIUS: Received Access-Accept for user ${p.username ?? '?'} from ${p.serverIp ?? '?'}`);
+        `RADIUS: Received Access-${p.accepted ? 'Accept' : 'Reject'} for user ${p.username} from ${p.serverIp}`);
       this.emit('aaa.authentication',
-        `AAA/AUTHEN: status = PASS for user '${p.username ?? '?'}'`);
+        `AAA/AUTHEN: status = ${p.accepted ? 'PASS' : 'FAIL'} for user '${p.username}'`);
     }));
     this.broadcast.track(bus.subscribe('radius.auth.rejected', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { username?: string; serverIp?: string };
+      const p = e.payload;
       this.emit('radius',
-        `RADIUS: Received Access-Reject for user ${p.username ?? '?'} from ${p.serverIp ?? '?'}`);
+        `RADIUS: Sent Access-Reject for user ${p.username} to ${p.fromIp} (${p.reason})`);
       this.emit('aaa.authentication',
-        `AAA/AUTHEN: status = FAIL for user '${p.username ?? '?'}'`);
+        `AAA/AUTHEN: status = FAIL for user '${p.username}'`);
     }));
     this.broadcast.track(bus.subscribe('radius.server.dead', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { serverIp?: string };
-      this.emit('radius', `RADIUS: Marking server ${p.serverIp ?? '?'} as DEAD`);
+      this.emit('radius', `RADIUS: Marking server ${e.payload.serverIp} as DEAD`);
     }));
     this.broadcast.track(bus.subscribe('radius.accounting.record', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { username?: string; type?: string };
-      this.emit('aaa.accounting',
-        `AAA/ACCT: ${p.type ?? 'record'} for user '${p.username ?? '?'}'`);
+      const p = e.payload;
+      this.emit('aaa.accounting', `AAA/ACCT: ${p.status} for user '${p.username}'`);
     }));
     this.broadcast.track(bus.subscribe('tacacs.authen.completed', (e) => {
       if (!mine(e.payload)) return;

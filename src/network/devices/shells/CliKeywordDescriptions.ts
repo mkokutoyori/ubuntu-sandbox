@@ -529,6 +529,7 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['kill', 'Terminate a user session'],
   ['check', 'Check the packet against the binding table'],
   ['trusted', 'Configure the interface as trusted'],
+  ['hwtacacs', 'Huawei Terminal Access Controller Access Control System'],
   ['hwtacacs-server', 'HWTACACS server information'],
   ['radius-server', 'RADIUS server information'],
   ['anti-attack', 'Attack-defence configuration'],

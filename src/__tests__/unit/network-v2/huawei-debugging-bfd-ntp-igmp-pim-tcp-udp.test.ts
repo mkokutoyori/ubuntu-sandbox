@@ -1,7 +1,7 @@
 /*
  * `debugging bfd all`, `debugging ntp-service all`, `debugging igmp all`,
  * `debugging pim all`, `debugging tcp packet`, `debugging udp packet`,
- * `debugging bgp update`, `debugging nat all` :
+ * `debugging bgp update`, `debugging nat all`, `debugging aaa|radius|hwtacacs all` :
  * six modules VRP que le catalogue ne connaissait pas (`Error: Unrecognized
  * command`).
  *
@@ -14,7 +14,7 @@
  * `ntp-service all` / `igmp all` / `pim all` n'est pas verifiee non plus
  * contre la documentation Huawei (inaccessible d'ici).
  *
- * Avant le correctif : 7 des 10 cas tombent (git stash de src/network).
+ * Avant le correctif : 9 des 12 cas tombent (git stash de src/network).
  * Passent des deux cotes le TEMOIN « un evenement BFD sans drapeau ne
  * trace rien », qui prouve que le laboratoire publie bien sur le bus et
  * que le silence vient du drapeau ; « un evenement d un autre equipement
@@ -129,6 +129,24 @@ describe('debugging bfd/ntp/igmp/pim/tcp/udp', () => {
     await flush();
     expect(shown('NAT: Session created (overload) TCP 192.168.1.10:40000 -> 203.0.113.1:1024')).toBe(true);
     expect(shown('NAT: Session removed (expired)')).toBe(true);
+  });
+
+  it('debugging aaa all et radius all tracent une authentification RADIUS', async () => {
+    await type('debugging aaa all');
+    await type('debugging radius all');
+    await type('terminal debugging');
+    publish('radius.auth.completed', { serverIp: '10.0.0.7', username: 'alice', accepted: false, identifier: 3, reason: 'bad-password' });
+    await flush();
+    expect(shown('RADIUS: Received Access-Reject for user alice from 10.0.0.7')).toBe(true);
+    expect(shown('AAA: Authentication failure, user alice, server 10.0.0.7')).toBe(true);
+  });
+
+  it('debugging hwtacacs all trace une autorisation', async () => {
+    await type('debugging hwtacacs all');
+    await type('terminal debugging');
+    publish('tacacs.author.completed', { serverIp: '10.0.0.8', username: 'bob', status: 'pass-add', command: 'display version' });
+    await flush();
+    expect(shown('HWTACACS: Authorization of user bob by 10.0.0.8: pass-add')).toBe(true);
   });
 
   it('un evenement d un autre equipement est ignore', async () => {

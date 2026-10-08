@@ -200,6 +200,45 @@ export class HuaweiDebugService implements TerminalDebugSource {
       this.emit('nat', `NAT: Port pool exhausted for ${e.payload.globalIp}`);
     }));
 
+    this.broadcast.track(bus.subscribe('radius.auth.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('radius', `RADIUS: Received Access-${p.accepted ? 'Accept' : 'Reject'} for user ${p.username} from ${p.serverIp}`);
+      this.emit('aaa', `AAA: Authentication ${p.accepted ? 'success' : 'failure'}, user ${p.username}, server ${p.serverIp}`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.server.dead', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('radius', `RADIUS: Server ${e.payload.serverIp} is marked down`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.server.alive', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('radius', `RADIUS: Server ${e.payload.serverIp} is marked up`);
+    }));
+    this.broadcast.track(bus.subscribe('radius.accounting.record', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('aaa', `AAA: Accounting ${p.status}, user ${p.username}, session ${p.sessionId}`);
+    }));
+    this.broadcast.track(bus.subscribe('tacacs.authen.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('hwtacacs', `HWTACACS: Authentication of user ${p.username} by ${p.serverIp}: ${p.status}`);
+      this.emit('aaa', `AAA: Authentication ${p.status === 'pass' ? 'success' : 'failure'}, user ${p.username}, server ${p.serverIp}`);
+    }));
+    this.broadcast.track(bus.subscribe('tacacs.author.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('hwtacacs', `HWTACACS: Authorization of user ${p.username} by ${p.serverIp}: ${p.status}`);
+      this.emit('aaa', `AAA: Authorization ${p.status.startsWith('pass') ? 'success' : 'failure'}, user ${p.username}`
+        + `${p.command === null ? '' : `, command ${p.command}`}`);
+    }));
+    this.broadcast.track(bus.subscribe('tacacs.acct.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('hwtacacs', `HWTACACS: Accounting of user ${p.username} by ${p.serverIp}: ${p.status}`);
+      this.emit('aaa', `AAA: Accounting ${p.status}, user ${p.username}`);
+    }));
+
     this.broadcast.track(bus.subscribe('vrrp.state.changed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
