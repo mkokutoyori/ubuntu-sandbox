@@ -68,7 +68,7 @@ test.describe('Scénario UI-2/UI-3/UI-5 (e2e) — interface vim/vi', () => {
     await typeCmd(page, 'vim /tmp/vim-nu-test.txt');
     await expect(page.getByText('vim-nu-test.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
 
-    const gutter = page.locator('[data-testid="vim-gutter"]');
+    const gutter = page.locator('[data-testid="vim-body"]');
     await expect(gutter).not.toContainText('1');
 
     await exCmd(page, 'set number');

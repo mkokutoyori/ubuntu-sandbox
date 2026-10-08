@@ -499,6 +499,7 @@ export class VimEngine {
   /** True while in insert mode AND the variant shows a mode indicator (vim, not strict vi). */
   get showsInsertIndicator(): boolean { return this._mode === 'insert' && this.variant === 'vim'; }
   get pendingSubstMatch(): PendingSubstMatch | null { return this._pendingMatch; }
+  get isReplacing(): boolean { return this._mode === 'insert' && this.replaceMode; }
   get visualAnchor(): { line: number; col: number } { return { line: this.visualAnchorLine, col: this.visualAnchorCol }; }
   get lineNumbersShown(): boolean { return this.showLineNumbers; }
   get relativeNumbersShown(): boolean { return this.showRelativeNumbers; }
