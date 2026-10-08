@@ -162,6 +162,17 @@ describe('TP 7 — l\'authentification par cle, de bout en bout', () => {
       .toContain('Time Zone');
   });
 
+  it('IOS : `ip ssh pubkey-chain` range le hachage de la cle sous le compte, sans jamais l\'afficher', async () => {
+    const body = (await cli('linux-pc').executeCommand('cat ~/.ssh/id_rsa.pub')).trim().split(/\s+/)[1];
+    const ios = cli('router-cisco');
+    for (const line of ['enable', 'configure terminal', 'ip ssh pubkey-chain', `username ${ADMIN}`, 'key-string',
+      ...(body.match(/.{1,64}/g) ?? []), 'exit', 'exit', 'exit', 'end']) await ios.executeCommand(line);
+    expect(await ios.executeCommand('show running-config | begin pubkey')).toMatch(/key-hash ssh-rsa [0-9A-F]{32}/);
+    expect(await cli('linux-pc').executeCommand(
+      `ssh -i ~/.ssh/id_rsa -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o StrictHostKeyChecking=no ${ADMIN}@${ip('router-cisco')} "show clock"`))
+      .toMatch(/\d\d:\d\d:\d\d/);
+  });
+
   it('FortiGate : la cle est un attribut de l\'administrateur', async () => {
     const pub = (await cli('linux-pc').executeCommand('cat ~/.ssh/id_ed25519.pub')).trim();
     const fgt = cli('firewall-fortinet');
@@ -370,6 +381,18 @@ describe('TP 12 — transferer des fichiers : scp et sftp', () => {
     const sent = await pc.executeCommand(`sshpass -p user scp -o StrictHostKeyChecking=no /tmp/tp12w.txt User@${ip('windows-pc')}:C:/Users/User/tp12w.txt`);
     expect(sent).toContain('100%');
     expect(await cli('windows-pc').executeCommand('type C:\\Users\\User\\tp12w.txt')).toContain('vers-windows');
+  });
+
+  it('IOS : `ip scp server enable` ouvre flash: en lecture et en ecriture', async () => {
+    const ios = cli('router-cisco');
+    for (const line of ['enable', 'configure terminal', 'ip scp server enable', 'end']) await ios.executeCommand(line);
+    const pc = cli('linux-pc');
+    await pc.executeCommand('echo "depuis-le-poste" > /tmp/Lab12.txt');
+    const scp = (args: string) => pc.executeCommand(`sshpass -p ${SECRET} scp -O -o StrictHostKeyChecking=no ${args}`);
+    expect(await scp(`/tmp/Lab12.txt ${ADMIN}@${ip('router-cisco')}:flash:Lab12.txt`)).toContain('100%');
+    expect(await ios.executeCommand('dir flash:')).toContain('Lab12.txt');
+    await scp(`${ADMIN}@${ip('router-cisco')}:flash:Lab12.txt /tmp/retour12.txt`);
+    expect(await pc.executeCommand('cat /tmp/retour12.txt')).toContain('depuis-le-poste');
   });
 
   it('VRP : sftp est refuse tant que `sftp server enable` n\'est pas tape, puis ouvert', async () => {

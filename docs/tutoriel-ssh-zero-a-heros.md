@@ -607,6 +607,25 @@ Maintenant, `ssh -o PubkeyAuthentication=no netadmin@10.0.0.12` répond `Permiss
 user@lpc:~$ ssh -i ~/.ssh/id_rsa -o PreferredAuthentications=publickey netadmin@10.0.0.17 "display clock"
 ```
 
+**c bis) Cisco IOS — `ip ssh pubkey-chain` : le routeur ne garde que le hachage**
+
+```
+ior(config)# ip ssh pubkey-chain
+ior(conf-ssh-pubkey)# username netadmin
+ior(conf-ssh-pubkey-user)# key-string
+ior(conf-ssh-pubkey-data)# AAAAB3NzaC1yc2EAAAADAQABAAABAQC...      ← le corps de id_rsa.pub, coupé en lignes de 64 caractères
+ior(conf-ssh-pubkey-data)# ...
+ior(conf-ssh-pubkey-data)# exit
+ior(conf-ssh-pubkey-user)# end
+ior# show running-config | begin pubkey
+ip ssh pubkey-chain
+  username netadmin
+   key-hash ssh-rsa 8FB4F858DD7E5AFB372780EC653DB371
+  quit
+```
+
+IOS n'accepte que des clés **RSA**, collées **sans** le préfixe `ssh-rsa`, et il ne conserve que l'empreinte MD5 de la clé (`key-hash`), jamais la clé elle-même. Tu peux aussi saisir directement `key-hash ssh-rsa <32 caractères hexadécimaux>`. Le compte `netadmin` doit exister localement, et la connexion par clé ne remplace pas le mot de passe : les deux restent acceptés tant que tu ne retires pas l'un d'eux.
+
 **d) FortiGate — la clé est un attribut de l'administrateur**
 
 ```
@@ -625,7 +644,7 @@ La valeur est **validée** : une clé mal formée est refusée à la saisie, pas
 
 > 🔍 **Point d'audit** — Inventorie les `authorized_keys` : une clé sans propriétaire identifiable (commentaire, ticket) est une porte dérobée potentielle. Et vérifie que les clés privées sont protégées par une **phrase de passe** — le `-N ""` de ce TP est une facilité de laboratoire.
 
-> ⚠️ **Limite du simulateur** — L'authentification par clé publique sur IOS (`ip ssh pubkey-chain`) n'est pas modélisée : le format de cette configuration n'a pas pu être attesté, et le simulateur ne l'invente pas.
+> ⚠️ **Sources** — Le format `pubkey-chain` / `key-hash` vient de transcriptions publiées de configurations IOS (la documentation officielle Cisco n'est pas joignable depuis l'environnement de développement) ; l'indentation exacte de `quit` dans la running-config et le texte d'erreur d'une clé illisible n'y sont attestés que par un seul exemple, et le simulateur les reprend tels quels.
 
 ---
 
@@ -818,6 +837,20 @@ C:\Users\User> type tp12w.txt
 vers-windows
 ```
 
+**Cisco IOS — `flash:` en lecture et en écriture une fois `ip scp server enable` tapé**
+
+```
+ior(config)# ip scp server enable
+user@lpc:~$ scp -O /tmp/Lab12.txt netadmin@10.0.0.15:flash:Lab12.txt
+Lab12.txt                               100%   16    16B/s   00:00
+ior# dir flash:
+...
+    3  -rwx           16  Oct 08 2026 15:06:24  Lab12.txt
+user@lpc:~$ scp -O netadmin@10.0.0.15:flash:Lab12.txt /tmp/retour12.txt
+```
+
+L'option `-O` force l'ancien protocole SCP, que les routeurs Cisco attendent ; `running-config` et `startup-config` se tirent de la même façon. Le `flash:` est **le même** que celui de `dir`, `more` et `copy` : un fichier envoyé par `scp` se lit depuis la console, et réciproquement.
+
 **Huawei VRP — le serveur SFTP est éteint par défaut, et il faut aussi l'autoriser au compte**
 
 ```
@@ -835,7 +868,7 @@ Une fois ces deux lignes passées, la session `sftp` s'ouvre.
 
 > 🧠 **Ce que tu viens d'apprendre** — SFTP n'est pas « SSH avec une option » : c'est un **sous-système** que le serveur peut refuser séparément, même quand le login interactif marche. C'est aussi un levier de durcissement : ne l'allume que là où il sert.
 
-> ⚠️ **Limite du simulateur** — `scp` vers un ASA ou un FortiGate (`ssh scopy enable`, etc.) n'est pas fonctionnel : la directive se stocke et s'affiche, mais le transfert n'a pas lieu. Pour sauvegarder une configuration, utilise les commandes propres à la famille. De même, `scp` d'un fichier vers la mémoire flash d'un routeur IOS n'est pas modélisé.
+> ⚠️ **Limite du simulateur** — `scp` vers un ASA ou un FortiGate (`ssh scopy enable`, etc.) n'est pas fonctionnel : la directive se stocke et s'affiche, mais le transfert n'a pas lieu. Pour sauvegarder une configuration, utilise les commandes propres à la famille. Le routeur Huawei ne dispose pas encore d'un système de fichiers `flash:` : sa session SFTP s'ouvre, mais aucune commande `dir` n'y répond (la taille et la capacité de la flash de chaque modèle n'ont pas pu être attestées).
 
 ---
 
@@ -962,8 +995,8 @@ Pour chaque équipement, de la plus à la moins critique :
 | # | Contrôle | Comment le relever | Attendu |
 |---|---|---|---|
 | 1 | Version du protocole | `ssh-keyscan`, `show ip ssh`, `display ssh server status` | SSH **2** uniquement ; ASA : `ssh version 2` |
-| 2 | Algorithmes | `show ip ssh`, `sshd -T` | Pas de SHA-1, pas de CBC ni de 3DES ; chaque dérogation `+algo` du client est justifiée |
-| 3 | Authentification | `sshd -T`, `display current-configuration \| include ssh user` | Clés plutôt que mots de passe ; pas de mot de passe vide ; `PermitRootLogin no` |
+| 2 | Algorithmes | `show ip ssh`, `sudo sshd -T` | Pas de SHA-1, pas de CBC ni de 3DES ; chaque dérogation `+algo` du client est justifiée |
+| 3 | Authentification | `sudo sshd -T`, `display current-configuration \| include ssh user` | Clés plutôt que mots de passe ; pas de mot de passe vide ; `PermitRootLogin no` |
 | 4 | Sources autorisées | `access-class`, `acl … inbound`, `ssh <réseau> <iface>`, `trusthost`, `AllowUsers` | Liste des postes d'administration, pas « tout le LAN » |
 | 5 | Délai d'inactivité | TP 9 | ≤ 15 minutes, jamais « 0 = infini » |
 | 6 | Freinage des tentatives | TP 10 | Verrouillage ou limitation actif **et** journalisé |
@@ -1034,13 +1067,15 @@ Pour chaque équipement, de la plus à la moins critique :
 
 ## Ce que ce tutoriel ne prétend pas couvrir
 
-Honnêteté d'auditeur : voici ce que le simulateur ne fait pas, mesuré et non supposé.
+Honnêteté d'auditeur : voici ce que le simulateur ne fait pas, mesuré et non supposé. Chaque ligne dit aussi **pourquoi** elle reste ouverte : les documentations Cisco, Huawei et Fortinet ne sont pas joignables depuis l'environnement de développement, et le projet préfère ne rien implémenter qu'inventer un texte que l'équipement réel n'écrit pas.
 
 - **ASA** : `show ssh sessions` et le journal d'accès d'administration ne sont pas modélisés ; `ssh scopy enable` est stocké et affiché, mais n'active aucun transfert.
-- **IOS** : l'authentification par clé publique (`ip ssh pubkey-chain`), l'ordre exact des bannières `login`/`motd` sur SSH, et la copie `scp` vers la mémoire flash ne sont pas modélisés.
-- **Huawei VRP** : `display logbuffer` ne reflète pas les connexions SSH ; la commande `dir` n'est pas modélisée.
-- **FortiGate** : la bannière d'identification SSH est de type OpenSSH ; la valeur exacte d'un vrai FortiOS n'a pas pu être attestée.
-- **Linux** : `sshd -T` s'exécute sans privilèges (un vrai Ubuntu l'exige) ; `ssh-copy-id` ne choisit pas la clé par défaut comme le fait un vrai client.
+- **IOS** : l'ordre exact des bannières `login` et `motd` sur SSH reste incertain (les sources publiques se contredisent) ; la copie sortante `copy scp:` / `copy ftp:` depuis la console du routeur n'est pas modélisée (`copy tftp:` l'est).
+- **Huawei VRP** : les journaux de connexion SSH existent sous `SSH/4/SSH_FAIL` (échec) et `SSH/5/SSH_USER_LOGIN` (succès, selon les références de journaux de la gamme CloudEngine), mais le texte exact du message et le numéro de gabarit pour les routeurs AR n'ont pas pu être relevés ; `display logbuffer` ne les affiche donc pas. Pas de `flash:` ni de `dir`.
+- **FortiGate** : la bannière d'identification SSH est de type OpenSSH ; la seule valeur retrouvée (`SSH-2.0-FortiSSH_2.5`) vient d'un message de forum vieux de vingt ans.
+- **Linux** : `sshd -T` n'affiche qu'une quinzaine de directives au lieu de la centaine d'un vrai sshd.
 - **Transport** : le `ProxyJump` fonctionne sur le fil ; l'authentification par clé *via* un saut qui impose lui-même un mot de passe n'est pas traitée dans ce tutoriel.
 
-Tout ce qui est écrit dans les TP 1 à 15 est, en revanche, exécuté par `tuto-ssh-zero-a-heros.test.ts` (43 cas) et `tuto-ssh-matrice-equipements.test.ts` (90 couples).
+Ce qui était sur cette liste et a été **fermé** : l'authentification par clé publique sur IOS, le transfert `scp` vers et depuis le `flash:` d'IOS (routeur et commutateur), `sshd -T` refusé sans privilège, `ssh-copy-id` qui prend la clé la plus récente.
+
+Tout ce qui est écrit dans les TP 1 à 15 est, en revanche, exécuté par `tuto-ssh-zero-a-heros.test.ts` et `tuto-ssh-matrice-equipements.test.ts` (90 couples).
