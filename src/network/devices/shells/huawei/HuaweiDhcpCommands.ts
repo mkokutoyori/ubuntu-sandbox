@@ -49,6 +49,12 @@ export function registerDhcpSystemCommands(
     return '';
   });
 
+  trie.register('undo dhcp enable', 'Disable DHCP service', () => {
+    callbacks.setDhcpEnabled(false);
+    getRouter()._getDHCPServerInternal().disable();
+    return '';
+  });
+
   trie.register('dhcp snooping enable', 'Enable DHCP snooping', () => {
     callbacks.setDhcpSnoopingEnabled(true);
     return '';

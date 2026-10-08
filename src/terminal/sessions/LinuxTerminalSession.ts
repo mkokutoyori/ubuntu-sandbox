@@ -3048,7 +3048,7 @@ export class LinuxTerminalSession extends TerminalSession {
       if (isOk(channelResult)) {
         const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
         const sourceHost = this.device.getHostname?.() ?? '';
-        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false);
+        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false, true);
         for (const line of banner) this.addLine(line);
         const promptHost = (wireRemoteDevice as unknown as { getSshHostname?: () => string })
           .getSshHostname?.() ?? host;

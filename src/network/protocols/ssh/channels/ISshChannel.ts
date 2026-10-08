@@ -138,4 +138,5 @@ export interface ISshSftpChannel extends ISshChannel {
   readonly type: 'sftp';
   sendRequest(req: SftpRequest): SftpResponse;
   readonly remoteCwd: string;
+  accepted(): Promise<boolean>;
 }

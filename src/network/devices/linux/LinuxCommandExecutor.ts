@@ -1644,7 +1644,7 @@ export class LinuxCommandExecutor {
       return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
     }
 
-    const { fs: wireFs, denial } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities);
+    const { fs: wireFs, denial } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities, cmd === 'scp' ? 'scp' : 'sftp');
     const unauthenticated = (): { output: string; exitCode: number } | null => (
       !wireFs && this.tcpConnector
         ? { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
@@ -1756,11 +1756,19 @@ export class LinuxCommandExecutor {
 
   private async tryOpenWireSftpFs(
     host: string, user: string, password: string, port = 22, identities: string[] = [],
+    command: 'scp' | 'sftp' = 'sftp',
   ): Promise<{ fs: ISftpFileSystem | null; denial?: string }> {
     const { session, denial } = await this.connectWireSsh(host, user, password, port, identities);
     if (!session) return { fs: null, denial };
     const channelResult = session.openSftpChannel();
     if (!isOk(channelResult)) { session.disconnect(); return { fs: null }; }
+    if (!(await channelResult.value.accepted())) {
+      session.disconnect();
+      return {
+        fs: null,
+        denial: command === 'scp' ? 'scp: Connection closed' : 'subsystem request failed on channel 0\nConnection closed',
+      };
+    }
     return { fs: new WireSftpFileSystem(channelResult.value) };
   }
 

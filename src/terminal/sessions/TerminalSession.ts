@@ -597,8 +597,9 @@ export abstract class TerminalSession {
     sourceIp: string,
     sourceHost: string,
     quiet = false,
+    preAuthBannerShown = false,
   ): string[] {
-    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet);
+    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet, preAuthBannerShown);
   }
 
   /**

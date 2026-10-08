@@ -438,7 +438,8 @@ export class SshServerHandler {
             }
             case 'subsystem': {
               const subsystem = decodeStringPayload(request.payload);
-              if (info.started || subsystem !== 'sftp') {
+              if (info.started || subsystem !== 'sftp'
+                || this.ctx.subsystemAdmitted?.('sftp', user) === false) {
                 request.reply(false);
                 return;
               }
