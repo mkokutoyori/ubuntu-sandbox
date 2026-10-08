@@ -145,7 +145,7 @@ import type {
   AdminHttpApp, AdminHttpServer, AdminServerCertificate, AdminServerCertificateMaterial,
 } from './mgmt/AdminHttpServer';
 import type { ManagementCli } from './mgmt/FirewallCliServer';
-import { ManagementPlane, type PasswordExpiryPolicy } from './mgmt/ManagementPlane';
+import { ManagementPlane, type ManagementSource, type PasswordExpiryPolicy } from './mgmt/ManagementPlane';
 import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
@@ -646,6 +646,7 @@ export class Firewall extends Equipment {
       knownAdmin: (user) => this.access.getAdmin(user) !== undefined,
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
+      sshIdentification: () => this.managementSshIdentification(),
       runningConfig: () => this.managementRunningConfig(),
       onManagementLogin: (session) => {
         this.management.noteLogin(session.username);
@@ -1688,6 +1689,9 @@ export class Firewall extends Equipment {
   }
 
   managementIdleTimeoutMs(): number { return this.management.idleTimeoutMs(); }
+
+  protected managementSshIdentification(): string | undefined { return undefined; }
+
   getLoggingConfig(): LoggingConfig { return this.logging; }
   getSyslogAgent(): SyslogAgent { return this.syslog; }
   getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }
@@ -1715,6 +1719,14 @@ export class Firewall extends Equipment {
 
   allowsAccess(iface: string, service: string): boolean {
     return this.management.allowsAccess(iface, service);
+  }
+
+  setManagementSources(service: string, iface: string, sources: readonly ManagementSource[]): void {
+    this.management.setServiceSources(service, iface, sources);
+  }
+
+  clearManagementSources(service: string, iface: string): void {
+    this.management.clearServiceSources(service, iface);
   }
 
   allowedAccessOn(iface: string): readonly string[] {

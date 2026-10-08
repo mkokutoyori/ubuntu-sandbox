@@ -24,6 +24,7 @@ import type { AuthMethodType, ISshAuthContext } from '../../../protocols/ssh/aut
 import type { ISftpFileSystem } from '../../../protocols/ssh/sftp/ISftpFileSystem';
 import { RouterSftpFileSystem } from '../../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { SshHostKey } from '../../../protocols/ssh/SshHostKey';
+import { SSH_SERVER_IDENTIFICATION } from '../../../protocols/ssh/serverIdentification';
 import { SshUserContext } from '../../../protocols/ssh/SshUserContext';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
@@ -57,6 +58,7 @@ export interface FirewallCliServerDeps {
   knownAdmin(user: string): boolean;
   refuseSource(source: string): boolean;
   idleTimeoutMs(): number | null;
+  sshIdentification(): string | undefined;
   runningConfig(): string;
   onLogin(session: AdminLoginFacts): void;
   onLogout(user: string): void;
@@ -137,6 +139,10 @@ class FirewallSshServerContext implements ISshServerContext {
     this.hostKey = hostKey;
     this.config = Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, permitRootLogin: false });
     this.auth = this.buildAuthContext();
+  }
+
+  serverIdentification(): string {
+    return this.deps.sshIdentification() ?? SSH_SERVER_IDENTIFICATION;
   }
 
   getFilesystem(): ISftpFileSystem {

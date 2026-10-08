@@ -134,7 +134,7 @@ export function isAnyHost(host: TrustHost): boolean {
   return host.address === '0.0.0.0' && host.mask === '0.0.0.0';
 }
 
-function withinMask(candidate: string, network: string, mask: string): boolean {
+export function withinMask(candidate: string, network: string, mask: string): boolean {
   return addressObjectMatches(
     subnetAddress('trusthost', network, mask), candidate, {});
 }

@@ -1,5 +1,5 @@
 import type { IPv4Packet } from '../../../core/types';
-import type { AccessMatrix } from '../authz/AccessMatrix';
+import { withinMask, type AccessMatrix } from '../authz/AccessMatrix';
 import {
   adminHasNoPassword, adminTrustsSource, applyAdminAccount, authenticateAdmin,
   type AdminAccountDraft,
@@ -18,6 +18,11 @@ export interface PasswordExpiryPolicy {
   readonly days: number;
 }
 
+export interface ManagementSource {
+  readonly network: string;
+  readonly mask: string;
+}
+
 export const NO_PASSWORD_EXPIRY: PasswordExpiryPolicy =
   Object.freeze({ enabled: false, days: 0 });
 
@@ -25,6 +30,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class ManagementPlane {
   private readonly allowed = new Map<string, ReadonlySet<string>>();
+  private readonly serviceSources = new Map<string, readonly ManagementSource[]>();
   private readonly secrets = new Map<string, string>();
   private readonly history = new PasswordHistory();
   private readonly lockout: ManagementLockout;
@@ -88,6 +94,20 @@ export class ManagementPlane {
     this.adminServer?.refresh();
   }
 
+  setServiceSources(service: string, iface: string, sources: readonly ManagementSource[]): void {
+    this.serviceSources.set(`${service.toLowerCase()}@${iface}`, sources);
+  }
+
+  clearServiceSources(service: string, iface: string): void {
+    this.serviceSources.delete(`${service.toLowerCase()}@${iface}`);
+  }
+
+  sourceAdmitted(service: string, iface: string, source: string): boolean {
+    const declared = this.serviceSources.get(`${service.toLowerCase()}@${iface}`);
+    if (declared === undefined) return true;
+    return declared.some(entry => withinMask(source, entry.network, entry.mask));
+  }
+
   allowsAccess(iface: string, service: string): boolean {
     if (this.allowed.size === 0) return true;
     return this.allowed.get(iface)?.has(service.toLowerCase()) ?? false;
@@ -112,6 +132,7 @@ export class ManagementPlane {
     const service = serviceOnPort(this.ports, port);
     if (service === undefined) return true;
     if (!this.allowsAccess(iface, service)) return false;
+    if (!this.sourceAdmitted(service, iface, packet.sourceIP.toString())) return false;
     return this.trustedSource(packet.sourceIP.toString());
   }
 

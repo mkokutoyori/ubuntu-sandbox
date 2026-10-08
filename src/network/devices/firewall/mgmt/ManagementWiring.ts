@@ -52,6 +52,7 @@ export interface ManagementHost {
   authRequiredByPolicy(): boolean;
   portalUsesHttps(): boolean;
   managementPorts(): ManagementPorts;
+  sshIdentification(): string | undefined;
   createManagementCli(user: string, origin: string): ManagementCli | null;
   authenticateAdmin(user: string, password: string, source: string): boolean;
   leaveCluster(iface: string, ip: string, mask: string): string;
@@ -172,6 +173,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     knownAdmin: (user) => host.knownAdmin(user),
     refuseSource: (source) => host.refuseManagementSource(source),
     idleTimeoutMs: () => host.managementIdleTimeoutMs(),
+    sshIdentification: () => host.sshIdentification(),
     runningConfig: () => host.runningConfig(),
     onLogin: (session) => { host.onManagementLogin(session); },
     onLogout: (user) => { host.onAdminLogout(user); },
