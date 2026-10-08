@@ -8,7 +8,7 @@ auparse/Makefile.am does, and the generated transtab is read back: values keep t
 flag tables iterate the way auparse iterates them and i2s lookups find the first entry holding the value.
 typetab.h is read as text: its entries map a field name to an AUPARSE_TYPE_* name.
 """
-import os, re, subprocess, sys, tempfile
+import json, os, re, subprocess, sys, tempfile
 
 TABLES = [
     ("access", "accesstab.h"), ("cap", "captab.h"), ("clock", "clocktab.h"), ("clone_flag", "clone-flagtab.h"),
@@ -24,6 +24,7 @@ TABLES = [
     ("netaction", "netactiontab.h"), ("bpf", "bpftab.h"), ("openat2_resolve", "openat2-resolvetab.h"),
     ("evtype", "normalize_evtypetab.h"),
     ("err", "../lib/errtab.h"), ("filter_list", "../lib/flagtab.h"), ("ftype", "../lib/ftypetab.h"), ("machine", "../lib/machinetab.h"),
+    ("field", "../lib/fieldtab.h"), ("op", "../lib/optab.h"), ("action", "../lib/actiontab.h"), ("fstype", "../lib/fstypetab.h"),
 ]
 
 def build(src, header, prefix, work):
@@ -49,6 +50,15 @@ def types(src):
             out.append((m.group(2), m.group(1)[len("AUPARSE_TYPE_"):]))
     return out
 
+def error_messages(src):
+    text = open(src + "/lib/errormsg.h").read()
+    numbers = {name: int(value) for name, value in re.findall(r"#define\s+(EAU_\w+)\s+(\d+)", text)}
+    rows = []
+    for key, position, message in re.findall(r'\{\s*(-[\w]+)\s*,\s*(\d)\s*,\s*"((?:[^"\\]|\\.)*)"\s*\}', text):
+        number = -numbers[key[1:]] if key.startswith("-EAU_") else int(key)
+        rows.append((number, int(position), message.replace('\\"', '"').replace("\\'", "'")))
+    return rows
+
 def main():
     src, out = sys.argv[1], sys.argv[2]
     work = tempfile.mkdtemp()
@@ -64,6 +74,11 @@ def main():
     t = types(src)
     for i in range(0, len(t), 4):
         lines.append("  " + ", ".join("[%s, %s]" % ('"%s"' % n, '"%s"' % ty) for n, ty in t[i:i + 4]) + ",")
+    lines.append("];")
+    lines.append("")
+    lines.append("export const ERROR_MESSAGE_TABLE: ReadonlyArray<readonly [number, number, string]> = [")
+    for number, position, message in error_messages(src):
+        lines.append("  [%d, %d, %s]," % (number, position, json.dumps(message)))
     lines.append("];")
     open(out, "w").write("\n".join(lines) + "\n")
     print(len(TABLES), "tables,", len(t), "field types")

@@ -1,17 +1,19 @@
 import { AUPARSE_TABLES, FIELD_TYPES } from './AuparseTables';
 import { SYSCALL_TABLES } from './AuditSyscallTables';
 import { strerror } from './AuditErrnoMessages';
+import { errnoToName } from './AuditErrnoTable';
 import { AUDIT } from './AuditConstants';
 import { bytesToCString, isDigit, isHexDigit, unescapeBytes } from './AuditCString';
 import { ttyDataText, type EscapeMode } from './AuditPrint';
 import { inetNtop6 } from './AuditSearchParser';
+import { strtoulBig } from './AuditCNumbers';
 
 export const MACH = { X86: 0, X86_64: 1, PPC64: 3, PPC: 4, S390X: 5, S390: 6, ARM: 8, AARCH64: 9, PPC64LE: 10, IO_URING: 11 } as const;
 const KEY_SEPARATOR = String.fromCharCode(0x01);
 
 const ELF_MACHINES: ReadonlyArray<readonly [number, number]> = [
   [0x40000003, MACH.X86], [0xc000003e, MACH.X86_64], [0x80000015, MACH.PPC64], [0xc0000015, MACH.PPC64LE],
-  [0x00000014, MACH.PPC], [0x80000016, MACH.S390X], [0x00000016, MACH.S390], [0x00000028, MACH.ARM],
+  [0x00000014, MACH.PPC], [0x80000016, MACH.S390X], [0x00000016, MACH.S390], [0x40000028, MACH.ARM],
   [0xc00000b7, MACH.AARCH64],
 ];
 
@@ -31,30 +33,7 @@ export interface Idata {
   val: string;
 }
 
-const U64 = (1n << 64n) - 1n;
-
-function parseCInteger(text: string, base: number): bigint {
-  let i = 0;
-  while (i < text.length && /\s/.test(text[i])) i++;
-  let negative = false;
-  if (text[i] === '+' || text[i] === '-') {
-    negative = text[i] === '-';
-    i++;
-  }
-  let b = base;
-  if ((b === 0 || b === 16) && text[i] === '0' && (text[i + 1] === 'x' || text[i + 1] === 'X') && isHexDigit(text[i + 2])) {
-    i += 2;
-    b = 16;
-  } else if (b === 0) b = text[i] === '0' ? 8 : 10;
-  let value = 0n;
-  const radix = BigInt(b);
-  for (; i < text.length; i++) {
-    const digit = parseInt(text[i], 36);
-    if (Number.isNaN(digit) || digit >= b) break;
-    value = value * radix + BigInt(digit);
-  }
-  return negative ? (-value) & U64 : value & U64;
-}
+const parseCInteger = (text: string, base: number): bigint => strtoulBig(text, base);
 
 const strtoulN = (text: string, base: number): number => Number(parseCInteger(text, base));
 const toInt = (value: bigint): number => Number(BigInt.asIntN(32, value));
@@ -89,11 +68,6 @@ function machineTable(machine: number): Readonly<Record<number, string>> | null 
 
 export function syscallToName(syscall: number, machine: number): string | null {
   return machineTable(machine)?.[syscall] ?? null;
-}
-
-function errnoToName(error: number): string | null {
-  if (error < 0) return null;
-  return lookupI2s('err', error);
 }
 
 const FIELD_TYPE_MAP: ReadonlyMap<string, string> = new Map(FIELD_TYPES);

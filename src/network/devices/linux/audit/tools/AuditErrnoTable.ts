@@ -144,3 +144,9 @@ export function auditNameToErrno(name: string): number {
   const value = Object.prototype.hasOwnProperty.call(ERRNO_TABLE, key) ? ERRNO_TABLE[key] : 0;
   return value * sign;
 }
+
+export function errnoToName(error: number): string | null {
+  if (error < 0) return null;
+  for (const [name, value] of Object.entries(ERRNO_TABLE)) if (value === error) return name;
+  return null;
+}
