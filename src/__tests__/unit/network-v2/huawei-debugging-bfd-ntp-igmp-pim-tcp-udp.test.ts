@@ -1,7 +1,7 @@
 /*
  * `debugging bfd all`, `debugging ntp-service all`, `debugging igmp all`,
  * `debugging pim all`, `debugging tcp packet`, `debugging udp packet`,
- * `debugging bgp update` :
+ * `debugging bgp update`, `debugging nat all` :
  * six modules VRP que le catalogue ne connaissait pas (`Error: Unrecognized
  * command`).
  *
@@ -14,7 +14,7 @@
  * `ntp-service all` / `igmp all` / `pim all` n'est pas verifiee non plus
  * contre la documentation Huawei (inaccessible d'ici).
  *
- * Avant le correctif : 6 des 9 cas tombent (git stash de src/network).
+ * Avant le correctif : 7 des 10 cas tombent (git stash de src/network).
  * Passent des deux cotes le TEMOIN « un evenement BFD sans drapeau ne
  * trace rien », qui prouve que le laboratoire publie bien sur le bus et
  * que le silence vient du drapeau ; « un evenement d un autre equipement
@@ -118,6 +118,17 @@ describe('debugging bfd/ntp/igmp/pim/tcp/udp', () => {
     await flush();
     expect(shown('BGP: Receive UPDATE 192.0.2.1/32 from peer 10.0.0.2')).toBe(true);
     expect(shown('BGP: Send withdrawal 198.51.100.0/24 to peer 10.0.0.2')).toBe(true);
+  });
+
+  it('debugging nat all trace la creation et la suppression d une session', async () => {
+    await type('debugging nat all');
+    await type('terminal debugging');
+    const session = { protocol: 6, localIp: '192.168.1.10', localPort: 40000, globalIp: '203.0.113.1', globalPort: 1024 };
+    publish('nat.session.created', { ...session, outsideIp: '198.51.100.9', outsidePort: 80, kind: 'overload' });
+    publish('nat.session.removed', { ...session, reason: 'expired' });
+    await flush();
+    expect(shown('NAT: Session created (overload) TCP 192.168.1.10:40000 -> 203.0.113.1:1024')).toBe(true);
+    expect(shown('NAT: Session removed (expired)')).toBe(true);
   });
 
   it('un evenement d un autre equipement est ignore', async () => {

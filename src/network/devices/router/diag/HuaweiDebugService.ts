@@ -182,6 +182,24 @@ export class HuaweiDebugService implements TerminalDebugSource {
     this.broadcast.track(bus.subscribe('bgp.update.sent', bgpUpdate('Send')));
     this.broadcast.track(bus.subscribe('bgp.update.received', bgpUpdate('Receive')));
 
+    const natProtocol = (code: number): string => (code === 6 ? 'TCP' : code === 17 ? 'UDP' : code === 1 ? 'ICMP' : String(code));
+    this.broadcast.track(bus.subscribe('nat.session.created', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('nat', `NAT: Session created (${p.kind}) ${natProtocol(p.protocol)} `
+        + `${p.localIp}:${p.localPort} -> ${p.globalIp}:${p.globalPort}`);
+    }));
+    this.broadcast.track(bus.subscribe('nat.session.removed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('nat', `NAT: Session removed (${p.reason}) ${natProtocol(p.protocol)} `
+        + `${p.localIp}:${p.localPort} -> ${p.globalIp}:${p.globalPort}`);
+    }));
+    this.broadcast.track(bus.subscribe('nat.port.exhausted', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('nat', `NAT: Port pool exhausted for ${e.payload.globalIp}`);
+    }));
+
     this.broadcast.track(bus.subscribe('vrrp.state.changed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
