@@ -78,6 +78,8 @@ import { toutesLesSuites } from './cisco/ciscoContinuations';
 import type { ParsedPing } from './cisco/ciscoPing';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
+import { ipSshPubkeySpecs, type PubkeyChainHost, type PubkeyChainMode } from './cisco/ipSshPubkeySpecs';
+import { decodeKeyString } from '../router/security/SshPubkeyChain';
 import { ciscoSoftwareOf } from './cisco/CiscoPlatform';
 import { effectiveIosSshAlgorithms } from '../router/security/CiscoSshAlgorithms';
 import { terminalSpecs } from './cisco/terminalSpecs';
@@ -2083,6 +2085,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return { scope, tous, niveau, commande: mots.join(' ') };
   }
 
+  private pubkeyUser: string | null = null;
+  private keyStringLines: string[] | null = null;
+
+  protected pubkeyChainHost(): PubkeyChainHost {
+    return {
+      chain: () => getSecurityConfig(this.d()).sshPubkeys,
+      selectedUser: () => this.pubkeyUser,
+      selectUser: (name) => { this.pubkeyUser = name; },
+      enter: (mode: PubkeyChainMode) => { this.mode = mode; },
+      beginKeyString: () => { this.keyStringLines = []; this.mode = 'config-ssh-pubkey-data'; },
+    };
+  }
+
+  private collectKeyStringLine(device: TDevice, rawLine: string): string {
+    const word = rawLine.trim().toLowerCase();
+    if (word !== 'exit' && word !== 'quit') {
+      this.keyStringLines!.push(rawLine.trim());
+      return '';
+    }
+    const lines = this.keyStringLines!;
+    this.keyStringLines = null;
+    this.mode = 'config-ssh-pubkey-user';
+    const decoded = decodeKeyString(lines);
+    if (decoded === null || this.pubkeyUser === null) return '% Invalid public key: only ssh-rsa keys can be stored.';
+    getSecurityConfig(device).sshPubkeys.add(this.pubkeyUser, decoded.entry);
+    return '';
+  }
+
   protected ipSshHost(): IpSshHost {
     return {
       sshConfig: () => getSecurityConfig(this.d()).ssh,
@@ -2821,6 +2851,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     rawInput = this.applyLineEditing(rawInput);
     // Multi-line banner entry: every line is verbatim content (leading
     // spaces, empty lines, would-be commands) until the delimiter shows up.
+    if (this.keyStringLines !== null) return this.collectKeyStringLine(device, rawInput);
     if (this.bannerCollector) {
       this.deviceRef = device;
       const out = this.collectBannerLine(rawInput);
@@ -6012,6 +6043,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.identityBootSpecs(),
       ...privilegeRuleSpecs(() => this.privilegeRuleHost()),
       ...ipSshSpecs(() => this.ipSshHost()),
+      ...ipSshPubkeySpecs(() => this.pubkeyChainHost()),
       ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),

@@ -61,6 +61,7 @@ import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
 import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import type { RouterSftpSource } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import { SshHostKey, type SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
 import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
@@ -3070,6 +3071,7 @@ export abstract class Switch extends Equipment {
       recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),
       forcedCommand: (user) => this.sshForcedCommand(user),
       sftpAdmitted: (user) => this.sshSftpAdmitted(user),
+      sftpSource: () => (this as unknown as { getSftpFileSource?: () => RouterSftpSource | null }).getSftpFileSource?.() ?? null,
       ...(this.sshPublicKeyAdmitted ? {
         publicKeyAdmitted: (user: string, key: string) =>
           this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
