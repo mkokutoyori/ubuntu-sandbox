@@ -1,6 +1,7 @@
 /*
  * `debugging bfd all`, `debugging ntp-service all`, `debugging igmp all`,
- * `debugging pim all`, `debugging tcp packet`, `debugging udp packet` :
+ * `debugging pim all`, `debugging tcp packet`, `debugging udp packet`,
+ * `debugging bgp update` :
  * six modules VRP que le catalogue ne connaissait pas (`Error: Unrecognized
  * command`).
  *
@@ -13,7 +14,7 @@
  * `ntp-service all` / `igmp all` / `pim all` n'est pas verifiee non plus
  * contre la documentation Huawei (inaccessible d'ici).
  *
- * Avant le correctif : 5 des 8 cas tombent (git stash de src/network).
+ * Avant le correctif : 6 des 9 cas tombent (git stash de src/network).
  * Passent des deux cotes le TEMOIN « un evenement BFD sans drapeau ne
  * trace rien », qui prouve que le laboratoire publie bien sur le bus et
  * que le silence vient du drapeau ; « un evenement d un autre equipement
@@ -106,6 +107,17 @@ describe('debugging bfd/ntp/igmp/pim/tcp/udp', () => {
     publish('pim.neighbor.added', { iface: 'GigabitEthernet0/0/0', neighborIp: '10.0.0.3', drPriority: 1, generationId: 7 });
     await flush();
     expect(shown('PIM: Neighbor 10.0.0.3 added')).toBe(true);
+  });
+
+  it('debugging bgp update trace une annonce et un retrait', async () => {
+    await type('debugging bgp update');
+    await type('terminal debugging');
+    const update = { neighborIp: '10.0.0.2', origin: 'igp', asPath: [65002], nextHop: '10.0.0.2', med: null, localPref: null };
+    publish('bgp.update.received', { ...update, announced: ['192.0.2.1/32'], withdrawn: [] });
+    publish('bgp.update.sent', { ...update, announced: [], withdrawn: ['198.51.100.0/24'] });
+    await flush();
+    expect(shown('BGP: Receive UPDATE 192.0.2.1/32 from peer 10.0.0.2')).toBe(true);
+    expect(shown('BGP: Send withdrawal 198.51.100.0/24 to peer 10.0.0.2')).toBe(true);
   });
 
   it('un evenement d un autre equipement est ignore', async () => {

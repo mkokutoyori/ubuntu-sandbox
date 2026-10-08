@@ -16,6 +16,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
+import type { BgpUpdateTracedPayload } from '@/network/bgp/events';
 import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortTap';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { huaweiDisplayInterfaceName } from '@/network/devices/shells/cli-utils';
@@ -166,6 +167,20 @@ export class HuaweiDebugService implements TerminalDebugSource {
       const p = e.payload;
       this.emit('bgp', `BGP: Peer ${p.neighborIp} state changed from ${p.oldState} to ${p.newState}`);
     }));
+
+    const bgpUpdate = (direction: 'Send' | 'Receive') => (e: { payload: BgpUpdateTracedPayload }): void => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      for (const prefix of p.announced) {
+        this.emit('bgp-update', `BGP: ${direction} UPDATE ${prefix} ${direction === 'Send' ? 'to' : 'from'} peer ${p.neighborIp}, `
+          + `next hop ${p.nextHop ?? '?'}, AS path ${p.asPath.join(' ') || 'empty'}`);
+      }
+      for (const prefix of p.withdrawn) {
+        this.emit('bgp-update', `BGP: ${direction} withdrawal ${prefix} ${direction === 'Send' ? 'to' : 'from'} peer ${p.neighborIp}`);
+      }
+    };
+    this.broadcast.track(bus.subscribe('bgp.update.sent', bgpUpdate('Send')));
+    this.broadcast.track(bus.subscribe('bgp.update.received', bgpUpdate('Receive')));
 
     this.broadcast.track(bus.subscribe('vrrp.state.changed', (e) => {
       if (!mine(e.payload)) return;

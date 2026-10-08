@@ -23,6 +23,7 @@ export type HuaweiDebugCategory =
   | 'stp'
   | 'vrrp'
   | 'bgp'
+  | 'bgp-update'
   | 'rip'
   | 'bfd'
   | 'ntp'
@@ -55,6 +56,7 @@ export const HUAWEI_DEBUG_CATALOG: readonly HuaweiDebugSpec[] = [
   { category: 'stp', words: ['stp'], label: 'STP', platforms: ['switch'] },
   { category: 'vrrp', words: ['vrrp'], label: 'VRRP', platforms: ['router'] },
   { category: 'bgp', words: ['bgp'], label: 'BGP', platforms: ['router'] },
+  { category: 'bgp-update', words: ['bgp', 'update'], label: 'BGP update', platforms: ['router'] },
   { category: 'rip', words: ['rip'], label: 'RIP', platforms: ['router'] },
   { category: 'bfd', words: ['bfd', 'all'], label: 'BFD', platforms: TOUTES },
   { category: 'ntp', words: ['ntp-service', 'all'], label: 'NTP', platforms: TOUTES },
