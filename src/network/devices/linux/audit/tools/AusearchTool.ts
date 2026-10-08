@@ -12,6 +12,8 @@ import { auditNameToErrno } from './AuditErrnoTable';
 import { isDigit, strtoul, strtollNumber, strtoulUint32, toUint32 } from './AuditCString';
 import { safePrintString, type EscapeMode } from './AuditPrint';
 import { formatCtime } from './AuditCtime';
+import { adjustType, Interpreter, MACH, elfToMachine } from './AuditInterpret';
+import { formatDateTime } from './AuditToolHost';
 
 export const AUSEARCH_VERSION = 'ausearch version 3.1.2';
 
@@ -389,8 +391,11 @@ class Ausearch {
           if (optarg === 'raw') this.format = 'raw';
           else if (optarg === 'default') this.format = 'default';
           else if (optarg!.startsWith('interp')) this.format = 'interpret';
-          else if (optarg === 'csv') this.format = 'csv';
-          else if (optarg === 'text') this.format = 'text';
+          else if (optarg === 'csv' || optarg === 'text') {
+            this.out.eprintf(`The ${optarg} format needs the auparse event normalizer, which is not built yet\n`);
+            retval = -1;
+            break;
+          }
           else {
             this.out.eprintf(`Unknown option (${optarg})\n`);
             retval = -1;
@@ -767,8 +772,139 @@ class Ausearch {
     switch (this.format) {
       case 'raw': this.outputRaw(e); break;
       case 'default': this.outputDefault(e); break;
+      case 'interpret': this.outputInterpreted(e); break;
       default: this.outputDefault(e); break;
     }
+  }
+
+  private machine = -1;
+  private curSyscall = -1;
+  private a0 = 0n;
+  private a1 = 0n;
+  private interpreter!: Interpreter;
+
+  private outputInterpreted(e: AuditEvent): void {
+    const last = e.records[e.records.length - 1];
+    this.out.printf('----\n');
+    if (!last) {
+      this.out.eprintf('Error - no elements in record.');
+      return;
+    }
+    if (last.type >= AUDIT.DAEMON_START && last.type < AUDIT.SYSCALL) this.outputInterpretedRecord(last, e.e);
+    else for (let i = e.records.length - 1; i >= 0; i--) this.outputInterpretedRecord(e.records[i], e.e);
+  }
+
+  private outputInterpretedRecord(n: AuditEvent['records'][number], e: AuditEvent['e']): void {
+    this.machine = -1;
+    this.curSyscall = -1;
+    let line = n.message;
+    if (e.node !== null) {
+      const space = line.indexOf(' ');
+      if (space >= 0) line = line.slice(space + 1);
+    }
+    const open = line.indexOf('(');
+    if (open < 0) {
+      this.out.eprintf("can't find time stamp\n");
+      return;
+    }
+    const head = line.slice(0, open);
+    const afterOpen = line.slice(open + 1);
+    const name = n.type >= 0 ? messageTypeToName(n.type) : null;
+    if (e.node !== null) this.out.printf(`node=${e.node} `);
+    this.out.printf(name !== null ? `type=${name} msg=audit(` : `${head}(`);
+    const close = afterOpen.indexOf(')');
+    if (close < 0) return;
+    let s: string | null = afterOpen.slice(close + 1);
+    this.out.printf(formatDateTime(this.host, e.sec));
+    this.out.printf(`.${String(e.milli).padStart(3, '0')}:${e.serial}) `);
+    if (n.type === AUDIT.SYSCALL) {
+      this.a0 = n.a0;
+      this.a1 = n.a1;
+    }
+    let found = false;
+    let comma = false;
+    let eq = 0;
+    while (s !== null && s.length > 0 && (eq = s.indexOf('=')) >= 0) {
+      comma = false;
+      found = true;
+      let nameAt = eq;
+      while (s[nameAt] !== ' ' && nameAt > 0) nameAt--;
+      this.out.printf(`${s.slice(0, eq)}=`);
+      let fieldName = s.slice(nameAt, eq);
+      const rest = s.slice(eq + 1);
+      if (fieldName === 'msg') {
+        s = rest;
+        continue;
+      }
+      if (fieldName[0] === "'") fieldName = fieldName.slice(1);
+      let value: string;
+      if (rest[0] === "'" || rest[0] === '"') {
+        const end = rest.indexOf(rest[0], 1);
+        if (end >= 0) {
+          value = rest.slice(0, end + 1);
+          s = rest.slice(end + 2);
+        } else {
+          value = rest;
+          s = null;
+        }
+      } else {
+        const commaAt = rest.indexOf(',');
+        const spaceAt = rest.indexOf(' ');
+        if (commaAt >= 0 && spaceAt >= 0 && commaAt < spaceAt) {
+          if (adjustType(n.type, fieldName, rest.slice(spaceAt)) === 'MAC_LABEL') {
+            value = rest.slice(0, spaceAt);
+            s = rest.slice(spaceAt + 1);
+          } else {
+            value = rest.slice(0, commaAt);
+            s = rest.slice(commaAt + 1);
+            comma = true;
+          }
+        } else if (commaAt >= 0 && spaceAt < 0) {
+          if (adjustType(n.type, fieldName, rest) === 'MAC_LABEL') {
+            value = rest;
+            s = null;
+          } else {
+            value = rest.slice(0, commaAt);
+            s = rest.slice(commaAt + 1);
+            comma = true;
+          }
+        } else if (spaceAt >= 0) {
+          value = rest.slice(0, spaceAt);
+          s = rest.slice(spaceAt + 1);
+        } else {
+          value = rest;
+          s = null;
+        }
+      }
+      this.reportInterpret(fieldName, value, comma, n.type);
+    }
+    if (!found && s !== null && eq < 0) this.out.printf(safePrintString(s, true, this.escapeMode));
+    else if (comma && s !== null) this.out.printf(safePrintString(s, true, this.escapeMode));
+    this.out.printf('\n');
+  }
+
+  private reportInterpret(nameIn: string, valIn: string, comma: boolean, rtype: number): void {
+    let name = nameIn;
+    let val = valIn;
+    while (name[0] === ' ' || name[0] === '(') name = name.slice(1);
+    if (name === 'acct' && val.endsWith(':')) val = val.slice(0, -1);
+    const type = adjustType(rtype, name, val);
+    if (rtype === AUDIT.SYSCALL || rtype === 1326 || rtype === AUDIT.URINGOP) {
+      if (rtype === AUDIT.URINGOP) this.machine = MACH.IO_URING;
+      else if (this.machine === -1) this.machine = MACH.X86_64;
+      if (name === 'arch') this.machine = elfToMachine(strtoul(val, 16));
+      if (this.curSyscall < 0 && (name === 'syscall' || name === 'uring_op')) this.curSyscall = strtoul(val, 10) | 0;
+    }
+    const syscall = rtype === AUDIT.SYSCALL || rtype === 1326 || rtype === AUDIT.URINGOP ? this.curSyscall : 0;
+    const out = this.interpreter.doInterpretation(type, { machine: this.machine, syscall, a0: this.a0, a1: this.a1, cwd: null, name, val }, this.escapeMode);
+    if (type === 'UNCLASSIFIED') this.out.printf(`${val}${comma ? ',' : ' '}`);
+    else if (name === 'key') {
+      const text = out ?? '(null)';
+      const keys = text.split(String.fromCharCode(1));
+      if (keys.length === 1) this.out.printf(`${text} `);
+      else this.out.printf(`${keys[0]}${keys.slice(1).map((k) => ` key=${k}`).join('')} `);
+    } else if (type === 'TTY_DATA') this.out.printf(out ?? '(null)');
+    else this.out.printf(`${out ?? '(null)'} `);
   }
 
   private checkpointDecision(ev: AuditEvent['e']): number {
@@ -978,6 +1114,7 @@ class Ausearch {
     const logFile = config?.logFile ?? '/var/log/audit/audit.log';
     const eoe = this.argEoeTimeout || config?.eoeTimeout || 2;
     this.assembler = new AuditEventAssembler(this.time, eoe);
+    this.interpreter = new Interpreter(this.host);
 
     if (this.checkpointFile) {
       const rc = this.loadCheckpoint(this.checkpointFile);

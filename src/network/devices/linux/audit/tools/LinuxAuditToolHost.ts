@@ -45,6 +45,10 @@ export function auditToolHost(executor: LinuxCommandExecutor): AuditSearchHost {
       return conf === null ? null : parseAuditdConf(conf);
     },
     dateStyle: () => dateStyleFor(lang),
+    protocolName: (number) => {
+      const found = executor.nss.lookup('protocols', (source) => source.getprotobynumber?.(number));
+      return found.status === 'SUCCESS' && found.entry ? found.entry.name : null;
+    },
     userUid: (name) => userMgr.getUser(name)?.uid ?? null,
     groupGid: (name) => userMgr.getGroup(name)?.gid ?? null,
     deviceAndInode: (path) => {

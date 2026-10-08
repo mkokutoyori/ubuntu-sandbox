@@ -27,6 +27,9 @@ def main():
         scenarios = {}
         scenarios["useradd -m"] = run(["useradd", "-m", "zzuser"])
         scenarios["chpasswd"] = run(["chpasswd"], "zzuser:Xx9!abcdef\n")
+        scenarios["usermod -s"] = run(["usermod", "-s", "/bin/bash", "zzuser"])
+        scenarios["usermod -L"] = run(["usermod", "-L", "zzuser"])
+        scenarios["usermod -U"] = run(["usermod", "-U", "zzuser"])
         scenarios["userdel -r"] = run(["userdel", "-r", "zzuser"])
         scenarios["groupadd"] = run(["groupadd", "zzgrp"])
         scenarios["groupdel"] = run(["groupdel", "zzgrp"])

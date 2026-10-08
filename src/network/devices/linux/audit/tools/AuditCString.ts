@@ -36,28 +36,33 @@ export function toInt32(value: number): number {
   return value | 0;
 }
 
-export function unescapeHex(text: string, from: number): string | null {
+export function unescapeBytes(text: string, from: number): number[] | null {
   let ptr = from;
   if (text[ptr] === '(') {
     const close = text.indexOf(')', ptr);
     if (close < 0) return null;
-    ptr = close + 1;
-    return text.slice(from, ptr);
+    return [...new TextEncoder().encode(text.slice(from, close + 1))];
   }
   while (isHexDigit(text[ptr])) ptr++;
-  if (ptr - from === 0) return null;
   const digits = text.slice(from, ptr);
   if (digits.length < 2) return null;
   const bytes: number[] = [];
   for (let i = 0; i < digits.length; i += 2) {
-    const pair = digits.slice(i, i + 2);
-    const hi = parseInt(pair[0], 16);
-    const lo = pair.length > 1 ? parseInt(pair[1], 16) : 0;
+    const hi = parseInt(digits[i], 16);
+    const lo = i + 1 < digits.length ? parseInt(digits[i + 1], 16) : 0;
     bytes.push(((Number.isNaN(hi) ? 0 : hi) << 4) | (Number.isNaN(lo) ? 0 : lo));
   }
-  const terminated = bytes.indexOf(0);
-  const used = terminated >= 0 ? bytes.slice(0, terminated) : bytes;
-  return new TextDecoder().decode(Uint8Array.from(used));
+  return bytes;
+}
+
+export function bytesToCString(bytes: readonly number[]): string {
+  const end = bytes.indexOf(0);
+  return new TextDecoder().decode(Uint8Array.from(end >= 0 ? bytes.slice(0, end) : bytes));
+}
+
+export function unescapeHex(text: string, from: number): string | null {
+  const bytes = unescapeBytes(text, from);
+  return bytes === null ? null : bytesToCString(bytes);
 }
 
 function parseInteger(text: string): bigint {

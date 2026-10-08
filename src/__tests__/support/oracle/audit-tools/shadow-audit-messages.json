@@ -31,6 +31,33 @@
    "res": 1
   }
  ],
+ "usermod -s": [
+  {
+   "type": 1108,
+   "op": "changing user shell",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  }
+ ],
+ "usermod -L": [
+  {
+   "type": 1108,
+   "op": "updating passwd",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 0
+  }
+ ],
+ "usermod -U": [
+  {
+   "type": 1108,
+   "op": "updating password",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 0
+  }
+ ],
  "userdel -r": [
   {
    "type": 1115,

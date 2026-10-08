@@ -30,6 +30,7 @@ describe('ausearch --checkpoint against the real 3.1.2 binary', () => {
         userName: () => null,
         groupName: () => null,
         userUid: () => null,
+        protocolName: () => null,
         groupGid: () => null,
         deviceAndInode: (path) => (files.has(path) ? { dev: 0xfd00, ino: 4242 } : null),
         writeFile: (path, content) => { files.set(path, content); return true; },

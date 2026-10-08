@@ -25,6 +25,7 @@ function labHost(c: Case): AuditSearchHost {
     userName: (uid) => (uid === 0 ? 'root' : null),
     groupName: (gid) => (gid === 0 ? 'root' : null),
     userUid: (name) => (name === 'root' ? 0 : null),
+    protocolName: () => null,
     groupGid: (name) => (name === 'root' ? 0 : null),
     deviceAndInode: () => null,
     writeFile: () => false,

@@ -940,7 +940,7 @@ function parseDaemon2(msg: string, s: SearchItems, env: ParseEnvironment): numbe
   return 0;
 }
 
-function inetNtop6(words: number[]): string {
+export function inetNtop6(words: number[]): string {
   let best = { base: -1, len: 0 };
   let current = { base: -1, len: 0 };
   for (let i = 0; i < 8; i++) {

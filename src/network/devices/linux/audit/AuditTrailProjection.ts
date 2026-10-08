@@ -23,6 +23,7 @@ import type { LinuxAuditLog } from './LinuxAuditLog';
 import { AUDIT_UNSET, acctMessageFields, userMessageFields, type AuditSender, type AcctMessage } from './AuditUserMessage';
 import type {
   UserCreatedPayload,
+  UserModifiedPayload,
   UserDeletedPayload,
   UserPasswordChangedPayload,
   UserLockStateChangedPayload,
@@ -45,6 +46,7 @@ export class AuditTrailProjection {
       bus.subscribe('linux.iam.user.deleted', (e) => this.onUserDeleted(e.payload)),
       bus.subscribe('linux.iam.user.password-changed', (e) => this.onPasswordChanged(e.payload)),
       bus.subscribe('linux.iam.user.lock-state-changed', (e) => this.onLockStateChanged(e.payload)),
+      bus.subscribe('linux.iam.user.modified', (e) => this.onUserModified(e.payload)),
       bus.subscribe('linux.iam.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('linux.iam.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('linux.service.started', (e) => this.onService(e.payload, 'SERVICE_START')),
@@ -58,8 +60,8 @@ export class AuditTrailProjection {
     this.subscriptions.length = 0;
   }
 
-  private account(type: string, message: Omit<AcctMessage, 'tty' | 'success'>, ttyOverride?: string): void {
-    this.auditLog.record(type, acctMessageFields(this.sender(), { ...message, tty: ttyOverride ?? 'pts/0', success: true }));
+  private account(type: string, message: Omit<AcctMessage, 'tty' | 'success'>, ttyOverride?: string, success = true): void {
+    this.auditLog.record(type, acctMessageFields(this.sender(), { ...message, tty: ttyOverride ?? 'pts/0', success }));
   }
 
   private onUserCreated(p: UserCreatedPayload): void {
@@ -91,7 +93,16 @@ export class AuditTrailProjection {
 
   private onLockStateChanged(p: UserLockStateChangedPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    this.account('USER_CHAUTHTOK', { op: 'updating password', name: null, id: p.uid, exe: '/usr/sbin/usermod' });
+    this.account('USER_CHAUTHTOK', { op: p.locked ? 'updating passwd' : 'updating password', name: null, id: p.uid, exe: '/usr/sbin/usermod' }, undefined, false);
+  }
+
+  private onUserModified(p: UserModifiedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    const operations: Record<string, string> = { shell: 'changing user shell', home: 'changing home directory' };
+    for (const field of p.changedFields) {
+      const op = operations[field];
+      if (op !== undefined) this.account('USER_CHAUTHTOK', { op, name: null, id: p.uid, exe: '/usr/sbin/usermod' });
+    }
   }
 
   private onGroupDeleted(p: GroupDeletedPayload): void {

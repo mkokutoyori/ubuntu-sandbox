@@ -492,19 +492,19 @@ export class LinuxAuditRules {
   private fire(syscall: string, path: string | undefined, key?: string, ctxArg?: AuditActorContext): void {
     if (this.enabledFlag === 0) return;
     const ctx = ctxArg ?? this.actorContextProvider?.() ?? DEFAULT_ACTOR;
-    const exit = ctx.success ? (writingSyscall(syscall) ? 3 : 0) : -13;
+    const exit = ctx.success ? (FD_RETURNING.has(syscall) ? 3 : 0) : -13;
     const number = x86SyscallNumber(syscall);
     const inode = path !== undefined ? this.vfs.resolveInode(path) : null;
-    const flags = writingSyscall(syscall) ? '241' : '0';
+    const args = syscallArguments(syscall, path);
     const syscallFields: Record<string, string | number> = {
       arch: 'c000003e',
       syscall: number ?? 0,
       success: ctx.success ? 'yes' : 'no',
       exit,
-      a0: syscall.endsWith('at') || syscall === 'openat' ? 'ffffff9c' : '0',
-      a1: '0',
-      a2: flags,
-      a3: writingSyscall(syscall) ? '1b6' : '0',
+      a0: args[0],
+      a1: args[1],
+      a2: args[2],
+      a3: args[3],
       items: path !== undefined ? 1 : 0,
       ppid: ctx.ppid,
       pid: ctx.pid,
@@ -555,6 +555,32 @@ function defaultSyscallFor(perm: 'r' | 'w' | 'x' | 'a'): string {
   if (perm === 'w') return 'open';
   if (perm === 'a') return 'chmod';
   return 'openat';
+}
+
+const FD_RETURNING: ReadonlySet<string> = new Set(['open', 'openat', 'openat2', 'creat']);
+const DIRFD_FIRST: ReadonlySet<string> = new Set([
+  'openat', 'openat2', 'mkdirat', 'unlinkat', 'fchmodat', 'fchownat', 'newfstatat', 'readlinkat', 'mknodat', 'utimensat', 'faccessat',
+]);
+
+function pointerFor(path: string | undefined, salt: number): string {
+  let h = 2166136261;
+  for (const ch of `${path ?? ''}#${salt}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return `55${h.toString(16).padStart(8, '0')}${(salt * 16).toString(16).padStart(2, '0')}`;
+}
+
+function syscallArguments(syscall: string, path: string | undefined): [string, string, string, string] {
+  const p0 = pointerFor(path, 0);
+  const p1 = pointerFor(path, 1);
+  const writing = writingSyscall(syscall);
+  if (syscall === 'open') return [p0, writing ? '241' : '0', '1b6', '0'];
+  if (syscall === 'openat' || syscall === 'openat2') return ['ffffff9c', p0, writing ? '241' : '0', '1b6'];
+  if (syscall === 'creat') return [p0, '1b6', '0', '0'];
+  if (syscall === 'execve') return [p0, p1, pointerFor(path, 2), '0'];
+  if (syscall === 'mkdir' || syscall === 'chmod') return [p0, '1ed', '0', '0'];
+  if (syscall === 'chown' || syscall === 'lchown') return [p0, '0', '0', '0'];
+  if (syscall === 'rename' || syscall === 'link' || syscall === 'symlink') return [p0, p1, '0', '0'];
+  if (DIRFD_FIRST.has(syscall)) return ['ffffff9c', p0, '0', '0'];
+  return [p0, '0', '0', '0'];
 }
 
 function writingSyscall(syscall: string): boolean {

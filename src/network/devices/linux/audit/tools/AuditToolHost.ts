@@ -26,6 +26,7 @@ export interface AuditToolHost {
 
 export interface AuditSearchHost extends AuditToolHost {
   userUid(name: string): number | null;
+  protocolName(number: number): string | null;
   groupGid(name: string): number | null;
   deviceAndInode(path: string): { dev: number; ino: number } | null;
   writeFile(path: string, content: string): boolean;

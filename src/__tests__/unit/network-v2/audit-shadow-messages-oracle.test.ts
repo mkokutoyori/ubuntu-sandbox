@@ -1,9 +1,10 @@
 /**
- * Measured against the real useradd/userdel/groupadd/groupdel of shadow 4.13 with libaudit replaced by
+ * Measured against the real useradd/userdel/usermod/groupadd/groupdel of shadow 4.13 with libaudit replaced by
  * scripts/oracle/audit_shim.c (scripts/oracle/record_shadow_audit.py): the type, operation text and acct/id form of every
- * message.  Both tests fall before the fix (the simulator wrote one record per command with invented operations such as
+ * message.  All three tests fall before the fix (the simulator wrote one record per command with invented operations such as
  * "add-user" and a duplicated acct= outside msg='...').  Grantors of PAM:chauthtok are not compared: they depend on the PAM
- * stack of the host.
+ * stack of the host.  usermod -L and -U are logged by the real tool with res=failed although the change is applied;
+ * the simulator copies that.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -13,9 +14,9 @@ import { nameToMessageType } from '@/network/devices/linux/audit/tools/AuditEven
 interface Row { type: number; op: string; name: string; id: number; res: number }
 const real = JSON.parse(readFileSync('src/__tests__/support/oracle/audit-tools/shadow-audit-messages.json', 'utf8')) as Record<string, Row[]>;
 
-type Shape = { type: number; op: string; form: 'acct' | 'id' };
+type Shape = { type: number; op: string; form: 'acct' | 'id'; res: string };
 
-const realShape = (rows: Row[]): Shape[] => rows.map((r) => ({ type: r.type, op: r.op, form: r.id === -1 ? 'acct' : 'id' }));
+const realShape = (rows: Row[]): Shape[] => rows.map((r) => ({ type: r.type, op: r.op, form: r.id === -1 ? 'acct' : 'id', res: r.res === 1 ? 'success' : 'failed' }));
 
 function simShape(log: string, from: number): Shape[] {
   const lines = log.split('\n').filter((l) => l.startsWith('type=')).slice(from);
@@ -23,7 +24,7 @@ function simShape(log: string, from: number): Shape[] {
     const type = nameToMessageType(/^type=(\S+)/.exec(line)![1]);
     const msg = /msg='([^']*)'/.exec(line)![1];
     const opMatch = /^op=(.*?) (?:acct=|id=)/.exec(msg)!;
-    return { type, op: opMatch[1], form: / acct=/.test(msg) ? 'acct' : 'id' };
+    return { type, op: opMatch[1], form: / acct=/.test(msg) ? 'acct' : 'id', res: /res=(\w+)$/.exec(msg)![1] };
   });
 }
 
@@ -50,6 +51,16 @@ describe('audit messages of the shadow tools against the real binaries', () => {
     expect(gdel).toEqual(realShape(real.groupdel));
     expect(addG).toEqual(realShape(real['useradd -m -G']));
     expect(delG).toEqual(realShape(real['userdel -r (member of a group)']));
+  });
+
+  it('usermod -s, -L and -U emit the operations and results of the real usermod', async () => {
+    const srv = new LinuxServer('linux-server', 'SRV1');
+    await srv.executeCommand('useradd -m zzuser');
+    await srv.executeCommand('echo zzuser:Xx9abcdef | chpasswd');
+    const [shell, lock, unlock] = await steps(srv, ['usermod -s /bin/bash zzuser', 'usermod -L zzuser', 'usermod -U zzuser']);
+    expect(shell).toEqual(realShape(real['usermod -s']));
+    expect(lock).toEqual(realShape(real['usermod -L']));
+    expect(unlock).toEqual(realShape(real['usermod -U']));
   });
 
   it('useradd -M and userdel without -r omit the home directory records', async () => {
