@@ -36,6 +36,7 @@ export type DebugCategory =
   | 'tacacs'
   | 'ntp.events'
   | 'ntp.packets'
+  | 'snmp.packets'
   | 'lldp.packets'
   | 'cdp.packets'
   | 'ip.pim'
@@ -115,7 +116,7 @@ const DEBUG_CATEGORIES: ReadonlySet<string> = new Set<string>([
   'ip.ssh', 'ip.domain', 'ip.nhrp', 'standby', 'vrrp', 'glbp', 'track',
   'ip.sla.trace', 'ip.sla.error',
   'aaa.authentication', 'aaa.authorization', 'aaa.accounting',
-  'radius', 'tacacs', 'ntp.events', 'ntp.packets',
+  'radius', 'tacacs', 'ntp.events', 'ntp.packets', 'snmp.packets',
   'lldp.packets', 'cdp.packets', 'ip.pim', 'vxlan', 'port-security',
   'ipv6.packet', 'ipv6.nd', 'ipv6.icmp', 'mac', 'link', 'stp.events', 'stp.bpdu',
 ]);
@@ -871,13 +872,36 @@ export class RouterDebugService implements TerminalDebugSource {
     }));
     this.broadcast.track(bus.subscribe('ntp.packet.sent', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { destIp?: string; mode?: string };
-      this.emit('ntp.packets', `NTP: xmit packet to ${p.destIp ?? '?'}, mode ${p.mode ?? 'client'}`);
+      const p = e.payload;
+      this.emit('ntp.packets', `NTP: xmit packet to ${p.serverIp}, mode ${p.mode}`);
     }));
     this.broadcast.track(bus.subscribe('ntp.packet.received', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { srcIp?: string; mode?: string };
-      this.emit('ntp.packets', `NTP: rcv packet from ${p.srcIp ?? '?'}, mode ${p.mode ?? 'server'}`);
+      const p = e.payload;
+      this.emit('ntp.packets', `NTP: rcv packet from ${p.fromIp}, mode ${p.mode}, stratum ${p.stratum}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('snmp.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('snmp.packets', `SNMP: Packet received via UDP from ${p.fromIp}: ${p.pduType}, `
+        + `community ${p.community}${p.requestId === undefined ? '' : `, request-id ${p.requestId}`}`);
+    }));
+    this.broadcast.track(bus.subscribe('snmp.packet.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('snmp.packets', `SNMP: Packet sent via UDP to ${p.destinationIp}: ${p.pduType}, `
+        + `community ${p.community}${p.requestId === undefined ? '' : `, request-id ${p.requestId}`}`);
+    }));
+    this.broadcast.track(bus.subscribe('snmp.auth.rejected', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('snmp.packets', `SNMP: Packet from ${p.fromIp} rejected (${p.reason}), community ${p.community}`);
+    }));
+    this.broadcast.track(bus.subscribe('snmp.trap.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('snmp.packets', `SNMP: Trap ${p.trapOid} sent via UDP to ${p.destinationIp}, community ${p.community}`);
     }));
 
     this.broadcast.track(bus.subscribe('radius.auth.completed', (e) => {
@@ -1036,6 +1060,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'tacacs': return 'TACACS+';
       case 'ntp.events': return 'NTP events';
       case 'ntp.packets': return 'NTP packets';
+      case 'snmp.packets': return 'SNMP packets';
       case 'lldp.packets': return 'LLDP packets';
       case 'cdp.packets': return 'CDP packets';
       case 'ip.pim': return 'PIM';
@@ -1099,6 +1124,7 @@ export class RouterDebugService implements TerminalDebugSource {
     ['IP SLA', ['ip.sla.trace', 'ip.sla.error', 'track']],
     ['AAA', ['aaa.authentication', 'aaa.authorization', 'aaa.accounting', 'radius', 'tacacs']],
     ['NTP', ['ntp.events', 'ntp.packets']],
+    ['SNMP', ['snmp.packets']],
     ['Neighbour discovery', ['cdp.packets', 'lldp.packets']],
     ['Crypto Subsystem', ['crypto.isakmp', 'crypto.ipsec']],
     ['Spanning Tree', ['stp.events', 'stp.bpdu']],

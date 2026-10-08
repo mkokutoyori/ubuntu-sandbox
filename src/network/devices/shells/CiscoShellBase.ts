@@ -3974,6 +3974,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         disable: (args) => CiscoShellBase.ntpDebugSwitch(svc(), args, false),
       },
       {
+        path: ['debug', 'snmp'], description: 'Debug SNMP',
+        undoDescription: 'Disable SNMP debug',
+        categories: ['snmp.packets'],
+        subKeywords: [
+          { keyword: 'packets', description: 'SNMP packets', category: 'snmp.packets' },
+        ],
+        enable: () => svc()?.enable('snmp.packets') ?? 'SNMP packets debugging is on',
+        disable: () => svc()?.disable('snmp.packets') ?? '',
+      },
+      {
         path: ['debug', 'aaa'], description: 'Debug AAA',
         undoDescription: 'Disable AAA debug', familyOnly: true,
         categories: ['aaa.accounting', 'aaa.authentication', 'aaa.authorization'],
