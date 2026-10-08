@@ -2,10 +2,13 @@ import type { DeviceType } from '../../../../core/types';
 import { Firewall, type FirewallOptions } from '../../Firewall';
 import { ASA_PROFILE } from './AsaProfile';
 import { AsaShell } from './AsaShell';
+import { AsaRunningState } from './AsaRunningState';
+import { ciscoSshIdentification } from '../../../../protocols/ssh/serverIdentification';
 
 export class AsaFirewall extends Firewall {
   private readonly accessGroups = new Map<string, string>();
   private shellInstance?: AsaShell;
+  private readonly state = new AsaRunningState();
 
   constructor(
     deviceType: DeviceType = 'firewall-cisco', name = 'ASA', x = 0, y = 0,
@@ -14,6 +17,15 @@ export class AsaFirewall extends Firewall {
     super(deviceType, name, x, y, { ...options, profile: ASA_PROFILE });
     this.getLoggingConfig().enabled = false;
   }
+
+  runningState(): AsaRunningState { return this.state; }
+
+  protected override managementSshIdentification(): string {
+    const version = this.state.sshVersion;
+    if (version === 1) return 'SSH-1.5-Cisco-1.25';
+    return ciscoSshIdentification(version ?? 0);
+  }
+
 
   getShell(): AsaShell {
     if (!this.shellInstance) this.shellInstance = new AsaShell(this);

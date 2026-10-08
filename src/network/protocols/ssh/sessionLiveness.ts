@@ -83,7 +83,23 @@ export function firstConfiguredIp(dev: Equipment): string | undefined {
     const ip = port.getIPAddress?.();
     if (ip) return ip.toString();
   }
-  return undefined;
+  return firstSviAddress(dev);
+}
+
+export function sviAddresses(dev: Equipment): string[] {
+  const host = dev as unknown as {
+    getSvis?: () => Array<{ ip?: { toString(): string } }>;
+    isSviLineUp?: (svi: unknown) => boolean;
+  };
+  const addresses: string[] = [];
+  for (const svi of host.getSvis?.() ?? []) {
+    if (svi.ip && (host.isSviLineUp?.(svi) ?? true)) addresses.push(svi.ip.toString());
+  }
+  return addresses;
+}
+
+export function firstSviAddress(dev: Equipment): string | undefined {
+  return sviAddresses(dev)[0];
 }
 
 /**

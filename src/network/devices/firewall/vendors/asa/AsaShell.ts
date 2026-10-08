@@ -1,7 +1,12 @@
+import { parsePipeFilter, applyPipeFilter } from '../../../shells/cli-utils';
 import {
   subnetAddress, hostAddress, rangeAddress, type AddressObject,
 } from '../../model/AddressObject';
 import type { RuleAction } from '../../model/SecurityRule';
+import {
+  ASA_SSH_DEFAULT_TIMEOUT_MINUTES,
+  type AsaAclLine, type AsaManagementService, type AsaManagementSource, type AsaRunningState,
+} from './AsaRunningState';
 import type { AsaFirewall } from './AsaFirewall';
 import type { SimulatedFlow, SimulatedProtocol } from '../../pipeline/SimulatedPacket';
 import type { FirewallSession } from '../../session/SessionTable';
@@ -32,15 +37,6 @@ import {
 import type { AsaShowHost, AsaShowView } from '@/cli/vendors/asa/asaShowFamily';
 
 export type AsaMode = 'exec' | 'privileged' | 'config' | 'config-if' | 'config-object' | 'config-group';
-
-interface AclLine {
-  readonly acl: string;
-  readonly action: RuleAction;
-  readonly protocol: string;
-  readonly source: string;
-  readonly destination: string;
-  readonly port?: string;
-}
 
 function parseTracerFlow(args: string[]): SimulatedFlow | undefined {
   const protocol = args[0];
@@ -214,23 +210,29 @@ function parseObjectNat(tokens: string[]): ObjectNatSpec | undefined {
   };
 }
 
+function isContiguousMask(mask: string): boolean {
+  const parsed = IPAddress.tryParse(mask);
+  if (parsed === null) return false;
+  const bits = parsed.toUint32();
+  const inverted = (~bits) >>> 0;
+  return ((inverted + 1) & inverted) === 0;
+}
+
 export class AsaShell implements AsaShowHost {
   private readonly fsm = new CLIStateMachine<AsaMode>(
     'exec', ASA_MODES, ASA_TOP_LEVEL as AsaMode, ASA_EXEC_LEVEL as AsaMode,
   );
   private socleInstance?: AsaSocle;
   private negatedLine = false;
-  private readonly objectNatLines = new Map<string, string>();
-  private readonly manualNatLines = new Map<string, string>();
-  private readonly loggingHostInterfaces = new Map<string, string>();
-  private manualRuleCounter = 0;
   private currentInterface?: string;
   private currentObject?: string;
   private currentGroup?: string;
-  private ruleCounter = 0;
-  private readonly aclLines: AclLine[] = [];
 
-  constructor(private readonly fw: AsaFirewall) {}
+  private readonly state: AsaRunningState;
+
+  constructor(private readonly fw: AsaFirewall) {
+    this.state = fw.runningState();
+  }
 
   private get mode(): AsaMode { return this.fsm.mode; }
   private set mode(value: AsaMode) { this.fsm.mode = value; }
@@ -307,6 +309,9 @@ export class AsaShell implements AsaShowHost {
   execute(rawLine: string): string {
     const line = rawLine.trim();
     if (line.length === 0) return '';
+
+    const piped = parsePipeFilter(line);
+    if (piped.filter) return applyPipeFilter(this.execute(piped.cmd), piped.filter);
 
     if (line.endsWith('?')) {
       return this.help(line.slice(0, -1)).join('\n') || ASA_INVALID_INPUT;
@@ -461,22 +466,82 @@ export class AsaShell implements AsaShowHost {
     return '';
   }
 
-  private managementAccess(service: 'ssh' | 'telnet', rest: string[], negated: boolean): string {
+  private managementAccess(service: AsaManagementService, rest: string[], negated: boolean): string {
+    if (service === 'ssh') {
+      const setting = this.sshSetting(rest, negated);
+      if (setting !== null) return setting;
+    }
     if (rest[0] === 'timeout' || rest[0] === 'version' || rest[0] === 'scopy') return '';
     const [network, mask, iface] = rest;
     if (!network || !mask || !iface) return ASA_INVALID_INPUT;
-    if (IPAddress.tryParse(network) === null || IPAddress.tryParse(mask) === null) {
-      return ASA_INVALID_INPUT;
-    }
+    if (!isContiguousMask(mask) || IPAddress.tryParse(network) === null) return ASA_INVALID_INPUT;
     const ports = this.fw.getZoneTable().interfacesOf(iface);
-    const port = ports[0];
-    if (!port) return ASA_INVALID_INPUT;
-    const current = ASA_MANAGEMENT_SERVICES.filter((s) => this.fw.allowsAccess(port, s));
-    const next = negated
-      ? current.filter((s) => s !== service)
-      : [...new Set([...current, service])];
-    for (const name of ports) this.fw.setAllowedAccess(name, next);
+    if (ports.length === 0) return ASA_INVALID_INPUT;
+    const entries = this.state.managementSources;
+    const same = (e: AsaManagementSource) =>
+      e.service === service && e.network === network && e.mask === mask && e.iface === iface;
+    const index = entries.findIndex(same);
+    if (negated) {
+      if (index >= 0) entries.splice(index, 1);
+    } else if (index < 0) {
+      entries.push({ service, network, mask, iface });
+    }
+    this.applyManagementSources(service, iface, ports);
     return '';
+  }
+
+  private applyManagementSources(
+    service: AsaManagementService, iface: string, ports: readonly string[],
+  ): void {
+    const mine = this.state.managementSources.filter(e => e.service === service && e.iface === iface);
+    for (const name of ports) {
+      const current = ASA_MANAGEMENT_SERVICES.filter((s) => this.fw.allowsAccess(name, s));
+      if (mine.length === 0) {
+        this.fw.clearManagementSources(service, name);
+        this.fw.setAllowedAccess(name, current.filter((s) => s !== service));
+        continue;
+      }
+      this.fw.setManagementSources(service, name, mine.map(e => ({ network: e.network, mask: e.mask })));
+      this.fw.setAllowedAccess(name, [...new Set([...current, service])]);
+    }
+  }
+
+  private sshSetting(rest: string[], negated: boolean): string | null {
+    const [keyword, value] = rest;
+    if (keyword === 'timeout') {
+      if (negated) {
+        this.state.sshTimeoutMinutes = ASA_SSH_DEFAULT_TIMEOUT_MINUTES;
+      } else {
+        const minutes = Number(value);
+        if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) return ASA_INVALID_INPUT;
+        this.state.sshTimeoutMinutes = minutes;
+      }
+      this.fw.setAdminIdleTimeout(this.state.sshTimeoutMinutes);
+      return '';
+    }
+    if (keyword === 'version') {
+      if (negated) { this.state.sshVersion = null; return ''; }
+      if (value !== '1' && value !== '2') return ASA_INVALID_INPUT;
+      this.state.sshVersion = value === '1' ? 1 : 2;
+      return '';
+    }
+    if (keyword === 'scopy') {
+      if (value !== 'enable') return ASA_INVALID_INPUT;
+      this.state.sshScopy = !negated;
+      return '';
+    }
+    return null;
+  }
+
+  private managementConfigLines(): string[] {
+    const lines: string[] = [];
+    for (const e of this.state.managementSources) {
+      lines.push(`${e.service} ${e.network} ${e.mask} ${e.iface}`);
+    }
+    lines.push(`ssh timeout ${this.state.sshTimeoutMinutes}`);
+    if (this.state.sshVersion !== null) lines.push(`ssh version ${this.state.sshVersion}`);
+    if (this.state.sshScopy) lines.push('ssh scopy enable');
+    return lines;
   }
 
   private aaaCommand(rest: string[]): string {
@@ -539,9 +604,9 @@ export class AsaShell implements AsaShowHost {
       return ASA_INVALID_INPUT;
     }
 
-    this.manualRuleCounter++;
-    const id = `manual#${this.manualRuleCounter}`;
-    this.manualNatLines.set(id, tokens.join(' '));
+    this.state.manualRuleCounter++;
+    const id = `manual#${this.state.manualRuleCounter}`;
+    this.state.manualNatLines.set(id, tokens.join(' '));
 
     this.fw.getNatPolicy().append({
       id,
@@ -580,7 +645,7 @@ export class AsaShell implements AsaShowHost {
     if (!fromPort || !toPort) return ASA_INVALID_INPUT;
 
     this.fw.getNatPolicy().remove(objectName);
-    this.objectNatLines.set(objectName, tokens.join(' '));
+    this.state.objectNatLines.set(objectName, tokens.join(' '));
     this.fw.getNatPolicy().append({
       id: objectName,
       section: ASA_NAT_SECTIONS.auto,
@@ -617,14 +682,14 @@ export class AsaShell implements AsaShowHost {
     if (keyword !== 'permit' && keyword !== 'deny') return ASA_INVALID_INPUT;
 
     const port = tail[0] === 'eq' ? tail[1] : undefined;
-    this.aclLines.push({
+    this.state.aclLines.push({
       acl, action: keyword === 'permit' ? 'allow' : 'deny',
       protocol, source, destination, port,
     });
 
-    this.ruleCounter++;
+    this.state.ruleCounter++;
     this.fw.getPolicyStore().append({
-      id: `${acl}#${this.ruleCounter}`,
+      id: `${acl}#${this.state.ruleCounter}`,
       name: acl,
       from: ['any'], to: ['any'],
       source: [source === 'any' ? 'any' : source],
@@ -730,8 +795,8 @@ export class AsaShell implements AsaShowHost {
       if (iface === undefined || address === undefined) return ASA_INVALID_INPUT;
       if (!this.interfaceNamed(iface)) return ASA_INVALID_INPUT;
 
-      if (negated) this.loggingHostInterfaces.delete(address);
-      else this.loggingHostInterfaces.set(address, iface);
+      if (negated) this.state.loggingHostInterfaces.delete(address);
+      else this.state.loggingHostInterfaces.set(address, iface);
       translated = ['host', address, ...args.slice(3)];
     }
     const error = this.fw.getLoggingConfig().applyLogging(translated, negated);
@@ -745,7 +810,7 @@ export class AsaShell implements AsaShowHost {
     const host = /^logging host (\S+)(.*)$/.exec(line);
     if (!host) return line;
 
-    const iface = this.loggingHostInterfaces.get(host[1]);
+    const iface = this.state.loggingHostInterfaces.get(host[1]);
     return iface === undefined ? line : `logging host ${iface} ${host[1]}${host[2]}`;
   }
 
@@ -762,8 +827,8 @@ export class AsaShell implements AsaShowHost {
   }
 
   private showAccessList(): string {
-    if (this.aclLines.length === 0) return '';
-    return this.aclLines.map((l, index) => {
+    if (this.state.aclLines.length === 0) return '';
+    return this.state.aclLines.map((l, index) => {
       const rule = this.fw.getPolicyStore().ordered()[index];
       const port = l.port ? ` eq ${l.port}` : '';
       const keyword = l.action === 'allow' ? 'permit' : 'deny';
@@ -801,7 +866,7 @@ export class AsaShell implements AsaShowHost {
 
       lines.push(`object network ${object.name}`);
       lines.push(` ${body}`);
-      const nat = this.objectNatLines.get(object.name);
+      const nat = this.state.objectNatLines.get(object.name);
       if (nat) lines.push(` ${nat}`);
     }
     return lines;
@@ -828,9 +893,9 @@ export class AsaShell implements AsaShowHost {
     const objects = this.objectLines();
     if (objects.length > 0) { lines.push(...objects, '!'); }
 
-    for (const line of this.manualNatLines.values()) lines.push(line);
+    for (const line of this.state.manualNatLines.values()) lines.push(line);
 
-    for (const line of this.aclLines) {
+    for (const line of this.state.aclLines) {
       const keyword = line.action === 'allow' ? 'permit' : 'deny';
       const port = line.port ? ` eq ${line.port}` : '';
       lines.push(`access-list ${line.acl} extended ${keyword} `
@@ -846,6 +911,7 @@ export class AsaShell implements AsaShowHost {
     if (this.fw.sameSecurityTrafficEnabled('inter-interface')) {
       lines.push('same-security-traffic permit inter-interface');
     }
+    lines.push(...this.managementConfigLines());
     return lines.join('\n');
   }
 }

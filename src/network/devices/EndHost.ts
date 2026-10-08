@@ -1128,6 +1128,7 @@ export abstract class EndHost extends Equipment {
       sendIpv6FrameNdpAware: (outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address) =>
         this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
       adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
+      neighbourResolved: (nextHopIp: string) => this.arpTable.has(nextHopIp),
       filterLocalSegment: (packet: IPv4Packet | IPv6Packet, family: string) => this.filterLocalDelivery(packet, family),
       defaultTtl: (family: string) => family === 'ipv6' ? this.defaultHopLimit : this.defaultTTL,
       pathMtu: (remoteIp: string, linkMtu: number) => {

@@ -259,7 +259,7 @@ function splitTopLevelCommas(s: string): string[] {
  */
 function maybeGlob(value: string, w: Word, glob?: GlobFn): string[] {
   if (!glob) return [value];
-  if (!hasUnescapedMeta(w)) return [value];
+  if (!hasUnescapedMeta(w) && !(hasUnquotedExpansion(w) && /[*?[]/.test(value))) return [value];
   const hits = glob(value);
   if (hits === null || hits.length === 0) return [value];
   return hits;
@@ -294,6 +294,18 @@ function hasUnescapedMeta(w: Word): boolean {
       // Expansions undergo word-splitting but not glob in our model
       // (matches bash without `set -f` only for cases without meta).
       return false;
+    default:
+      return false;
+  }
+}
+
+function hasUnquotedExpansion(w: Word): boolean {
+  switch (w.type) {
+    case 'VariableRef':
+    case 'CommandSubstitution':
+      return true;
+    case 'CompoundWord':
+      return w.parts.some(hasUnquotedExpansion);
     default:
       return false;
   }

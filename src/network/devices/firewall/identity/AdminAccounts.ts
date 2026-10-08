@@ -1,4 +1,5 @@
 import type { TcpStack } from '../../../tcp/TcpStack';
+import { parseAuthorizedKeysLine } from '../../../protocols/ssh/SshPureUtils';
 import { dialLdap } from '../../windows/server/ad/ldap/LdapClient';
 import { trustHostAllows, type AccessMatrix } from '../authz/AccessMatrix';
 import type { IdentitySource } from './IdentityTable';
@@ -10,6 +11,7 @@ export interface AdminAccountDraft {
   readonly profile: string;
   readonly vdoms: readonly string[];
   readonly trustHosts: readonly { index: number; address: string; mask: string }[];
+  readonly sshPublicKeys?: readonly string[];
   readonly comments?: string;
 }
 
@@ -28,6 +30,7 @@ export function applyAdminAccount(
     profile: admin.profile,
     vdoms: [...admin.vdoms],
     trustHosts: admin.trustHosts.map(host => ({ ...host })),
+    sshPublicKeys: [...(admin.sshPublicKeys ?? [])],
     remoteAuth: false,
     comments: admin.comments,
   });
@@ -45,6 +48,15 @@ export function authenticateAdmin(
   if (!admin) return false;
   if (source !== undefined && !trustHostAllows(admin.trustHosts, source)) return false;
   return (secrets.get(name) ?? '') === password;
+}
+
+export function adminAcceptsPublicKey(
+  access: AccessMatrix, name: string, material: string, source: string,
+): boolean {
+  const admin = access.getAdmin(name);
+  if (!admin) return false;
+  if (!trustHostAllows(admin.trustHosts, source)) return false;
+  return admin.sshPublicKeys.some(line => parseAuthorizedKeysLine(line)?.material === material);
 }
 
 export function adminHasNoPassword(

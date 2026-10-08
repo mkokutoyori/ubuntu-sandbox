@@ -330,6 +330,10 @@ export class HuaweiRouter extends Router {
     return this.getManagementService().sshPasswordAllowed(user);
   }
 
+  protected override sshSftpAdmitted(user: string): boolean {
+    return this.getManagementService().sshSftpAdmitted(user);
+  }
+
   protected override sshForcedCommand(user: string): string | null {
     return this.getManagementService().sshForcedCommand(user);
   }
@@ -450,10 +454,9 @@ export class HuaweiRouter extends Router {
     return new HuaweiVRPShell();
   }
 
+  override getSshMotd(): string { return this.getBanner('motd'); }
+
   /** Synchronous VRP exec whitelist consumed by the SSH cross-platform dispatch. */
-  override getSshMotd(): string {
-    return `Huawei Versatile Routing Platform Software\n<${this.hostname}>`;
-  }
 
   override runSshCommandSync(
     _user: string,

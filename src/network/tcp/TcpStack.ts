@@ -246,6 +246,7 @@ export interface TcpHost {
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
   adviseNegative?(nextHopIp: string): void;
+  neighbourResolved?(nextHopIp: string): boolean;
   filterLocalSegment?(packet: IPv4Packet | IPv6Packet, family: IpFamily): boolean;
   defaultTtl?(family: IpFamily): number | undefined;
   pathMtu?(remoteIp: string, linkMtu: number): number;
@@ -1288,6 +1289,13 @@ export class TcpStack {
 
   hasEgressTo(remoteIp: string): boolean {
     return this.resolveEgress(canonicalIpText(remoteIp)) !== null;
+  }
+
+  awaitsUnresolvedNeighbour(remoteIp: string): boolean {
+    if (ipFamilyOf(remoteIp) === 'ipv6') return false;
+    const egress = this.resolveEgress(canonicalIpText(remoteIp));
+    if (egress === null || egress.name === 'lo') return false;
+    return this.host.neighbourResolved?.(egress.nextHopIp) === false;
   }
 
   /**

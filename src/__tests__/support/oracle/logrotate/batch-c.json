@@ -1,0 +1,3891 @@
+[
+ {
+  "name": "mail-missing-cmd",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "mail-missing-cmd",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.1",
+     "content": "old\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  mail admin@example.com\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-m",
+    "/usr/bin/nomail-here",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs mailed to admin@example.com\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\nerror: cannot execute mail command: No such file or directory\nerror: mail command failed for /var/log/lr/a.log.2\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 66,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  mail admin@example.com\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.2",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "old\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "mail-works",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "mail-works",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.1",
+     "content": "old\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/fakemail",
+     "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  mail admin@example.com\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-m",
+    "/var/log/lr/fakemail",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs mailed to admin@example.com\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\nremoving old log /var/log/lr/a.log.2\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 66,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  mail admin@example.com\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakemail",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 50,
+    "type": "file",
+    "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/mail.out",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 47,
+    "type": "file",
+    "content": "args: -s /var/log/lr/a.log.2 admin@example.com\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "mail-first",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "mail-first",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.1",
+     "content": "old\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/fakemail",
+     "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  mail admin@example.com\n  mailfirst\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-m",
+    "/var/log/lr/fakemail",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs mailed to admin@example.com\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.2 to /var/log/lr/a.log.3 (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/a.log.2 does not exist\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 2, logstart 1, i 1), \nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.3 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 78,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  mail admin@example.com\n  mailfirst\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.2",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "old\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakemail",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 50,
+    "type": "file",
+    "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/mail.out",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 47,
+    "type": "file",
+    "content": "args: -s /var/log/lr/a.log.1 admin@example.com\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "mail-compressed",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "mail-compressed",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/fakemail",
+     "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  compress\n  mail admin@example.com\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-m",
+    "/var/log/lr/fakemail",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs mailed to admin@example.com\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1.gz to /var/log/lr/a.log.2.gz (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1.gz does not exist\nrenaming /var/log/lr/a.log.0.gz to /var/log/lr/a.log.1.gz (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0.gz does not exist\nlog /var/log/lr/a.log.2.gz doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\ncompressing log with: /bin/gzip\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 77,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  compress\n  mail admin@example.com\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1.gz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 24,
+    "type": "file",
+    "gzip": true,
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakemail",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 50,
+    "type": "file",
+    "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "mail-maxage",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "mail-maxage",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.1",
+     "content": "one\n",
+     "mtimeAgoSec": 86400
+    },
+    {
+     "path": "/var/log/lr/a.log.2",
+     "content": "two\n",
+     "mtimeAgoSec": 1728000
+    },
+    {
+     "path": "/var/log/lr/fakemail",
+     "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 5\n  maxage 5\n  mail admin@example.com\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-m",
+    "/var/log/lr/fakemail",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (5 rotations)\nempty log files are rotated, old logs mailed to admin@example.com\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 5\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nold log /var/log/lr/a.log.5 does not exist\nold log /var/log/lr/a.log.4 does not exist\nold log /var/log/lr/a.log.3 does not exist\nremoving old log /var/log/lr/a.log.2\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 5, logstart 1, i 1), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.6 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 77,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 5\n  maxage 5\n  mail admin@example.com\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.2",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "one\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakemail",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 50,
+    "type": "file",
+    "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/mail.out",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 47,
+    "type": "file",
+    "content": "args: -s /var/log/lr/a.log.2 admin@example.com\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "mail-dateext",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "mail-dateext",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log-20200101",
+     "content": "old1\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log-20200102",
+     "content": "old2\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/fakemail",
+     "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  dateext\n  mail admin@example.com\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-m",
+    "/var/log/lr/fakemail",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs mailed to admin@example.com\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nremoving /var/log/lr/a.log-20200101\nremoving old log /var/log/lr/a.log-20200101\nrenaming /var/log/lr/a.log to /var/log/lr/a.log-20261008\nremoving old log /var/log/lr/a.log-20200102\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 76,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  dateext\n  mail admin@example.com\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log-20261008",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakemail",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 50,
+    "type": "file",
+    "content": "#!/bin/sh\necho \"args: $*\" >> /var/log/lr/mail.out\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/mail.out",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 108,
+    "type": "file",
+    "content": "args: -s /var/log/lr/a.log-20200101 admin@example.com\nargs: -s /var/log/lr/a.log-20200102 admin@example.com\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "compress-fake-prog",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "compress-fake-prog",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\ncur\ncur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/fakezip",
+     "content": "#!/bin/sh\necho FAKEZIP\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  compress\n  compresscmd /var/log/lr/fakezip\n  compressext .zz\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\ncompress_prog is now /var/log/lr/fakezip\ncompress_ext is now .zz\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.2.zz to /var/log/lr/a.log.3.zz (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/a.log.2.zz does not exist\nrenaming /var/log/lr/a.log.1.zz to /var/log/lr/a.log.2.zz (rotatecount 2, logstart 1, i 1), \nold log /var/log/lr/a.log.1.zz does not exist\nrenaming /var/log/lr/a.log.0.zz to /var/log/lr/a.log.1.zz (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/a.log.0.zz does not exist\nlog /var/log/lr/a.log.3.zz doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\ncompressing log with: /var/log/lr/fakezip\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 104,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  compress\n  compresscmd /var/log/lr/fakezip\n  compressext .zz\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1.zz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 8,
+    "type": "file",
+    "content": "FAKEZIP\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakezip",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 23,
+    "type": "file",
+    "content": "#!/bin/sh\necho FAKEZIP\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "compress-prog-stderr",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "compress-prog-stderr",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\ncur\ncur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/fakezip-err",
+     "content": "#!/bin/sh\necho warning-from-compressor >&2\necho FAKEZIP\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  compress\n  compresscmd /var/log/lr/fakezip-err\n  compressext .zz\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\ncompress_prog is now /var/log/lr/fakezip-err\ncompress_ext is now .zz\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.2.zz to /var/log/lr/a.log.3.zz (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/a.log.2.zz does not exist\nrenaming /var/log/lr/a.log.1.zz to /var/log/lr/a.log.2.zz (rotatecount 2, logstart 1, i 1), \nold log /var/log/lr/a.log.1.zz does not exist\nrenaming /var/log/lr/a.log.0.zz to /var/log/lr/a.log.1.zz (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/a.log.0.zz does not exist\nlog /var/log/lr/a.log.3.zz doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\ncompressing log with: /var/log/lr/fakezip-err\nerror: Compressing program wrote following message to stderr when compressing log /var/log/lr/a.log.1:\nwarning-from-compressor\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 108,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  compress\n  compresscmd /var/log/lr/fakezip-err\n  compressext .zz\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1.zz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 8,
+    "type": "file",
+    "content": "FAKEZIP\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakezip-err",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 56,
+    "type": "file",
+    "content": "#!/bin/sh\necho warning-from-compressor >&2\necho FAKEZIP\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "compress-prog-fails",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "compress-prog-fails",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\ncur\ncur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/fakezip-fail",
+     "content": "#!/bin/sh\nexit 1\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  compress\n  compresscmd /var/log/lr/fakezip-fail\n  compressext .zz\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\ncompress_prog is now /var/log/lr/fakezip-fail\ncompress_ext is now .zz\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.2.zz to /var/log/lr/a.log.3.zz (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/a.log.2.zz does not exist\nrenaming /var/log/lr/a.log.1.zz to /var/log/lr/a.log.2.zz (rotatecount 2, logstart 1, i 1), \nold log /var/log/lr/a.log.1.zz does not exist\nrenaming /var/log/lr/a.log.0.zz to /var/log/lr/a.log.1.zz (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/a.log.0.zz does not exist\nlog /var/log/lr/a.log.3.zz doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\ncompressing log with: /var/log/lr/fakezip-fail\nerror: failed to compress log /var/log/lr/a.log.1\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 109,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  compress\n  compresscmd /var/log/lr/fakezip-fail\n  compressext .zz\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "cur\ncur\ncur\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakezip-fail",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 17,
+    "type": "file",
+    "content": "#!/bin/sh\nexit 1\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "compress-options-passed",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "compress-options-passed",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/fakezip",
+     "content": "#!/bin/sh\necho FAKEZIP\n",
+     "mode": 493
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  compress\n  compresscmd /var/log/lr/fakezip\n  compressoptions -9 --fast \"quoted arg\"\n  compressext .zz\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\ncompress_prog is now /var/log/lr/fakezip\ncompress_options is now  -9 --fast \"quoted arg\"\ncompress_ext is now .zz\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.2.zz to /var/log/lr/a.log.3.zz (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/a.log.2.zz does not exist\nrenaming /var/log/lr/a.log.1.zz to /var/log/lr/a.log.2.zz (rotatecount 2, logstart 1, i 1), \nold log /var/log/lr/a.log.1.zz does not exist\nrenaming /var/log/lr/a.log.0.zz to /var/log/lr/a.log.1.zz (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/a.log.0.zz does not exist\nlog /var/log/lr/a.log.3.zz doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\ncompressing log with: /var/log/lr/fakezip\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 145,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  compress\n  compresscmd /var/log/lr/fakezip\n  compressoptions -9 --fast \"quoted arg\"\n  compressext .zz\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1.zz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 8,
+    "type": "file",
+    "content": "FAKEZIP\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/fakezip",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 23,
+    "type": "file",
+    "content": "#!/bin/sh\necho FAKEZIP\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "compress-options-badquote",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "compress-options-badquote",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  compressoptions \"unterminated\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ]
+  },
+  "output": "reading config file /etc/lr/test.conf\ncompress_options is now  \"unterminated\nCreating stub state file: /var/lib/lr/status\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (no old logs will be kept)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\nCreating new state\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-08 09:00\n  log does not need rotating (log has already been rotated)\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 62,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  compressoptions \"unterminated\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 65,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:0:0\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "compress-delay-existing",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "compress-delay-existing",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "c\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.1",
+     "content": "one\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.2.gz",
+     "content": "x",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.3.gz",
+     "content": "y",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 3\n  compress\n  delaycompress\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (3 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 3\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\ncompressing log with: /bin/gzip\nrenaming /var/log/lr/a.log.3.gz to /var/log/lr/a.log.4.gz (rotatecount 3, logstart 1, i 3), \nrenaming /var/log/lr/a.log.2.gz to /var/log/lr/a.log.3.gz (rotatecount 3, logstart 1, i 2), \nrenaming /var/log/lr/a.log.1.gz to /var/log/lr/a.log.2.gz (rotatecount 3, logstart 1, i 1), \nrenaming /var/log/lr/a.log.0.gz to /var/log/lr/a.log.1.gz (rotatecount 3, logstart 1, i 0), \nold log /var/log/lr/a.log.0.gz does not exist\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\nremoving old log /var/log/lr/a.log.4.gz\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 68,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 3\n  compress\n  delaycompress\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 2,
+    "type": "file",
+    "content": "c\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.2.gz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 24,
+    "type": "file",
+    "gzip": true,
+    "content": "one\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.3.gz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 1,
+    "type": "file",
+    "content": "x",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "copy-compress",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "copy-compress",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "data\ndata\ndata\ndata\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  copytruncate\n  compress\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.2.gz to /var/log/lr/a.log.3.gz (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/a.log.2.gz does not exist\nrenaming /var/log/lr/a.log.1.gz to /var/log/lr/a.log.2.gz (rotatecount 2, logstart 1, i 1), \nold log /var/log/lr/a.log.1.gz does not exist\nrenaming /var/log/lr/a.log.0.gz to /var/log/lr/a.log.1.gz (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/a.log.0.gz does not exist\nlog /var/log/lr/a.log.3.gz doesn't exist -- won't try to dispose of it\ncopying /var/log/lr/a.log to /var/log/lr/a.log.1\ntruncating /var/log/lr/a.log\ncompressing log with: /bin/gzip\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  copytruncate\n  compress\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 0,
+    "type": "file",
+    "content": "",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1.gz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 27,
+    "type": "file",
+    "gzip": true,
+    "content": "data\ndata\ndata\ndata\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "renamecopy-compress",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "renamecopy-compress",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "data\ndata\ndata\ndata\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  renamecopy\n  compress\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.2.gz to /var/log/lr/a.log.3.gz (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/a.log.2.gz does not exist\nrenaming /var/log/lr/a.log.1.gz to /var/log/lr/a.log.2.gz (rotatecount 2, logstart 1, i 1), \nold log /var/log/lr/a.log.1.gz does not exist\nrenaming /var/log/lr/a.log.0.gz to /var/log/lr/a.log.1.gz (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/a.log.0.gz does not exist\nlog /var/log/lr/a.log.3.gz doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.tmp\ncopying /var/log/lr/a.log.tmp to /var/log/lr/a.log.1\nNot truncating /var/log/lr/a.log.tmp\nremoving tmp log /var/log/lr/a.log.tmp\ncompressing log with: /bin/gzip\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 65,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  renamecopy\n  compress\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1.gz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 27,
+    "type": "file",
+    "gzip": true,
+    "content": "data\ndata\ndata\ndata\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "copytruncate-existing-dest",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "copytruncate-existing-dest",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "data\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.1",
+     "content": "occupied\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  copytruncate\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.2 to /var/log/lr/a.log.3 (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/a.log.2 does not exist\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 2, logstart 1, i 1), \nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.3 doesn't exist -- won't try to dispose of it\ncopying /var/log/lr/a.log to /var/log/lr/a.log.1\ntruncating /var/log/lr/a.log\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 56,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  copytruncate\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 0,
+    "type": "file",
+    "content": "",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 5,
+    "type": "file",
+    "content": "data\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.2",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 9,
+    "type": "file",
+    "content": "occupied\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "dest-exists-nonrotated",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "dest-exists-nonrotated",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "data\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 0\n  create\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (no old logs will be kept)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 0\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\ndisposeName will be /var/log/lr/a.log.1\ncreating new /var/log/lr/a.log mode = 0644 uid = 0 gid = 0\nremoving old log /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 50,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 0\n  create\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 0,
+    "type": "file",
+    "content": "",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "create-exists",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "create-exists",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "data\n",
+     "mtimeAgoSec": 0,
+     "mode": 416,
+     "gid": 4
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  create 0600\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\ncreating new /var/log/lr/a.log mode = 0600 uid = 0 gid = 4\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 55,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  create 0600\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 384,
+    "uid": 0,
+    "gid": 4,
+    "size": 0,
+    "type": "file",
+    "content": "",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 416,
+    "uid": 0,
+    "gid": 4,
+    "size": 5,
+    "type": "file",
+    "content": "data\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "olddir-copytruncate",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "olddir-copytruncate",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    },
+    {
+     "path": "/var/log/lr/old"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  olddir /var/log/lr/old\n  copytruncate\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nolddir is now /var/log/lr/old\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nolddir is /var/log/lr/old, empty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/old/a.log.2 to /var/log/lr/old/a.log.3 (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/old/a.log.2 does not exist\nrenaming /var/log/lr/old/a.log.1 to /var/log/lr/old/a.log.2 (rotatecount 2, logstart 1, i 1), \nold log /var/log/lr/old/a.log.1 does not exist\nrenaming /var/log/lr/old/a.log.0 to /var/log/lr/old/a.log.1 (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/old/a.log.0 does not exist\nlog /var/log/lr/old/a.log.3 doesn't exist -- won't try to dispose of it\ncopying /var/log/lr/a.log to /var/log/lr/old/a.log.1\ntruncating /var/log/lr/a.log\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 81,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  olddir /var/log/lr/old\n  copytruncate\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 0,
+    "type": "file",
+    "content": "",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/old",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 4096,
+    "type": "dir"
+   },
+   {
+    "path": "/var/log/lr/old/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "olddir-dateext-compress",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "olddir-dateext-compress",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    },
+    {
+     "path": "/var/log/lr/old"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\ncur\ncur\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/old/a.log-20200101.gz",
+     "content": "x",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  olddir /var/log/lr/old\n  dateext\n  compress\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nolddir is now /var/log/lr/old\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nolddir is /var/log/lr/old, empty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log to /var/log/lr/old/a.log-20261008\ncompressing log with: /bin/gzip\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 87,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  olddir /var/log/lr/old\n  dateext\n  compress\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/old",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 4096,
+    "type": "dir"
+   },
+   {
+    "path": "/var/log/lr/old/a.log-20200101.gz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 1,
+    "type": "file",
+    "content": "x",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/old/a.log-20261008.gz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 26,
+    "type": "file",
+    "gzip": true,
+    "content": "cur\ncur\ncur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "olddir-createolddir-mode",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "olddir-createolddir-mode",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  olddir /var/log/lr/deep/er/old\n  createolddir 0700 root adm\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nolddir is now /var/log/lr/deep/er/old\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nolddir is /var/log/lr/deep/er/old, empty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/deep/er/old/a.log.2 to /var/log/lr/deep/er/old/a.log.3 (rotatecount 2, logstart 1, i 2), \nold log /var/log/lr/deep/er/old/a.log.2 does not exist\nrenaming /var/log/lr/deep/er/old/a.log.1 to /var/log/lr/deep/er/old/a.log.2 (rotatecount 2, logstart 1, i 1), \nold log /var/log/lr/deep/er/old/a.log.1 does not exist\nrenaming /var/log/lr/deep/er/old/a.log.0 to /var/log/lr/deep/er/old/a.log.1 (rotatecount 2, logstart 1, i 0), \nold log /var/log/lr/deep/er/old/a.log.0 does not exist\nlog /var/log/lr/deep/er/old/a.log.3 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/deep/er/old/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 103,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  olddir /var/log/lr/deep/er/old\n  createolddir 0700 root adm\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/deep",
+    "mode": 448,
+    "uid": 0,
+    "gid": 4,
+    "size": 4096,
+    "type": "dir"
+   },
+   {
+    "path": "/var/log/lr/deep/er",
+    "mode": 448,
+    "uid": 0,
+    "gid": 4,
+    "size": 4096,
+    "type": "dir"
+   },
+   {
+    "path": "/var/log/lr/deep/er/old",
+    "mode": 448,
+    "uid": 0,
+    "gid": 4,
+    "size": 4096,
+    "type": "dir"
+   },
+   {
+    "path": "/var/log/lr/deep/er/old/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "olddir-bad-path",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "olddir-bad-path",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  olddir /var/log/lr/a b\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ]
+  },
+  "output": "reading config file /etc/lr/test.conf\nerror: /etc/lr/test.conf:3 bad olddir path /var/log/lr/a b\nerror: found error in /var/log/lr/a.log , skipping\nremoving last 1 log configs\nCreating stub state file: /var/lib/lr/status\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\n\nHandling 0 logs\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 55,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  olddir /var/log/lr/a b\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 29,
+    "type": "file",
+    "content": "logrotate state -- version 2\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "olddir-noolddir",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "olddir-noolddir",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  olddir /var/log/lr/old\n  noolddir\n  rotate 1\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nolddir is now /var/log/lr/old\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 77,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  olddir /var/log/lr/old\n  noolddir\n  rotate 1\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "tz-newyork-daily",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "America/New_York",
+  "scenario": {
+   "name": "tz-newyork-daily",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 72000
+   },
+   "tz": "America/New_York"
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 05:38\n  Last rotated at 2026-10-07 13:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 41,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-5:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "tz-paris-dateext",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "Europe/Paris",
+  "scenario": {
+   "name": "tz-paris-dateext",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  dateext\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   },
+   "tz": "Europe/Paris"
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 11:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nglob finding old rotated logs failed\nrenaming /var/log/lr/a.log to /var/log/lr/a.log-20261008\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 51,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  dateext\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 68,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-11:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log-20261008",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "tz-tokyo-weekly",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "Asia/Tokyo",
+  "scenario": {
+   "name": "tz-tokyo-weekly",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  weekly\n  rotate 1\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 691200
+   },
+   "tz": "Asia/Tokyo"
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  weekly (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 18:38\n  Last rotated at 2026-09-30 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 42,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  weekly\n  rotate 1\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 68,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-18:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "weekday-today-1day",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "weekday-today-1day",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  weekly 4\n  rotate 1\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 194400
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  weekly (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-06 03:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 44,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  weekly 4\n  rotate 1\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "weekday-other-1day",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "weekday-other-1day",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "cur\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  weekly 0\n  rotate 1\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 194400
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  weekly (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-06 03:38\n  log does not need rotating (log has been rotated at 2026-10-06 03:38, which is less than a week ago)\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 44,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  weekly 0\n  rotate 1\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-6-3:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "cur\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "sparse-big-file",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "sparse-big-file",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "head\n",
+     "mtimeAgoSec": 0,
+     "sizeBytes": 819200
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  size 500k\n  rotate 1\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ]
+  },
+  "output": "reading config file /etc/lr/test.conf\nCreating stub state file: /var/lib/lr/status\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  512000 bytes (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\nCreating new state\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-08 09:00\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 45,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  size 500k\n  rotate 1\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 819200,
+    "type": "file",
+    "content": null,
+    "mtimeAgoSec": null,
+    "contentSha256": "fa746aad3f744706e9372f304a0b50f0b3c316441d54d7297c4de86ab21719bb"
+   }
+  ]
+ },
+ {
+  "name": "hourly-dateext-compress-delay",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "hourly-dateext-compress-delay",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "c\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log-2020010100",
+     "content": "o\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  hourly\n  rotate 3\n  dateext\n  compress\n  delaycompress\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 7300
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  hourly (3 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-08 07:37\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 3\ndateext suffix '-2026100809'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\ncompressing log with: /bin/gzip\nrenaming /var/log/lr/a.log to /var/log/lr/a.log-2026100809\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 79,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  hourly\n  rotate 3\n  dateext\n  compress\n  delaycompress\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log-2020010100.gz",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 22,
+    "type": "file",
+    "gzip": true,
+    "content": "o\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log-2026100809",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 2,
+    "type": "file",
+    "content": "c\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "start-with-dateext",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "start-with-dateext",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "c\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  start 7\n  dateext\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (2 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 2\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nglob finding old rotated logs failed\nrenaming /var/log/lr/a.log to /var/log/lr/a.log-20261008\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 61,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 2\n  start 7\n  dateext\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log-20261008",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 2,
+    "type": "file",
+    "content": "c\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "shred-on-rotate",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "shred-on-rotate",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "secret\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 0\n  shred\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (no old logs will be kept)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 0\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\ndisposeName will be /var/log/lr/a.log.1\nremoving old log /var/log/lr/a.log.1\nUsing shred to remove the file /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 49,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 0\n  shred\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "preremove-fails",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "preremove-fails",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "c\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.1",
+     "content": "o\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  preremove\n    exit 1\n  endscript\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\nremoving old log /var/log/lr/a.log.2\nrunning preremove script\nerror: error running preremove script for /var/log/lr/a.log.2 of '/var/log/lr/a.log '. Not removing this file.\nerror: Failed to remove old log /var/log/lr/a.log.2: No data available\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 76,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  preremove\n    exit 1\n  endscript\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 2,
+    "type": "file",
+    "content": "c\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.2",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 2,
+    "type": "file",
+    "content": "o\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "sharedscripts-pre-fails",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "sharedscripts-pre-fails",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/b.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/*.log {\n  daily\n  rotate 1\n  sharedscripts\n  prerotate\n    exit 2\n  endscript\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n\"/var/log/lr/b.log\" {t1}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200,
+    "t1": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/*.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nconsidering log /var/log/lr/b.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrotating log /var/log/lr/b.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/b.log.1 to /var/log/lr/b.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/b.log.1 does not exist\nrenaming /var/log/lr/b.log.0 to /var/log/lr/b.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/b.log.0 does not exist\nlog /var/log/lr/b.log.2 doesn't exist -- won't try to dispose of it\nrunning prerotate script\nerror: error running shared prerotate script for '/var/log/lr/*.log '\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 92,
+    "type": "file",
+    "content": "/var/log/lr/*.log {\n  daily\n  rotate 1\n  sharedscripts\n  prerotate\n    exit 2\n  endscript\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 105,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n\"/var/log/lr/b.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/b.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "sharedscripts-none-rotated",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "sharedscripts-none-rotated",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/b.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/*.log {\n  daily\n  rotate 1\n  sharedscripts\n  postrotate\n    echo POST\n  endscript\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n\"/var/log/lr/b.log\" {t1}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 60,
+    "t1": 60
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/*.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-08 09:37\n  log does not need rotating (log has already been rotated)\nconsidering log /var/log/lr/b.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-08 09:37\n  log does not need rotating (log has already been rotated)\nnot running postrotate script, since no logs were rotated\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 96,
+    "type": "file",
+    "content": "/var/log/lr/*.log {\n  daily\n  rotate 1\n  sharedscripts\n  postrotate\n    echo POST\n  endscript\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 105,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:37:58\n\"/var/log/lr/b.log\" 2026-10-8-9:37:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/b.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "rotate-one-missing-in-set",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "rotate-one-missing-in-set",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/b.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/*.log {\n  daily\n  rotate 1\n  missingok\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n\"/var/log/lr/b.log\" {t1}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200,
+    "t1": 259200
+   },
+   "symlinks": [
+    {
+     "path": "/var/log/lr/dangling.log",
+     "target": "/var/log/lr/nowhere"
+    }
+   ]
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/*.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nconsidering log /var/log/lr/b.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nconsidering log /var/log/lr/dangling.log\nCreating new state\n  log /var/log/lr/dangling.log is symbolic link. Rotation of symbolic links is not allowed to avoid security issues -- skipping.\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\nrotating log /var/log/lr/b.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/b.log.1 to /var/log/lr/b.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/b.log.1 does not exist\nrenaming /var/log/lr/b.log.0 to /var/log/lr/b.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/b.log.0 does not exist\nlog /var/log/lr/b.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/b.log to /var/log/lr/b.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 53,
+    "type": "file",
+    "content": "/var/log/lr/*.log {\n  daily\n  rotate 1\n  missingok\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 148,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/dangling.log\" 2026-10-8-9:0:0\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n\"/var/log/lr/b.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/b.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/dangling.log",
+    "mode": 511,
+    "uid": 0,
+    "gid": 0,
+    "size": 19,
+    "type": "symlink",
+    "target": "/var/log/lr/nowhere"
+   }
+  ]
+ },
+ {
+  "name": "large-rotate-count",
+  "nowSec": 1791452338,
+  "buildNowSec": 1791452338,
+  "tz": "UTC",
+  "scenario": {
+   "name": "large-rotate-count",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "c\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.1",
+     "content": "o1\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.2",
+     "content": "o2\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.3",
+     "content": "o3\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.4",
+     "content": "o4\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.5",
+     "content": "o5\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.6",
+     "content": "o6\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.7",
+     "content": "o7\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.8",
+     "content": "o8\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.9",
+     "content": "o9\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.10",
+     "content": "o10\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/a.log.11",
+     "content": "o11\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 30\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (30 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 30\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.30 to /var/log/lr/a.log.31 (rotatecount 30, logstart 1, i 30), \nold log /var/log/lr/a.log.30 does not exist\nrenaming /var/log/lr/a.log.29 to /var/log/lr/a.log.30 (rotatecount 30, logstart 1, i 29), \nold log /var/log/lr/a.log.29 does not exist\nrenaming /var/log/lr/a.log.28 to /var/log/lr/a.log.29 (rotatecount 30, logstart 1, i 28), \nold log /var/log/lr/a.log.28 does not exist\nrenaming /var/log/lr/a.log.27 to /var/log/lr/a.log.28 (rotatecount 30, logstart 1, i 27), \nold log /var/log/lr/a.log.27 does not exist\nrenaming /var/log/lr/a.log.26 to /var/log/lr/a.log.27 (rotatecount 30, logstart 1, i 26), \nold log /var/log/lr/a.log.26 does not exist\nrenaming /var/log/lr/a.log.25 to /var/log/lr/a.log.26 (rotatecount 30, logstart 1, i 25), \nold log /var/log/lr/a.log.25 does not exist\nrenaming /var/log/lr/a.log.24 to /var/log/lr/a.log.25 (rotatecount 30, logstart 1, i 24), \nold log /var/log/lr/a.log.24 does not exist\nrenaming /var/log/lr/a.log.23 to /var/log/lr/a.log.24 (rotatecount 30, logstart 1, i 23), \nold log /var/log/lr/a.log.23 does not exist\nrenaming /var/log/lr/a.log.22 to /var/log/lr/a.log.23 (rotatecount 30, logstart 1, i 22), \nold log /var/log/lr/a.log.22 does not exist\nrenaming /var/log/lr/a.log.21 to /var/log/lr/a.log.22 (rotatecount 30, logstart 1, i 21), \nold log /var/log/lr/a.log.21 does not exist\nrenaming /var/log/lr/a.log.20 to /var/log/lr/a.log.21 (rotatecount 30, logstart 1, i 20), \nold log /var/log/lr/a.log.20 does not exist\nrenaming /var/log/lr/a.log.19 to /var/log/lr/a.log.20 (rotatecount 30, logstart 1, i 19), \nold log /var/log/lr/a.log.19 does not exist\nrenaming /var/log/lr/a.log.18 to /var/log/lr/a.log.19 (rotatecount 30, logstart 1, i 18), \nold log /var/log/lr/a.log.18 does not exist\nrenaming /var/log/lr/a.log.17 to /var/log/lr/a.log.18 (rotatecount 30, logstart 1, i 17), \nold log /var/log/lr/a.log.17 does not exist\nrenaming /var/log/lr/a.log.16 to /var/log/lr/a.log.17 (rotatecount 30, logstart 1, i 16), \nold log /var/log/lr/a.log.16 does not exist\nrenaming /var/log/lr/a.log.15 to /var/log/lr/a.log.16 (rotatecount 30, logstart 1, i 15), \nold log /var/log/lr/a.log.15 does not exist\nrenaming /var/log/lr/a.log.14 to /var/log/lr/a.log.15 (rotatecount 30, logstart 1, i 14), \nold log /var/log/lr/a.log.14 does not exist\nrenaming /var/log/lr/a.log.13 to /var/log/lr/a.log.14 (rotatecount 30, logstart 1, i 13), \nold log /var/log/lr/a.log.13 does not exist\nrenaming /var/log/lr/a.log.12 to /var/log/lr/a.log.13 (rotatecount 30, logstart 1, i 12), \nold log /var/log/lr/a.log.12 does not exist\nrenaming /var/log/lr/a.log.11 to /var/log/lr/a.log.12 (rotatecount 30, logstart 1, i 11), \nrenaming /var/log/lr/a.log.10 to /var/log/lr/a.log.11 (rotatecount 30, logstart 1, i 10), \nrenaming /var/log/lr/a.log.9 to /var/log/lr/a.log.10 (rotatecount 30, logstart 1, i 9), \nrenaming /var/log/lr/a.log.8 to /var/log/lr/a.log.9 (rotatecount 30, logstart 1, i 8), \nrenaming /var/log/lr/a.log.7 to /var/log/lr/a.log.8 (rotatecount 30, logstart 1, i 7), \nrenaming /var/log/lr/a.log.6 to /var/log/lr/a.log.7 (rotatecount 30, logstart 1, i 6), \nrenaming /var/log/lr/a.log.5 to /var/log/lr/a.log.6 (rotatecount 30, logstart 1, i 5), \nrenaming /var/log/lr/a.log.4 to /var/log/lr/a.log.5 (rotatecount 30, logstart 1, i 4), \nrenaming /var/log/lr/a.log.3 to /var/log/lr/a.log.4 (rotatecount 30, logstart 1, i 3), \nrenaming /var/log/lr/a.log.2 to /var/log/lr/a.log.3 (rotatecount 30, logstart 1, i 2), \nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 30, logstart 1, i 1), \nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 30, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.31 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 42,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 30\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:58\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 2,
+    "type": "file",
+    "content": "c\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.10",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o9\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.11",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "o10\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.12",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 4,
+    "type": "file",
+    "content": "o11\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.2",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o1\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.3",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o2\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.4",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o3\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.5",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o4\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.6",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o5\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.7",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o6\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.8",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o7\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.9",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 3,
+    "type": "file",
+    "content": "o8\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "config-in-subdir-relative-include",
+  "nowSec": 1791452339,
+  "buildNowSec": 1791452339,
+  "tz": "UTC",
+  "scenario": {
+   "name": "config-in-subdir-relative-include",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "include conf.d\n"
+    },
+    {
+     "path": "/etc/lr/conf.d/10-a",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "test.conf"
+   ],
+   "cwd": "/etc/lr"
+  },
+  "output": "reading config file test.conf\nincluding conf.d\nreading config file 10-a\nCreating stub state file: /var/lib/lr/status\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\nCreating new state\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-08 09:00\n  log does not need rotating (log has already been rotated)\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/conf.d",
+    "mode": 493,
+    "uid": 0,
+    "gid": 0,
+    "size": 4096,
+    "type": "dir"
+   },
+   {
+    "path": "/etc/lr/conf.d/10-a",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 41,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 15,
+    "type": "file",
+    "content": "include conf.d\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 65,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:0:0\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "include-nesting",
+  "nowSec": 1791452339,
+  "buildNowSec": 1791452339,
+  "tz": "UTC",
+  "scenario": {
+   "name": "include-nesting",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "include /etc/lr/self.conf\n"
+    },
+    {
+     "path": "/etc/lr/self.conf",
+     "content": "include /etc/lr/self.conf\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ]
+  },
+  "output": "reading config file /etc/lr/test.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nreading config file /etc/lr/self.conf\nincluding /etc/lr/self.conf\nerror: /etc/lr/self.conf:1 include nesting too deep\nCreating stub state file: /var/lib/lr/status\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\n\nHandling 0 logs\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/self.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 26,
+    "type": "file",
+    "content": "include /etc/lr/self.conf\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 26,
+    "type": "file",
+    "content": "include /etc/lr/self.conf\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 29,
+    "type": "file",
+    "content": "logrotate state -- version 2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "include-tilde",
+  "nowSec": 1791452339,
+  "buildNowSec": 1791452339,
+  "tz": "UTC",
+  "scenario": {
+   "name": "include-tilde",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "include ~/lr.conf\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ]
+  },
+  "output": "reading config file /etc/lr/test.conf\n/etc/lr/test.conf:1 replaced ~/lr.conf with '/root' for include directive\nincluding /root/lr.conf\nerror: cannot stat /root/lr.conf: No such file or directory\nCreating stub state file: /var/lib/lr/status\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\n\nHandling 0 logs\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 18,
+    "type": "file",
+    "content": "include ~/lr.conf\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 29,
+    "type": "file",
+    "content": "logrotate state -- version 2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "mixed-stanza-errors",
+  "nowSec": 1791452339,
+  "buildNowSec": 1791452339,
+  "tz": "UTC",
+  "scenario": {
+   "name": "mixed-stanza-errors",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/b.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  rotate x\n}\n/var/log/lr/b.log {\n  daily\n  rotate 1\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/b.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nerror: /etc/lr/test.conf:2 bad rotation count 'x'\nerror: found error in /var/log/lr/a.log , skipping\nremoving last 1 log configs\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/b.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/b.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/b.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/b.log.1 to /var/log/lr/b.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/b.log.1 does not exist\nrenaming /var/log/lr/b.log.0 to /var/log/lr/b.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/b.log.0 does not exist\nlog /var/log/lr/b.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/b.log to /var/log/lr/b.log.1\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 74,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  rotate x\n}\n/var/log/lr/b.log {\n  daily\n  rotate 1\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/b.log\" 2026-10-8-9:38:59\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/b.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "stanza-error-skips-rest",
+  "nowSec": 1791452339,
+  "buildNowSec": 1791452339,
+  "tz": "UTC",
+  "scenario": {
+   "name": "stanza-error-skips-rest",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    },
+    {
+     "path": "/var/log/lr/b.log",
+     "content": "line1\nline2\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  bogus\n  rotate x\n  daily\n  postrotate\n    echo skipped\n  endscript\n  weekly\n}\n/var/log/lr/b.log {\n  monthly\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ]
+  },
+  "output": "reading config file /etc/lr/test.conf\nerror: /etc/lr/test.conf:2 unknown option 'bogus' -- ignoring line\nerror: /etc/lr/test.conf:3 bad rotation count 'x'\nerror: found error in /var/log/lr/a.log , skipping\nremoving last 1 log configs\nCreating stub state file: /var/lib/lr/status\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/b.log  monthly (no old logs will be kept)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/b.log\nCreating new state\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-08 09:00\n  log does not need rotating (log has already been rotated)\n",
+  "exit": 1,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 132,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  bogus\n  rotate x\n  daily\n  postrotate\n    echo skipped\n  endscript\n  weekly\n}\n/var/log/lr/b.log {\n  monthly\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 65,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/b.log\" 2026-10-8-9:0:0\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/b.log",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 12,
+    "type": "file",
+    "content": "line1\nline2\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "script-with-braces",
+  "nowSec": 1791452339,
+  "buildNowSec": 1791452339,
+  "tz": "UTC",
+  "scenario": {
+   "name": "script-with-braces",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "c\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  postrotate\n    if [ -f /x ]; then echo {ok}; fi\n    echo done\n  endscript\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\nrunning postrotate script\ndone\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 117,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  postrotate\n    if [ -f /x ]; then echo {ok}; fi\n    echo done\n  endscript\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:59\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 2,
+    "type": "file",
+    "content": "c\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ },
+ {
+  "name": "endscript-indented",
+  "nowSec": 1791452339,
+  "buildNowSec": 1791452339,
+  "tz": "UTC",
+  "scenario": {
+   "name": "endscript-indented",
+   "dirs": [
+    {
+     "path": "/var/lib/lr"
+    },
+    {
+     "path": "/var/log/lr"
+    }
+   ],
+   "files": [
+    {
+     "path": "/var/log/lr/a.log",
+     "content": "c\n",
+     "mtimeAgoSec": 0
+    }
+   ],
+   "configs": [
+    {
+     "path": "/etc/lr/test.conf",
+     "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  postrotate\n\techo tab\n\t  endscript\n}\n"
+    }
+   ],
+   "args": [
+    "-v",
+    "-s",
+    "/var/lib/lr/status",
+    "/etc/lr/test.conf"
+   ],
+   "state": "logrotate state -- version 2\n\"/var/log/lr/a.log\" {t0}\n",
+   "statePath": "/var/lib/lr/status",
+   "stateAgo": {
+    "t0": 259200
+   }
+  },
+  "output": "reading config file /etc/lr/test.conf\nReading state from file: /var/lib/lr/status\nAllocating hash table for state file, size 64 entries\nCreating new state\n\nHandling 1 logs\n\nrotating pattern: /var/log/lr/a.log  after 1 days (1 rotations)\nempty log files are rotated, old logs are removed\nconsidering log /var/log/lr/a.log\n  Now: 2026-10-08 09:38\n  Last rotated at 2026-10-05 09:38\n  log needs rotating\nrotating log /var/log/lr/a.log, log->rotateCount is 1\ndateext suffix '-20261008'\nglob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'\nrenaming /var/log/lr/a.log.1 to /var/log/lr/a.log.2 (rotatecount 1, logstart 1, i 1), \nold log /var/log/lr/a.log.1 does not exist\nrenaming /var/log/lr/a.log.0 to /var/log/lr/a.log.1 (rotatecount 1, logstart 1, i 0), \nold log /var/log/lr/a.log.0 does not exist\nlog /var/log/lr/a.log.2 doesn't exist -- won't try to dispose of it\nrenaming /var/log/lr/a.log to /var/log/lr/a.log.1\nrunning postrotate script\ntab\n",
+  "exit": 0,
+  "tree": [
+   {
+    "path": "/etc/lr/test.conf",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 77,
+    "type": "file",
+    "content": "/var/log/lr/a.log {\n  daily\n  rotate 1\n  postrotate\n\techo tab\n\t  endscript\n}\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/lib/lr/status",
+    "mode": 416,
+    "uid": 0,
+    "gid": 0,
+    "size": 67,
+    "type": "file",
+    "content": "logrotate state -- version 2\n\"/var/log/lr/a.log\" 2026-10-8-9:38:59\n",
+    "mtimeAgoSec": null
+   },
+   {
+    "path": "/var/log/lr/a.log.1",
+    "mode": 420,
+    "uid": 0,
+    "gid": 0,
+    "size": 2,
+    "type": "file",
+    "content": "c\n",
+    "mtimeAgoSec": null
+   }
+  ]
+ }
+]

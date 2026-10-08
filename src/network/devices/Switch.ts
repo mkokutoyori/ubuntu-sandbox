@@ -41,7 +41,7 @@ import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { getSessionRegistry, getManagementService } from '../equipment/RouterServiceCapabilities';
 import { RemoteAccessListeners } from './router/management/RemoteAccessListeners';
-import { VtyIncomingPolicy } from './router/vty/VtyIncomingPolicy';
+import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { SSH_DEFAULT_PORT, TELNET_DEFAULT_PORT } from './router/management/RouterManagementService';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet,
   ethernetFrameBytes,
@@ -129,7 +129,7 @@ import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
 import type { AccountServiceType, CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
-import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
+import { lineIdleTimeoutMs, vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { KeypairService } from './router/security/KeypairService';
 import { classifyIpv4Destination } from '../layers/internet/InternetLayer';
 import type { LldpHost } from '../lldp/LldpAgent';
@@ -2914,8 +2914,13 @@ export abstract class Switch extends Equipment {
     return this._getVtyLineConfig().all()[0];
   }
 
-  createVtyShell(): TelnetVtyShell {
+  createVtyShell(user?: string): TelnetVtyShell & { getCompletions(line: string): string[] } {
     const shell = this.createShell();
+    const account = user === undefined ? undefined : this.getCredentialStore().lookup(user);
+    const sessionShell = shell as unknown as {
+      beginExecSession?: (lvl: number, u?: string, vue?: string | null) => void;
+    };
+    sessionShell.beginExecSession?.(account?.privilege ?? 1, user, account?.view ?? null);
     let ended = false;
     return {
       execute: (rawInput: string): string => {
@@ -2924,6 +2929,7 @@ export abstract class Switch extends Equipment {
         return output;
       },
       getPrompt: () => shell.getPrompt(this),
+      getCompletions: (line: string) => shell.tabCandidates(line, this),
       lastEndedSession: () => ended,
     };
   }
@@ -2964,6 +2970,7 @@ export abstract class Switch extends Equipment {
   protected sshPasswordAllowed(_user: string): boolean { return true; }
   protected sshPublicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
   protected sshForcedCommand(_user: string): string | null { return null; }
+  protected sshSftpAdmitted(_user: string): boolean { return true; }
   protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
   protected sshServerIdentification(): string { return SSH_SERVER_IDENTIFICATION; }
 
@@ -3050,7 +3057,7 @@ export abstract class Switch extends Equipment {
         },
       }),
       execTarget: () => this as unknown as SshExecTarget,
-      execIdleTimeoutMs: () => null,
+      execIdleTimeoutMs: () => lineIdleTimeoutMs(this.vtyBlock()),
       banner: () => this.getBanner('login') || null,
       identification: () => this.sshServerIdentification(),
       transportPolicy: () => this.sshTransportPolicy(),
@@ -3058,9 +3065,11 @@ export abstract class Switch extends Equipment {
         chiffrement: algorithms.encryptionClientToServer, hmac: algorithms.macClientToServer ?? 'none',
       }),
       motd: () => this.getBanner('motd') || undefined,
-      isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
+      isClientBlocked: (ip) => !this._getVtyLineConfig().incomingVerdict().accept
+        || !this.vtyAdmissionVerdict('ssh', ip).accept,
       recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),
       forcedCommand: (user) => this.sshForcedCommand(user),
+      sftpAdmitted: (user) => this.sshSftpAdmitted(user),
       ...(this.sshPublicKeyAdmitted ? {
         publicKeyAdmitted: (user: string, key: string) =>
           this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
@@ -3085,7 +3094,7 @@ export abstract class Switch extends Equipment {
       authHeader: () => null,
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
-      admit: (ip, localIp) => this.vtyIncomingPolicy().admit('telnet', ip, localIp),
+      admit: (ip, localIp) => this.vtyAdmissionVerdict('telnet', ip, localIp),
       authenticateLocal: (user, password) =>
         this.accountAdmits(user, 'telnet') && this.getCredentialStore().authenticate(user, password),
       authenticateAaa: (user, password) => Promise.resolve(
@@ -3105,13 +3114,17 @@ export abstract class Switch extends Equipment {
       touchSession: (id, bytesIn, bytesOut) => {
         this.getSshSessionRegistry().touch(id, simulationNowMs(), bytesIn, bytesOut);
       },
-      idleTimeoutMs: () => null,
+      idleTimeoutMs: () => lineIdleTimeoutMs(this.vtyBlock()),
       recordAuthFailure: (user, ip) => { void user; void ip; },
       recordLogin: (user, ip) => { void user; void ip; },
     }));
   }
 
   private _vtyIncomingPolicy: VtyIncomingPolicy | null = null;
+
+  vtyAdmissionVerdict(transport: VtyTransportKind, sourceIp: string, localIp?: string): VtyAdmissionVerdict {
+    return this.vtyIncomingPolicy().admit(transport, sourceIp, localIp);
+  }
 
   private vtyIncomingPolicy(): VtyIncomingPolicy {
     this._vtyIncomingPolicy ??= new VtyIncomingPolicy({

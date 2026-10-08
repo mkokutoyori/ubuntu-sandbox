@@ -46,6 +46,7 @@ import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/hu
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import { huaweiHeaderHost } from './huawei/HuaweiHeaders';
 import { huaweiCaptureHost } from './huawei/CapturePacket';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { applyVrpLocalUser } from './huawei/huaweiLocalUser';
@@ -1570,15 +1571,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' }, undefined, undefined, huaweiCaptureHost(() => this.r()));
-    t.registerGreedy('header', 'Configure login/shell banner', (args) => {
-      const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
-      if (typeof router._setSshBanner === 'function') {
-        const rest = args.slice(args[0] === 'login' && args[1] === 'information' ? 2 : 1).join(' ');
-        router._setSshBanner(rest.replace(/^["']/, '').replace(/["']$/, ''));
-      }
-      return '';
-    });
+    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' }, undefined, undefined, huaweiCaptureHost(() => this.r()), huaweiHeaderHost(() => this.r()));
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurityDisplay(t, undefined,
       () => this.r()?.getSnmpService(), () => this.r());
@@ -1844,7 +1837,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' }, undefined, undefined, huaweiCaptureHost(() => this.r()));
+    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' }, undefined, undefined, huaweiCaptureHost(() => this.r()), huaweiHeaderHost(() => this.r()));
 
     const applyLldp = (fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void => {
       const ag = (getRouter() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
@@ -1871,14 +1864,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    t.registerGreedy('header', 'Configure login/shell banner', (args) => {
-      const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
-      if (typeof router._setSshBanner === 'function') {
-        const rest = args.slice(args[0] === 'login' && args[1] === 'information' ? 2 : 1).join(' ');
-        router._setSshBanner(rest.replace(/^["']/, '').replace(/["']$/, ''));
-      }
-      return '';
-    });
     // `command-alias enable|disable` + `command-alias alias <h> <expansion>`
     // mirror the VRP CLI alias feature consumed by runSshCommandSync.
     t.registerGreedy('command-alias', 'CLI alias configuration', (args) => {

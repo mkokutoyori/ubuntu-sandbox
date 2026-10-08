@@ -87,6 +87,7 @@ export interface RouterSshServerDeps {
   /** Optional auth-failure hook for the audit log. */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
   forcedCommand?(user: string): string | null;
+  sftpAdmitted?(user: string): boolean;
   publicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
 }
 
@@ -210,6 +211,10 @@ export class RouterSshServerContext implements ISshServerContext {
     const present = cred.has?.(username) ?? cred.get?.(username) !== undefined;
     if (!present) return null;
     return new SshUserContext(username, 0, 0, [], `/`);
+  }
+
+  subsystemAdmitted(name: string, userCtx: SshUserContext): boolean {
+    return name !== 'sftp' || (this.deps.sftpAdmitted?.(userCtx.username) ?? true);
   }
 
   forcedCommand(userCtx: SshUserContext): string | null {

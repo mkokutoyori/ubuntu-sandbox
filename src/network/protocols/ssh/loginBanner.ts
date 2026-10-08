@@ -38,11 +38,12 @@ export function composeSshLoginBanner(
   sourceIp: string,
   sourceHost: string,
   quiet = false,
+  preAuthBannerShown = false,
 ): string[] {
   const dev = device as SshBannerDevice;
   const lines: string[] = [];
   if (!quiet) {
-    const issueNet = dev.sshBanner?.() ?? '';
+    const issueNet = preAuthBannerShown ? '' : dev.sshBanner?.() ?? '';
     for (const ln of issueNet.replace(/\n+$/, '').split('\n')) {
       if (ln.length > 0) lines.push(ln);
     }

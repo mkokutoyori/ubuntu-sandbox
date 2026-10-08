@@ -16,6 +16,7 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
+import { compareAndRecordHostKey, type KnownHostsVfs } from '../../../protocols/ssh/hostkey/HostKeyChangedWarning';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import { readSshdConfig } from '../../../protocols/ssh/server/SshdConfigText';
@@ -297,35 +298,30 @@ function clientOption(args: string[], name: string): string | null {
 }
 
 /**
- * Local identity public key the client would offer (honours `-i`). The
- * current user's ~/.ssh is searched first; /root/.ssh is also probed
- * since key material is conventionally generated as root.
+ * Local identity public keys the client would offer, in the order it
+ * offers them (every `-i`, else the default identity files). The current
+ * user's ~/.ssh is searched first; /root/.ssh is also probed since key
+ * material is conventionally generated as root.
  */
-function localIdentityPublicKey(opts: SshClientOpts, flags: string[]): string | null {
-  // Files on disk (or the explicit -i) take precedence over the agent —
-  // matching OpenSSH's identity resolution order.
+function localIdentityPublicKeys(opts: SshClientOpts, flags: string[]): string[] {
+  const found: string[] = [];
   if (opts.localVfs) {
     const home = opts.sourceHome ?? '/root';
-    const iIdx = flags.indexOf('-i');
-    const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
+    const explicit = flags.flatMap((flag, index) => (flag === '-i' && flags[index + 1] ? [flags[index + 1]] : []));
     const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
-    const candidates = iVal
-      ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
+    const candidates = explicit.length > 0
+      ? explicit.map((path) => (path.endsWith('.pub') ? path : `${path}.pub`))
       : keyHomes.flatMap((h) => OPENSSH_DEFAULT_IDENTITY_FILES.map((name) => `${h}/.ssh/${name}.pub`));
-    for (const c of candidates) {
-      const data = opts.localVfs.readFile(c);
-      if (data && data.trim()) return data.trim();
+    for (const candidate of candidates) {
+      const data = opts.localVfs.readFile(candidate);
+      if (data && data.trim()) found.push(data.trim());
     }
+    if (found.length > 0) return found;
   }
-  // Agent fallback — when no on-disk identity matches but the SSH agent
-  // holds keys (e.g. linux2's adopted agent after -A from linux1), offer
-  // the first agent key's public-key line. Real OpenSSH iterates them;
-  // one is enough for the simulator's match against authorized_keys.
-  const agentKeys = opts.localAgent?.list();
-  for (const k of agentKeys ?? []) {
-    if (k.publicKey) return k.publicKey;
+  for (const key of opts.localAgent?.list() ?? []) {
+    if (key.publicKey) found.push(key.publicKey);
   }
-  return null;
+  return found;
 }
 
 /** Whether the remote user's authorized_keys lists the offered identity. */
@@ -448,12 +444,17 @@ function resolveSshAuthMethod(
     const method = OPENSSH_USERAUTH_METHODS.find((m) => m === name);
     if (!method || !offered.includes(method) || !clientTriesMethod(client, method)) continue;
     if (method !== 'publickey') return { method: 'password', serverMethods };
-    const identity = exec ? localIdentityPublicKey(opts, flags) : null;
-    const matchedKey = identity && exec
-      ? findMatchedAuthorizedKey(exec, remoteUser, identity, onStrictModesRefusal)
-      : null;
-    if (matchedKey && authorizedKeyAdmits(matchedKey, { ip: opts.sourceIp, host: opts.sourceHostname })) {
-      return { method: 'publickey', serverMethods, matchedKey };
+    let refusalReported = false;
+    const reportRefusalOnce = (offendingPath: string): void => {
+      if (refusalReported) return;
+      refusalReported = true;
+      onStrictModesRefusal?.(offendingPath);
+    };
+    for (const identity of exec ? localIdentityPublicKeys(opts, flags) : []) {
+      const matchedKey = exec ? findMatchedAuthorizedKey(exec, remoteUser, identity, reportRefusalOnce) : null;
+      if (matchedKey && authorizedKeyAdmits(matchedKey, { ip: opts.sourceIp, host: opts.sourceHostname })) {
+        return { method: 'publickey', serverMethods, matchedKey };
+      }
     }
   }
   return { method: null, serverMethods };
@@ -1146,21 +1147,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     }
   }
 
-  // Update the local ~/.ssh/known_hosts with the remote's host key (or
-  // emit the OpenSSH-style identification-changed warning when the key
-  // already present differs from the remote's).
   const keyChanged = updateKnownHosts(opts, machine, host, strictMode === 'no');
-  if (keyChanged) {
-    return {
-      output:
-        '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
-        '@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n' +
-        '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
-        'IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\n' +
-        `Add correct host key in /root/.ssh/known_hosts to get rid of this message.\n` +
-        `Offending key in /root/.ssh/known_hosts:1\n`,
-      exitCode: 255,
-    };
+  if (keyChanged !== null) {
+    return { output: `${keyChanged}\nHost key verification failed.\n`, exitCode: 255 };
   }
 
   // ── SSH port forwarding (-L / -R / -D) ──────────────────────────────
@@ -1456,35 +1445,25 @@ function forwardSshAgent(opts: SshClientOpts, machine: LinuxMachine): (() => voi
  * the local ~/.ssh/known_hosts. Returns true when an existing entry's
  * key differs from the remote's current key (host-key changed).
  */
-function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string, force = false): boolean {
-  if (!opts.localVfs) return false;
+function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string, force = false): string | null {
+  if (!opts.localVfs) return null;
   const remoteVfs = (machine as LinuxMachine & { executor: { vfs: { readFile: (p: string) => string | null } } }).executor.vfs;
-  // Read the remote's ed25519 public key (the algorithm we seed everywhere).
   const pubKeyRaw = remoteVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '';
   const tokens = pubKeyRaw.trim().split(/\s+/);
-  if (tokens.length < 2) return false;
-  const keyType = tokens[0] as SshHostKeyType;
-  const publicKey = tokens[1];
+  if (tokens.length < 2) return null;
 
   const home = opts.sourceHome ?? '/root';
-  const knownHostsPath = `${home}/.ssh/known_hosts`;
-  const existing = opts.localVfs.readFile(knownHostsPath) ?? '';
-  const file = SshKnownHostsFile.parse(existing);
-
-  const changed = file.hostKeyChanged(ip, keyType, publicKey);
-  if (changed && !force) return true;
-
-  if (changed || !file.find(ip, keyType)) {
-    const updated = (changed ? file.remove(ip) : file).add({ hostnames: [ip], keyType, publicKey });
-    const sshDir = knownHostsPath.replace(/\/[^/]+$/, '');
-    const uid = opts.sourceUid ?? 0;
-    const gid = opts.sourceGid ?? 0;
-    if (opts.localVfs.mkdirp && opts.localVfs.resolveInode && !opts.localVfs.resolveInode(sshDir)) {
-      opts.localVfs.mkdirp(sshDir, 0o700, uid, gid);
-    }
-    opts.localVfs.writeFile(knownHostsPath, updated.serialize(), uid, gid, 0o022);
-  }
-  return false;
+  const outcome = compareAndRecordHostKey({
+    vfs: opts.localVfs as KnownHostsVfs,
+    knownHostsPath: `${home}/.ssh/known_hosts`,
+    host: ip,
+    keyType: tokens[0],
+    publicKey: tokens[1],
+    uid: opts.sourceUid ?? 0,
+    gid: opts.sourceGid ?? 0,
+    replaceChanged: force,
+  });
+  return outcome.changed ? outcome.warning : null;
 }
 
 function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | null {

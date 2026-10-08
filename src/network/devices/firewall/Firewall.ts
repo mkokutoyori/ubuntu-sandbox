@@ -144,8 +144,8 @@ import { buildManagementServices } from './mgmt/ManagementWiring';
 import type {
   AdminHttpApp, AdminHttpServer, AdminServerCertificate, AdminServerCertificateMaterial,
 } from './mgmt/AdminHttpServer';
-import type { ManagementCli } from './mgmt/FirewallCliServer';
-import { ManagementPlane, type PasswordExpiryPolicy } from './mgmt/ManagementPlane';
+import type { AdminAccessKind, AdminLoginFacts, ManagementCli } from './mgmt/FirewallCliServer';
+import { ManagementPlane, type ManagementSource, type PasswordExpiryPolicy } from './mgmt/ManagementPlane';
 import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
@@ -643,12 +643,16 @@ export class Firewall extends Equipment {
       setDevicePriority: (priority) => this.setDevicePriority(priority),
       authenticateAdmin: (user, password, source) =>
         this.management.login(user, password, source),
+      adminAcceptsPublicKey: (user, material, source) =>
+        this.management.acceptsPublicKey(user, material, source),
       knownAdmin: (user) => this.access.getAdmin(user) !== undefined,
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
+      sshIdentification: () => this.managementSshIdentification(),
       runningConfig: () => this.managementRunningConfig(),
       onManagementLogin: (session) => {
         this.management.noteLogin(session.username);
+        this.logAdminAccess('login-success', session);
         this.adminSessions.open({
           username: session.username,
           type: 'CLI',
@@ -661,8 +665,9 @@ export class Firewall extends Equipment {
         });
       },
       onAdminLogout: (user) => { this.onAdminLogout(user); },
-      onManagementAuthFailure: (user) => {
-        this.management.noteAuthFailure(user);
+      onManagementAuthFailure: (failure) => {
+        this.management.noteAuthFailure(failure.username);
+        this.logAdminAccess('login-failed', failure);
       },
       loginBannerLines: (stage) => this.loginBanners.lines(stage),
       adminHttpsRedirect: () => this.management.adminHttpsRedirect(),
@@ -1688,6 +1693,9 @@ export class Firewall extends Equipment {
   }
 
   managementIdleTimeoutMs(): number { return this.management.idleTimeoutMs(); }
+
+  protected managementSshIdentification(): string | undefined { return undefined; }
+
   getLoggingConfig(): LoggingConfig { return this.logging; }
   getSyslogAgent(): SyslogAgent { return this.syslog; }
   getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }
@@ -1715,6 +1723,14 @@ export class Firewall extends Equipment {
 
   allowsAccess(iface: string, service: string): boolean {
     return this.management.allowsAccess(iface, service);
+  }
+
+  setManagementSources(service: string, iface: string, sources: readonly ManagementSource[]): void {
+    this.management.setServiceSources(service, iface, sources);
+  }
+
+  clearManagementSources(service: string, iface: string): void {
+    this.management.clearServiceSources(service, iface);
   }
 
   allowedAccessOn(iface: string): readonly string[] {
@@ -2519,7 +2535,18 @@ export class Firewall extends Equipment {
 
   getFortiGuard(): FortiGuardDatabases { return this.fortiguard; }
 
+  protected logAdminAccess(kind: AdminAccessKind, facts: AdminLoginFacts): void {
+    void kind;
+    void facts;
+  }
+
   onAdminLogout(admin: string): void {
+    const closing = this.adminSessions.list().filter(s => s.username === admin).pop();
+    if (closing) {
+      this.logAdminAccess('logout', {
+        username: admin, transport: closing.transport, local: closing.local, remote: closing.remote,
+      });
+    }
     this.adminSessions.closeNewestOf(admin);
     if (!this.revisionOnLogout) return;
     const text = this.configSnapshot?.();

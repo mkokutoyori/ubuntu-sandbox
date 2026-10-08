@@ -8,6 +8,7 @@ import { simulationNowMs } from '../../core/SystemClock';
 import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
 import { VfsPath, type PathActor } from './VfsPath';
+import { fnmatch, globPaths } from './fs/Glob';
 import { AT_DENY_USINE } from './jobs/AtPermissions';
 import { SYSTEM_CONFIG_DEFAULTS, SYSTEM_CONFIG_DIRECTORY, SYSTEM_CONFIG_FILE } from '../../ldap/openldap/ldapOptions';
 import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from '../../ldap/openldap/sasl/saslFiles';
@@ -1430,63 +1431,19 @@ export class VirtualFileSystem {
   }
 
   globMatch(text: string, pattern: string): boolean {
-    // Convert glob to regex
-    let regex = '^';
-    for (let i = 0; i < pattern.length; i++) {
-      const c = pattern[i];
-      if (c === '*') regex += '.*';
-      else if (c === '?') regex += '.';
-      else if (c === '[') {
-        // Character class — pass through to regex until closing ]
-        let cls = '[';
-        i++;
-        while (i < pattern.length && pattern[i] !== ']') {
-          cls += pattern[i];
-          i++;
-        }
-        cls += ']';
-        regex += cls;
-      } else if (c === '.') regex += '\\.';
-      else regex += c;
-    }
-    regex += '$';
-    return new RegExp(regex).test(text);
+    return fnmatch(pattern, text);
   }
 
-  /**
-   * Expand a glob pattern to matching paths in a directory.
-   */
   globExpand(pattern: string, cwd: string): string[] {
-    const absPattern = this.normalizePath(pattern, cwd);
-    const parts = absPattern.split('/').filter(Boolean);
-    return this._globExpandRecursive('/', parts, 0);
-  }
-
-  private _globExpandRecursive(currentPath: string, parts: string[], index: number): string[] {
-    if (index >= parts.length) return [currentPath];
-
-    const part = parts[index];
-    const inode = this.resolveInode(currentPath);
-    if (!inode || inode.type !== 'directory') return [];
-
-    const results: string[] = [];
-    if (part.includes('*') || part.includes('?') || part.includes('[')) {
-      const names = [...inode.children.keys()].sort((a, b) => a.localeCompare(b));
-      for (const name of names) {
-        if (name === '.' || name === '..') continue;
-        if (this.globMatch(name, part)) {
-          const childPath = currentPath === '/' ? '/' + name : currentPath + '/' + name;
-          results.push(...this._globExpandRecursive(childPath, parts, index + 1));
-        }
-      }
-    } else {
-      const childPath = currentPath === '/' ? '/' + part : currentPath + '/' + part;
-      if (this.existsNoFollow(childPath) || this.exists(childPath)) {
-        results.push(...this._globExpandRecursive(childPath, parts, index + 1));
-      }
-    }
-
-    return results;
+    const absolute = this.normalizePath(pattern, cwd);
+    return globPaths({
+      listNames: (directory) => {
+        const node = this.resolveInode(directory);
+        return node?.type === 'directory' ? [...node.children.keys()].filter((name) => name !== '.' && name !== '..') : null;
+      },
+      existsNoFollow: (path) => this.existsNoFollow(path) || this.exists(path),
+      isDirectory: (path) => this.getType(path) === 'directory',
+    }, absolute);
   }
 
   // ─── Utility ──────────────────────────────────────────────────────

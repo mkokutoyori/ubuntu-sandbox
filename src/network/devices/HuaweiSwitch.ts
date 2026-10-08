@@ -324,6 +324,10 @@ export class HuaweiSwitch extends Switch {
     return this.getManagementService().sshPasswordAllowed(user);
   }
 
+  protected override sshSftpAdmitted(user: string): boolean {
+    return this.getManagementService().sshSftpAdmitted(user);
+  }
+
   protected override sshForcedCommand(user: string): string | null {
     return this.getManagementService().sshForcedCommand(user);
   }

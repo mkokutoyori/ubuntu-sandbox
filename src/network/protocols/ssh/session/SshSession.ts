@@ -76,6 +76,8 @@ import { SSH_OPEN_ADMINISTRATIVELY_PROHIBITED } from '../transport/SshMessageNum
 import { decodeBoundPort, decodeForwardedTcpip, encodeDirectTcpip, encodeTcpipForward } from '../connection/ChannelPayloads';
 import { resolveAlgorithmDirectives } from '../transport/SshAlgorithms';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
+import { hostKeyChangedWarning } from '../hostkey/HostKeyChangedWarning';
+import { knownHostsLineOf } from '../hostkey/KnownHostsText';
 
 export interface SshSessionDeps {
   readonly tcpConnector: TcpConnector;
@@ -427,7 +429,14 @@ export class SshSession implements ISshSession {
         });
 
       case 'reject': {
-        this.deps.interactionHandler.showWarning(decision.warningBlock);
+        const knownHostsPath = this.deps.knownHostsPath;
+        this.deps.interactionHandler.showWarning(hostKeyChangedWarning({
+          host,
+          keyTypeLabel: sshKeyTypeLabel(key.algorithm),
+          fingerprint: key.fingerprint.toString(),
+          knownHostsPath,
+          line: knownHostsLineOf(this.deps.vfs.readFile(knownHostsPath) ?? '', host),
+        }));
         const known = store.get(host);
         return err({
           kind: 'HOST_KEY_CHANGED',

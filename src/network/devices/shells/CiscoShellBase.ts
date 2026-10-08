@@ -5261,6 +5261,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
   }
 
+  private vtyUnsetFields(
+    sub: string, args: readonly string[],
+  ): ReadonlyArray<'execTimeoutMinutes' | 'execTimeoutSeconds' | 'accessClassIn' | 'accessClassOut'
+    | 'sessionTimeoutMinutes' | 'privilege' | 'loginTimeoutSeconds' | 'rotaryGroup'> | null {
+    if (sub === 'exec-timeout') return ['execTimeoutMinutes', 'execTimeoutSeconds'];
+    if (sub === 'access-class') {
+      const direction = args[args.length - 1]?.toLowerCase();
+      if (direction === 'in') return ['accessClassIn'];
+      if (direction === 'out') return ['accessClassOut'];
+      return ['accessClassIn', 'accessClassOut'];
+    }
+    if (sub === 'session-timeout') return ['sessionTimeoutMinutes'];
+    if (sub === 'privilege') return ['privilege'];
+    if (sub === 'login-timeout') return ['loginTimeoutSeconds'];
+    if (sub === 'rotary') return ['rotaryGroup'];
+    return null;
+  }
+
   private registerLineCommands(t: CommandTrie): void {
     this.registerLineTransportCommands(t);
     /*
@@ -5359,7 +5377,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
         if (kw === 'password' && !args[0]) return '% Incomplete command.';
         const dev = this.d() as unknown as {
-          _getVtyLineConfig?: () => { upsert: (p: object) => { requiresPasswordButUnset?: () => boolean } };
+          _getVtyLineConfig?: () => {
+            upsert: (p: object) => { requiresPasswordButUnset?: () => boolean };
+            unset: (first: number, last: number, names: readonly string[]) => unknown;
+          };
         };
         const update: Record<string, unknown> = { first: range.first, last: range.last };
         if (kw === 'login') {
@@ -5455,6 +5476,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           else if (sub === 'motd-banner') update.motdBannerSuppressed = true;
           else if (sub === 'exec' && args[1]?.toLowerCase() === 'banner') update.execBannerSuppressed = true;
           else if (sub === 'autocommand') update.autocommand = '';
+          else {
+            const unsets = this.vtyUnsetFields(sub, args);
+            if (unsets !== null) {
+              dev._getVtyLineConfig?.().unset(range.first, range.last, unsets);
+              (this.d() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
+            }
+          }
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
         const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);

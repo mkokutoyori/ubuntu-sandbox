@@ -44,6 +44,7 @@ import {
   displayPatchInformation, displayDiagnosticInformation,
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import { huaweiHeaderHost, headerConfigLines } from './huawei/HuaweiHeaders';
 import { huaweiCaptureHost } from './huawei/CapturePacket';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
@@ -2298,11 +2299,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private userInterfaceExtraConfig: Map<string, {
     authMode?: string;
-    idleTimeoutMin?: number;
     screenLength?: number;
     historySize?: number;
     shellEnabled: boolean;
-    acl?: string;
     authorizationMode?: string;
     users: string[];
     rawLines: string[];
@@ -2322,17 +2321,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private buildUserInterfaceCommands(): void {
     const t = this.userIfTrie;
     for (const kw of ['authentication-mode', 'user',
-      'idle-timeout', 'screen-length', 'history-command', 'shell',
-      'acl', 'set', 'authorization-mode']) {
+      'screen-length', 'history-command', 'shell',
+      'set', 'authorization-mode']) {
       t.registerGreedy(kw, `user-interface ${kw}`, (args, raw) => {
         const label = this.uiLabel;
         const cfg = this.userInterfaceExtraConfig.get(label) ?? {
           authMode: undefined as string | undefined,
-          idleTimeoutMin: undefined as number | undefined,
           screenLength: undefined as number | undefined,
           historySize: undefined as number | undefined,
           shellEnabled: true,
-          acl: undefined as string | undefined,
           authorizationMode: undefined as string | undefined,
           users: [] as string[],
           rawLines: [] as string[],
@@ -2348,11 +2345,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
             });
           }
         }
-        else if (kw === 'idle-timeout' && args[0]) cfg.idleTimeoutMin = parseInt(args[0], 10);
         else if (kw === 'screen-length' && args[0]) cfg.screenLength = parseInt(args[0], 10);
         else if (kw === 'history-command' && args[0] === 'max-size' && args[1]) cfg.historySize = parseInt(args[1], 10);
         else if (kw === 'shell') cfg.shellEnabled = true;
-        else if (kw === 'acl' && args[0]) cfg.acl = args[0];
         else if (kw === 'authorization-mode' && args[0]) cfg.authorizationMode = args[0];
         else if (kw === 'user' && args[0]) cfg.users.push(args.join(' '));
         else if (kw === 'set') cfg.rawLines.push(line);
@@ -2360,6 +2355,25 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       });
     }
+    t.registerGreedy('idle-timeout', 'Set idle-timeout', (args) => {
+      const range = this.selectedUiRange;
+      if (!range) return '';
+      this.swRef?._getVtyLineConfig?.().upsert({
+        first: range.first, last: range.last,
+        idleTimeoutMinutes: Number.parseInt(args[0] ?? '0', 10),
+        idleTimeoutSeconds: Number.parseInt(args[1] ?? '0', 10),
+      });
+      return '';
+    });
+    t.registerGreedy('acl', 'Apply ACL to VTY', (args) => {
+      const range = this.selectedUiRange;
+      if (!range) return '';
+      const field = (args[1] ?? 'inbound').toLowerCase() === 'outbound' ? 'aclOutbound' : 'aclInbound';
+      this.swRef?._getVtyLineConfig?.().upsert({
+        first: range.first, last: range.last, [field]: args[0],
+      });
+      return '';
+    });
     // `protocol inbound {ssh|telnet|all|none}` toggles VTY transports
     // exactly like Cisco's `transport input`. Routes through the device
     // setter so CrossVendorSshHost.evaluate() sees the change.
@@ -3120,6 +3134,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       () => { if (this.swRef) this.swRef._captureStartupConfig(this.displayCurrentConfig(this.swRef)); },
       () => { this.swRef?._eraseStartupConfig(); },
       huaweiCaptureHost(() => this.swRef),
+      huaweiHeaderHost(() => this.swRef),
     );
   }
 
@@ -4549,10 +4564,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!vue) continue;
       const corps: string[] = [];
       if (cfg.authMode) corps.push(` authentication-mode ${cfg.authMode}`);
-      if (cfg.idleTimeoutMin !== undefined) corps.push(` idle-timeout ${cfg.idleTimeoutMin} 0`);
       if (cfg.screenLength !== undefined) corps.push(` screen-length ${cfg.screenLength}`);
       if (cfg.historySize !== undefined) corps.push(` history-command max-size ${cfg.historySize}`);
-      if (cfg.acl) corps.push(` acl ${cfg.acl} inbound`);
       if (cfg.authorizationMode) corps.push(` authorization-mode ${cfg.authorizationMode}`);
       for (const u of cfg.users) corps.push(` user ${u}`);
       for (const l of cfg.rawLines) corps.push(` ${l}`);
@@ -4574,10 +4587,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   private displayCurrentConfig(sw: HuaweiSwitchDevice): string {
+    const headers = headerConfigLines(huaweiHeaderHost(() => sw));
     const lines = [
       '#',
       `sysname ${sw.getHostname()}`,
       '#',
+      ...(headers.length > 0 ? [...headers, '#'] : []),
     ];
 
     const batch = [...sw.getVLANs().keys()].filter((id) => id !== 1);

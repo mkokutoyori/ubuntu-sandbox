@@ -34,7 +34,7 @@ import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
-import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { peerLiveness, firstSviAddress } from '@/network/protocols/ssh/sessionLiveness';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import type { RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
@@ -543,7 +543,7 @@ export abstract class TerminalSession {
       const ip = port.getIPAddress();
       if (ip && port.getIsUp()) return ip.toString();
     }
-    return null;
+    return firstSviAddress(this.device as unknown as Equipment) ?? null;
   }
 
   private _remoteLabel: string | null = null;
@@ -597,8 +597,9 @@ export abstract class TerminalSession {
     sourceIp: string,
     sourceHost: string,
     quiet = false,
+    preAuthBannerShown = false,
   ): string[] {
-    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet);
+    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet, preAuthBannerShown);
   }
 
   /**
