@@ -239,6 +239,26 @@ export class HuaweiDebugService implements TerminalDebugSource {
       this.emit('aaa', `AAA: Accounting ${p.status}, user ${p.username}`);
     }));
 
+    this.broadcast.track(bus.subscribe('lldp.frame.sent', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('lldp', `LLDP: Send LLDPDU on ${nom(e.payload.port)} (${e.payload.reason})`);
+    }));
+    this.broadcast.track(bus.subscribe('lldp.frame.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('lldp', `LLDP: Receive LLDPDU on ${nom(p.port)} from ${p.remoteSystem} (${p.remotePort})`);
+    }));
+    this.broadcast.track(bus.subscribe('lldp.neighbor.discovered', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('lldp', `LLDP: New neighbor ${p.remoteSystem} (${p.remotePort}) on ${nom(p.localPort)}, TTL ${p.ttlSec}s`);
+    }));
+    this.broadcast.track(bus.subscribe('lldp.neighbor.expired', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('lldp', `LLDP: Neighbor ${p.remoteSystem} on ${nom(p.localPort)} deleted (${p.cause})`);
+    }));
+
     this.broadcast.track(bus.subscribe('vrrp.state.changed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;

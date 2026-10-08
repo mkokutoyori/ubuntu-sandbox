@@ -25,6 +25,7 @@ export type HuaweiDebugCategory =
   | 'bgp'
   | 'bgp-update'
   | 'nat'
+  | 'lldp'
   | 'aaa'
   | 'radius'
   | 'hwtacacs'
@@ -63,6 +64,7 @@ export const HUAWEI_DEBUG_CATALOG: readonly HuaweiDebugSpec[] = [
   { category: 'aaa', words: ['aaa', 'all'], label: 'AAA', platforms: TOUTES },
   { category: 'radius', words: ['radius', 'all'], label: 'RADIUS', platforms: TOUTES },
   { category: 'hwtacacs', words: ['hwtacacs', 'all'], label: 'HWTACACS', platforms: TOUTES },
+  { category: 'lldp', words: ['lldp', 'all'], label: 'LLDP', platforms: TOUTES },
   { category: 'nat', words: ['nat', 'all'], label: 'NAT', platforms: ['router'] },
   { category: 'bgp-update', words: ['bgp', 'update'], label: 'BGP update', platforms: ['router'] },
   { category: 'rip', words: ['rip'], label: 'RIP', platforms: ['router'] },

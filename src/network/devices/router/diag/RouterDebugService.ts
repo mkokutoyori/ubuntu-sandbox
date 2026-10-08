@@ -593,9 +593,9 @@ export class RouterDebugService implements TerminalDebugSource {
     }));
     this.broadcast.track(bus.subscribe('pim.mroute.changed', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { group?: string; source?: string; iif?: string };
+      const p = e.payload;
       this.emit('ip.pim',
-        `PIM(0): Update (${p.source ?? '*'}, ${p.group ?? '*'}), incoming interface ${p.iif ?? 'Null'}`);
+        `PIM(0): Update (${p.source ?? '*'}, ${p.group}), incoming interface ${p.incomingInterface ?? 'Null'}`);
     }));
     this.broadcast.track(bus.subscribe('vxlan.mac.learned', (e) => {
       if (!mine(e.payload)) return;

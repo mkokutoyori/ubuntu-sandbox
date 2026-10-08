@@ -14,10 +14,14 @@
  * (il porte serverIp et fromIp), donc chaque ligne disait `xmit packet to
  * ?` / `rcv packet from ?`. Les lignes lisent maintenant les champs typés.
  *
+ * Troisieme lecture fautive du meme genre : `debug ip pim` lisait `iif`
+ * alors que l'evenement porte `incomingInterface`, et disait toujours
+ * `incoming interface Null`.
+ *
  * Le texte des lignes SNMP est derive des charges utiles ; sa forme exacte
  * sur un IOS n'est pas attestee depuis ce reseau.
  *
- * Avant le correctif : 4 des 5 cas tombent (git stash de src/network).
+ * Avant le correctif : 5 des 6 cas tombent (git stash de src/network).
  * Passe des deux cotes le TEMOIN « sans drapeau, une interrogation SNMP
  * ne trace rien », qui prouve que le laboratoire fait bien parler l'agent.
  */
@@ -89,6 +93,17 @@ describe('debug snmp packets', () => {
     await run(pc, 'snmpwalk -v2c -c wrong 10.0.9.1 1.3.6.1.2.1.1');
     expect(lines.join('\n')).toMatch(/SNMP: Packet from 10\.0\.9\.2 rejected \(unknown-community\), community wrong/);
   }, 30000);
+
+  it('debug ip pim nomme l interface entrante au lieu de Null', async () => {
+    const { router, lines } = await lab();
+    await run(router, 'debug ip pim');
+    router.getBus().publish({
+      topic: 'pim.mroute.changed',
+      payload: { deviceId: router.id, hostname: 'R1', group: '239.1.1.1', source: '10.0.0.5',
+        incomingInterface: 'GigabitEthernet0/0', outgoingInterfaces: [], reason: 'join' },
+    } as unknown as DomainEvent);
+    expect(lines.join('\n')).toContain('PIM(0): Update (10.0.0.5, 239.1.1.1), incoming interface GigabitEthernet0/0');
+  });
 
   it('debug ntp packets nomme le serveur au lieu de « ? »', async () => {
     const { router, lines } = await lab();

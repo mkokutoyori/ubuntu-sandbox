@@ -1,7 +1,7 @@
 /*
  * `debugging bfd all`, `debugging ntp-service all`, `debugging igmp all`,
  * `debugging pim all`, `debugging tcp packet`, `debugging udp packet`,
- * `debugging bgp update`, `debugging nat all`, `debugging aaa|radius|hwtacacs all` :
+ * `debugging bgp update`, `debugging nat all`, `debugging aaa|radius|hwtacacs|lldp all` :
  * six modules VRP que le catalogue ne connaissait pas (`Error: Unrecognized
  * command`).
  *
@@ -14,7 +14,7 @@
  * `ntp-service all` / `igmp all` / `pim all` n'est pas verifiee non plus
  * contre la documentation Huawei (inaccessible d'ici).
  *
- * Avant le correctif : 9 des 12 cas tombent (git stash de src/network).
+ * Avant le correctif : 10 des 13 cas tombent (git stash de src/network).
  * Passent des deux cotes le TEMOIN « un evenement BFD sans drapeau ne
  * trace rien », qui prouve que le laboratoire publie bien sur le bus et
  * que le silence vient du drapeau ; « un evenement d un autre equipement
@@ -147,6 +147,17 @@ describe('debugging bfd/ntp/igmp/pim/tcp/udp', () => {
     publish('tacacs.author.completed', { serverIp: '10.0.0.8', username: 'bob', status: 'pass-add', command: 'display version' });
     await flush();
     expect(shown('HWTACACS: Authorization of user bob by 10.0.0.8: pass-add')).toBe(true);
+  });
+
+  it('debugging lldp all trace une decouverte et une expiration de voisin', async () => {
+    await type('debugging lldp all');
+    await type('terminal debugging');
+    publish('lldp.neighbor.discovered', { localPort: 'GigabitEthernet0/0/1', remoteSystem: 'SW2', remotePort: 'Gi0/1', remoteCapabilities: [], ttlSec: 120 });
+    publish('lldp.neighbor.expired', { localPort: 'GigabitEthernet0/0/1', remoteSystem: 'SW2', cause: 'ttl' });
+    await flush();
+    expect(shown('LLDP: New neighbor SW2 (Gi0/1)')).toBe(true);
+    expect(shown('LLDP: Neighbor SW2')).toBe(true);
+    expect(shown('deleted (ttl)')).toBe(true);
   });
 
   it('un evenement d un autre equipement est ignore', async () => {
