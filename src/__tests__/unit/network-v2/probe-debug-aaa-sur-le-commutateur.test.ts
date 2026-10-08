@@ -38,10 +38,8 @@
  * rien n'etait arme, donc rien ne pouvait paraitre. Il exige maintenant
  * la PRESENCE avant l'absence.
  *
- * Limite assumee, la meme sur les DEUX plateformes et donc pas introduite
- * ici : aucune ligne `AAA/AUTHOR:` n'est emise, faute d'evenement
- * d'autorisation sur le bus. `debug aaa authorization` s'arme et ne dira
- * rien, sur le routeur comme sur le commutateur.
+ * Les lignes `AAA/AUTHOR:` sont desormais emises (voir
+ * probe-debug-aaa-authorization-tacacs.test.ts).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';

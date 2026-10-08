@@ -883,6 +883,21 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('aaa.accounting',
         `AAA/ACCT: ${p.type ?? 'record'} for user '${p.username ?? '?'}'`);
     }));
+    this.broadcast.track(bus.subscribe('tacacs.authen.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('tacacs', `TAC+: authentication for user ${p.username} by ${p.serverIp}: ${p.status}`);
+      this.emit('aaa.authentication',
+        `AAA/AUTHEN: status = ${p.status === 'pass' ? 'PASS' : 'FAIL'} for user '${p.username}'`);
+    }));
+    this.broadcast.track(bus.subscribe('tacacs.author.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      const command = p.command === null ? '' : ` command '${p.command}'`;
+      this.emit('tacacs', `TAC+: authorization for user ${p.username} by ${p.serverIp}: ${p.status}`);
+      this.emit('aaa.authorization',
+        `AAA/AUTHOR: user '${p.username}'${command} status = ${String(p.status).toUpperCase().replace('-', '_')}`);
+    }));
     this.broadcast.track(bus.subscribe('tacacs.acct.completed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as unknown as { username?: string };
