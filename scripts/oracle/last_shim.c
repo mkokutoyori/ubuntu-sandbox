@@ -1,0 +1,95 @@
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <pwd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <time.h>
+#include <unistd.h>
+
+static long env_long(const char *name, long fallback) {
+	const char *v = getenv(name);
+	return v && *v ? atol(v) : fallback;
+}
+
+time_t time(time_t *t) {
+	time_t now = env_long("LAST_NOW", 0);
+	if (!now) { static time_t (*real)(time_t *); if (!real) real = dlsym(RTLD_NEXT, "time"); return real(t); }
+	if (t) *t = now;
+	return now;
+}
+
+int gettimeofday(struct timeval *tv, void *tz) {
+	long now = env_long("LAST_NOW", 0);
+	if (!now) { static int (*real)(struct timeval *, void *); if (!real) real = dlsym(RTLD_NEXT, "gettimeofday"); return real(tv, tz); }
+	tv->tv_sec = now; tv->tv_usec = 0;
+	return 0;
+}
+
+int clock_gettime(clockid_t id, struct timespec *ts) {
+	long now = env_long("LAST_NOW", 0), boot = env_long("LAST_BOOT", 0);
+	if (now && id == CLOCK_REALTIME) { ts->tv_sec = now; ts->tv_nsec = 0; return 0; }
+	if (now && id == CLOCK_BOOTTIME) { ts->tv_sec = now - boot; ts->tv_nsec = 0; return 0; }
+	static int (*real)(clockid_t, struct timespec *); if (!real) real = dlsym(RTLD_NEXT, "clock_gettime");
+	return real(id, ts);
+}
+
+static int lookup(const char *list, const char *key, long *value) {
+	if (!list) return 0;
+	char *copy = strdup(list), *save = NULL;
+	int found = 0;
+	for (char *item = strtok_r(copy, ",", &save); item; item = strtok_r(NULL, ",", &save)) {
+		char *colon = strrchr(item, ':');
+		if (!colon) continue;
+		*colon = 0;
+		if (strcmp(item, key) == 0) { *value = atol(colon + 1); found = 1; if (!strcmp(colon + 1, "bad")) *value = -1; break; }
+	}
+	free(copy);
+	return found;
+}
+
+struct passwd *getpwnam(const char *name) {
+	static struct passwd pw;
+	long uid;
+	if (!lookup(getenv("LAST_USERS"), name, &uid)) return NULL;
+	memset(&pw, 0, sizeof pw);
+	pw.pw_name = (char *)name; pw.pw_uid = (uid_t)uid; pw.pw_gid = (gid_t)uid; pw.pw_dir = "/"; pw.pw_shell = "/bin/sh";
+	return &pw;
+}
+
+static int loginuid_pid(const char *path, char *pid) {
+	return sscanf(path, "/proc/%31[0-9]/loginuid", pid) == 1;
+}
+
+int access(const char *path, int mode) {
+	char pid[32]; long v;
+	if (loginuid_pid(path, pid)) return lookup(getenv("LAST_LOGINUIDS"), pid, &v) ? 0 : (errno = ENOENT, -1);
+	static int (*real)(const char *, int); if (!real) real = dlsym(RTLD_NEXT, "access");
+	return real(path, mode);
+}
+
+FILE *fopen(const char *path, const char *mode) {
+	char pid[32]; long v;
+	if (loginuid_pid(path, pid)) {
+		if (!lookup(getenv("LAST_LOGINUIDS"), pid, &v)) { errno = ENOENT; return NULL; }
+		char *text = v < 0 ? strdup("x\n") : NULL;
+		if (!text) { text = malloc(32); snprintf(text, 32, "%ld\n", v); }
+		return fmemopen(text, strlen(text), "r");
+	}
+	static FILE *(*real)(const char *, const char *); if (!real) real = dlsym(RTLD_NEXT, "fopen");
+	return real(path, mode);
+}
+
+int stat(const char *path, struct stat *st) {
+	long v;
+	if (strncmp(path, "/dev/", 5) == 0 && getenv("LAST_TTYOWNERS")) {
+		if (!lookup(getenv("LAST_TTYOWNERS"), path + 5, &v)) { errno = ENOENT; return -1; }
+		memset(st, 0, sizeof *st); st->st_uid = (uid_t)v;
+		return 0;
+	}
+	static int (*real)(const char *, struct stat *); if (!real) real = dlsym(RTLD_NEXT, "stat");
+	return real(path, st);
+}

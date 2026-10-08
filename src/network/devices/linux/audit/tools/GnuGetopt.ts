@@ -12,6 +12,11 @@ export interface GetoptResult {
 
 export const END_OF_OPTIONS = -1;
 
+export interface GetoptDiagnostics {
+  program: string;
+  write(text: string): void;
+}
+
 const NONE = 0;
 const REQUIRED = 1;
 const OPTIONAL = 2;
@@ -31,6 +36,7 @@ export class GnuGetopt {
     readonly argv: string[],
     optstring: string,
     private readonly longOptions: readonly LongOption[],
+    private readonly diagnostics: GetoptDiagnostics | null = null,
   ) {
     this.permute = !(optstring.startsWith('+') || optstring.startsWith('-'));
     this.returnInOrder = optstring.startsWith('-');
@@ -102,6 +108,7 @@ export class GnuGetopt {
     const name = eq >= 0 ? text.slice(0, eq) : text;
     let match = -1;
     let ambiguous = false;
+    const ambiguousSet: number[] = [];
     for (let i = 0; i < this.longOptions.length; i++) {
       const option = this.longOptions[i];
       if (option.name.startsWith(name)) {
@@ -111,16 +118,25 @@ export class GnuGetopt {
           break;
         }
         if (match === -1) match = i;
-        else if (this.longOptions[match].hasArg !== option.hasArg || this.longOptions[match].val !== option.val) ambiguous = true;
+        else if (this.longOptions[match].hasArg !== option.hasArg || this.longOptions[match].val !== option.val) {
+          ambiguous = true;
+          if (ambiguousSet.length === 0) ambiguousSet.push(match);
+          ambiguousSet.push(i);
+        }
       }
     }
     this.nextchar = null;
     if (ambiguous) {
+      if (this.diagnostics) {
+        const names = ambiguousSet.map((index) => ` '--${this.longOptions[index].name}'`).join('');
+        this.diagnostics.write(`${this.diagnostics.program}: option '--${text}' is ambiguous; possibilities:${names}\n`);
+      }
       this.optind++;
       this.optopt = 0;
       return { code: 63, optarg: null, longIndex: 0 };
     }
     if (match < 0) {
+      this.diagnostics?.write(`${this.diagnostics.program}: unrecognized option '--${text}'\n`);
       this.optind++;
       this.optopt = 0;
       return { code: 63, optarg: null, longIndex: 0 };
@@ -131,12 +147,14 @@ export class GnuGetopt {
     if (eq >= 0) {
       if (option.hasArg !== NONE) optarg = text.slice(eq + 1);
       else {
+        this.diagnostics?.write(`${this.diagnostics.program}: option '--${option.name}' doesn't allow an argument\n`);
         this.optopt = option.val;
         return { code: 63, optarg: null, longIndex: match };
       }
     } else if (option.hasArg === REQUIRED) {
       if (this.optind < this.argv.length) optarg = this.argv[this.optind++];
       else {
+        this.diagnostics?.write(`${this.diagnostics.program}: option '--${option.name}' requires an argument\n`);
         this.optopt = option.val;
         return { code: 63, optarg: null, longIndex: match };
       }
@@ -153,6 +171,7 @@ export class GnuGetopt {
     const at = this.shortOptions.indexOf(c);
     if (last) this.optind++;
     if (at < 0 || c === ':' || c === ';') {
+      this.diagnostics?.write(`${this.diagnostics.program}: invalid option -- '${c}'\n`);
       this.optopt = c.charCodeAt(0);
       return { code: 63, optarg: null, longIndex: 0 };
     }
@@ -173,6 +192,7 @@ export class GnuGetopt {
         return { code: c.charCodeAt(0), optarg, longIndex: 0 };
       }
       if (this.optind === this.argv.length) {
+        this.diagnostics?.write(`${this.diagnostics.program}: option requires an argument -- '${c}'\n`);
         this.optopt = c.charCodeAt(0);
         this.nextchar = null;
         return { code: 63, optarg: null, longIndex: 0 };
