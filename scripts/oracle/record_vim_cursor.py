@@ -34,9 +34,28 @@ def rand_text(r):
 MOTIONS = ["h", "j", "k", "l", "w", "W", "b", "B", "e", "E", "ge", "gE", "0", "^", "$", "g_", "gg", "G",
            "{", "}", "%", "+", "-", "<CR>", "<Space>", "<BS>", "|", "_", "gj", "gk"]
 CHARS = list("aexo .,-(")
+PATTERNS = ["foo", "a", "42", "ba", "end", "x", "o.", "^foo", "\\<b", "r$", "[0-9]", "tab"]
+
+def search_step(r):
+    n = r.choice(["", "", "2", "3"])
+    pat = r.choice(PATTERNS)
+    pool = [
+        [f"/{pat}<CR>"], [f"?{pat}<CR>"], ["n"], ["N"], [n + "n"], [n + "N"], ["*"], ["#"], [n + "*"], ["g*"], ["g#"],
+        [f"d/{pat}<CR>"], [f"d?{pat}<CR>"], ["dn"], ["dN"], [f"c/{pat}<CR>Q<Esc>"], [f"y/{pat}<CR>"], [f"/{pat}<CR>", "n"], [f"/{pat}/e<CR>"],
+        [f"/{pat}/+1<CR>"], [f"?{pat}?e<CR>"], [f"/{pat}<CR>", "N"], ["d*"], ["y#"], ["gn"], ["dgn"], ["cgnQ<Esc>"],
+        ["("], [")"], [n + "("], [n + ")"], ["d)"], ["d("], ["y)"], ["c)Q<Esc>"], ["das"], ["dis"], ["yas"], ["vasd"], ["visd"],
+        ["H"], ["M"], ["L"], [n + "H"], [n + "L"], ["dH"], ["dL"], ["dM"], ["yL"], ["vLd"],
+    ]
+    return r.choice(pool)
+
 def rand_step(r, vocab):
     n = r.choice(["", "", "", "2", "3", "5"])
     roll = r.random()
+    if vocab == "search" and roll < 0.6:
+        return search_step(r)
+    if vocab == "search":
+        vocab = "all"
+        roll = r.random()
     if vocab == "cursor" or roll < 0.62:
         k = r.random()
         if k < 0.18:
@@ -83,7 +102,7 @@ set lines=40 columns=200
 let g:cases = json_decode(join(readfile($VCASES), "\n"))
 let g:out = []
 function! Keys(step) abort
-  return substitute(a:step, '<[^>]\+>', '\=eval("\"\\" . submatch(0) . "\"")', 'g')
+  return substitute(a:step, '<\(CR\|Esc\|Space\|BS\|C-r\|C-v\)>', '\=eval("\"\\" . submatch(0) . "\"")', 'g')
 endfunction
 for c in g:cases
   set undolevels=-1

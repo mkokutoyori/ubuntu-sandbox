@@ -1,3 +1,4 @@
+import { findSentence } from './VimSentences';
 import {
   Cursor, MAXCOL, bckWord, bckendWord, colAtVcol, cursorVcol, endWord, firstNonBlank, fwdWord, isWhite,
   type FindState, type MotionBuffer, type MotionRequest, type MotionResult, type MotionType, type Pos,
@@ -431,6 +432,33 @@ export function runMotion(buf: MotionBuffer, from: Pos, req: MotionRequest): Mot
       const hit = searchChar(buf, from, count1, find, true);
       if (!hit) return fail(from, 'char', find.forward);
       return { pos: { line: from.line, col: hit.col }, type: 'char', inclusive: hit.inclusive };
+    }
+    case '(': case ')': {
+      const hit = findSentence(buf, from, req.key === ')', count1);
+      if (!hit) return { pos: from, type: 'char', inclusive: false, failed: true };
+      const text = buf.lines[hit.line] ?? '';
+      if (hit.col > 0 && hit.col >= text.length) return { pos: { line: hit.line, col: text.length - 1 }, type: 'char', inclusive: true };
+      return { pos: hit, type: 'char', inclusive: false };
+    }
+    case 'H': case 'M': case 'L': {
+      const top = buf.top ?? 0;
+      const height = buf.height ?? buf.lines.length;
+      const bottom = Math.min(lastLine, top + height - 1);
+      let line: number;
+      if (req.key === 'H') line = Math.min(bottom, top + count1 - 1);
+      else if (req.key === 'L') line = Math.max(top, bottom - (count1 - 1));
+      else {
+        const used = bottom - top + 1;
+        const half = Math.floor((used + 1) / 2);
+        let n = 0;
+        let seen = 0;
+        for (; top + n < lastLine; n++) {
+          seen++;
+          if (seen >= half) break;
+        }
+        line = top + n;
+      }
+      return { pos: { line, col: firstNonBlank(buf.lines[line] ?? '') }, type: 'line', inclusive: false };
     }
     case '}': case '{': {
       const hit = findParagraph(buf, from, req.key === '}', count1);

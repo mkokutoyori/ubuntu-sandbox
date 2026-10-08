@@ -1,13 +1,18 @@
 /*
  * Cursor and buffer transcripts recorded from a real vim 9.1 (scripts/oracle/record_vim_cursor.py,
  * seed 12, headless -es): 1200 random normal-mode command sequences over random buffers, each
- * step carrying the line, column and buffer vim ended on.  The fixture keeps only the
+ * step carrying the line, column and buffer vim ended on.  A second corpus (seed 31, 700
+ * transcripts) covers / ? n N * # g* g# with offsets, d/pat y/pat c/pat, gn, ( ) and the is/as
+ * objects.  H M L are not in it: a headless -es vim has no window, its L lands on line 1; they
+ * are pinned in vim-window-motions.test.ts from a tmux session instead.  Each fixture keeps only the
  * transcripts the engine now reproduces end to end; the 18 of 3000 that still diverge (U on a
  * line touched by a multi-line change, a few u cursor placements) are left out, not pinned.
  *
- * Measured with `git stash push -- src/network` against this corpus: 1007 of 1200 transcripts
- * fail on the previous engine (cursor semantics of w/b/e/f/t/;/,/%/{/}, curswant, operator
- * ranges, put, J, undo cursor, R, Vp), 0 fail after.  The corpus-size case passes either way
+ * Measured with `git stash push -- src/network` against the first corpus: 1007 of 1200
+ * transcripts fail on the previous engine (cursor semantics of w/b/e/f/t/;/,/%/{/}, curswant,
+ * operator ranges, put, J, undo cursor, R, Vp), 0 fail after.  Against the search corpus the
+ * previous engine, which had a forward-only / and no n N * # ( ) is as gn, fails 479 of the 700
+ * (the 1200 of the first corpus all pass on it); 0 fail after.  The corpus-size case passes either way
  * (witness that the fixture loads).
  */
 
@@ -37,9 +42,13 @@ function keysOf(step: string) {
 interface OracleStep { line: number; col: number; text: string[] }
 interface OracleCase { id: string; text: string[]; steps: string[]; after: OracleStep[] }
 
-const fixture = JSON.parse(
-  readFileSync('src/__tests__/support/oracle/vim-cursor/vim-9.1-seed12.json', 'utf8'),
-) as { vim: string; cases: OracleCase[] };
+function loadFixture(name: string): { vim: string; cases: OracleCase[] } {
+  return JSON.parse(readFileSync(`src/__tests__/support/oracle/vim-cursor/${name}`, 'utf8'));
+}
+
+const editFixture = loadFixture('vim-9.1-seed12.json');
+const searchFixture = loadFixture('vim-9.1-search-seed31.json');
+const fixture = { vim: editFixture.vim, cases: [...editFixture.cases, ...searchFixture.cases] };
 
 function replay(c: OracleCase): string | null {
   const content = c.text.join('\n') + '\n';
@@ -60,7 +69,8 @@ function replay(c: OracleCase): string | null {
 describe('vim cursor and buffer transcripts recorded from a real vim', () => {
   it('the recorded corpus is not empty', () => {
     expect(fixture.vim).toMatch(/^VIM - Vi IMproved 9\.1/);
-    expect(fixture.cases.length).toBe(1200);
+    expect(editFixture.cases.length).toBe(1200);
+    expect(searchFixture.cases.length).toBe(700);
   });
 
   it('replays every recorded transcript with the same cursor and the same buffer', () => {

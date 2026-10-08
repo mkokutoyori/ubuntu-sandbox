@@ -1,6 +1,8 @@
 export interface MotionBuffer {
   readonly lines: readonly string[];
   readonly tabstop: number;
+  readonly top?: number;
+  readonly height?: number;
 }
 
 export const MAXCOL = Number.MAX_SAFE_INTEGER;

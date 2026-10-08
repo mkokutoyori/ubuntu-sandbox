@@ -6,6 +6,11 @@ import { dotSwapPathFor } from './editorPaths';
 import { renderListLine, type ListChars } from './editorRender';
 import { MAXCOL, cursorVcol, firstNonBlank, runMotion, type FindState } from './vim/VimMotions';
 import { textObject } from './vim/VimTextObjects';
+import { compileVimPattern } from './vim/VimPattern';
+import {
+  NO_OFFSET, findMatch, identUnderCursor, parseSearchInput, patternForIdent, resolveTarget,
+  type LastSearch,
+} from './vim/VimSearch';
 import { joinText, removeChars, shiftLine, sliceChars, swapCase } from './vim/VimEditing';
 
 export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
@@ -50,57 +55,6 @@ export interface PendingSubstMatch {
   end: number;
   matchText: string;
   replacementPreview: string;
-}
-
-/**
- * Translate a vim "magic mode" pattern (the default: `( ) + ? { } |` are
- * literal unless backslash-escaped, the opposite of JS/PCRE) into an
- * equivalent JS RegExp source.
- */
-function compileVimPattern(pattern: string, ignoreCase: boolean): RegExp {
-  let out = '';
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    if (c === '\\') {
-      // \%xHH — a specific byte value (2 hex digits), e.g. \%x00 for NUL.
-      if (pattern[i + 1] === '%' && pattern[i + 2] === 'x' && /^[0-9a-fA-F]{2}$/.test(pattern.slice(i + 3, i + 5))) {
-        out += `\\x${pattern.slice(i + 3, i + 5)}`;
-        i += 4;
-        continue;
-      }
-      // \%uHHHH — a specific Unicode codepoint (4 hex digits), e.g. \%ufeff for a BOM.
-      if (pattern[i + 1] === '%' && pattern[i + 2] === 'u' && /^[0-9a-fA-F]{4}$/.test(pattern.slice(i + 3, i + 7))) {
-        out += `\\u${pattern.slice(i + 3, i + 7)}`;
-        i += 6;
-        continue;
-      }
-      const next = pattern[i + 1];
-      i++;
-      switch (next) {
-        case '(': out += '('; break;
-        case ')': out += ')'; break;
-        case '+': out += '+'; break;
-        case '?': out += '?'; break;
-        case '|': out += '|'; break;
-        case '{': out += '{'; break;
-        case '}': out += '}'; break;
-        case '<': out += '\\b(?=\\w)'; break;
-        case '>': out += '(?<=\\w)\\b'; break;
-        case '.': out += '\\.'; break;
-        case '\\': out += '\\\\'; break;
-        case '/': out += '/'; break;
-        case 'r': out += '\\r'; break; // carriage return
-        default: out += next !== undefined ? (/[a-zA-Z0-9]/.test(next) ? next : '\\' + next) : '\\\\';
-      }
-      continue;
-    }
-    if (c === '(' || c === ')' || c === '{' || c === '}' || c === '+' || c === '?' || c === '|') {
-      out += '\\' + c; // literal in vim's default magic mode
-      continue;
-    }
-    out += c; // . * ^ $ [ ] pass through — same meaning in both dialects
-  }
-  return new RegExp(out, ignoreCase ? 'i' : undefined);
 }
 
 /** Search `line` for the next match of `regex` at or after column `fromCol`. */
@@ -289,6 +243,9 @@ export class VimEngine {
   private _savedOnExit = false;
   private commandBuffer = '';
   private searchBuffer = '';
+  private searchDraftForward = true;
+  private lastSearch: LastSearch | null = null;
+  private searchContext: { operator: Operator | null; count: number | undefined; returnMode: VimMode } | null = null;
 
   // Command-line history recall (Up/Down in `:` and `/`), scoped to this
   // editing session (no persistence across sessions, no viminfo). Both
@@ -549,6 +506,7 @@ export class VimEngine {
     this.explicitWant = null;
     this.keepWantThisKey = false;
     this.applyKeyInner(k);
+    this.scrollToCursor();
     this.updateWant();
   }
 
@@ -974,11 +932,6 @@ export class VimEngine {
         this._mode = 'command';
         this.historyNavIndex = null;
         return;
-      case '/':
-        this.searchBuffer = '';
-        this._mode = 'search';
-        this.historyNavIndex = null;
-        return;
       case 'Escape':
         this._message = '';
         this.pendingOperator = null;
@@ -1095,6 +1048,7 @@ export class VimEngine {
       this.runOperatorMotion(op, key === 'j' || key === 'k' ? `g${key}` : `g${key}`);
       return;
     }
+    if (this.trySearchKey(`g${key}`, op)) return;
     this.cancelOperator();
   }
 
@@ -1139,6 +1093,7 @@ export class VimEngine {
     const doubled = op.length === 1 ? key === op : key === op[1];
     if (doubled) { this.runDoubledOperator(op); return; }
 
+    if (!k.ctrl && this.trySearchKey(key, op)) return;
     if (!k.ctrl && VimEngine.MOTION_KEYS.has(key)) { this.runOperatorMotion(op, key); return; }
     this.cancelOperator();
   }
@@ -1443,14 +1398,31 @@ export class VimEngine {
   private static readonly MOTION_KEYS: ReadonlySet<string> = new Set([
     'h', 'l', 'j', 'k', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backspace', ' ', 'Enter', '+', '-', '_',
     '0', '^', '$', 'Home', 'End', '|', 'G', 'w', 'W', 'e', 'E', 'b', 'B', ';', ',', '{', '}', '%',
+    '(', ')', 'H', 'M', 'L',
   ]);
 
   private currentWant(): number {
     return this.want >= 0 ? this.want : cursorVcol(this.line(this._cursorLine), this._cursorCol, this.tabstop);
   }
 
-  private motionBuffer(): { lines: readonly string[]; tabstop: number } {
-    return { lines: this.linesArr, tabstop: this.tabstop };
+  private motionBuffer(): { lines: readonly string[]; tabstop: number; top: number; height: number } {
+    return { lines: this.linesArr, tabstop: this.tabstop, top: this.topLine, height: this.windowHeight };
+  }
+
+  windowHeight = 30;
+  private topLine = 0;
+
+  private scrollToCursor(): void {
+    const height = this.windowHeight;
+    const last = this.linesArr.length - 1;
+    const centered = Math.max(0, Math.min(this._cursorLine - Math.floor((height - 1) / 2), Math.max(0, last + 1 - height)));
+    if (this._cursorLine < this.topLine) {
+      this.topLine = this.topLine - this._cursorLine >= Math.floor(height / 2) ? centered : this._cursorLine;
+    } else if (this._cursorLine > this.topLine + height - 1) {
+      const beyond = this._cursorLine - (this.topLine + height - 1);
+      this.topLine = beyond <= height + 1 ? this._cursorLine - height + 1 : centered;
+    }
+    this.topLine = Math.max(0, Math.min(this.topLine, Math.max(0, last)));
   }
 
   private runCursorMotion(key: string, arg?: string): void {
@@ -1484,6 +1456,7 @@ export class VimEngine {
       this.awaitingFindChar = key;
       return true;
     }
+    if (this.trySearchKey(key, null)) return true;
     if (!VimEngine.MOTION_KEYS.has(key)) return false;
     this.runCursorMotion(key);
     return true;
@@ -1497,7 +1470,7 @@ export class VimEngine {
     }
     if (key === '_' || key === 'e' || key === 'E') { this.runCursorMotion(`g${key}`); return true; }
     if (key === 'j' || key === 'k') { this.runCursorMotion(`g${key}`); return true; }
-    return false;
+    return this.trySearchKey(`g${key}`, null);
   }
 
   // ── VISUAL / VISUAL LINE / VISUAL BLOCK ─────────────────────────────
@@ -1683,7 +1656,10 @@ export class VimEngine {
     this.visualAnchorCol = range.start.col;
     let endLine = range.end.line;
     let endCol = range.end.col;
-    if (range.type === 'line') {
+    if (range.visualEnd) {
+      endLine = range.visualEnd.line;
+      endCol = range.visualEnd.col;
+    } else if (range.type === 'line') {
       if (this._mode !== 'visual-line') this._mode = 'visual-line';
     } else if (!range.inclusive) {
       if (endCol > 0) endCol--;
@@ -2868,19 +2844,46 @@ export class VimEngine {
 
   // ── SEARCH (/) mode ──────────────────────────────────────────────
 
+  get searchPromptChar(): '/' | '?' { return this.searchDraftForward ? '/' : '?'; }
+
+  private trySearchKey(key: string, op: Operator | null): boolean {
+    switch (key) {
+      case '/': case '?': this.beginSearch(key === '/', op); return true;
+      case 'n': case 'N': this.repeatSearch(key === 'N', op); return true;
+      case '*': case '#': case 'g*': case 'g#': this.searchIdentUnderCursor(key, op); return true;
+      case 'gn': case 'gN': this.selectNextMatch(key === 'gN', op); return true;
+      default: return false;
+    }
+  }
+
+  private beginSearch(forward: boolean, op: Operator | null): void {
+    const count = op ? this.effectiveCount() : this.takeCount();
+    this.searchContext = { operator: op, count, returnMode: this._mode };
+    this.searchDraftForward = forward;
+    this.searchBuffer = '';
+    this._mode = 'search';
+    this.historyNavIndex = null;
+  }
+
+  private leaveSearch(cancelled: boolean): { operator: Operator | null; count: number | undefined } {
+    const ctx = this.searchContext ?? { operator: null, count: undefined, returnMode: 'normal' as VimMode };
+    this.searchContext = null;
+    this._mode = ctx.returnMode;
+    this.historyNavIndex = null;
+    if (cancelled && ctx.operator) this.cancelOperator();
+    return { operator: ctx.operator, count: ctx.count };
+  }
+
   private applySearchKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
-      if (this.searchBuffer) {
-        this.searchHistoryList.push(this.searchBuffer);
-        this.performSearch(this.searchBuffer);
-      }
-      this._mode = 'normal';
-      this.historyNavIndex = null;
+      const typed = this.searchBuffer;
+      if (typed) this.searchHistoryList.push(typed);
+      const { operator, count } = this.leaveSearch(false);
+      this.executeTypedSearch(typed, this.searchDraftForward, operator, count);
       return;
     }
     if (k.key === 'Escape') {
-      this._mode = 'normal';
-      this.historyNavIndex = null;
+      this.leaveSearch(true);
       return;
     }
     if (k.key === 'ArrowUp') {
@@ -2892,6 +2895,7 @@ export class VimEngine {
       return;
     }
     if (k.key === 'Backspace') {
+      if (this.searchBuffer === '') { this.leaveSearch(true); return; }
       this.searchBuffer = this.searchBuffer.slice(0, -1);
       return;
     }
@@ -2900,38 +2904,124 @@ export class VimEngine {
     }
   }
 
-  private performSearch(query: string): void {
-    this.registers.set('/', { linewise: false, lines: [query] });
-    const flatOffset = this.linesArr.slice(0, this._cursorLine).join('\n').length
-      + (this._cursorLine > 0 ? 1 : 0) + this._cursorCol;
-    const text = this.content;
-    const base = compileVimPattern(query, this.ignoreCaseSearch);
-    // `m` (multiline) so `^`/`$` anchor to each line's boundaries — matching
-    // real vim — rather than only the start/end of the whole buffer. Search
-    // the full, unsliced text (not text.slice(flatOffset)) so a `^`-anchored
-    // pattern can't spuriously match mid-line at the slice point.
-    const regex = new RegExp(base.source, `gm${base.flags}`);
-    let idx = -1;
-    let wrapped = false;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(text)) !== null) {
-      if (match.index > flatOffset) { idx = match.index; break; }
-      if (match[0].length === 0) regex.lastIndex++;
+  private executeTypedSearch(typed: string, forward: boolean, op: Operator | null, count: number | undefined): void {
+    const delimiter = forward ? '/' : '?';
+    let parsed = parseSearchInput(typed, delimiter);
+    let origin = { line: this._cursorLine, col: this._cursorCol };
+    let anchorOp = op;
+    let chain = true;
+    let searchForward = forward;
+    let first = true;
+    while (chain) {
+      const reuseOffset = typed === '' && first;
+      const pattern = parsed.pattern === '' ? this.lastSearch?.pattern ?? '' : parsed.pattern;
+      if (pattern === '') { this._message = 'E35: No previous regular expression'; if (op) this.cancelOperator(); return; }
+      const offset = reuseOffset && this.lastSearch ? this.lastSearch.offset : parsed.offset;
+      const search: LastSearch = { pattern, forward: searchForward, offset };
+      this.lastSearch = search;
+      this.registers.set('/', { linewise: false, lines: [pattern] });
+      const target = this.findSearchTarget(origin, search, first ? count ?? 1 : 1);
+      if (!target) { if (op) this.cancelOperator(); return; }
+      if (parsed.chained === null || parsed.chained === '') {
+        this.applySearchTarget(target, anchorOp);
+        return;
+      }
+      origin = target.pos;
+      anchorOp = op;
+      const next = parsed.chained;
+      searchForward = next[0] !== '?';
+      parsed = parseSearchInput(next.slice(1), searchForward ? '/' : '?');
+      first = false;
+      chain = true;
     }
-    if (idx < 0) {
-      regex.lastIndex = 0;
-      match = regex.exec(text);
-      idx = match ? match.index : -1;
-      wrapped = true;
+  }
+
+  private findSearchTarget(from: { line: number; col: number }, search: LastSearch, count: number): ReturnType<typeof resolveTarget> | null {
+    const match = findMatch(this.linesArr, from, search.pattern, {
+      forward: search.forward, count, wrapscan: true,
+      anchor: search.offset.kind === 'end' ? 'end' : 'start',
+      ignoreCase: this.ignoreCaseSearch,
+    });
+    if (!match) {
+      this._message = `E486: Pattern not found: ${search.pattern}`;
+      return null;
     }
-    if (idx < 0) {
-      this._message = `E486: Pattern not found: ${query}`;
+    this._message = match.wrapped
+      ? (search.forward ? 'search hit BOTTOM, continuing at TOP' : 'search hit TOP, continuing at BOTTOM')
+      : '';
+    return resolveTarget(this.linesArr, match, search.offset);
+  }
+
+  private applySearchTarget(target: ReturnType<typeof resolveTarget>, op: Operator | null): void {
+    const from = { line: this._cursorLine, col: this._cursorCol };
+    if (op) {
+      const before = target.pos.line < from.line || (target.pos.line === from.line && target.pos.col < from.col);
+      this.executeOperator(op, {
+        start: before ? target.pos : from,
+        end: before ? from : target.pos,
+        type: target.linewise ? 'line' : 'char',
+        inclusive: target.inclusive,
+      }, 1);
       return;
     }
-    const before = text.slice(0, idx).split('\n');
-    this._cursorLine = before.length - 1;
-    this._cursorCol = before[before.length - 1].length;
-    this._message = wrapped ? 'search hit BOTTOM, continuing at TOP' : '';
+    this.lastJumpPosition = from;
+    this._cursorLine = target.pos.line;
+    const text = this.line(target.pos.line);
+    this._cursorCol = this._mode === 'normal'
+      ? Math.max(0, Math.min(target.pos.col, text.length - 1))
+      : Math.min(target.pos.col, text.length);
+  }
+
+  private repeatSearch(reverse: boolean, op: Operator | null): void {
+    const count = op ? this.effectiveCount() : this.takeCount();
+    if (!this.lastSearch) { this._message = 'E35: No previous regular expression'; if (op) this.cancelOperator(); return; }
+    const search: LastSearch = { ...this.lastSearch, forward: reverse ? !this.lastSearch.forward : this.lastSearch.forward };
+    const target = this.findSearchTarget({ line: this._cursorLine, col: this._cursorCol }, search, count ?? 1);
+    if (!target) { if (op) this.cancelOperator(); return; }
+    this.applySearchTarget(target, op);
+  }
+
+  private searchIdentUnderCursor(key: string, op: Operator | null): void {
+    const count = op ? this.effectiveCount() : this.takeCount();
+    const ident = identUnderCursor(this.linesArr, { line: this._cursorLine, col: this._cursorCol });
+    if (!ident) { this._message = 'E348: No string under cursor'; if (op) this.cancelOperator(); return; }
+    const wholeWord = !key.startsWith('g');
+    const forward = key.endsWith('*');
+    const pattern = patternForIdent(ident, wholeWord);
+    const search: LastSearch = { pattern, forward, offset: NO_OFFSET };
+    this.lastSearch = search;
+    this.registers.set('/', { linewise: false, lines: [pattern] });
+    const here = { line: this._cursorLine, col: this._cursorCol };
+    const target = this.findSearchTarget(ident.start, search, count ?? 1);
+    if (!target) { if (op) this.cancelOperator(); return; }
+    if (op) {
+      this._cursorLine = here.line;
+      this._cursorCol = here.col;
+    }
+    this.applySearchTarget(target, op);
+  }
+
+  private selectNextMatch(backward: boolean, op: Operator | null): void {
+    if (op) this.takeCount();
+    if (!this.lastSearch) { this._message = 'E35: No previous regular expression'; if (op) this.cancelOperator(); return; }
+    const pattern = this.lastSearch.pattern;
+    const here = { line: this._cursorLine, col: this._cursorCol };
+    const match = findMatch(this.linesArr, here, pattern, {
+      forward: !backward, count: 1, wrapscan: true, anchor: 'start', ignoreCase: this.ignoreCaseSearch, acceptAtCursor: !backward,
+    });
+    if (!match) { this._message = `E486: Pattern not found: ${pattern}`; if (op) this.cancelOperator(); return; }
+    const last = match.end.col > 0
+      ? { line: match.end.line, col: match.end.col - 1 }
+      : { line: Math.max(0, match.end.line - 1), col: Math.max(0, this.line(Math.max(0, match.end.line - 1)).length) };
+    if (op) {
+      this.executeOperator(op, { start: match.start, end: last, type: 'char', inclusive: true }, 1);
+      return;
+    }
+    this.visualAnchorLine = backward ? last.line : match.start.line;
+    this.visualAnchorCol = backward ? last.col : match.start.col;
+    this._cursorLine = backward ? match.start.line : last.line;
+    this._cursorCol = backward ? match.start.col : last.col;
+    this._mode = 'visual';
   }
 
   // ── Exit bookkeeping ─────────────────────────────────────────────

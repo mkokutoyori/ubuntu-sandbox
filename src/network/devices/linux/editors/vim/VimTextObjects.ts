@@ -3,12 +3,14 @@ import {
   type MotionBuffer, type MotionType, type Pos,
 } from './VimCursor';
 import { findMatchingBracket } from './VimMotions';
+import { currentSentence } from './VimSentences';
 
 export interface ObjectRange {
   readonly start: Pos;
   readonly end: Pos;
   readonly type: MotionType;
   readonly inclusive: boolean;
+  readonly visualEnd?: Pos;
 }
 
 function lessOrEqual(a: Pos, b: Pos): boolean {
@@ -231,6 +233,10 @@ export function textObject(buf: MotionBuffer, from: Pos, inner: boolean, key: st
     case 'w': return currentWord(buf, from, count, !inner, false);
     case 'W': return currentWord(buf, from, count, !inner, true);
     case 'p': return currentParagraph(buf, from, count, !inner);
+    case 's': {
+      const range = currentSentence(buf, from, count, !inner);
+      return range ? { start: range.start, end: range.end, type: 'char', inclusive: range.inclusive, visualEnd: range.visualEnd } : null;
+    }
     case '"': case "'": case '`': return currentQuote(buf, from, count, !inner, key);
     default: {
       const pair = BLOCKS[key];

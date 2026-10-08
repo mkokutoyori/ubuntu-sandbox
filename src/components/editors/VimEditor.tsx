@@ -23,7 +23,7 @@ export type VimEditorDriver = Pick<VimEngine,
   | 'relativeNumbersShown' | 'listMode' | 'colorColumn' | 'fileFormat'
   | 'variant' | 'isRecordingMacro' | 'recordingMacroName'
   | 'pendingBinaryWarning' | 'pendingSubstMatch' | 'pendingSwapRecovery'
-  | 'visualAnchor' | 'isReplacing'>;
+  | 'visualAnchor' | 'isReplacing' | 'searchPromptChar'>;
 
 interface VimEditorProps {
   filePath: string;
@@ -372,7 +372,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           </div>
         ) : engine.mode === 'search' ? (
           <div className="flex items-center">
-            <span style={{ color: '#cdd6f4' }}>/</span>
+            <span style={{ color: '#cdd6f4' }}>{engine.searchPromptChar}</span>
             <input
               name="vimSearch"
               autoComplete="off"
