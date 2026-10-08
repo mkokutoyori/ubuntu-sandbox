@@ -13,6 +13,7 @@
  *    terminal masks keystrokes regardless of which shell intercepted.
  */
 
+import { compareAndRecordHostKey } from '@/network/protocols/ssh/hostkey/HostKeyChangedWarning';
 import { Equipment } from '@/network/equipment/Equipment';
 import { IPAddress } from '@/network/core/types';
 import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
@@ -257,15 +258,6 @@ export type FinaliseAuthOutcome =
   /** Password was right but the server refuses the session outright (host-key mismatch, ForceCommand=internal-sftp) — the caller must NOT re-prompt for a password. */
   | { kind: 'refused'; message: string };
 
-const HOST_KEY_CHANGED_MESSAGE =
-  '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
-  '@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n' +
-  '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
-  'IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\n' +
-  'Add correct host key in /root/.ssh/known_hosts to get rid of this message.\n' +
-  'Offending key in /root/.ssh/known_hosts:1\n' +
-  'Host key verification failed.';
-
 interface DeviceVfsLike {
   readFile: (p: string) => string | null;
   writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void;
@@ -299,26 +291,28 @@ function foyerDe(device: unknown, user: string | undefined): string {
  * side lacks a VFS — e.g. a non-Linux source or target — so this never
  * regresses cross-vendor SSH that isn't in scope for host-key checking.
  */
-function checkKnownHosts(auth: PendingSshAuth): 'changed' | 'ok' | 'unsupported' {
+function checkKnownHosts(auth: PendingSshAuth): { changed: false } | { changed: true; message: string } | 'unsupported' {
   const targetVfs = vfsOf(auth.target);
   const sourceVfs = vfsOf(auth.sourceDevice);
   if (!targetVfs || !sourceVfs) return 'unsupported';
   const pubKeyRaw = targetVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '';
   const tokens = pubKeyRaw.trim().split(/\s+/);
   if (tokens.length < 2) return 'unsupported';
-  const keyType = tokens[0] as SshHostKeyType;
-  const publicKey = tokens[1];
 
-  const knownHostsPath = `${foyerDe(auth.sourceDevice, auth.sourceUser)}/.ssh/known_hosts`;
-  const existing = sourceVfs.readFile(knownHostsPath) ?? '';
-  const file = SshKnownHostsFile.parse(existing);
-  if (file.hostKeyChanged(auth.host, keyType, publicKey)) return 'changed';
-  if (!file.find(auth.host, keyType)) {
-    const updated = file.add({ hostnames: [auth.host], keyType, publicKey });
-    const owner = sshLocalIdentityFor(auth.sourceDevice, auth.sourceUser ?? auth.user);
-    sourceVfs.writeFile(knownHostsPath, updated.serialize(), owner.uid, owner.gid, 0o022);
-  }
-  return 'ok';
+  const owner = sshLocalIdentityFor(auth.sourceDevice, auth.sourceUser ?? auth.user);
+  const outcome = compareAndRecordHostKey({
+    vfs: sourceVfs,
+    knownHostsPath: `${foyerDe(auth.sourceDevice, auth.sourceUser)}/.ssh/known_hosts`,
+    host: auth.host,
+    keyType: tokens[0],
+    publicKey: tokens[1],
+    uid: owner.uid,
+    gid: owner.gid,
+    replaceChanged: false,
+  });
+  return outcome.changed
+    ? { changed: true, message: `${outcome.warning}\nHost key verification failed.` }
+    : { changed: false };
 }
 
 export async function finalisePendingAuth(
@@ -356,8 +350,9 @@ export async function finalisePendingAuth(
   // known_hosts is compared once, here: this check reads the target's
   // real host key and records it on first connection, so the connection
   // below is told not to repeat it rather than have two verdicts.
-  if (checkKnownHosts(auth) === 'changed') {
-    return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
+  const knownHosts = checkKnownHosts(auth);
+  if (knownHosts !== 'unsupported' && knownHosts.changed) {
+    return { kind: 'refused', message: knownHosts.message };
   }
 
   // Build the banner BEFORE recording — the OpenSSH "Last login" line
@@ -398,7 +393,7 @@ export async function finalisePendingAuth(
   });
   if (outcome.kind !== 'connected') {
     if (outcome.kind === 'host-key-changed') {
-      return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
+      return { kind: 'refused', message: 'Host key verification failed.' };
     }
     if (outcome.kind === 'auth-failed') return refusedByServer();
     if (outcome.kind === 'cancelled') return { kind: 'refused', message: '' };
@@ -458,7 +453,7 @@ async function runExecOverTheWire(
     algorithms: auth.algorithms,
   });
   if (outcome.kind !== 'connected') {
-    if (outcome.kind === 'host-key-changed') return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
+    if (outcome.kind === 'host-key-changed') return { kind: 'refused', message: 'Host key verification failed.' };
     if (outcome.kind === 'auth-failed') return refusedByServer();
     if (outcome.kind === 'cancelled') return { kind: 'refused', message: '' };
     return { kind: 'refused', message: outcome.message };

@@ -6,6 +6,8 @@
 
 import type { ISshLocalFs } from '../ISshLocalFs';
 import type { SshHostKey } from '../SshHostKey';
+import { hashKnownHostsToken, formatKnownHostsEntry } from '../SshPureUtils';
+import { appendKnownHostsLine, withoutHost } from './KnownHostsText';
 import { KnownHostsStore } from './KnownHostsStore';
 
 const DEFAULT_MODE = 0o644;
@@ -37,7 +39,15 @@ export class SshKnownHosts {
   }
 
   addHost(host: string, key: SshHostKey, opts: { hashed?: boolean } = {}): void {
-    const store = this.load().with(host, key, opts);
-    this.save(store);
+    const token = opts.hashed ? hashKnownHostsToken(host) : host;
+    const kept = withoutHost(this.vfs.readFile(this.path) ?? '', host);
+    this.vfs.writeFile(
+      this.path,
+      appendKnownHostsLine(kept, formatKnownHostsEntry(token, key)),
+      this.uid,
+      this.gid,
+      this.umask,
+    );
+    this.vfs.chmod(this.path, DEFAULT_MODE);
   }
 }
