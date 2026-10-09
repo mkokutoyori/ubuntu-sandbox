@@ -6,7 +6,10 @@ usage: record_journalctl.py corpus_dir out.json
 Every invocation reads the offline journal with --directory, with the realtime clock, the time zone and LC_ALL pinned
 (scripts/oracle/last_shim.c), and stores stdout, stderr and the exit status next to the export of the whole corpus.
 """
-import base64, hashlib, json, os, re, subprocess, sys
+import base64, json, os, re, subprocess, sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from journal_corpus_lib import build_entries, tree_digest
 
 NOW = 1791510700
 CURSOR_FILE = "/tmp/jcorpus.cursorfile"
@@ -39,71 +42,8 @@ def cases(cursors):
         out += [["--cursor", cursor], ["--after-cursor", cursor, "-n", "3"], ["-c", cursor, "-r", "-n", "2"], ["--cursor", cursor, "--show-cursor"], ["--until-cursor" if False else "--after-cursor", cursor, "-b", "0", "-n", "2"]]
     for mode in OUTPUTS:
         out += [["-o", mode, "-n", "12"]] if mode.startswith("short") else []
-        out += [["-o", mode], ["-o", mode, "-r", "-n", "9"], ["-o", mode, "-b", "-1", "-n", "6"], ["-o", mode, "-t", "myapp"], ["-o", mode, "-t", "nginx", "-n", "4"], ["-o", mode, "-t", "sudo"], ["-o", mode, "-p", "err", "-n", "5"], ["-o", mode, "--no-hostname", "-n", "3"], ["-o", mode, "-a", "-t", "myapp"], ["-o", mode, "-t", "myapp", "--no-full"], ["-o", mode, "-t", "myapp", "-l"], ["-o", mode, "-t", "myapp", "-q"], ["-o", mode, "--utc", "-n", "3"], ["-o", mode, "--show-cursor", "-n", "2"], ["-o", mode, "-t", "sshd", "-n", "2", "-x"], ["-o", mode, "-u", "cron", "--output-fields=PRIORITY"], ["-o", mode, "-n", "2", "--output-fields=_PID" if mode == "cat" else "--output-fields=_PID,MESSAGE"]]
+        out += [["-o", mode, "-n", "70"], ["-o", mode, "-r", "-n", "9"], ["-o", mode, "-b", "-1", "-n", "6"], ["-o", mode, "-t", "myapp"], ["-o", mode, "-t", "nginx", "-n", "4"], ["-o", mode, "-t", "sudo"], ["-o", mode, "-p", "err", "-n", "5"], ["-o", mode, "--no-hostname", "-n", "3"], ["-o", mode, "-a", "-t", "myapp"], ["-o", mode, "-t", "myapp", "--no-full"], ["-o", mode, "-t", "myapp", "-l"], ["-o", mode, "-t", "myapp", "-q"], ["-o", mode, "--utc", "-n", "3"], ["-o", mode, "--show-cursor", "-n", "2"], ["-o", mode, "-t", "sshd", "-n", "2", "-x"], ["-o", mode, "-u", "cron", "--output-fields=PRIORITY"], ["-o", mode, "-n", "2", "--output-fields=_PID" if mode == "cat" else "--output-fields=_PID,MESSAGE"]]
     return out
-
-def tree_digest(root):
-    digest = hashlib.sha256()
-    for directory, _, names in sorted(os.walk(root)):
-        for name in sorted(names):
-            digest.update(name.encode() + open(os.path.join(directory, name), "rb").read())
-    return digest.hexdigest()
-
-def parse_export(data):
-    entries, fields, pos = [], [], 0
-    while pos < len(data):
-        end = data.index(b"\n", pos)
-        line = data[pos:end]
-        if line == b"":
-            if fields:
-                entries.append(fields)
-            fields, pos = [], end + 1
-            continue
-        if b"=" in line:
-            name, _, value = line.partition(b"=")
-            pos = end + 1
-        else:
-            name = line
-            size = int.from_bytes(data[end + 1:end + 9], "little")
-            value = data[end + 9:end + 9 + size]
-            pos = end + 9 + size + 1
-        fields.append((name.decode(), value))
-    if fields:
-        entries.append(fields)
-    return entries
-
-def verbose_orders(corpus, env):
-    out = subprocess.run(["journalctl", f"--directory={os.path.join(corpus, 'journal')}", "--no-pager", "-o", "verbose", "-a"], capture_output=True, env=env, stdin=subprocess.DEVNULL).stdout
-    orders, current = [], None
-    for line in out.split(b"\n"):
-        if line and not line.startswith(b" ") and not line.startswith(b"-- "):
-            current = []
-            orders.append(current)
-        elif current is not None:
-            match = re.match(rb"^ {4}([A-Za-z_][A-Za-z0-9_]*)=", line)
-            if match:
-                current.append(match.group(1).decode())
-    return orders
-
-def build_entries(corpus):
-    env = dict(os.environ, TZ="UTC", LC_ALL="C")
-    export = open(os.path.join(corpus, "entries.export"), "rb").read()
-    orders = verbose_orders(corpus, env)
-    result = []
-    for fields, order in zip(parse_export(export), verbose_orders(corpus, env)):
-        header = dict(fields[:6])
-        cursor = header["__CURSOR"].decode()
-        rest = {}
-        for name, value in fields[6:]:
-            rest.setdefault(name, []).append(value)
-        rest.setdefault("_BOOT_ID", []).append(header["_BOOT_ID"])
-        ordered, seen = [], {}
-        for name in order:
-            index = seen.get(name, 0)
-            seen[name] = index + 1
-            ordered.append([name, base64.b64encode(rest[name][index]).decode()])
-        result.append({"cursor": cursor, "realtime": int(header["__REALTIME_TIMESTAMP"]), "monotonic": int(header["__MONOTONIC_TIMESTAMP"]), "seqnum": int(header["__SEQNUM"]), "seqnumId": header["__SEQNUM_ID"].decode(), "bootId": header["_BOOT_ID"].decode(), "fields": ordered})
-    return result
 
 def zone_case(args):
     if args[:1] == ["-o"] and len(args) > 1:

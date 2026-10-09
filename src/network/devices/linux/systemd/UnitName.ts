@@ -7,7 +7,13 @@ const GLOB_CHARS = '*?[';
 
 export const isGlob = (text: string): boolean => [...GLOB_CHARS].some(ch => text.includes(ch));
 
-export function unitNameIsValid(name: string): boolean {
+export interface UnitNameKinds {
+  plain?: boolean;
+  instance?: boolean;
+  template?: boolean;
+}
+
+export function unitNameIsValid(name: string, kinds: UnitNameKinds = { plain: true, instance: true, template: true }): boolean {
   if (name === '' || name.length >= UNIT_NAME_MAX) return false;
   const dot = name.lastIndexOf('.');
   if (dot <= 0) return false;
@@ -17,7 +23,11 @@ export function unitNameIsValid(name: string): boolean {
     if (name[i] === '@' && at < 0) at = i;
     if (!VALID_CHARS_WITH_AT.includes(name[i])) return false;
   }
-  return at !== 0;
+  if (at === 0) return false;
+  if (kinds.plain && at < 0) return true;
+  if (kinds.instance && at >= 0 && dot > at + 1) return true;
+  if (kinds.template && at >= 0 && dot === at + 1) return true;
+  return false;
 }
 
 export const unitNameToType = (name: string): string | null => (unitNameIsValid(name) ? name.slice(name.lastIndexOf('.') + 1) : null);

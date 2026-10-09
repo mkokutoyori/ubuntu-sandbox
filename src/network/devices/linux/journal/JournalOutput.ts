@@ -58,8 +58,8 @@ function displayTimestamp(record: JournalRecord): Display {
   let realtime: number | null = null;
   let monotonic: number | null = null;
   for (const [name, value] of record.fields) {
-    if (name === '_SOURCE_REALTIME_TIMESTAMP' && realtime === null) realtime = parseUnsigned(value) ?? -1;
-    else if (name === '_SOURCE_MONOTONIC_TIMESTAMP' && monotonic === null) monotonic = parseUnsigned(value) ?? -1;
+    if (name === '_SOURCE_REALTIME_TIMESTAMP') realtime = parseUnsigned(value) ?? -1;
+    else if (name === '_SOURCE_MONOTONIC_TIMESTAMP') monotonic = parseUnsigned(value) ?? -1;
     if (realtime !== null && monotonic !== null) break;
   }
   const realtimeGood = realtime !== null && realtime > 0;
@@ -163,7 +163,7 @@ function outputShort(out: ByteSink, record: JournalRecord, mode: OutputMode, fla
   const found = new Map<string, Uint8Array>();
   for (const [name, raw] of record.fields) {
     if (!wanted.includes(name)) continue;
-    if (!found.has(name)) found.set(name, raw);
+    found.set(name, raw);
   }
   let message = found.get('MESSAGE');
   if (message === undefined) return 0;
