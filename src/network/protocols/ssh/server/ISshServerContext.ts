@@ -35,6 +35,7 @@ export interface SshServerConfig {
 }
 
 export interface ILinuxShell {
+  readonly streamSession?: unknown;
   execute(line: string): Promise<{
     stdout: string;
     stderr: string;

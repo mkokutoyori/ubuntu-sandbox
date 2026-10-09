@@ -203,6 +203,7 @@ export class SshShellSession {
           this.writeText(`${text}\n`);
         },
         onDone: () => this.complete({ stdout: '', stderr: '', exitCode: 0 }),
+        session: this.services.shell.isNested?.() === true ? undefined : this.services.shell.streamSession,
       }) ?? false;
       if (started) return;
     }

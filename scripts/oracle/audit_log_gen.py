@@ -296,3 +296,61 @@ def gen_syscalls(seed, n):
         if r.random() < 0.05:
             out.append("type=MAC_STATUS %s enforcing=1 old_enforcing=0 auid=1100 ses=2 enabled=1 old-enabled=1 lsm=selinux res=1" % stamp)
     return "\n".join(out) + "\n"
+
+def gen_sessions(seed, n):
+    r = random.Random(seed)
+    t = 1760000000.0 + r.randint(0, 100000)
+    serial = r.randint(10, 500)
+    uids = [0, 1, 33, 1000, 1100, 1101, 65534]
+    names = {0: "root", 1: "daemon", 33: "www-data", 1000: "ubuntu", 1100: "alice", 1101: "bob", 65534: "nobody"}
+    hosts = ["10.0.0.5", "192.168.1.20", "?", "workstation.example.com", "172.16.4.9"]
+    lines = []
+    open_sessions = []
+    def emit(kind, body):
+        nonlocal t, serial
+        lines.append("type=%s msg=audit(%.3f:%d): %s" % (kind, t, serial, body))
+    def advance(low=1, high=300):
+        nonlocal t, serial
+        t += r.randint(low, high) + r.random()
+        serial += r.randint(1, 4)
+    for _ in range(n):
+        advance()
+        kind = r.choice(["full", "full", "full", "fail", "nologin", "nologout", "boot", "shutdown", "daemon", "dupe", "old", "partial", "end"])
+        uid = r.choice(uids); pid = r.randint(500, 9000); ses = r.randint(1, 12); host = r.choice(hosts)
+        term = r.choice(["/dev/pts/0", "/dev/pts/3", "ssh", "/dev/tty1", "pts/7"])
+        def login(old=True):
+            if old:
+                emit("LOGIN", "pid=%d uid=0 subj=unconfined old-auid=4294967295 auid=%d tty=(none) old-ses=4294967295 ses=%d res=1" % (pid, uid, ses))
+            else:
+                emit("LOGIN", "pid=%d uid=0 old auid=4294967295 auid=%d tty=(none) old ses=4294967295 ses=%d res=1" % (pid, uid, ses))
+        def user_login(res="success", with_uid=False):
+            who = "uid=%d" % uid if with_uid else "id=%d" % uid
+            if res == "success":
+                emit("USER_LOGIN", "pid=%d uid=0 auid=%d ses=%d subj=unconfined msg='op=login %s exe=\"/usr/sbin/sshd\" hostname=%s addr=10.9.8.7 terminal=%s res=success'" % (pid, uid, ses, who, host, term))
+            else:
+                emit("USER_LOGIN", "pid=%d uid=0 auid=4294967295 ses=4294967295 subj=unconfined msg='op=login acct=\"%s\" exe=\"/usr/sbin/sshd\" hostname=%s addr=10.9.8.7 terminal=%s res=failed'" % (pid, r.choice(list(names.values()) + ["mallory"]), host, term))
+        def logout():
+            emit("USER_END", "pid=%d uid=0 auid=%d ses=%d subj=unconfined msg='op=PAM:session_close grantors=pam_unix acct=\"%s\" exe=\"/usr/sbin/sshd\" hostname=%s addr=10.9.8.7 terminal=ssh res=success'" % (pid, uid, ses, names[uid], host))
+        if kind == "full":
+            login(); advance(1, 5); user_login(with_uid=r.random() < 0.2); advance(10, 4000); logout()
+        elif kind == "fail":
+            user_login("failed")
+        elif kind == "nologin":
+            user_login()
+        elif kind == "nologout":
+            login(); advance(1, 5); user_login()
+        elif kind == "boot":
+            emit("SYSTEM_BOOT", "pid=%d uid=0 auid=4294967295 ses=4294967295 msg=' comm=\"systemd-update-utmp\" exe=\"/usr/lib/systemd/systemd-update-utmp\" hostname=? addr=? terminal=? res=success'" % pid)
+        elif kind == "shutdown":
+            emit("SYSTEM_SHUTDOWN", "pid=%d uid=0 auid=4294967295 ses=4294967295 msg=' comm=\"systemd-update-utmp\" exe=\"/usr/lib/systemd/systemd-update-utmp\" hostname=? addr=? terminal=? res=success'" % pid)
+        elif kind == "daemon":
+            emit("DAEMON_START", "op=start ver=3.1.2 format=enriched kernel=%s auid=4294967295 pid=%d uid=0 ses=4294967295 subj=unconfined res=success" % (r.choice(["6.8.0-45-generic", "5.15.0-100-generic"]), pid))
+        elif kind == "dupe":
+            login(); advance(1, 5); user_login(); advance(1, 9); login()
+        elif kind == "old":
+            login(old=False); advance(1, 5); user_login(); advance(10, 900); logout()
+        elif kind == "partial":
+            emit("LOGIN", "uid=0 subj=unconfined old-auid=4294967295 auid=%d tty=(none) old-ses=4294967295 ses=%d res=1" % (uid, ses))
+        elif kind == "end":
+            logout()
+    return "\n".join(lines) + "\n"

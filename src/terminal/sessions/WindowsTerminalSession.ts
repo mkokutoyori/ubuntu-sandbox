@@ -11,6 +11,7 @@
  *   - Tab completion (PS cmdlets + device file paths)
  */
 
+import { SCREEN_REPAINT_MARK } from '@/network/protocols/ssh/server/SshScreenRepaint';
 import { Equipment } from '@/network';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { SSH_PASSWORD_PROMPTS } from '@/shell/sshLauncher';
@@ -1468,7 +1469,12 @@ export class WindowsTerminalSession extends TerminalSession {
 
       if (this.tryOpenRemoteEditor(line)) return true;
 
-      const onProgress = (text: string) => { this.addShellOutputLine(text); this.notify(); };
+      const screenBase = this.lines.length;
+      const onProgress = (text: string) => {
+        if (text === SCREEN_REPAINT_MARK) this.lines = this.lines.slice(0, screenBase);
+        else this.addShellOutputLine(text);
+        this.notify();
+      };
       const maybePromise = this.activeSubShell.processLine(line, onProgress);
 
       const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
@@ -1576,6 +1582,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // Ctrl+C → interrupt a running foreground async job first; otherwise
     // cancel the current input buffer (PowerShell prompt semantics).
     if (e.key === 'c' && e.ctrlKey) {
+      if (this.activeSubShell.interruptForeground?.()) return true;
       if (this.asyncRuntime.interruptForeground()) return true;
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
