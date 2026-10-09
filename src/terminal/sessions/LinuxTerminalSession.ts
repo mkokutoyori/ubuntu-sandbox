@@ -57,6 +57,7 @@ import {
   KeyEvent, InputMode, withTimeout, DeviceOfflineError,
 } from './TerminalSession';
 import { createSessionForDevice } from './sessionFactory';
+import { followArguments, snapshotCommand } from '@/network/devices/linux/journal/JournalFollow';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
 import { validateCrontabContent } from '@/network/devices/linux/cron/CrontabParser';
@@ -161,18 +162,6 @@ const LINUX_THEME: TerminalTheme = {
 };
 
 // ─── Session ──────────────────────────────────────────────────────
-
-function followArguments(args: string[]): string[] {
-  const kept: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    const token = args[i];
-    if (token === '-f' || token === '--follow') continue;
-    if (token === '-n' || token === '--lines') { i++; continue; }
-    if (token.startsWith('--lines=') || /^-n\d+$/.test(token)) continue;
-    kept.push(token);
-  }
-  return kept;
-}
 
 export class LinuxTerminalSession extends TerminalSession {
   currentPath: string;
@@ -1145,10 +1134,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (/[|<>&]/.test(commandLine)) return false;
     const shell = this.shell;
 
-    const nIdx = Math.max(toks.indexOf('-n'), toks.indexOf('--lines'));
-    const initialArgs = toks.slice(1).filter((t) => t !== '-f' && t !== '--follow');
-    if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
-    const initialCommand = ['journalctl', ...initialArgs].join(' ');
+    const initialCommand = snapshotCommand(toks.slice(1));
 
     return this.startFollowStream({
       commandLine,

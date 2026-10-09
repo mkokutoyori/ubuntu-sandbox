@@ -23,6 +23,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { TerminalAsyncRuntime } from '@/terminal/async/TerminalAsyncRuntime';
+import { followArguments, isJournalFollow, snapshotCommand } from '@/network/devices/linux/journal/JournalFollow';
 import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
 
 export interface SshInteractiveShellHooks {
@@ -36,6 +37,7 @@ export interface SshInteractiveShellHooks {
    * that reply carries empty stdout/stderr.
    */
   onDone: () => void;
+  snapshot?: (command: string) => Promise<string>;
 }
 
 /**
@@ -80,8 +82,9 @@ export class SshInteractiveShell {
     if (this.runtime.hasForegroundJob) return false;
     if (!(this.device instanceof LinuxMachine)) return false;
     const toks = line.trim().split(/\s+/);
-    if (toks[0] !== 'ping' && toks[0] !== 'ping6') return false;
     if (/[|<>&;]/.test(line)) return false;
+    if (isJournalFollow(toks) && hooks.snapshot !== undefined) return this.startJournalFollow(toks, line, hooks, hooks.snapshot);
+    if (toks[0] !== 'ping' && toks[0] !== 'ping6') return false;
 
     this.hooks = hooks;
     const dev = this.device;
@@ -97,6 +100,29 @@ export class SshInteractiveShell {
         if (!ctx.cancelled()) hooks.onDone();
       },
       onInterrupt: () => { ping?.interrupt(); hooks.onDone(); },
+    });
+    return job !== null;
+  }
+
+  private startJournalFollow(toks: string[], line: string, hooks: SshInteractiveShellHooks, snapshot: (command: string) => Promise<string>): boolean {
+    this.hooks = hooks;
+    const dev = this.device as LinuxMachine;
+    let unsubscribe: (() => void) | null = null;
+    const job = this.runtime.start({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        const initial = await snapshot(snapshotCommand(toks.slice(1)));
+        for (const text of initial.split('\n')) if (text.length > 0) ctx.sink.line(text);
+        if (ctx.cancelled()) return;
+        unsubscribe = dev.followJournal(followArguments(toks.slice(1)), (text) => ctx.sink.line(text));
+        while (!ctx.cancelled()) await ctx.delay(100);
+      },
+      onInterrupt: () => {
+        unsubscribe?.();
+        hooks.onDone();
+      },
     });
     return job !== null;
   }

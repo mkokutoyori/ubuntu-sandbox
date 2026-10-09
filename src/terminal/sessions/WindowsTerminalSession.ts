@@ -1576,6 +1576,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // Ctrl+C → interrupt a running foreground async job first; otherwise
     // cancel the current input buffer (PowerShell prompt semantics).
     if (e.key === 'c' && e.ctrlKey) {
+      if (this.activeSubShell.interruptForeground?.()) return true;
       if (this.asyncRuntime.interruptForeground()) return true;
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;

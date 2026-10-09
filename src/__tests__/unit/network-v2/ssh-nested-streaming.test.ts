@@ -40,11 +40,13 @@ const subShellOf = (host: TerminalSession): unknown =>
 describe('SSH Windows -> Linux is a transparent transport for behaviour', () => {
   let win: WindowsPC;
   let host: WindowsTerminalSession;
+  let linuxHost: LinuxPC;
 
   beforeEach(async () => {
     EquipmentRegistry.resetInstance();
     win = new WindowsPC('windows-pc', 'PC1', 0, 0);
     const linux = new LinuxPC('linux-pc', 'PC2', 0, 0);
+    linuxHost = linux;
     const sw = new CiscoSwitch('switch-cisco', 'SW', 24, 0, 0);
     win.powerOn(); linux.powerOn(); sw.powerOn();
     new Cable('c1').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
@@ -85,6 +87,22 @@ describe('SSH Windows -> Linux is a transparent transport for behaviour', () => 
     host.handleKey(key('c', { ctrlKey: true }));
     await tick();
     expect(subShellOf(host)).toBeInstanceOf(SshInteractiveSubShell);
+  });
+
+  it('journalctl -f streams records written after it started, with its own filters, over SSH', async () => {
+    await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
+    runOnForeground(host, 'journalctl -f -t sshfollow -o cat');
+    await tick();
+    await linuxHost.executeCommand('logger -t other "not selected"');
+    await linuxHost.executeCommand('logger -t sshfollow "streamed over ssh"');
+    await waitFor(host, (l) => l.includes('streamed over ssh'));
+    expect(texts(host)).toContain('streamed over ssh');
+    expect(texts(host)).not.toContain('not selected');
+    host.handleKey(key('c', { ctrlKey: true }));
+    for (let i = 0; i < 10; i++) await tick();
+    await linuxHost.executeCommand('logger -t sshfollow "after interrupt"');
+    for (let i = 0; i < 4; i++) await tick();
+    expect(texts(host)).not.toContain('after interrupt');
   });
 
   it('exit closes the remote session and returns to the Windows host', async () => {

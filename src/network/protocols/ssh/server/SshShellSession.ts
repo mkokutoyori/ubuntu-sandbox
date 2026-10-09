@@ -203,6 +203,7 @@ export class SshShellSession {
           this.writeText(`${text}\n`);
         },
         onDone: () => this.complete({ stdout: '', stderr: '', exitCode: 0 }),
+        snapshot: async (command) => (await this.services.shell.execute(command)).stdout,
       }) ?? false;
       if (started) return;
     }
