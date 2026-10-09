@@ -458,6 +458,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       });
       const EXIT_WORDS = new Set(['exit', 'logout']);
       return {
+        streamSession: session,
         execute: async (line: string) => {
           if (subShells.active) {
             const routed = await subShells.process(line);

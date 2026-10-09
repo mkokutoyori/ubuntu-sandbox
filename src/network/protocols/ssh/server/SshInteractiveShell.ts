@@ -19,12 +19,11 @@
  * `ILinuxShell.execute()` single-round-trip path, unchanged.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
-
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { TerminalAsyncRuntime } from '@/terminal/async/TerminalAsyncRuntime';
-import { followArguments, isJournalFollow, snapshotCommand } from '@/network/devices/linux/journal/JournalFollow';
-import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
+import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
+import { planLinuxStream } from '@/terminal/streams/LinuxStreamPlans';
+import { SCREEN_REPAINT_MARK } from './SshScreenRepaint';
 
 export interface SshInteractiveShellHooks {
   /** A line of output produced while a streaming job is running. */
@@ -37,7 +36,7 @@ export interface SshInteractiveShellHooks {
    * that reply carries empty stdout/stderr.
    */
   onDone: () => void;
-  snapshot?: (command: string) => Promise<string>;
+  session?: unknown;
 }
 
 /**
@@ -81,49 +80,36 @@ export class SshInteractiveShell {
   tryStartStreaming(line: string, hooks: SshInteractiveShellHooks): boolean {
     if (this.runtime.hasForegroundJob) return false;
     if (!(this.device instanceof LinuxMachine)) return false;
-    const toks = line.trim().split(/\s+/);
     if (/[|<>&;]/.test(line)) return false;
-    if (isJournalFollow(toks) && hooks.snapshot !== undefined) return this.startJournalFollow(toks, line, hooks, hooks.snapshot);
-    if (toks[0] !== 'ping' && toks[0] !== 'ping6') return false;
-
-    this.hooks = hooks;
-    const dev = this.device;
-    let ping: PingRun | null = null;
-    const job = this.runtime.start({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: line,
-      run: async (ctx) => {
-        const host = dev.pingHost({ sleep: (ms) => ctx.delay(ms), now: () => simulationNowMs() });
-        ping = createPing(toks.slice(1), host, (text) => ctx.sink.line(text), { cmd: toks[0] as 'ping' | 'ping6' });
-        await ping.run(() => ctx.cancelled());
-        if (!ctx.cancelled()) hooks.onDone();
-      },
-      onInterrupt: () => { ping?.interrupt(); hooks.onDone(); },
+    const session = hooks.session as LinuxShellSession | undefined;
+    if (session === undefined) return false;
+    const plan = planLinuxStream(this.device, session, line, {
+      mark: () => {},
+      beginFrame: () => hooks.onChunk(SCREEN_REPAINT_MARK),
     });
-    return job !== null;
-  }
-
-  private startJournalFollow(toks: string[], line: string, hooks: SshInteractiveShellHooks, snapshot: (command: string) => Promise<string>): boolean {
+    if (plan === null) return false;
     this.hooks = hooks;
-    const dev = this.device as LinuxMachine;
-    let unsubscribe: (() => void) | null = null;
-    const job = this.runtime.start({
+    if (plan.kind === 'notice') {
+      for (const text of plan.lines) hooks.onChunk(text);
+      hooks.onDone();
+      return true;
+    }
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      hooks.onDone();
+    };
+    const started = this.runtime.start({
       mode: 'foreground',
-      kind: 'streaming',
+      kind: plan.jobKind,
       command: line,
+      prepare: plan.prepare,
       run: async (ctx) => {
-        const initial = await snapshot(snapshotCommand(toks.slice(1)));
-        for (const text of initial.split('\n')) if (text.length > 0) ctx.sink.line(text);
-        if (ctx.cancelled()) return;
-        unsubscribe = dev.followJournal(followArguments(toks.slice(1)), (text) => ctx.sink.line(text));
-        while (!ctx.cancelled()) await ctx.delay(100);
+        try { await plan.run(ctx); } finally { finish(); }
       },
-      onInterrupt: () => {
-        unsubscribe?.();
-        hooks.onDone();
-      },
+      onInterrupt: plan.onInterrupt,
     });
-    return job !== null;
+    return started !== null;
   }
 }

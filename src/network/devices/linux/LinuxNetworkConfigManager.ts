@@ -153,7 +153,7 @@ export class LinuxNetworkConfigManager {
       if (!addr || addr.includes(':')) continue;
       const mask = SubnetMask.fromCIDR(prefix ? Number(prefix) : 24);
       if (index === 0) net.configureInterface(plan.iface, new IPAddress(addr), mask);
-      else port.addSecondaryIP(new IPAddress(addr), mask);
+      else net.addSecondaryInterfaceIP(plan.iface, new IPAddress(addr), mask);
       applied.push(`${plan.iface}: IPv4 address ${cidr}`);
     }
 

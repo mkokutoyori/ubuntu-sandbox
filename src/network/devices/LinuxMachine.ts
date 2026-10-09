@@ -3956,6 +3956,19 @@ export abstract class LinuxMachine extends EndHost
         port.clearIP();
         if (ip) this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
       },
+      addSecondaryInterfaceIP: (name: string, ip: IPAddress, mask: SubnetMask): void => {
+        const port = this.ports.get(name);
+        if (!port) return;
+        port.addSecondaryIP(ip, mask);
+        this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr: mask.toCIDR(), added: true } });
+      },
+      removeSecondaryInterfaceIP: (name: string, ip: IPAddress): void => {
+        const port = this.ports.get(name);
+        if (!port) return;
+        const cidr = port.getSecondaryIPs().find(e => e.ip.equals(ip))?.mask.toCIDR() ?? 0;
+        port.removeSecondaryIP(ip);
+        this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
+      },
       setInterfaceAdmin: (name: string, enabled: boolean): void => {
         const port = this.ports.get(name);
         if (!port) return;
