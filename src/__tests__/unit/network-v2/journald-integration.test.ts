@@ -3,7 +3,7 @@
  * the simulated host.  Every line a service, the kernel or logger writes now crosses the journald ingestion path - a
  * syslog or native datagram carrying the sender's credentials - and journalctl reads the resulting journal records, so
  * the fields (_PID, _COMM, _EXE, _SYSTEMD_UNIT, UNIT, _TRANSPORT) are the ones journald derives, not ones the command
- * invents.  Measured before the integration (module absent, git stash push -u -- src/network): 13 of the 14 cases fall.
+ * invents.  Measured before the integration (module absent, git stash push -u -- src/network): 16 of the 17 cases fall.
  * The one that passes either way is "logger without -i writes no pid into the file": a non-regression witness, since the
  * old command also left the pid out of the line unless -i was given.
  */
@@ -151,5 +151,32 @@ describe('journald and logger integrated in the host', () => {
     stop();
     expect(seen).toHaveLength(1);
     expect((JSON.parse(seen[0]) as Record<string, string>).MESSAGE).toBe('streamed');
+  });
+
+  it('a write to /dev/kmsg lands in the ring, in dmesg and in the journal as the kernel does', () => {
+    const exec = host();
+    exec.execute("echo '<3>EXT4-fs error on sda1' > /dev/kmsg");
+    expect(exec.execute('dmesg -l err')).toContain('EXT4-fs error on sda1');
+    const [entry] = entries(exec, '-k -g "EXT4-fs error"');
+    expect(entry._TRANSPORT).toBe('kernel');
+    expect(entry.PRIORITY).toBe('3');
+    expect(entry.SYSLOG_FACILITY).toBe('1');
+    expect(exec.vfs.readFile('/var/log/syslog')).toContain('EXT4-fs error on sda1');
+  });
+
+  it('a kmsg line without prefix is user.warning and an identifier is parsed out of it', () => {
+    const exec = host();
+    exec.execute("echo 'plain words' > /dev/kmsg");
+    exec.execute("echo '<14>app[7]: tagged' > /dev/kmsg");
+    const plain = entries(exec, '-k -g "plain words"')[0];
+    expect([plain.PRIORITY, plain.SYSLOG_FACILITY]).toEqual(['4', '1']);
+    const tagged = entries(exec, '-k -g tagged')[0];
+    expect([tagged.SYSLOG_IDENTIFIER, tagged.SYSLOG_PID, tagged.MESSAGE]).toEqual(['app', '7', 'tagged']);
+  });
+
+  it('reading /dev/kmsg returns records in the kernel format', () => {
+    const exec = host();
+    exec.execute("echo '<3>ring probe' > /dev/kmsg");
+    expect(exec.execute('cat /dev/kmsg')).toMatch(/^11,\d+,\d+,-;ring probe$/m);
   });
 });

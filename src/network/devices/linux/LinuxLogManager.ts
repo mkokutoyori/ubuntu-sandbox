@@ -40,6 +40,7 @@ interface JournalEntry {
   message: string;
   pid: number;
   hostname: string;
+  transport: string;
 }
 
 // ── Dmesg entry ──────────────────────────────────────────────────
@@ -116,6 +117,31 @@ export class LinuxLogManager {
     return facts !== null && this.pendingCgroup !== null ? { ...facts, cgroup: this.pendingCgroup } : facts;
   }
 
+  writeKernelRing(content: string): boolean {
+    let text = content;
+    if (text.endsWith('\n')) text = text.slice(0, -1);
+    text = text.slice(0, 1024);
+    let priority = 4;
+    const prefix = /^<(\d*)>/.exec(text);
+    if (prefix !== null) {
+      priority = (prefix[1] === '' ? 0 : Number(prefix[1])) & 0x3ff;
+      text = text.slice(prefix[0].length);
+    }
+    if (priority >> 3 === 0) priority |= 8;
+    const atMs = this.nowMs();
+    this.journald.deliverKernel({ priority, message: text, monotonicUsec: Math.max(0, atMs * 1000 - this.bootTime.getTime() * 1000), realtimeUsec: atMs * 1000 });
+    return true;
+  }
+
+  kernelRingRecords(): string {
+    return this.journald.records().filter((record) => fieldValues(record, '_TRANSPORT').some((value) => new TextDecoder().decode(value) === 'kernel')).map((record) => {
+      const level = new TextDecoder().decode(fieldValues(record, 'PRIORITY')[0] ?? new Uint8Array());
+      const facility = new TextDecoder().decode(fieldValues(record, 'SYSLOG_FACILITY')[0] ?? new Uint8Array());
+      const message = new TextDecoder().decode(fieldValues(record, 'MESSAGE')[0] ?? new Uint8Array());
+      return `${(Number(facility) << 3) | Number(level)},${record.seqnum},${record.monotonicUsec},-;${message.replace(/\\/g, '\\x5c').replace(/\n/g, '\\x0a')}\n`;
+    }).join('');
+  }
+
   setProcessProbe(probe: (pid: number) => ProcessFacts | null): void { this.processProbe = probe; }
 
   constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts, private readonly machineId: () => string = () => '0'.repeat(32)) {
@@ -137,6 +163,7 @@ export class LinuxLogManager {
     this.populateBootMessages();
     this.seeding = false;
     this.syncJournalFiles();
+    this.vfs.registerWritableGeneratedFile('/dev/kmsg', () => this.kernelRingRecords(), (content) => this.writeKernelRing(content), 0o644, 0, 0);
   }
 
   /** La ligne de commande du noyau, celle que `/proc/cmdline` rend. */
@@ -454,6 +481,7 @@ export class LinuxLogManager {
       pid: syslogPid !== null ? number('SYSLOG_PID', 0) : 0,
       displayPid: syslogPid !== null,
       hostname: text('_HOSTNAME') ?? this.currentHostname(),
+      transport: text('_TRANSPORT') ?? '',
     };
   }
 
@@ -464,7 +492,7 @@ export class LinuxLogManager {
   private onJournalRecord(record: JournalRecord): void {
     if (this.seeding) return;
     const entry = this.entryOf(record);
-    if (entry.facility === FACILITY_NAMES.kern) {
+    if (entry.transport === 'kernel') {
       const dEntry: DmesgEntry = {
         offsetSec: (entry.timestamp.getTime() - this.bootTime.getTime()) / 1000,
         level: entry.priority,

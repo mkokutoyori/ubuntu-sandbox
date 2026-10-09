@@ -47,6 +47,7 @@ export class LinuxJournald {
   private stamp: { realtimeUsec: number } | null = null;
   private streamCounter = 0;
   private flushed = false;
+  private kmsgSequence = 0;
 
   constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = DEFAULT_JOURNALD_SETTINGS) {
     this.bootId = hex128(`boot:${platform.hostname()}:${platform.machineId()}:${platform.bootUsec()}`);
@@ -124,9 +125,9 @@ export class LinuxJournald {
   }
 
   deliverKernel(message: KernelMessage): void {
-    const priority = message.priority & 0x3ff;
-    const items = [utf8(`_SOURCE_MONOTONIC_TIMESTAMP=${message.monotonicUsec}`), utf8('_TRANSPORT=kernel'), utf8(`PRIORITY=${priority & 7}`), utf8(`SYSLOG_FACILITY=${priority >> 3}`), utf8('SYSLOG_IDENTIFIER=kernel'), utf8(`MESSAGE=${message.message}`)];
-    const run = (): void => this.server.dispatch(items, null, null, priority, 0);
+    const escaped = Array.from(new TextEncoder().encode(message.message), byte => (byte >= 0x20 && byte < 0x7f && byte !== 0x5c ? String.fromCharCode(byte) : `\\x${byte.toString(16).padStart(2, '0')}`)).join('');
+    const record = utf8(`${message.priority & 0x3ff},${this.kmsgSequence++},${Math.floor(message.monotonicUsec)},-;${escaped}\n`);
+    const run = (): void => this.server.processKmsg(record);
     if (message.realtimeUsec !== undefined) this.withStamp(message.realtimeUsec, run);
     else run();
   }

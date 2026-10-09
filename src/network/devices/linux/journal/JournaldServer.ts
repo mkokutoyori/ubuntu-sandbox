@@ -91,6 +91,18 @@ const startsWith = (bytes: Uint8Array, prefix: string, at = 0): boolean => {
   return true;
 };
 
+function kmsgUnescape(text: string): Uint8Array {
+  const out: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const hex = text[i] === '\\' && text[i + 1] === 'x' ? /^[0-9a-fA-F]{2}/.exec(text.slice(i + 2, i + 4)) : null;
+    if (hex !== null) {
+      out.push(parseInt(hex[0], 16));
+      i += 3;
+    } else out.push(text.charCodeAt(i) & 0xff);
+  }
+  return Uint8Array.from(out);
+}
+
 export function syslogFixupFacility(priority: number): number {
   return (priority & LOG_FACMASK) === 0 ? (priority & LOG_PRIMASK) | LOG_USER : priority;
 }
@@ -574,6 +586,58 @@ export class JournaldServer {
     items.push(field('MESSAGE', body));
     if (storeRaw) items.push(field('SYSLOG_RAW', buf));
     this.dispatch(items, context, tvUsec, priority, 0);
+  }
+
+  processKmsg(record: Uint8Array): void {
+    const text = ascii(record);
+    const comma1 = text.indexOf(',');
+    if (comma1 < 0) return;
+    if (!/^\d+$/.test(text.slice(0, comma1))) return;
+    const priority = Number(text.slice(0, comma1));
+    if (priority > 999) return;
+    const comma2 = text.indexOf(',', comma1 + 1);
+    if (comma2 < 0) return;
+    const comma3 = text.indexOf(',', comma2 + 1);
+    if (comma3 < 0) return;
+    if (!/^\d+$/.test(text.slice(comma2 + 1, comma3))) return;
+    const monotonic = text.slice(comma2 + 1, comma3);
+    const semicolon = text.indexOf(';', comma3 + 1);
+    if (semicolon < 0) return;
+    const lineEnd = text.indexOf('\n', semicolon + 1);
+    if (lineEnd < 0) return;
+    const dictionary: Array<[string, string]> = [];
+    for (const line of text.slice(lineEnd + 1).split('\n')) {
+      if (!line.startsWith(' ')) continue;
+      const equals = line.indexOf('=');
+      if (equals < 0) continue;
+      dictionary.push([line.slice(1, equals), line.slice(equals + 1)]);
+    }
+    const message = kmsgUnescape(text.slice(semicolon + 1, lineEnd));
+    const facility = (priority & LOG_FACMASK) >> 3;
+    const items: Uint8Array[] = [];
+    for (const [name, value] of dictionary) {
+      if (name === 'SUBSYSTEM') items.push(utf8(`_KERNEL_SUBSYSTEM=${value}`));
+      else if (name === 'DEVICE') {
+        items.push(utf8(`_KERNEL_DEVICE=${value}`));
+        const plus = /^\+[^:]*:(.+)$/.exec(value);
+        if (plus !== null) items.push(utf8(`_UDEV_SYSNAME=${plus[1]}`));
+      }
+    }
+    items.push(utf8(`_SOURCE_MONOTONIC_TIMESTAMP=${monotonic}`), utf8('_TRANSPORT=kernel'), utf8(`PRIORITY=${priority & LOG_PRIMASK}`), utf8(`SYSLOG_FACILITY=${facility}`));
+    let body = message;
+    let pid: string | null = null;
+    if (facility === 0) items.push(utf8('SYSLOG_IDENTIFIER=kernel'));
+    else {
+      const identified = parseIdentifier(message, 0);
+      if (identified !== null) {
+        items.push(field('SYSLOG_IDENTIFIER', identified.identifier));
+        pid = identified.pid;
+        body = message.subarray(identified.at);
+      }
+    }
+    if (pid !== null) items.push(utf8(`SYSLOG_PID=${pid}`));
+    items.push(field('MESSAGE', body));
+    this.dispatch(items, null, null, priority, 0);
   }
 
   openStdoutStream(ucred: Ucred, label: Uint8Array | null): StdoutStream {
