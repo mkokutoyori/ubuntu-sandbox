@@ -31,6 +31,11 @@ int gettimeofday(struct timeval *tv, void *tz) {
 
 int clock_gettime(clockid_t id, struct timespec *ts) {
 	long now = env_long("LAST_NOW", 0), boot = env_long("LAST_BOOT", 0);
+	long offset = env_long("LAST_RT_OFFSET", 0);
+	if (!now && offset && (id == CLOCK_REALTIME || id == CLOCK_REALTIME_COARSE)) {
+		static int (*real_clock)(clockid_t, struct timespec *); if (!real_clock) real_clock = dlsym(RTLD_NEXT, "clock_gettime");
+		int rc = real_clock(id, ts); ts->tv_sec += offset; return rc;
+	}
 	if (now && id == CLOCK_REALTIME) { ts->tv_sec = now; ts->tv_nsec = 0; return 0; }
 	if (now && id == CLOCK_BOOTTIME) { ts->tv_sec = now - boot; ts->tv_nsec = 0; return 0; }
 	static int (*real)(clockid_t, struct timespec *); if (!real) real = dlsym(RTLD_NEXT, "clock_gettime");
@@ -148,4 +153,84 @@ uid_t getuid(void) {
 	const char *fake = getenv("LAST_UID");
 	if (!fake) { static uid_t (*real)(void); if (!real) real = dlsym(RTLD_NEXT, "getuid"); return real(); }
 	return (uid_t)atol(fake);
+}
+
+#include <fcntl.h>
+#include <stdarg.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+
+static int fake_file(const char *content) {
+	int fd = memfd_create("fake", 0);
+	if (fd < 0) return -1;
+	ssize_t ignored = write(fd, content, strlen(content));
+	if (!strchr(content, 10)) ignored = write(fd, "\n", 1);
+	(void)ignored;
+	lseek(fd, 0, SEEK_SET);
+	return fd;
+}
+
+int open(const char *path, int flags, ...) {
+	mode_t mode = 0;
+	if (flags & (O_CREAT | O_TMPFILE)) { va_list ap; va_start(ap, flags); mode = va_arg(ap, mode_t); va_end(ap); }
+	if (strcmp(path, "/proc/sys/kernel/random/boot_id") == 0 && getenv("LAST_BOOT_ID")) return fake_file(getenv("LAST_BOOT_ID"));
+	if (strcmp(path, "/etc/machine-id") == 0 && getenv("LAST_MACHINE_ID")) return fake_file(getenv("LAST_MACHINE_ID"));
+	static int (*real)(const char *, int, ...); if (!real) real = dlsym(RTLD_NEXT, "open");
+	return real(path, flags, mode);
+}
+int open64(const char *path, int flags, ...) {
+	mode_t mode = 0;
+	if (flags & (O_CREAT | O_TMPFILE)) { va_list ap; va_start(ap, flags); mode = va_arg(ap, mode_t); va_end(ap); }
+	if (strcmp(path, "/proc/sys/kernel/random/boot_id") == 0 && getenv("LAST_BOOT_ID")) return fake_file(getenv("LAST_BOOT_ID"));
+	if (strcmp(path, "/etc/machine-id") == 0 && getenv("LAST_MACHINE_ID")) return fake_file(getenv("LAST_MACHINE_ID"));
+	static int (*real)(const char *, int, ...); if (!real) real = dlsym(RTLD_NEXT, "open64");
+	return real(path, flags, mode);
+}
+int openat(int dirfd, const char *path, int flags, ...) {
+	mode_t mode = 0;
+	if (flags & (O_CREAT | O_TMPFILE)) { va_list ap; va_start(ap, flags); mode = va_arg(ap, mode_t); va_end(ap); }
+	if (strcmp(path, "/proc/sys/kernel/random/boot_id") == 0 && getenv("LAST_BOOT_ID")) return fake_file(getenv("LAST_BOOT_ID"));
+	if (strcmp(path, "/etc/machine-id") == 0 && getenv("LAST_MACHINE_ID")) return fake_file(getenv("LAST_MACHINE_ID"));
+	static int (*real)(int, const char *, int, ...); if (!real) real = dlsym(RTLD_NEXT, "openat");
+	return real(dirfd, path, flags, mode);
+}
+
+static const char *fake_path_content(const char *path) {
+	if (strcmp(path, "/proc/sys/kernel/random/boot_id") == 0 && getenv("LAST_BOOT_ID")) return getenv("LAST_BOOT_ID");
+	if (strcmp(path, "/etc/machine-id") == 0 && getenv("LAST_MACHINE_ID")) return getenv("LAST_MACHINE_ID");
+	return NULL;
+}
+int __open_2(const char *path, int flags) {
+	const char *c = fake_path_content(path); if (c) return fake_file(c);
+	static int (*real)(const char *, int); if (!real) real = dlsym(RTLD_NEXT, "__open_2");
+	return real(path, flags);
+}
+int __open64_2(const char *path, int flags) {
+	const char *c = fake_path_content(path); if (c) return fake_file(c);
+	static int (*real)(const char *, int); if (!real) real = dlsym(RTLD_NEXT, "__open64_2");
+	return real(path, flags);
+}
+int __openat_2(int dirfd, const char *path, int flags) {
+	const char *c = fake_path_content(path); if (c) return fake_file(c);
+	static int (*real)(int, const char *, int); if (!real) real = dlsym(RTLD_NEXT, "__openat_2");
+	return real(dirfd, path, flags);
+}
+int __openat64_2(int dirfd, const char *path, int flags) {
+	const char *c = fake_path_content(path); if (c) return fake_file(c);
+	static int (*real)(int, const char *, int); if (!real) real = dlsym(RTLD_NEXT, "__openat64_2");
+	return real(dirfd, path, flags);
+}
+
+int openat64(int dirfd, const char *path, int flags, ...) {
+	mode_t mode = 0;
+	if (flags & (O_CREAT | O_TMPFILE)) { va_list ap; va_start(ap, flags); mode = va_arg(ap, mode_t); va_end(ap); }
+	const char *c = fake_path_content(path); if (c) return fake_file(c);
+	static int (*real)(int, const char *, int, ...); if (!real) real = dlsym(RTLD_NEXT, "openat64");
+	return real(dirfd, path, flags, mode);
+}
+FILE *fopen64(const char *path, const char *mode) {
+	const char *c = fake_path_content(path);
+	if (c) { char *text = strdup(c); return fmemopen(text, strlen(text), "r"); }
+	static FILE *(*real)(const char *, const char *); if (!real) real = dlsym(RTLD_NEXT, "fopen64");
+	return real(path, mode);
 }
