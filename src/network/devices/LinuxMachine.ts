@@ -47,6 +47,7 @@ import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
 import { findEquipmentByIp } from '@/shell/hostResolution';
 import { LinuxRsyslogService } from './linux/syslog/LinuxRsyslogService';
+import { SyslogStreamFraming } from './linux/syslog/SyslogStreamFraming';
 import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
@@ -434,6 +435,14 @@ export abstract class LinuxMachine extends EndHost
     // à travers les câbles depuis celle-ci (docs/PRD-Pannes.md §F5.7).
     this.executor.mountServerReachable = (host: string) =>
       findHostByAddress(host, this.executor.vfs, this) !== null;
+    this.executor.streamConnector = (destination, port) => {
+      const socket = this.tcpv2.connect(destination, port);
+      const stream = socket as unknown as TcpStream | null;
+      return socket === null || socket.state !== 'established' || stream === null ? null : {
+        write: (bytes) => stream.write(String.fromCharCode(...bytes)),
+        close: () => stream.close(),
+      };
+    };
     this.executor.datagramSender = (destination, port, payload) => this.sendUdpDatagram({
       destination: new IPAddress(destination),
       destinationPort: port,
@@ -1556,6 +1565,21 @@ export abstract class LinuxMachine extends EndHost
         }, 'rsyslogd');
         return () => this.udpClose(port);
       },
+      ecouterTcp: (port, onMessage) => {
+        const stack = this.getTcpStack();
+        try {
+          stack.listen(port, {
+            identity: { processName: 'rsyslogd' },
+            onAccept: (socket) => {
+              const framing = new SyslogStreamFraming((message) => onMessage(socket.remoteIp, message));
+              (socket as unknown as TcpStream).onData((data) => framing.push(data));
+            },
+          });
+        } catch {
+          return null;
+        }
+        return () => stack.closeListener(port);
+      },
       hostname: () => this.getHostname(),
       maintenant: () => this.getSystemClockMs(),
       fuseau: () => this.executor.identity.timezone,
@@ -1609,10 +1633,9 @@ export abstract class LinuxMachine extends EndHost
   private publierPortsRsyslog(): void {
     const svc = this.rsyslogService;
     if (!svc) return;
-    const ports = svc.listeningPorts();
     this.executor.serviceMgr.registerServiceListener('rsyslog', {
       processName: 'rsyslogd',
-      sockets: ports.map((port) => ({ port, protocol: 'udp' as const })),
+      sockets: svc.listeningSockets(),
     });
   }
 

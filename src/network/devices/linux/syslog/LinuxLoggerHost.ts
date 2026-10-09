@@ -5,6 +5,7 @@ import { kernelHostname } from '../KernelHostname';
 import type { LoggerHost, LoggerOpen } from './LoggerTool';
 
 const UDP = 2;
+const TCP = 4;
 const JOURNAL_SOCKETS = new Set(['/dev/log', '/run/systemd/journal/dev-log']);
 const SYSLOG_PORT = 514;
 const NOT_FOUND = { error: 'No such file or directory' } as const;
@@ -88,6 +89,11 @@ export function loggerHost(executor: LinuxCommandExecutor, stdinText: string | u
       const portNumber = portName === 'syslog' ? SYSLOG_PORT : /^\d+$/.test(portName) ? Number(portName) : null;
       const address = resolveAddress(server, vfs.readFile('/etc/hosts') ?? '');
       if (address === null || portNumber === null || portNumber > 65535) return { fatal: `failed to resolve name ${server} port ${portName}: ${address === null ? 'Name or service not known' : 'Servname not supported for ai_socktype'}` };
+      if (!(types & UDP) && types & TCP) {
+        const stream = executor.streamConnector?.(address, portNumber) ?? null;
+        if (stream === null) return { error: 'Connection refused' };
+        return { type: TCP, connection: { send: (bytes) => { stream.write(bytes); return null; }, close: () => stream.close() } };
+      }
       if (!(types & UDP) || executor.datagramSender === null) return { error: 'Connection refused' };
       const sender = executor.datagramSender;
       return {

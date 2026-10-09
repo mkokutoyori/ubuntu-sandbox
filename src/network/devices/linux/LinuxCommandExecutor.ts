@@ -642,6 +642,8 @@ export class LinuxCommandExecutor {
   readonly functions: Map<string, import('@/bash/parser/ASTNode').Command> = new Map();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
+  streamConnector: ((destination: string, port: number) => { write(bytes: Uint8Array): void; close(): void } | null) | null = null;
+
   datagramSender: ((destination: string, port: number, payload: Uint8Array) => boolean) | null = null;
 
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;

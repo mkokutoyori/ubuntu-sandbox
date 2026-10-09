@@ -1,8 +1,8 @@
 /*
  * logger -n SERVER delivers over the simulated network.  The datagram built by the util-linux 2.39.3 port leaves through
  * the host's UDP egress (ARP, switch, cable) and reaches the collector's rsyslog receiver, which files it by facility.
- * Measured before the port was wired (git stash push -u -- src/network): 3 of the 5 cases fall - the collector receives
- * nothing, the frame count does not move and the unresolvable-name refusal is not worded like the tool.  The two that pass
+ * Measured before the port was wired (git stash push -u -- src/network): 4 of the 7 cases fall - the collector receives
+ * nothing, TCP is refused, the frame count does not move and the unresolvable-name refusal is not worded like the tool.  The three that pass
  * either way are WITNESSES: the local-socket delivery, and the closed receiver (a collector whose imudp is not enabled
  * files nothing, which proves the positive case above is the wire and not a shared object).
  * The frame measure is a DIFFERENCE: the same command with and without --no-act, so the ARP exchange that precedes the
@@ -61,6 +61,20 @@ describe('logger -n over the wire', () => {
   it('a name that does not resolve is refused in the tool\'s words', async () => {
     const { sender } = await lab();
     expect(await sender.executeCommand('logger -n nosuch.invalid -P 514 hi')).toContain('failed to resolve name nosuch.invalid port 514: Name or service not known');
+  }, 30_000);
+
+  it('logger -T delivers over a real TCP connection to an imtcp collector', async () => {
+    const { sender, collector } = await lab();
+    await collector.executeCommand("printf 'module(load=\"imtcp\")\\ninput(type=\"imtcp\" port=\"514\")\\n' >> /etc/rsyslog.conf");
+    await collector.executeCommand('systemctl restart rsyslog');
+    expect(await collector.executeCommand('ss -tlnp | grep 514')).toContain('514');
+    expect(await sender.executeCommand('logger -T -n 192.168.100.50 -t tcpprobe "over tcp"')).toBe('');
+    expect(await collector.executeCommand('grep "over tcp" /var/log/syslog')).toContain('tcpprobe');
+  }, 30_000);
+
+  it('logger -T to a port nobody listens on fails like the real tool', async () => {
+    const { sender } = await lab();
+    expect(await sender.executeCommand('logger -T -n 192.168.100.50 -P 9 hi')).toContain('failed to connect to 192.168.100.50 port 9');
   }, 30_000);
 
   it('WITNESS -- local delivery still reaches the journal', async () => {
