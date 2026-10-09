@@ -25,7 +25,7 @@ time_t time(time_t *t) {
 int gettimeofday(struct timeval *tv, void *tz) {
 	long now = env_long("LAST_NOW", 0);
 	if (!now) { static int (*real)(struct timeval *, void *); if (!real) real = dlsym(RTLD_NEXT, "gettimeofday"); return real(tv, tz); }
-	tv->tv_sec = now; tv->tv_usec = 0;
+	tv->tv_sec = now; tv->tv_usec = env_long("LAST_USEC", 0);
 	return 0;
 }
 
@@ -129,4 +129,23 @@ struct passwd *getpwuid(uid_t uid) {
 		if (!p) return NULL;
 		if (p->pw_uid == uid) return p;
 	}
+}
+
+#include <sys/types.h>
+int gethostname(char *name, size_t len) {
+	const char *fake = getenv("LAST_HOSTNAME");
+	if (!fake) { static int (*real)(char *, size_t); if (!real) real = dlsym(RTLD_NEXT, "gethostname"); return real(name, len); }
+	if (strlen(fake) >= len) { errno = ENAMETOOLONG; return -1; }
+	strcpy(name, fake);
+	return 0;
+}
+pid_t getpid(void) {
+	long fake = env_long("LAST_PID", 0);
+	if (!fake) { static pid_t (*real)(void); if (!real) real = dlsym(RTLD_NEXT, "getpid"); return real(); }
+	return (pid_t)fake;
+}
+uid_t getuid(void) {
+	const char *fake = getenv("LAST_UID");
+	if (!fake) { static uid_t (*real)(void); if (!real) real = dlsym(RTLD_NEXT, "getuid"); return real(); }
+	return (uid_t)atol(fake);
 }
