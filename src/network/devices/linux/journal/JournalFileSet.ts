@@ -65,10 +65,20 @@ export class JournalFile {
   private readonly mainChain = new EntryChain();
   private entryArrays = 0;
 
-  constructor(readonly identity: FileIdentity) {}
+  constructor(public identity: FileIdentity) {}
 
   get path(): string {
     return this.identity.path;
+  }
+
+  archive(): void {
+    this.state = 'ARCHIVED';
+    const first = this.records[0];
+    const directory = this.identity.path.slice(0, this.identity.path.lastIndexOf('/'));
+    const hex = (n: number): string => n.toString(16).padStart(16, '0');
+    const head = first === undefined ? hex(0) : hex(first.seqnum);
+    const realtime = first === undefined ? hex(0) : hex(first.realtimeUsec);
+    this.identity = { ...this.identity, path: `${directory}/system@${this.identity.seqnumId}-${head}-${realtime}.journal` };
   }
 
   registerOrphans(items: readonly Uint8Array[]): void {
@@ -189,10 +199,14 @@ export class JournalFileSet {
   }
 
   rotate(): JournalFile {
-    this.current.state = 'ARCHIVED';
+    this.current.archive();
     const file = new JournalFile(this.newFile(this.files.length));
     this.files.push(file);
     return file;
+  }
+
+  remove(predicate: (file: JournalFile) => boolean): void {
+    for (let i = this.files.length - 1; i >= 0; i--) if (this.files[i] !== this.current && predicate(this.files[i])) this.files.splice(i, 1);
   }
 
   records(): JournalRecord[] {

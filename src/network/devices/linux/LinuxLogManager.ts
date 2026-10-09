@@ -8,6 +8,10 @@ import { simulationNowMs } from '../../core/SystemClock';
 import { kernelHostname } from './KernelHostname';
 import { VirtualFileSystem } from './VirtualFileSystem';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
+import { LinuxJournald } from './journal/LinuxJournald';
+import type { ProcessFacts } from './journal/JournaldServer';
+import type { JournalRecord } from './journal/JournalRecord';
+import { fieldValues } from './journal/JournalRecord';
 import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type KernelBootFacts } from './boot/KernelBootLog';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
@@ -15,16 +19,11 @@ const PRIORITY_NAMES: Record<string, number> = {
   emerg: 0, emergency: 0, panic: 0, alert: 1, crit: 2, err: 3, error: 3,
   warning: 4, warn: 4, notice: 5, info: 6, debug: 7,
 };
-const PRIORITY_LABELS: Record<number, string> = {
-  0: 'emerg', 1: 'alert', 2: 'crit', 3: 'err',
-  4: 'warning', 5: 'notice', 6: 'info', 7: 'debug',
-};
-
 // ── Facility names ───────────────────────────────────────────────
 const FACILITY_NAMES: Record<string, number> = {
   kern: 0, user: 1, mail: 2, daemon: 3,
   auth: 4, syslog: 5, lpr: 6, news: 7,
-  cron: 8, authpriv: 10, ftp: 11,
+  uucp: 8, cron: 9, authpriv: 10, ftp: 11,
   local0: 16, local1: 17, local2: 18,
   local3: 19, local4: 20, local5: 21, local6: 22, local7: 23,
 };
@@ -50,30 +49,8 @@ interface DmesgEntry {
   message: string;
 }
 
-const JOURNALCTL_HELP = `journalctl [OPTIONS...] [MATCHES...]
-
-Query the journal.
-
-Options:
-  -n --lines=INTEGER   Number of journal entries to show
-  -r --reverse         Show the newest entries first
-  -u --unit=UNIT       Show logs from the specified unit
-  -p --priority=RANGE  Show entries with the specified priority
-  -k --dmesg           Show kernel message log from the current boot
-  -o --output=STRING   Change journal output mode
-  -b --boot[=ID]       Show data only from the specified boot
-  -N --fields          List all field names currently used
-  --since=DATE         Show entries not older than the specified date
-  --until=DATE         Show entries not newer than the specified date
-     --no-pager        Do not pipe output into a pager
-  -h --help            Show this help text`;
-
 export function fmtSyslogTimestamp(d: Date, zone?: string): string {
   return formatLocalTime('%b %e %H:%M:%S', d.getTime(), zone);
-}
-
-function fmtIsoTimestamp(d: Date, zone?: string): string {
-  return formatLocalTime('%Y-%m-%dT%H:%M:%S%z', d.getTime(), zone);
 }
 
 export function fmtHumanDate(d: Date, zone?: string): string {
@@ -81,12 +58,13 @@ export function fmtHumanDate(d: Date, zone?: string): string {
 }
 
 export class LinuxLogManager {
-  private journal: JournalEntry[] = [];
+  readonly journald: LinuxJournald;
+  private readonly syntheticFacts = new Map<number, ProcessFacts>();
+  private processProbe: ((pid: number) => ProcessFacts | null) | null = null;
+  private seeding = true;
   private dmesgBuffer: DmesgEntry[] = [];
   private bootTime: Date;
-  private bootId: string;
   private nextPid = 100;
-  private monotonicCounter = 0;
   /**
    * Whether the syslog daemon (`rsyslog`) is running. When it is stopped
    * the on-disk `/var/log/*` files stop receiving new lines — exactly as on
@@ -94,7 +72,6 @@ export class LinuxLogManager {
    * keeps recording, so `journalctl` still works.
    */
   private syslogDaemonActive = true;
-  private journaldActive = true;
   private busUnsub: Unsubscribe[] = [];
   private attachedBus: IEventBus | null = null;
   private attachedDeviceId: string | null = null;
@@ -119,12 +96,47 @@ export class LinuxLogManager {
   private zoneName: () => string | undefined = () => undefined;
   setZone(zone: () => string | undefined): void { this.zoneName = zone; }
 
-  constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts) {
+  registerProcessFacts(pid: number, facts: ProcessFacts): void { this.syntheticFacts.set(pid, facts); }
+
+  syncJournalFiles(): void {
+    const directory = this.journald.directory;
+    this.vfs.mkdirp(directory, 0o2755, 0, 4);
+    const wanted = new Set(this.journald.fileInfos().map((info) => info.path));
+    for (const entry of this.vfs.listDirectory(directory) ?? []) {
+      const path = `${directory}/${entry.name}`;
+      if (entry.name.endsWith('.journal') && !wanted.has(path)) this.vfs.deleteFile(path);
+    }
+    for (const path of wanted) if (!this.vfs.exists(path)) this.vfs.writeFile(path, '', 0, 4, 0o027, false, 8 * 1024 * 1024);
+  }
+
+  private pendingCgroup: string | null = null;
+
+  private probeFacts(pid: number): ProcessFacts | null {
+    const facts = this.processProbe?.(pid) ?? this.syntheticFacts.get(pid) ?? null;
+    return facts !== null && this.pendingCgroup !== null ? { ...facts, cgroup: this.pendingCgroup } : facts;
+  }
+
+  setProcessProbe(probe: (pid: number) => ProcessFacts | null): void { this.processProbe = probe; }
+
+  constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts, private readonly machineId: () => string = () => '0'.repeat(32)) {
     this.bootFacts = facts ?? defaultKernelBootFacts();
     this.kernelRelease = this.bootFacts.kernelRelease;
     this.bootTime = new Date(simulationNowMs() - 30_000);
-    this.bootId = this.generateBootId();
+    this.vfs.mkdirp('/var/log/journal', 0o2755, 0, 4);
+    this.journald = new LinuxJournald({
+      nowUsec: () => this.nowMs() * 1000,
+      bootUsec: () => this.bootTime.getTime() * 1000,
+      machineId: () => this.machineId(),
+      hostname: () => this.currentHostname(),
+      probe: (pid) => this.probeFacts(pid),
+      journaldPid: () => null,
+      persistentStorage: () => this.vfs.resolveInode('/var/log/journal') !== null,
+      diskFreeBytes: () => 20 * 1024 ** 3,
+    });
+    this.journald.onRecord((record) => this.onJournalRecord(record));
     this.populateBootMessages();
+    this.seeding = false;
+    this.syncJournalFiles();
   }
 
   /** La ligne de commande du noyau, celle que `/proc/cmdline` rend. */
@@ -142,111 +154,20 @@ export class LinuxLogManager {
     this.attachedBus = bus;
     if (deviceId) this.attachedDeviceId = deviceId;
     const isSyslog = (p: { name: string }): boolean =>
-      p.name === 'rsyslog' || p.name === 'syslog' || p.name === 'systemd-journald';
+      p.name === 'rsyslog' || p.name === 'syslog';
     this.busUnsub = [
       bus.subscribeWhere('linux.service.stopped', isSyslog, (e) => {
-        if (e.payload.name !== 'systemd-journald') this.syslogDaemonActive = false;
-        if (e.payload.name === 'systemd-journald') this.journaldActive = false;
+        this.syslogDaemonActive = false;
       }),
       bus.subscribeWhere('linux.service.started', isSyslog, (e) => {
-        if (e.payload.name !== 'systemd-journald') {
-          this.syslogDaemonActive = true;
-          // A starting daemon opens its files by name (§F7.11).
-          this.reopenLogFiles();
-        }
-        if (e.payload.name === 'systemd-journald') this.journaldActive = true;
+        this.syslogDaemonActive = true;
+        this.reopenLogFiles();
       }),
       bus.subscribeWhere('linux.service.restarted', isSyslog, () => {
         this.syslogDaemonActive = true;
-        this.journaldActive = true;
         this.reopenLogFiles();
       }),
     ];
-  }
-
-  // ── logger command ─────────────────────────────────────────────
-  /**
-   * La taille maximale d'un message `logger`, celle de la RFC 3164 que
-   * `logger(1)` applique par defaut. Elle valait 2048 ici, un chiffre
-   * qu'aucune machine ne porte.
-   */
-  private static readonly DEFAULT_MESSAGE_SIZE = 1024;
-
-  executeLogger(args: string[], currentUser: string): string {
-    const DEFAULT_MESSAGE_SIZE = LinuxLogManager.DEFAULT_MESSAGE_SIZE;
-    const split = (line: string, size: number): string[] => {
-      const out: string[] = [];
-      for (let at = 0; at < line.length; at += size) out.push(line.slice(at, at + size));
-      return out.length > 0 ? out : [''];
-    };
-    let tag = currentUser;
-    let priority = 'user.notice';
-    let includePid = false;
-    let toStderr = false;
-    let expandNewlines = false;
-    let fromFile: string | null = null;
-    let sizeArg: string | null = null;
-    const msgParts: string[] = [];
-
-    let i = 0;
-    while (i < args.length) {
-      const a = args[i];
-      if (a === '-t' || a === '--tag') { tag = args[++i] ?? tag; i++; }
-      else if (a === '-p' || a === '--priority') { priority = args[++i] ?? priority; i++; }
-      else if (a === '-i' || a === '--id') { includePid = true; i++; }
-      else if (a === '-s' || a === '--stderr') { toStderr = true; i++; }
-      else if (a === '-e') { expandNewlines = true; i++; }
-      else if (a === '-f' || a === '--file') { fromFile = args[++i] ?? null; i++; }
-      else if (a === '-S' || a === '--size') { sizeArg = args[++i] ?? ''; i++; }
-      else { msgParts.push(a); i++; }
-    }
-
-    if (sizeArg !== null && !/^\d+$/.test(sizeArg)) {
-      return `logger: failed to parse message size: '${sizeArg}': Invalid argument`;
-    }
-    const size = sizeArg === null ? DEFAULT_MESSAGE_SIZE : Number(sizeArg);
-
-    const parsed = this.parsePriority(priority);
-    if (!parsed) return `logger: unknown priority name: ${priority}`;
-
-    let messages: string[];
-    if (fromFile !== null) {
-      const content = this.vfs.readFile(fromFile);
-      if (content === null) return `logger: ${fromFile}: No such file or directory`;
-      messages = content.split('\n').filter((l) => l.length > 0).flatMap((l) => split(l, size));
-    } else {
-      if (args.length === 0) return 'Usage: logger [options] [<message>]';
-      let msg = msgParts.join(' ');
-      if (expandNewlines) msg = msg.replace(/\\n/g, '\n');
-      // Un message passe en ARGUMENT est coupe et le reste jete ; un
-      // FICHIER est decoupe en messages successifs. Les deux formes sont
-      // relevees sur util-linux, la page de manuel annoncant par
-      // ailleurs une limite « en-tete comprise » que le binaire
-      // n'applique pas.
-      messages = [msg.slice(0, size)];
-    }
-
-    const safeTag = tag.length > 255 ? tag.slice(0, 255) : tag;
-    const pid = this.nextPid++;
-    const echoed: string[] = [];
-    for (const message of messages) {
-      this.addEntry({
-        priority: parsed.priority,
-        facility: parsed.facility,
-        unit: '',
-        tag: safeTag,
-        message,
-        pid,
-        displayPid: includePid,
-        hostname: this.currentHostname(),
-      });
-      if (toStderr) {
-        const last = this.journal[this.journal.length - 1];
-        echoed.push(this.formatSyslogLine(last));
-      }
-    }
-
-    return echoed.join('\n');
   }
 
   /**
@@ -341,157 +262,8 @@ export class LinuxLogManager {
       message,
       pid: 1,
       hostname: this.currentHostname(),
+      ...(unit === 'systemd' ? {} : { unitField: unit.includes('.') ? unit : `${unit}.service` }),
     });
-  }
-
-  // ── journalctl command ─────────────────────────────────────────
-  executeJournalctl(args: string[]): string {
-    for (const arg of args) {
-      if (arg === '--version') return 'systemd 249 (249.11-0ubuntu3)';
-      if (arg === '-h' || arg === '--help') return JOURNALCTL_HELP;
-      if (arg === '-N' || arg === '--fields') {
-        return ['MESSAGE', 'PRIORITY', 'SYSLOG_FACILITY', 'SYSLOG_IDENTIFIER',
-          '_PID', '_UID', '_GID', '_HOSTNAME', '_TRANSPORT', '_SYSTEMD_UNIT',
-          '__REALTIME_TIMESTAMP', '__MONOTONIC_TIMESTAMP'].join('\n');
-      }
-      if (arg === '--disk-usage') return this.cmdDiskUsage();
-      if (arg === '--list-boots') return this.cmdListBoots();
-      if (arg === '--rotate') return 'Rotating journal files...';
-      if (arg === '--flush') return 'Flushing journal to persistent storage...';
-      if (arg.startsWith('--vacuum-time')) return 'Vacuuming done, freed 0B of archived journals.';
-      if (arg.startsWith('--vacuum-size')) return 'Vacuuming done, freed 0B of archived journals.';
-    }
-
-    if (!this.journaldActive) return 'No journal files were found.';
-
-    let n = -1;
-    let reverse = false;
-    let quiet = false;
-    let outputFormat = 'short';
-    let unitFilter = '';
-    let priorityFilter = -1;
-    let pidFilter = -1;
-    let outputFields: string[] = [];
-    let kernelOnly = false;
-    let sinceMs = -1;
-    let untilMs = -1;
-
-    let i = 0;
-    while (i < args.length) {
-      switch (args[i]) {
-        case '-n':
-        case '--lines': {
-          const v = args[++i] ?? '';
-          if (!/^\d+$/.test(v)) return `journalctl: invalid number of lines: "${v}".`;
-          n = parseInt(v, 10);
-          i++; break;
-        }
-        case '-r':
-        case '--reverse':
-          reverse = true; i++; break;
-        case '-q':
-        case '--quiet':
-          quiet = true; i++; break;
-        case '-k':
-        case '--dmesg':
-          kernelOnly = true; i++; break;
-        case '-x': case '--catalog':
-        case '-f': case '--follow':
-          i++; break;
-        case '-b':
-        case '--boot': {
-          const nxt = args[i + 1];
-          if (nxt && /^-?\d+$/.test(nxt)) {
-            if (parseInt(nxt, 10) < 0) return `Failed to look up boot ${nxt}: no such boot ID`;
-            i++;
-          }
-          i++; break;
-        }
-        case '-D': case '--directory': {
-          const dir = args[++i] ?? '';
-          if (dir.startsWith('/sys') || dir.startsWith('/proc')) return `Failed to open directory ${dir}: error`;
-          i++; break;
-        }
-        case '--since': case '-S':
-          sinceMs = this.parseJournalTime(args[++i] ?? ''); i++; break;
-        case '--until': case '-U':
-          untilMs = this.parseJournalTime(args[++i] ?? ''); i++; break;
-        case '--no-pager':
-          i++; break;  // no-op
-        case '-o':
-        case '--output':
-          outputFormat = args[++i] || 'short';
-          i++; break;
-        case '-u':
-        case '--unit': {
-          unitFilter = args[++i] || '';
-          i++; break;
-        }
-        case '-p':
-        case '--priority': {
-          const pval = args[++i] || '';
-          const pnum = this.resolvePriority(pval);
-          if (pnum === -1) return `Invalid priority: ${pval}`;
-          priorityFilter = pnum;
-          i++; break;
-        }
-        default: {
-          if (args[i].startsWith('--facility')) { i++; break; }
-          if (args[i].startsWith('_PID=')) pidFilter = parseInt(args[i].slice(5));
-          if (args[i].startsWith('--output-fields=')) outputFields = args[i].slice(16).split(',');
-          i++; break;
-        }
-      }
-    }
-
-    // Validate output format
-    const validFormats = ['short', 'short-iso', 'json', 'json-pretty', 'cat', 'verbose'];
-    if (!validFormats.includes(outputFormat)) {
-      return `Invalid argument: unknown output format "${outputFormat}".`;
-    }
-
-    // Filter entries
-    let entries = this.filterEntries(unitFilter, priorityFilter, pidFilter);
-    if (kernelOnly) entries = entries.filter((e) => e.facility === FACILITY_NAMES.kern);
-    if (sinceMs >= 0) entries = entries.filter((e) => e.timestamp.getTime() >= sinceMs);
-    if (untilMs >= 0) entries = entries.filter((e) => e.timestamp.getTime() <= untilMs);
-
-    // Hide entries with timestamps in the future. The boot-time canned
-    // messages (kernel + systemd + sshd "Server listening on …") are
-    // staggered along synthetic offsets from bootTime — when the host
-    // is queried within the first few seconds, some offsets exceed real
-    // wall-clock time and would surface as "events that haven't
-    // happened yet" relative to `date(1)`. Real journalctl only ever
-    // returns entries it has already received.
-    const nowMs = this.nowMs();
-    entries = entries.filter((e) => e.timestamp.getTime() <= nowMs);
-
-    if (entries.length === 0) return '-- No entries --';
-
-    // Apply -n
-    if (n >= 0) {
-      entries = entries.slice(-n);
-    }
-
-    // Apply -r
-    if (reverse) {
-      entries = [...entries].reverse();
-    }
-
-    // Format output
-    const lines = entries.map(e => this.formatEntry(e, outputFormat, outputFields));
-
-    // Add header unless quiet, reversed, or non-short format
-    if (!quiet && !reverse && (outputFormat === 'short' || outputFormat === 'short-iso')) {
-      const first = this.journal[0];
-      const last = this.journal[this.journal.length - 1];
-      if (first && last) {
-        const header = `-- Logs begin at ${fmtHumanDate(first.timestamp, this.zoneName())}, end at ${fmtHumanDate(last.timestamp, this.zoneName())}. --`;
-        return header + '\n' + lines.join('\n');
-      }
-    }
-
-    return lines.join('\n');
   }
 
   // ── dmesg command ──────────────────────────────────────────────
@@ -616,54 +388,110 @@ export class LinuxLogManager {
   private addEntry(opts: {
     priority: number; facility: number; unit: string;
     tag: string; message: string; pid: number; hostname: string;
-    displayPid?: boolean;
-  }): void {
-    this.monotonicCounter += 1000;
-    const entry: JournalEntry = {
-      timestamp: new Date(this.nowMs()),
-      monotonicUsec: this.monotonicCounter,
-      priority: opts.priority,
-      facility: opts.facility,
-      unit: opts.unit,
-      tag: opts.tag,
-      message: opts.message,
-      pid: opts.pid,
-      displayPid: opts.displayPid,
-      hostname: this.currentHostname(),
+    displayPid?: boolean; unitField?: string;
+  }, atMs: number = this.nowMs()): void {
+    const run = (): void => {
+      if (opts.facility === FACILITY_NAMES.kern) {
+        this.journald.deliverKernel({ priority: (opts.facility << 3) | opts.priority, message: opts.message, monotonicUsec: Math.max(0, atMs * 1000 - this.bootTime.getTime() * 1000), realtimeUsec: atMs * 1000 });
+        return;
+      }
+      if (opts.unitField !== undefined) {
+        this.deliverUnitMessage(opts, opts.unitField, atMs);
+        return;
+      }
+      const pidPart = opts.pid > 0 && opts.displayPid !== false ? `[${opts.pid}]` : '';
+      const datagram = `<${(opts.facility << 3) | opts.priority}>${fmtSyslogTimestamp(new Date(atMs), this.zoneName())} ${opts.tag}${pidPart}: ${opts.message}`;
+      const known = opts.pid > 0 && this.probeFacts(opts.pid) !== null;
+      if (opts.pid > 0 && !known) this.syntheticFacts.set(opts.pid, this.factsFor(opts.pid, opts.tag, opts.unit));
+      this.pendingCgroup = opts.unit !== '' || opts.pid === 1 ? this.factsFor(opts.pid, opts.tag, opts.unit).cgroup : null;
+      try {
+        this.journald.deliverSyslog(new TextEncoder().encode(datagram), opts.pid > 0 ? { pid: opts.pid, uid: 0, gid: 0 } : null, null, atMs * 1000);
+      } finally {
+        this.pendingCgroup = null;
+      }
     };
-    // journald keeps the in-memory journal regardless of rsyslog's state.
-    this.journal.push(entry);
-    // Kernel-facility messages also land in the kernel ring buffer (dmesg).
-    if (opts.facility === FACILITY_NAMES.kern) {
+    this.journald.withStamp(atMs * 1000, run);
+  }
+
+  private deliverUnitMessage(opts: { priority: number; facility: number; tag: string; message: string; pid: number }, unit: string, atMs: number): void {
+    const lines = [`PRIORITY=${opts.priority}`, `SYSLOG_FACILITY=${opts.facility}`, `SYSLOG_IDENTIFIER=${opts.tag}`, `UNIT=${unit}`, `MESSAGE=${opts.message}`];
+    const known = this.probeFacts(opts.pid) !== null;
+    if (!known) this.syntheticFacts.set(opts.pid, this.factsFor(opts.pid, opts.tag, ''));
+    this.pendingCgroup = opts.pid === 1 ? '/init.scope' : null;
+    try {
+      this.journald.deliverNative(new TextEncoder().encode(`${lines.join('\n')}\n`), { pid: opts.pid, uid: 0, gid: 0 }, null, atMs * 1000);
+    } finally {
+      this.pendingCgroup = null;
+    }
+  }
+
+  private factsFor(pid: number, tag: string, unit: string): ProcessFacts {
+    const service = unit.replace(/\.service$/, '');
+    let cgroup: string | null = null;
+    if (pid === 1) cgroup = '/init.scope';
+    else if (service !== '') cgroup = `/system.slice/${service}.service`;
+    return { uid: 0, gid: 0, comm: tag.slice(0, 15), exe: null, cmdline: null, capeff: null, label: null, auditId: null, loginUid: null, cgroup, invocationId: null };
+  }
+
+  private entryOf(record: JournalRecord): JournalEntry {
+    const text = (name: string): string | null => {
+      const [value] = fieldValues(record, name);
+      return value === undefined ? null : new TextDecoder().decode(value);
+    };
+    const number = (name: string, fallback: number): number => {
+      const value = text(name);
+      return value !== null && /^\d+$/.test(value) ? Number(value) : fallback;
+    };
+    const syslogPid = text('SYSLOG_PID');
+    return {
+      timestamp: new Date(Math.floor(record.realtimeUsec / 1000)),
+      monotonicUsec: record.monotonicUsec,
+      priority: number('PRIORITY', 6),
+      facility: number('SYSLOG_FACILITY', 1),
+      unit: text('_SYSTEMD_UNIT') ?? '',
+      tag: text('SYSLOG_IDENTIFIER') ?? text('_COMM') ?? '',
+      message: text('MESSAGE') ?? '',
+      pid: syslogPid !== null ? number('SYSLOG_PID', 0) : 0,
+      displayPid: syslogPid !== null,
+      hostname: text('_HOSTNAME') ?? this.currentHostname(),
+    };
+  }
+
+  private journalEntries(): JournalEntry[] {
+    return this.journald.records().map((record) => this.entryOf(record));
+  }
+
+  private onJournalRecord(record: JournalRecord): void {
+    if (this.seeding) return;
+    const entry = this.entryOf(record);
+    if (entry.facility === FACILITY_NAMES.kern) {
       const dEntry: DmesgEntry = {
         offsetSec: (entry.timestamp.getTime() - this.bootTime.getTime()) / 1000,
-        level: opts.priority,
-        message: opts.message,
+        level: entry.priority,
+        message: entry.message,
       };
       this.dmesgBuffer.push(dEntry);
       this.emitToDmesgFollowers(dEntry);
     }
     this.emitToFollowers(entry);
 
-    // The on-disk /var/log/* files are written by rsyslog: when that daemon
-    // is stopped they freeze, but `journalctl` keeps working.
     if (!this.syslogDaemonActive) return;
 
-    const facilityName = this.facilityName(opts.facility);
+    const facilityName = this.facilityName(entry.facility);
     const logLine = this.formatSyslogLine(entry);
 
-    for (const file of this.routeLogFiles(facilityName, opts.priority)) {
+    for (const file of this.routeLogFiles(facilityName, entry.priority)) {
       this.appendToLogFile(file, logLine);
     }
 
     if (this.attachedBus && this.attachedDeviceId) {
-      const sevName = this.SEVERITY_NAME[opts.priority] ?? 'informational';
+      const sevName = this.SEVERITY_NAME[entry.priority] ?? 'informational';
       this.attachedBus.publish({
         topic: 'device.syslog.entry',
         payload: {
           deviceId: this.attachedDeviceId,
-          severity: sevName, severityNum: opts.priority,
-          tag: opts.tag, message: opts.message, ts: entry.timestamp.getTime(),
+          severity: sevName, severityNum: entry.priority,
+          tag: entry.tag, message: entry.message, ts: entry.timestamp.getTime(),
         },
       });
     }
@@ -781,10 +609,6 @@ export class LinuxLogManager {
     this.openLogFiles.clear();
   }
 
-  private filterEntries(unit: string, priority: number, pid: number): JournalEntry[] {
-    return this.journal.filter((e) => this.entryMatches(e, unit, priority, pid));
-  }
-
   private entryMatches(e: JournalEntry, unit: string, priority: number, pid: number): boolean {
     if (unit) {
       const u = unit.replace(/\.service$/, '');
@@ -800,20 +624,6 @@ export class LinuxLogManager {
     return true;
   }
 
-  private parseJournalTime(spec: string): number {
-    const s = spec.trim().toLowerCase();
-    if (s === '' || s === 'now') return this.nowMs();
-    const ago = s.match(/^(\d+)\s*(second|minute|hour|day|week)s?\s*(ago)?$/);
-    if (ago) {
-      const mult: Record<string, number> = {
-        second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
-      };
-      return this.nowMs() - parseInt(ago[1], 10) * mult[ago[2]];
-    }
-    const t = Date.parse(spec);
-    return isNaN(t) ? this.nowMs() : t;
-  }
-
   private readonly followSubs = new Set<{ unit: string; priority: number; pid: number; listener: (line: string) => void }>();
 
   /** Subscribe to live journal lines (journalctl -f). Returns an unsubscribe. */
@@ -827,64 +637,8 @@ export class LinuxLogManager {
     if (this.followSubs.size === 0) return;
     for (const sub of this.followSubs) {
       if (this.entryMatches(entry, sub.unit, sub.priority, sub.pid)) {
-        sub.listener(this.formatEntry(entry, 'short', []));
+        sub.listener(this.formatSyslogLine(entry));
       }
-    }
-  }
-
-  private formatEntry(entry: JournalEntry, format: string, outputFields: string[]): string {
-    switch (format) {
-      case 'short': {
-        const ts = fmtSyslogTimestamp(entry.timestamp, this.zoneName());
-        const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
-        return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
-      }
-      case 'short-iso': {
-        const ts = fmtIsoTimestamp(entry.timestamp, this.zoneName());
-        const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
-        return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
-      }
-      case 'cat':
-        return entry.message;
-      case 'json':
-      case 'json-pretty': {
-        const obj: Record<string, string> = {
-          '__REALTIME_TIMESTAMP': String(entry.timestamp.getTime() * 1000),
-          '_HOSTNAME': entry.hostname,
-          'PRIORITY': String(entry.priority),
-          'SYSLOG_FACILITY': String(entry.facility),
-          'SYSLOG_IDENTIFIER': entry.tag,
-          '_PID': String(entry.pid),
-          'MESSAGE': entry.message,
-          '_SYSTEMD_UNIT': entry.unit || '',
-        };
-        // Apply output fields filter
-        let filtered = obj;
-        if (outputFields.length > 0) {
-          filtered = {};
-          for (const f of outputFields) {
-            if (f in obj) filtered[f] = obj[f];
-          }
-        }
-        return format === 'json-pretty'
-          ? JSON.stringify(filtered, null, 4)
-          : JSON.stringify(filtered);
-      }
-      case 'verbose': {
-        const ts = fmtHumanDate(entry.timestamp, this.zoneName());
-        return [
-          `${ts} [s=${this.bootId}]`,
-          `    PRIORITY=${entry.priority}`,
-          `    SYSLOG_FACILITY=${entry.facility}`,
-          `    SYSLOG_IDENTIFIER=${entry.tag}`,
-          `    MESSAGE=${entry.message}`,
-          `    _PID=${entry.pid}`,
-          `    _HOSTNAME=${entry.hostname}`,
-          `    _SYSTEMD_UNIT=${entry.unit}`,
-        ].join('\n');
-      }
-      default:
-        return entry.message;
     }
   }
 
@@ -937,40 +691,11 @@ export class LinuxLogManager {
     return files;
   }
 
-  private resolvePriority(val: string): number {
-    // Numeric
-    const num = parseInt(val);
-    if (!isNaN(num) && num >= 0 && num <= 7) return num;
-    // Named
-    const pri = PRIORITY_NAMES[val];
-    return pri !== undefined ? pri : -1;
-  }
-
   private facilityName(facility: number): string {
     for (const [name, num] of Object.entries(FACILITY_NAMES)) {
       if (num === facility) return name;
     }
     return 'user';
-  }
-
-  private cmdDiskUsage(): string {
-    const bytes = this.journal.length * 128; // rough estimate
-    let size: string;
-    if (bytes < 1024) size = `${bytes}B`;
-    else if (bytes < 1024 * 1024) size = `${(bytes / 1024).toFixed(1)}K`;
-    else size = `${(bytes / (1024 * 1024)).toFixed(1)}M`;
-    return `Archived and active journals take up ${size} in the file system.`;
-  }
-
-  private cmdListBoots(): string {
-    const ts = fmtHumanDate(this.bootTime, this.zoneName());
-    const now = fmtHumanDate(new Date(this.nowMs()), this.zoneName());
-    return ` 0 ${this.bootId} ${ts}—${now}`;
-  }
-
-  private generateBootId(): string {
-    const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-    return `${hex()}${hex()}-${hex()}-${hex()}-${hex()}-${hex()}${hex()}${hex()}`;
   }
 
   // ── Boot message population ────────────────────────────────────
@@ -979,19 +704,10 @@ export class LinuxLogManager {
 
     for (const km of kernelBootMessages(this.bootFacts)) {
       this.dmesgBuffer.push({ offsetSec: km.offset, level: km.level, message: km.msg });
-      // Also add to journal
-      this.journal.push({
-        timestamp: new Date(bt.getTime() + km.offset * 1000),
-        monotonicUsec: Math.floor(km.offset * 1000000),
-        priority: km.level,
-        facility: 0, // kern
-        unit: '',
-        tag: 'kernel',
-        message: km.msg,
-        pid: 0,
-        hostname: this.currentHostname(),
-      });
+      this.addEntry({ priority: km.level, facility: FACILITY_NAMES.kern, unit: '', tag: 'kernel', message: km.msg, pid: 0, hostname: this.currentHostname() }, bt.getTime() + km.offset * 1000);
     }
+
+    this.journald.withStamp(bt.getTime() * 1000 + 2_000_000, () => this.journald.start());
 
     // Systemd boot messages
     const systemdMsgs: Array<{ tag: string; unit: string; pid: number; msg: string; pri: number; fac: number }> = [
@@ -1006,17 +722,8 @@ export class LinuxLogManager {
     let offset = 2.0;
     for (const sm of systemdMsgs) {
       offset += 0.1;
-      this.journal.push({
-        timestamp: new Date(bt.getTime() + offset * 1000),
-        monotonicUsec: Math.floor(offset * 1000000),
-        priority: sm.pri,
-        facility: sm.fac,
-        unit: sm.unit,
-        tag: sm.tag,
-        message: sm.msg,
-        pid: sm.pid,
-        hostname: this.currentHostname(),
-      });
+      const started = /^Started (\S+\.service)/.exec(sm.msg);
+      this.addEntry({ priority: sm.pri, facility: sm.fac, unit: sm.unit, tag: sm.tag, message: sm.msg, pid: sm.pid, hostname: this.currentHostname(), ...(started ? { unitField: started[1] } : {}) }, bt.getTime() + offset * 1000);
     }
 
     // No seeded sshd lines here, deliberately.
@@ -1046,21 +753,8 @@ export class LinuxLogManager {
     offset = 2.5;
     for (const msg of authMsgs) {
       offset += 0.1;
-      this.journal.push({
-        timestamp: new Date(bt.getTime() + offset * 1000),
-        monotonicUsec: Math.floor(offset * 1000000),
-        priority: 6,
-        facility: 4, // auth
-        unit: 'systemd-logind',
-        tag: 'systemd-logind',
-        message: msg,
-        pid: logindPid,
-        hostname: this.currentHostname(),
-      });
+      this.addEntry({ priority: 6, facility: 4, unit: 'systemd-logind', tag: 'systemd-logind', message: msg, pid: logindPid, hostname: this.currentHostname() }, bt.getTime() + offset * 1000);
     }
-
-    // Set monotonic counter past boot messages
-    this.monotonicCounter = 5000000;
 
     // Write initial log files
     this.writeInitialLogFiles();
@@ -1068,25 +762,25 @@ export class LinuxLogManager {
 
   private writeInitialLogFiles(): void {
     // /var/log/syslog - all non-auth entries
-    const syslogLines = this.journal
+    const syslogLines = this.journalEntries()
       .filter(e => this.facilityName(e.facility) !== 'auth')
       .map(e => this.formatSyslogLine(e));
     this.vfs.createFileAt('/var/log/syslog', syslogLines.join('\n') + '\n', 0o640, 0, 4);
 
     // /var/log/auth.log - auth facility
-    const authLines = this.journal
+    const authLines = this.journalEntries()
       .filter(e => e.facility === FACILITY_NAMES['auth'])
       .map(e => this.formatSyslogLine(e));
     this.vfs.createFileAt('/var/log/auth.log', authLines.join('\n') + '\n', 0o640, 0, 4);
 
     // /var/log/kern.log - kernel facility
-    const kernLines = this.journal
+    const kernLines = this.journalEntries()
       .filter(e => e.facility === FACILITY_NAMES['kern'])
       .map(e => this.formatSyslogLine(e));
     this.vfs.createFileAt('/var/log/kern.log', kernLines.join('\n') + '\n', 0o640, 0, 4);
 
     // /var/log/boot.log - systemd + kernel boot messages
-    const bootLines = this.journal
+    const bootLines = this.journalEntries()
       .filter(e => e.tag === 'systemd' || e.tag === 'kernel')
       .map(e => this.formatSyslogLine(e));
     this.vfs.createFileAt('/var/log/boot.log', bootLines.join('\n') + '\n', 0o640, 0, 4);

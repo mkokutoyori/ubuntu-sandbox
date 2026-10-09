@@ -169,7 +169,7 @@ describe('Logging — Linux iptables drops appear in /var/log/kern.log', () => {
     cli.getTcpStack().connect('10.0.0.2', 23);
 
     const kern = await srv.executeCommand('cat /var/log/kern.log');
-    expect(kern).toMatch(/netfilter.+\[netfilter DROP\] IN=eth0.+SRC=10\.0\.0\.1 DST=10\.0\.0\.2 PROTO=TCP.+DPT=23/);
+    expect(kern).toMatch(/kernel: \[netfilter DROP\] IN=eth0.+SRC=10\.0\.0\.1 DST=10\.0\.0\.2 PROTO=TCP.+DPT=23/);
   });
 });
 

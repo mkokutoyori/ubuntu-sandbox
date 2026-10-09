@@ -217,6 +217,10 @@ import { runLastlog } from './login/LastlogTool';
 import { lastlogHost } from './login/LinuxLastlogHost';
 import type { ToolResult } from './audit/tools/AuditToolHost';
 import { lastHost } from './login/LinuxLastHost';
+import { loggerHost } from './syslog/LinuxLoggerHost';
+import { runLogger } from './syslog/LoggerTool';
+import { journalctlHost } from './journal/LinuxJournalctlHost';
+import { runJournalctl } from './journal/JournalctlTool';
 import { renderLoginctl } from './network/loginctlFormatter';
 import { cmdTty, cmdRunlevel, formatLocalTime } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
@@ -694,8 +698,19 @@ export class LinuxCommandExecutor {
     this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
-    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
+    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId);
     this.logMgr.setClock(this.wallNow);
+    this.logMgr.setProcessProbe((pid) => {
+      const process = this.processMgr.get(pid);
+      if (!process) return null;
+      const attrs = this.auditAttrs(pid);
+      const none = 4294967295;
+      return {
+        uid: process.uid, gid: process.gid, comm: process.comm, exe: process.exe ?? null, cmdline: process.command ?? null, capeff: null, label: null,
+        auditId: attrs.sessionid === none ? null : attrs.sessionid, loginUid: attrs.loginuid === none ? null : attrs.loginuid,
+        cgroup: this.cgroupPathFor(pid), invocationId: null,
+      };
+    });
     this.logMgr.setZone(() => this.identity.timezone);
     this.pam = new LinuxPam({
       vfs: this.vfs,
@@ -1193,6 +1208,10 @@ export class LinuxCommandExecutor {
   private rsyslogProcess(): (import('../os/OSProcess').OSProcess) | undefined {
     const info = this.processMgr.list().find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
     return info as unknown as import('../os/OSProcess').OSProcess | undefined;
+  }
+
+  auditAttributesOf(pid: number): { loginuid: number; sessionid: number } {
+    return this.auditAttrs(pid);
   }
 
   private auditAttrs(pid: number): { loginuid: number; sessionid: number } {
@@ -5545,13 +5564,12 @@ export class LinuxCommandExecutor {
 
       // Logging commands
       case 'logger': {
-        const out = this.logMgr.executeLogger(args, this.userMgr.currentUser);
-        const isErr = out.startsWith('logger:') || out.startsWith('Usage');
-        return { output: out, exitCode: isErr ? 1 : 0 };
+        const result = runLogger(loggerHost(this, stdin, args), args, cmd);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'journalctl': {
-        const out = this.logMgr.executeJournalctl(args);
-        return { output: out, exitCode: out.startsWith('Invalid') ? 1 : 0 };
+        const result = runJournalctl(journalctlHost(this), args, cmd);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'dmesg': {
         const out = this.logMgr.executeDmesg(args);

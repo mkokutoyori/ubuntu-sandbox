@@ -94,7 +94,7 @@ describe('Scénario 4 — journald : collecte structurée et filtrage', () => {
     expect(Number(entry._PID)).toBeGreaterThan(0);
     expect(entry.__REALTIME_TIMESTAMP).toBeDefined();
 
-    const unitEntry = entries.find((e) => e._SYSTEMD_UNIT === 'appa.service');
+    const unitEntry = entries.find((e) => e.UNIT === 'appa.service' && e._PID === '1');
     expect(unitEntry).toBeDefined();
   });
 

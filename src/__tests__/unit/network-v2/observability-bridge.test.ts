@@ -16,6 +16,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 
+import { journalctlHost } from '@/network/devices/linux/journal/LinuxJournalctlHost';
+import { runJournalctl } from '@/network/devices/linux/journal/JournalctlTool';
+
 describe('observability: lastlog / journalctl coherency', () => {
   let vfs: VirtualFileSystem;
   let exec: LinuxCommandExecutor;
@@ -117,7 +120,7 @@ describe('observability: lastlog / journalctl coherency', () => {
       expect(auth).toContain('Accepted password for alice from 10.0.0.2');
 
       // The new bridge: journalctl -u sshd must surface the same event.
-      const journal = exec.logMgr.executeJournalctl(['-u', 'ssh']);
+      const journal = runJournalctl(journalctlHost(exec), ['-u', 'ssh']).stdout;
       expect(journal).toContain('Accepted password for alice from 10.0.0.2');
     });
 
@@ -129,7 +132,7 @@ describe('observability: lastlog / journalctl coherency', () => {
 
       bus.emit({ kind: 'auth_failure', user: 'mallory', method: 'password', ip: '10.0.0.99', reason: 'bad password' });
 
-      const journal = exec.logMgr.executeJournalctl(['-u', 'ssh']);
+      const journal = runJournalctl(journalctlHost(exec), ['-u', 'ssh']).stdout;
       expect(journal).toContain('Failed password for mallory from 10.0.0.99');
     });
   });

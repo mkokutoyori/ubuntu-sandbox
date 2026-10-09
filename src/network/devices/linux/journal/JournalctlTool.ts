@@ -747,7 +747,7 @@ function runAction(
     return;
   }
   const all = host.records();
-  if (args.directory !== null && args.directory !== host.journalDirectory()) return fail(`Failed to open ${args.directory}`, 'ENOENT');
+  if (args.directory !== null && args.directory !== host.journalDirectory() && !host.journalDirectory().startsWith(`${args.directory.replace(/\/+$/, '')}/`)) return fail(`Failed to open ${args.directory}`, 'ENOENT');
   if (args.root !== null || args.image !== null || args.files.length > 0 || args.fileStdin || args.machine !== null) {
     const target = args.root ?? args.image ?? args.files[0] ?? args.machine ?? 'files';
     return fail(`Failed to open ${args.files.length > 0 ? 'files' : target}`, 'ENOENT');

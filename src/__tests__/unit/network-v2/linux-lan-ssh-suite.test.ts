@@ -846,11 +846,11 @@ describe('§12 — auth.log + syslog when logging daemons are stopped', () => {
       excludes: ['manual test entry'],
     },
     {
-      name: 'journald stopped → journalctl prints an empty / unavailable message',
+      name: 'journald stopped → journalctl still reads the journal files',
       setup: (l) => { void l.pc2.executeCommand('systemctl stop systemd-journald'); },
       on: l => l.pc2,
       cmd: 'journalctl -u ssh.service',
-      contains: [/No journal files were found|service is not active|No entries/i],
+      contains: [/sshd|No entries/i],
     },
     {
       name: 'after rsyslog is started again, new SSH events ARE logged',
