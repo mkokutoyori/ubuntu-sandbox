@@ -11,6 +11,7 @@ import { SYSCALL_TABLES } from './AuditSyscallTables';
 import { auditNameToErrno } from './AuditErrnoTable';
 import { isDigit, strtoul, strtollNumber, strtoulUint32, toUint32 } from './AuditCString';
 import { safePrintString, type EscapeMode } from './AuditPrint';
+import { NormalizedReport } from './AusearchNormalizedReport';
 import { formatCtime } from './AuditCtime';
 import { adjustType, Interpreter, MACH, elfToMachine } from './AuditInterpret';
 import { formatDateTime } from './AuditToolHost';
@@ -154,6 +155,7 @@ class Ausearch {
   private eventUuid: string | null = null;
   private eventVmname: string | null = null;
   private argEoeTimeout = 0;
+  private eoeSeconds = 2;
   private eventNodes: string[] | null = null;
   private extraKeys = false;
   private extraLabels = false;
@@ -391,11 +393,8 @@ class Ausearch {
           if (optarg === 'raw') this.format = 'raw';
           else if (optarg === 'default') this.format = 'default';
           else if (optarg!.startsWith('interp')) this.format = 'interpret';
-          else if (optarg === 'csv' || optarg === 'text') {
-            this.out.eprintf(`The ${optarg} format needs the auparse event normalizer, which is not built yet\n`);
-            retval = -1;
-            break;
-          }
+          else if (optarg === 'csv') this.format = 'csv';
+          else if (optarg === 'text') this.format = 'text';
           else {
             this.out.eprintf(`Unknown option (${optarg})\n`);
             retval = -1;
@@ -773,8 +772,17 @@ class Ausearch {
       case 'raw': this.outputRaw(e); break;
       case 'default': this.outputDefault(e); break;
       case 'interpret': this.outputInterpreted(e); break;
+      case 'csv':
+      case 'text': this.normalizedReport().report(e, this.format, this.eoeSeconds); break;
       default: this.outputDefault(e); break;
     }
+  }
+
+  private report: NormalizedReport | null = null;
+
+  private normalizedReport(): NormalizedReport {
+    this.report ??= new NormalizedReport(this.host, this.out, this.escapeMode, { time: this.extraTime, labels: this.extraLabels, obj2: this.extraObj2, keys: this.extraKeys });
+    return this.report;
   }
 
   private machine = -1;
@@ -1113,6 +1121,7 @@ class Ausearch {
     if (!config) this.out.eprintf("Config file /etc/audit/auditd.conf doesn't exist, skipping\n");
     const logFile = config?.logFile ?? '/var/log/audit/audit.log';
     const eoe = this.argEoeTimeout || config?.eoeTimeout || 2;
+    this.eoeSeconds = eoe;
     this.assembler = new AuditEventAssembler(this.time, eoe);
     this.interpreter = new Interpreter(this.host);
 
