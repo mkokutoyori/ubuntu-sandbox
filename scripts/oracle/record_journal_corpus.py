@@ -36,23 +36,30 @@ def sender(comm, unit, body):
     time.sleep(0.4)
     os._exit(0)
 
-def credentials():
+def credentials(pid=None):
+    base = "/proc/self" if pid is None else f"/proc/{pid}"
     def read(path):
         try:
             return open(path, "rb").read()
         except OSError:
             return b""
-    status = read("/proc/self/status").decode()
+    status = read(base + "/status").decode()
     capeff = [line.split(":")[1].strip() for line in status.splitlines() if line.startswith("CapEff:")]
-    cgroup = [line[3:] for line in read("/proc/self/cgroup").decode().splitlines() if line.startswith("0::")]
+    uids = [line.split()[1] for line in status.splitlines() if line.startswith("Uid:")]
+    gids = [line.split()[1] for line in status.splitlines() if line.startswith("Gid:")]
+    cgroup = [line[3:] for line in read(base + "/cgroup").decode().splitlines() if line.startswith("0::")]
+    try:
+        exe = os.readlink(base + "/exe")
+    except OSError:
+        exe = ""
     return {
-        "pid": os.getpid(), "uid": os.getuid(), "gid": os.getgid(), "comm": read("/proc/self/comm").decode().rstrip("\n"), "exe": os.readlink("/proc/self/exe"),
-        "cmdline": read("/proc/self/cmdline").decode().rstrip("\0").replace("\0", " "), "capeff": capeff[0] if capeff else "", "cgroup": cgroup[0] if cgroup else "",
-        "loginuid": read("/proc/self/loginuid").decode().strip(), "sessionid": read("/proc/self/sessionid").decode().strip(),
+        "pid": os.getpid() if pid is None else pid, "uid": int(uids[0]) if uids else 0, "gid": int(gids[0]) if gids else 0, "comm": read(base + "/comm").decode().rstrip("\n"), "exe": exe,
+        "cmdline": read(base + "/cmdline").decode().rstrip("\0").replace("\0", " "), "capeff": capeff[0] if capeff else "", "cgroup": cgroup[0] if cgroup else "",
+        "loginuid": read(base + "/loginuid").decode().strip(), "sessionid": read(base + "/sessionid").decode().strip(),
     }
 
 def log_send(kind, payload, extra=None):
-    line = {"boot": CURRENT_BOOT[0], "kind": kind, "payload": base64.b64encode(payload).decode(), "credentials": credentials()}
+    line = {"boot": CURRENT_BOOT[0], "kind": kind, "payload": base64.b64encode(payload).decode(), "credentials": credentials(), "parent": credentials(os.getppid())}
     if extra:
         line.update(extra)
     with open(SENDS_FILE, "a") as handle:

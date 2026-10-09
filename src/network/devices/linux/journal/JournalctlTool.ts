@@ -2,6 +2,7 @@ import { END_OF_OPTIONS, GnuGetopt, type LongOption } from '../audit/tools/GnuGe
 import { ExitSignal, ToolOutput, type ToolResult } from '../audit/tools/AuditToolHost';
 import { fnmatch } from '../fs/Glob';
 import { type SystemdClock, formatTimespan, formatTimestamp, parseSec, parseTimestamp, systemdClock } from '../systemd/SystemdTime';
+import { safeAtoi } from '../systemd/SafeNumbers';
 import { isGlob, unitNameMangle } from '../systemd/UnitName';
 import { type CatalogItem, type CatalogLocale, catalogForRecord, dumpCatalogEntry, findCatalogText, formatCatalogBlock, listCatalog } from './Catalog';
 import { JournalMatches } from './JournalMatches';
@@ -189,32 +190,6 @@ function defaultArgs(): Args {
     syslogIdentifiers: [], systemUnits: [], userUnits: [], field: null, catalog: false, reverse: false, journalType: 0, root: null, image: null, machine: null,
     namespace: null, outputFields: null, pattern: null, caseMode: 'auto', vacuumSize: 0, vacuumFiles: 0, vacuumTime: 0, jsonOutput: false,
   };
-}
-
-function safeAtoi(input: string): number | 'EINVAL' | 'ERANGE' {
-  let s = input.replace(/^[ \t\n\r]+/, '');
-  let base = 0;
-  const prefixed = /^(0[bB]|0[oO])/.exec(s);
-  if (prefixed) {
-    base = prefixed[1][1].toLowerCase() === 'b' ? 2 : 8;
-    s = s.slice(2);
-  }
-  const sign = s[0] === '-' || s[0] === '+' ? s[0] : '';
-  let body = sign ? s.slice(1) : s;
-  if (base === 0) {
-    if (/^0[xX]/.test(body)) {
-      base = 16;
-      body = body.slice(2);
-    } else if (/^0/.test(body) && body.length > 1) {
-      base = 8;
-      body = body.slice(1);
-    } else base = 10;
-  }
-  const digits = base === 16 ? /^[0-9a-fA-F]+$/ : base === 8 ? /^[0-7]+$/ : base === 2 ? /^[01]+$/ : /^[0-9]+$/;
-  if (!digits.test(body)) return 'EINVAL';
-  const value = parseInt(body, base) * (sign === '-' ? -1 : 1);
-  if (value > 2147483647 || value < -2147483648) return 'ERANGE';
-  return value;
 }
 
 function stringTableLookup(table: readonly string[], value: string, max: number): number | 'EINVAL' | 'ERANGE' {
