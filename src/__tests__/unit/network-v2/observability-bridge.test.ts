@@ -11,6 +11,7 @@
  *  §JB2 Failed auth + invalid-user events go through the same bridge.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
@@ -62,9 +63,7 @@ describe('observability: lastlog / journalctl coherency', () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.userMgr.useradd('bob',   { u: 1002 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
-      const veryOld = Date.now() - 30 * 86400_000;
-      const slot = (exec.lastlog as unknown as { entries: Map<string, { current: { when: number; sourceHost: string; tty: string } }> }).entries;
-      slot.set('bob', { current: { when: veryOld, sourceHost: '10.0.0.6', tty: 'pts/1' } });
+      exec.lastlog.record('bob', '10.0.0.6', 'pts/1', simulationNowMs() - 30 * 86400_000);
       const out = exec.execute('lastlog -t 7');
       expect(out).toContain('alice');
       expect(out).not.toMatch(/^bob /m);
@@ -73,9 +72,7 @@ describe('observability: lastlog / journalctl coherency', () => {
     it('-b DAYS shows only entries older than the cutoff', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.userMgr.useradd('bob',   { u: 1002 });
-      const old = Date.now() - 30 * 86400_000;
-      const slot = (exec.lastlog as unknown as { entries: Map<string, { current: { when: number; sourceHost: string; tty: string } }> }).entries;
-      slot.set('bob', { current: { when: old, sourceHost: '10.0.0.6', tty: 'pts/1' } });
+      exec.lastlog.record('bob', '10.0.0.6', 'pts/1', simulationNowMs() - 30 * 86400_000);
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       const out = exec.execute('lastlog -b 7 -u alice');
       expect(out).not.toMatch(/^alice\s+pts\/0/m);
@@ -94,14 +91,14 @@ describe('observability: lastlog / journalctl coherency', () => {
 
     it('--help prints the synopsis', async () => {
       const out = exec.execute('lastlog --help');
-      expect(out).toMatch(/Usage:\s*\n\s*lastlog \[options\]/);
+      expect(out).toMatch(/^Usage: lastlog \[options\]\n/);
       expect(out).toContain('--before DAYS');
       expect(out).toContain('--clear');
     });
 
-    it('--version reports util-linux 2.37.x', async () => {
+    it('--version is not an option of the shadow lastlog', async () => {
       const out = exec.execute('lastlog --version');
-      expect(out).toMatch(/^lastlog from util-linux 2\./);
+      expect(out).toMatch(/^lastlog: unrecognized option '--version'\nUsage: lastlog \[options\]/);
     });
   });
 

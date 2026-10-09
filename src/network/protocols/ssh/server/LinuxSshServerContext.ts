@@ -69,7 +69,6 @@ import { SSHD_LISTEN_BACKLOG } from '@/network/devices/linux/ports/ListenBacklog
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
 
-const LASTLOG_PATH = '/var/log/lastlog.json';
 
 const SSHD_CONFIG_PATH = '/etc/ssh/sshd_config';
 const FAIL2BAN_JAIL_LOCAL_PATH = '/etc/fail2ban/jail.local';
@@ -79,12 +78,6 @@ const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
 const ETC_SSH_DIR = '/etc/ssh';
 const SSHD_CONFIG_DROP_IN_DIR = '/etc/ssh/sshd_config.d';
-
-interface LastLoginEntry {
-  user: string;
-  ip: string;
-  at: number;
-}
 
 /** Render a sub-shell's output lines the way the wire expects stdout. */
 function joinLines(lines: readonly string[]): string {
@@ -586,49 +579,13 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getLastLogin(user: string): string | null {
-    const raw = this.vfs.readFile(LASTLOG_PATH);
-    if (!raw) return null;
-    try {
-      const entries = JSON.parse(raw) as LastLoginEntry[];
-      let last: LastLoginEntry | undefined;
-      for (const entry of entries) {
-        if (entry.user === user) last = entry;
-      }
-      if (!last) return null;
-      const date = new Date(last.at).toUTCString();
-      return `Last login: ${date} from ${last.ip}`;
-    } catch {
-      return null;
-    }
+    const entry = this.executor?.lastlog.getCurrent(user);
+    if (!entry) return null;
+    return `Last login: ${new Date(entry.when).toUTCString()} from ${entry.sourceHost}`;
   }
 
   recordLogin(user: string, fromIp: string): void {
     this.openPamSession(user, fromIp);
-    const entry: LastLoginEntry = { user, ip: fromIp, at: simulationNowMs() };
-    let entries: LastLoginEntry[] = [];
-    const raw = this.vfs.readFile(LASTLOG_PATH);
-    if (raw) {
-      try {
-        entries = JSON.parse(raw) as LastLoginEntry[];
-      } catch {
-        entries = [];
-      }
-    }
-    entries.push(entry);
-    this.vfs.writeFile(
-      LASTLOG_PATH,
-      JSON.stringify(entries),
-      0,
-      0,
-      0o022,
-    );
-    // /var/log/auth.log is produced reactively by SshSyslogger subscribed to
-    // the event bus (post-merge). We only own the lastlog side here.
-    // Mirror the login into the in-memory lastlog registry so the SSH
-    // client side (which lives in the same process) can pick up the
-    // canonical ctime-formatted "Last login: …" line without re-parsing
-    // the JSON file. The registry rotates current ↔ previous, keeping
-    // PAM-like semantics.
     this.executor?.lastlog.record(user, fromIp, 'pts/0');
   }
 

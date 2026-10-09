@@ -81,9 +81,8 @@ describe('Scénario 3 — lastlog : dernière connexion par compte', () => {
     const { pc1, srv } = await buildLan();
     await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const out = await srv.executeCommand('lastlog -b 30 -u alice');
-    // alice vient de se connecter — pas "avant 30 jours" — donc absente.
-    const lines = out.split('\n').filter((l) => l.trim());
-    expect(lines.length).toBe(1); // en-tête seule
+    // alice vient de se connecter — pas "avant 30 jours" — donc absente ; le vrai lastlog n'imprime l'en-tête qu'avec la première ligne.
+    expect(out.trim()).toBe('');
   });
 
   it('lastlog -t <jours> inclut les connexions récentes', async () => {

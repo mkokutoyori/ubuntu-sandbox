@@ -213,6 +213,8 @@ import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
 import { runLast } from './login/LastTool';
+import { runLastlog } from './login/LastlogTool';
+import { lastlogHost } from './login/LinuxLastlogHost';
 import type { ToolResult } from './audit/tools/AuditToolHost';
 import { lastHost } from './login/LinuxLastHost';
 import { renderLoginctl } from './network/loginctlFormatter';
@@ -364,26 +366,6 @@ function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; p
 function permTriad(p: number): string {
   return ((p & 0o4) ? 'r' : '-') + ((p & 0o2) ? 'w' : '-') + ((p & 0o1) ? 'x' : '-');
 }
-
-const LASTLOG_HELP = [
-  '',
-  'Usage:',
-  ' lastlog [options]',
-  '',
-  'Reports the most recent login of all users or of a given user.',
-  '',
-  'Options:',
-  ' -b, --before DAYS    print only lastlog records older than DAYS',
-  ' -C, --clear          clear lastlog record of a user (usable only with -u)',
-  ' -R, --root CHROOT_DIR  directory to chroot into',
-  ' -S, --set            set lastlog record to current time (usable only with -u)',
-  ' -t, --time DAYS      print only lastlog records more recent than DAYS',
-  ' -u, --user LOGIN     print lastlog record of the specified LOGIN',
-  ' -h, --help           display this help',
-  ' -V, --version        display version',
-  '',
-  'For more details see lastlog(8).',
-].join('\n');
 
 /** Map the short process state code to the long name procfs prints in
  *  /proc/<pid>/status (State: R (running) etc.). */
@@ -706,6 +688,7 @@ export class LinuxCommandExecutor {
     this.userMgr.setClock(this.wallNow);
     // Project the lastlog registry onto the canonical /var/log/lastlog file
     // so the filesystem view stays coherent with the in-memory registry.
+    this.lastlog.bindUidResolver((user) => this.userMgr.getUser(user)?.uid);
     this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
     this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
@@ -5354,7 +5337,10 @@ export class LinuxCommandExecutor {
         }
         return { output: 'loginctl: command not found', exitCode: 127 };
       }
-      case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
+      case 'lastlog': {
+        const result = this.handleLastlog(args);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
       case 'setfacl': return this.cmdSetfacl(args);
       case 'getfacl': return this.cmdGetfacl(args);
       case 'getent': {
@@ -7166,20 +7152,6 @@ export class LinuxCommandExecutor {
     return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
   }
 
-  /**
-   * `lastlog` — one row per known account showing the most-recent login
-   * the lastlog registry recorded (or "Never logged in" when absent).
-   * Mirrors util-linux output: `Username Port From Latest`.
-   *
-   * Supported flags:
-   *   -u, --user <name>   restrict to a single user
-   *   -b, --before <days> hide rows older than N days
-   *   -t, --time  <days>  hide rows older than N days (alias of -b's inverse)
-   *
-   * Real lastlog is backed by a binary `/var/log/lastlog` indexed by UID;
-   * the simulator stores the same triple `{when, sourceHost, tty}` in
-   * LinuxLastlogRegistry — the rendering is identical.
-   */
   /** Optional accessor to the SSH server context, wired by LinuxMachine. */
   sshContextForFail2ban: (() => {
     bannedIps(): string[];
@@ -7258,90 +7230,8 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  renderLastlog(args: string[]): string {
-    let filterUser: string | null = null;
-    let beforeDays: number | null = null;
-    let timeDays: number | null = null;
-    let clear = false;
-    let setNow = false;
-
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-h' || a === '--help') return LASTLOG_HELP;
-      if (a === '-V' || a === '--version') return 'lastlog from util-linux 2.37.2';
-      if (a === '-u' || a === '--user') { filterUser = args[++i] ?? null; continue; }
-      if (a === '-b' || a === '--before') { beforeDays = Number(args[++i]); continue; }
-      if (a === '-t' || a === '--time')   { timeDays   = Number(args[++i]); continue; }
-      if (a === '-C' || a === '--clear')  { clear = true; continue; }
-      if (a === '-S' || a === '--set')    { setNow = true; continue; }
-      if (a === '-R' || a === '--root') { i++; continue; }
-    }
-
-    if (clear || setNow) {
-      if (!filterUser) return 'lastlog: option requires -u/--user';
-      if (clear) this.lastlog.clearUser(filterUser);
-      if (setNow) this.lastlog.record(filterUser, '0.0.0.0', 'pts/0');
-      return '';
-    }
-
-    // Resolve -u into a row predicate. lastlog(8) accepts a login name,
-    // a numeric UID, or an inclusive UID range "LO-HI" (either bound may
-    // be omitted for an open range). A name/UID that matches no account
-    // is an error; a range that matches nothing is simply empty.
-    let userFilter: ((u: UserEntry) => boolean) | null = null;
-    if (filterUser !== null) {
-      const range = /^(\d*)-(\d*)$/.exec(filterUser);
-      if (range && (range[1] !== '' || range[2] !== '')) {
-        const lo = range[1] === '' ? 0 : Number(range[1]);
-        const hi = range[2] === '' ? Number.MAX_SAFE_INTEGER : Number(range[2]);
-        userFilter = (u) => u.uid >= lo && u.uid <= hi;
-      } else if (/^\d+$/.test(filterUser)) {
-        const uid = Number(filterUser);
-        if (!this.userMgr.getAllUsers().some(u => u.uid === uid)) {
-          return `lastlog: Unknown user or range: ${filterUser}`;
-        }
-        userFilter = (u) => u.uid === uid;
-      } else {
-        if (!this.userMgr.getAllUsers().some(u => u.username === filterUser)) {
-          return `lastlog: Unknown user or range: ${filterUser}`;
-        }
-        userFilter = (u) => u.username === filterUser;
-      }
-    }
-
-    const header = 'Username         Port     From             Latest';
-    const rows: string[] = [header];
-    const now = simulationNowMs();
-    const beforeCutoff = beforeDays !== null && Number.isFinite(beforeDays)
-      ? now - beforeDays * 86400_000
-      : null;
-    const timeCutoff = timeDays !== null && Number.isFinite(timeDays)
-      ? now - timeDays * 86400_000
-      : null;
-
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const pad2 = (n: number) => String(n).padStart(2, '0');
-
-    for (const u of this.userMgr.getAllUsers()) {
-      if (userFilter && !userFilter(u)) continue;
-      const entry = this.lastlog.getCurrent(u.username);
-      if (!entry) {
-        rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
-        continue;
-      }
-      if (beforeCutoff !== null && entry.when >= beforeCutoff) continue;
-      if (timeCutoff !== null && entry.when < timeCutoff) continue;
-      const d = new Date(entry.when);
-      const latest =
-        `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${pad2(d.getUTCDate())} ` +
-        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} +0000 ${d.getUTCFullYear()}`;
-      rows.push(
-        `${u.username.padEnd(16)} ${entry.tty.padEnd(8)} ${entry.sourceHost.padEnd(16)} ${latest}`,
-      );
-    }
-    return rows.join('\n');
+  handleLastlog(args: string[]): ToolResult {
+    return runLastlog(lastlogHost(this), args);
   }
 
   /**

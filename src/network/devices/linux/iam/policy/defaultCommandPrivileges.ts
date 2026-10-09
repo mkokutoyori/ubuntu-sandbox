@@ -73,10 +73,6 @@ export function createDefaultCommandPrivileges(): CommandPrivilegePolicy {
     })
     .declare('umount', { deny: Deny.withMessage('umount: only root can do that: Permission denied') })
     .declare('ufw', { deny: Deny.withMessage('ERROR: You need to be root to run this script') })
-    .declare('lastlog', {
-      appliesWhen: (args) => args.some(a => a === '-C' || a === '--clear' || a === '-S' || a === '--set'),
-      deny: Deny.withMessage('lastlog: must be root'),
-    })
     .declare('dmesg', {
       appliesWhen: (args) => args.some(a =>
         a === '-c' || a === '--read-clear' || a === '-C' || a === '--clear' ||

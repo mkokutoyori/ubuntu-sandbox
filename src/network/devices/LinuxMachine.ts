@@ -2221,7 +2221,6 @@ export abstract class LinuxMachine extends EndHost
       const userEntry = this.executor.userMgr.getUser(user);
       const uid = userEntry?.uid ?? 1000;
       const gid = userEntry?.gid ?? uid;
-      this.rememberLastSshLogin(user, fromIp);
       const session = this.sessionTable.open({
         user, uid, sshdPid: 0,
         fromIp, fromHost,
@@ -2470,21 +2469,9 @@ export abstract class LinuxMachine extends EndHost
     return t;
   })();
 
-  /**
-   * Per-user record of the most recent SUCCESSFUL SSH login. Read by
-   * the sshLauncher banner to produce the OpenSSH "Last login: <date>
-   * from <ip>" line. The simulator's analogue of `/var/log/lastlog`.
-   */
-  private readonly lastSshLoginByUser = new Map<string, { at: Date; from: string }>();
-
-  /** sshLauncher contract — returns the previous login for `user` (if any). */
   getLastSshLoginFor(user: string): { at: Date; from: string } | null {
-    return this.lastSshLoginByUser.get(user) ?? null;
-  }
-
-  /** Push a new last-login entry; called from `recordSshLogin` on accept. */
-  private rememberLastSshLogin(user: string, fromIp: string): void {
-    this.lastSshLoginByUser.set(user, { at: simulationDate(), from: fromIp });
+    const entry = this.executor.lastlog.getCurrent(user);
+    return entry ? { at: new Date(entry.when), from: entry.sourceHost } : null;
   }
 
   /** Ensure a tty=tty1 console session exists for the local user. */
