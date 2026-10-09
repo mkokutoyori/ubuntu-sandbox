@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
-import { parseSec, parseTimestamp, formatTimestamp, systemdClock } from '@/network/devices/linux/systemd/SystemdTime';
+import { formatTimespan, parseSec, parseTimestamp, formatTimestamp, systemdClock } from '@/network/devices/linux/systemd/SystemdTime';
 
 interface Recorded {
   stdout: string;
@@ -71,7 +71,10 @@ describe('parse_sec against systemd-analyze timespan', () => {
       }
       const expected = /us: (\d+)/.exec(text(recorded.stdout))![1];
       expect(parsed.ok).toBe(true);
-      if (parsed.ok) expect(parsed.usec === Number.POSITIVE_INFINITY ? '18446744073709551615' : String(parsed.usec)).toBe(expected);
+      if (parsed.ok) {
+        expect(parsed.usec === Number.POSITIVE_INFINITY ? '18446744073709551615' : String(parsed.usec)).toBe(expected);
+        expect(formatTimespan(parsed.usec, 0)).toBe(/Human: (.*)/.exec(text(recorded.stdout))![1]);
+      }
     });
   }
 });

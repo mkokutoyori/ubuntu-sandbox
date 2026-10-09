@@ -102,12 +102,54 @@ export function parseSec(text: string): ParsedTime {
   return parseTime(text, USEC_PER_SEC);
 }
 
+const TIMESPAN_TABLE: ReadonlyArray<readonly [string, number]> = [
+  ['y', USEC_PER_YEAR], ['month', USEC_PER_MONTH], ['w', USEC_PER_WEEK], ['d', USEC_PER_DAY], ['h', USEC_PER_HOUR], ['min', USEC_PER_MINUTE],
+  ['s', USEC_PER_SEC], ['ms', USEC_PER_MSEC], ['us', 1],
+];
+
+export function formatTimespan(usec: number, accuracy: number): string {
+  if (usec === Number.POSITIVE_INFINITY) return 'infinity';
+  if (usec <= 0) return '0';
+  let remaining = usec;
+  let out = '';
+  let something = false;
+  for (const [suffix, unit] of TIMESPAN_TABLE) {
+    if (remaining <= 0) break;
+    if (remaining < accuracy && something) break;
+    if (remaining < unit) continue;
+    let whole = Math.floor(remaining / unit);
+    let rest = remaining % unit;
+    let piece: string | null = null;
+    if (remaining < USEC_PER_MINUTE && rest > 0) {
+      let digits = 0;
+      for (let cc = unit; cc > 1; cc = Math.floor(cc / 10)) digits++;
+      for (let cc = accuracy; cc > 1; cc = Math.floor(cc / 10)) {
+        rest = Math.floor(rest / 10);
+        digits--;
+      }
+      if (digits > 0) {
+        piece = `${out === '' ? '' : ' '}${whole}.${String(rest).padStart(digits, '0')}${suffix}`;
+        remaining = 0;
+      }
+    }
+    if (piece === null) {
+      piece = `${out === '' ? '' : ' '}${whole}${suffix}`;
+      remaining = rest;
+    }
+    out += piece;
+    something = true;
+    whole = 0;
+  }
+  return out;
+}
+
 export type TimestampStyle = 'pretty' | 'us' | 'utc' | 'us-utc' | 'date' | 'unix';
 
 export interface Zone {
   readonly name: string;
   localTime: HostClock['localTime'];
   mktime(tm: Tm): number;
+  utcOffsetSecondsAt(epochSec: number): number;
   abbreviationAt(epochSec: number): string;
   standardAndDaylightNames(): readonly [string, string];
 }
@@ -151,6 +193,7 @@ function makeZone(zone: TimeZone, requestedName: string): Zone {
     name: zone.name,
     localTime: hostClock(zone.name).localTime,
     mktime: utc ? tm => Date.UTC(tm.year, tm.mon, tm.mday, tm.hour, tm.min, tm.sec) / 1000 : glibcMktime(zone),
+    utcOffsetSecondsAt: epochSec => offsetMinutesAt(zone, epochSec * 1000) * 60,
     abbreviationAt: epochSec => (utc ? 'UTC' : abreviationA(requestedName, epochSec * 1000)),
     standardAndDaylightNames: () => {
       if (utc) return ['UTC', 'UTC'];

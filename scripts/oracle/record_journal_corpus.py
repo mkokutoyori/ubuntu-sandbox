@@ -123,6 +123,7 @@ def record(work):
         env = dict(os.environ, LD_PRELOAD=SHIM, LAST_BOOT_ID=boot, LAST_MACHINE_ID=MACHINE_ID, LAST_RT_OFFSET=str(offset))
         shutil.rmtree("/run/systemd/journal", ignore_errors=True)
         os.makedirs("/run/systemd/journal", exist_ok=True)
+        shutil.rmtree(f"/run/log/journal/{MACHINE_ID}", ignore_errors=True)
         journald = subprocess.Popen(["/lib/systemd/systemd-journald"], env=env, stdout=subprocess.DEVNULL, stderr=open("/tmp/jd.err","wb"))
         for _ in range(50):
             if os.path.exists("/run/systemd/journal/socket") and os.path.exists("/run/systemd/journal/stdout"): break
