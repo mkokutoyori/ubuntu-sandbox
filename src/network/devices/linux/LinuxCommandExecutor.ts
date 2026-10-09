@@ -8,7 +8,9 @@ import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 import { runAusearch } from './audit/tools/AusearchTool';
 import { runAureport } from './audit/tools/AureportTool';
 import { runAusyscall } from './audit/tools/AusyscallTool';
-import { auditToolHost } from './audit/tools/LinuxAuditToolHost';
+import { runAulast } from './audit/tools/AulastTool';
+import { runAulastlog } from './audit/tools/AulastlogTool';
+import { auditLoginHost, auditToolHost } from './audit/tools/LinuxAuditToolHost';
 
 import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
@@ -273,7 +275,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Users and groups
   'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-  'faillock', 'ausearch', 'ausyscall', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
+  'faillock', 'ausearch', 'ausyscall', 'aulast', 'aulastlog', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
   'login', 'logout', 'logname', 'users', 'lid', 'members', 'newgrp',
   // Lookup
@@ -5287,6 +5289,12 @@ export class LinuxCommandExecutor {
       case 'atrm': return this.atDenied('atrm') ?? cmdAtrm(this.atQueue, args);
       case 'ausearch': {
         const result = runAusearch(auditToolHost(this), args, stdin ?? null);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
+      case 'aulast':
+      case 'aulastlog': {
+        const run = cmd === 'aulast' ? runAulast : runAulastlog;
+        const result = run(auditLoginHost(this), args, stdin ?? null);
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'ausyscall': {
