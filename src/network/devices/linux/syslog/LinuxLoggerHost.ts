@@ -6,7 +6,17 @@ import type { LoggerHost, LoggerOpen } from './LoggerTool';
 
 const UDP = 2;
 const JOURNAL_SOCKETS = new Set(['/dev/log', '/run/systemd/journal/dev-log']);
+const SYSLOG_PORT = 514;
 const NOT_FOUND = { error: 'No such file or directory' } as const;
+
+function resolveAddress(name: string, hosts: string): string | null {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(name)) return name.split('.').every((octet) => Number(octet) <= 255) ? name : null;
+  for (const line of hosts.split('\n')) {
+    const [address, ...names] = line.replace(/#.*/, '').trim().split(/\s+/);
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(address ?? '') && names.includes(name)) return address;
+  }
+  return null;
+}
 
 function encodeNative(lines: string[]): Uint8Array {
   const encoder = new TextEncoder();
@@ -73,7 +83,21 @@ export function loggerHost(executor: LinuxCommandExecutor, stdinText: string | u
       if (!JOURNAL_SOCKETS.has(path)) return NOT_FOUND;
       return types & UDP ? open() : { error: 'Protocol wrong type for socket' };
     },
-    connectInet: (server, port) => ({ fatal: `failed to connect to ${server} port ${port ?? 'syslog'}` }),
+    connectInet: (server, port, types) => {
+      const portName = port ?? 'syslog';
+      const portNumber = portName === 'syslog' ? SYSLOG_PORT : /^\d+$/.test(portName) ? Number(portName) : null;
+      const address = resolveAddress(server, vfs.readFile('/etc/hosts') ?? '');
+      if (address === null || portNumber === null || portNumber > 65535) return { fatal: `failed to resolve name ${server} port ${portName}: ${address === null ? 'Name or service not known' : 'Servname not supported for ai_socktype'}` };
+      if (!(types & UDP) || executor.datagramSender === null) return { error: 'Connection refused' };
+      const sender = executor.datagramSender;
+      return {
+        type: UDP,
+        connection: {
+          send: (bytes) => (sender(address, portNumber, Uint8Array.from(bytes)) ? null : 'Network is unreachable'),
+          close: () => undefined,
+        },
+      };
+    },
     readFile: (path) => {
       const absolute = vfs.normalizePath(path, executor.getCwd());
       const inode = vfs.resolveInode(absolute);

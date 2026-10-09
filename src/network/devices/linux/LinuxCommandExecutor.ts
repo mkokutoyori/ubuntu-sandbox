@@ -642,6 +642,8 @@ export class LinuxCommandExecutor {
   readonly functions: Map<string, import('@/bash/parser/ASTNode').Command> = new Map();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
+  datagramSender: ((destination: string, port: number, payload: Uint8Array) => boolean) | null = null;
+
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;

@@ -434,6 +434,13 @@ export abstract class LinuxMachine extends EndHost
     // à travers les câbles depuis celle-ci (docs/PRD-Pannes.md §F5.7).
     this.executor.mountServerReachable = (host: string) =>
       findHostByAddress(host, this.executor.vfs, this) !== null;
+    this.executor.datagramSender = (destination, port, payload) => this.sendUdpDatagram({
+      destination: new IPAddress(destination),
+      destinationPort: port,
+      sourcePort: this.allocateEphemeralPort(),
+      payload,
+      payloadBytes: payload.length,
+    });
     this.executor.setEphemeralRangeApplier((min, max) => this.tcpv2.setEphemeralRange(min, max));
     this.executor.setEphemeralPoolFreeChecker(() => this.tcpv2.hasFreeEphemeralPort());
     const utmpSync = new UtmpSync(this.executor.vfs);
@@ -1538,6 +1545,7 @@ export abstract class LinuxMachine extends EndHost
           const p = d.udp.payload as unknown;
           let charge = '';
           if (typeof p === 'string') charge = p;
+          else if (p instanceof Uint8Array) charge = new TextDecoder().decode(p);
           else if (p && typeof p === 'object' && (p as { type?: string }).type === 'syslog') {
             const s2 = p as { facility: number; severity: number; hostname: string;
                               tag: string; message: string; timestamp: string };
