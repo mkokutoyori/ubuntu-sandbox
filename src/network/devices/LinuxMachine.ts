@@ -47,6 +47,9 @@ import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
 import { findEquipmentByIp } from '@/shell/hostResolution';
 import { LinuxRsyslogService } from './linux/syslog/LinuxRsyslogService';
+import { journalctlHost } from './linux/journal/LinuxJournalctlHost';
+import { runJournalctl } from './linux/journal/JournalctlTool';
+import { cursorOf } from './linux/journal/JournalRecord';
 import { SyslogStreamFraming } from './linux/syslog/SyslogStreamFraming';
 import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
@@ -5079,8 +5082,17 @@ export abstract class LinuxMachine extends EndHost
     this.executor.installCrontab(content, user);
   }
 
-  followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {
-    return this.executor.logMgr.followJournal(opts, listener);
+  followJournal(args: string[], sink: (line: string) => void): () => void {
+    const host = journalctlHost(this.executor);
+    const journald = this.executor.logMgr.journald;
+    const tail = journald.records()[journald.records().length - 1];
+    let last = tail === undefined ? null : cursorOf(tail);
+    return journald.onRecord((record) => {
+      const argv = [...args, ...(last === null ? [] : [`--after-cursor=${last}`])];
+      last = cursorOf(record);
+      const out = runJournalctl(host, argv).stdout;
+      for (const line of out.split('\n')) if (line.length > 0) sink(line);
+    });
   }
 
   sampleVmstatSnapshot() {

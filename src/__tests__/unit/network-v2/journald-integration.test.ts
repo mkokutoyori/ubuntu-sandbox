@@ -3,13 +3,14 @@
  * the simulated host.  Every line a service, the kernel or logger writes now crosses the journald ingestion path - a
  * syslog or native datagram carrying the sender's credentials - and journalctl reads the resulting journal records, so
  * the fields (_PID, _COMM, _EXE, _SYSTEMD_UNIT, UNIT, _TRANSPORT) are the ones journald derives, not ones the command
- * invents.  Measured before the integration (module absent, git stash push -u -- src/network): 11 of the 12 cases fall.
+ * invents.  Measured before the integration (module absent, git stash push -u -- src/network): 13 of the 14 cases fall.
  * The one that passes either way is "logger without -i writes no pid into the file": a non-regression witness, since the
  * old command also left the pid out of the line unless -i was given.
  */
 import { describe, it, expect } from 'vitest';
 import { EventBus } from '@/events/EventBus';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
+import { LinuxServer } from '@/network/devices/LinuxServer';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 function host(): LinuxCommandExecutor {
@@ -129,5 +130,26 @@ describe('journald and logger integrated in the host', () => {
     expect(exec.vfs.readFile('/var/log/syslog')).not.toContain('after stop');
     expect(entries(exec, '-t probe')[0].MESSAGE).toBe('after stop');
     expect(simulationNowMs()).toBeGreaterThan(0);
+  });
+
+  it('journalctl -f applies the options of the command to every new record', async () => {
+    const server = new LinuxServer('linux-server', 'S1');
+    const seen: string[] = [];
+    const stop = server.followJournal(['-p', 'err', '-o', 'cat'], (line) => seen.push(line));
+    await server.executeCommand('logger -p user.info "quiet line"');
+    await server.executeCommand('logger -p user.err "loud line"');
+    stop();
+    await server.executeCommand('logger -p user.err "after stop"');
+    expect(seen).toEqual(['loud line']);
+  });
+
+  it('journalctl -f -o json streams one parsable object per record', async () => {
+    const server = new LinuxServer('linux-server', 'S1');
+    const seen: string[] = [];
+    const stop = server.followJournal(['-o', 'json', '-t', 'probe'], (line) => seen.push(line));
+    await server.executeCommand('logger -t probe "streamed"');
+    stop();
+    expect(seen).toHaveLength(1);
+    expect((JSON.parse(seen[0]) as Record<string, string>).MESSAGE).toBe('streamed');
   });
 });

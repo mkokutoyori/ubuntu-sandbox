@@ -473,8 +473,6 @@ export class LinuxLogManager {
       this.dmesgBuffer.push(dEntry);
       this.emitToDmesgFollowers(dEntry);
     }
-    this.emitToFollowers(entry);
-
     if (!this.syslogDaemonActive) return;
 
     const facilityName = this.facilityName(entry.facility);
@@ -607,39 +605,6 @@ export class LinuxLogManager {
     // un descripteur appartenant à un pid mort.
     this.descriptorSink?.closeAll();
     this.openLogFiles.clear();
-  }
-
-  private entryMatches(e: JournalEntry, unit: string, priority: number, pid: number): boolean {
-    if (unit) {
-      const u = unit.replace(/\.service$/, '');
-      const hit = (e.unit && e.unit.includes(u))
-        || (e.tag && e.tag.includes(u))
-        || e.message.startsWith(`${u}.service`)
-        || e.message.includes(`${u}.service:`)
-        || e.message.includes(`${u}[`);
-      if (!hit) return false;
-    }
-    if (priority >= 0 && e.priority > priority) return false;
-    if (pid >= 0 && e.pid !== pid) return false;
-    return true;
-  }
-
-  private readonly followSubs = new Set<{ unit: string; priority: number; pid: number; listener: (line: string) => void }>();
-
-  /** Subscribe to live journal lines (journalctl -f). Returns an unsubscribe. */
-  followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {
-    const sub = { unit: opts.unit ?? '', priority: opts.priority ?? -1, pid: opts.pid ?? -1, listener };
-    this.followSubs.add(sub);
-    return () => { this.followSubs.delete(sub); };
-  }
-
-  private emitToFollowers(entry: JournalEntry): void {
-    if (this.followSubs.size === 0) return;
-    for (const sub of this.followSubs) {
-      if (this.entryMatches(entry, sub.unit, sub.priority, sub.pid)) {
-        sub.listener(this.formatSyslogLine(entry));
-      }
-    }
   }
 
   private parsePriority(spec: string): { facility: number; priority: number } | null {
