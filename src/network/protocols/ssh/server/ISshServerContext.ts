@@ -161,7 +161,7 @@ export interface ISshServerContext {
   /**
    * Optional logout hook fired by SshServerHandler when an authenticated
    * session ends (channel close, client disconnect, or transport drop).
-   * Implementations append to /var/log/wtmp.json on Linux and publish
+   * Implementations publish
    * `windows.account.logoff` on Windows so the Security event log
    * receives 4634 in addition to the 4624/4625 it already gets.
    */
@@ -169,7 +169,7 @@ export interface ISshServerContext {
   /**
    * Optional auth-failure hook used by SshServerHandler when the handshake or
    * password/pubkey check is rejected (analysis doc §1.4/§1.5). Implementations
-   * append to /var/log/auth.log and /var/log/btmp.json.
+   * append to /var/log/auth.log.
    */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
   clientPort?(fromIp: string): number | undefined;

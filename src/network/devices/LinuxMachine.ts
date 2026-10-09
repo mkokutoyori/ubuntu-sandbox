@@ -215,7 +215,6 @@ import {
 import { SshSessionTable } from './linux/network/SshSessionTable';
 import { renderWho } from './linux/network/whoFormatter';
 import { renderW } from './linux/network/wFormatter';
-import { renderLast } from './linux/network/lastFormatter';
 import { renderLoginctl } from './linux/network/loginctlFormatter';
 import { UtmpSync } from './linux/network/UtmpSync';
 import { TcpSocketStateProjection } from './linux/network/TcpSocketStateProjection';
@@ -438,6 +437,8 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setEphemeralRangeApplier((min, max) => this.tcpv2.setEphemeralRange(min, max));
     this.executor.setEphemeralPoolFreeChecker(() => this.tcpv2.hasFreeEphemeralPort());
     const utmpSync = new UtmpSync(this.executor.vfs);
+    utmpSync.bindKernelRelease(() => this.executor.identity.kernel.release);
+    utmpSync.bindUidResolver((user) => this.executor.userMgr.getUser(user)?.uid);
     utmpSync.bootstrap();
     if (this.executor.lifecycle.bootedAt()) {
       utmpSync.appendRebootMark(this.executor.lifecycle.bootedAt()!);
@@ -2528,14 +2529,7 @@ export abstract class LinuxMachine extends EndHost
       }, argv.slice(1));
     }
     if (cmd === 'last') {
-      return renderLast({
-        table: this.sessionTable,
-        utmp: this.utmpSync,
-        bootDate: this.executor.lifecycle.bootedAt(),
-        kernelRelease: this.executor.identity.kernel.release,
-        zone: this.executor.localZone(),
-        now: this.executor.simulatedDate(),
-      }, argv.slice(1));
+      return this.executor.handleLast(argv.slice(1), 'last').interleaved;
     }
     if (cmd === 'loginctl') {
       return renderLoginctl({

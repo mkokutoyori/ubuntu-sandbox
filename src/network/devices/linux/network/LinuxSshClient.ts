@@ -978,12 +978,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const noteRefusal = (
     method?: 'password' | 'publickey', reason?: string,
   ): void => {
-    if (opts.wireAuthRefused) {
-      (machine as unknown as {
-        recordFailedSshLogin?: (u: string, ip: string) => void;
-      }).recordFailedSshLogin?.(remoteUser, opts.sourceIp);
-      return;
-    }
+    if (opts.wireAuthRefused) return;
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, method, reason);
     throttler?.recordFailure(opts.sourceIp, simulationNowMs());
   };

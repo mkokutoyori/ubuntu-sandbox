@@ -82,7 +82,7 @@ describe('toutes les vues nomment le meme noyau', () => {
   it('l enregistrement de demarrage de last', async () => {
     const pc = poste();
 
-    const ligne = (await pc.executeCommand('last')).split('\n')
+    const ligne = (await pc.executeCommand('last -w')).split('\n')
       .find((l) => l.startsWith('reboot')) ?? '';
 
     expect(ligne).toContain(await noyau(pc));

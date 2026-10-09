@@ -71,7 +71,7 @@ import {
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
 import { runXargs } from './coreutils/Xargs';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
   CommandPrivilegePolicy,
@@ -212,7 +212,9 @@ import { bytesToHex, fileTextToBytes } from '@/crypto/encoding';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
-import { renderLast, renderLastb } from './network/lastFormatter';
+import { runLast } from './login/LastTool';
+import type { ToolResult } from './audit/tools/AuditToolHost';
+import { lastHost } from './login/LinuxLastHost';
 import { renderLoginctl } from './network/loginctlFormatter';
 import { cmdTty, cmdRunlevel, formatLocalTime } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
@@ -4847,6 +4849,10 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
   }
 
+  handleLast(args: string[], program: string): ToolResult {
+    return runLast(lastHost(this), args, program);
+  }
+
   handleAuditctl(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const result = runAuditctl(auditctlHost(this, false), args);
     return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
@@ -5327,36 +5333,11 @@ export class LinuxCommandExecutor {
         }
         return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
       }
-      case 'last': {
-        if (this.sessionTable) {
-          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
-          const out = renderLast({
-            table: this.sessionTable,
-            utmp: this.utmpSync,
-            bootDate: this.lifecycle.bootedAt(),
-            kernelRelease: this.identity.kernel.release,
-            zone: this.localZone(),
-            now: this.simulatedDate(),
-          }, args);
-          const exit = out.startsWith('last: ') ? 1 : 0;
-          return { output: out, exitCode: exit };
-        }
-        return { output: cmdLast(c, args), exitCode: 0 };
-      }
+      case 'last':
       case 'lastb': {
-        if (this.sessionTable && this.utmpSync) {
-          const out = renderLastb({
-            table: this.sessionTable,
-            utmp: this.utmpSync,
-            bootDate: this.lifecycle.bootedAt(),
-            kernelRelease: this.identity.kernel.release,
-            zone: this.localZone(),
-            now: this.simulatedDate(),
-          }, args);
-          const exit = out.startsWith('lastb: ') ? 1 : 0;
-          return { output: out, exitCode: exit };
-        }
-        return { output: cmdLastb(c, args), exitCode: 0 };
+        this.sessionTable?.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+        const result = this.handleLast(args, cmd);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'loginctl': {
         if (this.sessionTable) {
