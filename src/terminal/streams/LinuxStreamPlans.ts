@@ -21,6 +21,7 @@ import {
 } from '@/network/devices/linux/system/Dstat';
 import { interleaveTcpdumpStreams, runTcpdump } from '@/network/devices/linux/network/tcpdump/TcpdumpRunner';
 import { followArguments, snapshotCommand } from '@/network/devices/linux/journal/JournalFollow';
+import { splitChainText, splitPipeStages } from '@/network/devices/linux/LinuxShellParser';
 import type { AsyncJobContext } from '@/terminal/async';
 
 export interface StreamScreen {
@@ -31,6 +32,7 @@ export interface StreamScreen {
 export interface StreamJobPlan {
   readonly kind: 'job';
   readonly jobKind: 'streaming' | 'subscription';
+  readonly lineOriented: boolean;
   prepare?(ctx: AsyncJobContext): boolean;
   run(ctx: AsyncJobContext): Promise<void>;
   onInterrupt?(ctx: AsyncJobContext): void;
@@ -56,9 +58,9 @@ function notice(...lines: string[]): StreamNoticePlan {
 
 function job(
   run: (ctx: AsyncJobContext) => Promise<void>,
-  extra: Pick<StreamJobPlan, 'prepare' | 'onInterrupt'> & { jobKind?: StreamJobPlan['jobKind'] } = {},
+  extra: Pick<StreamJobPlan, 'prepare' | 'onInterrupt'> & { jobKind?: StreamJobPlan['jobKind']; lineOriented?: boolean } = {},
 ): StreamJobPlan {
-  return { kind: 'job', jobKind: extra.jobKind ?? 'streaming', prepare: extra.prepare, onInterrupt: extra.onInterrupt, run };
+  return { kind: 'job', jobKind: extra.jobKind ?? 'streaming', lineOriented: extra.lineOriented ?? true, prepare: extra.prepare, onInterrupt: extra.onInterrupt, run };
 }
 
 function follow(
@@ -109,14 +111,102 @@ function repainting(screen: StreamScreen, frame: () => string, intervalMs: numbe
       emit(ctx, frame());
       await ctx.delay(intervalMs);
     }
-  }, { prepare: () => { screen.mark(); return true; } });
+  }, { prepare: () => { screen.mark(); return true; }, lineOriented: false });
 }
 
 function intervalOf(seconds: number): number {
   return Math.max(100, seconds * 1000);
 }
 
+const LINEWISE_FILTERS = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'gawk', 'cut', 'tr', 'cat', 'stdbuf']);
+const WHOLE_INPUT_GREP_FLAGS = /^-[A-Za-z]*[clLqm]|^--(count|files-with|files-without|quiet|silent|max-count)/;
+
+function isLinewiseFilter(stage: string): boolean {
+  const toks = stage.split(/\s+/);
+  if (!LINEWISE_FILTERS.has(toks[0])) return false;
+  if (/[<>&;]/.test(stage)) return false;
+  if (toks[0].endsWith('grep') && toks.slice(1).some((t) => WHOLE_INPUT_GREP_FLAGS.test(t))) return false;
+  if ((toks[0] === 'awk' || toks[0] === 'gawk') && /\b(END|BEGIN)\b/.test(stage)) return false;
+  return true;
+}
+
+function shellQuote(text: string): string {
+  return `'${text.replace(/'/g, "'\\''")}'`;
+}
+
+function filteredContext(ctx: AsyncJobContext, passes: (line: string) => string): AsyncJobContext {
+  let pending = '';
+  const emitLine = (text: string, type?: string): void => {
+    const out = passes(text);
+    if (out.length > 0) for (const line of out.split('\n')) ctx.sink.line(line, type);
+  };
+  return {
+    ...ctx,
+    sink: {
+      line: (text, type) => emitLine(text, type),
+      lines: (texts, type) => { for (const text of texts) emitLine(text, type); },
+      write: (chunk, type) => {
+        pending += chunk;
+        const parts = pending.split('\n');
+        pending = parts.pop() ?? '';
+        for (const part of parts) emitLine(part, type);
+      },
+      warn: (text) => ctx.sink.warn(text),
+      error: (text) => ctx.sink.error(text),
+    },
+  };
+}
+
 export function planLinuxStream(
+  dev: LinuxMachine, session: LinuxShellSession, commandLine: string, screen: StreamScreen,
+): StreamPlan | null {
+  const chains = splitChainText(commandLine);
+  if (chains.length > 1) return planSequence(dev, session, chains, screen);
+  const stages = splitPipeStages(commandLine);
+  if (stages.length <= 1) return planStage(dev, session, commandLine, screen);
+  if (commandLine.includes('||')) return null;
+  const filters = stages.slice(1);
+  if (!filters.every(isLinewiseFilter)) return null;
+  const head = planStage(dev, session, stages[0], screen);
+  if (head === null || head.kind !== 'job' || !head.lineOriented) return null;
+  const tail = filters.join(' | ');
+  const passes = (line: string): string => dev.runCommandFrameInSession(`printf '%s\\n' ${shellQuote(line)} | ${tail}`, session).replace(/\n$/, '');
+  return {
+    ...head,
+    prepare: head.prepare ? (ctx) => head.prepare!(filteredContext(ctx, passes)) : undefined,
+    run: (ctx) => head.run(filteredContext(ctx, passes)),
+    onInterrupt: head.onInterrupt ? (ctx) => head.onInterrupt!(filteredContext(ctx, passes)) : undefined,
+  };
+}
+
+function planSequence(
+  dev: LinuxMachine, session: LinuxShellSession, chains: ReturnType<typeof splitChainText>, screen: StreamScreen,
+): StreamPlan | null {
+  const prefix = chains.slice(0, -1);
+  if (prefix.some((chain) => chain.operator !== ';' && chain.operator !== '&&')) return null;
+  const last = planLinuxStream(dev, session, chains[chains.length - 1].text, screen);
+  if (last === null || last.kind !== 'job') return null;
+  let proceed = true;
+  return {
+    ...last,
+    prepare: (ctx) => {
+      let succeeded = true;
+      let previous: typeof chains[number]['operator'] = ';';
+      for (const chain of prefix) {
+        if (previous === '&&' && !succeeded) { previous = chain.operator; continue; }
+        const out = dev.runCommandFrameInSession(chain.text, session).replace(/\n$/, '');
+        if (out.length > 0) emit(ctx, out);
+        succeeded = session.lastExitCode === 0;
+        previous = chain.operator;
+      }
+      proceed = previous === ';' || succeeded;
+      return proceed && last.prepare ? last.prepare(ctx) : true;
+    },
+    run: (ctx) => (proceed ? last.run(ctx) : Promise.resolve()),
+  };
+}
+
+function planStage(
   dev: LinuxMachine, session: LinuxShellSession, commandLine: string, screen: StreamScreen,
 ): StreamPlan | null {
   const toks = commandLine.trim().split(/\s+/);
@@ -259,7 +349,7 @@ function planMtr(dev: LinuxMachine, commandLine: string, toks: string[], screen:
       if (parsed.reportMode && cycle + 1 >= parsed.cycles) break;
       await ctx.delay(intervalMs);
     }
-  }, { prepare: () => { screen.mark(); return true; } });
+  }, { prepare: () => { screen.mark(); return true; }, lineOriented: false });
 }
 
 function planWatch(dev: LinuxMachine, session: LinuxShellSession, commandLine: string, toks: string[], screen: StreamScreen): StreamPlan | null {

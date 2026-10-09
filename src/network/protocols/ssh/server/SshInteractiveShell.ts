@@ -80,7 +80,7 @@ export class SshInteractiveShell {
   tryStartStreaming(line: string, hooks: SshInteractiveShellHooks): boolean {
     if (this.runtime.hasForegroundJob) return false;
     if (!(this.device instanceof LinuxMachine)) return false;
-    if (/[|<>&;]/.test(line)) return false;
+    if (/[<>]|(?<!&)&(?!&)/.test(line)) return false;
     const session = hooks.session as LinuxShellSession | undefined;
     if (session === undefined) return false;
     const plan = planLinuxStream(this.device, session, line, {

@@ -177,6 +177,70 @@ describe('SSH Windows -> Linux is a transparent transport for behaviour', () => 
     host.handleKey(key('c', { ctrlKey: true }));
   });
 
+  it('tail -f piped into grep streams only the matching lines, over SSH', async () => {
+    await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
+    await linuxHost.executeCommand('echo seed > /tmp/piped.log');
+    runOnForeground(host, "tail -f /tmp/piped.log | grep 'ERROR'");
+    await tick();
+    await linuxHost.executeCommand('echo "INFO boot" >> /tmp/piped.log');
+    await linuxHost.executeCommand('echo "ERROR disk full" >> /tmp/piped.log');
+    await waitFor(host, (l) => l.includes('ERROR disk full'));
+    expect(texts(host)).toContain('ERROR disk full');
+    expect(texts(host)).not.toContain('INFO boot');
+    host.handleKey(key('c', { ctrlKey: true }));
+    await waitFor(host, (l) => l.includes('^C'));
+    for (let i = 0; i < 8; i++) await tick();
+    await linuxHost.executeCommand('echo "ERROR after interrupt" >> /tmp/piped.log');
+    for (let i = 0; i < 4; i++) await tick();
+    expect(texts(host)).not.toContain('ERROR after interrupt');
+  });
+
+  it('journalctl -f piped into grep filters the initial snapshot and the followed records, over SSH', async () => {
+    await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
+    await linuxHost.executeCommand('logger -t pipetag "keep before"');
+    await linuxHost.executeCommand('logger -t pipetag "drop before"');
+    runOnForeground(host, "journalctl -f -t pipetag -o cat | grep keep");
+    await waitFor(host, (l) => l.includes('keep before'));
+    await linuxHost.executeCommand('logger -t pipetag "keep after"');
+    await linuxHost.executeCommand('logger -t pipetag "drop after"');
+    await waitFor(host, (l) => l.includes('keep after'));
+    expect(texts(host)).toContain('keep after');
+    expect(texts(host).filter((t) => t.startsWith('drop'))).toEqual([]);
+    host.handleKey(key('c', { ctrlKey: true }));
+  });
+
+  it('a pipe into a command that needs the whole input is not streamed (WITNESS: runs once and returns)', async () => {
+    await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
+    await linuxHost.executeCommand('printf "a\\nb\\n" > /tmp/whole.log');
+    runOnForeground(host, 'tail -f /tmp/whole.log | wc -l');
+    await waitFor(host, (l) => l.includes('2'));
+    runOnForeground(host, 'echo prompt-back');
+    await waitFor(host, (l) => l.includes('prompt-back'));
+    expect(texts(host)).toContain('prompt-back');
+  });
+
+  it('a sequence runs its leading commands once then streams the last one, over SSH', async () => {
+    await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
+    await linuxHost.executeCommand('echo seed > /tmp/seq.log');
+    runOnForeground(host, 'echo starting-watch; tail -f /tmp/seq.log');
+    await waitFor(host, (l) => l.includes('seed'));
+    expect(texts(host)).toContain('starting-watch');
+    await linuxHost.executeCommand('echo later >> /tmp/seq.log');
+    await waitFor(host, (l) => l.includes('later'));
+    expect(texts(host)).toContain('later');
+    host.handleKey(key('c', { ctrlKey: true }));
+  });
+
+  it('&& does not stream the last command when the first one failed, over SSH', async () => {
+    await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
+    runOnForeground(host, 'false && tail -f /tmp/never.log');
+    for (let i = 0; i < 6; i++) await tick();
+    runOnForeground(host, 'echo after-skip');
+    await waitFor(host, (l) => l.includes('after-skip'));
+    expect(texts(host)).toContain('after-skip');
+    expect(texts(host).some((t) => /never\.log/.test(t) && !t.startsWith('false'))).toBe(false);
+  });
+
   it('exit closes the remote session and returns to the Windows host', async () => {
     await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
     expect(subShellOf(host)).toBeInstanceOf(SshInteractiveSubShell);
