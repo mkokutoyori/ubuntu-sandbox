@@ -94,6 +94,7 @@ import { ausearchCommand } from './audit/Ausearch';
 import { aureportCommand } from './audit/Aureport';
 import { auditctlCommand } from './audit/Auditctl';
 import { augenrulesCommand } from './audit/Augenrules';
+import { ausyscallCommand } from './audit/Ausyscall';
 import { logrotateCommand } from './system/Logrotate';
 import { rebootCommand } from './system/Reboot';
 import { dmesgCommand } from './system/Dmesg';
@@ -242,6 +243,7 @@ export {
   aureportCommand,
   auditctlCommand,
   augenrulesCommand,
+  ausyscallCommand,
   logrotateCommand,
   rebootCommand,
   dmesgCommand,
@@ -406,6 +408,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   aureportCommand,
   auditctlCommand,
   augenrulesCommand,
+  ausyscallCommand,
   logrotateCommand,
   rebootCommand,
   dmesgCommand,

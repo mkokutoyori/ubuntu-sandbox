@@ -7,6 +7,7 @@ import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 import { runAusearch } from './audit/tools/AusearchTool';
 import { runAureport } from './audit/tools/AureportTool';
+import { runAusyscall } from './audit/tools/AusyscallTool';
 import { auditToolHost } from './audit/tools/LinuxAuditToolHost';
 
 import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
@@ -272,7 +273,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Users and groups
   'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-  'faillock', 'ausearch', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
+  'faillock', 'ausearch', 'ausyscall', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
   'login', 'logout', 'logname', 'users', 'lid', 'members', 'newgrp',
   // Lookup
@@ -5286,6 +5287,10 @@ export class LinuxCommandExecutor {
       case 'atrm': return this.atDenied('atrm') ?? cmdAtrm(this.atQueue, args);
       case 'ausearch': {
         const result = runAusearch(auditToolHost(this), args, stdin ?? null);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
+      case 'ausyscall': {
+        const result = runAusyscall({ machine: () => this.identity.kernel.machine }, args);
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'aureport': {
