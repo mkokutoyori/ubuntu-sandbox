@@ -1,4 +1,5 @@
 import type { HostClock } from '../audit/tools/AuditHostClock';
+import { strptime, type Tm } from '../time/Strptime';
 
 const USEC_PER_SEC = 1_000_000;
 const USEC_PER_MSEC = 1_000;
@@ -103,73 +104,6 @@ function parseSubseconds(text: string): number | null {
     factor = Math.trunc(factor / 10);
   }
   return result;
-}
-
-interface Tm extends BrokenDownTime {
-  wasSeconds?: number;
-}
-
-function takeNumber(text: string, at: number, low: number, high: number, digits: number): { value: number; end: number } | null {
-  let i = at;
-  while (text[i] === ' ') i++;
-  if (!isDigit(text[i])) return null;
-  let value = 0;
-  let taken = 0;
-  while (taken < digits && isDigit(text[i])) {
-    value = value * 10 + (text.charCodeAt(i) - 48);
-    i++;
-    taken++;
-  }
-  if (value < low || value > high) return null;
-  return { value, end: i };
-}
-
-function strptime(text: string, format: string, tm: Tm, clock: HostClock): number {
-  let at = 0;
-  for (let f = 0; f < format.length; f++) {
-    const ch = format[f];
-    if (ch === '%') {
-      const directive = format[++f];
-      if (directive === 's') {
-        let i = at;
-        while (text[i] === ' ') i++;
-        const first = i;
-        while (isDigit(text[i])) i++;
-        if (i === first) return -1;
-        const seconds = Number(text.slice(first, i));
-        const local = clock.localTime(seconds);
-        tm.year = local.year;
-        tm.mon = local.mon;
-        tm.mday = local.mday;
-        tm.hour = local.hour;
-        tm.min = local.min;
-        tm.sec = local.sec;
-        at = i;
-        continue;
-      }
-      const spec: Record<string, [number, number, number]> = {
-        y: [0, 99, 2], Y: [0, 9999, 4], m: [1, 12, 2], d: [1, 31, 2], H: [0, 23, 2], M: [0, 59, 2], S: [0, 61, 2],
-      };
-      const entry = spec[directive];
-      if (entry === undefined) return -1;
-      const taken = takeNumber(text, at, entry[0], entry[1], entry[2]);
-      if (taken === null) return -1;
-      at = taken.end;
-      if (directive === 'y') tm.year = 1900 + (taken.value >= 69 ? taken.value : taken.value + 100);
-      else if (directive === 'Y') tm.year = taken.value;
-      else if (directive === 'm') tm.mon = taken.value - 1;
-      else if (directive === 'd') tm.mday = taken.value;
-      else if (directive === 'H') tm.hour = taken.value;
-      else if (directive === 'M') tm.min = taken.value;
-      else tm.sec = taken.value;
-    } else if (isSpace(ch)) {
-      while (at < text.length && isSpace(text[at])) at++;
-    } else {
-      if (text[at] !== ch) return -1;
-      at++;
-    }
-  }
-  return at;
 }
 
 export function parseTimestamp(input: string, nowSec: number, clock: HostClock): number | null {

@@ -17,7 +17,7 @@ BOOTS = [
     ("11111111-2222-4333-8444-555555555552", 1709400000 - int(time.time())),
     ("11111111-2222-4333-8444-555555555553", 1721900000 - int(time.time())),
 ]
-CGROUP = "/sys/fs/cgroup/systemd"
+CGROUP = "/sys/fs/cgroup/unified"
 libc = ctypes.CDLL(None, use_errno=True)
 
 def sender(comm, unit, body):
@@ -31,6 +31,7 @@ def sender(comm, unit, body):
         os.makedirs(path, exist_ok=True)
         open(os.path.join(path, "cgroup.procs"), "w").write(str(os.getpid()))
     body()
+    time.sleep(0.4)
     os._exit(0)
 
 def native(fields):
@@ -101,8 +102,18 @@ def boot_messages(index):
     sender("sudo", "user.slice/user-1000.slice/session-3.scope", sudo)
     sender("shell", None, lambda: send_native([("MESSAGE", f"from a process outside any unit ({day})"), ("PRIORITY", "6"), ("SYSLOG_IDENTIFIER", "logger")]))
 
+CONF_DIR = "/etc/systemd/journald.conf.d"
+CONF = CONF_DIR + "/zz-oracle.conf"
+
 def main():
-    work = sys.argv[1]
+    os.makedirs(CONF_DIR, exist_ok=True)
+    open(CONF, "w").write("[Journal]\nReadKMsg=no\nAudit=no\nRateLimitIntervalSec=0\nStorage=persistent\n")
+    try:
+        record(sys.argv[1])
+    finally:
+        os.unlink(CONF)
+
+def record(work):
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(work)
     run_dir = f"/var/log/journal/{MACHINE_ID}"
