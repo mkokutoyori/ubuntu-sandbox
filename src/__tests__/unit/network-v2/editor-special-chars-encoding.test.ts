@@ -119,33 +119,33 @@ describe('Scénario UI-9 — vim : :set fileencoding? rapporte toujours utf-8', 
   });
 });
 
-describe('Scénario UI-9 — nano : caractères de contrôle en notation ^X', () => {
+describe('Scénario UI-9 — nano : caractères de contrôle en notation ^X (la ligne vide finale de nano reste affichée)', () => {
   it('les octets de contrôle (< 0x20) sont représentés en ^X, jamais affichés bruts', () => {
     const content = 'texte\x01control\x02chars\x1bici\n';
     const fs = new InMemoryEditorFsContext({ '/tmp/ctrl.txt': content });
     const nano = new NanoEngine(fs, '/tmp/ctrl.txt', content, false);
-    expect(nano.displayContent).toBe('texte^Acontrol^Bchars^[ici');
+    expect(nano.displayContent).toBe('texte^Acontrol^Bchars^[ici\n');
   });
 
   it('tab et retour à la ligne restent des caractères réels (pas de transformation)', () => {
     const content = 'a\tb\nc\n';
     const fs = new InMemoryEditorFsContext({ '/tmp/tab.txt': content });
     const nano = new NanoEngine(fs, '/tmp/tab.txt', content, false);
-    expect(nano.displayContent).toBe('a\tb\nc');
+    expect(nano.displayContent).toBe('a\tb\nc\n');
   });
 
   it('DEL (0x7f) est représenté par ^?', () => {
     const content = 'a\x7fb\n';
     const fs = new InMemoryEditorFsContext({ '/tmp/del.txt': content });
     const nano = new NanoEngine(fs, '/tmp/del.txt', content, false);
-    expect(nano.displayContent).toBe('a^?b');
+    expect(nano.displayContent).toBe('a^?b\n');
   });
 
   it('un texte sans caractère de contrôle est affiché tel quel', () => {
     const content = 'plain ascii text\n';
     const fs = new InMemoryEditorFsContext({ '/tmp/plain.txt': content });
     const nano = new NanoEngine(fs, '/tmp/plain.txt', content, false);
-    expect(nano.displayContent).toBe(nano.content);
+    expect(nano.displayContent).toBe(nano.content + '\n');
   });
 });
 

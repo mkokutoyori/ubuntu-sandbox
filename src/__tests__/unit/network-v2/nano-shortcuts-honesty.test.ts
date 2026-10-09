@@ -39,7 +39,7 @@ describe('Scénario — ^G ouvre une aide réelle, ^C reste la position du curse
     const nano = new NanoEngine(fs, '/tmp/x.txt', 'abc\n', false);
     ctrl(nano, 'c');
     expect(nano.mode).toBe('edit');
-    expect(nano.statusMessage).toContain('line 1');
+    expect(nano.statusMessage).toBe('[ line  1/2 (50%), col  1/ 4 ( 25%), char  0/4 ( 0%) ]');
   });
 
   it('^X (ou Échap) referme l\'aide et revient exactement où on était', () => {
@@ -234,13 +234,13 @@ describe('Scénario — ^J Justify reformate le paragraphe courant', () => {
     expect(nano.lines).toEqual(['a b c']);
   });
 
-  it('un paragraphe long est reformaté à la largeur maximale (80 colonnes)', () => {
+  it('un paragraphe long est reformaté à la largeur maximale (72 colonnes : 80 - 8, mesuré sur nano 7.2)', () => {
     const words = Array.from({ length: 30 }, (_, i) => `mot${i}`);
     const content = words.join('\n') + '\n';
     const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': content });
     const nano = new NanoEngine(fs, '/tmp/x.txt', content, false);
     ctrl(nano, 'j');
-    for (const line of nano.lines) expect(line.length).toBeLessThanOrEqual(80);
+    for (const line of nano.lines) expect(line.length).toBeLessThanOrEqual(72);
     // Every original word survives the reflow, in order.
     expect(nano.lines.join(' ')).toBe(words.join(' '));
   });
@@ -252,13 +252,15 @@ describe('Scénario — ^J Justify reformate le paragraphe courant', () => {
     expect(nano.lines).toEqual(['p1a p1b', '', 'p2a', 'p2b']);
   });
 
-  it('sur une ligne vide, ne fait rien', () => {
+  it('sur une ligne vide, justifie le paragraphe suivant (mesuré sur nano 7.2 : Modified, curseur après le paragraphe)', () => {
     const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'a\n\nb\n' });
     const nano = new NanoEngine(fs, '/tmp/x.txt', 'a\n\nb\n', false);
     press(nano, 'ArrowDown'); // land on the blank line
     ctrl(nano, 'j');
     expect(nano.lines).toEqual(['a', '', 'b']);
-    expect(nano.modified).toBe(false);
+    expect(nano.modified).toBe(true);
+    expect(nano.statusMessage).toBe('[ Justified paragraph ]');
+    expect(nano.cursorLine).toBe(3);
   });
 
   it('mode vue (-v) : ^J est bloqué', () => {

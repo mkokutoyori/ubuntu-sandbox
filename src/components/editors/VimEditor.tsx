@@ -7,7 +7,7 @@
  */
 
 import React, { useRef, useEffect, useCallback, useReducer } from 'react';
-import { scrollCaretIntoView } from './caretScroll';
+import { layoutLine, selectionForLine, rulerColumn, type SegmentKind, type CaretShape, type VisualState } from './vimLayout';
 import { VimEngine, type VimVariant } from '@/network/devices/linux/editors/VimEngine';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 
@@ -22,7 +22,8 @@ export type VimEditorDriver = Pick<VimEngine,
   | 'exited' | 'savedOnExit' | 'isReadOnly' | 'lineNumbersShown'
   | 'relativeNumbersShown' | 'listMode' | 'colorColumn' | 'fileFormat'
   | 'variant' | 'isRecordingMacro' | 'recordingMacroName'
-  | 'pendingBinaryWarning' | 'pendingSubstMatch' | 'pendingSwapRecovery'>;
+  | 'pendingBinaryWarning' | 'pendingSubstMatch' | 'pendingSwapRecovery'
+  | 'visualAnchor' | 'isReplacing' | 'searchPromptChar'>;
 
 interface VimEditorProps {
   filePath: string;
@@ -38,8 +39,18 @@ interface VimEditorProps {
   initialCursorLine?: number;
 }
 
-function flatOffset(lines: readonly string[], line: number, col: number): number {
-  return lines.slice(0, line).join('\n').length + (line > 0 ? 1 : 0) + col;
+function segmentStyle(kind: SegmentKind): React.CSSProperties {
+  switch (kind) {
+    case 'selected': return { backgroundColor: '#45475a' };
+    case 'caret-block': return { backgroundColor: '#f5e0dc', color: '#1e1e2e' };
+    case 'caret-bar': return { boxShadow: 'inset 2px 0 0 #f5e0dc' };
+    case 'caret-underline': return { boxShadow: 'inset 0 -2px 0 #f5e0dc' };
+    default: return {};
+  }
+}
+
+function caretColumnFor(text: string, col: number, renderList: ((line: string) => string) | null): number {
+  return renderList ? renderList(text.slice(0, col)).replace(/\$$/, '').length : col;
 }
 
 /** Real vim's ruler position label: "All" when the whole file fits on
@@ -72,7 +83,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const caretRef = useRef<HTMLSpanElement>(null);
   const commandRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -91,12 +103,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
     } else if (engine.mode === 'swap-recovery') {
       swapPromptRef.current?.focus();
     } else {
-      textareaRef.current?.focus();
-      const pos = flatOffset(engine.lines, engine.cursorLine, engine.cursorCol);
-      textareaRef.current?.setSelectionRange(pos, pos);
-      if (textareaRef.current) {
-        scrollCaretIntoView(textareaRef.current, engine.cursorLine, engine.lines.length);
-      }
+      bodyRef.current?.focus();
+      caretRef.current?.scrollIntoView?.({ block: 'nearest' });
     }
   });
 
@@ -109,6 +117,13 @@ export const VimEditor: React.FC<VimEditorProps> = ({
     }
     bump();
   }, [engine, onExit, bump]);
+
+  const focusedInBuffer = engine.mode !== 'command' && engine.mode !== 'search';
+  const caret: CaretShape = engine.mode === 'insert' ? (engine.isReplacing ? 'underline' : 'bar') : 'block';
+  const visual: VisualState | null =
+    engine.mode === 'visual' || engine.mode === 'visual-line' || engine.mode === 'visual-block'
+      ? { mode: engine.mode, anchor: engine.visualAnchor, cursor: { line: engine.cursorLine, col: engine.cursorCol } }
+      : null;
 
   const showSplash = isNewFile && engine.content === '' && engine.mode === 'normal';
 
@@ -184,118 +199,113 @@ export const VimEditor: React.FC<VimEditorProps> = ({
         lineHeight: '1.4',
       }}
     >
-      {/* ── Editor area with line numbers ── */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Left gutter: always present (real vim always reserves this
-            column for `~` on lines past EOF) — line numbers are an
-            independent overlay within it, off by default like real vim. */}
+      <div
+        ref={bodyRef}
+        data-testid="vim-body"
+        tabIndex={0}
+        onKeyDown={dispatch}
+        className="flex-1 overflow-y-auto overflow-x-hidden relative outline-none"
+        style={{ backgroundColor: '#1e1e2e' }}
+      >
         <div
-          data-testid="vim-gutter"
-          className="select-none overflow-hidden shrink-0 text-right pr-1"
+          className="grid"
           style={{
-            backgroundColor: '#181825',
-            color: '#585b70',
-            minWidth: (engine.lineNumbersShown || engine.relativeNumbersShown) ? '3.5em' : '1em',
+            gridTemplateColumns: `${(engine.lineNumbersShown || engine.relativeNumbersShown) ? '3.5em' : '1em'} 1fr`,
             paddingTop: '2px',
             lineHeight: '1.4',
-            fontSize: 'inherit',
-            fontFamily: 'inherit',
           }}
         >
-          {lines.map((_, i) => {
-            const isCursor = i === engine.cursorLine;
+          {lines.map((text, i) => {
+            const isCursorLine = i === engine.cursorLine;
             let label = '';
             if (engine.relativeNumbersShown) {
-              label = isCursor
+              label = isCursorLine
                 ? (engine.lineNumbersShown ? String(i + 1) : '0')
                 : String(Math.abs(i - engine.cursorLine));
             } else if (engine.lineNumbersShown) {
               label = String(i + 1);
             }
+            const shown = engine.listMode ? engine.renderListLine(text) : text;
+            const segments = layoutLine(shown, {
+              tabstop: 8,
+              caretCol: isCursorLine && focusedInBuffer ? caretColumnFor(text, engine.cursorCol, engine.listMode ? engine.renderListLine : null) : null,
+              caret,
+              selection: selectionForLine(lines, i, visual, 8),
+            });
             return (
-              <div
-                key={i}
-                style={{
-                  minHeight: '1.4em',
-                  color: isCursor ? '#cdd6f4' : '#585b70',
-                }}
-              >
-                {label}
-              </div>
+              <React.Fragment key={i}>
+                <div
+                  data-testid="vim-gutter-cell"
+                  className="select-none text-right pr-1"
+                  style={{ backgroundColor: '#181825', color: isCursorLine ? '#cdd6f4' : '#585b70' }}
+                >
+                  {label}
+                </div>
+                <div
+                  data-testid="vim-line"
+                  className="pl-2"
+                  style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', minHeight: '1.4em' }}
+                >
+                  {segments.map((seg, k) => (
+                    <span
+                      key={k}
+                      data-testid={seg.kind.startsWith('caret') ? 'vim-cursor' : undefined}
+                      ref={seg.kind.startsWith('caret') ? caretRef : undefined}
+                      style={segmentStyle(seg.kind)}
+                    >
+                      {seg.text}
+                    </span>
+                  ))}
+                </div>
+              </React.Fragment>
             );
           })}
           {Array.from({ length: Math.max(0, visibleLineCount - totalLines) }).map((_, i) => (
-            <div
-              key={`tilde-${i}`}
-              data-testid="vim-tilde"
-              style={{
-                minHeight: '1.4em',
-                color: '#45475a',
-                textAlign: 'left',
-                paddingLeft: '4px',
-              }}
-            >
-              ~
-            </div>
+            <React.Fragment key={`tilde-${i}`}>
+              <div
+                data-testid="vim-tilde"
+                className="select-none"
+                style={{ backgroundColor: '#181825', color: '#45475a', textAlign: 'left', paddingLeft: '4px', minHeight: '1.4em' }}
+              >
+                ~
+              </div>
+              <div />
+            </React.Fragment>
           ))}
         </div>
 
-        {/* Content area */}
-        <div className="flex-1 relative">
-          {engine.colorColumn !== null && (
-            <div
-              data-testid="vim-colorcolumn"
-              className="absolute top-0 bottom-0 pointer-events-none"
-              style={{
-                left: `calc(0.5rem + ${engine.colorColumn}ch)`,
-                width: '1px',
-                backgroundColor: '#45475a',
-              }}
-            />
-          )}
-          <textarea
-            name="vimBuffer"
-            autoComplete="off"
-            ref={textareaRef}
-            value={engine.listMode ? engine.lines.map((l) => engine.renderListLine(l)).join('\n') : engine.content}
-            onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
-            onKeyDown={dispatch}
-            readOnly
-            className="absolute inset-0 w-full h-full outline-none resize-none pl-2 pt-0.5"
+        {engine.colorColumn !== null && (
+          <div
+            data-testid="vim-colorcolumn"
+            className="absolute top-0 bottom-0 pointer-events-none"
             style={{
-              backgroundColor: '#1e1e2e',
-              color: '#cdd6f4',
-              fontFamily: 'inherit',
-              fontSize: 'inherit',
-              lineHeight: '1.4',
-              caretColor: engine.mode === 'insert' ? '#f5e0dc' : 'transparent',
-              border: 'none',
-              tabSize: 8,
+              left: `calc(${(engine.lineNumbersShown || engine.relativeNumbersShown) ? '3.5em' : '1em'} + 0.5rem + ${engine.colorColumn}ch)`,
+              width: '1px',
+              backgroundColor: '#45475a',
             }}
-            spellCheck={false}
           />
+        )}
 
-          {showSplash && (
-            <div
-              className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
-              style={{ color: '#585b70' }}
-            >
-              <div className="text-xl mb-2 font-bold" style={{ color: '#cdd6f4' }}>
-                {editorName === 'vim' ? 'VIM - Vi IMproved' : 'Vi'}
-              </div>
-              {editorName === 'vim' && (
-                <>
-                  <div className="text-sm mb-1">version 8.2.4919</div>
-                  <div className="text-sm mb-1">by Bram Moolenaar et al.</div>
-                  <div className="text-sm mb-3">Modified by team+vim@tracker.debian.org</div>
-                </>
-              )}
-              <div className="text-sm">type  :q&lt;Enter&gt;               to exit</div>
-              <div className="text-sm">type  :help&lt;Enter&gt;  or  &lt;F1&gt;  for on-line help</div>
-              <div className="text-sm">type  :help version8&lt;Enter&gt;   for version info</div>
+        {showSplash && (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
+            style={{ color: '#585b70' }}
+          >
+            <div className="text-xl mb-2 font-bold" style={{ color: '#cdd6f4' }}>
+              {editorName === 'vim' ? 'VIM - Vi IMproved' : 'Vi'}
             </div>
-          )}
-        </div>
+            {editorName === 'vim' && (
+              <>
+                <div className="text-sm mb-1">version 8.2.4919</div>
+                <div className="text-sm mb-1">by Bram Moolenaar et al.</div>
+                <div className="text-sm mb-3">Modified by team+vim@tracker.debian.org</div>
+              </>
+            )}
+            <div className="text-sm">type  :q&lt;Enter&gt;               to exit</div>
+            <div className="text-sm">type  :help&lt;Enter&gt;  or  &lt;F1&gt;  for on-line help</div>
+            <div className="text-sm">type  :help version8&lt;Enter&gt;   for version info</div>
+          </div>
+        )}
       </div>
 
       {/* ── Status line (penultimate line) ──
@@ -323,7 +333,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
             {engine.isRecordingMacro && (
               <span style={{ color: '#f38ba8' }} className="mr-4">recording @{engine.recordingMacroName}</span>
             )}
-            {engine.cursorLine + 1},{engine.cursorCol + 1}
+            {engine.cursorLine + 1},{rulerColumn(lines[engine.cursorLine] ?? '', engine.cursorCol, 8, engine.mode === 'insert')}
             <span className="ml-4">
               {vimPositionLabel(engine.cursorLine, totalLines, visibleLineCount)}
             </span>
@@ -362,7 +372,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           </div>
         ) : engine.mode === 'search' ? (
           <div className="flex items-center">
-            <span style={{ color: '#cdd6f4' }}>/</span>
+            <span style={{ color: '#cdd6f4' }}>{engine.searchPromptChar}</span>
             <input
               name="vimSearch"
               autoComplete="off"
@@ -393,7 +403,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
         ) : (
           <span style={{
             color: engine.message.startsWith('E') ? '#f38ba8' :
-              engine.message.includes('INSERT') ? '#a6e3a1' : '#a6adc8',
+              (engine.message.includes('INSERT') || engine.message.includes('REPLACE')) ? '#a6e3a1' : '#a6adc8',
           }}>
             {engine.message}
           </span>

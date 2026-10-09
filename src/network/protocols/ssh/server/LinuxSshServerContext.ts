@@ -54,7 +54,6 @@ import {
 import { parseDialAddress, socketStream } from '@/network/tcp/dial';
 import { isDialFailure } from '@/network/tcp/types';
 import { PortNumber } from '@/network/core/ports/PortNumber';
-import { LinuxUtmpProjection } from '../logging/LinuxUtmpProjection';
 import { SshAuthThrottler } from '../security/SshAuthThrottler';
 import { Fail2banAgent } from '../security/Fail2banAgent';
 import { SshInteractiveShell } from './SshInteractiveShell';
@@ -70,11 +69,6 @@ import { SSHD_LISTEN_BACKLOG } from '@/network/devices/linux/ports/ListenBacklog
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
 
-const LASTLOG_PATH = '/var/log/lastlog.json';
-// `wtmp` and `btmp` are binary in real Linux. We store JSON in the simulator
-// (analysis doc §3.7) so `last` / `lastb` can render OpenSSH-style rows.
-const WTMP_PATH = '/var/log/wtmp.json';
-const BTMP_PATH = '/var/log/btmp.json';
 
 const SSHD_CONFIG_PATH = '/etc/ssh/sshd_config';
 const FAIL2BAN_JAIL_LOCAL_PATH = '/etc/fail2ban/jail.local';
@@ -84,49 +78,6 @@ const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
 const ETC_SSH_DIR = '/etc/ssh';
 const SSHD_CONFIG_DROP_IN_DIR = '/etc/ssh/sshd_config.d';
-
-interface LastLoginEntry {
-  user: string;
-  ip: string;
-  at: number;
-}
-
-interface WtmpEntry {
-  user: string;
-  ip: string;
-  at: number;
-  type: 'login' | 'logout' | 'reboot';
-  tty: string;
-}
-
-interface BtmpEntry {
-  user: string;
-  ip: string;
-  at: number;
-  reason: string;
-  tty: string;
-}
-
-function appendJsonLog(
-  vfs: VirtualFileSystem,
-  path: string,
-  entry: unknown,
-  mode: number,
-): void {
-  const raw = vfs.readFile(path);
-  let arr: unknown[] = [];
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) arr = parsed;
-    } catch {
-      arr = [];
-    }
-  }
-  arr.push(entry);
-  vfs.writeFile(path, JSON.stringify(arr), 0, 0, 0o022);
-  vfs.chmod(path, mode);
-}
 
 /** Render a sub-shell's output lines the way the wire expects stdout. */
 function joinLines(lines: readonly string[]): string {
@@ -177,7 +128,6 @@ export class LinuxSshServerContext implements ISshServerContext {
   private readonly throttler: SshAuthThrottler | null;
   readonly fail2ban: Fail2banAgent | null;
   private readonly syslogger: SshSyslogger | null;
-  private readonly utmpProjection: LinuxUtmpProjection | null;
   readonly rawConfig: string;
   readonly maxAuthTriesDisconnect = SSHD_MAX_AUTH_TRIES_REASON;
   private cachedEffective: SshdServerConfig | null = null;
@@ -270,12 +220,6 @@ export class LinuxSshServerContext implements ISshServerContext {
       : null;
 
 
-    // utmp / btmp are owned by recordLogin / recordAuthFailure on
-    // this same context — the projection exists for tests that drive
-    // SshServerEventBus directly without instantiating a full
-    // LinuxSshServerContext, so we deliberately do NOT subscribe a
-    // second writer here (it would double every row).
-    this.utmpProjection = null;
 
     this.rawConfig = readSshdConfig(this.vfs);
   }
@@ -635,81 +579,16 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getLastLogin(user: string): string | null {
-    const raw = this.vfs.readFile(LASTLOG_PATH);
-    if (!raw) return null;
-    try {
-      const entries = JSON.parse(raw) as LastLoginEntry[];
-      let last: LastLoginEntry | undefined;
-      for (const entry of entries) {
-        if (entry.user === user) last = entry;
-      }
-      if (!last) return null;
-      const date = new Date(last.at).toUTCString();
-      return `Last login: ${date} from ${last.ip}`;
-    } catch {
-      return null;
-    }
+    const entry = this.executor?.lastlog.getCurrent(user);
+    if (!entry) return null;
+    return `Last login: ${new Date(entry.when).toUTCString()} from ${entry.sourceHost}`;
   }
 
   recordLogin(user: string, fromIp: string): void {
     this.openPamSession(user, fromIp);
-    const entry: LastLoginEntry = { user, ip: fromIp, at: simulationNowMs() };
-    let entries: LastLoginEntry[] = [];
-    const raw = this.vfs.readFile(LASTLOG_PATH);
-    if (raw) {
-      try {
-        entries = JSON.parse(raw) as LastLoginEntry[];
-      } catch {
-        entries = [];
-      }
-    }
-    entries.push(entry);
-    this.vfs.writeFile(
-      LASTLOG_PATH,
-      JSON.stringify(entries),
-      0,
-      0,
-      0o022,
-    );
-    // /var/log/auth.log is produced reactively by SshSyslogger subscribed to
-    // the event bus (post-merge). We only own the lastlog + wtmp side here.
-    this.appendWtmp({
-      user,
-      ip: fromIp,
-      at: entry.at,
-      type: 'login',
-      tty: 'pts/0',
-    });
-    // Mirror the login into the in-memory lastlog registry so the SSH
-    // client side (which lives in the same process) can pick up the
-    // canonical ctime-formatted "Last login: …" line without re-parsing
-    // the JSON file. The registry rotates current ↔ previous, keeping
-    // PAM-like semantics.
     this.executor?.lastlog.record(user, fromIp, 'pts/0');
   }
 
-  /**
-   * Pair with {@link recordLogin}: append a DEAD_PROCESS-style row when
-   * the SSH session ends, so `last` can show LOGOUT times instead of
-   * just "still logged in". Real wtmp pairs USER_PROCESS / DEAD_PROCESS
-   * by tty; we keep the same `tty: 'pts/0'` simplification as the login
-   * side and tag the row `type: 'logout'`.
-   */
-  recordLogout(user: string, fromIp: string): void {
-    this.appendWtmp({
-      user,
-      ip: fromIp,
-      at: simulationNowMs(),
-      type: 'logout',
-      tty: 'pts/0',
-    });
-  }
-
-  /**
-   * Mirror an authentication failure into /var/log/btmp.json (mode 0o600).
-   * The matching /var/log/auth.log line is emitted by SshSyslogger via the
-   * `auth_failure` event.
-   */
   clientPort(fromIp: string): number | undefined {
     const machine = this.device as { sshClientPort?: (ip: string) => number } | null;
     return machine?.sshClientPort?.(fromIp);
@@ -740,22 +619,8 @@ export class LinuxSshServerContext implements ISshServerContext {
     machine?.sshWireConnectionClosed?.(user, fromIp);
   }
 
-  recordAuthFailure(user: string, fromIp: string, reason: string): void {
-    this.appendBtmp({
-      user: user || 'invalid user',
-      ip: fromIp,
-      at: simulationNowMs(),
-      reason,
-      tty: 'ssh:notty',
-    });
-  }
-
-  private appendWtmp(entry: WtmpEntry): void {
-    appendJsonLog(this.vfs, WTMP_PATH, entry, 0o644);
-  }
-
-  private appendBtmp(entry: BtmpEntry): void {
-    appendJsonLog(this.vfs, BTMP_PATH, entry, 0o600);
+  recordAuthFailure(user: string, fromIp: string): void {
+    if (this.device instanceof LinuxMachine) this.device.recordFailedSshLogin(user || 'invalid user', fromIp);
   }
 
   /** Build an SshUserContext for the authenticated user from /etc/passwd. */

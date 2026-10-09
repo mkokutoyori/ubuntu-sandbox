@@ -162,6 +162,18 @@ const LINUX_THEME: TerminalTheme = {
 
 // ─── Session ──────────────────────────────────────────────────────
 
+function followArguments(args: string[]): string[] {
+  const kept: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i];
+    if (token === '-f' || token === '--follow') continue;
+    if (token === '-n' || token === '--lines') { i++; continue; }
+    if (token.startsWith('--lines=') || /^-n\d+$/.test(token)) continue;
+    kept.push(token);
+  }
+  return kept;
+}
+
 export class LinuxTerminalSession extends TerminalSession {
   currentPath: string;
   currentUser: string;
@@ -1133,8 +1145,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (/[|<>&]/.test(commandLine)) return false;
     const shell = this.shell;
 
-    const uIdx = Math.max(toks.indexOf('-u'), toks.indexOf('--unit'));
-    const unit = uIdx >= 0 ? toks[uIdx + 1] : undefined;
     const nIdx = Math.max(toks.indexOf('-n'), toks.indexOf('--lines'));
     const initialArgs = toks.slice(1).filter((t) => t !== '-f' && t !== '--follow');
     if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
@@ -1148,7 +1158,7 @@ export class LinuxTerminalSession extends TerminalSession {
         for (const line of initial.split('\n')) ctx.sink.line(line);
         return true;
       },
-      subscribe: (sink) => dev.followJournal({ unit }, sink),
+      subscribe: (sink) => dev.followJournal(followArguments(toks.slice(1)), sink),
     });
   }
 

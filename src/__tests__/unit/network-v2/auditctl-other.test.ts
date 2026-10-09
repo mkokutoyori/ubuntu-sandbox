@@ -82,7 +82,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('ln -s /etc/passwd /tmp/watched_dir/passwd_sym');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
       expect(auditLog).toContain('key="symlink_watch"');
-      expect(auditLog).toContain('syscall=symlink');
+      expect(auditLog).toContain('syscall=88');
     });
 
     it('5. should watch a symbolic link file itself instead of its target', async () => {
@@ -116,8 +116,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       
       const output = await pc.executeCommand('touch /tmp/ro_dir/file.txt');
       expect(output.toLowerCase()).toContain('read-only file system');
-      const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).not.toContain('ro_watch');
+      expect(await pc.executeCommand('ausearch -m SYSCALL -k ro_watch')).toContain('<no matches>');
     });
 
     it('8. should watch hidden files successfully (files starting with a dot)', async () => {
@@ -178,7 +177,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -w /tmp/trunc.txt -p w -k trunc_watch');
       await pc.executeCommand('truncate -s 0 /tmp/trunc.txt');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('syscall=truncate');
+      expect(auditLog).toContain('syscall=76');
     });
 
     it('14. should track filesystem changes done via sed inline substitutions (inode replacement)', async () => {
@@ -196,12 +195,12 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('15. should log directory changes when a watched directory is removed completely', async () => {
       const pc = await setupAdvancedAuditPC();
       await pc.executeCommand('mkdir /tmp/toremove');
-      await pc.executeCommand('auditctl -w /tmp/toremove -p d -k rm_dir_watch'); // d = delete
+      await pc.executeCommand('auditctl -w /tmp/toremove -p w -k rm_dir_watch');
       
       await pc.executeCommand('rmdir /tmp/toremove');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
       expect(auditLog).toContain('key="rm_dir_watch"');
-      expect(auditLog).toContain('syscall=rmdir');
+      expect(auditLog).toContain('syscall=84');
     });
 
     it('16. should log file access when using standard file editors (nano/vim simulation)', async () => {
@@ -253,7 +252,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -w /tmp/perms.txt -p a -k perms_watch');
       await pc.executeCommand('chmod 755 /tmp/perms.txt');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('syscall=chmod');
+      expect(auditLog).toContain('syscall=90');
     });
 
     it('21. should log owner changes explicitly with chown syscall parameters', async () => {
@@ -262,7 +261,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -w /tmp/owner.txt -p a -k owner_watch');
       await pc.executeCommand('chown user:user /tmp/owner.txt');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('syscall=chown');
+      expect(auditLog).toContain('syscall=92');
     });
 
     it('22. should watch changes on files containing space characters inside filenames', async () => {
@@ -281,8 +280,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -w /tmp/watched_dir/file.txt -p r -k file_only_watch');
       
       await pc.executeCommand('ls /tmp/watched_dir'); // accesses directory, not the file
-      const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).not.toContain('file_only_watch');
+      expect(await pc.executeCommand('ausearch -m SYSCALL -k file_only_watch')).toContain('<no matches>');
     });
 
     it('24. should watch directory access explicitly if directory is watched with read permissions', async () => {
@@ -315,7 +313,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('27. should log file creations using openat syscall rules', async () => {
       const pc = await setupAdvancedLAN(); // setup system to handle openat
       const output = await pc.executeCommand('auditctl -a always,exit -S openat -k fs_openat');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('28. should separate file modifications logs when they occur in same milliseconds', async () => {
@@ -360,7 +358,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -a always,exit -S execve -k exec_tracking');
       await pc.executeCommand('whoami');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('syscall=execve');
+      expect(auditLog).toContain('syscall=59');
     });
 
     it('33. should include login user ID (auid) in execution records even when running under sudo (euid=0)', async () => {
@@ -378,7 +376,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('kill -9 9999'); // Mock trigger
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
       expect(auditLog).toContain('key="process_kills"');
-      expect(auditLog).toContain('syscall=kill');
+      expect(auditLog).toContain('syscall=62');
     });
 
     it('35. should log pam session validation errors with failed status on incorrect login inputs', async () => {
@@ -594,10 +592,10 @@ describe('Linux auditctl Advanced Integration Suite', () => {
   // ─── Block 3: Daemon Control, Saturation & Backlog (Tests 61-90) ──
 
   describe('Block 3: Daemon Control, Backlog Exhaustion & Service Reloads', () => {
-    it('61. should reload audit daemon rules dynamically on sending SIGHUP signal', async () => {
+    it('61. should load rules.d content into the kernel through augenrules --load', async () => {
       const pc = await setupAdvancedAuditPC();
       await pc.executeCommand('echo "-w /etc/passwd -p wa" >> /etc/audit/rules.d/audit.rules');
-      const output = await pc.executeCommand('kill -HUP $(pgid auditd)'); // reload
+      const output = await pc.executeCommand('augenrules --load');
       expect(output).not.toContain('error');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('-w /etc/passwd');
@@ -606,7 +604,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('62. should support configuring backlog limit via auditctl -b', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -b 8192');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('backlog_limit 8192');
     });
@@ -656,7 +654,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       const pc = await setupAdvancedAuditPC();
       await pc.executeCommand('auditctl -e 2'); // Lock
       const output = await pc.executeCommand('auditctl -w /etc/passwd -p wa');
-      expect(output.toLowerCase()).toMatch(/locked|error|rejected/);
+      expect(output).toBe('The audit system is in immutable mode, no rule changes allowed');
     });
 
     it('69. should reject backlog limits modification once audit configuration is locked (enabled 2)', async () => {
@@ -699,7 +697,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('74. should support auditing queue rate limits on logging pipelines via auditctl -r', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -r 500');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('rate_limit 500');
     });
@@ -707,7 +705,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('75. should support zero parameter on rate limits config (unlimited logging allowed)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -r 0');
-      expect(output.trim()).toBe('');
+      expect(output).toMatch(/^enabled [012]\nfailure [012]\npid \d+\nrate_limit \d+\nbacklog_limit \d+\n/);
       const status = await pc.executeCommand('auditctl -s');
       expect(status).toContain('rate_limit 0');
     });
@@ -724,20 +722,20 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       expect(rotExist).toContain('audit.log.1');
     });
 
-    it('77. should suspend logging immediately on disk full alert (simulated space_left threshold)', async () => {
+    it('77. should leave kernel rule loading unaffected when auditd suspends on a space_left threshold', async () => {
       const pc = await setupAdvancedAuditPC();
       await pc.executeCommand('sed -i "s/space_left = 75/space_left = 999999/g" /etc/audit/auditd.conf'); // impossible space
       await pc.executeCommand('sed -i "s/space_left_action = SYSLOG/space_left_action = SUSPEND/g" /etc/audit/auditd.conf');
       await pc.executeCommand('service auditd restart');
       const output = await pc.executeCommand('auditctl -w /etc/passwd -p w');
-      expect(output.toLowerCase()).toMatch(/suspend|error|disabled/);
+      expect(output).toBe('');
     });
 
-    it('78. should reject auditctl -s query if audit service is stopped completely', async () => {
+    it('78. should report pid 0 in auditctl -s once the audit daemon is stopped', async () => {
       const pc = await setupAdvancedAuditPC();
       await pc.executeCommand('service auditd stop');
       const output = await pc.executeCommand('auditctl -s');
-      expect(output.toLowerCase()).toMatch(/error|cannot connect|stopped/);
+      expect(output).toContain('pid 0\n');
     });
 
     it('79. should restore default backlog limit value of 64 on clean reset operations', async () => {
@@ -762,10 +760,10 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       expect(output).toContain('DAEMON_START');
     });
 
-    it('82. should support configuration audits using auditctl --status option', async () => {
+    it('82. should reject the non-existent --status long option like the real auditctl', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl --status');
-      expect(output).toContain('enabled');
+      expect(output).toBe('Option --status is invalid\nThere was an error while processing parameters');
     });
 
     it('83. should protect active ruleset from modification if read-only rules file is mounted', async () => {
@@ -831,7 +829,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('91. should filter syscall rules based on devmajor parameters', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F devmajor=8 -k dev_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('devmajor=8');
     });
@@ -839,7 +837,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('92. should filter syscall rules based on devminor parameters', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F devminor=1 -k dev_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('devminor=1');
     });
@@ -847,7 +845,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('93. should filter syscall rules based on exact inode parameter matching', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F inode=12345 -k inode_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('inode=12345');
     });
@@ -863,7 +861,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('95. should support exclude filter rules to ignore noise on dynamic syscalls (never,exit)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a never,exit -S read -k ignore_read');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('never,exit');
     });
@@ -874,8 +872,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -a always,exit -S open -F uid=1000 -k always_open');
       
       await pc.executeCommand('su user -c "cat /etc/passwd"'); // triggers open
-      const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).not.toContain('always_open'); // ignored due to never rule
+      expect(await pc.executeCommand('ausearch -m SYSCALL -k always_open')).toContain('<no matches>');
     });
 
     it('97. should support excluding logs targeting specific system execution paths (never,exit -F path=...)', async () => {
@@ -884,12 +881,11 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       expect(output.trim()).toBe('');
     });
 
-    it('98. should filter syscall rules by process session ID explicitly (-F ses=1)', async () => {
+    it('98. should reject ses as a field name because auditctl only knows sessionid (-F ses=1)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F ses=1 -k session_open');
-      expect(output.trim()).toBe('');
-      const list = await pc.executeCommand('auditctl -l');
-      expect(list).toContain('ses=1');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch\n-F unknown field: ses\nThere was an error while processing parameters');
+      expect(await pc.executeCommand('auditctl -l')).toBe('No rules');
     });
 
     it('99. should reject syscall filters if comparison operator has typos (uid<>1000)', async () => {
@@ -901,13 +897,13 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('100. should support inequality comparison on file/process attributes (-F uid>1000)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F "uid>1000" -k non_system_users');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('101. should filter syscall rules by file directory parameter (-F dir=/etc)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F dir=/etc -k etc_dir_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('dir=/etc');
     });
@@ -922,36 +918,33 @@ describe('Linux auditctl Advanced Integration Suite', () => {
 
     it('103. should exclude directory watches dynamically if exclude rules match path patterns', async () => {
       const pc = await setupAdvancedAuditPC();
-      await pc.executeCommand('auditctl -a never,exit -F dir=/tmp');
+      await pc.executeCommand('auditctl -a never,exit -S all -F dir=/tmp');
       await pc.executeCommand('auditctl -w /tmp/test -p w -k tmp_write');
       
       await pc.executeCommand('touch /tmp/test');
-      const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).not.toContain('tmp_write');
+      expect(await pc.executeCommand('ausearch -m SYSCALL -k tmp_write')).toContain('<no matches>');
     });
 
-    it('104. should support filtering based on filesystem type magic numbers (-F fstype=0xef53)', async () => {
+    it('104. should reject fstype outside the filesystem filter list (-F fstype=0xef53)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F fstype=0xef53 -k ext_open');
-      expect(output.trim()).toBe('');
-      const list = await pc.executeCommand('auditctl -l');
-      expect(list).toContain('fstype=0xef53');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch\nfstype field is not valid for the filter\nThere was an error while processing parameters');
+      expect(await pc.executeCommand('auditctl -l')).toBe('No rules');
     });
 
     it('105. should filter audit records based on process executable name matches (-F exe=/bin/ls)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F exe=/bin/ls -k ls_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('exe=/bin/ls');
     });
 
-    it('106. should filter audit records based on process name matches (-F comm=ls)', async () => {
+    it('106. should reject comm as a field name because auditctl 3.1.2 has no such field (-F comm=ls)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F comm=ls -k ls_open');
-      expect(output.trim()).toBe('');
-      const list = await pc.executeCommand('auditctl -l');
-      expect(list).toContain('comm=ls');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch\n-F unknown field: comm\nThere was an error while processing parameters');
+      expect(await pc.executeCommand('auditctl -l')).toBe('No rules');
     });
 
     it('107. should reject rule creation if fstype value is out of hex bounds', async () => {
@@ -963,7 +956,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('108. should support filtering based on process session login state (-F sessionid=1)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F sessionid=1');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('109. should handle exclude filter rule deletions explicitly', async () => {
@@ -982,31 +975,31 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('111. should support filtering on PAM session identifiers explicitly (-F subj_user=unconfined_u)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F subj_user=unconfined_u');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('112. should support filtering on PAM role identifiers explicitly (-F subj_role=unconfined_r)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F subj_role=unconfined_r');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('113. should support filtering on PAM type identifiers explicitly (-F subj_type=unconfined_t)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F subj_type=unconfined_t');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('114. should support filtering on PAM sensitivity level explicitly (-F subj_sen=s0)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F subj_sen=s0');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
     });
 
     it('115. should reject exclusion rules if action key has typo (alwayss,exit)', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a alwayss,exit -S open');
-      expect(output.toLowerCase()).toContain('invalid');
+      expect(output).toContain('bad keyword');
     });
 
     it('116. should reject exclusion rules if filter target has typo (always,exitt)', async () => {
@@ -1063,7 +1056,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('long_watch');
       
-      const del = await pc.executeCommand(`auditctl -W ${longName} -p wa`);
+      const del = await pc.executeCommand(`auditctl -W ${longName} -p wa -k long_watch`);
       expect(del.trim()).toBe('');
     });
 
@@ -1074,10 +1067,10 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       expect(output).toBeDefined(); // can monitor read-only paths, ensure no service crash
     });
 
-    it('124. should reject rule creation if custom key contains non-ASCII characters', async () => {
+    it('124. should accept a custom key containing non-ASCII characters like the real auditctl', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -w /etc/passwd -p wa -k key_utf8_★');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('');
     });
 
     it('125. should reject spaces surrounding the equals sign in multi-criteria fields key', async () => {
@@ -1106,13 +1099,13 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       expect(output.toLowerCase()).toMatch(/invalid|quote|syntax/);
     });
 
-    it('129. should preserve all mutable rules after service status transitions from active to inactive and back', async () => {
+    it('129. should drop runtime-only rules when auditd restarts because augenrules --load begins with -D', async () => {
       const pc = await setupAdvancedAuditPC();
       await pc.executeCommand('auditctl -w /etc/hosts -p wa -k hosts_test');
       await pc.executeCommand('service auditd stop');
       await pc.executeCommand('service auditd start');
       const list = await pc.executeCommand('auditctl -l');
-      expect(list).toContain('hosts_test');
+      expect(list).toBe('No rules');
     });
 
     it('130. should clear active rules database cleanly using auditctl -D from PrivilegedEXEC mode', async () => {
@@ -1176,7 +1169,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('139. should reject syscall append commands if filter operator parameters has typos', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a alwayss,exit -S open');
-      expect(output.toLowerCase()).toContain('invalid');
+      expect(output).toContain('bad keyword');
     });
 
     it('140. should support deleting syscall rules based on their key filter dynamically', async () => {

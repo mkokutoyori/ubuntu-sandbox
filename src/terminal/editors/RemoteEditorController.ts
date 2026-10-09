@@ -92,6 +92,9 @@ export class RemoteVimController extends BaseRemoteEditorController<VimEditorVie
   get pendingBinaryWarning(): string | null { return this.current.pendingBinaryWarning; }
   get pendingSubstMatch(): PendingSubstMatch | null { return this.current.pendingSubstMatch; }
   get pendingSwapRecovery(): PendingSwapRecovery | null { return this.current.pendingSwapRecovery; }
+  get isReplacing(): boolean { return this.current.isReplacing; }
+  get searchPromptChar(): '/' | '?' { return this.current.searchPromptChar; }
+  get visualAnchor(): { line: number; col: number } { return { ...this.current.visualAnchor }; }
 
   renderListLine(line: string): string {
     if (!this.current.listMode) return line;

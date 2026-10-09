@@ -48,6 +48,9 @@ export interface VimEditorView extends EditorViewBase {
   readonly pendingSwapRecovery: PendingSwapRecovery | null;
   /** `:set listchars` — the renderer applies it, so `:set list` works remotely. */
   readonly listChars: ListChars;
+  readonly isReplacing: boolean;
+  readonly searchPromptChar: '/' | '?';
+  readonly visualAnchor: { readonly line: number; readonly col: number };
 }
 
 export interface NanoEditorView extends EditorViewBase {

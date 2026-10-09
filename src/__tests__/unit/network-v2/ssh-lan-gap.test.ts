@@ -12,6 +12,7 @@
  *            and exits at EOF.
  */
 
+import { UT, Utmpx, binaryStringToBytes } from '@/network/devices/linux/login/UtmpxRecord';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
@@ -49,13 +50,14 @@ describe('SSH gap-analysis remediations (P5/P8/P9)', () => {
   // ─── P9 — wtmp / btmp ────────────────────────────────────────
 
   // G1
-  it('G1 — successful SSH login appends an entry to /var/log/wtmp.json', async () => {
+  it('G1 — successful SSH login appends a USER_PROCESS record to /var/log/wtmp', async () => {
     const session = await openSshSession(lan.pc1, PC2_IP, 'user', 'admin');
     session.disconnect();
-    const raw = await lan.pc2.executeCommand('cat /var/log/wtmp.json');
-    const arr = JSON.parse(raw.trim()) as Array<{ user: string; ip: string }>;
-    expect(arr.length).toBeGreaterThanOrEqual(1);
-    expect(arr[arr.length - 1].user).toBe('user');
+    const dev = lan.pc2 as unknown as { executor: { vfs: { readFile(path: string): string | null } } };
+    const bytes = binaryStringToBytes(dev.executor.vfs.readFile('/var/log/wtmp') ?? '');
+    const records = Array.from({ length: bytes.length / 384 }, (_, i) => new Utmpx(bytes.subarray(i * 384, (i + 1) * 384)));
+    const logins = records.filter((r) => r.type === UT.USER_PROCESS && r.text('user') === 'user');
+    expect(logins.length).toBeGreaterThanOrEqual(1);
   });
 
   // G2
@@ -73,27 +75,19 @@ describe('SSH gap-analysis remediations (P5/P8/P9)', () => {
   });
 
   // G3
-  it('G3 — failed password attempt appends to /var/log/btmp.json and surfaces in `lastb`', async () => {
+  it('G3 — failed password attempt appends a record to /var/log/btmp that only root can list with lastb', async () => {
     try {
       await openSshSession(lan.pc1, PC2_IP, 'user', 'wrong-password');
     } catch {
       // expected: connect throws on auth failure
     }
-    // btmp is mode 0o600 in real Linux; in the simulator we mirror that, so
-    // we read it via the device's own VFS rather than `cat` (which would hit
-    // permission denied for the non-root caller).
     const dev = lan.pc2 as unknown as {
       executor: { vfs: { readFile(path: string): string | null } };
     };
-    const btmpRaw = dev.executor.vfs.readFile('/var/log/btmp.json');
-    expect(btmpRaw).not.toBeNull();
-    const btmp = JSON.parse(btmpRaw!.trim()) as Array<{ user: string }>;
-    expect(btmp.length).toBeGreaterThanOrEqual(1);
-    expect(btmp[0].user).toBe('user');
-    // `lastb` is sudo-only on real systems, but the simulator is permissive
-    // about the command itself — only the underlying file is mode-protected.
-    const out = await lan.pc2.executeCommand('lastb');
-    expect(out).toMatch(/btmp begins /);
+    const bytes = binaryStringToBytes(dev.executor.vfs.readFile('/var/log/btmp') ?? '');
+    expect(bytes.length).toBeGreaterThanOrEqual(384);
+    expect(new Utmpx(bytes.subarray(0, 384)).text('user')).toBe('user');
+    expect(await lan.pc2.executeCommand('lastb')).toBe('lastb: cannot open /var/log/btmp: Permission denied');
   });
 
   // ─── P8 — HashKnownHosts ─────────────────────────────────────

@@ -47,6 +47,10 @@ import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
 import { findEquipmentByIp } from '@/shell/hostResolution';
 import { LinuxRsyslogService } from './linux/syslog/LinuxRsyslogService';
+import { journalctlHost } from './linux/journal/LinuxJournalctlHost';
+import { runJournalctl } from './linux/journal/JournalctlTool';
+import { cursorOf } from './linux/journal/JournalRecord';
+import { SyslogStreamFraming } from './linux/syslog/SyslogStreamFraming';
 import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
@@ -215,7 +219,6 @@ import {
 import { SshSessionTable } from './linux/network/SshSessionTable';
 import { renderWho } from './linux/network/whoFormatter';
 import { renderW } from './linux/network/wFormatter';
-import { renderLast } from './linux/network/lastFormatter';
 import { renderLoginctl } from './linux/network/loginctlFormatter';
 import { UtmpSync } from './linux/network/UtmpSync';
 import { TcpSocketStateProjection } from './linux/network/TcpSocketStateProjection';
@@ -435,9 +438,26 @@ export abstract class LinuxMachine extends EndHost
     // à travers les câbles depuis celle-ci (docs/PRD-Pannes.md §F5.7).
     this.executor.mountServerReachable = (host: string) =>
       findHostByAddress(host, this.executor.vfs, this) !== null;
+    this.executor.streamConnector = (destination, port) => {
+      const socket = this.tcpv2.connect(destination, port);
+      const stream = socket as unknown as TcpStream | null;
+      return socket === null || socket.state !== 'established' || stream === null ? null : {
+        write: (bytes) => stream.write(String.fromCharCode(...bytes)),
+        close: () => stream.close(),
+      };
+    };
+    this.executor.datagramSender = (destination, port, payload) => this.sendUdpDatagram({
+      destination: new IPAddress(destination),
+      destinationPort: port,
+      sourcePort: this.allocateEphemeralPort(),
+      payload,
+      payloadBytes: payload.length,
+    });
     this.executor.setEphemeralRangeApplier((min, max) => this.tcpv2.setEphemeralRange(min, max));
     this.executor.setEphemeralPoolFreeChecker(() => this.tcpv2.hasFreeEphemeralPort());
     const utmpSync = new UtmpSync(this.executor.vfs);
+    utmpSync.bindKernelRelease(() => this.executor.identity.kernel.release);
+    utmpSync.bindUidResolver((user) => this.executor.userMgr.getUser(user)?.uid);
     utmpSync.bootstrap();
     if (this.executor.lifecycle.bootedAt()) {
       utmpSync.appendRebootMark(this.executor.lifecycle.bootedAt()!);
@@ -1537,6 +1557,7 @@ export abstract class LinuxMachine extends EndHost
           const p = d.udp.payload as unknown;
           let charge = '';
           if (typeof p === 'string') charge = p;
+          else if (p instanceof Uint8Array) charge = new TextDecoder().decode(p);
           else if (p && typeof p === 'object' && (p as { type?: string }).type === 'syslog') {
             const s2 = p as { facility: number; severity: number; hostname: string;
                               tag: string; message: string; timestamp: string };
@@ -1546,6 +1567,21 @@ export abstract class LinuxMachine extends EndHost
           if (charge) onDatagram(d.sourceIP.toString(), charge);
         }, 'rsyslogd');
         return () => this.udpClose(port);
+      },
+      ecouterTcp: (port, onMessage) => {
+        const stack = this.getTcpStack();
+        try {
+          stack.listen(port, {
+            identity: { processName: 'rsyslogd' },
+            onAccept: (socket) => {
+              const framing = new SyslogStreamFraming((message) => onMessage(socket.remoteIp, message));
+              (socket as unknown as TcpStream).onData((data) => framing.push(data));
+            },
+          });
+        } catch {
+          return null;
+        }
+        return () => stack.closeListener(port);
       },
       hostname: () => this.getHostname(),
       maintenant: () => this.getSystemClockMs(),
@@ -1600,10 +1636,9 @@ export abstract class LinuxMachine extends EndHost
   private publierPortsRsyslog(): void {
     const svc = this.rsyslogService;
     if (!svc) return;
-    const ports = svc.listeningPorts();
     this.executor.serviceMgr.registerServiceListener('rsyslog', {
       processName: 'rsyslogd',
-      sockets: ports.map((port) => ({ port, protocol: 'udp' as const })),
+      sockets: svc.listeningSockets(),
     });
   }
 
@@ -2220,7 +2255,6 @@ export abstract class LinuxMachine extends EndHost
       const userEntry = this.executor.userMgr.getUser(user);
       const uid = userEntry?.uid ?? 1000;
       const gid = userEntry?.gid ?? uid;
-      this.rememberLastSshLogin(user, fromIp);
       const session = this.sessionTable.open({
         user, uid, sshdPid: 0,
         fromIp, fromHost,
@@ -2469,21 +2503,9 @@ export abstract class LinuxMachine extends EndHost
     return t;
   })();
 
-  /**
-   * Per-user record of the most recent SUCCESSFUL SSH login. Read by
-   * the sshLauncher banner to produce the OpenSSH "Last login: <date>
-   * from <ip>" line. The simulator's analogue of `/var/log/lastlog`.
-   */
-  private readonly lastSshLoginByUser = new Map<string, { at: Date; from: string }>();
-
-  /** sshLauncher contract — returns the previous login for `user` (if any). */
   getLastSshLoginFor(user: string): { at: Date; from: string } | null {
-    return this.lastSshLoginByUser.get(user) ?? null;
-  }
-
-  /** Push a new last-login entry; called from `recordSshLogin` on accept. */
-  private rememberLastSshLogin(user: string, fromIp: string): void {
-    this.lastSshLoginByUser.set(user, { at: simulationDate(), from: fromIp });
+    const entry = this.executor.lastlog.getCurrent(user);
+    return entry ? { at: new Date(entry.when), from: entry.sourceHost } : null;
   }
 
   /** Ensure a tty=tty1 console session exists for the local user. */
@@ -2528,14 +2550,7 @@ export abstract class LinuxMachine extends EndHost
       }, argv.slice(1));
     }
     if (cmd === 'last') {
-      return renderLast({
-        table: this.sessionTable,
-        utmp: this.utmpSync,
-        bootDate: this.executor.lifecycle.bootedAt(),
-        kernelRelease: this.executor.identity.kernel.release,
-        zone: this.executor.localZone(),
-        now: this.executor.simulatedDate(),
-      }, argv.slice(1));
+      return this.executor.handleLast(argv.slice(1), 'last').interleaved;
     }
     if (cmd === 'loginctl') {
       return renderLoginctl({
@@ -5067,8 +5082,17 @@ export abstract class LinuxMachine extends EndHost
     this.executor.installCrontab(content, user);
   }
 
-  followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {
-    return this.executor.logMgr.followJournal(opts, listener);
+  followJournal(args: string[], sink: (line: string) => void): () => void {
+    const host = journalctlHost(this.executor);
+    const journald = this.executor.logMgr.journald;
+    const tail = journald.records()[journald.records().length - 1];
+    let last = tail === undefined ? null : cursorOf(tail);
+    return journald.onRecord((record) => {
+      const argv = [...args, ...(last === null ? [] : [`--after-cursor=${last}`])];
+      last = cursorOf(record);
+      const out = runJournalctl(host, argv).stdout;
+      for (const line of out.split('\n')) if (line.length > 0) sink(line);
+    });
   }
 
   sampleVmstatSnapshot() {

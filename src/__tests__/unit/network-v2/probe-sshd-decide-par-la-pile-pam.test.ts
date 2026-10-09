@@ -93,7 +93,7 @@ describe('sshd decided by the PAM stack', () => {
     const order = [
       /^Invalid user ghost from 10\.0\.0\.2 port \d+$/,
       /^pam_unix\(sshd:auth\): check pass; user unknown$/,
-      /^pam_unix\(sshd:auth\): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10\.0\.0\.2 $/,
+      /^pam_unix\(sshd:auth\): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10\.0\.0\.2$/,
       /^Failed password for invalid user ghost from 10\.0\.0\.2 port \d+ ssh2$/,
     ].map((pattern) => lines.findIndex((line) => pattern.test(line)));
     expect(order.every((index) => index >= 0)).toBe(true);

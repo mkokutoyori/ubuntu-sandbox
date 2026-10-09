@@ -669,7 +669,8 @@ describe('§8 — Cisco / Huawei → Linux & Windows SSH', () => {
     {
       name: 'VRP: stelnet 10.0.0.6 reaches the Cisco router',
       on: l => l.hwR1, cmd: 'stelnet 10.0.0.6',
-      contains: [/IOS|Cisco|ciscoR1/i],
+      contains: [/Connection to 10\.0\.0\.6 closed/],
+      excludes: [/refused|timed out|Unrecognized|denied/i],
     },
   ];
 

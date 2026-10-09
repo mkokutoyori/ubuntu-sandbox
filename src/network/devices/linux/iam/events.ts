@@ -45,11 +45,17 @@ export interface UserCreatedPayload extends UserRef {
   supplementaryGroups: string[];
   /** True when `useradd` auto-created a user-private group. */
   userPrivateGroupCreated: boolean;
+  /** True when `useradd -m` created the home directory. */
+  homeCreated: boolean;
 }
 
 export interface UserDeletedPayload extends UserRef {
   /** Whether the home directory was removed (`userdel -r`). */
   homeRemoved: boolean;
+  /** Whether the user-private group was removed with the account. */
+  privateGroupRemoved: boolean;
+  /** Names of the groups the account was a member of before removal. */
+  memberOf: string[];
 }
 
 /** A field-level change on an existing account (`usermod`, `chage`, `chfn`). */
@@ -105,7 +111,10 @@ export interface GroupCreatedPayload extends GroupRef {
   userPrivateGroup: boolean;
 }
 
-export type GroupDeletedPayload = GroupRef;
+export interface GroupDeletedPayload extends GroupRef {
+  /** True when `userdel` removed the user-private group together with the account. */
+  userPrivateGroup: boolean;
+}
 
 export interface GroupModifiedPayload extends GroupRef {
   changedFields: string[];

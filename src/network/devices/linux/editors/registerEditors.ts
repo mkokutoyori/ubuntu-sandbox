@@ -56,6 +56,9 @@ function vimSession(variant: 'vi' | 'vim', seed: EditorSessionSeed): EditorSessi
     pendingSubstMatch: engine.pendingSubstMatch,
     pendingSwapRecovery: engine.pendingSwapRecovery,
     listChars: engine.listChars,
+    isReplacing: engine.isReplacing,
+    searchPromptChar: engine.searchPromptChar,
+    visualAnchor: engine.visualAnchor,
   });
   return {
     get view() { return view(); },

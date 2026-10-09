@@ -1,5 +1,6 @@
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
-import { cmdAureport } from '../../audit/AuditCommands';
+import { runAureport } from '../../audit/tools/AureportTool';
+import { auditToolHost } from '../../audit/tools/LinuxAuditToolHost';
 import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
 
 const AUREPORT_OPTIONS: readonly LinuxCommandOption[] = [
@@ -26,5 +27,13 @@ export const aureportCommand: LinuxCommand = {
   usage: 'aureport [options]',
   options: AUREPORT_OPTIONS,
   privilege: { satisfiedBy: Satisfy.root },
-  run: (ctx, args) => cmdAureport(ctx.executor.auditLog, args),
+  readsStdin: true,
+  run: (ctx, args, stdin) => {
+    const result = runAureport(auditToolHost(ctx.executor), args, stdin ?? null);
+    return result.stdout + result.stderr;
+  },
+  runWithStatus: (ctx, args, stdin) => {
+    const result = runAureport(auditToolHost(ctx.executor), args, stdin ?? null);
+    return Promise.resolve({ output: result.stdout, exitCode: result.exitCode, stderr: result.stderr, interleaved: result.interleaved });
+  },
 };

@@ -9,16 +9,9 @@ export type NanoMode =
   | 'help' | 'execute-prompt' | 'read-file-prompt';
 
 /** Column width `^J` (Justify) wraps a paragraph to. */
-const JUSTIFY_WIDTH = 80;
+const JUSTIFY_WIDTH = 72;
 
-/**
- * Lines a PageUp/PageDown jumps by. Real nano ties this to the terminal
- * window's actual row count; this headless engine has no live viewport,
- * so — like VimEditor's own `visibleLineCount` assumption — a fixed
- * value approximates "a screen's worth" well enough for chunked
- * navigation through a long file.
- */
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 18;
 
 export interface PendingReplaceMatch {
   line: number;
@@ -33,7 +26,7 @@ function escapeRegExp(s: string): string {
 
 /** Ctrl+Left/Right word-jump boundary: any non-whitespace character. */
 function isWordChar(ch: string | undefined): boolean {
-  return ch !== undefined && !/\s/.test(ch);
+  return ch !== undefined && /[\p{L}\p{N}]/u.test(ch);
 }
 
 /** Search `line` for the next match of `regex` at or after column `fromCol`. */
@@ -111,13 +104,13 @@ export class NanoEngine {
     /** `nano -l` / `--linenumbers`. */
     private _showLineNumbers = false,
   ) {
-    const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
-    this.linesArr = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
+    this.linesArr = initialContent.length === 0 ? [''] : initialContent.split('\n');
+    this.ensureTrailingBlankLine();
     this._statusMessage = _readOnly
       ? '[ View mode ]'
       : isNewFile
         ? '[ New File ]'
-        : `[ Read ${this.linesArr.length} line${this.linesArr.length === 1 ? '' : 's'} ]`;
+        : `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
     this.saveFileNameBuffer = filePath;
     // GNU nano creates a `.<file>.swp` lock file for the duration of the
     // editing session to prevent two nano instances from editing the same
@@ -133,7 +126,7 @@ export class NanoEngine {
 
   // ── Public state (read-only) ──────────────────────────────────────
 
-  get content(): string { return this.linesArr.join('\n'); }
+  get content(): string { return this.lines.join('\n'); }
   /**
    * Real nano always renders non-printable control bytes as `^X` (never
    * the raw byte, which would corrupt the terminal) — unlike vim's opt-in
@@ -143,7 +136,7 @@ export class NanoEngine {
    */
   get displayContent(): string {
     let out = '';
-    for (const ch of this.content) out += displayNotation(ch);
+    for (const ch of this.linesArr.join('\n')) out += displayNotation(ch);
     return out;
   }
   /**
@@ -173,8 +166,41 @@ export class NanoEngine {
     return displayColumnFor(this.linesArr, line, col);
   }
   /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
-  private serialize(): string { return this.linesArr.join('\n') + '\n'; }
-  get lines(): readonly string[] { return this.linesArr; }
+  private serialize(): string {
+    const body = this.linesArr.slice();
+    if (body[body.length - 1] === '') body.pop();
+    return body.length === 0 ? '' : body.join('\n') + '\n';
+  }
+
+  private locationMessage(): string {
+    const totalLines = this.linesArr.length;
+    const line = this._cursorLine + 1;
+    const column = displayColumnFor(this.linesArr, this._cursorLine, this._cursorCol) + 1;
+    const fullWidth = displayColumnFor(this.linesArr, this._cursorLine, this.line(this._cursorLine).length) + 1;
+    const fullSize = this.serialize().length;
+    let before = 0;
+    for (let i = 0; i < this._cursorLine; i++) before += this.line(i).length + 1;
+    before += this._cursorCol;
+    const pct = (part: number, whole: number): number => (whole === 0 ? 0 : Math.floor((100 * part) / whole));
+    const pad = (n: number, width: number): string => String(n).padStart(width, ' ');
+    const lineWidth = Math.max(2, String(totalLines).length);
+    const sizeWidth = Math.max(2, String(fullSize).length);
+    return `[ line ${pad(line, lineWidth)}/${totalLines} (${pad(pct(line, totalLines), 2)}%), `
+      + `col ${pad(column, 2)}/${pad(fullWidth, 2)} (${pad(pct(column, fullWidth), 3)}%), `
+      + `char ${pad(before, sizeWidth)}/${fullSize} (${pad(pct(before, fullSize), 2)}%) ]`;
+  }
+
+  private ensureTrailingBlankLine(): void {
+    if (this.linesArr[this.linesArr.length - 1] !== '') this.linesArr.push('');
+  }
+
+  private writtenLineCount(): number {
+    return this.linesArr.length - 1;
+  }
+  get lines(): readonly string[] {
+    return this.linesArr.length > 1 ? this.linesArr.slice(0, -1) : this.linesArr;
+  }
+  get bufferLines(): readonly string[] { return this.linesArr; }
   get mode(): NanoMode { return this._mode; }
   get cursorLine(): number { return this._cursorLine; }
   get cursorCol(): number { return this._cursorCol; }
@@ -237,6 +263,13 @@ export class NanoEngine {
 
   applyKey(k: EditorKeyInput): void {
     if (this._exited) return;
+    this.verticalKey = false;
+    this.dispatchKey(k);
+    this.ensureTrailingBlankLine();
+    if (!this.verticalKey) this.placeWant = displayColumnFor(this.linesArr, this._cursorLine, this._cursorCol);
+  }
+
+  private dispatchKey(k: EditorKeyInput): void {
     switch (this._mode) {
       case 'edit': return this.applyEditKey(k);
       case 'save-prompt': return this.applySavePromptKey(k);
@@ -349,6 +382,28 @@ export class NanoEngine {
 
   private line(i: number): string { return this.linesArr[i] ?? ''; }
 
+  private placeWant = 0;
+  private verticalKey = false;
+
+  private columnAtDisplay(line: number, want: number): number {
+    const text = this.line(line);
+    let width = 0;
+    for (let i = 0; i < text.length; i++) {
+      const next = width + (text[i] === '\t' ? 8 - (width % 8) : displayWidth(text[i]));
+      if (next > want) return i;
+      width = next;
+    }
+    return text.length;
+  }
+
+  private moveVertical(delta: number): void {
+    const target = Math.max(0, Math.min(this.linesArr.length - 1, this._cursorLine + delta));
+    this.verticalKey = true;
+    this._cursorLine = target;
+    this._cursorCol = this.columnAtDisplay(target, this.placeWant);
+    this.lastEditKind = null;
+  }
+
   private clampCol(line: number, col: number): number {
     return Math.max(0, Math.min(col, this.line(line).length));
   }
@@ -420,12 +475,10 @@ export class NanoEngine {
         this.lastEditKind = null;
         return;
       case 'ArrowUp':
-        if (this._cursorLine > 0) { this._cursorLine--; this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol); }
-        this.lastEditKind = null;
+        this.moveVertical(-1);
         return;
       case 'ArrowDown':
-        if (this._cursorLine < this.linesArr.length - 1) { this._cursorLine++; this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol); }
-        this.lastEditKind = null;
+        this.moveVertical(1);
         return;
       case 'Home':
         this._cursorCol = 0;
@@ -514,6 +567,8 @@ export class NanoEngine {
     if (k.key === 'ArrowLeft') { this.jumpWordLeft(); return; }
     if (k.key === 'ArrowRight') { this.jumpWordRight(); return; }
     const key = k.key.toLowerCase();
+    const emacs: Record<string, string> = { b: 'ArrowLeft', f: 'ArrowRight', p: 'ArrowUp', n: 'ArrowDown', a: 'Home', e: 'End', d: 'Delete', h: 'Backspace' };
+    if (emacs[key]) { this.applyEditKey({ ...k, key: emacs[key], ctrl: false }); return; }
     // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
     // File or Execute Command — real nano has none of these bound while
     // read-only, since every one of them would mutate the buffer.
@@ -597,8 +652,7 @@ export class NanoEngine {
         this.lastActionWasCut = false;
         return;
       case 'c': { // Cur Pos
-        const total = this.linesArr.length;
-        this._statusMessage = `[ line ${this._cursorLine + 1}/${total}, col ${this._cursorCol + 1} ]`;
+        this._statusMessage = this.locationMessage();
         this.lastActionWasCut = false;
         return;
       }
@@ -643,15 +697,24 @@ export class NanoEngine {
   }
 
   private pageUp(): void {
-    this._cursorLine = Math.max(0, this._cursorLine - PAGE_SIZE);
-    this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol);
-    this.lastEditKind = null;
+    if (this._cursorLine + 1 <= PAGE_SIZE) {
+      this._cursorLine = 0;
+      this._cursorCol = 0;
+      this.lastEditKind = null;
+      return;
+    }
+    this.moveVertical(-PAGE_SIZE);
   }
 
   private pageDown(): void {
-    this._cursorLine = Math.min(this.linesArr.length - 1, this._cursorLine + PAGE_SIZE);
-    this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol);
-    this.lastEditKind = null;
+    const last = this.linesArr.length - 1;
+    if (this._cursorLine + 1 + PAGE_SIZE > last + 1) {
+      this._cursorLine = last;
+      this._cursorCol = this.line(last).length;
+      this.lastEditKind = null;
+      return;
+    }
+    this.moveVertical(PAGE_SIZE);
   }
 
   /**
@@ -661,33 +724,50 @@ export class NanoEngine {
    * a single press would skip past the last word of a line entirely.
    */
   private jumpWordLeft(): void {
-    if (this._cursorCol === 0) {
-      if (this._cursorLine === 0) return;
-      this._cursorLine--;
-      this._cursorCol = this.line(this._cursorLine).length;
-      this.lastEditKind = null;
-      return;
-    }
-    const text = this.line(this._cursorLine);
+    let line = this._cursorLine;
     let col = this._cursorCol;
-    while (col > 0 && !isWordChar(text[col - 1])) col--;
-    while (col > 0 && isWordChar(text[col - 1])) col--;
+    let seenWord = false;
+    let stepForward = false;
+    while (true) {
+      if (col === 0) {
+        if (line === 0) break;
+        line--;
+        col = this.line(line).length;
+      }
+      if (col > 0) col--;
+      if (isWordChar(this.line(line)[col])) {
+        seenWord = true;
+        if (col === 0) break;
+      } else if (seenWord) {
+        stepForward = true;
+        break;
+      }
+    }
+    if (stepForward) col++;
+    this._cursorLine = line;
     this._cursorCol = col;
     this.lastEditKind = null;
   }
 
   private jumpWordRight(): void {
-    const text = this.line(this._cursorLine);
-    if (this._cursorCol >= text.length) {
-      if (this._cursorLine >= this.linesArr.length - 1) return;
-      this._cursorLine++;
-      this._cursorCol = 0;
-      this.lastEditKind = null;
-      return;
-    }
+    let line = this._cursorLine;
     let col = this._cursorCol;
-    while (col < text.length && isWordChar(text[col])) col++;
-    while (col < text.length && !isWordChar(text[col])) col++;
+    let seenSpace = !isWordChar(this.line(line)[col]);
+    while (line < this.linesArr.length - 1 || col < this.line(line).length) {
+      if (col >= this.line(line).length) {
+        line++;
+        col = 0;
+        seenSpace = true;
+      } else {
+        col++;
+      }
+      if (isWordChar(this.line(line)[col])) {
+        if (seenSpace) break;
+      } else {
+        seenSpace = true;
+      }
+    }
+    this._cursorLine = line;
     this._cursorCol = col;
     this.lastEditKind = null;
   }
@@ -795,6 +875,10 @@ export class NanoEngine {
     } else {
       this.cutBuffer = { kind: 'lines', lines: [this.line(this._cursorLine)] };
       this._statusMessage = 'Copied 1 line';
+      if (this._cursorLine < this.linesArr.length - 1) {
+        this._cursorLine++;
+        this._cursorCol = 0;
+      }
     }
   }
 
@@ -858,7 +942,7 @@ export class NanoEngine {
         this.finishExit(true);
         return;
       }
-      const n = this.linesArr.length;
+      const n = this.writtenLineCount();
       this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
       return;
     }
@@ -977,29 +1061,80 @@ export class NanoEngine {
 
   // ── Justify (^J) — reflow the current paragraph to JUSTIFY_WIDTH ──
 
-  private justifyParagraph(): void {
-    if (this.line(this._cursorLine).trim() === '') return; // real nano: nothing to justify on a blank line
-    let start = this._cursorLine;
-    while (start > 0 && this.line(start - 1).trim() !== '') start--;
-    let end = this._cursorLine;
-    while (end < this.linesArr.length - 1 && this.line(end + 1).trim() !== '') end++;
+  private indentWidth(text: string): number {
+    const lead = text.match(/^[ \t]*/)?.[0] ?? '';
+    return displayColumnFor([lead], 0, lead.length);
+  }
 
-    const words = this.linesArr.slice(start, end + 1).join(' ').split(/\s+/).filter((w) => w.length > 0);
-    const wrapped: string[] = [];
-    let cur = '';
-    for (const w of words) {
-      if (cur.length === 0) { cur = w; continue; }
-      if (cur.length + 1 + w.length <= JUSTIFY_WIDTH) cur += ' ' + w;
-      else { wrapped.push(cur); cur = w; }
+  private paragraphContaining(target: number): { start: number; end: number } {
+    let blockStart = target;
+    while (blockStart > 0 && this.line(blockStart - 1).trim() !== '') blockStart--;
+    let start = blockStart;
+    while (true) {
+      let end = start;
+      if (start + 1 < this.linesArr.length && this.line(start + 1).trim() !== '') {
+        end = start + 1;
+        const bodyIndent = this.indentWidth(this.line(end));
+        while (end + 1 < this.linesArr.length && this.line(end + 1).trim() !== ''
+          && this.indentWidth(this.line(end + 1)) === bodyIndent) end++;
+      }
+      if (target <= end) return { start, end };
+      start = end + 1;
     }
-    if (cur.length > 0) wrapped.push(cur);
+  }
+
+  private squeezeText(text: string): string {
+    return text.replace(/[ \t]+/g, (run, offset: number, whole: string) => {
+      const endsSentence = /[.?!][)\]"'}>]*$/.test(whole.slice(0, offset));
+      return endsSentence && run.length >= 2 ? '  ' : ' ';
+    });
+  }
+
+  private justifyParagraph(): void {
+    let first = this._cursorLine;
+    while (first < this.linesArr.length && this.line(first).trim() === '') first++;
+    if (first >= this.linesArr.length) return;
+    const { start, end } = this.paragraphContaining(first);
+
+    const indentOf = (i: number): string => this.line(i).match(/^[ \t]*/)?.[0] ?? '';
+    const firstIndent = indentOf(start);
+    const restIndent = end > start ? indentOf(start + 1) : firstIndent;
+    const bodies = this.linesArr.slice(start, end + 1).map((l) => l.replace(/^[ \t]+/, ''));
+    const joined = bodies.map((body, i) => {
+      if (i === bodies.length - 1) return body.trimEnd();
+      const trailing = body.match(/[ \t]*$/)?.[0] ?? '';
+      const endsSentence = /[.?!][)\]"'}>]*$/.test(body.trimEnd());
+      return body.trimEnd() + (endsSentence && (trailing.length >= 2 || trailing === '\t') ? '  ' : ' ');
+    }).join('');
+    const squeezed = this.squeezeText(joined);
+    const words = Array.from(squeezed.matchAll(/(\S+)( {1,2})?/g), (m) => ({ text: m[1], gap: m[2] ?? ' ' }));
+
+    const wrapped: string[] = [];
+    let current = firstIndent;
+    let currentHasWord = false;
+    let pendingGap = '';
+    const widthOf = (text: string): number => displayColumnFor([text], 0, text.length);
+    for (const word of words) {
+      if (!currentHasWord) {
+        current += word.text;
+        currentHasWord = true;
+      } else if (widthOf(current + pendingGap + word.text) <= JUSTIFY_WIDTH) {
+        current += pendingGap + word.text;
+      } else {
+        wrapped.push(current);
+        current = restIndent + word.text;
+      }
+      pendingGap = word.gap;
+    }
+    if (currentHasWord) wrapped.push(current);
     if (wrapped.length === 0) wrapped.push('');
 
     this.beginDiscreteEdit();
     this.linesArr.splice(start, end - start + 1, ...wrapped);
-    this._cursorLine = start + wrapped.length - 1;
-    this._cursorCol = wrapped[wrapped.length - 1].length;
+    this._cursorLine = start + wrapped.length;
+    this._cursorCol = 0;
     this._modified = true;
+    this._statusMessage = '[ Justified paragraph ]';
   }
 
   // ── Search ───────────────────────────────────────────────────────

@@ -5,6 +5,10 @@
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { runAusearch } from './audit/tools/AusearchTool';
+import { runAureport } from './audit/tools/AureportTool';
+import { runAusyscall } from './audit/tools/AusyscallTool';
+import { auditToolHost } from './audit/tools/LinuxAuditToolHost';
 
 import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
@@ -68,7 +72,7 @@ import {
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
 import { runXargs } from './coreutils/Xargs';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
   CommandPrivilegePolicy,
@@ -122,10 +126,13 @@ import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
 import type { SocketTable } from '../../core/SocketTable';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
+import { acctMessageFields, grantorsOf, type AuditSender } from './audit/AuditUserMessage';
 import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
 import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
-import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
+import { runAuditctl } from './audit/tools/AuditctlTool';
+import { runAugenrules } from './audit/tools/AugenrulesTool';
+import { auditctlHost, augenrulesHost } from './audit/tools/LinuxAuditctlHost';
 import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
 import {
   STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
@@ -206,7 +213,15 @@ import { bytesToHex, fileTextToBytes } from '@/crypto/encoding';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
-import { renderLast, renderLastb } from './network/lastFormatter';
+import { runLast } from './login/LastTool';
+import { runLastlog } from './login/LastlogTool';
+import { lastlogHost } from './login/LinuxLastlogHost';
+import type { ToolResult } from './audit/tools/AuditToolHost';
+import { lastHost } from './login/LinuxLastHost';
+import { loggerHost } from './syslog/LinuxLoggerHost';
+import { runLogger } from './syslog/LoggerTool';
+import { journalctlHost } from './journal/LinuxJournalctlHost';
+import { runJournalctl } from './journal/JournalctlTool';
 import { renderLoginctl } from './network/loginctlFormatter';
 import { cmdTty, cmdRunlevel, formatLocalTime } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
@@ -258,7 +273,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Users and groups
   'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-  'faillock', 'ausearch', 'aureport', 'auditctl', 'pwck', 'grpck', 'visudo',
+  'faillock', 'ausearch', 'ausyscall', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
   'login', 'logout', 'logname', 'users', 'lid', 'members', 'newgrp',
   // Lookup
@@ -356,26 +371,6 @@ function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; p
 function permTriad(p: number): string {
   return ((p & 0o4) ? 'r' : '-') + ((p & 0o2) ? 'w' : '-') + ((p & 0o1) ? 'x' : '-');
 }
-
-const LASTLOG_HELP = [
-  '',
-  'Usage:',
-  ' lastlog [options]',
-  '',
-  'Reports the most recent login of all users or of a given user.',
-  '',
-  'Options:',
-  ' -b, --before DAYS    print only lastlog records older than DAYS',
-  ' -C, --clear          clear lastlog record of a user (usable only with -u)',
-  ' -R, --root CHROOT_DIR  directory to chroot into',
-  ' -S, --set            set lastlog record to current time (usable only with -u)',
-  ' -t, --time DAYS      print only lastlog records more recent than DAYS',
-  ' -u, --user LOGIN     print lastlog record of the specified LOGIN',
-  ' -h, --help           display this help',
-  ' -V, --version        display version',
-  '',
-  'For more details see lastlog(8).',
-].join('\n');
 
 /** Map the short process state code to the long name procfs prints in
  *  /proc/<pid>/status (State: R (running) etc.). */
@@ -648,6 +643,10 @@ export class LinuxCommandExecutor {
   readonly functions: Map<string, import('@/bash/parser/ASTNode').Command> = new Map();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
+  streamConnector: ((destination: string, port: number) => { write(bytes: Uint8Array): void; close(): void } | null) | null = null;
+
+  datagramSender: ((destination: string, port: number, payload: Uint8Array) => boolean) | null = null;
+
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;
@@ -698,13 +697,25 @@ export class LinuxCommandExecutor {
     this.userMgr.setClock(this.wallNow);
     // Project the lastlog registry onto the canonical /var/log/lastlog file
     // so the filesystem view stays coherent with the in-memory registry.
+    this.lastlog.bindUidResolver((user) => this.userMgr.getUser(user)?.uid);
     this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
     this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
-    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
+    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId);
     this.logMgr.setClock(this.wallNow);
+    this.logMgr.setProcessProbe((pid) => {
+      const process = this.processMgr.get(pid);
+      if (!process) return null;
+      const attrs = this.auditAttrs(pid);
+      const none = 4294967295;
+      return {
+        uid: process.uid, gid: process.gid, comm: process.comm, exe: process.exe ?? null, cmdline: process.command ?? null, capeff: null, label: null,
+        auditId: attrs.sessionid === none ? null : attrs.sessionid, loginUid: attrs.loginuid === none ? null : attrs.loginuid,
+        cgroup: this.cgroupPathFor(pid), invocationId: null,
+      };
+    });
     this.logMgr.setZone(() => this.identity.timezone);
     this.pam = new LinuxPam({
       vfs: this.vfs,
@@ -748,7 +759,6 @@ export class LinuxCommandExecutor {
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer }, this.dynamicUsers);
     this.serviceMgr.setClock(this.wallNow);
     this.serviceMgr.setZone(() => this.identity.timezone);
-    this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
     this.auditRules.bindActorContextProvider(() => this.snapshotActor());
     this.isServer = isServer;
 
@@ -1205,6 +1215,10 @@ export class LinuxCommandExecutor {
     return info as unknown as import('../os/OSProcess').OSProcess | undefined;
   }
 
+  auditAttributesOf(pid: number): { loginuid: number; sessionid: number } {
+    return this.auditAttrs(pid);
+  }
+
   private auditAttrs(pid: number): { loginuid: number; sessionid: number } {
     const NONE = 4294967295;
     if (!this.sessionTable) return { loginuid: NONE, sessionid: NONE };
@@ -1303,7 +1317,7 @@ export class LinuxCommandExecutor {
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
     this.auditTrail?.dispose();
-    this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId);
+    this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId, () => this.auditSender());
     this.fsAuditProjection?.dispose();
     this.fsAuditProjection = new FileSystemAuditProjection(bus, this.auditRules, deviceId);
     this.serviceMgr.registerConfigCheck('auditd', () => this.checkAuditdConfig());
@@ -1328,6 +1342,7 @@ export class LinuxCommandExecutor {
       serviceMgr: this.serviceMgr,
       freeSpaceMb: () => this.auditFreeSpaceMb(),
       kernelRelease: () => this.identity.kernel.release,
+      loadRules: () => { this.handleAugenrules(['--load']); },
     });
     // Keep the PAM password-policy config files coherent with the policy
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
@@ -1644,7 +1659,7 @@ export class LinuxCommandExecutor {
       return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
     }
 
-    const { fs: wireFs, denial } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities, cmd === 'scp' ? 'scp' : 'sftp');
+    const { fs: wireFs, denial, release } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities, cmd === 'scp' ? 'scp' : 'sftp');
     const unauthenticated = (): { output: string; exitCode: number } | null => (
       !wireFs && this.tcpConnector
         ? { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
@@ -1661,7 +1676,11 @@ export class LinuxCommandExecutor {
         local: { fs: localFs, cwd: this.cwd },
         resolveRemote: (host) => wireFs ?? this.resolveRemoteSftpFs(host, remoteUser),
       });
-      return session.run();
+      try {
+        return await session.run();
+      } finally {
+        release?.();
+      }
     }
 
     // sftp
@@ -1691,6 +1710,7 @@ export class LinuxCommandExecutor {
       initialRemoteCwd: remoteFs.initialCwd?.() ?? undefined,
     });
     session.run(SftpCommandScript.parse(stdin));
+    release?.();
     return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
   }
 
@@ -1757,7 +1777,7 @@ export class LinuxCommandExecutor {
   private async tryOpenWireSftpFs(
     host: string, user: string, password: string, port = 22, identities: string[] = [],
     command: 'scp' | 'sftp' = 'sftp',
-  ): Promise<{ fs: ISftpFileSystem | null; denial?: string }> {
+  ): Promise<{ fs: ISftpFileSystem | null; denial?: string; release?: () => void }> {
     const { session, denial } = await this.connectWireSsh(host, user, password, port, identities);
     if (!session) return { fs: null, denial };
     const channelResult = session.openSftpChannel();
@@ -1769,7 +1789,7 @@ export class LinuxCommandExecutor {
         denial: command === 'scp' ? 'scp: Connection closed' : 'subsystem request failed on channel 0\nConnection closed',
       };
     }
-    return { fs: new WireSftpFileSystem(channelResult.value) };
+    return { fs: new WireSftpFileSystem(channelResult.value), release: () => session.disconnect() };
   }
 
   private async relayShellOverWire(
@@ -2323,6 +2343,15 @@ export class LinuxCommandExecutor {
    * public key into the remote user's ~/.ssh/authorized_keys so subsequent
    * logins can use public-key authentication.
    */
+  private newestFirstPublicKeys(sshDirectory: string): string[] {
+    const names = (this.vfs.listDirectory(sshDirectory) ?? [])
+      .map((entry) => entry.name)
+      .filter((name) => /^id.*\.pub$/.test(name) && !name.endsWith('-cert.pub'));
+    const stamped = names.map((name) => ({ name, mtime: this.vfs.lstat(`${sshDirectory}/${name}`)?.mtime ?? 0 }));
+    stamped.sort((a, b) => b.mtime - a.mtime || (a.name < b.name ? -1 : 1));
+    return stamped.map((entry) => `${sshDirectory}/${entry.name}`);
+  }
+
   private runSshCopyId(args: string[]): { output: string; exitCode: number } {
     let identity: string | null = null;
     let target: string | null = null;
@@ -2341,11 +2370,7 @@ export class LinuxCommandExecutor {
     const home = this.sshHomeDir();
     const pubCandidates = identity
       ? [identity.endsWith('.pub') ? identity : `${identity}.pub`]
-      : [
-          `${home}/.ssh/id_ed25519.pub`,
-          `${home}/.ssh/id_rsa.pub`,
-          `${home}/.ssh/id_ecdsa.pub`,
-        ];
+      : this.newestFirstPublicKeys(`${home}/.ssh`);
     let pubKey: string | null = null;
     let pubSource = pubCandidates[0];
     for (const c of pubCandidates) {
@@ -4766,6 +4791,12 @@ export class LinuxCommandExecutor {
     }
   }
 
+  private auditSender(): AuditSender {
+    const cur = this.userMgr.currentUid;
+    const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : cur;
+    return { pid: this.shellPid ?? 1, uid: cur, auid: loginUid, ses: 1 };
+  }
+
   private snapshotActor(): import('./audit/LinuxAuditRules').AuditActorContext {
     const cur = this.userMgr.currentUid;
     const gid = this.userMgr.currentGid;
@@ -4782,15 +4813,16 @@ export class LinuxCommandExecutor {
     return {
       pid: this.shellPid ?? 1,
       ppid: this.shellPpid ?? 1,
-      uid: loginUid,
+      uid: cur,
       euid,
-      gid: loginUid,
+      gid,
       egid: euid === 0 ? 0 : gid,
       auid: loginUid,
       comm,
       exe,
       tty: 'pts/0',
       success: this.lastExitCode === 0,
+      cwd: this.cwd,
     };
   }
 
@@ -4824,35 +4856,18 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
   }
 
-  resolveAusearchUserArgs(args: string[]): string[] {
-    const out = [...args];
-    for (let i = 0; i < out.length - 1; i++) {
-      if ((out[i] === '-u' || out[i] === '-ua' || out[i] === '-ui') && !/^\d+$/.test(out[i + 1])) {
-        const u = this.userMgr.getUser(out[i + 1]);
-        if (u) out[i + 1] = String(u.uid);
-      }
-    }
-    return out;
+  handleLast(args: string[], program: string): ToolResult {
+    return runLast(lastHost(this), args, program);
   }
 
-  handleAuditctl(args: string[]): { output: string; exitCode: number } {
-    if (!this.serviceMgr.status('auditd') || this.serviceMgr.status('auditd')?.state !== 'active') {
-      if (args[0] === '-s' || args[0] === '--status') {
-        return { output: 'auditctl: error: cannot connect to audit daemon (auditd stopped)', exitCode: 1 };
-      }
-    }
-    if (this.auditDaemon?.suspended && (args[0] === '-w' || args[0] === '-a' || args[0] === '-A')) {
-      return { output: `auditctl: audit logging is suspended (${this.auditDaemon.spaceLeftAction}): low disk space`, exitCode: 1 };
-    }
-    if (args[0] === '-R') {
-      const file = args[1];
-      if (!file) return { output: "auditctl: invalid: missing file argument", exitCode: 1 };
-      const content = this.vfs.readFile(this.vfs.normalizePath(file, this.ctx().cwd));
-      if (content === null) return { output: `auditctl: Unable to read ${file}: No such file or directory`, exitCode: 1 };
-      this.auditRules.loadRulesText(content);
-      return { output: '', exitCode: 0 };
-    }
-    return cmdAuditctl(this.auditRules, args);
+  handleAuditctl(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const result = runAuditctl(auditctlHost(this, false), args);
+    return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+  }
+
+  handleAugenrules(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const result = runAugenrules(augenrulesHost(this), args);
+    return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
   }
 
   setCommandHead(name: string): void { this.currentCommandHead = name; }
@@ -5270,9 +5285,21 @@ export class LinuxCommandExecutor {
       }
       case 'atq': return this.atDenied('atq') ?? cmdAtq(this.atQueue, this.identity.timezone);
       case 'atrm': return this.atDenied('atrm') ?? cmdAtrm(this.atQueue, args);
-      case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
-      case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
+      case 'ausearch': {
+        const result = runAusearch(auditToolHost(this), args, stdin ?? null);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
+      case 'ausyscall': {
+        const result = runAusyscall({ machine: () => this.identity.kernel.machine }, args);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
+      case 'aureport': {
+        const result = runAureport(auditToolHost(this), args, stdin ?? null);
+        const shaped = { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+        return shaped;
+      }
       case 'auditctl': return this.handleAuditctl(args);
+      case 'augenrules': return this.handleAugenrules(args);
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
@@ -5317,36 +5344,11 @@ export class LinuxCommandExecutor {
         }
         return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
       }
-      case 'last': {
-        if (this.sessionTable) {
-          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
-          const out = renderLast({
-            table: this.sessionTable,
-            utmp: this.utmpSync,
-            bootDate: this.lifecycle.bootedAt(),
-            kernelRelease: this.identity.kernel.release,
-            zone: this.localZone(),
-            now: this.simulatedDate(),
-          }, args);
-          const exit = out.startsWith('last: ') ? 1 : 0;
-          return { output: out, exitCode: exit };
-        }
-        return { output: cmdLast(c, args), exitCode: 0 };
-      }
+      case 'last':
       case 'lastb': {
-        if (this.sessionTable && this.utmpSync) {
-          const out = renderLastb({
-            table: this.sessionTable,
-            utmp: this.utmpSync,
-            bootDate: this.lifecycle.bootedAt(),
-            kernelRelease: this.identity.kernel.release,
-            zone: this.localZone(),
-            now: this.simulatedDate(),
-          }, args);
-          const exit = out.startsWith('lastb: ') ? 1 : 0;
-          return { output: out, exitCode: exit };
-        }
-        return { output: cmdLastb(c, args), exitCode: 0 };
+        this.sessionTable?.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+        const result = this.handleLast(args, cmd);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'loginctl': {
         if (this.sessionTable) {
@@ -5363,7 +5365,10 @@ export class LinuxCommandExecutor {
         }
         return { output: 'loginctl: command not found', exitCode: 127 };
       }
-      case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
+      case 'lastlog': {
+        const result = this.handleLastlog(args);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
       case 'setfacl': return this.cmdSetfacl(args);
       case 'getfacl': return this.cmdGetfacl(args);
       case 'getent': {
@@ -5568,13 +5573,12 @@ export class LinuxCommandExecutor {
 
       // Logging commands
       case 'logger': {
-        const out = this.logMgr.executeLogger(args, this.userMgr.currentUser);
-        const isErr = out.startsWith('logger:') || out.startsWith('Usage');
-        return { output: out, exitCode: isErr ? 1 : 0 };
+        const result = runLogger(loggerHost(this, stdin, args), args, cmd);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'journalctl': {
-        const out = this.logMgr.executeJournalctl(args);
-        return { output: out, exitCode: out.startsWith('Invalid') ? 1 : 0 };
+        const result = runJournalctl(journalctlHost(this), args, cmd);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
       case 'dmesg': {
         const out = this.logMgr.executeDmesg(args);
@@ -6786,32 +6790,36 @@ export class LinuxCommandExecutor {
       session.end();
       this.logMgr.logAuth('su', `FAILED SU (to ${user.username}) ${previous.user} on ${SU_TTY_NAME}`, pid);
       if (code === PamReturn.AUTH_ERR || code === PamReturn.USER_UNKNOWN || code === PamReturn.MAXTRIES) {
-        const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : previous.uid;
-        this.auditLog.record('USER_AUTH', {
-          pid: this.shellPid ?? 1, uid: previous.uid, auid: loginUid, ses: 1,
-          msg: `op=PAM_authentication grantors=? acct="${user.username}" exe="/bin/su" hostname=? addr=? terminal=pts/0 res=failed`,
-          acct: user.username, res: 'failed',
-        });
+        this.recordPamAccount('USER_AUTH', 'authentication', session, user.username, false);
       }
       return { ok: false, result: { output: `${refusal}su: ${pamStrError(code)}`, exitCode: 1 } };
     }
 
     this.logMgr.logAuth('su', `(to ${user.username}) ${previous.user} on ${SU_TTY_NAME}`, pid);
+    this.recordPamAccount('USER_AUTH', 'authentication', session, user.username, true);
+    this.recordPamAccount('USER_ACCT', 'accounting', session, user.username, true);
+    this.recordPamAccount('CRED_ACQ', 'setcred', session, user.username, true);
     session.openSession();
     const messages = session.sessionMessages.join('');
-    this.recordPamSession('USER_START', user.username, user.uid, previous.uid, 'PAM_session_open');
+    this.recordPamAccount('USER_START', 'session_open', session, user.username, true);
 
     if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
       session.closeSession();
+      this.recordPamAccount('USER_END', 'session_close', session, user.username, true);
+      this.recordPamAccount('CRED_DISP', 'setcred', session, user.username, true);
       session.end();
-      this.recordPamSession('USER_END', user.username, user.uid, previous.uid, 'PAM_session_close');
       const notice = this.vfs.readFile('/etc/nologin.txt');
       return { ok: false, result: { output: `${messages}${notice === null ? 'This account is currently not available.' : notice.replace(/\n+$/, '')}`, exitCode: 1 } };
     }
 
     this.suStack.push({
       ...previous,
-      release: () => { session.closeSession(); session.end(); },
+      release: () => {
+        session.closeSession();
+        this.recordPamAccount('USER_END', 'session_close', session, user.username, true);
+        this.recordPamAccount('CRED_DISP', 'setcred', session, user.username, true);
+        session.end();
+      },
     });
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
@@ -6821,10 +6829,7 @@ export class LinuxCommandExecutor {
     return {
       ok: true,
       messages,
-      restore: () => {
-        this.popSuFrame();
-        this.recordPamSession('USER_END', user.username, user.uid, previous.uid, 'PAM_session_close');
-      },
+      restore: () => { this.popSuFrame(); },
     };
   }
 
@@ -6899,12 +6904,13 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private recordPamSession(type: 'USER_START' | 'USER_END', acct: string, uid: number, byUid: number, op: string): void {
-    this.auditLog.record(type, {
-      pid: this.shellPid ?? 1, uid: byUid, auid: byUid, ses: 1,
-      msg: `op=${op} grantors=pam_unix acct="${acct}" exe="/bin/su" hostname=? addr=? terminal=pts/0 PAM_session=${op} res=success`,
-      acct, res: 'success',
-    });
+  private recordPamAccount(
+    type: string, stage: string, session: PamServiceSession, acct: string, success: boolean,
+  ): void {
+    const grantors = grantorsOf(session.transaction.handle.moduleResults);
+    this.auditLog.record(type, acctMessageFields(this.auditSender(), {
+      op: `PAM:${stage} grantors=${grantors}`, name: acct, id: null, exe: '/usr/bin/su', tty: '/dev/pts/0', success,
+    }));
   }
 
   /** Handle exit/logout — pops su stack if in su session */
@@ -7173,20 +7179,6 @@ export class LinuxCommandExecutor {
     return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
   }
 
-  /**
-   * `lastlog` — one row per known account showing the most-recent login
-   * the lastlog registry recorded (or "Never logged in" when absent).
-   * Mirrors util-linux output: `Username Port From Latest`.
-   *
-   * Supported flags:
-   *   -u, --user <name>   restrict to a single user
-   *   -b, --before <days> hide rows older than N days
-   *   -t, --time  <days>  hide rows older than N days (alias of -b's inverse)
-   *
-   * Real lastlog is backed by a binary `/var/log/lastlog` indexed by UID;
-   * the simulator stores the same triple `{when, sourceHost, tty}` in
-   * LinuxLastlogRegistry — the rendering is identical.
-   */
   /** Optional accessor to the SSH server context, wired by LinuxMachine. */
   sshContextForFail2ban: (() => {
     bannedIps(): string[];
@@ -7265,90 +7257,8 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  renderLastlog(args: string[]): string {
-    let filterUser: string | null = null;
-    let beforeDays: number | null = null;
-    let timeDays: number | null = null;
-    let clear = false;
-    let setNow = false;
-
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-h' || a === '--help') return LASTLOG_HELP;
-      if (a === '-V' || a === '--version') return 'lastlog from util-linux 2.37.2';
-      if (a === '-u' || a === '--user') { filterUser = args[++i] ?? null; continue; }
-      if (a === '-b' || a === '--before') { beforeDays = Number(args[++i]); continue; }
-      if (a === '-t' || a === '--time')   { timeDays   = Number(args[++i]); continue; }
-      if (a === '-C' || a === '--clear')  { clear = true; continue; }
-      if (a === '-S' || a === '--set')    { setNow = true; continue; }
-      if (a === '-R' || a === '--root') { i++; continue; }
-    }
-
-    if (clear || setNow) {
-      if (!filterUser) return 'lastlog: option requires -u/--user';
-      if (clear) this.lastlog.clearUser(filterUser);
-      if (setNow) this.lastlog.record(filterUser, '0.0.0.0', 'pts/0');
-      return '';
-    }
-
-    // Resolve -u into a row predicate. lastlog(8) accepts a login name,
-    // a numeric UID, or an inclusive UID range "LO-HI" (either bound may
-    // be omitted for an open range). A name/UID that matches no account
-    // is an error; a range that matches nothing is simply empty.
-    let userFilter: ((u: UserEntry) => boolean) | null = null;
-    if (filterUser !== null) {
-      const range = /^(\d*)-(\d*)$/.exec(filterUser);
-      if (range && (range[1] !== '' || range[2] !== '')) {
-        const lo = range[1] === '' ? 0 : Number(range[1]);
-        const hi = range[2] === '' ? Number.MAX_SAFE_INTEGER : Number(range[2]);
-        userFilter = (u) => u.uid >= lo && u.uid <= hi;
-      } else if (/^\d+$/.test(filterUser)) {
-        const uid = Number(filterUser);
-        if (!this.userMgr.getAllUsers().some(u => u.uid === uid)) {
-          return `lastlog: Unknown user or range: ${filterUser}`;
-        }
-        userFilter = (u) => u.uid === uid;
-      } else {
-        if (!this.userMgr.getAllUsers().some(u => u.username === filterUser)) {
-          return `lastlog: Unknown user or range: ${filterUser}`;
-        }
-        userFilter = (u) => u.username === filterUser;
-      }
-    }
-
-    const header = 'Username         Port     From             Latest';
-    const rows: string[] = [header];
-    const now = simulationNowMs();
-    const beforeCutoff = beforeDays !== null && Number.isFinite(beforeDays)
-      ? now - beforeDays * 86400_000
-      : null;
-    const timeCutoff = timeDays !== null && Number.isFinite(timeDays)
-      ? now - timeDays * 86400_000
-      : null;
-
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const pad2 = (n: number) => String(n).padStart(2, '0');
-
-    for (const u of this.userMgr.getAllUsers()) {
-      if (userFilter && !userFilter(u)) continue;
-      const entry = this.lastlog.getCurrent(u.username);
-      if (!entry) {
-        rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
-        continue;
-      }
-      if (beforeCutoff !== null && entry.when >= beforeCutoff) continue;
-      if (timeCutoff !== null && entry.when < timeCutoff) continue;
-      const d = new Date(entry.when);
-      const latest =
-        `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${pad2(d.getUTCDate())} ` +
-        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} +0000 ${d.getUTCFullYear()}`;
-      rows.push(
-        `${u.username.padEnd(16)} ${entry.tty.padEnd(8)} ${entry.sourceHost.padEnd(16)} ${latest}`,
-      );
-    }
-    return rows.join('\n');
+  handleLastlog(args: string[]): ToolResult {
+    return runLastlog(lastlogHost(this), args);
   }
 
   /**

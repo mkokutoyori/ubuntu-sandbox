@@ -45,11 +45,15 @@ export function displayWidth(ch: string): number {
   return displayNotation(ch).length;
 }
 
+const NANO_TABSIZE = 8;
+
 /** Rendered column a (line, col) cursor sits at. */
 export function displayColumnFor(lines: readonly string[], line: number, col: number): number {
   const text = lines[line] ?? '';
   let w = 0;
-  for (let i = 0; i < col && i < text.length; i++) w += displayWidth(text[i]);
+  for (let i = 0; i < col && i < text.length; i++) {
+    w += text[i] === '\t' ? NANO_TABSIZE - (w % NANO_TABSIZE) : displayWidth(text[i]);
+  }
   return w;
 }
 

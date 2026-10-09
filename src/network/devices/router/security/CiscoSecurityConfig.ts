@@ -1,3 +1,4 @@
+import { SshPubkeyChain } from './SshPubkeyChain';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
@@ -399,6 +400,7 @@ export class CiscoSecurityConfig {
   tacacsDefaults: TacacsGlobalDefaults = {};
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
+  sshPubkeys = new SshPubkeyChain();
 
   sshServerLimits(): { maxAuthTries: number; loginGraceTime: number } {
     return { maxAuthTries: this.ssh.authRetries, loginGraceTime: this.ssh.timeoutSec };
@@ -623,6 +625,7 @@ export class CiscoSecurityConfig {
       lines.push(`ip ssh client algorithm encryption ${this.ssh.clientEncryptionAlgorithms.join(' ')}`);
     }
     if (this.ssh.scpServerEnabled) lines.push('ip scp server enable');
+    lines.push(...this.sshPubkeys.configLines());
     for (const k of this.cryptoKeys) {
       if (k.general) lines.push(`crypto key generate rsa general-keys modulus ${k.modulus} label ${k.label}`);
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);

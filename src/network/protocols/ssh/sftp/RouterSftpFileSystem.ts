@@ -29,7 +29,7 @@ export class RouterSftpFileSystem implements ISftpFileSystem {
   constructor(private readonly source: RouterSftpSource) {}
 
   private canonical(path: string): string {
-    return path.replace(/^\/+/, '').replace(/\\/g, '/').toLowerCase();
+    return path.replace(/^\/+/, '').replace(/\\/g, '/');
   }
 
   normalizePath(path: string, _cwd: string): string {

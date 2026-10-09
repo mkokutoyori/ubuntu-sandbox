@@ -70,6 +70,8 @@ import type { IEventBus } from '@/events/EventBus';
 import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
 import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
+import type { RouterSftpSource } from '../protocols/ssh/sftp/RouterSftpFileSystem';
+import { ciscoSftpSource } from './shells/cisco/CiscoSftpSource';
 import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import {
   chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
@@ -505,6 +507,10 @@ export class CiscoRouter extends Router {
     return { chiffrement: effective.encryption[0], hmac: effective.mac[0] };
   }
 
+  protected override sshPublicKeyAdmitted(user: string, offeredKeyMaterial: string): boolean {
+    return getSecurityConfig(this).sshPubkeys.admits(user, offeredKeyMaterial);
+  }
+
   protected override sshHostKeySpec(): { algorithm: SshKeyAlgorithm; bits?: number } {
     return { algorithm: 'ssh-rsa', bits: getSecurityConfig(this).cryptoKeys[0]?.modulus };
   }
@@ -514,36 +520,17 @@ export class CiscoRouter extends Router {
   }
 
   /**
-   * Vendor-identifying line shown to a non-interactive SSH client that
-   * lands with no `banner motd` configured — mirrors the real prompt's
-   * hostname so cross-vendor tooling (and the cross-vendor SSH test
-   * suite) can tell which device family it reached. Suppressed when a
-   * real `banner motd` IS configured (via `sshBanner()`, populated by
-   * the `banner motd` command) so the two don't double up.
-   */
-  override getSshMotd(): string {
-    if (this.sshBannerText) return '';
-    return `Cisco IOS Software\n${this.hostname}#`;
-  }
-
-  /**
    * Synthetic SFTP-file source — Cisco IOS exposes running-config /
    * startup-config / flash:/ over scp when `ip scp server enable` is
    * set. The scp adapter calls read() with a path; we return the
    * canonical text the user would see via `show running-config`.
    */
-  getSftpFileSource(): { read: (p: string) => string | null; list: () => readonly string[] } | null {
-    if (!getSecurityConfig(this).ssh.scpServerEnabled) return null;
-    const knownFiles = ['running-config', 'startup-config'];
-    return {
-      read: (path: string) => {
-        const p = path.replace(/^\/+/, '').toLowerCase();
-        if (p === 'running-config' || p === 'system:running-config') return showRunningConfig(this);
-        if (p === 'startup-config' || p === 'nvram:startup-config') return showRunningConfig(this);
-        return null;
-      },
-      list: () => knownFiles,
-    };
+  getSftpFileSource(): RouterSftpSource | null {
+    return ciscoSftpSource({
+      scpServerEnabled: () => getSecurityConfig(this).ssh.scpServerEnabled,
+      flash: () => this._getCiscoFileSystem('router-isr2911'),
+      runningConfig: () => showRunningConfig(this),
+    });
   }
 
   override runSshCommandSync(

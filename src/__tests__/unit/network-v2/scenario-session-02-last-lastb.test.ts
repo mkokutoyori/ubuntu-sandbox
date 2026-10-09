@@ -95,13 +95,13 @@ describe('Scénario 2 — last / lastb : historique des connexions', () => {
     expect(out).toMatch(/10\.0\.0\.1/);
   });
 
-  it('cohérence : la taille de /var/log/wtmp divisée par 384 correspond au nombre de lignes de last', async () => {
+  it('cohérence : sans déconnexion, la taille de /var/log/wtmp divisée par 384 correspond au nombre de lignes de last -x', async () => {
     const { pc1, srv } = await buildLan();
     await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60', 'admin\n');
     const size = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
     const wtmpEntries = size / 384;
     const lastEntries = Number(
-      (await srv.executeCommand("last | grep -v 'begins\\|^$' | wc -l")).trim(),
+      (await srv.executeCommand("last -x | grep -v 'begins\\|^$' | wc -l")).trim(),
     );
     expect(Number.isInteger(wtmpEntries)).toBe(true);
     expect(wtmpEntries).toBe(lastEntries);

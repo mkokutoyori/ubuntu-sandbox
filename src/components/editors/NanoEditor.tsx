@@ -7,7 +7,7 @@
  */
 
 import React, { useRef, useEffect, useCallback, useReducer } from 'react';
-import { scrollCaretIntoView } from './caretScroll';
+import { scrollCaretIntoView, scrollColumnIntoView } from './caretScroll';
 import {
   nanoEditShortcutRows, nanoTitleState, nanoTitleName,
 } from '@/network/devices/linux/editors/editorRender';
@@ -170,7 +170,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
       const pos = engine.displayCursorOffset;
       textareaRef.current?.setSelectionRange(pos, pos);
       if (textareaRef.current) {
-        scrollCaretIntoView(textareaRef.current, engine.cursorLine, engine.lines.length);
+        scrollCaretIntoView(textareaRef.current, engine.cursorLine, engine.displayContent.split('\n').length);
+        scrollColumnIntoView(textareaRef.current, caretRef.current);
       }
     }
   });
@@ -209,11 +210,12 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     if (gutterRef.current) gutterRef.current.style.transform = `translateY(${-top}px)`;
   }, []);
 
+  const bufferLineCount = engine.displayContent.split('\n').length;
   const [shortcutsRow1, shortcutsRow2] = shortcutsForMode(engine);
 
   const titleStatus = nanoTitleState({ readOnly: engine.isReadOnly, modified: engine.modified });
   const titlePosition = showPosition
-    ? `line ${engine.cursorLine + 1}/${engine.lines.length} col ${engine.cursorCol + 1}`
+    ? `line ${engine.cursorLine + 1}/${bufferLineCount} col ${engine.displayColumnFor(engine.cursorLine, engine.cursorCol) + 1}`
     : '';
 
   return (
@@ -257,7 +259,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             style={{
               backgroundColor: '#300a24',
               color: '#585b70',
-              minWidth: `${String(engine.lines.length).length + 1}ch`,
+              minWidth: `${String(bufferLineCount).length + 1}ch`,
               paddingTop: '0.25rem',
               paddingRight: '0.5em',
               lineHeight: '1.35',
@@ -266,7 +268,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               transform: `translateY(${-scrollRef.current.top}px)`,
             }}
           >
-            {engine.lines.map((_, i) => (
+            {Array.from({ length: bufferLineCount }, (_, i) => (
               <div key={i} style={{ minHeight: '1.35em' }}>{i + 1}</div>
             ))}
           </div>
@@ -284,14 +286,17 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           onMouseUp={engine.mode === 'help' ? undefined : handleEditMouseUp}
           onScroll={handleEditScroll}
           readOnly
+          wrap="off"
           className="absolute inset-0 w-full h-full outline-none resize-none p-1"
           style={{
+            whiteSpace: 'pre',
+            overflowX: 'auto',
             backgroundColor: '#300a24',
             color: '#d3d7cf',
             fontFamily: 'inherit',
             fontSize: 'inherit',
             lineHeight: 'inherit',
-            caretColor: '#ffffff',
+            caretColor: 'transparent',
             border: 'none',
             tabSize: 8,
           }}
@@ -301,13 +306,14 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           <div
             ref={caretRef}
             data-testid="nano-caret"
-            className="absolute pointer-events-none terminal-cursor"
+            className="absolute pointer-events-none"
             style={{
               top: `calc(0.25rem + ${engine.cursorLine} * 1.35em)`,
               left: `calc(0.25rem + ${engine.displayColumnFor(engine.cursorLine, engine.cursorCol)}ch)`,
-              width: '2px',
-              height: '1.2em',
+              width: '1ch',
+              height: '1.35em',
               backgroundColor: '#ffffff',
+              mixBlendMode: 'difference',
               transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
             }}
           />
