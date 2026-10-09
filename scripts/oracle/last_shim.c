@@ -73,6 +73,8 @@ int access(const char *path, int mode) {
 
 FILE *fopen(const char *path, const char *mode) {
 	char pid[32]; long v;
+	if (strcmp(path, "/var/log/lastlog") == 0 && getenv("LAST_LASTLOG")) path = getenv("LAST_LASTLOG");
+	if (strcmp(path, "/etc/login.defs") == 0 && getenv("LAST_LOGINDEFS")) path = getenv("LAST_LOGINDEFS");
 	if (loginuid_pid(path, pid)) {
 		if (!lookup(getenv("LAST_LOGINUIDS"), pid, &v)) { errno = ENOENT; return NULL; }
 		char *text = v < 0 ? strdup("x\n") : NULL;
@@ -92,4 +94,39 @@ int stat(const char *path, struct stat *st) {
 	}
 	static int (*real)(const char *, struct stat *); if (!real) real = dlsym(RTLD_NEXT, "stat");
 	return real(path, st);
+}
+
+static struct passwd *entry_at(int index) {
+	static struct passwd pw;
+	static char name[64];
+	const char *list = getenv("LAST_USERS");
+	if (!list) return NULL;
+	char *copy = strdup(list), *save = NULL;
+	int at = 0;
+	struct passwd *result = NULL;
+	for (char *item = strtok_r(copy, ",", &save); item; item = strtok_r(NULL, ",", &save), at++) {
+		if (at != index) continue;
+		char *colon = strrchr(item, ':');
+		if (!colon) break;
+		*colon = 0;
+		snprintf(name, sizeof name, "%s", item);
+		memset(&pw, 0, sizeof pw);
+		pw.pw_name = name; pw.pw_uid = (uid_t)atol(colon + 1); pw.pw_gid = pw.pw_uid; pw.pw_dir = "/"; pw.pw_shell = "/bin/sh";
+		result = &pw;
+		break;
+	}
+	free(copy);
+	return result;
+}
+
+static int walk;
+void setpwent(void) { walk = 0; }
+void endpwent(void) { walk = 0; }
+struct passwd *getpwent(void) { return entry_at(walk++); }
+struct passwd *getpwuid(uid_t uid) {
+	for (int i = 0;; i++) {
+		struct passwd *p = entry_at(i);
+		if (!p) return NULL;
+		if (p->pw_uid == uid) return p;
+	}
 }
