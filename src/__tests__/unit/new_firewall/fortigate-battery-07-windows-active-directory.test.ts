@@ -271,7 +271,8 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     });
 
     it('319. Port Forwarding / VIP FortiGate : Accès RDP depuis le WAN sur le port externe 33389 redirigé sur 3389', async () => {
-      const { winPc, fw } = await creerLaboHybride();
+      const { winPc, winDc, fw } = await creerLaboHybride();
+      await pwsh(winDc)('Enable-RemoteDesktop');
       await taper(fw, [
         'config firewall vip', 'edit "VIP_RDP_WIN"',
         'set extip 192.168.1.1', 'set mappedip "10.10.10.10"',

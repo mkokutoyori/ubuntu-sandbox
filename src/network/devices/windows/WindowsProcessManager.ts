@@ -159,6 +159,7 @@ export class WindowsProcessManager implements ServiceProcessHost {
     this.addSvchost(912, [0, 'NT AUTHORITY\\LocalService'], ['EventLog', 'W32Time']);
     this.addSvchost(964, [0, 'NT AUTHORITY\\SYSTEM'], ['Schedule', 'Themes', 'Winmgmt']);
     this.addSvchost(1048, [0, 'NT AUTHORITY\\LocalService'], ['Dhcp', 'AudioSrv']);
+    this.addSvchost(1096, [0, 'NT AUTHORITY\\NetworkService'], ['TermService']);
     this.addSvchost(1100, [0, 'NT AUTHORITY\\SYSTEM'], ['SamSs', 'CryptSvc']);
     this.addSvchost(1168, [0, 'NT AUTHORITY\\LocalService'], ['mpssvc']);
 
@@ -386,11 +387,6 @@ export class WindowsProcessManager implements ServiceProcessHost {
     }
   }
 
-  /**
-   * A started service is hosted again: by the shared process it ran in when
-   * that still lives, by a fresh one when it had a host and lost it. A
-   * service that never had a host process still has none.
-   */
   onServiceStarted(service: WindowsService): void {
     if (this.getPidForService(service.name) !== 0) return;
     const lower = service.name.toLowerCase();

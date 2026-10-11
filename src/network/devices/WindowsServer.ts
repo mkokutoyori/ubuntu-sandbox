@@ -122,6 +122,7 @@ export class WindowsServer extends WindowsPC {
     this.getDhcpServerRole();
     this.getNpsRole();
     this.getIisRole();
+    this.reconcileListeners();
   }
 
   override getWindowsEdition(): 'client' | 'server' { return 'server'; }
@@ -1485,6 +1486,7 @@ export class WindowsServer extends WindowsPC {
     svcMgr.addService('ADWS', 'Active Directory Web Services', 'Provides a web service interface to Active Directory domains',
       { dependencies: ['NTDS'], account: 'NT AUTHORITY\\NETWORK SERVICE', processName: 'Microsoft.ActiveDirectory.WebServices.exe' });
     this.startDomainTimeServer();
+    this.reconcileListeners();
   }
 
   private startDomainTimeServer(): void {

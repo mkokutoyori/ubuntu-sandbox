@@ -312,6 +312,9 @@ export class WindowsServiceManager {
     // Management
     svc('Winmgmt', 'Windows Management Instrumentation', 'Provides a common interface and object model for WMI',
       { dependencies: ['RpcSs'], account: 'NT AUTHORITY\\SYSTEM' });
+    svc('TermService', 'Remote Desktop Services',
+      'Allows users to connect interactively to a remote computer. Remote Desktop and Remote Desktop Session Host Server depend on this service.',
+      { dependencies: ['RpcSs'], account: 'NT AUTHORITY\\NetworkService' });
     svc('WinRM', 'Windows Remote Management (WS-Management)',
       'Windows Remote Management (WinRM) service',
       { dependencies: ['RpcSs'], startType: 'Manual', state: 'Stopped', account: 'NT AUTHORITY\\NetworkService' });
@@ -565,11 +568,6 @@ export class WindowsServiceManager {
     });
   }
 
-  /**
-   * Run whichever recovery tiers have come due, per the device's simulated
-   * clock. A restart re-spawns the hosting process (the original one is long
-   * gone — it's what crashed) through the process host.
-   */
   advanceRecoveryTimers(nowMs: number): void {
     const due = this.pendingRecoveries.filter(r => r.dueAtMs <= nowMs);
     if (due.length === 0) return;

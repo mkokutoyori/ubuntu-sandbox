@@ -493,6 +493,7 @@ describe('Batterie 11 : Tests 501 à 550 — Cloud Hybride, EVPN-VXLAN, K8s, API
     it('547. Interconnexion Direct Connect BGP + EVPN-VXLAN reliant un conteneur Linux et l\'Active Directory Windows', async () => {
       const { srvK8s, winDc } = await creerLaboCloudHybride();
       await pwsh(winDc)('Install-WindowsFeature -Name AD-Domain-Services');
+      await pwsh(winDc)('Install-ADDSForest -DomainName cloud.lab -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd!" -AsPlainText -Force) -Force');
       const ldapTest = await srvK8s.executeCommand('nc -zv -w 2 10.100.0.20 389');
       expect(ldapTest).toMatch(/succeeded|open|Connected/i);
     });

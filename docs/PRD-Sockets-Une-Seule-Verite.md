@@ -387,11 +387,34 @@ déclarations d'écoute (ports, propriétaire, prédicat d'activité) qu'il rapp
 l'ouverture : le processus qui héberge le service (`sshd.exe`), ou `System` (PID 4) pour 445 et 139, tenus par le
 noyau. Garde-fou : `probe-un-service-windows-n-ecoute-que-tant-qu-il-tourne`.
 
-Pas construit dans ce lot : les écoutes 5985, 389, 636, 3268, 3269, 88, 135, 5722, 8530 et 515 n'ont pas de
-processus propriétaire et s'ouvrent au démarrage quelle que soit la fonctionnalité (RDP, WinRM, contrôleur de
-domaine, rôles) ; un service qui n'a jamais eu de processus d'hébergement n'en reçoit pas en démarrant (aucun
-regroupement `svchost -k` ne dit dans lequel le mettre) ; le processus par session d'OpenSSH pour Windows, le
-`ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
+Un port que sa fonctionnalité ne sert pas est refusé, et un port servi appartient au processus qui le sert (mesuré
+sur `ce9f180db`) : à la construction d'un WindowsPC ou d'un WindowsServer neuf -- RDP désactivé, ni domaine ni rôle --
+`nc` réussissait sur 3389, 5985, 389, 3268, 636, 3269, 88, 5722, 8530 et 515 et `netstat -ano` les listait tous en
+`LISTENING`, neuf avec le PID 0 et 3389 avec le PID 1096 que `tasklist` ne connaissait pas. Les dix écoutes étaient
+ouvertes par `initDefaultSockets` et chacune vérifiait sa fonctionnalité à l'acceptation, pour fermer la prise une fois
+la poignée de main faite : un `Test-NetConnection` ou un `nmap` y voyait un port ouvert là où un Windows réel répond
+par un refus, et un poste client portait les ports d'un contrôleur de domaine, de DFSR, de WSUS et d'un serveur
+d'impression, des rôles qu'il ne peut pas installer. Elles sont maintenant des déclarations de
+`WindowsServicePortProjection` (3389 quand RDP est activé, 5985 quand WinRM est configuré, 389/3268/636/3269 et 88
+sur un contrôleur de domaine, 5722, 8530 et 515 quand le rôle correspondant est installé, 135 tant que `RpcSs` tourne),
+rapprochées de l'état à chaque événement de service, à chaque écriture du registre (quel qu'en soit le chemin :
+`reg add`, `Set-ItemProperty`, stratégie de groupe), à chaque changement de `WindowsWinRmConfig`, au cycle de vie des
+rôles et à la promotion d'un contrôleur de domaine. RDP n'a plus qu'un interrupteur, la valeur de registre
+`HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\fDenyTSConnections` (Microsoft Learn : 1 bloque toutes les
+connexions, 0 les autorise), semée à 1 comme une installation neuve : `Enable-RemoteDesktop` l'écrit au lieu de
+basculer un champ que le registre ne voyait pas, et une valeur ou une clé absente ferme RDP. Le propriétaire est lu
+dans la table des processus : `lsass.exe` pour LDAP et le KDC, `System` (PID 4, HTTP.sys) pour WinRM et WSUS, l'hôte
+de `RpcSs` pour 135, de `TermService` pour RDP, de `DFSR` pour 5722, du spouleur pour 515. `TermService` entre dans le
+gestionnaire de services et un svchost (PID 1096) l'héberge, si bien que le PID de RDP existe enfin dans `tasklist` ;
+`winrm quickconfig` démarre le service `WinRM` comme il l'annonce. Garde-fou :
+`probe-un-port-windows-n-existe-que-si-sa-fonctionnalite-est-active`.
+
+Pas construit dans ce lot : les écoutes que les rôles DNS, IIS, DHCP, NPS, Exchange et cluster ouvrent par leurs
+propres sous-systèmes (TCP et UDP) et les sockets UDP du système (LLMNR, mDNS, client DHCP, client DNS) gardent le
+PID 0 ; le port 135 d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ;
+`TermService` est affiché Automatic quand un Windows réel le dit Manual ; un service qui n'a jamais eu de processus
+d'hébergement n'en reçoit pas en démarrant ; le processus par session d'OpenSSH pour Windows, le `ssh.exe` client comme
+processus et `ssh -N` vers ou depuis Windows sont traités après.
 
 ## 7. Hors périmètre
 
