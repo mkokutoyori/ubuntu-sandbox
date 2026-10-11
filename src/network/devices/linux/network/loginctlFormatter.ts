@@ -47,7 +47,7 @@ function synthSession(r: UtmpRecord): SshSession {
 function pad(s: string, w: number): string { return s.padEnd(w); }
 function padLeft(s: string, w: number): string { return s.padStart(w); }
 
-function sessionId(s: SshSession, index: number): string {
+export function loginctlSessionId(s: SshSession, index: number): string {
   const pid = (s as { shellPid?: number }).shellPid ?? s.sshdPid ?? 0;
   if (pid > 0) return String(pid);
   return String(index + 1);
@@ -74,7 +74,7 @@ function renderListSessions(ctx: LoginctlContext): string {
   const header = `${pad('SESSION', 10)} ${pad('UID', 6)} ${pad('USER', 16)} ${pad('SEAT', 8)} TTY`;
   const lines: string[] = [header];
   sessions.forEach((s, i) => {
-    const sid = sessionId(s, i);
+    const sid = loginctlSessionId(s, i);
     lines.push([
       padLeft(sid, 10),
       padLeft(String(s.uid), 6),
@@ -108,12 +108,12 @@ function renderListUsers(ctx: LoginctlContext): string {
 
 function renderShowSession(ctx: LoginctlContext, id: string): string {
   const sessions = activeSessions(ctx);
-  const idx = sessions.findIndex((s, i) => sessionId(s, i) === id);
+  const idx = sessions.findIndex((s, i) => loginctlSessionId(s, i) === id);
   if (idx < 0) {
     return `Failed to get session: No session '${id}' known`;
   }
   const s = sessions[idx];
-  const sid = sessionId(s, idx);
+  const sid = loginctlSessionId(s, idx);
   const leader = (s as { shellPid?: number }).shellPid ?? s.sshdPid ?? 0;
   const lines = [
     `Id=${sid}`,
@@ -158,7 +158,7 @@ function renderShowUser(ctx: LoginctlContext, id: string): string {
     `Slice=user-${match.uid}.slice`,
     `Display=`,
     `State=active`,
-    `Sessions=${sessions.filter((s) => s.user === match.user).map((s, i) => sessionId(s, i)).join(' ')}`,
+    `Sessions=${sessions.filter((s) => s.user === match.user).map((s, i) => loginctlSessionId(s, i)).join(' ')}`,
     `IdleHint=no`,
     `IdleSinceHint=0`,
     `IdleSinceHintMonotonic=0`,
@@ -323,7 +323,7 @@ function runTerminateUser(ctx: LoginctlContext, names: string[]): string {
       continue;
     }
     matched.forEach((s, i) => {
-      const sid = sessionId(s, sessions.indexOf(s));
+      const sid = loginctlSessionId(s, sessions.indexOf(s));
       const r = ctx.action!.terminate(sid);
       if (!r.ok) errors.push(r.error ?? `Failed to terminate session: ${sid}`);
       void i;
@@ -353,7 +353,7 @@ function renderListSeats(noLegend: boolean): string {
 
 function firstSessionId(ctx: LoginctlContext): string {
   const sessions = activeSessions(ctx);
-  return sessions.length > 0 ? sessionId(sessions[0], 0) : '';
+  return sessions.length > 0 ? loginctlSessionId(sessions[0], 0) : '';
 }
 
 function firstUserName(ctx: LoginctlContext): string {

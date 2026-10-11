@@ -490,6 +490,7 @@ export class TcpSocket {
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
   private readonly closeHandlers: TcpCloseHandler[] = [];
+  private closeNotified = false;
   private readonly urgentHandlers: Array<(lastUrgentByte: string) => void> = [];
   private readonly endHandlers: Array<() => void> = [];
   private endDelivered = false;
@@ -606,7 +607,7 @@ export class TcpSocket {
   }
 
   onClose(handler: TcpCloseHandler): () => void {
-    if (this.closed) {
+    if (this.closed || this.closeNotified) {
       handler(this.closeReason ?? 'shutdown');
       return () => {};
     }
@@ -709,6 +710,8 @@ export class TcpSocket {
   }
 
   _fireClose(reason: TcpCloseReason): void {
+    if (this.closeNotified) return;
+    this.closeNotified = true;
     this.closeReason = reason;
     for (const h of [...this.closeHandlers]) {
       try { h(reason); } catch { /* swallow per-handler */ }
@@ -1022,6 +1025,18 @@ export class TcpStack {
     for (const sock of Array.from(this.sockets.values())) {
       if (sock.ownerPid !== pid) continue;
       this._teardown(sock, 'shutdown');
+      count++;
+    }
+    return count;
+  }
+
+  closeSocketsOwnedBy(pid: number): number {
+    let count = 0;
+    for (const sock of Array.from(this.sockets.values())) {
+      if (sock.ownerPid !== pid) continue;
+      if (sock.unreadBytes > 0) this._abort(sock);
+      else sock.close();
+      sock._fireClose('shutdown');
       count++;
     }
     return count;

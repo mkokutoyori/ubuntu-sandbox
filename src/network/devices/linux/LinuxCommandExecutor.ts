@@ -225,7 +225,7 @@ import { loggerHost } from './syslog/LinuxLoggerHost';
 import { runLogger } from './syslog/LoggerTool';
 import { journalctlHost } from './journal/LinuxJournalctlHost';
 import { runJournalctl } from './journal/JournalctlTool';
-import { renderLoginctl } from './network/loginctlFormatter';
+import { renderLoginctl, type LoginctlSessionAction } from './network/loginctlFormatter';
 import { cmdTty, cmdRunlevel, formatLocalTime } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -2653,6 +2653,12 @@ export class LinuxCommandExecutor {
     this.sessionTable = table;
   }
 
+  private loginctlAction: LoginctlSessionAction | undefined;
+
+  setLoginctlAction(action: LoginctlSessionAction): void {
+    this.loginctlAction = action;
+  }
+
   readonly commandPrivileges: CommandPrivilegePolicy = createDefaultCommandPrivileges();
 
   private portBindingPolicy: PortBindingPolicy | null = null;
@@ -2813,29 +2819,6 @@ export class LinuxCommandExecutor {
 
   setUtmpSync(sync: import('./network/UtmpSync').UtmpSync): void {
     this.utmpSync = sync;
-  }
-
-  private buildLoginctlAction(table: SshSessionTable): import('./network/loginctlFormatter').LoginctlSessionAction {
-    const findSession = (sid: string) => {
-      const sessions = table.list();
-      const idx = sessions.findIndex((s, i) => {
-        const pid = s.shellPid ?? s.sshdPid ?? 0;
-        return (pid > 0 ? String(pid) : String(i + 1)) === sid;
-      });
-      return idx >= 0 ? sessions[idx] : null;
-    };
-    const terminate = (sid: string, signal: 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT') => {
-      const s = findSession(sid);
-      if (!s) return { ok: false, error: `Failed to terminate session: No session '${sid}' known` };
-      if (s.shellPid) this.processMgr.kill(s.shellPid, signal);
-      if (s.sshdPid) this.processMgr.kill(s.sshdPid, signal);
-      table.close(s.tty, 'admin');
-      return { ok: true };
-    };
-    return {
-      terminate: (sid) => terminate(sid, 'SIGTERM'),
-      kill: (sid, signal) => terminate(sid, signal),
-    };
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -5391,7 +5374,7 @@ export class LinuxCommandExecutor {
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
             now: this.simulatedDate(),
-            action: this.buildLoginctlAction(this.sessionTable),
+            action: this.loginctlAction,
           }, args);
           const exit = out.startsWith('Failed to') || out.startsWith('Unknown command') ? 1 : 0;
           return { output: out, exitCode: exit };

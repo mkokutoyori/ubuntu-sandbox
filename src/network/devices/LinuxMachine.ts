@@ -35,7 +35,6 @@ import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { PortNumber } from '../core/ports/PortNumber';
-import type { SocketProtocol } from '../core/SocketTable';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
@@ -221,9 +220,13 @@ import {
   commandNotFoundMessage,
 } from './linux/service/CriticalFiles';
 import { SshSessionTable } from './linux/network/SshSessionTable';
+import type { SshSession } from './linux/network/SshSession';
 import { renderWho } from './linux/network/whoFormatter';
 import { renderW } from './linux/network/wFormatter';
-import { renderLoginctl } from './linux/network/loginctlFormatter';
+import {
+  renderLoginctl, loginctlSessionId,
+  type LoginctlSessionAction, type LoginctlSignal,
+} from './linux/network/loginctlFormatter';
 import { UtmpSync } from './linux/network/UtmpSync';
 import { TcpSocketStateProjection } from './linux/network/TcpSocketStateProjection';
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
@@ -436,6 +439,7 @@ export abstract class LinuxMachine extends EndHost
         return true;
       });
     this.executor.setSessionTable(this.sessionTable);
+    this.executor.setLoginctlAction(this.buildLoginctlAction());
     this.executor.setSshHostKeyProbe((ip, port, hostKeyAlgorithms) =>
       probeSshHostKey(this.tcpv2.connect(ip, port) as unknown as TcpStream | null, hostKeyAlgorithms));
     // Un montage réseau tient tant que son serveur est là. Aucun protocole
@@ -2090,30 +2094,31 @@ export abstract class LinuxMachine extends EndHost
     bus.subscribe('linux.process.exited', (e) => {
       const payload = e.payload as { pid: number; comm: string };
       const { pid, comm } = payload;
+      const heldSession = this.sshSessionsByPid.get(pid);
+      if (heldSession !== undefined) this.endSshSession(heldSession, 'killed');
       this.executor.releaseSshClient(pid);
       const stack = this.getTcpStack();
-      const toUnbind: Array<{
-        protocol: SocketProtocol; localAddress: string; localPort: number; state: string;
-        remoteAddress: string; remotePort: number;
-      }> = [];
+      stack.closeSocketsOwnedBy(pid);
+      const outliving = new Set(stack.listSockets()
+        .map((socket) => `${socket.localPort}|${socket.remoteIp}|${socket.remotePort}`));
       for (const sock of this.socketTable.getAll()) {
         const matchesByPid = sock.pid === pid;
         const matchesByName = comm && sock.pid === undefined && sock.processName === comm;
         if (!matchesByPid && !matchesByName) continue;
-        toUnbind.push({
-          protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state,
-          remoteAddress: sock.remoteAddress, remotePort: sock.remotePort,
-        });
-      }
-      for (const s of toUnbind) {
-        if (s.remoteAddress === '*') this.socketTable.unbind(s.protocol, s.localAddress, s.localPort);
-        else this.socketTable.removeConnection(s);
-        if (s.protocol === 'tcp' && s.state === 'LISTEN') {
-          stack.closeListener(s.localPort, s.localAddress);
-          this._sshdActivePorts.delete(s.localPort);
+        if (sock.remoteAddress === '*') {
+          this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
+          if (sock.protocol === 'tcp' && sock.state === 'LISTEN') {
+            stack.closeListener(sock.localPort, sock.localAddress);
+            this._sshdActivePorts.delete(sock.localPort);
+          }
+        } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
+          sock.pid = undefined;
+          sock.processName = undefined;
+          sock.uid = undefined;
+        } else {
+          this.socketTable.removeConnection(sock);
         }
       }
-      stack.abortSocketsOwnedBy(pid);
     });
   }
 
@@ -2304,6 +2309,8 @@ export abstract class LinuxMachine extends EndHost
       });
       session.sshdPid = sshdChild.pid;
       session.shellPid = shell.pid;
+      this.sshSessionsByPid.set(sshdChild.pid, session);
+      this.sshSessionsByPid.set(shell.pid, session);
       this.utmpSync?.updateSessionPids(session.tty, shell.pid, sshdChild.pid);
       this.persistLogindSession(session.tty, uid, user, shell.pid, fromIp);
       events.emit({ kind: 'channel_opened', user, channelType: 'shell' });
@@ -2362,19 +2369,33 @@ export abstract class LinuxMachine extends EndHost
 
   private closeSshSessionRecord(user: string, fromIp: string, fromPort?: number): boolean {
     const session = this.sessionTable.list().find((s) => s.user === user && s.fromIp === fromIp
-      && !s.closedAt && (fromPort === undefined || s.fromPort === fromPort));
-    if (!session) return false;
-    const sid = String(session.shellPid ?? session.sshdPid ?? 0);
-    this.sessionTable.close(session.tty, 'normal');
+      && this.sshSessionsByPid.get(s.sshdPid) === s
+      && (fromPort === undefined || s.fromPort === fromPort));
+    return session !== undefined && this.endSshSession(session, 'normal');
+  }
+
+  private readonly sshSessionsByPid = new Map<number, SshSession>();
+
+  private endSshSession(session: SshSession, reason: string, signal?: LoginctlSignal): boolean {
+    if (session.closed) return false;
+    const sid = loginctlSessionId(session, this.sessionTable.list().indexOf(session));
+    for (const pid of [session.shellPid, session.sshdPid]) {
+      if (pid !== undefined) this.sshSessionsByPid.delete(pid);
+    }
+    this.sessionTable.close(session.tty, reason);
     this.removePtsNode(session.tty);
     this.dropLogindSession(sid, session.uid);
-    this.emitSessionClosedLog(user, session.sshdPid ?? 0, sid);
-    this.socketTable.removeConnection({
-      protocol: 'tcp', localPort: 22, remoteAddress: fromIp,
-      remotePort: session.fromPort ?? this.sshClientPort(fromIp),
-    });
-    if (session.shellPid) this.executor.processMgr.exit(session.shellPid, 0);
-    if (session.sshdPid) this.executor.processMgr.exit(session.sshdPid, 0);
+    this.emitSessionClosedLog(session.user, session.sshdPid ?? 0, sid);
+    if (session.fromPort !== undefined) {
+      this.socketTable.removeConnection({
+        protocol: 'tcp', localPort: 22, remoteAddress: session.fromIp, remotePort: session.fromPort,
+      });
+    }
+    for (const pid of [session.shellPid, session.sshdPid]) {
+      if (pid === undefined || pid === 0) continue;
+      if (signal === undefined) this.executor.processMgr.exit(pid, 0);
+      else this.executor.processMgr.kill(pid, signal);
+    }
     return true;
   }
 
@@ -2633,37 +2654,19 @@ export abstract class LinuxMachine extends EndHost
     this.executor.vfs.deleteFile(`/dev/${tty}`);
   }
 
-  private buildLoginctlAction(): import('./linux/network/loginctlFormatter').LoginctlSessionAction {
-    const findSession = (sessionId: string) => {
-      const sessions = this.sessionTable.list();
-      const idx = sessions.findIndex((s, i) => {
-        const pid = s.shellPid ?? s.sshdPid ?? 0;
-        const sid = pid > 0 ? String(pid) : String(i + 1);
-        return sid === sessionId;
-      });
-      return idx >= 0 ? sessions[idx] : null;
-    };
-    const terminateSession = (sessionId: string, signal: 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT') => {
-      const s = findSession(sessionId);
-      if (!s) return { ok: false, error: `Failed to terminate session: No session '${sessionId}' known` };
-      const sshdPid = s.sshdPid;
-      if (s.shellPid) this.executor.processMgr.kill(s.shellPid, signal);
-      if (s.sshdPid) this.executor.processMgr.kill(s.sshdPid, signal);
-      this.sessionTable.close(s.tty, 'admin');
-      this.removePtsNode(s.tty);
-      this.dropLogindSession(sessionId, s.uid);
-      this.emitSessionClosedLog(s.user, sshdPid, sessionId);
-      this.getSshServerContext().events.emit({
-        kind: 'client_disconnected', user: s.user, ip: s.fromIp,
-        port: this.sshClientPort(s.fromIp), authenticated: true,
-        reason: 'admin_disconnect',
-      });
-      this.sshForgetPeerPort(s.fromIp);
+  private buildLoginctlAction(): LoginctlSessionAction {
+    const terminate = (sessionId: string, signal: LoginctlSignal) => {
+      const session = this.sessionTable.list()
+        .find((candidate, index) => loginctlSessionId(candidate, index) === sessionId);
+      if (session === undefined) {
+        return { ok: false, error: `Failed to terminate session: No session '${sessionId}' known` };
+      }
+      this.endSshSession(session, 'admin', signal);
       return { ok: true };
     };
     return {
-      terminate: (sid) => terminateSession(sid, 'SIGTERM'),
-      kill: (sid, signal) => terminateSession(sid, signal),
+      terminate: (sessionId) => terminate(sessionId, 'SIGTERM'),
+      kill: (sessionId, signal) => terminate(sessionId, signal),
     };
   }
 

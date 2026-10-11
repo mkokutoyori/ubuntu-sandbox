@@ -29,8 +29,7 @@
  *
  * Ce qui n'est PAS construit : l'enfant sans privilege `sshd: user@pts/0`, qui tient la connexion avec le
  * moniteur dans un vrai Linux (ici le shell est l'enfant du moniteur et le moniteur seul tient la socket) ; une
- * session sans terminal (`ssh hote commande`) prend encore un numero de pts ; et la mort d'un processus qui
- * detient une connexion vivante (`kill` du moniteur) abat toujours la socket sans FIN (le pair garde ESTAB).
+ * session sans terminal (`ssh hote commande`) prend encore un numero de pts.
  *
  * Discrimination (fichier copie sur 608f58462, `git stash push -- src/network`) : DIX cas sur quatorze tombent.
  * Les quatre autres passent des deux cotes : deux TEMOINS (un tunnel en cours est une session : un moniteur et
@@ -221,7 +220,8 @@ describe('two sessions of one user from one machine are two sessions', () => {
     expect(listing).toContain(`pid=${monitors[1].pid}`);
     expect(listing).not.toContain(`pid=${monitors[0].pid}`);
     expect(listing.split('\n').filter((line) => /10\.0\.0\.1:\d+/.test(line))).toHaveLength(1);
-    expect(lan.pc2.getTcpStack().listSockets().filter((socket) => socket.localPort === 22)).toHaveLength(1);
+    const serving = lan.pc2.getTcpStack().listSockets().filter((socket) => socket.localPort === 22);
+    expect(serving.filter((socket) => socket.state === 'established')).toHaveLength(1);
   });
 
   it('the sessions of two users do not touch each other', async () => {

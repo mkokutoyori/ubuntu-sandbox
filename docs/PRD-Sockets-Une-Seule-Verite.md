@@ -314,9 +314,33 @@ vienne d'un `exit`, d'un raccrochage ou d'un `kill`, retire le processus, ferme 
 connexion. Garde-fous : `probe-les-processus-de-session-sshd-suivent-leur-connexion` et
 `probe-le-ssh-du-terminal-est-un-processus`.
 
+Un processus qui sort ferme ses prises comme le fait `tcp_close()` du noyau 5.15 (`__tcp_close`, source lue) : un
+FIN si rien n'attendait d'être lu, un RST s'il restait des octets reçus et non lus (RFC 9293 §3.6.1 SHLD-3, RFC 2525
+§2.17), rien pour une connexion pas encore ouverte (§3.10.4) ; une prise en TIME-WAIT, qui n'appartient plus à
+personne, survit à son ancien propriétaire avec sa ligne dans `ss`. Mesuré avant : un `kill` propre laissait le pair
+en ESTAB sans fin (la prise locale disparaissait, aucune trame ne partait). Le faucheur de prises de `LinuxMachine`
+ferme d'abord les prises du processus, retire la ligne d'une prise disparue, et ne fait que retirer le propriétaire
+d'une prise qui survit ; l'application de la prise est prévenue de sa fermeture, une seule fois, dès la sortie du
+processus. Garde-fou : `probe-un-processus-qui-sort-ferme-ses-prises-comme-tcp-close`.
+
+Une session s'arrête avec ses processus, par un seul chemin (`LinuxMachine.endSshSession`) : la sortie ordinaire,
+`loginctl terminate-session` / `kill-session` / `terminate-user` (systemd 249, `man/loginctl.xml` : « kills all
+processes of the session and deallocates all resources attached to the session ») et la sortie du moniteur ou du
+shell qu'il porte, que ce soit `kill`, `pkill` ou une sortie. Mesuré avant : tuer le shell laissait `who`,
+`loginctl`, la connexion et le tunnel du client intacts, sans ligne `Removed session` ; l'action de `loginctl`
+existait en deux exemplaires, celle de la machine et celle de l'exécuteur (le chemin de `sudo loginctl`), qui ne
+retirait ni le nœud `pts`, ni la session logind, ni les lignes du journal ; seule la sortie du processus `ssh` du
+client fermait la connexion, jamais l'inverse. La correspondance identifiant → session n'est plus écrite qu'une fois
+(`loginctlSessionId`), l'exécuteur reçoit l'action de la machine, et une connexion perdue retire les redirections de
+la session et fait sortir le processus `ssh` qui la tenait (`SshSession.onDisconnected`). Garde-fou :
+`probe-tuer-le-processus-de-session-termine-la-session`.
+
 Pas construit : l'enfant sans privilège `sshd: user@pts/0`, qui tient la connexion avec le moniteur dans un vrai
 Linux ; une session sans terminal prend encore un numéro de `pts` ; un `ssh` tapé dans une session distante déjà
-ouverte n'a pas de processus.
+ouverte n'a pas de processus ; `WindowsPC` garde l'abandon silencieux des prises d'un processus terminé (sa
+sémantique n'est pas sourçable d'ici) ; un moniteur tué par SIGKILL écrit la même ligne PAM de fermeture qu'un
+SIGTERM, alors qu'un vrai sshd, qui ne s'exécute plus, n'en écrit aucune ; une session telnet n'a pas de processus
+propre (elle porte le pid de telnetd) et finit avec sa connexion.
 
 ## 7. Hors périmètre
 
