@@ -209,6 +209,7 @@ import {
 } from '@/network/protocols/telnet/TelnetClientSession';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
+import type { SshClientHandle, SshClientPlacement } from './network/SshClientProcess';
 import type { TcpStack } from '../../tcp/TcpStack';
 import { md5, sha1, sha256 } from '@/crypto/hash';
 import { bytesToHex, fileTextToBytes } from '@/crypto/encoding';
@@ -485,7 +486,6 @@ export class LinuxCommandExecutor {
   getSocketTable(): SocketTable | null { return this.socketTable; }
   /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
   private forwarding: SshForwardingTable | null = null;
-  getForwardingTable(): SshForwardingTable | null { return this.forwarding; }
   /** Captured TCP traffic — rendered by `tcpdump`. */
   readonly captureLog = new PacketCaptureLog();
   /** Shared SSH session table — backs `who` / `w` / `last`. */
@@ -1889,7 +1889,7 @@ export class LinuxCommandExecutor {
     } finally {
       if (target?.holdOnly === true) this.forwarding?.holdOpen(session);
       if (this.forwarding?.holds(session)) {
-        this.handSshSessionTo(session, client.pid());
+        this.handSshSessionTo(session, client.pid(), this.userMgr.currentUid);
       } else {
         session.disconnect();
         client.retire();
@@ -1903,7 +1903,7 @@ export class LinuxCommandExecutor {
     let pid: number | null = null;
     return {
       pid: () => {
-        if (pid === null) pid = this.spawnSshClient(args, detached);
+        if (pid === null) pid = this.spawnSshClient(args, this.ownSshClientPlacement(detached));
         return pid;
       },
       retire: () => {
@@ -1914,21 +1914,46 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private spawnSshClient(args: readonly string[], detached: boolean): number {
+  private ownSshClientPlacement(detached: boolean): SshClientPlacement {
     const c = this.ctx();
-    return this.processMgr.spawn({
-      command: ['ssh', ...args].join(' '),
-      comm: 'ssh',
+    return {
+      ppid: detached ? 1 : this.currentBashPid(),
+      tty: detached ? '?' : 'pts/0',
       user: this.userMgr.currentUser,
       uid: c.uid,
       gid: c.gid,
-      ppid: detached ? 1 : this.currentBashPid(),
-      tty: detached ? '?' : 'pts/0',
       cwd: this.cwd,
+    };
+  }
+
+  private spawnSshClient(args: readonly string[], placement: SshClientPlacement): number {
+    return this.processMgr.spawn({
+      command: ['ssh', ...args].join(' '),
+      comm: 'ssh',
+      user: placement.user,
+      uid: placement.uid,
+      gid: placement.gid,
+      ppid: placement.ppid,
+      tty: placement.tty,
+      cwd: placement.cwd,
     }).pid;
   }
 
-  private handSshSessionTo(session: SshSession, pid: number): void {
+  openTerminalSshClient(
+    args: readonly string[], session: SshSession, placement: SshClientPlacement,
+  ): SshClientHandle {
+    const pid = this.spawnSshClient(args, placement);
+    this.handSshSessionTo(session, pid, placement.uid);
+    return {
+      pid,
+      retire: () => {
+        this.forwarding?.closeOwnedBy(pid);
+        if (this.processMgr.get(pid)) this.processMgr.exit(pid, 0);
+      },
+    };
+  }
+
+  private handSshSessionTo(session: SshSession, pid: number, uid: number): void {
     this.forwarding?.adopt(session, pid);
     const endpoint = session.localEndpoint;
     if (endpoint === null || this.socketTable === null) return;
@@ -1938,7 +1963,7 @@ export class LinuxCommandExecutor {
     if (connection === undefined) return;
     connection.pid = pid;
     connection.processName = 'ssh';
-    connection.uid = this.userMgr.currentUid;
+    connection.uid = uid;
   }
 
   releaseSshClient(pid: number): void {

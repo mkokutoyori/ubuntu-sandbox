@@ -47,10 +47,11 @@ export class SshForwardingTable {
 
   openLocal(
     fwd: SshPortForward, session: SshSession, pid: number, ownerUid?: number,
+    onTunnelRefused?: (line: string) => void,
   ): ForwardOpening {
     if (this.ownTcpStack === undefined || this.sockets.isPortBound(fwd.listenPort, 'tcp')) return 'address-in-use';
     const host = { getTcpStack: () => this.ownTcpStack! };
-    const tunnel = tunnelThroughSession(session);
+    const tunnel = tunnelThroughSession(session, onTunnelRefused);
     const identity = { pid, processName: 'ssh' };
     const forwarder = fwd.kind === 'dynamic'
       ? new SshDynamicForwarder(host, tunnel, {

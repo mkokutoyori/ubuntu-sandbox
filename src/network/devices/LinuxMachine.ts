@@ -118,6 +118,10 @@ import { SystemCron } from './linux/cron/SystemCron';
 import { formatCtime } from './linux/time/ctime';
 import type { HardwareProfile } from './host/hardware';
 import { LinuxShellSession, TtyAllocator } from './linux/shell/LinuxShellSession';
+import type { SshClientHandle } from './linux/network/SshClientProcess';
+import type { SshPortForward } from './linux/network/SshPortForward';
+import type { SshSession as WireSshSession } from '../protocols/ssh/session/SshSession';
+import type { ForwardOpening } from '../protocols/ssh/ForwardOpening';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import type { LinuxProfile } from './linux/LinuxProfile';
@@ -2383,6 +2387,27 @@ export abstract class LinuxMachine extends EndHost
     });
     this.getSshServerContext().closePamSession(fromIp);
     this.sshForgetPeerPort(fromIp);
+  }
+
+  openSshClientProcess(
+    args: readonly string[], session: WireSshSession, shell: LinuxShellSession,
+  ): SshClientHandle {
+    return this.executor.openTerminalSshClient(args, session, {
+      ppid: shell.shellPid, tty: shell.tty, user: shell.user, uid: shell.uid, gid: shell.gid, cwd: shell.cwd,
+    });
+  }
+
+  openSshLocalForward(
+    forward: SshPortForward, session: WireSshSession, clientPid: number, ownerUid: number,
+    onTunnelRefused?: (line: string) => void,
+  ): ForwardOpening {
+    return this.executor.forwardingTable?.openLocal(forward, session, clientPid, ownerUid, onTunnelRefused)
+      ?? 'permission-denied';
+  }
+
+  openSshRemoteForward(forward: SshPortForward, session: WireSshSession): boolean {
+    return this.executor.forwardingTable?.openRemote(
+      forward, session, this, (name) => this.executor.resolveHostIpv4(name)) ?? false;
   }
 
   isSshActive(): boolean { return this.isServiceActive('ssh'); }

@@ -124,19 +124,14 @@ import { splitShellWords } from '@/bash/runtime/ShellWords';
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
-import { SshLocalForwarder } from '@/network/protocols/ssh/SshLocalForwarder';
-import { SshRemoteForwarder } from '@/network/protocols/ssh/SshRemoteForwarder';
-import { tunnelThroughSession } from '@/network/protocols/ssh/forwardRelay';
-import { SshDynamicForwarder } from '@/network/protocols/ssh/SshDynamicForwarder';
+import type { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
+import type { SshClientHandle } from '@/network/devices/linux/network/SshClientProcess';
 import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
 import {
   parseSshArgs,
   parseProxyJumpSpec,
-  type DynamicForward,
-  type LocalForward,
   type ParsedSshArgs,
   type ProxyHop,
-  type RemoteForward,
 } from './sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -2263,7 +2258,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // quiet-mode ACL) is preserved via RouterSshServerContext's
     // isClientBlocked/recordAuthFailure hooks, now reachable from a real
     // auth exchange instead of a local call.
-    await this.connectAndEnterSsh(merged);
+    await this.connectAndEnterSsh(merged, args);
   }
 
   /**
@@ -2311,14 +2306,15 @@ export class LinuxTerminalSession extends TerminalSession {
       strict: StrictHostKeyChecking | undefined;
       command: string | null;
       hashKnownHosts?: boolean;
-      localForwards?: readonly LocalForward[];
-      remoteForwards?: readonly RemoteForward[];
-      dynamicForwards?: readonly DynamicForward[];
+      localForwards?: readonly SshPortForward[];
+      remoteForwards?: readonly SshPortForward[];
+      dynamicForwards?: readonly SshPortForward[];
       forwardAgent?: boolean;
       requestTty?: 'yes' | 'no' | 'force';
       authentication?: SshClientAuthentication;
       algorithms?: SshAlgorithmPreferences;
     },
+    args: readonly string[],
   ): Promise<void> {
     const dev = this.device as unknown as {
       executor?: {
@@ -2498,26 +2494,17 @@ export class LinuxTerminalSession extends TerminalSession {
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
     const linuxRemoteDevice = findLinuxMachineByIp(host);
-    // OpenSSH `-L`: register local-port forwarders on the local device,
-    // each tunnelling new connections through this SSH session.
-    const forwarders = this.installLocalForwards(session, host, meta);
-    // OpenSSH `-D`: SOCKS proxy on a local port — symmetric placement to
-    // `-L` (always on the local device).
-    const dynamicForwarders = this.installDynamicForwards(session, host, meta);
-    const localRequested = (meta.localForwards?.length ?? 0) + (meta.dynamicForwards?.length ?? 0);
-    if (localRequested > 0 && forwarders.length + dynamicForwarders.length === 0) {
-      this.addLine(NO_LOCAL_FORWARDING);
-    }
-    const remoteForwarders = await this.installRemoteForwards(session, host, meta);
+    const client = this.device instanceof LinuxMachine && this.shell
+      ? this.device.openSshClientProcess(args, session, this.shell)
+      : null;
+    this.openSshForwards(session, client, meta);
     const agentForwarding = linuxRemoteDevice
       ? this.installAgentForwarding(linuxRemoteDevice, meta)
       : null;
     const onSessionEnd = () => {
-      for (const f of forwarders) f.dispose();
-      for (const f of dynamicForwarders) f.dispose();
-      for (const f of remoteForwarders) f.dispose();
       agentForwarding?.detach();
-      session.disconnect();
+      if (client !== null) client.retire();
+      else session.disconnect();
     };
 
     // Every vendor is driven over the real, authenticated SSH channel.
@@ -3379,115 +3366,35 @@ export class LinuxTerminalSession extends TerminalSession {
    * `connectAndEnterSsh` opens afterwards for the final hop. Each hop
    * defaults its user to the previous hop's user when omitted.
    */
-  /**
-   * Register `-L localPort:remoteHost:remotePort` forwarders on the local
-   * device for every entry in `meta.localForwards`. Returns the list of
-   * registered forwarders so the caller can dispose them when the SSH
-   * session ends.
-   */
-  private installLocalForwards(
+  private openSshForwards(
     session: SshSession,
-    sshHost: string,
-    meta: { localForwards?: readonly LocalForward[] },
-  ): SshLocalForwarder[] {
-    const forwards = meta.localForwards ?? [];
-    if (forwards.length === 0) return [];
-    const localDevice = this.getLocalDevice() as unknown as
-      import('@/network/devices/EndHost').EndHost;
-    if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
-      return [];
-    }
-    const tunnel = tunnelThroughSession(session, (line) => this.addLine(line, 'error'));
-    const out: SshLocalForwarder[] = [];
-    for (const fwd of forwards) {
-      const forwarder = new SshLocalForwarder(localDevice, tunnel, {
-        localPort: fwd.localPort,
-        remoteHost: fwd.remoteHost,
-        remotePort: fwd.remotePort,
-        sshHost,
-      });
-      const opening = forwarder.register(this.shell?.uid);
-      if (opening !== 'opened') {
-        for (const line of localListenerFailure('127.0.0.1', fwd.localPort, opening)) this.addLine(line);
+    client: SshClientHandle | null,
+    meta: {
+      localForwards?: readonly SshPortForward[];
+      remoteForwards?: readonly SshPortForward[];
+      dynamicForwards?: readonly SshPortForward[];
+    },
+  ): void {
+    const machine = this.device instanceof LinuxMachine ? this.device : null;
+    const local = [...(meta.localForwards ?? []), ...(meta.dynamicForwards ?? [])];
+    let opened = 0;
+    for (const forward of local) {
+      const opening = machine !== null && client !== null
+        ? machine.openSshLocalForward(
+          forward, session, client.pid, this.shell?.uid ?? 0, (line) => this.addLine(line, 'error'))
+        : 'permission-denied';
+      if (opening === 'opened') {
+        opened += 1;
         continue;
       }
-      out.push(forwarder);
+      for (const line of localListenerFailure(forward.bindAddress, forward.listenPort, opening)) this.addLine(line);
     }
-    return out;
-  }
-
-  /**
-   * Register `-D socksPort` SOCKS proxies on the local device. Each one
-   * accepts SOCKS5 CONNECT requests and bridges through the SSH session.
-   */
-  private installDynamicForwards(
-    session: SshSession,
-    sshHost: string,
-    meta: { dynamicForwards?: readonly DynamicForward[] },
-  ): SshDynamicForwarder[] {
-    const forwards = meta.dynamicForwards ?? [];
-    if (forwards.length === 0) return [];
-    const localDevice = this.getLocalDevice() as unknown as
-      import('@/network/devices/EndHost').EndHost;
-    if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
-      return [];
-    }
-    const tunnel = tunnelThroughSession(session, (line) => this.addLine(line, 'error'));
-    const out: SshDynamicForwarder[] = [];
-    for (const fwd of forwards) {
-      const forwarder = new SshDynamicForwarder(localDevice, tunnel, {
-        socksPort: fwd.socksPort,
-        bindAddress: fwd.bindAddress,
-        sshHost,
-      });
-      const opening = forwarder.register(this.shell?.uid);
-      if (opening !== 'opened') {
-        const shown = fwd.bindAddress === null || fwd.bindAddress === undefined ? '127.0.0.1'
-          : fwd.bindAddress === '*' ? '0.0.0.0' : fwd.bindAddress;
-        for (const line of localListenerFailure(shown, fwd.socksPort, opening)) this.addLine(line);
-        continue;
+    if (local.length > 0 && opened === 0) this.addLine(NO_LOCAL_FORWARDING);
+    for (const forward of meta.remoteForwards ?? []) {
+      if (machine === null || !machine.openSshRemoteForward(forward, session)) {
+        this.addLine(remoteForwardFailure(forward.listenPort));
       }
-      out.push(forwarder);
     }
-    return out;
-  }
-
-  /**
-   * Mirror of {@link installLocalForwards} for `-R`. Each entry opens
-   * a listener on the *remote* device for `remotePort`. Returns the
-   * list of registered forwarders so the caller can dispose them
-   * when the SSH session ends.
-   */
-  private async installRemoteForwards(
-    session: SshSession,
-    sshHost: string,
-    meta: { remoteForwards?: readonly RemoteForward[] },
-  ): Promise<SshRemoteForwarder[]> {
-    const forwards = meta.remoteForwards ?? [];
-    if (forwards.length === 0) return [];
-    const localDevice = this.getLocalDevice() as unknown as
-      import('@/network/devices/EndHost').EndHost;
-    if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
-      return [];
-    }
-    const resolver = (this.getLocalDevice() as unknown as {
-      executor?: { resolveHostIpv4?: (name: string) => string | null };
-    }).executor;
-    const out: SshRemoteForwarder[] = [];
-    for (const fwd of forwards) {
-      const forwarder = new SshRemoteForwarder(session, localDevice, {
-        remotePort: fwd.remotePort,
-        localHost: fwd.localHost,
-        localPort: fwd.localPort,
-        sshHost,
-      }, (name) => resolver?.resolveHostIpv4?.(name) ?? null);
-      if (!await forwarder.register()) {
-        this.addLine(remoteForwardFailure(fwd.remotePort));
-        continue;
-      }
-      out.push(forwarder);
-    }
-    return out;
   }
 
   /**

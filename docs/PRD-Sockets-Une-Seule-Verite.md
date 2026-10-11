@@ -288,6 +288,36 @@ un vrai processus (le listener TNS d'Oracle, qui écoute dès l'amorçage sans p
 pas nommé tant qu'aucun processus ne le tient). `probe-ss-netstat-proc-net-une-seule-verite` est le garde-fou
 de ce croisement.
 
+### P5 — Une session SSH est des processus, des deux côtés
+
+P4 posait qu'une prise n'a de propriétaire que si un processus vivant la tient. Il restait à donner de vrais
+processus aux sessions SSH et à les faire mourir avec leur connexion. Mesuré sur `origin/mandeng 608f58462` :
+
+- **Serveur.** Après `ssh user@h true`, après une session interactive nourrie sur l'entrée standard et après
+  une session de terminal fermée par `exit`, `ps` listait toujours `sshd: user [priv]` et `-bash` (quatre paires
+  après quatre commandes, chacune sur un `pts/N` de plus) alors que `who`, `w` et `loginctl` disaient que
+  personne n'était connecté : `closeSshSessionRecord` appelait `reap`, qui ne retire qu'un zombie. Et il fermait
+  « le plus ancien enregistrement de `(utilisateur, adresse)` » : la fin d'une commande depuis le même poste
+  fermait donc le tunnel `ssh -f -N -L` ouvert avant elle.
+- **Client.** Un `ssh` tapé dans un terminal ne laissait aucun processus : la connexion vers le port 22 et les
+  écoutes `-L`/`-D` n'avaient pas de propriétaire pour `ss -p` ou `lsof`, et il n'y avait rien à tuer. Le
+  terminal avait sa propre grammaire de `-L`/`-R`/`-D` (l'adresse de liaison était lue puis jetée) et sa propre
+  orchestration des écoutes, en double de celles du chemin `executeCommand`.
+
+Désormais l'enregistrement de session porte le port source de *sa* connexion : il le prend en réclamant la prise
+acceptée que nul enregistrement ouvert ne tient, se ferme par ce port (`connectionClosed` reçoit le port de la
+connexion qui se ferme) et fait alors sortir le shell puis le moniteur ; le faucheur de prises retire une ligne
+de connexion par son quadruplet. Côté client, le `ssh` d'un terminal est un processus enfant du shell de ce
+terminal, sur son tty, qui adopte la session ; ses redirections passent par la `SshForwardingTable` de la
+machine (une seule orchestration) sur la grammaire de `SshPortForward` (une seule grammaire). Sa fin, qu'elle
+vienne d'un `exit`, d'un raccrochage ou d'un `kill`, retire le processus, ferme les écoutes et raccroche la
+connexion. Garde-fous : `probe-les-processus-de-session-sshd-suivent-leur-connexion` et
+`probe-le-ssh-du-terminal-est-un-processus`.
+
+Pas construit : l'enfant sans privilège `sshd: user@pts/0`, qui tient la connexion avec le moniteur dans un vrai
+Linux ; une session sans terminal prend encore un numéro de `pts` ; un `ssh` tapé dans une session distante déjà
+ouverte n'a pas de processus.
+
 ## 7. Hors périmètre
 
 - **UDP.** Même structure (`udpBindAddress` vs table), mais un socket UDP
