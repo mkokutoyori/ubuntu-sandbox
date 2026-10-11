@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record cursor/buffer transcripts from a real vim.
 
-usage: record_vim_cursor.py [--seed N] [--cases N] [--vocab cursor|edit|all] out.json
+usage: record_vim_cursor.py [--seed N] [--cases N] [--vocab cursor|edit|search|tabs|all] out.json
 
 Every case is a starting buffer and a list of steps; a step is one complete Normal-mode
 command (ending in <Esc> when it enters Insert mode).  The real vim runs the steps one by
@@ -48,7 +48,34 @@ def search_step(r):
     ]
     return r.choice(pool)
 
+TAB_OPTIONS = [["tabstop=8"], ["tabstop=4"], ["tabstop=2"], ["tabstop=3"], ["shiftwidth=4"], ["shiftwidth=2"], ["shiftwidth=0", "tabstop=4"],
+               ["softtabstop=4"], ["softtabstop=-1", "shiftwidth=4"], ["softtabstop=2"], ["softtabstop=8"], ["expandtab"], ["autoindent"]]
+
+def tab_options(r):
+    chosen = []
+    for group in r.sample(TAB_OPTIONS, r.randint(0, 5)):
+        chosen += group
+    return chosen
+
+def tabs_step(r):
+    ins = r.choice(["x", "ab", " ", "  ", "x y", "   "])
+    n = r.choice(["", "", "2", "3"])
+    pool = [
+        ["i<Tab><Esc>"], ["a<Tab><Esc>"], ["A<Tab><Esc>"], ["I<Tab><Esc>"], ["i<Tab><Tab><Esc>"], ["A<Tab><Tab><Tab><Esc>"],
+        ["A" + ins + "<Tab>x<Esc>"], ["i<Tab><BS><Esc>"], ["A<Tab><Tab><BS><Esc>"], ["A<Tab><Tab><BS><BS><Esc>"], ["A<BS><Esc>"], ["A<BS><BS><Esc>"],
+        ["A  <Tab><BS><Esc>"], ["A  <BS><Esc>"], ["A    <BS><Esc>"], ["I<BS><Esc>"], ["A" + ins + "<BS><Esc>"], ["I" + ins + "<Tab><BS><BS><Esc>"],
+        ["o<Esc>"], ["Ox<Esc>"], ["ox<Esc>"], ["o<Tab>x<Esc>"], ["Ofoo<CR>bar<Esc>"], ["A<CR>x<Esc>"], ["i<CR><Esc>"], ["ccx<Esc>"], ["Sx<Esc>"], ["cc<Esc>"],
+        ["ofoo<CR><Esc>"], ["A<CR><CR>x<Esc>"], ["o<Tab><CR>x<Esc>"], ["ox<CR><Esc>"],
+        [n + ">>"], [n + "<<"], [">j"], ["<k"], ["Vj>"], ["Vj<"], ["V2>"], ["vj>"], ["Vj" + n + ">"], [">ip"],
+        ["r<Tab>"], ["R<Tab><Esc>"], ["x"], ["~"], ["J"], ["3ix<Tab><Esc>"], ["3A<Tab><Esc>"], [">>", "j", "."], ["A<Tab>y<Esc>", "."], ["o<Tab>y<Esc>", "j", "."],
+        ["l"], ["h"], ["j"], ["k"], ["$"], ["0"], ["^"], ["w"], ["b"], ["e"], ["gg"], ["G"], [n + "|"], [n + "j"], [n + "k"],
+        ["dd"], ["yy", "p"], ["u"], ["<C-r>"], ["a" + ins + "<Esc>"], ["o" + ins + "<Esc>"],
+    ]
+    return r.choice(pool)
+
 def rand_step(r, vocab):
+    if vocab == "tabs":
+        return tabs_step(r)
     n = r.choice(["", "", "", "2", "3", "5"])
     roll = r.random()
     if vocab == "search" and roll < 0.6:
@@ -90,7 +117,10 @@ def gen_cases(seed, count, vocab):
     cases = []
     for i in range(count):
         steps = [t for _ in range(r.randint(2, 9)) for t in rand_step(r, vocab)]
-        cases.append({"id": f"c{seed}-{i}", "text": rand_text(r), "steps": steps})
+        case = {"id": f"c{seed}-{i}", "text": rand_text(r), "steps": steps}
+        if vocab == "tabs":
+            case["options"] = tab_options(r)
+        cases.append(case)
     return cases
 
 VIMSCRIPT = r'''
@@ -98,13 +128,18 @@ set nocompatible
 set noswapfile nobackup nowritebackup viminfo= tabstop=8 shiftwidth=8 noexpandtab noautoindent
 set nowrapscan
 set wrapscan
+set backspace=indent,eol,start
 set lines=40 columns=200
 let g:cases = json_decode(join(readfile($VCASES), "\n"))
 let g:out = []
 function! Keys(step) abort
-  return substitute(a:step, '<\(CR\|Esc\|Space\|BS\|C-r\|C-v\)>', '\=eval("\"\\" . submatch(0) . "\"")', 'g')
+  return substitute(a:step, '<\(CR\|Esc\|Space\|BS\|Tab\|C-r\|C-v\)>', '\=eval("\"\\" . submatch(0) . "\"")', 'g')
 endfunction
 for c in g:cases
+  set tabstop=8 shiftwidth=8 softtabstop=0 noexpandtab noautoindent
+  if has_key(c, 'options') && len(c.options) > 0
+    execute 'set ' . join(c.options, ' ')
+  endif
   set undolevels=-1
   silent! %delete _
   call setline(1, c.text)

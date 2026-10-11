@@ -83,7 +83,7 @@ export class RemoteVimController extends BaseRemoteEditorController<VimEditorVie
   get message(): string { return this.current.message; }
   get commandLineText(): string { return this.current.commandLineText; }
   get searchText(): string { return this.current.searchText; }
-  get fileFormat(): 'unix' | 'dos' { return this.current.fileFormat; }
+  get fileFormat(): 'unix' | 'dos' | 'mac' { return this.current.fileFormat; }
   get listMode(): boolean { return this.current.listMode; }
   get relativeNumbersShown(): boolean { return this.current.relativeNumbersShown; }
   get colorColumn(): number | null { return this.current.colorColumn; }

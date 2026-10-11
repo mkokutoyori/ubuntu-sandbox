@@ -326,7 +326,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           {engine.variant === 'vim' && engine.modified && <span style={{ color: '#f38ba8' }}>[+] </span>}
           {engine.isReadOnly && <span style={{ color: '#f9e2af' }}>[RO] </span>}
           <span>{fileName}</span>
-          {engine.variant === 'vim' && engine.fileFormat === 'dos' && <span style={{ color: '#a6adc8' }}> [dos]</span>}
+          {engine.variant === 'vim' && engine.fileFormat !== 'unix' && <span style={{ color: '#a6adc8' }}> [{engine.fileFormat}]</span>}
         </span>
         {engine.variant === 'vim' && (
           <span style={{ color: '#a6adc8' }}>

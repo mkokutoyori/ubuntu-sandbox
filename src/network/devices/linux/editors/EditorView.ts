@@ -37,7 +37,7 @@ export interface VimEditorView extends EditorViewBase {
   readonly message: string;
   readonly commandLineText: string;
   readonly searchText: string;
-  readonly fileFormat: 'unix' | 'dos';
+  readonly fileFormat: 'unix' | 'dos' | 'mac';
   readonly listMode: boolean;
   readonly relativeNumbersShown: boolean;
   readonly colorColumn: number | null;

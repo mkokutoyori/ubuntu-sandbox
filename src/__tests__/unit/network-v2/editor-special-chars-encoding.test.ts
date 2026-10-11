@@ -115,7 +115,7 @@ describe('Scénario UI-9 — vim : :set fileencoding? rapporte toujours utf-8', 
     const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'a\n' });
     const vim = new VimEngine(fs, '/tmp/x.txt', 'a\n', false, 'vim');
     exCmd(vim, 'set fileencoding?');
-    expect(vim.message).toBe('fileencoding=utf-8');
+    expect(vim.message).toBe('  fileencoding=utf-8');
   });
 });
 
@@ -154,42 +154,42 @@ describe('Scénario UI-9 — vim : détection filetype étendue', () => {
     const fs = new InMemoryEditorFsContext({ '/etc/network/interfaces': 'auto eth0\n' });
     const vim = new VimEngine(fs, '/etc/network/interfaces', 'auto eth0\n', false, 'vim');
     exCmd(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=interfaces');
+    expect(vim.message).toBe('  filetype=interfaces');
   });
 
   it('/etc/hosts → filetype=hostsfile', () => {
     const fs = new InMemoryEditorFsContext({ '/etc/hosts': '127.0.0.1 localhost\n' });
     const vim = new VimEngine(fs, '/etc/hosts', '127.0.0.1 localhost\n', false, 'vim');
     exCmd(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=hostsfile');
+    expect(vim.message).toBe('  filetype=hostsfile');
   });
 
   it('/etc/resolv.conf → filetype=resolv', () => {
     const fs = new InMemoryEditorFsContext({ '/etc/resolv.conf': 'nameserver 1.1.1.1\n' });
     const vim = new VimEngine(fs, '/etc/resolv.conf', 'nameserver 1.1.1.1\n', false, 'vim');
     exCmd(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=resolv');
+    expect(vim.message).toBe('  filetype=resolv');
   });
 
   it('/etc/sudoers → filetype=sudoers', () => {
     const fs = new InMemoryEditorFsContext({ '/etc/sudoers': 'root ALL=(ALL:ALL) ALL\n' });
     const vim = new VimEngine(fs, '/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n', false, 'vim');
     exCmd(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=sudoers');
+    expect(vim.message).toBe('  filetype=sudoers');
   });
 
   it('/etc/passwd → filetype=passwd', () => {
     const fs = new InMemoryEditorFsContext({ '/etc/passwd': 'root:x:0:0::/root:/bin/bash\n' });
     const vim = new VimEngine(fs, '/etc/passwd', 'root:x:0:0::/root:/bin/bash\n', false, 'vim');
     exCmd(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=passwd');
+    expect(vim.message).toBe('  filetype=passwd');
   });
 
   it('/tmp/test.sh → filetype=sh', () => {
     const fs = new InMemoryEditorFsContext({ '/tmp/test.sh': '#!/bin/bash\necho hi\n' });
     const vim = new VimEngine(fs, '/tmp/test.sh', '#!/bin/bash\necho hi\n', false, 'vim');
     exCmd(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=sh');
+    expect(vim.message).toBe('  filetype=sh');
   });
 });
 
@@ -223,6 +223,8 @@ describe('Scénario UI-10 (état moteur, scoped) — colorcolumn / hlsearch / sh
   it(':set incsearch / :set noincsearch basculent l\'état', () => {
     const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'a\n' });
     const vim = new VimEngine(fs, '/tmp/x.txt', 'a\n', false, 'vim');
+    expect(vim.incSearch).toBe(true);
+    exCmd(vim, 'set noincsearch');
     expect(vim.incSearch).toBe(false);
     exCmd(vim, 'set incsearch');
     expect(vim.incSearch).toBe(true);

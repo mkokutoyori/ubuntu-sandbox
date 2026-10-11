@@ -4,14 +4,16 @@ import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { renderListLine, type ListChars } from './editorRender';
-import { MAXCOL, cursorVcol, firstNonBlank, runMotion, type FindState } from './vim/VimMotions';
+import { MAXCOL, charCells, colAtVcol, cursorVcol, firstNonBlank, isWhite, type FindState } from './vim/VimCursor';
+import { runMotion } from './vim/VimMotions';
 import { textObject } from './vim/VimTextObjects';
 import { compileVimPattern } from './vim/VimPattern';
 import {
   NO_OFFSET, findMatch, identUnderCursor, parseSearchInput, patternForIdent, resolveTarget,
   type LastSearch,
 } from './vim/VimSearch';
-import { joinText, removeChars, shiftLine, sliceChars, swapCase } from './vim/VimEditing';
+import { indentString, indentWidth, insertTab, joinText, removeChars, shiftLine, sliceChars, softBackspace, swapCase, tabSpaces } from './vim/VimEditing';
+import { VimOptions } from './vim/VimOptions';
 
 export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
 export type VimVariant = 'vim' | 'vi';
@@ -168,15 +170,19 @@ interface OperatorRange {
   noAdjustEnd?: boolean;
 }
 
-function colAtVcolInsert(text: string, want: number, tabstop: number): number {
-  let vcol = 0;
-  for (let i = 0; i < text.length; i++) {
-    const width = text[i] === '\t' ? tabstop - (vcol % tabstop) : 1;
-    if (want < vcol + width) return i;
-    vcol += width;
+function listCharsOf(spec: string): ListChars {
+  const found = { tab: '^I', trail: '', eol: '' };
+  for (const item of spec.split(',')) {
+    const separator = item.indexOf(':');
+    if (separator < 0) continue;
+    const key = item.slice(0, separator);
+    const value = item.slice(separator + 1);
+    if (key === 'tab' || key === 'trail' || key === 'eol') found[key] = value;
   }
-  return text.length;
+  return found;
 }
+
+const SET_COMMAND = /^(se|set|setl|setlo|setloc|setloca|setlocal|setg|setgl|setglo|setglob|setgloba|setglobal)(?:\s+(.*))?$/;
 
 function firstNonWhite(text: string): number {
   let col = 0;
@@ -199,32 +205,6 @@ interface UnnamedRegister {
  * extension — plain vi addresses lines with `NG`/`:N`), and no
  * `-- INSERT --` mode indicator (classic vi shows no mode line at all).
  */
-const VIM_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
-  'number', 'nu', 'relativenumber', 'rnu', 'list', 'showmatch', 'sm',
-  'incsearch', 'hlsearch', 'ignorecase', 'autoindent', 'ai',
-]);
-
-const VIM_NUMERIC_OPTIONS: ReadonlySet<string> = new Set(['colorcolumn']);
-
-const VIM_STRING_OPTIONS: ReadonlySet<string> = new Set([
-  'listchars', 'filetype', 'ft', 'fileformat', 'ff', 'fileencoding', 'fenc',
-]);
-
-function vimSetRefusal(argument: string): string {
-  const name = argument.split('=')[0].replace(/^no/, '');
-  const bare = argument.split('=')[0];
-  const value = argument.includes('=') ? argument.slice(argument.indexOf('=') + 1) : null;
-  const known = VIM_BOOLEAN_OPTIONS.has(name) || VIM_NUMERIC_OPTIONS.has(name)
-    || VIM_STRING_OPTIONS.has(name);
-  if (!known) return `E518: Unknown option: ${argument}`;
-  if (value === null) return `E518: Unknown option: ${argument}`;
-  if (VIM_NUMERIC_OPTIONS.has(bare) && !/^\d+$/.test(value)) {
-    return `E521: Number required after =: ${argument}`;
-  }
-  if (VIM_BOOLEAN_OPTIONS.has(bare)) return `E474: Invalid argument: ${argument}`;
-  return `E518: Unknown option: ${argument}`;
-}
-
 interface ExRange {
   start: number | null;
   end: number | null;
@@ -262,13 +242,16 @@ export class VimEngine {
   private insertKind: 'i' | 'o' | 'O' = 'i';
   private insertedText = '';
   private insertUndoDepth = -1;
-  private readonly shiftwidth = 8;
   private joinSpaces = true;
   private cmdKeys: EditorKeyInput[] = [];
   private commandChanged = false;
   private commandBlocked = false;
   private mlEmpty = false;
   private replaceMode = false;
+  private typedSpace = false;
+  private autoIndentPending = false;
+  private insertTouched = false;
+  private insertStart = { line: 0, col: 0 };
   private lineUndoLine = -1;
   private lineUndoText = '';
   private lineUndoRunning = false;
@@ -280,7 +263,7 @@ export class VimEngine {
   private want = -1;
   private explicitWant: number | null = null;
   private keepWantThisKey = false;
-  private readonly tabstop = 8;
+  readonly options: VimOptions;
   private swapPath: string;
   private orphanSwapPath: string | null = null;
   private _pendingSwapRecovery: PendingSwapRecovery | null = null;
@@ -312,19 +295,7 @@ export class VimEngine {
   private visualObjectKind: 'i' | 'a' | null = null;
   private lastVisual: { anchor: { line: number; col: number }; cursor: { line: number; col: number }; mode: 'visual' | 'visual-line' | 'visual-block' } | null = null;
 
-  // `:set` toggles. Real vim ships with `number`/`relativenumber` both off
-  // by default — the user opts in explicitly (e.g. via ~/.vimrc).
-  private showLineNumbers = false;
-  private showRelativeNumbers = false;
-  private hlsearchEnabled = false;
-  private ignoreCaseSearch = false;
   private _shellOutput = '';
-  private listModeEnabled = false;
-  private listCharsCfg: { tab: string; trail: string; eol: string } = { tab: '^I', trail: '', eol: '$' };
-  private showMatchEnabled = false;
-  private incSearchEnabled = false;
-  private colorColumnCfg: number | null = null;
-  private autoindentEnabled = false;
 
   // Named registers ("a-"z, "*, "+) plus the unnamed register kept at
   // key '"'. Macros live in a separate namespace (recorded key sequences,
@@ -361,15 +332,6 @@ export class VimEngine {
   // operator machinery (dw/d$/mark motions).
   private operatorPendingTextObjectKind: 'i' | 'a' | null = null;
 
-  // `fileformat` — autodetected from the presence of any \r\n pair in the
-  // file as loaded (real vim's heuristic). A CRLF-terminated line has its
-  // trailing \r stripped from the in-memory buffer, same as real vim; a
-  // *stray* \r not immediately followed by \n (corruption from a botched
-  // conversion) is left in place, exactly where `\r` search/substitution
-  // is meant to find and clean it up. Only affects how lines are rejoined
-  // on save — never auto-strips existing buffer content.
-  private _fileFormat: 'unix' | 'dos' = 'unix';
-
   constructor(
     private readonly fs: EditorFsContext,
     public readonly filePath: string,
@@ -380,10 +342,14 @@ export class VimEngine {
     /** `vim +LINE file` — 1-indexed, clamped to the buffer. */
     initialCursor?: { line: number },
   ) {
-    this._fileFormat = initialContent.includes('\r\n') ? 'dos' : 'unix';
+    this.options = new VimOptions(variant);
+    const detectedFormat = initialContent.includes('\r\n') ? 'dos' : 'unix';
+    this.options.assign('fileformat', detectedFormat);
+    this.options.assign('fileencoding', 'utf-8');
+    this.options.assign('filetype', this.detectFiletype());
     const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
     const rawLines = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
-    this.linesArr = this._fileFormat === 'dos'
+    this.linesArr = detectedFormat === 'dos'
       ? rawLines.map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l))
       : rawLines;
     this.originalDiskLines = [...this.linesArr];
@@ -458,27 +424,32 @@ export class VimEngine {
   get pendingSubstMatch(): PendingSubstMatch | null { return this._pendingMatch; }
   get isReplacing(): boolean { return this._mode === 'insert' && this.replaceMode; }
   get visualAnchor(): { line: number; col: number } { return { line: this.visualAnchorLine, col: this.visualAnchorCol }; }
-  get lineNumbersShown(): boolean { return this.showLineNumbers; }
-  get relativeNumbersShown(): boolean { return this.showRelativeNumbers; }
-  get hlsearch(): boolean { return this.hlsearchEnabled; }
+  get lineNumbersShown(): boolean { return this.options.bool('number'); }
+  get relativeNumbersShown(): boolean { return this.options.bool('relativenumber'); }
+  get hlsearch(): boolean { return this.options.bool('hlsearch'); }
   get shellOutput(): string { return this._shellOutput; }
-  get fileFormat(): 'unix' | 'dos' { return this._fileFormat; }
-  get listMode(): boolean { return this.listModeEnabled; }
-  get showMatch(): boolean { return this.showMatchEnabled; }
-  get incSearch(): boolean { return this.incSearchEnabled; }
-  get colorColumn(): number | null { return this.colorColumnCfg; }
-  get autoindent(): boolean { return this.autoindentEnabled; }
+  get fileFormat(): 'unix' | 'dos' | 'mac' { return this.options.string('fileformat') as 'unix' | 'dos' | 'mac'; }
+  get listMode(): boolean { return this.options.bool('list'); }
+  get showMatch(): boolean { return this.options.bool('showmatch'); }
+  get incSearch(): boolean { return this.options.bool('incsearch'); }
+  get colorColumn(): number | null {
+    const first = /^\d+/.exec(this.options.string('colorcolumn'));
+    return first ? parseInt(first[0], 10) : null;
+  }
+  get autoindent(): boolean { return this.options.bool('autoindent'); }
+  private get tabstop(): number { return this.options.tabstop; }
+  private get shiftwidth(): number { return this.options.shiftwidth; }
   /** Real vim's `:set list` rendering: `$` at end of line, `^I` (or the
    *  configured `listchars` symbol) for tabs, a literal `^M` for a stray
    *  embedded CR (real CRLF pairs are already stripped from the buffer at
    *  load time, so any \r left here is genuine corruption to surface). */
   renderListLine(line: string): string {
-    if (!this.listModeEnabled) return line;
-    return renderListLine(line, this.listCharsCfg);
+    if (!this.listMode) return line;
+    return renderListLine(line, this.listChars);
   }
 
   /** `:set listchars` as it stands — carried in the view for a remote renderer. */
-  get listChars(): ListChars { return { ...this.listCharsCfg }; }
+  get listChars(): ListChars { return listCharsOf(this.options.string('listchars')); }
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
   /** Text register content, `null` if empty/unset. Named registers, the unnamed register ("), and "/. */
@@ -958,7 +929,10 @@ export class VimEngine {
     this._cursorCol = firstNonBlank >= 0 ? firstNonBlank : 0;
   }
 
-  private setLine(i: number, text: string): void { this.linesArr[i] = text; }
+  private setLine(i: number, text: string): void {
+    this.linesArr[i] = text;
+    this.insertTouched = true;
+  }
 
   private jumpToMark(key: string, linewise: boolean): void {
     const isBackToggle = (!linewise && key === '`') || (linewise && key === "'");
@@ -984,8 +958,12 @@ export class VimEngine {
     this._message = '';
   }
 
-  private enterInsert(): void {
+  private enterInsert(opened = false): void {
     this.mlEmpty = false;
+    this.typedSpace = false;
+    this.insertTouched = opened;
+    this.autoIndentPending = opened && this.options.bool('autoindent');
+    this.insertStart = { line: this._cursorLine, col: this._cursorCol };
     this._mode = 'insert';
     this._message = this.variant === 'vim' ? '-- INSERT --' : '';
   }
@@ -995,7 +973,7 @@ export class VimEngine {
     const text = this.line(this._cursorLine);
     if (kind === 'o' || kind === 'O') {
       this.pushUndoSnapshot();
-      const indent = this.autoindentEnabled ? text.match(/^[ \t]*/)?.[0] ?? '' : '';
+      const indent = this.indentFor(text);
       const at = kind === 'o' ? this._cursorLine + 1 : this._cursorLine;
       this.linesArr.splice(at, 0, indent);
       this._cursorLine = at;
@@ -1012,7 +990,7 @@ export class VimEngine {
     this.insertKind = kind === 'o' || kind === 'O' ? kind : 'i';
     this.insertedText = '';
     this.insertUndoDepth = this.undoStack.length;
-    this.enterInsert();
+    this.enterInsert(kind === 'o' || kind === 'O');
   }
 
   private operatorShortcut(op: Operator, motion: string): void {
@@ -1228,15 +1206,17 @@ export class VimEngine {
 
   private changeRange(start: { line: number; col: number }, endExclusive: { line: number; col: number }, end: { line: number; col: number }, type: 'char' | 'line'): void {
     this.pushUndoSnapshot();
+    let emptyChange = false;
     if (type === 'line') {
       const removed = this.linesArr.slice(start.line, end.line + 1);
       this.setRegister({ linewise: true, lines: removed });
-      const indent = this.autoindentEnabled ? this.line(start.line).match(/^[ \t]*/)?.[0] ?? '' : '';
+      const indent = this.indentFor(this.line(start.line));
       this.linesArr.splice(start.line, end.line - start.line + 1, indent);
       this._cursorLine = start.line;
       this._cursorCol = indent.length;
     } else {
       const empty = start.line === endExclusive.line && start.col >= endExclusive.col;
+      emptyChange = empty;
       if (!empty) {
         const removed = removeChars(this.linesArr, start, endExclusive);
         this.setRegister({ linewise: false, lines: removed });
@@ -1249,13 +1229,13 @@ export class VimEngine {
     this.insertKind = 'i';
     this.insertedText = '';
     this.insertUndoDepth = -1;
-    this.enterInsert();
+    this.enterInsert(type === 'line' || !emptyChange);
   }
 
   private shiftRange(startLine: number, endLine: number, amount: number): void {
     this.pushUndoSnapshot();
     for (let i = startLine; i <= endLine; i++) {
-      this.linesArr[i] = shiftLine(this.line(i), this.tabstop, this.shiftwidth, amount);
+      this.linesArr[i] = shiftLine(this.line(i), this.tabstop, this.shiftwidth, amount, this.options.expandtab);
     }
     this._cursorLine = startLine;
     this._cursorCol = firstNonBlank(this.line(startLine));
@@ -1290,11 +1270,16 @@ export class VimEngine {
     if (key === 'Escape' || (key.length !== 1 && key !== 'Enter')) return;
     const text = this.line(this._cursorLine);
     if (text.length - this._cursorCol < count) return;
+    if (key === '\t' && this.options.expandtab) {
+      this.pendingCountStr = String(count);
+      for (const replayed of ['R', 'Tab', 'Escape']) this.applyKeyInner({ key: replayed });
+      return;
+    }
     this.pushUndoSnapshot();
     if (key === 'Enter') {
       const before = text.slice(0, this._cursorCol);
       const after = text.slice(this._cursorCol + count);
-      const indent = this.autoindentEnabled ? text.match(/^[ \t]*/)?.[0] ?? '' : '';
+      const indent = this.indentFor(text);
       this.linesArr.splice(this._cursorLine, 1, before, indent + after);
       this._cursorLine++;
       this._cursorCol = indent.length;
@@ -1821,9 +1806,9 @@ export class VimEngine {
 
   private charEndVcol(text: string, col: number): number {
     let vcol = 0;
-    for (let i = 0; i < col && i < text.length; i++) vcol += text[i] === '\t' ? this.tabstop - (vcol % this.tabstop) : 1;
+    for (let i = 0; i < col && i < text.length; i++) vcol += charCells(text[i], vcol, this.tabstop);
     if (col >= text.length) return vcol;
-    const width = text[col] === '\t' ? this.tabstop - (vcol % this.tabstop) : 1;
+    const width = charCells(text[col], vcol, this.tabstop);
     return vcol + width - 1;
   }
 
@@ -1835,7 +1820,7 @@ export class VimEngine {
     let to = text.length;
     let foundFrom = false;
     for (let i = 0; i < text.length; i++) {
-      const width = text[i] === '\t' ? this.tabstop - (vcol % this.tabstop) : 1;
+      const width = charCells(text[i], vcol, this.tabstop);
       const end = vcol + width - 1;
       if (!foundFrom && end >= corners.left) { from = i; foundFrom = true; }
       if (foundFrom && !corners.toEol && vcol > corners.right) { to = i; break; }
@@ -1895,7 +1880,7 @@ export class VimEngine {
     let to = text.length;
     let foundFrom = false;
     for (let i = 0; i < text.length; i++) {
-      const width = text[i] === '\t' ? this.tabstop - (vcol % this.tabstop) : 1;
+      const width = charCells(text[i], vcol, this.tabstop);
       const end = vcol + width - 1;
       if (!foundFrom && end >= corners.left) { from = i; foundFrom = true; }
       if (foundFrom && !(corners.toEol || toEol) && vcol > corners.right) { to = i; break; }
@@ -1939,6 +1924,12 @@ export class VimEngine {
       this.leaveInsert();
       return;
     }
+    const keepsAutoIndent = k.key === 'Enter';
+    this.insertKey(k);
+    if (!keepsAutoIndent) this.autoIndentPending = false;
+  }
+
+  private insertKey(k: EditorKeyInput): void {
     if (k.ctrl && k.key.toLowerCase() === 'h') { this.insertBackspace(); return; }
     if (k.ctrl && k.key.toLowerCase() === 'w') { this.insertDeleteWordBack(); return; }
     if (k.ctrl && k.key.toLowerCase() === 'u') { this.insertDeleteToLineStart(); return; }
@@ -1946,7 +1937,7 @@ export class VimEngine {
     switch (k.key) {
       case 'Backspace': this.insertBackspace(); return;
       case 'Enter': this.insertNewline(); this.insertedText += '\n'; return;
-      case 'Tab': this.insertCharacter('\t'); return;
+      case 'Tab': this.insertTabKey(); return;
       case 'ArrowLeft': this.insertCursorMove(() => { if (this._cursorCol > 0) this._cursorCol--; }); return;
       case 'ArrowRight': this.insertCursorMove(() => { this._cursorCol = Math.min(this.line(this._cursorLine).length, this._cursorCol + 1); }); return;
       case 'Home': this.insertCursorMove(() => { this._cursorCol = 0; }); return;
@@ -1974,21 +1965,47 @@ export class VimEngine {
     this._cursorCol++;
     this._modified = true;
     this.insertedText += ch;
+    if (ch === ' ') this.typedSpace = true;
+  }
+
+  private insertTabKey(): void {
+    if (!this.options.expandtab && this.options.softtabstop === 0) { this.insertCharacter('\t'); return; }
+    const before = this.line(this._cursorLine);
+    const col = this._cursorCol;
+    let replacing: { floor: number } | null = null;
+    if (this.replaceMode) {
+      replacing = { floor: this.insertStart.line === this._cursorLine ? this.insertStart.col : 0 };
+      const spaces = tabSpaces(before, col, this.options);
+      for (let i = 0; i < spaces; i++) this.replacedOriginals.push(i === 0 && col < before.length ? before[col] : null);
+    }
+    const edit = insertTab(before, col, this.options, replacing);
+    this.setLine(this._cursorLine, edit.line);
+    this.insertedText += '\t';
+    this._cursorCol = edit.col;
+    this._modified = true;
+    this.typedSpace = false;
   }
 
   private insertNewline(): void {
     const l = this.line(this._cursorLine);
-    const before = l.slice(0, this._cursorCol);
+    let before = l.slice(0, this._cursorCol);
     let after = l.slice(this._cursorCol);
-    let indent = '';
-    if (this.autoindentEnabled) {
-      indent = l.match(/^[ \t]*/)?.[0] ?? '';
-      after = indent + after;
+    const indent = this.indentFor(before);
+    if (this.options.bool('autoindent')) {
+      after = after.replace(/^[ \t]+/, '');
+      if (this.autoIndentPending) before = before.replace(/[ \t]+$/, '');
     }
-    this.linesArr.splice(this._cursorLine, 1, before, after);
+    this.linesArr.splice(this._cursorLine, 1, before, indent + after);
     this._cursorLine++;
     this._cursorCol = indent.length;
     this._modified = true;
+    this.insertTouched = true;
+    this.autoIndentPending = this.options.bool('autoindent');
+  }
+
+  private indentFor(text: string): string {
+    if (!this.options.bool('autoindent')) return '';
+    return indentString(indentWidth(text, this.tabstop).width, this.tabstop, this.options.expandtab);
   }
 
   private insertCursorMove(move: () => void): void {
@@ -2002,7 +2019,7 @@ export class VimEngine {
     const target = down ? Math.min(this.linesArr.length - 1, this._cursorLine + 1) : Math.max(0, this._cursorLine - 1);
     const want = this.currentWant();
     const text = this.line(target);
-    let col = colAtVcolInsert(text, want, this.tabstop);
+    let col = colAtVcol(text, want, this.tabstop, true);
     if (want >= MAXCOL) col = text.length;
     this.insertCursorMove(() => { this._cursorLine = target; this._cursorCol = col; });
   }
@@ -2016,9 +2033,26 @@ export class VimEngine {
       this.linesArr.splice(this._cursorLine + 1, 1);
     }
     this._modified = true;
+    this.insertTouched = true;
+  }
+
+  private trimAutoIndent(): void {
+    const original = this.line(this._cursorLine);
+    let text = original;
+    let at = Math.min(this._cursorCol, text.length);
+    for (;;) {
+      if (at >= text.length && at > 0) at--;
+      if (!isWhite(text[at])) break;
+      text = text.slice(0, at) + text.slice(at + 1);
+    }
+    if (text !== original) this.explicitWant = cursorVcol(original, this._cursorCol, this.tabstop, false);
+    if (text[at] !== undefined && at + 1 >= text.length) at++;
+    this.setLine(this._cursorLine, text);
+    this._cursorCol = at;
   }
 
   private leaveInsert(): void {
+    if (this.autoIndentPending) { this.trimAutoIndent(); this.autoIndentPending = false; }
     if (this.blockInsertContext) this.finishBlockInsert();
     const text = this.insertedText;
     const repeat = this.insertRepeat;
@@ -2028,15 +2062,13 @@ export class VimEngine {
         if (this.insertKind !== 'i') this.insertNewline();
         for (const ch of text) {
           if (ch === '\n') this.insertNewline();
+          else if (ch === '\t') this.insertTabKey();
           else this.insertCharacter(ch);
         }
       }
     }
-    if (this.insertUndoDepth >= 0 && this.undoStack.length === this.insertUndoDepth) {
-      const top = this.undoStack[this.undoStack.length - 1];
-      if (top && top.lines.length === this.linesArr.length && top.lines.every((l, i) => l === this.linesArr[i])) {
-        this.undoStack.pop();
-      }
+    if (this.insertUndoDepth >= 0 && this.undoStack.length === this.insertUndoDepth && !this.insertTouched) {
+      this.undoStack.pop();
     }
     this.insertUndoDepth = -1;
     this.insertedText = '';
@@ -2064,7 +2096,13 @@ export class VimEngine {
       return;
     }
     this.insertedText = this.insertedText.slice(0, -1);
-    if (this._cursorCol > 0) {
+    const soft = softBackspace(this.line(this._cursorLine), this._cursorCol, this.options, this.typedSpace);
+    if (soft) {
+      this.typedSpace = false;
+      this.setLine(this._cursorLine, soft.line);
+      this._cursorCol = soft.col;
+      this._modified = true;
+    } else if (this._cursorCol > 0) {
       const l = this.line(this._cursorLine);
       this.setLine(this._cursorLine, l.slice(0, this._cursorCol - 1) + l.slice(this._cursorCol));
       this._cursorCol--;
@@ -2076,6 +2114,7 @@ export class VimEngine {
       this._cursorLine--;
       this._cursorCol = prevLen;
       this._modified = true;
+      this.insertTouched = true;
     }
   }
 
@@ -2485,154 +2524,15 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
-    if (trimmed === 'set number' || trimmed === 'set nu') {
-      this.showLineNumbers = true;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set nonumber' || trimmed === 'set nonu') {
-      this.showLineNumbers = false;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set relativenumber' || trimmed === 'set rnu') {
-      this.showRelativeNumbers = true;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set norelativenumber' || trimmed === 'set nornu') {
-      this.showRelativeNumbers = false;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set list') {
-      this.listModeEnabled = true;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set nolist') {
-      this.listModeEnabled = false;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    const listcharsMatch = trimmed.match(/^set listchars=(.*)$/);
-    if (listcharsMatch) {
-      for (const part of listcharsMatch[1].split(',')) {
-        const [key, ...rest] = part.split(':');
-        const val = rest.join(':').replace(/\\ /g, ' ');
-        if (key === 'tab') this.listCharsCfg.tab = val;
-        else if (key === 'trail') this.listCharsCfg.trail = val;
-        else if (key === 'eol') this.listCharsCfg.eol = val;
-      }
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set showmatch' || trimmed === 'set sm') {
-      this.showMatchEnabled = true;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set noshowmatch' || trimmed === 'set nosm') {
-      this.showMatchEnabled = false;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set incsearch') {
-      this.incSearchEnabled = true;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set noincsearch') {
-      this.incSearchEnabled = false;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set fileencoding?' || trimmed === 'set fenc?') {
-      this._message = 'fileencoding=utf-8';
-      this._mode = 'normal';
-      return;
-    }
-    const colorColumnMatch = trimmed.match(/^set colorcolumn=(\d+)$/);
-    if (colorColumnMatch) {
-      this.colorColumnCfg = parseInt(colorColumnMatch[1], 10);
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set colorcolumn=') {
-      this.colorColumnCfg = null;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set hlsearch') {
-      this.hlsearchEnabled = true;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set nohlsearch') {
-      this.hlsearchEnabled = false;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set ignorecase') {
-      this.ignoreCaseSearch = true;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set noignorecase') {
-      this.ignoreCaseSearch = false;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set autoindent' || trimmed === 'set ai') {
-      this.autoindentEnabled = true;
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set noautoindent' || trimmed === 'set noai') {
-      this.autoindentEnabled = false;
-      this._message = '';
+    const setCommand = SET_COMMAND.exec(trimmed);
+    if (setCommand) {
+      const name = setCommand[1];
+      const scope = name.startsWith('setl') ? 'setlocal' : name.startsWith('setg') ? 'setglobal' : 'set';
+      this._message = this.options.apply(setCommand[2] ?? '', scope).message;
       this._mode = 'normal';
       return;
     }
     if (trimmed === 'syntax on' || trimmed === 'syntax off') {
-      this._message = '';
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set filetype?' || trimmed === 'set ft?') {
-      this._message = `filetype=${this.detectFiletype()}`;
-      this._mode = 'normal';
-      return;
-    }
-    if (trimmed === 'set fileformat?' || trimmed === 'set ff?') {
-      this._message = `fileformat=${this._fileFormat}`;
-      this._mode = 'normal';
-      return;
-    }
-    const ffSet = trimmed.match(/^set (?:fileformat|ff)=(unix|dos)$/);
-    if (ffSet) {
-      // Only changes how the file is written on the next save — matches
-      // real vim: existing buffer content (including any stray \r left
-      // over from corruption) is untouched until explicitly edited out.
-      this._fileFormat = ffSet[1] as 'unix' | 'dos';
       this._message = '';
       this._mode = 'normal';
       return;
@@ -2651,12 +2551,6 @@ export class VimEngine {
       return;
     }
 
-    if (/^set\s+\S/.test(trimmed)) {
-      this._message = vimSetRefusal(trimmed.replace(/^set\s+/, ''));
-      this._mode = 'normal';
-      return;
-    }
-
     this._message = `E492: Not an editor command: ${trimmed}`;
     this._mode = 'normal';
   }
@@ -2670,9 +2564,8 @@ export class VimEngine {
       this._message = "E45: 'readonly' option is set (add ! to override)";
       return false;
     }
-    const body = this._fileFormat === 'dos'
-      ? `${this.linesArr.join('\r\n')}\r\n`
-      : `${this.content}\n`;
+    const terminator = ({ unix: '\n', dos: '\r\n', mac: '\r' } as const)[this.fileFormat] ?? '\n';
+    const body = `${this.linesArr.join(terminator)}${terminator}`;
     const ok = this.fs.writeFile(path, body);
     if (!ok) {
       this._message = `E212: Can't open file for writing`;
@@ -2936,14 +2829,21 @@ export class VimEngine {
     }
   }
 
+  private searchFailure(pattern: string, forward: boolean): string {
+    if (this.options.bool('wrapscan')) return `E486: Pattern not found: ${pattern}`;
+    return forward
+      ? `E385: Search hit BOTTOM without match for: ${pattern}`
+      : `E384: Search hit TOP without match for: ${pattern}`;
+  }
+
   private findSearchTarget(from: { line: number; col: number }, search: LastSearch, count: number): ReturnType<typeof resolveTarget> | null {
     const match = findMatch(this.linesArr, from, search.pattern, {
-      forward: search.forward, count, wrapscan: true,
+      forward: search.forward, count, wrapscan: this.options.bool('wrapscan'),
       anchor: search.offset.kind === 'end' ? 'end' : 'start',
-      ignoreCase: this.ignoreCaseSearch,
+      ignoreCase: this.options.bool('ignorecase'),
     });
     if (!match) {
-      this._message = `E486: Pattern not found: ${search.pattern}`;
+      this._message = this.searchFailure(search.pattern, search.forward);
       return null;
     }
     this._message = match.wrapped
@@ -3007,9 +2907,9 @@ export class VimEngine {
     const pattern = this.lastSearch.pattern;
     const here = { line: this._cursorLine, col: this._cursorCol };
     const match = findMatch(this.linesArr, here, pattern, {
-      forward: !backward, count: 1, wrapscan: true, anchor: 'start', ignoreCase: this.ignoreCaseSearch, acceptAtCursor: !backward,
+      forward: !backward, count: 1, wrapscan: this.options.bool('wrapscan'), anchor: 'start', ignoreCase: this.options.bool('ignorecase'), acceptAtCursor: !backward,
     });
-    if (!match) { this._message = `E486: Pattern not found: ${pattern}`; if (op) this.cancelOperator(); return; }
+    if (!match) { this._message = this.searchFailure(pattern, !backward); if (op) this.cancelOperator(); return; }
     const last = match.end.col > 0
       ? { line: match.end.line, col: match.end.col - 1 }
       : { line: Math.max(0, match.end.line - 1), col: Math.max(0, this.line(Math.max(0, match.end.line - 1)).length) };
