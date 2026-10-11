@@ -1,3 +1,4 @@
+import { screenGo, screenLineEnd, screenLineStart } from './VimScreenMotions';
 import { findSentence } from './VimSentences';
 import {
   Cursor, MAXCOL, bckWord, bckendWord, colAtVcol, cursorVcol, endWord, firstNonBlank, fwdWord, isWhite,
@@ -323,15 +324,29 @@ export function runMotion(buf: MotionBuffer, from: Pos, req: MotionRequest): Mot
       if (req.key === '+' || req.key === 'Enter' || req.key === '-') {
         return { pos: { line: target, col: firstNonBlank(targetText) }, type: 'line', inclusive: false };
       }
-      const col = colAtVcol(targetText, req.want, buf.tabstop, req.visual);
+      const col = colAtVcol(targetText, req.want, buf.tabstop, req.visual, buf.ctrlTab);
       return { pos: { line: target, col }, type: 'line', inclusive: false, keepWant: true };
     }
     case 'gj': case 'gk': {
       const down = req.key === 'gj';
+      if (buf.window && buf.window.wraps) {
+        const moved = screenGo(buf.window, buf.lines.length, from, down, count1, req.want, req.visual);
+        return { pos: moved.pos, type: 'char', inclusive: req.want >= MAXCOL, want: moved.want, keepWant: true, ...(moved.failed ? { failed: true } : {}) };
+      }
       const target = down ? Math.min(lastLine, from.line + count1) : Math.max(0, from.line - count1);
-      const col = colAtVcol(buf.lines[target] ?? '', req.want, buf.tabstop, req.visual);
+      const col = colAtVcol(buf.lines[target] ?? '', req.want, buf.tabstop, req.visual, buf.ctrlTab);
       const moved = target !== from.line;
       return { pos: { line: target, col }, type: 'char', inclusive: false, keepWant: true, ...(moved ? {} : { failed: true }) };
+    }
+    case 'g0': case 'g^': case 'gm': {
+      if (!buf.window) return { pos: { line: from.line, col: req.key === 'g^' ? firstNonBlank(text) : 0 }, type: 'char', inclusive: false };
+      const pos = screenLineStart(buf.window, from, req.key === 'g^', req.key === 'gm', text);
+      return { pos, type: 'char', inclusive: false };
+    }
+    case 'g$': {
+      if (!buf.window) return { pos: { line: Math.min(lastLine, from.line + count1 - 1), col: Math.max(0, (buf.lines[Math.min(lastLine, from.line + count1 - 1)] ?? '').length - 1) }, type: 'char', inclusive: true };
+      const moved = screenLineEnd(buf.window, from, count1, buf.lines.length, text, req.visual);
+      return { pos: moved.pos, type: 'char', inclusive: true, want: moved.want };
     }
     case '_': {
       const target = cursorDown(buf, from, count1 - 1);
@@ -354,10 +369,10 @@ export function runMotion(buf: MotionBuffer, from: Pos, req: MotionRequest): Mot
       const t = buf.lines[target] ?? '';
       let col = Math.max(0, t.length - 1);
       while (col > 0 && isWhite(t[col])) col--;
-      return { pos: { line: target, col }, type: 'char', inclusive: true, want: cursorVcol(t, col, buf.tabstop) };
+      return { pos: { line: target, col }, type: 'char', inclusive: true, want: cursorVcol(t, col, buf.tabstop, !buf.list, buf.ctrlTab) };
     }
     case '|': {
-      const col = req.count !== undefined && req.count > 0 ? colAtVcol(text, req.count - 1, buf.tabstop) : 0;
+      const col = req.count !== undefined && req.count > 0 ? colAtVcol(text, req.count - 1, buf.tabstop, false, buf.ctrlTab) : 0;
       return { pos: { line: from.line, col }, type: 'char', inclusive: false, want: req.count !== undefined && req.count > 0 ? req.count - 1 : 0 };
     }
     case 'G': case 'gg': {
@@ -441,23 +456,27 @@ export function runMotion(buf: MotionBuffer, from: Pos, req: MotionRequest): Mot
       return { pos: hit, type: 'char', inclusive: false };
     }
     case 'H': case 'M': case 'L': {
-      const top = buf.top ?? 0;
-      const height = buf.height ?? buf.lines.length;
-      const bottom = Math.min(lastLine, top + height - 1);
+      const view = buf.window;
+      const top = view?.top ?? 0;
       let line: number;
-      if (req.key === 'H') line = Math.min(bottom, top + count1 - 1);
-      else if (req.key === 'L') line = Math.max(top, bottom - (count1 - 1));
-      else {
-        const used = bottom - top + 1;
-        const half = Math.floor((used + 1) / 2);
+      if (req.key === 'L') {
+        const last = view?.botLine ?? lastLine + 1;
+        line = count1 - 1 >= last ? 0 : last - (count1 - 1) - 1;
+      } else if (req.key === 'M') {
+        const height = view?.height ?? buf.lines.length;
+        const half = Math.floor((height - (view?.emptyRows ?? 0) + 1) / 2);
+        let used = 0;
         let n = 0;
-        let seen = 0;
         for (; top + n < lastLine; n++) {
-          seen++;
-          if (seen >= half) break;
+          used += view ? view.rowsOf(top + n) : 1;
+          if (used >= half) break;
         }
-        line = top + n;
+        if (n > 0 && used > height) n--;
+        line = Math.min(lastLine, top + n);
+      } else {
+        line = Math.min(lastLine, top + count1 - 1);
       }
+      if (view && !req.operator) line = view.cursorCorrect(line);
       return { pos: { line, col: firstNonBlank(buf.lines[line] ?? '') }, type: 'line', inclusive: false };
     }
     case '}': case '{': {

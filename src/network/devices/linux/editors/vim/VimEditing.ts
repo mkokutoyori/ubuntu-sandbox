@@ -53,6 +53,7 @@ export function shiftLine(line: string, tabstop: number, shiftwidth: number, amo
 
 export interface TabSettings {
   readonly tabstop: number;
+  readonly ctrlTab?: boolean;
   readonly softtabstop: number;
   readonly expandtab: boolean;
 }
@@ -64,7 +65,7 @@ export interface LineEdit {
 
 export function tabSpaces(line: string, col: number, settings: TabSettings): number {
   const step = settings.softtabstop > 0 ? settings.softtabstop : settings.tabstop;
-  return step - (cursorVcol(line, col, settings.tabstop, false) % step);
+  return step - (cursorVcol(line, col, settings.tabstop, false, settings.ctrlTab) % step);
 }
 
 export function insertTab(line: string, col: number, settings: TabSettings, replacing: { readonly floor: number } | null = null): LineEdit {
@@ -79,11 +80,11 @@ export function insertTab(line: string, col: number, settings: TabSettings, repl
   let first = cursor;
   const floor = replacing === null ? 0 : replacing.floor;
   while (first > floor && isWhite(widened[first - 1])) first--;
-  const want = cursorVcol(widened, cursor, settings.tabstop, false);
-  let vcol = cursorVcol(widened, first, settings.tabstop, false);
+  const want = cursorVcol(widened, cursor, settings.tabstop, false, settings.ctrlTab);
+  let vcol = cursorVcol(widened, first, settings.tabstop, false, settings.ctrlTab);
   let run = '';
   for (;;) {
-    const width = settings.tabstop - (vcol % settings.tabstop);
+    const width = charCells('\t', vcol, settings.tabstop, settings.ctrlTab);
     if (vcol + width > want) break;
     run += '\t';
     vcol += width;
@@ -96,21 +97,21 @@ export function softBackspace(line: string, col: number, settings: TabSettings, 
   if (settings.softtabstop === 0 || col === 0) return null;
   const previous = line[col - 1];
   if (!(previous === '\t' || (previous === ' ' && !typedSpace))) return null;
-  const previousStart = cursorVcol(line, col - 1, settings.tabstop, false);
-  const previousEnd = previousStart + charCells(previous, previousStart, settings.tabstop) - 1;
+  const previousStart = cursorVcol(line, col - 1, settings.tabstop, false, settings.ctrlTab);
+  const previousEnd = previousStart + charCells(previous, previousStart, settings.tabstop, settings.ctrlTab) - 1;
   const want = Math.floor(previousEnd / settings.softtabstop) * settings.softtabstop;
   let text = line;
   let at = col;
-  let vcol = cursorVcol(text, at, settings.tabstop, false);
+  let vcol = cursorVcol(text, at, settings.tabstop, false, settings.ctrlTab);
   while (vcol > want && at > 0 && isWhite(text[at - 1])) {
     text = text.slice(0, at - 1) + text.slice(at);
     at--;
-    vcol = cursorVcol(text, at, settings.tabstop, false);
+    vcol = cursorVcol(text, at, settings.tabstop, false, settings.ctrlTab);
   }
   while (vcol < want) {
     text = text.slice(0, at) + ' ' + text.slice(at);
     at++;
-    vcol = cursorVcol(text, at, settings.tabstop, false);
+    vcol = cursorVcol(text, at, settings.tabstop, false, settings.ctrlTab);
   }
   return { line: text, col: at };
 }

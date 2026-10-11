@@ -31,6 +31,7 @@ function startup(profile: 'vim' | 'vi'): VimOptions {
   const options = new VimOptions(profile);
   options.assign('filetype', recorded.variants[profile].defaults.filetype as string);
   options.assign('fileencoding', 'utf-8');
+  options.assign('scroll', 11);
   return options;
 }
 

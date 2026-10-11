@@ -19,7 +19,7 @@ OPTIONS = [
     ("wrap", "wrap", "bool"), ("scrolloff", "so", "number"), ("sidescroll", "ss", "number"),
     ("sidescrolloff", "siso", "number"), ("wrapscan", "ws", "bool"), ("display", "dy", "string"),
     ("ruler", "ru", "bool"), ("showcmd", "sc", "bool"), ("showmode", "smd", "bool"),
-    ("filetype", "ft", "string"), ("fileformat", "ff", "string"), ("fileencoding", "fenc", "string"),
+    ("scroll", "scr", "number"), ("filetype", "ft", "string"), ("fileformat", "ff", "string"), ("fileencoding", "fenc", "string"),
 ]
 
 def forms(name, short, kind):
@@ -44,6 +44,8 @@ def forms(name, short, kind):
     return out
 
 EXTRA = [
+    ["set scr=0", "set scr?"], ["set scr=100"], ["set scr=100", "set scr?"], ["set scr=23", "set scr?"], ["set scr=24", "set scr?"], ["set scr=5", "set scr?", "set scr=0", "set scr?"],
+    ["set scr=-1"], ["set scr=5", "set scr&", "set scr?"], ["set scr+=1", "set scr?"], ["set scr-=20", "set scr?"],
     ["set ts=4 sw=4 et"], ["set ts=4 sw=4 et", "set ts?", "set sw?", "set et?"],
     ["set ts=4 foo sw=5", "set ts?", "set sw?"], ["set ts=4  sw=5", "set ts?", "set sw?"], ["set  ts?"],
     ["set ts? sw?"], ["set ts=4 sw? et?"], ["set nu rnu", "set nu?", "set rnu?"], ["set ts=4 nu=2"],

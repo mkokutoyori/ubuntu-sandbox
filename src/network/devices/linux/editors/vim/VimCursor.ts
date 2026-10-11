@@ -1,8 +1,12 @@
+import { codePointWidth } from './VimCells';
+import type { WindowView } from './VimWindow';
+
 export interface MotionBuffer {
   readonly lines: readonly string[];
   readonly tabstop: number;
-  readonly top?: number;
-  readonly height?: number;
+  readonly list?: boolean;
+  readonly ctrlTab?: boolean;
+  readonly window?: WindowView;
 }
 
 export const MAXCOL = Number.MAX_SAFE_INTEGER;
@@ -53,33 +57,48 @@ export function charClassAt(line: string, col: number, big: boolean): 0 | 1 | 2 
   return isKeywordChar(ch) ? 2 : 1;
 }
 
-export function charCells(ch: string, vcol: number, tabstop: number): number {
-  if (ch === '\t') return tabstop - (vcol % tabstop);
-  const code = ch.charCodeAt(0);
-  if (code < 0x20 || code === 0x7f) return 2;
-  return 1;
+export function charCells(ch: string, vcol: number, tabstop: number, ctrlTab = false): number {
+  if (ch === '\t') return ctrlTab ? 2 : tabstop - (vcol % tabstop);
+  return codePointWidth(ch.codePointAt(0)!);
 }
 
-export function cursorVcol(line: string, col: number, tabstop: number, normalMode = true): number {
+export function cursorVcol(line: string, col: number, tabstop: number, normalMode = true, ctrlTab = false): number {
   let vcol = 0;
-  for (let i = 0; i < col && i < line.length; i++) vcol += charCells(line[i], vcol, tabstop);
+  for (let i = 0; i < col && i < line.length; i++) vcol += charCells(line[i], vcol, tabstop, ctrlTab);
   if (col < line.length) {
-    const width = charCells(line[col], vcol, tabstop);
+    const width = charCells(line[col], vcol, tabstop, ctrlTab);
     if (line[col] === '\t' && normalMode) return vcol + width - 1;
   }
   return vcol;
 }
 
-export function colAtVcol(line: string, want: number, tabstop: number, allowEol = false): number {
+export function colAtVcol(line: string, want: number, tabstop: number, allowEol = false, ctrlTab = false): number {
   const last = allowEol ? line.length : Math.max(0, line.length - 1);
   if (want >= MAXCOL) return last;
   let vcol = 0;
   for (let i = 0; i < line.length; i++) {
-    const width = charCells(line[i], vcol, tabstop);
+    const width = charCells(line[i], vcol, tabstop, ctrlTab);
     if (want < vcol + width) return i;
     vcol += width;
   }
   return last;
+}
+
+export function byteOffset(line: string, col: number): number {
+  return new TextEncoder().encode(line.slice(0, col)).length;
+}
+
+export function colAtByte(line: string, bytes: number): number {
+  let used = 0;
+  let col = 0;
+  while (col < line.length) {
+    const length = line.codePointAt(col)! > 0xffff ? 2 : 1;
+    const size = new TextEncoder().encode(line.slice(col, col + length)).length;
+    if (used + size > bytes) break;
+    used += size;
+    col += length;
+  }
+  return col;
 }
 
 export function firstNonBlank(line: string, keepOffEnd = true): number {

@@ -90,6 +90,7 @@ const DEFS: readonly OptionDef[] = [
   { name: 'ruler', short: 'ru', kind: 'bool', scope: 'global', reset: same(false), startup: { vim: true, vi: false } },
   { name: 'showcmd', short: 'sc', kind: 'bool', scope: 'global', reset: same(false), startup: { vim: true, vi: false } },
   { name: 'showmode', short: 'smd', kind: 'bool', scope: 'global', reset: { vim: true, vi: false } },
+  { name: 'scroll', short: 'scr', kind: 'number', scope: 'local', reset: same(0), number: { min: Number.MIN_SAFE_INTEGER, max: Number.MAX_SAFE_INTEGER, belowMin: 'E487', clamp: false } },
   { name: 'filetype', short: 'ft', kind: 'string', scope: 'local', reset: same(''), normalize: (v) => (/^[A-Za-z0-9._-]*$/.test(v) ? v : null) },
   { name: 'fileformat', short: 'ff', kind: 'string', scope: 'local', reset: same('unix'), normalize: (v) => (v === '' || v === 'unix' || v === 'dos' || v === 'mac' ? v : null) },
   { name: 'fileencoding', short: 'fenc', kind: 'string', scope: 'local', reset: same('') },
@@ -103,7 +104,7 @@ export type OptionName =
   | 'number' | 'relativenumber' | 'numberwidth' | 'list' | 'listchars' | 'showmatch' | 'incsearch'
   | 'hlsearch' | 'ignorecase' | 'autoindent' | 'colorcolumn' | 'tabstop' | 'shiftwidth' | 'softtabstop'
   | 'expandtab' | 'wrap' | 'scrolloff' | 'sidescroll' | 'sidescrolloff' | 'wrapscan' | 'display'
-  | 'ruler' | 'showcmd' | 'showmode' | 'filetype' | 'fileformat' | 'fileencoding';
+  | 'ruler' | 'showcmd' | 'showmode' | 'scroll' | 'filetype' | 'fileformat' | 'fileencoding';
 
 export type SetScope = 'set' | 'setlocal' | 'setglobal';
 
@@ -236,7 +237,9 @@ export class VimOptions {
     };
 
     if (source.startsWith('all&', at)) {
-      for (const def of DEFS) this.write(def, scope === 'setglobal' ? 'set' : scope, def.reset[this.profile]);
+      for (const def of DEFS) {
+        if (def.name !== 'scroll') this.write(def, scope === 'setglobal' ? 'set' : scope, def.reset[this.profile]);
+      }
       return { next: at + 4, error: null };
     }
 
