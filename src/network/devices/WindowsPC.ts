@@ -27,7 +27,6 @@ import {
 } from './windows/WindowsNicTeam';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
-import type { SocketProtocol } from '../core/SocketTable';
 import { MACAddress } from '../core/types';
 import { toDisplayName, adapterIfIndex, LOOPBACK_IFINDEX } from './windows/WindowsInterfaceNaming';
 import { interfaceGuidFor } from './host/hardware/HardwareIdentity';
@@ -112,6 +111,7 @@ import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection } from './windows/WindowsServicePortProjection';
+import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
 import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
@@ -425,6 +425,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private eventLogProjection: WindowsEventLogProjection | null = null;
   /** Reactive consumer: service lifecycle events → socket-table ports. */
   private servicePortProjection: WindowsServicePortProjection | null = null;
+  private tcpSocketProjection: TcpSocketStateProjection | null = null;
   /** `netsh interface portproxy` rules — port-forwarding entries. */
   readonly portProxyTable: PortProxyTable = new PortProxyTable();
   /** Reactive consumer: port-proxy events → socket-table listeners. */
@@ -799,6 +800,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
+    this.tcpSocketProjection?.dispose();
+    this.tcpSocketProjection = new TcpSocketStateProjection(bus, this.socketTable, this.id);
     this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable, this.getTcpStack());
     this.portProxyTable.attachBus(bus, this.id);
     this.rdp.sessions.attachBus(bus, this.getHostname());
@@ -830,23 +833,25 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     this._processSocketReaperOff?.();
     this._processSocketReaperOff = bus.subscribe('windows.process.stopped', (e) => {
-      const payload = e.payload as { pid: number; name: string };
-      const { pid, name } = payload;
+      const { pid, name, forced } = e.payload;
       const stack = this.getTcpStack();
-      const toUnbind: Array<{ protocol: SocketProtocol; localAddress: string; localPort: number; state: string }> = [];
+      stack.closeSocketsOwnedBy(pid, forced ? 'reset' : 'graceful');
+      const outliving = new Set(stack.listSockets()
+        .map((socket) => `${socket.localPort}|${socket.remoteIp}|${socket.remotePort}`));
       for (const sock of this.socketTable.getAll()) {
         const matchesByPid = sock.pid === pid;
-        const matchesByName = name && sock.processName === name;
+        const matchesByName = name && sock.pid === undefined && sock.processName === name;
         if (!matchesByPid && !matchesByName) continue;
-        toUnbind.push({ protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state });
-      }
-      for (const s of toUnbind) {
-        this.socketTable.unbind(s.protocol, s.localAddress, s.localPort);
-        if (s.protocol === 'tcp' && s.state === 'LISTEN') {
-          stack.closeListener(s.localPort, s.localAddress);
+        if (sock.remoteAddress === '*') {
+          this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
+          if (sock.protocol === 'tcp' && sock.state === 'LISTEN') stack.closeListener(sock.localPort, sock.localAddress);
+        } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
+          sock.pid = undefined;
+          sock.processName = undefined;
+        } else {
+          this.socketTable.removeConnection(sock);
         }
       }
-      stack.abortSocketsOwnedBy(pid);
     });
   }
 
@@ -2555,22 +2560,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
     }).then(r => {
       wire?.close();
-      const peerIp = r.exitCode === 0 ? this.resolveSshPeer(args) : null;
-      if (peerIp) {
-        const entry = this.socketTable.connect('tcp', sourceIp, 0, peerIp, 22, undefined, 'ssh.exe');
-        this.socketTable.transition(entry.id, 'TIME_WAIT');
-      }
       return r.output;
     });
-  }
-
-  private resolveSshPeer(args: string[]): string | null {
-    for (const a of args) {
-      if (a.startsWith('-')) continue;
-      const at = a.includes('@') ? a.split('@')[1] : a;
-      if (IPAddress.tryParse(at) !== null) return at;
-    }
-    return null;
   }
 
   private async runPathpingCommand(args: string[]): Promise<string> {

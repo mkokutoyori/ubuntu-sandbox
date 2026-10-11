@@ -337,20 +337,54 @@ la session et fait sortir le processus `ssh` qui la tenait (`SshSession.onDiscon
 
 Pas construit : l'enfant sans privilège `sshd: user@pts/0`, qui tient la connexion avec le moniteur dans un vrai
 Linux ; une session sans terminal prend encore un numéro de `pts` ; un `ssh` tapé dans une session distante déjà
-ouverte n'a pas de processus ; `WindowsPC` garde l'abandon silencieux des prises d'un processus terminé (sa
-sémantique n'est pas sourçable d'ici) ; un moniteur tué par SIGKILL écrit la même ligne PAM de fermeture qu'un
-SIGTERM, alors qu'un vrai sshd, qui ne s'exécute plus, n'en écrit aucune ; une session telnet n'a pas de processus
-propre (elle porte le pid de telnetd) et finit avec sa connexion.
+ouverte n'a pas de processus ; un moniteur tué par SIGKILL écrit la même ligne PAM de fermeture qu'un SIGTERM,
+alors qu'un vrai sshd, qui ne s'exécute plus, n'en écrit aucune ; une session telnet n'a pas de processus propre
+(elle porte le pid de telnetd) et finit avec sa connexion.
+
+### P6 — Les machines Windows disent la même chose
+
+Tout ce que P2 à P5 posent pour Linux vaut pour un `WindowsPC`, qui n'en tenait presque rien. Mesuré sur
+`origin/mandeng 5df140bb3`, un LinuxPC et un WindowsPC câblés :
+
+- **Les connexions n'existaient pas pour `netstat -ano` ni pour `Get-NetTCPConnection`.** Les deux lisent la
+  `SocketTable` (une seule vérité, et c'est bien), mais la pile du WindowsPC n'y projetait que les écoutes : une
+  connexion acceptée par `sshd.exe` (PID 1088) était dans la pile (`22->10.0.0.3:32768 established owner=null`) et
+  nulle part ailleurs.
+- **Une connexion acceptée n'avait pas de propriétaire**, ni sur Windows ni, pour tout service autre que sshd et
+  telnetd, sur Linux : `ss -tnp` n'affichait pas de colonne `users:` et `kill` du démon laissait la connexion
+  ESTAB des deux côtés.
+- **Le faucheur de prises de Windows** appelait `abortSocketsOwnedBy`, un `_teardown` silencieux, puis retirait
+  toute ligne portant la même adresse locale ou le même nom d'image : `taskkill /F /PID 1088` laissait la
+  connexion ouverte chez le pair et pouvait emporter les lignes d'autres connexions ou d'autres instances de
+  `svchost.exe`. L'arrêt d'un service retirait son processus de la table sans événement.
+- **`ssh` lancé depuis le poste Windows** écrivait à la main une ligne TIME_WAIT (`10.0.0.7:55579`) que ni la pile
+  ni le serveur ne connaissaient : le serveur avait vu le port 49153.
+
+Désormais une prise acceptée appartient au processus qui tient l'écoute, comme le descripteur que rend `accept`
+(`accept(2)` : « creates a new connected socket, and returns a new file descriptor » ; Winsock : « creates and
+returns a handle to the new socket »), pour tous les services des deux plates-formes ; la pile du WindowsPC projette
+ses connexions dans la table avec la même `TcpSocketStateProjection` que Linux (déplacée dans `tcp/`) ; et un
+processus Windows qui s'arrête ferme les prises qu'il tient (`closeSocketsOwnedBy`, politique de sortie `reset`
+pour une terminaison forcée -- `taskkill /F`, `Stop-Process`, TerminateProcess ; `graceful` sinon -- l'arrêt d'un
+service) selon la documentation Microsoft : `ExitProcess` ferme les poignées du processus, `closesocket` sans
+SO_LINGER est une fermeture ordinaire, et WSAECONNRESET « normally results if the peer application on the remote
+host is suddenly stopped ». Ce qui reste en TIME_WAIT n'a plus de propriétaire (PID 0). Gardes-fous :
+`probe-une-prise-acceptee-appartient-au-processus-qui-tient-l-ecoute` et
+`probe-windows-un-processus-termine-ferme-ses-connexions`.
+
+Pas construit dans ce lot : l'arrêt d'un service ne ferme pas encore son écoute dans la pile (un `sshd` arrêté
+accepte toujours) et son PID réaffiché après redémarrage est l'ancien ; les écoutes 5985, 389, 636, 3268, 3269,
+88, 135, 5722, 8530 et 515 n'ont pas de processus propriétaire ; le processus par session d'OpenSSH pour Windows,
+le `ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
 
 ## 7. Hors périmètre
 
 - **UDP.** Même structure (`udpBindAddress` vs table), mais un socket UDP
   n'a pas d'état `LISTEN` et se diagnostique autrement. À traiter ensuite
   si P1 se passe bien.
-- **Windows.** `WindowsServicePortProjection` et
-  `PortProxySocketProjection` ont la même forme et méritent le même
-  traitement, mais après Linux : le motif doit être éprouvé une fois avant
-  d'être répliqué.
+- **Windows.** Traité en P6 pour les connexions, leur propriétaire et la
+  mort d'un processus ; `WindowsServicePortProjection` et
+  `PortProxySocketProjection` ont encore la forme que P2 a retirée à Linux.
 - **Le listener TNS d'Oracle.** Nommé en P2, traité ailleurs.
 
 ## 8. Vérification

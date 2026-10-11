@@ -2,7 +2,7 @@ import type { SocketEntry, SocketState, SocketTable } from '@/network/core/Socke
 import type { TcpListener, TcpSocket, TcpStack } from '@/network/tcp/TcpStack';
 import type { TcpInfo, TcpListenerQueues, TcpQueues, TcpSocketFacts, TcpTimer } from '@/network/tcp/TcpInfo';
 import { kernelComm } from '../LinuxProcessManager';
-import { socketStateOfTcp } from './TcpSocketStateProjection';
+import { socketStateOfTcp } from '@/network/tcp/TcpSocketStateProjection';
 
 export interface SocketOwner {
   readonly pid: number;

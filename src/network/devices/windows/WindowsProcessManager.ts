@@ -119,7 +119,7 @@ export class WindowsProcessManager {
     this.deviceId = deviceId;
   }
 
-  private publishProcess(pid: number, name: string, started: boolean): void {
+  private publishProcess(pid: number, name: string, started: boolean, forced = false): void {
     const proc = this.processes.get(pid);
     this.bus?.publish({
       topic: started ? 'windows.process.started' : 'windows.process.stopped',
@@ -130,6 +130,7 @@ export class WindowsProcessManager {
         owner: proc?.owner,
         commandLine: proc?.commandLine,
         elevation: proc?.elevation,
+        forced,
       },
     });
   }
@@ -325,7 +326,7 @@ export class WindowsProcessManager {
     if (proc.systemOwned && !isAdmin) return `ERROR: Access is denied.`;
     if (proc.critical) return `ERROR: The process "${proc.name}" with PID ${pid} is critical and cannot be terminated.`;
 
-    this.publishProcess(pid, proc.name, false);
+    this.publishProcess(pid, proc.name, false, force);
     this.processes.delete(pid);
     for (const serviceName of proc.hostedServices) {
       this.serviceManager?.recordCrash(serviceName, this.nowMs());
@@ -374,6 +375,7 @@ export class WindowsProcessManager {
       if (proc.hostedServices.length === 1) {
         // Only remove non-svchost processes; svchost stays alive even if one service stops
         if (proc.name !== 'svchost.exe') {
+          this.publishProcess(proc.pid, proc.name, false);
           this.processes.delete(proc.pid);
         } else {
           proc.hostedServices.splice(idx, 1);

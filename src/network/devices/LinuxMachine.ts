@@ -228,7 +228,7 @@ import {
   type LoginctlSessionAction, type LoginctlSignal,
 } from './linux/network/loginctlFormatter';
 import { UtmpSync } from './linux/network/UtmpSync';
-import { TcpSocketStateProjection } from './linux/network/TcpSocketStateProjection';
+import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
@@ -1970,7 +1970,6 @@ export abstract class LinuxMachine extends EndHost
             backlog: SSHD_LISTEN_BACKLOG,
             identity: { pid, processName: 'sshd' },
             onAccept: (socket) => {
-              stack.setSocketOwner(socket, pid);
               this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
@@ -2052,7 +2051,6 @@ export abstract class LinuxMachine extends EndHost
       stack.listen(LinuxMachine.TELNET_PORT, {
         identity: { pid, processName: 'in.telnetd' },
         onAccept: (socket) => {
-          stack.setSocketOwner(socket, pid);
           new TelnetServerHandler(this.getTelnetServerContext())
             .register(socket as unknown as TcpStream, socket.remoteIp);
         },

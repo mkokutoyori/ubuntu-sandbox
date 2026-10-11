@@ -1496,11 +1496,11 @@ class WindowsProcessAdapter implements IProcessProvider {
     const byName = this.mgr().getProcessesByName(nameOrPid);
     return byName.length > 0 ? toProcessInfo(byName[0]) : null;
   }
-  killProcess(nameOrPid: string | number, force: boolean): string {
+  killProcess(nameOrPid: string | number): string {
     if (typeof nameOrPid === 'number') {
-      return this.mgr().killProcess(nameOrPid, force, this.isAdmin());
+      return this.mgr().killProcess(nameOrPid, true, this.isAdmin());
     }
-    return this.mgr().killByName(nameOrPid, force, this.isAdmin(), false);
+    return this.mgr().killByName(nameOrPid, true, this.isAdmin(), false);
   }
   startProcess(imageName: string, opts?: { arguments?: string; user?: string }): ProcessInfo | null {
     const mgr = this.mgr();
