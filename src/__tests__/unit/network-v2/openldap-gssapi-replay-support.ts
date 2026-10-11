@@ -4,6 +4,7 @@ import { KerberosClient } from '@/network/kerberos/KerberosClient';
 import { decodeCcache } from '@/network/kerberos/ccache/FileCcache';
 import { AES256_PROFILE, decryptWithConfounder } from '@/network/kerberos/enctype/aesCtsHmacSha1';
 import { KG_USAGE_INITIATOR_SEAL } from '@/network/kerberos/gssapi/GssSecurityContext';
+import { frameInitialContextToken } from '@/network/kerberos/gssapi/GssToken';
 import { decodeSpnegoToken } from '@/network/kerberos/gssapi/spnego/SpnegoToken';
 import { Krb5Context } from '@/network/devices/linux/kerberos/Krb5Context';
 import { Krb5GssClient } from '@/network/devices/linux/kerberos/Krb5GssClient';
@@ -48,7 +49,22 @@ function tokenBody(token: Uint8Array): Uint8Array {
   return framed.content.subarray(oid.nextOffset + INITIAL_TOKEN_HEADER_BYTES);
 }
 
+const GS2_HEADER_FLAGS = /^(F,)?[pny]/;
+const TOKEN_ID_BYTES = 2;
+
+function withoutGs2Header(credentials: Uint8Array): Uint8Array | null {
+  const text = Buffer.from(credentials).toString('latin1');
+  if (credentials[0] === 0x60 || !GS2_HEADER_FLAGS.test(text)) return null;
+  let commas = 0;
+  let offset = 0;
+  for (; offset < text.length && commas < 2; offset++) if (text[offset] === ',') commas++;
+  const unframed = credentials.subarray(offset);
+  return frameInitialContextToken((unframed[0] << 8) | unframed[1], unframed.subarray(TOKEN_ID_BYTES));
+}
+
 function mechanismToken(credentials: Uint8Array): Uint8Array {
+  const gs2 = withoutGs2Header(credentials);
+  if (gs2 !== null) return gs2;
   const spnego = decodeSpnegoToken(credentials);
   if (spnego === null) return credentials;
   return (spnego.kind === 'init' ? spnego.mechToken : spnego.responseToken) ?? new Uint8Array(0);
@@ -214,7 +230,7 @@ export function replayedKrb5(
   return { gss: new Krb5GssClient(host, new Krb5Context(host)), files, sentRequests };
 }
 
-const GSSAPI_PLUGINS = ['libgssapiv2.so', 'libplain.so', 'libdigestmd5.so', 'libcrammd5.so'];
+const GSSAPI_PLUGINS = ['libgs2.so', 'libgssapiv2.so', 'libplain.so', 'libdigestmd5.so', 'libcrammd5.so'];
 
 export async function replayGssapiScenario(corpus: GssapiCorpus, scenario: GssapiScenario, args: readonly string[]): Promise<string[]> {
   const problems: string[] = [];

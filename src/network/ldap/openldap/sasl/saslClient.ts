@@ -54,9 +54,35 @@ function saslUsererr(code: number): number {
 const utf8 = (bytes: Uint8Array): string => new TextDecoder().decode(bytes);
 
 const MECH_PLUS_SUFFIX = /-PLUS$/i;
+const SASL_CB_CANON_USER = 0x8007;
 
-function isEqualMech(wanted: string, mechName: string): boolean {
-  return wanted.toLowerCase() === mechName.toLowerCase();
+const MECH_NAME_CHARACTER = /[A-Za-z0-9_-]/;
+
+function isPlusMech(name: string): boolean {
+  return MECH_PLUS_SUFFIX.test(name) && name.length > 5;
+}
+
+function matchMech(wanted: string, mechName: string): { equal: boolean; plus: boolean } {
+  const plus = isPlusMech(wanted);
+  const length = plus ? wanted.length - 5 : wanted.length;
+  return { equal: length >= mechName.length && wanted.slice(0, length).toLowerCase() === mechName.toLowerCase(), plus };
+}
+
+function orderMechs(mechlist: string, hasChannelBinding: boolean): { names: string[]; serverCanChannelBinding: boolean } {
+  const words: string[] = [];
+  let current = '';
+  for (const character of `${mechlist}\0`) {
+    if (MECH_NAME_CHARACTER.test(character)) {
+      current += character;
+      continue;
+    }
+    if (current !== '') words.push(current);
+    current = '';
+  }
+  const names = hasChannelBinding
+    ? [...words.filter(isPlusMech), ...words.filter((word) => !isPlusMech(word))]
+    : words.filter((word) => !isPlusMech(word));
+  return { names, serverCanChannelBinding: hasChannelBinding && words.some(isPlusMech) };
 }
 
 function mechCompare(a: ClientMechanism, b: ClientMechanism): number {
@@ -124,11 +150,16 @@ function findPrompt(prompts: SaslInteract[] | null, id: number): SaslInteract | 
   return null;
 }
 
+type ChannelBindingDisposition = 'none' | 'want' | 'used';
+
+const CHANNEL_BINDING_CRITICAL = false;
+
 export class SaslClientConn {
   props: SaslSecurityProperties = { minSsf: 0, maxSsf: 0, maxBufsize: 0, securityFlags: 0 };
   externalSsf = 0;
   externalAuthId: string | null = null;
   channelBinding: Uint8Array | null = null;
+  channelBindingName = 'ldap';
   readonly oparams: SaslOutParams = {
     user: null, authid: null, mechSsf: 0, maxOutbuf: 0, done: false, encode: null, decode: null,
   };
@@ -178,8 +209,9 @@ export class SaslClientConn {
     return SaslRc.OK;
   }
 
-  setChannelBinding(data: Uint8Array | null): void {
+  setChannelBinding(data: Uint8Array | null, name = 'ldap'): void {
     this.channelBinding = data;
+    this.channelBindingName = name;
   }
 
   setExternal(ssf: number, authId: string | null): void {
@@ -200,6 +232,7 @@ export class SaslClientConn {
   }
 
   private canonUser(user: string, flags: number): number {
+    this.seterror(SaslRc.FAIL, `Unable to find a callback: ${SASL_CB_CANON_USER}`);
     const isSpace = (character: string): boolean => /[ \t\n\v\f\r]/.test(character);
     let length = user.length;
     let begin = 0;
@@ -216,8 +249,10 @@ export class SaslClientConn {
     return SaslRc.OK;
   }
 
-  private newParams(): SaslClientParams {
+  private newParams(disposition: ChannelBindingDisposition): SaslClientParams {
     return {
+      channelBindingName: this.channelBindingName,
+      channelBindingDisposition: disposition,
       service: this.service,
       externalAuthId: this.externalAuthId,
       serverFqdn: this.serverFqdn,
@@ -280,16 +315,21 @@ export class SaslClientConn {
       return this.dostep(null, prompts);
     }
     const minssf = this.props.minSsf < this.externalSsf ? 0 : this.props.minSsf - this.externalSsf;
-    const names = mechlist.split(/[^A-Za-z0-9_-]+/).filter((name) => name !== '');
+    const present = this.channelBinding !== null;
+    const { names, serverCanChannelBinding } = orderMechs(mechlist, present);
     if (names.length === 0) {
       this.seterror(SaslRc.NOMECH, '');
       return { rc: SaslRc.NOMECH, mech: null, out: null, prompts: null };
     }
+    const negotiating = names.length > 1;
+    const disposition: ChannelBindingDisposition = present && negotiating && (serverCanChannelBinding || !CHANNEL_BINDING_CRITICAL) ? 'want' : 'none';
     let best: ClientMechanism | null = null;
+    let bestDisposition: ChannelBindingDisposition = 'none';
     for (const candidate of this.mechList) {
       if (best !== null) break;
       for (const name of names) {
-        if (!isEqualMech(name, candidate.name)) continue;
+        const matched = matchMech(name, candidate.name);
+        if (!matched.equal) continue;
         if (!this.haveAllPrompts(candidate)) break;
         if (minssf > candidate.maxSsf) break;
         let myflags = this.props.securityFlags;
@@ -297,6 +337,7 @@ export class SaslClientConn {
         if (((myflags ^ candidate.securityFlags) & myflags) !== 0) break;
         if ((candidate.features & SaslFeat.NEEDSERVERFQDN) !== 0 && this.serverFqdn === null) break;
         best = candidate;
+        bestDisposition = present && matched.plus ? 'used' : disposition;
         break;
       }
     }
@@ -305,7 +346,7 @@ export class SaslClientConn {
       return { rc: SaslRc.NOMECH, mech: null, out: null, prompts: null };
     }
     this.mech = best;
-    this.params = this.newParams();
+    this.params = this.newParams(bestDisposition);
     const created = best.create(this.params);
     if (typeof created === 'number') {
       this.session = null;

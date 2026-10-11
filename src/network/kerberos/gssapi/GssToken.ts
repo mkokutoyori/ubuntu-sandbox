@@ -87,3 +87,15 @@ export function channelBindingsDigest(applicationData: Uint8Array | null): Uint8
   structure.set(applicationData, 20);
   return md5(structure);
 }
+
+export function decapsulateInitialContextToken(bytes: Uint8Array): Uint8Array | null {
+  if (bytes.length < 2 || bytes[0] !== INITIAL_CONTEXT_TOKEN_TAG) return null;
+  try {
+    const framed = parseTLV(bytes, 0);
+    const oid = parseTLV(framed.content, 0);
+    if (oid.tagNumber !== OBJECT_IDENTIFIER_TAG || decodeOid(oid.content) !== KRB5_MECHANISM_OID) return null;
+    return framed.content.subarray(oid.nextOffset);
+  } catch {
+    return null;
+  }
+}

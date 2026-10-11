@@ -2,8 +2,8 @@ import type { KerberosClient, TgsExchangeResult } from '@/network/kerberos/Kerbe
 import {
   KDC_OPT_CANONICALIZE, KDC_OPT_RENEWABLE, PA_AS_FRESHNESS, PA_REQ_ENC_PA_REP, KrbErrorCode, principalName, PrincipalNameType,
 } from '@/network/kerberos/types';
-import type { GssAcquisition, GssClientEnvironment } from '@/network/kerberos/gssapi/GssClientEnvironment';
-import { GSS_S_FAILURE, GSS_S_NO_CRED, gssFailure } from '@/network/kerberos/gssapi/GssStatus';
+import type { GssAcquisition, GssClientEnvironment, GssCredentialAcquisition } from '@/network/kerberos/gssapi/GssClientEnvironment';
+import { GSS_S_CREDENTIALS_EXPIRED, GSS_S_FAILURE, GSS_S_NO_CRED, gssFailure, type GssFailure } from '@/network/kerberos/gssapi/GssStatus';
 import type { Ccache, CcacheCredential } from '@/network/kerberos/ccache/FileCcache';
 import { Krb5Context, type KdcAddress } from './Krb5Context';
 import {
@@ -12,21 +12,19 @@ import {
 } from './Krb5Ccache';
 import { kdcErrorMessage, noKdcForRealm, unreachableKdc } from './Krb5Errors';
 import type { Krb5Host } from './Krb5Host';
-import { unparsePrincipal, type Krb5Principal } from './Krb5Principal';
+import { samePrincipal, unparsePrincipal, type Krb5Principal } from './Krb5Principal';
 
 const TICKET_EXPIRED = 'Ticket expired';
 const REFRESH_WINDOW_SECONDS = 30;
 const REFRESH_TIME_KEY = 'refresh_time';
 const CONFIGURATION_REALM = 'X-CACHECONF:';
 const CONFIGURATION_DATA = 'krb5_ccache_conf_data';
+const CCACHE_NO_MATCH = 'Principal in credential cache does not match desired name';
+const NO_MINOR_CODE = 'Success';
 const PERMITTED_ENCTYPES = [18, 17, 20, 19, 16, 23, 25, 26];
 const TGS_OPTIONS = KDC_OPT_RENEWABLE;
 const REFERRAL_REALM = '';
 const IP_LITERAL = /^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]*:[0-9a-f:]*$/i;
-
-function noCredentials(minor: string): GssAcquisition {
-  return { kind: 'failure', failure: gssFailure(GSS_S_NO_CRED, minor) };
-}
 
 function failure(minor: string): GssAcquisition {
   return { kind: 'failure', failure: gssFailure(GSS_S_FAILURE, minor) };
@@ -74,25 +72,59 @@ export class Krb5GssClient implements GssClientEnvironment {
     return forward.canonicalName.toLowerCase();
   }
 
-  async acquire(service: string, hostName: string): Promise<GssAcquisition> {
+  private openDefaultCache(): { kind: 'open'; cache: FileCredentialCache; stored: Ccache; path: string } | { kind: 'failure'; failure: GssFailure } {
     const cacheName = this.context.defaultCcacheName();
+    const missing = gssFailure(GSS_S_NO_CRED, `No Kerberos credentials available (default cache: ${cacheName})`);
     const path = ccachePathOf(parseCcacheName(cacheName));
-    if (path === null) return noCredentials(`No Kerberos credentials available (default cache: ${cacheName})`);
+    if (path === null) return { kind: 'failure', failure: missing };
     const cache = new FileCredentialCache(this.host, path);
-    if (!cache.exists()) return noCredentials(`No Kerberos credentials available (default cache: ${cacheName})`);
-    let stored = cache.read();
+    if (!cache.exists()) return { kind: 'failure', failure: missing };
+    const stored = cache.read();
     if (stored === null) {
-      return noCredentials(`No Kerberos credentials available: Unsupported credentials cache format version number (filename: ${path})`);
+      return {
+        kind: 'failure',
+        failure: gssFailure(GSS_S_NO_CRED, `No Kerberos credentials available: Unsupported credentials cache format version number (filename: ${path})`),
+      };
     }
-    if (stored.credentials.length === 0) return noCredentials('Credential cache is empty');
+    if (stored.credentials.length === 0) return { kind: 'failure', failure: gssFailure(GSS_S_NO_CRED, 'Credential cache is empty') };
+    return { kind: 'open', cache, stored, path };
+  }
 
-    const target = [service, await this.canonicalHost(hostName)];
-    const client = fromCcachePrincipal(stored.defaultPrincipal);
+  private async refreshIfDue(cache: FileCredentialCache, stored: Ccache, client: Krb5Principal): Promise<Ccache> {
     const now = this.nowSeconds();
     const tgt = stored.credentials.find((credential) => isTicketGrantingCredential(credential, client.realm));
     if (tgt !== undefined && now + REFRESH_WINDOW_SECONDS > tgt.endTime) {
-      stored = await this.attemptClientKeytabRefresh(cache, stored, client, now);
+      return this.attemptClientKeytabRefresh(cache, stored, client, now);
     }
+    return stored;
+  }
+
+  async acquireCredentials(name: string | null): Promise<GssCredentialAcquisition> {
+    const opened = this.openDefaultCache();
+    if (opened.kind === 'failure') return opened;
+    const client = fromCcachePrincipal(opened.stored.defaultPrincipal);
+    if (name !== null) {
+      const wanted = this.context.parseName(name);
+      if (!wanted.ok || !samePrincipal(wanted.principal, client)) {
+        return { kind: 'failure', failure: gssFailure(GSS_S_NO_CRED, CCACHE_NO_MATCH) };
+      }
+    }
+    const stored = await this.refreshIfDue(opened.cache, opened.stored, client);
+    const tgt = stored.credentials.find((credential) => isTicketGrantingCredential(credential, client.realm));
+    const lifetimeEnd = tgt !== undefined ? tgt.endTime : stored.credentials.find((credential) => !isRefreshNote(credential))?.endTime ?? 0;
+    if (lifetimeEnd <= this.nowSeconds()) return { kind: 'failure', failure: gssFailure(GSS_S_CREDENTIALS_EXPIRED, NO_MINOR_CODE) };
+    return { kind: 'credentials', name: unparsePrincipal(client) };
+  }
+
+  async acquire(service: string, hostName: string): Promise<GssAcquisition> {
+    const opened = this.openDefaultCache();
+    if (opened.kind === 'failure') return opened;
+    const { cache, path } = opened;
+    const client = fromCcachePrincipal(opened.stored.defaultPrincipal);
+    const target = [service, await this.canonicalHost(hostName)];
+    const now = this.nowSeconds();
+    const stored = await this.refreshIfDue(cache, opened.stored, client);
+    const tgt = stored.credentials.find((credential) => isTicketGrantingCredential(credential, client.realm));
     const cached = stored.credentials.find((credential) =>
       isServerCredential(credential, target) && credential.endTime > now);
     if (cached !== undefined) return this.acquisition(cached, client.realm);
