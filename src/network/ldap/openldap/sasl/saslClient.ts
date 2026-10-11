@@ -3,6 +3,7 @@ import {
   type ClientMechanism, type ClientMechanismSession, type SaslClientParams, type SaslInteract,
   type SaslOutParams, type SaslSecurityProperties, type StepOutcome,
 } from './saslTypes';
+import type { ChannelBindingKind } from '../ldapOptions';
 import type { GssClientEnvironment } from '@/network/kerberos/gssapi/GssClientEnvironment';
 
 const ERROR_STRINGS: Readonly<Record<number, string>> = {
@@ -127,6 +128,7 @@ export class SaslClientConn {
   props: SaslSecurityProperties = { minSsf: 0, maxSsf: 0, maxBufsize: 0, securityFlags: 0 };
   externalSsf = 0;
   externalAuthId: string | null = null;
+  channelBinding: Uint8Array | null = null;
   readonly oparams: SaslOutParams = {
     user: null, authid: null, mechSsf: 0, maxOutbuf: 0, done: false, encode: null, decode: null,
   };
@@ -176,6 +178,10 @@ export class SaslClientConn {
     return SaslRc.OK;
   }
 
+  setChannelBinding(data: Uint8Array | null): void {
+    this.channelBinding = data;
+  }
+
   setExternal(ssf: number, authId: string | null): void {
     this.externalSsf = ssf;
     this.externalAuthId = authId !== null && authId !== '' ? authId : null;
@@ -222,6 +228,7 @@ export class SaslClientConn {
       oparams: this.oparams,
       random: this.environment.random,
       gss: this.environment.gss ?? null,
+      channelBinding: this.channelBinding,
       seterror: (message: string) => this.seterror(SaslRc.FAIL, message),
       canonUser: (user, flags) => this.canonUser(user, flags),
       getSimple: (id, required, prompts) => {
@@ -412,6 +419,14 @@ export class SaslClientConn {
   get mechanismName(): string | null {
     return this.mech === null ? null : this.mech.name;
   }
+}
+
+export function channelBindingData(
+  kind: ChannelBindingKind, tls: { readonly unique: Uint8Array | null; readonly serverEndPoint: Uint8Array | null },
+): Uint8Array | null {
+  if (kind === 'tls-unique') return tls.unique;
+  if (kind === 'tls-endpoint') return tls.serverEndPoint;
+  return null;
 }
 
 export function stripPlusSuffix(name: string): string {

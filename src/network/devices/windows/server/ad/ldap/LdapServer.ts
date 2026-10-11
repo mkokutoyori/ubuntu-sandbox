@@ -26,6 +26,7 @@ import {
 import { ApReplayCache, type KerberosServiceIdentity } from '@/network/kerberos/ApReqVerifier';
 import { machineSalt, stringToKey } from '@/network/kerberos/crypto';
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { tlsServerEndPoint } from '@/network/tls/channelBinding';
 import { GssapiServerExchange, type EstablishedSecurityLayer } from '@/network/ldap/gssapi/GssapiServerExchange';
 import { GssSaslLayer } from '@/network/ldap/gssapi/GssSaslLayer';
 import { LAYER_CONFIDENTIALITY, LAYER_INTEGRITY, LAYER_NONE, type LayerOffer } from '@/network/ldap/gssapi/Rfc4752';
@@ -601,6 +602,7 @@ export class LdapServerHandler {
       this.gssapi = new GssapiServerExchange({
         serviceKey: stringToKey(identity.serviceSecret, machineSalt(identity.realm, identity.hostName)),
         clock, replayCache: replayCacheOf(identity), offer: GSSAPI_LAYER_OFFER,
+        channelBindings: this.tls !== null && this.tls.result === 'accept' ? tlsServerEndPoint(this.tls.presentedCertificate) : null,
       });
     }
     const step = this.gssapi.step(sasl.credentials ?? null);

@@ -4,7 +4,7 @@ import { AES256_CTS_HMAC_SHA1_96, KU_AP_REP_ENC_PART, KU_AP_REQ_AUTHENTICATOR, d
 import { AP_OPT_MUTUAL_REQUIRED, type PrincipalName, type Ticket } from '../types';
 import {
   GSS_C_CONF_FLAG, GSS_C_INTEG_FLAG, GSS_C_MUTUAL_FLAG, GSS_C_REPLAY_FLAG, GSS_C_SEQUENCE_FLAG, GSS_C_TRANS_FLAG,
-  TOKEN_ID_AP_REP, TOKEN_ID_AP_REQ, frameInitialContextToken, parseInitialContextToken,
+  TOKEN_ID_AP_REP, TOKEN_ID_AP_REQ, channelBindingsDigest, frameInitialContextToken, parseInitialContextToken,
 } from './GssToken';
 import { GssSecurityContext } from './GssSecurityContext';
 import { GSS_S_DEFECTIVE_TOKEN, GSS_S_FAILURE, gssFailure, type GssFailure } from './GssStatus';
@@ -32,6 +32,7 @@ export interface GssInitiatorOptions {
   readonly credential: GssCredential;
   readonly requestedFlags: number;
   readonly layerFlagsOnlyWhenRequested?: boolean;
+  readonly channelBindings?: Uint8Array | null;
   readonly clock: GssClock;
   readonly random?: RandomSource;
 }
@@ -41,10 +42,11 @@ export type GssStep =
   | { readonly kind: 'complete'; readonly output: Uint8Array | null }
   | { readonly kind: 'error'; readonly failure: GssFailure };
 
-function checksumValue(flags: number): Uint8Array {
+function checksumValue(flags: number, channelBindings: Uint8Array | null): Uint8Array {
   const value = new Uint8Array(4 + BINDING_BYTES + 4);
   const view = new DataView(value.buffer);
   view.setUint32(0, BINDING_BYTES, true);
+  value.set(channelBindingsDigest(channelBindings), 4);
   view.setUint32(4 + BINDING_BYTES, flags, true);
   return value;
 }
@@ -95,7 +97,7 @@ export class GssInitiator {
     const authenticator = encodeAuthenticator({
       crealm: credential.clientRealm,
       cname: credential.clientName,
-      cksum: { type: CHECKSUM_TYPE_GSSAPI, checksum: checksumValue(this.flags) },
+      cksum: { type: CHECKSUM_TYPE_GSSAPI, checksum: checksumValue(this.flags, this.options.channelBindings ?? null) },
       cusec,
       ctime,
       subkey: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: subkey },

@@ -6,16 +6,22 @@ import { AP_OPT_MUTUAL_REQUIRED, KrbErrorCode } from '../types';
 import type { GssClock } from './GssInitiator';
 import { CHECKSUM_TYPE_GSSAPI } from './GssInitiator';
 import { GssSecurityContext } from './GssSecurityContext';
-import { GSS_C_SEQUENCE_FLAG, TOKEN_ID_AP_REP, TOKEN_ID_AP_REQ, frameInitialContextToken, parseInitialContextToken } from './GssToken';
+import { GSS_S_BAD_BINDINGS, gssFailure, type GssFailure } from './GssStatus';
+import {
+  CHANNEL_BINDING_DIGEST_BYTES, GSS_C_SEQUENCE_FLAG, TOKEN_ID_AP_REP, TOKEN_ID_AP_REQ, channelBindingsDigest,
+  frameInitialContextToken, parseInitialContextToken,
+} from './GssToken';
 
 const SESSION_KEY_BYTES = 32;
 const SEQUENCE_MASK = 0x7fffffff;
-const FLAGS_OFFSET = 4 + 16;
+const BINDINGS_OFFSET = 4;
+const FLAGS_OFFSET = BINDINGS_OFFSET + CHANNEL_BINDING_DIGEST_BYTES;
 
 export interface GssAcceptorOptions {
   readonly serviceKey: Uint8Array;
   readonly clock: GssClock;
   readonly replayCache?: ApReplayCache;
+  readonly channelBindings?: Uint8Array | null;
   readonly random?: RandomSource;
 }
 
@@ -26,7 +32,7 @@ export interface GssPeer {
 
 export type GssAcceptStep =
   | { readonly kind: 'complete'; readonly output: Uint8Array | null; readonly peer: GssPeer; readonly flags: number }
-  | { readonly kind: 'error'; readonly errorCode: number; readonly message: string };
+  | { readonly kind: 'error'; readonly errorCode: number; readonly message: string; readonly failure?: GssFailure };
 
 export class GssAcceptor {
   private established: GssSecurityContext | null = null;
@@ -38,6 +44,13 @@ export class GssAcceptor {
 
   get securityContext(): GssSecurityContext | null {
     return this.established;
+  }
+
+  private bindingsAgree(initiatorDigest: Uint8Array): boolean {
+    const own = this.options.channelBindings ?? null;
+    if (own === null || initiatorDigest.every(byte => byte === 0)) return true;
+    const expected = channelBindingsDigest(own);
+    return initiatorDigest.length === expected.length && initiatorDigest.every((byte, index) => byte === expected[index]);
   }
 
   step(input: Uint8Array): GssAcceptStep {
@@ -52,6 +65,12 @@ export class GssAcceptor {
     const checksum = authenticator.cksum;
     if (checksum === undefined || checksum.type !== CHECKSUM_TYPE_GSSAPI || checksum.checksum.length < FLAGS_OFFSET + 4) {
       return { kind: 'error', errorCode: KrbErrorCode.KRB_AP_ERR_BAD_INTEGRITY, message: 'the authenticator carries no GSS-API checksum' };
+    }
+    if (!this.bindingsAgree(checksum.checksum.subarray(BINDINGS_OFFSET, FLAGS_OFFSET))) {
+      return {
+        kind: 'error', errorCode: KrbErrorCode.KRB_AP_ERR_BAD_INTEGRITY, message: 'the channel bindings differ',
+        failure: gssFailure(GSS_S_BAD_BINDINGS, 'Success'),
+      };
     }
     const flags = new DataView(checksum.checksum.buffer, checksum.checksum.byteOffset, checksum.checksum.length).getUint32(FLAGS_OFFSET, true);
     const mutual = (apReq.apOptions & AP_OPT_MUTUAL_REQUIRED) !== 0;

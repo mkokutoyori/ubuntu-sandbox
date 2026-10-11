@@ -146,6 +146,7 @@ export interface SaslClientParams {
   readonly oparams: SaslOutParams;
   readonly random: (length: number) => Uint8Array;
   readonly gss: GssClientEnvironment | null;
+  readonly channelBinding: Uint8Array | null;
   seterror(message: string): void;
   canonUser(user: string, flags: number): number;
   getSimple(id: number, required: boolean, prompts: SaslInteract[] | null): { rc: number; value: Uint8Array | null };

@@ -239,6 +239,10 @@ export class TlsServerSession {
   peerVerified = false;
   peerVerificationReason: string | null = null;
   private credentials: ActiveCredential;
+
+  get presentedCertificate(): X509Certificate {
+    return this.credentials.cert;
+  }
   private protocols: readonly TlsProtocolVersion[];
   private readonly policy: ResolvedLegacyPolicy;
   private legacy: LegacyServerHandshake | null = null;

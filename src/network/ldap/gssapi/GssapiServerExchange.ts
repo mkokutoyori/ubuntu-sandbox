@@ -10,6 +10,7 @@ export interface GssapiServerOptions {
   readonly clock: GssClock;
   readonly replayCache: ApReplayCache;
   readonly offer: LayerOffer;
+  readonly channelBindings?: Uint8Array | null;
   readonly random?: RandomSource;
 }
 
@@ -34,7 +35,8 @@ export class GssapiServerExchange {
 
   constructor(private readonly options: GssapiServerOptions) {
     this.acceptor = new GssAcceptor({
-      serviceKey: options.serviceKey, clock: options.clock, replayCache: options.replayCache, random: options.random,
+      serviceKey: options.serviceKey, clock: options.clock, replayCache: options.replayCache,
+      channelBindings: options.channelBindings, random: options.random,
     });
   }
 

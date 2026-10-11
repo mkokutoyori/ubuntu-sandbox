@@ -3,7 +3,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 import { runLdapsearch, type LdapToolHost } from '@/network/ldap/openldap/ldapsearch';
-import type { LdapChannel, LdapTransport, TlsUpgradeRequest, TlsUpgradeOutcome, ChannelRead, ConnectOutcome } from '@/network/ldap/openldap/ldapChannel';
+import type { LdapChannel, LdapTlsState, LdapTransport, TlsUpgradeRequest, TlsUpgradeOutcome, ChannelRead, ConnectOutcome } from '@/network/ldap/openldap/ldapChannel';
 import { kernelHostname } from '../../KernelHostname';
 import { formatCtime } from '../../time/ctime';
 import { dialLdap, type LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
@@ -48,6 +48,13 @@ class ClientChannel implements LdapChannel {
 
   upgradeTls(request: TlsUpgradeRequest): TlsUpgradeOutcome {
     return this.upgrade(this.client, request);
+  }
+
+  tlsState(): LdapTlsState | null {
+    const channel = this.client.tlsChannel;
+    return channel === null
+      ? null
+      : { strength: channel.keyBits, clientDn: null, serverEndPoint: channel.serverEndPoint, unique: channel.unique };
   }
 
   close(): void {

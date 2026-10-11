@@ -13,13 +13,20 @@ export type ChannelRead =
   | { readonly kind: 'eof' }
   | { readonly kind: 'again' };
 
+export interface LdapTlsState {
+  readonly strength: number;
+  readonly clientDn: string | null;
+  readonly serverEndPoint: Uint8Array | null;
+  readonly unique: Uint8Array | null;
+}
+
 export interface LdapChannel {
   write(bytes: Uint8Array): boolean;
   read(want: number): ChannelRead;
   readable(): boolean;
   upgradeTls(request: TlsUpgradeRequest): TlsUpgradeOutcome;
   readonly peerAddress: string;
-  tlsState?(): { readonly strength: number; readonly clientDn: string | null } | null;
+  tlsState?(): LdapTlsState | null;
   readonly localEndpoint: string;
   close(): void;
 }

@@ -1,4 +1,5 @@
 import { encodeTLV, parseTLV } from '@/network/devices/windows/server/ad/ldap/Ber';
+import { md5 } from '@/crypto/hash';
 
 export const KRB5_MECHANISM_OID = '1.2.840.113554.1.2.2';
 
@@ -75,4 +76,14 @@ export function parseInitialContextToken(bytes: Uint8Array): InitialContextToken
   } catch {
     return null;
   }
+}
+
+export const CHANNEL_BINDING_DIGEST_BYTES = 16;
+
+export function channelBindingsDigest(applicationData: Uint8Array | null): Uint8Array {
+  if (applicationData === null) return new Uint8Array(CHANNEL_BINDING_DIGEST_BYTES);
+  const structure = new Uint8Array(5 * 4 + applicationData.length);
+  new DataView(structure.buffer).setUint32(16, applicationData.length, true);
+  structure.set(applicationData, 20);
+  return md5(structure);
 }

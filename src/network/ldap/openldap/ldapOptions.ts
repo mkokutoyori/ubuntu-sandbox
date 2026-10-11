@@ -7,6 +7,9 @@ import {
 
 export const LdapVersion = { V2: 2, V3: 3 } as const;
 export const LdapDeref = { NEVER: 0, SEARCHING: 1, FINDING: 2, ALWAYS: 3 } as const;
+export type ChannelBindingKind = 'none' | 'tls-unique' | 'tls-endpoint';
+const CHANNEL_BINDING_KINDS: readonly ChannelBindingKind[] = ['none', 'tls-unique', 'tls-endpoint'];
+
 export const TlsRequireCert = { NEVER: 0, HARD: 1, DEMAND: 2, ALLOW: 3, TRY: 4 } as const;
 export const LDAP_PORT_DEFAULT = 389;
 
@@ -26,7 +29,7 @@ export interface LdapOptions {
     authzid: string | null;
     secprops: SaslSecurityProperties;
     noCanon: boolean;
-    channelBinding: string | null;
+    channelBinding: ChannelBindingKind;
   };
   tls: {
     certFile: string | null;
@@ -61,7 +64,7 @@ export function defaultLdapOptions(): LdapOptions {
     defPort: LDAP_PORT_DEFAULT,
     urls,
     referrals: true,
-    sasl: { mech: null, realm: null, authcid: null, authzid: null, secprops: defaultSecurityProperties(), noCanon: false, channelBinding: null },
+    sasl: { mech: null, realm: null, authcid: null, authzid: null, secprops: defaultSecurityProperties(), noCanon: false, channelBinding: 'none' },
     tls: {
       certFile: null, keyFile: null, caCertFile: null, caCertDir: null,
       requireCert: TlsRequireCert.DEMAND, requireSan: TlsRequireCert.ALLOW,
@@ -166,7 +169,10 @@ const DEFINITIONS: readonly OptionDefinition[] = [
   { name: 'SASL_AUTHZID', userOnly: true, apply: (o, v, s) => { o.sasl.authzid = s === 'environment' && v === '' ? null : v; } },
   { name: 'SASL_SECPROPS', userOnly: false, apply: (o, v) => { parseSecprops(v, o.sasl.secprops); } },
   { name: 'SASL_NOCANON', userOnly: false, apply: (o, v) => { o.sasl.noCanon = booleanOf(v); } },
-  { name: 'SASL_CBINDING', userOnly: false, apply: (o, v) => { o.sasl.channelBinding = v; } },
+  {
+    name: 'SASL_CBINDING', userOnly: false,
+    apply: (o, v) => { const kind = CHANNEL_BINDING_KINDS.find((candidate) => candidate === v.toLowerCase()); if (kind !== undefined) o.sasl.channelBinding = kind; },
+  },
   { name: 'TLS_CERT', userOnly: true, apply: (o, v) => { o.tls.certFile = v; } },
   { name: 'TLS_KEY', userOnly: true, apply: (o, v) => { o.tls.keyFile = v; } },
   { name: 'TLS_CACERT', userOnly: false, apply: (o, v) => { o.tls.caCertFile = v; } },

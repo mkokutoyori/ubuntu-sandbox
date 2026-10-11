@@ -16,7 +16,7 @@ import { Sockbuf, berGetNext, newBerGetNextState, type BerGetNextState } from '.
 import type { LdapChannel, LdapTransport, TlsUpgradeRequest } from './ldapChannel';
 import { HeapSim } from './ldapHeap';
 import { LDAP_SASL_QUIET } from './lutilSasl';
-import { SaslClientConn, saslErrstring, type SaslHostEnvironment } from './sasl/saslClient';
+import { SaslClientConn, channelBindingData, saslErrstring, type SaslHostEnvironment } from './sasl/saslClient';
 import { SaslProp, SaslRc, type SaslInteract } from './sasl/saslTypes';
 
 export type { LdapChannel, LdapTransport, TlsUpgradeRequest, TlsUpgradeOutcome } from './ldapChannel';
@@ -1789,7 +1789,10 @@ export class LdapSession {
       ctx = created.conn;
       conn.saslAuthCtx = ctx;
       const tls = conn.sb.channel.tlsState?.() ?? null;
-      if (tls !== null) ctx.setExternal(tls.strength, tls.clientDn);
+      if (tls !== null) {
+        ctx.setExternal(tls.strength, tls.clientDn);
+        ctx.setChannelBinding(channelBindingData(this.options.sasl.channelBinding, tls));
+      }
       ctx.setSecProps(this.options.sasl.secprops);
       let prompts: SaslInteract[] | null = null;
       let pmech: string | null = null;

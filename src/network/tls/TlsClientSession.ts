@@ -43,6 +43,8 @@ import {
   type LegacySuiteDefinition, type ResolvedLegacyPolicy, type LegacyVersion, type TlsProtocolVersion,
 } from './legacy/legacyCipherSuites';
 import { LegacyClientHandshake, newHelloRandom } from './legacy/LegacyHandshake';
+import { cipherKeyBits, tlsUnique } from './channelBinding';
+import { hexToBytes } from '@/crypto/encoding';
 import type { TrafficProtection } from './trafficProtection';
 import { suiteInfo } from './suite13';
 import type { Tls13Hash } from './hkdf';
@@ -233,6 +235,16 @@ export class TlsClientSession {
 
   get legacyResumed(): boolean {
     return this.legacy?.resumed ?? false;
+  }
+
+  get sessionKeyBits(): number | null {
+    return cipherKeyBits({ version: this.negotiatedVersion, suite: this.negotiatedCipherSuite });
+  }
+
+  get uniqueChannelBinding(): Uint8Array | null {
+    if (this.legacy === null) return null;
+    const verifyData = this.legacy.resumed ? this.legacy.serverVerifyData : this.legacy.clientVerifyData;
+    return verifyData === '' ? null : tlsUnique(hexToBytes(verifyData));
   }
 
   pskResumed = false;

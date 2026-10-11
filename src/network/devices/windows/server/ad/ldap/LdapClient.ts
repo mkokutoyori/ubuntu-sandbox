@@ -17,6 +17,7 @@ import type { TlsClientConfig, TlsClientSession } from '@/network/tls/TlsClientS
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
 import { encodeRecords, decodeRecords } from '@/network/http/https/TlsRecordWire';
 import { driveClientHandshake } from './ldapStartTls';
+import { tlsServerEndPoint } from '@/network/tls/channelBinding';
 import { attributeFromWire } from './LdapWireSyntax';
 import type { GssInitiator } from '@/network/kerberos/gssapi/GssInitiator';
 import { describeGssFailure } from '@/network/kerberos/gssapi/GssStatus';
@@ -94,6 +95,16 @@ export class LdapClient {
     const decoded = this.saslLayer.layer.decode(bytes);
     if (decoded.rc !== 0) throw new Error('SASL security layer: undecodable frame');
     return decoded.data;
+  }
+
+  get tlsChannel(): { keyBits: number; serverEndPoint: Uint8Array | null; unique: Uint8Array | null } | null {
+    if (this.tls === null) return null;
+    const certificate = this.tls.peerCertificate;
+    return {
+      keyBits: this.tls.sessionKeyBits ?? 0,
+      serverEndPoint: certificate === null ? null : tlsServerEndPoint(certificate),
+      unique: this.tls.uniqueChannelBinding,
+    };
   }
 
   get isEncrypted(): boolean {

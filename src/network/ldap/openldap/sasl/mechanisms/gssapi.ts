@@ -72,7 +72,7 @@ function gssapiSession(): ClientMechanismSession {
       if (acquired.kind === 'failure') return gssError(params, acquired.failure);
       initiator = new GssInitiator({
         credential: acquired.credential, requestedFlags: request.flags,
-        layerFlagsOnlyWhenRequested: request.layerFlagsOnlyWhenRequested, clock: params.gss.clock, random: params.random,
+        layerFlagsOnlyWhenRequested: request.layerFlagsOnlyWhenRequested, channelBindings: params.channelBinding, clock: params.gss.clock, random: params.random,
       });
     }
 
