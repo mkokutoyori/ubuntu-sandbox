@@ -12,7 +12,7 @@
 
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import type { WindowsServiceManager } from './WindowsServiceManager';
+import type { ServiceProcessHost, WindowsService, WindowsServiceManager } from './WindowsServiceManager';
 import type { IEventBus } from '@/events/EventBus';
 
 export type ProcessSession = 'Services' | 'Console';
@@ -88,8 +88,10 @@ const CRITICAL_PROCESSES = new Set([
   'winlogon.exe', 'services.exe', 'lsass.exe',
 ]);
 
-export class WindowsProcessManager {
+export class WindowsProcessManager implements ServiceProcessHost {
   private processes: Map<number, WindowsProcess> = new Map();
+  private sharedHostOf: Map<string, number> = new Map();
+  private hostedBefore: Set<string> = new Set();
   private nextPid = 100;
   /** Reactive sink — null until the device attaches its bus. */
   private bus: IEventBus | null = null;
@@ -108,6 +110,7 @@ export class WindowsProcessManager {
   attachServiceManager(mgr: WindowsServiceManager, nowMs: () => number): void {
     this.serviceManager = mgr;
     this.nowMs = nowMs;
+    mgr.attachProcessHost(this);
   }
 
   /**
@@ -329,6 +332,8 @@ export class WindowsProcessManager {
     this.publishProcess(pid, proc.name, false, force);
     this.processes.delete(pid);
     for (const serviceName of proc.hostedServices) {
+      this.hostedBefore.add(serviceName.toLowerCase());
+      this.sharedHostOf.delete(serviceName.toLowerCase());
       this.serviceManager?.recordCrash(serviceName, this.nowMs());
     }
     return '';
@@ -366,39 +371,43 @@ export class WindowsProcessManager {
    * Remove processes tied to a service when the service stops.
    */
   onServiceStopped(serviceName: string): void {
+    const lower = serviceName.toLowerCase();
     for (const proc of [...this.processes.values()]) {
-      if (proc.hostedServices.length === 0) continue;
-      const idx = proc.hostedServices.findIndex(s => s.toLowerCase() === serviceName.toLowerCase());
+      const idx = proc.hostedServices.findIndex(s => s.toLowerCase() === lower);
       if (idx === -1) continue;
-
-      // If this process hosts only this service, kill it
-      if (proc.hostedServices.length === 1) {
-        // Only remove non-svchost processes; svchost stays alive even if one service stops
-        if (proc.name !== 'svchost.exe') {
-          this.publishProcess(proc.pid, proc.name, false);
-          this.processes.delete(proc.pid);
-        } else {
-          proc.hostedServices.splice(idx, 1);
-        }
+      this.hostedBefore.add(lower);
+      if (proc.hostedServices.length === 1 && proc.name !== 'svchost.exe') {
+        this.publishProcess(proc.pid, proc.name, false);
+        this.processes.delete(proc.pid);
       } else {
         proc.hostedServices.splice(idx, 1);
+        this.sharedHostOf.set(lower, proc.pid);
       }
     }
   }
 
   /**
-   * Spawn a process when a service starts (for dedicated-process services).
+   * A started service is hosted again: by the shared process it ran in when
+   * that still lives, by a fresh one when it had a host and lost it. A
+   * service that never had a host process still has none.
    */
-  onServiceStarted(serviceName: string, processName: string): void {
-    // Check if a process already hosts this service
-    for (const proc of this.processes.values()) {
-      if (proc.hostedServices.some(s => s.toLowerCase() === serviceName.toLowerCase())) return;
+  onServiceStarted(service: WindowsService): void {
+    if (this.getPidForService(service.name) !== 0) return;
+    const lower = service.name.toLowerCase();
+    if (service.processName !== 'svchost.exe') {
+      this.spawnProcess(service.processName, 620, 'NT AUTHORITY\\SYSTEM', {
+        hostedServices: [service.name], systemOwned: true,
+      });
+      return;
     }
-    // If it's a svchost service, add to an existing svchost or don't spawn
-    if (processName === 'svchost.exe') return;
-
-    this.spawnProcess(processName, 620, 'NT AUTHORITY\\SYSTEM', {
-      hostedServices: [serviceName], systemOwned: true,
+    if (!this.hostedBefore.has(lower)) return;
+    const shared = this.processes.get(this.sharedHostOf.get(lower) ?? -1);
+    if (shared?.name === 'svchost.exe') {
+      shared.hostedServices.push(service.name);
+      return;
+    }
+    this.spawnProcess('svchost.exe', 620, service.account, {
+      hostedServices: [service.name], systemOwned: true,
     });
   }
 

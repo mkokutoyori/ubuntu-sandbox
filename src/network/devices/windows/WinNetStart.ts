@@ -8,11 +8,9 @@
  */
 
 import type { WindowsServiceManager } from './WindowsServiceManager';
-import type { WindowsProcessManager } from './WindowsProcessManager';
 
 export interface NetStartContext {
   serviceManager: WindowsServiceManager;
-  processManager: WindowsProcessManager;
   isAdmin: boolean;
 }
 
@@ -39,7 +37,6 @@ export function cmdNetStart(ctx: NetStartContext, args: string[]): string {
     return `System error.\n\n${err}`;
   }
 
-  ctx.processManager.onServiceStarted(svc.name, svc.processName);
   return `The ${svc.displayName} service was started successfully.\n`;
 }
 
@@ -66,7 +63,6 @@ export function cmdNetStop(ctx: NetStartContext, args: string[]): string {
     return `System error.\n\n${err}`;
   }
 
-  ctx.processManager.onServiceStopped(svc.name);
   return `The ${svc.displayName} service was stopped successfully.\n`;
 }
 

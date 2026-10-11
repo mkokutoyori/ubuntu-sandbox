@@ -14,7 +14,6 @@
 
 import { simulationDate } from '@/network/core/SystemClock';
 
-import type { PortSpec } from '../../core/ports/PortNumber';
 import type { IEventBus } from '@/events/EventBus';
 
 export type ServiceState =
@@ -73,37 +72,10 @@ export interface WindowsService {
   critical?: boolean;
 }
 
-/**
- * The listening sockets a Windows service opens once running. Drives the
- * socket-table coherence: `sc start`/`net start` binds them, `sc stop`
- * releases them — exactly as the service controller does on real Windows.
- */
-export interface WindowsServiceListenerSpec {
-  /** Process the kernel attributes the socket to (`netstat -b`/`-o`). */
-  processName: string;
-  /** PID shown by `netstat -o`. */
-  pid: number;
-  sockets: PortSpec[];
+export interface ServiceProcessHost {
+  onServiceStarted(service: WindowsService): void;
+  onServiceStopped(serviceName: string): void;
 }
-
-/** Default Windows service → listening-port mapping (keyed lower-case). */
-export const WINDOWS_SERVICE_LISTENERS: Readonly<Record<string, WindowsServiceListenerSpec>> = {
-  lanmanserver: {
-    processName: 'System',
-    pid: 4,
-    sockets: [{ port: 445, protocol: 'tcp' }, { port: 139, protocol: 'tcp' }],
-  },
-  termservice: {
-    processName: 'svchost.exe',
-    pid: 1096,
-    sockets: [{ port: 3389, protocol: 'tcp' }],
-  },
-  sshd: {
-    processName: 'sshd.exe',
-    pid: 1088,
-    sockets: [{ port: 22, protocol: 'tcp' }],
-  },
-};
 
 /** State codes for sc query output */
 const STATE_CODES: Record<ServiceState, number> = {
@@ -177,6 +149,7 @@ export class WindowsServiceManager {
   /** Reactive sink — null until the device attaches its bus. */
   private bus: IEventBus | null = null;
   private deviceId = '';
+  private processHost: ServiceProcessHost | null = null;
 
   private failureConfigs: Map<string, FailureActionsConfig> = new Map();
   private failureState: Map<string, { count: number; lastFailureAtMs: number }> = new Map();
@@ -202,6 +175,10 @@ export class WindowsServiceManager {
     bus.subscribe('device.power-on', (e) => {
       if (e.payload.id === deviceId) this.applyBootStartupPolicy();
     });
+  }
+
+  attachProcessHost(host: ServiceProcessHost): void {
+    this.processHost = host;
   }
 
   /**
@@ -239,8 +216,18 @@ export class WindowsServiceManager {
    */
   private applyBootStartupPolicy(): void {
     for (const svc of this.services.values()) {
-      svc.state = WindowsServiceManager.AUTO_START_TYPES.has(svc.startType) ? 'Running' : 'Stopped';
+      const target = WindowsServiceManager.AUTO_START_TYPES.has(svc.startType) ? 'Running' : 'Stopped';
+      if (svc.state !== target) this.applyRunning(svc, target === 'Running');
     }
+  }
+
+  private applyRunning(svc: WindowsService, running: boolean): void {
+    const prev = svc.state;
+    svc.state = running ? 'Running' : 'Stopped';
+    if (running) this.processHost?.onServiceStarted(svc);
+    else this.processHost?.onServiceStopped(svc.name);
+    this.publishServiceState(svc, running);
+    this.notifyWatchers(svc, prev);
   }
 
   /** Publish a service-lifecycle event on the central bus. */
@@ -431,6 +418,11 @@ export class WindowsServiceManager {
     return this.getAllServices().filter(s => s.state === 'Running');
   }
 
+  isStarted(name: string): boolean {
+    const state = this.services.get(name.toLowerCase())?.state;
+    return state === 'Running' || state === 'Paused';
+  }
+
   /** Get services that depend on the given service */
   getDependents(serviceName: string): WindowsService[] {
     const lower = serviceName.toLowerCase();
@@ -483,10 +475,7 @@ export class WindowsServiceManager {
     if (!svc) return `The specified service does not exist. [SC] OpenService FAILED 1060.`;
     if (svc.state === 'Running') return `An instance of the service is already running.`;
     if (svc.startType === 'Disabled') return `The service cannot be started because it is disabled.`;
-    const prev = svc.state;
-    svc.state = 'Running';
-    this.publishServiceState(svc, true);
-    this.notifyWatchers(svc, prev);
+    this.applyRunning(svc, true);
     return '';
   }
 
@@ -504,10 +493,7 @@ export class WindowsServiceManager {
       return `Cannot stop ${svc.displayName} because dependent services are running: ${depNames}.`;
     }
 
-    const prev = svc.state;
-    svc.state = 'Stopped';
-    this.publishServiceState(svc, false);
-    this.notifyWatchers(svc, prev);
+    this.applyRunning(svc, false);
     return '';
   }
 
@@ -515,19 +501,15 @@ export class WindowsServiceManager {
    * `Stop-Service -Force` / `Restart-Service -Force` semantics: stop every
    * running dependent first (deepest dependents before their prerequisites),
    * then the target itself — the exact reverse of Windows' start order.
-   * `onStopped` lets the caller keep a co-owned view (process table, ports)
-   * coherent with each individual stop as it happens, in order.
    */
-  stopServiceCascade(name: string, isAdmin: boolean, onStopped?: (svc: WindowsService) => void): string {
+  stopServiceCascade(name: string, isAdmin: boolean): string {
     if (!isAdmin) return 'Access is denied.';
     const svc = this.services.get(name.toLowerCase());
     if (!svc) return `The specified service does not exist. [SC] OpenService FAILED 1060.`;
     for (const dep of this.getRunningDependents(svc.name)) {
-      this.stopServiceCascade(dep.name, isAdmin, onStopped);
+      this.stopServiceCascade(dep.name, isAdmin);
     }
-    const msg = this.stopService(name, isAdmin);
-    if (!msg) onStopped?.(svc);
-    return msg;
+    return this.stopService(name, isAdmin);
   }
 
   // ─── Recovery actions (`sc failure` / crash detection) ───────────
@@ -585,11 +567,10 @@ export class WindowsServiceManager {
 
   /**
    * Run whichever recovery tiers have come due, per the device's simulated
-   * clock. `onRestarted` lets the caller re-spawn the hosting process (the
-   * original one is long gone — it's what crashed), keeping Get-Process/
-   * `sc queryex` coherent with the newly-running service.
+   * clock. A restart re-spawns the hosting process (the original one is long
+   * gone — it's what crashed) through the process host.
    */
-  advanceRecoveryTimers(nowMs: number, onRestarted?: (svc: WindowsService) => void): void {
+  advanceRecoveryTimers(nowMs: number): void {
     const due = this.pendingRecoveries.filter(r => r.dueAtMs <= nowMs);
     if (due.length === 0) return;
     this.pendingRecoveries = this.pendingRecoveries.filter(r => r.dueAtMs > nowMs);
@@ -597,11 +578,7 @@ export class WindowsServiceManager {
       const svc = this.services.get(r.serviceName.toLowerCase());
       if (!svc) continue;
       if (r.action.type === 'restart') {
-        const prev = svc.state;
-        svc.state = 'Running';
-        this.publishServiceState(svc, true);
-        this.notifyWatchers(svc, prev);
-        onRestarted?.(svc);
+        this.applyRunning(svc, true);
       } else if (r.action.type === 'run') {
         this.bus?.publish({
           topic: 'windows.service.recovery-run',

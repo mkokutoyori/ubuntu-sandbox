@@ -372,19 +372,35 @@ host is suddenly stopped ». Ce qui reste en TIME_WAIT n'a plus de propriétaire
 `probe-une-prise-acceptee-appartient-au-processus-qui-tient-l-ecoute` et
 `probe-windows-un-processus-termine-ferme-ses-connexions`.
 
-Pas construit dans ce lot : l'arrêt d'un service ne ferme pas encore son écoute dans la pile (un `sshd` arrêté
-accepte toujours) et son PID réaffiché après redémarrage est l'ancien ; les écoutes 5985, 389, 636, 3268, 3269,
-88, 135, 5722, 8530 et 515 n'ont pas de processus propriétaire ; le processus par session d'OpenSSH pour Windows,
-le `ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
+Les écoutes d'un service Windows sont de vraies écoutes de la pile et suivent le service (mesuré sur `15f994d0d`) :
+`sc stop sshd` retirait la ligne 22 de `netstat -ano` et laissait l'écoute, si bien que `nc` y réussissait et que
+`ssh` obtenait « Permission denied » d'un serveur arrêté ; la reprise après `taskkill /F` avec `sc failure ...
+restart/` relançait `sshd.exe` sous un nouveau PID pendant que `netstat` affichait l'ancien (1088) d'une table
+codée en dur, pour une pile qui n'écoutait plus ; un démarrage de la machine écrivait l'état des services sans
+événement ni effet sur les processus ; un service hébergé par un svchost qui s'arrêtait puis redémarrait sortait de
+`tasklist /svc`. Le gestionnaire de services porte maintenant l'effet sur le processus (`ServiceProcessHost`) avant
+d'annoncer, par une seule fonction pour le démarrage, l'arrêt, la reprise après incident et le démarrage de la
+machine -- les sept appels manuels à `onServiceStarted`/`onServiceStopped` (`sc`, `net`, `Start-Service`,
+`Stop-Service`, `Restart-Service`, le tour d'horloge) disparaissent -- et `WindowsServicePortProjection` tient des
+déclarations d'écoute (ports, propriétaire, prédicat d'activité) qu'il rapproche de l'état courant à chaque
+événement de service et à la construction. Le propriétaire est lu dans la table des processus au moment de
+l'ouverture : le processus qui héberge le service (`sshd.exe`), ou `System` (PID 4) pour 445 et 139, tenus par le
+noyau. Garde-fou : `probe-un-service-windows-n-ecoute-que-tant-qu-il-tourne`.
+
+Pas construit dans ce lot : les écoutes 5985, 389, 636, 3268, 3269, 88, 135, 5722, 8530 et 515 n'ont pas de
+processus propriétaire et s'ouvrent au démarrage quelle que soit la fonctionnalité (RDP, WinRM, contrôleur de
+domaine, rôles) ; un service qui n'a jamais eu de processus d'hébergement n'en reçoit pas en démarrant (aucun
+regroupement `svchost -k` ne dit dans lequel le mettre) ; le processus par session d'OpenSSH pour Windows, le
+`ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
 
 ## 7. Hors périmètre
 
 - **UDP.** Même structure (`udpBindAddress` vs table), mais un socket UDP
   n'a pas d'état `LISTEN` et se diagnostique autrement. À traiter ensuite
   si P1 se passe bien.
-- **Windows.** Traité en P6 pour les connexions, leur propriétaire et la
-  mort d'un processus ; `WindowsServicePortProjection` et
-  `PortProxySocketProjection` ont encore la forme que P2 a retirée à Linux.
+- **Windows.** Traité en P6 pour les connexions, leur propriétaire, la
+  mort d'un processus et les écoutes des services ;
+  `PortProxySocketProjection` a encore la forme que P2 a retirée à Linux.
 - **Le listener TNS d'Oracle.** Nommé en P2, traité ailleurs.
 
 ## 8. Vérification

@@ -799,7 +799,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.attachForwarder((logName, entry) => this.tryForwardMatchingEvent(logName, entry));
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
     this.servicePortProjection?.dispose();
-    this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
+    this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.getTcpStack(), this.procMgr);
+    this.servicePortProjection.declare({
+      ports: [22],
+      owner: { service: 'sshd' },
+      active: () => this.svcMgr.isStarted('sshd'),
+      accept: () => (socket) => {
+        this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+      },
+    });
+    this.servicePortProjection.declare({
+      ports: [445, 139],
+      owner: { image: 'System' },
+      active: () => this.svcMgr.isStarted('LanmanServer'),
+      accept: () => (socket) => this.serveSmb(socket),
+    });
+    this.servicePortProjection.reconcile();
     this.tcpSocketProjection?.dispose();
     this.tcpSocketProjection = new TcpSocketStateProjection(bus, this.socketTable, this.id);
     this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable, this.getTcpStack());
@@ -858,59 +873,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private _processSocketReaperOff: (() => void) | null = null;
   private _recoveryRunOff: (() => void) | null = null;
 
-  private initDefaultSockets(): void {
-    // Les quatre `socketTable.bind()` qui ouvraient cette méthode sont
-    // partis (docs/PRD-Sockets-Une-Seule-Verite.md §P2) : trois d'entre
-    // eux doublaient un `listen()` situé quelques lignes plus bas, et
-    // leur identité voyage désormais avec l'écoute elle-même. Le
-    // quatrième, le 139, n'écoutait nulle part — il l'a maintenant.
+  private serveSmb(socket: TcpSocket): void {
+    if (this.svcMgr.getService('LanmanServer')?.state !== 'Running') {
+      socket.close();
+      return;
+    }
+    const clientHost = this.reverseLookupClient(socket.remoteIp);
+    this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
+  }
 
+  private initDefaultSockets(): void {
     // Persist SSH server config + host key under C:\ProgramData\ssh\ on
     // first boot so OpenSSH-for-Windows files are visible from the shell.
     this.getSshServerContext();
-
-    // TCP SSH server on port 22 — handles SSH auth + SFTP subsystem.
-    this.getTcpStack().listen(22, {
-      identity: { pid: 1088, processName: 'sshd.exe' },
-      onAccept: (socket) => {
-        // TcpSocket structurally satisfies TcpStream (write/send/close/onData/
-        // onClose all present) — the two abstractions just predate a shared
-        // interface, so the handler's nested onData parameter variance needs
-        // an explicit assertion here.
-        this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
-      },
-    });
-
-    // TCP SMB server on port 445 (LanmanServer) — real `net use`/UNC traffic.
-    // Refuses (drops) the connection when LanmanServer isn't Running, so the
-    // client's negotiate gets no reply — same "network path not found" a
-    // real client sees when the Server service is stopped.
-    const serveSmb = (socket: TcpSocket): void => {
-      if (this.svcMgr.getService('LanmanServer')?.state !== 'Running') {
-        socket.close();
-        return;
-      }
-      const clientHost = this.reverseLookupClient(socket.remoteIp);
-      this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
-    };
-    this.getTcpStack().listen(445, {
-      identity: { pid: 4, processName: 'System' },
-      onAccept: serveSmb,
-    });
-
-    // NetBIOS Session Service — le transport hérité du même LanmanServer,
-    // que `ss`/`netstat` annonçaient depuis toujours sans que rien ne
-    // réponde derrière (docs/PRD-Sockets-Une-Seule-Verite.md §P2). Il
-    // sert le même SMB que le 445, et s'éteint avec le même service.
-    // Ce que ce raccourci NE fait pas : le préambule NetBIOS
-    // (session request/positive response, RFC 1002 §4.3) — aucune couche
-    // NBSS n'existe ici, et un client qui l'attendrait n'existe pas non
-    // plus. Un port joignable qui parle le bon protocole vaut mieux
-    // qu'un port affiché qui ne parle rien.
-    this.getTcpStack().listen(139, {
-      identity: { pid: 4, processName: 'System' },
-      onAccept: serveSmb,
-    });
 
     // TCP WinRM server on port 5985 — real Invoke-Command/Enter-PSSession/
     // Test-WSMan reachability (PRD-Windows-Server.md §5 P4). Refuses
@@ -3454,7 +3429,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const netCtx2 = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
       if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
       if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
-      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
+      const netSvcCtx = { serviceManager: this.svcMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start') return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
       if (subCmd === 'use') return cmdNetUse(this.buildNetContext(), subArgs);
@@ -3980,7 +3955,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const netUserCtx = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
       if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
       if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
-      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
+      const netSvcCtx = { serviceManager: this.svcMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start')       return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop')        return cmdNetStop(netSvcCtx, subArgs);
       if (subCmd === 'share')       return cmdNetShare(this.buildNetContext(), subArgs);
@@ -4109,10 +4084,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.runBackgroundGroupPolicyRefresh(ms);
     this.getDnsServerRole()?.tick();
     this.getDhcpServerRole()?.tick();
-    this.svcMgr.advanceRecoveryTimers(
-      this.simulatedDate().getTime(),
-      (svc) => this.procMgr.onServiceStarted(svc.name, svc.processName),
-    );
+    this.svcMgr.advanceRecoveryTimers(this.simulatedDate().getTime());
   }
 
   /**
