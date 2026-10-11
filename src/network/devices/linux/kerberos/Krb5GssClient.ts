@@ -1,8 +1,10 @@
 import type { KerberosClient, TgsExchangeResult } from '@/network/kerberos/KerberosClient';
 import {
-  KDC_OPT_CANONICALIZE, KDC_OPT_RENEWABLE, PA_AS_FRESHNESS, PA_REQ_ENC_PA_REP, KrbErrorCode, principalName, PrincipalNameType,
+  KDC_OPT_CANONICALIZE, KDC_OPT_FORWARDABLE, KDC_OPT_FORWARDED, KDC_OPT_PROXIABLE, KDC_OPT_RENEWABLE, PA_AS_FRESHNESS, PA_REQ_ENC_PA_REP, KrbErrorCode, principalName, PrincipalNameType,
 } from '@/network/kerberos/types';
 import type { GssAcquisition, GssClientEnvironment, GssCredentialAcquisition } from '@/network/kerberos/gssapi/GssClientEnvironment';
+import type { ForwardedCredential } from '@/network/kerberos/gssapi/GssInitiator';
+import { ticketFlagsFromBits, ticketFlagsToBits } from '@/network/kerberos/codec';
 import { GSS_S_CREDENTIALS_EXPIRED, GSS_S_FAILURE, GSS_S_NO_CRED, gssFailure, type GssFailure } from '@/network/kerberos/gssapi/GssStatus';
 import type { Ccache, CcacheCredential } from '@/network/kerberos/ccache/FileCcache';
 import { Krb5Context, type KdcAddress } from './Krb5Context';
@@ -21,8 +23,8 @@ const CONFIGURATION_REALM = 'X-CACHECONF:';
 const CONFIGURATION_DATA = 'krb5_ccache_conf_data';
 const CCACHE_NO_MATCH = 'Principal in credential cache does not match desired name';
 const NO_MINOR_CODE = 'Success';
+const FORWARD_ATTEMPTS = 2;
 const PERMITTED_ENCTYPES = [18, 17, 20, 19, 16, 23, 25, 26];
-const TGS_OPTIONS = KDC_OPT_RENEWABLE;
 const REFERRAL_REALM = '';
 const IP_LITERAL = /^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]*:[0-9a-f:]*$/i;
 
@@ -34,6 +36,11 @@ function isServerCredential(credential: CcacheCredential, components: readonly s
   return credential.server.components.length === components.length
     && credential.server.components.every((part, index) => part === components[index])
     && credential.server.realm !== CONFIGURATION_REALM;
+}
+
+function inheritedOptions(tgt: CcacheCredential): number {
+  const held = ticketFlagsFromBits(tgt.flags);
+  return (held.forwardable ? KDC_OPT_FORWARDABLE : 0) | (held.proxiable ? KDC_OPT_PROXIABLE : 0) | (held.renewable ? KDC_OPT_RENEWABLE : 0);
 }
 
 function isRefreshNote(credential: CcacheCredential): boolean {
@@ -116,7 +123,43 @@ export class Krb5GssClient implements GssClientEnvironment {
     return { kind: 'credentials', name: unparsePrincipal(client) };
   }
 
-  async acquire(service: string, hostName: string): Promise<GssAcquisition> {
+  async acquire(service: string, hostName: string, delegate = false): Promise<GssAcquisition> {
+    const acquired = await this.acquireServiceTicket(service, hostName);
+    if (!delegate || acquired.kind !== 'credential') return acquired;
+    const forwarded = await this.forwardTicketGrantingTicket();
+    return forwarded === null ? acquired : { kind: 'credential', credential: { ...acquired.credential, forwarded } };
+  }
+
+  private async forwardTicketGrantingTicket(): Promise<ForwardedCredential | null> {
+    const opened = this.openDefaultCache();
+    if (opened.kind === 'failure') return null;
+    const client = fromCcachePrincipal(opened.stored.defaultPrincipal);
+    const tgt = opened.stored.credentials.find((credential) => isTicketGrantingCredential(credential, client.realm));
+    const tgtTicket = tgt === undefined ? null : ticketOfCredential(tgt);
+    if (tgt === undefined || tgtTicket === null) return null;
+    const located = await this.context.locateKdcs(client.realm);
+    if (located.kind === 'none') return null;
+    const held = ticketFlagsFromBits(tgt.flags);
+    const options = KDC_OPT_FORWARDED | inheritedOptions(tgt);
+    const cname = principalName(PrincipalNameType.NT_PRINCIPAL, ...client.components);
+    const shape = { nameType: PrincipalNameType.NT_SRV_INST, till: tgt.endTime, renewTill: held.renewable ? tgt.renewTill : undefined };
+    let exchange: TgsExchangeResult | null = null;
+    for (let attempt = 0; attempt < FORWARD_ATTEMPTS && (exchange === null || !exchange.ok); attempt++) {
+      exchange = await this.withKdc(located.addresses, (kdc) =>
+        kdc.tgsExchange(tgtTicket, tgt.key, cname, client.realm, ['krbtgt', client.realm], client.realm, options, shape));
+    }
+    const part = exchange?.encKdcRepPart;
+    if (exchange === null || !exchange.ok || exchange.ticket === undefined || part === undefined) return null;
+    return {
+      ticket: exchange.ticket,
+      info: {
+        key: part.key, prealm: client.realm, pname: cname, flags: ticketFlagsToBits(part.flags), authtime: part.authtime, starttime: part.starttime,
+        endtime: part.endtime, renewTill: part.renewTill, srealm: part.srealm, sname: part.sname,
+      },
+    };
+  }
+
+  private async acquireServiceTicket(service: string, hostName: string): Promise<GssAcquisition> {
     const opened = this.openDefaultCache();
     if (opened.kind === 'failure') return opened;
     const { cache, path } = opened;
@@ -140,9 +183,9 @@ export class Krb5GssClient implements GssClientEnvironment {
     const cname = principalName(PrincipalNameType.NT_PRINCIPAL, ...client.components);
     const askKdc = (options: number): Promise<TgsExchangeResult | null> => this.withKdc(located.addresses, (kdc) =>
       kdc.tgsExchange(tgtTicket, tgt.key, cname, client.realm, target, client.realm, options));
-    let exchange = await askKdc(TGS_OPTIONS | KDC_OPT_CANONICALIZE);
+    let exchange = await askKdc(inheritedOptions(tgt) | KDC_OPT_CANONICALIZE);
     if (exchange !== null && !exchange.ok && exchange.errorCode === KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN) {
-      exchange = await askKdc(TGS_OPTIONS) ?? exchange;
+      exchange = await askKdc(inheritedOptions(tgt)) ?? exchange;
     }
     if (exchange === null) return failure(unreachableKdc(client.realm));
     if (!exchange.ok) {

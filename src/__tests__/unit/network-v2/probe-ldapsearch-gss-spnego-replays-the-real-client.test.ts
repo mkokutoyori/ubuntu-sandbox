@@ -30,9 +30,9 @@
  * minssf300 (libsasl2 filtre sur le SSF maximal du mecanisme avant d'en
  * appeler un).
  *
- * Non attestable ici : `-O passcred` (delegation) a ete enregistre mais n'est
- * pas rejoue, le simulateur le refuse explicitement ; les requetes TGS ne sont
- * comparees que par options, noms et domaine (voir la sonde GSSAPI).
+ * Non attestable ici : la delegation (`-O passcred`) a ses propres sondes ; les
+ * requetes TGS ne sont comparees que par options, noms et domaine (voir la
+ * sonde GSSAPI).
  */
 import { describe, it, expect } from 'vitest';
 import { loadJson } from './openldap-replay-support';

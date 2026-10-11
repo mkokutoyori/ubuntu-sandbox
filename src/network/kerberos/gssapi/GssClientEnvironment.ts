@@ -11,6 +11,6 @@ export type GssCredentialAcquisition =
 
 export interface GssClientEnvironment {
   readonly clock: GssClock;
-  acquire(service: string, host: string): Promise<GssAcquisition>;
+  acquire(service: string, host: string, delegate?: boolean): Promise<GssAcquisition>;
   acquireCredentials(name: string | null): Promise<GssCredentialAcquisition>;
 }

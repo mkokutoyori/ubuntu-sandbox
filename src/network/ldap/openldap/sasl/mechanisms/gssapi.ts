@@ -75,16 +75,12 @@ function gssapiSession(variant: Variant): ClientMechanismSession {
     if (input === null && initiator !== null) initiator = null;
 
     const request = requestOf(params, variant);
-    if ((request.flags & GSS_C_DELEG_FLAG) !== 0) {
-      params.seterror('GSSAPI Failure: forwarding the credentials (passcred) is not implemented by this simulator');
-      return { rc: SaslRc.FAIL };
-    }
     if (initiator === null) {
       if (params.gss === null) {
         params.seterror('GSSAPI Failure: no Kerberos library is available');
         return { rc: SaslRc.FAIL };
       }
-      const acquired = await params.gss.acquire(params.service, serverFqdn);
+      const acquired = await params.gss.acquire(params.service, serverFqdn, (request.flags & GSS_C_DELEG_FLAG) !== 0);
       if (acquired.kind === 'failure') return gssError(params, credentialFailure(variant, acquired.failure));
       const kerberos = new GssInitiator({
         credential: acquired.credential, requestedFlags: request.flags,

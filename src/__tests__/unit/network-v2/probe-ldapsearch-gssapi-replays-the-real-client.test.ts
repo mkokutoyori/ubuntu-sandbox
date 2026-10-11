@@ -37,9 +37,9 @@
  * passent avant comme apres, ils servent de temoins de non-regression.
  *
  * Non attestable ici : le jeu de greffons du paquet Ubuntu 22.04 simule face au
- * 2.1.28 d'Ubuntu 24.04 qui sert de reference ; GS2-KRB5, que le vrai greffon
- * annonce aussi, n'est pas porte ; `-O passcred` (delegation) est refuse
- * explicitement. Devant un TGT expire ou a moins de 30 secondes de
+ * 2.1.28 d'Ubuntu 24.04 qui sert de reference ; GS2-IAKERB, que le vrai
+ * greffon annonce aussi, n'est pas porte ; la delegation (`-O passcred`) a ses
+ * propres sondes. Devant un TGT expire ou a moins de 30 secondes de
  * l'expiration, le vrai client envoie une requete AS sans cle (le client
  * keytab par defaut n'existe pas) et note `refresh_time` dans le cache : les
  * deux sont reproduits, la requete AS est comparee champ a champ et le cache
