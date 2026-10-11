@@ -614,10 +614,10 @@ export class LinuxSshServerContext implements ISshServerContext {
     }
   }
 
-  connectionClosed(user: string, fromIp: string): void {
-    this.pamAuth?.closeSession({ ip: fromIp, port: this.clientPort(fromIp) });
-    const machine = this.device as { sshWireConnectionClosed?: (u: string, ip: string) => void } | null;
-    machine?.sshWireConnectionClosed?.(user, fromIp);
+  connectionClosed(user: string, fromIp: string, fromPort?: number): void {
+    this.pamAuth?.closeSession({ ip: fromIp, port: fromPort ?? this.clientPort(fromIp) });
+    const machine = this.device as { sshWireConnectionClosed?: (u: string, ip: string, port?: number) => void } | null;
+    machine?.sshWireConnectionClosed?.(user, fromIp, fromPort);
   }
 
   recordAuthFailure(user: string, fromIp: string): void {

@@ -28,6 +28,7 @@ export interface SshSessionInit {
   shellPid?: number;
   /** Source IP of the connection, as in `w` and auth.log "from <ip>". */
   fromIp: string;
+  fromPort?: number;
   /** Source hostname (resolved or numeric). */
   fromHost: string;
   /** Transport — always 'ssh' for our sshd, kept polymorphic for future. */
@@ -43,6 +44,7 @@ export class SshSession {
   sshdPid: number;
   shellPid?: number;
   fromIp: string;
+  fromPort?: number;
   fromHost: string;
   transport: SessionTransport;
   loginAt: Date;
@@ -72,6 +74,7 @@ export class SshSession {
     this.sshdPid = init.sshdPid;
     this.shellPid = init.shellPid;
     this.fromIp = init.fromIp;
+    this.fromPort = init.fromPort;
     this.fromHost = init.fromHost;
     this.transport = init.transport ?? 'ssh';
     this.loginAt = init.loginAt ?? simulationDate();

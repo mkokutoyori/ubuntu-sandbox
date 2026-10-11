@@ -1963,7 +1963,6 @@ export abstract class LinuxMachine extends EndHost
             identity: { pid, processName: 'sshd' },
             onAccept: (socket) => {
               stack.setSocketOwner(socket, pid);
-              this.sshAcceptedSockets.set(socket.remoteIp, socket);
               this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
@@ -2089,15 +2088,22 @@ export abstract class LinuxMachine extends EndHost
       const { pid, comm } = payload;
       this.executor.releaseSshClient(pid);
       const stack = this.getTcpStack();
-      const toUnbind: Array<{ protocol: SocketProtocol; localAddress: string; localPort: number; state: string }> = [];
+      const toUnbind: Array<{
+        protocol: SocketProtocol; localAddress: string; localPort: number; state: string;
+        remoteAddress: string; remotePort: number;
+      }> = [];
       for (const sock of this.socketTable.getAll()) {
         const matchesByPid = sock.pid === pid;
         const matchesByName = comm && sock.pid === undefined && sock.processName === comm;
         if (!matchesByPid && !matchesByName) continue;
-        toUnbind.push({ protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state });
+        toUnbind.push({
+          protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state,
+          remoteAddress: sock.remoteAddress, remotePort: sock.remotePort,
+        });
       }
       for (const s of toUnbind) {
-        this.socketTable.unbind(s.protocol, s.localAddress, s.localPort);
+        if (s.remoteAddress === '*') this.socketTable.unbind(s.protocol, s.localAddress, s.localPort);
+        else this.socketTable.removeConnection(s);
         if (s.protocol === 'tcp' && s.state === 'LISTEN') {
           stack.closeListener(s.localPort, s.localAddress);
           this._sshdActivePorts.delete(s.localPort);
@@ -2186,7 +2192,6 @@ export abstract class LinuxMachine extends EndHost
 
   private readonly sshPeerPorts: Map<string, number> = new Map();
   private readonly sshWirePeers = new Set<string>();
-  private readonly sshAcceptedSockets = new Map<string, TcpSocket>();
   private sshNextClientPort = 0;
 
   noteSshWirePeer(fromIp: string, port: number): void {
@@ -2251,15 +2256,28 @@ export abstract class LinuxMachine extends EndHost
     this.sessionTable.recordFailedLogin(user, fromIp);
   }
 
-  openSshSessionRecord(user: string, fromIp: string, fromHost: string): void {
+  private claimAcceptedSshSocket(fromIp: string): TcpSocket | undefined {
+    const claimed = new Set(this.sessionTable.list()
+      .filter((session) => session.fromIp === fromIp)
+      .map((session) => session.fromPort));
+    return this.getTcpStack().listSockets().find((socket) => socket.passive
+      && socket.state === 'established'
+      && socket.remoteIp === fromIp
+      && this._sshdActivePorts.has(socket.localPort)
+      && !claimed.has(socket.remotePort));
+  }
+
+  openSshSessionRecord(user: string, fromIp: string, fromHost: string): number {
     const events = this.getSshServerContext().events;
+    const accepted = this.claimAcceptedSshSocket(fromIp);
+    const peerPort = accepted?.remotePort ?? this.sshClientPort(fromIp);
     {
       const userEntry = this.executor.userMgr.getUser(user);
       const uid = userEntry?.uid ?? 1000;
       const gid = userEntry?.gid ?? uid;
       const session = this.sessionTable.open({
         user, uid, sshdPid: 0,
-        fromIp, fromHost,
+        fromIp, fromPort: peerPort, fromHost,
       });
       this.materializePtsNode(session.tty, uid, gid);
       this.executor.lastlog.record(user, fromIp, session.tty);
@@ -2289,7 +2307,6 @@ export abstract class LinuxMachine extends EndHost
       const myIp = this.getPorts()
         .map((p) => p.getIPAddress()?.toString())
         .find((ip): ip is string => !!ip) ?? '0.0.0.0';
-      const peerPort = this.sshClientPort(fromIp);
       try {
         this.socketTable.upsertConnection({
           protocol: 'tcp',
@@ -2298,7 +2315,6 @@ export abstract class LinuxMachine extends EndHost
           state: 'ESTABLISHED',
           pid: sshdChild.pid, processName: 'sshd',
         });
-        const accepted = this.sshAcceptedSockets.get(fromIp);
         if (accepted) this.getTcpStack().setSocketOwner(accepted, sshdChild.pid);
       } catch { /* socket accounting is best-effort */ }
       if (!this.sshArrivedOverWire(fromIp)) {
@@ -2308,51 +2324,59 @@ export abstract class LinuxMachine extends EndHost
         );
       }
     }
+    return peerPort;
   }
 
   private readonly heldSshRecords = new Map<string, number>();
 
-  scheduleSshLogout(user: string, fromIp: string, holdSeconds: number, wireOwned = false): void {
+  private sshRecordKey(user: string, fromIp: string, fromPort: number | undefined): string {
+    return `${user}@${fromIp}:${fromPort ?? '*'}`;
+  }
+
+  scheduleSshLogout(
+    user: string, fromIp: string, holdSeconds: number, wireOwned = false, fromPort?: number,
+  ): void {
     if (!wireOwned) {
-      if (holdSeconds <= 0) { this.recordSshLogout(user, fromIp); return; }
-      this.getScheduler().setTimeout(() => this.recordSshLogout(user, fromIp), holdSeconds * 1000);
+      if (holdSeconds <= 0) { this.recordSshLogout(user, fromIp, fromPort); return; }
+      this.getScheduler().setTimeout(() => this.recordSshLogout(user, fromIp, fromPort), holdSeconds * 1000);
       return;
     }
     if (holdSeconds <= 0) return;
-    const key = `${user}@${fromIp}`;
+    const key = this.sshRecordKey(user, fromIp, fromPort);
     this.heldSshRecords.set(key, (this.heldSshRecords.get(key) ?? 0) + 1);
     this.getScheduler().setTimeout(() => {
       const left = (this.heldSshRecords.get(key) ?? 1) - 1;
       if (left > 0) this.heldSshRecords.set(key, left); else this.heldSshRecords.delete(key);
-      if (left === 0) this.closeSshSessionRecord(user, fromIp);
+      if (left === 0) this.closeSshSessionRecord(user, fromIp, fromPort);
     }, holdSeconds * 1000);
   }
 
-  sshWireConnectionClosed(user: string, fromIp: string): void {
-    if (this.heldSshRecords.has(`${user}@${fromIp}`)) return;
-    this.closeSshSessionRecord(user, fromIp);
+  sshWireConnectionClosed(user: string, fromIp: string, fromPort?: number): void {
+    if (this.heldSshRecords.has(this.sshRecordKey(user, fromIp, fromPort))) return;
+    this.closeSshSessionRecord(user, fromIp, fromPort);
   }
 
-  private closeSshSessionRecord(user: string, fromIp: string): boolean {
-    const session = this.sessionTable.list()
-      .find((s) => s.user === user && s.fromIp === fromIp && !s.closedAt);
+  private closeSshSessionRecord(user: string, fromIp: string, fromPort?: number): boolean {
+    const session = this.sessionTable.list().find((s) => s.user === user && s.fromIp === fromIp
+      && !s.closedAt && (fromPort === undefined || s.fromPort === fromPort));
     if (!session) return false;
     const sid = String(session.shellPid ?? session.sshdPid ?? 0);
-    if (session.shellPid) this.executor.processMgr.reap(session.shellPid);
-    if (session.sshdPid) this.executor.processMgr.reap(session.sshdPid);
     this.sessionTable.close(session.tty, 'normal');
     this.removePtsNode(session.tty);
     this.dropLogindSession(sid, session.uid);
     this.emitSessionClosedLog(user, session.sshdPid ?? 0, sid);
     this.socketTable.removeConnection({
-      protocol: 'tcp', localPort: 22, remoteAddress: fromIp, remotePort: this.sshClientPort(fromIp),
+      protocol: 'tcp', localPort: 22, remoteAddress: fromIp,
+      remotePort: session.fromPort ?? this.sshClientPort(fromIp),
     });
+    if (session.shellPid) this.executor.processMgr.exit(session.shellPid, 0);
+    if (session.sshdPid) this.executor.processMgr.exit(session.sshdPid, 0);
     return true;
   }
 
-  recordSshLogout(user: string, fromIp: string): void {
-    const port = this.sshClientPort(fromIp);
-    const closed = this.closeSshSessionRecord(user, fromIp);
+  recordSshLogout(user: string, fromIp: string, fromPort?: number): void {
+    const port = fromPort ?? this.sshClientPort(fromIp);
+    const closed = this.closeSshSessionRecord(user, fromIp, fromPort);
     this.getSshServerContext().events.emit({
       kind: 'client_disconnected', user, ip: fromIp, port,
       authenticated: closed, reason: 'client_disconnect',

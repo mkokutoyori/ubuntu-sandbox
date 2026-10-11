@@ -174,7 +174,7 @@ export interface ISshServerContext {
    */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
   clientPort?(fromIp: string): number | undefined;
-  connectionClosed?(user: string, fromIp: string): void;
+  connectionClosed?(user: string, fromIp: string, fromPort?: number): void;
   connectionEnded?(fromIp: string, port: number | undefined): void;
   /**
    * Build a fully-populated SshUserContext from /etc/passwd (real uid/gid/groups/home).
