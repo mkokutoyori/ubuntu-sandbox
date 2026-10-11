@@ -149,6 +149,7 @@ export class TlsClientSession {
   receivedTicket: SessionTicket | null = null;
   peerCertificate: X509Certificate | null = null;
   peerCertificateChain: readonly X509Certificate[] = [];
+  clientCertificateSent: X509Certificate | null = null;
   receivedStaple: OcspResponseMessage | null = null;
   peerVerified = false;
   peerSignature: { readonly digest: string; readonly type: string } | null = null;
@@ -546,6 +547,7 @@ export class TlsClientSession {
     const flight = legacy.handle(incoming);
     this.peerCertificate = legacy.peerCertificate;
     this.peerCertificateChain = legacy.peerCertificateChain;
+    this.clientCertificateSent = legacy.clientCertificateSent;
     this.receivedStaple = legacy.receivedStaple;
     this.peerVerified = legacy.peerVerified;
     this.peerVerificationReason = legacy.peerVerificationReason;
@@ -702,6 +704,7 @@ export class TlsClientSession {
       };
       finalBundle.push(clientCertificate);
       this.transcript.push(encodeHandshakeMessage(clientCertificate));
+      this.clientCertificateSent = this.config.clientCert ?? null;
 
       if (this.config.clientCert && this.config.clientPrivateKey) {
         const clientSignature = signCertificateVerify(

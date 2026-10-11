@@ -8,6 +8,7 @@ import { kernelHostname } from '../../KernelHostname';
 import { formatCtime } from '../../time/ctime';
 import { dialLdap, type LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import { connectTls, type TlsConnectHost } from '@/network/ldap/openldap/tls/tlsConnect';
+import { ldapDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import type { TlsFiles } from '@/network/ldap/openldap/tls/tlsContext';
 import { SASL_PLUGIN_DIRECTORY, loadClientPlugins } from '@/network/ldap/openldap/sasl/saslPlugins';
 import { Krb5Context } from '../../kerberos/Krb5Context';
@@ -51,7 +52,11 @@ class ClientChannel implements LdapChannel {
     const channel = this.client.tlsChannel;
     return channel === null
       ? null
-      : { strength: channel.keyBits, clientDn: null, serverEndPoint: channel.serverEndPoint, unique: channel.unique };
+      : {
+        strength: channel.keyBits,
+        clientDn: channel.clientCertificate === null ? null : ldapDistinguishedName(channel.clientCertificate.subject),
+        serverEndPoint: channel.serverEndPoint, unique: channel.unique,
+      };
   }
 
   close(): void {

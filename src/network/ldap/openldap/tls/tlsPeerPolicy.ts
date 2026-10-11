@@ -17,7 +17,7 @@ export interface TraceLine {
 }
 
 export type PeerVerdict =
-  | { readonly ok: true }
+  | { readonly ok: true; readonly lines?: readonly TraceLine[] }
   | { readonly ok: false; readonly errno: number | null; readonly lines: readonly TraceLine[] };
 
 export type ChainVerification = { readonly ok: true } | { readonly ok: false; readonly reason: VerificationReason };
@@ -57,8 +57,9 @@ export function judgeChain(
   if (certificate === null && requireCert === TlsRequireCert.TRY) return accepted;
   const chain = verification.ok === false ? STATUS_OF_REASON[verification.reason] ?? GNUTLS_CERT_INVALID : 0;
   const status = algorithms.decisive ? algorithms.status : chain | algorithms.status;
-  if (status === 0 || requireCert === TlsRequireCert.ALLOW) return accepted;
-  return refusal(null, { level: LdapDebug.TRACE, text: `TLS: peer cert untrusted or revoked (0x${status.toString(16)})\n` });
+  if (status === 0) return accepted;
+  const line: TraceLine = { level: LdapDebug.TRACE, text: `TLS: peer cert untrusted or revoked (0x${status.toString(16)})\n` };
+  return requireCert === TlsRequireCert.ALLOW ? { ok: true, lines: [line] } : refusal(null, line);
 }
 
 type NameKind = 'dns' | 'ipv4' | 'ipv6';

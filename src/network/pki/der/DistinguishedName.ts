@@ -97,6 +97,18 @@ export function decodeName(node: DerNode): string {
   return renderDistinguishedName(attributes);
 }
 
+const LIBLDAP_ATTRIBUTE_NAMES: Readonly<Record<string, string>> = {
+  CN: 'cn', SN: 'sn', GN: 'givenName', C: 'c', L: 'l', ST: 'st', O: 'o', OU: 'ou', title: 'title', DC: 'dc', emailAddress: 'email',
+};
+
+export function ldapDistinguishedName(text: string): string {
+  return splitDistinguishedName(text).reverse().map(({ type, value }) => {
+    const known = attributeByName(type);
+    const name = known === undefined ? type : LIBLDAP_ATTRIBUTE_NAMES[known.short] ?? known.oid;
+    return `${name}=${value.replace(/([,\\+"<>;])/g, '\\$1')}`;
+  }).join(',');
+}
+
 export function opensslDistinguishedName(text: string): string {
   return splitDistinguishedName(text).map(({ type, value }) => `${type} = ${value}`).join(', ');
 }

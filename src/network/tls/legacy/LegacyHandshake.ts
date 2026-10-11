@@ -622,6 +622,7 @@ export class LegacyClientHandshake {
   result: 'success' | 'failure' | null = null;
   lastAlert: TlsAlert | null = null;
   peerCertificate: X509Certificate | null = null;
+  clientCertificateSent: X509Certificate | null = null;
   peerCertificateChain: readonly X509Certificate[] = [];
   receivedStaple: OcspResponseMessage | null = null;
   peerSignature: { readonly digest: string; readonly type: string } | null = null;
@@ -847,6 +848,7 @@ export class LegacyClientHandshake {
       };
       out.push(clientCertificate);
       this.messages.push(encodeLegacyMessage(clientCertificate, this.wire));
+      this.clientCertificateSent = setup.clientCert ?? null;
     }
     const clientKeyExchange: ClientKeyExchange = { kind: 'client_key_exchange', exchange };
     out.push(clientKeyExchange);

@@ -64,6 +64,11 @@ export async function connectTls(request: TlsUpgradeRequest, host: TlsConnectHos
       crls: context.revocationLists,
       revocationCheck: context.revocationLists.length > 0 ? 'crl' : 'none',
     }),
+    ...(context.clientKey !== null && context.clientCertificates.length > 0 ? {
+      clientCert: context.clientCertificates[0],
+      clientChain: context.clientCertificates.slice(1),
+      clientPrivateKey: context.clientKey,
+    } : {}),
     allowUntrustedPeer: true,
     verifyHostname: false,
     securityLevel: 0,
@@ -82,6 +87,7 @@ export async function connectTls(request: TlsUpgradeRequest, host: TlsConnectHos
     host.detach();
     return reportFailure(request, chain);
   }
+  for (const line of chain.lines ?? []) request.debug(line.level, line.text);
   if (facts.certificate !== null) {
     const peer = judgePeer(request.tls, hostName, facts.certificate, await host.localFqdn());
     if (peer.ok === false) {

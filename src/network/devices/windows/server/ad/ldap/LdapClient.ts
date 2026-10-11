@@ -5,6 +5,7 @@
  * use instead of direct method calls into another device's `DirectoryTree`.
  */
 
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import {
   type LdapMessage, type ProtocolOp, type PartialAttribute, type LdapResult, type LdapControl,
@@ -97,13 +98,14 @@ export class LdapClient {
     return decoded.data;
   }
 
-  get tlsChannel(): { keyBits: number; serverEndPoint: Uint8Array | null; unique: Uint8Array | null } | null {
+  get tlsChannel(): { keyBits: number; serverEndPoint: Uint8Array | null; unique: Uint8Array | null; clientCertificate: X509Certificate | null } | null {
     if (this.tls === null) return null;
     const certificate = this.tls.peerCertificate;
     return {
       keyBits: this.tls.sessionKeyBits ?? 0,
       serverEndPoint: certificate === null ? null : tlsServerEndPoint(certificate),
       unique: this.tls.uniqueChannelBinding,
+      clientCertificate: this.tls.clientCertificateSent,
     };
   }
 
