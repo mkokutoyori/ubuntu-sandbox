@@ -72,6 +72,13 @@ export interface WindowsService {
   critical?: boolean;
 }
 
+export const SHARED_HOST_IMAGES: ReadonlySet<string> = new Set(['svchost.exe', 'lsass.exe']);
+
+export function serviceImageOf(binaryPath: string, fallback: string): string {
+  const match = /^\s*"?([^"]*?\.exe)(?=$|[\s"])/i.exec(binaryPath);
+  return match ? match[1].slice(match[1].lastIndexOf('\\') + 1) : fallback;
+}
+
 export interface ServiceProcessHost {
   onServiceStarted(service: WindowsService): void;
   onServiceStopped(serviceName: string): void;
@@ -274,6 +281,8 @@ export class WindowsServiceManager {
       { dependencies: ['Afd', 'Tcpip'], account: 'NT Authority\\LocalService' });
     svc('Dnscache', 'DNS Client', 'Caches DNS names and registers the full computer name',
       { dependencies: ['Tcpip'], account: 'NT AUTHORITY\\NetworkService' });
+    svc('iphlpsvc', 'IP Helper', 'Provides tunnel connectivity using IPv6 transition technologies (6to4, ISATAP, Port Proxy, and Teredo), and IP-HTTPS.',
+      { dependencies: ['RpcSs', 'Tcpip'], account: 'NT AUTHORITY\\SYSTEM' });
     svc('NetBT', 'NetBT', 'NetBIOS over TCP/IP',
       { serviceType: 'KERNEL_DRIVER', startType: 'System', dependencies: ['Tcpip'], account: '', processName: 'System', acceptsShutdown: false });
 
@@ -701,19 +710,20 @@ export class WindowsServiceManager {
     if (this.services.has(name.toLowerCase())) return `The specified service already exists.`;
     const displayName = opts.displayName ?? name;
     const account = opts.account ?? 'NT AUTHORITY\\SYSTEM';
+    const image = serviceImageOf(opts.binaryPath, name.toLowerCase() + '.exe');
     this.services.set(name.toLowerCase(), {
       name,
       displayName,
       description: opts.description ?? '',
       state: 'Stopped',
       startType: opts.startType ?? 'Manual',
-      serviceType: 'WIN32_OWN_PROCESS',
+      serviceType: SHARED_HOST_IMAGES.has(image.toLowerCase()) ? 'WIN32_SHARE_PROCESS' : 'WIN32_OWN_PROCESS',
       binaryPath: opts.binaryPath,
       account,
       dependencies: opts.dependencies ?? [],
       canPauseAndContinue: false,
       acceptsShutdown: false,
-      processName: name.toLowerCase() + '.exe',
+      processName: image,
       builtIn: false,
     });
     this.syncRegistry(name);

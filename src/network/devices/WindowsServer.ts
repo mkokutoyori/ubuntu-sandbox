@@ -78,6 +78,15 @@ const EXCHANGE_ROLE_SERVICES: Readonly<Record<string, readonly string[]>> = {
   ClientAccess: ['MSExchangeFrontEndTransport'],
 };
 
+const EXCHANGE_BIN_DIRECTORY = 'C:\\Program Files\\Microsoft\\Exchange Server\\V15\\Bin';
+
+const EXCHANGE_SERVICE_IMAGES: Readonly<Record<string, string>> = {
+  MSExchangeTransport: 'EdgeTransport.exe',
+  MSExchangeIS: 'Microsoft.Exchange.Store.Service.exe',
+  MSExchangeADTopology: 'Microsoft.Exchange.Directory.TopologyService.exe',
+  MSExchangeFrontEndTransport: 'MSExchangeFrontendTransport.exe',
+};
+
 /** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `WinDomainDiag.cmdNltest` has always reported. */
 const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
 
@@ -456,7 +465,7 @@ export class WindowsServer extends WindowsPC {
     for (const role of roles) {
       for (const svcName of EXCHANGE_ROLE_SERVICES[role] ?? []) {
         if (!manager.getService(svcName)) {
-          manager.createService(svcName, { binaryPath: 'C:\\Program Files\\Microsoft\\Exchange Server\\V15\\Bin\\edgetransport.exe', displayName: `Microsoft Exchange ${svcName.replace('MSExchange', '')}`, startType: 'Automatic' }, true);
+          manager.createService(svcName, { binaryPath: `${EXCHANGE_BIN_DIRECTORY}\\${EXCHANGE_SERVICE_IMAGES[svcName]}`, displayName: `Microsoft Exchange ${svcName.replace('MSExchange', '')}`, startType: 'Automatic' }, true);
         }
         manager.startService(svcName, true);
       }

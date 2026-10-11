@@ -106,6 +106,10 @@ async function imagePid(windows: WindowsPC, image: string): Promise<number | nul
   return row ? Number(row.split(/\s+/)[1]) : null;
 }
 
+async function servicePid(windows: WindowsPC, service: string): Promise<number> {
+  return Number(/PID\s*:\s*(\d+)/.exec(await windows.executeCommand(`sc queryex ${service}`))![1]);
+}
+
 describe('the bench is sound (witness)', () => {
   it('sshd listens at the PID of sshd.exe and a client reaches it', async () => {
     const { windows, reach } = await lab();
@@ -206,8 +210,8 @@ describe('a service that crashes closes its port, the recovery action opens it a
 
   it('the death of the process hosting LanmanServer closes the kernel-owned 445 and 139', async () => {
     const { windows, reach } = await lab();
-    const host = await imagePid(windows, 'LanmanServer.exe');
-    expect(host).not.toBeNull();
+    const host = await servicePid(windows, 'LanmanServer');
+    expect(host).not.toBe(0);
     await windows.executeCommand(`taskkill /F /PID ${host}`);
     await settle();
     expect(await reach(445)).toBe('refused');
@@ -263,13 +267,14 @@ describe('a service that had a host process is hosted again when it restarts', (
     expect(await windows.executeCommand(`tasklist /svc /FI "PID eq ${pid}"`)).toMatch(/svchost\.exe\s+\d+\s+Themes/);
   });
 
-  it('LanmanServer lost its host process with a stop: after the start an svchost hosts it', async () => {
+  it('LanmanServer stopped and started: the svchost that hosted it hosts it again', async () => {
     const { windows } = await lab();
+    const host = await servicePid(windows, 'LanmanServer');
+    expect(await windows.executeCommand(`tasklist /svc /FI "PID eq ${host}"`)).toMatch(/svchost\.exe\s+\d+\s+.*LanmanServer/);
     await windows.executeCommand('sc stop LanmanServer');
-    expect(await imagePid(windows, 'LanmanServer.exe')).toBeNull();
+    expect(await windows.executeCommand(`tasklist /svc /FI "PID eq ${host}"`)).not.toContain('LanmanServer');
     await windows.executeCommand('sc start LanmanServer');
-    const pid = /PID\s*:\s*(\d+)/.exec(await windows.executeCommand('sc queryex LanmanServer'))![1];
-    expect(Number(pid)).not.toBe(0);
-    expect(await windows.executeCommand(`tasklist /svc /FI "PID eq ${pid}"`)).toMatch(/svchost\.exe\s+\d+\s+LanmanServer/);
+    expect(await servicePid(windows, 'LanmanServer')).toBe(host);
+    expect(await windows.executeCommand(`tasklist /svc /FI "PID eq ${host}"`)).toMatch(/svchost\.exe\s+\d+\s+.*LanmanServer/);
   });
 });

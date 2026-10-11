@@ -409,6 +409,19 @@ gestionnaire de services et un svchost (PID 1096) l'héberge, si bien que le PID
 `winrm quickconfig` démarre le service `WinRM` comme il l'annonce. Garde-fou :
 `probe-un-port-windows-n-existe-que-si-sa-fonctionnalite-est-active`.
 
+Un service de rôle tourne dans le processus où Windows le fait tourner (mesuré sur `2d36ab993`) :
+`Install-WindowsFeature AD-Domain-Services` créait trois processus `ntds.exe`, `netlogon.exe` et `kdc.exe` là où NTDS, Netlogon
+et Kdc ont `lsass.exe` pour chemin binaire ; DHCP, NPAS et Web-Server créaient `dhcpserver.exe`, `ias.exe` et `w3svc.exe`, des
+processus nommés d'après le service, là où ils tournent dans un svchost (`svchost.exe -k iissvcs` pour W3SVC) ; `sc create MySvc
+binPath= "C:\tools\agent.exe"` puis `sc start` lançait `mysvc.exe` ; `tasklist` listait `LanmanServer.exe` et
+`LanmanWorkstation.exe`, des images qui n'existent pas ; il n'y avait pas de service IP Helper ; les services Exchange portaient
+des noms de processus tirés de leur nom de service. Le processus d'un service est maintenant l'image que nomme son chemin
+binaire (`serviceImageOf`), le type du service (`WIN32_OWN_PROCESS` ou `WIN32_SHARE_PROCESS`) en découle, `lsass.exe` et
+`svchost.exe` sont des hôtes partagés qui ne meurent pas avec un de leurs services (un svchost créé pour un rôle sort avec lui),
+la table des fonctionnalités porte l'image des services de rôle, chaque service Exchange a son image, et le 4688 d'un processus
+de service enregistre le chemin binaire que `sc qc` affiche. Garde-fou :
+`probe-un-service-de-role-tourne-dans-le-processus-ou-windows-le-fait-tourner`.
+
 Pas construit dans ce lot : les écoutes que les rôles DNS, IIS, DHCP, NPS, Exchange et cluster ouvrent par leurs
 propres sous-systèmes (TCP et UDP) et les sockets UDP du système (LLMNR, mDNS, client DHCP, client DNS) gardent le
 PID 0 ; le port 135 d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ;

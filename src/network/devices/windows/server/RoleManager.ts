@@ -96,11 +96,11 @@ export class RoleManager {
    * Spooler) already exist on every device — just ensure Running/Automatic.
    * Role-only services (NTDS, DNS, DHCPServer, IAS, W3SVC…) are created here.
    */
-  private bringUpService(name: string, isAdmin: boolean): void {
+  private bringUpService(name: string, isAdmin: boolean, image?: string): void {
     const existing = this.services.getService(name);
     if (!existing) {
       this.services.createService(name, {
-        binaryPath: `C:\\Windows\\System32\\svchost.exe -k ${name.toLowerCase()}`,
+        binaryPath: image ?? `C:\\Windows\\System32\\svchost.exe -k ${name.toLowerCase()}`,
         startType: ROLE_SERVICE_START_TYPE,
       }, isAdmin);
     } else if (existing.startType !== ROLE_SERVICE_START_TYPE) {
@@ -144,7 +144,7 @@ export class RoleManager {
     }
     for (const c of changed) {
       this.installed.add(c.name.toLowerCase());
-      for (const svcName of c.services) this.bringUpService(svcName, isAdmin);
+      for (const svcName of c.services) this.bringUpService(svcName, isAdmin, c.images?.[svcName]);
     }
     for (const c of changed) this.announce(c.name, 'install');
     return { ok: true, message: 'Success', changed: changed.map(c => this.toView(c)) };

@@ -23,6 +23,7 @@ export interface WindowsFeatureDef {
   readonly featureType: 'Role' | 'Role Service' | 'Feature';
   /** WindowsServiceManager service names this feature's install brings up. */
   readonly services: readonly string[];
+  readonly images?: Readonly<Record<string, string>>;
   /** PowerShell module the feature unlocks (e.g. `SmbShare`, `DnsServer`). */
   readonly psModule?: string;
   /** Companion tool feature installed when `-IncludeManagementTools` is passed. */
@@ -39,6 +40,8 @@ export interface WindowsFeatureDef {
   readonly aliases?: readonly string[];
 }
 
+const LSASS = 'C:\\Windows\\System32\\lsass.exe';
+
 export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
   {
     name: 'FS-FileServer', displayName: 'File Server',
@@ -49,12 +52,14 @@ export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
     name: 'AD-Domain-Services', displayName: 'Active Directory Domain Services',
     featureType: 'Role',
     services: ['NTDS', 'Netlogon', 'Kdc'], psModule: 'ActiveDirectory',
+    images: { NTDS: LSASS, Netlogon: LSASS, Kdc: LSASS },
     managementToolsFeature: 'RSAT-AD-PowerShell',
   },
   {
     name: 'DNS', displayName: 'DNS Server',
     featureType: 'Role',
     services: ['DNS'], psModule: 'DnsServer',
+    images: { DNS: 'C:\\Windows\\System32\\dns.exe' },
   },
   {
     name: 'DHCP', displayName: 'DHCP Server',
@@ -80,27 +85,32 @@ export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
     name: 'AD-Certificate', displayName: 'Active Directory Certificate Services',
     featureType: 'Role',
     services: ['CertSvc'], psModule: 'ADCSDeployment',
+    images: { CertSvc: 'C:\\Windows\\System32\\certsrv.exe' },
     aliases: ['ADCS-Cert-Authority', 'ADCS-Web-Enrollment'],
   },
   {
     name: 'FS-DFS-Namespace', displayName: 'DFS Namespaces',
     featureType: 'Role Service',
     services: ['Dfs'], psModule: 'DFSN',
+    images: { Dfs: 'C:\\Windows\\System32\\dfssvc.exe' },
   },
   {
     name: 'FS-DFS-Replication', displayName: 'DFS Replication',
     featureType: 'Role Service',
     services: ['DFSR'], psModule: 'DFSR',
+    images: { DFSR: 'C:\\Windows\\System32\\DFSR.exe' },
   },
   {
     name: 'Failover-Clustering', displayName: 'Failover Clustering',
     featureType: 'Feature',
     services: ['ClusSvc'], psModule: 'FailoverClusters',
+    images: { ClusSvc: 'C:\\Windows\\Cluster\\clussvc.exe' },
   },
   {
     name: 'UpdateServices', displayName: 'Windows Server Update Services',
     featureType: 'Role',
     services: ['WsusService'], psModule: 'UpdateServices',
+    images: { WsusService: 'C:\\Program Files\\Update Services\\Services\\WsusService.exe' },
   },
   {
     name: 'RSAT-AD-PowerShell', displayName: 'Active Directory module for Windows PowerShell',
