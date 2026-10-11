@@ -218,7 +218,7 @@ describe('the server name indication of libldap', () => {
       localFqdn: async () => corpus.localFqdn,
       handshake(config) {
         received.serverName = config.serverName;
-        return { established: false, certificate: null, verification: { ok: true } };
+        return { established: false, alert: false, certificate: null, verification: { ok: true } };
       },
       detach: () => undefined,
     };
@@ -241,7 +241,7 @@ describe('the server name indication of libldap', () => {
       ...hostSeeing({ serverName: undefined }),
       handshake(config) {
         seen = config.verifyHostname;
-        return { established: false, certificate: null, verification: { ok: true } };
+        return { established: false, alert: false, certificate: null, verification: { ok: true } };
       },
     };
     const options = defaultLdapOptions();

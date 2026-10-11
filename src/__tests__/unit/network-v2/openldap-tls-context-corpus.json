@@ -362,6 +362,141 @@
    },
    "lines": [],
    "contextFails": false
+  },
+  {
+   "name": "cipher-list-unknown-word",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "FOO"
+   },
+   "lines": [
+    "TLS: could not set cipher list FOO.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-without-protocol",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL:-VERS-ALL"
+   },
+   "lines": [
+    "TLS: could not set cipher list NORMAL:-VERS-ALL.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-none",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NONE"
+   },
+   "lines": [
+    "TLS: could not set cipher list NONE.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-without-cipher",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL:-CIPHER-ALL"
+   },
+   "lines": [
+    "TLS: could not set cipher list NORMAL:-CIPHER-ALL.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-without-key-exchange",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NONE:+VERS-TLS1.2:+AES-128-GCM:+AEAD:+ECDHE-RSA"
+   },
+   "lines": [
+    "TLS: could not set cipher list NONE:+VERS-TLS1.2:+AES-128-GCM:+AEAD:+ECDHE-RSA.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-unknown-modifier",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL:%FOO"
+   },
+   "lines": [
+    "TLS: could not set cipher list NORMAL:%FOO.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-trailing-space",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL "
+   },
+   "lines": [
+    "TLS: could not set cipher list NORMAL .",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-leading-space",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": " NORMAL"
+   },
+   "lines": [],
+   "contextFails": false
+  },
+  {
+   "name": "cipher-list-is-judged-before-the-ca-file",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/nonexistent.pem",
+    "LDAPTLS_CIPHER_SUITE": "FOO"
+   },
+   "lines": [
+    "TLS: could not set cipher list FOO.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-ok-then-ca-file-missing",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/nonexistent.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL:-VERS-TLS1.3"
+   },
+   "lines": [
+    "TLS: could not use CA certificate file `/tmp/tlslab/nonexistent.pem': Error while reading file. (-64)",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-accepted",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "SECURE256:-VERS-TLS1.3:%COMPAT"
+   },
+   "lines": [],
+   "contextFails": false
+  },
+  {
+   "name": "cipher-list-empty-is-unset",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": ""
+   },
+   "lines": [],
+   "contextFails": false
   }
  ]
 }

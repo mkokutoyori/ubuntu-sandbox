@@ -320,11 +320,15 @@ export class LegacyServerHandshake {
       bundle.push(status);
     }
 
+    const scheme = signatureAlgorithmName(this.setup.serverPrivateKey, version, this.setup.clientSignatureAlgorithms);
+    const offeredSchemes = this.setup.clientSignatureAlgorithms;
+    if (version === '1.2' && (offeredSchemes.length === 0 ? this.setup.securityLevel >= 1 : !offeredSchemes.includes(scheme))) {
+      return this.reject('handshake_failure');
+    }
     if (suite.keyExchange !== 'RSA') {
       const params = this.generateParams();
       if (params === null) return this.reject('handshake_failure');
       const signed = keyExchangeSignedData(this.setup.clientRandom, this.serverRandom, params);
-      const scheme = signatureAlgorithmName(this.setup.serverPrivateKey, version, this.setup.clientSignatureAlgorithms);
       const serverKeyExchange: ServerKeyExchange = {
         kind: 'server_key_exchange', params,
         signatureAlgorithm: scheme,

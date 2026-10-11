@@ -112,6 +112,8 @@ export interface TlsClientConfig {
   readonly maxFragmentLength?: number;
   /** RFC 8701 — inject GREASE values into the ClientHello lists. */
   readonly grease?: boolean;
+  /** RFC 8446 §4.2.3 — signature schemes announced, in preference order; defaults to `CLIENT_HELLO_SIGNATURE_SCHEMES`. */
+  readonly signatureSchemes?: readonly string[];
 }
 
 const GREASE_VALUE = 0x0a0a;
@@ -288,11 +290,11 @@ export class TlsClientSession {
     // fait une vraie pile configurée avec des groupes qu'elle ne sait pas
     // faire — elle échoue avant d'écrire, plutôt que d'ouvrir une
     // conversation qu'elle ne peut pas conclure.
-    if (this.supportedGroups.length === 0) { this.fail('handshake_failure'); return []; }
+    if (this.supportedGroups.length === 0 && this.offersTls13()) { this.fail('handshake_failure'); return []; }
     if (this.versions.length === 0) { this.fail('protocol_version'); return []; }
     if (this.policy.error !== null) { this.fail('handshake_failure'); return []; }
     this.clientRandom = newHelloRandom();
-    const records = this.sendClientHello(this.supportedGroups[0]);
+    const records = this.sendClientHello(this.supportedGroups[0] ?? '');
     const ticket = this.config.resumptionTicket;
     if (!ticket || !this.config.earlyData) return records;
     const hash = suiteInfo(ticket.cipherSuite).hash;
@@ -316,7 +318,7 @@ export class TlsClientSession {
       extensions: {
         supportedVersions: this.offersTls13() ? this.withGrease(this.versions, GREASE_NAME) : [], keyShare: this.clientKeyShare,
         supportedGroups: this.withGrease(this.supportedGroups, GREASE_NAME),
-        signatureAlgorithms: this.withGrease(CLIENT_HELLO_SIGNATURE_SCHEMES, GREASE_NAME),
+        signatureAlgorithms: this.withGrease(this.config.signatureSchemes ?? CLIENT_HELLO_SIGNATURE_SCHEMES, GREASE_NAME),
         alpn: this.config.alpn ? this.withGrease(this.config.alpn, GREASE_NAME) : undefined,
         serverName: this.config.serverName,
         ...(this.config.requestOcspStaple || this.config.requireOcspStaple || this.config.collectOcspStaple ? { statusRequest: true } : {}),
@@ -472,7 +474,7 @@ export class TlsClientSession {
       legacyExtensions: extensions,
       extensions: {
         supportedVersions: [], keyShare: '', supportedGroups: this.supportedGroups,
-        signatureAlgorithms: CLIENT_HELLO_SIGNATURE_SCHEMES,
+        signatureAlgorithms: this.config.signatureSchemes ?? CLIENT_HELLO_SIGNATURE_SCHEMES,
         alpn: this.config.alpn, serverName: this.config.serverName,
       },
     };

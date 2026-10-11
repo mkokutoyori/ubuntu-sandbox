@@ -439,9 +439,11 @@ export class TlsServerSession {
     const offeredSuites = clientHello.legacyCipherSuites ?? [];
     const policy = renegotiation !== undefined && this.renegotiationCipherList !== undefined
       ? resolveLegacyPolicy({ ...this.config, cipherList: this.renegotiationCipherList }) : this.policy;
+    const sharedGroup = this.supportedGroups.some((group) => isImplementedGroup(group) && clientHello.extensions.supportedGroups.includes(group));
     const usable = (definition: LegacySuiteDefinition | undefined): boolean =>
       definition !== undefined && policy.suites.includes(definition) && offeredSuites.includes(definition.code) && suiteUsableAt(definition, version)
-      && suiteMatchesCertificate(this.credentials.cert, definition);
+      && suiteMatchesCertificate(this.credentials.cert, definition)
+      && (!definition.keyExchange.startsWith('ECDHE') || sharedGroup);
     const serverOrder = policy.suites;
     const suite = this.config.preferServerCiphers === false
       ? offeredSuites.map((code) => serverOrder.find((definition) => definition.code === code)).find(

@@ -3,6 +3,7 @@ import { pemToCertChain, pemToCrl, pemToPrivateKey } from '@/network/pki/pem';
 import type { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import { defaultGnutlsPriority, parseGnutlsPriority, type GnutlsPriority } from '@/network/tls/gnutls/GnutlsPriority';
 import type { TlsDebug } from '../ldapChannel';
 import { LdapDebug } from '../ldapLog';
 import type { LdapOptions } from '../ldapOptions';
@@ -21,6 +22,7 @@ export interface TlsContext {
   readonly revocationLists: readonly CertificateRevocationList[];
   readonly clientCertificates: readonly X509Certificate[];
   readonly clientKey: PkiPrivateKey | null;
+  readonly priority: GnutlsPriority;
 }
 
 export type TlsContextInit =
@@ -37,6 +39,15 @@ function textOf(files: TlsFiles, path: string): string | null {
 
 export function initTlsContext(tls: LdapOptions['tls'], files: TlsFiles, debug: TlsDebug): TlsContextInit {
   let errmsg = '';
+  let priority = defaultGnutlsPriority();
+  if (tls.cipherSuite !== null) {
+    const parsed = parseGnutlsPriority(tls.cipherSuite);
+    if (parsed.ok === false) {
+      debug(LdapDebug.ANY, `TLS: could not set cipher list ${tls.cipherSuite}.\n`);
+      return { ok: false, errmsg };
+    }
+    priority = parsed.priority;
+  }
   const trustAnchors: X509Certificate[] = [];
 
   if (tls.caCertDir !== null) {
@@ -111,7 +122,7 @@ export function initTlsContext(tls: LdapOptions['tls'], files: TlsFiles, debug: 
     revocationLists.push(list);
   }
 
-  return { ok: true, context: { trustAnchors, revocationLists, clientCertificates, clientKey } };
+  return { ok: true, context: { trustAnchors, revocationLists, clientCertificates, clientKey, priority } };
 }
 
 const IS_A_DIRECTORY = 'Is a directory';

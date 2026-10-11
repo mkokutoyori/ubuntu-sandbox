@@ -5,7 +5,7 @@
  * avant tout octet TLS et se raconte en lignes `TLS:` sur `-d`. Un poste Linux
  * du laboratoire doit tenir les memes propos, ligne a ligne, que le vrai client.
  *
- * Autorite : un vrai `ldapsearch` 2.6.10 (GnuTLS 3.8.3) ; les 29 scenarios de
+ * Autorite : un vrai `ldapsearch` 2.6.10 (GnuTLS 3.8.3) ; les 41 scenarios de
  * `openldap-tls-context-corpus.json` ont ete executes avec les memes fichiers
  * (chemins identiques sous /tmp/tlslab), chaque variable posee en prefixe de
  * commande, et leurs lignes `TLS:` consignees telles quelles. Source lue :
@@ -27,6 +27,18 @@
  * chacun pour sa raison : le temoin du laboratoire ; les valeurs vides, qui
  * n'ont jamais eu d'effet (le contexte n'etait pas construit du tout) ; et le
  * libelle « (unknown error code) » d'un pair non approuve sous StartTLS.
+ *
+ * Ajout `TLS_CIPHER_SUITE` : `tlsg_ctx_init` juge la chaine de priorites AVANT tout
+ * fichier (`tlsg_parse_ciphers`), un echec ecrit « TLS: could not set cipher
+ * list <chaine>. » puis « TLS: init_def_ctx: . » (message vide : aucun
+ * `gnutls_strerror` n'a encore ete enregistre) et arrete la connexion ; 12
+ * scenarios mesures sur le vrai client (mot inconnu, sans protocole, NONE, sans
+ * chiffrement, sans echange de cles, modificateur inconnu, espace finale
+ * refusee et espace initiale toleree, chaine jugee avant le fichier CA, chaine
+ * valide laissant le fichier CA echouer, valeur vide = non definie). Avant
+ * l'ajout : 8 des 46 cas tombent (les huit refus) ; les quatre acceptations
+ * (espace initiale, chaine valide, valeur vide, chaine valide + CA absent)
+ * passent des deux cotes parce que la chaine n'etait alors pas evaluee du tout.
  *
  * Non attestable : le texte exact d'un fichier de cle chiffre (mot de passe
  * absent), non porte ici ; le contenu du magasin de confiance d'une vraie
