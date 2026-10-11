@@ -51,7 +51,14 @@ function checksumValue(flags: number, channelBindings: Uint8Array | null): Uint8
   return value;
 }
 
-export class GssInitiator {
+export interface GssContextInitiator {
+  readonly flags: number;
+  readonly clientDisplayName: string;
+  readonly securityContext: GssSecurityContext | null;
+  step(input: Uint8Array | null): GssStep;
+}
+
+export class GssInitiator implements GssContextInitiator {
   private state: 'start' | 'awaiting-reply' | 'established' | 'failed' = 'start';
   private sent: { ctime: number; cusec: number; subkey: Uint8Array; sequence: number } | null = null;
   private established: GssSecurityContext | null = null;

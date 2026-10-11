@@ -4,10 +4,11 @@ import { KerberosClient } from '@/network/kerberos/KerberosClient';
 import { decodeCcache } from '@/network/kerberos/ccache/FileCcache';
 import { AES256_PROFILE, decryptWithConfounder } from '@/network/kerberos/enctype/aesCtsHmacSha1';
 import { KG_USAGE_INITIATOR_SEAL } from '@/network/kerberos/gssapi/GssSecurityContext';
+import { decodeSpnegoToken } from '@/network/kerberos/gssapi/spnego/SpnegoToken';
 import { Krb5Context } from '@/network/devices/linux/kerberos/Krb5Context';
 import { Krb5GssClient } from '@/network/devices/linux/kerberos/Krb5GssClient';
 import type { Krb5Host } from '@/network/devices/linux/kerberos/Krb5Host';
-import { splitPdus, type RecordedConnection } from './openldap-replay-support';
+import { compareWithRecording, replay, splitPdus, type RecordedConnection, type Scenario } from './openldap-replay-support';
 
 export interface GssapiScenario {
   readonly name: string;
@@ -47,6 +48,12 @@ function tokenBody(token: Uint8Array): Uint8Array {
   return framed.content.subarray(oid.nextOffset + INITIAL_TOKEN_HEADER_BYTES);
 }
 
+function mechanismToken(credentials: Uint8Array): Uint8Array {
+  const spnego = decodeSpnegoToken(credentials);
+  if (spnego === null) return credentials;
+  return (spnego.kind === 'init' ? spnego.mechToken : spnego.responseToken) ?? new Uint8Array(0);
+}
+
 function saslCredentials(message: Uint8Array): Uint8Array | null {
   const bindRequest = parseAll(parseTLV(message, 0).content)[1];
   if (bindRequest === undefined || bindRequest.tagNumber !== 0) return null;
@@ -80,13 +87,13 @@ export function recordedGssRandom(scenario: GssapiScenario, serviceKey: Uint8Arr
   const request = pdus.find((entry) => entry.direction === 'c' && entry.pdu[0] === 0x30 && saslCredentials(entry.pdu) !== null);
   const reply = pdus.find((entry) => entry.direction === 's' && entry.pdu[0] === 0x30 && serverCredentials(entry.pdu) !== null);
   if (request === undefined) return null;
-  const apReq = decodeApReq(tokenBody(saslCredentials(request.pdu)!));
+  const apReq = decodeApReq(tokenBody(mechanismToken(saslCredentials(request.pdu)!)));
   const opened = decryptWithConfounder(AES256_PROFILE, serviceKey, KU_AP_REQ_AUTHENTICATOR, apReq.authenticator.cipher);
   const authenticator = decodeAuthenticator(opened.plaintext);
   const chunks = [authenticator.subkey!.keyValue, sequenceBytes(authenticator.seqNumber!), opened.confounder];
   let contextKey = authenticator.subkey!.keyValue;
   if (reply !== undefined) {
-    const apRep = decodeApRep(tokenBody(serverCredentials(reply.pdu)!));
+    const apRep = decodeApRep(tokenBody(mechanismToken(serverCredentials(reply.pdu)!)));
     const part = decodeEncApRepPart(decryptWithConfounder(AES256_PROFILE, serviceKey, KU_AP_REP_ENC_PART, apRep.encPart.cipher).plaintext);
     if (part.subkey !== undefined) contextKey = part.subkey.keyValue;
   }
@@ -136,18 +143,34 @@ export class RandomTape {
   }
 }
 
-function scriptedKdc(replies: readonly (readonly string[])[], random: (length: number) => Uint8Array, clockMs: () => number) {
+export function kdcRequestSummary(framed: Uint8Array): string {
+  const request = decodeKdcReq(framed.subarray(4));
+  const body = request.reqBody;
+  const initial = request.msgType === 'AS-REQ';
+  return JSON.stringify({
+    type: request.msgType, padata: initial ? request.padata.map((entry) => entry.type) : undefined, options: body.kdcOptions,
+    cname: body.cname?.nameString, realm: body.realm, sname: body.sname?.nameString, etype: initial ? body.etype : undefined,
+    renewable: body.rtime !== undefined,
+  });
+}
+
+function scriptedKdc(
+  replies: readonly (readonly string[])[], sent: Uint8Array[][], random: (length: number) => Uint8Array, clockMs: () => number,
+) {
   let dialed = 0;
   return (): KerberosClient | null => {
-    const reply = replies[dialed++];
+    const reply = replies[dialed];
     if (reply === undefined) return null;
+    const requests: Uint8Array[] = [];
+    sent[dialed++] = requests;
     const socket = {
       listeners: [] as ((data: Uint8Array) => void)[],
       onData(callback: (data: Uint8Array) => void) {
         this.listeners.push(callback);
         return () => { this.listeners = this.listeners.filter((candidate) => candidate !== callback); };
       },
-      send(_bytes: Uint8Array) {
+      send(bytes: Uint8Array) {
+        requests.push(bytes);
         for (const chunk of reply) for (const listener of [...this.listeners]) listener(bytesOfHex(chunk));
         return true;
       },
@@ -159,6 +182,7 @@ function scriptedKdc(replies: readonly (readonly string[])[], random: (length: n
 export interface ReplayedKrb5 {
   readonly gss: Krb5GssClient;
   readonly files: Map<string, Uint8Array>;
+  readonly sentRequests: Uint8Array[][];
 }
 
 export function replayedKrb5(
@@ -168,7 +192,8 @@ export function replayedKrb5(
   const cachePath = scenario.cacheEnv.replace(/^FILE:/, '');
   if (scenario.cache !== null) files.set(cachePath, bytesOfHex(corpus.caches[scenario.cache]));
   files.set('/etc/krb5.conf', new TextEncoder().encode(corpus.files[scenario.config]));
-  const dial = scriptedKdc(scenario.kdcReplies, random, () => Math.floor(clockMicroseconds() / 1000));
+  const sentRequests: Uint8Array[][] = [];
+  const dial = scriptedKdc(scenario.kdcReplies, sentRequests, random, () => Math.floor(clockMicroseconds() / 1000));
   const host: Krb5Host = {
     environment: (name) => (name === 'KRB5CCNAME' ? scenario.cacheEnv : null),
     readText: (path) => (files.has(path) ? Buffer.from(files.get(path)!).toString('latin1') : null),
@@ -186,5 +211,44 @@ export function replayedKrb5(
     querySrv: async () => [],
     dialKdc: () => dial(),
   };
-  return { gss: new Krb5GssClient(host, new Krb5Context(host)), files };
+  return { gss: new Krb5GssClient(host, new Krb5Context(host)), files, sentRequests };
+}
+
+const GSSAPI_PLUGINS = ['libgssapiv2.so', 'libplain.so', 'libdigestmd5.so', 'libcrammd5.so'];
+
+export async function replayGssapiScenario(corpus: GssapiCorpus, scenario: GssapiScenario, args: readonly string[]): Promise<string[]> {
+  const problems: string[] = [];
+  const cacheBytes = scenario.cache === null ? null : bytesOfHex(corpus.caches[scenario.cache]);
+  const key = cacheBytes === null ? null : serviceSessionKey(cacheBytes, ['ldap', 'vm']);
+  const recorded = key === null || scenario.connections[0].transcript.length === 0 ? null : recordedGssRandom(scenario, key);
+  const tape = new RandomTape([...recordedKdcNonces(scenario), ...(recorded?.chunks ?? [])], problems);
+  const clock = recorded?.clockMicroseconds ?? scenario.clockMicroseconds;
+  const krb5 = replayedKrb5(corpus, scenario, tape.take, () => clock);
+  const asScenario: Scenario = {
+    name: scenario.name, args, stdin: '', connections: scenario.connections,
+    stdout: scenario.stdout, stderr: scenario.stderr, exitCode: scenario.exitCode,
+  };
+  const outcome = await replay(asScenario, {
+    args, files: {}, saslPlugins: GSSAPI_PLUGINS, random: tape.take, gss: krb5.gss, debugLevel: scenario.debugLevel,
+  });
+  const found = compareWithRecording({ ...outcome, problems: [...problems, ...outcome.problems] }, scenario, scenario.debugLevel !== undefined);
+  if (scenario.cacheAfter !== undefined) {
+    const written = krb5.files.get(scenario.cacheEnv.replace(/^FILE:/, ''));
+    const writtenHex = written === undefined ? '' : Buffer.from(written).toString('hex');
+    if (writtenHex !== scenario.cacheAfter) {
+      let offset = 0;
+      while (offset < writtenHex.length && writtenHex[offset] === scenario.cacheAfter[offset]) offset++;
+      found.push(`the credentials cache differs after the run at hex offset ${offset}: real ...${scenario.cacheAfter.slice(Math.max(0, offset - 20), offset + 60)} simulated ...${writtenHex.slice(Math.max(0, offset - 20), offset + 60)}`);
+    }
+  }
+  if (tape.remaining !== 0) found.push(`${tape.remaining} recorded random draws were never consumed`);
+  scenario.kdcRequests.forEach((connection, index) => {
+    connection.forEach((chunk, position) => {
+      const sent = krb5.sentRequests[index]?.[position];
+      const recordedSummary = kdcRequestSummary(bytesOfHex(chunk));
+      if (sent === undefined) found.push(`KDC request ${index}.${position} was never sent: ${recordedSummary}`);
+      else if (kdcRequestSummary(sent) !== recordedSummary) found.push(`KDC request ${index}.${position} differs:\n--- real ${recordedSummary}\n--- simulated ${kdcRequestSummary(sent)}`);
+    });
+  });
+  return found;
 }

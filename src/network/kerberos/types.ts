@@ -81,6 +81,8 @@ export interface EtypeInfo2Entry {
 export const PA_TGS_REQ = 1;
 export const PA_ENC_TIMESTAMP = 2;
 export const PA_ETYPE_INFO2 = 19;
+export const PA_REQ_ENC_PA_REP = 149;
+export const PA_AS_FRESHNESS = 150;
 
 export const KDC_OPT_FORWARDABLE = 1 << 30;
 export const KDC_OPT_PROXIABLE = 1 << 28;

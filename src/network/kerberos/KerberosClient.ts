@@ -79,6 +79,8 @@ const TICKET_REQUEST_LIFETIME_SECONDS = 24 * 3600;
 const RENEWABLE_REQUEST_LIFETIME_SECONDS = 7 * 24 * 3600;
 
 export interface AsRequestOptions {
+  readonly etypes?: readonly number[];
+  readonly padata?: readonly PaData[];
   readonly forwardable?: boolean;
   readonly proxiable?: boolean;
   readonly renewable?: boolean;
@@ -119,6 +121,30 @@ export class KerberosClient {
     return reply;
   }
 
+  private initialRequest(
+    cname: PrincipalName, realm: string, sname: PrincipalName, options: AsRequestOptions,
+  ): { baseReq: KdcReq; nonce: number } {
+    const nonce = this.nextNonce();
+    const now = Math.floor(this.clockMs() / 1000);
+    const till = now + (options.lifetimeSeconds ?? TICKET_REQUEST_LIFETIME_SECONDS);
+    const rtime = now + (options.renewableLifetimeSeconds ?? RENEWABLE_REQUEST_LIFETIME_SECONDS);
+    const kdcOptions = kdcOptionsOf(options);
+    const baseReq: KdcReq = {
+      msgType: 'AS-REQ', padata: [...(options.padata ?? [])],
+      reqBody: {
+        kdcOptions, cname, realm, sname, till, rtime: (kdcOptions & KDC_OPT_RENEWABLE) !== 0 ? rtime : undefined,
+        nonce, etype: [...(options.etypes ?? [AES256_CTS_HMAC_SHA1_96])],
+      },
+    };
+    return { baseReq, nonce };
+  }
+
+  requestInitialCredentialsWithoutKey(username: string, realm: string, options: AsRequestOptions): boolean {
+    const cname = principalName(PrincipalNameType.NT_PRINCIPAL, username);
+    const sname = principalName(PrincipalNameType.NT_SRV_INST, 'krbtgt', realm);
+    return this.roundTrip(encodeKdcReq(this.initialRequest(cname, realm, sname, options).baseReq)) !== null;
+  }
+
   /** RFC 4120 §3.1 — the full AS exchange for `username`/`password` against `realm`, requesting a ticket for `serviceName` (defaults to the realm's own krbtgt, i.e. a plain TGT). */
   asExchange(
     username: string, password: PasswordSource, realm: string, serviceName: string | readonly string[] = 'krbtgt',
@@ -128,18 +154,7 @@ export class KerberosClient {
     const sname = typeof serviceName === 'string'
       ? principalName(PrincipalNameType.NT_SRV_INST, serviceName, realm)
       : principalName(PrincipalNameType.NT_SRV_INST, ...serviceName);
-    const nonce = this.nextNonce();
-    const now = Math.floor(this.clockMs() / 1000);
-    const till = now + (options.lifetimeSeconds ?? TICKET_REQUEST_LIFETIME_SECONDS);
-    const rtime = now + (options.renewableLifetimeSeconds ?? RENEWABLE_REQUEST_LIFETIME_SECONDS);
-    const kdcOptions = kdcOptionsOf(options);
-    const baseReq: KdcReq = {
-      msgType: 'AS-REQ', padata: [],
-      reqBody: {
-        kdcOptions, cname, realm, sname, till, rtime: (kdcOptions & KDC_OPT_RENEWABLE) !== 0 ? rtime : undefined,
-        nonce, etype: [AES256_CTS_HMAC_SHA1_96],
-      },
-    };
+    const { baseReq, nonce } = this.initialRequest(cname, realm, sname, options);
 
     const firstReply = this.roundTrip(encodeKdcReq(baseReq));
     if (!firstReply) return { ok: false, eText: 'no reply from KDC' };

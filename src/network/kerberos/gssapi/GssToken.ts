@@ -20,7 +20,7 @@ export const GSS_C_TRANS_FLAG = 0x100;
 const OBJECT_IDENTIFIER_TAG = 0x06;
 const INITIAL_CONTEXT_TOKEN_TAG = 0x60;
 
-function encodeOid(oid: string): Uint8Array {
+export function encodeOid(oid: string): Uint8Array {
   const arcs = oid.split('.').map(Number);
   const content: number[] = [arcs[0] * 40 + arcs[1]];
   for (const arc of arcs.slice(2)) {
@@ -31,7 +31,7 @@ function encodeOid(oid: string): Uint8Array {
   return encodeTLV('universal', OBJECT_IDENTIFIER_TAG, false, Uint8Array.from(content));
 }
 
-function decodeOid(content: Uint8Array): string {
+export function decodeOid(content: Uint8Array): string {
   const arcs: number[] = [Math.floor(content[0] / 40), content[0] % 40];
   let value = 0;
   for (const byte of content.subarray(1)) {
