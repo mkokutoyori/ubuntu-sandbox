@@ -19,7 +19,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchangeKeyPair } from './keyExchange';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
-import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { CertificateVerifier, VerificationReason } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { MAX_TLS_RECORD_LENGTH, type CipherSuite } from './types';
 import type { TlsDomainEvent } from './events';
@@ -79,6 +79,7 @@ export interface TlsClientConfig {
   readonly alpn?: readonly string[];
   /** RFC 6066 §3 — the host_name this client is asking for. */
   readonly serverName?: string;
+  readonly verifyHostname?: boolean;
   /** A ticket from a prior session's NewSessionTicket — offers PSK resumption (§4.2.11). */
   readonly resumptionTicket?: SessionTicket;
   /** Sent as 0-RTT data alongside ClientHello (§2.3) — only honored together with `resumptionTicket`. */
@@ -148,7 +149,7 @@ export class TlsClientSession {
   peerVerified = false;
   peerSignature: { readonly digest: string; readonly type: string } | null = null;
   serverTempKey: string | null = null;
-  peerVerificationReason: string | null = null;
+  peerVerificationReason: VerificationReason | null = null;
   /**
    * RFC 8446 §7.2 — this side's current application traffic secrets, set
    * once the handshake succeeds and ratcheted independently per direction
@@ -235,6 +236,10 @@ export class TlsClientSession {
 
   get legacyResumed(): boolean {
     return this.legacy?.resumed ?? false;
+  }
+
+  private get hostnameToVerify(): string | undefined {
+    return this.config.verifyHostname === false ? undefined : this.config.serverName;
   }
 
   get sessionKeyBits(): number | null {
@@ -427,7 +432,7 @@ export class TlsClientSession {
       offeredGroups: this.supportedGroups, clientHelloBytes: this.lastClientHelloBytes,
       clientRandom: this.clientRandom, clientVersionWire: PROTOCOL_VERSION_WIRE[ceiling],
       offersTls13: this.offersTls13(), verifier: this.config.verifier,
-      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.config.serverName,
+      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.hostnameToVerify,
       clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
       securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
       clientExtensions: this.legacyExtensions(),
@@ -480,7 +485,7 @@ export class TlsClientSession {
       offeredGroups: this.supportedGroups, clientHelloBytes: helloBytes,
       clientRandom: this.clientRandom, clientVersionWire: PROTOCOL_VERSION_WIRE[version],
       offersTls13: false, verifier: this.config.verifier,
-      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.config.serverName,
+      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.hostnameToVerify,
       clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
       securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
       clientExtensions: extensions, session: null,
@@ -631,7 +636,7 @@ export class TlsClientSession {
       this.peerCertificateChain = certificate!.certificateList;
       this.receivedStaple = certificate!.ocspStaple ?? null;
       const verification = this.config.verifier.verify(
-        leafCert, this.config.serverName, certificate!.certificateList.slice(1), 'serverAuth', this.policy.securityLevel,
+        leafCert, this.hostnameToVerify, certificate!.certificateList.slice(1), 'serverAuth', this.policy.securityLevel,
       );
       this.peerVerified = verification.ok !== false;
       if (verification.ok === false) {

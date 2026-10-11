@@ -66,7 +66,9 @@ export function generateSelfSignedCertificate(
   return { cert: signCertificate(fields, keys.privateKey), privateKey: keys.privateKey };
 }
 
-export function selfSignedServiceCertificate(subject: string): { cert: X509Certificate; keyPair: PkiKeyPair } {
+export function selfSignedServiceCertificate(
+  subject: string, subjectAltNames: readonly string[] = [],
+): { cert: X509Certificate; keyPair: PkiKeyPair } {
   const keyPair = PkiKeyPair.generate('rsa');
   const name = subject.includes('=') ? subject : `CN=${subject}`;
   const now = simulationNowMs();
@@ -74,6 +76,7 @@ export function selfSignedServiceCertificate(subject: string): { cert: X509Certi
     version: 3, serialNumber: '1', subject: name, issuer: name,
     notBefore: now - 1000, notAfter: now + 365 * 24 * 3600 * 1000,
     publicKey: keyPair.publicKey, signatureAlgorithm: 'sha256WithRSAEncryption',
+    ...(subjectAltNames.length > 0 ? { extensions: { subjectAltName: subjectAltNames } } : {}),
   };
   return { cert: signCertificate(fields, keyPair.privateKey), keyPair };
 }

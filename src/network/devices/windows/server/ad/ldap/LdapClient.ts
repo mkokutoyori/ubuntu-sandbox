@@ -107,17 +107,20 @@ export class LdapClient {
     };
   }
 
+  detachTls(): void {
+    this.tls = null;
+  }
+
   get isEncrypted(): boolean {
     return this.tls !== null;
   }
 
-  attachTls(config: TlsClientConfig): { ok: true } | { ok: false; reason: string | null } {
+  attachTls(config: TlsClientConfig): { ok: boolean; session: TlsClientSession } {
     this.rawSuspended = true;
-    const session = driveClientHandshake(this.socket, config);
+    const handshake = driveClientHandshake(this.socket, config);
     this.rawSuspended = false;
-    if (session === null) return { ok: false, reason: null };
-    this.tls = session;
-    return { ok: true };
+    if (handshake.established) this.tls = handshake.session;
+    return { ok: handshake.established, session: handshake.session };
   }
 
   private rawInbox: Uint8Array = new Uint8Array(0);
@@ -192,11 +195,11 @@ export class LdapClient {
     const [reply] = this.roundTrip({ kind: 'extendedRequest', requestName: START_TLS_OID });
     if (!reply || reply.protocolOp.kind !== 'extendedResponse') return { ok: false, result: NO_RESPONSE('extendedResponse') };
     if (reply.protocolOp.result.resultCode !== LdapResultCode.success) return { ok: false, result: reply.protocolOp.result };
-    const tls = driveClientHandshake(this.socket, config);
-    if (!tls) {
+    const handshake = driveClientHandshake(this.socket, config);
+    if (!handshake.established) {
       return { ok: false, result: { resultCode: LdapResultCode.operationsError, matchedDN: '', diagnosticMessage: 'TLS handshake failed' } };
     }
-    this.tls = tls;
+    this.tls = handshake.session;
     return { ok: true, result: reply.protocolOp.result };
   }
 

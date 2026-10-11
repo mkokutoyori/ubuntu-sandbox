@@ -1,12 +1,17 @@
 import type { LdapOptions } from './ldapOptions';
 
+export type TlsDebug = (level: number, text: string) => void;
+
 export interface TlsUpgradeRequest {
   readonly serverName: string;
   readonly tls: LdapOptions['tls'];
   readonly implicit: boolean;
+  readonly debug: TlsDebug;
 }
 
-export type TlsUpgradeOutcome = { readonly ok: true } | { readonly ok: false; readonly detail: string };
+export type TlsUpgradeOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly detail: string | null; readonly errno: number | null };
 
 export type ChannelRead =
   | { readonly kind: 'data'; readonly bytes: Uint8Array }
@@ -24,7 +29,7 @@ export interface LdapChannel {
   write(bytes: Uint8Array): boolean;
   read(want: number): ChannelRead;
   readable(): boolean;
-  upgradeTls(request: TlsUpgradeRequest): TlsUpgradeOutcome;
+  upgradeTls(request: TlsUpgradeRequest): Promise<TlsUpgradeOutcome>;
   readonly peerAddress: string;
   tlsState?(): LdapTlsState | null;
   readonly localEndpoint: string;

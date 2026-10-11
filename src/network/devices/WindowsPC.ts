@@ -4869,7 +4869,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const store = this.getDirectoryStore();
     if (!store) { socket.close(); return; }
     const serviceSecret = store.getComputerSecret(this.getHostname());
-    if (!this.ldapStartTlsIdentity) this.ldapStartTlsIdentity = selfSignedLdapCert(store.getRealm());
+    if (!this.ldapStartTlsIdentity) {
+      const dnsHostName = `${this.getHostname()}.${store.dnsName}`.toLowerCase();
+      this.ldapStartTlsIdentity = selfSignedLdapCert(dnsHostName, [dnsHostName]);
+    }
     const forest = getForestForDomain(store.dnsName);
     const otherDomainRoots = forest
       ? forest.listDomains()

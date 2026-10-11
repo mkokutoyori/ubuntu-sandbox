@@ -235,6 +235,7 @@ import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/int
 import { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
 import type { SshKeygenTerminal } from '@/network/protocols/ssh/SshKeygenCommand';
 import { SSHD_LISTEN_BACKLOG } from './linux/ports/ListenBacklogs';
+import { CA_BUNDLE_PATH, caBundlePem } from '@/network/pki/caBundle';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -417,6 +418,7 @@ export abstract class LinuxMachine extends EndHost
         () => `${this.ipv4Settings.get(knob.name)}\n`,
         (text) => this.ipv4Settings.write(knob.name, text));
     }
+    this.executor.vfs.registerGeneratedFile(CA_BUNDLE_PATH, () => caBundlePem(this.trustedCAs), 0o644);
     this.executor.vfs.mkdirp('/proc/sys/net/core', 0o755, 0, 0);
     for (const knob of LINUX_CORE_KNOBS) {
       this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/core/${knob.name}`,

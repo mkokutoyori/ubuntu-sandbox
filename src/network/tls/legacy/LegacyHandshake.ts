@@ -7,7 +7,7 @@ import {
 } from '@/crypto/dh/modp';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { allowsMissingCertificate, continuesAfterVerificationFailure, type ClientCertPolicy } from '../clientAuthPolicy';
-import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { CertificateVerifier, VerificationReason } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { alertFromRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from '../alerts';
 import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchangeKeyPair } from '../keyExchange';
@@ -622,7 +622,7 @@ export class LegacyClientHandshake {
   peerSignature: { readonly digest: string; readonly type: string } | null = null;
   serverTempKey: string | null = null;
   peerVerified = false;
-  peerVerificationReason: string | null = null;
+  peerVerificationReason: VerificationReason | null = null;
   traffic: LegacyTraffic | null = null;
   peerAlert: TlsAlert | null = null;
   negotiatedVersion: LegacyVersion | null = null;

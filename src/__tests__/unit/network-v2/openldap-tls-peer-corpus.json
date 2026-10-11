@@ -1,0 +1,240 @@
+{
+ "localFqdn": "vm",
+ "certificates": {
+  "san_ok": "-----BEGIN CERTIFICATE-----\nMIIDGzCCAgOgAwIBAgIUMCcZrJQn0XMI6wjg6tAkEFBGeLIwDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU3WhcNMjYxMDMxMDcwNDU3\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nANG8ybAAEXrPlFnt69kWv9gluNPpQxM20Cu4N8HVJ8y7JP58B9no5mt/URV/4rC1\n6RaCX7JYH/xiQDumDiSB9F4MPJ5NRka10QGyLJmhp+xczEjA+1VHuu2hBkQQ2voX\nDfc0CDgMKRV/eWTIlMhmoAZj54KdOkMX+qsQYrE2Y3qAAFbXTTngvrDOooTwGCCz\nq2NdLtvn2GEoy8AzP8xT79FVxjPwX6tCMJS4dGmifaube4bBRfS6P7iFFrVOanBR\n89zZNgNZ4t51V7II+lJvdOqUF24ujxLVb2M+nsj6JBJYMfxbv2SggnlsEj6XybQo\nQCXlA9yEh7UBZQ109lUqKi0CAwEAAaNzMHEwHQYDVR0OBBYEFODnpOeCN7QIYrv8\njKzcj9J5DPdUMB8GA1UdIwQYMBaAFODnpOeCN7QIYrv8jKzcj9J5DPdUMA8GA1Ud\nEwEB/wQFMAMBAf8wHgYDVR0RBBcwFYICdm2CCWxvY2FsaG9zdIcEfwAAATANBgkq\nhkiG9w0BAQsFAAOCAQEAka11qy5QV53XHZwlVYU6L1OF6HQatcNEugVy/vsSZcYP\nZX0X2IDkL0tyJ9O6/KwUQB9Dx0inDTSxvKx67AFyJ1VBQVqf2A34pyAHdLWOiSDK\nlhw5hbrY/+QSd9g0P4EydExJB9TcyQXEowFA+HbQ1XLiGY0XrfGlehhxdz0Krq2U\nP5jsQYHlE5SRCW6cxhF2xJJlIxQ75UJN91f5hXLMMZL/oBsOSiJwIahgzBdwlxi4\nZXyQ1VxRVC4+BWgMeMmQNc/mfe8+nqCPuYtr3HXonoexiynru7KtmM2XFdW/obLA\nDu6806M4Mz01JDM/p+2l/2WYjdtbSxyLSBPtLY9Iww==\n-----END CERTIFICATE-----\n",
+  "cn_only": "-----BEGIN CERTIFICATE-----\nMIIC+zCCAeOgAwIBAgIUIb7ukv0aIiwEjRA60OzXpZIM40QwDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU4WhcNMjYxMDMxMDcwNDU4\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAKESB+Wualpu3LidWizQxDLkqniYj1i6Jr648JQthjB8T4b0OHo+VLvQ6mMcpB0V\nwXpJ9n+oJUeBl0hki9wVrcaISMd+ILgLEIGeyPrLEzxZ3bx5e44ANM1zCFpR2QJG\n0tNah5q8ZgKy5NQQK+2BISTncf5SFEZI+m9EGpmnksOAHZ9RjNR5WPD1QWy0QCka\ns6fchgvTG819svdRvvZeFbLbmF7SCoc6r/qgFPB7RFxt7Jt1pnh/x38t4Q1HcrkH\nHnZbBYe8UDyPBYqeNuRzCBK1CLLNTCEeMLeaEdWdM9vhtp+1MqLcHvpaNOjynGvN\nMz+i4zHq/SLgWgDNOjFysnMCAwEAAaNTMFEwHQYDVR0OBBYEFJmD6X+bYiMHfHJg\n5Xu38En912ZdMB8GA1UdIwQYMBaAFJmD6X+bYiMHfHJg5Xu38En912ZdMA8GA1Ud\nEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAFU309J9TiHCFgYsArgn2jVv\nRCXbiCkmmKGYkNX3OY+n7rcD4H5PvEIprC1rcCftsAkxK/gls1bQfpuJh7dtLQ66\nwZEf5ktER3srz6Thf6m/I6nzYRFhMydM4ab9Eu5NrqWzsTkn9420nGHRChuuM4lL\nwzvTEiFDe0EPcgp4uqNXpXBr/IxcRRdNhzw6p6C1Z5Gkf5kql02QMHcCZm58qq4G\nbdmptES90oMphRP2ukUW6J6PpiRy6arphEz/7cMYVL/19b79zW79QWkEGy+A8xNr\nNTrmURt2v8H2G3iQEbvcNmVLiyihh2Im9Jss26CbPIalAsy8EznO1vsM9BetMQU=\n-----END CERTIFICATE-----\n",
+  "san_other": "-----BEGIN CERTIFICATE-----\nMIIDFTCCAf2gAwIBAgIURTcIXtkhk//W6+RfDDQffH4oEgowDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU4WhcNMjYxMDMxMDcwNDU4\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAMNJOUHWSoG2LUe0i3s1fEVh55kSol/4jVTDiwNKkNb+6meMp5l3SWm1QUM2ywrA\nek7i2vsW+yynywduNM6FnuVbJFghfcmrcg9bk263KXOz0Pdtr6znwC5vPVQP99hG\nG10K2W3jz5xGhV+KbJKc1Tk+V7CIal9bu6Oav9365jSNL8kZDMxyMaA4EhTvmai8\nWL7D1d7iUauFxE718xUcXLJGwqHXmdYIlfCNV4MPG3h0/k4nn+c9O2TjO+Unxori\nNpyJJQeRvrOLISV371DFOKQZlT1jSbxcQL9s39pL2aPTo+6NpTrPU/WOVtxN44HR\noX6zfxlpwl0oVrBKxnQz7H0CAwEAAaNtMGswHQYDVR0OBBYEFLfFQ0DEzaLMkU1O\nvnlXVc7NGN1BMB8GA1UdIwQYMBaAFLfFQ0DEzaLMkU1OvnlXVc7NGN1BMA8GA1Ud\nEwEB/wQFMAMBAf8wGAYDVR0RBBEwD4INb3RoZXIuZXhhbXBsZTANBgkqhkiG9w0B\nAQsFAAOCAQEAlhUNwCIvyDPClKnipDrM/G8Iws98R3oZRh/xS3ncnWYw70OnRfrM\nyuewwQpRnh3zjuFqdEML93IZvhSjBSYI79lAJAspufYrNtnL20mmXumpQ4+E+oYy\ne3l2xbD+KULnV/WBWAYSsGLa+UZdZkLt0jTvsUcjcN7PQNsnZ/9TXP2/4HymxlIM\naS9P91PRUSDcChlKH42WmiQJHoCoRxdXQQoFER/4Yz7iVBrpY1IYlcUi3+U20wsT\nwa6KTiiKhkZZL18pIw4hzsUcFUxlgRFzvJMg4F5noBA8qtCuH0yKWvJcKVXn9GzO\nA6FnkE7sbY99/8ItnC7jXKEUeFVnY3kbww==\n-----END CERTIFICATE-----\n",
+  "wild": "-----BEGIN CERTIFICATE-----\nMIIDHzCCAgegAwIBAgIUNoZ+hDEmQ+yfmSZ1l+w/2dMVOKYwDQYJKoZIhvcNAQEL\nBQAwEzERMA8GA1UEAwwId2hhdGV2ZXIwHhcNMjYxMDExMDcwNDU4WhcNMjYxMDMx\nMDcwNDU4WjATMREwDwYDVQQDDAh3aGF0ZXZlcjCCASIwDQYJKoZIhvcNAQEBBQAD\nggEPADCCAQoCggEBAJwP3e7JDckqgGXmRUQfimL9Pa0I3u8gH8J3NDbaDJO7x5zb\nYPO40ndxe31Y8VwtuBKXzRLR50lPaOJPYwRaVoVO14ylzxJHn2HC0M8Icc2KptT9\ng+3jlrvbzu4EkKOL6ejYUT4F8W/uMiuLCt54FMVJ8a2jjiSKn552q52Lq8j5lom9\neCtaH1/kMwzwbEiHnf6zdolMca4wrHPMIGqjRzMqNMIDFdW3Z33xNyMCLSXfFWMB\n2Q482vsSdfJgC1i+qicSlwGP0RC0X99pVrY4X99YYEZ+f7i9c+qjEbfU/BwRJdwR\nksY93XJkWSJaLAykCCkcx7pCepS8Jdx0ycAYvl0CAwEAAaNrMGkwHQYDVR0OBBYE\nFCP2AN5RWHIJsYtJSHK4T8ACzLqdMB8GA1UdIwQYMBaAFCP2AN5RWHIJsYtJSHK4\nT8ACzLqdMA8GA1UdEwEB/wQFMAMBAf8wFgYDVR0RBA8wDYILKi5jb3JwLnRlc3Qw\nDQYJKoZIhvcNAQELBQADggEBAGcQa6Wh4dS4M4hM3Krt4z3AMJ6X/BGHsLkqcDok\nZTlaWhUSKcxzPjsTq1gCBDsg75wsLs6Y31jfXp4+wWEJfE6APSks4iw0CuD0ugmj\n7cbBXZwcM2f6lOh1qJimWRwKHnSH9IsSn3RxzsVIM9+U+e3lwCl3bHTUygeFyoX5\nvr+IzHjaMlm993Eo5orkEhYxSJ8yWKpnb1BesyxIl78EB3HBKLEbhQuv4JGIXch/\nKCO8FHHuCYcJrNk0KiJaKgoYuozk47sxXA+i+yFJerg104XqISB2ZW3ABKRIkSxH\nAK1gPb1WyNZBkxLz6avZJjX3vyCwLZTf8m6snTuAQjCGqrk=\n-----END CERTIFICATE-----\n",
+  "ip_only": "-----BEGIN CERTIFICATE-----\nMIIDDDCCAfSgAwIBAgIUUvMClh1uoyKwbgaCee2P89cafpwwDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU4WhcNMjYxMDMxMDcwNDU4\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAMfzVb5UfzEi4PK5S18U7jh2oisU9iqYxX4aFLgiXkPft9CquaAp93lmjLFwI2Pq\nPFVWrNueRDZMMtqYzAXeVJ3ptdzDIikPIQN9zKoogcuxRZayxO6E4RXUa7mrZRd6\nsNDrtW/vDb4q0oY3w9eSPhP3nK5mtUk+xI37W8SGmzp+SKT5Ojq8z9EdCNmXhyrD\nZahRG/tNYpDHIL2IFe5kgtcuAFfWG+kP/faM7kcDxSSljWJonLidknsXxLKXma1B\nBpkCP5O8Sr5h1uUoPiptqfx/ZrKShoRx9SquykM2A34LS5Lhj4MOjj01JftrBNYk\nHnL/Q9szpMeqezBcs+nROe0CAwEAAaNkMGIwHQYDVR0OBBYEFNnjFvrb7odz2KGM\nydYlg/UetchqMB8GA1UdIwQYMBaAFNnjFvrb7odz2KGMydYlg/UetchqMA8GA1Ud\nEwEB/wQFMAMBAf8wDwYDVR0RBAgwBocEfwAAATANBgkqhkiG9w0BAQsFAAOCAQEA\nGtbSuSMhsDu0t3gqJPAptrZzlZV3PUObqPNkedMbrU9dMJt08uMP8guQE3E3V1F6\nSOp0LBbp1x1R6f4NKY6LTSRfxyT6QC7XQKqwvAKCPWlHDmAtL5zQogmwE7KFIaJP\nrHSdP7ZNZ7z6QTTat5+cI6uKPU1joDi4qBrfKHiDmwoPE1YLM68k9yhOiT2yzial\nfBAb44wvvfmLK59/Xcg/0F7m+WnHtrc7NBgk41dqBGP+MfgHOz2WCUfd4upvqbeA\nl+pgMGUzGXm2FBsTadNTpIURumfsp5RvbqxnrTApfTsztA8eCfLx9TUaHa6BpROA\nziB9oFLx2PPklghBP5aZRw==\n-----END CERTIFICATE-----\n",
+  "nocn_san": "-----BEGIN CERTIFICATE-----\nMIIDDjCCAfagAwIBAgIUNTnZB8ua8qwRcKKZkJhCAxym1UowDQYJKoZIhvcNAQEL\nBQAwDzENMAsGA1UECgwEbm9jbjAeFw0yNjEwMTEwNzA0NTlaFw0yNjEwMzEwNzA0\nNTlaMA8xDTALBgNVBAoMBG5vY24wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEK\nAoIBAQDl3KJdhM4QU3SrSKpelm5RO85owaEVfeO4Yov7ibQZ6Y9CKCYj7YKxnfyS\n6Kl01u6ozZRvswsYtEJw0BoE9g9Z2ocvOOa3YTe1w98au9aFMqNMgRvZWLz49uNs\nj30/kn2I+d4R8Li+yBQG33CLdr5TBHQ8LUaFiGmRTlxao7nn5B7YwcqW2C4jc/GT\nY9Xju1m/u1SKShui+qiJEgkD5mrN1DwU9M+sNXGd0OewoOjSXmMHQBnXdkMxtBLH\n7Pl8kv2D8L2dsZsB0pSCKij9eF3228F8eZDf523qfRDbhmWx28a6mpwlb5HW/hF6\n/Nb5PW1/NVx6UNB3BUtK9pGZlORBAgMBAAGjYjBgMB0GA1UdDgQWBBT+R0whyHWN\nqGaK2cT3dMg5SlfTzzAfBgNVHSMEGDAWgBT+R0whyHWNqGaK2cT3dMg5SlfTzzAP\nBgNVHRMBAf8EBTADAQH/MA0GA1UdEQQGMASCAnZtMA0GCSqGSIb3DQEBCwUAA4IB\nAQAPj+pJLepfgoVi7G87FY7F8HOd4DUGr/DxmPQVKRRQ0nDQaTQOB9gYCf7odyev\nz7w3/irZBkeZK2xtEOhiTjYV4ANhU+Sg8Jc65f7wjvFHLlFLSlFSr21JkPGMtv6O\nbMr8UqXEwdJ4a7PNzRW4vS8noKLNS7BFxpTPNOy0w81VWC/GEedZ//w8/zfOWfUK\ni/dKMdQ4ST6pZH8SX0V58SoCK4w0u+bd4DHWgU1vPI4djY8qBL3B2CdeMzBH51J5\n9hXFJF4WZFfIfM5viOC5IXgX6UpRZuTrtYYCUW/saJ67FnHjNMw4tZySbrEweTUp\nKWtFf083Jt+zHE0E6Bw/pcB5\n-----END CERTIFICATE-----\n"
+ },
+ "hostMatrix": {
+  "san_ok/vm": "YYYYYYYYYYYYYYYYYYYYYYYYY",
+  "san_ok/localhost": "YYYYYYYYYYYYYYYYYYYYYYYYY",
+  "san_ok/127.0.0.1": "YYYYYYYYYYYYYYYYYYYYYYYYY",
+  "san_ok/foo.corp.test": "YYYYYYYYYYY....Y....Y....",
+  "cn_only/vm": "YYYYYYYYYYYYY..YYY..YYY..",
+  "cn_only/localhost": "YYYYYYYYYYYYY..YYY..YYY..",
+  "cn_only/127.0.0.1": "YYYYYYYYYYY....Y....Y....",
+  "cn_only/foo.corp.test": "YYYYYYYYYYY....Y....Y....",
+  "san_other/vm": "YYYYYYYYYYYY...YY...YY...",
+  "san_other/localhost": "YYYYYYYYYYYY...YY...YY...",
+  "san_other/127.0.0.1": "YYYYYYYYYYY....Y....Y....",
+  "san_other/foo.corp.test": "YYYYYYYYYYY....Y....Y....",
+  "wild/vm": "YYYYYYYYYYY....Y....Y....",
+  "wild/localhost": "YYYYYYYYYYY....Y....Y....",
+  "wild/127.0.0.1": "YYYYYYYYYYY....Y....Y....",
+  "wild/foo.corp.test": "YYYYYYYYYYYYYYYYYYYYYYYYY",
+  "ip_only/vm": "YYYYYYYYYYYY...YY...YY...",
+  "ip_only/localhost": "YYYYYYYYYYYY...YY...YY...",
+  "ip_only/127.0.0.1": "YYYYYYYYYYYYYYYYYYYYYYYYY",
+  "ip_only/foo.corp.test": "YYYYYYYYYYY....Y....Y....",
+  "nocn_san/vm": "YYYYYYYYYYYYYYYYYYYYYYYYY",
+  "nocn_san/localhost": "YYYYYYYYYYYYYYYYYYYYYYYYY",
+  "nocn_san/127.0.0.1": "YYYYYYYYYYY....Y....Y....",
+  "nocn_san/foo.corp.test": "YYYYYYYYYYY....Y....Y...."
+ },
+ "chains": {
+  "expired": {
+   "pem": "-----BEGIN CERTIFICATE-----\nMIICxTCCAa2gAwIBAgIBATANBgkqhkiG9w0BAQsFADANMQswCQYDVQQDDAJ2bTAe\nFw0yMDAxMDEwMDAwMDBaFw0yMTAxMDEwMDAwMDBaMA0xCzAJBgNVBAMMAnZtMIIB\nIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0PSgyFWuFt2dJD+QtCZ9Og4X\nndiMJfu1GIHCJT46+rDANRMarVHFNYITjUeRdJACktkYUCtvuHY5Xf3824e5AQ60\nbuHpqnvh+l6Gc/p5ztUy9plM/jC5hLYVSE9MD64lM56Riphbgu1mZGHByxue+Vcq\nbt7rZu/w47N8tEwNopX5pMXK7p8zYqAF/JK/eOb5osi/6eBtvv6N2dG3oZwWQX5+\nwNjHTDq3D5aLMbBvviKGsK1asOdNV4usxjoHqKl8rJ7CN7dGf9KTmN1coS5/dFUj\nrqaBduQcRgCf2yNsq2aTNU71PEQATepvcVWtvO1/mskYZZ/AN7/05+3xw7V4vwID\nAQABozAwLjANBgNVHREEBjAEggJ2bTAdBgNVHQ4EFgQUkqH0N/UBqStUBnFuiMep\nr6JNlvQwDQYJKoZIhvcNAQELBQADggEBAHExtScW8R9PeKP/q2fJdmXFuD8r4z0U\nBsy/Qqaboc205X4CFRW/MAnRc+SFN+pdMBVydplMyT7oQfQZh0NwKLOUvyidu5L1\nDdmnk/nBTYBPvcWYyDbgRT7nUeZG4DECe+ejDukVWFu1EhkEeKbpvKhTswfcE4fC\nVy0JAZLQVSkgAFb1YqVOu/hG95iAeVtaGy5eMDDE7xNKJRNRTVE++nYSZRW/xUSp\nWP+vu0KVM3ydQ6jaNFK62MuEEwZs6DN1jXY7muhXLPaSyTlQwWcsPmt5AZdpflxq\nDD8D6hbno5KJ6B51gQkFFn1fNAwxiglK6YQ9+DAn09UZTILiUGuB0ys=\n-----END CERTIFICATE-----\n",
+   "results": {
+    "never": "Y",
+    "allow": "Y",
+    "try": ".",
+    "demand": ".",
+    "hard": "."
+   },
+   "lines": [
+    "TLS: peer cert untrusted or revoked (0x402)",
+    "TLS: can't connect: (unknown error code)."
+   ]
+  },
+  "future": {
+   "pem": "-----BEGIN CERTIFICATE-----\nMIICxTCCAa2gAwIBAgIBAjANBgkqhkiG9w0BAQsFADANMQswCQYDVQQDDAJ2bTAe\nFw0zMDAxMDEwMDAwMDBaFw0zMTAxMDEwMDAwMDBaMA0xCzAJBgNVBAMMAnZtMIIB\nIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwmieOJvZdM1ngMMP7R1B2g24\nn2+zga94/IJSpdjR55IATcqL1ZyOtUo/xRuvaP2e64zqzxR4PmSsd91WcsZBKGSL\n0PuD6pohDHDw+2eIKLqPwweQ53yrRq9orPhXDdfUWERrBgvuj4rXFtWQJuf4QIyA\nDfgDqMEXtt8t8bWlQS6NWqvMiMie/ec2e/+y7v5E1yDEkjvRAKxdDJR1n+XtVDPO\nrrEt8la+46DNndn2MlXDIekGfAKTjzr4Y3GW/SxSnYPHvwdixrKJjw1xBPv25aCI\n/0lzHWVPzgZ9jUsZRMXaFCozOTwacyX5kFkl9Oj15a2/ptq1u1vuJ0O9O+7oLwID\nAQABozAwLjANBgNVHREEBjAEggJ2bTAdBgNVHQ4EFgQUW1Rvgej/lXJqlJmIuLJj\no5xeQWgwDQYJKoZIhvcNAQELBQADggEBAGPx0qPD6wJXoFaZzCL0Zlvt7KJNfYfz\nKbgl9+hNr6z72kYMhgxsdQ/Nx+tBQHPNLdcLhCUWRzVU4GxafzHkkuZSxbZxV4+4\nMZAQW2mvQs4PT7FCwm5zP9EbKRqGY9KZUEzdTywMTWBWgKdcRBaT8MFNhrNn1v8u\n5UpMMfnzhQ9W1C3kiRTJ/eK0y0a9S0QM6MrQkwcXHuGDQtNStWUBfrEkEC8V3uWu\nxn78fRkRFUtgSCga5ceQhfeEYxOAuK3NgTGiNMHD+Qo3YVpNn5iS6ARR33bvREUO\nlfKZaxpeskEVHgcADfQ505GkIsJGmTKxPDcCc2vYiZkqY2gXTrM9UVs=\n-----END CERTIFICATE-----\n",
+   "results": {
+    "never": "Y",
+    "allow": "Y",
+    "try": ".",
+    "demand": ".",
+    "hard": "."
+   },
+   "lines": [
+    "TLS: peer cert untrusted or revoked (0x202)",
+    "TLS: can't connect: (unknown error code)."
+   ]
+  }
+ },
+ "untrustedLines": [
+  "TLS: peer cert untrusted or revoked (0x42)",
+  "TLS: can't connect: (unknown error code)."
+ ],
+ "pins": [
+  {
+   "label": "md5 of the key",
+   "value": "md5:+TDNtUzsGpAbWOMbU2ACag==",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha1 of the key",
+   "value": "sha1:TOFMBI8PkBZ3BhKjhKdHE8tVA60=",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha224 of the key",
+   "value": "sha224:i7lUokQ60lNJcgv4MlxJpclWaS/HQOgvOE6kgw==",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha256 of the key",
+   "value": "sha256:PW5kEu2ttXTHsVSF0eMZnZuLLDKOntR95yt/uxy+5cA=",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha384 of the key",
+   "value": "sha384:59CgEsrEbasIx2dESvg6IaEJkD2K6g+wQtx1Z0+FgYEL1aEhDCIcXmdElFiKW+vG",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha512 of the key",
+   "value": "sha512:UmzOW+gG29smt/uQw405Uf53tvDGJXpnzM5sO1xuqVVXtsBMK9fuHe+e2FpTDVnBbKm6Yt3U+WTvJKJ+SM7Dmw==",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha3-224 of the key",
+   "value": "sha3-224:ZxMmptQ+HW+bKwvwteq/OoG8+qtedaMNawQ8Kw==",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha3-256 of the key",
+   "value": "sha3-256:f4H9jqmWUUJf4qrtH2D43CC8HwZkKK94wxW1NAu0nAI=",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha3-384 of the key",
+   "value": "sha3-384:6Hvkhu3ekC8eSBduQ3ISgyVZ58mgGgGg1jIJnrEsooCicC4xM9U+Y61csxRpmaSW",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha3-512 of the key",
+   "value": "sha3-512:vG25c9u36hGa/UzcI0Mv32UlrGcgVqWW/1YyT6K1ZoT0PGu36nQwlopq1SlkG6ukn02Jm3pOQdHZshSYmuAL1g==",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "SHA256 uppercase",
+   "value": "SHA256:PW5kEu2ttXTHsVSF0eMZnZuLLDKOntR95yt/uxy+5cA=",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "raw key without algorithm",
+   "value": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0bzJsAARes+UWe3r2Ra/2CW40+lDEzbQK7g3wdUnzLsk/nwH2ejma39RFX/isLXpFoJfslgf/GJAO6YOJIH0Xgw8nk1GRrXRAbIsmaGn7FzMSMD7VUe67aEGRBDa+hcN9zQIOAwpFX95ZMiUyGagBmPngp06Qxf6qxBisTZjeoAAVtdNOeC+sM6ihPAYILOrY10u2+fYYSjLwDM/zFPv0VXGM/Bfq0IwlLh0aaJ9q5t7hsFF9Lo/uIUWtU5qcFHz3Nk2A1ni3nVXsgj6Um906pQXbi6PEtVvYz6eyPokElgx/Fu/ZKCCeWwSPpfJtChAJeUD3ISHtQFlDXT2VSoqLQIDAQAB",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "sha256 hash without algorithm",
+   "value": "PW5kEu2ttXTHsVSF0eMZnZuLLDKOntR95yt/uxy+5cA=",
+   "accepted": false,
+   "startTls": "ldap_start_tls: Connect error (-11)",
+   "lines": [
+    "tlsg_session_pinning: public key hash does not match provided pin."
+   ]
+  },
+  {
+   "label": "sha256 of another value",
+   "value": "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+   "accepted": false,
+   "startTls": "ldap_start_tls: Connect error (-11)",
+   "lines": [
+    "tlsg_session_pinning: public key hash does not match provided pin."
+   ]
+  },
+  {
+   "label": "sha-256 spelling",
+   "value": "sha-256:PW5kEu2ttXTHsVSF0eMZnZuLLDKOntR95yt/uxy+5cA=",
+   "accepted": false,
+   "startTls": "ldap_start_tls: Can't contact LDAP server (-1)",
+   "lines": [
+    "tlsg_session_pinning: unknown hashing algorithm for GnuTLS: 'sha-256'"
+   ]
+  },
+  {
+   "label": "rmd160",
+   "value": "rmd160:AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+   "accepted": false,
+   "startTls": "ldap_start_tls: Can't contact LDAP server (-1)",
+   "lines": [
+    "tlsg_session_pinning: unknown hashing algorithm for GnuTLS: 'rmd160'"
+   ]
+  },
+  {
+   "label": "RMD160",
+   "value": "RMD160:AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+   "accepted": false,
+   "startTls": "ldap_start_tls: Can't contact LDAP server (-1)",
+   "lines": [
+    "tlsg_session_pinning: unknown hashing algorithm for GnuTLS: 'RMD160'"
+   ]
+  },
+  {
+   "label": "md2",
+   "value": "md2:AAAAAAAAAAAAAAAAAAAAAA==",
+   "accepted": false,
+   "startTls": "ldap_start_tls: Can't contact LDAP server (-1)",
+   "lines": []
+  },
+  {
+   "label": "unknown algorithm",
+   "value": "md9:AAAA",
+   "accepted": false,
+   "startTls": "ldap_start_tls: Can't contact LDAP server (-1)",
+   "lines": [
+    "tlsg_session_pinning: unknown hashing algorithm for GnuTLS: 'md9'"
+   ]
+  },
+  {
+   "label": "not base64",
+   "value": "bogus",
+   "accepted": true,
+   "startTls": "ok",
+   "lines": []
+  },
+  {
+   "label": "empty hash after the colon",
+   "value": "sha256:",
+   "accepted": false,
+   "startTls": "ldap_start_tls: Connect error (-11)",
+   "lines": [
+    "tlsg_session_pinning: public key hash does not match provided pin."
+   ]
+  }
+ ],
+ "serverNameIndication": {
+  "vm": "vm",
+  "127.0.0.1": null,
+  "localhost": "localhost",
+  "foo.corp.test": "foo.corp.test"
+ }
+}

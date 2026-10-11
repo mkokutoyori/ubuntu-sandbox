@@ -1,3 +1,4 @@
+import { ldapDecodeB64Inplace } from './base64';
 import { LdapRc } from './ldapErrors';
 import { parseSecprops } from './sasl/saslSecprops';
 import { defaultSecurityProperties, type SaslSecurityProperties } from './sasl/saslTypes';
@@ -12,6 +13,11 @@ const CHANNEL_BINDING_KINDS: readonly ChannelBindingKind[] = ['none', 'tls-uniqu
 
 export const TlsRequireCert = { NEVER: 0, HARD: 1, DEMAND: 2, ALLOW: 3, TRY: 4 } as const;
 export const LDAP_PORT_DEFAULT = 389;
+
+export interface PeerKeyPin {
+  readonly algorithm: string | null;
+  readonly hash: Uint8Array;
+}
 
 export interface LdapOptions {
   version: number;
@@ -43,7 +49,7 @@ export interface LdapOptions {
     protocolMax: string | null;
     crlCheck: string | null;
     crlFile: string | null;
-    peerKeyHash: string | null;
+    peerKeyHash: PeerKeyPin | null;
     ecName: string | null;
     randFile: string | null;
   };
@@ -110,10 +116,27 @@ const DEREF_KEYS: readonly (readonly [string, number])[] = [
 ];
 
 const TLS_REQCERT_KEYS: readonly (readonly [string, number])[] = [
-  ['never', TlsRequireCert.NEVER], ['no', TlsRequireCert.NEVER],
-  ['hard', TlsRequireCert.HARD], ['demand', TlsRequireCert.DEMAND], ['yes', TlsRequireCert.DEMAND],
-  ['allow', TlsRequireCert.ALLOW], ['try', TlsRequireCert.TRY],
+  ['never', TlsRequireCert.NEVER], ['demand', TlsRequireCert.DEMAND], ['allow', TlsRequireCert.ALLOW], ['try', TlsRequireCert.TRY],
+  ['hard', TlsRequireCert.HARD], ['on', TlsRequireCert.HARD], ['yes', TlsRequireCert.HARD], ['true', TlsRequireCert.HARD],
 ];
+
+function requirementOf(text: string): number | null {
+  const lower = text.toLowerCase();
+  for (const [key, mode] of TLS_REQCERT_KEYS) if (key === lower) return mode;
+  return null;
+}
+
+function presentOrNull(text: string): string | null {
+  return text === '' ? null : text;
+}
+
+function peerKeyPinOf(text: string, current: PeerKeyPin | null): PeerKeyPin | null {
+  if (text === '') return null;
+  const colon = text.indexOf(':');
+  const algorithm = colon < 0 ? null : text.slice(0, colon);
+  const hash = ldapDecodeB64Inplace(colon < 0 ? text : text.slice(colon + 1));
+  return hash === null ? current : { algorithm, hash };
+}
 
 export type OptionSource = 'sysconf' | 'userconf' | 'environment';
 
@@ -173,26 +196,20 @@ const DEFINITIONS: readonly OptionDefinition[] = [
     name: 'SASL_CBINDING', userOnly: false,
     apply: (o, v) => { const kind = CHANNEL_BINDING_KINDS.find((candidate) => candidate === v.toLowerCase()); if (kind !== undefined) o.sasl.channelBinding = kind; },
   },
-  { name: 'TLS_CERT', userOnly: true, apply: (o, v) => { o.tls.certFile = v; } },
-  { name: 'TLS_KEY', userOnly: true, apply: (o, v) => { o.tls.keyFile = v; } },
-  { name: 'TLS_CACERT', userOnly: false, apply: (o, v) => { o.tls.caCertFile = v; } },
-  { name: 'TLS_CACERTDIR', userOnly: false, apply: (o, v) => { o.tls.caCertDir = v; } },
-  {
-    name: 'TLS_REQCERT', userOnly: false,
-    apply: (o, v) => { for (const [key, mode] of TLS_REQCERT_KEYS) if (key === v.toLowerCase()) o.tls.requireCert = mode; },
-  },
-  {
-    name: 'TLS_REQSAN', userOnly: false,
-    apply: (o, v) => { for (const [key, mode] of TLS_REQCERT_KEYS) if (key === v.toLowerCase()) o.tls.requireSan = mode; },
-  },
-  { name: 'TLS_RANDFILE', userOnly: false, apply: (o, v) => { o.tls.randFile = v; } },
-  { name: 'TLS_CIPHER_SUITE', userOnly: false, apply: (o, v) => { o.tls.cipherSuite = v; } },
+  { name: 'TLS_CERT', userOnly: true, apply: (o, v) => { o.tls.certFile = presentOrNull(v); } },
+  { name: 'TLS_KEY', userOnly: true, apply: (o, v) => { o.tls.keyFile = presentOrNull(v); } },
+  { name: 'TLS_CACERT', userOnly: false, apply: (o, v) => { o.tls.caCertFile = presentOrNull(v); } },
+  { name: 'TLS_CACERTDIR', userOnly: false, apply: (o, v) => { o.tls.caCertDir = presentOrNull(v); } },
+  { name: 'TLS_REQCERT', userOnly: false, apply: (o, v) => { o.tls.requireCert = requirementOf(v) ?? o.tls.requireCert; } },
+  { name: 'TLS_REQSAN', userOnly: false, apply: (o, v) => { o.tls.requireSan = requirementOf(v) ?? o.tls.requireSan; } },
+  { name: 'TLS_RANDFILE', userOnly: false, apply: (o, v) => { o.tls.randFile = presentOrNull(v); } },
+  { name: 'TLS_CIPHER_SUITE', userOnly: false, apply: (o, v) => { o.tls.cipherSuite = presentOrNull(v); } },
   { name: 'TLS_PROTOCOL_MIN', userOnly: false, apply: (o, v) => { o.tls.protocolMin = v; } },
   { name: 'TLS_PROTOCOL_MAX', userOnly: false, apply: (o, v) => { o.tls.protocolMax = v; } },
-  { name: 'TLS_PEERKEY_HASH', userOnly: false, apply: (o, v) => { o.tls.peerKeyHash = v; } },
-  { name: 'TLS_ECNAME', userOnly: false, apply: (o, v) => { o.tls.ecName = v; } },
+  { name: 'TLS_PEERKEY_HASH', userOnly: false, apply: (o, v) => { o.tls.peerKeyHash = peerKeyPinOf(v, o.tls.peerKeyHash); } },
+  { name: 'TLS_ECNAME', userOnly: false, apply: (o, v) => { o.tls.ecName = presentOrNull(v); } },
   { name: 'TLS_CRLCHECK', userOnly: false, apply: (o, v) => { o.tls.crlCheck = v; } },
-  { name: 'TLS_CRLFILE', userOnly: false, apply: (o, v) => { o.tls.crlFile = v; } },
+  { name: 'TLS_CRLFILE', userOnly: false, apply: (o, v) => { o.tls.crlFile = presentOrNull(v); } },
 ];
 
 export function applyConfigOption(

@@ -27,7 +27,12 @@ export function stepServerHandshake(tls: TlsServerSession, data: Uint8Array): Ui
  * same pattern `LdapClient`/`KerberosClient`'s `roundTrip` already use).
  * Returns the established session, or `null` if it didn't complete.
  */
-export function driveClientHandshake(socket: TcpSocket, config: TlsClientConfig): TlsClientSession | null {
+export interface ClientHandshake {
+  readonly session: TlsClientSession;
+  readonly established: boolean;
+}
+
+export function driveClientHandshake(socket: TcpSocket, config: TlsClientConfig): ClientHandshake {
   const tls = new TlsClientSession(config);
   let flight = tls.start();
   for (let i = 0; i < 10; i++) {
@@ -39,10 +44,10 @@ export function driveClientHandshake(socket: TcpSocket, config: TlsClientConfig)
     // own `Finished`, computed from the *previous* iteration's reply) — once
     // `result` is set there's nothing further to send or wait for.
     if (tls.result !== null) break;
-    if (!reply) return null;
+    if (!reply) return { session: tls, established: false };
     const nextFlight = tls.handle(decodeRecords(reply));
     if (!nextFlight) break;
     flight = nextFlight;
   }
-  return tls.result === 'success' ? tls : null;
+  return { session: tls, established: tls.result === 'success' };
 }
