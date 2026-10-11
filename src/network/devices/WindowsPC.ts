@@ -53,6 +53,7 @@ import {
   TelnetClientSession, type TelnetClientTransport,
 } from '../protocols/telnet/TelnetClientSession';
 import type { TcpSocket } from '../tcp/TcpStack';
+import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient, winWireExecTarget } from './windows/network/WindowsSshClient';
@@ -110,10 +111,10 @@ import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
-import { WindowsServicePortProjection } from './windows/WindowsServicePortProjection';
+import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
-import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
+import { PortProxyEndpoint } from './windows/PortProxyEndpoint';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
@@ -276,6 +277,7 @@ import {
  */
 /** Le pas du planificateur de tâches — la minute, comme sous Windows. */
 const TASK_TICK_MS = 60_000;
+const DNS_CLIENT_SERVICE = 'Dnscache';
 
 /**
  * `ReferenceId` a la mode Windows : l'adresse en hexadecimal suivie de
@@ -427,7 +429,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** `netsh interface portproxy` rules — port-forwarding entries. */
   readonly portProxyTable: PortProxyTable = new PortProxyTable();
   /** Reactive consumer: port-proxy events → socket-table listeners. */
-  private portProxySocketProjection: PortProxySocketProjection | null = null;
+  private readonly portProxyEndpoint = new PortProxyEndpoint(() => this.portProxyTable.list(), this.getTcpStack());
   /** Service manager (service lifecycle, dependencies) */
   private svcMgr: WindowsServiceManager;
   /** Process manager (process table, PIDs, kill, tree) */
@@ -531,11 +533,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.winrm.onChange(() => this.reconcileListeners());
     this.auditPolicy.seedDefaults(type === 'windows-server' ? 'server' : 'client');
     this.registry.onValueChanged = (change) => {
-      this.syncLinkLocalResponders();
       this.reconcileListeners();
       if (change) this.auditRegistryChange(change);
     };
-    this.syncLinkLocalResponders();
     this.startScheduledTaskTicker();
   }
 
@@ -724,28 +724,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return false;
   }
 
-  syncLinkLocalResponders(): void {
-    if (!this.getIsPoweredOn()) return;
-    const llmnr = this.getLlmnrAgent();
-    const mdns = this.getMdnsAgent();
-    if (isLlmnrEnabled(this.registry)) llmnr.start(); else llmnr.stop();
-    if (isMdnsEnabled(this.registry)) mdns.start(); else mdns.stop();
-  }
-
   override powerOn(): void {
     super.powerOn();
-    this.syncLinkLocalResponders();
+    this.reconcileListeners();
     this.startScheduledTaskTicker();
   }
 
   override powerOff(): void {
-    this._llmnrAgent?.stop();
-    this._mdnsAgent?.stop();
     if (this.taskTimer !== null) {
       this.hostTimers.clear(this.taskTimer);
       this.taskTimer = null;
     }
     super.powerOff();
+    this.reconcileListeners();
   }
 
   private taskTimer: symbol | null = null;
@@ -866,10 +857,33 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       active: () => this.hasFeature('Print-Services'),
       accept: () => (socket) => this.serveLpd(socket),
     });
+    this.servicePortProjection.declareEndpoint({
+      owner: { service: DNS_CLIENT_SERVICE },
+      active: () => this.getIsPoweredOn() && this.svcMgr.isStarted(DNS_CLIENT_SERVICE) && isLlmnrEnabled(this.registry),
+      endpoint: { open: (identity) => this.getLlmnrAgent().start(identity), close: () => this._llmnrAgent?.stop() },
+    });
+    this.servicePortProjection.declareEndpoint({
+      owner: { service: DNS_CLIENT_SERVICE },
+      active: () => this.getIsPoweredOn() && this.svcMgr.isStarted(DNS_CLIENT_SERVICE) && isMdnsEnabled(this.registry),
+      endpoint: { open: (identity) => this.getMdnsAgent().start(identity), close: () => this._mdnsAgent?.stop() },
+    });
+    this.servicePortProjection.declareEndpoint({
+      owner: { service: 'W32Time' },
+      active: () => this.getIsPoweredOn() && this.svcMgr.isStarted('W32Time'),
+      endpoint: { open: (identity) => this.openNtpPort(identity), close: () => this.udpClose(UDP_PORT_NTP) },
+    });
+    this.servicePortProjection.declareEndpoint({
+      owner: { service: 'iphlpsvc' },
+      active: () => this.svcMgr.isStarted('iphlpsvc'),
+      endpoint: this.portProxyEndpoint,
+    });
+    this._portProxyChangesOff?.();
+    const offAdded = bus.subscribe('windows.portproxy.added', (e) => this.onPortProxyChange(e.payload.deviceId));
+    const offRemoved = bus.subscribe('windows.portproxy.removed', (e) => this.onPortProxyChange(e.payload.deviceId));
+    this._portProxyChangesOff = () => { offAdded(); offRemoved(); };
     this.servicePortProjection.reconcile();
     this.tcpSocketProjection?.dispose();
     this.tcpSocketProjection = new TcpSocketStateProjection(bus, this.socketTable, this.id);
-    this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable, this.getTcpStack());
     this.portProxyTable.attachBus(bus, this.id);
     this.rdp.sessions.attachBus(bus, this.getHostname());
 
@@ -901,28 +915,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this._processSocketReaperOff?.();
     this._processSocketReaperOff = bus.subscribe('windows.process.stopped', (e) => {
       const { pid, name, forced } = e.payload;
-      const stack = this.getTcpStack();
-      stack.closeSocketsOwnedBy(pid, forced ? 'reset' : 'graceful');
-      const outliving = new Set(stack.listSockets()
-        .map((socket) => `${socket.localPort}|${socket.remoteIp}|${socket.remotePort}`));
-      for (const sock of this.socketTable.getAll()) {
-        const matchesByPid = sock.pid === pid;
-        const matchesByName = name && sock.pid === undefined && sock.processName === name;
-        if (!matchesByPid && !matchesByName) continue;
-        if (sock.remoteAddress === '*') {
-          this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
-          if (sock.protocol === 'tcp' && sock.state === 'LISTEN') stack.closeListener(sock.localPort, sock.localAddress);
-        } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
-          sock.pid = undefined;
-          sock.processName = undefined;
-        } else {
-          this.socketTable.removeConnection(sock);
-        }
-      }
+      this.reapProcessSockets(pid, name, forced ? 'reset' : 'graceful');
     });
   }
 
   private _processSocketReaperOff: (() => void) | null = null;
+  private _portProxyChangesOff: (() => void) | null = null;
+
+  private onPortProxyChange(deviceId: string): void {
+    if (deviceId === this.id) this.reconcileListeners();
+  }
   private _recoveryRunOff: (() => void) | null = null;
 
   private serveSmb(socket: TcpSocket): void {
@@ -1040,6 +1042,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   protected reconcileListeners(): void {
     this.servicePortProjection?.reconcile();
+  }
+
+  protected declareEndpoint(declaration: WindowsEndpointDeclaration): void {
+    this.servicePortProjection?.declareEndpoint(declaration);
   }
 
   private isDomainController(): boolean {
@@ -5804,16 +5810,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** L'agent NTP de cette machine — le MEME moteur que Cisco et Linux. */
   private _ntpAgent: NtpAgent | null = null;
-  public override resolverProcessName(): string { return 'svchost'; }
+  public override resolverIdentity(): ListenerIdentity { return this.procMgr.identityOfService(DNS_CLIENT_SERVICE); }
 
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
       this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
-      this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
-        this._ntpAgent?.handleUdp(inPort, sourceIP as IPAddress, udp);
-      }, 'svchost');
     }
     return this._ntpAgent;
+  }
+
+  private openNtpPort(identity: ListenerIdentity): void {
+    const agent = this.getNtpAgent();
+    this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
+      agent.handleUdp(inPort, sourceIP as IPAddress, udp);
+    }, identity.processName, { pid: identity.pid });
   }
 
   /** Le service W32Time de cette machine (`PRD-NTP-Tutoriel.md` §5). */

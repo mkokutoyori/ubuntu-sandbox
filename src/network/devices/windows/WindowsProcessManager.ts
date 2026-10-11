@@ -14,6 +14,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { SHARED_HOST_IMAGES, type ServiceProcessHost, type WindowsService, type WindowsServiceManager } from './WindowsServiceManager';
 import type { IEventBus } from '@/events/EventBus';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 
 export type ProcessSession = 'Services' | 'Console';
 
@@ -416,6 +417,18 @@ export class WindowsProcessManager implements ServiceProcessHost {
    */
   resolveOwner(proc: WindowsProcess, currentUser: string): string {
     return proc.owner === '{USER}' ? `${currentUser}` : proc.owner;
+  }
+
+  identityOfService(serviceName: string): ListenerIdentity {
+    return this.identityOf(this.processes.get(this.getPidForService(serviceName)));
+  }
+
+  identityOfImage(image: string): ListenerIdentity {
+    return this.identityOf(this.getProcessesByName(image)[0]);
+  }
+
+  private identityOf(proc: WindowsProcess | undefined): ListenerIdentity {
+    return proc ? { pid: proc.pid, processName: proc.name } : {};
   }
 
   /** PID of the process hosting a given service, or 0 if none is running. */

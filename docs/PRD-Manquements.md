@@ -55,7 +55,7 @@ Chacun est classé par ce qu'il coûte à l'apprenant, pas par sa taille.
 | # | Manquement | Où c'est écrit |
 |---|---|---|
 | C1 | **UDP non traité** | `PRD-Sockets` §7. Même structure à deux tables ; un socket UDP n'a pas d'état `LISTEN` et se diagnostique autrement. |
-| C2 | **Windows non unifié** | `PRD-Sockets` §7 : `WindowsServicePortProjection` et `PortProxySocketProjection` ont la même forme, à traiter après Linux. |
+| C2 | **Windows non unifié** | `PRD-Sockets` §7, traité en P6 : les écoutes de service, de fonctionnalité, de rôle et de système, les sockets UDP, le faucheur de prises et le port proxy passent par `WindowsServicePortProjection`. Restent `netstat -b`, `-q` et les noms, les processus par session d'OpenSSH pour Windows et `ssh -N`. |
 | C3 | **nginx sans HTTPS** | `PRD-Nginx` §P5, bloqué faute d'un chemin `openssl req` → PEM côté Linux. |
 | C4 | **apache2 ne sert rien** | `systemctl start apache2` rend l'unité `active` et rien n'écoute. |
 | C5 | **curl P4** | proxy, cookies, `--retry`, formulaires : refusés honnêtement, non implémentés. |

@@ -19,6 +19,7 @@
  * datagramme.
  */
 import type { EndHost } from '@/network/devices/EndHost';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -84,10 +85,10 @@ export class LlmnrAgent {
 
   isRunning(): boolean { return this.bound; }
 
-  start(): void {
+  start(identity?: ListenerIdentity): void {
     if (this.bound) return;
     try {
-      bindMulticastDns(this.host, LLMNR_BINDING, (q, src, sport) => this.respond(q, src, sport));
+      bindMulticastDns(this.host, LLMNR_BINDING, (q, src, sport) => this.respond(q, src, sport), undefined, identity);
       this.bound = true;
     } catch { return; }
     this.state = 'tentative';

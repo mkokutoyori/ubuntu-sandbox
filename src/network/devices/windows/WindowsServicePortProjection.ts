@@ -1,7 +1,6 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { TcpAcceptHandler, TcpListenOptions } from '../../tcp/TcpStack';
 import type { ListenerIdentity } from '../../tcp/ListenerSocketSink';
-import type { WindowsProcess } from './WindowsProcessManager';
 
 export interface ServiceListenerStack {
   listen(localPort: number, opts: TcpListenOptions): unknown;
@@ -10,14 +9,24 @@ export interface ServiceListenerStack {
 }
 
 export interface ServiceListenerProcesses {
-  getPidForService(serviceName: string): number;
-  getProcess(pid: number): WindowsProcess | undefined;
-  getProcessesByName(name: string): WindowsProcess[];
+  identityOfService(serviceName: string): ListenerIdentity;
+  identityOfImage(image: string): ListenerIdentity;
 }
 
 export type ListenerOwner =
   | { readonly service: string }
   | { readonly image: string };
+
+export interface WindowsEndpoint {
+  open(identity: ListenerIdentity): void;
+  close(): void;
+}
+
+export interface WindowsEndpointDeclaration {
+  readonly owner: ListenerOwner | (() => ListenerOwner);
+  readonly active: () => boolean;
+  readonly endpoint: WindowsEndpoint;
+}
 
 export interface WindowsListenerDeclaration {
   readonly ports: readonly number[];
@@ -28,7 +37,9 @@ export interface WindowsListenerDeclaration {
 
 export class WindowsServicePortProjection {
   private readonly subscriptions: Unsubscribe[] = [];
-  private readonly declarations: WindowsListenerDeclaration[] = [];
+  private readonly declarations: WindowsEndpointDeclaration[] = [];
+  private reconciling = false;
+  private requested = false;
 
   constructor(
     bus: IEventBus,
@@ -49,13 +60,37 @@ export class WindowsServicePortProjection {
   }
 
   declare(declaration: WindowsListenerDeclaration): void {
+    this.declareEndpoint({
+      owner: declaration.owner,
+      active: declaration.active,
+      endpoint: this.tcpEndpoint(declaration.ports, declaration.accept),
+    });
+  }
+
+  declareEndpoint(declaration: WindowsEndpointDeclaration): void {
     this.declarations.push(declaration);
   }
 
   reconcile(): void {
-    for (const declaration of this.declarations) {
-      if (declaration.active()) this.open(declaration);
-      else this.close(declaration);
+    this.requested = true;
+    if (this.reconciling) return;
+    this.reconciling = true;
+    try {
+      let failure: unknown = null;
+      while (this.requested) {
+        this.requested = false;
+        for (const declaration of this.declarations) {
+          try {
+            if (declaration.active()) declaration.endpoint.open(this.ownerOf(declaration.owner));
+            else declaration.endpoint.close();
+          } catch (error) {
+            failure ??= error;
+          }
+        }
+      }
+      if (failure !== null) throw failure;
+    } finally {
+      this.reconciling = false;
     }
   }
 
@@ -63,22 +98,24 @@ export class WindowsServicePortProjection {
     if (deviceId === this.deviceId) this.reconcile();
   }
 
-  private open(declaration: WindowsListenerDeclaration): void {
-    const identity = this.ownerOf(declaration.owner);
-    const open = new Set(this.stack.listListeners().map((listener) => listener.localPort));
-    for (const port of declaration.ports) {
-      if (!open.has(port)) this.stack.listen(port, { onAccept: declaration.accept(port), identity });
-    }
+  private tcpEndpoint(ports: readonly number[], accept: (port: number) => TcpAcceptHandler): WindowsEndpoint {
+    return {
+      open: (identity) => {
+        const open = new Set(this.stack.listListeners().map((listener) => listener.localPort));
+        for (const port of ports) {
+          if (!open.has(port)) this.stack.listen(port, { onAccept: accept(port), identity });
+        }
+      },
+      close: () => {
+        for (const port of ports) this.stack.closeListener(port);
+      },
+    };
   }
 
-  private close(declaration: WindowsListenerDeclaration): void {
-    for (const port of declaration.ports) this.stack.closeListener(port);
-  }
-
-  private ownerOf(owner: ListenerOwner): ListenerIdentity {
-    const process = 'service' in owner
-      ? this.processes.getProcess(this.processes.getPidForService(owner.service))
-      : this.processes.getProcessesByName(owner.image)[0];
-    return process ? { pid: process.pid, processName: process.name } : {};
+  private ownerOf(declared: ListenerOwner | (() => ListenerOwner)): ListenerIdentity {
+    const owner = typeof declared === 'function' ? declared() : declared;
+    return 'service' in owner
+      ? this.processes.identityOfService(owner.service)
+      : this.processes.identityOfImage(owner.image);
   }
 }

@@ -1,4 +1,5 @@
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { DHCPServer } from './DHCPServer';
 import { DHCPPacket, DHCP_OPTION } from './DHCPPacket';
 import type { DhcpBulkRecord } from './types';
@@ -64,6 +65,7 @@ function concatenate(parts: readonly Uint8Array[]): Uint8Array {
 export interface BulkLeasequeryHost {
   tcp(): TcpStack;
   now(): number;
+  identity?(): ListenerIdentity;
 }
 
 export class DhcpBulkLeasequeryService {
@@ -78,7 +80,7 @@ export class DhcpBulkLeasequeryService {
     const wanted = this.server.isBulkLeasequeryEnabled();
     if (wanted && !this.listening) {
       this.host.tcp().listen(BULK_LEASEQUERY_PORT, {
-        identity: { pid: 1067, processName: 'dhcpd' },
+        identity: this.host.identity?.() ?? { pid: 1067, processName: 'dhcpd' },
         onAccept: (socket) => this.accept(socket),
       });
       this.listening = true;

@@ -17,6 +17,7 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import type { IEventBus } from '@/events/EventBus';
 
 import { WindowsPC } from './WindowsPC';
 import { RoleManager } from './windows/server/RoleManager';
@@ -115,7 +116,57 @@ export class WindowsServer extends WindowsPC {
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
     this.setCurrentUser('Administrator');
+    this.declareRoleListeners();
     this.roleManager.onFeatureLifecycle(() => this.materializeInstalledRoles());
+  }
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    this.declareRoleListeners();
+  }
+
+  private declareRoleListeners(): void {
+    const services = this.getServiceManager();
+    this.declareEndpoint({
+      owner: { service: 'DNS' },
+      active: () => this.roleManager.isInstalled('DNS') && services.isStarted('DNS'),
+      endpoint: { open: (identity) => this.getDnsServerRole()?.start(identity), close: () => this.dnsServerRoleInstance?.stop() },
+    });
+    this.declareEndpoint({
+      owner: { service: 'DHCPServer' },
+      active: () => this.roleManager.isInstalled('DHCP') && services.isStarted('DHCPServer'),
+      endpoint: { open: (identity) => this.getDhcpServerRole()?.start(identity), close: () => this.dhcpServerRoleInstance?.stop() },
+    });
+    this.declareEndpoint({
+      owner: { service: 'IAS' },
+      active: () => this.roleManager.isInstalled('NPAS') && services.isStarted('IAS'),
+      endpoint: { open: (identity) => this.getNpsRole()?.start(identity), close: () => this.npsRoleInstance?.stop() },
+    });
+    this.declareEndpoint({
+      owner: { image: 'System' },
+      active: () => this.roleManager.isInstalled('Web-Server') && services.isStarted('W3SVC'),
+      endpoint: { open: (identity) => this.getIisRole()?.start(identity), close: () => this.iisRoleInstance?.stop() },
+    });
+    this.declareEndpoint({
+      owner: { image: 'System' },
+      active: () => this.clusterServiceInstance !== null && services.isStarted('ClusSvc'),
+      endpoint: { open: (identity) => this.clusterServiceInstance?.start(identity), close: () => this.clusterServiceInstance?.stop() },
+    });
+    this.declareEndpoint({
+      owner: { image: 'System' },
+      active: () => this.exchangeOrgName !== null,
+      endpoint: { open: (identity) => this.autodiscoverServer?.start(identity), close: () => this.autodiscoverServer?.stop() },
+    });
+    this.declareEndpoint({
+      owner: () => ({ service: services.isStarted('MSExchangeTransport') ? 'MSExchangeTransport' : 'MSExchangeFrontEndTransport' }),
+      active: () => this.exchangeOrgName !== null
+        && (services.isStarted('MSExchangeTransport') || services.isStarted('MSExchangeFrontEndTransport')),
+      endpoint: {
+        open: (identity) => { for (const connector of this.receiveConnectors.values()) for (const server of connector.servers) server.start(identity); },
+        close: () => { for (const connector of this.receiveConnectors.values()) for (const server of connector.servers) server.stop(); },
+      },
+    });
+    this.reconcileListeners();
   }
 
   /**
@@ -184,7 +235,7 @@ export class WindowsServer extends WindowsPC {
         zoneFiles: this.dnsZoneFileSink(),
         directoryAvailable: () => this.getDirectoryStore() !== null,
       });
-      this.dnsServerRoleInstance.start();
+      this.reconcileListeners();
     }
     return this.dnsServerRoleInstance;
   }
@@ -209,7 +260,7 @@ export class WindowsServer extends WindowsPC {
         resolve: (name) => (IPAddress.isValid(name) ? name : this.resolveHostnameSync(name)?.toString() ?? null),
         localAddressToward: (address) => this.sourceAddressFor(new IPAddress(address))?.toString() ?? null,
       });
-      this.dhcpServerRoleInstance.start();
+      this.reconcileListeners();
     }
     this.dhcpServerRoleInstance.setDomainContext(
       this.getDirectoryStore() !== null || this.getDomainMembership() !== null,
@@ -231,7 +282,7 @@ export class WindowsServer extends WindowsPC {
     }
     if (!this.npsRoleInstance) {
       this.npsRoleInstance = new WindowsNpsRole(this, this, this.eventLog, () => this.simulatedDate(), () => this.getBus());
-      this.npsRoleInstance.start();
+      this.reconcileListeners();
     }
     return this.npsRoleInstance;
   }
@@ -248,7 +299,7 @@ export class WindowsServer extends WindowsPC {
     }
     if (!this.iisRoleInstance) {
       this.iisRoleInstance = new WindowsIisRole(this, this.getFileSystem(), this.getCertStore());
-      this.iisRoleInstance.start();
+      this.reconcileListeners();
     }
     return this.iisRoleInstance;
   }
@@ -334,7 +385,7 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: `New-Cluster : This computer is already a member of cluster "${this.clusterServiceInstance.clusterName}".` };
     }
     this.clusterServiceInstance = new ClusterService(this, clusterName, selfNodeName, peers, () => this.getScheduler(), this.getBus());
-    this.clusterServiceInstance.start();
+    this.reconcileListeners();
     return { ok: true, message: '' };
   }
 
@@ -485,7 +536,6 @@ export class WindowsServer extends WindowsPC {
     this.autodiscoverServer = new Http1ServerSession(
       this.getTcpStack(), AUTODISCOVER_PORT, (req) => this.handleAutodiscoverHttp(req), this.getBus(),
     );
-    this.autodiscoverServer.start();
   }
 
   /**
@@ -854,10 +904,10 @@ export class WindowsServer extends WindowsPC {
           onMessageAccepted: (delivered) => this.handleAcceptedMessage(delivered),
         },
       );
-      server.start();
       servers.push(server);
     }
     this.receiveConnectors.set(key, { def, servers });
+    this.reconcileListeners();
     return { ok: true, message: '' };
   }
 

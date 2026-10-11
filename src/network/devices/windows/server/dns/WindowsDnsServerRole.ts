@@ -1,6 +1,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { EndHost } from '@/network/devices/EndHost';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { Zone, ZoneError } from '@/network/dns/zone/Zone';
 import { ZoneStore, ZoneStoreError } from '@/network/dns/zone/ZoneStore';
 import { reverseZoneNameFor, classlessOwnerFor } from '@/network/dns/zone/ReverseZoneNames';
@@ -359,10 +360,11 @@ export class WindowsDnsServerRole {
 
   getTsigKeyring(): TsigKeyring { return this.keyring; }
 
-  start(): void {
+  start(identity: ListenerIdentity = {}): void {
     if (this.running) return;
-    bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, 'dns');
-    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT);
+    const processName = identity.processName ?? 'dns';
+    bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, processName, undefined, undefined, { pid: identity.pid });
+    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT, { processName, pid: identity.pid });
     this.running = true;
   }
 

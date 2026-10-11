@@ -51,6 +51,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { EndHost } from '@/network/devices/EndHost';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
@@ -283,13 +284,14 @@ export class MdnsAgent {
 
   isRunning(): boolean { return this.bound; }
 
-  start(): void {
+  start(identity?: ListenerIdentity): void {
     if (this.bound) return;
     try {
       bindMulticastDns(
         this.host, MDNS_BINDING,
         (q, src, sport) => this.respond(q, src, sport),
-        (r) => this.observe(r));
+        (r) => this.observe(r),
+        identity);
       this.bound = true;
     } catch { return; }
     // §8.1 : on ne s'annonce qu'après avoir sondé. Le sondage part en

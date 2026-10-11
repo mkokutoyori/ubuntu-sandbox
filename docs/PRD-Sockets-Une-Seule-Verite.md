@@ -106,7 +106,7 @@ Les 16 appels, lus un par un :
 | `WindowsPC.initDefaultSockets()` | 22, 445, 3389 | **(b)** doublon des `listen()` du même fichier |
 | `WindowsPC.initDefaultSockets()` | 139 | **(c)** décoratif — aucun `listen(139)` nulle part |
 | `WindowsServicePortProjection` | selon le service | **(a)** projection légitime |
-| `PortProxySocketProjection` | port d'écoute | **(a)** projection, suivie d'un vrai `listen()` |
+| `PortProxySocketProjection` (remplacée en P6 par `PortProxyEndpoint`) | port d'écoute | **(a)** projection, suivie d'un vrai `listen()` |
 
 **L'erreur symétrique est la plus nombreuse**, et elle n'apparaît dans
 aucun de ces 16 appels puisqu'elle consiste précisément à n'en faire
@@ -422,12 +422,33 @@ la table des fonctionnalités porte l'image des services de rôle, chaque servic
 de service enregistre le chemin binaire que `sc qc` affiche. Garde-fou :
 `probe-un-service-de-role-tourne-dans-le-processus-ou-windows-le-fait-tourner`.
 
-Pas construit dans ce lot : les écoutes que les rôles DNS, IIS, DHCP, NPS, Exchange et cluster ouvrent par leurs
-propres sous-systèmes (TCP et UDP) et les sockets UDP du système (LLMNR, mDNS, client DHCP, client DNS) gardent le
-PID 0 ; le port 135 d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ;
-`TermService` est affiché Automatic quand un Windows réel le dit Manual ; un service qui n'a jamais eu de processus
-d'hébergement n'en reçoit pas en démarrant ; le processus par session d'OpenSSH pour Windows, le `ssh.exe` client comme
-processus et `ssh -N` vers ou depuis Windows sont traités après.
+Une écoute ou une socket UDP de rôle ou de système appartient au processus qui la sert et ne vit que tant que son service
+tourne (mesuré sur `2d36ab993`, WindowsServer avec les rôles DNS, DHCP, NPS et IIS) : `netstat -ano` listait UDP et TCP 53, UDP
+67 et 547, UDP 1812 et 1813 et TCP 80 au PID 0 (le TCP 53 sous l'étiquette `dnsmasq`, un démon Linux), TCP 647 au PID 1220 que
+`tasklist` ne connaissait pas, UDP 5353, 5355 et 123 au PID 0, et une règle `netsh interface portproxy` au PID 1100 d'un svchost
+étranger (SamSs, CryptSvc). `sc stop DNS` (ou `DHCPServer`, `IAS`, `W3SVC`) laissait les ports ouverts et répondeurs ; `taskkill
+/F` sur `dns.exe` ne retirait rien ; et le faucheur de prises, copié d'un système à l'autre, ne retirait d'une prise UDP que sa
+ligne -- l'écoute UDP de l'hôte et la table de sockets sont deux structures -- si bien que sous Linux `kill -9` de `named` fait
+disparaître la ligne de `ss -ulnp` et que `dig` obtient sa réponse. `WindowsServicePortProjection` tient maintenant des points
+d'accès (`WindowsEndpoint` : `open(identité)` et `close()`) en plus des écoutes TCP, rapprochés de l'état à chaque événement
+avec isolation des échecs : DNS, DHCP (4, 6 et bascule), NPS, IIS (HTTP.sys, `System`), le cœur du cluster (`System`),
+l'Autodiscover et les connecteurs de réception d'Exchange, LLMNR, mDNS, NTP et les règles de port proxy (`iphlpsvc`, qui
+tourne dans un svchost, `svchost.exe -k NetSvcs`) se déclarent avec un propriétaire et un prédicat d'activité, et reçoivent
+l'identité du processus à l'ouverture. Les rôles ne s'ouvrent plus à leur création mais quand leur service tourne, et l'état
+d'un site IIS (Started/Stopped) reste celui de l'administrateur quand W3SVC redémarre. Les deux faucheurs de prises (Linux,
+Windows) deviennent un seul, `EndHost.reapProcessSockets`, qui ferme aussi l'écoute UDP ; les sockets que LLMNR et mDNS ouvrent
+pour interroger le lien appartiennent à `Dnscache` (`EndHost.resolverIdentity()`). Un serveur dont on remplace le bus
+(`setEventBus` reconstruit la projection) déclare de nouveau ses points d'accès de rôle, et l'écoute du port proxy est un objet
+unique de la machine que la reconstruction ne remplace pas. Garde-fou :
+`probe-chaque-ecoute-windows-suit-son-service-et-porte-son-processus`.
+
+Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
+non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
+Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135
+d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ; `TermService` est affiché
+Automatic quand un Windows réel le dit Manual ; un service qui n'a jamais eu de processus d'hébergement n'en reçoit pas en
+démarrant ; `netstat -b`, `-q` et la résolution des noms sont traités après, de même que le processus par session d'OpenSSH pour
+Windows, le `ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows.
 
 ## 7. Hors périmètre
 
@@ -435,8 +456,9 @@ processus et `ssh -N` vers ou depuis Windows sont traités après.
   n'a pas d'état `LISTEN` et se diagnostique autrement. À traiter ensuite
   si P1 se passe bien.
 - **Windows.** Traité en P6 pour les connexions, leur propriétaire, la
-  mort d'un processus et les écoutes des services ;
-  `PortProxySocketProjection` a encore la forme que P2 a retirée à Linux.
+  mort d'un processus, les écoutes des services, des fonctionnalités, des
+  rôles et du système (UDP compris) ; `netstat -b` et la résolution des
+  noms restent à faire.
 - **Le listener TNS d'Oracle.** Nommé en P2, traité ailleurs.
 
 ## 8. Vérification

@@ -2095,28 +2095,7 @@ export abstract class LinuxMachine extends EndHost
       const heldSession = this.sshSessionsByPid.get(pid);
       if (heldSession !== undefined) this.endSshSession(heldSession, 'killed');
       this.executor.releaseSshClient(pid);
-      const stack = this.getTcpStack();
-      stack.closeSocketsOwnedBy(pid);
-      const outliving = new Set(stack.listSockets()
-        .map((socket) => `${socket.localPort}|${socket.remoteIp}|${socket.remotePort}`));
-      for (const sock of this.socketTable.getAll()) {
-        const matchesByPid = sock.pid === pid;
-        const matchesByName = comm && sock.pid === undefined && sock.processName === comm;
-        if (!matchesByPid && !matchesByName) continue;
-        if (sock.remoteAddress === '*') {
-          this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
-          if (sock.protocol === 'tcp' && sock.state === 'LISTEN') {
-            stack.closeListener(sock.localPort, sock.localAddress);
-            this._sshdActivePorts.delete(sock.localPort);
-          }
-        } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
-          sock.pid = undefined;
-          sock.processName = undefined;
-          sock.uid = undefined;
-        } else {
-          this.socketTable.removeConnection(sock);
-        }
-      }
+      for (const port of this.reapProcessSockets(pid, comm, 'tcp_close')) this._sshdActivePorts.delete(port);
     });
   }
 
