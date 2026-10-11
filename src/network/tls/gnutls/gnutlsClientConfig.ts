@@ -6,7 +6,7 @@ import type { GnutlsPriority } from './GnutlsPriority';
 import { clientHelloOffer } from './gnutlsClientOffer';
 
 export type GnutlsClientConfig = Required<Pick<
-TlsClientConfig, 'versions' | 'cipherSuites' | 'legacyCipherSuites' | 'supportedGroups' | 'signatureSchemes'
+TlsClientConfig, 'versions' | 'cipherSuites' | 'legacyCipherSuites' | 'supportedGroups' | 'signatureSchemes' | 'minimumDhBits'
 >>;
 
 const VERSION_OF: Readonly<Record<string, TlsProtocolVersion>> = { 'VERS-TLS1.3': '1.3', 'VERS-TLS1.2': '1.2' };
@@ -34,6 +34,7 @@ export function gnutlsClientConfig(priority: GnutlsPriority): GnutlsClientConfig
       .map((suite) => suite.name as CipherSuite),
     legacyCipherSuites: legacy,
     supportedGroups: offer.groupNames.filter((group) => !group.startsWith('GROUP-GC')).map(groupNameOf),
+    minimumDhBits: priority.minimumDhPrimeBits,
     signatureSchemes: offer.signatureCodes.filter((code) => code in SIGNATURE_SCHEME_OF).map((code) => SIGNATURE_SCHEME_OF[code]),
   };
 }

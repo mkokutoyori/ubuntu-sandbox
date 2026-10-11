@@ -97,7 +97,11 @@ function tlsConnectHostOf(ctx: LinuxCommandContext, client: LdapClient): TlsConn
       const verification = session.peerVerified
         ? { ok: true as const }
         : { ok: false as const, reason: session.peerVerificationReason ?? 'unknown' };
-      return { established: ok, alert: session.lastAlert !== null, certificate: session.peerCertificate, verification };
+      return {
+        established: ok, alert: session.lastAlert !== null,
+        localAlert: session.peerAlert === null ? session.lastAlert?.description ?? null : null, certificate: session.peerCertificate,
+        chain: session.peerCertificateChain, verification,
+      };
     },
     detach: () => client.detachTls(),
   };

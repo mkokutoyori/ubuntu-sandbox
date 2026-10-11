@@ -34,12 +34,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
-import { defaultLdapOptions } from '@/network/ldap/openldap/ldapOptions';
-import { connectTls, type TlsConnectHost } from '@/network/ldap/openldap/tls/tlsConnect';
-import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
-import { TlsClientSession } from '@/network/tls/TlsClientSession';
-import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
-import type { TlsRecord } from '@/network/tls/recordLayer';
+import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
+import { connectWithPriority } from './gnutls-handshake-support';
 import { loadJson } from './openldap-replay-support';
 
 interface HandshakeCase {
@@ -72,42 +68,11 @@ function serverConfig(args: readonly string[], ec: boolean): TlsServerConfig {
   return config;
 }
 
-function play(client: TlsClientSession, server: TlsServerSession): void {
-  let flight: readonly TlsRecord[] | null = client.start();
-  for (let i = 0; i < 10 && server.result === null && flight !== null && flight.length > 0; i++) {
-    const reply = server.handle(flight);
-    if (reply === null) break;
-    flight = client.handle(reply);
-  }
-}
+const BEYOND_THE_STACK: ReadonlySet<string> = new Set(['SECURE256']);
 
 async function connect(entry: HandshakeCase): Promise<{ lines: string[]; suite: string | null }> {
-  const lines: string[] = [];
-  let suite: string | null = null;
-  const options = defaultLdapOptions();
-  options.tls.requireCert = 0;
-  options.tls.cipherSuite = entry.priority;
-  const host: TlsConnectHost = {
-    files: { read: () => ({ error: 'No such file or directory' }), regularFiles: () => null },
-    localFqdn: async () => 'vm',
-    handshake(config: TlsClientConfig) {
-      const server = new TlsServerSession(serverConfig(entry.serverArgs, entry.ec));
-      const session = new TlsClientSession(config);
-      play(session, server);
-      suite = session.result === 'success' ? session.negotiatedCipherSuite : null;
-      return {
-        established: session.result === 'success', alert: session.lastAlert !== null,
-        certificate: session.peerCertificate, verification: { ok: true as const },
-      };
-    },
-    detach: () => undefined,
-  };
-  const request = { serverName: '10.0.0.10', tls: options.tls, implicit: true, debug: (_level: number, text: string) => { lines.push(text.trimEnd()); } };
-  await connectTls(request, host);
-  return { lines, suite };
+  return connectWithPriority(entry.priority, () => serverConfig(entry.serverArgs, entry.ec));
 }
-
-const BEYOND_THE_STACK: ReadonlySet<string> = new Set(['SECURE256']);
 
 function failureLine(lines: readonly string[]): string | null {
   return lines.find((line) => line.startsWith("TLS: can't connect")) ?? null;

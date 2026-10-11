@@ -114,6 +114,8 @@ export interface TlsClientConfig {
   readonly grease?: boolean;
   /** RFC 8446 §4.2.3 — signature schemes announced, in preference order; defaults to `CLIENT_HELLO_SIGNATURE_SCHEMES`. */
   readonly signatureSchemes?: readonly string[];
+  /** Smallest finite-field DH prime (bits) accepted from a TLS ≤ 1.2 server; replaces the OpenSSL security level rule when set. */
+  readonly minimumDhBits?: number;
 }
 
 const GREASE_VALUE = 0x0a0a;
@@ -437,6 +439,7 @@ export class TlsClientSession {
       allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.hostnameToVerify,
       clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
       securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
+      ...(this.config.minimumDhBits !== undefined ? { minimumDhBits: this.config.minimumDhBits } : {}),
       clientExtensions: this.legacyExtensions(),
       session: this.config.legacySession ?? null,
       allowUnsafeRenegotiation: this.config.allowUnsafeLegacyRenegotiation === true,
@@ -490,6 +493,7 @@ export class TlsClientSession {
       allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.hostnameToVerify,
       clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
       securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
+      ...(this.config.minimumDhBits !== undefined ? { minimumDhBits: this.config.minimumDhBits } : {}),
       clientExtensions: extensions, session: null,
       allowUnsafeRenegotiation: false,
       requestStatus: false, enforceStaple: false, requireStaple: false,

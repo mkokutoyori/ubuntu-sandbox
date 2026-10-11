@@ -7,6 +7,7 @@ import { splitDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import { encodeSubjectPublicKeyInfo } from '@/network/pki/der/X509Der';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { LdapRc } from '../ldapErrors';
+import type { ProfileJudgement } from '@/network/tls/gnutls/gnutlsVerificationProfile';
 import { LdapDebug } from '../ldapLog';
 import { TlsRequireCert, type LdapOptions } from '../ldapOptions';
 
@@ -39,6 +40,7 @@ const STATUS_OF_REASON: Readonly<Partial<Record<VerificationReason, number>>> = 
 };
 
 const accepted: PeerVerdict = { ok: true };
+const NO_FINDING: ProfileJudgement = { status: 0, decisive: false };
 
 function refusal(errno: number | null, ...lines: TraceLine[]): PeerVerdict {
   return { ok: false, errno, lines };
@@ -49,12 +51,13 @@ function anyLevel(text: string): TraceLine {
 }
 
 export function judgeChain(
-  requireCert: number, certificate: X509Certificate | null, verification: ChainVerification,
+  requireCert: number, certificate: X509Certificate | null, verification: ChainVerification, algorithms: ProfileJudgement = NO_FINDING,
 ): PeerVerdict {
   if (requireCert === TlsRequireCert.NEVER) return accepted;
   if (certificate === null && requireCert === TlsRequireCert.TRY) return accepted;
-  if (verification.ok !== false || requireCert === TlsRequireCert.ALLOW) return accepted;
-  const status = STATUS_OF_REASON[verification.reason] ?? GNUTLS_CERT_INVALID;
+  const chain = verification.ok === false ? STATUS_OF_REASON[verification.reason] ?? GNUTLS_CERT_INVALID : 0;
+  const status = algorithms.decisive ? algorithms.status : chain | algorithms.status;
+  if (status === 0 || requireCert === TlsRequireCert.ALLOW) return accepted;
   return refusal(null, { level: LdapDebug.TRACE, text: `TLS: peer cert untrusted or revoked (0x${status.toString(16)})\n` });
 }
 

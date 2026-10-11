@@ -1,8 +1,9 @@
 import {
   CERTIFICATE_TYPE_NAMES, CIPHER_NAMES, CURVE_NAMES, GNUTLS_SUITES, GROUP_KINDS, GROUP_NAMES, KEYWORDS, KEY_EXCHANGE_NAMES, MAC_NAMES,
-  MODIFIER_NAMES, SIGNATURE_NAMES, SIGNATURE_VERSIONS, SOURCE_LISTS, UNSUPPORTED_VERSIONS, VERSION_NAMES,
+  MODIFIER_NAMES, PROFILE_RANK, SIGNATURE_NAMES, SIGNATURE_VERSIONS, SOURCE_LISTS, UNSUPPORTED_VERSIONS, VERSION_NAMES,
   type GnutlsNameTable, type GnutlsPriorityLists, type GnutlsSuite,
 } from './gnutlsPriorityData';
+import { LEVEL_OF_PROFILE, minimumDhPrimeBits, type VerificationProfile, type VerificationSettings } from './gnutlsVerificationProfile';
 
 export type { GnutlsPriorityLists, GnutlsSuite };
 
@@ -13,6 +14,8 @@ export interface GnutlsPriority extends GnutlsPriorityLists {
   readonly modifiers: readonly string[];
   readonly clientCertificateTypes: readonly string[];
   readonly serverCertificateTypes: readonly string[];
+  readonly verification: VerificationSettings;
+  readonly minimumDhPrimeBits: number;
 }
 
 export type GnutlsPriorityParse =
@@ -27,6 +30,8 @@ interface PriorityState {
   lists: Record<ListName, string[]>;
   certificateTypes: Record<CertificateTypeList, string[]>;
   modifiers: string[];
+  verification: { profile: VerificationProfile | null; allowSha1: boolean; allowBroken: boolean; allowMd5: boolean };
+  level: number;
 }
 
 const TLS13 = 'VERS-TLS1.3';
@@ -84,6 +89,8 @@ function initialState(startsWithNone: boolean): PriorityState {
       ? { client: [], server: [] }
       : { client: copyOf(DEFAULT_CERTIFICATE_TYPES), server: copyOf(DEFAULT_CERTIFICATE_TYPES) },
     modifiers: [],
+    verification: { profile: null, allowSha1: false, allowBroken: false, allowMd5: false },
+    level: 0,
   };
 }
 
@@ -99,6 +106,10 @@ function applyKeyword(state: PriorityState, name: string, additive: boolean): bo
   put('macs', keyword.macs);
   put('signatures', keyword.signatures);
   put('groups', keyword.groups);
+  if (state.level === 0 || state.level > keyword.level) state.level = keyword.level;
+  const wanted = keyword.profile as VerificationProfile | null;
+  const current = state.verification.profile;
+  if (wanted !== null && (current === null || PROFILE_RANK[current] > PROFILE_RANK[wanted])) state.verification.profile = wanted;
   return true;
 }
 
@@ -290,6 +301,19 @@ function breakList(text: string): string[] {
   }
 }
 
+const PROFILE_PREFIX = 'PROFILE_';
+
+function applyVerificationModifier(state: PriorityState, modifier: string): void {
+  if (modifier.startsWith(PROFILE_PREFIX)) {
+    const named = modifier.slice(PROFILE_PREFIX.length);
+    state.verification.profile = (named === 'SUITEB192' ? 'SUITEB128' : named) as VerificationProfile;
+    state.level = LEVEL_OF_PROFILE[state.verification.profile];
+  }
+  else if (modifier === 'VERIFY_ALLOW_SIGN_WITH_SHA1') state.verification.allowSha1 = true;
+  else if (modifier === 'VERIFY_ALLOW_BROKEN') state.verification.allowBroken = true;
+  else if (modifier === 'VERIFY_ALLOW_SIGN_RSA_MD5') state.verification.allowMd5 = true;
+}
+
 function applyElement(state: PriorityState, element: string, keywordSeen: boolean): 'keyword' | 'applied' | 'refused' {
   if (applyKeyword(state, element, keywordSeen)) return 'keyword';
   const sign = element.charAt(0);
@@ -302,6 +326,7 @@ function applyElement(state: PriorityState, element: string, keywordSeen: boolea
     const modifier = element.slice(1);
     if (!MODIFIER_NAMES.includes(modifier)) return 'refused';
     state.modifiers.push(element);
+    applyVerificationModifier(state, modifier);
     return 'applied';
   }
   return 'refused';
@@ -413,6 +438,8 @@ function finalise(state: PriorityState): GnutlsPriority | null {
     modifiers: state.modifiers,
     clientCertificateTypes: state.certificateTypes.client,
     serverCertificateTypes: state.certificateTypes.server,
+    verification: state.verification,
+    minimumDhPrimeBits: minimumDhPrimeBits(state.level),
   };
 }
 

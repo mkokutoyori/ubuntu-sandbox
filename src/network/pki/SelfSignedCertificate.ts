@@ -67,9 +67,9 @@ export function generateSelfSignedCertificate(
 }
 
 export function selfSignedServiceCertificate(
-  subject: string, subjectAltNames: readonly string[] = [],
+  subject: string, subjectAltNames: readonly string[] = [], keyBits?: number,
 ): { cert: X509Certificate; keyPair: PkiKeyPair } {
-  const keyPair = PkiKeyPair.generate('rsa');
+  const keyPair = PkiKeyPair.generate('rsa', keyBits);
   const name = subject.includes('=') ? subject : `CN=${subject}`;
   const now = simulationNowMs();
   const fields: X509CertificateFields = {

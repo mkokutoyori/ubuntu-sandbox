@@ -603,6 +603,7 @@ export interface LegacyClientSetup {
   readonly clientChain?: readonly X509Certificate[];
   readonly clientPrivateKey?: PkiPrivateKey;
   readonly securityLevel: number;
+  readonly minimumDhBits?: number;
   readonly resolveSuite: (name: string) => LegacySuiteDefinition | undefined;
   readonly clientExtensions: LegacyClientExtensions;
   readonly session: ResumableLegacySession | null;
@@ -813,7 +814,10 @@ export class LegacyClientHandshake {
         if (params.type !== 'dh') return this.fail('illegal_parameter');
         const p = modpFromHex(params.p);
         this.serverTempKey = `DH, ${p.toString(2).length} bits`;
-        if (!dhPermitted(setup.securityLevel, p.toString(2).length)) return this.fail('handshake_failure');
+        const primeBits = p.toString(2).length;
+        if (setup.minimumDhBits !== undefined) {
+          if (primeBits < setup.minimumDhBits) return this.fail('insufficient_security');
+        } else if (!dhPermitted(setup.securityLevel, primeBits)) return this.fail('handshake_failure');
         const g = modpFromHex(params.g);
         const own = generateModpKeyPair({ id: 0, bits: p.toString(2).length, prime: p, generator: g });
         const secret = modpSharedSecret(own, modpFromHex(params.ys));

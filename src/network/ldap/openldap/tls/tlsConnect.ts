@@ -1,11 +1,12 @@
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { gnutlsClientConfig } from '@/network/tls/gnutls/gnutlsClientConfig';
+import { judgeAlgorithms, profiledCertificate } from '@/network/tls/gnutls/gnutlsVerificationProfile';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import type { TlsUpgradeOutcome, TlsUpgradeRequest } from '../ldapChannel';
 import { LdapDebug } from '../ldapLog';
 import {
-  GNUTLS_E_FATAL_ALERT_RECEIVED, GNUTLS_E_NO_PRIORITIES_WERE_SET, GNUTLS_E_PREMATURE_TERMINATION, gnutlsStrerror,
+  GNUTLS_E_DH_PRIME_UNACCEPTABLE, GNUTLS_E_FATAL_ALERT_RECEIVED, GNUTLS_E_NO_PRIORITIES_WERE_SET, GNUTLS_E_PREMATURE_TERMINATION, gnutlsStrerror,
 } from './gnutlsErrors';
 import { initTlsContext, type TlsFiles } from './tlsContext';
 import { judgeChain, judgePeer, type ChainVerification, type PeerVerdict } from './tlsPeerPolicy';
@@ -13,7 +14,9 @@ import { judgeChain, judgePeer, type ChainVerification, type PeerVerdict } from 
 export interface TlsHandshakeFacts {
   readonly established: boolean;
   readonly alert: boolean;
+  readonly localAlert: string | null;
   readonly certificate: X509Certificate | null;
+  readonly chain: readonly X509Certificate[];
   readonly verification: ChainVerification;
 }
 
@@ -63,13 +66,18 @@ export async function connectTls(request: TlsUpgradeRequest, host: TlsConnectHos
     }),
     allowUntrustedPeer: true,
     verifyHostname: false,
+    securityLevel: 0,
     serverName: indicationOf(hostName),
   };
   const facts = host.handshake(config);
   if (!facts.established) {
+    if (facts.localAlert === 'insufficient_security') return handshakeFailure(request, GNUTLS_E_DH_PRIME_UNACCEPTABLE);
     return handshakeFailure(request, facts.alert ? GNUTLS_E_FATAL_ALERT_RECEIVED : GNUTLS_E_PREMATURE_TERMINATION);
   }
-  const chain = judgeChain(request.tls.requireCert, facts.certificate, facts.verification);
+  const algorithms = judgeAlgorithms(
+    context.priority.verification, facts.chain.map(profiledCertificate), context.trustAnchors.map(profiledCertificate),
+  );
+  const chain = judgeChain(request.tls.requireCert, facts.certificate, facts.verification, algorithms);
   if (chain.ok === false) {
     host.detach();
     return reportFailure(request, chain);
