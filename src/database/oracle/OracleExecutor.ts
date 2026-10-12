@@ -36,6 +36,7 @@ import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, typ
 import type { ColumnDataType } from '../engine/catalog/DataType';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
+import { followSynonyms, type ObjectName } from './naming/SynonymResolution';
 import { makeSqlId } from './views/sqlId';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
@@ -1725,8 +1726,7 @@ export class OracleExecutor extends BaseExecutor {
 
     let usage: SelectColumnUsage | null = null;
     for (const ref of refs) {
-      const schema = this.resolveSchema(ref.schema);
-      const tableName = ref.name.toUpperCase();
+      const { schema, name: tableName } = this.resolveTableTarget(ref.schema, ref.name);
       const granted = this.privileges.columnRestriction(schema, tableName, 'SELECT');
       if (granted === null && !this.hasColumnScopedPolicy(schema, tableName)) continue;
       const meta = this.storage.getTableMeta(schema, tableName);
@@ -1781,8 +1781,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private loadTable(ref: import('../engine/parser/ASTNode').TableRef): { rows: StorageRow[]; columns: StorageColMeta[] } {
-    const schema = this.resolveSchema(ref.schema);
-    const tableName = ref.name.toUpperCase();
+    const { schema, name: tableName } = this.resolveTableTarget(ref.schema, ref.name);
     const alias = ref.alias?.toUpperCase();
 
     // table@dblink — the rows live on ANOTHER database. Used to be
@@ -2607,8 +2606,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeMerge(stmt: MergeStatement): ResultSet {
     this.requireWritableTransaction();
-    const targetSchema = this.resolveSchema(stmt.target.schema);
-    const targetName = stmt.target.name.toUpperCase();
+    const { schema: targetSchema, name: targetName } = this.resolveTableTarget(stmt.target.schema, stmt.target.name);
 
     const targetMeta = this.requireTableMeta(targetSchema, targetName);
 
@@ -2795,6 +2793,21 @@ export class OracleExecutor extends BaseExecutor {
     return (explicit || this.context.currentSchema).toUpperCase();
   }
 
+  /**
+   * The object a table name designates: the table or view itself when the
+   * session schema (or the qualifier) holds one, else the target of a
+   * private synonym there, else — for an unqualified name — of a public one.
+   */
+  private resolveTableTarget(qualifier: string | null | undefined, name: string): ObjectName {
+    return followSynonyms(this.storage, { schema: this.resolveSchema(qualifier), name: name.toUpperCase() }, {
+      exists: ({ schema, name: objectName }) =>
+        this.storage.tableExists(schema, objectName)
+        || this.storage.viewExists(schema, objectName)
+        || this.catalog.getMaterializedView(schema, objectName) !== undefined,
+      publicFallback: !qualifier,
+    });
+  }
+
   /** Look up a table's metadata or raise ORA-00942 like real Oracle. */
   private requireTableMeta(schema: string, tableName: string): TableMeta {
     const meta = this.storage.getTableMeta(schema, tableName);
@@ -2830,8 +2843,7 @@ export class OracleExecutor extends BaseExecutor {
   private executeInsert(stmt: InsertStatement): ResultSet {
     this.requireWritableTransaction();
     this.txn.begin();
-    const schema = this.resolveSchema(stmt.table.schema);
-    const tableName = stmt.table.name.toUpperCase();
+    const { schema, name: tableName } = this.resolveTableTarget(stmt.table.schema, stmt.table.name);
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'INSERT');
@@ -2970,8 +2982,7 @@ export class OracleExecutor extends BaseExecutor {
   private executeUpdate(stmt: UpdateStatement): ResultSet {
     this.requireWritableTransaction();
     this.txn.begin();
-    const schema = this.resolveSchema(stmt.table.schema);
-    const tableName = stmt.table.name.toUpperCase();
+    const { schema, name: tableName } = this.resolveTableTarget(stmt.table.schema, stmt.table.name);
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'UPDATE');
@@ -3018,8 +3029,7 @@ export class OracleExecutor extends BaseExecutor {
   private executeDelete(stmt: DeleteStatement): ResultSet {
     this.requireWritableTransaction();
     this.txn.begin();
-    const schema = this.resolveSchema(stmt.table.schema);
-    const tableName = stmt.table.name.toUpperCase();
+    const { schema, name: tableName } = this.resolveTableTarget(stmt.table.schema, stmt.table.name);
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');

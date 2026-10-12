@@ -55,7 +55,8 @@ import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 import { IPAddress } from '@/network/core/types';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
-import { type AddsForestOptions, DEFAULT_AD_FUNCTIONAL_LEVEL, netbiosNameProblem } from './windows/server/ad/adFunctionalLevels';
+import { type AddsForestOptions, DEFAULT_AD_FUNCTIONAL_LEVEL, netbiosNameProblem, parseAdFunctionalLevel } from './windows/server/ad/adFunctionalLevels';
+import type { ForestPromotion } from './windows/server/ad/DirectoryDelta';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -97,6 +98,7 @@ const AUTODISCOVER_PORT = 80;
 export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
   private directoryStore: DirectoryStore | null = null;
+  private forestPromotion: ForestPromotion | null = null;
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
   private npsRoleInstance: WindowsNpsRole | null = null;
@@ -192,6 +194,8 @@ export class WindowsServer extends WindowsPC {
 
   /** PRD Phase 5 (§5 P5): the real AD DS directory, once `Install-ADDSForest` has promoted this server. */
   getDirectoryStore(): DirectoryStore | null { return this.directoryStore; }
+
+  getForestPromotion(): ForestPromotion | null { return this.forestPromotion; }
 
   protected override logonDomainNames(): { netbios: string; dns: string } | null {
     const store = this.directoryStore;
@@ -449,6 +453,11 @@ export class WindowsServer extends WindowsPC {
     if (opts.whatIf) {
       return { ok: true, message: `What if: Performing the operation "Install-ADDSForest" on target "${this.getHostname()}".` };
     }
+    this.forestPromotion = {
+      domainName, netbiosName: netbios, safeModeAdminPassword,
+      forestMode: forestLevel.keyword, domainMode: domainLevel.keyword,
+      installDns: opts.installDns, databasePath: opts.databasePath, logPath: opts.logPath, sysvolPath: opts.sysvolPath,
+    };
     this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { now: () => this.simulatedDate() });
     this.directoryStore.domainMode = domainLevel.domainMode;
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
@@ -471,6 +480,17 @@ export class WindowsServer extends WindowsPC {
     this.logDirectoryServiceStartup();
     this.auditPolicy.seedDefaults('domain-controller');
     return { ok: true, message: '' };
+  }
+
+  replayForestPromotion(promotion: ForestPromotion): AdDsOpResult {
+    return this.installADDSForest(promotion.domainName, promotion.netbiosName, promotion.safeModeAdminPassword, {
+      forestMode: parseAdFunctionalLevel(promotion.forestMode) ?? undefined,
+      domainMode: parseAdFunctionalLevel(promotion.domainMode) ?? undefined,
+      installDns: promotion.installDns,
+      databasePath: promotion.databasePath,
+      logPath: promotion.logPath,
+      sysvolPath: promotion.sysvolPath,
+    });
   }
 
   private pointDnsClientAtLoopback(): void {

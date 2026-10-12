@@ -80,20 +80,16 @@ export function screenLineEnd(view: WindowView, from: Pos, count: number, lineCo
     let cell = width1 - 1;
     if (virt >= width1) cell += (Math.floor((virt - width1) / width1) + 1) * width1;
     let col = view.colAtCell(from.line, cell, allowEol);
-    if (col > 0) {
-      const landed = view.virtColumn(from.line, col, true);
-      if (landed > cell + 1) col--;
-    }
-    return { pos: { line: from.line, col }, want: view.virtColumn(from.line, col, true), failed: false };
+    const want = view.virtColumn(from.line, col, true);
+    if (col > 0 && want > cell) col--;
+    return { pos: { line: from.line, col }, want, failed: false };
   }
   const line = Math.min(lineCount - 1, from.line + Math.max(0, count - 1));
   const cell = view.leftCol + view.textWidth - 1;
   let col = view.colAtCell(line, cell, allowEol);
-  const lineText = line === from.line ? text : '';
-  void lineText;
   if (col > 0) {
-    const landed = view.virtColumn(line, col, true);
-    if (landed >= view.leftCol + view.textWidth) col--;
+    const span = view.charCells(line, col);
+    if (span.width > 1 && span.end >= cell) col--;
   }
   return { pos: { line, col }, want: view.virtColumn(line, col, true), failed: false };
 }

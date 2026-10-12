@@ -57,6 +57,9 @@ import {
 } from '@/network/devices/windows/netFirewallRule';
 import { buildConnection, type Connection } from './networkStore';
 import { withFactoryTwin } from './factoryTwin';
+import { diffDirectory, type ForestPromotion } from '@/network/devices/windows/server/ad/DirectoryDelta';
+import type { DirectoryDelta } from '@/network/devices/windows/server/ad/DirectoryStore';
+import { resetForestRegistry, withIsolatedForestRegistry } from '@/network/devices/windows/server/ad/forest/Forest';
 import {
   captureWindowsServerRoles, restoreWindowsServerRoles, type WindowsServerRolesState,
 } from './windowsServerRoles';
@@ -291,6 +294,7 @@ interface TopologyDeviceExport {
   };
   removedPaths?: string[];
   windowsFeatures?: { installed: string[]; removed?: string[] };
+  activeDirectory?: { promotion: ForestPromotion; delta?: DirectoryDelta };
   windowsRoles?: WindowsServerRolesState;
   /**
    * The machine's registry, as a diff against a pristine hive of the same
@@ -993,6 +997,27 @@ function restoreWindowsFeatures(device: WindowsServer, saved: NonNullable<Topolo
   for (const name of saved.installed) roles.install(name, {}, true);
 }
 
+function captureActiveDirectory(device: WindowsServer, twin: WindowsServer): TopologyDeviceExport['activeDirectory'] | undefined {
+  const promotion = device.getForestPromotion();
+  const store = device.getDirectoryStore();
+  if (!promotion || !store) return undefined;
+  const factory = withIsolatedForestRegistry(() => {
+    twin.replayForestPromotion(promotion);
+    return twin.getDirectoryStore()?.exportSnapshot() ?? null;
+  });
+  const delta = factory ? diffDirectory(store.exportSnapshot(), factory) : null;
+  return delta ? { promotion, delta } : { promotion };
+}
+
+function restoreActiveDirectory(device: WindowsServer, saved: NonNullable<TopologyDeviceExport['activeDirectory']>): void {
+  const result = device.replayForestPromotion(saved.promotion);
+  if (!result.ok) {
+    Logger.warn('ad', 'persistence.restore-failed', result.message);
+    return;
+  }
+  if (saved.delta) device.getDirectoryStore()?.importSnapshot(saved.delta);
+}
+
 function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport {
   const pos = device.getPosition();
   const entry: TopologyDeviceExport = {
@@ -1048,7 +1073,9 @@ function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport
         entry.windowsFeatures = features;
         restoreWindowsFeatures(twin, features);
       }
-      const roles = captureWindowsServerRoles(device);
+      const directory = captureActiveDirectory(device, twin);
+      if (directory) entry.activeDirectory = directory;
+      const roles = captureWindowsServerRoles(device, twin);
       if (roles) entry.windowsRoles = roles;
     }
     const files = captureWindowsFiles(device, twin);
@@ -1250,6 +1277,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
 
   resetDeviceCounters();
   resetCounters();
+  resetForestRegistry();
   Logger.reset();
 
   for (const devData of json.devices) {
@@ -1419,11 +1447,12 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {
+      if (devData.windowsFeatures && device instanceof WindowsServer) restoreWindowsFeatures(device, devData.windowsFeatures);
+      if (devData.activeDirectory && device instanceof WindowsServer) restoreActiveDirectory(device, devData.activeDirectory);
       if (devData.files || devData.removedPaths) {
         restoreWindowsFiles(device, devData.files ?? [], devData.removedPaths ?? []);
       }
       if (devData.windowsAccounts) restoreWindowsAccounts(device, devData.windowsAccounts);
-      if (devData.windowsFeatures && device instanceof WindowsServer) restoreWindowsFeatures(device, devData.windowsFeatures);
       if (devData.windowsRoles && device instanceof WindowsServer) restoreWindowsServerRoles(device, devData.windowsRoles);
       // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\
       // Services\<name>` is a projection of the service table, written by

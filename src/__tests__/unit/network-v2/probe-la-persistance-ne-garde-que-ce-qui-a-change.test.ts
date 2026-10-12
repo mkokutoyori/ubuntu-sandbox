@@ -318,6 +318,8 @@ describe('Oracle writes the schema objects that differ from a fresh database, an
       .toBe('[["IX_LAB"],["UX_LAB"]]');
     expect(db.storage.getAllSynonyms().map((x) => `${x.owner}.${x.name}->${x.tableOwner}.${x.tableName}`).sort())
       .toEqual(['PUBLIC.PUB_DEPT->SCOTT.DEPT', 'SCOTT.SYN_EMP->SCOTT.EMP']);
+    expect(cell('SELECT COUNT(*) FROM scott.syn_emp')).toBe(cell('SELECT COUNT(*) FROM scott.emp'));
+    expect(cell('SELECT COUNT(*) FROM pub_dept')).toBe(cell('SELECT COUNT(*) FROM scott.dept'));
     expect(cell('SELECT scott.f_plus(2, 3) FROM dual')).toBe('[[5]]');
     expect(db.catalog.getStoredUnits().filter((u) => u.name === 'PKG_LAB').map((u) => u.type).sort())
       .toEqual(['PACKAGE', 'PACKAGE BODY']);

@@ -332,6 +332,25 @@ export class DirectoryTree {
     this.byDn.set(this.dnIndexKey(dn), entry);
   }
 
+  restoreEntry(dn: DistinguishedName, attributes: Record<string, string[]>, stamp: EntryReplMeta | null): TreeOpResult {
+    const existing = this.getByDn(dn);
+    if (existing) {
+      existing.attributes.clear();
+      for (const [k, v] of toAttrMap(attributes)) existing.attributes.set(k, v);
+      existing.replMeta = stamp;
+      this.rememberAttributeNames(Object.keys(attributes));
+      return { ok: true, message: '' };
+    }
+    const parentDn = parentOf(dn);
+    const parent = parentDn ? this.getByDn(parentDn) : null;
+    if (!parent) return { ok: false, message: 'noSuchObject: parent does not exist' };
+    this.rememberAttributeNames(Object.keys(attributes));
+    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: stamp };
+    parent.children.set(rdnKey(dn), entry);
+    this.byDn.set(this.dnIndexKey(dn), entry);
+    return { ok: true, message: '' };
+  }
+
   /**
    * RFC 4511 §4.9 ModifyDNRequest — renames `dn` to `newRdnStr`, optionally
    * moving it under `newSuperior` and/or stripping the old RDN's

@@ -210,24 +210,29 @@ parametres, tables (Data Pump) et vues, sequences, index, synonymes, triggers, p
 ne voyagent pas les vues materialisees, liens de base, repertoires, types objet, taches DBMS_SCHEDULER,
 commentaires, politiques d'audit, VPD/RLS, TDE, Data Vault, partitions de tables (Data Pump ne les porte pas),
 ni les donnees d'une table temporaire. (3) Windows Server : seuls les roles installes, les zones DNS et les
-etendues DHCP IPv4 voyagent ; Active Directory, IIS (sites, pools), ADCS, NPS, DFS, WSUS, impression, cluster,
-Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
+etendues DHCP IPv4 voyagent, ainsi que l'annuaire d'un controleur de domaine racine de foret (la promotion est
+rejouee, puis le delta de l'annuaire contre un jumeau promu : objets, mots de passe, GPO, schema, ACL, sites,
+fonctionnalites optionnelles) ; ne voyagent pas les domaines enfants, les controleurs supplementaires, les
+approbations, les machines jointes au domaine, ni le journal de replication ; IIS (sites, pools), ADCS, NPS, DFS,
+WSUS, impression, cluster, Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
 **Pourquoi ce n'est pas ferme** : (1) le texte de configuration est rejoue par la CLI dans l'ordre ; un extrait par
 difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations) : il faut un diff
 par bloc de mode. (2) Chaque famille d'objets Oracle demande une section dans `OracleStateDelta.ts` (une entree,
 un enumerateur sur le catalogue et sa restitution). (3) Chaque role Windows demande un `RolePersister`
-(`src/store/windowsServerRoles.ts`) ; l'annuaire AD est le plus gros et suppose de rejouer un magasin d'objets entier.
+(`src/store/windowsServerRoles.ts`) ; pour AD, les foret a plusieurs domaines ou controleurs demandent de nommer
+chaque controleur par sa promotion (`Install-ADDSDomain`, `Install-ADDSDomainController`) et de rejouer dans l'ordre
+des dependances, la replication entre eux restant a reconstituer sur le fil.
 
-### [oracle] synonymes stockes mais jamais resolus, fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse
-**Mesure** : apres `CREATE SYNONYM scott.a1 FOR scott.emp`, `SELECT COUNT(*) FROM scott.a1` rend ORA-00942 (idem
-pour un synonyme public) : le synonyme est stocke et liste, aucune resolution de nom ne le consulte.
-`SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et
+### [oracle] fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse, FORCE sans effet, synonymes hors DML
+**Mesure** : `SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et
 `pkg.g()` est refuse par l'analyseur. `ALTER TRIGGER scott.t DISABLE` rend `Unsupported ALTER target: TRIGGER`.
 `CREATE FORCE VIEW` est lu mais jamais evalue : une vue sur une table absente est toujours creee, sans l'ORA-00942
-du `NOFORCE` par defaut.
-**Pourquoi ce n'est pas ferme** : la resolution d'un nom de table est eparpillee dans l'executeur (SELECT, INSERT,
-UPDATE, DELETE, DDL) ; y brancher les synonymes (schema courant puis PUBLIC, chaine bornee) est un changement
-transverse a part entiere, de meme que l'appel d'une fonction de paquetage depuis une expression SQL.
+du `NOFORCE` par defaut. Les synonymes sont resolus par SELECT, INSERT, UPDATE, DELETE et MERGE ; ils ne le sont
+pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonctions (`EXEC syn_proc`), `TRUNCATE`,
+`LOCK TABLE`, `DESCRIBE`, `GRANT ... ON synonyme` ni `COMMENT ON`.
+**Pourquoi ce n'est pas ferme** : chacun est un point d'entree distinct de l'executeur (resolution des sequences,
+des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
+depuis une expression SQL est un changement d'evaluation a part entiere.
 
 ### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
 **Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les

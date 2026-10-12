@@ -104,5 +104,15 @@ export function getForestForDomain(dnsName: string): Forest | null {
   return domainToForest.get(key(dnsName))?.forest ?? null;
 }
 
+export function withIsolatedForestRegistry<T>(run: () => T): T {
+  const saved = new Map(domainToForest);
+  try {
+    return run();
+  } finally {
+    domainToForest.clear();
+    for (const [name, registration] of saved) domainToForest.set(name, registration);
+  }
+}
+
 /** Test isolation only — the registry is otherwise a process-lifetime singleton, like `EquipmentRegistry`. */
 export function resetForestRegistry(): void { domainToForest.clear(); }

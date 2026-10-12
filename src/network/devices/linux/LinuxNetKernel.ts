@@ -85,6 +85,7 @@ export interface LinuxNetKernel {
 
   /** Configure an IPv6 address on an interface, inserting its connected route. */
   configureIPv6Interface(name: string, address: IPv6Address, prefixLength: number): boolean;
+  removeIPv6Interface(name: string, address: IPv6Address): boolean;
 
   // ─── Routing ─────────────────────────────────────────────────────
   getRoutingTable(): HostRouteEntry[];
