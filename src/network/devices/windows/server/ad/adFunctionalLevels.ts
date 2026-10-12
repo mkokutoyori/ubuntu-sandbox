@@ -52,4 +52,5 @@ export interface AddsForestOptions {
   logPath?: string;
   sysvolPath?: string;
   whatIf?: boolean;
+  invocationId?: string;
 }

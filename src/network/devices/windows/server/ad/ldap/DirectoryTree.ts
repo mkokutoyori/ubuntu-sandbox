@@ -6,7 +6,7 @@
  * not a flat lookup table with cosmetic DN strings.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationDate } from '@/network/core/SystemClock';
 
 import {
   type DistinguishedName, type Rdn, parseDN, formatDN, dnEquals, parentOf, isDescendantOf,
@@ -75,6 +75,7 @@ function localWins(local: EntryReplMeta, entrant: EntryReplMeta): boolean {
 export interface ReplicationIdentity {
   readonly invocationId: string;
   nextUsn(): number;
+  nextGuid?(): string;
 }
 
 export interface DirectoryEntry {
@@ -156,7 +157,7 @@ export class DirectoryTree {
     return {
       originatingInvocationId: this.replication.invocationId,
       originatingUsn: this.replication.nextUsn(),
-      timestamp: Math.floor(simulationNowMs() / 1000),
+      timestamp: Math.floor(this.now().getTime() / 1000),
       version: (precedent?.version ?? 0) + 1,
     };
   }
@@ -186,7 +187,7 @@ export class DirectoryTree {
     this.rememberAttributeNames(Object.keys(attributes));
     const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: this.stampFor() };
     if (!entry.attributes.has('objectguid')) {
-      entry.attributes.set('objectguid', [globalThis.crypto.randomUUID()]);
+      entry.attributes.set('objectguid', [this.replication?.nextGuid?.() ?? globalThis.crypto.randomUUID()]);
       this.rememberAttributeNames(['objectGUID']);
     }
     parent.children.set(rdnKey(dn), entry);

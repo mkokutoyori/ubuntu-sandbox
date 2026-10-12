@@ -100,6 +100,7 @@ export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
   private directoryStore: DirectoryStore | null = null;
   private directoryPromotion: DirectoryPromotion | null = null;
+  private promotionClockMs: number | null = null;
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
   private npsRoleInstance: WindowsNpsRole | null = null;
@@ -197,6 +198,10 @@ export class WindowsServer extends WindowsPC {
   getDirectoryStore(): DirectoryStore | null { return this.directoryStore; }
 
   getDirectoryPromotion(): DirectoryPromotion | null { return this.directoryPromotion; }
+
+  private directoryDate(): Date {
+    return this.promotionClockMs !== null ? new Date(this.promotionClockMs) : this.simulatedDate();
+  }
 
   protected override logonDomainNames(): { netbios: string; dns: string } | null {
     const store = this.directoryStore;
@@ -454,12 +459,13 @@ export class WindowsServer extends WindowsPC {
     if (opts.whatIf) {
       return { ok: true, message: `What if: Performing the operation "Install-ADDSForest" on target "${this.getHostname()}".` };
     }
+    this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { now: () => this.directoryDate(), invocationId: opts.invocationId });
     this.directoryPromotion = {
       kind: 'forest', domainName, netbiosName: netbios, safeModeAdminPassword,
       forestMode: forestLevel.keyword, domainMode: domainLevel.keyword,
       installDns: opts.installDns, databasePath: opts.databasePath, logPath: opts.logPath, sysvolPath: opts.sysvolPath,
+      invocationId: this.directoryStore.getInvocationId(), promotedAt: this.directoryDate().getTime(),
     };
-    this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { now: () => this.simulatedDate() });
     this.directoryStore.domainMode = domainLevel.domainMode;
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSecret());
@@ -484,6 +490,15 @@ export class WindowsServer extends WindowsPC {
   }
 
   replayDirectoryPromotion(promotion: DirectoryPromotion, baseline?: DirectorySnapshot): AdDsOpResult {
+    this.promotionClockMs = promotion.promotedAt ?? null;
+    try {
+      return this.replayPinnedPromotion(promotion, baseline);
+    } finally {
+      this.promotionClockMs = null;
+    }
+  }
+
+  private replayPinnedPromotion(promotion: DirectoryPromotion, baseline?: DirectorySnapshot): AdDsOpResult {
     switch (promotionKind(promotion)) {
       case 'childDomain': {
         const child = promotion as ChildDomainPromotion;
@@ -505,6 +520,7 @@ export class WindowsServer extends WindowsPC {
           databasePath: forest.databasePath,
           logPath: forest.logPath,
           sysvolPath: forest.sysvolPath,
+          invocationId: forest.invocationId,
         });
       }
     }
@@ -1216,8 +1232,10 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: `New-ADDomain : ${join.message}` };
     }
 
-    this.directoryPromotion = promotion;
-    this.directoryStore = new DirectoryStore(newDomainDnsName, netbios, safeModeAdminPassword, { sharedSchemaValidator: join.schemaValidator, now: () => this.simulatedDate() });
+    this.directoryStore = new DirectoryStore(newDomainDnsName, netbios, safeModeAdminPassword, {
+      sharedSchemaValidator: join.schemaValidator, now: () => this.directoryDate(), invocationId: promotion.invocationId,
+    });
+    this.directoryPromotion = { ...promotion, invocationId: this.directoryStore.getInvocationId(), promotedAt: promotion.promotedAt ?? this.directoryDate().getTime() };
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSecret());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
@@ -1484,7 +1502,8 @@ export class WindowsServer extends WindowsPC {
     return new DirectoryStore(promotion.domainName, promotion.netbiosName, promotion.safeModeAdminPassword, {
       skipSeed: true,
       sharedSchemaValidator: getSchemaValidatorForDomain(promotion.domainName) ?? undefined,
-      now: () => this.simulatedDate(),
+      now: () => this.directoryDate(),
+      invocationId: promotion.invocationId,
     });
   }
 
@@ -1503,7 +1522,7 @@ export class WindowsServer extends WindowsPC {
     // Default-First-Site-Name always already exists at this point — replicated in above from the source DC, which created it at its own promotion.
     const initialSite = (ownIp ? store.siteForIp(ownIp) : null) ?? DEFAULT_SITE_NAME;
     store.assignServerToSite(this.getHostname(), initialSite, ownIp ?? undefined);
-    this.directoryPromotion = promotion;
+    this.directoryPromotion = { ...promotion, invocationId: store.getInvocationId(), promotedAt: promotion.promotedAt ?? this.directoryDate().getTime() };
     this.directoryStore = store;
     this.provisionSysvol(domainName);
     this.registerDcServices();

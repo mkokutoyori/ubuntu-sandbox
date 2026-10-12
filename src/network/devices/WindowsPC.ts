@@ -1139,6 +1139,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     );
   }
 
+  getNtdsOptions(): NtdsOption[] { return [...this.ntdsOptions]; }
+
+  restoreNtdsOptions(options: readonly NtdsOption[]): void {
+    this.ntdsOptions.clear();
+    for (const option of options) this.ntdsOptions.add(option);
+  }
+
   /** PRD-Windows-Server-Advanced.md §5 P6 — every past `replicateFrom` cycle, annotated intra-/inter-site. */
   getReplicationLog(): readonly ReplicationLogEntry[] { return this.replicationSignals.log.get(); }
 
