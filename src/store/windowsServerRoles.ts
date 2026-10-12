@@ -1,4 +1,5 @@
 import { WindowsServer } from '@/network/devices/WindowsServer';
+import type { AppPoolInfo, IisStateDelta, WebsiteInfo } from '@/network/devices/windows/server/iis/WindowsIisRole';
 import type {
   DnsDynamicUpdateMode, DnsTransferPolicy, DnsZoneInfo, DnsZoneType,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
@@ -28,6 +29,7 @@ interface DhcpScopeState {
 
 export interface WindowsServerRolesState {
   dnsZones?: DnsZoneState[];
+  iis?: IisStateDelta;
   dhcp?: {
     scopes: DhcpScopeState[];
     exclusions: Array<{ start: string; end: string }>;
@@ -105,7 +107,39 @@ const dhcpScopes: RolePersister = {
   },
 };
 
-const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes];
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+const differing = <T extends { name: string }>(live: readonly T[], factory: readonly T[]): T[] => {
+  const baseline = new Map(factory.map((item) => [item.name, item]));
+  return live.filter((item) => !same(item, baseline.get(item.name)));
+};
+
+const missing = <T extends { name: string }>(live: readonly T[], factory: readonly T[]): string[] => {
+  const present = new Set(live.map((item) => item.name));
+  return factory.map((item) => item.name).filter((name) => !present.has(name));
+};
+
+const iisSites: RolePersister = {
+  capture(server, twin) {
+    const role = server.getIisRole();
+    if (!role) return {};
+    const factory = twin.getIisRole();
+    const liveSites: WebsiteInfo[] = role.listWebsites();
+    const factorySites: WebsiteInfo[] = factory?.listWebsites() ?? [];
+    const livePools: AppPoolInfo[] = role.listAppPools();
+    const factoryPools: AppPoolInfo[] = factory?.listAppPools() ?? [];
+    const delta: IisStateDelta = {
+      sites: differing(liveSites, factorySites), removedSites: missing(liveSites, factorySites),
+      appPools: differing(livePools, factoryPools), removedAppPools: missing(livePools, factoryPools),
+    };
+    return Object.values(delta).some((list) => list.length > 0) ? { iis: delta } : {};
+  },
+  restore(server, state) {
+    if (state.iis) server.getIisRole()?.restoreState(state.iis);
+  },
+};
+
+const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes, iisSites];
 
 export function captureWindowsServerRoles(server: WindowsServer, twin: WindowsServer): WindowsServerRolesState | undefined {
   const state = Object.assign({}, ...PERSISTERS.map((p) => p.capture(server, twin))) as WindowsServerRolesState;

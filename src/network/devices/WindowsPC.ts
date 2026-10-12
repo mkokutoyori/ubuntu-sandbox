@@ -223,6 +223,7 @@ import { cmdSlmgr } from './windows/WinSlmgr';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl } from '@/network/http/curl/CurlEngine';
 import { linkNeighbourOf, type ScanHost } from '@/network/scan/nmap/NmapProbes';
@@ -362,7 +363,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** `repadmin /options` (PRD-Repadmin.md P8) — this DC's NTDS Settings flags. `DISABLE_OUTBOUND_REPL`/`DISABLE_INBOUND_REPL` have a real causal effect on `ReplicationServerHandler`/`replicateFrom`; `IS_GC`/`DISABLE_SPN_REGISTRATION` are declarative storage only (§2.1 P8). */
   private readonly ntdsOptions = new Set<NtdsOption>();
   /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
-  private ldapStartTlsIdentity: ReturnType<typeof selfSignedLdapCert> | null = null;
+  private ldapStartTlsIdentity: { cert: X509Certificate; keyPair: { privateKey: PkiPrivateKey } } | null = null;
   /** Windows Update client redirection toward a WSUS server (PRD-Windows-Server-Advanced.md §5 P19) — unset by default (points at Windows Update directly, out of this simulator's scope); set via `Set-WUSettings -WUServer`. */
   readonly wsus: WindowsWsusClientConfig = new WindowsWsusClientConfig();
   /** Activation/licensing state (PRD-Windows-Server-Advanced.md §5 P21) — ships on every SKU; toggled via `slmgr /ipk`/`/ato`. */
@@ -1072,6 +1073,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /** This host's own RDP TLS identity certificate (PRD-Windows-Server-Advanced.md §5 P17) — lazily created once; a real client would present its own trust decision UI for this cert, which a `dialRdp()` caller stands in for via an explicit `CertificateVerifier`. */
+  getTlsIdentities(): { rdp?: { cert: X509Certificate; privateKey: PkiPrivateKey }; ldap?: { cert: X509Certificate; privateKey: PkiPrivateKey } } {
+    return {
+      ...(this.rdpTlsIdentity ? { rdp: { cert: this.rdpTlsIdentity.cert, privateKey: this.rdpTlsIdentity.privateKey } } : {}),
+      ...(this.ldapStartTlsIdentity ? { ldap: { cert: this.ldapStartTlsIdentity.cert, privateKey: this.ldapStartTlsIdentity.keyPair.privateKey } } : {}),
+    };
+  }
+
+  restoreTlsIdentities(identities: { rdp?: { cert: X509Certificate; privateKey: PkiPrivateKey }; ldap?: { cert: X509Certificate; privateKey: PkiPrivateKey } }): void {
+    if (identities.rdp) this.rdpTlsIdentity = { cert: identities.rdp.cert, privateKey: identities.rdp.privateKey };
+    if (identities.ldap) this.ldapStartTlsIdentity = { cert: identities.ldap.cert, keyPair: { privateKey: identities.ldap.privateKey } };
+  }
+
   getRdpTlsCertificate(): X509Certificate {
     if (!this.rdpTlsIdentity) {
       this.rdpTlsIdentity = generateSelfSignedCertificate(`CN=${this.getHostname()}`, { now: this.simulatedDate().getTime() });
