@@ -108,7 +108,7 @@ function leaveIpv6Group(host: EndHost, binding: McastDnsBinding): void {
 
 function bindResolverClientSocket(host: EndHost, sourcePort: number, listener: Parameters<EndHost['udpBind']>[1]): void {
   const resolver = host.resolverIdentity();
-  host.udpBind(sourcePort, listener, resolver.processName, { pid: resolver.pid });
+  host.udpBind(sourcePort, listener, resolver.processName, { pid: resolver.pid, service: resolver.service });
 }
 
 export function bindMulticastDns(
@@ -133,7 +133,7 @@ export function bindMulticastDns(
     } else {
       sendOnBothGroups(host, binding, binding.port, bytes);
     }
-  }, identity.processName, { pid: identity.pid });
+  }, identity.processName, { pid: identity.pid, service: identity.service });
   joinIpv6Group(host, binding);
 }
 

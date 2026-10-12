@@ -2526,10 +2526,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
       .map(s => ({
         localAddress:  s.localAddress,
         localPort:     s.localPort,
-        remoteAddress: s.state === 'LISTEN' ? '0.0.0.0' : s.remoteAddress,
-        remotePort:    s.state === 'LISTEN' ? 0 : s.remotePort,
+        remoteAddress: s.remoteAddress === '*' ? (s.localAddress.includes(':') ? '::' : '0.0.0.0') : s.remoteAddress,
+        remotePort:    s.remoteAddress === '*' ? 0 : s.remotePort,
         state:         s.state === 'LISTEN' ? 'Listen' : s.state,
-        pid:           s.pid,
+        pid:           s.pid ?? 0,
       }));
   }
 
@@ -2541,7 +2541,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
       .map(s => ({
         localAddress: s.localAddress,
         localPort:    s.localPort,
-        pid:          s.pid,
+        pid:          s.pid ?? 0,
         processName:  s.processName,
       }));
   }

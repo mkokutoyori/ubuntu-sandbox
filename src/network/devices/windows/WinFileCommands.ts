@@ -10,16 +10,6 @@
  */
 
 import { WindowsFileSystem } from './WindowsFileSystem';
-import type {
-  SocketEntry, SocketProtocol, SocketTable,
-} from '../../core/SocketTable';
-import {
-  renderTable, type TableColumn, type TableStyle,
-} from '../shells/cli/TextTable';
-import type { WinCommandContext } from './WinCommandExecutor';
-import { showRoutePrint } from './WinRoute';
-import { netstatStatistics, type NetstatProtocolFilter } from './WinNetstatStatistics';
-import { snmpSnapshot } from '../linux/ports/PortsFilesystem';
 import {
   filterFind, filterFindstr, parseFindArguments, parseFindstrArguments, textLines,
 } from './FindText';
@@ -213,115 +203,6 @@ export function cmdTasklist(ctx: WinFileCommandContext): string {
   }
 
   return lines.join('\n');
-}
-
-// ─── netstat ───────────────────────────────────────────────────────
-
-function statistiquesInterfaces(netCtx: WinCommandContext): string {
-  let octetsRecus = 0, octetsEnvoyes = 0, paquetsRecus = 0, paquetsEnvoyes = 0;
-  for (const [, port] of netCtx.ports) {
-    const c = port.getCounters?.();
-    octetsRecus += c?.bytesIn ?? 0;
-    octetsEnvoyes += c?.bytesOut ?? 0;
-    paquetsRecus += c?.framesIn ?? 0;
-    paquetsEnvoyes += c?.framesOut ?? 0;
-  }
-  const ligne = (nom: string, recu: number, envoye: number) =>
-    `${nom.padEnd(24)}${String(recu).padStart(12)}${String(envoye).padStart(16)}`;
-  return [
-    '',
-    'Interface Statistics',
-    '',
-    `${''.padEnd(24)}${'Received'.padStart(12)}${'Sent'.padStart(16)}`,
-    '',
-    ligne('Bytes', octetsRecus, octetsEnvoyes),
-    ligne('Unicast packets', paquetsRecus, paquetsEnvoyes),
-    ligne('Non-unicast packets', 0, 0),
-    ligne('Discards', 0, 0),
-    ligne('Errors', 0, 0),
-    ligne('Unknown protocols', 0, 0),
-    '',
-  ].join('\n');
-}
-
-const WINDOWS_NETSTAT_TABLE: TableStyle = { gap: 0, rule: false, indent: '  ' };
-
-const NETSTAT_PROTOCOLS: Readonly<Record<string, SocketProtocol>> = {
-  tcp: 'tcp', udp: 'udp', tcpv6: 'tcp', udpv6: 'udp',
-};
-
-const NETSTAT_FAMILIES: Record<string, NetstatProtocolFilter> = {
-  ip: 'ip', ipv4: 'ipv4', icmp: 'icmp', icmpv4: 'icmpv4',
-  tcp: 'tcp', tcpv4: 'tcpv4', udp: 'udp', udpv4: 'udpv4',
-};
-
-function familleDemandee(args: string[]): NetstatProtocolFilter | null {
-  const at = args.findIndex((a) => a.toLowerCase() === '-p');
-  if (at < 0 || args[at + 1] === undefined) return null;
-  return NETSTAT_FAMILIES[args[at + 1].toLowerCase()] ?? null;
-}
-
-function protocoleDemande(args: string[]): SocketProtocol | null {
-  const at = args.findIndex((a) => a.toLowerCase() === '-p');
-  if (at < 0 || args[at + 1] === undefined) return null;
-  return NETSTAT_PROTOCOLS[args[at + 1].toLowerCase()] ?? null;
-}
-
-export function cmdNetstat(
-  ctx: WinFileCommandContext,
-  args: string[] = [],
-  socketTable?: SocketTable | null,
-  netCtx?: WinCommandContext,
-): string {
-  // Expand combined flags: '-an' → chars a, n
-  const hasFlag = (ch: string): boolean =>
-    args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch));
-
-  if (hasFlag('r')) {
-    return netCtx ? showRoutePrint(netCtx) : '';
-  }
-
-  if (hasFlag('e')) {
-    return netCtx ? statistiquesInterfaces(netCtx) : '';
-  }
-
-  if (hasFlag('s')) {
-    return netstatStatistics(
-      snmpSnapshot(netCtx?.protocolCounters()),
-      familleDemandee(args));
-  }
-
-  const showAll = hasFlag('a') || args.includes('-an');
-  const withPid = hasFlag('o');
-  const only = protocoleDemande(args);
-
-  const rows = (socketTable?.getAll() ?? []).filter((sock) => {
-    if (!showAll && sock.state !== 'ESTABLISHED') return false;
-    return only === null || sock.protocol === only;
-  });
-
-  const columns: Array<TableColumn<SocketEntry>> = [
-    { header: 'Proto', width: 7, value: (s) => s.protocol.toUpperCase() },
-    {
-      header: 'Local Address', width: 23,
-      value: (s) => `${s.localAddress}:${s.localPort}`,
-    },
-    {
-      header: 'Foreign Address', width: 23,
-      value: (s) => (s.protocol === 'udp' ? '*:*'
-        : s.state === 'LISTEN' ? '0.0.0.0:0'
-          : `${s.remoteAddress}:${s.remotePort}`),
-    },
-    {
-      header: 'State', width: 16,
-      value: (s) => (s.protocol === 'udp' ? ''
-        : s.state === 'LISTEN' ? 'LISTENING' : s.state),
-    },
-  ];
-  if (withPid) columns.push({ header: 'PID', value: (s) => String(s.pid ?? 0) });
-
-  return ['', 'Active Connections', '',
-    ...renderTable(rows, columns, WINDOWS_NETSTAT_TABLE)].join('\n');
 }
 
 // ─── attrib ───────────────────────────────────────────────────────

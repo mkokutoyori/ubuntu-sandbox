@@ -54,7 +54,7 @@ export class PortProxyEndpoint implements WindowsEndpoint {
       accepted.close();
       return;
     }
-    if (identity.pid !== undefined) this.tcpStack.setSocketOwner(upstream, identity.pid);
+    if (identity.pid !== undefined) this.tcpStack.setSocketOwner(upstream, identity.pid, identity.service);
     accepted.onData((data) => upstream.send(data));
     accepted.onClose(() => upstream.close());
   }

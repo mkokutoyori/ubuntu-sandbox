@@ -318,8 +318,7 @@ export interface TcpConnectOptions {
   allowHalfOpen?: boolean;
 }
 
-export interface TcpListenOptions {
-  onAccept: TcpAcceptHandler;
+export interface TcpBindOptions {
   /**
    * Ce que la `SocketTable` sait en plus de la pile — pid, nom de
    * processus, bannière. Fourni ici plutôt que réinscrit à côté par un
@@ -336,6 +335,10 @@ export interface TcpListenOptions {
   allowHalfOpen?: boolean;
   backlog?: number;
   boundDevice?: string;
+}
+
+export interface TcpListenOptions extends TcpBindOptions {
+  onAccept: TcpAcceptHandler;
 }
 
 export class TcpSocket {
@@ -391,6 +394,7 @@ export class TcpSocket {
   /** 2MSL timer token while in TIME-WAIT (RFC 9293 §3.4.1). */
   timeWaitTimer: symbol | null = null;
   ownerPid: number | null = null;
+  ownerService: string | null = null;
 
   /** Segments (SYN/data/FIN) sent but not yet covered by an ACK (PRD-TCP.md P1). */
   unackedQueue: UnackedSegment[] = [];
@@ -723,7 +727,7 @@ export class TcpListener {
   constructor(
     readonly localIp: string,
     readonly localPort: number,
-    readonly onAccept: TcpAcceptHandler,
+    public onAccept: TcpAcceptHandler | null,
     readonly identity: ListenerIdentity = {},
     readonly receiveWindow: number = TCP_DEFAULT_WINDOW,
     readonly maxSegmentSize: number = Number.MAX_SAFE_INTEGER,
@@ -734,6 +738,8 @@ export class TcpListener {
     readonly backlog: number = TCP_SOMAXCONN,
     readonly boundDevice: string | null = null,
   ) {}
+
+  get accepting(): boolean { return this.onAccept !== null; }
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
 }
@@ -815,7 +821,7 @@ export class TcpStack {
    */
   attachSocketSink(sink: ListenerSocketSink): void {
     this.socketSink = sink;
-    for (const l of this.listeners.values()) sink.announce(l.localIp, l.localPort, l.identity);
+    for (const l of this.listeners.values()) sink.announce(l.localIp, l.localPort, l.identity, undefined, !l.accepting);
   }
 
   private socketSink: ListenerSocketSink | null = null;
@@ -827,6 +833,31 @@ export class TcpStack {
   }
 
   listen(localPort: number, opts: TcpListenOptions, localIp = '0.0.0.0'): TcpListener {
+    return this.register(localPort, opts, opts.onAccept, localIp);
+  }
+
+  bind(localPort: number, opts: TcpBindOptions = {}, localIp = '0.0.0.0'): TcpListener {
+    return this.register(localPort, opts, null, localIp);
+  }
+
+  startListening(listener: TcpListener, onAccept: TcpAcceptHandler): void {
+    if (this.listeners.get(listener.key()) !== listener || listener.accepting) return;
+    listener.onAccept = onAccept;
+    this.socketSink?.promote(listener.localIp, listener.localPort);
+    this.announceListener(listener, true);
+  }
+
+  private announceListener(listener: TcpListener, added: boolean): void {
+    this.getBus().publish({
+      topic: 'tcp.listener.changed',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        localIp: listener.localIp, localPort: listener.localPort, added,
+      },
+    });
+  }
+
+  private register(localPort: number, opts: TcpBindOptions, onAccept: TcpAcceptHandler | null, localIp: string): TcpListener {
     if (!PortNumber.isValid(localPort)) {
       throw new Error(`TCP listener port out of range: ${localPort} (EINVAL)`);
     }
@@ -854,7 +885,7 @@ export class TcpStack {
     }
     const backlogLimit = this.host.listenBacklogLimit?.() ?? TCP_SOMAXCONN;
     const listener = new TcpListener(
-      localIp, boundPort, opts.onAccept, opts.identity ?? {},
+      localIp, boundPort, onAccept, opts.identity ?? {},
       opts.receiveWindow, opts.maxSegmentSize, opts.ttl ?? null, opts.diffServ ?? DiffServField.DEFAULT,
       opts.allowHalfOpen ?? false, opts.ttlFloor ?? TtlFloor.NONE, Math.min(opts.backlog ?? backlogLimit, backlogLimit),
       opts.boundDevice ?? null);
@@ -862,14 +893,8 @@ export class TcpStack {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
     this.listeners.set(listener.key(), listener);
-    this.socketSink?.announce(localIp, boundPort, listener.identity, listener.boundDevice ?? undefined);
-    this.getBus().publish({
-      topic: 'tcp.listener.changed',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        localIp, localPort: boundPort, added: true,
-      },
-    });
+    this.socketSink?.announce(localIp, boundPort, listener.identity, listener.boundDevice ?? undefined, !listener.accepting);
+    if (listener.accepting) this.announceListener(listener, true);
     return listener;
   }
 
@@ -881,17 +906,11 @@ export class TcpStack {
       if (pending.pendingListener === listener) this._teardown(pending, 'shutdown');
     }
     this.socketSink?.withdraw(localIp, localPort);
-    this.getBus().publish({
-      topic: 'tcp.listener.changed',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        localIp, localPort, added: false,
-      },
-    });
+    if (listener?.accepting) this.announceListener(listener, false);
   }
 
   listListeners(): TcpListener[] {
-    return Array.from(this.listeners.values()).sort((a, b) =>
+    return Array.from(this.listeners.values()).filter((listener) => listener.accepting).sort((a, b) =>
       a.localPort === b.localPort ? a.localIp.localeCompare(b.localIp) : a.localPort - b.localPort);
   }
 
@@ -1046,14 +1065,15 @@ export class TcpStack {
     return count;
   }
 
-  setSocketOwner(socket: TcpSocket, pid: number): void {
+  setSocketOwner(socket: TcpSocket, pid: number, service?: string): void {
     socket.ownerPid = pid;
+    socket.ownerService = service ?? null;
     this.getBus().publish({
       topic: 'tcp.socket.owned',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         localIp: socket.localIp, localPort: socket.localPort,
-        remoteIp: socket.remoteIp, remotePort: socket.remotePort, pid,
+        remoteIp: socket.remoteIp, remotePort: socket.remotePort, pid, service,
       },
     });
   }
@@ -2457,9 +2477,9 @@ export class TcpStack {
     const listener = socket.pendingListener;
     if (!listener) return;
     socket.pendingListener = null;
-    if (listener.identity.pid !== undefined) this.setSocketOwner(socket, listener.identity.pid);
+    if (listener.identity.pid !== undefined) this.setSocketOwner(socket, listener.identity.pid, listener.identity.service);
     if (listener.identity.banner) socket.write(listener.identity.banner);
-    try { listener.onAccept(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
+    try { listener.onAccept?.(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
   }
 
   private updateSendWindow(socket: TcpSocket, seg: TcpSegment): void {
@@ -3254,7 +3274,7 @@ export class TcpStack {
     const wildcard = ipFamilyOf(dstIp) === 'ipv6' ? '::' : '0.0.0.0';
     for (const address of [dstIp, wildcard, '0.0.0.0']) {
       const listener = this.listeners.get(makeListenerKey(address, port));
-      if (listener && (device === null || listener.boundDevice === null || listener.boundDevice === device)) {
+      if (listener?.accepting && (device === null || listener.boundDevice === null || listener.boundDevice === device)) {
         return listener;
       }
     }
