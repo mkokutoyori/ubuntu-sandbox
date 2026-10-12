@@ -3,7 +3,7 @@ import type { KernelSocketRow } from '../network/KernelSocketRows';
 import {
   renderProcNetTcp, renderProcNetUdp, renderProcNetRaw, renderProcNetUnix, renderProcNetSockstat, renderProcNetSockstat6,
 } from './ProcNetTables';
-import { newProtocolCounters, type ProtocolCounters } from '../../../layers/internet/ProtocolCounters';
+import { newProtocolCounters, tcpTotals, type ProtocolCounters } from '../../../layers/internet/ProtocolCounters';
 import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts } from '../LinuxIpv4Settings';
 
 /** Canonical filesystem locations the port subsystem maintains. */
@@ -64,7 +64,7 @@ export function linuxSnmpSnapshot(counters?: ProtocolCounters, kernel?: KernelIp
 export function snmpSnapshot(counters?: ProtocolCounters): SnmpSnapshot {
   return {
     counters: counters ?? newProtocolCounters(),
-    currEstab: counters?.tcpCurrEstab ?? 0,
+    currEstab: counters === undefined ? 0 : tcpTotals(counters).CurrEstab,
   };
 }
 
@@ -72,6 +72,7 @@ export function snmpSnapshot(counters?: ProtocolCounters): SnmpSnapshot {
 export function renderProcNetSnmp(snapshot: LinuxSnmpSnapshot): string {
   const c = snapshot.counters;
   const k = snapshot.kernel;
+  const t = tcpTotals(c);
   return [
     'Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates',
     `Ip: ${k.forwarding ? 1 : 2} ${k.defaultTtl} ${c.ipInReceives} ${c.ipInHdrErrors} ${c.ipInAddrErrors} ${c.ipForwDatagrams} ${c.ipInUnknownProtos} ${c.ipInDiscards} ${c.ipInDelivers} ${c.ipOutRequests} ${c.ipOutDiscards} ${c.ipOutNoRoutes} 0 ${c.ipReasmReqds} ${c.ipReasmOKs} ${c.ipReasmFails} ${c.ipFragOKs} ${c.ipFragFails} ${c.ipFragCreates}`,
@@ -80,7 +81,7 @@ export function renderProcNetSnmp(snapshot: LinuxSnmpSnapshot): string {
     'IcmpMsg: InType8 OutType0',
     `IcmpMsg: ${c.icmpInEchos} ${c.icmpOutEchoReps}`,
     'Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors',
-    `Tcp: 1 ${k.rtoMinMs} ${k.rtoMaxMs} -1 ${c.tcpActiveOpens} ${c.tcpPassiveOpens} ${c.tcpAttemptFails} ${c.tcpEstabResets} ${snapshot.currEstab} ${c.tcpInSegs} ${c.tcpOutSegs} ${c.tcpRetransSegs} ${c.tcpInErrs} ${c.tcpOutRsts} ${c.tcpInCsumErrors}`,
+    `Tcp: 1 ${k.rtoMinMs} ${k.rtoMaxMs} -1 ${t.ActiveOpens} ${t.PassiveOpens} ${t.AttemptFails} ${t.EstabResets} ${t.CurrEstab} ${t.InSegs} ${t.OutSegs} ${t.RetransSegs} ${t.InErrs} ${t.OutRsts} ${t.InCsumErrors}`,
     'Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
     `Udp: ${c.udpInDatagrams} ${c.udpNoPorts} ${c.udpInErrors} ${c.udpOutDatagrams} 0 0 ${c.udpInCsumErrors} 0`,
     'UdpLite: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',

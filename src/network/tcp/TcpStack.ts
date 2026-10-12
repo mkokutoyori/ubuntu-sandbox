@@ -222,17 +222,17 @@ export interface TcpOptionPolicy {
 const ALL_TCP_OPTIONS: TcpOptionPolicy = { sack: true, timestamps: true, windowScaling: true };
 
 export interface TcpMibSink {
-  activeOpen(): void;
-  passiveOpen(): void;
-  attemptFail(): void;
-  establishedReset(): void;
-  establishedEntered(): void;
-  establishedLeft(): void;
-  segmentIn(): void;
-  segmentOut(): void;
-  retransmitted(): void;
-  inError(checksum: boolean): void;
-  outReset(): void;
+  activeOpen(family: IpFamily): void;
+  passiveOpen(family: IpFamily): void;
+  attemptFail(family: IpFamily): void;
+  establishedReset(family: IpFamily): void;
+  establishedEntered(family: IpFamily): void;
+  establishedLeft(family: IpFamily): void;
+  segmentIn(family: IpFamily): void;
+  segmentOut(family: IpFamily): void;
+  retransmitted(family: IpFamily): void;
+  inError(checksum: boolean, family: IpFamily): void;
+  outReset(family: IpFamily): void;
 }
 
 export interface TcpHost {
@@ -1518,10 +1518,11 @@ export class TcpStack {
   ): boolean {
     const receivedTtl = arrival.ttl;
     const ipHeader = arrival.header;
-    this.host.mib?.segmentIn();
+    const family = ipFamilyOf(dstIp);
+    this.host.mib?.segmentIn(family);
     // RFC 9293 §3.1 — a corrupted segment is discarded silently.
     if (!verifyTcpChecksum(seg, senderIp, dstIp)) {
-      this.host.mib?.inError(true);
+      this.host.mib?.inError(true, family);
       this.dropped(senderIp, seg.sourcePort, 'bad-checksum');
       return true;
     }
@@ -2739,21 +2740,21 @@ export class TcpStack {
     try { socket._fireClose(reason); } catch (e) { Logger.warn(this.host.id, 'tcp:onClose', String(e)); }
   }
 
-  private countTransition(mib: TcpMibSink, from: TcpState, to: TcpState): void {
+  private countTransition(mib: TcpMibSink, family: IpFamily, from: TcpState, to: TcpState): void {
     const counted = (state: TcpState): boolean => state === 'established' || state === 'close-wait';
-    if (from === 'closed' && to === 'syn-sent') mib.activeOpen();
-    if (from === 'closed' && to === 'syn-received') mib.passiveOpen();
-    if (to === 'closed' && (from === 'syn-sent' || from === 'syn-received')) mib.attemptFail();
-    if (to === 'closed' && counted(from)) mib.establishedReset();
-    if (counted(to) && !counted(from)) mib.establishedEntered();
-    if (counted(from) && !counted(to)) mib.establishedLeft();
+    if (from === 'closed' && to === 'syn-sent') mib.activeOpen(family);
+    if (from === 'closed' && to === 'syn-received') mib.passiveOpen(family);
+    if (to === 'closed' && (from === 'syn-sent' || from === 'syn-received')) mib.attemptFail(family);
+    if (to === 'closed' && counted(from)) mib.establishedReset(family);
+    if (counted(to) && !counted(from)) mib.establishedEntered(family);
+    if (counted(from) && !counted(to)) mib.establishedLeft(family);
   }
 
   _transition(socket: TcpSocket, newState: TcpState): void {
     if (socket.state === newState) return;
     const oldState = socket.state;
     socket.state = newState;
-    if (this.host.mib) this.countTransition(this.host.mib, oldState, newState);
+    if (this.host.mib) this.countTransition(this.host.mib, socket.family, oldState, newState);
     if (newState === 'established') {
       socket.everEstablished = true;
       socket.establishedAtMs = this.getScheduler().now();
@@ -3169,7 +3170,7 @@ export class TcpStack {
   }
 
   private resend(socket: TcpSocket, entry: UnackedSegment, reason: TcpRetransmitReason, rtoMs: number): void {
-    this.host.mib?.retransmitted();
+    this.host.mib?.retransmitted(socket.family);
     this.getBus().publish({
       topic: 'tcp.retransmit',
       payload: {
@@ -3192,8 +3193,8 @@ export class TcpStack {
     const family = ipFamilyOf(dstIp);
     const local = this.isLocalDestination(dstIp, family);
     const ttl = shape?.ttl ?? this.defaultTtl(family);
-    if (!retransmission) this.host.mib?.segmentOut();
-    if (seg.flags.rst) this.host.mib?.outReset();
+    if (!retransmission) this.host.mib?.segmentOut(family);
+    if (seg.flags.rst) this.host.mib?.outReset(family);
     const l3Packet = family === 'ipv6'
       ? this.buildIpv6Segment(srcIp, dstIp, seg, ttl, shape?.tos)
       : this.buildIpv4Segment(srcIp, dstIp, seg, ttl, shape?.fragmentMtu, shape);

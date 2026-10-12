@@ -11,7 +11,7 @@ import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import { broadcastAddress } from '../../core/ip';
 import { linuxSnmpSnapshot, type LinuxSnmpSnapshot } from './ports/PortsFilesystem';
 import type { KernelIpFacts } from './LinuxIpv4Settings';
-import type { ProtocolCounters } from '../../layers/internet/ProtocolCounters';
+import { tcpTotals, type ProtocolCounters } from '../../layers/internet/ProtocolCounters';
 
 // ─── ifconfig ───────────────────────────────────────────────────────
 
@@ -152,6 +152,7 @@ export function renderNetstatStatistics(counters?: ProtocolCounters, kernel?: Ke
 
 function cmdNetstatStatistics(snapshot: LinuxSnmpSnapshot): string {
   const c = snapshot.counters;
+  const t = tcpTotals(c);
   return [
     'Ip:',
     `    Forwarding: ${snapshot.kernel.forwarding ? 1 : 2}`,
@@ -183,14 +184,14 @@ function cmdNetstatStatistics(snapshot: LinuxSnmpSnapshot): string {
       'echo replies': c.icmpOutEchoReps,
     }),
     'Tcp:',
-    `    ${c.tcpActiveOpens} active connection openings`,
-    `    ${c.tcpPassiveOpens} passive connection openings`,
-    `    ${c.tcpAttemptFails} failed connection attempts`,
-    `    ${c.tcpEstabResets} connection resets received`,
+    `    ${t.ActiveOpens} active connection openings`,
+    `    ${t.PassiveOpens} passive connection openings`,
+    `    ${t.AttemptFails} failed connection attempts`,
+    `    ${t.EstabResets} connection resets received`,
     `    ${snapshot.currEstab} connections established`,
-    `    ${c.tcpInSegs} segments received`,
-    `    ${c.tcpOutSegs} segments sent out`,
-    `    ${c.tcpRetransSegs} segments retransmitted`,
+    `    ${t.InSegs} segments received`,
+    `    ${t.OutSegs} segments sent out`,
+    `    ${t.RetransSegs} segments retransmitted`,
     'Udp:',
     `    ${c.udpInDatagrams} packets received`,
     `    ${c.udpNoPorts} packets to unknown port received`,

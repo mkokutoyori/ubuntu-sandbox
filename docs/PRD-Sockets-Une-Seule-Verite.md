@@ -491,6 +491,21 @@ bound to IPv4 » (5985, PID 4) et « OpenSSH on Windows does not work » (22). R
 aucun transcript atteint pour dire s'ils tiennent une ligne IPv6. Garde-fous :
 `probe-windows-pose-et-retire-une-adresse-ipv6-comme-linux` et `probe-windows-ecoute-sur-les-deux-familles-ce-que-le-vrai-ecoute-ainsi`.
 
+Les deux familles se comptent. Mesuré sur `a7e9f551f` (un LinuxPC et un WindowsPC reliés par `fd00::/64`, trois `ping -6` puis deux
+`ping`) : `netstat -s` de Linux voyait cinq paquets reçus — les deux échos IPv4 et trois datagrammes UDP multicast de fond —, rien des
+trois échos IPv6, des sollicitations de voisin ni de leurs annonces ; Windows n'imprimait que les quatre blocs IPv4 ;
+`/proc/net/snmp6` n'existait pas ; et le TCP IPv6 s'ajoutait aux compteurs IPv4 (un seul jeu de compteurs `tcp*` pour les deux
+familles). `ProtocolCounters` porte maintenant un jeu `ip6*`, `icmp6*` (par type, indices de l'IANA), `udp6*`, `udpLite6*` et `tcp6*`,
+rempli à deux endroits seulement : la sortie unique de trame (`EndHost.sendFrame`, qui compte aussi les octets, en-tête compris, et le
+multicast) et l'entrée unique (`handleIPv6`, qui compte d'abord et valide ensuite : `ipv6HeaderProblem` refuse l'adresse de bouclage
+hors `lo`, la portée 0 ou 1 d'un groupe et la source multicast, comme `ip6_rcv_core` du noyau 5.15, et une interface sans IPv6 jette le
+paquet après l'avoir reçu). Le TCP reçoit la famille par `TcpMibSink` : Linux additionne les deux familles (la MIB TCP du noyau est
+unique), Windows les affiche à part. Ce que le noyau ne compte pas n'est plus compté : un paquet que netfilter jette n'est pas un
+`InDiscards` (l'ancien code IPv4 le comptait) et un datagramme UDP multicast ou diffusé sans écouteur est un `IgnoredMulti`, pas un
+`NoPorts` (`__udp4_lib_mcast_deliver`). Les paquets réels qui ne quittent pas la machine (UDP, TCP, erreur ICMP vers soi) passent les
+deux étapes, sortie puis entrée ; le `ping` vers soi, qui fabrique son résultat sans paquet, reste à faire. Garde-fou :
+`probe-une-machine-compte-son-trafic-ipv6`.
+
 Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
 non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
 Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135
