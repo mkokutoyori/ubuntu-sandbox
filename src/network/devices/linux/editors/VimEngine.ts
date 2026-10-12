@@ -193,6 +193,12 @@ interface ExRange {
   literal: string;
 }
 
+const LAYOUT_OPTIONS: ReadonlySet<string> = new Set([
+  'number', 'relativenumber', 'numberwidth', 'list', 'listchars', 'wrap', 'tabstop', 'scrolloff', 'sidescroll', 'sidescrolloff', 'display',
+]);
+
+const LITERAL_INSERT_CONTROLS: ReadonlySet<string> = new Set(['b', 'f', 'l', 's', 'z']);
+
 export class VimEngine {
   private linesArr: string[];
   private _mode: VimMode = 'normal';
@@ -251,7 +257,6 @@ export class VimEngine {
   private readonly window: VimWindow;
   private listSpecCache: { spec: string; parsed: ListSpec } | null = null;
   private showcmdKeys = '';
-  private topValidFor: number | null = null;
   private swapPath: string;
   private orphanSwapPath: string | null = null;
   private _pendingSwapRecovery: PendingSwapRecovery | null = null;
@@ -332,7 +337,7 @@ export class VimEngine {
       private readonly displayName: string = filePath,
   ) {
     this.options = new VimOptions(variant);
-    this.options.onChange(() => { this.topValidFor = null; });
+    this.options.onChange((name) => { if (LAYOUT_OPTIONS.has(name)) this.window.invalidateTop(); });
     this.window = new VimWindow({ lineCount: () => this.linesArr.length, lineAt: (i) => this.linesArr[i] ?? '' }, () => this.windowSettings());
     const detectedFormat = initialContent.includes('\r\n') ? 'dos' : 'unix';
     this.options.assign('fileformat', detectedFormat);
@@ -677,7 +682,6 @@ export class VimEngine {
     this.undoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
     this.redoStack = [];
     this.commandChanged = true;
-    this.topValidFor = null;
   }
 
   private restoreSnapshot(snap: UndoSnapshot): void {
@@ -1427,8 +1431,9 @@ export class VimEngine {
   }
 
   resize(rows: number, cols: number): void {
+    if (Math.max(2, rows) === this.window.rows && Math.max(1, cols) === this.window.cols) return;
     this.window.resize(rows, cols, this._cursorLine, this._cursorCol, this.cursorOnTabEnd());
-    this.topValidFor = null;
+    this.window.invalidateTop();
     this.options.assign('scroll', this.window.defaultScroll);
     this.followCursor();
   }
@@ -1446,23 +1451,34 @@ export class VimEngine {
 
   private followCursor(): void {
     if (this._mode === 'command' || this._mode === 'search') return;
-    if (this.topValidFor !== this._cursorLine) this.window.follow(this._cursorLine);
-    this.topValidFor = this._cursorLine;
+    this.window.follow(this._cursorLine, this._cursorCol);
     this.window.followColumn(this._cursorLine, this._cursorCol, this.cursorOnTabEnd());
   }
 
   private pageScroll(forward: boolean): void {
-    const count = this.takeCount() ?? 1;
+    const inserting = this._mode === 'insert';
+    const count = inserting ? 1 : this.takeCount() ?? 1;
+    if (this.want < 0) this.want = this.currentWant();
     const result = this.window.onePage(forward, count, this._cursorLine);
+    if (result.failed) this.keepWantThisKey = true;
     const bytes = byteOffset(this.line(this._cursorLine), this._cursorCol);
     this._cursorLine = result.cursor;
-    this._cursorCol = this.clampCol(this._cursorLine, colAtByte(this.line(this._cursorLine), bytes));
+    this._cursorCol = this.clampCol(this._cursorLine, colAtByte(this.line(this._cursorLine), bytes), inserting);
     if (!result.failed) this._cursorCol = firstNonBlank(this.line(this._cursorLine));
+    if (inserting && !result.failed) {
+      this.insertRepeat = 1;
+      this.insertedText = '';
+      this.insertUndoDepth = -1;
+    }
   }
 
   private halfPageScroll(down: boolean): void {
     const count = this.takeCount();
-    if ((down && this._cursorLine === this.linesArr.length - 1) || (!down && this._cursorLine === 0)) return;
+    if ((down && this._cursorLine === this.linesArr.length - 1) || (!down && this._cursorLine === 0)) {
+      if (this.want < 0) this.want = this.currentWant();
+      this.keepWantThisKey = true;
+      return;
+    }
     if (count !== undefined && count > 0) this.options.assign('scroll', Math.min(count, this.window.height));
     const configured = this.options.number('scroll');
     this._cursorLine = this.window.halfPage(down, configured > 0 ? configured : this.window.defaultScroll, this._cursorLine);
@@ -1475,7 +1491,6 @@ export class VimEngine {
     if (this.want < 0) this.want = this.currentWant();
     this.keepWantThisKey = true;
     this._cursorLine = this.window.scrollLines(up, count, this._cursorLine);
-    if (this.options.scrolloff > 0) this.topValidFor = this._cursorLine;
     if (this._cursorLine !== previous) this._cursorCol = colAtVcol(this.line(this._cursorLine), this.currentWant(), this.tabstop, this._mode !== 'normal', this.ctrlTab);
   }
 
@@ -1489,6 +1504,10 @@ export class VimEngine {
   }
 
   clickAt(row: number, col: number): void {
+    if (this.visualObjectKind !== null) {
+      this.visualObjectKind = null;
+      return;
+    }
     if (!this.mouseReaches()) return;
     const hit = this.window.cellAt(row, col);
     if (hit === null) return;
@@ -1526,34 +1545,59 @@ export class VimEngine {
   }
 
   private runHorizontalScroll(key: string, count: number): void {
-    if (this.options.wrap) return;
+    if (this.options.wrap) {
+      this.keepWantThisKey = true;
+      return;
+    }
     const width = this.window.textWidth;
     const siso = this.options.sidescrolloff;
+    const half = Math.floor(this.window.cols / 2);
     const span = this.window.cursorSpan(this._cursorLine, this._cursorCol, this.cursorOnTabEnd());
-    if (key === 'H' || key === 'h') this.window.setLeftCol(this.window.leftCol - (key === 'H' ? count * Math.floor(this.window.cols / 2) : count));
-    else if (key === 'L' || key === 'l') this.window.setLeftCol(this.window.leftCol + (key === 'L' ? count * Math.floor(this.window.cols / 2) : count));
-    else if (key === 's') this.window.setLeftCol(span.start > siso ? span.start - siso : 0);
-    else if (key === 'e') this.window.setLeftCol(span.end + siso < width ? 0 : span.end + siso - width + 1);
-    if (key === 'H' || key === 'h' || key === 'L' || key === 'l') this.keepCursorInColumns();
+    if (key === 'H' || key === 'h') {
+      const amount = key === 'H' ? count * half : count;
+      this.setLeftcol(amount > this.window.leftCol ? 0 : this.window.leftCol - amount);
+    } else if (key === 'L' || key === 'l') {
+      this.setLeftcol(this.window.leftCol + (key === 'L' ? count * half : count));
+    } else if (key === 's') {
+      this.window.setLeftCol(span.start > siso ? span.start - siso : 0);
+    } else if (key === 'e') {
+      this.window.setLeftCol(span.end + siso < width ? 0 : span.end + siso - width + 1);
+    }
   }
 
-  private keepCursorInColumns(): void {
-    const width = this.window.textWidth;
+  private coladvance(cell: number): boolean {
+    const target = Math.max(0, cell);
+    const cells = this.window.cellCount(this._cursorLine);
+    this._cursorCol = this.window.colAtCell(this._cursorLine, target, false);
+    return target < cells || cells === 0;
+  }
+
+  private setLeftcol(leftcol: number): void {
+    if (this.window.leftCol === leftcol) {
+      this.keepWantThisKey = true;
+      return;
+    }
+    this.window.setLeftCol(leftcol);
+    const lastcol = leftcol + this.window.textWidth - 1;
     const siso = this.options.sidescrolloff;
-    const lastCol = this.window.leftCol + width - 1;
-    const text = this.line(this._cursorLine);
-    const cellToCol = (cell: number): number => {
-      const cells = this.window.cellsOf(this._cursorLine);
-      if (cells.length === 0) return 0;
-      const target = cells[Math.max(0, Math.min(cell, cells.length - 1))].col;
-      return Math.max(0, Math.min(target < 0 ? text.length - 1 : target, Math.max(0, text.length - 1)));
-    };
-    const virt = this.window.cursorSpan(this._cursorLine, this._cursorCol, this.cursorOnTabEnd()).virt;
-    if (virt > lastCol - siso) this._cursorCol = cellToCol(lastCol - siso);
-    else if (virt < this.window.leftCol + siso) this._cursorCol = cellToCol(this.window.leftCol + siso);
-    const span = this.window.cursorSpan(this._cursorLine, this._cursorCol, this.cursorOnTabEnd());
-    if (span.end > lastCol) this._cursorCol = cellToCol(span.start - 1);
-    else if (span.start < this.window.leftCol) this._cursorCol = cellToCol(span.end + 1);
+    let moved = false;
+    const virt = this.window.virtColumn(this._cursorLine, this._cursorCol, this.cursorOnTabEnd());
+    if (virt > lastcol - siso) {
+      moved = true;
+      this.coladvance(lastcol - siso);
+    } else if (virt < leftcol + siso) {
+      moved = true;
+      this.coladvance(leftcol + siso);
+    }
+    const span = this.window.cursorSpan(this._cursorLine, this._cursorCol, false);
+    if (span.end > lastcol) {
+      moved = true;
+      this.coladvance(span.start - 1);
+    } else if (span.start < leftcol) {
+      moved = true;
+      if (!this.coladvance(span.end + 1)) this.window.setLeftCol(span.start);
+    }
+    if (!moved) this.keepWantThisKey = true;
   }
 
   private trackShowcmd(k: EditorKeyInput): void {
@@ -1730,9 +1774,10 @@ export class VimEngine {
     if (key === '"') { this.awaitingRegisterName = true; return; }
 
     if (key === 'Escape' || (k.ctrl && key === '[')) {
-      if (this.pendingCountStr !== '' || this.pendingG || this.awaitingFindChar || this.visualObjectKind) {
+      if (this.pendingCountStr !== '' || this.pendingG || this.pendingZ || this.awaitingFindChar || this.visualObjectKind) {
         this.pendingCountStr = '';
         this.pendingG = false;
+        this.pendingZ = false;
         this.awaitingFindChar = null;
         this.visualObjectKind = null;
         return;
@@ -1752,6 +1797,12 @@ export class VimEngine {
       const kind = this.visualObjectKind;
       this.visualObjectKind = null;
       this.selectVisualObject(kind, key);
+      return;
+    }
+
+    if (this.pendingZ) {
+      this.pendingZ = false;
+      this.runZCommand(key);
       return;
     }
 
@@ -1777,6 +1828,7 @@ export class VimEngine {
 
     switch (key) {
       case 'g': this.pendingG = true; return;
+      case 'z': this.pendingZ = true; return;
       case 'v': this.switchVisualMode('visual'); return;
       case 'V': this.switchVisualMode('visual-line'); return;
       case 'i': case 'a':
@@ -1934,33 +1986,30 @@ export class VimEngine {
   }
 
   private visualLineInsert(append: boolean): void {
-    const bounds = this.visualBounds();
-    const mode = this._mode;
+    const anchorLine = this.visualAnchorLine;
+    const cursorLine = this._cursorLine;
+    const cursorCol = this._cursorCol;
     this.exitVisual();
-    if (mode === 'visual-line') {
-      this._cursorLine = append ? bounds.endLine : bounds.startLine;
-      this.beginInsert(append ? 'A' : 'I');
-      return;
-    }
+    const backwards = cursorLine < anchorLine;
+    let line: number;
+    let col: number;
     if (append) {
-      this._cursorLine = bounds.endLine;
-      this._cursorCol = Math.min(bounds.endCol + 1, this.line(bounds.endLine).length);
-      this.pushUndoSnapshot();
-      this.insertRepeat = 1;
-      this.insertKind = 'i';
-      this.insertedText = '';
-      this.insertUndoDepth = this.undoStack.length;
-      this.enterInsert();
+      line = backwards ? anchorLine : cursorLine;
+      const text = this.line(line);
+      const step = text.codePointAt(cursorCol) !== undefined && text.codePointAt(cursorCol)! > 0xffff ? 2 : 1;
+      col = backwards || cursorCol === 0 ? 0 : Math.min(cursorCol + step, text.length);
     } else {
-      this._cursorLine = bounds.startLine;
-      this._cursorCol = bounds.startCol;
-      this.pushUndoSnapshot();
-      this.insertRepeat = 1;
-      this.insertKind = 'i';
-      this.insertedText = '';
-      this.insertUndoDepth = this.undoStack.length;
-      this.enterInsert();
+      line = backwards ? cursorLine : anchorLine;
+      col = backwards ? Math.min(cursorCol, this.line(line).length) : 0;
     }
+    this._cursorLine = line;
+    this._cursorCol = col;
+    this.pushUndoSnapshot();
+    this.insertRepeat = 1;
+    this.insertKind = 'i';
+    this.insertedText = '';
+    this.insertUndoDepth = this.undoStack.length;
+    this.enterInsert();
   }
 
   private visualReplace(k: EditorKeyInput): void {
@@ -2189,7 +2238,7 @@ export class VimEngine {
     if (k.ctrl && k.key.toLowerCase() === 'd') { this.insertUnindent(previousChar); return; }
     if (k.ctrl && k.key.toLowerCase() === 'e') { this.insertCopyAdjacent(true); return; }
     if (k.ctrl && k.key.toLowerCase() === 'y') { this.insertCopyAdjacent(false); return; }
-    if (k.ctrl && k.key.toLowerCase() === 'f') { this.insertCharacter('\u0006'); return; }
+    if (k.ctrl && LITERAL_INSERT_CONTROLS.has(k.key.toLowerCase())) { this.insertCharacter(String.fromCharCode(k.key.toLowerCase().charCodeAt(0) - 96)); return; }
 
     switch (k.key) {
       case 'Backspace': this.insertBackspace(); return;
@@ -2200,6 +2249,7 @@ export class VimEngine {
       case 'Home': this.insertCursorMove(() => { this._cursorCol = 0; }); return;
       case 'End': this.insertCursorMove(() => { this._cursorCol = this.line(this._cursorLine).length; }); return;
       case 'ArrowUp': case 'ArrowDown': this.insertVerticalMove(k.key === 'ArrowDown'); return;
+      case 'PageUp': case 'PageDown': this.pageScroll(k.key === 'PageDown'); return;
       case 'Delete': this.insertDeleteForward(); return;
       default:
         if (k.key.length === 1 && !k.ctrl && !k.alt) this.insertCharacter(k.key);

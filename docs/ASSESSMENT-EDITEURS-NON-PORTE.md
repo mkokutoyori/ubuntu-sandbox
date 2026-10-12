@@ -27,26 +27,30 @@ Les modeles d'ecran sont rejoues contre des binaires reels pilotes par tmux :
 | Ecran de nano | nano 7.2, `-I` | `scripts/oracle/record_nano_screen.py` | cells 150, scroll 200, resize 150, prompts 3 x 150 (seeds 7, 13, 17) | `nano-screen-oracle.test.ts` |
 | Taille du tty | bash 5.2, stty 9.4, six tailles de pty | `scripts/oracle/record_tty_geometry.py` | six tailles | `tty-window-size.test.ts` |
 
-Etat mesure : vim 1213 cas sur 1250 (cellules du curseur comprises), plus 6000 transcripts de curseur et de tampon (dont 2 x 800 en mode Visuel et 2 x 800 en mode Insertion), nano 949 cas sur 950,
+Etat mesure : vim 1249 cas sur 1250 (cellules du curseur comprises), plus 6000 transcripts de curseur et de tampon (dont 2 x 800 en mode Visuel et 2 x 800 en mode Insertion), nano 949 cas sur 950,
 tty six tailles sur six. Les corpus prompts seed 13 et seed 17 ont ete enregistres APRES
 le code qui les juge : seed 13 a trouve 3 ecarts (corriges), seed 17 est passe 150/150
 sans retouche.
 
 ## 1. vim
 
-### 1.1 Les 37 cas du corpus que le modele n'atteint pas (`UNPORTED_CASES`)
+### 1.1 Le cas du corpus que le modele n'atteint pas (`UNPORTED_CASES`)
 
 Aucun n'est epingle comme contrat ; un cas de la liste qui se met a passer fait echouer le test
-pour qu'on le retire. Familles, chacune mesuree :
+pour qu'on le retire.
 
 | Famille | Cas | Constat | Statut |
 | --- | --- | --- | --- |
-| `g$` en `nowrap` avec `sidescroll` ET `sidescrolloff` | `cell2-133`, `cell2-194` | La colonne de gauche differe. | Non porte |
-| `scrolloff` plus grand que la moitie de la fenetre (so=8 dans 12 lignes, so=999, so=5 dans 5 lignes de texte), `display=lastline`/`truncate`/vide avec une ligne partielle | `scr3-76`, `scr3-101`, `scr3-130`, `scr3-144`, `scr3-176`, `scr3-179`, `scr3-194`, `clk9-46`, `-48`, `-69`, `-79`, `-104`, `-133`, `-137`, `-178`, `-191`, `clk21-19`, `-20`, `-69`, `-84`, `-130`, `-144` | `scroll_cursor_*` et `cursor_correct` de vim partent d'un `w_topline` que ce moteur recalcule autrement : la fenetre defile d'une rangee de plus ou de moins apres un saut (Ctrl-D/U/B/F, clic loin du curseur) quand la marge ne tient pas. | Non porte |
-| Redimensionnement avec une ligne du curseur plus haute que la fenetre | `rsz5-36`, `-50`, `-56`, `-70`, `-92`, `-117`, `-139`, `-144`, `-155` | Meme famille, par `resize`. | Non porte |
-| Prefixe d'objet de texte en attente en Visuel (`Vi` puis clic), `A` en Visuel ligne | `clk9-39`, `-113`, `-154`, `-168` | Le clic ou la touche suivante annule le prefixe chez vim, pas ici. | Non porte |
-| Deux clics sur la meme cellule en moins de 'mousetime' | `clk21-53` | Vim y voit un double-clic et selectionne le mot ; ce moteur y voit deux clics simples. | Non porte |
-| Clic sur la rangee `@@@` d'une ligne dont aucune rangee n'est visible | (aucun cas isole du corpus, releve a la main) | Vim l'ignore ; ce moteur la rapporte a la ligne cachee. | Non porte |
+| Deux clics sur la meme cellule en moins de 'mousetime' | `clk21-53` | Vim y voit un double-clic et selectionne le mot ; ce moteur y voit deux clics simples. Le navigateur fournit le nombre de clics (`event.detail`), pas une horloge rejouable : le geste reste a mesurer sur un corpus qui separe les clics par des delais connus. | Non porte |
+
+Les 36 autres cas de l'ancien corpus sont rejoues depuis le commit « fenetre de vim : memes decisions de
+defilement que move.c » : le moteur reprend les fonctions de `move.c` de vim 9.1.0016 (`update_topline`,
+`curs_columns`, `scroll_cursor_top/bot/halfway`, `cursor_correct`, `onepage`, `halfpage`,
+`scroll_to_fraction`) avec les memes etats de validite (`w_valid` : `VALID_TOPLINE`, `VALID_BOTLINE`,
+`VALID_BOTLINE_AP`, curseur deja deplace) et le meme second passage de `update_topline` apres le
+dessin quand `w_botline` a change (`win_update`). Le source de vim n'a pas ete lu de memoire : le
+tarball `vim_9.1.0016.orig.tar.gz` de l'archive Ubuntu a ete compile avec des traces et rejoue sur
+les memes transcriptions.
 
 ### 1.2 Hors corpus
 
@@ -57,6 +61,7 @@ pour qu'on le retire. Familles, chacune mesuree :
 | Touches d'Insertion hors corpus : Ctrl-R {registre}, Ctrl-V / Ctrl-Q (litteral), Ctrl-O (une commande Normale), Ctrl-K (digraphe), Ctrl-A / Ctrl-@ (reinserer le dernier texte), Ctrl-N / Ctrl-P / Ctrl-X (completion), Ctrl-G u / j / k | Non porte | Ctrl-T, Ctrl-D (et `0 Ctrl-D`, `^ Ctrl-D`), Ctrl-E, Ctrl-Y, Ctrl-F (sans `cindent`), Ctrl-U, Ctrl-W, Ctrl-H, Retour arriere, Tab, Entree et les fleches sont rejoues contre un vrai vim (corpus insert). Les touches listees ici sont ignorees en mode Insertion, sans message. |
 | `:set` sans argument | Non porte | Vim liste les options differentes de leur defaut ; le moteur ne rend rien. |
 | `hlsearch`, `incsearch`, `showmatch` | Accepte sans effet (prealable) | Les options sont lues, listees (`:set hls?`) et ignorees : aucun surlignage des occurrences, aucune recherche incrementale pendant la frappe de `/`, aucun saut bref sur la parenthese ouvrante. `incsearch` modifie le TEXTE de l'ecran (la fenetre defile jusqu'a l'occurrence pendant la saisie), donc c'est le plus visible. |
+| Options de defilement `scrolljump`, `smoothscroll`, `splitkeep` | Non porte | Absentes de la table des options : `:set scrolljump=5` est refuse comme option inconnue, ce qui est la reponse correcte tant qu'aucune regle de defilement ne la lit. `scroll_cursor_*` de `move.c` consomme `p_sj` ; l'ajouter demande de mesurer ses effets sur `scroll_cursor_top/bot`, pas de la stocker. |
 | Liste de sauts (`Ctrl-O`, `Ctrl-I`, `:jumps`) | Non porte | Seuls les sauts de marques (`` ` `` et `'`) sont suivis ; ni `G`, ni `gg`, ni les recherches ne s'y inscrivent. |
 | Souris de vim : glisser pour selectionner, double-clic (mot), triple-clic (ligne), Maj-clic, clic droit, clic dans la ligne de commande, `ttymouse`, `mousemodel`, `mousescroll`, `mousetime` | Non porte | Le clic simple est porte et rejoue contre un vrai vim (`mouse=` a, n, v, i, c et leurs unions ; vide par defaut, comme un vim Debian/Ubuntu) : il place le curseur sur la cellule cliquee, tabulation et caractere large compris, garde la colonne voulue, clot le mode Visuel, et un clic sous le texte atteint la derniere ligne. La molette defile de trois lignes sans consulter `mouse=`. |
 | Styles de l'ecran (`Search`, `IncSearch`, `MatchParen`, colorisation syntaxique) | Non porte | Le corpus compare du texte et une cellule. Ce moteur peint `linenr`, `cursorlinenr`, `nontext`, `special`, `visual`, `colorcolumn`, `modemsg`, `error`. |

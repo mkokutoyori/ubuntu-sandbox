@@ -7,104 +7,33 @@
  *   nement de la fenetre entre les etapes) et click (deux corpus de 200 cas, seeds 9 et 21, de clics de souris en encodage SGR,
  *   avec `:set mouse=` tire parmi a, n, nv, i, v, nvi et vide).
  *
- * Mesure avec `git stash push -u -- src/network` : l'ancien moteur n'a ni ecran, ni fenetre, ni
- * `resize`, ni `clickAt` ; le fichier ne se charge meme pas (VimScreen n'existe pas), donc les 6 tests
- * tombent avant.  Le corpus click seul, rejoue sur le moteur de a0acef2cc avec un `clickAt` vide et sans
- * option `mouse` : 107 cas tombent hors de la liste ci-dessous (clics sans effet, `Ctrl-F` en Visuel,
- * colonne d'une tabulation en Visuel), les autres passent par hasard ou parce que `mouse=` est vide.
- * Le TEMOIN que le lab est sain : 1213 cas sur 1250 passent apres, cellule du curseur comprise, dont
- * les cas a `mouse=` vide ou un clic ne doit RIEN faire (un vim Debian/Ubuntu lit `defaults.vim` avec la
- * souris coupee) et les cas a clic ignore faute de mode dans `mouse=`.
+ * Methode : la fenetre (VimWindow.ts) transcrit move.c et window.c de vim 9.1.0016 lus dans l'archive source
+ * (update_topline, scroll_cursor_top/bot/halfway, cursor_correct, curs_columns, check_cursor_moved, win_new_height,
+ * scroll_to_fraction, onepage, halfpage, set_leftcol), sans heuristique : meme drapeaux de validite, meme
+ * second update_topline quand w_botline change, memes `w_skipcol` et rangee `<<<` pour une ligne plus haute que
+ * la fenetre.  Un binaire instrumente (macro TRACE) a servi a lire les decisions de vim pas a pas quand une
+ * transcription divergeait.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 37 cas sur 1250, dont ceux du second corpus click, enregistre
- * apres le premier : ils tombent tous dans des familles deja nommees, aucune famille nouvelle.  Aucun n'est
- * epingle comme contrat : un cas de la liste qui se met a passer fait echouer le test pour qu'on le
- * retire de la liste.
- *   - scrolloff grand devant la hauteur de la fenetre (so=8 dans 12 lignes, so=999, ou so=5 dans une
- *     fenetre de 5 lignes de texte) : `scroll_cursor_*` et `cursor_correct` de vim partent d'un
- *     `w_topline` que ce moteur recalcule autrement ;
- *   - Ctrl-D / Ctrl-U / Ctrl-B / Ctrl-F en fin ou en debut de fichier avec `display=lastline`/`truncate` ;
- *   - redimensionnement quand la ligne du curseur est plus haute que la fenetre ;
- *   - `g$` en `nowrap` avec `sidescroll` et `sidescrolloff` ensemble ;
- *   - deux clics sur la meme cellule a moins de 'mousetime' (500 ms) : vim y voit un double-clic et selectionne
- *     le mot, ce moteur y voit deux clics simples (clk21-53) ;
- *   - clic ou touche avec un prefixe d'objet de texte en attente (`Vi` puis clic), `A` en Visuel ligne ;
- *   - clic sur la rangee `@@@` d'une ligne dont aucune rangee n'est visible : vim l'ignore.
+ * Mesure avec `git stash push -- src/network` (moteur du commit precedent) : 5 des 6 tests tombent avant
+ * (cells-seed2, click-seed9, click-seed21, resize-seed5, scroll-seed3 ; le sixieme, cells-seed1, passe avant comme apres,
+ * c'est le TEMOIN que le lab est sain), et 36 des 1250 cas divergent (2 + 12 + 6 + 9 + 7), 0 apres hors
+ * UNPORTED_CASES.  Le corpus click seul, rejoue au tout premier moteur de a0acef2cc, perdait 107 cas (clics sans
+ * effet, `Ctrl-F` en Visuel, colonne d'une tabulation en Visuel).  Les cas a `mouse=` vide ou un clic ne doit
+ * RIEN faire (un vim Debian/Ubuntu lit `defaults.vim` avec la souris coupee) sont dans le corpus et passent.
+ * Trois lots frais, enregistres apres l'ajustement (environ 1650 cas), ont servi de verification hors echantillon.
+ *
+ * Divergence connue, mesuree et NON portee (UNPORTED_CASES) : 1 cas sur 1250.
+ *   - clk21-53 : deux clics sur la meme cellule a moins de 'mousetime' (500 ms) ; vim y voit un double-clic
+ *     et selectionne le mot, ce moteur y voit deux clics simples.  Le navigateur fournit `event.detail`, le
+ *     branchement est a faire cote composant ; il n'est pas epingle comme contrat : si le cas se met a passer,
+ *     le test echoue pour qu'on le retire de la liste.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
-import { VimEngine } from '@/network/devices/linux/editors/VimEngine';
-import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
-import { editorKey, type EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
-import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
-
-interface Recorded { y: number; x: number; rows: string[]; last: string; height: number; width: number }
-interface ScreenCase { id: string; text: string[]; rows: number; cols: number; setup: string[]; steps: string[]; after: Recorded[]; mouse?: string }
-
-const NAMED: Record<string, [string, Partial<EditorKeyInput>]> = {
-  Esc: ['Escape', {}], CR: ['Enter', {}], Tab: ['Tab', {}], BS: ['Backspace', {}], Space: [' ', {}],
-  Up: ['ArrowUp', {}], Down: ['ArrowDown', {}], Left: ['ArrowLeft', {}], Right: ['ArrowRight', {}],
-  Home: ['Home', {}], End: ['End', {}], PageUp: ['PageUp', {}], PageDown: ['PageDown', {}], Del: ['Delete', {}],
-};
-
-function keysOf(step: string): EditorKeyInput[] {
-  const out: EditorKeyInput[] = [];
-  for (let i = 0; i < step.length;) {
-    const named = /^<(C-([a-z[])|[A-Za-z]+)>/.exec(step.slice(i));
-    if (named) {
-      if (named[2] !== undefined) { out.push(editorKey(named[2], { ctrl: true })); i += named[0].length; continue; }
-      const entry = NAMED[named[1]];
-      if (entry) { out.push(editorKey(entry[0], entry[1])); i += named[0].length; continue; }
-    }
-    const cp = step.codePointAt(i)!;
-    const ch = String.fromCodePoint(cp);
-    out.push(editorKey(ch));
-    i += ch.length;
-  }
-  return out;
-}
-
-function textRows(engine: VimEngine): string[] {
-  return engine.screen.rows.slice(0, -1).map((row) => plainRowText(row).replace(/\s+$/, ''));
-}
-
-function replay(c: ScreenCase): string | null {
-  const content = c.text.join('\n') + '\n';
-  const fs = new InMemoryEditorFsContext({ '/tmp/s.txt': content });
-  const engine = new VimEngine(fs, '/tmp/s.txt', content, false, 'vim');
-  engine.resize(c.rows, c.cols);
-  const setup = c.mouse === undefined ? c.setup : [`set mouse=${c.mouse}`, ...c.setup];
-  for (const line of setup) for (const k of keysOf(`:${line}<CR>`)) engine.applyKey(k);
-  for (let s = 0; s < c.after.length; s++) {
-    const step = c.steps[s];
-    if (step.startsWith('@click:')) {
-      const [, row, col] = step.split(':').map(Number);
-      engine.clickAt(row, col);
-    } else if (step.startsWith('@')) {
-      const [rows, cols] = step.slice(1).split('x').map(Number);
-      engine.resize(rows, cols);
-    } else {
-      for (const k of keysOf(step)) engine.applyKey(k);
-    }
-    const want = c.after[s];
-    const got = textRows(engine);
-    const screen = engine.screen;
-    const rowsOk = JSON.stringify(got) === JSON.stringify(want.rows.slice(0, got.length).map((r) => r.replace(/\s+$/, '')));
-    const wantAtCommandLine = want.y >= want.height - 1;
-    const cursorOk = wantAtCommandLine || (screen.cursor !== null && screen.cursor.row === want.y && screen.cursor.col === want.x);
-    if (!rowsOk || !cursorOk) {
-      return `${c.id} ${c.rows}x${c.cols} ${JSON.stringify(c.setup)} step ${s} ${JSON.stringify(c.steps.slice(0, s + 1))}\n  want y=${want.y} x=${want.x} rows=${JSON.stringify(want.rows)}\n  got  y=${screen.cursor?.row} x=${screen.cursor?.col} rows=${JSON.stringify(got)}`;
-    }
-  }
-  return null;
-}
+import { replayScreenCase, type ScreenCase } from '../../support/oracle/vimScreenReplay';
 
 const UNPORTED_CASES: ReadonlySet<string> = new Set([
-  'cell2-133', 'cell2-194',
-  'scr3-76', 'scr3-101', 'scr3-130', 'scr3-144', 'scr3-176', 'scr3-179', 'scr3-194',
-  'rsz5-36', 'rsz5-50', 'rsz5-56', 'rsz5-70', 'rsz5-92', 'rsz5-117', 'rsz5-139', 'rsz5-144', 'rsz5-155',
-  'clk9-39', 'clk9-46', 'clk9-48', 'clk9-69', 'clk9-104', 'clk9-113', 'clk9-133', 'clk9-137', 'clk9-154', 'clk9-168', 'clk9-178', 'clk9-191',
-  'clk21-19', 'clk21-20', 'clk21-53', 'clk21-69', 'clk21-84', 'clk21-130', 'clk21-144',
+  'clk21-53',
 ]);
 
 const dir = 'src/__tests__/support/oracle/vim-screen';
@@ -113,7 +42,7 @@ const fixtures = readdirSync(dir).filter((f) => f.endsWith('.json')).sort().map(
 describe('vim screen transcripts recorded from a real vim', () => {
   for (const fixture of fixtures) {
     it(`${fixture.name} replays with the same rows and cursor cell`, () => {
-      const outcomes = fixture.cases.map((c) => ({ id: c.id, failure: replay(c) }));
+      const outcomes = fixture.cases.map((c) => ({ id: c.id, failure: replayScreenCase(c) }));
       const unexpected = outcomes.filter((o) => o.failure !== null && !UNPORTED_CASES.has(o.id)).map((o) => o.failure);
       const nowPassing = outcomes.filter((o) => o.failure === null && UNPORTED_CASES.has(o.id)).map((o) => o.id);
       expect(unexpected.length > 0 ? `${unexpected.length} of ${fixture.cases.length}\n${unexpected.slice(0, 3).join('\n')}` : '').toBe('');

@@ -1,0 +1,1161 @@
+{
+"vim": "VIM - Vi IMproved 9.1 (2024 Jan 02, compiled Aug 24 2026 22:13:04)",
+"cases": [
+{
+"id": "win-botline-redraw",
+"text": [
+"a1",
+"a2",
+"a3",
+"a4",
+"a5",
+"a6",
+"a7",
+"a8",
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w",
+"b1",
+"b2",
+"b3"
+],
+"rows": 8,
+"cols": 80,
+"setup": [],
+"steps": [
+"5j"
+],
+"after": [
+{
+"y": 2,
+"x": 0,
+"rows": [
+"a4",
+"a5",
+"a6",
+"a7",
+"a8",
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w",
+"23 w24 w25 w26 w27 w"
+],
+"last": "                                                              6,1           50%",
+"height": 8,
+"width": 80
+}
+],
+"why": "w_botline change after the first scroll: a second update_topline re-centres (halfway with prefer_above=false)"
+},
+{
+"id": "win-botline-approx-scroll",
+"text": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"row 9",
+"row 10",
+"row 11",
+"row 12",
+"row 13",
+"row 14",
+"row 15",
+"row 16",
+"row 17",
+"row 18",
+"row 19",
+"row 20",
+"row 21",
+"row 22",
+"row 23",
+"row 24",
+"row 25",
+"row 26",
+"row 27",
+"row 28",
+"row 29",
+"row 30"
+],
+"rows": 10,
+"cols": 40,
+"setup": [
+"set so=3"
+],
+"steps": [
+"3<C-e>",
+"3<C-y>",
+"10G",
+"<C-e>"
+],
+"after": [
+{
+"y": 3,
+"x": 0,
+"rows": [
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"row 9",
+"row 10",
+"row 11",
+"row 12"
+],
+"last": "                      7,1           14%",
+"height": 10,
+"width": 40
+},
+{
+"y": 5,
+"x": 0,
+"rows": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"row 9"
+],
+"last": "                      6,1           Top",
+"height": 10,
+"width": 40
+},
+{
+"y": 5,
+"x": 0,
+"rows": [
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"row 9",
+"row 10",
+"row 11",
+"row 12",
+"row 13"
+],
+"last": "                      10,1          19%",
+"height": 10,
+"width": 40
+},
+{
+"y": 4,
+"x": 0,
+"rows": [
+"row 6",
+"row 7",
+"row 8",
+"row 9",
+"row 10",
+"row 11",
+"row 12",
+"row 13",
+"row 14"
+],
+"last": "                      10,1          23%",
+"height": 10,
+"width": 40
+}
+],
+"why": "Ctrl-E/Ctrl-Y approximate w_botline; cursor_correct revalidates it"
+},
+{
+"id": "win-halfpage-up-valid-top",
+"text": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"row 9",
+"row 10",
+"row 11",
+"row 12",
+"row 13",
+"row 14",
+"row 15",
+"row 16",
+"row 17",
+"row 18",
+"row 19",
+"row 20",
+"row 21",
+"row 22",
+"row 23",
+"row 24",
+"row 25",
+"row 26",
+"row 27",
+"row 28",
+"row 29",
+"row 30",
+"row 31",
+"row 32",
+"row 33",
+"row 34",
+"row 35",
+"row 36",
+"row 37",
+"row 38",
+"row 39",
+"row 40",
+"row 41",
+"row 42",
+"row 43",
+"row 44",
+"row 45",
+"row 46",
+"row 47",
+"row 48",
+"row 49",
+"row 50",
+"row 51",
+"row 52",
+"row 53",
+"row 54",
+"row 55",
+"row 56",
+"row 57",
+"row 58",
+"row 59",
+"row 60"
+],
+"rows": 12,
+"cols": 30,
+"setup": [
+"set so=8"
+],
+"steps": [
+"50G",
+"5<C-u>"
+],
+"after": [
+{
+"y": 5,
+"x": 0,
+"rows": [
+"row 45",
+"row 46",
+"row 47",
+"row 48",
+"row 49",
+"row 50",
+"row 51",
+"row 52",
+"row 53",
+"row 54",
+"row 55"
+],
+"last": ":s             50,1       89%",
+"height": 12,
+"width": 30
+},
+{
+"y": 5,
+"x": 0,
+"rows": [
+"row 40",
+"row 41",
+"row 42",
+"row 43",
+"row 44",
+"row 45",
+"row 46",
+"row 47",
+"row 48",
+"row 49",
+"row 50"
+],
+"last": "               45,1       79%",
+"height": 12,
+"width": 30
+}
+],
+"why": "cursor_correct leaves VALID_TOPLINE set after the cursor moved: no further scrolling"
+},
+{
+"id": "win-ctrl-f-fail-keeps-curswant",
+"text": [
+"    indented line",
+"short",
+"x\ttab\there",
+"last\tline here"
+],
+"rows": 12,
+"cols": 40,
+"setup": [
+"set so=0"
+],
+"steps": [
+"jj$",
+"2<C-f>",
+"k"
+],
+"after": [
+{
+"y": 2,
+"x": 19,
+"rows": [
+"    indented line",
+"short",
+"x       tab     here",
+"last    line here",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": ":set so=0             3,10-20       All",
+"height": 12,
+"width": 40
+},
+{
+"y": 0,
+"x": 12,
+"rows": [
+"last    line here",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": "                      4,10-13       Bot",
+"height": 12,
+"width": 40
+},
+{
+"y": 0,
+"x": 19,
+"rows": [
+"x       tab     here",
+"last    line here",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": "                      3,10-20       Bot",
+"height": 12,
+"width": 40
+}
+],
+"why": "a Ctrl-F that fails does not set curswant again"
+},
+{
+"id": "win-resize-height-then-width",
+"text": [
+"foo bar",
+"\t[1,2]",
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59",
+"",
+"x y z",
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"row 9",
+"row 10"
+],
+"rows": 12,
+"cols": 50,
+"setup": [],
+"steps": [
+"jj",
+"@8x30",
+"@12x50"
+],
+"after": [
+{
+"y": 0,
+"x": 0,
+"rows": [
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15",
+" w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w",
+"28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40",
+" w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w",
+"53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8",
+"w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21",
+" w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w",
+"34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46",
+" w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w",
+"59",
+""
+],
+"last": "                                3,1           15%",
+"height": 12,
+"width": 50
+},
+{
+"y": 0,
+"x": 0,
+"rows": [
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10",
+" w11 w12 w13 w14 w15 w16 w17 w",
+"18 w19 w20 w21 w22 w23 w24 w25",
+" w26 w27 w28 w29 w30 w31 w32 w",
+"33 w34 w35 w36 w37 w38 w39 w40",
+" w41 w42 w43 w44 w45 w46 w47 w",
+"48 w49 w50 w51 w52 w53 w54 w55"
+],
+"last": "               3,1        14%",
+"height": 8,
+"width": 30
+},
+{
+"y": 0,
+"x": 0,
+"rows": [
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15",
+" w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w",
+"28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40",
+" w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w",
+"53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8",
+"w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21",
+" w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w",
+"34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46",
+" w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w",
+"59",
+""
+],
+"last": "                                3,1           15%",
+"height": 12,
+"width": 50
+}
+],
+"why": "the height is applied with the old width, update_topline runs between the two"
+},
+{
+"id": "win-resize-tall-line",
+"text": [
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59",
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5"
+],
+"rows": 12,
+"cols": 30,
+"setup": [
+"set so=3"
+],
+"steps": [
+"$",
+"@5x30",
+"@20x50",
+"@5x30"
+],
+"after": [
+{
+"y": 10,
+"x": 3,
+"rows": [
+"<<<w41 w42 w43 w44 w45 w46 w47",
+" w48 w49 w50 w51 w52 w53 w54 w",
+"55 w56 w57 w58 w59w1 w2 w3 w4",
+"w5 w6 w7 w8 w9 w10 w11 w12 w13",
+" w14 w15 w16 w17 w18 w19 w20 w",
+"21 w22 w23 w24 w25 w26 w27 w28",
+" w29 w30 w31 w32 w33 w34 w35 w",
+"36 w37 w38 w39 w40 w41 w42 w43",
+" w44 w45 w46 w47 w48 w49 w50 w",
+"51 w52 w53 w54 w55 w56 w57 w58",
+" w59"
+],
+"last": ":s             1,904      Top",
+"height": 12,
+"width": 30
+},
+{
+"y": 3,
+"x": 3,
+"rows": [
+"<<<w37 w38 w39 w40 w41 w42 w43",
+" w44 w45 w46 w47 w48 w49 w50 w",
+"51 w52 w53 w54 w55 w56 w57 w58",
+" w59"
+],
+"last": "               1,904      Top",
+"height": 5,
+"width": 30
+},
+{
+"y": 18,
+"x": 3,
+"rows": [
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15",
+" w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w",
+"28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40",
+" w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w",
+"53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8",
+"w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21",
+" w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w",
+"34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46",
+" w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w",
+"59w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w",
+"15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27",
+" w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w",
+"40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52",
+" w53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w",
+"8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w",
+"21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33",
+" w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w",
+"46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58",
+" w59"
+],
+"last": "                                1,904         Top",
+"height": 20,
+"width": 50
+},
+{
+"y": 3,
+"x": 3,
+"rows": [
+"<<<w37 w38 w39 w40 w41 w42 w43",
+" w44 w45 w46 w47 w48 w49 w50 w",
+"51 w52 w53 w54 w55 w56 w57 w58",
+" w59"
+],
+"last": "               1,904      Top",
+"height": 5,
+"width": 30
+}
+],
+"why": "a cursor line taller than the window: w_skipcol and the <<< marker"
+},
+{
+"id": "win-click-tall-line",
+"text": [
+"row 1",
+"row 2",
+"row 3",
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32 w33 w34 w35 w36 w37 w38 w39 w40 w41 w42 w43 w44 w45 w46 w47 w48 w49 w50 w51 w52 w53 w54 w55 w56 w57 w58 w59",
+"row 1",
+"row 2",
+"row 3"
+],
+"rows": 6,
+"cols": 30,
+"setup": [],
+"mouse": "a",
+"steps": [
+"4G",
+"@click:4:4",
+"@click:1:22"
+],
+"after": [
+{
+"y": 0,
+"x": 0,
+"rows": [
+"w1 w2 w3 w4 w5 w6 w7 w8 w9 w10",
+" w11 w12 w13 w14 w15 w16 w17 w",
+"18 w19 w20 w21 w22 w23 w24 w25",
+" w26 w27 w28 w29 w30 w31 w32 w",
+"33 w34 w35 w36 w37 w38 w39 w40"
+],
+"last": "               4,1        50%",
+"height": 6,
+"width": 30
+},
+{
+"y": 2,
+"x": 4,
+"rows": [
+"<<<w19 w20 w21 w22 w23 w24 w25",
+" w26 w27 w28 w29 w30 w31 w32 w",
+"33 w34 w35 w36 w37 w38 w39 w40",
+" w41 w42 w43 w44 w45 w46 w47 w",
+"48 w49 w50 w51 w52 w53 w54 w55"
+],
+"last": "               4,125      50%",
+"height": 6,
+"width": 30
+},
+{
+"y": 2,
+"x": 22,
+"rows": [
+"<<<1 w12 w13 w14 w15 w16 w17 w",
+"18 w19 w20 w21 w22 w23 w24 w25",
+" w26 w27 w28 w29 w30 w31 w32 w",
+"33 w34 w35 w36 w37 w38 w39 w40",
+" w41 w42 w43 w44 w45 w46 w47 w"
+],
+"last": "               4,113      50%",
+"height": 6,
+"width": 30
+}
+],
+"why": "clicks map through w_skipcol"
+},
+{
+"id": "win-edit-last-char-keeps-top",
+"text": [
+"l1",
+"l2",
+"last line of three"
+],
+"rows": 6,
+"cols": 60,
+"setup": [],
+"steps": [
+"G",
+"<C-e>",
+"x"
+],
+"after": [
+{
+"y": 2,
+"x": 0,
+"rows": [
+"l1",
+"l2",
+"last line of three",
+"~",
+"~"
+],
+"last": "\"t.txt\" 3L, 25B                           3,1           All",
+"height": 6,
+"width": 60
+},
+{
+"y": 1,
+"x": 0,
+"rows": [
+"l2",
+"last line of three",
+"~",
+"~",
+"~"
+],
+"last": "                                          3,1           Bot",
+"height": 6,
+"width": 60
+},
+{
+"y": 2,
+"x": 0,
+"rows": [
+"l1",
+"l2",
+"ast line of three",
+"~",
+"~"
+],
+"last": "                                          3,1           All",
+"height": 6,
+"width": 60
+}
+],
+"why": "x on the last character moves the cursor before the change column: VALID_TOPLINE survives"
+},
+{
+"id": "win-insert-pageup",
+"text": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"row 9",
+"row 10",
+"row 11",
+"row 12",
+"row 13",
+"row 14",
+"row 15",
+"row 16",
+"row 17",
+"row 18",
+"row 19",
+"row 20",
+"row 21",
+"row 22",
+"row 23",
+"row 24",
+"row 25",
+"row 26",
+"row 27",
+"row 28",
+"row 29",
+"row 30",
+"row 31",
+"row 32",
+"row 33",
+"row 34",
+"row 35",
+"row 36",
+"row 37",
+"row 38",
+"row 39",
+"row 40",
+"row 41",
+"row 42",
+"row 43",
+"row 44",
+"row 45",
+"row 46",
+"row 47",
+"row 48",
+"row 49",
+"row 50",
+"row 51",
+"row 52",
+"row 53",
+"row 54",
+"row 55",
+"row 56",
+"row 57",
+"row 58",
+"row 59",
+"row 60"
+],
+"rows": 12,
+"cols": 40,
+"setup": [
+"set so=0"
+],
+"steps": [
+"40G",
+"I",
+"<PageUp>"
+],
+"after": [
+{
+"y": 5,
+"x": 0,
+"rows": [
+"row 35",
+"row 36",
+"row 37",
+"row 38",
+"row 39",
+"row 40",
+"row 41",
+"row 42",
+"row 43",
+"row 44",
+"row 45"
+],
+"last": ":set so=0             40,1          69%",
+"height": 12,
+"width": 40
+},
+{
+"y": 5,
+"x": 0,
+"rows": [
+"row 35",
+"row 36",
+"row 37",
+"row 38",
+"row 39",
+"row 40",
+"row 41",
+"row 42",
+"row 43",
+"row 44",
+"row 45"
+],
+"last": "-- INSERT --          40,1          69%",
+"height": 12,
+"width": 40
+},
+{
+"y": 10,
+"x": 0,
+"rows": [
+"row 26",
+"row 27",
+"row 28",
+"row 29",
+"row 30",
+"row 31",
+"row 32",
+"row 33",
+"row 34",
+"row 35",
+"row 36"
+],
+"last": "-- INSERT --          36,1          51%",
+"height": 12,
+"width": 40
+}
+],
+"why": "Insert-mode PageUp is onepage(BACKWARD)"
+},
+{
+"id": "win-g-dollar-nowrap-tab",
+"text": [
+"    end.\t(x)\tcafé\tx\tbar\tfoo",
+"second"
+],
+"rows": 12,
+"cols": 30,
+"setup": [
+"set nowrap ss=5 siso=3"
+],
+"steps": [
+"e",
+"g$"
+],
+"after": [
+{
+"y": 0,
+"x": 6,
+"rows": [
+"    end.        (x)     café",
+"second",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": ":s          ss=1,7        All",
+"height": 12,
+"width": 30
+},
+{
+"y": 0,
+"x": 26,
+"rows": [
+"nd.        (x)     café    x",
+"d",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": ":s          ss=1,19-32    All",
+"height": 12,
+"width": 30
+}
+],
+"why": "g$ with nowrap: only a multi-cell character that does not fit moves the cursor back, a tab counts as one cell"
+},
+{
+"id": "win-visual-object-then-click",
+"text": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8"
+],
+"rows": 12,
+"cols": 40,
+"setup": [],
+"mouse": "a",
+"steps": [
+"V",
+"i",
+"@click:5:3",
+"$"
+],
+"after": [
+{
+"y": 0,
+"x": 0,
+"rows": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"~",
+"~",
+"~"
+],
+"last": "-- VISUAL LI1         1,1           All",
+"height": 12,
+"width": 40
+},
+{
+"y": 0,
+"x": 0,
+"rows": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"~",
+"~",
+"~"
+],
+"last": "-- VISUAL LIi         1,1           All",
+"height": 12,
+"width": 40
+},
+{
+"y": 0,
+"x": 0,
+"rows": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"~",
+"~",
+"~"
+],
+"last": "-- VISUAL LI1         1,1           All",
+"height": 12,
+"width": 40
+},
+{
+"y": 0,
+"x": 5,
+"rows": [
+"row 1",
+"row 2",
+"row 3",
+"row 4",
+"row 5",
+"row 6",
+"row 7",
+"row 8",
+"~",
+"~",
+"~"
+],
+"last": "-- VISUAL LI1         1,6           All",
+"height": 12,
+"width": 40
+}
+],
+"why": "a pending Visual text-object prefix is cancelled by the click"
+},
+{
+"id": "win-zh-wrap-keeps-curswant",
+"text": [
+"abcdefghijklmnop",
+"xy",
+"0123456789abcdef"
+],
+"rows": 12,
+"cols": 40,
+"setup": [],
+"steps": [
+"$",
+"zh",
+"j",
+"j"
+],
+"after": [
+{
+"y": 0,
+"x": 15,
+"rows": [
+"abcdefghijklmnop",
+"xy",
+"0123456789abcdef",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": "<t\" 3L, 37B           1,16          All",
+"height": 12,
+"width": 40
+},
+{
+"y": 0,
+"x": 15,
+"rows": [
+"abcdefghijklmnop",
+"xy",
+"0123456789abcdef",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": "<t\" 3L, 37B           1,16          All",
+"height": 12,
+"width": 40
+},
+{
+"y": 1,
+"x": 1,
+"rows": [
+"abcdefghijklmnop",
+"xy",
+"0123456789abcdef",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": "<t\" 3L, 37B           2,2           All",
+"height": 12,
+"width": 40
+},
+{
+"y": 2,
+"x": 15,
+"rows": [
+"abcdefghijklmnop",
+"xy",
+"0123456789abcdef",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~",
+"~"
+],
+"last": "<t\" 3L, 37B           3,16          All",
+"height": 12,
+"width": 40
+}
+],
+"why": "zh with wrap does nothing and does not reset curswant"
+},
+{
+"id": "win-click-truncated-row",
+"text": [
+"one",
+"word word word word word word word word word word word word word word word word word word",
+"word word word word word word word word word word word word word word word word word word",
+"four"
+],
+"rows": 6,
+"cols": 30,
+"setup": [],
+"mouse": "a",
+"steps": [
+"@click:0:2",
+"@click:4:5",
+"@click:1:5",
+"@click:4:5"
+],
+"after": [
+{
+"y": 0,
+"x": 2,
+"rows": [
+"one",
+"word word word word word word",
+"word word word word word word",
+"word word word word word word",
+"@@@"
+],
+"last": "<              1,3        Top",
+"height": 6,
+"width": 30
+},
+{
+"y": 0,
+"x": 5,
+"rows": [
+"word word word word word word",
+"word word word word word word",
+"word word word word word word",
+"four",
+"~"
+],
+"last": "               3,6        Bot",
+"height": 6,
+"width": 30
+},
+{
+"y": 1,
+"x": 5,
+"rows": [
+"word word word word word word",
+"word word word word word word",
+"word word word word word word",
+"four",
+"~"
+],
+"last": "               3,36       Bot",
+"height": 6,
+"width": 30
+},
+{
+"y": 3,
+"x": 3,
+"rows": [
+"word word word word word word",
+"word word word word word word",
+"word word word word word word",
+"four",
+"~"
+],
+"last": "               4,4        Bot",
+"height": 6,
+"width": 30
+}
+],
+"why": "the @@@ row still belongs to the hidden line: the click moves the cursor there and the window follows"
+}
+]
+}
