@@ -116,10 +116,10 @@ export class WindowsNpsRole {
     const processName = identity.processName ?? 'IAS';
     this.host.udpBind(RADIUS_AUTH_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.agent.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    }, processName, { pid: identity.pid });
+    }, processName, { pid: identity.pid, service: identity.service });
     this.host.udpBind(RADIUS_ACCT_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.agent.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    }, processName, { pid: identity.pid });
+    }, processName, { pid: identity.pid, service: identity.service });
     this.unsubscribeAuditLog = this.getHostBus().subscribe('radius.packet.sent', (e) => {
       const p = e.payload as { deviceId: string; code: string; username: string | null };
       if (p.deviceId !== this.host.getId()) return;

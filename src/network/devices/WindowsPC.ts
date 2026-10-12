@@ -264,10 +264,14 @@ import {
 } from './windows/netFirewallProfile';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType,
-  cmdRen, cmdDel, cmdTree, cmdTasklist, cmdNetstat,
+  cmdRen, cmdDel, cmdTree, cmdTasklist,
   cmdAttrib, cmdFind, cmdFindstr, cmdMore, cmdFc,
   cmdSort,
 } from './windows/WinFileCommands';
+import { runNetstat, type NetstatMachine } from './windows/WinNetstat';
+import { netstatStatistics } from './windows/WinNetstatStatistics';
+import { showRoutePrint } from './windows/WinRoute';
+import { snmpSnapshot } from './linux/ports/PortsFilesystem';
 
 /**
  * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
@@ -2753,6 +2757,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private static readonly HOSTS_FILE = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
+  private static readonly SERVICES_FILE = 'C:\\Windows\\System32\\drivers\\etc\\services';
 
   /** Single source of truth for the simulated OS build, so `ver` reports
    *  the same string from cmd and from the PowerShell native shim, and it
@@ -3216,7 +3221,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         writeFile: (p, c) => fileCtx.fs.createFile(p, c).ok,
       }, fileCtx.hostname);
       case 'winrm':   return cmdWinrm(this.winrm, args);
-      case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable, this.buildNetContext());
+      case 'netstat': return runNetstat(this.netstatMachine(), args);
       case 'attrib':  return cmdAttrib(fileCtx, args);
       case 'find':    return cmdFind(fileCtx, args, stdin);
       case 'findstr': return cmdFindstr(fileCtx, args, stdin);
@@ -3657,6 +3662,49 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   tracertHost(): TracertHost {
     return tracertHostOf(this.buildNetContext());
+  }
+
+  private netstatMachine(): NetstatMachine {
+    return {
+      computerName: this.hostname,
+      primaryDnsSuffix: this.dnsSuffix,
+      elevated: this.userMgr.isCurrentUserAdmin(),
+      sockets: () => this.socketTable.getAll(),
+      processImage: (pid) => this.procMgr.getProcess(pid)?.name ?? null,
+      servicesFile: () => {
+        const file = this.fs.readFile(WindowsPC.SERVICES_FILE);
+        return file.ok ? file.content ?? '' : null;
+      },
+      isOwnAddress: (address) => {
+        if (address.includes(':')) {
+          const parsed = IPv6Address.tryParse(address);
+          return parsed !== null && (parsed.isUnspecified() || this.isLocalAddress6(parsed));
+        }
+        const parsed = IPAddress.tryParse(address);
+        return parsed !== null && (parsed.isUnspecified() || this.isLocalAddress(parsed));
+      },
+      zoneOf: (address) => {
+        const bare = address.replace(/%.*$/, '').toLowerCase();
+        if (!bare.startsWith('fe80:')) return null;
+        const position = [...this.ports.values()].findIndex((port) =>
+          port.getLinkLocalIPv6()?.toString().replace(/%.*$/, '').toLowerCase() === bare);
+        return position === -1 ? null : adapterIfIndex(position);
+      },
+      resolveAddress: (address) => this.resolveAddressNameAsync(address),
+      linkCounters: () => {
+        const totals = { bytesIn: 0, bytesOut: 0, framesIn: 0, framesOut: 0 };
+        for (const port of this.ports.values()) {
+          const counters = port.getCounters?.();
+          totals.bytesIn += counters?.bytesIn ?? 0;
+          totals.bytesOut += counters?.bytesOut ?? 0;
+          totals.framesIn += counters?.framesIn ?? 0;
+          totals.framesOut += counters?.framesOut ?? 0;
+        }
+        return totals;
+      },
+      routePrint: () => showRoutePrint(this.buildNetContext()),
+      protocolStatistics: (only) => netstatStatistics(snmpSnapshot(this.getProtocolCounters()), only),
+    };
   }
 
   private buildNetContext(): WinCommandContext {
@@ -5823,7 +5871,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const agent = this.getNtpAgent();
     this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
       agent.handleUdp(inPort, sourceIP as IPAddress, udp);
-    }, identity.processName, { pid: identity.pid });
+    }, identity.processName, { pid: identity.pid, service: identity.service });
   }
 
   /** Le service W32Time de cette machine (`PRD-NTP-Tutoriel.md` §5). */

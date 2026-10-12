@@ -420,7 +420,8 @@ export class WindowsProcessManager implements ServiceProcessHost {
   }
 
   identityOfService(serviceName: string): ListenerIdentity {
-    return this.identityOf(this.processes.get(this.getPidForService(serviceName)));
+    const identity = this.identityOf(this.processes.get(this.getPidForService(serviceName)));
+    return identity.pid === undefined ? identity : { ...identity, service: serviceName };
   }
 
   identityOfImage(image: string): ListenerIdentity {

@@ -442,13 +442,32 @@ pour interroger le lien appartiennent à `Dnscache` (`EndHost.resolverIdentity()
 unique de la machine que la reconstruction ne remplace pas. Garde-fou :
 `probe-chaque-ecoute-windows-suit-son-service-et-porte-son-processus`.
 
+`netstat` de Windows dit ce que dit le vrai (mesuré sur `fa7d49a31`, un WindowsServer et un LinuxPC câblés) : `netstat -a` listait les lignes
+dans l'ordre d'arrivée dans la table, des adresses IPv6 nues (`:::7200`, `::1:7300`), des écoutes face à `0.0.0.0:0` et aucun nom (ni le
+service du fichier `services`, ni le fichier `hosts`, ni le DNS), et ignorait `-b`, `-q`, `-f`, `-t`, `-x`, `-y`, `-p tcpv6`, `/?`, les
+commutateurs inconnus et les majuscules ; `-e -s` ne disait que `-e`. `WinNetstat.ts` remplace le code de `WinFileCommands.ts` : arguments
+typés (`parseNetstatArguments`), aide de Windows 10 22H2, lignes triées (TCP IPv4, TCP IPv6, UDP IPv4, UDP IPv6, adresse numérique puis
+port), colonne distante nommée par le fichier `services` de la machine (`IanaServiceRegistry.fromServicesFile`, dont `parseServicesRecord`
+remplace aussi le lecteur de `getent services`), son fichier `hosts` et une vraie question PTR sur le fil, le nom de l'ordinateur pour une
+écoute, une adresse de la machine ou la boucle, la zone d'une adresse de lien local, `-p` pour plusieurs protocoles, `-s` par famille,
+`-e -s` ensemble, TIME_WAIT sans `-a`. `-b` nomme sous chaque ligne le service puis l'exécutable (`  Dnscache` puis ` [svchost.exe]`) et
+exige une session élevée : le service qui tient une prise voyage de `ListenerIdentity` à `SocketEntry.serviceName` (écoutes, connexions
+acceptées, UDP). `-t`, `-x` et `-y` partagent le modèle de ligne de `Get-NetTCPConnection` (état de délestage `InHost`, gabarit `Internet`
+pour une connexion et rien pour une écoute, PID 0 pour une prise sans propriétaire, adresse générique de sa famille pour une écoute).
+`-q` liste les sockets TCP liées qui n'écoutent pas, qui existent maintenant dans la pile (`TcpStack.bind`, état `BOUND` de la table, port
+tenu, SYN refusé, pas un port éphémère, fauchées avec leur processus) et que `ss`, `netstat` et `/proc/net/tcp` de Linux ne montrent pas :
+le noyau 5.15 ne parcourt que les tables d'écoute et de connexions (`net/ipv4/tcp_ipv4.c`, `net/ipv4/inet_diag.c`), jamais la table de
+liaison. Garde-fous : `probe-netstat-windows-nomme-trie-et-refuse-comme-windows`, `probe-netstat-b-nomme-le-service-et-l-executable`,
+`probe-netstat-q-montre-les-ports-lies-sans-ecoute` et `probe-netstat-t-x-y-et-powershell-disent-la-meme-chose`.
+
 Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
 non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
 Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135
 d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ; `TermService` est affiché
 Automatic quand un Windows réel le dit Manual ; un service qui n'a jamais eu de processus d'hébergement n'en reçoit pas en
-démarrant ; `netstat -b`, `-q` et la résolution des noms sont traités après, de même que le processus par session d'OpenSSH pour
-Windows, le `ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows.
+démarrant ; aucune application de la simulation n'ouvre encore de socket TCP liée sans écoute (la brique est dans la pile) ; les
+services Windows n'écoutent pas en double pile et `netstat -s` ne dit rien d'IPv6 ; le processus par session d'OpenSSH pour Windows, le
+`ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
 
 ## 7. Hors périmètre
 
@@ -457,8 +476,9 @@ Windows, le `ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows.
   si P1 se passe bien.
 - **Windows.** Traité en P6 pour les connexions, leur propriétaire, la
   mort d'un processus, les écoutes des services, des fonctionnalités, des
-  rôles et du système (UDP compris) ; `netstat -b` et la résolution des
-  noms restent à faire.
+  rôles et du système (UDP compris), et pour `netstat` (`-b`, `-q`, les noms,
+  le tri, `-t`, `-x`, `-y`) ; restent la double pile des services Windows et les
+  compteurs IPv6 de `netstat -s`.
 - **Le listener TNS d'Oracle.** Nommé en P2, traité ailleurs.
 
 ## 8. Vérification

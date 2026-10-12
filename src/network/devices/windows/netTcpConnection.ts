@@ -23,6 +23,12 @@ export const NET_TCP_OFFLOAD_STATES: readonly NetTcpOffloadState[] = [
   'InHost', 'Offloading', 'Offloaded', 'Uploading',
 ];
 
+export const HOST_OFFLOAD_STATE: NetTcpOffloadState = 'InHost';
+
+export function appliedSettingOf(state: NetTcpState): NetTcpAppliedSetting | '' {
+  return state === 'Listen' || state === 'Bound' ? '' : 'Internet';
+}
+
 export function netTcpStateOf(socketState: string): NetTcpState {
   const spelled = socketState.split('_')
     .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
@@ -37,7 +43,7 @@ export interface NetTcpConnectionRow {
   remoteAddress: string;
   remotePort: number;
   state: NetTcpState;
-  appliedSetting: NetTcpAppliedSetting;
+  appliedSetting: NetTcpAppliedSetting | '';
   offloadState: NetTcpOffloadState;
   owningProcess: number;
   creationTime: string;

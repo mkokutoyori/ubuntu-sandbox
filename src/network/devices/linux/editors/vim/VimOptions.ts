@@ -27,6 +27,7 @@ interface OptionDef {
   readonly startup?: ProfileDefaults;
   readonly number?: NumberRule;
   readonly commaList?: boolean;
+  readonly flagList?: string;
   readonly normalize?: (value: string) => string | null;
 }
 
@@ -94,6 +95,7 @@ const DEFS: readonly OptionDef[] = [
   { name: 'filetype', short: 'ft', kind: 'string', scope: 'local', reset: same(''), normalize: (v) => (/^[A-Za-z0-9._-]*$/.test(v) ? v : null) },
   { name: 'fileformat', short: 'ff', kind: 'string', scope: 'local', reset: same('unix'), normalize: (v) => (v === '' || v === 'unix' || v === 'dos' || v === 'mac' ? v : null) },
   { name: 'fileencoding', short: 'fenc', kind: 'string', scope: 'local', reset: same('') },
+  { name: 'mouse', short: 'mouse', kind: 'string', scope: 'global', reset: same(''), flagList: 'nvichar' },
 ];
 
 const BY_NAME: ReadonlyMap<string, OptionDef> = new Map(
@@ -104,7 +106,7 @@ export type OptionName =
   | 'number' | 'relativenumber' | 'numberwidth' | 'list' | 'listchars' | 'showmatch' | 'incsearch'
   | 'hlsearch' | 'ignorecase' | 'autoindent' | 'colorcolumn' | 'tabstop' | 'shiftwidth' | 'softtabstop'
   | 'expandtab' | 'wrap' | 'scrolloff' | 'sidescroll' | 'sidescrolloff' | 'wrapscan' | 'display'
-  | 'ruler' | 'showcmd' | 'showmode' | 'scroll' | 'filetype' | 'fileformat' | 'fileencoding';
+  | 'ruler' | 'showcmd' | 'showmode' | 'scroll' | 'filetype' | 'fileformat' | 'fileencoding' | 'mouse';
 
 export type SetScope = 'set' | 'setlocal' | 'setglobal';
 
@@ -326,7 +328,23 @@ export class VimOptions {
     return null;
   }
 
+  private assignFlags(def: OptionDef, operation: Operation, valueText: string, scope: SetScope): Refusal | null {
+    const current = this.readFrom(scope).get(def.name) as string;
+    for (const flag of valueText) {
+      if (!def.flagList!.includes(flag)) return { code: 'E539', what: `Illegal character <${flag}>` };
+    }
+    const unique = (text: string): string => [...new Set(text)].join('');
+    let next: string;
+    if (operation === '=') next = unique(valueText);
+    else if (operation === '+=') next = unique(current + valueText);
+    else if (operation === '^=') next = unique(valueText + current);
+    else next = [...current].filter((flag) => !valueText.includes(flag)).join('');
+    this.write(def, scope, next);
+    return null;
+  }
+
   private assignString(def: OptionDef, operation: Operation, valueText: string, scope: SetScope): Refusal | null {
+    if (def.flagList !== undefined) return this.assignFlags(def, operation, valueText, scope);
     const current = this.readFrom(scope).get(def.name) as string;
     let next = valueText;
     if (operation !== '=') {

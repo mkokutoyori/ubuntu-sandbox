@@ -32,6 +32,24 @@ export interface ServicePortDefinition {
   readonly comment?: string;
 }
 
+export interface ServicesFileRecord {
+  readonly name: string;
+  readonly port: number;
+  readonly protocol: string;
+  readonly aliases: readonly string[];
+}
+
+export function parseServicesRecord(line: string): ServicesFileRecord | null {
+  const fields = line.replace(/#.*$/, '').trim().split(/\s+/);
+  if (fields.length < 2) return null;
+  const slash = fields[1].indexOf('/');
+  if (slash === -1) return null;
+  const port = parseInt(fields[1].slice(0, slash), 10);
+  const protocol = fields[1].slice(slash + 1);
+  if (!Number.isFinite(port) || !protocol) return null;
+  return { name: fields[0], port, protocol, aliases: fields.slice(2) };
+}
+
 /**
  * The stock assignment table. Deliberately broad — it carries more
  * services than the simulator binds today so that `getent services` and
@@ -52,6 +70,8 @@ const STANDARD_DEFINITIONS: ReadonlyArray<Omit<ServicePortDefinition, 'aliases'>
   { name: 'tftp', port: 69, protocol: 'udp', comment: 'Trivial File Transfer' },
   { name: 'http', port: 80, protocol: 'tcp', aliases: ['www', 'www-http'], comment: 'World Wide Web HTTP' },
   { name: 'kerberos', port: 88, protocol: 'tcp', aliases: ['kerberos5', 'krb5'], comment: 'Kerberos' },
+  { name: 'epmap', port: 135, protocol: 'tcp', aliases: ['loc-srv'], comment: 'DCE endpoint resolution' },
+  { name: 'epmap', port: 135, protocol: 'udp', aliases: ['loc-srv'], comment: 'DCE endpoint resolution' },
   { name: 'pop3', port: 110, protocol: 'tcp', aliases: ['pop-3'], comment: 'Post Office Protocol - Version 3' },
   { name: 'nntp', port: 119, protocol: 'tcp', aliases: ['usenet'], comment: 'Network News Transfer Protocol' },
   { name: 'ntp', port: 123, protocol: 'udp', comment: 'Network Time Protocol' },
@@ -101,6 +121,17 @@ export class IanaServiceRegistry {
     const registry = new IanaServiceRegistry();
     for (const raw of STANDARD_DEFINITIONS) {
       registry.register({ ...raw, aliases: raw.aliases ?? [] });
+    }
+    return registry;
+  }
+
+  static fromServicesFile(text: string): IanaServiceRegistry {
+    const registry = new IanaServiceRegistry();
+    for (const line of text.split('\n')) {
+      const record = parseServicesRecord(line);
+      if (record === null || (record.protocol !== 'tcp' && record.protocol !== 'udp')) continue;
+      if (registry.lookup(record.port, record.protocol) !== undefined) continue;
+      registry.register({ name: record.name, port: record.port, protocol: record.protocol, aliases: record.aliases });
     }
     return registry;
   }

@@ -1970,16 +1970,20 @@ export abstract class EndHost extends Equipment {
    */
   private attachListenerProjection(): void {
     this.tcpv2.attachSocketSink({
-      announce: (localIp, localPort, identity, boundDevice) => {
+      announce: (localIp, localPort, identity, boundDevice, bound) => {
         const family = localIp.includes(':') ? 'v6' : 'v4';
         if (this.socketTable.isPortBound(localPort, 'tcp', family)) return;
         try {
-          this.socketTable.bind(
+          const entry = this.socketTable.bind(
             'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,
-            boundDevice === undefined ? undefined : { boundDevice },
+            { boundDevice, serviceName: identity.service },
           );
+          if (bound) entry.state = 'BOUND';
           this.sinkOwnedListeners.add(`${localIp}:${localPort}`);
         } catch { /* déjà annoncé par ailleurs — l'entrée existante fait foi */ }
+      },
+      promote: (localIp, localPort) => {
+        this.socketTable.setListenerState('tcp', localIp, localPort, 'LISTEN');
       },
       withdraw: (localIp, localPort) => {
         if (!this.sinkOwnedListeners.delete(`${localIp}:${localPort}`)) return;
@@ -3378,13 +3382,13 @@ export abstract class EndHost extends Equipment {
   }
 
   public udpBind(
-    port: number, listener: UdpListener, processName?: string, owner: { pid?: number; uid?: number } = {},
+    port: number, listener: UdpListener, processName?: string, owner: { pid?: number; uid?: number; service?: string } = {},
   ): number | false {
     let bound: number;
     try {
       bound = port === PORT_ANY ? this.socketTable.allocateEphemeralPort() : port;
       this.socketTable.bind('udp', '0.0.0.0', bound, owner.pid, processName, undefined,
-        owner.uid === undefined ? undefined : { ownerUid: owner.uid });
+        { ownerUid: owner.uid, serviceName: owner.service });
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
       throw error;
@@ -3688,13 +3692,14 @@ export abstract class EndHost extends Equipment {
           continue;
         }
         this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
-        if (sock.protocol === 'tcp' && sock.state === 'LISTEN') {
+        if (sock.protocol === 'tcp' && (sock.state === 'LISTEN' || sock.state === 'BOUND')) {
           stack.closeListener(sock.localPort, sock.localAddress);
           closedListeners.push(sock.localPort);
         }
       } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
         sock.pid = undefined;
         sock.processName = undefined;
+        sock.serviceName = undefined;
         sock.uid = undefined;
       } else {
         this.socketTable.removeConnection(sock);

@@ -13,7 +13,7 @@ export const ALL_DHCP_SERVERS_GROUP = 'ff02::1:2';
 
 export interface Dhcpv6HostPort {
   interfaces(): ReadonlyArray<{ name: string; mac: string; globalAddress: string | null }>;
-  udpBind(port: number, listener: (delivery: UdpDelivery) => void, processName: string, owner?: { pid?: number }): number | false;
+  udpBind(port: number, listener: (delivery: UdpDelivery) => void, processName: string, owner?: { pid?: number; service?: string }): number | false;
   udpClose(port: number): void;
   joinIPv6Group(iface: string, group: string): boolean;
   leaveIPv6Group(iface: string, group: string): boolean;
@@ -45,7 +45,7 @@ export class Dhcpv6HostService {
     if (this.running) return true;
     const interfaces = this.host.interfaces();
     if (interfaces.length > 0) this.server.setServerDuid(`00:03:00:01:${interfaces[0].mac}`);
-    if (this.host.udpBind(DHCPV6_SERVER_PORT, this.handle, identity.processName ?? this.processName, { pid: identity.pid }) === false) return false;
+    if (this.host.udpBind(DHCPV6_SERVER_PORT, this.handle, identity.processName ?? this.processName, { pid: identity.pid, service: identity.service }) === false) return false;
     for (const port of interfaces) this.host.joinIPv6Group(port.name, ALL_DHCP_SERVERS_GROUP);
     this.server.enable();
     this.running = true;

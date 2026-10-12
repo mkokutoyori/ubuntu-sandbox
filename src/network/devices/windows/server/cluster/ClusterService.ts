@@ -84,7 +84,7 @@ export class ClusterService {
   start(identity: ListenerIdentity = {}): void {
     if (this.bound) return;
     this.bound = true;
-    this.host.udpBind(CLUSTER_HEARTBEAT_PORT, (dgram) => this.onHeartbeat(dgram), identity.processName, { pid: identity.pid });
+    this.host.udpBind(CLUSTER_HEARTBEAT_PORT, (dgram) => this.onHeartbeat(dgram), identity.processName, { pid: identity.pid, service: identity.service });
     this.heartbeatTimer = this.getScheduler().setInterval(() => this.onHeartbeatTick(), HEARTBEAT_INTERVAL_MS);
     this.sendHeartbeats();
   }
