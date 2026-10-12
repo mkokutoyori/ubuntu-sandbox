@@ -19,11 +19,11 @@
  * `ILinuxShell.execute()` single-round-trip path, unchanged.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
-
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { TerminalAsyncRuntime } from '@/terminal/async/TerminalAsyncRuntime';
-import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
+import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
+import { planLinuxStream } from '@/terminal/streams/LinuxStreamPlans';
+import { SCREEN_REPAINT_MARK } from './SshScreenRepaint';
 
 export interface SshInteractiveShellHooks {
   /** A line of output produced while a streaming job is running. */
@@ -36,6 +36,7 @@ export interface SshInteractiveShellHooks {
    * that reply carries empty stdout/stderr.
    */
   onDone: () => void;
+  session?: unknown;
 }
 
 /**
@@ -79,25 +80,36 @@ export class SshInteractiveShell {
   tryStartStreaming(line: string, hooks: SshInteractiveShellHooks): boolean {
     if (this.runtime.hasForegroundJob) return false;
     if (!(this.device instanceof LinuxMachine)) return false;
-    const toks = line.trim().split(/\s+/);
-    if (toks[0] !== 'ping' && toks[0] !== 'ping6') return false;
-    if (/[|<>&;]/.test(line)) return false;
-
-    this.hooks = hooks;
-    const dev = this.device;
-    let ping: PingRun | null = null;
-    const job = this.runtime.start({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: line,
-      run: async (ctx) => {
-        const host = dev.pingHost({ sleep: (ms) => ctx.delay(ms), now: () => simulationNowMs() });
-        ping = createPing(toks.slice(1), host, (text) => ctx.sink.line(text), { cmd: toks[0] as 'ping' | 'ping6' });
-        await ping.run(() => ctx.cancelled());
-        if (!ctx.cancelled()) hooks.onDone();
-      },
-      onInterrupt: () => { ping?.interrupt(); hooks.onDone(); },
+    if (/[<>]|(?<!&)&(?!&)/.test(line)) return false;
+    const session = hooks.session as LinuxShellSession | undefined;
+    if (session === undefined) return false;
+    const plan = planLinuxStream(this.device, session, line, {
+      mark: () => {},
+      beginFrame: () => hooks.onChunk(SCREEN_REPAINT_MARK),
     });
-    return job !== null;
+    if (plan === null) return false;
+    this.hooks = hooks;
+    if (plan.kind === 'notice') {
+      for (const text of plan.lines) hooks.onChunk(text);
+      hooks.onDone();
+      return true;
+    }
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      hooks.onDone();
+    };
+    const started = this.runtime.start({
+      mode: 'foreground',
+      kind: plan.jobKind,
+      command: line,
+      prepare: plan.prepare,
+      run: async (ctx) => {
+        try { await plan.run(ctx); } finally { finish(); }
+      },
+      onInterrupt: plan.onInterrupt,
+    });
+    return started !== null;
   }
 }

@@ -52,20 +52,20 @@ describe('Scénario 6 — /var/log/wtmp, btmp, lastlog : fichiers binaires', () 
     expect(size).toBeGreaterThan(0);
   });
 
-  it('une connexion SSH augmente la taille de wtmp d\'exactement 384 octets', async () => {
+  it('une connexion SSH close ajoute deux enregistrements de 384 octets a wtmp : USER_PROCESS puis DEAD_PROCESS', async () => {
     const { pc1, srv } = await buildLan();
     const before = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
     await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const after = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
-    expect(after - before).toBe(384);
+    expect(after - before).toBe(2 * 384);
   });
 
-  it('trois connexions SSH ajoutent exactement 3*384 octets à wtmp', async () => {
+  it('trois connexions SSH closes ajoutent exactement 3*2*384 octets à wtmp', async () => {
     const { pc1, srv } = await buildLan();
     const before = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
     for (let i = 0; i < 3; i++) await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const after = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
-    expect(after - before).toBe(3 * 384);
+    expect(after - before).toBe(3 * 2 * 384);
   });
 
   it('/var/log/btmp est absent/vide avant toute tentative échouée', async () => {
@@ -81,12 +81,12 @@ describe('Scénario 6 — /var/log/wtmp, btmp, lastlog : fichiers binaires', () 
     expect(size).toBe(384);
   });
 
-  it('btmp est en 0600 (root uniquement) — plus restrictif que wtmp en 0644', async () => {
+  it('btmp est en 0660 root:utmp — plus restrictif que wtmp en 0664', async () => {
     const { srv } = await buildLan();
     const wtmpPerm = (await srv.executeCommand("stat -c '%a' /var/log/wtmp")).trim();
     const btmpPerm = (await srv.executeCommand("stat -c '%a' /var/log/btmp")).trim();
-    expect(wtmpPerm).toBe('644');
-    expect(btmpPerm).toBe('600');
+    expect(wtmpPerm).toBe('664');
+    expect(btmpPerm).toBe('660');
   });
 
   it('un utilisateur non-root ne peut pas lire /var/log/btmp directement (mode 0600)', async () => {
@@ -110,13 +110,11 @@ describe('Scénario 6 — /var/log/wtmp, btmp, lastlog : fichiers binaires', () 
     expect(out).not.toMatch(/Unknown user/);
   });
 
-  it('cohérence globale : nombre d\'entrées wtmp/384 == nombre de lignes last (hors footer)', async () => {
+  it('cohérence globale : une connexion ajoute un enregistrement de connexion, donc une ligne a last', async () => {
     const { pc1, srv } = await buildLan();
+    const lines = async (): Promise<number> => Number((await srv.executeCommand("last | grep -v 'begins\\|^$' | wc -l")).trim());
+    const before = await lines();
     await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
-    const size = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
-    const lastCount = Number(
-      (await srv.executeCommand("last | grep -v 'begins\\|^$' | wc -l")).trim(),
-    );
-    expect(size / 384).toBe(lastCount);
+    expect(await lines()).toBe(before + 1);
   });
 });

@@ -21,6 +21,10 @@ export async function dialTcp(
   if (!socket) return { dialFailed: stack.hasEgressTo(destination.toString()) ? 'timeout' : 'unreachable' };
   if (socket.state === 'established') return socket;
   if (socket.closed) return dialFailureOf(socket);
+  if (stack.awaitsUnresolvedNeighbour(destination.toString())) {
+    socket.close();
+    return { dialFailed: 'unreachable' };
+  }
 
   return new Promise((resolve) => {
     let offOpen: () => void = () => {};

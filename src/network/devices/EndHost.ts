@@ -33,9 +33,10 @@ import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters }
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
-import { TcpStack, TCP_SOMAXCONN, type TcpOptionPolicy, type TcpMibSink } from '../tcp/TcpStack';
+import { TcpStack, TCP_SOMAXCONN, type TcpOptionPolicy, type TcpMibSink, type OwnerExit } from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
+import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
 import type { DiffServField, HopLimit, TimeToLive, TtlFloor } from '../core/IpHeaderFields';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
@@ -1128,6 +1129,8 @@ export abstract class EndHost extends Equipment {
       sendIpv6FrameNdpAware: (outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address) =>
         this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
       adviseNegative: (nextHopIp: string) => this.reprobeNeighbour(nextHopIp),
+      neighbourResolved: (nextHopIp: string) => this.arpTable.has(nextHopIp),
+      filterLocalSegment: (packet: IPv4Packet | IPv6Packet, family: string) => this.filterLocalDelivery(packet, family),
       defaultTtl: (family: string) => family === 'ipv6' ? this.defaultHopLimit : this.defaultTTL,
       pathMtu: (remoteIp: string, linkMtu: number) => {
         const destination = remoteIp.includes(':') ? IPv6Address.tryParse(remoteIp) : IPAddress.tryParse(remoteIp);
@@ -1967,16 +1970,20 @@ export abstract class EndHost extends Equipment {
    */
   private attachListenerProjection(): void {
     this.tcpv2.attachSocketSink({
-      announce: (localIp, localPort, identity, boundDevice) => {
+      announce: (localIp, localPort, identity, boundDevice, bound) => {
         const family = localIp.includes(':') ? 'v6' : 'v4';
         if (this.socketTable.isPortBound(localPort, 'tcp', family)) return;
         try {
-          this.socketTable.bind(
+          const entry = this.socketTable.bind(
             'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,
-            boundDevice === undefined ? undefined : { boundDevice },
+            { boundDevice, serviceName: identity.service },
           );
+          if (bound) entry.state = 'BOUND';
           this.sinkOwnedListeners.add(`${localIp}:${localPort}`);
         } catch { /* déjà annoncé par ailleurs — l'entrée existante fait foi */ }
+      },
+      promote: (localIp, localPort) => {
+        this.socketTable.setListenerState('tcp', localIp, localPort, 'LISTEN');
       },
       withdraw: (localIp, localPort) => {
         if (!this.sinkOwnedListeners.delete(`${localIp}:${localPort}`)) return;
@@ -3170,6 +3177,21 @@ export abstract class EndHost extends Equipment {
    * mismatched combination (e.g. configured on a UDP rule) falls back to
    * the default ICMP error rather than silently doing nothing.
    */
+  private filterLocalDelivery(packet: IPv4Packet | IPv6Packet, family: string): boolean {
+    for (const direction of ['out', 'in'] as const) {
+      if (family === 'ipv6') {
+        if (this.firewallFilter6('lo', packet as IPv6Packet, direction) !== 'accept') return false;
+        continue;
+      }
+      const verdict = this.firewallFilter('lo', packet as IPv4Packet, direction);
+      if (verdict === 'accept') continue;
+      if (direction === 'in') this.protocolCounters.ipInDiscards++;
+      if (verdict === 'reject') this.sendICMPReject('lo', packet as IPv4Packet);
+      return false;
+    }
+    return true;
+  }
+
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
     const rejectWith = this.lastRejectWith;
     this.lastRejectWith = null;
@@ -3360,13 +3382,13 @@ export abstract class EndHost extends Equipment {
   }
 
   public udpBind(
-    port: number, listener: UdpListener, processName?: string, owner: { pid?: number; uid?: number } = {},
+    port: number, listener: UdpListener, processName?: string, owner: { pid?: number; uid?: number; service?: string } = {},
   ): number | false {
     let bound: number;
     try {
       bound = port === PORT_ANY ? this.socketTable.allocateEphemeralPort() : port;
       this.socketTable.bind('udp', '0.0.0.0', bound, owner.pid, processName, undefined,
-        owner.uid === undefined ? undefined : { ownerUid: owner.uid });
+        { ownerUid: owner.uid, serviceName: owner.service });
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
       throw error;
@@ -3645,12 +3667,45 @@ export abstract class EndHost extends Equipment {
    * Linux les deux vivent dans `systemd-resolved`, sous Windows dans le
    * `svchost` du service de client DNS.
    */
-  public resolverProcessName(): string { return 'systemd-resolved'; }
+  public resolverIdentity(): ListenerIdentity { return { processName: 'systemd-resolved' }; }
 
   /** Close a UDP port: remove the listener and the socket-table entry. */
   public udpClose(port: number): void {
     this.udpListeners.delete(port);
     this.socketTable.unbind('udp', '0.0.0.0', port);
+  }
+
+  public reapProcessSockets(pid: number, processName: string | undefined, exit: OwnerExit): number[] {
+    const stack = this.getTcpStack();
+    stack.closeSocketsOwnedBy(pid, exit);
+    const outliving = new Set(stack.listSockets()
+      .map((socket) => `${socket.localPort}|${socket.remoteIp}|${socket.remotePort}`));
+    const closedListeners: number[] = [];
+    for (const sock of this.socketTable.getAll()) {
+      const matchesByPid = sock.pid === pid;
+      const matchesByName = processName && sock.pid === undefined && sock.processName === processName;
+      if (!matchesByPid && !matchesByName) continue;
+      if (sock.remoteAddress === '*') {
+        if (sock.protocol === 'udp') {
+          if (sock.localAddress === '0.0.0.0') this.udpClose(sock.localPort);
+          else this.udpCloseAddress(sock.localAddress, sock.localPort);
+          continue;
+        }
+        this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
+        if (sock.protocol === 'tcp' && (sock.state === 'LISTEN' || sock.state === 'BOUND')) {
+          stack.closeListener(sock.localPort, sock.localAddress);
+          closedListeners.push(sock.localPort);
+        }
+      } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
+        sock.pid = undefined;
+        sock.processName = undefined;
+        sock.serviceName = undefined;
+        sock.uid = undefined;
+      } else {
+        this.socketTable.removeConnection(sock);
+      }
+    }
+    return closedListeners;
   }
 
   /**

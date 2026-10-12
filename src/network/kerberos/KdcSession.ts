@@ -20,13 +20,13 @@ import {
 } from './codec';
 import {
   NO_TICKET_FLAGS, PA_ENC_TIMESTAMP, PA_ETYPE_INFO2, PA_TGS_REQ, KrbErrorCode,
-  KDC_OPT_FORWARDABLE, KDC_OPT_PROXIABLE, KDC_OPT_RENEWABLE, KDC_OPT_RENEWABLE_OK, KDC_OPT_RENEW,
+  KDC_OPT_FORWARDABLE, KDC_OPT_FORWARDED, KDC_OPT_PROXIABLE, KDC_OPT_RENEWABLE, KDC_OPT_RENEWABLE_OK, KDC_OPT_RENEW,
   type KdcReq, type KdcRep, type PaData, type Ticket, type EncTicketPart, type EncKdcRepPart, type PrincipalName,
 } from './types';
 import {
   AES256_CTS_HMAC_SHA1_96, stringToKey, accountSalt, machineSalt, encryptWithUsage, decryptWithUsage,
   randomSessionKey, KU_PA_ENC_TIMESTAMP, KU_TICKET, KU_AS_REP_ENC_PART,
-  KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART,
+  KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART, KU_TGS_REP_ENC_PART_SUBKEY,
 } from './crypto';
 import { deriveInterrealmKey, referralPrincipal } from './crossRealm';
 import { type IEventBus } from '@/events/EventBus';
@@ -57,6 +57,11 @@ export interface KdcContext {
 /** Kerberos error codes as the two-hex-digit Status/SubStatus AD's Security log actually shows (Get-WinEvent's `Status`/`SubStatus` EventData fields), not the bare RFC 4120 error-code integer. */
 function kerberosStatusHex(errorCode: number): string {
   return `0x${errorCode.toString(16)}`;
+}
+
+interface TgsReplyKey {
+  readonly key: Uint8Array;
+  readonly usage: number;
 }
 
 export class KdcSessionHandler {
@@ -322,8 +327,10 @@ export class KdcSessionHandler {
     }
 
     const ticketSessionKey = ticketPart.key.keyValue;
+    let authenticatorSubkey: Uint8Array | undefined;
     try {
       const authenticator = decodeAuthenticator(decryptWithUsage(ticketSessionKey, KU_TGS_REQ_AUTHENTICATOR, apReq.authenticator.cipher));
+      authenticatorSubkey = authenticator.subkey?.keyValue;
       const validCname = authenticator.cname.nameString.join('/') === ticketPart.cname.nameString.join('/');
       const validSkew = Math.abs(now - authenticator.ctime) <= CLOCK_SKEW_SECONDS;
       if (validCname && !validSkew) {
@@ -335,6 +342,10 @@ export class KdcSessionHandler {
       this.failTgs(socket, req, ticketPart.cname.nameString.join('/'), KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Authenticator verification failed');
       return;
     }
+
+    const reply: TgsReplyKey = authenticatorSubkey === undefined
+      ? { key: ticketSessionKey, usage: KU_TGS_REP_ENC_PART }
+      : { key: authenticatorSubkey, usage: KU_TGS_REP_ENC_PART_SUBKEY };
 
     /**
      * MS-SFU S4U2Proxy (PRD-Windows-Server-Advanced.md §5 P10): the
@@ -349,12 +360,17 @@ export class KdcSessionHandler {
      * the user's behalf.
      */
     if (req.reqBody.additionalTickets && req.reqBody.additionalTickets.length > 0) {
-      this.handleS4U2Proxy(socket, req, realm, ticketPart);
+      this.handleS4U2Proxy(socket, req, realm, ticketPart, reply);
       return;
     }
 
     if (renewing) {
-      this.handleRenew(socket, req, apReq.ticket, ticketPart, ticketDecryptKey, now);
+      this.handleRenew(socket, req, apReq.ticket, ticketPart, ticketDecryptKey, now, reply);
+      return;
+    }
+
+    if ((req.reqBody.kdcOptions & KDC_OPT_FORWARDED) !== 0) {
+      this.handleForward(socket, req, realm, apReq.ticket, ticketPart, ticketDecryptKey, now, reply);
       return;
     }
 
@@ -412,29 +428,72 @@ export class KdcSessionHandler {
       msgType: 'TGS-REP', padata: [], crealm: ticketPart.crealm, cname: ticketPart.cname, ticket,
       encPart: {
         etype: AES256_CTS_HMAC_SHA1_96,
-        cipher: encryptWithUsage(ticketSessionKey, KU_TGS_REP_ENC_PART, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
+        cipher: encryptWithUsage(reply.key, reply.usage, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
       },
     };
     socket.send(frameForTcp(encodeKdcRep(rep)));
-    const snameStr = sname.nameString.join('/');
-    this.bus().publish({
-      topic: 'kerberos.tgs.succeeded',
-      payload: { ...this.kdcRef(), cname: cnameStr, serviceName: snameStr, referral: isOutboundReferral },
-    });
-    // 4769 "A Kerberos service ticket was requested" — TargetDomainName is
-    // the trusted domain's real NetBIOS name for a cross-realm referral
-    // (discovered over LDAP at New-ADTrust time, §1.3 grounding; falls
-    // back to the DNS realm, never fabricated, if that discovery never
-    // happened), or this DC's own domain for an ordinary same-realm ticket.
     const targetDomainName = isOutboundReferral
       ? (this.ctx.store.getTrust(targetRealm)?.remoteNetbiosName ?? targetRealm.toUpperCase())
       : this.ctx.store.netbiosName;
+    this.announceServiceTicket(cnameStr, sname.nameString.join('/'), isOutboundReferral, targetDomainName);
+  }
+
+  private announceServiceTicket(cnameStr: string, snameStr: string, referral: boolean, targetDomainName: string): void {
+    this.bus().publish({
+      topic: 'kerberos.tgs.succeeded',
+      payload: { ...this.kdcRef(), cname: cnameStr, serviceName: snameStr, referral },
+    });
     this.ctx.writeSecurityEvent?.(4769, 'SuccessAudit',
       `A Kerberos service ticket was requested.\n\nAccount Information:\n\tAccount Name:\t\t${cnameStr}\n\nService Information:\n\tService Name:\t\t${snameStr}\n\nNetwork Information:\n\tTarget Domain Name:\t${targetDomainName}`,
       { TargetUserName: cnameStr, TargetDomainName: targetDomainName, ServiceName: snameStr, Status: '0x0' });
   }
 
-  private handleRenew(socket: TcpSocket, req: KdcReq, presented: Ticket, ticketPart: EncTicketPart, ticketKey: Uint8Array, now: number): void {
+  private handleForward(
+    socket: TcpSocket, req: KdcReq, realm: string, presented: Ticket, ticketPart: EncTicketPart, ticketKey: Uint8Array, now: number,
+    reply: TgsReplyKey,
+  ): void {
+    const cnameStr = ticketPart.cname.nameString.join('/');
+    const sname = req.reqBody.sname;
+    const ticketGranting = sname.nameString.length === 2 && sname.nameString[0] === 'krbtgt';
+    if (!ticketPart.flags.forwardable || !ticketGranting || presented.realm.toUpperCase() !== realm.toUpperCase()) {
+      this.failTgs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_BADOPTION);
+      return;
+    }
+    const options = req.reqBody.kdcOptions;
+    const renewable = (options & KDC_OPT_RENEWABLE) !== 0 && ticketPart.flags.renewable && ticketPart.renewTill !== undefined;
+    const flags = {
+      ...NO_TICKET_FLAGS, forwarded: true, renewable, preAuthent: ticketPart.flags.preAuthent,
+      forwardable: (options & KDC_OPT_FORWARDABLE) !== 0, proxiable: (options & KDC_OPT_PROXIABLE) !== 0 && ticketPart.flags.proxiable,
+    };
+    const endtime = Math.min(req.reqBody.till, ticketPart.endtime);
+    const renewTill = renewable ? ticketPart.renewTill : undefined;
+    const sessionKeyValue = randomSessionKey();
+    const encTicketPart: EncTicketPart = {
+      flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
+      crealm: ticketPart.crealm, cname: ticketPart.cname, authtime: ticketPart.authtime, starttime: now, endtime, renewTill,
+    };
+    const ticket: Ticket = {
+      tktVno: 5, realm, sname,
+      encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher: encryptWithUsage(ticketKey, KU_TICKET, encodeEncTicketPart(encTicketPart)) },
+    };
+    const encKdcRepPart: EncKdcRepPart = {
+      key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
+      nonce: req.reqBody.nonce, flags, authtime: ticketPart.authtime, starttime: now, endtime, renewTill, srealm: realm, sname,
+    };
+    const rep: KdcRep = {
+      msgType: 'TGS-REP', padata: [], crealm: ticketPart.crealm, cname: ticketPart.cname, ticket,
+      encPart: {
+        etype: AES256_CTS_HMAC_SHA1_96,
+        cipher: encryptWithUsage(reply.key, reply.usage, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
+      },
+    };
+    socket.send(frameForTcp(encodeKdcRep(rep)));
+    this.announceServiceTicket(cnameStr, sname.nameString.join('/'), false, this.ctx.store.netbiosName);
+  }
+
+  private handleRenew(
+    socket: TcpSocket, req: KdcReq, presented: Ticket, ticketPart: EncTicketPart, ticketKey: Uint8Array, now: number, reply: TgsReplyKey,
+  ): void {
     const cnameStr = ticketPart.cname.nameString.join('/');
     const renewTill = ticketPart.renewTill;
     if (!ticketPart.flags.renewable || renewTill === undefined) {
@@ -471,7 +530,7 @@ export class KdcSessionHandler {
       msgType: 'TGS-REP', padata: [], crealm: ticketPart.crealm, cname: ticketPart.cname, ticket,
       encPart: {
         etype: AES256_CTS_HMAC_SHA1_96,
-        cipher: encryptWithUsage(ticketPart.key.keyValue, KU_TGS_REP_ENC_PART, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
+        cipher: encryptWithUsage(reply.key, reply.usage, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
       },
     };
     socket.send(frameForTcp(encodeKdcRep(rep)));
@@ -490,7 +549,7 @@ export class KdcSessionHandler {
    * not the delegating service's — exactly as if the user had asked
    * directly.
    */
-  private handleS4U2Proxy(socket: TcpSocket, req: KdcReq, realm: string, ticketPart: EncTicketPart): void {
+  private handleS4U2Proxy(socket: TcpSocket, req: KdcReq, realm: string, ticketPart: EncTicketPart, reply: TgsReplyKey): void {
     const delegatingService = ticketPart.cname.nameString[0].replace(/\$$/, '');
     const delegatingKey = this.computerKey(delegatingService, realm);
     if (delegatingKey === null) {
@@ -535,7 +594,6 @@ export class KdcSessionHandler {
       encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher: encryptWithUsage(targetKey, KU_TICKET, encodeEncTicketPart(encTicketPart)) },
     };
 
-    const delegatingTicketSessionKey = ticketPart.key.keyValue;
     const encKdcRepPart: EncKdcRepPart = {
       key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
       nonce: req.reqBody.nonce, flags, authtime: evidencePart.authtime, starttime: now, endtime,
@@ -545,7 +603,7 @@ export class KdcSessionHandler {
       msgType: 'TGS-REP', padata: [], crealm: evidencePart.crealm, cname: evidencePart.cname, ticket,
       encPart: {
         etype: AES256_CTS_HMAC_SHA1_96,
-        cipher: encryptWithUsage(delegatingTicketSessionKey, KU_TGS_REP_ENC_PART, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
+        cipher: encryptWithUsage(reply.key, reply.usage, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
       },
     };
     socket.send(frameForTcp(encodeKdcRep(rep)));

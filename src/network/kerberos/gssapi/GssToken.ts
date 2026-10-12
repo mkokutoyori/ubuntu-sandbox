@@ -1,4 +1,5 @@
 import { encodeTLV, parseTLV } from '@/network/devices/windows/server/ad/ldap/Ber';
+import { md5 } from '@/crypto/hash';
 
 export const KRB5_MECHANISM_OID = '1.2.840.113554.1.2.2';
 
@@ -19,7 +20,7 @@ export const GSS_C_TRANS_FLAG = 0x100;
 const OBJECT_IDENTIFIER_TAG = 0x06;
 const INITIAL_CONTEXT_TOKEN_TAG = 0x60;
 
-function encodeOid(oid: string): Uint8Array {
+export function encodeOid(oid: string): Uint8Array {
   const arcs = oid.split('.').map(Number);
   const content: number[] = [arcs[0] * 40 + arcs[1]];
   for (const arc of arcs.slice(2)) {
@@ -30,7 +31,7 @@ function encodeOid(oid: string): Uint8Array {
   return encodeTLV('universal', OBJECT_IDENTIFIER_TAG, false, Uint8Array.from(content));
 }
 
-function decodeOid(content: Uint8Array): string {
+export function decodeOid(content: Uint8Array): string {
   const arcs: number[] = [Math.floor(content[0] / 40), content[0] % 40];
   let value = 0;
   for (const byte of content.subarray(1)) {
@@ -72,6 +73,28 @@ export function parseInitialContextToken(bytes: Uint8Array): InitialContextToken
       tokenId: (framed.content[afterOid] << 8) | framed.content[afterOid + 1],
       body: framed.content.subarray(afterOid + 2),
     };
+  } catch {
+    return null;
+  }
+}
+
+export const CHANNEL_BINDING_DIGEST_BYTES = 16;
+
+export function channelBindingsDigest(applicationData: Uint8Array | null): Uint8Array {
+  if (applicationData === null) return new Uint8Array(CHANNEL_BINDING_DIGEST_BYTES);
+  const structure = new Uint8Array(5 * 4 + applicationData.length);
+  new DataView(structure.buffer).setUint32(16, applicationData.length, true);
+  structure.set(applicationData, 20);
+  return md5(structure);
+}
+
+export function decapsulateInitialContextToken(bytes: Uint8Array): Uint8Array | null {
+  if (bytes.length < 2 || bytes[0] !== INITIAL_CONTEXT_TOKEN_TAG) return null;
+  try {
+    const framed = parseTLV(bytes, 0);
+    const oid = parseTLV(framed.content, 0);
+    if (oid.tagNumber !== OBJECT_IDENTIFIER_TAG || decodeOid(oid.content) !== KRB5_MECHANISM_OID) return null;
+    return framed.content.subarray(oid.nextOffset);
   } catch {
     return null;
   }

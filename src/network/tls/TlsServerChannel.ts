@@ -8,6 +8,7 @@ import { encryptApplicationData, decryptApplicationData } from '../http/https/Ap
 export interface TlsServerChannelHandlers {
   onHandshakeComplete?(): void;
   onData(plaintext: Uint8Array): void;
+  onEarlyData?(plaintext: Uint8Array): void;
   onRenegotiated?(): void;
 }
 
@@ -39,6 +40,8 @@ export class TlsServerChannel {
       if (reply && reply.length > 0) this.emit(reply);
       if ((this.tls.result as string | null) !== 'accept') return;
       this.handlers.onHandshakeComplete?.();
+      const early = this.tls.receivedEarlyData;
+      if (early !== null && early.length > 0) this.handlers.onEarlyData?.(early);
       records = this.tls.takeTrailingRecords();
       if (records.length === 0) return;
     }
@@ -81,7 +84,11 @@ export class TlsServerChannel {
     this.emit(sealed.records);
   }
 
-  requestRenegotiation(options: { readonly requestClientCertificate?: boolean; readonly clientCertPolicy?: ClientCertPolicy } = {}): boolean {
+  writeClear(bytes: Uint8Array): void {
+    this.socket.write(bytesToBinaryString(bytes));
+  }
+
+  requestRenegotiation(options: { readonly requestClientCertificate?: boolean; readonly clientCertPolicy?: ClientCertPolicy; readonly cipherList?: string } = {}): boolean {
     const hello = this.tls.requestRenegotiation(this.serverSequence, options);
     if (hello === null) return false;
     this.serverSequence += hello.length;

@@ -1,6 +1,6 @@
-export type DhcpDebugApplication = 'dhcps' | 'dhcpc' | 'dhcprelay';
+export type DhcpDebugApplication = 'dhcps' | 'dhcpc' | 'dhcprelay' | 'ike';
 
-export const DHCP_DEBUG_APPLICATIONS: readonly DhcpDebugApplication[] = ['dhcps', 'dhcpc', 'dhcprelay'];
+export const DHCP_DEBUG_APPLICATIONS: readonly DhcpDebugApplication[] = ['dhcps', 'dhcpc', 'dhcprelay', 'ike'];
 
 const HISTORY_LIMIT = 500;
 
@@ -41,7 +41,16 @@ export class DhcpDebug {
   emit(application: DhcpDebugApplication, text: string): void {
     if (!this.enabledFlag || this.level(application) === 0) return;
     const stamp = this.timestampFlag ? `${formatStamp(this.clockMs())} ` : '';
-    const line = `${stamp}[note]${text}`;
+    this.record(`${stamp}[note]${text}`);
+  }
+
+  emitRaw(application: DhcpDebugApplication, text: string): void {
+    if (!this.enabledFlag || this.level(application) === 0) return;
+    const stamp = this.timestampFlag ? `${formatStamp(this.clockMs())} ` : '';
+    this.record(`${stamp}${text}`);
+  }
+
+  private record(line: string): void {
     this.history.push(line);
     if (this.history.length > HISTORY_LIMIT) this.history.shift();
     for (const listener of this.listeners) listener(line);

@@ -53,8 +53,8 @@ import {
 } from '@/network/devices/windows/netNeighbor';
 import {
   type NetTcpConnectionRow, type NetTcpConnectionSelection, NET_TCP_APPLIED_SETTINGS,
-  NET_TCP_OFFLOAD_STATES, NET_TCP_STATES, netTcpSelectionIsEmpty, netTcpStateOf,
-  noMatchingNetTcpConnection, selectNetTcpConnections,
+  HOST_OFFLOAD_STATE, NET_TCP_OFFLOAD_STATES, NET_TCP_STATES, appliedSettingOf, netTcpSelectionIsEmpty,
+  netTcpStateOf, noMatchingNetTcpConnection, selectNetTcpConnections,
 } from '@/network/devices/windows/netTcpConnection';
 import {
   type NetConnectionProfileRow, type NetConnectionProfileSelection, NETWORK_CATEGORIES,
@@ -1040,8 +1040,8 @@ export class GetNetTCPConnectionCmdlet implements ICmdlet {
       remoteAddress:  c.remoteAddress,
       remotePort:     c.remotePort,
       state:          netTcpStateOf(c.state),
-      appliedSetting: 'Internet',
-      offloadState:   'InHost',
+      appliedSetting: appliedSettingOf(netTcpStateOf(c.state)),
+      offloadState:   HOST_OFFLOAD_STATE,
       owningProcess:  c.pid,
       creationTime:   '',
     }));

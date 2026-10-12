@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoPromptAnswer, nanoCursor } from './helpers/nanoScreen';
 
 /**
  * Scénario (e2e) — édition curseur dans les champs de prompt nano
@@ -47,8 +48,8 @@ test.describe('Scénario (e2e) — édition curseur dans les champs de prompt na
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.type('X');
 
-    const searchInput = page.locator('[data-testid="nano-status-message"] input').first();
-    await expect(searchInput).toHaveValue('ethX1');
+    await expect.poll(() => nanoPromptAnswer(page, 'Search:')).toBe('ethX1');
+    expect((await nanoCursor(page)).column).toBe('Search: ethX'.length);
   });
 
   test('Home puis Delete corrige le début d\'un nom de fichier sans tout retaper', async ({ page }) => {
@@ -57,12 +58,11 @@ test.describe('Scénario (e2e) — édition curseur dans les champs de prompt na
 
     await page.keyboard.type('x');
     await page.keyboard.press('Control+o');
-    const filenameInput = page.locator('[data-testid="nano-status-message"] input').first();
     for (let i = 0; i < 40; i++) await page.keyboard.press('Backspace');
     await page.keyboard.type('//tmp/real.txt');
     await page.keyboard.press('Home');
     await page.keyboard.press('Delete');
-    await expect(filenameInput).toHaveValue('/tmp/real.txt');
+    await expect.poll(() => nanoPromptAnswer(page, 'File Name to Write:')).toBe('/tmp/real.txt');
 
     await page.keyboard.press('Enter');
     await expect(page.locator('[data-testid="nano-status-message"]')).toContainText('Wrote');

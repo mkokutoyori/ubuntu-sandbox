@@ -10,8 +10,8 @@
  *     generated /proc/net/{tcp,udp} views
  *   - end-to-end on a real LinuxServer: `systemctl start/stop` moves ports
  *     in and out of `netstat`
- *   - Windows: `WindowsServiceManager` keeps the socket table coherent and
- *     the drivers\etc\services file is the full IANA registry
+ *   - Windows: the service controller opens and closes the real listeners of
+ *     its services, and the drivers\etc\services file is the full IANA registry
  */
 
 import { describe, it, expect } from 'vitest';
@@ -22,9 +22,7 @@ import { ServicePortProjection } from '@/network/devices/linux/ports/ServicePort
 import { PortActivityLogProjection } from '@/network/devices/linux/ports/PortActivityLogProjection';
 import type { ServicePortSource } from '@/network/devices/linux/ports/ServicePortProjection';
 import type { ServicePortBinding } from '@/network/devices/linux/LinuxServiceManager';
-import { WindowsServiceManager } from '@/network/devices/windows/WindowsServiceManager';
-
-import { WindowsServicePortProjection } from '@/network/devices/windows/WindowsServicePortProjection';
+import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { DomainEvent } from '@/events/types';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -253,24 +251,23 @@ describe('Linux end-to-end port coherence', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Windows port coherence', () => {
-  it('releases a service port on stop and rebinds it on start, reactively', () => {
-    const mgr = new WindowsServiceManager();
-    const table = new SocketTable();
-    table.bind('tcp', '0.0.0.0', 445, 4, 'System');
-    const bus = new EventBus();
-    mgr.attachBus(bus, 'win-1');
-    // The reactive consumer keeps the socket table coherent with sc/net.
-    new WindowsServicePortProjection(bus, 'win-1', table);
+  it('releases a service port on stop and rebinds it on start, reactively', async () => {
+    const pc = new WindowsPC('windows-pc', 'WIN1');
+    pc.powerOn();
+    pc.setCurrentUser('Administrator');
+    const listening = () => pc.getTcpStack().listListeners().some((listener) => listener.localPort === 445);
+    expect(listening()).toBe(true);
 
-    expect(mgr.stopService('LanmanServer', true)).toBe('');
-    expect(table.isPortBound(445, 'tcp')).toBe(false);
+    expect(pc.getServiceManager().stopService('LanmanServer', true)).toBe('');
+    expect(listening()).toBe(false);
+    expect(await pc.executeCommand('netstat -ano')).not.toMatch(/:445\s/);
 
-    expect(mgr.startService('LanmanServer', true)).toBe('');
-    expect(table.isPortBound(445, 'tcp')).toBe(true);
+    expect(pc.getServiceManager().startService('LanmanServer', true)).toBe('');
+    expect(listening()).toBe(true);
+    expect(await pc.executeCommand('netstat -ano')).toMatch(/0\.0\.0\.0:445\s+0\.0\.0\.0:0\s+LISTENING\s+4\b/);
   });
 
   it('ships the full IANA registry as the drivers\\etc\\services file', async () => {
-    const { WindowsPC } = await import('@/network/devices/WindowsPC');
     const pc = new WindowsPC('windows-pc', 'WIN1');
     const services = await pc.executeCommand('type C:\\Windows\\System32\\drivers\\etc\\services');
     expect(services).toContain('ssh');

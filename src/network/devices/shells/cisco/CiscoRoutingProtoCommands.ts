@@ -245,6 +245,9 @@ export function buildRouterSubmodeOn(
     }
     const proc = bgp();
     if (proc) proc.networks = proc.networks.filter((n) => n.split(/\s+/)[0] !== args[0]);
+    const engineConfig = bgpEng().getConfig();
+    engineConfig.networks = engineConfig.networks.filter((n) => n.network !== args[0]);
+    converge();
     return '';
   });
 
@@ -569,6 +572,7 @@ export function buildRouterSubmodeOn(
       if (!bn) { bn = { ip: a[0], activated: false }; ec.neighbors.set(a[0], bn); }
       if (a[1] === 'remote-as') bn.remoteAs = parseInt(a[2], 10);
       else if (a[1] === 'activate') bn.activated = true;
+      else if (a[1] === 'shutdown') bn.shutdown = true;
       else if (a[1] === 'weight') {
         bn.weight = boundedInteger(a[2], 0, BGP_WEIGHT_MAX) as number;
       } else if (a[1] === 'peer-group' && a[2]) {
@@ -782,6 +786,11 @@ export function buildRouterSubmodeOn(
         const n = proc.neighbors.get(a[0]);
         if (n && a[1] === 'activate') n.activated = false;
         if (n && a[1] === 'peer-group') n.peerGroup = undefined;
+        if (a[1] === 'shutdown') {
+          if (n) n.attrs = n.attrs.filter((line) => !/\bshutdown\s*$/.test(line));
+          const engineNeighbor = bgpEng().getConfig().neighbors.get(a[0]);
+          if (engineNeighbor) engineNeighbor.shutdown = false;
+        }
       }
       converge();
       return '';
@@ -820,7 +829,7 @@ export function registerRoutingProtoShow(
     for (const [ip, cfg] of c.neighbors) {
       const v = byId.get(ip);
       const upDown = v && v.isUp ? `${v.uptimeSec}s` : 'never';
-      const state = v ? v.state : 'Idle';
+      const state = cfg.shutdown === true ? 'Idle (Admin)' : v ? v.state : 'Idle';
       rows.push(`${ip.padEnd(16)}4 ${String(cfg.remoteAs ?? 0).padEnd(5)}` +
         `      0        0       0    0    0 ${upDown.padEnd(8)} ${state}`);
     }

@@ -62,6 +62,17 @@ const BY_NAME = new Map(LEGACY_CIPHER_SUITES.map((definition) => [definition.nam
 const BY_OPENSSL = new Map(LEGACY_CIPHER_SUITES.map((definition) => [definition.opensslName, definition]));
 const BY_CODE = new Map(LEGACY_CIPHER_SUITES.map((definition) => [definition.code, definition]));
 
+const BULK_KEY_BYTES: Readonly<Record<BulkCipher, number>> = {
+  '3DES_EDE_CBC': 24, AES_128_CBC: 16, AES_256_CBC: 32, AES_128_GCM: 16, AES_256_GCM: 32, AES_128_CCM: 16, AES_256_CCM: 32,
+  AES_128_CCM_8: 16, AES_256_CCM_8: 32, CHACHA20_POLY1305: 32, CAMELLIA_128_CBC: 16, CAMELLIA_256_CBC: 32,
+  ARIA_128_GCM: 16, ARIA_256_GCM: 32,
+};
+
+export function legacyKeyBits(suiteName: string): number | null {
+  const definition = BY_NAME.get(suiteName);
+  return definition === undefined ? null : BULK_KEY_BYTES[definition.cipher] * 8;
+}
+
 export function legacySuiteByName(name: string): LegacySuiteDefinition | undefined {
   return BY_NAME.get(name);
 }

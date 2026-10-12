@@ -12,6 +12,12 @@
  *                     Subclasses use this for typed access to device-specific APIs.
  */
 
+import { monitorCaptureSpecs, type MonitorCaptureHost } from './cisco/monitorCaptureSpecs';
+import { resolveCiscoInterfaceName } from './cli-utils';
+import type { FrameSource } from '../../hardware/PortTap';
+import { embeddedCaptureOf } from '@/network/capture/embeddedCaptureOf';
+import type { ACLEngine } from '../router/ACLEngine';
+import type { IPv4Packet } from '../../core/types';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
@@ -72,6 +78,8 @@ import { toutesLesSuites } from './cisco/ciscoContinuations';
 import type { ParsedPing } from './cisco/ciscoPing';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
+import { ipSshPubkeySpecs, type PubkeyChainHost, type PubkeyChainMode } from './cisco/ipSshPubkeySpecs';
+import { decodeKeyString } from '../router/security/SshPubkeyChain';
 import { ciscoSoftwareOf } from './cisco/CiscoPlatform';
 import { effectiveIosSshAlgorithms } from '../router/security/CiscoSshAlgorithms';
 import { terminalSpecs } from './cisco/terminalSpecs';
@@ -2077,6 +2085,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return { scope, tous, niveau, commande: mots.join(' ') };
   }
 
+  private pubkeyUser: string | null = null;
+  private keyStringLines: string[] | null = null;
+
+  protected pubkeyChainHost(): PubkeyChainHost {
+    return {
+      chain: () => getSecurityConfig(this.d()).sshPubkeys,
+      selectedUser: () => this.pubkeyUser,
+      selectUser: (name) => { this.pubkeyUser = name; },
+      enter: (mode: PubkeyChainMode) => { this.mode = mode; },
+      beginKeyString: () => { this.keyStringLines = []; this.mode = 'config-ssh-pubkey-data'; },
+    };
+  }
+
+  private collectKeyStringLine(device: TDevice, rawLine: string): string {
+    const word = rawLine.trim().toLowerCase();
+    if (word !== 'exit' && word !== 'quit') {
+      this.keyStringLines!.push(rawLine.trim());
+      return '';
+    }
+    const lines = this.keyStringLines!;
+    this.keyStringLines = null;
+    this.mode = 'config-ssh-pubkey-user';
+    const decoded = decodeKeyString(lines);
+    if (decoded === null || this.pubkeyUser === null) return '% Invalid public key: only ssh-rsa keys can be stored.';
+    getSecurityConfig(device).sshPubkeys.add(this.pubkeyUser, decoded.entry);
+    return '';
+  }
+
   protected ipSshHost(): IpSshHost {
     return {
       sshConfig: () => getSecurityConfig(this.d()).ssh,
@@ -2815,6 +2851,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     rawInput = this.applyLineEditing(rawInput);
     // Multi-line banner entry: every line is verbatim content (leading
     // spaces, empty lines, would-be commands) until the delimiter shows up.
+    if (this.keyStringLines !== null) return this.collectKeyStringLine(device, rawInput);
     if (this.bannerCollector) {
       this.deviceRef = device;
       const out = this.collectBannerLine(rawInput);
@@ -3874,6 +3911,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         disable: () => svc()?.disable('standby') ?? '',
       },
       {
+        path: ['debug', 'ip', 'bgp', 'updates'], description: 'BGP updates',
+        undoDescription: 'Disable BGP updates debug',
+        categories: ['ip.bgp.updates'],
+        enable: () => svc()?.enable('ip.bgp.updates') ?? 'BGP updates debugging is on',
+        disable: () => svc()?.disable('ip.bgp.updates') ?? '',
+      },
+      {
         path: ['debug', 'eigrp'], description: 'Debug EIGRP',
         undoDescription: 'Disable EIGRP debug',
         categories: ['ip.eigrp'],
@@ -3959,6 +4003,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ],
         enable: (args) => CiscoShellBase.ntpDebugSwitch(svc(), args, true),
         disable: (args) => CiscoShellBase.ntpDebugSwitch(svc(), args, false),
+      },
+      {
+        path: ['debug', 'snmp'], description: 'Debug SNMP',
+        undoDescription: 'Disable SNMP debug',
+        categories: ['snmp.packets'],
+        subKeywords: [
+          { keyword: 'packets', description: 'SNMP packets', category: 'snmp.packets' },
+        ],
+        enable: () => svc()?.enable('snmp.packets') ?? 'SNMP packets debugging is on',
+        disable: () => svc()?.disable('snmp.packets') ?? '',
       },
       {
         path: ['debug', 'aaa'], description: 'Debug AAA',
@@ -5238,6 +5292,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
   }
 
+  private vtyUnsetFields(
+    sub: string, args: readonly string[],
+  ): ReadonlyArray<'execTimeoutMinutes' | 'execTimeoutSeconds' | 'accessClassIn' | 'accessClassOut'
+    | 'sessionTimeoutMinutes' | 'privilege' | 'loginTimeoutSeconds' | 'rotaryGroup'> | null {
+    if (sub === 'exec-timeout') return ['execTimeoutMinutes', 'execTimeoutSeconds'];
+    if (sub === 'access-class') {
+      const direction = args[args.length - 1]?.toLowerCase();
+      if (direction === 'in') return ['accessClassIn'];
+      if (direction === 'out') return ['accessClassOut'];
+      return ['accessClassIn', 'accessClassOut'];
+    }
+    if (sub === 'session-timeout') return ['sessionTimeoutMinutes'];
+    if (sub === 'privilege') return ['privilege'];
+    if (sub === 'login-timeout') return ['loginTimeoutSeconds'];
+    if (sub === 'rotary') return ['rotaryGroup'];
+    return null;
+  }
+
   private registerLineCommands(t: CommandTrie): void {
     this.registerLineTransportCommands(t);
     /*
@@ -5336,7 +5408,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
         if (kw === 'password' && !args[0]) return '% Incomplete command.';
         const dev = this.d() as unknown as {
-          _getVtyLineConfig?: () => { upsert: (p: object) => { requiresPasswordButUnset?: () => boolean } };
+          _getVtyLineConfig?: () => {
+            upsert: (p: object) => { requiresPasswordButUnset?: () => boolean };
+            unset: (first: number, last: number, names: readonly string[]) => unknown;
+          };
         };
         const update: Record<string, unknown> = { first: range.first, last: range.last };
         if (kw === 'login') {
@@ -5432,6 +5507,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           else if (sub === 'motd-banner') update.motdBannerSuppressed = true;
           else if (sub === 'exec' && args[1]?.toLowerCase() === 'banner') update.execBannerSuppressed = true;
           else if (sub === 'autocommand') update.autocommand = '';
+          else {
+            const unsets = this.vtyUnsetFields(sub, args);
+            if (unsets !== null) {
+              dev._getVtyLineConfig?.().unset(range.first, range.last, unsets);
+              (this.d() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
+            }
+          }
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
         const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
@@ -5961,6 +6043,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.identityBootSpecs(),
       ...privilegeRuleSpecs(() => this.privilegeRuleHost()),
       ...ipSshSpecs(() => this.ipSshHost()),
+      ...ipSshPubkeySpecs(() => this.pubkeyChainHost()),
       ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
@@ -5977,6 +6060,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
       ...testAaaSpecs(() => this.testAaaHost()),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
+      ...monitorCaptureSpecs(() => this.monitorCaptureHost()),
     ];
   }
 
@@ -5987,6 +6071,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * la meme classe : c'est ce qui rend une declaration UNIQUE possible.
    * La phrase de repli sert la machine qui n'en a pas encore construit.
    */
+  private monitorCaptureHost(): MonitorCaptureHost {
+    const device = this.d();
+    return {
+      service: () => embeddedCaptureOf(device as unknown as FrameSource),
+      resolveInterface: (text) => resolveCiscoInterfaceName(device.getPortNames(), text),
+      accessListFilter: (name) => {
+        const engine = (device as unknown as { _getACLEngineInternal?: () => ACLEngine })._getACLEngineInternal?.();
+        if (engine === undefined || (engine.findByName(name) === undefined && engine.findById(Number(name)) === undefined)) return null;
+        return (_frame, wire) => {
+          const packet = wire.payload as IPv4Packet | undefined;
+          return packet?.type === 'ipv4' && engine.evaluateACLByName(name, packet, undefined, false) === 'permit';
+        };
+      },
+      exportCapture: (destination, content) => {
+        const name = destination.slice(destination.lastIndexOf('/') + 1).replace(/^[a-z]+:/i, '') || 'capture.pcap';
+        if (/^(flash|bootflash):/i.test(destination) || !destination.includes(':')) {
+          this.fs().write(name, content);
+          return '';
+        }
+        this.fs().write(name, content);
+        const reply = this.copierFichier([`flash:${name}`, destination]);
+        this.fs().remove(name);
+        return reply;
+      },
+      clockText: (at) => {
+        const reading = ciscoClockReading(this.cs(), at.getTime());
+        const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
+        const local = reading.local;
+        const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][local.getUTCMonth()];
+        return `${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}.${pad(local.getUTCMilliseconds(), 3)} `
+          + `${reading.timezone} ${month} ${pad(local.getUTCDate())} ${local.getUTCFullYear()}`;
+      },
+    };
+  }
+
   private showDebuggingHost(): ShowDebuggingHost {
     const service = () => (this.d() as unknown as {
       getDebugService?: () => { format(): string; formatConditions(): string };

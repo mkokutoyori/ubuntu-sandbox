@@ -83,6 +83,14 @@ function unpackMembers(magic: string, raw: string): ArchiveMember[] | null {
   } catch { return null; }
 }
 
+export function gzipText(payload: string, name: string, mtimeMs: number): string {
+  return packGzip({ name, mtime: mtimeMs, payload });
+}
+
+export function gunzipText(raw: string): string | null {
+  return unpackGzip(raw)?.payload ?? null;
+}
+
 function packGzip(body: GzipBody): string {
   return `${GZ_MAGIC}\n${JSON.stringify(body)}`;
 }

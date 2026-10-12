@@ -169,7 +169,10 @@ export async function sshHop(page: Page, sshCmd: string, pass: string, settleMs 
   const before = (await termText(page)).length;
   await typeCommand(page, sshCmd);
   const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+  const hostKeyPrompt = page.locator('[data-testid="terminal-modal"]').getByText('Are you sure you want to continue connecting');
   try {
+    await expect(pw.or(hostKeyPrompt)).toBeVisible({ timeout: 7_000 });
+    if (await hostKeyPrompt.isVisible()) await typeCommand(page, 'yes');
     await expect(pw).toBeVisible({ timeout: 7_000 });
     await typePassword(page, pass);
   } catch {

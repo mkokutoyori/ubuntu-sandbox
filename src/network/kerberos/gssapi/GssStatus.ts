@@ -2,6 +2,7 @@ import type { GssTokenError } from './GssSecurityContext';
 
 export const GSS_S_BAD_MECH = 0x00010000;
 export const GSS_S_BAD_NAME = 0x00020000;
+export const GSS_S_BAD_BINDINGS = 0x00040000;
 export const GSS_S_BAD_SIG = 0x00060000;
 export const GSS_S_NO_CRED = 0x00070000;
 export const GSS_S_NO_CONTEXT = 0x00080000;
@@ -14,6 +15,7 @@ export const GSS_S_FAILURE = 0x000d0000;
 const MAJOR_TEXT: Readonly<Record<number, string>> = {
   [GSS_S_BAD_MECH]: 'An unsupported mechanism was requested',
   [GSS_S_BAD_NAME]: 'An invalid name was supplied',
+  [GSS_S_BAD_BINDINGS]: 'Incorrect channel bindings were supplied',
   [GSS_S_BAD_SIG]: 'A token had an invalid Message Integrity Check (MIC)',
   [GSS_S_NO_CRED]: 'No credentials were supplied, or the credentials were unavailable or inaccessible',
   [GSS_S_NO_CONTEXT]: 'No context has been established',

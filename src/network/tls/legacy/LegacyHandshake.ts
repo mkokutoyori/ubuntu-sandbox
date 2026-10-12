@@ -7,7 +7,7 @@ import {
 } from '@/crypto/dh/modp';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { allowsMissingCertificate, continuesAfterVerificationFailure, type ClientCertPolicy } from '../clientAuthPolicy';
-import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { CertificateVerifier, VerificationReason } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { alertFromRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from '../alerts';
 import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchangeKeyPair } from '../keyExchange';
@@ -226,6 +226,10 @@ export class LegacyServerHandshake {
   get negotiatedSuite(): LegacySuiteDefinition { return this.suite; }
 
   get wasResumed(): boolean { return this.resumed; }
+  get resumptionOffered(): boolean {
+    const client = this.setup.clientExtensions;
+    return client.sessionId !== '' || (client.sessionTicket !== null && client.sessionTicket !== '');
+  }
 
   private helloExtensions(): LegacyServerHello['extensions'] {
     const client = this.setup.clientExtensions;
@@ -316,11 +320,15 @@ export class LegacyServerHandshake {
       bundle.push(status);
     }
 
+    const scheme = signatureAlgorithmName(this.setup.serverPrivateKey, version, this.setup.clientSignatureAlgorithms);
+    const offeredSchemes = this.setup.clientSignatureAlgorithms;
+    if (version === '1.2' && (offeredSchemes.length === 0 ? this.setup.securityLevel >= 1 : !offeredSchemes.includes(scheme))) {
+      return this.reject('handshake_failure');
+    }
     if (suite.keyExchange !== 'RSA') {
       const params = this.generateParams();
       if (params === null) return this.reject('handshake_failure');
       const signed = keyExchangeSignedData(this.setup.clientRandom, this.serverRandom, params);
-      const scheme = signatureAlgorithmName(this.setup.serverPrivateKey, version, this.setup.clientSignatureAlgorithms);
       const serverKeyExchange: ServerKeyExchange = {
         kind: 'server_key_exchange', params,
         signatureAlgorithm: scheme,
@@ -595,6 +603,7 @@ export interface LegacyClientSetup {
   readonly clientChain?: readonly X509Certificate[];
   readonly clientPrivateKey?: PkiPrivateKey;
   readonly securityLevel: number;
+  readonly minimumDhBits?: number;
   readonly resolveSuite: (name: string) => LegacySuiteDefinition | undefined;
   readonly clientExtensions: LegacyClientExtensions;
   readonly session: ResumableLegacySession | null;
@@ -613,12 +622,13 @@ export class LegacyClientHandshake {
   result: 'success' | 'failure' | null = null;
   lastAlert: TlsAlert | null = null;
   peerCertificate: X509Certificate | null = null;
+  clientCertificateSent: X509Certificate | null = null;
   peerCertificateChain: readonly X509Certificate[] = [];
   receivedStaple: OcspResponseMessage | null = null;
   peerSignature: { readonly digest: string; readonly type: string } | null = null;
   serverTempKey: string | null = null;
   peerVerified = false;
-  peerVerificationReason: string | null = null;
+  peerVerificationReason: VerificationReason | null = null;
   traffic: LegacyTraffic | null = null;
   peerAlert: TlsAlert | null = null;
   negotiatedVersion: LegacyVersion | null = null;
@@ -805,7 +815,10 @@ export class LegacyClientHandshake {
         if (params.type !== 'dh') return this.fail('illegal_parameter');
         const p = modpFromHex(params.p);
         this.serverTempKey = `DH, ${p.toString(2).length} bits`;
-        if (!dhPermitted(setup.securityLevel, p.toString(2).length)) return this.fail('handshake_failure');
+        const primeBits = p.toString(2).length;
+        if (setup.minimumDhBits !== undefined) {
+          if (primeBits < setup.minimumDhBits) return this.fail('insufficient_security');
+        } else if (!dhPermitted(setup.securityLevel, primeBits)) return this.fail('handshake_failure');
         const g = modpFromHex(params.g);
         const own = generateModpKeyPair({ id: 0, bits: p.toString(2).length, prime: p, generator: g });
         const secret = modpSharedSecret(own, modpFromHex(params.ys));
@@ -835,6 +848,7 @@ export class LegacyClientHandshake {
       };
       out.push(clientCertificate);
       this.messages.push(encodeLegacyMessage(clientCertificate, this.wire));
+      this.clientCertificateSent = setup.clientCert ?? null;
     }
     const clientKeyExchange: ClientKeyExchange = { kind: 'client_key_exchange', exchange };
     out.push(clientKeyExchange);
@@ -919,6 +933,12 @@ export class LegacyClientHandshake {
     this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.exportedSession = setup.session;
+    const earlier = setup.session.peerCertificates;
+    if (earlier !== undefined && earlier.length > 0) {
+      this.peerCertificate = earlier[0];
+      this.peerCertificateChain = earlier;
+      this.peerVerified = (setup.session.verifyResult ?? 0) === 0;
+    }
     this.state = 'done';
     this.result = 'success';
     return [changeCipherSpec(version), sealed];
@@ -937,6 +957,7 @@ export class LegacyClientHandshake {
         createdAt: this.setup.now(), lifetimeSeconds: lifetime,
       },
       ticket: ticket?.ticket ?? null,
+      ...(this.peerCertificateChain.length > 0 ? { peerCertificates: this.peerCertificateChain } : {}),
     };
   }
 

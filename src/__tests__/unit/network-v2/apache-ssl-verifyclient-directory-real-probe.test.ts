@@ -8,6 +8,11 @@
  * MESURÉ avant correctif : la directive était refusée à la lecture de la configuration (« needs a TLS renegotiation after the
  * handshake, which this simulator does not perform »). Avant correctif (git stash de src/network) 6 cas sur 6 tombent, le témoin lui-même pour une raison
  * structurelle : la configuration du laboratoire, qui porte la directive, était refusée et Apache ne démarrait pas.
+ *
+ * Même mécanisme pour `SSLCipherSuite` par chemin (second describe) : si la suite négociée n'est pas permise pour le chemin, le serveur renégocie
+ * avec la liste du chemin (TLS ≤ 1.2) ; un client qui ne propose que la suite refusée n'obtient pas la page ; en TLS 1.3 la liste ne s'applique pas.
+ * Avant correctif (git stash de src/network) les 4 cas réels du second describe et les 2 cas de configuration tombent, les témoins
+ * comme les autres pour la même raison structurelle (la directive était refusée à la lecture).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -119,5 +124,49 @@ describe('SSLVerifyClient par chemin ↔ clients réels', () => {
     });
     relay.stop();
     expect(output).toContain('secret-report');
+  }, 90000);
+});
+
+describe('SSLCipherSuite par chemin ↔ clients réels', () => {
+  const SUITES = 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384';
+  const sections = '  SSLHonorCipherOrder on\n  SSLCipherSuite ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384\n  <Location /strict>\n    SSLCipherSuite ECDHE-RSA-AES256-GCM-SHA384\n  </Location>\n';
+
+  it('témoin : un chemin sans exigence est servi avec la première suite du serveur', async () => {
+    const srv = machine();
+    const { relay, dir } = await lab(srv, sections);
+    const result = await curl(relay, dir, '/', [...TLS12, '-v', '--ciphers', SUITES]);
+    relay.stop();
+    expect(result.stderr).toContain('ECDHE-RSA-AES128-GCM-SHA256');
+    expect(result.stdout).toContain('Apache2 Ubuntu Default Page');
+  }, 90000);
+
+  it('un chemin qui exige une autre suite : renégociation vers cette suite, puis chemin servi', async () => {
+    const srv = machine();
+    const { relay, dir } = await lab(srv, sections);
+    await sh(srv, 'mkdir -p /var/www/html/strict');
+    await sh(srv, `sh -c 'echo strict-page > /var/www/html/strict/index.html'`);
+    const result = await curl(relay, dir, '/strict/', [...TLS12, '--ciphers', SUITES]);
+    relay.stop();
+    expect(result.stdout).toContain('strict-page');
+  }, 90000);
+
+  it('un client qui ne propose que la suite refusée par le chemin n\'obtient pas la page', async () => {
+    const srv = machine();
+    const { relay, dir } = await lab(srv, sections);
+    await sh(srv, 'mkdir -p /var/www/html/strict');
+    await sh(srv, `sh -c 'echo strict-page > /var/www/html/strict/index.html'`);
+    const result = await curl(relay, dir, '/strict/', [...TLS12, '--ciphers', 'ECDHE-RSA-AES128-GCM-SHA256']);
+    relay.stop();
+    expect(result.stdout).not.toContain('strict-page');
+  }, 90000);
+
+  it('en TLS 1.3 la liste SSLCipherSuite des versions antérieures ne s\'applique pas : le chemin est servi', async () => {
+    const srv = machine();
+    const { relay, dir } = await lab(srv, sections);
+    await sh(srv, 'mkdir -p /var/www/html/strict');
+    await sh(srv, `sh -c 'echo strict-page > /var/www/html/strict/index.html'`);
+    const result = await curl(relay, dir, '/strict/', []);
+    relay.stop();
+    expect(result.stdout).toContain('strict-page');
   }, 90000);
 });

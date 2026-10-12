@@ -271,6 +271,7 @@ export async function relayScriptedShell(
   let remaining = skipLines;
   let ended = false;
   let nested = false;
+  let ranAnyLine = false;
   const typedLines = stdin.split('\n');
   if (typedLines[typedLines.length - 1] === '') typedLines.pop();
   for (const raw of typedLines) {
@@ -281,6 +282,7 @@ export async function relayScriptedShell(
     const result = awaitingChallenge
       ? await shell.provideInput(line)
       : await shell.runLine(line);
+    ranAnyLine = true;
     if (!awaitingChallenge) lines.push(`${prompt}${line}`);
     const merged = `${result.stdout}${result.stderr}`.replace(/\n+$/, '');
     if (merged.length > 0) lines.push(merged);
@@ -289,6 +291,7 @@ export async function relayScriptedShell(
     ended = result.sessionEnded === true;
     nested = result.nested === true;
   }
+  if (!ranAnyLine && prompt.length > 0 && shell.supportsInlineHelp()) lines.push(prompt);
   return { output: lines.join('\n'), exitCode: 0 };
 }
 

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoHighlighted } from './helpers/nanoScreen';
 
 /**
  * Scénario (e2e) — "Replace this instance?" surligne désormais
@@ -45,13 +46,12 @@ test.describe('Scénario (e2e) — surlignage de "Replace this instance?"', () =
     await openTerminal(page, id);
   });
 
-  test('aucun surlignage hors de "Replace this instance?", puis un overlay apparaît sur la bonne occurrence', async ({ page }) => {
+  test('aucun surlignage hors de "Replace this instance?", puis l\'occurrence est mise en évidence', async ({ page }) => {
     await typeCmd(page, 'echo "eth0 up" > /tmp/nano-hl.txt');
     await typeCmd(page, 'nano /tmp/nano-hl.txt');
     await expect(page.getByText('GNU nano')).toBeVisible({ timeout: 5_000 });
 
-    const highlight = page.locator('[data-testid="nano-replace-highlight"]');
-    await expect(highlight).toHaveCount(0);
+    expect(await nanoHighlighted(page)).toBe('e');
 
     await page.keyboard.press('Control+\\');
     await typeText(page, 'eth');
@@ -60,10 +60,9 @@ test.describe('Scénario (e2e) — surlignage de "Replace this instance?"', () =
     await page.keyboard.press('Enter');
 
     await expect(page.getByText('Replace this instance?')).toBeVisible();
-    await expect(highlight).toBeVisible();
+    await expect.poll(() => nanoHighlighted(page)).toBe('eth');
 
-    // Cancel out without writing -- this test only cares about the overlay.
     await page.keyboard.press('Control+c');
-    await expect(highlight).toHaveCount(0);
+    await expect.poll(() => nanoHighlighted(page)).toBe('e');
   });
 });

@@ -64,6 +64,7 @@ export const SaslFeat = {
   WANT_CLIENT_FIRST: 0x0002,
   SERVER_FIRST: 0x0010,
   ALLOWS_PROXY: 0x0020,
+  GSS_FRAMING: 0x0100,
   CHANNEL_BINDING: 0x0800,
   SUPPORTS_HTTP: 0x1000,
 } as const;
@@ -146,6 +147,9 @@ export interface SaslClientParams {
   readonly oparams: SaslOutParams;
   readonly random: (length: number) => Uint8Array;
   readonly gss: GssClientEnvironment | null;
+  readonly channelBinding: Uint8Array | null;
+  readonly channelBindingName: string;
+  readonly channelBindingDisposition: 'none' | 'want' | 'used';
   seterror(message: string): void;
   canonUser(user: string, flags: number): number;
   getSimple(id: number, required: boolean, prompts: SaslInteract[] | null): { rc: number; value: Uint8Array | null };

@@ -10,6 +10,7 @@ export type DebugCategory =
   | 'ip.rip'
   | 'ip.eigrp'
   | 'ip.bgp'
+  | 'ip.bgp.updates'
   | 'ip.routing'
   | 'ip.icmp'
   | 'ip.packet'
@@ -35,6 +36,7 @@ export type DebugCategory =
   | 'tacacs'
   | 'ntp.events'
   | 'ntp.packets'
+  | 'snmp.packets'
   | 'lldp.packets'
   | 'cdp.packets'
   | 'ip.pim'
@@ -55,6 +57,7 @@ import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortT
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
+import type { BgpUpdateTracedPayload } from '@/network/bgp/events';
 
 const OSPF_TYPE_NAMES: Readonly<Record<number, string>> = {
   1: 'Hello', 2: 'Data Description', 3: 'LS Request', 4: 'LS Update', 5: 'LS Ack',
@@ -108,12 +111,12 @@ const DEBUG_CATEGORIES: ReadonlySet<string> = new Set<string>([
   'crypto.isakmp', 'crypto.ipsec',
   'ip.ospf.adj', 'ip.ospf.events', 'ip.ospf.spf', 'ip.ospf.hello',
   'ip.ospf.packet', 'ip.ospf.lsa-generation',
-  'ip.rip', 'ip.eigrp', 'ip.bgp', 'ip.routing', 'ip.icmp', 'ip.packet',
+  'ip.rip', 'ip.eigrp', 'ip.bgp', 'ip.bgp.updates', 'ip.routing', 'ip.icmp', 'ip.packet',
   'ip.tcp', 'ip.udp', 'ip.nat', 'ip.arp', 'interface', 'ip.dhcp.server',
   'ip.ssh', 'ip.domain', 'ip.nhrp', 'standby', 'vrrp', 'glbp', 'track',
   'ip.sla.trace', 'ip.sla.error',
   'aaa.authentication', 'aaa.authorization', 'aaa.accounting',
-  'radius', 'tacacs', 'ntp.events', 'ntp.packets',
+  'radius', 'tacacs', 'ntp.events', 'ntp.packets', 'snmp.packets',
   'lldp.packets', 'cdp.packets', 'ip.pim', 'vxlan', 'port-security',
   'ipv6.packet', 'ipv6.nd', 'ipv6.icmp', 'mac', 'link', 'stp.events', 'stp.bpdu',
 ]);
@@ -590,9 +593,9 @@ export class RouterDebugService implements TerminalDebugSource {
     }));
     this.broadcast.track(bus.subscribe('pim.mroute.changed', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { group?: string; source?: string; iif?: string };
+      const p = e.payload;
       this.emit('ip.pim',
-        `PIM(0): Update (${p.source ?? '*'}, ${p.group ?? '*'}), incoming interface ${p.iif ?? 'Null'}`);
+        `PIM(0): Update (${p.source ?? '*'}, ${p.group}), incoming interface ${p.incomingInterface ?? 'Null'}`);
     }));
     this.broadcast.track(bus.subscribe('vxlan.mac.learned', (e) => {
       if (!mine(e.payload)) return;
@@ -765,6 +768,28 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('ip.bgp', `BGP: ${p.neighborIp} went from ${p.oldState} to ${p.newState}`);
     }));
 
+    const bgpUpdate = (direction: 'sent' | 'received') => (e: { payload: BgpUpdateTracedPayload }): void => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      const verb = direction === 'sent' ? 'send' : 'rcvd';
+      const peer = p.neighborIp;
+      if (p.announced.length > 0) {
+        const attributes = [
+          p.origin === null ? null : `origin ${p.origin}`,
+          `path ${p.asPath.join(' ')}`.trim(),
+          p.nextHop === null ? null : `next hop ${p.nextHop}`,
+          p.med === null ? null : `metric ${p.med}`,
+          p.localPref === null ? null : `localpref ${p.localPref}`,
+        ].filter((part): part is string => part !== null && part !== 'path');
+        this.emit('ip.bgp.updates', `BGP(0): ${peer} ${verb} UPDATE w/ attr: ${attributes.join(', ')}`);
+        for (const prefix of p.announced) this.emit('ip.bgp.updates', `BGP(0): ${peer} ${verb} UPDATE ${prefix}`);
+      }
+      for (const prefix of p.withdrawn) {
+        this.emit('ip.bgp.updates', `BGP(0): ${peer} ${verb} UPDATE ${prefix} -- withdrawn`);
+      }
+    };
+    this.broadcast.track(bus.subscribe('bgp.update.sent', bgpUpdate('sent')));
+    this.broadcast.track(bus.subscribe('bgp.update.received', bgpUpdate('received')));
     this.broadcast.track(bus.subscribe('port.security.violation', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as unknown as { portName?: string; mac?: { toString(): string }; action?: string };
@@ -847,41 +872,77 @@ export class RouterDebugService implements TerminalDebugSource {
     }));
     this.broadcast.track(bus.subscribe('ntp.packet.sent', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { destIp?: string; mode?: string };
-      this.emit('ntp.packets', `NTP: xmit packet to ${p.destIp ?? '?'}, mode ${p.mode ?? 'client'}`);
+      const p = e.payload;
+      this.emit('ntp.packets', `NTP: xmit packet to ${p.serverIp}, mode ${p.mode}`);
     }));
     this.broadcast.track(bus.subscribe('ntp.packet.received', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { srcIp?: string; mode?: string };
-      this.emit('ntp.packets', `NTP: rcv packet from ${p.srcIp ?? '?'}, mode ${p.mode ?? 'server'}`);
+      const p = e.payload;
+      this.emit('ntp.packets', `NTP: rcv packet from ${p.fromIp}, mode ${p.mode}, stratum ${p.stratum}`);
+    }));
+
+    this.broadcast.track(bus.subscribe('snmp.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('snmp.packets', `SNMP: Packet received via UDP from ${p.fromIp}: ${p.pduType}, `
+        + `community ${p.community}${p.requestId === undefined ? '' : `, request-id ${p.requestId}`}`);
+    }));
+    this.broadcast.track(bus.subscribe('snmp.packet.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('snmp.packets', `SNMP: Packet sent via UDP to ${p.destinationIp}: ${p.pduType}, `
+        + `community ${p.community}${p.requestId === undefined ? '' : `, request-id ${p.requestId}`}`);
+    }));
+    this.broadcast.track(bus.subscribe('snmp.auth.rejected', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('snmp.packets', `SNMP: Packet from ${p.fromIp} rejected (${p.reason}), community ${p.community}`);
+    }));
+    this.broadcast.track(bus.subscribe('snmp.trap.sent', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('snmp.packets', `SNMP: Trap ${p.trapOid} sent via UDP to ${p.destinationIp}, community ${p.community}`);
     }));
 
     this.broadcast.track(bus.subscribe('radius.auth.completed', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { username?: string; serverIp?: string };
+      const p = e.payload;
       this.emit('radius',
-        `RADIUS: Received Access-Accept for user ${p.username ?? '?'} from ${p.serverIp ?? '?'}`);
+        `RADIUS: Received Access-${p.accepted ? 'Accept' : 'Reject'} for user ${p.username} from ${p.serverIp}`);
       this.emit('aaa.authentication',
-        `AAA/AUTHEN: status = PASS for user '${p.username ?? '?'}'`);
+        `AAA/AUTHEN: status = ${p.accepted ? 'PASS' : 'FAIL'} for user '${p.username}'`);
     }));
     this.broadcast.track(bus.subscribe('radius.auth.rejected', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { username?: string; serverIp?: string };
+      const p = e.payload;
       this.emit('radius',
-        `RADIUS: Received Access-Reject for user ${p.username ?? '?'} from ${p.serverIp ?? '?'}`);
+        `RADIUS: Sent Access-Reject for user ${p.username} to ${p.fromIp} (${p.reason})`);
       this.emit('aaa.authentication',
-        `AAA/AUTHEN: status = FAIL for user '${p.username ?? '?'}'`);
+        `AAA/AUTHEN: status = FAIL for user '${p.username}'`);
     }));
     this.broadcast.track(bus.subscribe('radius.server.dead', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { serverIp?: string };
-      this.emit('radius', `RADIUS: Marking server ${p.serverIp ?? '?'} as DEAD`);
+      this.emit('radius', `RADIUS: Marking server ${e.payload.serverIp} as DEAD`);
     }));
     this.broadcast.track(bus.subscribe('radius.accounting.record', (e) => {
       if (!mine(e.payload)) return;
-      const p = e.payload as unknown as { username?: string; type?: string };
-      this.emit('aaa.accounting',
-        `AAA/ACCT: ${p.type ?? 'record'} for user '${p.username ?? '?'}'`);
+      const p = e.payload;
+      this.emit('aaa.accounting', `AAA/ACCT: ${p.status} for user '${p.username}'`);
+    }));
+    this.broadcast.track(bus.subscribe('tacacs.authen.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('tacacs', `TAC+: authentication for user ${p.username} by ${p.serverIp}: ${p.status}`);
+      this.emit('aaa.authentication',
+        `AAA/AUTHEN: status = ${p.status === 'pass' ? 'PASS' : 'FAIL'} for user '${p.username}'`);
+    }));
+    this.broadcast.track(bus.subscribe('tacacs.author.completed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      const command = p.command === null ? '' : ` command '${p.command}'`;
+      this.emit('tacacs', `TAC+: authorization for user ${p.username} by ${p.serverIp}: ${p.status}`);
+      this.emit('aaa.authorization',
+        `AAA/AUTHOR: user '${p.username}'${command} status = ${String(p.status).toUpperCase().replace('-', '_')}`);
     }));
     this.broadcast.track(bus.subscribe('tacacs.acct.completed', (e) => {
       if (!mine(e.payload)) return;
@@ -971,6 +1032,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.rip': return 'RIP protocol';
       case 'ip.eigrp': return 'EIGRP';
       case 'ip.bgp': return 'BGP';
+      case 'ip.bgp.updates': return 'BGP updates';
       case 'ip.routing': return 'IP routing';
       case 'ip.icmp': return 'ICMP packet';
       case 'ip.packet': return 'IP packet';
@@ -996,6 +1058,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'tacacs': return 'TACACS+';
       case 'ntp.events': return 'NTP events';
       case 'ntp.packets': return 'NTP packets';
+      case 'snmp.packets': return 'SNMP packets';
       case 'lldp.packets': return 'LLDP packets';
       case 'cdp.packets': return 'CDP packets';
       case 'ip.pim': return 'PIM';
@@ -1049,7 +1112,7 @@ export class RouterDebugService implements TerminalDebugSource {
       'ip.ospf.packet', 'ip.ospf.lsa-generation']],
     ['RIP', ['ip.rip']],
     ['EIGRP', ['ip.eigrp']],
-    ['BGP', ['ip.bgp']],
+    ['BGP', ['ip.bgp', 'ip.bgp.updates']],
     ['PIM', ['ip.pim']],
     ['NHRP', ['ip.nhrp']],
     ['DHCP', ['ip.dhcp.server']],
@@ -1059,6 +1122,7 @@ export class RouterDebugService implements TerminalDebugSource {
     ['IP SLA', ['ip.sla.trace', 'ip.sla.error', 'track']],
     ['AAA', ['aaa.authentication', 'aaa.authorization', 'aaa.accounting', 'radius', 'tacacs']],
     ['NTP', ['ntp.events', 'ntp.packets']],
+    ['SNMP', ['snmp.packets']],
     ['Neighbour discovery', ['cdp.packets', 'lldp.packets']],
     ['Crypto Subsystem', ['crypto.isakmp', 'crypto.ipsec']],
     ['Spanning Tree', ['stp.events', 'stp.bpdu']],

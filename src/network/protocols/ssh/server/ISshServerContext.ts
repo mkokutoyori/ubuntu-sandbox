@@ -35,6 +35,7 @@ export interface SshServerConfig {
 }
 
 export interface ILinuxShell {
+  readonly streamSession?: unknown;
   execute(line: string): Promise<{
     stdout: string;
     stderr: string;
@@ -113,6 +114,8 @@ export interface ILinuxShell {
    * `:!cmd` are the remote's own (docs/PRD-SSH-Unification.md §4bis B3).
    */
   openEditor?(commandLine: string): EditorSession | null;
+  /** The client's terminal changed size (window-change, RFC 4254 §6.7). */
+  setWindowSize?(rows: number, cols: number): void;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
   dispose?(): void;
 }
@@ -161,7 +164,7 @@ export interface ISshServerContext {
   /**
    * Optional logout hook fired by SshServerHandler when an authenticated
    * session ends (channel close, client disconnect, or transport drop).
-   * Implementations append to /var/log/wtmp.json on Linux and publish
+   * Implementations publish
    * `windows.account.logoff` on Windows so the Security event log
    * receives 4634 in addition to the 4624/4625 it already gets.
    */
@@ -169,11 +172,11 @@ export interface ISshServerContext {
   /**
    * Optional auth-failure hook used by SshServerHandler when the handshake or
    * password/pubkey check is rejected (analysis doc §1.4/§1.5). Implementations
-   * append to /var/log/auth.log and /var/log/btmp.json.
+   * append to /var/log/auth.log.
    */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
   clientPort?(fromIp: string): number | undefined;
-  connectionClosed?(user: string, fromIp: string): void;
+  connectionClosed?(user: string, fromIp: string, fromPort?: number): void;
   connectionEnded?(fromIp: string, port: number | undefined): void;
   /**
    * Build a fully-populated SshUserContext from /etc/passwd (real uid/gid/groups/home).
@@ -212,6 +215,7 @@ export interface ISshServerContext {
   rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
+  subsystemAdmitted?(name: string, user: SshUserContext): boolean;
   readonly maxAuthTriesDisconnect?: string;
 }
 

@@ -69,6 +69,7 @@ export type CiscoShellMode =
   | 'config-ca-trustpoint'
   | 'config-applet' | 'config-flow-exporter' | 'config-flow-record' | 'config-flow-monitor'
   | 'config-archive' | 'config-archive-log'
+  | 'config-ssh-pubkey' | 'config-ssh-pubkey-user' | 'config-ssh-pubkey-data'
   | 'config-gdoi-group';
 
 export interface CiscoShellContext {

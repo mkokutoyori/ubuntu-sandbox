@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxLastlogRegistry } from '@/network/devices/linux/LinuxLastlogRegistry';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
@@ -21,6 +22,9 @@ describe('LinuxLastlogRegistry — PAM-style rotation', () => {
 
   beforeEach(() => {
     reg = new LinuxLastlogRegistry();
+    reg.attachVfs(new VirtualFileSystem());
+    const uids: Record<string, number> = { alice: 1000, bob: 1001 };
+    reg.bindUidResolver((user) => uids[user]);
   });
 
   it('first call returns undefined (no prior login)', () => {

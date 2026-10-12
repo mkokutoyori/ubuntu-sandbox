@@ -27,7 +27,7 @@ import {
 } from './types';
 import {
   AES256_CTS_HMAC_SHA1_96, stringToKey, accountSalt, encryptWithUsage, decryptWithUsage,
-  KU_PA_ENC_TIMESTAMP, KU_AS_REP_ENC_PART, KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART,
+  KU_PA_ENC_TIMESTAMP, KU_AS_REP_ENC_PART, KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART, KU_TGS_REP_ENC_PART_SUBKEY,
 } from './crypto';
 
 /**
@@ -40,11 +40,14 @@ import {
  */
 export function buildApReq(
   ticket: Ticket, sessionKey: Uint8Array, cname: PrincipalName, crealm: string, usage: number,
-  nowMs: number = simulationNowMs(),
+  nowMs: number = simulationNowMs(), subkey: Uint8Array | null = null,
 ): Uint8Array {
   const authenticatorCipher = encryptWithUsage(
     sessionKey, usage,
-    encodeAuthenticator({ crealm, cname, ctime: Math.floor(nowMs / 1000), cusec: 0 }),
+    encodeAuthenticator({
+      crealm, cname, ctime: Math.floor(nowMs / 1000), cusec: 0,
+      subkey: subkey === null ? undefined : { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: subkey },
+    }),
   );
   return encodeApReq({ apOptions: 0, ticket, authenticator: { etype: AES256_CTS_HMAC_SHA1_96, cipher: authenticatorCipher } });
 }
@@ -71,14 +74,23 @@ export interface AsExchangeResult {
 
 export type TgsExchangeResult = AsExchangeResult;
 
+export interface TgsRequestShape {
+  readonly nameType?: number;
+  readonly till?: number;
+  readonly renewTill?: number;
+}
+
 // A real Kerberos client requests a `till` far beyond any realistic KDC
 // policy maximum (Windows itself typically asks for the ASN.1 "never
 // expires" sentinel) — the KDC's own ticket-lifetime policy, not the
 // client's request, is what actually governs the granted endtime.
 const TICKET_REQUEST_LIFETIME_SECONDS = 24 * 3600;
 const RENEWABLE_REQUEST_LIFETIME_SECONDS = 7 * 24 * 3600;
+const SUBKEY_BYTES = 32;
 
 export interface AsRequestOptions {
+  readonly etypes?: readonly number[];
+  readonly padata?: readonly PaData[];
   readonly forwardable?: boolean;
   readonly proxiable?: boolean;
   readonly renewable?: boolean;
@@ -119,6 +131,30 @@ export class KerberosClient {
     return reply;
   }
 
+  private initialRequest(
+    cname: PrincipalName, realm: string, sname: PrincipalName, options: AsRequestOptions,
+  ): { baseReq: KdcReq; nonce: number } {
+    const nonce = this.nextNonce();
+    const now = Math.floor(this.clockMs() / 1000);
+    const till = now + (options.lifetimeSeconds ?? TICKET_REQUEST_LIFETIME_SECONDS);
+    const rtime = now + (options.renewableLifetimeSeconds ?? RENEWABLE_REQUEST_LIFETIME_SECONDS);
+    const kdcOptions = kdcOptionsOf(options);
+    const baseReq: KdcReq = {
+      msgType: 'AS-REQ', padata: [...(options.padata ?? [])],
+      reqBody: {
+        kdcOptions, cname, realm, sname, till, rtime: (kdcOptions & KDC_OPT_RENEWABLE) !== 0 ? rtime : undefined,
+        nonce, etype: [...(options.etypes ?? [AES256_CTS_HMAC_SHA1_96])],
+      },
+    };
+    return { baseReq, nonce };
+  }
+
+  requestInitialCredentialsWithoutKey(username: string, realm: string, options: AsRequestOptions): boolean {
+    const cname = principalName(PrincipalNameType.NT_PRINCIPAL, username);
+    const sname = principalName(PrincipalNameType.NT_SRV_INST, 'krbtgt', realm);
+    return this.roundTrip(encodeKdcReq(this.initialRequest(cname, realm, sname, options).baseReq)) !== null;
+  }
+
   /** RFC 4120 §3.1 — the full AS exchange for `username`/`password` against `realm`, requesting a ticket for `serviceName` (defaults to the realm's own krbtgt, i.e. a plain TGT). */
   asExchange(
     username: string, password: PasswordSource, realm: string, serviceName: string | readonly string[] = 'krbtgt',
@@ -128,18 +164,7 @@ export class KerberosClient {
     const sname = typeof serviceName === 'string'
       ? principalName(PrincipalNameType.NT_SRV_INST, serviceName, realm)
       : principalName(PrincipalNameType.NT_SRV_INST, ...serviceName);
-    const nonce = this.nextNonce();
-    const now = Math.floor(this.clockMs() / 1000);
-    const till = now + (options.lifetimeSeconds ?? TICKET_REQUEST_LIFETIME_SECONDS);
-    const rtime = now + (options.renewableLifetimeSeconds ?? RENEWABLE_REQUEST_LIFETIME_SECONDS);
-    const kdcOptions = kdcOptionsOf(options);
-    const baseReq: KdcReq = {
-      msgType: 'AS-REQ', padata: [],
-      reqBody: {
-        kdcOptions, cname, realm, sname, till, rtime: (kdcOptions & KDC_OPT_RENEWABLE) !== 0 ? rtime : undefined,
-        nonce, etype: [AES256_CTS_HMAC_SHA1_96],
-      },
-    };
+    const { baseReq, nonce } = this.initialRequest(cname, realm, sname, options);
 
     const firstReply = this.roundTrip(encodeKdcReq(baseReq));
     if (!firstReply) return { ok: false, eText: 'no reply from KDC' };
@@ -202,18 +227,19 @@ export class KerberosClient {
    */
   tgsExchange(
     tgt: Ticket, tgtSessionKey: Uint8Array, cname: PrincipalName, crealm: string, serviceName: string | readonly string[],
-    targetRealm: string = crealm, kdcOptions = 0,
+    targetRealm: string = crealm, kdcOptions = 0, shape: TgsRequestShape | null = null,
   ): TgsExchangeResult {
-    const sname = principalName(PrincipalNameType.NT_SRV_HST, ...(typeof serviceName === 'string' ? [serviceName] : serviceName));
+    const sname = principalName(shape?.nameType ?? PrincipalNameType.NT_SRV_HST, ...(typeof serviceName === 'string' ? [serviceName] : serviceName));
     const nonce = this.nextNonce();
-    const till = Math.floor(this.clockMs() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
-    const paValue = buildApReq(tgt, tgtSessionKey, cname, crealm, KU_TGS_REQ_AUTHENTICATOR, this.clockMs());
+    const subkey = this.random(SUBKEY_BYTES);
+    const till = shape?.till ?? Math.floor(this.clockMs() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
+    const paValue = buildApReq(tgt, tgtSessionKey, cname, crealm, KU_TGS_REQ_AUTHENTICATOR, this.clockMs(), subkey);
 
     const req: KdcReq = {
       msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],
-      reqBody: { kdcOptions, realm: targetRealm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
+      reqBody: { kdcOptions, realm: targetRealm, sname, till, rtime: shape?.renewTill, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
     };
-    return this.finishTgs(req, tgtSessionKey, nonce);
+    return this.finishTgs(req, subkey, nonce, KU_TGS_REP_ENC_PART_SUBKEY);
   }
 
   renewExchange(ticket: Ticket, sessionKey: Uint8Array, cname: PrincipalName, crealm: string, till: number): TgsExchangeResult {
@@ -223,10 +249,10 @@ export class KerberosClient {
       padata: [{ type: PA_TGS_REQ, value: buildApReq(ticket, sessionKey, cname, crealm, KU_TGS_REQ_AUTHENTICATOR, this.clockMs()) }],
       reqBody: { kdcOptions: KDC_OPT_RENEW, realm: ticket.realm, sname: ticket.sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
     };
-    return this.finishTgs(req, sessionKey, nonce);
+    return this.finishTgs(req, sessionKey, nonce, KU_TGS_REP_ENC_PART);
   }
 
-  private finishTgs(req: KdcReq, sessionKey: Uint8Array, nonce: number): TgsExchangeResult {
+  private finishTgs(req: KdcReq, replyKey: Uint8Array, nonce: number, usage: number): TgsExchangeResult {
     const reply = this.roundTrip(encodeKdcReq(req));
     if (!reply) return { ok: false, eText: 'no reply from KDC' };
     if (isKrbError(reply)) {
@@ -234,7 +260,7 @@ export class KerberosClient {
       return { ok: false, errorCode: err.errorCode, eText: err.eText };
     }
     try {
-      return this.decodeRep(reply, sessionKey, KU_TGS_REP_ENC_PART, nonce);
+      return this.decodeRep(reply, replyKey, usage, nonce);
     } catch {
       return { ok: false, errorCode: KrbErrorCode.KRB_AP_ERR_BAD_INTEGRITY, eText: 'Decrypt integrity check failed' };
     }
@@ -268,7 +294,7 @@ export class KerberosClient {
         additionalTickets: [evidenceTicket],
       },
     };
-    return this.finishTgs(req, serviceTgtSessionKey, nonce);
+    return this.finishTgs(req, serviceTgtSessionKey, nonce, KU_TGS_REP_ENC_PART);
   }
 }
 

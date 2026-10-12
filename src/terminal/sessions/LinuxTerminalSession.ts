@@ -9,6 +9,8 @@
  *   - Tab completion
  */
 
+import { SCREEN_REPAINT_MARK } from '@/network/protocols/ssh/server/SshScreenRepaint';
+import { findEquipmentByIp } from '@/shell/hostResolution';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
@@ -49,13 +51,14 @@ import {
   DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING,
 } from '@/network/devices/linux/system/Dstat';
 import { interleaveTcpdumpStreams, runTcpdump } from '@/network/devices/linux/network/tcpdump/TcpdumpRunner';
-import type { AsyncJobContext } from '@/terminal/async';
+import { planLinuxStream, planCaptureTool, captureToolInvocation, type StreamPlan, type StreamScreen } from '@/terminal/streams/LinuxStreamPlans';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode, withTimeout, DeviceOfflineError,
 } from './TerminalSession';
 import { createSessionForDevice } from './sessionFactory';
+import { followArguments, snapshotCommand } from '@/network/devices/linux/journal/JournalFollow';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
 import { validateCrontabContent } from '@/network/devices/linux/cron/CrontabParser';
@@ -91,7 +94,7 @@ import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubSh
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
-import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
+import { parseEditorArgs, parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 import {
   createRemoteEditorController,
   type RemoteEditorTransport,
@@ -121,30 +124,23 @@ import { splitShellWords } from '@/bash/runtime/ShellWords';
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
-import { SshLocalForwarder } from '@/network/protocols/ssh/SshLocalForwarder';
-import { SshRemoteForwarder } from '@/network/protocols/ssh/SshRemoteForwarder';
-import { tunnelThroughSession } from '@/network/protocols/ssh/forwardRelay';
-import { SshDynamicForwarder } from '@/network/protocols/ssh/SshDynamicForwarder';
+import type { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
+import type { SshClientHandle } from '@/network/devices/linux/network/SshClientProcess';
 import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
 import {
   parseSshArgs,
   parseProxyJumpSpec,
-  type DynamicForward,
-  type LocalForward,
   type ParsedSshArgs,
   type ProxyHop,
-  type RemoteForward,
 } from './sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import type { TcpConnector } from '@/network/tcp/types';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 import { localListenerFailure, NO_LOCAL_FORWARDING, remoteForwardFailure } from '@/network/protocols/ssh/ForwardOpening';
 
-type CaptureTool = 'tcpdump' | 'traceroute';
 
 // ─── Theme ────────────────────────────────────────────────────────
 
@@ -378,12 +374,24 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
+  protected override applyWindowSize(rows: number, cols: number): void {
+    if (this.shell) this.shell.windowSize = { rows, cols };
+    this.activeSubShell?.resize?.(rows, cols);
+    for (const sub of this.iShellSubStack) sub.resize?.(rows, cols);
+  }
+
+  private adoptWindowSize(shell: LinuxShellSession): LinuxShellSession {
+    const size = this.windowSize;
+    if (size !== null) shell.windowSize = size;
+    return shell;
+  }
+
   constructor(id: string, device: Equipment) {
     super(id, device);
     // Allocate a dedicated -bash on the device when possible so multiple
     // terminals on the same machine have isolated cwd / env / su stack.
     if (device instanceof LinuxMachine) {
-      this.shell = device.openShellSession();
+      this.shell = this.adoptWindowSize(device.openShellSession());
       this.currentPath = this.shell.cwd;
       this.currentUser = this.shell.user;
       // Make sure the terminal tears down its session when the manager
@@ -421,7 +429,7 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
     if (this.shell) dev.closeShellSession(this.shell);
-    this.shell = dev.openShellSession({ user });
+    this.shell = this.adoptWindowSize(dev.openShellSession({ user }));
     this.currentUser = user;
     this.currentPath = this.shell.cwd;
     if (this.rootBash) {
@@ -875,539 +883,37 @@ export class LinuxTerminalSession extends TerminalSession {
     return done;
   }
 
-  /**
-   * Detect `tail -f` / `tail -F` and, on a match, open a follow stream
-   * whose sink pumps appended file content through `addLine` so React
-   * re-renders pick it up live. Returns `true` when a stream was opened
-   * (caller must stop processing this command); `false` for any other
-   * input. Falls back silently when the device is not a LinuxMachine or
-   * no shell session is allocated.
-   */
-  private tryStartTailStream(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    const shell = this.shell;
-    let handle: import('@/network/devices/linux/coreutils').TailFollowHandle | null = null;
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
-      prepare: (ctx) => {
-        handle = dev.startTailFollowInSession(commandLine, shell, {
-          write: (chunk) => ctx.sink.write(chunk),
-          warn:  (msg)   => ctx.sink.error(msg),
-          error: (msg)   => ctx.sink.error(msg),
-        });
-        if (!handle) return false;
-        ctx.onCancel(() => handle?.cancel());
-        return true;
-      },
-      run: (ctx) => new Promise<void>((resolve) => {
-        if (ctx.cancelled()) { resolve(); return; }
-        ctx.onCancel(() => resolve());
-      }),
-    });
-    return job !== null;
-  }
-
-  private tryStartPingStream(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    const shell = this.shell;
-    if (!(dev instanceof LinuxMachine) || !shell) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'ping' && toks[0] !== 'ping6') return false;
-    if (/[|<>&;]/.test(commandLine)) return false;
-    let ping: PingRun | null = null;
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
-      run: async (ctx) => {
-        const host = dev.pingHostInSession(shell, { sleep: (ms) => ctx.delay(ms), now: () => simulationNowMs() });
-        ping = createPing(toks.slice(1), host, (line) => ctx.sink.line(line), { cmd: toks[0] as 'ping' | 'ping6' });
-        await ping.run(() => ctx.cancelled());
-      },
-      onInterrupt: () => { ping?.interrupt(); },
-    });
-    return job !== null;
-  }
-
-  private tryStartTracerouteStream(commandLine: string): boolean {
-    return this.tryStartCaptureTool(commandLine, 'traceroute');
-  }
-
-  private captureToolInvocation(
-    commandLine: string, tool: CaptureTool,
-  ): { argv: string[]; elevated: boolean } | null {
-    if (/[|<>&;]/.test(commandLine)) return null;
-    const toks = commandLine.trim().split(/\s+/);
-    const elevated = toks[0] === 'sudo';
-    const argv = elevated ? toks.slice(1) : toks;
-    return argv[0] === tool ? { argv, elevated } : null;
-  }
-
-  private tryStartCaptureTool(commandLine: string, tool: CaptureTool): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    if (!(this.device instanceof LinuxMachine) || !this.shell) return false;
-    const invocation = this.captureToolInvocation(commandLine, tool);
-    if (invocation === null) return false;
-    if (invocation.elevated && this.shell.uid !== 0) return false;
-    return this.startCaptureTool(commandLine, invocation.argv, invocation.elevated);
-  }
-
-  private startCaptureTool(commandLine: string, argv: string[], elevated: boolean): boolean {
-    const dev = this.device;
-    const shell = this.shell;
-    if (!(dev instanceof LinuxMachine) || !shell) return false;
-    if (elevated) {
-      const refusal = dev.sudoRefusalInSession(argv, shell);
-      if (refusal !== null) { this.addLine(refusal); this.notify(); return true; }
-    }
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
-      run: async (ctx) => {
-        if (argv[0] === 'traceroute') {
-          await runTraceroute(
-            argv.slice(1), dev.tracerouteHostInSession(shell, elevated),
-            (text) => { for (const line of text.split('\n')) ctx.sink.line(line); },
-            () => ctx.cancelled());
-          return;
-        }
-        const result = await runTcpdump(argv.slice(1), {
-          ...dev.tcpdumpDepsInSession(shell, elevated),
-          stream: { line: (text) => ctx.sink.line(text) },
-          onCancelRequested: (cb) => { ctx.onCancel(cb); return () => {}; },
-          interruptEchoed: () => true,
-        });
-        const rest = interleaveTcpdumpStreams(result);
-        if (rest) for (const line of rest.split('\n')) ctx.sink.line(line);
-      },
-    });
-    return job !== null;
-  }
-
-  private tryStartMtrStream(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'mtr') return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-
-    const parsed = parseMtrArgs(toks.slice(1));
-    if (parsed.showHelp) { this.addLine(MTR_USAGE); this.notify(); return true; }
-    if (parsed.showVersion) { this.addLine(MTR_VERSION); this.notify(); return true; }
-    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
-    if (!parsed.target) { this.addLine('mtr: no host specified'); this.notify(); return true; }
-
-    const intervalMs = Math.max(100, parsed.intervalSec * 1000);
+  private plannedStreamScreen(): StreamScreen {
     let baseLen = this.lines.length;
+    return {
+      mark: () => { baseLen = this.lines.length; },
+      beginFrame: () => { this.lines = this.lines.slice(0, baseLen); },
+    };
+  }
 
+  private tryStartPlannedStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const plan = planLinuxStream(dev, this.shell, commandLine, this.plannedStreamScreen());
+    return plan !== null && this.runStreamPlan(commandLine, plan);
+  }
+
+  private runStreamPlan(commandLine: string, plan: StreamPlan): boolean {
+    if (plan.kind === 'notice') {
+      for (const line of plan.lines) this.addLine(line);
+      this.notify();
+      return true;
+    }
     const job = this.startAsyncCommand({
       mode: 'foreground',
-      kind: 'streaming',
+      kind: plan.jobKind,
       command: commandLine,
-      prepare: () => { baseLen = this.lines.length; return true; },
-      run: async (ctx) => {
-        const hopIps: (string | null)[] = [];
-        let resolved = false;
-        const discovery = await dev.tracerouteStreamInSession(parsed.target, {
-          maxHops: parsed.maxHops,
-          probesPerHop: 1,
-          onResolved: () => { resolved = true; },
-          onHop: (hop) => { hopIps.push(hop.ip ?? null); },
-          shouldStop: () => ctx.cancelled(),
-        });
-        if (ctx.cancelled()) return;
-        if (!discovery.resolved) {
-          ctx.sink.error(`mtr: Failed to resolve host: ${parsed.target}`);
-          return;
-        }
-        if (!resolved || hopIps.length === 0) {
-          ctx.sink.error('mtr: no hops discovered');
-          return;
-        }
-
-        const stats = hopIps.map(() => new MtrHopStats());
-        const startedAt = simulationDate();
-        const hostname = dev.getHostname();
-        const targetIpStr = hopIps[hopIps.length - 1] ?? parsed.target;
-
-        const paint = () => {
-          this.lines = this.lines.slice(0, baseLen);
-          const frame = formatMtrFrame({ hostname, target: targetIpStr, startedAt, hops: stats },
-            parsed.reportMode ? 'report' : 'live');
-          for (const line of frame.split('\n')) this.addLine(line);
-          this.notify();
-        };
-        paint();
-
-        for (let cycle = 0; ; cycle++) {
-          if (ctx.cancelled()) return;
-          if (parsed.reportMode && cycle >= parsed.cycles) break;
-          for (let i = 0; i < hopIps.length; i++) {
-            const ip = hopIps[i];
-            let probe: MtrHopProbe;
-            if (!ip) {
-              probe = { lost: true };
-            } else {
-              try {
-                const result = dev.sendPingProbeSync(new IPAddress(ip));
-                probe = result.success
-                  ? { ip, rttMs: result.rttMs, lost: false }
-                  : { ip, lost: true };
-              } catch {
-                probe = { ip, lost: true };
-              }
-            }
-            stats[i].record(probe);
-          }
-          paint();
-          if (parsed.reportMode && cycle + 1 >= parsed.cycles) break;
-          await ctx.delay(intervalMs);
-        }
-      },
+      prepare: plan.prepare,
+      run: plan.run,
+      onInterrupt: plan.onInterrupt,
     });
     return job !== null;
-  }
-
-  private startRepaintingMonitor(commandLine: string, intervalMs: number): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    const shell = this.shell;
-    let baseLen = this.lines.length;
-
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
-      prepare: () => { baseLen = this.lines.length; return true; },
-      run: async (ctx) => {
-        while (!ctx.cancelled()) {
-          const frame = dev.runCommandFrameInSession(commandLine, shell);
-          this.lines = this.lines.slice(0, baseLen);
-          for (const line of frame.split('\n')) this.addLine(line);
-          this.notify();
-          await ctx.delay(intervalMs);
-        }
-      },
-    });
-    return job !== null;
-  }
-
-  private tryStartWatchStream(commandLine: string): boolean {
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'watch') return false;
-    let parsed: ReturnType<typeof parseWatchArgs>;
-    try { parsed = parseWatchArgs(toks.slice(1)); } catch { return false; }
-    if (parsed.command.length === 0) return false;
-    return this.startRepaintingMonitor(commandLine, Math.max(100, parsed.intervalSeconds * 1000));
-  }
-
-  private tryStartTopStream(commandLine: string): boolean {
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'top') return false;
-    if (toks.includes('-n') || toks.includes('-b')) return false;
-    const dIdx = toks.indexOf('-d');
-    const delay = dIdx >= 0 ? parseFloat(toks[dIdx + 1]) : 3;
-    const intervalMs = Math.max(100, (Number.isFinite(delay) && delay > 0 ? delay : 3) * 1000);
-    return this.startRepaintingMonitor(commandLine, intervalMs);
-  }
-
-  private tryStartTcpdump(commandLine: string): boolean {
-    return this.tryStartCaptureTool(commandLine, 'tcpdump');
-  }
-
-  private tryStartJournalFollow(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'journalctl') return false;
-    if (!toks.includes('-f') && !toks.includes('--follow')) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const shell = this.shell;
-
-    const uIdx = Math.max(toks.indexOf('-u'), toks.indexOf('--unit'));
-    const unit = uIdx >= 0 ? toks[uIdx + 1] : undefined;
-    const nIdx = Math.max(toks.indexOf('-n'), toks.indexOf('--lines'));
-    const initialArgs = toks.slice(1).filter((t) => t !== '-f' && t !== '--follow');
-    if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
-    const initialCommand = ['journalctl', ...initialArgs].join(' ');
-
-    return this.startFollowStream({
-      commandLine,
-      prepare: (ctx) => {
-        const initial = dev.runCommandFrameInSession(initialCommand, shell);
-        if (initial.startsWith('No journal files')) { ctx.sink.line(initial); return false; }
-        for (const line of initial.split('\n')) ctx.sink.line(line);
-        return true;
-      },
-      subscribe: (sink) => dev.followJournal({ unit }, sink),
-    });
-  }
-
-  private tryStartIpMonitor(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'ip') return false;
-    let i = 1;
-    while (i < toks.length && toks[i].startsWith('-')) i++;
-    if (toks[i] !== 'monitor') return false;
-
-    const spec = parseIpMonitorSpec(toks.slice(i + 1));
-    if ('error' in spec) { this.addLine(spec.error); return true; }
-
-    return this.startFollowStream({
-      commandLine,
-      kind: 'subscription',
-      subscribe: (sink) => dev.monitorNetlink(
-        { objects: spec.objects, labelled: spec.labelled },
-        (block) => { for (const line of block.split('\n')) sink(line); },
-      ),
-    });
-  }
-
-  private tryStartDmesgFollow(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'dmesg') return false;
-    if (!toks.includes('-w') && !toks.includes('--follow')) return false;
-    const shell = this.shell;
-
-    let raw = false;
-    let humanTime = false;
-    let levelFilter: string[] = [];
-    for (let i = 1; i < toks.length; i++) {
-      const a = toks[i];
-      if (a === '-T' || a === '--ctime' || a === '-H' || a === '--human') humanTime = true;
-      else if (a === '-r' || a === '--raw') raw = true;
-      else if (a === '-l' || a === '--level') {
-        levelFilter = (toks[++i] || '').split(',').map((l) => l.trim()).filter(Boolean);
-      } else if (a.startsWith('--level=')) {
-        levelFilter = a.slice(8).split(',').map((l) => l.trim()).filter(Boolean);
-      }
-    }
-
-    const initialArgs = toks.slice(1).filter((t) => t !== '-w' && t !== '--follow');
-    const initialCommand = ['dmesg', ...initialArgs].join(' ');
-
-    return this.startFollowStream({
-      commandLine,
-      prepare: (ctx) => {
-        const initial = dev.runCommandFrameInSession(initialCommand, shell);
-        if (initial.startsWith('dmesg:') && !initial.includes('\n')) {
-          ctx.sink.line(initial);
-          return false;
-        }
-        if (initial) for (const line of initial.split('\n')) ctx.sink.line(line);
-        return true;
-      },
-      subscribe: (sink) => dev.followDmesg({ raw, humanTime, levelFilter }, sink),
-    });
-  }
-
-  private tryStartNetstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'netstat') return false;
-    const continuous = toks.some(
-      (t) => t.startsWith('-') && !t.startsWith('--') && t.includes('c'),
-    ) || toks.includes('--continuous');
-    if (!continuous) return false;
-    const shell = this.shell;
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: 1000,
-      frame: () => dev.runCommandFrameInSession(commandLine, shell),
-    });
-  }
-
-  private tryStartFreeStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'free') return false;
-    let intervalSeconds: number | null = null;
-    let count: number | null = null;
-    const rest: string[] = [];
-    for (let i = 1; i < toks.length; i++) {
-      const a = toks[i];
-      if ((a === '-s' || a === '--seconds') && toks[i + 1]) {
-        const v = parseInt(toks[++i], 10);
-        if (!Number.isFinite(v) || v <= 0) return false;
-        intervalSeconds = v;
-      } else if ((a === '-c' || a === '--count') && toks[i + 1]) {
-        const v = parseInt(toks[++i], 10);
-        if (!Number.isFinite(v) || v <= 0) return false;
-        count = v;
-      } else {
-        rest.push(a);
-      }
-    }
-    if (intervalSeconds === null) return false;
-    const shell = this.shell;
-    const rendered = ['free', ...rest].join(' ').trim();
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, intervalSeconds * 1000),
-      maxFrames: count ?? undefined,
-      frame: () => dev.runCommandFrameInSession(rendered, shell),
-    });
-  }
-
-  private tryStartVmstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'vmstat') return false;
-    const parsed = parseVmstatArgs(toks.slice(1));
-    if ('error' in parsed) return false;
-    if (parsed.intervalSeconds === null) return false;
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => vmstatHeader(parsed),
-      frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed),
-    });
-  }
-
-  private tryStartMpstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'mpstat') return false;
-    const parsed = parseMpstatArgs(toks.slice(1));
-    if ('error' in parsed) return false;
-    if (parsed.intervalSeconds === null) return false;
-    const accumulator = new MpstatAccumulator();
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(simulationDate())}`,
-      frame: () => {
-        const rows = dev.sampleMpstatSnapshot(parsed);
-        accumulator.add(rows);
-        const now = simulationDate();
-        return rows.map((r) => formatMpstatRow(now, r)).join('\n');
-      },
-      trailer: () => {
-        if (accumulator.sampleCount() === 0) return '';
-        const lines = ['', ...accumulator.averages().map((r) => formatMpstatAverageRow(r))];
-        return lines.join('\n');
-      },
-    });
-  }
-
-  private tryStartPidstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'pidstat') return false;
-    const parsed = parsePidstatArgs(toks.slice(1));
-    if ('error' in parsed) return false;
-    if (parsed.intervalSeconds === null) return false;
-    if (parsed.report === 'cpu') {
-      const accumulator = new PidstatAccumulator<PidstatCpuRow>('cpu');
-      return this.startScrollingMonitor({
-        commandLine,
-        intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-        maxFrames: parsed.count ?? undefined,
-        header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, simulationDate())}`,
-        frame: () => {
-          const rows = dev.samplePidstatCpu(parsed);
-          accumulator.add(rows);
-          const now = simulationDate();
-          return rows.map((r) => formatPidstatCpuRow(now, r)).join('\n');
-        },
-        trailer: () => {
-          if (accumulator.sampleCount() === 0) return '';
-          return ['', ...accumulator.averages().map((r) => formatPidstatAverageCpuRow(r))].join('\n');
-        },
-      });
-    }
-    const accumulator = new PidstatAccumulator<PidstatMemRow>('memory');
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, simulationDate())}`,
-      frame: () => {
-        const rows = dev.samplePidstatMemory(parsed);
-        accumulator.add(rows);
-        const now = simulationDate();
-        return rows.map((r) => formatPidstatMemRow(now, r)).join('\n');
-      },
-      trailer: () => {
-        if (accumulator.sampleCount() === 0) return '';
-        return ['', ...accumulator.averages().map((r) => formatPidstatAverageMemRow(r))].join('\n');
-      },
-    });
-  }
-
-  private tryStartIostatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'iostat') return false;
-    const parsed = parseIostatArgs(toks.slice(1));
-    if ('error' in parsed) return false;
-    if (parsed.intervalSeconds === null) return false;
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => dev.iostatBannerLine(),
-      frame: () => `\n${renderIostatReport(
-        parsed,
-        dev.sampleIostatCpuSnapshot(),
-        dev.sampleIostatDevicesSnapshot(parsed),
-        simulationDate(),
-      )}`,
-    });
-  }
-
-  private tryStartDstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'dstat') return false;
-
-    const parsed = parseDstatArgs(toks.slice(1));
-    if (parsed.showHelp) { this.addLine(DSTAT_USAGE); this.notify(); return true; }
-    if (parsed.showVersion) { this.addLine(DSTAT_VERSION); this.notify(); return true; }
-    if (parsed.listStats) { this.addLine(DSTAT_LISTING); this.notify(); return true; }
-    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
-
-    const rate = newDstatRateState();
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => formatDstatHeader(parsed.groups),
-      frame: () => formatDstatRow(dev.sampleDstatSnapshot(rate), parsed.groups),
-    });
   }
 
   private async tryInteractiveRead(line: string): Promise<boolean> {
@@ -1483,23 +989,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // Intercept `tail -f` / `tail -F` — open a streaming follow on the
     // VFS through the unified async runtime; appended bytes flow into the
     // terminal until Ctrl+C cancels the foreground job.
-    if (this.tryStartTailStream(trimmed)) return;
-    if (this.tryStartPingStream(trimmed)) return;
-    if (this.tryStartTracerouteStream(trimmed)) return;
-    if (this.tryStartMtrStream(trimmed)) return;
-    if (this.tryStartWatchStream(trimmed)) return;
-    if (this.tryStartTopStream(trimmed)) return;
-    if (this.tryStartJournalFollow(trimmed)) return;
-    if (this.tryStartIpMonitor(trimmed)) return;
-    if (this.tryStartDmesgFollow(trimmed)) return;
-    if (this.tryStartNetstatStream(trimmed)) return;
-    if (this.tryStartVmstatStream(trimmed)) return;
-    if (this.tryStartFreeStream(trimmed)) return;
-    if (this.tryStartMpstatStream(trimmed)) return;
-    if (this.tryStartPidstatStream(trimmed)) return;
-    if (this.tryStartIostatStream(trimmed)) return;
-    if (this.tryStartDstatStream(trimmed)) return;
-    if (this.tryStartTcpdump(trimmed)) return;
+    if (this.tryStartPlannedStream(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
     if (this.tryVisudoEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
@@ -2056,28 +1546,9 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
-    let filePath = '';
-    for (const arg of args) {
-      if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
-    }
-    // nano -v/--view: open read-only, no Write Out. nano -c/--constantshow:
-    // title bar shows the live cursor position. Both no-ops for vi/vim
-    // (which use their own :view / :set ruler commands for the same idea).
-    const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
-    const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
-    const showLineNumbers = editorCmd === 'nano' && args.some((a) => a === '-l' || a === '--linenumbers');
-    // `+LINE[,COLUMN]` (nano) / `+LINE` (vim/vi, no column form) opens the
-    // buffer with the cursor already positioned there. Real nano/vim take
-    // the LAST such argument if more than one is given.
-    let initialCursorLine: number | undefined;
-    let initialCursorCol: number | undefined;
-    for (const arg of args) {
-      const m = /^\+(\d+)(?:,(\d+))?$/.exec(arg);
-      if (m) {
-        initialCursorLine = parseInt(m[1], 10);
-        initialCursorCol = m[2] !== undefined ? parseInt(m[2], 10) : undefined;
-      }
-    }
+    const launch = parseEditorArgs(editorCmd, args);
+    if (launch === null) return;
+    const { filePath, readOnly, showPosition, showLineNumbers, softwrap, initialCursorLine, initialCursorCol } = launch;
 
     // No filename given: a genuinely unnamed buffer. Resolving '' against
     // the cwd would collapse to the cwd's OWN directory path (VFS
@@ -2097,6 +1568,8 @@ export class LinuxTerminalSession extends TerminalSession {
         readOnly,
         showPosition,
         showLineNumbers,
+        softwrap,
+        displayName: '',
         initialCursorLine,
         initialCursorCol,
       };
@@ -2126,6 +1599,8 @@ export class LinuxTerminalSession extends TerminalSession {
       readOnly,
       showPosition,
       showLineNumbers,
+      softwrap,
+      displayName: filePath,
       initialCursorLine,
       initialCursorCol,
     };
@@ -2300,8 +1775,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
 
-    const captureTool = this.captureToolInvocation(command, 'tcpdump')
-      ?? this.captureToolInvocation(command, 'traceroute');
+    const captureTool = captureToolInvocation(command);
     if (captureTool !== null && captureTool.elevated) {
       const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
@@ -2329,7 +1803,8 @@ export class LinuxTerminalSession extends TerminalSession {
     const captureTool = ctx.metadata.get('enter_capture_tool') as string | undefined;
     if (captureTool) {
       const { command, argv } = JSON.parse(captureTool) as { command: string; argv: string[] };
-      this.startCaptureTool(command, argv, true);
+      const dev = this.device;
+      if (dev instanceof LinuxMachine && this.shell) this.runStreamPlan(command, planCaptureTool(dev, this.shell, argv, true));
       return;
     }
     const rmanArgs = ctx.metadata.get('enter_rman') as string | undefined;
@@ -2780,7 +2255,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // quiet-mode ACL) is preserved via RouterSshServerContext's
     // isClientBlocked/recordAuthFailure hooks, now reachable from a real
     // auth exchange instead of a local call.
-    await this.connectAndEnterSsh(merged);
+    await this.connectAndEnterSsh(merged, args);
   }
 
   /**
@@ -2828,14 +2303,15 @@ export class LinuxTerminalSession extends TerminalSession {
       strict: StrictHostKeyChecking | undefined;
       command: string | null;
       hashKnownHosts?: boolean;
-      localForwards?: readonly LocalForward[];
-      remoteForwards?: readonly RemoteForward[];
-      dynamicForwards?: readonly DynamicForward[];
+      localForwards?: readonly SshPortForward[];
+      remoteForwards?: readonly SshPortForward[];
+      dynamicForwards?: readonly SshPortForward[];
       forwardAgent?: boolean;
       requestTty?: 'yes' | 'no' | 'force';
       authentication?: SshClientAuthentication;
       algorithms?: SshAlgorithmPreferences;
     },
+    args: readonly string[],
   ): Promise<void> {
     const dev = this.device as unknown as {
       executor?: {
@@ -3015,26 +2491,17 @@ export class LinuxTerminalSession extends TerminalSession {
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
     const linuxRemoteDevice = findLinuxMachineByIp(host);
-    // OpenSSH `-L`: register local-port forwarders on the local device,
-    // each tunnelling new connections through this SSH session.
-    const forwarders = this.installLocalForwards(session, host, meta);
-    // OpenSSH `-D`: SOCKS proxy on a local port — symmetric placement to
-    // `-L` (always on the local device).
-    const dynamicForwarders = this.installDynamicForwards(session, host, meta);
-    const localRequested = (meta.localForwards?.length ?? 0) + (meta.dynamicForwards?.length ?? 0);
-    if (localRequested > 0 && forwarders.length + dynamicForwarders.length === 0) {
-      this.addLine(NO_LOCAL_FORWARDING);
-    }
-    const remoteForwarders = await this.installRemoteForwards(session, host, meta);
+    const client = this.device instanceof LinuxMachine && this.shell
+      ? this.device.openSshClientProcess(args, session, this.shell)
+      : null;
+    this.openSshForwards(session, client, meta);
     const agentForwarding = linuxRemoteDevice
       ? this.installAgentForwarding(linuxRemoteDevice, meta)
       : null;
     const onSessionEnd = () => {
-      for (const f of forwarders) f.dispose();
-      for (const f of dynamicForwarders) f.dispose();
-      for (const f of remoteForwarders) f.dispose();
       agentForwarding?.detach();
-      session.disconnect();
+      if (client !== null) client.retire();
+      else session.disconnect();
     };
 
     // Every vendor is driven over the real, authenticated SSH channel.
@@ -3048,7 +2515,7 @@ export class LinuxTerminalSession extends TerminalSession {
       if (isOk(channelResult)) {
         const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
         const sourceHost = this.device.getHostname?.() ?? '';
-        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false);
+        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false, true);
         for (const line of banner) this.addLine(line);
         const promptHost = (wireRemoteDevice as unknown as { getSshHostname?: () => string })
           .getSshHostname?.() ?? host;
@@ -3066,6 +2533,8 @@ export class LinuxTerminalSession extends TerminalSession {
           (footer) => this.onRemoteHangup(footer),
           (line) => this.addLine(line),
         );
+        const size = this.windowSize;
+        if (size !== null) this.activeSubShell.resize?.(size.rows, size.cols);
         this._inputBuf = '';
         this.notify();
         return;
@@ -3562,7 +3031,12 @@ export class LinuxTerminalSession extends TerminalSession {
       // an ordinary command (docs/PRD-SSH-Unification.md §4bis B3).
       if (this.tryOpenRemoteEditor(line)) return true;
 
-      const onProgress = (text: string) => { this.addShellOutputLine(text); this.notify(); };
+      const screenBase = this.lines.length;
+      const onProgress = (text: string) => {
+        if (text === SCREEN_REPAINT_MARK) this.lines = this.lines.slice(0, screenBase);
+        else this.addShellOutputLine(text);
+        this.notify();
+      };
       const maybePromise = this.activeSubShell.processLine(line, onProgress);
 
       const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {
@@ -3836,7 +3310,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const pausedShell = this.shell;
     let remoteShell: LinuxShellSession | null = null;
     if (remote instanceof LinuxMachine) {
-      remoteShell = remote.openShellSession({ user });
+      remoteShell = this.adoptWindowSize(remote.openShellSession({ user }));
     }
     this.sshStack.push({
       device: this.device,
@@ -3891,115 +3365,35 @@ export class LinuxTerminalSession extends TerminalSession {
    * `connectAndEnterSsh` opens afterwards for the final hop. Each hop
    * defaults its user to the previous hop's user when omitted.
    */
-  /**
-   * Register `-L localPort:remoteHost:remotePort` forwarders on the local
-   * device for every entry in `meta.localForwards`. Returns the list of
-   * registered forwarders so the caller can dispose them when the SSH
-   * session ends.
-   */
-  private installLocalForwards(
+  private openSshForwards(
     session: SshSession,
-    sshHost: string,
-    meta: { localForwards?: readonly LocalForward[] },
-  ): SshLocalForwarder[] {
-    const forwards = meta.localForwards ?? [];
-    if (forwards.length === 0) return [];
-    const localDevice = this.getLocalDevice() as unknown as
-      import('@/network/devices/EndHost').EndHost;
-    if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
-      return [];
-    }
-    const tunnel = tunnelThroughSession(session, (line) => this.addLine(line, 'error'));
-    const out: SshLocalForwarder[] = [];
-    for (const fwd of forwards) {
-      const forwarder = new SshLocalForwarder(localDevice, tunnel, {
-        localPort: fwd.localPort,
-        remoteHost: fwd.remoteHost,
-        remotePort: fwd.remotePort,
-        sshHost,
-      });
-      const opening = forwarder.register(this.shell?.uid);
-      if (opening !== 'opened') {
-        for (const line of localListenerFailure('127.0.0.1', fwd.localPort, opening)) this.addLine(line);
+    client: SshClientHandle | null,
+    meta: {
+      localForwards?: readonly SshPortForward[];
+      remoteForwards?: readonly SshPortForward[];
+      dynamicForwards?: readonly SshPortForward[];
+    },
+  ): void {
+    const machine = this.device instanceof LinuxMachine ? this.device : null;
+    const local = [...(meta.localForwards ?? []), ...(meta.dynamicForwards ?? [])];
+    let opened = 0;
+    for (const forward of local) {
+      const opening = machine !== null && client !== null
+        ? machine.openSshLocalForward(
+          forward, session, client.pid, this.shell?.uid ?? 0, (line) => this.addLine(line, 'error'))
+        : 'permission-denied';
+      if (opening === 'opened') {
+        opened += 1;
         continue;
       }
-      out.push(forwarder);
+      for (const line of localListenerFailure(forward.bindAddress, forward.listenPort, opening)) this.addLine(line);
     }
-    return out;
-  }
-
-  /**
-   * Register `-D socksPort` SOCKS proxies on the local device. Each one
-   * accepts SOCKS5 CONNECT requests and bridges through the SSH session.
-   */
-  private installDynamicForwards(
-    session: SshSession,
-    sshHost: string,
-    meta: { dynamicForwards?: readonly DynamicForward[] },
-  ): SshDynamicForwarder[] {
-    const forwards = meta.dynamicForwards ?? [];
-    if (forwards.length === 0) return [];
-    const localDevice = this.getLocalDevice() as unknown as
-      import('@/network/devices/EndHost').EndHost;
-    if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
-      return [];
-    }
-    const tunnel = tunnelThroughSession(session, (line) => this.addLine(line, 'error'));
-    const out: SshDynamicForwarder[] = [];
-    for (const fwd of forwards) {
-      const forwarder = new SshDynamicForwarder(localDevice, tunnel, {
-        socksPort: fwd.socksPort,
-        bindAddress: fwd.bindAddress,
-        sshHost,
-      });
-      const opening = forwarder.register(this.shell?.uid);
-      if (opening !== 'opened') {
-        const shown = fwd.bindAddress === null || fwd.bindAddress === undefined ? '127.0.0.1'
-          : fwd.bindAddress === '*' ? '0.0.0.0' : fwd.bindAddress;
-        for (const line of localListenerFailure(shown, fwd.socksPort, opening)) this.addLine(line);
-        continue;
+    if (local.length > 0 && opened === 0) this.addLine(NO_LOCAL_FORWARDING);
+    for (const forward of meta.remoteForwards ?? []) {
+      if (machine === null || !machine.openSshRemoteForward(forward, session)) {
+        this.addLine(remoteForwardFailure(forward.listenPort));
       }
-      out.push(forwarder);
     }
-    return out;
-  }
-
-  /**
-   * Mirror of {@link installLocalForwards} for `-R`. Each entry opens
-   * a listener on the *remote* device for `remotePort`. Returns the
-   * list of registered forwarders so the caller can dispose them
-   * when the SSH session ends.
-   */
-  private async installRemoteForwards(
-    session: SshSession,
-    sshHost: string,
-    meta: { remoteForwards?: readonly RemoteForward[] },
-  ): Promise<SshRemoteForwarder[]> {
-    const forwards = meta.remoteForwards ?? [];
-    if (forwards.length === 0) return [];
-    const localDevice = this.getLocalDevice() as unknown as
-      import('@/network/devices/EndHost').EndHost;
-    if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
-      return [];
-    }
-    const resolver = (this.getLocalDevice() as unknown as {
-      executor?: { resolveHostIpv4?: (name: string) => string | null };
-    }).executor;
-    const out: SshRemoteForwarder[] = [];
-    for (const fwd of forwards) {
-      const forwarder = new SshRemoteForwarder(session, localDevice, {
-        remotePort: fwd.remotePort,
-        localHost: fwd.localHost,
-        localPort: fwd.localPort,
-        sshHost,
-      }, (name) => resolver?.resolveHostIpv4?.(name) ?? null);
-      if (!await forwarder.register()) {
-        this.addLine(remoteForwardFailure(fwd.remotePort));
-        continue;
-      }
-      out.push(forwarder);
-    }
-    return out;
   }
 
   /**
@@ -4084,23 +3478,6 @@ function homeDirectoryOn(device: Equipment, user: string): string {
   return device instanceof LinuxMachine
     ? device.homeDirectoryOf(user)
     : user === 'root' ? '/root' : `/home/${user}`;
-}
-
-function findEquipmentByIp(targetIp: string): Equipment | null {
-  const all = EquipmentRegistry.getInstance().getAll();
-  for (const eq of all) {
-    const portsObj = (eq as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
-    if (!portsObj) continue;
-    for (const port of portsObj.values()) {
-      const ip = port.getIPAddress?.();
-      if (ip && ip.toString() === targetIp) {
-        if (typeof (eq as unknown as { executeCommand?: unknown }).executeCommand === 'function') {
-          return eq;
-        }
-      }
-    }
-  }
-  return null;
 }
 
 function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {

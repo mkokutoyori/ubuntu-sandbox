@@ -191,14 +191,14 @@ describe('Scénario 11 — marque comme mouvement d\'opérateur (d`a, d\'a, y\'a
     expect(vim.lines[0]).toBe('fgh');
   });
 
-  it("d`a vers une marque sur une autre ligne annule (mouvement non résolu, comme un vrai mouvement inconnu)", () => {
+  it("d`a vers une marque sur une autre ligne supprime la plage exclusive, devenue linéaire quand elle part du retrait", () => {
     const content = 'line one\nline two\n';
     const fs = new InMemoryEditorFsContext({ '/tmp/op3.txt': content });
     const vim = new VimEngine(fs, '/tmp/op3.txt', content, false, 'vim');
     press(vim, 'm'); press(vim, 'a');
     press(vim, 'j');
     press(vim, 'd'); press(vim, '`'); press(vim, 'a');
-    expect(vim.lines).toEqual(['line one', 'line two']); // unchanged, operator cancelled
+    expect(vim.lines).toEqual(['line two']);
   });
 
   it("d'a supprime toutes les lignes entre le curseur et la ligne de la marque, incluses (linéaire)", () => {

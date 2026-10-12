@@ -30,7 +30,10 @@ export type SocketState =
   | 'CLOSING'
   | 'LAST_ACK'
   | 'TIME_WAIT'
+  | 'BOUND'
   | 'CLOSED';
+
+export type ProtocolSocketState = Exclude<SocketState, 'BOUND'>;
 
 export interface SocketEntry {
   /** Unique numeric identifier within this SocketTable */
@@ -47,6 +50,7 @@ export interface SocketEntry {
   pid?: number;
   /** Human-readable process name (optional) */
   processName?: string;
+  serviceName?: string;
   uid?: number;
   boundDevice?: string;
   /**
@@ -103,7 +107,7 @@ export class SocketTable {
     pid?: number,
     processName?: string,
     banner?: string,
-    options?: { reuseAddr?: boolean; ownerUid?: number; boundDevice?: string },
+    options?: { reuseAddr?: boolean; ownerUid?: number; boundDevice?: string; serviceName?: string },
   ): SocketEntry {
     if (localPort !== 0 && options?.ownerUid !== undefined && this.bindingPolicy !== null
       && !this.bindingPolicy.permits(localPort, { uid: options.ownerUid })) {
@@ -138,6 +142,7 @@ export class SocketTable {
       state: 'LISTEN',
       pid,
       processName,
+      serviceName: options?.serviceName,
       banner,
       uid: options?.ownerUid,
       boundDevice: options?.boundDevice,
@@ -199,6 +204,16 @@ export class SocketTable {
     this.sockets.set(this.idCounter, entry);
     this.bindings.add(this.bindKey(protocol, actualPort, localAddress));
     return entry;
+  }
+
+  setListenerState(protocol: SocketProtocol, localAddress: string, localPort: number, state: SocketState): boolean {
+    for (const entry of this.sockets.values()) {
+      if (entry.remoteAddress !== '*' || entry.protocol !== protocol) continue;
+      if (entry.localAddress !== localAddress || entry.localPort !== localPort) continue;
+      entry.state = state;
+      return true;
+    }
+    return false;
   }
 
   transition(socketId: number, state: SocketState): boolean {
@@ -350,7 +365,7 @@ export class SocketTable {
     localPort: number;
     remoteAddress: string;
     remotePort: number;
-  }, pid: number): boolean {
+  }, pid: number, serviceName?: string): boolean {
     for (const entry of this.sockets.values()) {
       if (entry.remoteAddress === '*') continue;
       if (entry.protocol !== params.protocol) continue;
@@ -358,6 +373,7 @@ export class SocketTable {
       if (entry.remoteAddress !== params.remoteAddress) continue;
       if (entry.remotePort !== params.remotePort) continue;
       entry.pid = pid;
+      entry.serviceName = serviceName;
       return true;
     }
     return false;

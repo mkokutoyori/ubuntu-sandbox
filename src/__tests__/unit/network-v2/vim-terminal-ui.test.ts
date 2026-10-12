@@ -7,19 +7,16 @@
  * codes d'erreur exacts (E37/E45/E212/E492/E325).
  *
  * TDD: written against the headless VimEngine (the state the React
- * overlay renders from) plus the pure `vimPositionLabel` helper the
- * component uses for its Top/Bot/All/N% ruler. Full syntax highlighting
- * and live search-match highlighting are NOT implemented — they would
- * require replacing the plain <textarea> content area with a per-token
- * span renderer, a much larger architectural change out of scope here;
- * this is a deliberate, disclosed limitation rather than a faked pass.
+ * overlay renders from). The ruler (position and Top/Bot/All/N%) is read
+ * from the last row of `engine.screen`, the row the overlay paints.
+ * Syntax highlighting and live search-match highlighting are NOT
+ * implemented; this is a disclosed limitation rather than a faked pass.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { VimEngine } from '@/network/devices/linux/editors/VimEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
-import { vimPositionLabel } from '@/components/editors/VimEditor';
 
 function typeText(engine: { applyKey(k: EditorKeyInput): void }, text: string): void {
   for (const ch of text) engine.applyKey(editorKey(ch));
@@ -68,22 +65,41 @@ describe('Scénario UI-2 — numéros de ligne : :set number / :set relativenumb
   });
 });
 
-describe('Scénario UI-2 — position/pourcentage dans la mode line (Top/Bot/All/N%)', () => {
+function rulerLabel(engine: VimEngine): string {
+  const bottom = engine.screen.rows[engine.screen.rows.length - 1].text;
+  return bottom.slice(bottom.length - 3).trim();
+}
+
+function longFile(lines: number): VimEngine {
+  const content = Array.from({ length: lines }, (_, i) => `l${i + 1}`).join('\n') + '\n';
+  const fs = new InMemoryEditorFsContext({ '/tmp/long.txt': content });
+  const vim = new VimEngine(fs, '/tmp/long.txt', content, false, 'vim');
+  vim.resize(24, 80);
+  return vim;
+}
+
+describe('Scénario UI-2 — position/pourcentage dans la règle (Top/Bot/All/N%)', () => {
   it('"All" quand tout le fichier tient dans la fenêtre visible', () => {
-    expect(vimPositionLabel(0, 5, 30)).toBe('All');
-    expect(vimPositionLabel(4, 5, 30)).toBe('All');
+    expect(rulerLabel(longFile(5))).toBe('All');
+    const vim = longFile(5);
+    typeText(vim, 'G');
+    expect(rulerLabel(vim)).toBe('All');
   });
 
-  it('"Top" quand le curseur est sur la première ligne d\'un fichier trop long', () => {
-    expect(vimPositionLabel(0, 100, 30)).toBe('Top');
+  it('"Top" quand la première ligne d\'un fichier trop long est en haut de la fenêtre', () => {
+    expect(rulerLabel(longFile(100))).toBe('Top');
   });
 
-  it('"Bot" quand le curseur est sur la dernière ligne d\'un fichier trop long', () => {
-    expect(vimPositionLabel(99, 100, 30)).toBe('Bot');
+  it('"Bot" quand la dernière ligne d\'un fichier trop long est dans la fenêtre', () => {
+    const vim = longFile(100);
+    typeText(vim, 'G');
+    expect(rulerLabel(vim)).toBe('Bot');
   });
 
   it('un pourcentage entre Top et Bot pour un fichier trop long', () => {
-    expect(vimPositionLabel(49, 100, 30)).toBe('50%');
+    const vim = longFile(100);
+    typeText(vim, '50G');
+    expect(rulerLabel(vim)).toMatch(/^\d+%$/);
   });
 });
 

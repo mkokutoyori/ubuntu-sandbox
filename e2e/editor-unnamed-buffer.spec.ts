@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoPromptAnswer } from './helpers/nanoScreen';
 
 /**
  * Scénario (e2e) — `nano`/`vim` invoqués sans nom de fichier ouvrent un
@@ -50,8 +51,7 @@ test.describe('Scénario (e2e) — nano/vim sans nom de fichier', () => {
     const status = page.locator('[data-testid="nano-status-message"]');
     await expect(status).toContainText('File Name to Write');
     // The filename field must start EMPTY, never prefilled with "New Buffer".
-    const filenameInput = page.locator('[data-testid="nano-status-message"] input');
-    await expect(filenameInput).toHaveValue('');
+    expect(await nanoPromptAnswer(page, 'File Name to Write:')).toBe('');
 
     await page.keyboard.type('/tmp/really-named.txt');
     await page.keyboard.press('Enter');
@@ -72,8 +72,7 @@ test.describe('Scénario (e2e) — nano/vim sans nom de fichier', () => {
   test('vim seul : :w sans nom échoue avec E32, ne crée rien sur le disque', async ({ page }) => {
     await typeCmd(page, 'vim');
     await expect(page.getByText('GNU nano')).not.toBeVisible();
-    const textarea = page.locator('textarea').first();
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="vim-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('i');
     await page.keyboard.type('hello');

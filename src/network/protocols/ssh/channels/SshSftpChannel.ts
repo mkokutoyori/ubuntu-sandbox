@@ -57,6 +57,8 @@ export class SshSftpChannel
   private _remoteCwd = '.';
   private nextRequestId = 1;
   private negotiatedVersion = CLIENT_SFTP_VERSION;
+  private settleSubsystem: (accepted: boolean) => void = () => undefined;
+  private readonly subsystemAnswer = new Promise<boolean>((resolve) => { this.settleSubsystem = resolve; });
 
   constructor(private readonly connection: SshConnection, channelId: number) {
     super(channelId, 'sftp');
@@ -73,10 +75,12 @@ export class SshSftpChannel
     });
     channel.whenOpened((failure) => {
       if (failure !== null) {
+        this.settleSubsystem(false);
         this.close();
         return;
       }
       void channel.request('subsystem', encodeStringPayload(SFTP_SUBSYSTEM), true).then((accepted) => {
+        this.settleSubsystem(accepted);
         if (!accepted) this.close();
       });
       const version = this.roundTrip({ type: 'INIT', version: CLIENT_SFTP_VERSION });
@@ -134,6 +138,8 @@ export class SshSftpChannel
       default: return { ok: false, error: `unsupported op: ${req.op}` };
     }
   }
+
+  accepted(): Promise<boolean> { return this.subsystemAnswer; }
 
   get remoteCwd(): string {
     return this._remoteCwd;

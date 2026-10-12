@@ -24,11 +24,6 @@
  * `WireExecTarget.forksToBackground` et l'appel de `releaseSshClient` par le reaper de `LinuxMachine` a la
  * mort du processus.
  *
- * Ce qui n'est PAS construit : le chemin du terminal interactif (`LinuxTerminalSession`) ouvre toujours ses
- * ecoutes `-L` sans processus proprietaire ; et le serveur laisse les processus de session (`sshd: user
- * [priv]` et `-bash`) dans `ps` apres la fin de la session, defaut anterieur a ce changement : `reap`
- * n'agit que sur un zombie et `terminate` n'en laisse aucun.
- *
  * Discrimination (fichier copie sur origin/mandeng 75c5280d8) : NEUF cas sur onze tombent. Les deux autres
  * passent des deux cotes : un TEMOIN (un tunnel relaie des octets et `ps` liste `sshd` des deux cotes : le
  * labo est sain) et une NON-REGRESSION (une commande `ssh` qui ne laisse rien derriere elle ne laisse pas de

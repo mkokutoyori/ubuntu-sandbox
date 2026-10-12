@@ -1,4 +1,5 @@
 import { ACCESS_GROUPS } from '../../../authz/AccessMatrix';
+import { parseAuthorizedKeysLine } from '../../../../../protocols/ssh/SshPureUtils';
 import { passwordPolicyRefusal } from './passwordPolicy';
 import {
   addressMask, choice, refList, reference, text, word,
@@ -29,6 +30,19 @@ const GROUP_HELP: Readonly<Record<string, string>> = Object.freeze({
 });
 
 const TRUSTHOST_COUNT = 10;
+const SSH_PUBLIC_KEY_COUNT = 3;
+
+function sshPublicKeyAttributes(): FortiAttributeSpec[] {
+  const out: FortiAttributeSpec[] = [];
+  for (let index = 1; index <= SSH_PUBLIC_KEY_COUNT; index++) {
+    out.push({
+      ...text(`ssh-public-key${index}`, `Public key ${index} of the administrator, for SSH public-key login.`),
+      valueRefusal: (value) => (value === '' || parseAuthorizedKeysLine(value) !== null
+        ? null : 'the value is not an SSH public key (expected "<key type> <base64 key>").'),
+    });
+  }
+  return out;
+}
 
 function rightsAttributes(): FortiAttributeSpec[] {
   return ACCESS_GROUPS.map(group =>
@@ -101,6 +115,7 @@ export const SYSTEM_ADMIN: FortiTableSpec = {
       ['system accprofile']),
     refList('vdom', 'Virtual domains this administrator can access.', ['vdom']),
     ...trustHostAttributes(),
+    ...sshPublicKeyAttributes(),
     {
       ...choice('two-factor', 'Enable/disable two-factor authentication.', [
         { keyword: 'disable', description: 'No second factor.' },
@@ -126,6 +141,7 @@ export const SYSTEM_ADMIN: FortiTableSpec = {
       profile: object.effective('accprofile')[0] ?? 'no_access',
       vdoms: [...object.effective('vdom')],
       trustHosts: readTrustHosts(object),
+      sshPublicKeys: readSshPublicKeys(object),
       comments: object.effective('comments')[0] || undefined,
     });
   },
@@ -133,6 +149,15 @@ export const SYSTEM_ADMIN: FortiTableSpec = {
     context.device.removeAdminAccount(key);
   },
 };
+
+function readSshPublicKeys(object: FortiObjectView): string[] {
+  const out: string[] = [];
+  for (let index = 1; index <= SSH_PUBLIC_KEY_COUNT; index++) {
+    const declared = object.effective(`ssh-public-key${index}`)[0];
+    if (declared !== undefined && declared !== '') out.push(declared);
+  }
+  return out;
+}
 
 function readTrustHosts(object: FortiObjectView) {
   const out: { index: number; address: string; mask: string }[] = [];

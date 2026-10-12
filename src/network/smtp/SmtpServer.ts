@@ -1,4 +1,5 @@
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { type IScheduler, type TimerHandle, getDefaultScheduler } from '@/events/Scheduler';
 import { SmtpServerSession, type SmtpServerConfig } from './SmtpServerSession';
 import { decodeCommand, encodeReply, reply, replyEnhanced, ENHANCED } from './replies';
@@ -53,8 +54,9 @@ export class SmtpServer {
     this.beforeMessageAccepted = opts.beforeMessageAccepted;
   }
 
-  start(): void {
-    this.listener = this.tcpStack.listen(this.port, { onAccept: (socket) => this.handleConnection(socket) });
+  start(identity?: ListenerIdentity): void {
+    if (this.listener) return;
+    this.listener = this.tcpStack.listen(this.port, { onAccept: (socket) => this.handleConnection(socket), identity });
   }
 
   stop(): void {

@@ -7,6 +7,7 @@
  * Also provides registerDisplayCommands() to wire them onto a CommandTrie.
  */
 
+import { huaweiHeaderHost, headerConfigLines } from './HuaweiHeaders';
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { vrpRenderOffset } from '@/cli/vendors/vrp/vrpClockFamily';
@@ -506,10 +507,12 @@ export function displayCurrentConfig(
 ): string {
   const ports = router._getPortsInternal();
   const table = router._getRoutingTableInternal();
+  const headers = headerConfigLines(huaweiHeaderHost(() => router));
   const lines = [
     '#',
     `sysname ${router._getHostnameInternal()}`,
     '#',
+    ...(headers.length > 0 ? [...headers, '#'] : []),
   ];
 
   const dnsCfg = router._getDnsConfig();

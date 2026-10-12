@@ -1,4 +1,5 @@
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { IEventBus } from '@/events/EventBus';
 import type { DhcpAdmissionPolicy } from '@/network/dhcp/types';
 import { DHCP_FAILOVER_PORT } from '@/network/core/WellKnownPorts';
@@ -16,6 +17,7 @@ import {
 export interface FailoverHost {
   now(): number;
   tcp(): TcpStack;
+  identity(): ListenerIdentity;
   bus(): IEventBus;
   deviceId(): string;
   hostName(): string;
@@ -80,7 +82,7 @@ export class DhcpFailoverService {
   start(): void {
     if (this.listening) return;
     this.host.tcp().listen(DHCP_FAILOVER_PORT, {
-      identity: { pid: 1220, processName: 'svchost.exe' },
+      identity: this.host.identity(),
       onAccept: (socket: TcpSocket) => this.accept(socket),
     });
     this.unsubscribers = [

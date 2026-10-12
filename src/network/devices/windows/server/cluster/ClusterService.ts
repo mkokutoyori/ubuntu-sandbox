@@ -21,6 +21,7 @@
  * manual one.
  */
 import type { EndHost, UdpDelivery } from '@/network/devices/EndHost';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { IPAddress } from '@/network/core/types';
 import type { IScheduler, TimerHandle } from '@/events/Scheduler';
 import { getDefaultScheduler } from '@/events/Scheduler';
@@ -80,10 +81,10 @@ export class ClusterService {
     for (const node of this.listNodes()) this.lastKnownNodeStates.set(node.name, node.state);
   }
 
-  start(): void {
+  start(identity: ListenerIdentity = {}): void {
     if (this.bound) return;
     this.bound = true;
-    this.host.udpBind(CLUSTER_HEARTBEAT_PORT, (dgram) => this.onHeartbeat(dgram));
+    this.host.udpBind(CLUSTER_HEARTBEAT_PORT, (dgram) => this.onHeartbeat(dgram), identity.processName, { pid: identity.pid, service: identity.service });
     this.heartbeatTimer = this.getScheduler().setInterval(() => this.onHeartbeatTick(), HEARTBEAT_INTERVAL_MS);
     this.sendHeartbeats();
   }

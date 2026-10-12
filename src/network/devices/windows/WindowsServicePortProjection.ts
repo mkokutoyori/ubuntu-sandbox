@@ -1,62 +1,121 @@
-/**
- * WindowsServicePortProjection — reactive socket-table coherence for Windows
- * services.
- *
- * `WindowsServiceManager` no longer touches the socket table itself: it
- * announces every start/stop on the bus. This projection subscribes to that
- * stream and binds / releases the service's listening ports on the kernel
- * {@link SocketTable}, so stopping a service with `sc`/`net stop` removes
- * its ports from `netstat` and starting it puts them back.
- *
- * Windows analogue of the Linux {@link ServicePortProjection}.
- */
-
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import type { SocketTable } from '../../core/SocketTable';
-import type { WindowsServiceEventPayload } from './events';
-import { WINDOWS_SERVICE_LISTENERS } from './WindowsServiceManager';
+import type { TcpAcceptHandler, TcpListenOptions } from '../../tcp/TcpStack';
+import type { ListenerIdentity } from '../../tcp/ListenerSocketSink';
 
-/** Default bind address when a listener spec does not pin one. */
-const ALL_INTERFACES = '0.0.0.0';
+export interface ServiceListenerStack {
+  listen(localPort: number, opts: TcpListenOptions): unknown;
+  closeListener(localPort: number): void;
+  listListeners(): ReadonlyArray<{ readonly localPort: number }>;
+}
+
+export interface ServiceListenerProcesses {
+  identityOfService(serviceName: string): ListenerIdentity;
+  identityOfImage(image: string): ListenerIdentity;
+}
+
+export type ListenerOwner =
+  | { readonly service: string }
+  | { readonly image: string };
+
+export interface WindowsEndpoint {
+  open(identity: ListenerIdentity): void;
+  close(): void;
+}
+
+export interface WindowsEndpointDeclaration {
+  readonly owner: ListenerOwner | (() => ListenerOwner);
+  readonly active: () => boolean;
+  readonly endpoint: WindowsEndpoint;
+}
+
+export interface WindowsListenerDeclaration {
+  readonly ports: readonly number[];
+  readonly owner: ListenerOwner;
+  readonly active: () => boolean;
+  readonly accept: (port: number) => TcpAcceptHandler;
+}
 
 export class WindowsServicePortProjection {
   private readonly subscriptions: Unsubscribe[] = [];
+  private readonly declarations: WindowsEndpointDeclaration[] = [];
+  private reconciling = false;
+  private requested = false;
 
   constructor(
     bus: IEventBus,
     private readonly deviceId: string,
-    private readonly socketTable: SocketTable,
+    private readonly stack: ServiceListenerStack,
+    private readonly processes: ServiceListenerProcesses,
   ) {
     this.subscriptions.push(
-      bus.subscribe('windows.service.started', (e) => this.onStarted(e.payload)),
-      bus.subscribe('windows.service.stopped', (e) => this.onStopped(e.payload)),
+      bus.subscribe('windows.service.started', (e) => this.onServiceEvent(e.payload.deviceId)),
+      bus.subscribe('windows.service.stopped', (e) => this.onServiceEvent(e.payload.deviceId)),
+      bus.subscribe('windows.service.crashed', (e) => this.onServiceEvent(e.payload.deviceId)),
     );
   }
 
-  /** Detach every subscription — call before discarding the projection. */
   dispose(): void {
     for (const off of this.subscriptions) off();
     this.subscriptions.length = 0;
   }
 
-  private onStarted(p: WindowsServiceEventPayload): void {
-    if (p.deviceId !== this.deviceId) return;
-    const spec = WINDOWS_SERVICE_LISTENERS[p.serviceName.toLowerCase()];
-    if (!spec) return;
-    for (const s of spec.sockets) {
-      if (this.socketTable.isPortBound(s.port, s.protocol)) continue;
-      try {
-        this.socketTable.bind(s.protocol, s.address ?? ALL_INTERFACES, s.port, spec.pid, spec.processName);
-      } catch { /* already bound — keep the existing entry */ }
+  declare(declaration: WindowsListenerDeclaration): void {
+    this.declareEndpoint({
+      owner: declaration.owner,
+      active: declaration.active,
+      endpoint: this.tcpEndpoint(declaration.ports, declaration.accept),
+    });
+  }
+
+  declareEndpoint(declaration: WindowsEndpointDeclaration): void {
+    this.declarations.push(declaration);
+  }
+
+  reconcile(): void {
+    this.requested = true;
+    if (this.reconciling) return;
+    this.reconciling = true;
+    try {
+      let failure: unknown = null;
+      while (this.requested) {
+        this.requested = false;
+        for (const declaration of this.declarations) {
+          try {
+            if (declaration.active()) declaration.endpoint.open(this.ownerOf(declaration.owner));
+            else declaration.endpoint.close();
+          } catch (error) {
+            failure ??= error;
+          }
+        }
+      }
+      if (failure !== null) throw failure;
+    } finally {
+      this.reconciling = false;
     }
   }
 
-  private onStopped(p: WindowsServiceEventPayload): void {
-    if (p.deviceId !== this.deviceId) return;
-    const spec = WINDOWS_SERVICE_LISTENERS[p.serviceName.toLowerCase()];
-    if (!spec) return;
-    for (const s of spec.sockets) {
-      this.socketTable.unbind(s.protocol, s.address ?? ALL_INTERFACES, s.port);
-    }
+  private onServiceEvent(deviceId: string): void {
+    if (deviceId === this.deviceId) this.reconcile();
+  }
+
+  private tcpEndpoint(ports: readonly number[], accept: (port: number) => TcpAcceptHandler): WindowsEndpoint {
+    return {
+      open: (identity) => {
+        const open = new Set(this.stack.listListeners().map((listener) => listener.localPort));
+        for (const port of ports) {
+          if (!open.has(port)) this.stack.listen(port, { onAccept: accept(port), identity });
+        }
+      },
+      close: () => {
+        for (const port of ports) this.stack.closeListener(port);
+      },
+    };
+  }
+
+  private ownerOf(declared: ListenerOwner | (() => ListenerOwner)): ListenerIdentity {
+    const owner = typeof declared === 'function' ? declared() : declared;
+    return 'service' in owner
+      ? this.processes.identityOfService(owner.service)
+      : this.processes.identityOfImage(owner.image);
   }
 }

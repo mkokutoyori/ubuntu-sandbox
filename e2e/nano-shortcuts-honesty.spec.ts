@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoText } from './helpers/nanoScreen';
 
 /**
  * Scénario (e2e) — la barre de raccourcis de nano promettait des touches
@@ -41,20 +42,19 @@ test.describe('Scénario (e2e) — barre de raccourcis nano : ^G, ^X→Y, ^T, ^R
 
   test('^G ouvre un véritable écran d\'aide, ^X le referme', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/help.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('Control+g');
-    await expect(textarea).toHaveValue(/GNU nano Help Text/);
+    await expect.poll(() => nanoText(page)).toMatch(/GNU nano Help Text/);
 
     await page.keyboard.press('Control+x');
-    await expect(textarea).not.toHaveValue(/GNU nano Help Text/);
+    await expect.poll(() => nanoText(page)).not.toMatch(/GNU nano Help Text/);
   });
 
   test('^X puis Y repasse par "File Name to Write:" avant d\'écrire', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/exit-chain.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    const body = page.locator('[data-testid="nano-body"]');
+    await expect(body).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('contenu');
     await page.keyboard.press('Control+x');
@@ -62,7 +62,7 @@ test.describe('Scénario (e2e) — barre de raccourcis nano : ^G, ^X→Y, ^T, ^R
 
     const status = page.locator('[data-testid="nano-status-message"]');
     await expect(status).toContainText('File Name to Write');
-    await expect(textarea).toBeVisible(); // still in nano, not exited yet
+    await expect(body).toBeVisible();
 
     await page.keyboard.press('Enter');
     await expect(page.locator('[data-testid="nano-titlebar"]')).not.toBeVisible({ timeout: 5_000 });
@@ -74,23 +74,21 @@ test.describe('Scénario (e2e) — barre de raccourcis nano : ^G, ^X→Y, ^T, ^R
 
   test('^T Execute Command insère la sortie d\'une commande au curseur', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/exec.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('Control+t');
     const status = page.locator('[data-testid="nano-status-message"]');
-    await expect(status).toContainText('Execute Command');
+    await expect(status).toContainText('Command to execute');
 
     await page.keyboard.type('echo INSERTED');
     await page.keyboard.press('Enter');
 
-    await expect(textarea).toHaveValue(/INSERTED/);
+    await expect.poll(() => nanoText(page)).toMatch(/INSERTED/);
   });
 
   test('^J Justify reformate le paragraphe courant', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/justify.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('alpha');
     await page.keyboard.press('Enter');
@@ -99,6 +97,6 @@ test.describe('Scénario (e2e) — barre de raccourcis nano : ^G, ^X→Y, ^T, ^R
     await page.keyboard.type('gamma');
 
     await page.keyboard.press('Control+j');
-    await expect(textarea).toHaveValue('alpha beta gamma');
+    await expect.poll(() => nanoText(page)).toBe('alpha beta gamma');
   });
 });

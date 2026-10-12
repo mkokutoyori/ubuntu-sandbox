@@ -59,6 +59,7 @@ export class Http1ServerSession {
   ) {}
 
   start(identity?: ListenerIdentity, backlog?: number): void {
+    if (this.listener) return;
     this.listener = this.tcpStack.listen(this.port, {
       onAccept: (socket) => this.handleConnection(socket),
       identity,

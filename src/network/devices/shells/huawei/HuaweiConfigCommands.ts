@@ -459,10 +459,6 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
   if (head === 'terminal' && args[1] === 'monitor') {
     return '';
   }
-  if (head === 'header') {
-    (router as any)._setSshBanner?.('');
-    return '';
-  }
   if (head === 'ip' && args[1] === 'pool' && args[2]) {
     router._getDHCPServerInternal().deletePool?.(args[2]);
     return '';

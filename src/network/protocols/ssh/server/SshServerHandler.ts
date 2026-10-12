@@ -299,7 +299,7 @@ export class SshServerHandler {
         reason: reason === 'rst' ? 'reset' : 'closed',
         timestamp: simulationNowMs(),
       });
-      if (closedUser !== null) this.ctx.connectionClosed?.(closedUser, clientIp);
+      if (closedUser !== null) this.ctx.connectionClosed?.(closedUser, clientIp, conn.remotePort);
       this.ctx.connectionEnded?.(clientIp, closedPort);
       userCtx = null;
     });
@@ -438,7 +438,8 @@ export class SshServerHandler {
             }
             case 'subsystem': {
               const subsystem = decodeStringPayload(request.payload);
-              if (info.started || subsystem !== 'sftp') {
+              if (info.started || subsystem !== 'sftp'
+                || this.ctx.subsystemAdmitted?.('sftp', user) === false) {
                 request.reply(false);
                 return;
               }

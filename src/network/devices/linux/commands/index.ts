@@ -93,6 +93,10 @@ import { visudoCommand } from './iam/Visudo';
 import { ausearchCommand } from './audit/Ausearch';
 import { aureportCommand } from './audit/Aureport';
 import { auditctlCommand } from './audit/Auditctl';
+import { augenrulesCommand } from './audit/Augenrules';
+import { ausyscallCommand } from './audit/Ausyscall';
+import { aulastCommand } from './audit/Aulast';
+import { aulastlogCommand } from './audit/Aulastlog';
 import { logrotateCommand } from './system/Logrotate';
 import { rebootCommand } from './system/Reboot';
 import { dmesgCommand } from './system/Dmesg';
@@ -240,6 +244,10 @@ export {
   ausearchCommand,
   aureportCommand,
   auditctlCommand,
+  augenrulesCommand,
+  ausyscallCommand,
+  aulastCommand,
+  aulastlogCommand,
   logrotateCommand,
   rebootCommand,
   dmesgCommand,
@@ -403,6 +411,10 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ausearchCommand,
   aureportCommand,
   auditctlCommand,
+  augenrulesCommand,
+  ausyscallCommand,
+  aulastCommand,
+  aulastlogCommand,
   logrotateCommand,
   rebootCommand,
   dmesgCommand,

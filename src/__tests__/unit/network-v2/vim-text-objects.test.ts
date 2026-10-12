@@ -170,11 +170,11 @@ describe('Scénario 12 — i( / a( (+ alias b), i{ / a{ (+ alias B), i[ / a[', (
     expect(vim.lines[0]).toBe('block {} end');
   });
 
-  it('da{ supprime les accolades elles-mêmes', () => {
+  it('da{ supprime les accolades elles-mêmes, sans toucher aux blancs voisins', () => {
     const vim = make('x = { y } ;\n');
     moveToCol(vim, 6);
     press(vim, 'd'); press(vim, 'a'); press(vim, '{');
-    expect(vim.lines[0]).toBe('x = ;');
+    expect(vim.lines[0]).toBe('x =  ;');
   });
 
   it('di[ / da[ ciblent les crochets', () => {

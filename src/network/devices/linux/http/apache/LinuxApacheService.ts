@@ -15,7 +15,7 @@ import type { ServiceSocketServer } from '../../ports/ServiceSocketServer';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { NginxHost } from '../nginx/LinuxNginxService';
 import {
-  parseApacheConfig, apacheWarnings, selectVirtualHost, effectiveClientVerify, loadedApacheModules,
+  parseApacheConfig, apacheWarnings, selectVirtualHost, effectivePathTransport, loadedApacheModules,
   type ApacheConfig, type ApacheVirtualHost,
 } from './ApacheConfig';
 import {
@@ -256,12 +256,19 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
       ...(verifying === undefined && port.vhosts.some((entry) => entry.tls.verifier !== null)
         ? { verifier: port.vhosts.find((entry) => entry.tls.verifier !== null)!.tls.verifier! }
         : {}),
-      renegotiateForClientCertificate: (request) => {
+      requirePathTransport: (request) => {
         const vhosts = port.vhosts.map((entry) => entry.vhost);
         const vhost = selectVirtualHost(this.config, vhosts[0].port, request.headers.get('Host') ?? '', vhosts);
-        const mode = vhost === null ? null : effectiveClientVerify(vhost, request.target ?? '/');
-        if (mode === null || mode === 'none') return null;
-        return mode === 'require' ? 'strict' : mode === 'optional' ? 'optional' : 'optional_no_ca';
+        const wanted = vhost === null ? null : effectivePathTransport(vhost, request.target ?? '/');
+        if (wanted === null) return null;
+        const mode = wanted.verifyClient;
+        const clientCertPolicy = mode === null || mode === 'none' ? undefined
+          : mode === 'require' ? 'strict' as const : mode === 'optional' ? 'optional' as const : 'optional_no_ca' as const;
+        if (clientCertPolicy === undefined && wanted.cipherSuite === null) return null;
+        return {
+          ...(clientCertPolicy !== undefined ? { clientCertPolicy } : {}),
+          ...(wanted.cipherSuite !== null ? { cipherList: wanted.cipherSuite } : {}),
+        };
       },
       ...(verifying
         ? {

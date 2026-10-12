@@ -13,6 +13,7 @@
  */
 
 import type { EndHost } from '@/network/devices/EndHost';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { WindowsCertStore } from '@/network/devices/windows/CertStore';
 import { contentTypeForPath } from '@/network/http/HttpTypes';
@@ -82,6 +83,8 @@ interface SiteState extends WebsiteInfo {
 export class WindowsIisRole {
   private readonly sites = new Map<string, SiteState>();
   private readonly appPools = new Map<string, AppPoolInfo>();
+  private listening = false;
+  private identity: ListenerIdentity = {};
 
   constructor(
     private readonly host: EndHost,
@@ -93,13 +96,22 @@ export class WindowsIisRole {
     if (!this.fs.exists(indexPath)) this.fs.createFile(indexPath, DEFAULT_PAGE);
     this.appPools.set(DEFAULT_APP_POOL, this.makeAppPool(DEFAULT_APP_POOL, {}));
     this.sites.set(DEFAULT_SITE_NAME, {
-      name: DEFAULT_SITE_NAME, physicalPath: DEFAULT_PHYSICAL_PATH, port: 80, state: 'Stopped',
+      name: DEFAULT_SITE_NAME, physicalPath: DEFAULT_PHYSICAL_PATH, port: 80, state: 'Started',
       applicationPool: DEFAULT_APP_POOL, server: null, httpsServer: null,
     });
   }
 
-  start(): void { this.startSite(DEFAULT_SITE_NAME); }
-  stop(): void { for (const name of this.sites.keys()) this.stopSite(name); }
+  start(identity: ListenerIdentity = {}): void {
+    this.identity = identity;
+    this.listening = true;
+    for (const site of this.sites.values()) this.listen(site);
+  }
+
+  stop(): void {
+    this.listening = false;
+    for (const site of this.sites.values()) this.unlisten(site);
+  }
+
   isRunning(): boolean { return [...this.sites.values()].some(s => s.state === 'Started'); }
 
   // ─── Sites (New-Website / Get-Website / Start-Website / Stop-Website) ──
@@ -146,13 +158,10 @@ export class WindowsIisRole {
       return { ok: false, message: `New-WebBinding : Cannot find the certificate hash specified: ${certificateThumbprint}.` };
     }
     site.httpsServer?.stop();
-    const httpsServer = new HttpsServerSession(
-      this.host.getTcpStack(), port, buildHttpsServerConfig(entry), (req) => this.buildResponse(site, req),
-    );
-    httpsServer.start();
-    site.httpsServer = httpsServer;
+    site.httpsServer = null;
     site.httpsPort = port;
     site.certificateThumbprint = certificateThumbprint;
+    if (this.listening && site.state === 'Started') this.listenHttps(site);
     return { ok: true, message: '' };
   }
 
@@ -160,13 +169,8 @@ export class WindowsIisRole {
     const site = this.sites.get(name);
     if (!site) return { ok: false, message: `Start-Website : A website named "${name}" does not exist.` };
     if (site.state === 'Started') return { ok: true, message: '' };
-    const server = new Http1ServerSession(this.host.getTcpStack(), site.port, (req) => this.buildResponse(site, req));
-    server.start();
-    site.server = server;
     site.state = 'Started';
-    if (site.httpsPort !== undefined && site.certificateThumbprint !== undefined) {
-      this.newBinding(name, 'https', site.httpsPort, site.certificateThumbprint);
-    }
+    if (this.listening) this.listen(site);
     return { ok: true, message: '' };
   }
 
@@ -174,12 +178,37 @@ export class WindowsIisRole {
     const site = this.sites.get(name);
     if (!site) return { ok: false, message: `Stop-Website : A website named "${name}" does not exist.` };
     if (site.state === 'Stopped') return { ok: true, message: '' };
+    this.unlisten(site);
+    site.state = 'Stopped';
+    return { ok: true, message: '' };
+  }
+
+  private listen(site: SiteState): void {
+    if (site.state !== 'Started') return;
+    if (!site.server) {
+      const server = new Http1ServerSession(this.host.getTcpStack(), site.port, (req) => this.buildResponse(site, req));
+      server.start(this.identity);
+      site.server = server;
+    }
+    this.listenHttps(site);
+  }
+
+  private listenHttps(site: SiteState): void {
+    if (site.httpsServer || site.httpsPort === undefined || site.certificateThumbprint === undefined) return;
+    const entry = this.certStore.get(site.certificateThumbprint);
+    if (!entry) return;
+    const httpsServer = new HttpsServerSession(
+      this.host.getTcpStack(), site.httpsPort, buildHttpsServerConfig(entry), (req) => this.buildResponse(site, req),
+    );
+    httpsServer.start(this.identity);
+    site.httpsServer = httpsServer;
+  }
+
+  private unlisten(site: SiteState): void {
     site.server?.stop();
     site.server = null;
     site.httpsServer?.stop();
     site.httpsServer = null;
-    site.state = 'Stopped';
-    return { ok: true, message: '' };
   }
 
   /** `iisreset` — restarts every currently-running site (a site explicitly stopped via `Stop-Website` stays stopped, matching real IIS's per-site state surviving a W3SVC restart). */

@@ -153,7 +153,7 @@ async function laboratoire(options: { politiqueRetour?: boolean } = {}) {
 
 function tramesWan(s: Site): IPv4Packet[] {
   return s.fw.getPacketCapture()
-    .select({ iface: 'port2', filter: {}, limit: 0 })
+    .select({ iface: 'port2', matches: () => true, limit: 0 })
     .map(entry => entry.frame.payload as IPv4Packet)
     .filter(packet => packet?.type === 'ipv4');
 }

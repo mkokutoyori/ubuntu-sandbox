@@ -8,6 +8,8 @@
  * truth so HuaweiSwitchShell and HuaweiVRPShell don't duplicate it (DRY).
  */
 
+import { applyHeaderCommand, type HuaweiHeaderHost } from './HuaweiHeaders';
+import { parseCapturePacket, CAPTURE_NEEDS_TERMINAL, type CapturePacketHost } from './CapturePacket';
 import type { CommandTrie } from '../CommandTrie';
 import type { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
 import {
@@ -51,15 +53,6 @@ export function screenLength(): string {
 }
 
 /**
- * `header {login|shell} information <text>` — banner text. Accepted and
- * stored by the caller if it cares; here it's a recognised no-op so the
- * CLI does not reject it.
- */
-export function setHeader(): string {
-  return '';
-}
-
-/**
  * Register the VRP lifecycle / management commands on a CommandTrie.
  * Called by BOTH HuaweiSwitchShell and HuaweiVRPShell so the wiring
  * itself isn't duplicated (DRY).
@@ -69,8 +62,18 @@ export function registerHuaweiCommonMgmt(
   debug?: { service: () => HuaweiDebugService | null; platform: HuaweiDebugPlatform },
   onSave?: () => void,
   onResetSaved?: () => void,
+  capture?: CapturePacketHost,
+  headers?: HuaweiHeaderHost,
 ): void {
   if (debug) registerHuaweiDebugging(trie, debug.service, debug.platform);
+  if (capture) {
+    trie.registerGreedy('capture-packet interface', 'Capture packets on an interface', (args, raw) => {
+      const parsed = parseCapturePacket(['interface', ...args], raw ?? `capture-packet interface ${args.join(' ')}`, capture);
+      return parsed.ok === false ? parsed.error : CAPTURE_NEEDS_TERMINAL;
+    });
+    trie.setCanonicalDescription('capture-packet', 'Capture packets');
+    trie.describeArgs('capture-packet interface', [{ name: 'interface-name', type: 'WORD', description: 'Interface to capture on' }]);
+  }
   trie.registerGreedy('save', 'Save current configuration', () => {
     onSave?.();
     return saveConfiguration();
@@ -82,7 +85,12 @@ export function registerHuaweiCommonMgmt(
   });
   trie.register('commit', 'Commit candidate configuration', () => commitConfiguration());
   trie.registerGreedy('screen-length', 'Set terminal screen length', () => screenLength());
-  trie.registerGreedy('header', 'Configure login/shell banner', () => setHeader());
+  if (headers) {
+    trie.registerGreedy('header', 'Configure login/shell banner',
+      (args) => applyHeaderCommand(args, headers, false));
+    trie.registerGreedy('undo header', 'Remove the login/shell banner',
+      (args) => applyHeaderCommand(args, headers, true));
+  }
   trie.register('terminal monitor', 'Enable terminal monitoring', () => 'Info: Current terminal monitor is on.');
   trie.register('undo terminal monitor', 'Disable terminal monitoring', () => 'Info: Current terminal monitor is off.');
   trie.register('terminal debugging', 'Enable terminal debugging', () => 'Info: Current terminal debugging is on.');

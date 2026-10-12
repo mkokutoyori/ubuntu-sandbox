@@ -8,6 +8,10 @@
  * MESURÉ avant correctif : sans -www la commande était refusée (« interactive mode reads application data from a terminal »).
  * Avant correctif (git stash de src/network et src/terminal) 7 cas sur 8 tombent ; le témoin (le serveur -www, déjà commité)
  * passe dans les deux états.
+ * Puis, pour les commandes qui restaient refusées (S, P) ou imprimaient un texte inventé (SSL_renegotiate -> 1, KeyUpdate sent) :
+ * les réponses sont celles du vrai s_server 3.0.13 (SSL_do_handshake -> 1, print_stats, texte en clair de P, erreurs OpenSSL de r et c).
+ * Avant ce second correctif 7 des 10 cas de la fin du fichier tombent (S, P, r en 1.3, B, les statistiques de Q, et la connexion TCP
+ * de contrôle que s_client ouvrait en plus de la sonde TLS et que le serveur comptait comme un second accept) ; le témoin -www passe.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -96,7 +100,7 @@ describe('openssl s_server interactif', () => {
     await type(server, `${START} -tls1_2`);
     await type(client, 'openssl s_client -connect 127.0.0.1:4433 -tls1_2');
     await type(server, 'r');
-    expect(text(server)).toContain('SSL_renegotiate -> 1');
+    expect(text(server)).toContain('SSL_do_handshake -> 1');
     await type(client, 'after renegotiation');
     expect(text(server)).toContain('after renegotiation');
   });
@@ -106,7 +110,7 @@ describe('openssl s_server interactif', () => {
     await type(server, START);
     await type(client, 'openssl s_client -connect 127.0.0.1:4433 -tls1_3');
     await type(server, 'k');
-    expect(text(server)).toContain('KeyUpdate sent');
+    expect(text(server)).toContain('SSL_do_handshake -> 1');
     await type(client, 'still alive');
     expect(text(server)).toContain('still alive');
   });
@@ -118,5 +122,58 @@ describe('openssl s_server interactif', () => {
     expect(text(server)).toContain('DONE');
     expect(server.foreground.getPrompt()).not.toBe('');
     expect(await sh(srv, 'ss -ltn')).not.toContain(':4433');
+  });
+
+  it('S imprime les statistiques du contexte (format de print_stats) : une connexion acceptée et terminée', async () => {
+    const { server, client } = await lab();
+    await type(server, START);
+    await type(client, 'openssl s_client -connect 127.0.0.1:4433 -tls1_3');
+    await type(server, 'S');
+    const shown = text(server);
+    expect(shown).toContain('   0 items in the session cache');
+    expect(shown).toContain('   1 server accepts (SSL_accept())');
+    expect(shown).toContain('   1 server accepts that finished');
+    expect(shown).toContain('   0 cache full overflows (128 allowed)');
+  });
+
+  it('Q avec un client connecté : DONE, fermeture, puis les statistiques finales', async () => {
+    const { server, client } = await lab();
+    await type(server, START);
+    await type(client, 'openssl s_client -connect 127.0.0.1:4433 -tls1_3');
+    await type(server, 'Q');
+    const shown = text(server);
+    expect(shown).toContain('DONE');
+    expect(shown).toContain('shutdown accept socket');
+    expect(shown).toContain('CONNECTION CLOSED');
+    expect(shown).toContain('   1 server accepts that finished');
+  });
+
+  it('P écrit « Lets print some clear text » en clair sur la prise, hors de TLS', async () => {
+    const { srv, server } = await lab();
+    await type(server, START);
+    const raw = srv.getTcpStack().connect('127.0.0.1', 4433)!;
+    let received = '';
+    raw.onData((data) => { received += String(data); });
+    await type(server, 'P');
+    expect(received).toContain('Lets print some clear text\n');
+    expect(text(server)).not.toContain('not available');
+  });
+
+  it('k en TLS 1.2 et r en TLS 1.3 : SSL_do_handshake -> 1 et, pour r en 1.3, l\'erreur can_renegotiate', async () => {
+    const { server, client } = await lab();
+    await type(server, START);
+    await type(client, 'openssl s_client -connect 127.0.0.1:4433 -tls1_3');
+    await type(server, 'r');
+    expect(text(server)).toMatch(/error:0A00010A:SSL routines:can_renegotiate:wrong ssl version/);
+    expect(text(server)).toContain('SSL_do_handshake -> 1');
+  });
+
+  it("B n'est pas une commande du s_client 3.0 (le heartbeat a disparu) : la ligne part comme donnée", async () => {
+    const { server, client } = await lab();
+    await type(server, START);
+    await type(client, 'openssl s_client -connect 127.0.0.1:4433 -tls1_3');
+    await type(client, 'B');
+    expect(text(client)).not.toContain('heartbeat');
+    expect(text(server)).toMatch(/\nB$/);
   });
 });

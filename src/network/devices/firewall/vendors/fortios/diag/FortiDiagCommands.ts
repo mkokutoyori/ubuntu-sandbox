@@ -8,7 +8,7 @@ import type { Firewall } from '../../../Firewall';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
 import type { PacketContext } from '../../../pipeline/PacketContext';
 import {
-  parseCaptureFilter, portsOf, type CaptureFilter,
+  portsOf,
 } from '../../../diag/PacketCapture';
 import { FortiMessages } from '../FortiMessages';
 import { parseAuthFilter, renderAuthList } from './authListRenderer';
@@ -23,7 +23,8 @@ import type { FortiDiagnostics } from './FortiDiagnostics';
 import { renderDebugFlow } from './debugFlowRenderer';
 import { DHCP_DEBUG_APPLICATIONS, isDhcpDebugApplication } from '../../../l3/DhcpDebug';
 import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
-import { renderSniffer } from './snifferRenderer';
+import { renderSniffer, type SnifferTimestamps } from './snifferRenderer';
+import { compileSnifferFilter, type SnifferMatcher } from '../../../diag/SnifferFilter';
 import {
   clearFilter, filterIsEmpty, renderSessionList, sessionMatchesFilter,
   type SessionFilter,
@@ -752,11 +753,13 @@ function renderFlowFilter(deps: FortiDiagDeps): string {
       ? fallback : String(value);
 
   return [
-    'vd: any',
+    `vd: ${shown(filter.vd, 'any')}`,
     `addr: ${shown(filter.addr, '0.0.0.0')}`,
     `saddr: ${shown(filter.saddr, '0.0.0.0')}`,
     `daddr: ${shown(filter.daddr, '0.0.0.0')}`,
     `port: ${shown(filter.port, '0')}`,
+    `sport: ${shown(filter.sport, '0')}`,
+    `dport: ${shown(filter.dport, '0')}`,
     `proto: ${shown(filter.proto, '0')}`,
   ].join('\n');
 }
@@ -773,10 +776,13 @@ function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
     case 'saddr': filter.saddr = value; return '';
     case 'daddr': filter.daddr = value; return '';
     case 'port': filter.port = Number.parseInt(value, 10); return '';
+    case 'sport': filter.sport = Number.parseInt(value, 10); return '';
+    case 'dport': filter.dport = Number.parseInt(value, 10); return '';
     case 'proto': filter.proto = Number.parseInt(value, 10); return '';
+    case 'vd': filter.vd = value; return '';
     default:
       return FortiMessages.parseError(name,
-        'known filters: addr, saddr, daddr, port, proto, clear.');
+        'known filters: vd, addr, saddr, daddr, port, sport, dport, proto, clear.');
   }
 }
 
@@ -917,7 +923,8 @@ export interface SnifferPlan {
   readonly expression: string;
   readonly verbosity: number;
   readonly count: number;
-  readonly filter: CaptureFilter;
+  readonly timestamps: SnifferTimestamps;
+  readonly matches: SnifferMatcher;
 }
 
 export function parseSnifferPlan(
@@ -929,9 +936,9 @@ export function parseSnifferPlan(
   if (iface !== 'any' && !knownInterface(iface)) return null;
 
   const parsed = splitSnifferArguments(rest.slice(2));
-  const filter = parseCaptureFilter(parsed.expression);
-  if (filter === null) return null;
-  return { iface, filter, ...parsed };
+  const filter = compileSnifferFilter(parsed.expression);
+  if (filter.ok === false) return null;
+  return { iface, matches: filter.matches, ...parsed };
 }
 
 function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -944,17 +951,16 @@ function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {
   }
 
   const parsed = splitSnifferArguments(rest.slice(2));
-  const filter = parseCaptureFilter(parsed.expression);
-  if (filter === null) {
-    return FortiMessages.valueError(
-      parsed.expression, 'unsupported sniffer filter expression.');
+  const filter = compileSnifferFilter(parsed.expression);
+  if (filter.ok === false) {
+    return FortiMessages.valueError(parsed.expression, filter.message);
   }
 
-  const { expression, verbosity, count } = parsed;
-  const frames = deps.fw.getPacketCapture().select({ iface, filter, limit: count });
+  const { expression, verbosity, count, timestamps } = parsed;
+  const frames = deps.fw.getPacketCapture().select({ iface, matches: filter.matches, limit: count });
   const startedAt = frames[0]?.at ?? deps.fw.now();
 
-  return renderSniffer({ iface, expression, verbosity, count }, frames, startedAt);
+  return renderSniffer({ iface, expression, verbosity, count, timestamps }, frames, startedAt);
 }
 
 function setLogFilter(words: readonly string[], deps: FortiDiagDeps): string {
@@ -997,7 +1003,7 @@ function setLogFilter(words: readonly string[], deps: FortiDiagDeps): string {
 
 export function splitSnifferArguments(
   words: readonly string[],
-): { expression: string; verbosity: number; count: number } {
+): { expression: string; verbosity: number; count: number; timestamps: SnifferTimestamps } {
   const joined = words.join(' ');
   const quoted = /^\s*(['"])([\s\S]*?)\1\s*/.exec(joined);
 
@@ -1010,7 +1016,8 @@ export function splitSnifferArguments(
 
   const verbosity = Number.parseInt(tail[0] ?? '1', 10) || 1;
   const count = Number.parseInt(tail[1] ?? '0', 10) || 0;
-  return { expression: expression === 'none' ? '' : expression, verbosity, count };
+  const timestamps: SnifferTimestamps = tail[2] === 'a' ? 'absolute' : tail[2] === 'l' ? 'local' : 'relative';
+  return { expression: expression === 'none' ? '' : expression, verbosity, count, timestamps };
 }
 
 function countTraces(rendered: string): number {

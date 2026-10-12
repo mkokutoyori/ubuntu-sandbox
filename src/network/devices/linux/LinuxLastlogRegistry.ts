@@ -1,163 +1,120 @@
-/**
- * LinuxLastlogRegistry — per-machine record of "last successful login" per
- * user, mirroring what `/var/log/lastlog` backs on real Linux (consumed by
- * pam_lastlog.so on authentication and rendered by lastlog(8)).
- *
- * Semantics:
- *   - Each successful interactive login (local console, SSH, sftp) records
- *     `{ when, sourceHost, tty }`. The registry retains the MOST RECENT
- *     entry per user — exactly like the fixed-size struct lastlog keeps
- *     per UID — and the previous one (for the "Last login: …" banner).
- *   - When a {@link VirtualFileSystem} is attached, the registry is the
- *     single source of truth for `/var/log/lastlog`: every mutation is
- *     projected to that file (seeded 0644 root:root) so the filesystem
- *     layer stays coherent with the in-memory view, and a fresh registry
- *     re-hydrates from the file on attach.
- */
-
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
+import { binaryStringToBytes, bytesToBinaryString } from './login/UtmpxRecord';
+import { LASTLOG_RECORD_SIZE } from './login/LastlogTool';
 
-/** Canonical path lastlog(8) reads on a real system. */
 export const LASTLOG_PATH = '/var/log/lastlog';
 const LOG_DIR = '/var/log';
+const UTMP_GID = 43;
+const LINE_SIZE = 32;
+const HOST_SIZE = 256;
 
 export interface LastlogEntry {
-  /** UNIX timestamp in milliseconds. */
   readonly when: number;
-  /** Source hostname or IP that initiated the login. */
   readonly sourceHost: string;
-  /** pty/console identifier (e.g. "pts/0", "tty1"). */
   readonly tty: string;
 }
 
-interface UserLastlog {
-  current?: LastlogEntry;
-  previous?: LastlogEntry;
-}
-
-interface PersistedRow {
-  user: string;
-  when: number;
-  sourceHost: string;
-  tty: string;
+function cString(bytes: Uint8Array): string {
+  const end = bytes.indexOf(0);
+  return new TextDecoder().decode(end < 0 ? bytes : bytes.subarray(0, end));
 }
 
 export class LinuxLastlogRegistry {
-  private readonly entries: Map<string, UserLastlog> = new Map();
+  private readonly previous = new Map<string, LastlogEntry>();
   private vfs: VirtualFileSystem | null = null;
+  private uidOf: (user: string) => number | undefined = () => undefined;
 
-  /**
-   * Bind a VFS so `/var/log/lastlog` becomes the persistent projection of
-   * this registry. Re-hydrates from an existing file, or seeds an empty
-   * one (0644 root:root) when absent. Idempotent.
-   */
+  bindUidResolver(resolver: (user: string) => number | undefined): void {
+    this.uidOf = resolver;
+  }
+
   attachVfs(vfs: VirtualFileSystem): void {
     this.vfs = vfs;
-    if (vfs.exists(LASTLOG_PATH)) this.load();
-    else this.persist();
-  }
-
-  /**
-   * Record a successful login for `user`. Atomically rotates
-   * previous ← current ; current ← new, and projects to disk.
-   * Returns the entry that became `previous` (undefined on first login).
-   */
-  record(user: string, sourceHost: string, tty: string, when: number = simulationNowMs()): LastlogEntry | undefined {
-    const slot = this.entries.get(user) ?? {};
-    const newEntry: LastlogEntry = { when, sourceHost, tty };
-    const becamePrevious = slot.current;
-    slot.previous = becamePrevious;
-    slot.current = newEntry;
-    this.entries.set(user, slot);
-    this.persist();
-    return becamePrevious;
-  }
-
-  /** Read the entry to display on next login (the "previous" slot). */
-  getPrevious(user: string): LastlogEntry | undefined {
-    return this.entries.get(user)?.previous;
-  }
-
-  /** Read the current (most recent) entry. */
-  getCurrent(user: string): LastlogEntry | undefined {
-    return this.entries.get(user)?.current;
-  }
-
-  /** Snapshot every user with a recorded login — drives the `lastlog` command. */
-  listCurrent(): ReadonlyMap<string, LastlogEntry> {
-    const out = new Map<string, LastlogEntry>();
-    for (const [user, slot] of this.entries) {
-      if (slot.current) out.set(user, slot.current);
+    if (!vfs.exists(LOG_DIR)) vfs.mkdirp(LOG_DIR, 0o755, 0, 0);
+    if (!vfs.exists(LASTLOG_PATH)) {
+      vfs.writeFile(LASTLOG_PATH, '', 0, 0, 0o022);
+      vfs.chmod(LASTLOG_PATH, 0o664);
+      vfs.chown(LASTLOG_PATH, 0, UTMP_GID);
     }
-    return out;
   }
 
-  /** Reset the registry (test utility) and clear the projected file. */
+  record(user: string, sourceHost: string, tty: string, when: number = simulationNowMs()): LastlogEntry | undefined {
+    const uid = this.uidOf(user);
+    if (this.vfs === null || uid === undefined) return undefined;
+    const before = this.read(uid);
+    if (before) this.previous.set(user, before);
+    const bytes = this.bytes();
+    const offset = uid * LASTLOG_RECORD_SIZE;
+    const grown = new Uint8Array(Math.max(bytes.length, offset + LASTLOG_RECORD_SIZE));
+    grown.set(bytes);
+    const record = grown.subarray(offset, offset + LASTLOG_RECORD_SIZE);
+    record.fill(0);
+    const view = new DataView(record.buffer, record.byteOffset, record.byteLength);
+    view.setInt32(0, Math.floor(when / 1000), true);
+    record.set(new TextEncoder().encode(tty).subarray(0, LINE_SIZE), 4);
+    record.set(new TextEncoder().encode(sourceHost).subarray(0, HOST_SIZE), 4 + LINE_SIZE);
+    this.store(grown);
+    return before;
+  }
+
+  getPrevious(user: string): LastlogEntry | undefined {
+    return this.previous.get(user);
+  }
+
+  getCurrent(user: string): LastlogEntry | undefined {
+    const uid = this.uidOf(user);
+    return uid === undefined ? undefined : this.read(uid);
+  }
+
   reset(): void {
-    this.entries.clear();
-    this.persist();
+    this.previous.clear();
+    this.store(new Uint8Array(0));
   }
 
-  /** Drop a single user's entry; used by `lastlog -C -u <user>`. */
   clearUser(user: string): void {
-    this.entries.delete(user);
-    this.persist();
+    const uid = this.uidOf(user);
+    if (uid === undefined) return;
+    const bytes = this.bytes();
+    const offset = uid * LASTLOG_RECORD_SIZE;
+    if (offset + LASTLOG_RECORD_SIZE > bytes.length) return;
+    bytes.fill(0, offset, offset + LASTLOG_RECORD_SIZE);
+    this.store(bytes);
   }
 
-  /** Absolute path of the projected lastlog file. */
   filePath(): string {
     return LASTLOG_PATH;
   }
 
-  // ─── persistence ───────────────────────────────────────────────────
-
-  private load(): void {
-    if (!this.vfs) return;
-    const raw = this.vfs.readFile(LASTLOG_PATH);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (!Array.isArray(parsed)) return;
-      for (const r of parsed as PersistedRow[]) {
-        if (!r || typeof r.user !== 'string') continue;
-        this.entries.set(r.user, {
-          current: { when: r.when, sourceHost: r.sourceHost, tty: r.tty },
-        });
-      }
-    } catch {
-      /* corrupt file → keep in-memory view, matches util-linux tolerance */
-    }
+  private bytes(): Uint8Array {
+    return binaryStringToBytes(this.vfs?.readFile(LASTLOG_PATH) ?? '');
   }
 
-  private persist(): void {
-    if (!this.vfs) return;
-    if (!this.vfs.exists(LOG_DIR)) this.vfs.mkdirp(LOG_DIR, 0o755, 0, 0);
-    const rows: PersistedRow[] = [];
-    for (const [user, slot] of this.entries) {
-      if (slot.current) {
-        rows.push({ user, when: slot.current.when, sourceHost: slot.current.sourceHost, tty: slot.current.tty });
-      }
-    }
-    this.vfs.writeFile(LASTLOG_PATH, JSON.stringify(rows), 0, 0, 0o022);
+  private store(bytes: Uint8Array): void {
+    this.vfs?.writeFile(LASTLOG_PATH, bytesToBinaryString(bytes), 0, 0, 0o022);
   }
 
-  /**
-   * Format an entry as the canonical OpenSSH "Last login: …" line.
-   * Example: `Last login: Tue Jan 23 12:34:56 2024 from 10.0.0.1`
-   */
+  private read(uid: number): LastlogEntry | undefined {
+    const bytes = this.bytes();
+    const offset = uid * LASTLOG_RECORD_SIZE;
+    if (offset + LASTLOG_RECORD_SIZE > bytes.length) return undefined;
+    const record = bytes.subarray(offset, offset + LASTLOG_RECORD_SIZE);
+    const seconds = new DataView(record.buffer, record.byteOffset, record.byteLength).getInt32(0, true);
+    if (seconds === 0) return undefined;
+    return {
+      when: seconds * 1000,
+      tty: cString(record.subarray(4, 4 + LINE_SIZE)),
+      sourceHost: cString(record.subarray(4 + LINE_SIZE, 4 + LINE_SIZE + HOST_SIZE)),
+    };
+  }
+
   static format(entry: LastlogEntry): string {
     const d = new Date(entry.when);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const ctime =
-      `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ` +
-      `${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:` +
-      `${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} ` +
-      `${d.getUTCFullYear()}`;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    const ctime = `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} ${d.getUTCFullYear()}`;
     return `Last login: ${ctime} from ${entry.sourceHost}`;
   }
 }

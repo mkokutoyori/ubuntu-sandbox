@@ -1,10 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoText } from './helpers/nanoScreen';
 
 /**
  * Scénario (e2e) — sélection de région dans nano : ^6/M-A pose une
  * marque, M-6 copie la région, ^K la coupe au lieu de la ligne entière.
  * Aucun des trois n'était lié auparavant — seul le ^K "ligne entière"
  * existait.
+ * Mesuré sur nano 7.2 sous tmux : M-6 ne dit rien dans la barre d'état.
  */
 
 async function waitForStore(page: Page): Promise<void> {
@@ -40,8 +42,7 @@ test.describe('Scénario (e2e) — sélection de région dans nano', () => {
 
   test('^6 puis M-6 copie exactement le texte marqué, pas la ligne entière', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/mark.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('hello world');
     await page.keyboard.press('Home');
@@ -52,18 +53,17 @@ test.describe('Scénario (e2e) — sélection de région dans nano', () => {
 
     await page.keyboard.press('End');
     await page.keyboard.press('Alt+6');
-    await expect(status).toContainText('Copied region');
+    await expect(status).toHaveText('');
 
     await page.keyboard.press('Home');
     await page.keyboard.press('Control+u');
 
-    await expect(textarea).toHaveValue('worldhello world');
+    await expect.poll(() => nanoText(page)).toBe('worldhello world');
   });
 
   test('^K avec une marque active coupe la région, pas la ligne', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/mark2.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('hello world');
     await page.keyboard.press('Home');
@@ -72,9 +72,9 @@ test.describe('Scénario (e2e) — sélection de région dans nano', () => {
     await page.keyboard.press('End');
     await page.keyboard.press('Control+k');
 
-    await expect(textarea).toHaveValue('hello ');
+    await expect.poll(() => nanoText(page)).toBe('hello');
 
     await page.keyboard.press('Control+u');
-    await expect(textarea).toHaveValue('hello world');
+    await expect.poll(() => nanoText(page)).toBe('hello world');
   });
 });

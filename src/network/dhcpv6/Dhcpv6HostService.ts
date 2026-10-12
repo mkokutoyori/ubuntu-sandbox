@@ -1,6 +1,7 @@
 import { dhcpv6WireLength } from './Dhcpv6Codec';
 import { IPv6Address } from '../core/types';
 import type { EndHost, UdpDelivery } from '../devices/EndHost';
+import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { DHCPv6Packet } from './DHCPv6Packet';
 import { startReconfigure } from './Dhcpv6Reconfigure';
 import { DHCPv6Server } from './DHCPv6Server';
@@ -12,7 +13,7 @@ export const ALL_DHCP_SERVERS_GROUP = 'ff02::1:2';
 
 export interface Dhcpv6HostPort {
   interfaces(): ReadonlyArray<{ name: string; mac: string; globalAddress: string | null }>;
-  udpBind(port: number, listener: (delivery: UdpDelivery) => void, processName: string): number | false;
+  udpBind(port: number, listener: (delivery: UdpDelivery) => void, processName: string, owner?: { pid?: number; service?: string }): number | false;
   udpClose(port: number): void;
   joinIPv6Group(iface: string, group: string): boolean;
   leaveIPv6Group(iface: string, group: string): boolean;
@@ -40,11 +41,11 @@ export class Dhcpv6HostService {
 
   isRunning(): boolean { return this.running; }
 
-  start(): boolean {
+  start(identity: ListenerIdentity = {}): boolean {
     if (this.running) return true;
     const interfaces = this.host.interfaces();
     if (interfaces.length > 0) this.server.setServerDuid(`00:03:00:01:${interfaces[0].mac}`);
-    if (this.host.udpBind(DHCPV6_SERVER_PORT, this.handle, this.processName) === false) return false;
+    if (this.host.udpBind(DHCPV6_SERVER_PORT, this.handle, identity.processName ?? this.processName, { pid: identity.pid, service: identity.service }) === false) return false;
     for (const port of interfaces) this.host.joinIPv6Group(port.name, ALL_DHCP_SERVERS_GROUP);
     this.server.enable();
     this.running = true;
@@ -104,7 +105,7 @@ export function dhcpv6PortOf(host: EndHost): Dhcpv6HostPort {
       name: port.getName(), mac: port.getMAC().toString(), globalAddress: port.getGlobalIPv6()?.toString() ?? null,
     })),
     schedule: (callback, delayMs) => host.scheduleTimer(callback, delayMs),
-    udpBind: (port, listener, processName) => host.udpBind(port, listener, processName),
+    udpBind: (port, listener, processName, owner) => host.udpBind(port, listener, processName, owner),
     udpClose: port => host.udpClose(port),
     joinIPv6Group: (iface, group) => host.joinIPv6Group(iface, group),
     leaveIPv6Group: (iface, group) => host.leaveIPv6Group(iface, group),

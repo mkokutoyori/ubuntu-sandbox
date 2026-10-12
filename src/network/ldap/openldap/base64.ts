@@ -91,3 +91,38 @@ export function b64Pton(source: string, targetSize: number): Uint8Array | null {
   }
   return target.slice(0, tarIndex);
 }
+
+const LDAP_NIBBLE_INVALID = 0xff;
+
+function ldapNibble(code: number): number {
+  const index = ALPHABET.indexOf(String.fromCharCode(code));
+  return index < 0 ? LDAP_NIBBLE_INVALID : index;
+}
+
+function signedByte(value: number): number {
+  return (value << 24) >> 24;
+}
+
+export function ldapDecodeB64Inplace(text: string): Uint8Array | null {
+  const input = new TextEncoder().encode(text);
+  const at = (index: number): number => (index < input.length ? input[index] : 0);
+  const EQUALS = 0x3d;
+  const out: number[] = [];
+  for (let p = 0; p < input.length; p += 4) {
+    for (let i = 0; i < 4; i++) {
+      const code = at(p + i);
+      if (code !== EQUALS && ((code & 0x80) !== 0 || ldapNibble(code & 0x7f) > 0x3f)) return null;
+    }
+    const nibble = (index: number): number => signedByte(at(index) === EQUALS ? LDAP_NIBBLE_INVALID : ldapNibble(at(index) & 0x7f));
+    const first = nibble(p);
+    const second = nibble(p + 1);
+    out.push(((first << 2) | (second >> 4)) & 0xff);
+    if (at(p + 2) === EQUALS) break;
+    const third = nibble(p + 2);
+    out.push((((second & 0x0f) << 4) | (third >> 2)) & 0xff);
+    if (at(p + 3) === EQUALS) break;
+    const fourth = nibble(p + 3);
+    out.push((((third & 0x03) << 6) | fourth) & 0xff);
+  }
+  return Uint8Array.from(out);
+}

@@ -113,6 +113,9 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-ipv6-dhcp':          '{host}(config-dhcpv6)#',
   'config-keychain':           '{host}(config-keychain)#',
   'config-keychain-key':       '{host}(config-keychain-key)#',
+  'config-ssh-pubkey':         '{host}(conf-ssh-pubkey)#',
+  'config-ssh-pubkey-user':    '{host}(conf-ssh-pubkey-user)#',
+  'config-ssh-pubkey-data':   '{host}(conf-ssh-pubkey-data)#',
   'config-network-group':      '{host}(config-network-group)#',
 };
 

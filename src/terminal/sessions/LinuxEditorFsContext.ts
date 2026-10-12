@@ -45,7 +45,9 @@ export class LinuxEditorFsContext implements EditorFsContext {
   }
 
   runShellCommand(cmd: string): string {
-    return this.dev.executeShellCommandSync(cmd);
+    return this.session
+      ? this.dev.runCommandFrameInSession(cmd, this.session)
+      : this.dev.executeShellCommandSync(cmd);
   }
 
   filterThroughShell(cmd: string, input: string): string {

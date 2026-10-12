@@ -8,6 +8,7 @@
  * LinuxCommandExecutor — no cross-project wiring.
  */
 
+import { simulationNowMs } from '@/network/core/SystemClock';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 
@@ -24,8 +25,7 @@ describe('lastlog command', () => {
   });
 
   function setEntryAge(user: string, daysAgo: number, host = '10.0.0.9', tty = 'pts/3'): void {
-    const entries = (exec.lastlog as unknown as { entries: Map<string, LastlogSlot> }).entries;
-    entries.set(user, { current: { when: Date.now() - daysAgo * 86400_000, sourceHost: host, tty } });
+    exec.lastlog.record(user, host, tty, simulationNowMs() - daysAgo * 86400_000);
   }
 
   it('1. prints the canonical Username/Port/From/Latest header', () => {
@@ -107,8 +107,8 @@ describe('lastlog command', () => {
   it('10. rejects -C/-S without -u and when not root', () => {
     exec.userMgr.useradd('alice', { u: 1001 });
     exec.userMgr.currentUid = 0;
-    expect(exec.execute('lastlog -C')).toMatch(/option requires -u|--user/);
+    expect(exec.execute('lastlog -C')).toMatch(/Options -C and -S require option -u to specify the user/);
     exec.userMgr.currentUid = 1001;
-    expect(exec.execute('lastlog -C -u alice')).toMatch(/must be root/);
+    expect(exec.execute('lastlog -C -u alice')).toBe('/var/log/lastlog: Permission denied');
   });
 });

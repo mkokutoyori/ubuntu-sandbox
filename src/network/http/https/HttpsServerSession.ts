@@ -15,12 +15,16 @@ import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
 import type { ClientCertPolicy } from '@/network/tls/clientAuthPolicy';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+
+export interface PathTransportRequirement {
+  readonly clientCertPolicy?: ClientCertPolicy;
+  readonly cipherList?: string;
+}
 
 export type HttpsServerConfig = Omit<TlsServerConfig, 'alpnProtocols'> & {
-  readonly renegotiateForClientCertificate?: (request: HttpMessage) => ClientCertPolicy | null;
+  readonly requirePathTransport?: (request: HttpMessage) => PathTransportRequirement | null;
   readonly alpnProtocols?: readonly string[];
   /** RFC 6797 — if set, every response carries `Strict-Transport-Security: max-age=<n>`. */
   readonly hstsMaxAgeSeconds?: number;
@@ -108,7 +112,7 @@ export class HttpsServerSession {
     const emit = (response: HttpMessage, shouldClose: boolean): void => {
       this.applyHsts(response);
       const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
-      const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
+      const responseBytes = binaryStringToBytes(encodeResponse(response, { chunked }));
       channel.write(responseBytes);
       if (shouldClose) {
         unsubscribe();
@@ -161,28 +165,29 @@ export class HttpsServerSession {
       else enqueue(() => { settle(produced); });
     };
 
-    const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
-      onRenegotiated: () => {
-        const waiting = deferred;
-        deferred = null;
-        if (waiting !== null) runRequest(waiting);
-      },
-      onData: (requestBytes) => {
-        const completeRequest = assembler.push(decoder.decode(requestBytes));
+    const handleBytes = (requestBytes: Uint8Array, early: boolean): void => {
+        const completeRequest = assembler.push(bytesToBinaryString(requestBytes));
         if (completeRequest === null) return;
         const parsed = parseRequest(completeRequest);
-        const gate = this.tlsConfig().renegotiateForClientCertificate;
-        const policy = parsed.ok && gate !== undefined ? gate(parsed.message) : null;
-        if (policy !== null) {
+        if (early && parsed.ok) parsed.message.headers.set('Early-Data', '1');
+        const gate = this.tlsConfig().requirePathTransport;
+        const need = parsed.ok && gate !== undefined ? gate(parsed.message) : null;
+        if (need !== null) {
+          const policy = need.clientCertPolicy;
           const presented = tls.peerCertificate !== null;
-          const satisfied = presented ? tls.peerVerified || policy !== 'strict' : false;
-          if (!satisfied) {
-            if (!presented && tls.needsClientCertificateRenegotiation
-              && channel.requestRenegotiation({ requestClientCertificate: true, clientCertPolicy: policy })) {
+          const certificateMet = policy === undefined || (presented ? tls.peerVerified || policy !== 'strict' : false);
+          const suiteMet = need.cipherList === undefined || tls.suiteAllowedBy(need.cipherList);
+          if (!certificateMet || !suiteMet) {
+            const options = {
+              ...(policy !== undefined && !presented ? { requestClientCertificate: true, clientCertPolicy: policy } : {}),
+              ...(!suiteMet ? { cipherList: need.cipherList } : {}),
+            };
+            const renegotiable = (policy === undefined || !presented) && tls.canRenegotiate(options);
+            if (renegotiable && channel.requestRenegotiation(options)) {
               deferred = parsed;
               return;
             }
-            if (policy === 'strict' || presented) {
+            if (!suiteMet || policy === 'strict' || presented) {
               const refusal = createResponse(403, 'Forbidden');
               refusal.headers.set('Connection', 'close');
               enqueue(() => emit(refusal, true));
@@ -191,7 +196,16 @@ export class HttpsServerSession {
           }
         }
         runRequest(parsed);
+    };
+
+    const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
+      onRenegotiated: () => {
+        const waiting = deferred;
+        deferred = null;
+        if (waiting !== null) runRequest(waiting);
       },
+      onEarlyData: (requestBytes) => handleBytes(requestBytes, true),
+      onData: (requestBytes) => handleBytes(requestBytes, false),
     });
     unsubscribe = () => channel.detachOnly();
   }

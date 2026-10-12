@@ -25,16 +25,27 @@ export class SshForwardingTable {
 
   adopt(session: SshSession, pid: number): void {
     this.owners.set(session, pid);
+    session.onDisconnected(() => this.connectionLost(session, pid));
+  }
+
+  private connectionLost(session: SshSession, pid: number): void {
+    if (this.owners.get(session) !== pid) return;
+    this.dropForwards(session);
+    this.released(pid);
+  }
+
+  private dropForwards(session: SshSession): void {
+    this.owners.delete(session);
+    for (const live of this.active.filter((candidate) => candidate.session === session)) {
+      this.active.splice(this.active.indexOf(live), 1);
+      live.stop();
+    }
   }
 
   closeOwnedBy(pid: number): boolean {
     const sessions = [...this.owners].filter(([, owner]) => owner === pid).map(([session]) => session);
     for (const session of sessions) {
-      this.owners.delete(session);
-      for (const live of this.active.filter((candidate) => candidate.session === session)) {
-        this.active.splice(this.active.indexOf(live), 1);
-        live.stop();
-      }
+      this.dropForwards(session);
       session.disconnect();
     }
     return sessions.length > 0;
@@ -47,10 +58,11 @@ export class SshForwardingTable {
 
   openLocal(
     fwd: SshPortForward, session: SshSession, pid: number, ownerUid?: number,
+    onTunnelRefused?: (line: string) => void,
   ): ForwardOpening {
     if (this.ownTcpStack === undefined || this.sockets.isPortBound(fwd.listenPort, 'tcp')) return 'address-in-use';
     const host = { getTcpStack: () => this.ownTcpStack! };
-    const tunnel = tunnelThroughSession(session);
+    const tunnel = tunnelThroughSession(session, onTunnelRefused);
     const identity = { pid, processName: 'ssh' };
     const forwarder = fwd.kind === 'dynamic'
       ? new SshDynamicForwarder(host, tunnel, {

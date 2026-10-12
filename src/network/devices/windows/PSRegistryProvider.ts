@@ -198,6 +198,9 @@ function buildHKLM(product: WindowsProductIdentity): RegistryKey {
   currentControlSet.subkeys.set('services', services);
   const control = makeKey('Control');
   currentControlSet.subkeys.set('control', control);
+  const terminalServer = makeKey('Terminal Server');
+  control.subkeys.set('terminal server', terminalServer);
+  seedValue(terminalServer, 'fDenyTSConnections', 1, 'DWord');
 
   // HKLM:\HARDWARE
   const hardware = makeKey('HARDWARE');

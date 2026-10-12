@@ -1,0 +1,257 @@
+{
+ "useradd -m": [
+  {
+   "type": 1116,
+   "op": "adding group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1114,
+   "op": "adding user",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  },
+  {
+   "type": 1114,
+   "op": "adding home directory",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  }
+ ],
+ "chpasswd": [
+  {
+   "type": 1108,
+   "op": "PAM:chauthtok grantors=pam_permit",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  }
+ ],
+ "usermod -s": [
+  {
+   "type": 1108,
+   "op": "changing user shell",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  }
+ ],
+ "usermod -L": [
+  {
+   "type": 1108,
+   "op": "updating passwd",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 0
+  }
+ ],
+ "usermod -U": [
+  {
+   "type": 1108,
+   "op": "updating password",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 0
+  }
+ ],
+ "userdel -r": [
+  {
+   "type": 1115,
+   "op": "deleting user entries",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  },
+  {
+   "type": 1117,
+   "op": "deleting group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1117,
+   "op": "deleting shadow group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1115,
+   "op": "deleting home directory",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  }
+ ],
+ "groupadd": [
+  {
+   "type": 1116,
+   "op": "adding group to /etc/group",
+   "name": "zzgrp",
+   "id": 1002,
+   "res": 1
+  },
+  {
+   "type": 1116,
+   "op": "adding group to /etc/gshadow",
+   "name": "zzgrp",
+   "id": 1002,
+   "res": 1
+  },
+  {
+   "type": 1116,
+   "op": "",
+   "name": "zzgrp",
+   "id": 1002,
+   "res": 1
+  }
+ ],
+ "groupdel": [
+  {
+   "type": 1117,
+   "op": "removing group from /etc/group",
+   "name": "zzgrp",
+   "id": 1002,
+   "res": 1
+  },
+  {
+   "type": 1117,
+   "op": "removing group from /etc/gshadow",
+   "name": "zzgrp",
+   "id": 1002,
+   "res": 1
+  },
+  {
+   "type": 1117,
+   "op": "",
+   "name": "zzgrp",
+   "id": 1002,
+   "res": 1
+  }
+ ],
+ "useradd (no home)": [
+  {
+   "type": 1116,
+   "op": "adding group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1114,
+   "op": "adding user",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  }
+ ],
+ "userdel": [
+  {
+   "type": 1115,
+   "op": "deleting user entries",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  },
+  {
+   "type": 1117,
+   "op": "deleting group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1117,
+   "op": "deleting shadow group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  }
+ ],
+ "useradd -m -G": [
+  {
+   "type": 1116,
+   "op": "adding group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1114,
+   "op": "adding user",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  },
+  {
+   "type": 1114,
+   "op": "adding user to group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1114,
+   "op": "adding user to shadow group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1114,
+   "op": "adding home directory",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  }
+ ],
+ "userdel -r (member of a group)": [
+  {
+   "type": 1115,
+   "op": "deleting user entries",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  },
+  {
+   "type": 1115,
+   "op": "deleting user from group",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  },
+  {
+   "type": 1117,
+   "op": "deleting group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1117,
+   "op": "deleting shadow group",
+   "name": "zzuser",
+   "id": -1,
+   "res": 1
+  },
+  {
+   "type": 1115,
+   "op": "deleting user from shadow group",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  },
+  {
+   "type": 1115,
+   "op": "deleting home directory",
+   "name": "zzuser",
+   "id": 1001,
+   "res": 1
+  }
+ ]
+}

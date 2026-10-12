@@ -192,7 +192,7 @@ async function laboratoire(options: { autoriteDeB?: 'commune' | 'etrangere' } = 
 
 function tramesEsp(s: Site): IPv4Packet[] {
   return s.fw.getPacketCapture()
-    .select({ iface: 'port2', filter: {}, limit: 0 })
+    .select({ iface: 'port2', matches: () => true, limit: 0 })
     .map(entry => entry.frame.payload as IPv4Packet)
     .filter(packet => packet?.type === 'ipv4' && packet.protocol === IP_PROTO_ESP);
 }

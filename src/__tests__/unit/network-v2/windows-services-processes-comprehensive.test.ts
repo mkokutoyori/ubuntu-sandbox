@@ -776,7 +776,8 @@ describe('Service state → process lifecycle', () => {
     await pc.executeCommand('sc create MySvc binPath= "C:\\myapp.exe" DisplayName= "My Service"');
     await pc.executeCommand('sc start MySvc');
     const list = await pc.executeCommand('tasklist');
-    expect(list).toContain('mysvc.exe');
+    expect(list).toContain('myapp.exe');
+    expect(list).not.toContain('mysvc.exe');
   });
 
   it.skip('PowerShell Stop-Service should also remove process', async () => {

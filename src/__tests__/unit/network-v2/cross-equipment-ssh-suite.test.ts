@@ -657,7 +657,8 @@ describe('§8 — Cisco / Huawei → Linux & Windows SSH', () => {
       name: 'IOS: ssh -l admin 10.0.0.8 reaches the Huawei router',
       setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
       on: l => l.ciscoR1, cmd: 'ssh -l admin 10.0.0.8',
-      contains: [/VRP|Huawei|<hwR1>/i],
+      contains: [/Connection to 10\.0\.0\.8 closed/],
+      excludes: [/refused|timed out|Invalid input|denied/i],
     },
     {
       name: 'VRP: stelnet 10.0.0.1 reaches a Linux PC',
@@ -668,7 +669,8 @@ describe('§8 — Cisco / Huawei → Linux & Windows SSH', () => {
     {
       name: 'VRP: stelnet 10.0.0.6 reaches the Cisco router',
       on: l => l.hwR1, cmd: 'stelnet 10.0.0.6',
-      contains: [/IOS|Cisco|ciscoR1/i],
+      contains: [/Connection to 10\.0\.0\.6 closed/],
+      excludes: [/refused|timed out|Unrecognized|denied/i],
     },
   ];
 

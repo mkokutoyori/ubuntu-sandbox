@@ -34,7 +34,7 @@ import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
-import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { peerLiveness, firstSviAddress } from '@/network/protocols/ssh/sessionLiveness';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import type { RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
@@ -128,6 +128,8 @@ export type InputMode =
       readOnly?: boolean;
       showPosition?: boolean;
       showLineNumbers?: boolean;
+      softwrap?: boolean;
+      displayName?: string;
       initialCursorLine?: number;
       initialCursorCol?: number;
     }
@@ -526,6 +528,21 @@ export abstract class TerminalSession {
 
   get hasActiveChild(): boolean { return this._children.length > 0; }
 
+  private _windowSize: { readonly rows: number; readonly cols: number } | null = null;
+
+  get windowSize(): { readonly rows: number; readonly cols: number } | null { return this._windowSize; }
+
+  setWindowSize(rows: number, cols: number): void {
+    if (rows < 1 || cols < 1) return;
+    const last = this._windowSize;
+    if (last !== null && last.rows === rows && last.cols === cols) return;
+    this._windowSize = { rows, cols };
+    this.applyWindowSize(rows, cols);
+    for (const child of this._children) child.setWindowSize(rows, cols);
+  }
+
+  protected applyWindowSize(_rows: number, _cols: number): void {}
+
   editorSave(content: string, filePath: string): void {
     if (this._children.length > 0) { this.foreground.editorSave(content, filePath); return; }
   }
@@ -543,7 +560,7 @@ export abstract class TerminalSession {
       const ip = port.getIPAddress();
       if (ip && port.getIsUp()) return ip.toString();
     }
-    return null;
+    return firstSviAddress(this.device as unknown as Equipment) ?? null;
   }
 
   private _remoteLabel: string | null = null;
@@ -597,8 +614,9 @@ export abstract class TerminalSession {
     sourceIp: string,
     sourceHost: string,
     quiet = false,
+    preAuthBannerShown = false,
   ): string[] {
-    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet);
+    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet, preAuthBannerShown);
   }
 
   /**

@@ -19,6 +19,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { EndHost } from '@/network/devices/EndHost';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
 import { WindowsDhcpv6 } from './WindowsDhcpv6';
 import { DhcpBulkLeasequeryService } from '@/network/dhcp/DhcpBulkLeasequery';
@@ -168,6 +169,7 @@ export class WindowsDhcpServerRole {
   readonly failover: DhcpFailoverService;
   readonly v6: WindowsDhcpv6;
   private readonly bulkLeasequery: DhcpBulkLeasequeryService;
+  private identity: ListenerIdentity = {};
 
   constructor(private readonly host: EndHost, private readonly env: DhcpRoleEnvironment = STANDALONE_ENVIRONMENT) {
     this.engine.setPingPacketCount(0);
@@ -175,7 +177,8 @@ export class WindowsDhcpServerRole {
     this.engine.setDeviceId(host.getId(), host.getHostname());
     this.engine.setClock(() => env.now());
     this.v6 = new WindowsDhcpv6(host, () => env.now());
-    this.bulkLeasequery = new DhcpBulkLeasequeryService({ tcp: () => host.getTcpStack(), now: () => env.now() }, this.engine);
+    this.bulkLeasequery = new DhcpBulkLeasequeryService(
+      { tcp: () => host.getTcpStack(), now: () => env.now(), identity: () => this.identity }, this.engine);
     this.engine.setAdmissionPolicy(null);
     this.failover = new DhcpFailoverService(this.failoverHost());
     this.engine.setAdmissionPolicy(this.failover.policy);
@@ -185,6 +188,7 @@ export class WindowsDhcpServerRole {
     return {
       now: () => this.env.now(),
       tcp: () => this.host.getTcpStack(),
+      identity: () => this.identity,
       bus: () => this.host.getBus(),
       deviceId: () => this.host.getId(),
       hostName: () => this.host.getHostname(),
@@ -372,12 +376,13 @@ export class WindowsDhcpServerRole {
 
   isRunning(): boolean { return this.running; }
 
-  start(): void {
+  start(identity: ListenerIdentity = {}): void {
     if (this.running) return;
+    this.identity = identity;
     this.engine.enable();
-    this.host.udpBind(DHCP_SERVER_PORT, this.handleDatagram, 'dhcpserver');
+    this.host.udpBind(DHCP_SERVER_PORT, this.handleDatagram, identity.processName ?? 'dhcpserver', { pid: identity.pid, service: identity.service });
     this.running = true;
-    this.v6.start();
+    this.v6.start(identity);
     this.failover.start();
   }
 

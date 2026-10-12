@@ -131,6 +131,6 @@ describe('TEMOINS', () => {
     const pc = poste();
 
     expect(await pc.executeCommand('logger -p invalid_fac.err "alerte"'))
-      .toContain('unknown priority name');
+      .toContain('unknown facility name: invalid_fac');
   });
 });

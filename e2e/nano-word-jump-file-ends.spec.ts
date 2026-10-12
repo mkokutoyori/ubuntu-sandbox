@@ -1,8 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoText } from './helpers/nanoScreen';
 
 /**
  * Scénario (e2e) — Ctrl+←/→ (saut par mot) et M-\ / M-/ (début/fin de
- * fichier) dans nano. Aucun des deux n'était lié auparavant.
+ * fichier) dans nano. Aucun des deux n'était lié auparavant. Mesuré sur nano 7.2 sous tmux :
+ * M-/ atteint la ligne finale vide du tampon, `alpha`, `beta`, M-/, `Y` donne trois lignes.
  */
 
 async function waitForStore(page: Page): Promise<void> {
@@ -38,33 +40,30 @@ test.describe('Scénario (e2e) — saut par mot et début/fin de fichier dans na
 
   test('Ctrl+→ saute au début du mot suivant, insère au bon endroit', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/word.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('foo bar baz');
     await page.keyboard.press('Home');
     await page.keyboard.press('Control+ArrowRight');
     await page.keyboard.type('-X-');
 
-    await expect(textarea).toHaveValue('foo -X-bar baz');
+    await expect.poll(() => nanoText(page)).toBe('foo -X-bar baz');
   });
 
   test('Ctrl+← saute au début du mot précédent', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/word2.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('foo bar baz');
     await page.keyboard.press('Control+ArrowLeft');
     await page.keyboard.type('-X-');
 
-    await expect(textarea).toHaveValue('foo bar -X-baz');
+    await expect.poll(() => nanoText(page)).toBe('foo bar -X-baz');
   });
 
   test('M-\\ va au début du fichier, M-/ va à la fin', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/fileends.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('alpha');
     await page.keyboard.press('Enter');
@@ -72,10 +71,10 @@ test.describe('Scénario (e2e) — saut par mot et début/fin de fichier dans na
 
     await page.keyboard.press('Alt+\\');
     await page.keyboard.type('X');
-    await expect(textarea).toHaveValue('Xalpha\nbeta');
+    await expect.poll(() => nanoText(page)).toBe('Xalpha\nbeta');
 
     await page.keyboard.press('Alt+/');
     await page.keyboard.type('Y');
-    await expect(textarea).toHaveValue('Xalpha\nbetaY');
+    await expect.poll(() => nanoText(page)).toBe('Xalpha\nbeta\nY');
   });
 });

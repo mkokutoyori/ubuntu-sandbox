@@ -106,9 +106,7 @@ function scStart(ctx: ScContext, args: string[]): string {
     return `[SC] StartService FAILED:\n\n${err}`;
   }
 
-  // Spawn process for the service
   const svc = ctx.serviceManager.getService(name);
-  if (svc) ctx.processManager.onServiceStarted(svc.name, svc.processName);
 
   // Real sc.exe returns full status block with START_PENDING state
   // Temporarily show START_PENDING, then state is already Running
@@ -134,9 +132,6 @@ function scStop(ctx: ScContext, args: string[]): string {
     if (err.includes('dependent') || err.includes('Cannot stop')) return `[SC] ControlService FAILED 1051:\n\n${err}`;
     return `[SC] ControlService FAILED:\n\n${err}`;
   }
-
-  // Remove associated process
-  if (svc) ctx.processManager.onServiceStopped(svc.name);
 
   // Real sc.exe returns full status block with STOP_PENDING state
   if (svc) {

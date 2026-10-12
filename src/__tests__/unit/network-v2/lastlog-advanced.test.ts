@@ -14,14 +14,26 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
+import { binaryStringToBytes } from '@/network/devices/linux/login/UtmpxRecord';
+import { LASTLOG_RECORD_SIZE } from '@/network/devices/linux/login/LastlogTool';
 import { LinuxLastlogRegistry, LASTLOG_PATH } from '@/network/devices/linux/LinuxLastlogRegistry';
 import { LinuxSshServerContext } from '@/network/protocols/ssh/server/LinuxSshServerContext';
 
 interface PersistedRow { user: string; when: number; sourceHost: string; tty: string }
 
 function readLastlogFile(exec: LinuxCommandExecutor): PersistedRow[] {
-  const raw = exec.vfs.readFile(LASTLOG_PATH);
-  return raw ? (JSON.parse(raw) as PersistedRow[]) : [];
+  const bytes = binaryStringToBytes(exec.vfs.readFile(LASTLOG_PATH) ?? '');
+  const rows: PersistedRow[] = [];
+  for (const user of exec.userMgr.getAllUsers()) {
+    const at = user.uid * LASTLOG_RECORD_SIZE;
+    if (at + LASTLOG_RECORD_SIZE > bytes.length) continue;
+    const record = bytes.subarray(at, at + LASTLOG_RECORD_SIZE);
+    const seconds = new DataView(record.buffer, record.byteOffset, record.byteLength).getInt32(0, true);
+    if (seconds === 0) continue;
+    const text = (from: number, to: number): string => new TextDecoder().decode(record.subarray(from, to)).replace(/\0.*$/s, '');
+    rows.push({ user: user.username, when: seconds * 1000, tty: text(4, 36), sourceHost: text(36, 292) });
+  }
+  return rows;
 }
 
 function rowFor(out: string, user: string): string | undefined {
@@ -93,8 +105,8 @@ describe('lastlog — advanced multi-layer', () => {
       expect(exec.execute('lastlog -h')).toMatch(/Usage:[\s\S]*--user/);
     });
 
-    it('A9 -V prints the util-linux version', () => {
-      expect(exec.execute('lastlog -V')).toMatch(/util-linux/);
+    it('A9 -V is not an option of the shadow lastlog and is refused like the real one', () => {
+      expect(exec.execute('lastlog -V')).toMatch(/^lastlog: invalid option -- 'V'\nUsage: lastlog \[options\]/);
     });
 
     it('A10 plain lastlog lists every account exactly once', () => {
@@ -112,11 +124,11 @@ describe('lastlog — advanced multi-layer', () => {
       expect(exec.vfs.exists(LASTLOG_PATH)).toBe(true);
     });
 
-    it('B2 the seeded file is owned root:root, mode 0644', () => {
+    it('B2 the seeded file is owned root:utmp, mode 0664', () => {
       const inode = exec.vfs.resolveInode(LASTLOG_PATH)!;
       expect(inode.uid).toBe(0);
-      expect(inode.gid).toBe(0);
-      expect((inode.permissions & 0o777).toString(8)).toBe('644');
+      expect(inode.gid).toBe(43);
+      expect((inode.permissions & 0o777).toString(8)).toBe('664');
     });
 
     it('B3 a recorded login is projected to the file', () => {
@@ -129,12 +141,12 @@ describe('lastlog — advanced multi-layer', () => {
       expect(alice!.tty).toBe('pts/0');
     });
 
-    it('B4 reading the file back via cat yields valid JSON of the entries', () => {
+    it('B4 the file is the binary struct lastlog table indexed by uid', () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       const out = exec.execute('cat /var/log/lastlog');
-      expect(() => JSON.parse(out)).not.toThrow();
-      expect(out).toContain('alice');
+      expect(out).toContain('10.0.0.5');
+      expect(out.length).toBe(1002 * 292);
     });
 
     it('B5 -C removes the user from the on-disk projection', () => {
@@ -159,6 +171,7 @@ describe('lastlog — advanced multi-layer', () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.42', 'pts/9');
       const reborn = new LinuxLastlogRegistry();
+      reborn.bindUidResolver((user) => exec.userMgr.getUser(user)?.uid);
       reborn.attachVfs(exec.vfs);
       expect(reborn.getCurrent('alice')?.sourceHost).toBe('10.0.0.42');
     });
@@ -193,8 +206,8 @@ describe('lastlog — advanced multi-layer', () => {
       expect(out).toMatch(/^root\b/m);
     });
 
-    it('C4 an unknown numeric UID is an error', () => {
-      expect(exec.execute('lastlog -u 4242')).toMatch(/Unknown user or range: 4242/);
+    it('C4 an unknown numeric UID selects no account and prints nothing, as the real tool does', () => {
+      expect(exec.execute('lastlog -u 4242')).toBe('');
     });
 
     it('C5 a non-root user may still read lastlog', () => {
@@ -209,14 +222,14 @@ describe('lastlog — advanced multi-layer', () => {
     it('C6 -C and -S are refused to non-root', () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.userMgr.currentUid = 1001;
-      expect(exec.execute('lastlog -C -u alice')).toMatch(/must be root/);
-      expect(exec.execute('lastlog -S -u alice')).toMatch(/must be root/);
+      expect(exec.execute('lastlog -C -u alice')).toBe('/var/log/lastlog: Permission denied');
+      expect(exec.execute('lastlog -S -u alice')).toBe('/var/log/lastlog: Permission denied');
     });
 
     it('C7 -C/-S without -u is rejected', () => {
       exec.userMgr.currentUid = 0;
-      expect(exec.execute('lastlog -C')).toMatch(/requires -u|--user/);
-      expect(exec.execute('lastlog -S')).toMatch(/requires -u|--user/);
+      expect(exec.execute('lastlog -C')).toMatch(/^lastlog: Options -C and -S require option -u to specify the user/);
+      expect(exec.execute('lastlog -S')).toMatch(/^lastlog: Options -C and -S require option -u to specify the user/);
     });
   });
 
@@ -265,8 +278,7 @@ describe('lastlog — advanced multi-layer', () => {
 
     it('D5 the SSH source IP propagates to the on-disk projection', () => {
       sshContext().recordLogin('alice', '203.0.113.8');
-      const rows = JSON.parse(exec2.vfs.readFile(LASTLOG_PATH) ?? '[]') as PersistedRow[];
-      expect(rows.find(r => r.user === 'alice')?.sourceHost).toBe('203.0.113.8');
+      expect(readLastlogFile(exec2).find(r => r.user === 'alice')?.sourceHost).toBe('203.0.113.8');
     });
 
     it('D6 distinct source hosts across logins keep the most recent', () => {

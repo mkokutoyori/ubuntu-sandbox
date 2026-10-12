@@ -18,6 +18,9 @@ import { CyclingPolicy, type CompletionPolicy } from '@/terminal/completion';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
+import { embeddedCaptureOf } from '@/network/capture/embeddedCaptureOf';
+import type { FrameSource } from '@/network/hardware/PortTap';
+import { huaweiCaptureHost, parseCapturePacket, captureBanner, captureTrailer, packetBlock } from '@/network/devices/shells/huawei/CapturePacket';
 import { VRP_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
 
 const HUAWEI_THEME: TerminalTheme = {
@@ -33,6 +36,8 @@ const HUAWEI_THEME: TerminalTheme = {
   bootColor: '#06b6d4',     // cyan-500
   pagerColor: '#facc15',    // yellow-400
 };
+
+const CAPTURE_POLL_MS = 50;
 
 export class HuaweiTerminalSession extends CLITerminalSession {
   /** Per-terminal vty session — same model as CiscoTerminalSession (§5.1). */
@@ -185,6 +190,58 @@ export class HuaweiTerminalSession extends CLITerminalSession {
   protected override afterCommandExecuted(_command: string): void {
     this.reconcileDebugSubscription();
     this.reconcileTerminalMonitor();
+  }
+
+  private captureSerial = 0;
+
+  protected override tryInterceptAsyncCommand(command: string): boolean {
+    const words = command.trim().split(/\s+/);
+    if (words[0] !== 'capture-packet' || this.hasForegroundAsyncJob) return false;
+    const host = huaweiCaptureHost(() => this.device);
+    const parsed = parseCapturePacket(words.slice(1), command.trim(), host);
+    if (!parsed.ok) return false;
+    const plan = parsed.plan;
+    const service = embeddedCaptureOf(this.device as unknown as FrameSource);
+    const name = `vrp-capture-${++this.captureSerial}`;
+    const buffer = service.defineBuffer(name);
+    buffer.circular = true;
+    buffer.maxElementBytes = plan.packetLength;
+    if (plan.aclRef !== null) buffer.filter = { label: `acl ${plan.aclRef}`, matches: host.filterFor(plan.aclRef) };
+    service.definePoint(name, 'ip cef', plan.iface, 'both');
+    service.associate(name, name);
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command,
+      run: async (ctx) => {
+        service.start(name);
+        ctx.sink.line(captureBanner(plan));
+        let shown = 0;
+        let elapsed = 0;
+        const flush = (): void => {
+          while (shown < buffer.frames.length && (plan.packetNumber === null || shown < plan.packetNumber)) {
+            for (const line of packetBlock(shown + 1, buffer.frames[shown].frame)) ctx.sink.line(line);
+            shown++;
+          }
+        };
+        try {
+          while (!ctx.cancelled()
+            && (plan.packetNumber === null || shown < plan.packetNumber)
+            && (plan.timeoutSeconds === null || elapsed < plan.timeoutSeconds * 1000)) {
+            await ctx.delay(CAPTURE_POLL_MS);
+            elapsed += CAPTURE_POLL_MS;
+            flush();
+          }
+        } finally {
+          if (service.point(name)?.active) service.stop(name);
+          service.removePoint(name);
+          service.removeBuffer(name);
+        }
+        ctx.sink.line(captureTrailer(shown));
+      },
+      onInterrupt: (ctx) => ctx.sink.line(captureTrailer(buffer.frames.length)),
+    });
+    return job !== null;
   }
 
   private reconcileTerminalMonitor(): void {

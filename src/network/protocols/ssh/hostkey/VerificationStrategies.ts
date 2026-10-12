@@ -10,7 +10,6 @@ import type { KnownHostsStore } from './KnownHostsStore';
 import {
   type IHostKeyVerificationStrategy,
   type VerificationDecision,
-  buildHostKeyChangedWarning,
 } from './IHostKeyVerificationStrategy';
 
 export class AskVerificationStrategy implements IHostKeyVerificationStrategy {
@@ -28,7 +27,7 @@ export class AskVerificationStrategy implements IHostKeyVerificationStrategy {
       };
     }
     if (known.matches(key)) return { action: 'accept_silent' };
-    return rejectChangedKey(host, known, key);
+    return rejectChangedKey(host);
   }
 }
 
@@ -41,7 +40,7 @@ export class StrictVerificationStrategy implements IHostKeyVerificationStrategy 
     const known = store.get(host);
     if (!known) return { action: 'refuse_unknown', host };
     if (known.matches(key)) return { action: 'accept_silent' };
-    return rejectChangedKey(host, known, key);
+    return rejectChangedKey(host);
   }
 }
 
@@ -56,7 +55,7 @@ export class AcceptNewVerificationStrategy
     const known = store.get(host);
     if (!known) return { action: 'accept_and_save' };
     if (known.matches(key)) return { action: 'accept_silent' };
-    return rejectChangedKey(host, known, key);
+    return rejectChangedKey(host);
   }
 }
 
@@ -85,16 +84,6 @@ export function createVerificationStrategy(
   }
 }
 
-function rejectChangedKey(
-  host: string,
-  expected: SshHostKey,
-  got: SshHostKey,
-): VerificationDecision {
-  const expectedFp = expected.fingerprint.toString();
-  const actualFp = got.fingerprint.toString();
-  return {
-    action: 'reject',
-    reason: `host key for ${host} has changed`,
-    warningBlock: buildHostKeyChangedWarning(host, expectedFp, actualFp),
-  };
+function rejectChangedKey(host: string): VerificationDecision {
+  return { action: 'reject', reason: `host key for ${host} has changed` };
 }

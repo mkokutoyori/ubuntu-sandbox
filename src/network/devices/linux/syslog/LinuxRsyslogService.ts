@@ -15,6 +15,7 @@ export interface RsyslogHost {
   ecrireLigne(chemin: string, ligne: string): void;
   listerRepertoire(chemin: string): string[];
   ecouterUdp(port: number, onDatagram: (source: string, charge: string) => void): (() => void) | null;
+  ecouterTcp(port: number, onMessage: (source: string, charge: string) => void): (() => void) | null;
   hostname(): string;
   maintenant(): number;
   fuseau?(): string | undefined;
@@ -41,7 +42,7 @@ export function analyserMessageRecu(brut: string): {
 
 export class LinuxRsyslogService implements ServiceSocketServer {
   private config: ConfigRsyslog = { ecoutes: [], regles: [], inclusions: [] };
-  private readonly fermetures = new Map<number, () => void>();
+  private readonly fermetures = new Map<string, () => void>();
 
   constructor(private readonly host: RsyslogHost) {}
 
@@ -68,6 +69,12 @@ export class LinuxRsyslogService implements ServiceSocketServer {
     this.config = { ecoutes, regles, inclusions: base.inclusions };
   }
 
+  listeningSockets(): Array<{ port: number; protocol: 'udp' | 'tcp' }> {
+    const seen = new Map<string, { port: number; protocol: 'udp' | 'tcp' }>();
+    for (const e of this.config.ecoutes) seen.set(`${e.protocole}:${e.port}`, { port: e.port, protocol: e.protocole === 'tcp' ? 'tcp' : 'udp' });
+    return [...seen.values()].sort((a, b) => a.port - b.port || a.protocol.localeCompare(b.protocol));
+  }
+
   listeningPorts(): number[] {
     return [...new Set(this.config.ecoutes.map((e) => e.port))].sort((a, b) => a - b);
   }
@@ -80,16 +87,19 @@ export class LinuxRsyslogService implements ServiceSocketServer {
       (e) => e.port === spec.port && e.protocole === (spec.protocol === 'tcp' ? 'tcp' : 'udp'),
     );
     if (!voulu) return false;
-    if (this.fermetures.has(spec.port)) return true;
-    const off = this.host.ecouterUdp(spec.port, (src, charge) => this.recevoir(src, charge));
+    const key = `${voulu.protocole}:${spec.port}`;
+    if (this.fermetures.has(key)) return true;
+    const receive = (src: string, charge: string): void => this.recevoir(src, charge);
+    const off = voulu.protocole === 'tcp' ? this.host.ecouterTcp(spec.port, receive) : this.host.ecouterUdp(spec.port, receive);
     if (!off) return false;
-    this.fermetures.set(spec.port, off);
+    this.fermetures.set(key, off);
     return true;
   }
 
   close(spec: PortSpec): void {
-    this.fermetures.get(spec.port)?.();
-    this.fermetures.delete(spec.port);
+    const key = `${spec.protocol === 'tcp' ? 'tcp' : 'udp'}:${spec.port}`;
+    this.fermetures.get(key)?.();
+    this.fermetures.delete(key);
   }
 
   stopAll(): void {

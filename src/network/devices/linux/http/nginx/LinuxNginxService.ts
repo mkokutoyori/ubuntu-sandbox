@@ -318,8 +318,10 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return this.loadPortTls(onPort, port);
   }
 
+  private readonly ocspZones = new Map<string, unknown>();
+
   private wireDeps(): OcspWireDeps {
-    return { tcpStack: () => this.host.tcpStack(), resolve: (name) => this.host.resolve?.(name) ?? null, now: () => this.host.now().getTime() };
+    return { tcpStack: () => this.host.tcpStack(), resolve: (name) => this.host.resolve?.(name) ?? null, now: () => this.host.now().getTime(), sharedCache: this.ocspZones };
   }
 
   private loadPortTls(onPort: readonly NginxServerBlock[], port: number): PortTls | TlsProblem {

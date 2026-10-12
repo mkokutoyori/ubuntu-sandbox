@@ -32,6 +32,11 @@ export class AsaTerminalSession extends CLITerminalSession {
     return `${this.device.getHostname()}>`;
   }
 
+  protected override prepareAsRemoteUser(_user: string): void {
+    this.isBooting = false;
+    this.updatePrompt();
+  }
+
   protected getCtrlZCommand(): string { return 'end'; }
   protected getPagerIndicator(): string { return '<--- More --->'; }
 

@@ -106,7 +106,7 @@ Les 16 appels, lus un par un :
 | `WindowsPC.initDefaultSockets()` | 22, 445, 3389 | **(b)** doublon des `listen()` du même fichier |
 | `WindowsPC.initDefaultSockets()` | 139 | **(c)** décoratif — aucun `listen(139)` nulle part |
 | `WindowsServicePortProjection` | selon le service | **(a)** projection légitime |
-| `PortProxySocketProjection` | port d'écoute | **(a)** projection, suivie d'un vrai `listen()` |
+| `PortProxySocketProjection` (remplacée en P6 par `PortProxyEndpoint`) | port d'écoute | **(a)** projection, suivie d'un vrai `listen()` |
 
 **L'erreur symétrique est la plus nombreuse**, et elle n'apparaît dans
 aucun de ces 16 appels puisqu'elle consiste précisément à n'en faire
@@ -288,15 +288,197 @@ un vrai processus (le listener TNS d'Oracle, qui écoute dès l'amorçage sans p
 pas nommé tant qu'aucun processus ne le tient). `probe-ss-netstat-proc-net-une-seule-verite` est le garde-fou
 de ce croisement.
 
+### P5 — Une session SSH est des processus, des deux côtés
+
+P4 posait qu'une prise n'a de propriétaire que si un processus vivant la tient. Il restait à donner de vrais
+processus aux sessions SSH et à les faire mourir avec leur connexion. Mesuré sur `origin/mandeng 608f58462` :
+
+- **Serveur.** Après `ssh user@h true`, après une session interactive nourrie sur l'entrée standard et après
+  une session de terminal fermée par `exit`, `ps` listait toujours `sshd: user [priv]` et `-bash` (quatre paires
+  après quatre commandes, chacune sur un `pts/N` de plus) alors que `who`, `w` et `loginctl` disaient que
+  personne n'était connecté : `closeSshSessionRecord` appelait `reap`, qui ne retire qu'un zombie. Et il fermait
+  « le plus ancien enregistrement de `(utilisateur, adresse)` » : la fin d'une commande depuis le même poste
+  fermait donc le tunnel `ssh -f -N -L` ouvert avant elle.
+- **Client.** Un `ssh` tapé dans un terminal ne laissait aucun processus : la connexion vers le port 22 et les
+  écoutes `-L`/`-D` n'avaient pas de propriétaire pour `ss -p` ou `lsof`, et il n'y avait rien à tuer. Le
+  terminal avait sa propre grammaire de `-L`/`-R`/`-D` (l'adresse de liaison était lue puis jetée) et sa propre
+  orchestration des écoutes, en double de celles du chemin `executeCommand`.
+
+Désormais l'enregistrement de session porte le port source de *sa* connexion : il le prend en réclamant la prise
+acceptée que nul enregistrement ouvert ne tient, se ferme par ce port (`connectionClosed` reçoit le port de la
+connexion qui se ferme) et fait alors sortir le shell puis le moniteur ; le faucheur de prises retire une ligne
+de connexion par son quadruplet. Côté client, le `ssh` d'un terminal est un processus enfant du shell de ce
+terminal, sur son tty, qui adopte la session ; ses redirections passent par la `SshForwardingTable` de la
+machine (une seule orchestration) sur la grammaire de `SshPortForward` (une seule grammaire). Sa fin, qu'elle
+vienne d'un `exit`, d'un raccrochage ou d'un `kill`, retire le processus, ferme les écoutes et raccroche la
+connexion. Garde-fous : `probe-les-processus-de-session-sshd-suivent-leur-connexion` et
+`probe-le-ssh-du-terminal-est-un-processus`.
+
+Un processus qui sort ferme ses prises comme le fait `tcp_close()` du noyau 5.15 (`__tcp_close`, source lue) : un
+FIN si rien n'attendait d'être lu, un RST s'il restait des octets reçus et non lus (RFC 9293 §3.6.1 SHLD-3, RFC 2525
+§2.17), rien pour une connexion pas encore ouverte (§3.10.4) ; une prise en TIME-WAIT, qui n'appartient plus à
+personne, survit à son ancien propriétaire avec sa ligne dans `ss`. Mesuré avant : un `kill` propre laissait le pair
+en ESTAB sans fin (la prise locale disparaissait, aucune trame ne partait). Le faucheur de prises de `LinuxMachine`
+ferme d'abord les prises du processus, retire la ligne d'une prise disparue, et ne fait que retirer le propriétaire
+d'une prise qui survit ; l'application de la prise est prévenue de sa fermeture, une seule fois, dès la sortie du
+processus. Garde-fou : `probe-un-processus-qui-sort-ferme-ses-prises-comme-tcp-close`.
+
+Une session s'arrête avec ses processus, par un seul chemin (`LinuxMachine.endSshSession`) : la sortie ordinaire,
+`loginctl terminate-session` / `kill-session` / `terminate-user` (systemd 249, `man/loginctl.xml` : « kills all
+processes of the session and deallocates all resources attached to the session ») et la sortie du moniteur ou du
+shell qu'il porte, que ce soit `kill`, `pkill` ou une sortie. Mesuré avant : tuer le shell laissait `who`,
+`loginctl`, la connexion et le tunnel du client intacts, sans ligne `Removed session` ; l'action de `loginctl`
+existait en deux exemplaires, celle de la machine et celle de l'exécuteur (le chemin de `sudo loginctl`), qui ne
+retirait ni le nœud `pts`, ni la session logind, ni les lignes du journal ; seule la sortie du processus `ssh` du
+client fermait la connexion, jamais l'inverse. La correspondance identifiant → session n'est plus écrite qu'une fois
+(`loginctlSessionId`), l'exécuteur reçoit l'action de la machine, et une connexion perdue retire les redirections de
+la session et fait sortir le processus `ssh` qui la tenait (`SshSession.onDisconnected`). Garde-fou :
+`probe-tuer-le-processus-de-session-termine-la-session`.
+
+Pas construit : l'enfant sans privilège `sshd: user@pts/0`, qui tient la connexion avec le moniteur dans un vrai
+Linux ; une session sans terminal prend encore un numéro de `pts` ; un `ssh` tapé dans une session distante déjà
+ouverte n'a pas de processus ; un moniteur tué par SIGKILL écrit la même ligne PAM de fermeture qu'un SIGTERM,
+alors qu'un vrai sshd, qui ne s'exécute plus, n'en écrit aucune ; une session telnet n'a pas de processus propre
+(elle porte le pid de telnetd) et finit avec sa connexion.
+
+### P6 — Les machines Windows disent la même chose
+
+Tout ce que P2 à P5 posent pour Linux vaut pour un `WindowsPC`, qui n'en tenait presque rien. Mesuré sur
+`origin/mandeng 5df140bb3`, un LinuxPC et un WindowsPC câblés :
+
+- **Les connexions n'existaient pas pour `netstat -ano` ni pour `Get-NetTCPConnection`.** Les deux lisent la
+  `SocketTable` (une seule vérité, et c'est bien), mais la pile du WindowsPC n'y projetait que les écoutes : une
+  connexion acceptée par `sshd.exe` (PID 1088) était dans la pile (`22->10.0.0.3:32768 established owner=null`) et
+  nulle part ailleurs.
+- **Une connexion acceptée n'avait pas de propriétaire**, ni sur Windows ni, pour tout service autre que sshd et
+  telnetd, sur Linux : `ss -tnp` n'affichait pas de colonne `users:` et `kill` du démon laissait la connexion
+  ESTAB des deux côtés.
+- **Le faucheur de prises de Windows** appelait `abortSocketsOwnedBy`, un `_teardown` silencieux, puis retirait
+  toute ligne portant la même adresse locale ou le même nom d'image : `taskkill /F /PID 1088` laissait la
+  connexion ouverte chez le pair et pouvait emporter les lignes d'autres connexions ou d'autres instances de
+  `svchost.exe`. L'arrêt d'un service retirait son processus de la table sans événement.
+- **`ssh` lancé depuis le poste Windows** écrivait à la main une ligne TIME_WAIT (`10.0.0.7:55579`) que ni la pile
+  ni le serveur ne connaissaient : le serveur avait vu le port 49153.
+
+Désormais une prise acceptée appartient au processus qui tient l'écoute, comme le descripteur que rend `accept`
+(`accept(2)` : « creates a new connected socket, and returns a new file descriptor » ; Winsock : « creates and
+returns a handle to the new socket »), pour tous les services des deux plates-formes ; la pile du WindowsPC projette
+ses connexions dans la table avec la même `TcpSocketStateProjection` que Linux (déplacée dans `tcp/`) ; et un
+processus Windows qui s'arrête ferme les prises qu'il tient (`closeSocketsOwnedBy`, politique de sortie `reset`
+pour une terminaison forcée -- `taskkill /F`, `Stop-Process`, TerminateProcess ; `graceful` sinon -- l'arrêt d'un
+service) selon la documentation Microsoft : `ExitProcess` ferme les poignées du processus, `closesocket` sans
+SO_LINGER est une fermeture ordinaire, et WSAECONNRESET « normally results if the peer application on the remote
+host is suddenly stopped ». Ce qui reste en TIME_WAIT n'a plus de propriétaire (PID 0). Gardes-fous :
+`probe-une-prise-acceptee-appartient-au-processus-qui-tient-l-ecoute` et
+`probe-windows-un-processus-termine-ferme-ses-connexions`.
+
+Les écoutes d'un service Windows sont de vraies écoutes de la pile et suivent le service (mesuré sur `15f994d0d`) :
+`sc stop sshd` retirait la ligne 22 de `netstat -ano` et laissait l'écoute, si bien que `nc` y réussissait et que
+`ssh` obtenait « Permission denied » d'un serveur arrêté ; la reprise après `taskkill /F` avec `sc failure ...
+restart/` relançait `sshd.exe` sous un nouveau PID pendant que `netstat` affichait l'ancien (1088) d'une table
+codée en dur, pour une pile qui n'écoutait plus ; un démarrage de la machine écrivait l'état des services sans
+événement ni effet sur les processus ; un service hébergé par un svchost qui s'arrêtait puis redémarrait sortait de
+`tasklist /svc`. Le gestionnaire de services porte maintenant l'effet sur le processus (`ServiceProcessHost`) avant
+d'annoncer, par une seule fonction pour le démarrage, l'arrêt, la reprise après incident et le démarrage de la
+machine -- les sept appels manuels à `onServiceStarted`/`onServiceStopped` (`sc`, `net`, `Start-Service`,
+`Stop-Service`, `Restart-Service`, le tour d'horloge) disparaissent -- et `WindowsServicePortProjection` tient des
+déclarations d'écoute (ports, propriétaire, prédicat d'activité) qu'il rapproche de l'état courant à chaque
+événement de service et à la construction. Le propriétaire est lu dans la table des processus au moment de
+l'ouverture : le processus qui héberge le service (`sshd.exe`), ou `System` (PID 4) pour 445 et 139, tenus par le
+noyau. Garde-fou : `probe-un-service-windows-n-ecoute-que-tant-qu-il-tourne`.
+
+Un port que sa fonctionnalité ne sert pas est refusé, et un port servi appartient au processus qui le sert (mesuré
+sur `ce9f180db`) : à la construction d'un WindowsPC ou d'un WindowsServer neuf -- RDP désactivé, ni domaine ni rôle --
+`nc` réussissait sur 3389, 5985, 389, 3268, 636, 3269, 88, 5722, 8530 et 515 et `netstat -ano` les listait tous en
+`LISTENING`, neuf avec le PID 0 et 3389 avec le PID 1096 que `tasklist` ne connaissait pas. Les dix écoutes étaient
+ouvertes par `initDefaultSockets` et chacune vérifiait sa fonctionnalité à l'acceptation, pour fermer la prise une fois
+la poignée de main faite : un `Test-NetConnection` ou un `nmap` y voyait un port ouvert là où un Windows réel répond
+par un refus, et un poste client portait les ports d'un contrôleur de domaine, de DFSR, de WSUS et d'un serveur
+d'impression, des rôles qu'il ne peut pas installer. Elles sont maintenant des déclarations de
+`WindowsServicePortProjection` (3389 quand RDP est activé, 5985 quand WinRM est configuré, 389/3268/636/3269 et 88
+sur un contrôleur de domaine, 5722, 8530 et 515 quand le rôle correspondant est installé, 135 tant que `RpcSs` tourne),
+rapprochées de l'état à chaque événement de service, à chaque écriture du registre (quel qu'en soit le chemin :
+`reg add`, `Set-ItemProperty`, stratégie de groupe), à chaque changement de `WindowsWinRmConfig`, au cycle de vie des
+rôles et à la promotion d'un contrôleur de domaine. RDP n'a plus qu'un interrupteur, la valeur de registre
+`HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\fDenyTSConnections` (Microsoft Learn : 1 bloque toutes les
+connexions, 0 les autorise), semée à 1 comme une installation neuve : `Enable-RemoteDesktop` l'écrit au lieu de
+basculer un champ que le registre ne voyait pas, et une valeur ou une clé absente ferme RDP. Le propriétaire est lu
+dans la table des processus : `lsass.exe` pour LDAP et le KDC, `System` (PID 4, HTTP.sys) pour WinRM et WSUS, l'hôte
+de `RpcSs` pour 135, de `TermService` pour RDP, de `DFSR` pour 5722, du spouleur pour 515. `TermService` entre dans le
+gestionnaire de services et un svchost (PID 1096) l'héberge, si bien que le PID de RDP existe enfin dans `tasklist` ;
+`winrm quickconfig` démarre le service `WinRM` comme il l'annonce. Garde-fou :
+`probe-un-port-windows-n-existe-que-si-sa-fonctionnalite-est-active`.
+
+Un service de rôle tourne dans le processus où Windows le fait tourner (mesuré sur `2d36ab993`) :
+`Install-WindowsFeature AD-Domain-Services` créait trois processus `ntds.exe`, `netlogon.exe` et `kdc.exe` là où NTDS, Netlogon
+et Kdc ont `lsass.exe` pour chemin binaire ; DHCP, NPAS et Web-Server créaient `dhcpserver.exe`, `ias.exe` et `w3svc.exe`, des
+processus nommés d'après le service, là où ils tournent dans un svchost (`svchost.exe -k iissvcs` pour W3SVC) ; `sc create MySvc
+binPath= "C:\tools\agent.exe"` puis `sc start` lançait `mysvc.exe` ; `tasklist` listait `LanmanServer.exe` et
+`LanmanWorkstation.exe`, des images qui n'existent pas ; il n'y avait pas de service IP Helper ; les services Exchange portaient
+des noms de processus tirés de leur nom de service. Le processus d'un service est maintenant l'image que nomme son chemin
+binaire (`serviceImageOf`), le type du service (`WIN32_OWN_PROCESS` ou `WIN32_SHARE_PROCESS`) en découle, `lsass.exe` et
+`svchost.exe` sont des hôtes partagés qui ne meurent pas avec un de leurs services (un svchost créé pour un rôle sort avec lui),
+la table des fonctionnalités porte l'image des services de rôle, chaque service Exchange a son image, et le 4688 d'un processus
+de service enregistre le chemin binaire que `sc qc` affiche. Garde-fou :
+`probe-un-service-de-role-tourne-dans-le-processus-ou-windows-le-fait-tourner`.
+
+Une écoute ou une socket UDP de rôle ou de système appartient au processus qui la sert et ne vit que tant que son service
+tourne (mesuré sur `2d36ab993`, WindowsServer avec les rôles DNS, DHCP, NPS et IIS) : `netstat -ano` listait UDP et TCP 53, UDP
+67 et 547, UDP 1812 et 1813 et TCP 80 au PID 0 (le TCP 53 sous l'étiquette `dnsmasq`, un démon Linux), TCP 647 au PID 1220 que
+`tasklist` ne connaissait pas, UDP 5353, 5355 et 123 au PID 0, et une règle `netsh interface portproxy` au PID 1100 d'un svchost
+étranger (SamSs, CryptSvc). `sc stop DNS` (ou `DHCPServer`, `IAS`, `W3SVC`) laissait les ports ouverts et répondeurs ; `taskkill
+/F` sur `dns.exe` ne retirait rien ; et le faucheur de prises, copié d'un système à l'autre, ne retirait d'une prise UDP que sa
+ligne -- l'écoute UDP de l'hôte et la table de sockets sont deux structures -- si bien que sous Linux `kill -9` de `named` fait
+disparaître la ligne de `ss -ulnp` et que `dig` obtient sa réponse. `WindowsServicePortProjection` tient maintenant des points
+d'accès (`WindowsEndpoint` : `open(identité)` et `close()`) en plus des écoutes TCP, rapprochés de l'état à chaque événement
+avec isolation des échecs : DNS, DHCP (4, 6 et bascule), NPS, IIS (HTTP.sys, `System`), le cœur du cluster (`System`),
+l'Autodiscover et les connecteurs de réception d'Exchange, LLMNR, mDNS, NTP et les règles de port proxy (`iphlpsvc`, qui
+tourne dans un svchost, `svchost.exe -k NetSvcs`) se déclarent avec un propriétaire et un prédicat d'activité, et reçoivent
+l'identité du processus à l'ouverture. Les rôles ne s'ouvrent plus à leur création mais quand leur service tourne, et l'état
+d'un site IIS (Started/Stopped) reste celui de l'administrateur quand W3SVC redémarre. Les deux faucheurs de prises (Linux,
+Windows) deviennent un seul, `EndHost.reapProcessSockets`, qui ferme aussi l'écoute UDP ; les sockets que LLMNR et mDNS ouvrent
+pour interroger le lien appartiennent à `Dnscache` (`EndHost.resolverIdentity()`). Un serveur dont on remplace le bus
+(`setEventBus` reconstruit la projection) déclare de nouveau ses points d'accès de rôle, et l'écoute du port proxy est un objet
+unique de la machine que la reconstruction ne remplace pas. Garde-fou :
+`probe-chaque-ecoute-windows-suit-son-service-et-porte-son-processus`.
+
+`netstat` de Windows dit ce que dit le vrai (mesuré sur `fa7d49a31`, un WindowsServer et un LinuxPC câblés) : `netstat -a` listait les lignes
+dans l'ordre d'arrivée dans la table, des adresses IPv6 nues (`:::7200`, `::1:7300`), des écoutes face à `0.0.0.0:0` et aucun nom (ni le
+service du fichier `services`, ni le fichier `hosts`, ni le DNS), et ignorait `-b`, `-q`, `-f`, `-t`, `-x`, `-y`, `-p tcpv6`, `/?`, les
+commutateurs inconnus et les majuscules ; `-e -s` ne disait que `-e`. `WinNetstat.ts` remplace le code de `WinFileCommands.ts` : arguments
+typés (`parseNetstatArguments`), aide de Windows 10 22H2, lignes triées (TCP IPv4, TCP IPv6, UDP IPv4, UDP IPv6, adresse numérique puis
+port), colonne distante nommée par le fichier `services` de la machine (`IanaServiceRegistry.fromServicesFile`, dont `parseServicesRecord`
+remplace aussi le lecteur de `getent services`), son fichier `hosts` et une vraie question PTR sur le fil, le nom de l'ordinateur pour une
+écoute, une adresse de la machine ou la boucle, la zone d'une adresse de lien local, `-p` pour plusieurs protocoles, `-s` par famille,
+`-e -s` ensemble, TIME_WAIT sans `-a`. `-b` nomme sous chaque ligne le service puis l'exécutable (`  Dnscache` puis ` [svchost.exe]`) et
+exige une session élevée : le service qui tient une prise voyage de `ListenerIdentity` à `SocketEntry.serviceName` (écoutes, connexions
+acceptées, UDP). `-t`, `-x` et `-y` partagent le modèle de ligne de `Get-NetTCPConnection` (état de délestage `InHost`, gabarit `Internet`
+pour une connexion et rien pour une écoute, PID 0 pour une prise sans propriétaire, adresse générique de sa famille pour une écoute).
+`-q` liste les sockets TCP liées qui n'écoutent pas, qui existent maintenant dans la pile (`TcpStack.bind`, état `BOUND` de la table, port
+tenu, SYN refusé, pas un port éphémère, fauchées avec leur processus) et que `ss`, `netstat` et `/proc/net/tcp` de Linux ne montrent pas :
+le noyau 5.15 ne parcourt que les tables d'écoute et de connexions (`net/ipv4/tcp_ipv4.c`, `net/ipv4/inet_diag.c`), jamais la table de
+liaison. Garde-fous : `probe-netstat-windows-nomme-trie-et-refuse-comme-windows`, `probe-netstat-b-nomme-le-service-et-l-executable`,
+`probe-netstat-q-montre-les-ports-lies-sans-ecoute` et `probe-netstat-t-x-y-et-powershell-disent-la-meme-chose`.
+
+Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
+non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
+Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135
+d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ; `TermService` est affiché
+Automatic quand un Windows réel le dit Manual ; un service qui n'a jamais eu de processus d'hébergement n'en reçoit pas en
+démarrant ; aucune application de la simulation n'ouvre encore de socket TCP liée sans écoute (la brique est dans la pile) ; les
+services Windows n'écoutent pas en double pile et `netstat -s` ne dit rien d'IPv6 ; le processus par session d'OpenSSH pour Windows, le
+`ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
+
 ## 7. Hors périmètre
 
 - **UDP.** Même structure (`udpBindAddress` vs table), mais un socket UDP
   n'a pas d'état `LISTEN` et se diagnostique autrement. À traiter ensuite
   si P1 se passe bien.
-- **Windows.** `WindowsServicePortProjection` et
-  `PortProxySocketProjection` ont la même forme et méritent le même
-  traitement, mais après Linux : le motif doit être éprouvé une fois avant
-  d'être répliqué.
+- **Windows.** Traité en P6 pour les connexions, leur propriétaire, la
+  mort d'un processus, les écoutes des services, des fonctionnalités, des
+  rôles et du système (UDP compris), et pour `netstat` (`-b`, `-q`, les noms,
+  le tri, `-t`, `-x`, `-y`) ; restent la double pile des services Windows et les
+  compteurs IPv6 de `netstat -s`.
 - **Le listener TNS d'Oracle.** Nommé en P2, traité ailleurs.
 
 ## 8. Vérification

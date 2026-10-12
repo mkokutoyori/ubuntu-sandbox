@@ -447,7 +447,7 @@ function parseTls13(list: string, available: (cipher: Tls13Cipher) => boolean): 
 
 export function createCipherList(ruleString: string, options: CipherListOptions = {}): CipherListResult {
   const available = options.isAvailable ?? (() => true);
-  const nodes: Node[] = ALL_CIPHERS.filter(available).map((cipher) => ({ cipher, active: false, prev: null, next: null }));
+  const nodes: Node[] = [...ALL_CIPHERS].sort((left, right) => right.id - left.id).filter(available).map((cipher) => ({ cipher, active: false, prev: null, next: null }));
   const chain: Chain = { head: null, tail: null };
   nodes.forEach((node, index) => {
     node.prev = index > 0 ? nodes[index - 1] : null;

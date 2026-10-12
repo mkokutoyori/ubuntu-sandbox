@@ -13,7 +13,7 @@ import type { NanoMode, PendingReplaceMatch } from './NanoEngine';
 import type { PendingSubstMatch, PendingSwapRecovery, VimMode, VimVariant } from './VimEngine';
 import type { EditorKeyInput } from './EditorKeyInput';
 import type { EditorName } from './editorLaunch';
-import type { ListChars } from './editorRender';
+import type { EditorScreen } from './screen/EditorScreen';
 
 export interface EditorViewBase {
   readonly filePath: string;
@@ -37,7 +37,7 @@ export interface VimEditorView extends EditorViewBase {
   readonly message: string;
   readonly commandLineText: string;
   readonly searchText: string;
-  readonly fileFormat: 'unix' | 'dos';
+  readonly fileFormat: 'unix' | 'dos' | 'mac';
   readonly listMode: boolean;
   readonly relativeNumbersShown: boolean;
   readonly colorColumn: number | null;
@@ -46,8 +46,10 @@ export interface VimEditorView extends EditorViewBase {
   readonly pendingBinaryWarning: string | null;
   readonly pendingSubstMatch: PendingSubstMatch | null;
   readonly pendingSwapRecovery: PendingSwapRecovery | null;
-  /** `:set listchars` — the renderer applies it, so `:set list` works remotely. */
-  readonly listChars: ListChars;
+  readonly isReplacing: boolean;
+  readonly searchPromptChar: '/' | '?';
+  readonly visualAnchor: { readonly line: number; readonly col: number };
+  readonly screen: EditorScreen;
 }
 
 export interface NanoEditorView extends EditorViewBase {
@@ -55,8 +57,6 @@ export interface NanoEditorView extends EditorViewBase {
   readonly mode: NanoMode;
   readonly statusMessage: string;
   readonly helpText: string;
-  readonly displayContent: string;
-  readonly displayCursorOffset: number;
   readonly promptCursor: number;
   readonly saveFileName: string;
   readonly searchQuery: string;
@@ -67,6 +67,7 @@ export interface NanoEditorView extends EditorViewBase {
   readonly replaceSearchQuery: string;
   readonly replaceWithText: string;
   readonly pendingReplaceMatch: PendingReplaceMatch | null;
+  readonly screen: EditorScreen;
 }
 
 export type EditorView = VimEditorView | NanoEditorView;
@@ -80,8 +81,11 @@ export interface EditorSession {
   applyKey(key: EditorKeyInput): EditorView;
   /** Clipboard paste, where the engine treats it as more than keystrokes. */
   applyPaste?(text: string): EditorView;
-  /** Click-to-position, in rendered columns. */
-  moveCursorToDisplayOffset?(offset: number): EditorView;
+  click?(row: number, col: number): EditorView;
+  /** The terminal changed size (RFC 4254 §6.7 window-change, or a local resize). */
+  resize?(rows: number, cols: number): EditorView;
+  /** Mouse wheel: scroll the window without moving the cursor more than the window requires. */
+  scroll?(up: boolean, count: number): EditorView;
   close(): void;
 }
 
@@ -99,6 +103,8 @@ export interface EditorSessionSeed {
   readonly readOnly: boolean;
   readonly showPosition: boolean;
   readonly showLineNumbers: boolean;
+  readonly softwrap: boolean;
+  readonly displayName: string;
   readonly initialCursorLine?: number;
   readonly initialCursorCol?: number;
 }

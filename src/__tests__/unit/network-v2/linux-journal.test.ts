@@ -104,10 +104,10 @@ describe('Group 1: logger command', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Group 2: journalctl basic viewing', () => {
-  it('should show all log entries with header', async () => {
+  it('should show all log entries without the pre-246 header', async () => {
     const server = new LinuxServer('linux-server', 'S1');
     const result = await server.executeCommand('journalctl');
-    expect(result).toContain('-- Logs begin at');
+    expect(result).not.toContain('-- Logs begin at');
     expect(result).toContain('kernel');
   });
 
@@ -127,7 +127,7 @@ describe('Group 2: journalctl basic viewing', () => {
     const server = new LinuxServer('linux-server', 'S1');
     const result = await server.executeCommand('journalctl');
     // Should contain boot messages + header
-    expect(result).toContain('-- Logs begin at');
+    expect(result).not.toContain('-- Logs begin at');
     expect(result).toContain('systemd');
   });
 
@@ -152,7 +152,7 @@ describe('Group 2: journalctl basic viewing', () => {
   it('should work with --no-pager flag', async () => {
     const server = new LinuxServer('linux-server', 'S1');
     const result = await server.executeCommand('journalctl --no-pager');
-    expect(result).toContain('-- Logs begin at');
+    expect(result).not.toContain('-- Logs begin at');
   });
 
   it('should suppress header/footer with -q', async () => {
@@ -181,10 +181,10 @@ describe('Group 3: journalctl filtering', () => {
     expect(result).toContain('sshd');
   });
 
-  it('should filter by unit with -u systemd', async () => {
+  it('should filter by unit with -u systemd-journald', async () => {
     const server = new LinuxServer('linux-server', 'S1');
-    const result = await server.executeCommand('journalctl -u systemd');
-    expect(result).toContain('systemd');
+    const result = await server.executeCommand('journalctl -u systemd-journald');
+    expect(result).toContain('Started systemd-journald.service');
   });
 
   it('should return "No entries" for non-existent unit', async () => {
@@ -408,12 +408,14 @@ describe('Group 6: Log files (/var/log/)', () => {
     expect(after.length).toBeGreaterThan(before.length);
   });
 
-  it('should route kern messages to /var/log/kern.log', async () => {
+  it('should file logger kern.* under the user facility, as util-linux does', async () => {
     const server = new LinuxServer('linux-server', 'S1');
     await server.executeCommand('logger -p kern.warning "Kernel test warning"');
 
     const kernLog = await server.executeCommand('cat /var/log/kern.log');
-    expect(kernLog).toContain('Kernel test warning');
+    const syslog = await server.executeCommand('cat /var/log/syslog');
+    expect(kernLog).not.toContain('Kernel test warning');
+    expect(syslog).toContain('Kernel test warning');
   });
 
   it('should route auth messages to /var/log/auth.log', async () => {
@@ -446,13 +448,13 @@ describe('Group 7: Journal management commands', () => {
   it('should rotate journal with --rotate', async () => {
     const server = new LinuxServer('linux-server', 'S1');
     const result = await server.executeCommand('journalctl --rotate');
-    expect(result).toContain('Rotating');
+    expect(result).toBe('');
   });
 
   it('should flush journal with --flush', async () => {
     const server = new LinuxServer('linux-server', 'S1');
     const result = await server.executeCommand('journalctl --flush');
-    expect(result).toContain('Flushing');
+    expect(result).toBe('');
   });
 
   it('should vacuum by time with --vacuum-time', async () => {
@@ -491,7 +493,7 @@ describe('Group 8: Permissions and error handling', () => {
     // fenêtre des 5 dernières : ajouter une ligne légitime ailleurs dans
     // le démarrage l'en chassait. On affirme donc ce que le cas veut
     // dire — du journal, et pas un refus.
-    expect(result).toContain('-- Logs begin at');
+    expect(result).not.toContain('-- Logs begin at');
     expect(result).not.toMatch(/Permission denied|not permitted/i);
     expect(result.split('\n').filter((l) => l.trim()).length).toBeGreaterThan(1);
   });
@@ -505,13 +507,13 @@ describe('Group 8: Permissions and error handling', () => {
   it('should reject invalid priority for journalctl -p', async () => {
     const server = new LinuxServer('linux-server', 'S1');
     const result = await server.executeCommand('journalctl -p invalid');
-    expect(result).toContain('Invalid');
+    expect(result).toContain('Unknown log level invalid');
   });
 
   it('should reject invalid output format for journalctl -o', async () => {
     const server = new LinuxServer('linux-server', 'S1');
     const result = await server.executeCommand('journalctl -o badformat');
-    expect(result).toContain('Invalid');
+    expect(result).toContain("Unknown output format 'badformat'");
   });
 
   it('should reject dmesg -c for non-root', async () => {
@@ -574,7 +576,8 @@ describe('Group 9: Advanced scenarios and combinations', () => {
     const syslog = await server.executeCommand('cat /var/log/syslog');
 
     expect(authLog).toContain('Auth event');
-    expect(kernLog).toContain('Kernel event');
+    expect(kernLog).not.toContain('Kernel event');
+    expect(syslog).toContain('Kernel event');
     expect(syslog).toContain('User event');
   });
 

@@ -164,7 +164,7 @@ class ReplayChannel implements LdapChannel {
     return this.hasData();
   }
 
-  upgradeTls = () => ({ ok: true }) as const;
+  upgradeTls = async () => ({ ok: true }) as const;
 
   close(): void {}
 }

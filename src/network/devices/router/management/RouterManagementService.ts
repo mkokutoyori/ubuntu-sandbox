@@ -141,6 +141,7 @@ export class RouterManagementService {
     version: 2,
     timeout: SSH_DEFAULT_TIMEOUT_SEC,
     retries: SSH_DEFAULT_AUTH_RETRIES,
+    sftpEnabled: false,
   };
   private readonly sshUsers = new Map<string, SshUser>();
   private readonly rsaPeerPublicKeys = new Map<string, RsaPeerPublicKey>();
@@ -181,6 +182,21 @@ export class RouterManagementService {
     else if (head === 'server') return args[1] ?? head;
     else this.recordRaw('stelnet', args.join(' '));
     return null;
+  }
+
+  configureSftp(args: string[], negated = false): string | null {
+    const head = (args[0] ?? '').toLowerCase();
+    if (head === 'server' && args[1]?.toLowerCase() === 'enable' && args.length === 2) {
+      this.sshServer.sftpEnabled = !negated;
+      return null;
+    }
+    return args[head === 'server' ? 1 : 0] ?? head;
+  }
+
+  sshSftpAdmitted(user: string): boolean {
+    if (!this.sshServer.sftpEnabled) return false;
+    const type = this.sshUsers.get(user)?.serviceType;
+    return type === 'sftp' || type === 'all';
   }
 
   configureTelnet(args: string[], negated = false): string | null {

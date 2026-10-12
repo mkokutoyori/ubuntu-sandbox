@@ -26,7 +26,7 @@ beforeEach(() => {
 const SERVICE = 'src/network/devices/router/diag/RouterDebugService.ts';
 
 /**
- * Les deux categories qui restent sans emetteur, chacune pour une raison
+ * La categorie qui reste sans emetteur, pour une raison
  * ecrite. Cette liste ne doit que RETRECIR.
  */
 const SANS_EMETTEUR_CONNUES = [
@@ -35,8 +35,6 @@ const SANS_EMETTEUR_CONNUES = [
   // MISE EN FORME des lignes de `debug nhrp`, qu'aucune transcription
   // joignable depuis ce reseau n'atteste.
   'ip.nhrp',
-  // Aucun evenement ne distingue l'autorisation de l'authentification.
-  'aaa.authorization',
 ];
 
 function sources(dir: string): string[] {

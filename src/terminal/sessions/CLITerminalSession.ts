@@ -661,7 +661,8 @@ export abstract class CLITerminalSession extends TerminalSession {
     }
     // Matches the exec-mode client's own default (runOutboundSshClient) —
     // real IOS/VRP `ssh host` with no `-l`/`user@` defaults to 'admin'.
-    const user = parsed.user ?? 'admin';
+    const asksUsername = parsed.user === null && trimmed.split(/\s+/)[0] === 'stelnet';
+    let user = parsed.user ?? 'admin';
 
     // Passing this.device as `from` restricts the search to what a real
     // client can actually reach across the cable plant (docs/PRD-Link-
@@ -710,17 +711,30 @@ export abstract class CLITerminalSession extends TerminalSession {
       }
     }
 
-    const gate = remote.sshdAcceptsLogin?.(user) ?? remote.getSshHost?.()?.acceptsLogin?.(user) ?? { ok: true };
+    const gate = asksUsername
+      ? { ok: true }
+      : remote.sshdAcceptsLogin?.(user) ?? remote.getSshHost?.()?.acceptsLogin?.(user) ?? { ok: true };
     if (!gate.ok) {
       remote.recordSshLogin?.(user, sourceIp, localHostname, false);
       return [{ type: 'output', outputLines: [`${user}@${host}: Permission denied (publickey,password).`] }];
     }
 
     let attempts = 0;
+    const usernameSteps: InteractiveStep[] = asksUsername ? [{
+      type: 'text',
+      prompt: 'Please input the username:',
+      storeAs: 'cli_ssh_user',
+      validation: (value: string) => {
+        if (value.trim() === '') return { valid: false, errorMessage: '' };
+        user = value.trim();
+        return { valid: true };
+      },
+    }] : [];
     return [
+      ...usernameSteps,
       {
         type: 'password',
-        prompt: `${user}@${host}'s password: `,
+        prompt: asksUsername ? 'Enter password:' : `${user}@${host}'s password: `,
         mask: 'hidden',
         storeAs: 'cli_ssh_password',
         validation: (pwd: string) => {

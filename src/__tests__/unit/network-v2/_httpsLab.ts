@@ -63,7 +63,8 @@ export async function exchange(
   if (!socket || socket.state !== 'established') return null;
   const verifier = await trustedVerifier(srv, 'srv', 'srv2', 'srv3');
   const client = new TlsClientSession({ verifier, serverName: host, ...config } as TlsClientConfig);
-  runTlsHandshakeOverSocket(socket, client);
+  const early: TlsRecord[] = [];
+  runTlsHandshakeOverSocket(socket, client, (records) => { early.push(...records); });
   if (client.result !== 'success') { socket.close(); return { client, records: [], status: '' }; }
   const request = createRequest('GET', path);
   request.headers.set('Host', hostHeader);
@@ -73,6 +74,8 @@ export async function exchange(
   const stop = socket.onData((data) => { received = decodeRecords(binaryStringToBytes(String(data))); });
   socket.write(bytesToBinaryString(encodeRecords(sealed.records)));
   stop();
-  const plain = received.length > 0 ? new TextDecoder().decode(decryptApplicationData(client.serverTraffic(), 0, received).plaintext) : '';
+  let answeredEarly = 0;
+  try { if (early.length > 0) answeredEarly = decryptApplicationData(client.serverTraffic(), 0, early).nextSeq; } catch { answeredEarly = 0; }
+  const plain = received.length > 0 ? new TextDecoder().decode(decryptApplicationData(client.serverTraffic(), answeredEarly, received).plaintext) : '';
   return { client, records: received, status: plain.split('\r\n')[0] ?? '' };
 }

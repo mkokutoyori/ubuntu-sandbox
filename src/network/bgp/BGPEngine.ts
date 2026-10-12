@@ -43,6 +43,7 @@ export interface BgpNeighborCfg {
   activated: boolean;
   /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
   weight?: number;
+  shutdown?: boolean;
 }
 export interface BGPConfig {
   asn: number;
@@ -259,7 +260,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
    * no matching `neighbor` statement ⇒ no peering).
    */
   acceptInbound(link: BgpPeerLink): void {
-    if (!this.isEnabled() || !this.config.neighbors.has(link.neighborIp)) {
+    if (!this.isEnabled() || !this.config.neighbors.has(link.neighborIp)
+      || this.config.neighbors.get(link.neighborIp)?.shutdown === true) {
       link.transport.close();
       return;
     }
@@ -290,8 +292,17 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     for (const ip of [...this.connectRetry.keys()]) {
       if (!this.config.neighbors.has(ip)) this.clearConnectRetry(ip);
     }
-    for (const ip of this.config.neighbors.keys()) {
-      if (this.peers.has(ip)) continue;
+    for (const [ip, cfg] of this.config.neighbors) {
+      if (cfg.shutdown !== true) continue;
+      const ps = this.peers.get(ip);
+      if (ps) {
+        this.closeAndAnnounce(ip, ps, CEASE_SUBCODE.ADMINISTRATIVE_SHUTDOWN);
+        this.peers.delete(ip);
+      }
+      this.clearConnectRetry(ip);
+    }
+    for (const [ip, cfg] of this.config.neighbors) {
+      if (this.peers.has(ip) || cfg.shutdown === true) continue;
       // RFC 4271 §8.2.2: while the ConnectRetryTimer runs, the FSM sits in
       // Active and does NOT re-dial — the timer is what paces attempts.
       // Dialling here on every convergence was the whole problem: with
@@ -309,7 +320,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
    * else will try again until it fires.
    */
   private tryConnect(ip: string): boolean {
-    if (!this.isEnabled() || !this.config.neighbors.has(ip)) return false;
+    if (!this.isEnabled() || !this.config.neighbors.has(ip)
+      || this.config.neighbors.get(ip)?.shutdown === true) return false;
     const link = this.wire?.connect(ip) ?? null;
     if (!link) {
       // Not a reachable cabled peer: the FSM never leaves Idle, but it
@@ -384,9 +396,24 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     this.advertiseTo(ip);
   }
 
+  private traceUpdate(topic: 'bgp.update.sent' | 'bgp.update.received', ip: string, update: BgpUpdateMessage): void {
+    const prefix = (n: BgpNlri): string => `${n.network}/${n.prefixLength}`;
+    this.bus?.publish({
+      topic,
+      payload: {
+        deviceId: this.deviceId, neighborIp: ip,
+        announced: update.announced.map(prefix), withdrawn: update.withdrawn.map(prefix),
+        origin: update.attributes?.origin ?? null, asPath: update.attributes?.asPath ?? [],
+        nextHop: update.attributes?.nextHop ?? null,
+        med: update.attributes?.med ?? null, localPref: update.attributes?.localPref ?? null,
+      },
+    });
+  }
+
   private onUpdate(ip: string, update: BgpUpdateMessage): void {
     const ps = this.peers.get(ip);
     if (!ps) return;
+    this.traceUpdate('bgp.update.received', ip, update);
     for (const w of update.withdrawn) {
       ps.adjRibIn.delete(`${w.network}/${this.maskOf(w)}`);
     }
@@ -603,15 +630,19 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       const serial = JSON.stringify(attrs);
       if (ps.adjRibOut.get(key)?.serial === serial) continue;
       ps.adjRibOut.set(key, { nlri, serial });
-      ps.session.sendUpdate({
+      const announcement: BgpUpdateMessage = {
         type: 'bgp', message: 'update', withdrawn: [], announced: [nlri], attributes: attrs,
-      });
+      };
+      ps.session.sendUpdate(announcement);
+      this.traceUpdate('bgp.update.sent', ip, announcement);
       ps.tableVersionSent = this.tableVersion;
     }
     if (withdrawn.length > 0) {
-      ps.session.sendUpdate({
+      const withdrawal: BgpUpdateMessage = {
         type: 'bgp', message: 'update', withdrawn, announced: [],
-      });
+      };
+      ps.session.sendUpdate(withdrawal);
+      this.traceUpdate('bgp.update.sent', ip, withdrawal);
       ps.tableVersionSent = this.tableVersion;
     }
   }

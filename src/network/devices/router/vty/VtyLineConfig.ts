@@ -140,6 +140,16 @@ export interface VtyLineConfigInit {
   readonly execBannerSuppressed?: boolean;
 }
 
+export function lineIdleTimeoutMs(line: VtyLineConfig | undefined): number | null {
+  if (!line) return null;
+  const execDeclared = line.execTimeoutMinutes !== null || line.execTimeoutSeconds !== null;
+  const minutes = execDeclared ? line.execTimeoutMinutes : line.idleTimeoutMinutes;
+  const seconds = execDeclared ? line.execTimeoutSeconds : line.idleTimeoutSeconds;
+  if (minutes === null && seconds === null) return null;
+  const ms = ((minutes ?? 0) * 60 + (seconds ?? 0)) * 1000;
+  return ms > 0 ? ms : null;
+}
+
 export class VtyLineConfig {
   readonly first: number;
   readonly last: number;
@@ -226,6 +236,15 @@ export class VtyLineConfig {
   /** The line span as a value object (membership / overlap / size helpers). */
   get range(): VtyLineRange {
     return new VtyLineRange(this.first, this.last);
+  }
+
+  withoutFields(names: readonly (keyof VtyLineConfigInit)[]): VtyLineConfig {
+    const kept: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(this)) {
+      kept[name] = value === null ? undefined : value;
+    }
+    for (const name of names) kept[name] = undefined;
+    return new VtyLineConfig(kept as unknown as VtyLineConfigInit);
   }
 
   withFields(patch: Partial<VtyLineConfigInit>): VtyLineConfig {

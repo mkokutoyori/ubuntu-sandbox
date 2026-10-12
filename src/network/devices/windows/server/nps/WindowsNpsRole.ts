@@ -29,6 +29,7 @@
 import { simulationDate } from '@/network/core/SystemClock';
 
 import type { EndHost } from '@/network/devices/EndHost';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { RadiusServerAgent, type RadiusServerHost, type RadiusUserResolverContext } from '@/network/radius/RadiusServerAgent';
 import { attr, type RadiusUser, type RadiusAttribute } from '@/network/radius/types';
 import { type IEventBus } from '@/events/EventBus';
@@ -109,15 +110,16 @@ export class WindowsNpsRole {
 
   isRunning(): boolean { return this.running; }
 
-  start(): void {
+  start(identity: ListenerIdentity = {}): void {
     if (this.running) return;
     this.agent.start();
+    const processName = identity.processName ?? 'IAS';
     this.host.udpBind(RADIUS_AUTH_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.agent.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    }, 'IAS');
+    }, processName, { pid: identity.pid, service: identity.service });
     this.host.udpBind(RADIUS_ACCT_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.agent.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    }, 'IAS');
+    }, processName, { pid: identity.pid, service: identity.service });
     this.unsubscribeAuditLog = this.getHostBus().subscribe('radius.packet.sent', (e) => {
       const p = e.payload as { deviceId: string; code: string; username: string | null };
       if (p.deviceId !== this.host.getId()) return;

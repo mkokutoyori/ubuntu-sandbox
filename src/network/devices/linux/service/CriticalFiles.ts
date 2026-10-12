@@ -206,7 +206,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   usermod: '/usr/sbin/usermod', groupadd: '/usr/sbin/groupadd',
   systemctl: '/bin/systemctl', service: '/usr/sbin/service',
   crontab: '/usr/bin/crontab', 'run-parts': '/bin/run-parts',
-  auditctl: '/sbin/auditctl', ausearch: '/sbin/ausearch', aureport: '/sbin/aureport',
+  auditctl: '/sbin/auditctl', augenrules: '/sbin/augenrules', ausearch: '/sbin/ausearch', aureport: '/sbin/aureport',
   reboot: '/sbin/reboot', shutdown: '/sbin/shutdown', logger: '/usr/bin/logger',
   journalctl: '/bin/journalctl', dmesg: '/bin/dmesg', logrotate: '/usr/sbin/logrotate',
   rsyslogd: '/usr/sbin/rsyslogd',

@@ -1,8 +1,8 @@
-import type { SocketEntry, SocketState, SocketTable } from '@/network/core/SocketTable';
+import type { ProtocolSocketState, SocketEntry, SocketTable } from '@/network/core/SocketTable';
 import type { TcpListener, TcpSocket, TcpStack } from '@/network/tcp/TcpStack';
 import type { TcpInfo, TcpListenerQueues, TcpQueues, TcpSocketFacts, TcpTimer } from '@/network/tcp/TcpInfo';
 import { kernelComm } from '../LinuxProcessManager';
-import { socketStateOfTcp } from './TcpSocketStateProjection';
+import { socketStateOfTcp } from '@/network/tcp/TcpSocketStateProjection';
 
 export interface SocketOwner {
   readonly pid: number;
@@ -19,7 +19,7 @@ export interface ProcessDirectory {
 
 export interface KernelSocketRow {
   readonly entry: SocketEntry;
-  readonly state: SocketState;
+  readonly state: ProtocolSocketState;
   readonly owner: SocketOwner | null;
   readonly queues: TcpQueues;
   readonly listener: TcpListenerQueues | null;
@@ -91,6 +91,7 @@ export function kernelSocketRows(sources: KernelSocketSources): KernelSocketRow[
 
   const rows: KernelSocketRow[] = [];
   for (const entry of table.getAll()) {
+    if (entry.state === 'BOUND') continue;
     const ownerPid = ownerPidOf(entry, processes);
     if (entry.protocol !== 'tcp' || stack === null) {
       rows.push({

@@ -58,10 +58,7 @@ test.describe('Scénario 3 (e2e) — nano Ctrl+W / Ctrl+\\', () => {
     await page.keyboard.press('Enter');
 
     await page.keyboard.press('Control+\\');
-    await expect(page.getByText('Search (to replace):')).toBeVisible();
-    // Real nano prefills the last search term ("eth1") with the cursor at
-    // the end — a real user backspaces it away before typing a new term.
-    for (let i = 0; i < 10; i++) await page.keyboard.press('Backspace');
+    await expect(page.getByText('Search (to replace) [eth1]:')).toBeVisible();
     await typeText(page, 'eth');
     await page.keyboard.press('Enter');
     await expect(page.getByText('Replace with:')).toBeVisible();

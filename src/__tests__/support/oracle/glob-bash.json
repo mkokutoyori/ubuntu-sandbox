@@ -1,0 +1,538 @@
+{
+ "tree": [
+  {
+   "path": ".dot.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": ".hid",
+   "type": "dir",
+   "target": null
+  },
+  {
+   "path": ".hid/h.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "B.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "a.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "app-20260101",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "app-20260102",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "app-2026010x",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "app.1.gz",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "app.2.gz",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "b.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "broken.log",
+   "type": "symlink",
+   "target": "nonexistent"
+  },
+  {
+   "path": "c.txt",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "dir1",
+   "type": "dir",
+   "target": null
+  },
+  {
+   "path": "dir1/x.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "dir1/y.1",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "dir1/y.10",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "dir1/y.2",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "dir2",
+   "type": "dir",
+   "target": null
+  },
+  {
+   "path": "dir2/z.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "link.log",
+   "type": "symlink",
+   "target": "a.log"
+  },
+  {
+   "path": "q?.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "sp ace.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "sub",
+   "type": "dir",
+   "target": null
+  },
+  {
+   "path": "sub/deep",
+   "type": "dir",
+   "target": null
+  },
+  {
+   "path": "sub/deep/d.log",
+   "type": "file",
+   "target": null
+  },
+  {
+   "path": "we[ird.log",
+   "type": "file",
+   "target": null
+  }
+ ],
+ "cases": [
+  {
+   "pattern": "*.log",
+   "result": [
+    "B.log",
+    "a.log",
+    "b.log",
+    "broken.log",
+    "link.log",
+    "q?.log",
+    "sp ace.log",
+    "we[ird.log"
+   ]
+  },
+  {
+   "pattern": "?.log",
+   "result": [
+    "B.log",
+    "a.log",
+    "b.log"
+   ]
+  },
+  {
+   "pattern": "[ab].log",
+   "result": [
+    "a.log",
+    "b.log"
+   ]
+  },
+  {
+   "pattern": "[!a].log",
+   "result": [
+    "B.log",
+    "b.log"
+   ]
+  },
+  {
+   "pattern": "[^a].log",
+   "result": [
+    "B.log",
+    "b.log"
+   ]
+  },
+  {
+   "pattern": "[a-b].log",
+   "result": [
+    "a.log",
+    "b.log"
+   ]
+  },
+  {
+   "pattern": "[[:upper:]].log",
+   "result": [
+    "B.log"
+   ]
+  },
+  {
+   "pattern": "[[:digit:]]*",
+   "result": [
+    "[[:digit:]]*"
+   ]
+  },
+  {
+   "pattern": "*",
+   "result": [
+    "B.log",
+    "a.log",
+    "app-20260101",
+    "app-20260102",
+    "app-2026010x",
+    "app.1.gz",
+    "app.2.gz",
+    "b.log",
+    "broken.log",
+    "c.txt",
+    "dir1",
+    "dir2",
+    "link.log",
+    "q?.log",
+    "sp ace.log",
+    "sub",
+    "we[ird.log"
+   ]
+  },
+  {
+   "pattern": "*.*",
+   "result": [
+    "B.log",
+    "a.log",
+    "app.1.gz",
+    "app.2.gz",
+    "b.log",
+    "broken.log",
+    "c.txt",
+    "link.log",
+    "q?.log",
+    "sp ace.log",
+    "we[ird.log"
+   ]
+  },
+  {
+   "pattern": ".*",
+   "result": [
+    ".dot.log",
+    ".hid"
+   ]
+  },
+  {
+   "pattern": ".d*",
+   "result": [
+    ".dot.log"
+   ]
+  },
+  {
+   "pattern": ".*.log",
+   "result": [
+    ".dot.log"
+   ]
+  },
+  {
+   "pattern": "dir*/*.log",
+   "result": [
+    "dir1/x.log",
+    "dir2/z.log"
+   ]
+  },
+  {
+   "pattern": "dir1/y.[0-9]",
+   "result": [
+    "dir1/y.1",
+    "dir1/y.2"
+   ]
+  },
+  {
+   "pattern": "dir1/y.*",
+   "result": [
+    "dir1/y.1",
+    "dir1/y.10",
+    "dir1/y.2"
+   ]
+  },
+  {
+   "pattern": "*/*.log",
+   "result": [
+    "dir1/x.log",
+    "dir2/z.log"
+   ]
+  },
+  {
+   "pattern": "*/*/*.log",
+   "result": [
+    "sub/deep/d.log"
+   ]
+  },
+  {
+   "pattern": "sub/*/d.log",
+   "result": [
+    "sub/deep/d.log"
+   ]
+  },
+  {
+   "pattern": "sub/deep/",
+   "result": [
+    "sub/deep/"
+   ]
+  },
+  {
+   "pattern": "dir*/",
+   "result": [
+    "dir1/",
+    "dir2/"
+   ]
+  },
+  {
+   "pattern": "nonexist*",
+   "result": [
+    "nonexist*"
+   ]
+  },
+  {
+   "pattern": "nonexist",
+   "result": [
+    "nonexist"
+   ]
+  },
+  {
+   "pattern": "a.log",
+   "result": [
+    "a.log"
+   ]
+  },
+  {
+   "pattern": "./a.log",
+   "result": [
+    "./a.log"
+   ]
+  },
+  {
+   "pattern": "dir1/../a.log",
+   "result": [
+    "dir1/../a.log"
+   ]
+  },
+  {
+   "pattern": "app-20[0-9][0-9][0-9][0-9][0-9][0-9]",
+   "result": [
+    "app-20260101",
+    "app-20260102"
+   ]
+  },
+  {
+   "pattern": "app-????????",
+   "result": [
+    "app-20260101",
+    "app-20260102",
+    "app-2026010x"
+   ]
+  },
+  {
+   "pattern": "app.*.gz",
+   "result": [
+    "app.1.gz",
+    "app.2.gz"
+   ]
+  },
+  {
+   "pattern": "*.gz",
+   "result": [
+    "app.1.gz",
+    "app.2.gz"
+   ]
+  },
+  {
+   "pattern": "\\*.log",
+   "result": [
+    "*.log"
+   ]
+  },
+  {
+   "pattern": "we\\[ird.log",
+   "result": [
+    "we[ird.log"
+   ]
+  },
+  {
+   "pattern": "we[ird.log",
+   "result": [
+    "we[ird.log"
+   ]
+  },
+  {
+   "pattern": "q?.log",
+   "result": [
+    "q?.log"
+   ]
+  },
+  {
+   "pattern": "q\\?.log",
+   "result": [
+    "q?.log"
+   ]
+  },
+  {
+   "pattern": "[",
+   "result": [
+    "["
+   ]
+  },
+  {
+   "pattern": "a[",
+   "result": [
+    "a["
+   ]
+  },
+  {
+   "pattern": "[]]*",
+   "result": [
+    "[]]*"
+   ]
+  },
+  {
+   "pattern": "[a-]*.log",
+   "result": [
+    "a.log"
+   ]
+  },
+  {
+   "pattern": "sp*",
+   "result": [
+    "sp ace.log"
+   ]
+  },
+  {
+   "pattern": "*ace*",
+   "result": [
+    "sp ace.log"
+   ]
+  },
+  {
+   "pattern": "link.log",
+   "result": [
+    "link.log"
+   ]
+  },
+  {
+   "pattern": "*link*",
+   "result": [
+    "link.log"
+   ]
+  },
+  {
+   "pattern": "broken.log",
+   "result": [
+    "broken.log"
+   ]
+  },
+  {
+   "pattern": "b*g.log",
+   "result": [
+    "b*g.log"
+   ]
+  },
+  {
+   "pattern": "[[:alpha:]]",
+   "result": [
+    "[[:alpha:]]"
+   ]
+  },
+  {
+   "pattern": "[[:alpha:]].log",
+   "result": [
+    "B.log",
+    "a.log",
+    "b.log"
+   ]
+  },
+  {
+   "pattern": "dir1/*",
+   "result": [
+    "dir1/x.log",
+    "dir1/y.1",
+    "dir1/y.10",
+    "dir1/y.2"
+   ]
+  },
+  {
+   "pattern": "dir1/*.1*",
+   "result": [
+    "dir1/y.1",
+    "dir1/y.10"
+   ]
+  },
+  {
+   "pattern": "d*/y.?",
+   "result": [
+    "dir1/y.1",
+    "dir1/y.2"
+   ]
+  },
+  {
+   "pattern": "*/",
+   "result": [
+    "dir1/",
+    "dir2/",
+    "sub/"
+   ]
+  },
+  {
+   "pattern": "dir?/z.log",
+   "result": [
+    "dir2/z.log"
+   ]
+  },
+  {
+   "pattern": "/tmp/claude-0/globlab/t/a.log",
+   "result": [
+    "/tmp/claude-0/globlab/t/a.log"
+   ]
+  },
+  {
+   "pattern": "/tmp/claude-0/globlab/t/*.txt",
+   "result": [
+    "/tmp/claude-0/globlab/t/c.txt"
+   ]
+  },
+  {
+   "pattern": "/tmp/claude-0/globlab/t/dir*/*.log",
+   "result": [
+    "/tmp/claude-0/globlab/t/dir1/x.log",
+    "/tmp/claude-0/globlab/t/dir2/z.log"
+   ]
+  },
+  {
+   "pattern": "/tmp/claude-0/globlab/t/.hid/*",
+   "result": [
+    "/tmp/claude-0/globlab/t/.hid/h.log"
+   ]
+  }
+ ]
+}

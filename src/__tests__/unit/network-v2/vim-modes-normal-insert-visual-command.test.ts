@@ -245,7 +245,7 @@ describe('Scénario 4 — VISUAL LINE (V): sélection ligne par ligne', () => {
     const { vim } = newEngine('a\nb\nc\n');
     press(vim, 'V'); press(vim, 'j');
     press(vim, '>');
-    expect(vim.lines).toEqual(['    a', '    b', 'c']);
+    expect(vim.lines).toEqual(['\ta', '\tb', 'c']);
   });
 
   it(': from VISUAL LINE opens the command line prefilled with \'<,\'> and runs the ex command on just that range', () => {

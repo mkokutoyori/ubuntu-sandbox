@@ -11,7 +11,7 @@
  * a `forwarded-tcpip` channel per accepted connection (RFC 4254 §7.1).
  *
  * Scope:
- *  - R1..R3 : parseRemoteForwardSpec accepts 3-part / 4-part / rejects bad.
+ *  - R1..R3 : SshPortForward.parse accepts 3-part / 4-part (bind address honoured) / rejects bad.
  *  - R4..R5 : parseSshArgs collects multiple `-R` and `-o RemoteForward=`.
  *  - R6     : SshRemoteForwarder.register() leaves a listener on the
  *             REMOTE device, requested over the wire.
@@ -23,10 +23,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
-import {
-  parseRemoteForwardSpec,
-  parseSshArgs,
-} from '@/terminal/sessions/sshArgs';
+import { parseSshArgs } from '@/terminal/sessions/sshArgs';
+import { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
 import { SshRemoteForwarder } from '@/network/protocols/ssh/SshRemoteForwarder';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
@@ -52,29 +50,32 @@ describe('SSH LAN — remote port forwarding (`ssh -R`)', () => {
   // ─── parser ───────────────────────────────────────────────────
 
   // R1
-  it('R1 — parseRemoteForwardSpec accepts the 3-part form', () => {
-    expect(parseRemoteForwardSpec('8080:localhost:80')).toEqual({
-      remotePort: 8080,
-      localHost: 'localhost',
-      localPort: 80,
+  it('R1 — SshPortForward.parse accepts the 3-part form for -R', () => {
+    expect(SshPortForward.parse('remote', '8080:localhost:80')).toMatchObject({
+      kind: 'remote',
+      bindAddress: '127.0.0.1',
+      listenPort: 8080,
+      destHost: 'localhost',
+      destPort: 80,
     });
   });
 
   // R2
-  it('R2 — parseRemoteForwardSpec accepts the 4-part form (bindAddress ignored)', () => {
-    expect(parseRemoteForwardSpec('0.0.0.0:8080:localhost:80')).toEqual({
-      remotePort: 8080,
-      localHost: 'localhost',
-      localPort: 80,
+  it('R2 — SshPortForward.parse accepts the 4-part form for -R and honours the bind address', () => {
+    expect(SshPortForward.parse('remote', '0.0.0.0:8080:localhost:80')).toMatchObject({
+      bindAddress: '0.0.0.0',
+      listenPort: 8080,
+      destHost: 'localhost',
+      destPort: 80,
     });
   });
 
   // R3
-  it('R3 — parseRemoteForwardSpec returns null on malformed input', () => {
-    expect(parseRemoteForwardSpec('not-a-spec')).toBeNull();
-    expect(parseRemoteForwardSpec('abc:def:ghi')).toBeNull();
-    expect(parseRemoteForwardSpec('0:host:80')).toBeNull();
-    expect(parseRemoteForwardSpec('80::443')).toBeNull();
+  it('R3 — SshPortForward.parse returns null on malformed -R input', () => {
+    expect(SshPortForward.parse('remote', 'not-a-spec')).toBeNull();
+    expect(SshPortForward.parse('remote', 'abc:def:ghi')).toBeNull();
+    expect(SshPortForward.parse('remote', '0:host:80')).toBeNull();
+    expect(SshPortForward.parse('remote', '80::443')).toBeNull();
   });
 
   // R4
@@ -85,8 +86,8 @@ describe('SSH LAN — remote port forwarding (`ssh -R`)', () => {
       'user@10.0.0.2',
     ]);
     expect(parsed!.remoteForwards).toHaveLength(2);
-    expect(parsed!.remoteForwards[0].remotePort).toBe(8080);
-    expect(parsed!.remoteForwards[1].remotePort).toBe(9090);
+    expect(parsed!.remoteForwards[0].listenPort).toBe(8080);
+    expect(parsed!.remoteForwards[1].listenPort).toBe(9090);
   });
 
   // R5
@@ -95,9 +96,10 @@ describe('SSH LAN — remote port forwarding (`ssh -R`)', () => {
       '-o', 'RemoteForward=9000:localhost:443',
       'user@10.0.0.2',
     ]);
-    expect(parsed!.remoteForwards).toEqual([
-      { remotePort: 9000, localHost: 'localhost', localPort: 443 },
-    ]);
+    expect(parsed!.remoteForwards).toHaveLength(1);
+    expect(parsed!.remoteForwards[0]).toMatchObject({
+      listenPort: 9000, destHost: 'localhost', destPort: 443,
+    });
   });
 
   // ─── activation ───────────────────────────────────────────────

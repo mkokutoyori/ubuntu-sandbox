@@ -122,6 +122,8 @@ async function ouvrirSsh(
   s: TerminalSession, ligne: string, secret: string,
 ): Promise<void> {
   await saisir(s, ligne);
+  const mode = s.currentInputMode as { type: string; promptText?: string };
+  if (mode.type === 'interactive-text' && /username/i.test(mode.promptText ?? '')) await saisir(s, 'admin');
   if (s.currentInputMode.type === 'password') await repondreMotDePasse(s, secret);
 }
 

@@ -136,7 +136,7 @@ export function abreviationA(nom: string, atMs: number): string {
   const zone = TimeZone.parse(nom);
   if (!zone) return 'UTC';
 
-  const tabulee = PAR_NOM.get(zone.name.toLowerCase());
+  const tabulee = PAR_NOM.get(zone.name.toLowerCase()) ?? PAR_NOM.get(nom.trim().toLowerCase());
   if (!tabulee) return numericAbbreviation(zone, atMs);
   if (tabulee.abbrDst && isDaylightSavingAt(zone, atMs)) return tabulee.abbrDst;
   return tabulee.abbr;

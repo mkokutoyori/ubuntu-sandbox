@@ -24,11 +24,16 @@ export interface SessionTicket {
   readonly cipherSuite: CipherSuite;
   readonly ticketLifetime: number;
   readonly issuedAt: number;
+  readonly resumptionPsk?: string;
+  readonly maxEarlyDataSize?: number;
+  readonly verifyResult?: number;
+  readonly serverName?: string;
   consumed: boolean;
 }
 
 /** RFC 8446 §7.5.1 shape — `HKDF-Expand-Label(resumption_master_secret, "resumption", ticket_nonce, Hash.length)`. */
-export function deriveResumptionPsk(ticket: Pick<SessionTicket, 'resumptionMasterSecret' | 'ticketNonce' | 'cipherSuite'>): string {
+export function deriveResumptionPsk(ticket: Pick<SessionTicket, 'resumptionMasterSecret' | 'ticketNonce' | 'cipherSuite'> & { readonly resumptionPsk?: string }): string {
+  if (ticket.resumptionPsk !== undefined) return ticket.resumptionPsk;
   const { hash } = suiteInfo(ticket.cipherSuite);
   return expandLabel(ticket.resumptionMasterSecret, 'resumption', ticket.ticketNonce, hash);
 }

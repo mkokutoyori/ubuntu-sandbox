@@ -15,8 +15,8 @@ import { describe, it, expect } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxAuditLog, LinuxAuditRecord } from '@/network/devices/linux/audit/LinuxAuditLog';
 import { AuditTrailProjection } from '@/network/devices/linux/audit/AuditTrailProjection';
-import { cmdAusearch, cmdAureport, cmdAuditctl } from '@/network/devices/linux/audit/AuditCommands';
 import { LinuxAuditRules } from '@/network/devices/linux/audit/LinuxAuditRules';
+import { LinuxPC } from '@/network/devices/LinuxPC';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { EventBus } from '@/events/EventBus';
 import { WindowsServiceManager } from '@/network/devices/windows/WindowsServiceManager';
@@ -107,11 +107,11 @@ describe('AuditTrailProjection', () => {
       payload: {
         deviceId: 'dev-1', username: 'bob', uid: 1001, gid: 1001,
         home: '/home/bob', shell: '/bin/bash', kind: 'regular',
-        supplementaryGroups: [], userPrivateGroupCreated: true,
+        supplementaryGroups: [], userPrivateGroupCreated: true, homeCreated: true,
       },
     });
-    expect(log.query({ type: 'ADD_USER' })).toHaveLength(1);
-    expect(log.all()[0].get('acct')).toBe('bob');
+    expect(log.query({ type: 'ADD_USER' })).toHaveLength(2);
+    expect(log.all()[0].get('msg')).toContain('op=adding user id=1001');
   });
 
   it('records a USER_CHAUTHTOK event on a password change', () => {
@@ -136,7 +136,7 @@ describe('AuditTrailProjection', () => {
     const { bus, log } = wired();
     bus.publish({
       topic: 'linux.iam.user.deleted',
-      payload: { deviceId: 'other', username: 'bob', uid: 1001, homeRemoved: true },
+      payload: { deviceId: 'other', username: 'bob', uid: 1001, homeRemoved: true, privateGroupRemoved: true, memberOf: [] },
     });
     expect(log.all()).toHaveLength(0);
   });
@@ -154,25 +154,10 @@ describe('ausearch / aureport / auditctl', () => {
     return log;
   }
 
-  it('ausearch -m filters by record type', () => {
-    const out = cmdAusearch(seeded(), ['-m', 'ADD_USER']);
-    expect(out).toContain('type=ADD_USER');
-    expect(out).not.toContain('USER_CHAUTHTOK');
-  });
-
-  it('ausearch reports no matches for an unknown type', () => {
-    expect(cmdAusearch(seeded(), ['-m', 'NOPE'])).toBe('<no matches>');
-  });
-
-  it('aureport summarises the audit trail', () => {
-    const out = cmdAureport(seeded(), []);
-    expect(out).toContain('Summary Report');
-    expect(out).toContain('Number of events: 2');
-    expect(out).toContain('ADD_USER');
-  });
-
-  it('auditctl -s shows the subsystem status', () => {
-    expect(cmdAuditctl(new LinuxAuditRules(seeded(), new VirtualFileSystem()), ['-s']).output).toContain('enabled 1');
+  it('auditctl -s shows the subsystem status', async () => {
+    const pc = new LinuxPC('SecurityHost', 0, 0);
+    await pc.executeCommand('sudo su -');
+    expect(await pc.executeCommand('auditctl -s')).toContain('enabled 1');
   });
 });
 
@@ -188,14 +173,38 @@ describe('Linux audit trail — end to end', () => {
     await srv.executeCommand('useradd -m zoe');
     const auditLog = await srv.executeCommand('cat /var/log/audit/audit.log');
     expect(auditLog).toContain('type=ADD_USER');
-    expect(auditLog).toContain('acct=zoe');
+    expect(auditLog).toContain('acct="zoe"');
   });
 
   it('answers ausearch queries over real account activity', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
     await srv.executeCommand('useradd -m zoe');
     const out = await srv.executeCommand('ausearch -m ADD_USER');
-    expect(out).toContain('acct=zoe');
+    expect(out).toContain('op=adding user id=');
+  });
+
+  it('ausearch -m filters by record type', async () => {
+    const srv = new LinuxServer('linux-server', 'SRV1');
+    await srv.executeCommand('useradd -m zoe');
+    const out = await srv.executeCommand('ausearch -m ADD_USER');
+    expect(out).toContain('type=ADD_USER');
+    expect(out).not.toContain('type=ADD_GROUP');
+  });
+
+  it('ausearch reports no matches on stderr with exit status 1', async () => {
+    const srv = new LinuxServer('linux-server', 'SRV1');
+    await srv.executeCommand('useradd -m zoe');
+    const out = await srv.executeCommand('ausearch -m USER_ACCT; echo status=$?');
+    expect(out).toContain('<no matches>');
+    expect(out).toContain('status=1');
+  });
+
+  it('aureport summarises the audit trail', async () => {
+    const srv = new LinuxServer('linux-server', 'SRV1');
+    await srv.executeCommand('useradd -m zoe');
+    const out = await srv.executeCommand('aureport');
+    expect(out).toContain('Summary Report');
+    expect(out).toContain('Number of events:');
   });
 });
 

@@ -18,6 +18,7 @@ const SHELL_LOCAL_VARIABLES = new Set([
   'UID', 'EUID', 'PPID', 'HOSTNAME', 'BASH', 'BASH_VERSION', 'BASH_SUBSHELL',
   'OSTYPE', 'HOSTTYPE', 'MACHTYPE', 'IFS', 'PS1', 'PS2', 'PS4',
   'RANDOM', 'SECONDS', 'LINENO', 'BASHPID', 'GROUPS', 'HISTFILE', 'HISTSIZE',
+  'COLUMNS', 'LINES',
 ]);
 
 export interface EnvironmentOptions {

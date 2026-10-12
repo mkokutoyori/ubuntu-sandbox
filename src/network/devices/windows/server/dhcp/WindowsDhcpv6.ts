@@ -3,6 +3,7 @@ import { IPv6Address } from '@/network/core/types';
 import { ipv6ToBigInt } from '@/network/core/Ipv6Arithmetic';
 import { Dhcpv6HostService, dhcpv6PortOf } from '@/network/dhcpv6/Dhcpv6HostService';
 import type { DHCPv6Server } from '@/network/dhcpv6/DHCPv6Server';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 
 export interface DhcpV6OpResult { ok: boolean; message: string }
 
@@ -91,7 +92,7 @@ export class WindowsDhcpv6 {
 
   engine(): DHCPv6Server { return this.service.getEngine(); }
 
-  start(): void { this.service.start(); }
+  start(identity?: ListenerIdentity): void { this.service.start(identity); }
 
   stop(): void { this.service.stop(); }
 

@@ -338,26 +338,16 @@ class WindowsServiceAdapter implements IServiceProvider {
     return s ? toServiceInfo(s, this.mgr(), this.pc.getProcessManager()) : null;
   }
   startService(name: string): string {
-    const msg = this.mgr().startService(name, this.isAdmin());
-    if (!msg) {
-      const svc = this.mgr().getService(name);
-      if (svc) this.pc.getProcessManager().onServiceStarted(svc.name, svc.processName);
-    }
-    return msg;
+    return this.mgr().startService(name, this.isAdmin());
   }
   stopService(name: string, force?: boolean): string {
     const admin = this.isAdmin();
-    if (force) {
-      return this.mgr().stopServiceCascade(name, admin, svc => this.pc.getProcessManager().onServiceStopped(svc.name));
-    }
-    const msg = this.mgr().stopService(name, admin);
-    if (!msg) this.pc.getProcessManager().onServiceStopped(name);
-    return msg;
+    return force ? this.mgr().stopServiceCascade(name, admin) : this.mgr().stopService(name, admin);
   }
   restartService(name: string, force?: boolean): string {
     const admin = this.isAdmin();
     const stopRes = force
-      ? this.mgr().stopServiceCascade(name, admin, svc => this.pc.getProcessManager().onServiceStopped(svc.name))
+      ? this.mgr().stopServiceCascade(name, admin)
       : this.stopService(name);
     // Real PowerShell Restart-Service tolerates a pre-stopped target: it
     // just starts it. Only abort on permission errors or "service not found".
@@ -1496,11 +1486,11 @@ class WindowsProcessAdapter implements IProcessProvider {
     const byName = this.mgr().getProcessesByName(nameOrPid);
     return byName.length > 0 ? toProcessInfo(byName[0]) : null;
   }
-  killProcess(nameOrPid: string | number, force: boolean): string {
+  killProcess(nameOrPid: string | number): string {
     if (typeof nameOrPid === 'number') {
-      return this.mgr().killProcess(nameOrPid, force, this.isAdmin());
+      return this.mgr().killProcess(nameOrPid, true, this.isAdmin());
     }
-    return this.mgr().killByName(nameOrPid, force, this.isAdmin(), false);
+    return this.mgr().killByName(nameOrPid, true, this.isAdmin(), false);
   }
   startProcess(imageName: string, opts?: { arguments?: string; user?: string }): ProcessInfo | null {
     const mgr = this.mgr();
@@ -2536,10 +2526,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
       .map(s => ({
         localAddress:  s.localAddress,
         localPort:     s.localPort,
-        remoteAddress: s.state === 'LISTEN' ? '0.0.0.0' : s.remoteAddress,
-        remotePort:    s.state === 'LISTEN' ? 0 : s.remotePort,
+        remoteAddress: s.remoteAddress === '*' ? (s.localAddress.includes(':') ? '::' : '0.0.0.0') : s.remoteAddress,
+        remotePort:    s.remoteAddress === '*' ? 0 : s.remotePort,
         state:         s.state === 'LISTEN' ? 'Listen' : s.state,
-        pid:           s.pid,
+        pid:           s.pid ?? 0,
       }));
   }
 
@@ -2551,7 +2541,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
       .map(s => ({
         localAddress: s.localAddress,
         localPort:    s.localPort,
-        pid:          s.pid,
+        pid:          s.pid ?? 0,
         processName:  s.processName,
       }));
   }

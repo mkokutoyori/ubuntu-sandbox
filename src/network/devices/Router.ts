@@ -51,7 +51,7 @@ import { deviceClockSource, SEVERITY_NAMES } from './inspection/config/LoggingCo
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import type { VtyLineConfig } from './router/vty/VtyLineConfig';
-import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
+import { lineIdleTimeoutMs, vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
@@ -1253,6 +1253,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       execTarget: () => this as unknown as SshExecTarget,
       sftpSource: () => this.sshSftpFileSource(),
       forcedCommand: (user) => this.sshForcedCommand(user),
+      sftpAdmitted: (user) => this.sshSftpAdmitted(user),
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
       identification: () => this.sshServerIdentification(),
@@ -1686,17 +1687,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getOspfIntegration(): RouterOSPFIntegration { return this.ospfIntegration; }
 
   /**
-   * `exec-timeout` of the VTY line, in milliseconds. Real IOS hangs an
+   * `exec-timeout` (IOS) or `idle-timeout` (VRP) of the VTY line, in
+   * milliseconds. Real IOS hangs an
    * idle EXEC session up on the line's own timer; `exec-timeout 0 0`
    * (both fields zero) disables it, as does an unconfigured line here.
    */
   private resolveVtyIdleTimeoutMs(): number | null {
-    const block = this.blocVtyCourant();
-    if (!block) return null;
-    const { execTimeoutMinutes: min, execTimeoutSeconds: sec } = block;
-    if (min == null && sec == null) return null;
-    const ms = ((min ?? 0) * 60 + (sec ?? 0)) * 1000;
-    return ms > 0 ? ms : null;
+    return lineIdleTimeoutMs(this.blocVtyCourant());
   }
 
   /**
@@ -4382,6 +4379,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   protected sshPasswordAllowed(_user: string): boolean { return true; }
   protected sshPublicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
   protected sshForcedCommand(_user: string): string | null { return null; }
+  protected sshSftpAdmitted(_user: string): boolean { return true; }
   private sshPasswordLoginAdmitted(user: string): boolean {
     return this.accountAdmits(user, 'ssh') && this.sshPasswordAllowed(user);
   }

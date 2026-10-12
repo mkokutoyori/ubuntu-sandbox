@@ -48,6 +48,8 @@ import type { IEventBus } from '@/events/EventBus';
 import type { TimerHandle } from '@/events/Scheduler';
 import { Logger } from '../core/Logger';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
+import type { RouterSftpSource } from '../protocols/ssh/sftp/RouterSftpFileSystem';
+import { ciscoSftpSource } from './shells/cisco/CiscoSftpSource';
 import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { ArchiveService } from './router/archive/ArchiveService';
@@ -467,6 +469,18 @@ export class CiscoSwitch extends Switch {
   }
 
   getOSType(): string { return 'cisco-ios'; }
+
+  protected override sshPublicKeyAdmitted(user: string, offeredKeyMaterial: string): boolean {
+    return getSecurityConfig(this).sshPubkeys.admits(user, offeredKeyMaterial);
+  }
+
+  getSftpFileSource(): RouterSftpSource | null {
+    return ciscoSftpSource({
+      scpServerEnabled: () => getSecurityConfig(this).ssh.scpServerEnabled,
+      flash: () => this._getCiscoFileSystem('switch-c2960'),
+      runningConfig: () => this.getRunningConfig(),
+    });
+  }
 
   protected override sshServerIdentification(): string {
     return ciscoSshIdentification(getSecurityConfig(this).ssh.version);

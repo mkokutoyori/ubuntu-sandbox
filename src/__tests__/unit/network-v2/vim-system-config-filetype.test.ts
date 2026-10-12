@@ -67,7 +67,7 @@ describe('Scénario 9 — /etc/fstab : création, filetype, validation mount --f
 
     const vim = new VimEngine(fsCtx, '/etc/fstab', '', true, 'vim', 'root');
     exCommand(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=fstab');
+    expect(vim.message).toBe('  filetype=fstab');
 
     press(vim, 'i');
     const lines = [
@@ -125,7 +125,7 @@ describe('Scénario 9 — /etc/crontab : filetype, recherche, ajout d\'une tâch
 
     const vim = new VimEngine(fsCtx, '/etc/crontab', original, false, 'vim', 'root');
     exCommand(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=crontab');
+    expect(vim.message).toBe('  filetype=crontab');
 
     press(vim, '/');
     typeText(vim, '^[0-9*].*root');
@@ -178,7 +178,7 @@ describe('Scénario 9 — /etc/ssh/sshd_config : filetype, substitutions, valida
 
     const vim = new VimEngine(fsCtx, '/etc/ssh/sshd_config', original, false, 'vim', 'root');
     exCommand(vim, 'set filetype?');
-    expect(vim.message).toBe('filetype=sshconfig');
+    expect(vim.message).toBe('  filetype=sshconfig');
 
     exCommand(vim, '%s/^#Port.*/Port 2222/');
     exCommand(vim, '%s/^#PermitRootLogin.*/PermitRootLogin prohibit-password/');

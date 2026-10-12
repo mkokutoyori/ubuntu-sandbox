@@ -12,6 +12,11 @@
  * RFC 4752 tombent. Passent avant et apres, sans que rien en depende : le
  * mecanisme refuse, le bind simple, le jeton nu (refuse dans les deux modeles)
  * et la recherche sans bind (temoin : le DC refuse bien l'anonyme).
+ *
+ * Liaison de canal sur StartTLS (RFC 5929) : 3 des 5 cas ajoutes tombent avant
+ * (l'etat du canal n'existait pas, le DC acceptait toute liaison). Passent
+ * avant et apres : la liaison exacte (l'ancien client n'en portait pas et le
+ * DC n'en lisait pas) et l'absence de liaison, qui reste acceptee comme chez MIT.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, IPAddress, SubnetMask } from '@/network/core/types';
@@ -23,7 +28,9 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
-import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
+import { dialLdap, type LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import { tlsServerEndPointOfDer } from '@/network/tls/channelBinding';
 import { LdapResultCode } from '@/network/devices/windows/server/ad/ldap/LdapMessage';
 import { parseFilter } from '@/network/devices/windows/server/ad/ldap/LdapFilter';
 import { principalName, PrincipalNameType } from '@/network/kerberos/types';
@@ -73,13 +80,16 @@ async function serviceTicket(client: LinuxServer, dc: WindowsServer): Promise<{ 
   return { ticket: tgsResult.ticket!, sessionKey: tgsResult.sessionKey! };
 }
 
-function initiatorOver(client: LinuxServer, held: { ticket: Ticket; sessionKey: Uint8Array }, layerFlags: number): GssInitiator {
+function initiatorOver(
+  client: LinuxServer, held: { ticket: Ticket; sessionKey: Uint8Array }, layerFlags: number, channelBindings: Uint8Array | null = null,
+): GssInitiator {
   return new GssInitiator({
     credential: {
       ticket: held.ticket, sessionKey: held.sessionKey,
       clientName: principalName(PrincipalNameType.NT_PRINCIPAL, 'alice'), clientRealm: 'LAB.LOCAL',
     },
     requestedFlags: GSS_C_MUTUAL_FLAG | GSS_C_SEQUENCE_FLAG | layerFlags,
+    channelBindings,
     clock: { nowMicroseconds: () => Math.floor(client.getTcpStack().nowMs() * 1000) },
   });
 }
@@ -154,4 +164,53 @@ describe('LDAP GSSAPI SASL bind — RFC 4752 exchange over TCP/389', () => {
     expect(bindRes.ok).toBe(true);
   });
 
+});
+
+describe('LDAP GSSAPI SASL bind — channel bindings over StartTLS (RFC 5929, RFC 4121 §4.1.1.2)', () => {
+  const UNTRUSTED = { verifier: new CertificateVerifier({ trustAnchors: [] }), allowUntrustedPeer: true };
+
+  async function tlsConnection(): Promise<{ ldap: LdapClient; held: { ticket: Ticket; sessionKey: Uint8Array }; client: LinuxServer }> {
+    const { dc, client } = await buildLan();
+    const held = await serviceTicket(client, dc);
+    const ldap = dialLdap(client.getTcpStack(), '192.168.53.10').client!;
+    expect(ldap.startTls(UNTRUSTED).ok).toBe(true);
+    return { ldap, held, client };
+  }
+
+  it('the channel state of the client names the end point of the certificate the server presented', async () => {
+    const { ldap } = await tlsConnection();
+    const channel = ldap.tlsChannel!;
+    expect(new TextDecoder().decode(channel.serverEndPoint!.subarray(0, 21))).toBe('tls-server-end-point:');
+    expect(channel.serverEndPoint).toHaveLength(21 + 32);
+    expect(channel.keyBits).toBe(256);
+  });
+
+  it('binds when the bindings of the client are the end point of the server certificate', async () => {
+    const { ldap, held, client } = await tlsConnection();
+    const bound = ldap.bindGssapi(initiatorOver(client, held, GSS_C_INTEG_FLAG, ldap.tlsChannel!.serverEndPoint), NONE);
+    expect(bound.ok).toBe(true);
+    expect(ldap.search('DC=lab,DC=local', 'sub', parseFilter('(sAMAccountName=alice)')).entries).toHaveLength(1);
+  });
+
+  it('refuses a bind whose bindings are those of another certificate', async () => {
+    const { ldap, held, client } = await tlsConnection();
+    const other = tlsServerEndPointOfDer(new Uint8Array([1, 2, 3]), (data) => new Uint8Array(32).fill(data.length));
+    const bound = ldap.bindGssapi(initiatorOver(client, held, GSS_C_INTEG_FLAG, other), NONE);
+    expect(bound.ok).toBe(false);
+    expect(bound.result.resultCode).toBe(LdapResultCode.invalidCredentials);
+  });
+
+  it('binds when the client supplies no bindings at all, as MIT does', async () => {
+    const { ldap, held, client } = await tlsConnection();
+    expect(ldap.bindGssapi(initiatorOver(client, held, GSS_C_INTEG_FLAG), NONE).ok).toBe(true);
+  });
+
+  it('a connection without TLS holds no bindings and accepts any the client supplies', async () => {
+    const { dc, client } = await buildLan();
+    const held = await serviceTicket(client, dc);
+    const ldap = dialLdap(client.getTcpStack(), '192.168.53.10').client!;
+    expect(ldap.tlsChannel).toBeNull();
+    const stray = tlsServerEndPointOfDer(new Uint8Array([9]), () => new Uint8Array(32));
+    expect(ldap.bindGssapi(initiatorOver(client, held, GSS_C_INTEG_FLAG, stray), NONE).ok).toBe(true);
+  });
 });

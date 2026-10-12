@@ -83,9 +83,17 @@ describe('TLS 1.3 handshake messages — encode/decode round-trip', () => {
   it('round-trips NewSessionTicket', () => {
     const msg: NewSessionTicket = {
       kind: 'new_session_ticket', ticketLifetime: 7200, ticketAgeAdd: hex(4), ticketNonce: hex(8),
-      ticket: hex(16), extensions: { earlyData: true },
+      ticket: hex(16), extensions: { earlyData: true, maxEarlyDataSize: 1024 },
     };
     expect(decodeHandshakeMessage(encodeHandshakeMessage(msg))).toEqual(msg);
+  });
+
+  it('NewSessionTicket carries max_early_data_size (RFC 8446 §4.2.10), 16384 by default', () => {
+    const msg: NewSessionTicket = {
+      kind: 'new_session_ticket', ticketLifetime: 7200, ticketAgeAdd: hex(4), ticketNonce: hex(8),
+      ticket: hex(16), extensions: { earlyData: true },
+    };
+    expect(decodeHandshakeMessage(encodeHandshakeMessage(msg))).toEqual({ ...msg, extensions: { earlyData: true, maxEarlyDataSize: 16384 } });
   });
 
   it('round-trips KeyUpdate', () => {

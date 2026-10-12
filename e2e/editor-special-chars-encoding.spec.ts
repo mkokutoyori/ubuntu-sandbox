@@ -57,13 +57,13 @@ test.describe('Scénario UI-9 (e2e) — caractères spéciaux et encodage', () =
 
     await page.keyboard.press('n');
     await expect(page.locator('[data-testid="terminal-modal"]')).not.toContainText('may be a binary file', { timeout: 5_000 });
-    await expect(page.locator('[data-testid="vim-statusline"]')).not.toBeVisible();
+    await expect(page.locator('[data-testid="vim-body"]')).not.toBeVisible();
   });
 
   test(':set list révèle $ (fin de ligne) et ^I (tabulation), invisibles sans list', async ({ page }) => {
     await typeCmd(page, "printf 'a\\tb\\n' > /tmp/list-mode.txt");
     await typeCmd(page, 'vim /tmp/list-mode.txt');
-    await expect(page.getByText('list-mode.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="vim-cmdline"]')).toContainText('list-mode.txt', { timeout: 5_000 });
     await expect(page.getByText('a^Ib$')).not.toBeVisible();
 
     await exCmd(page, 'set list');

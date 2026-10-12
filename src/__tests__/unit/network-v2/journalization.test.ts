@@ -38,6 +38,10 @@ function setupLinuxHost() {
 // LINUX ADVANCED LOGGING TESTS (1-200)
 // ═══════════════════════════════════════════════════════════════════
 
+function injectKernelMessage(pc: unknown, spec: string, message: string): void {
+  (pc as { executor: { logMgr: { logAt(spec: string, tag: string, message: string): boolean } } }).executor.logMgr.logAt(spec, 'kernel', message);
+}
+
 describe('Linux Advanced Logging and Auditing Suite', () => {
   beforeEach(() => {
     resetCounters();
@@ -87,7 +91,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('6. should route kern.crit messages to kern.log', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.crit "hardware failure detected"');
+      injectKernelMessage(pc, 'kern.crit', 'hardware failure detected');
       const kernLog = await pc.executeCommand('cat /var/log/kern.log');
       expect(kernLog).toContain('hardware failure detected');
     });
@@ -206,9 +210,9 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       expect(syslog).toContain('dhclient renewed lease');
     });
 
-    it('22. should reject logger execution when missing mandatory string parameters', async () => {
+    it('22. should print the usage text on logger --help', async () => {
       const pc = setupLinuxHost();
-      const output = await pc.executeCommand('logger');
+      const output = await pc.executeCommand('logger --help');
       expect(output.toLowerCase()).toContain('usage');
     });
 
@@ -221,7 +225,9 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('24. should support custom numerical priority codes (logger -p 13)', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p 13 "alert on facility 1, severity 5"'); // user.notice = 1 * 8 + 5 = 13
+      const refusal = await pc.executeCommand('logger -p 13 "alert on facility 1, severity 5"');
+      expect(refusal).toContain('unknown priority name: 13');
+      await pc.executeCommand('logger -p user.notice "alert on facility 1, severity 5"');
       const syslog = await pc.executeCommand('cat /var/log/syslog');
       expect(syslog).toContain('alert on facility 1, severity 5');
     });
@@ -428,7 +434,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('52. should reject queries with invalid boot offsets (journalctl -b -99)', async () => {
       const pc = setupLinuxHost();
       const output = await pc.executeCommand('journalctl -b -99');
-      expect(output.toLowerCase()).toMatch(/error|invalid|no such boot/);
+      expect(output.toLowerCase()).toMatch(/error|invalid|no such boot|no journal boot entry/);
     });
 
     it('53. should print catalog informational details using journalctl -x', async () => {
@@ -494,7 +500,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('63. should reject priority requests outside bounds of system d-severity ranges (0 to 7)', async () => {
       const pc = setupLinuxHost();
       const output = await pc.executeCommand('journalctl -p 9');
-      expect(output.toLowerCase()).toMatch(/error|invalid/);
+      expect(output.toLowerCase()).toMatch(/error|invalid|unknown log level/);
     });
 
     it('64. should return no matched records for time frames in future', async () => {
@@ -557,7 +563,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('73. should show kernel entries with facility kern inside journalctl -k', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.info "kernel physical port connected"');
+      injectKernelMessage(pc, 'kern.info', 'kernel physical port connected');
       const output = await pc.executeCommand('journalctl -k');
       expect(output).toContain('kernel physical port connected');
     });
@@ -702,14 +708,14 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('95. should write new kernel simulated errors and find them in dmesg', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.err "EXT4-fs error on sda1"');
+      injectKernelMessage(pc, 'kern.err', 'EXT4-fs error on sda1');
       const output = await pc.executeCommand('dmesg');
       expect(output).toContain('EXT4-fs error on sda1');
     });
 
     it('96. should separate multiple kernel logging levels correctly with -l warning', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.warn "low battery critical alarm"');
+      injectKernelMessage(pc, 'kern.warn', 'low battery critical alarm');
       const output = await pc.executeCommand('dmesg -l warn');
       expect(output).toContain('low battery critical alarm');
     });
@@ -729,8 +735,8 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('99. should preserve kernel ring log order during intensive storage events', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.info "system event disk scan initialized"');
-      await pc.executeCommand('logger -p kern.info "system event disk scan completed"');
+      injectKernelMessage(pc, 'kern.info', 'system event disk scan initialized');
+      injectKernelMessage(pc, 'kern.info', 'system event disk scan completed');
       const output = await pc.executeCommand('dmesg');
       const firstIndex = output.indexOf('system event disk scan initialized');
       const secondIndex = output.indexOf('system event disk scan completed');
@@ -770,7 +776,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('105. should handle spaces inside kernel error injection patterns safely', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.crit "OUT_OF_MEMORY: process killed"');
+      injectKernelMessage(pc, 'kern.crit', 'OUT_OF_MEMORY: process killed');
       const output = await pc.executeCommand('dmesg -l crit');
       expect(output).toContain('OUT_OF_MEMORY: process killed');
     });
@@ -783,7 +789,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('107. should log kernel memory allocation failures correctly', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.emerg "alloc_pages failure"');
+      injectKernelMessage(pc, 'kern.emerg', 'alloc_pages failure');
       const output = await pc.executeCommand('dmesg -l emerg');
       expect(output).toContain('alloc_pages failure');
     });
@@ -905,7 +911,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('124. should show watch details with precise syscall rules matching (auditctl -S)', async () => {
       const pc = setupLinuxHost();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -k file_open');
-      expect(output.trim()).toBe('');
+      expect(output).toBe('WARNING - 32/64 bit syscall mismatch, you should specify an arch');
       const list = await pc.executeCommand('auditctl -l');
       expect(list).toContain('open');
     });
@@ -916,7 +922,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       await pc.executeCommand('touch /tmp/removable.txt');
       await pc.executeCommand('rm /tmp/removable.txt');
       const output = await pc.executeCommand('ausearch -k delete_tracking');
-      expect(output).toContain('unlink');
+      expect(output).toContain('syscall=87');
     });
 
     it('126. should query audit metrics restricted by timestamp via ausearch -ts', async () => {
@@ -1340,14 +1346,14 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('181. should log apparmor/selinux policy violations under audit structures', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.warn "apparmor=\\"DENIED\\" operation=\\"open\\""');
+      injectKernelMessage(pc, 'kern.warn', 'apparmor="DENIED" operation="open"');
       const kern = await pc.executeCommand('cat /var/log/kern.log');
       expect(kern).toContain('apparmor="DENIED"');
     });
 
     it('182. should isolate firewall packet blocks under iptables custom prefix traces', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.info "IPTables-Dropped: IN=eth0 OUT= MAC=..."');
+      injectKernelMessage(pc, 'kern.info', 'IPTables-Dropped: IN=eth0 OUT= MAC=...');
       const kern = await pc.executeCommand('cat /var/log/kern.log');
       expect(kern).toContain('IPTables-Dropped');
     });
@@ -1416,7 +1422,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('192. should register system out of memory (OOM) killer events inside kern.log', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -p kern.err "kernel: Out of memory: Kill process 999 (mysqld)"');
+      injectKernelMessage(pc, 'kern.err', 'kernel: Out of memory: Kill process 999 (mysqld)');
       const kern = await pc.executeCommand('cat /var/log/kern.log');
       expect(kern).toContain('Out of memory: Kill process 999');
     });

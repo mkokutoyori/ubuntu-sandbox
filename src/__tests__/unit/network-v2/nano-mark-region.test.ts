@@ -173,8 +173,7 @@ describe('Scénario — ^U (Paste) place désormais le curseur APRÈS le texte c
     press(nano, 'ArrowDown'); // on "b"
     ctrl(nano, 'k'); // cuts "b"
     expect(nano.lines).toEqual(['a', 'X']);
-    press(nano, 'ArrowDown'); // on "X"
-    ctrl(nano, 'u'); // paste "b" back before "X"
+    ctrl(nano, 'u'); // the cursor stayed on "X": paste "b" back before it
     expect(nano.lines).toEqual(['a', 'b', 'X']);
     expect(nano.cursorLine).toBe(2); // right after the pasted line, on "X"
     expect(nano.cursorCol).toBe(0);

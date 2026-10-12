@@ -24,6 +24,14 @@ export class VtyLineConfigStore {
     return next;
   }
 
+  unset(first: number, last: number, names: readonly (keyof VtyLineConfigInit)[]): VtyLineConfig | undefined {
+    const existing = this.byKey.get(`${first} ${last}`);
+    if (!existing) return undefined;
+    const next = existing.withoutFields(names);
+    this.byKey.set(`${first} ${last}`, next);
+    return next;
+  }
+
   get(first: number, last: number): VtyLineConfig | undefined {
     return this.byKey.get(`${first} ${last}`);
   }

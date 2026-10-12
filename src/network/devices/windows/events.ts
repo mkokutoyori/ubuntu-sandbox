@@ -149,6 +149,7 @@ export interface WindowsProcessEventPayload extends WindowsDeviceRef {
   commandLine?: string;
   /** Real UAC elevation context, when the spawner knows it (PRD-Winlogon.md §2.1 P5) — see `WindowsProcess.elevation`. */
   elevation?: 'full' | 'default' | 'limited';
+  forced?: boolean;
 }
 
 /** `runas` — an explicit-credentials logon (PRD-Winlogon.md §2.1 P5, 4648): `subject` is the *caller's* account, `target` the account impersonated. */

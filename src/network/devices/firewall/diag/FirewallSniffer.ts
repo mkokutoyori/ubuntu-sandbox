@@ -1,8 +1,9 @@
-import { frameMatches, type CaptureFilter, type CapturedFrame } from './PacketCapture';
+import type { CapturedFrame } from './PacketCapture';
+import type { SnifferMatcher } from './SnifferFilter';
 
 export interface SnifferSelection {
   readonly iface: string;
-  readonly filter: CaptureFilter;
+  readonly matches: SnifferMatcher;
   readonly count: number;
 }
 
@@ -22,7 +23,7 @@ export function beginSniffer(
     wanted: selection.count,
     onFrame: (listener) => source.observe((entry) => {
       if (selection.iface !== 'any' && entry.iface !== selection.iface) return;
-      if (!frameMatches(entry.frame, selection.filter)) return;
+      if (!selection.matches(entry)) return;
       listener(entry);
     }),
   };

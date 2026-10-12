@@ -53,12 +53,12 @@ describe('Scénario — Ctrl+→ saute au début du mot suivant', () => {
     expect(nano.cursorCol).toBe(7);
   });
 
-  it('en fin de fichier, ne fait rien (reste sur place)', () => {
+  it('en fin de dernière ligne, passe sur la ligne vide finale de nano', () => {
     const nano = newEngine('foo\n');
     press(nano, 'End');
     ctrlArrow(nano, 'ArrowRight');
-    expect(nano.cursorLine).toBe(0);
-    expect(nano.cursorCol).toBe(3);
+    expect(nano.cursorLine).toBe(1);
+    expect(nano.cursorCol).toBe(0);
   });
 });
 
@@ -84,12 +84,12 @@ describe('Scénario — Ctrl+← saute au début du mot précédent', () => {
     expect(nano.cursorCol).toBe(0); // start of "foo"
   });
 
-  it('en début de ligne, remonte à la fin de la ligne précédente', () => {
+  it('en début de ligne, remonte au début du dernier mot de la ligne précédente', () => {
     const nano = newEngine('foo bar\nbaz\n');
     press(nano, 'ArrowDown');
     ctrlArrow(nano, 'ArrowLeft');
     expect(nano.cursorLine).toBe(0);
-    expect(nano.cursorCol).toBe(7);
+    expect(nano.cursorCol).toBe(4);
   });
 
   it('en tout début de fichier, ne fait rien', () => {
@@ -109,11 +109,11 @@ describe('Scénario — M-\\ (First Line) et M-/ (Last Line)', () => {
     expect(nano.cursorCol).toBe(0);
   });
 
-  it('M-/ place le curseur à la toute fin du fichier', () => {
+  it('M-/ place le curseur sur la ligne vide finale de nano', () => {
     const nano = newEngine('a\nbb\nccc\n');
     alt(nano, '/');
-    expect(nano.cursorLine).toBe(2);
-    expect(nano.cursorCol).toBe(3);
+    expect(nano.cursorLine).toBe(3);
+    expect(nano.cursorCol).toBe(0);
   });
 
   it('un mouvement de fichier interrompt la coalescence undo', () => {

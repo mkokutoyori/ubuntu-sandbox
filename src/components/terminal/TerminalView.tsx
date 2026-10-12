@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
+import { useGridGeometry } from '../gridGeometry';
 import type {
   RemoteNanoController,
   RemoteVimController,
@@ -76,6 +77,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   const interactiveInputRef = useRef<HTMLInputElement>(null);
   const reverseSearchRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
+  useGridGeometry(terminalRef, session, (size) => session.setWindowSize(size.rows, size.cols));
 
   // Scroll to bottom on output changes — but only while the user hasn't
   // scrolled up to read earlier output. A real terminal freezes the view
@@ -309,6 +311,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             readOnly={editorMode.readOnly}
             showPosition={editorMode.showPosition}
             showLineNumbers={editorMode.showLineNumbers}
+            softwrap={editorMode.softwrap}
+            displayName={editorMode.displayName}
             initialCursorLine={editorMode.initialCursorLine}
             initialCursorCol={editorMode.initialCursorCol}
             fsContext={fsContext}
@@ -325,6 +329,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           isNewFile={editorMode.isNewFile}
           editorName={editorMode.editorType === 'vi' ? 'vi' : 'vim'}
           initialCursorLine={editorMode.initialCursorLine}
+          displayName={editorMode.displayName}
           fsContext={fsContext}
           owner={owner}
           onExit={(saved: boolean) => session.editorExit(saved)}

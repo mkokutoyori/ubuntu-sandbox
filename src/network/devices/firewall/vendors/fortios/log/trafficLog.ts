@@ -1,3 +1,4 @@
+import type { AdminAccessKind } from '../../../mgmt/FirewallCliServer';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
 import type { FirewallSession, SessionCloseReason } from '../../../session/SessionTable';
 import type { SecurityRule } from '../../../model/SecurityRule';
@@ -177,6 +178,65 @@ export interface ConfigChangeFacts {
   readonly user: string;
   readonly ui: string;
   readonly transactionId: number;
+}
+
+
+export interface AdminAccessFacts {
+  readonly now: number;
+  readonly kind: AdminAccessKind;
+  readonly user: string;
+  readonly knownUser: boolean;
+  readonly transport: string;
+  readonly source: string;
+  readonly destination: string;
+  readonly profile?: string;
+}
+
+const ADMIN_ACCESS_LOGID: Readonly<Record<AdminAccessKind, string>> = {
+  'login-success': '0100032001',
+  'login-failed': '0100032002',
+  logout: '0100032003',
+};
+
+const ADMIN_ACCESS_DESCRIPTION: Readonly<Record<AdminAccessKind, string>> = {
+  'login-success': 'Admin login successful',
+  'login-failed': 'Admin login failed',
+  logout: 'Admin logout successful',
+};
+
+const ADMIN_UI_METHOD: Readonly<Record<string, string>> = { web: 'https' };
+
+export function adminAccessLog(facts: AdminAccessFacts): FirewallLogDraft {
+  const method = ADMIN_UI_METHOD[facts.transport] ?? facts.transport;
+  const ui = `${method}(${facts.source})`;
+  const failed = facts.kind === 'login-failed';
+  const reason = failed ? (facts.knownUser ? 'passwd_invalid' : 'name_invalid') : 'none';
+  const message = facts.kind === 'login-success'
+    ? `Administrator ${facts.user} logged in successfully from ${ui}`
+    : facts.kind === 'logout'
+      ? `Administrator ${facts.user} logged out from ${ui}`
+      : `Administrator ${facts.user} login failed from ${ui} because of ${facts.knownUser ? 'invalid password' : 'invalid user name'}`;
+
+  return {
+    at: facts.now,
+    type: 'event',
+    subtype: 'system',
+    level: failed ? 'alert' : 'information',
+    id: ADMIN_ACCESS_LOGID[facts.kind],
+    fields: {
+      logdesc: ADMIN_ACCESS_DESCRIPTION[facts.kind],
+      user: facts.user,
+      ui,
+      method,
+      srcip: facts.source,
+      dstip: facts.destination,
+      action: facts.kind === 'logout' ? 'logout' : 'login',
+      status: failed ? 'failed' : 'success',
+      reason,
+      profile: facts.kind === 'login-success' ? facts.profile : undefined,
+      msg: message,
+    },
+  };
 }
 
 const CONFIG_LOGID = '0100044547';

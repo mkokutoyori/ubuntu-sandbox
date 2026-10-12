@@ -23,6 +23,7 @@
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxUserManager } from '../LinuxUserManager';
 import { HostsFile } from '../../HostsFile';
+import { parseServicesRecord } from '../../../core/ports/IanaServiceRegistry';
 import type { INssSource } from './INssSource';
 import { parseAliasesFile } from './aliasesFile';
 import type {
@@ -283,18 +284,11 @@ export class FilesNssSource implements INssSource {
   }
 
   private *iterateServices(): Generator<NssServiceEntry> {
-    const lines = readRecords(this.vfs, '/etc/services');
-    if (!lines) return;
-    for (const line of lines) {
-      const parts = line.split(/\s+/);
-      if (parts.length < 2) continue;
-      const portProto = parts[1];
-      const slash = portProto.indexOf('/');
-      if (slash === -1) continue;
-      const port = parseInt(portProto.slice(0, slash), 10);
-      const protocol = portProto.slice(slash + 1);
-      if (!Number.isFinite(port) || !protocol) continue;
-      yield { name: parts[0], port, protocol, aliases: parts.slice(2) };
+    const content = this.vfs.readFile('/etc/services');
+    if (content == null) return;
+    for (const line of content.split('\n')) {
+      const record = parseServicesRecord(line);
+      if (record !== null) yield { name: record.name, port: record.port, protocol: record.protocol, aliases: [...record.aliases] };
     }
   }
 

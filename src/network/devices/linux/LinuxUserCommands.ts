@@ -224,13 +224,7 @@ export function cmdW(ctx: ShellContext, uptimeSeconds = 0): string {
   return ctx.userMgr.w(uptimeSeconds);
 }
 
-export function cmdLast(ctx: ShellContext, args: string[]): string {
-  return ctx.userMgr.last(args);
-}
 
-export function cmdLastb(ctx: ShellContext, args: string[]): string {
-  return ctx.userMgr.lastb(args);
-}
 
 export function cmdSudoCheck(ctx: ShellContext, args: string[]): string {
   // sudo -l -U username

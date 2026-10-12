@@ -31,51 +31,28 @@
  * l'option qui retire les drapeaux automatiques de MIT quand maxssf est
  * inferieur ou egal au SSF externe.
  *
+ * Le scenario `expired` a ete enregistre de nouveau avec la requete AS et le
+ * cache final : avant la correction du client Kerberos, 1 des 24 cas tombait
+ * (requete AS jamais envoyee, cache sans `refresh_time`) ; les 23 autres
+ * passent avant comme apres, ils servent de temoins de non-regression.
+ *
  * Non attestable ici : le jeu de greffons du paquet Ubuntu 22.04 simule face au
- * 2.1.28 d'Ubuntu 24.04 qui sert de reference ; GS2-KRB5 et GSS-SPNEGO, que le
- * vrai greffon annonce aussi, ne sont pas portes ; `-O passcred` (delegation)
- * est refuse explicitement ; le vrai client, devant un TGT expire, tente
- * d'abord un echange anonyme pour blinder sa requete (FAST) puis ecrit une
- * entree `refresh_time` dans le cache : ni l'un ni l'autre ne sont reproduits
- * (la sortie et le code de retour le sont, le cache n'est pas compare pour
- * ce scenario).
+ * 2.1.28 d'Ubuntu 24.04 qui sert de reference ; GS2-IAKERB, que le vrai
+ * greffon annonce aussi, n'est pas porte ; la delegation (`-O passcred`) a ses
+ * propres sondes. Devant un TGT expire ou a moins de 30 secondes de
+ * l'expiration, le vrai client envoie une requete AS sans cle (le client
+ * keytab par defaut n'existe pas) et note `refresh_time` dans le cache : les
+ * deux sont reproduits, la requete AS est comparee champ a champ et le cache
+ * octet pour octet. Les requetes TGS ne sont comparees que par options, noms
+ * et domaine : le vrai client y joint un PA-FX-FAST et propose huit types de
+ * chiffrement, le simulateur n'implemente ni FAST ni d'autre chiffrement
+ * qu'AES256.
  */
 import { describe, it, expect } from 'vitest';
-import { replay, compareWithRecording, loadJson, type Scenario } from './openldap-replay-support';
-import {
-  RandomTape, recordedGssRandom, recordedKdcNonces, replayedKrb5, serviceSessionKey,
-  type GssapiCorpus, type GssapiScenario,
-} from './openldap-gssapi-replay-support';
+import { loadJson } from './openldap-replay-support';
+import { replayGssapiScenario, type GssapiCorpus } from './openldap-gssapi-replay-support';
 
 const corpus = loadJson<GssapiCorpus>('openldap-ldapsearch-gssapi-corpus.json');
-const PLUGINS = ['libgssapiv2.so', 'libplain.so', 'libdigestmd5.so', 'libcrammd5.so'];
-
-const bytesOfHex = (text: string): Uint8Array => Uint8Array.from(Buffer.from(text, 'hex'));
-
-async function run(scenario: GssapiScenario, args: readonly string[]) {
-  const problems: string[] = [];
-  const cacheBytes = scenario.cache === null ? null : bytesOfHex(corpus.caches[scenario.cache]);
-  const key = cacheBytes === null ? null : serviceSessionKey(cacheBytes, ['ldap', 'vm']);
-  const recorded = key === null || scenario.connections[0].transcript.length === 0 ? null : recordedGssRandom(scenario, key);
-  const tape = new RandomTape([...recordedKdcNonces(scenario), ...(recorded?.chunks ?? [])], problems);
-  const clock = recorded?.clockMicroseconds ?? scenario.clockMicroseconds;
-  const krb5 = replayedKrb5(corpus, scenario, tape.take, () => clock);
-  const asScenario: Scenario = {
-    name: scenario.name, args, stdin: '', connections: scenario.connections,
-    stdout: scenario.stdout, stderr: scenario.stderr, exitCode: scenario.exitCode,
-  };
-  const outcome = await replay(asScenario, {
-    args, files: {}, saslPlugins: PLUGINS, random: tape.take, gss: krb5.gss, debugLevel: scenario.debugLevel,
-  });
-  const found = compareWithRecording({ ...outcome, problems: [...problems, ...outcome.problems] }, scenario, scenario.debugLevel !== undefined);
-  if (scenario.cacheAfter !== undefined) {
-    const written = krb5.files.get(scenario.cacheEnv.replace(/^FILE:/, ''));
-    if (written === undefined || Buffer.from(written).toString('hex') !== scenario.cacheAfter) found.push('the credentials cache differs after the run');
-  }
-  if (tape.remaining !== 0) found.push(`${tape.remaining} recorded random draws were never consumed`);
-  return found;
-}
-
 describe('ldapsearch -Y GSSAPI replays the real OpenLDAP client', () => {
   it('the corpus carries the recorded scenarios', () => {
     expect(corpus.scenarios.length).toBe(22);
@@ -84,13 +61,13 @@ describe('ldapsearch -Y GSSAPI replays the real OpenLDAP client', () => {
   it('the replay refuses a request that differs from the recorded one', async () => {
     const scenario = corpus.scenarios.find((candidate) => candidate.name === 'default')!;
     const altered = scenario.args.flatMap((arg) => (arg === 'GSSAPI' ? [arg, '-O', 'maxssf=1'] : [arg]));
-    const problems = await run(scenario, altered);
+    const problems = await replayGssapiScenario(corpus, scenario, altered);
     expect(problems.some((problem) => problem.startsWith('request mismatch') || problem.startsWith('unexpected request'))).toBe(true);
   });
 
   for (const scenario of corpus.scenarios) {
     it(`scenario ${scenario.name} matches the real client byte for byte`, async () => {
-      expect(await run(scenario, scenario.args)).toEqual([]);
+      expect(await replayGssapiScenario(corpus, scenario, scenario.args)).toEqual([]);
     });
   }
 });

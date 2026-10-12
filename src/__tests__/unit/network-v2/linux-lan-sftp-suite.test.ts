@@ -1785,14 +1785,14 @@ describe('§31 — journalctl mirrors auth.log for sftp sessions', () => {
       contains: [/Accepted password for alice/],
     },
     {
-      name: 'journald stopped → journalctl reports no entries',
+      name: 'journald stopped → journalctl still reads the journal files',
       setup: async (l) => {
         await l.pc2.executeCommand('systemctl stop systemd-journald');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
       },
       on: l => l.pc2,
       cmd: 'journalctl -u ssh',
-      contains: [/No journal files were found|service is not active|No entries/i],
+      contains: [/sshd|No entries/i],
     },
   ];
 

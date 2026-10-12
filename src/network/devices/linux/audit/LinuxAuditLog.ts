@@ -51,6 +51,9 @@ export class LinuxAuditRecord {
 
   /** True when the record carries `res=success`. */
   get succeeded(): boolean {
+    const msg = this.fields.msg;
+    if (typeof msg === 'string') return /(?:^| )res=success\b/.test(msg);
+    if (this.fields.success !== undefined) return this.fields.success === 'yes';
     return String(this.fields.res ?? '') === 'success';
   }
 
@@ -80,6 +83,12 @@ export class LinuxAuditLog {
 
   setClock(now: () => number): void { this.nowMs = now; }
 
+  private admission: (type: string) => boolean = () => true;
+
+  setAdmission(admission: (type: string) => boolean): void { this.admission = admission; }
+
+  currentTimeMs(): number { return this.nowMs(); }
+
   private readonly records: LinuxAuditRecord[] = [];
   private serialCounter = 0;
 
@@ -95,6 +104,7 @@ export class LinuxAuditLog {
    * The serial number is allocated monotonically, as the kernel does.
    */
   record(type: string, fields: Record<string, string | number> = {}): LinuxAuditRecord {
+    if (!this.admission(type)) return new LinuxAuditRecord(type, 0, fields, this.nowMs());
     const entry = new LinuxAuditRecord(type, ++this.serialCounter, fields);
     this.records.push(entry);
     this.materialize();
@@ -102,11 +112,12 @@ export class LinuxAuditLog {
   }
 
   recordEvent(parts: Array<{ type: string; fields?: Record<string, string | number> }>): LinuxAuditRecord[] {
-    if (parts.length === 0) return [];
+    const admitted = parts.filter((p) => this.admission(p.type));
+    if (admitted.length === 0) return [];
     const serial = ++this.serialCounter;
     const ts = this.nowMs();
     const out: LinuxAuditRecord[] = [];
-    for (const p of parts) {
+    for (const p of admitted) {
       const entry = new LinuxAuditRecord(p.type, serial, p.fields ?? {}, ts);
       this.records.push(entry);
       out.push(entry);
@@ -156,13 +167,13 @@ export class LinuxAuditLog {
 /** Quote an audit field value when it contains whitespace. */
 const ALWAYS_QUOTED: ReadonlySet<string> = new Set([
   'key', 'name', 'exe', 'comm', 'dir', 'path', 'file',
-  'subj', 'subj_user', 'subj_role', 'subj_type',
-  'obj_user', 'obj_role', 'obj_type', 'tty', 'cwd',
-  'cmdline', 'proctitle',
+  'cwd', 'cmdline',
 ]);
 
 function formatField(key: string, value: string | number): string {
   const text = String(value);
+  if (key === 'msg') return `msg='${text}'`;
+  if (text === '(null)') return `${key}=(null)`;
   if (ALWAYS_QUOTED.has(key)) return `${key}="${text}"`;
   if (/\s/.test(text)) return `${key}="${text}"`;
   return `${key}=${text}`;

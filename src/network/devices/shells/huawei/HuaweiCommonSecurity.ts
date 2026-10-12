@@ -109,7 +109,7 @@ export function displaySshServerStatusVrp(device: unknown): string {
     `SSH connection timeout          : ${ssh?.timeout ?? SSH_DEFAULT_TIMEOUT_SEC} seconds`,
     'SSH server key generating interval : 0 hours',
     `SSH authentication retries      : ${ssh?.retries ?? SSH_DEFAULT_AUTH_RETRIES} times`,
-    'SFTP server                     : Disable',
+    `SFTP server                     : ${ssh?.sftpEnabled ? 'Enable' : 'Disable'}`,
     `Stelnet server                  : ${ssh?.enabled ? 'Enable' : 'Disable'}`,
   ].join('\n');
 }
@@ -176,7 +176,7 @@ export function registerHuaweiCommonSecurity(
   const resyncListeners = (): void => {
     (getRouter?.() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
   };
-  const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'ntp-service' | 'clock' | 'sflow', args: string[]) => {
+  const dispatch = (feature: 'stelnet' | 'sftp' | 'telnet' | 'ssh' | 'ntp-service' | 'clock' | 'sflow', args: string[]) => {
     if (!getRouter) return '';
     const mgmt = getRouter().getManagementService();
     switch (feature) {
@@ -197,6 +197,11 @@ export function registerHuaweiCommonSecurity(
         const refuse = mgmt.configureTelnet(args);
         if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
         resyncListeners();
+        break;
+      }
+      case 'sftp': {
+        const refuse = mgmt.configureSftp(args);
+        if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
         break;
       }
       case 'ssh': {
@@ -249,6 +254,10 @@ export function registerHuaweiCommonSecurity(
   registerUndoForms('stelnet', 'Disable the STelnet server', [['server', 'enable']],
     [{ keyword: 'server', description: 'STelnet server' }],
     (args) => getRouter().getManagementService().configureStelnet([...args], true));
+  trie.registerGreedy('sftp', 'SFTP configuration', (args) => dispatch('sftp', args));
+  registerUndoForms('sftp', 'Disable the SFTP server', [['server', 'enable']],
+    [{ keyword: 'server', description: 'SFTP server' }],
+    (args) => getRouter().getManagementService().configureSftp([...args], true));
   trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
   registerUndoForms('telnet', 'Disable the Telnet server', [
     ['server', 'enable'], ['server', 'port'], ['server', 'acl'],

@@ -26,7 +26,8 @@ import {
 import { ApReplayCache, type KerberosServiceIdentity } from '@/network/kerberos/ApReqVerifier';
 import { machineSalt, stringToKey } from '@/network/kerberos/crypto';
 import { simulationNowMs } from '@/network/core/SystemClock';
-import { GssapiServerExchange, type EstablishedSecurityLayer } from '@/network/ldap/gssapi/GssapiServerExchange';
+import { tlsServerEndPoint } from '@/network/tls/channelBinding';
+import { GssapiServerExchange, type EstablishedSecurityLayer, type ServerMechanism } from '@/network/ldap/gssapi/GssapiServerExchange';
 import { GssSaslLayer } from '@/network/ldap/gssapi/GssSaslLayer';
 import { LAYER_CONFIDENTIALITY, LAYER_INTEGRITY, LAYER_NONE, type LayerOffer } from '@/network/ldap/gssapi/Rfc4752';
 import type { GssPeer } from '@/network/kerberos/gssapi/GssAcceptor';
@@ -124,7 +125,7 @@ const NOT_BOUND: LdapResult = {
 };
 
 const SUPPORTED_CONTROLS: readonly string[] = [PAGED_RESULTS_CONTROL_OID, SORT_REQUEST_OID, DOMAIN_SCOPE_OID];
-const SUPPORTED_SASL_MECHANISMS: readonly string[] = ['GSSAPI'];
+const SUPPORTED_SASL_MECHANISMS: readonly ServerMechanism[] = ['GSSAPI', 'GSS-SPNEGO'];
 const OPERATIONAL_ATTRIBUTES: ReadonlySet<string> = new Set([
   'createtimestamp', 'modifytimestamp', 'subschemasubentry', 'structuralobjectclass', 'entrydn',
 ]);
@@ -168,6 +169,7 @@ export class LdapServerHandler {
   private replyEncrypted = false;
   private stringWire = false;
   private gssapi: GssapiServerExchange | null = null;
+  private gssapiMechanism: ServerMechanism | null = null;
   private saslLayer: { readonly layer: GssSaslLayer; readonly maxSend: number } | null = null;
 
   constructor(private readonly ctx: LdapServerContext) {
@@ -273,7 +275,7 @@ export class LdapServerHandler {
           return;
         }
         if (op.sasl) {
-          if (!SUPPORTED_SASL_MECHANISMS.includes(op.sasl.mechanism)) {
+          if (!SUPPORTED_SASL_MECHANISMS.includes(op.sasl.mechanism as ServerMechanism)) {
             this.bound = false;
             this.reply(socket, msg.messageID, {
               kind: 'bindResponse', result: ldapResult(LdapResultCode.authMethodNotSupported),
@@ -592,15 +594,19 @@ export class LdapServerHandler {
       });
     };
     const identity = this.ctx.kerberos;
-    if (sasl.mechanism !== 'GSSAPI' || identity === undefined) {
+    const mechanism = SUPPORTED_SASL_MECHANISMS.find((candidate) => candidate === sasl.mechanism);
+    if (mechanism === undefined || identity === undefined) {
       refuse();
       return;
     }
-    if (this.gssapi === null) {
+    if (this.gssapi === null || this.gssapiMechanism !== mechanism) {
+      this.gssapiMechanism = mechanism;
       const clock = { nowMicroseconds: (): number => Math.floor((identity.clockMs ?? simulationNowMs)() * 1000) };
       this.gssapi = new GssapiServerExchange({
+        mechanism,
         serviceKey: stringToKey(identity.serviceSecret, machineSalt(identity.realm, identity.hostName)),
         clock, replayCache: replayCacheOf(identity), offer: GSSAPI_LAYER_OFFER,
+        channelBindings: this.tls !== null && this.tls.result === 'accept' ? tlsServerEndPoint(this.tls.presentedCertificate) : null,
       });
     }
     const step = this.gssapi.step(sasl.credentials ?? null);
@@ -621,7 +627,7 @@ export class LdapServerHandler {
     this.gssapi = null;
     this.bound = true;
     this.authenticated = true;
-    this.reply(socket, messageID, { kind: 'bindResponse', result: ldapResult(LdapResultCode.success) });
+    this.reply(socket, messageID, { kind: 'bindResponse', result: ldapResult(LdapResultCode.success), serverSaslCreds: step.finalCredentials });
     if (step.layer !== null) this.installSaslLayer(step.layer);
   }
 

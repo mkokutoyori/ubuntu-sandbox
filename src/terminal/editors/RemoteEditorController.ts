@@ -12,6 +12,7 @@
  */
 
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
+import type { EditorScreen } from '@/network/devices/linux/editors/screen/EditorScreen';
 import type {
   EditorView,
   NanoEditorView,
@@ -24,21 +25,21 @@ import type {
   VimMode,
   VimVariant,
 } from '@/network/devices/linux/editors/VimEngine';
-import {
-  displayColumnFor,
-  renderListLine,
-} from '@/network/devices/linux/editors/editorRender';
 
 /** The wire operations a controller needs; satisfied by ISshShellChannel. */
 export interface RemoteEditorTransport {
   sendEditorKey(key: EditorKeyInput): Promise<EditorView | null>;
   pasteIntoEditor(text: string): Promise<EditorView | null>;
-  moveEditorCursor(offset: number): Promise<EditorView | null>;
+  clickEditor(row: number, col: number): Promise<EditorView | null>;
+  scrollEditor(up: boolean, count: number): Promise<EditorView | null>;
+  onEditorView(handler: (view: EditorView) => void): () => void;
+  resize(cols: number, rows: number): void;
   closeEditor(): void;
 }
 
 abstract class BaseRemoteEditorController<V extends EditorView> {
   protected current: V;
+  private readonly stopListening: () => void;
 
   constructor(
     protected readonly transport: RemoteEditorTransport,
@@ -47,6 +48,7 @@ abstract class BaseRemoteEditorController<V extends EditorView> {
     private readonly onUpdate: () => void,
   ) {
     this.current = initial;
+    this.stopListening = transport.onEditorView((view) => this.absorb(view));
   }
 
   get lines(): readonly string[] { return this.current.lines; }
@@ -68,7 +70,12 @@ abstract class BaseRemoteEditorController<V extends EditorView> {
     void this.transport.sendEditorKey(key).then((view) => this.absorb(view));
   }
 
-  dispose(): void { this.transport.closeEditor(); }
+  dispose(): void {
+    this.stopListening();
+    this.transport.closeEditor();
+  }
+
+  resize(rows: number, cols: number): void { this.transport.resize(cols, rows); }
 
   protected absorb(view: EditorView | null): void {
     if (view) this.current = view as V;
@@ -83,7 +90,7 @@ export class RemoteVimController extends BaseRemoteEditorController<VimEditorVie
   get message(): string { return this.current.message; }
   get commandLineText(): string { return this.current.commandLineText; }
   get searchText(): string { return this.current.searchText; }
-  get fileFormat(): 'unix' | 'dos' { return this.current.fileFormat; }
+  get fileFormat(): 'unix' | 'dos' | 'mac' { return this.current.fileFormat; }
   get listMode(): boolean { return this.current.listMode; }
   get relativeNumbersShown(): boolean { return this.current.relativeNumbersShown; }
   get colorColumn(): number | null { return this.current.colorColumn; }
@@ -92,19 +99,25 @@ export class RemoteVimController extends BaseRemoteEditorController<VimEditorVie
   get pendingBinaryWarning(): string | null { return this.current.pendingBinaryWarning; }
   get pendingSubstMatch(): PendingSubstMatch | null { return this.current.pendingSubstMatch; }
   get pendingSwapRecovery(): PendingSwapRecovery | null { return this.current.pendingSwapRecovery; }
+  get isReplacing(): boolean { return this.current.isReplacing; }
+  get searchPromptChar(): '/' | '?' { return this.current.searchPromptChar; }
+  get visualAnchor(): { line: number; col: number } { return { ...this.current.visualAnchor }; }
+  get screen(): EditorScreen { return this.current.screen; }
 
-  renderListLine(line: string): string {
-    if (!this.current.listMode) return line;
-    return renderListLine(line, this.current.listChars);
+  scrollView(up: boolean, count: number): void {
+    void this.transport.scrollEditor(up, count).then((view) => this.absorb(view));
+  }
+
+  clickAt(row: number, col: number): void {
+    void this.transport.clickEditor(row, col).then((view) => this.absorb(view));
   }
 }
 
 export class RemoteNanoController extends BaseRemoteEditorController<NanoEditorView> {
   get mode(): NanoMode { return this.current.mode; }
+  get screen(): EditorScreen { return this.current.screen; }
   get statusMessage(): string { return this.current.statusMessage; }
   get helpText(): string { return this.current.helpText; }
-  get displayContent(): string { return this.current.displayContent; }
-  get displayCursorOffset(): number { return this.current.displayCursorOffset; }
   get promptCursor(): number { return this.current.promptCursor; }
   get saveFileName(): string { return this.current.saveFileName; }
   get searchQuery(): string { return this.current.searchQuery; }
@@ -116,16 +129,16 @@ export class RemoteNanoController extends BaseRemoteEditorController<NanoEditorV
   get replaceWithText(): string { return this.current.replaceWithText; }
   get pendingReplaceMatch(): PendingReplaceMatch | null { return this.current.pendingReplaceMatch; }
 
-  displayColumnFor(line: number, col: number): number {
-    return displayColumnFor(this.current.lines, line, col);
+  scrollView(up: boolean, count: number): void {
+    void this.transport.scrollEditor(up, count).then((view) => this.absorb(view));
   }
 
   applyPaste(text: string): void {
     void this.transport.pasteIntoEditor(text).then((view) => this.absorb(view));
   }
 
-  moveCursorToDisplayOffset(offset: number): void {
-    void this.transport.moveEditorCursor(offset).then((view) => this.absorb(view));
+  clickAt(row: number, col: number): void {
+    void this.transport.clickEditor(row, col).then((view) => this.absorb(view));
   }
 }
 
