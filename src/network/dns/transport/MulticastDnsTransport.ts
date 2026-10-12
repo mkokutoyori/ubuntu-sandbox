@@ -14,6 +14,7 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
+import { DUAL_STACK, IPV4_ONLY } from '@/network/tcp/TcpStack';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 
@@ -133,7 +134,10 @@ export function bindMulticastDns(
     } else {
       sendOnBothGroups(host, binding, binding.port, bytes);
     }
-  }, identity.processName, { pid: identity.pid, service: identity.service });
+  }, identity.processName, {
+    pid: identity.pid, service: identity.service,
+    families: binding.group6 ? DUAL_STACK : IPV4_ONLY,
+  });
   joinIpv6Group(host, binding);
 }
 

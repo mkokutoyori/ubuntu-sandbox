@@ -192,6 +192,14 @@ export function ipFamilyOf(ip: string): IpFamily {
   return ip.includes(':') ? 'ipv6' : 'ipv4';
 }
 
+export function wildcardAddressOf(family: IpFamily): string {
+  return family === 'ipv6' ? '::' : '0.0.0.0';
+}
+
+export const IPV4_ONLY: readonly IpFamily[] = ['ipv4'];
+
+export const DUAL_STACK: readonly IpFamily[] = ['ipv4', 'ipv6'];
+
 export function canonicalIpText(ip: string): string {
   try {
     return addressTextWithoutScope(ipFamilyOf(ip) === 'ipv4' ? new IPAddress(ip) : new IPv6Address(ip));
@@ -3271,7 +3279,7 @@ export class TcpStack {
   }
 
   private findListener(dstIp: string, port: number, device: string | null = null): import('./TcpStack').TcpListener | undefined {
-    const wildcard = ipFamilyOf(dstIp) === 'ipv6' ? '::' : '0.0.0.0';
+    const wildcard = wildcardAddressOf(ipFamilyOf(dstIp));
     for (const address of [dstIp, wildcard, '0.0.0.0']) {
       const listener = this.listeners.get(makeListenerKey(address, port));
       if (listener?.accepting && (device === null || listener.boundDevice === null || listener.boundDevice === device)) {

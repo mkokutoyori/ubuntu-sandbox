@@ -441,8 +441,8 @@ describe('a role listener lives while its service runs', () => {
 
   it('a powered-off server holds no responder socket, and power-on gives LLMNR, mDNS and NTP back', async () => {
     const bench = await lab();
-    const responders = () => bench.windows.getSocketTable().getAll()
-      .filter((row) => row.protocol === 'udp' && [5355, 5353, 123].includes(row.localPort)).map((row) => row.localPort).sort();
+    const responders = () => [...new Set(bench.windows.getSocketTable().getAll()
+      .filter((row) => row.protocol === 'udp' && [5355, 5353, 123].includes(row.localPort)).map((row) => row.localPort))].sort();
     expect(responders()).toEqual([123, 5353, 5355]);
     bench.windows.powerOff();
     expect(responders()).toEqual([]);

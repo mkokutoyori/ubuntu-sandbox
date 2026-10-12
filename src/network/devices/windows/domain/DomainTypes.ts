@@ -16,6 +16,23 @@ export interface DomainMembership {
   readonly machineSecret: string;
 }
 
+export interface GroupPolicyClientState {
+  appliedComputer: string[];
+  appliedUser: string[];
+  managedValues: Array<{ identity: string; key: string; valueName: string }>;
+  lastAppliedAt: string | null;
+  logonBanner: { title: string; text: string } | null;
+  startupScript: string | null;
+  signature: string | null;
+  refreshCycle: number;
+}
+
+export interface WindowsDomainState {
+  membership?: DomainMembership;
+  serviceAccounts?: string[];
+  groupPolicy?: GroupPolicyClientState;
+}
+
 export interface DomainSession {
   readonly netbiosName: string;
   readonly sam: string;
