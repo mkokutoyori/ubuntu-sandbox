@@ -128,6 +128,8 @@ export type InputMode =
       readOnly?: boolean;
       showPosition?: boolean;
       showLineNumbers?: boolean;
+      softwrap?: boolean;
+      displayName?: string;
       initialCursorLine?: number;
       initialCursorCol?: number;
     }

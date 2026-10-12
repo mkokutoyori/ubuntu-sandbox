@@ -161,8 +161,8 @@ export class SshShellSession {
       }
     } else if (action.action === 'paste') {
       view = this.editor?.applyPaste?.(action.text) ?? null;
-    } else if (action.action === 'cursor') {
-      view = this.editor?.moveCursorToDisplayOffset?.(action.offset) ?? null;
+    } else if (action.action === 'click') {
+      view = this.editor?.click?.(action.row, action.col) ?? null;
     } else {
       this.editor?.close();
       this.editor = null;

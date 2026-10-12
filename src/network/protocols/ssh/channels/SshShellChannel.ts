@@ -146,8 +146,8 @@ export class SshShellChannel
     return this.editorExchange({ action: 'paste', text });
   }
 
-  moveEditorCursor(offset: number): Promise<EditorView | null> {
-    return this.editorExchange({ action: 'cursor', offset });
+  clickEditor(row: number, col: number): Promise<EditorView | null> {
+    return this.editorExchange({ action: 'click', row, col });
   }
 
   scrollEditor(up: boolean, count: number): Promise<EditorView | null> {

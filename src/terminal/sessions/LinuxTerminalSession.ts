@@ -94,7 +94,7 @@ import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubSh
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
-import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
+import { parseEditorArgs, parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 import {
   createRemoteEditorController,
   type RemoteEditorTransport,
@@ -1546,28 +1546,9 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
-    let filePath = '';
-    for (const arg of args) {
-      if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
-    }
-    // nano -v/--view: open read-only, no Write Out. nano -c/--constantshow:
-    // title bar shows the live cursor position. Both no-ops for vi/vim
-    // (which use their own :view / :set ruler commands for the same idea).
-    const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
-    const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
-    const showLineNumbers = editorCmd === 'nano' && args.some((a) => a === '-l' || a === '--linenumbers');
-    // `+LINE[,COLUMN]` (nano) / `+LINE` (vim/vi, no column form) opens the
-    // buffer with the cursor already positioned there. Real nano/vim take
-    // the LAST such argument if more than one is given.
-    let initialCursorLine: number | undefined;
-    let initialCursorCol: number | undefined;
-    for (const arg of args) {
-      const m = /^\+(\d+)(?:,(\d+))?$/.exec(arg);
-      if (m) {
-        initialCursorLine = parseInt(m[1], 10);
-        initialCursorCol = m[2] !== undefined ? parseInt(m[2], 10) : undefined;
-      }
-    }
+    const launch = parseEditorArgs(editorCmd, args);
+    if (launch === null) return;
+    const { filePath, readOnly, showPosition, showLineNumbers, softwrap, initialCursorLine, initialCursorCol } = launch;
 
     // No filename given: a genuinely unnamed buffer. Resolving '' against
     // the cwd would collapse to the cwd's OWN directory path (VFS
@@ -1587,6 +1568,8 @@ export class LinuxTerminalSession extends TerminalSession {
         readOnly,
         showPosition,
         showLineNumbers,
+        softwrap,
+        displayName: '',
         initialCursorLine,
         initialCursorCol,
       };
@@ -1616,6 +1599,8 @@ export class LinuxTerminalSession extends TerminalSession {
       readOnly,
       showPosition,
       showLineNumbers,
+      softwrap,
+      displayName: filePath,
       initialCursorLine,
       initialCursorCol,
     };

@@ -3,7 +3,6 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
-import { renderListLine, type ListChars } from './editorRender';
 import { MAXCOL, byteOffset, charCells, colAtByte, colAtVcol, cursorVcol, firstNonBlank, isWhite, type FindState, type MotionBuffer } from './vim/VimCursor';
 import { runMotion } from './vim/VimMotions';
 import { parseListChars, type ListSpec } from './vim/VimCells';
@@ -174,18 +173,6 @@ interface OperatorRange {
   noAdjustEnd?: boolean;
 }
 
-function listCharsOf(spec: string): ListChars {
-  const found = { tab: '^I', trail: '', eol: '' };
-  for (const item of spec.split(',')) {
-    const separator = item.indexOf(':');
-    if (separator < 0) continue;
-    const key = item.slice(0, separator);
-    const value = item.slice(separator + 1);
-    if (key === 'tab' || key === 'trail' || key === 'eol') found[key] = value;
-  }
-  return found;
-}
-
 const SET_COMMAND = /^(se|set|setl|setlo|setloc|setloca|setlocal|setg|setgl|setglo|setglob|setgloba|setglobal)(?:\s+(.*))?$/;
 
 function firstNonWhite(text: string): number {
@@ -351,6 +338,7 @@ export class VimEngine {
     owner = 'user',
     /** `vim +LINE file` — 1-indexed, clamped to the buffer. */
     initialCursor?: { line: number },
+      private readonly displayName: string = filePath,
   ) {
     this.options = new VimOptions(variant);
     this.options.onChange(() => { this.topValidFor = null; });
@@ -370,8 +358,8 @@ export class VimEngine {
     this._message = filePath === ''
       ? ''
       : isNewFile
-        ? `"${filePath}" [New]`
-        : `"${filePath}" ${this.linesArr.length}L, ${new TextEncoder().encode(initialContent).length}B`;
+        ? `"${this.shownName}" [New]`
+        : `"${this.shownName}" ${this.linesArr.length}L, ${new TextEncoder().encode(initialContent).length}B`;
 
     // A genuinely unnamed buffer (filePath === '', real vim's `vim` with
     // no argument) has no real file yet — resolving '' would collapse to
@@ -427,7 +415,7 @@ export class VimEngine {
    *  before rendering the file as text, exactly like a real terminal would
    *  refuse to treat arbitrary binary data as a stream of characters. */
   get pendingBinaryWarning(): string | null {
-    return this._mode === 'binary-warning' ? `"${this.filePath}" may be a binary file, see it anyway?` : null;
+    return this._mode === 'binary-warning' ? `"${this.shownName}" may be a binary file, see it anyway?` : null;
   }
   /** Set once a recovery/edit-anyway choice leaves the original .swp behind — real vim never auto-deletes it. */
   get orphanSwapFilePath(): string | null { return this.orphanSwapPath; }
@@ -461,17 +449,6 @@ export class VimEngine {
   private tabSettings(): { tabstop: number; softtabstop: number; expandtab: boolean; ctrlTab: boolean } {
     return { tabstop: this.tabstop, softtabstop: this.options.softtabstop, expandtab: this.options.expandtab, ctrlTab: this.ctrlTab };
   }
-  /** Real vim's `:set list` rendering: `$` at end of line, `^I` (or the
-   *  configured `listchars` symbol) for tabs, a literal `^M` for a stray
-   *  embedded CR (real CRLF pairs are already stripped from the buffer at
-   *  load time, so any \r left here is genuine corruption to surface). */
-  renderListLine(line: string): string {
-    if (!this.listMode) return line;
-    return renderListLine(line, this.listChars);
-  }
-
-  /** `:set listchars` as it stands — carried in the view for a remote renderer. */
-  get listChars(): ListChars { return listCharsOf(this.options.string('listchars')); }
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
   /** Text register content, `null` if empty/unset. Named registers, the unnamed register ("), and "/. */
@@ -586,7 +563,7 @@ export class VimEngine {
     const key = k.key.toLowerCase();
     if (key === 'y' || k.key === 'Enter') {
       this._mode = 'normal';
-      this._message = `"${this.filePath}" [noeol] ${this.linesArr.length}L, binary`;
+      this._message = `"${this.shownName}" [noeol] ${this.linesArr.length}L, binary`;
       return;
     }
     if (key === 'n' || k.key === 'Escape') {
@@ -1452,6 +1429,10 @@ export class VimEngine {
       numberwidth: o.number('numberwidth'), list: o.bool('list'), listchars: this.listSpecCache.parsed,
       scrolloff: o.scrolloff, sidescroll: o.sidescroll, sidescrolloff: o.sidescrolloff,
     };
+  }
+
+  private get shownName(): string {
+    return this.displayName === '' ? this.filePath : this.displayName;
   }
 
   resize(rows: number, cols: number): void {
@@ -2806,7 +2787,7 @@ export class VimEngine {
     // Real vim reports the byte count actually written (UTF-8), not the
     // in-memory JS string length — they diverge for any multi-byte char.
     const byteLength = new TextEncoder().encode(body).length;
-    this._message = `"${path}" ${this.linesArr.length}L, ${byteLength}B written`;
+    this._message = `"${path === this.filePath ? this.shownName : path}" ${this.linesArr.length}L, ${byteLength}B written`;
     return true;
   }
 

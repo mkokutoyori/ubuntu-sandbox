@@ -1,19 +1,17 @@
 /**
  * Nano — surligner l'occurrence concernée pendant "Replace this
- * instance?". Le moteur expose déjà `pendingReplaceMatch` (ligne,
- * colonnes de début/fin en coordonnées RAW du buffer) mais rien ne
- * l'exploitait à l'affichage : l'utilisateur devait deviner quelle
- * occurrence était en train d'être proposée. `displayColumnFor` traduit
- * une colonne RAW vers sa position dans `displayContent` (qui diffère
- * dès qu'un caractère de contrôle `^X` la précède sur la même ligne),
- * exactement le calcul dont le composant a besoin pour positionner un
- * overlay `ch`-based par-dessus le textarea.
+ * instance?". Le moteur expose `pendingReplaceMatch` (ligne, colonnes de
+ * début/fin en coordonnées RAW du buffer) et son écran la peint en
+ * inversion vidéo, aux colonnes AFFICHÉES : un caractère de contrôle
+ * `^X` qui la précède sur la même ligne la décale de deux colonnes par
+ * caractère, une tabulation jusqu'au taquet suivant.
  */
 import { describe, it, expect } from 'vitest';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
+import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
 
 function typeText(engine: { applyKey(k: EditorKeyInput): void }, text: string): void {
   for (const ch of text) engine.applyKey(editorKey(ch));
@@ -25,44 +23,56 @@ function ctrl(engine: { applyKey(k: EditorKeyInput): void }, key: string): void 
   engine.applyKey(editorKey(key, { ctrl: true }));
 }
 
-describe('Scénario — displayColumnFor traduit une colonne RAW vers sa colonne affichée', () => {
-  it('sans caractère de contrôle, la colonne affichée est identique à la colonne réelle', () => {
-    const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'eth0 up\n' });
-    const nano = new NanoEngine(fs, '/tmp/x.txt', 'eth0 up\n', false);
-    expect(nano.displayColumnFor(0, 0)).toBe(0);
-    expect(nano.displayColumnFor(0, 4)).toBe(4);
+function highlighted(nano: NanoEngine): string[] {
+  const screen = nano.screen;
+  const out: string[] = [];
+  for (const row of screen.rows) {
+    for (const span of row.spans) {
+      if (span.style !== 'reverse') continue;
+      const text = plainRowText(row);
+      if (span.from === 0 && span.to >= row.text.length - 1) continue;
+      out.push(text.slice(span.from, span.to));
+    }
+  }
+  return out;
+}
+
+function sized(content: string): NanoEngine {
+  const nano = new NanoEngine(new InMemoryEditorFsContext({ '/tmp/x.txt': content }), '/tmp/x.txt', content, false);
+  nano.resize(24, 80);
+  return nano;
+}
+
+function askToReplace(nano: NanoEngine, search: string, replacement: string): void {
+  ctrl(nano, '\\');
+  typeText(nano, search);
+  press(nano, 'Enter');
+  typeText(nano, replacement);
+  press(nano, 'Enter');
+}
+
+describe('Scénario — l\'occurrence proposée est peinte en inversion vidéo', () => {
+  it('les cellules inversées encadrent exactement le texte trouvé', () => {
+    const nano = sized('eth0 up\neth1 up\n');
+    askToReplace(nano, 'eth', 'ens');
+    expect(nano.pendingReplaceMatch!.line).toBe(0);
+    expect(highlighted(nano).filter((text) => text !== '')).toContain('eth');
   });
 
-  it('un caractère de contrôle avant la colonne cible décale la position affichée (^A = 2 colonnes)', () => {
-    const content = 'x\x01eth0\n'; // displayContent: "x^Aeth0"
-    const fs = new InMemoryEditorFsContext({ '/tmp/ctrl.txt': content });
-    const nano = new NanoEngine(fs, '/tmp/ctrl.txt', content, false);
-    // Raw column 2 is "e" of "eth0" -- but ^A eats 2 display columns for 1 raw column.
-    expect(nano.displayColumnFor(0, 2)).toBe(3);
+  it('un caractère de contrôle avant le match décale la surbrillance de deux colonnes (^A)', () => {
+    const nano = sized('x\x01eth0\n');
+    askToReplace(nano, 'eth', 'ens');
+    const row = nano.screen.rows[1];
+    const span = row.spans.find((s) => s.style === 'reverse')!;
+    expect(plainRowText(row).slice(span.from, span.to)).toBe('eth');
+    expect(span.from).toBe(3);
   });
 
-  it('sur une ligne différente de la ligne 0, ne compte que les caractères de CETTE ligne', () => {
-    const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'aaaa\nbbbb\n' });
-    const nano = new NanoEngine(fs, '/tmp/x.txt', 'aaaa\nbbbb\n', false);
-    expect(nano.displayColumnFor(1, 2)).toBe(2);
-  });
-});
-
-describe('Scénario — pendingReplaceMatch fournit tout ce qu\'il faut pour surligner l\'occurrence', () => {
-  it('les colonnes du match, converties via displayColumnFor, encadrent exactement le texte trouvé', () => {
-    const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'eth0 up\neth1 up\n' });
-    const nano = new NanoEngine(fs, '/tmp/x.txt', 'eth0 up\neth1 up\n', false);
-    ctrl(nano, '\\');
-    typeText(nano, 'eth');
-    press(nano, 'Enter');
-    typeText(nano, 'ens');
-    press(nano, 'Enter');
-
-    const m = nano.pendingReplaceMatch!;
-    expect(m).not.toBeNull();
-    expect(m.line).toBe(0);
-    const startCol = nano.displayColumnFor(m.line, m.start);
-    const endCol = nano.displayColumnFor(m.line, m.end);
-    expect(nano.lines[m.line].slice(startCol, endCol)).toBe('eth');
+  it('sur une ligne autre que la première, ne compte que les caractères de CETTE ligne', () => {
+    const nano = sized('aaaa\nbbbb\n');
+    askToReplace(nano, 'bb', 'cc');
+    const row = nano.screen.rows[2];
+    const span = row.spans.find((s) => s.style === 'reverse')!;
+    expect(plainRowText(row).slice(span.from, span.to)).toBe('bb');
   });
 });

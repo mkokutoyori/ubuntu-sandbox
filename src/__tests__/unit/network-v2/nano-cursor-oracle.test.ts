@@ -19,8 +19,7 @@ import { readFileSync } from 'fs';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey } from '@/network/devices/linux/editors/EditorKeyInput';
-import { displayNotation } from '@/network/devices/linux/editors/editorRender';
-import { expandLine, parseListChars } from '@/network/devices/linux/editors/vim/VimCells';
+import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
 
 interface ScreenStep { rows: string[]; y: number; x: number }
 interface NanoCase { id: string; text: string[]; steps: string[]; after: ScreenStep[] }
@@ -42,11 +41,6 @@ function keysOf(token: string) {
   return [...token].map((c) => editorKey(c));
 }
 
-function screenRow(text: string): string {
-  const shown = [...text].map((c) => (c === '\t' ? c : displayNotation(c))).join('');
-  return expandLine(shown, { tabstop: 8, list: false, listchars: parseListChars(''), wrapWidth: null }).map((c) => c.ch).join('').replace(/\s+$/, '');
-}
-
 function sameRow(want: string, got: string): boolean {
   return want.length >= 79 ? got.startsWith(want.slice(0, 78)) : want === got;
 }
@@ -54,15 +48,17 @@ function sameRow(want: string, got: string): boolean {
 function replay(c: NanoCase): string | null {
   const content = c.text.join('\n') + '\n';
   const nano = new NanoEngine(new InMemoryEditorFsContext({ '/tmp/t.txt': content }), '/tmp/t.txt', content, false, false);
+  nano.resize(24, 80);
   for (let s = 0; s < c.steps.length; s++) {
     for (const k of keysOf(c.steps[s])) nano.applyKey(k);
     const want = c.after[s];
-    const rows = nano.lines.map(screenRow);
+    const screen = nano.screen;
+    const rows = screen.rows.slice(1, 1 + Math.max(want.rows.length, 1)).map((row) => plainRowText(row).replace(/\s+$/, ''));
     const wantRows = want.rows.slice(0, rows.length);
-    const x = nano.displayColumnFor(nano.cursorLine, nano.cursorCol);
+    const cursor = screen.cursor!;
     const rowsOk = wantRows.every((w, i) => sameRow(w, rows[i]));
-    if (!rowsOk || nano.cursorLine !== want.y || x !== want.x) {
-      return `${c.id} step ${s} ${JSON.stringify(c.steps.slice(0, s + 1))}: want ${want.y}:${want.x} ${JSON.stringify(wantRows)}, got ${nano.cursorLine}:${x} ${JSON.stringify(rows)}`;
+    if (!rowsOk || cursor.row - 1 !== want.y || cursor.col !== want.x) {
+      return `${c.id} step ${s} ${JSON.stringify(c.steps.slice(0, s + 1))}: want ${want.y}:${want.x} ${JSON.stringify(wantRows)}, got ${cursor.row - 1}:${cursor.col} ${JSON.stringify(rows)}`;
     }
   }
   return null;

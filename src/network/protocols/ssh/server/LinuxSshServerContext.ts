@@ -501,6 +501,8 @@ export class LinuxSshServerContext implements ISshServerContext {
             readOnly: launch.readOnly,
             showPosition: launch.showPosition,
             showLineNumbers: launch.showLineNumbers,
+            softwrap: launch.softwrap,
+            displayName: launch.filePath,
             initialCursorLine: launch.initialCursorLine,
             initialCursorCol: launch.initialCursorCol,
           });

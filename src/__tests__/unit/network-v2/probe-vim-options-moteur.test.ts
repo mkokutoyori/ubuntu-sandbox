@@ -14,6 +14,7 @@
  * que le lab tape des commandes ex et lit l'etat du moteur ; NON-REGRESSION, `:set zorglub` rendait
  * deja E518 dans les mots de vim.
  */
+import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { describe, it, expect } from 'vitest';
 import { VimEngine } from '@/network/devices/linux/editors/VimEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
@@ -99,9 +100,9 @@ describe('les options reglent le moteur', () => {
     const { engine } = vim('ab\n');
     ex(engine, 'set list');
     ex(engine, 'set lcs=tab:>-');
-    expect(engine.renderListLine('ab')).toBe('ab');
+    expect(plainRowText(engine.screen.rows[0]).trimEnd()).toBe('ab');
     ex(engine, 'set lcs=eol:$');
-    expect(engine.renderListLine('ab')).toBe('ab$');
+    expect(plainRowText(engine.screen.rows[0]).trimEnd()).toBe('ab$');
   });
 
   it(':setl et :setg abreviatures de setlocal et setglobal', () => {

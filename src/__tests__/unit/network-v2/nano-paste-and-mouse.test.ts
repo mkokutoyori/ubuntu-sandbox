@@ -2,10 +2,11 @@
  * Nano — coller depuis le presse-papiers du navigateur et cliquer dans
  * le texte pour repositionner le curseur.
  *
- * Le textarea affiche `displayContent` (notation `^X` pour les octets de
- * contrôle), donc un clic souris — dont `selectionStart` est un offset
- * dans le texte AFFICHÉ — doit être reconverti vers la position réelle
- * (ligne, colonne) du buffer avant de toucher `linesArr`. `applyPaste`
+ * Le composant peint les cellules de `engine.screen` (notation `^X` pour
+ * les octets de contrôle, tabulations développées), donc un clic souris
+ * — une ligne et une colonne d'ÉCRAN — est reconverti par
+ * `engine.clickAt(row, col)` vers la position réelle (ligne, colonne) du
+ * buffer, défilement horizontal compris. `applyPaste`
  * simule un collage sans "bracketed paste" : chaque caractère atterrit
  * comme s'il avait été tapé très vite (un `\n` collé crée une nouvelle
  * ligne, comme Enter), en UN SEUL pas d'annulation.
@@ -123,62 +124,82 @@ describe('Scénario — coller dans les prompts (recherche, remplacement, nom de
   });
 });
 
-describe('Scénario — clic souris repositionne le curseur (offset display → (ligne, colonne) réelle)', () => {
-  it('cliquer sur un offset simple (aucun caractère de contrôle) déplace le curseur exactement', () => {
-    const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'hello\nworld\n' });
-    const nano = new NanoEngine(fs, '/tmp/x.txt', 'hello\nworld\n', false);
-    // "hello\nworld" -- offset 8 is the "r" in "world" (line 1, col 2).
-    nano.moveCursorToDisplayOffset(8);
+describe('Scénario — clic souris repositionne le curseur (cellule de l\'écran → (ligne, colonne) réelle)', () => {
+  function sized(content: string, file = '/tmp/x.txt'): NanoEngine {
+    const nano = new NanoEngine(new InMemoryEditorFsContext({ [file]: content }), file, content, false);
+    nano.resize(24, 80);
+    return nano;
+  }
+
+  it('cliquer sur une cellule simple (aucun caractère de contrôle) déplace le curseur exactement', () => {
+    const nano = sized('hello\nworld\n');
+    nano.clickAt(2, 2);
     expect(nano.cursorLine).toBe(1);
     expect(nano.cursorCol).toBe(2);
   });
 
-  it('un offset au-delà de la dernière ligne clampe en fin de buffer', () => {
-    const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'ab\n' });
-    const nano = new NanoEngine(fs, '/tmp/x.txt', 'ab\n', false);
-    nano.moveCursorToDisplayOffset(999);
+  it('un clic sous la dernière ligne tombe sur la dernière ligne', () => {
+    const nano = sized('ab\n');
+    nano.clickAt(15, 0);
     expect(nano.cursorLine).toBe(1);
     expect(nano.cursorCol).toBe(0);
   });
 
-  it('un caractère de contrôle avant le point de clic (^A = 2 colonnes affichées) décale le mapping vers la position réelle', () => {
-    const content = 'x\x01y\n'; // displayContent: "x^Ay" (4 display chars, 3 raw chars)
-    const fs = new InMemoryEditorFsContext({ '/tmp/ctrl.txt': content });
-    const nano = new NanoEngine(fs, '/tmp/ctrl.txt', content, false);
-    expect(nano.displayContent).toBe('x^Ay\n');
-    // Display offset 3 is right after "^A" (2 display chars) + "x" (1) = the "y".
-    nano.moveCursorToDisplayOffset(3);
+  it('un clic sur la barre de titre, la barre d\'état ou les raccourcis ne bouge rien', () => {
+    const nano = sized('hello\nworld\n');
+    nano.clickAt(0, 3);
+    nano.clickAt(22, 3);
+    nano.clickAt(23, 3);
     expect(nano.cursorLine).toBe(0);
-    expect(nano.cursorCol).toBe(2); // raw column of "y" -- NOT 3
+    expect(nano.cursorCol).toBe(0);
   });
 
-  it('displayCursorOffset est l\'inverse exact de moveCursorToDisplayOffset pour un aller-retour', () => {
-    const content = 'ab\x01cd\n';
-    const fs = new InMemoryEditorFsContext({ '/tmp/ctrl2.txt': content });
-    const nano = new NanoEngine(fs, '/tmp/ctrl2.txt', content, false);
-    for (const target of [0, 1, 2, 4, 5, 6]) {
-      nano.moveCursorToDisplayOffset(target);
-      expect(nano.displayCursorOffset).toBe(target);
+  it('un caractère de contrôle avant le point de clic (^A = 2 colonnes affichées) décale le mapping vers la position réelle', () => {
+    const nano = sized('x\x01y\n', '/tmp/ctrl.txt');
+    nano.clickAt(1, 3);
+    expect(nano.cursorLine).toBe(0);
+    expect(nano.cursorCol).toBe(2);
+  });
+
+  it('une tabulation : un clic dans ses cellules tombe sur elle, un clic après tombe sur le caractère suivant', () => {
+    const nano = sized('a\tb\n');
+    nano.clickAt(1, 5);
+    expect(nano.cursorCol).toBe(1);
+    nano.clickAt(1, 8);
+    expect(nano.cursorCol).toBe(2);
+  });
+
+  it('la cellule du curseur revient exactement sur la cellule cliquée', () => {
+    const nano = sized('ab\x01cd\n', '/tmp/ctrl2.txt');
+    for (const column of [0, 1, 2, 4, 5]) {
+      nano.clickAt(1, column);
+      expect(nano.screen.cursor).toEqual({ row: 1, col: column });
     }
   });
 
   it('un clic ne fait rien hors du mode édition (ex: pendant un prompt de recherche)', () => {
-    const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'hello\n' });
-    const nano = new NanoEngine(fs, '/tmp/x.txt', 'hello\n', false);
+    const nano = sized('hello\n');
     ctrl(nano, 'w');
-    nano.moveCursorToDisplayOffset(3);
-    expect(nano.mode).toBe('search'); // still in the prompt
+    nano.clickAt(1, 3);
+    expect(nano.mode).toBe('search');
     expect(nano.cursorLine).toBe(0);
-    expect(nano.cursorCol).toBe(0); // buffer cursor untouched
+    expect(nano.cursorCol).toBe(0);
   });
 
   it('après un clic, la frappe suivante démarre un nouveau pas d\'annulation (comme les flèches)', () => {
-    const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': 'ab\n' });
-    const nano = new NanoEngine(fs, '/tmp/x.txt', 'ab\n', false);
+    const nano = sized('ab\n');
     typeText(nano, 'X');
-    nano.moveCursorToDisplayOffset(0);
+    nano.clickAt(1, 0);
     typeText(nano, 'Y');
-    alt(nano, 'u'); // undoes only "Y"
+    alt(nano, 'u');
     expect(nano.lines).toEqual(['Xab']);
+  });
+
+  it('dans une ligne défilée horizontalement, un clic compte depuis la première colonne affichée', () => {
+    const long = `${'a'.repeat(100)}\n`;
+    const nano = sized(long);
+    press(nano, 'End');
+    nano.clickAt(1, 10);
+    expect(nano.screen.cursor).toEqual({ row: 1, col: 10 });
   });
 });

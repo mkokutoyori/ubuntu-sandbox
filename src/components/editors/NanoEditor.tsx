@@ -1,18 +1,12 @@
-/**
- * NanoEditor - GNU nano terminal editor, rendered from a headless
- * NanoEngine (src/network/devices/linux/editors/NanoEngine.ts). The
- * engine owns the buffer/cursor/mode state machine and all filesystem
- * side effects (main file + lock/swap file); this component is a thin
- * keystroke-forwarding renderer over it.
- */
-
 import React, { useRef, useEffect, useCallback, useReducer } from 'react';
-import { scrollCaretIntoView, scrollColumnIntoView } from './caretScroll';
-import {
-  nanoEditShortcutRows, nanoTitleState, nanoTitleName,
-} from '@/network/devices/linux/editors/editorRender';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
+import type { NanoLaunchOptions } from '@/network/devices/linux/editors/NanoEngine';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
+import type { EditorScreen } from '@/network/devices/linux/editors/screen/EditorScreen';
+import { nanoLayout } from '@/network/devices/linux/editors/nano/NanoWindow';
+import { GridRows } from './EditorGrid';
+import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
+import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
 
 /**
  * What the renderer needs from whatever holds the buffer. A local
@@ -20,13 +14,7 @@ import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsCo
  * over an SSH channel (docs/PRD-SSH-Unification.md §4bis B3).
  */
 export type NanoEditorDriver = Pick<NanoEngine,
-  | 'applyKey' | 'applyPaste' | 'displayColumnFor' | 'moveCursorToDisplayOffset'
-  | 'lines' | 'mode' | 'cursorLine' | 'cursorCol' | 'modified' | 'exited'
-  | 'savedOnExit' | 'isReadOnly' | 'lineNumbersShown' | 'statusMessage'
-  | 'helpText' | 'displayContent' | 'displayCursorOffset' | 'promptCursor'
-  | 'saveFileName' | 'searchQuery' | 'gotoLineQuery' | 'executeCommandQuery'
-  | 'readFileQuery' | 'regexSearchEnabled' | 'replaceSearchQuery'
-  | 'replaceWithText' | 'pendingReplaceMatch'>;
+  | 'applyKey' | 'applyPaste' | 'screen' | 'resize' | 'scrollView' | 'clickAt' | 'exited' | 'savedOnExit'>;
 
 interface NanoEditorProps {
   filePath: string;
@@ -38,75 +26,23 @@ interface NanoEditorProps {
   onExit: (saved: boolean) => void;
   /** `nano -v`: buffer is immutable, no Write Out. */
   readOnly?: boolean;
-  /** `nano -c`: title bar shows the live cursor position. */
   showPosition?: boolean;
   /** `nano -l`/`--linenumbers`: line-number gutter shown at open. */
   showLineNumbers?: boolean;
+  softwrap?: boolean;
   /** `nano +LINE[,COLUMN] file`: initial cursor position (1-indexed). */
   initialCursorLine?: number;
   initialCursorCol?: number;
+  displayName?: string;
 }
 
-type Shortcut = readonly [string, string];
+const WHEEL_ROWS = 3;
 
-/** The bottom two-row shortcut bar is strictly contextual in real nano —
- *  only the keys meaningful in the active mode are ever shown. */
-function shortcutsForMode(engine: NanoEditorDriver): readonly [readonly Shortcut[], readonly Shortcut[]] {
-  switch (engine.mode) {
-    case 'search':
-      return [
-        [['^G', 'Help'], ['^W', 'Search'], ['M-C', 'Case Sens'], ['M-R', 'Regexp']],
-        [['^C', 'Cancel'], ['M-B', 'Backwards']],
-      ];
-    case 'replace-search':
-      return [
-        [['^G', 'Help'], ['M-C', 'Case Sens'], ['M-R', 'Regexp']],
-        [['^C', 'Cancel']],
-      ];
-    case 'replace-with':
-      return [
-        [['^G', 'Help'], ['M-C', 'Case Sens']],
-        [['^C', 'Cancel']],
-      ];
-    case 'replace-confirm':
-      return [
-        [['^G', 'Help'], ['Y', 'Yes'], ['A', 'All']],
-        [['N', 'No'], ['^C', 'Cancel']],
-      ];
-    case 'save-prompt':
-      return [
-        [['^G', 'Help']],
-        [['^C', 'Cancel']],
-      ];
-    case 'exit-save-prompt':
-      return [
-        [['^G', 'Help'], ['Y', 'Yes']],
-        [['N', 'No'], ['^C', 'Cancel']],
-      ];
-    case 'goto-line':
-      return [
-        [['^G', 'Help']],
-        [['^C', 'Cancel']],
-      ];
-    case 'execute-prompt':
-      return [
-        [['^G', 'Help']],
-        [['^C', 'Cancel']],
-      ];
-    case 'read-file-prompt':
-      return [
-        [['^G', 'Help']],
-        [['^C', 'Cancel']],
-      ];
-    case 'help':
-      return [
-        [['^X', 'Exit Help']],
-        [],
-      ];
-    case 'edit':
-    default:
-      return nanoEditShortcutRows();
-  }
+function slice(screen: EditorScreen, from: number, to: number): EditorScreen {
+  const cursor = screen.cursor !== null && screen.cursor.row >= from && screen.cursor.row < to
+    ? { row: screen.cursor.row - from, col: screen.cursor.col }
+    : null;
+  return { rows: screen.rows.slice(from, to), cursor };
 }
 
 export const NanoEditor: React.FC<NanoEditorProps> = ({
@@ -119,471 +55,110 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   readOnly = false,
   showPosition = false,
   showLineNumbers = false,
+  softwrap = false,
   initialCursorLine,
   initialCursorCol,
+  displayName,
 }) => {
   const engineRef = useRef<NanoEditorDriver>();
   if (!engineRef.current) {
+    const launch: NanoLaunchOptions = { softwrap, constantShow: showPosition, displayName };
     engineRef.current = driver ?? new NanoEngine(
       fsContext!, filePath, initialContent, isNewFile, readOnly,
       initialCursorLine !== undefined ? { line: initialCursorLine, col: initialCursorCol } : undefined,
-      showLineNumbers,
+      showLineNumbers, launch,
     );
   }
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const saveInputRef = useRef<HTMLInputElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const caretRef = useRef<HTMLDivElement>(null);
-  const highlightRef = useRef<HTMLDivElement>(null);
-  const gutterRef = useRef<HTMLDivElement>(null);
-  // The textarea owns real, native scrolling (long buffers overflow its
-  // box and the browser scrolls it internally — that can't be delegated
-  // to an ancestor). The caret/highlight overlays and the line-number
-  // gutter are separate DOM nodes positioned from cursorLine/cursorCol
-  // alone, so a plain mouse-wheel scroll (which changes no engine state,
-  // triggers no re-render) used to leave them glued to their unscrolled
-  // position — floating disconnected from the text underneath. Tracked
-  // in a ref (not state) and applied as a `transform` written directly
-  // on scroll: going through setState here would re-run the selection
-  // sync effect below on every scroll tick and fight the user's manual
-  // scrolling by re-revealing the caret's real position each time.
-  const scrollRef = useRef({ top: 0, left: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  const resized = useCallback((size: GridSize) => {
+    engine.resize(Math.max(2, size.rows), size.cols);
+    bump();
+  }, [engine, bump]);
+  useGridGeometry(containerRef, engine, resized, GRID_LINE_HEIGHT);
 
   useEffect(() => {
-    if (engine.mode === 'save-prompt') {
-      saveInputRef.current?.focus();
-      const pos = engine.promptCursor;
-      saveInputRef.current?.setSelectionRange(pos, pos);
-    } else if (engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
-      // Hidden Y/N/A capture inputs — no text field, nothing to position.
-      saveInputRef.current?.focus();
-    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with'
-      || engine.mode === 'goto-line' || engine.mode === 'execute-prompt' || engine.mode === 'read-file-prompt') {
-      searchInputRef.current?.focus();
-      const pos = engine.promptCursor;
-      searchInputRef.current?.setSelectionRange(pos, pos);
-    } else {
-      textareaRef.current?.focus();
-      const pos = engine.displayCursorOffset;
-      textareaRef.current?.setSelectionRange(pos, pos);
-      if (textareaRef.current) {
-        scrollCaretIntoView(textareaRef.current, engine.cursorLine, engine.displayContent.split('\n').length);
-        scrollColumnIntoView(textareaRef.current, caretRef.current);
-      }
-    }
+    bodyRef.current?.focus();
   });
 
-  const dispatch = useCallback((e: React.KeyboardEvent, forwardToApp = true) => {
+  const dispatch = useCallback((e: React.KeyboardEvent) => {
     e.preventDefault();
     engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
     if (engine.exited) {
       onExit(engine.savedOnExit);
       return;
     }
-    if (forwardToApp) bump();
+    bump();
   }, [engine, onExit, bump]);
 
-  const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => dispatch(e), [dispatch]);
-  const handlePromptKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => dispatch(e), [dispatch]);
-
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+  const paste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
     engine.applyPaste(e.clipboardData.getData('text'));
     bump();
   }, [engine, bump]);
 
-  const handleEditMouseUp = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
-    const offset = e.currentTarget.selectionStart ?? 0;
-    engine.moveCursorToDisplayOffset(offset);
+  const wheel = useCallback((e: React.WheelEvent) => {
+    if (e.deltaY === 0) return;
+    engine.scrollView(e.deltaY > 0, WHEEL_ROWS);
     bump();
   }, [engine, bump]);
 
-  const handleEditScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
-    scrollRef.current = { top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft };
-    const { top, left } = scrollRef.current;
-    const shift = `translate(${-left}px, ${-top}px)`;
-    if (caretRef.current) caretRef.current.style.transform = shift;
-    if (highlightRef.current) highlightRef.current.style.transform = shift;
-    if (gutterRef.current) gutterRef.current.style.transform = `translateY(${-top}px)`;
-  }, []);
+  const click = useCallback((e: React.MouseEvent) => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const rect = body.getBoundingClientRect();
+    const cell = measureCell(body);
+    if (!(cell > 0)) return;
+    engine.clickAt(Math.floor((e.clientY - rect.top) / GRID_LINE_HEIGHT), Math.floor((e.clientX - rect.left) / cell));
+    bump();
+  }, [engine, bump]);
 
-  const bufferLineCount = engine.displayContent.split('\n').length;
-  const [shortcutsRow1, shortcutsRow2] = shortcutsForMode(engine);
-
-  const titleStatus = nanoTitleState({ readOnly: engine.isReadOnly, modified: engine.modified });
-  const titlePosition = showPosition
-    ? `line ${engine.cursorLine + 1}/${bufferLineCount} col ${engine.displayColumnFor(engine.cursorLine, engine.cursorCol) + 1}`
-    : '';
+  const screen = engine.screen;
+  const layout = nanoLayout(screen.rows.length);
+  const editEnd = layout.editFrom + layout.editRows;
+  const barsEnd = layout.barsFrom === null ? layout.statusRow + 1 : screen.rows.length;
 
   return (
     <div
-      className="h-full w-full flex flex-col"
+      ref={containerRef}
+      className="h-full w-full relative overflow-hidden"
       style={{
         backgroundColor: '#300a24',
         color: '#d3d7cf',
-        fontFamily: "'Ubuntu Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
-        fontSize: '14px',
-        lineHeight: '1.35',
+        fontFamily: GRID_FONT_FAMILY,
+        fontSize: `${GRID_FONT_SIZE}px`,
       }}
     >
-      {/* ── Header bar (inverted: white bg, dark text, like real nano) ── */}
       <div
-        data-testid="nano-titlebar"
-        className="flex items-center shrink-0 px-2"
-        style={{
-          backgroundColor: '#d3d7cf',
-          color: '#300a24',
-          minHeight: '1.35em',
-          fontWeight: 'bold',
-        }}
+        ref={bodyRef}
+        data-testid="nano-body"
+        tabIndex={0}
+        onKeyDown={dispatch}
+        onPaste={paste}
+        onWheel={wheel}
+        onMouseDown={click}
+        className="absolute inset-0 outline-none"
       >
-        <span className="mx-1">GNU nano 6.2</span>
-        <span className="flex-1 text-center mx-1">{nanoTitleName(filePath)}</span>
-        <span className="mx-1">
-          {titleStatus}
-          {titleStatus && titlePosition && '    '}
-          {titlePosition}
-        </span>
-      </div>
-
-      {/* ── Editor content area (optional line-number gutter + textarea) ── */}
-      <div className="flex-1 flex overflow-hidden">
-        {engine.lineNumbersShown && engine.mode !== 'help' && (
-          <div
-            ref={gutterRef}
-            data-testid="nano-gutter"
-            className="select-none shrink-0 text-right"
-            style={{
-              backgroundColor: '#300a24',
-              color: '#585b70',
-              minWidth: `${String(bufferLineCount).length + 1}ch`,
-              paddingTop: '0.25rem',
-              paddingRight: '0.5em',
-              lineHeight: '1.35',
-              fontSize: 'inherit',
-              fontFamily: 'inherit',
-              transform: `translateY(${-scrollRef.current.top}px)`,
-            }}
-          >
-            {Array.from({ length: bufferLineCount }, (_, i) => (
-              <div key={i} style={{ minHeight: '1.35em' }}>{i + 1}</div>
-            ))}
+        {layout.titleRow !== null && (
+          <div data-testid="nano-titlebar">
+            <GridRows screen={slice(screen, 0, 1)} caret="block" cursorTestId="nano-cursor" />
           </div>
         )}
-        <div className="flex-1 relative overflow-hidden">
-        <textarea
-          name="nanoBuffer"
-          autoComplete="off"
-          ref={textareaRef}
-          data-testid="nano-textarea"
-          value={engine.mode === 'help' ? engine.helpText : engine.displayContent}
-          onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
-          onKeyDown={handleEditKeyDown}
-          onPaste={engine.mode === 'help' ? undefined : handlePaste}
-          onMouseUp={engine.mode === 'help' ? undefined : handleEditMouseUp}
-          onScroll={handleEditScroll}
-          readOnly
-          wrap="off"
-          className="absolute inset-0 w-full h-full outline-none resize-none p-1"
-          style={{
-            whiteSpace: 'pre',
-            overflowX: 'auto',
-            backgroundColor: '#300a24',
-            color: '#d3d7cf',
-            fontFamily: 'inherit',
-            fontSize: 'inherit',
-            lineHeight: 'inherit',
-            caretColor: 'transparent',
-            border: 'none',
-            tabSize: 8,
-          }}
-          spellCheck={false}
-        />
-        {engine.mode === 'edit' && (
-          <div
-            ref={caretRef}
-            data-testid="nano-caret"
-            className="absolute pointer-events-none"
-            style={{
-              top: `calc(0.25rem + ${engine.cursorLine} * 1.35em)`,
-              left: `calc(0.25rem + ${engine.displayColumnFor(engine.cursorLine, engine.cursorCol)}ch)`,
-              width: '1ch',
-              height: '1.35em',
-              backgroundColor: '#ffffff',
-              mixBlendMode: 'difference',
-              transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
-            }}
-          />
-        )}
-        {engine.mode === 'replace-confirm' && engine.pendingReplaceMatch && (() => {
-          const m = engine.pendingReplaceMatch;
-          const startCol = engine.displayColumnFor(m.line, m.start);
-          const endCol = engine.displayColumnFor(m.line, m.end);
-          return (
-            <div
-              ref={highlightRef}
-              data-testid="nano-replace-highlight"
-              className="absolute pointer-events-none"
-              style={{
-                top: `calc(0.25rem + ${m.line} * 1.35em)`,
-                left: `calc(0.25rem + ${startCol}ch)`,
-                width: `${Math.max(1, endCol - startCol)}ch`,
-                height: '1.35em',
-                backgroundColor: 'rgba(255, 255, 0, 0.35)',
-                transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
-              }}
-            />
-          );
-        })()}
+        <div data-testid="nano-edit">
+          <GridRows screen={slice(screen, layout.editFrom, editEnd)} caret="block" cursorTestId="nano-cursor" />
         </div>
-      </div>
-
-      {/* ── Status message line (centered, above shortcuts) ── */}
-      <div
-        data-testid="nano-status-message"
-        className="text-center shrink-0"
-        style={{
-          minHeight: '1.35em',
-          color: engine.statusMessage.startsWith('[') ? '#d3d7cf' : '#ffffff',
-          backgroundColor: '#300a24',
-        }}
-      >
-        {engine.mode === 'save-prompt' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>File Name to Write: </span>
-            <input
-              name="nanoSave"
-              autoComplete="off"
-              ref={saveInputRef}
-              value={engine.saveFileName}
-              onChange={() => { /* engine-authoritative */ }}
-              onKeyDown={handlePromptKeyDown}
-              onPaste={handlePaste}
-              className="flex-1 bg-transparent outline-none"
-              style={{
-                color: '#ffffff',
-                caretColor: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-              }}
-              spellCheck={false}
-            />
+        <div data-testid="nano-status-message">
+          <GridRows screen={slice(screen, layout.statusRow, layout.statusRow + 1)} caret="block" cursorTestId="nano-cursor" />
+        </div>
+        {layout.barsFrom !== null && (
+          <div data-testid="nano-shortcut-bar">
+            <GridRows screen={slice(screen, layout.barsFrom, barsEnd)} caret="block" cursorTestId="nano-cursor" />
           </div>
         )}
-        {engine.mode === 'execute-prompt' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>Execute Command: </span>
-            <input
-              name="nanoSearch"
-              autoComplete="off"
-              ref={searchInputRef}
-              value={engine.executeCommandQuery}
-              onChange={() => { /* engine-authoritative */ }}
-              onKeyDown={handlePromptKeyDown}
-              onPaste={handlePaste}
-              className="flex-1 bg-transparent outline-none"
-              style={{
-                color: '#ffffff',
-                caretColor: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-              }}
-              spellCheck={false}
-            />
-          </div>
-        )}
-        {engine.mode === 'read-file-prompt' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>File to insert: </span>
-            <input
-              name="nanoSearch"
-              autoComplete="off"
-              ref={searchInputRef}
-              value={engine.readFileQuery}
-              onChange={() => { /* engine-authoritative */ }}
-              onKeyDown={handlePromptKeyDown}
-              onPaste={handlePaste}
-              className="flex-1 bg-transparent outline-none"
-              style={{
-                color: '#ffffff',
-                caretColor: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-              }}
-              spellCheck={false}
-            />
-          </div>
-        )}
-        {engine.mode === 'exit-save-prompt' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>Save modified buffer? &nbsp;</span>
-            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> Y</span>
-            <span style={{ color: '#d3d7cf' }}>es</span>
-            <span className="mx-1" />
-            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> N</span>
-            <span style={{ color: '#d3d7cf' }}>o</span>
-            <span className="mx-1" />
-            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> ^C</span>
-            <span style={{ color: '#d3d7cf' }}> Cancel</span>
-            <input
-              name="nanoSave"
-              autoComplete="off"
-              ref={saveInputRef}
-              onKeyDown={handlePromptKeyDown}
-              className="absolute opacity-0 w-0 h-0"
-              autoFocus
-            />
-          </div>
-        )}
-        {engine.mode === 'search' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>{engine.regexSearchEnabled ? 'Search [Regexp]: ' : 'Search: '}</span>
-            <input
-              name="nanoSearch"
-              autoComplete="off"
-              ref={searchInputRef}
-              value={engine.searchQuery}
-              onChange={() => { /* engine-authoritative */ }}
-              onKeyDown={handlePromptKeyDown}
-              onPaste={handlePaste}
-              className="flex-1 bg-transparent outline-none"
-              style={{
-                color: '#ffffff',
-                caretColor: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-              }}
-              spellCheck={false}
-            />
-          </div>
-        )}
-        {engine.mode === 'replace-search' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>
-              {engine.regexSearchEnabled ? 'Search (to replace) [Regexp]: ' : 'Search (to replace): '}
-            </span>
-            <input
-              name="nanoSearch"
-              autoComplete="off"
-              ref={searchInputRef}
-              value={engine.replaceSearchQuery}
-              onChange={() => { /* engine-authoritative */ }}
-              onKeyDown={handlePromptKeyDown}
-              onPaste={handlePaste}
-              className="flex-1 bg-transparent outline-none"
-              style={{
-                color: '#ffffff',
-                caretColor: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-              }}
-              spellCheck={false}
-            />
-          </div>
-        )}
-        {engine.mode === 'replace-with' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>Replace with: </span>
-            <input
-              name="nanoSearch"
-              autoComplete="off"
-              ref={searchInputRef}
-              value={engine.replaceWithText}
-              onChange={() => { /* engine-authoritative */ }}
-              onKeyDown={handlePromptKeyDown}
-              onPaste={handlePaste}
-              className="flex-1 bg-transparent outline-none"
-              style={{
-                color: '#ffffff',
-                caretColor: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-              }}
-              spellCheck={false}
-            />
-          </div>
-        )}
-        {engine.mode === 'goto-line' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>Enter line number, column number: </span>
-            <input
-              name="nanoSearch"
-              autoComplete="off"
-              ref={searchInputRef}
-              value={engine.gotoLineQuery}
-              onChange={() => { /* engine-authoritative */ }}
-              onKeyDown={handlePromptKeyDown}
-              onPaste={handlePaste}
-              className="flex-1 bg-transparent outline-none"
-              style={{
-                color: '#ffffff',
-                caretColor: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-              }}
-              spellCheck={false}
-            />
-          </div>
-        )}
-        {engine.mode === 'replace-confirm' && (
-          <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>Replace this instance? &nbsp;</span>
-            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> Y</span>
-            <span style={{ color: '#d3d7cf' }}>es</span>
-            <span className="mx-1" />
-            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> N</span>
-            <span style={{ color: '#d3d7cf' }}>o</span>
-            <span className="mx-1" />
-            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> A</span>
-            <span style={{ color: '#d3d7cf' }}>ll</span>
-            <input
-              name="nanoSave"
-              autoComplete="off"
-              ref={saveInputRef}
-              onKeyDown={handlePromptKeyDown}
-              className="absolute opacity-0 w-0 h-0"
-              autoFocus
-            />
-          </div>
-        )}
-        {engine.mode === 'edit' && engine.statusMessage}
-      </div>
-
-      {/* ── Bottom shortcut bar (two rows, inverted colors like real nano) ── */}
-      {/* Strictly contextual: shows exactly the shortcuts bound in the
-          active mode (edit/search/replace/save/...), like real nano. */}
-      <div data-testid="nano-shortcut-bar" className="shrink-0" style={{ backgroundColor: '#300a24' }}>
-        {[shortcutsRow1, shortcutsRow2].map((row, rowIdx) => (
-          <div key={rowIdx} className="flex flex-wrap" style={{ minHeight: '1.35em' }}>
-            {row.map(([key, label]) => (
-              <div key={key} className="flex" style={{ minWidth: '16.66%' }}>
-                <span
-                  style={{
-                    backgroundColor: '#d3d7cf',
-                    color: '#300a24',
-                    paddingLeft: '2px',
-                    paddingRight: '2px',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {key}
-                </span>
-                <span
-                  style={{
-                    color: '#d3d7cf',
-                    paddingLeft: '2px',
-                    paddingRight: '4px',
-                  }}
-                >
-                  {label}
-                </span>
-              </div>
-            ))}
-          </div>
-        ))}
       </div>
     </div>
   );

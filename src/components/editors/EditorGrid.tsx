@@ -12,6 +12,8 @@ const STYLES: Record<ScreenStyle, CSSProperties> = {
   colorcolumn: { backgroundColor: '#313244' },
   modemsg: { color: '#a6e3a1', fontWeight: 'bold' },
   error: { color: '#f38ba8' },
+  reverse: { backgroundColor: '#d3d7cf', color: '#300a24' },
+  alert: { backgroundColor: '#c01c28', color: '#ffffff', fontWeight: 'bold' },
 };
 
 const CARETS: Record<CaretShape, CSSProperties> = {

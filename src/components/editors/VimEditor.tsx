@@ -36,6 +36,7 @@ interface VimEditorProps {
   onExit: (saved: boolean) => void;
   /** `vim +LINE file`: initial cursor line (1-indexed). */
   initialCursorLine?: number;
+  displayName?: string;
 }
 
 const WHEEL_LINES = 3;
@@ -50,12 +51,14 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   owner,
   onExit,
   initialCursorLine,
+  displayName,
 }) => {
   const engineRef = useRef<VimEditorDriver>();
   if (!engineRef.current) {
     engineRef.current = driver ?? new VimEngine(
       fsContext!, filePath, initialContent, isNewFile, editorName, owner ?? 'user',
       initialCursorLine !== undefined ? { line: initialCursorLine } : undefined,
+      displayName,
     );
   }
   const engine = engineRef.current;

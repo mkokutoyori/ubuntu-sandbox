@@ -25,16 +25,12 @@ import type {
   VimMode,
   VimVariant,
 } from '@/network/devices/linux/editors/VimEngine';
-import {
-  displayColumnFor,
-  renderListLine,
-} from '@/network/devices/linux/editors/editorRender';
 
 /** The wire operations a controller needs; satisfied by ISshShellChannel. */
 export interface RemoteEditorTransport {
   sendEditorKey(key: EditorKeyInput): Promise<EditorView | null>;
   pasteIntoEditor(text: string): Promise<EditorView | null>;
-  moveEditorCursor(offset: number): Promise<EditorView | null>;
+  clickEditor(row: number, col: number): Promise<EditorView | null>;
   scrollEditor(up: boolean, count: number): Promise<EditorView | null>;
   onEditorView(handler: (view: EditorView) => void): () => void;
   resize(cols: number, rows: number): void;
@@ -111,19 +107,13 @@ export class RemoteVimController extends BaseRemoteEditorController<VimEditorVie
   scrollView(up: boolean, count: number): void {
     void this.transport.scrollEditor(up, count).then((view) => this.absorb(view));
   }
-
-  renderListLine(line: string): string {
-    if (!this.current.listMode) return line;
-    return renderListLine(line, this.current.listChars);
-  }
 }
 
 export class RemoteNanoController extends BaseRemoteEditorController<NanoEditorView> {
   get mode(): NanoMode { return this.current.mode; }
+  get screen(): EditorScreen { return this.current.screen; }
   get statusMessage(): string { return this.current.statusMessage; }
   get helpText(): string { return this.current.helpText; }
-  get displayContent(): string { return this.current.displayContent; }
-  get displayCursorOffset(): number { return this.current.displayCursorOffset; }
   get promptCursor(): number { return this.current.promptCursor; }
   get saveFileName(): string { return this.current.saveFileName; }
   get searchQuery(): string { return this.current.searchQuery; }
@@ -135,16 +125,16 @@ export class RemoteNanoController extends BaseRemoteEditorController<NanoEditorV
   get replaceWithText(): string { return this.current.replaceWithText; }
   get pendingReplaceMatch(): PendingReplaceMatch | null { return this.current.pendingReplaceMatch; }
 
-  displayColumnFor(line: number, col: number): number {
-    return displayColumnFor(this.current.lines, line, col);
+  scrollView(up: boolean, count: number): void {
+    void this.transport.scrollEditor(up, count).then((view) => this.absorb(view));
   }
 
   applyPaste(text: string): void {
     void this.transport.pasteIntoEditor(text).then((view) => this.absorb(view));
   }
 
-  moveCursorToDisplayOffset(offset: number): void {
-    void this.transport.moveEditorCursor(offset).then((view) => this.absorb(view));
+  clickAt(row: number, col: number): void {
+    void this.transport.clickEditor(row, col).then((view) => this.absorb(view));
   }
 }
 

@@ -105,8 +105,7 @@ export interface ISshShellChannel extends ISshChannel {
   sendEditorKey(key: EditorKeyInput): Promise<EditorView | null>;
   /** Clipboard paste into the open editor. */
   pasteIntoEditor(text: string): Promise<EditorView | null>;
-  /** Click-to-position inside the open editor, in rendered columns. */
-  moveEditorCursor(offset: number): Promise<EditorView | null>;
+  clickEditor(row: number, col: number): Promise<EditorView | null>;
   /** Mouse-wheel scroll inside the open editor. */
   scrollEditor(up: boolean, count: number): Promise<EditorView | null>;
   /** A screen the server pushed on its own, after a window-change reflowed the editor. */

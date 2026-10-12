@@ -12,8 +12,7 @@ function pixels(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function measureGrid(element: HTMLElement, fixedLineHeight?: number): GridSize | null {
-  const style = getComputedStyle(element);
+export function measureCell(element: HTMLElement): number {
   const probe = document.createElement('span');
   probe.setAttribute('aria-hidden', 'true');
   probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;pointer-events:none';
@@ -21,6 +20,12 @@ export function measureGrid(element: HTMLElement, fixedLineHeight?: number): Gri
   element.appendChild(probe);
   const cell = probe.getBoundingClientRect().width / PROBE_LENGTH;
   element.removeChild(probe);
+  return cell;
+}
+
+export function measureGrid(element: HTMLElement, fixedLineHeight?: number): GridSize | null {
+  const style = getComputedStyle(element);
+  const cell = measureCell(element);
   const lineHeight = fixedLineHeight ?? (pixels(style.lineHeight) || pixels(style.fontSize) * 1.35);
   const width = element.clientWidth - pixels(style.paddingLeft) - pixels(style.paddingRight);
   const height = element.clientHeight - pixels(style.paddingTop) - pixels(style.paddingBottom);

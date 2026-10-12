@@ -11,6 +11,7 @@
  * token-renderer rewrite already flagged out of scope for syntax
  * highlighting, so this is a disclosed limitation, not a faked pass.
  */
+import { plainRowText, type EditorScreen } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { describe, it, expect } from 'vitest';
 import { VimEngine } from '@/network/devices/linux/editors/VimEngine';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
@@ -23,6 +24,9 @@ function typeText(engine: { applyKey(k: EditorKeyInput): void }, text: string): 
 }
 function press(engine: { applyKey(k: EditorKeyInput): void }, key: string, mods: Partial<EditorKeyInput> = {}): void {
   engine.applyKey(editorKey(key, mods));
+}
+function firstRow(engine: { screen: EditorScreen }): string {
+  return plainRowText(engine.screen.rows[0]).trimEnd();
 }
 function exCmd(engine: { applyKey(k: EditorKeyInput): void }, cmd: string): void {
   press(engine, ':'); typeText(engine, cmd); press(engine, 'Enter');
@@ -69,7 +73,7 @@ describe('Scénario UI-9 — vim : :set list affiche $ (EOL), ^I (tabs), ^M (CR 
     const fs = new InMemoryEditorFsContext({ '/tmp/tabs.txt': content });
     const vim = new VimEngine(fs, '/tmp/tabs.txt', content, false, 'vim');
     expect(vim.listMode).toBe(false);
-    expect(vim.renderListLine(vim.lines[0])).toBe('a\tb'); // list off: passthrough
+    expect(firstRow(vim)).toBe('a       b');
   });
 
   it(':set list affiche $ en fin de ligne et ^I pour les tabulations', () => {
@@ -78,7 +82,7 @@ describe('Scénario UI-9 — vim : :set list affiche $ (EOL), ^I (tabs), ^M (CR 
     const vim = new VimEngine(fs, '/tmp/tabs.txt', content, false, 'vim');
     exCmd(vim, 'set list');
     expect(vim.listMode).toBe(true);
-    expect(vim.renderListLine(vim.lines[0])).toBe('a^Ib$');
+    expect(firstRow(vim)).toBe('a^Ib$');
   });
 
   it(':set list révèle un ^M pour un CR isolé (corruption), invisible sans list', () => {
@@ -88,7 +92,7 @@ describe('Scénario UI-9 — vim : :set list affiche $ (EOL), ^I (tabs), ^M (CR 
     const fs = new InMemoryEditorFsContext({ '/tmp/stray-cr.txt': content });
     const vim = new VimEngine(fs, '/tmp/stray-cr.txt', content, false, 'vim');
     exCmd(vim, 'set list');
-    expect(vim.renderListLine(vim.lines[0])).toBe('line1^Mline1b$');
+    expect(firstRow(vim)).toBe('line1^Mline1b$');
   });
 
   it(':set listchars personnalise les symboles (tab, trail, eol)', () => {
@@ -97,7 +101,7 @@ describe('Scénario UI-9 — vim : :set list affiche $ (EOL), ^I (tabs), ^M (CR 
     const vim = new VimEngine(fs, '/tmp/custom.txt', content, false, 'vim');
     exCmd(vim, 'set listchars=tab:>-,trail:.,eol:$');
     exCmd(vim, 'set list');
-    expect(vim.renderListLine(vim.lines[0])).toBe('a>-b..$');
+    expect(firstRow(vim)).toBe('a>------b..$');
   });
 
   it(':set nolist désactive à nouveau l\'affichage', () => {
@@ -120,32 +124,26 @@ describe('Scénario UI-9 — vim : :set fileencoding? rapporte toujours utf-8', 
 });
 
 describe('Scénario UI-9 — nano : caractères de contrôle en notation ^X (la ligne vide finale de nano reste affichée)', () => {
+  function firstRow(content: string, file: string): string {
+    const nano = new NanoEngine(new InMemoryEditorFsContext({ [file]: content }), file, content, false);
+    nano.resize(24, 80);
+    return plainRowText(nano.screen.rows[1]);
+  }
+
   it('les octets de contrôle (< 0x20) sont représentés en ^X, jamais affichés bruts', () => {
-    const content = 'texte\x01control\x02chars\x1bici\n';
-    const fs = new InMemoryEditorFsContext({ '/tmp/ctrl.txt': content });
-    const nano = new NanoEngine(fs, '/tmp/ctrl.txt', content, false);
-    expect(nano.displayContent).toBe('texte^Acontrol^Bchars^[ici\n');
+    expect(firstRow('texte\x01control\x02chars\x1bici\n', '/tmp/ctrl.txt')).toBe('texte^Acontrol^Bchars^[ici');
   });
 
-  it('tab et retour à la ligne restent des caractères réels (pas de transformation)', () => {
-    const content = 'a\tb\nc\n';
-    const fs = new InMemoryEditorFsContext({ '/tmp/tab.txt': content });
-    const nano = new NanoEngine(fs, '/tmp/tab.txt', content, false);
-    expect(nano.displayContent).toBe('a\tb\nc\n');
+  it('une tabulation est développée jusqu\'au taquet de huit colonnes', () => {
+    expect(firstRow('a\tb\nc\n', '/tmp/tab.txt')).toBe('a       b');
   });
 
   it('DEL (0x7f) est représenté par ^?', () => {
-    const content = 'a\x7fb\n';
-    const fs = new InMemoryEditorFsContext({ '/tmp/del.txt': content });
-    const nano = new NanoEngine(fs, '/tmp/del.txt', content, false);
-    expect(nano.displayContent).toBe('a^?b\n');
+    expect(firstRow('a\x7fb\n', '/tmp/del.txt')).toBe('a^?b');
   });
 
   it('un texte sans caractère de contrôle est affiché tel quel', () => {
-    const content = 'plain ascii text\n';
-    const fs = new InMemoryEditorFsContext({ '/tmp/plain.txt': content });
-    const nano = new NanoEngine(fs, '/tmp/plain.txt', content, false);
-    expect(nano.displayContent).toBe(nano.content + '\n');
+    expect(firstRow('plain ascii text\n', '/tmp/plain.txt')).toBe('plain ascii text');
   });
 });
 

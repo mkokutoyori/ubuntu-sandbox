@@ -71,68 +71,88 @@
  *     `^X Exit', et les garde ;
  *   - NON-REGRESSION : `Modified' pour un tampon modifie et `New Buffer'
  *     pour un tampon sans nom etaient deja justes, et le restent.
+ *
+ * SUITE. Ces quatre faits ne vivent plus dans `editorRender' : la barre, le titre et
+ * l'etat sont les rangees de `engine.screen', et la sonde les lit la ou le composant les
+ * peint (80x24 : titre, rangee 0 ; barre, rangees 22 et 23). La barre complete a six colonnes
+ * en 80 colonnes est rejouee sur le vrai nano par nano-screen-oracle.test.ts, a toutes les
+ * largeurs ; ici ne restent que les faits nommes ci-dessus.
  */
+
 import { describe, it, expect } from 'vitest';
-import {
-  nanoEditShortcutRows, nanoTitleState, nanoTitleName,
-} from '@/network/devices/linux/editors/editorRender';
+import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
+import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
+import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
 
-type Rangees = readonly (readonly (readonly [string, string])[])[];
+function open(options: { readOnly?: boolean; path?: string; isNew?: boolean } = {}): NanoEngine {
+  const path = options.path ?? '/tmp/n1.txt';
+  const nano = new NanoEngine(
+    new InMemoryEditorFsContext({}), path, options.isNew === true ? '' : 'one\ntwo\n', options.isNew === true, options.readOnly === true,
+    undefined, false, { displayName: path === '' ? '' : 'n1.txt' },
+  );
+  nano.resize(24, 80);
+  return nano;
+}
 
-const edition = (): Rangees => nanoEditShortcutRows();
-const vue = (): Rangees => nanoEditShortcutRows();
+const barre = (nano: NanoEngine): [string, string] => {
+  const rows = nano.screen.rows;
+  return [plainRowText(rows[22]), plainRowText(rows[23])];
+};
 
-const aplati = (rows: Rangees): string =>
-  rows.map(r => r.map(([k, l]) => `${k} ${l}`).join('  ')).join(' | ');
+const titre = (nano: NanoEngine): string => plainRowText(nano.screen.rows[0]);
 
 describe('la barre et le titre de nano disent ce que nano dit', () => {
   it('TEMOIN : la barre d edition commence par ^G Help et ^X Exit', () => {
-    const rows = edition();
-    expect(rows[0][0]).toEqual(['^G', 'Help']);
-    expect(rows[1][0]).toEqual(['^X', 'Exit']);
+    const [haut, bas] = barre(open());
+    expect(haut.startsWith('^G Help')).toBe(true);
+    expect(bas.startsWith('^X Exit')).toBe(true);
   });
 
   it('chaque rangee porte SIX raccourcis', () => {
-    const rows = edition();
-    expect(rows[0]).toHaveLength(6);
-    expect(rows[1]).toHaveLength(6);
+    const [haut, bas] = barre(open());
+    expect(haut.match(/\^[A-Z\\/]|M-./g)).toHaveLength(6);
+    expect(bas.match(/\^[A-Z\\/]|M-./g)).toHaveLength(6);
   });
 
   it('`^C Location` et `^/ Go To Line` ferment les rangees', () => {
-    const rows = edition();
-    expect(rows[0][5]).toEqual(['^C', 'Location']);
-    expect(rows[1][5]).toEqual(['^/', 'Go To Line']);
+    const [haut, bas] = barre(open());
+    expect(haut.trimEnd().endsWith('^C Location')).toBe(true);
+    expect(bas.trimEnd().endsWith('^/ Go To Line')).toBe(true);
   });
 
   it('la barre entiere est celle du vrai nano', () => {
-    expect(aplati(edition())).toBe(
-      '^G Help  ^O Write Out  ^W Where Is  ^K Cut  ^T Execute  ^C Location'
-      + ' | ^X Exit  ^R Read File  ^\\ Replace  ^U Paste  ^J Justify  ^/ Go To Line');
+    const [haut, bas] = barre(open());
+    expect(haut.replace(/\s+/g, ' ').trim()).toBe('^G Help ^O Write Out ^W Where Is ^K Cut ^T Execute ^C Location');
+    expect(bas.replace(/\s+/g, ' ').trim()).toBe('^X Exit ^R Read File ^\\ Replace ^U Paste ^J Justify ^/ Go To Line');
   });
 
   it('la barre garde ce que le mode vue retranchait', () => {
-    const barre = aplati(vue());
+    const [haut, bas] = barre(open({ readOnly: true }));
     for (const raccourci of ['^O Write Out', '^K Cut', '^U Paste', '^R Read File']) {
-      expect(barre).toContain(raccourci);
+      expect(`${haut}${bas}`).toContain(raccourci);
     }
   });
 
   it('plus aucun `^_` dans la barre', () => {
-    expect(aplati(vue())).not.toContain('^_');
-    expect(aplati(edition())).not.toContain('^_');
+    const [haut, bas] = barre(open());
+    expect(`${haut}${bas}`).not.toContain('^_');
   });
 
   it('l etat du titre en lecture seule est `View`', () => {
-    expect(nanoTitleState({ readOnly: true, modified: false })).toBe('View');
+    expect(titre(open({ readOnly: true })).trimEnd().endsWith('View')).toBe(true);
   });
 
   it('un fichier neuf mais nomme n a PAS d etat de titre', () => {
-    expect(nanoTitleState({ readOnly: false, modified: false })).toBe('');
-    expect(nanoTitleName('/tmp/brandnew.txt')).toBe('/tmp/brandnew.txt');
+    const rangee = titre(open({ isNew: true }));
+    expect(rangee).not.toContain('Modified');
+    expect(rangee).not.toContain('View');
+    expect(rangee).toContain('n1.txt');
   });
 
   it('NON-REGRESSION : un tampon modifie porte `Modified`, et sans nom `New Buffer`', () => {
-    expect(nanoTitleState({ readOnly: false, modified: true })).toBe('Modified');
-    expect(nanoTitleName('')).toBe('New Buffer');
+    const modifie = open();
+    modifie.applyKey({ key: 'x', ctrl: false });
+    expect(titre(modifie).trimEnd().endsWith('Modified')).toBe(true);
+    expect(titre(open({ path: '', isNew: true }))).toContain('New Buffer');
   });
 });
