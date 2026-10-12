@@ -107,6 +107,10 @@ export class RemoteVimController extends BaseRemoteEditorController<VimEditorVie
   scrollView(up: boolean, count: number): void {
     void this.transport.scrollEditor(up, count).then((view) => this.absorb(view));
   }
+
+  clickAt(row: number, col: number): void {
+    void this.transport.clickEditor(row, col).then((view) => this.absorb(view));
+  }
 }
 
 export class RemoteNanoController extends BaseRemoteEditorController<NanoEditorView> {

@@ -11,7 +11,7 @@ import { VimEngine, type VimVariant } from '@/network/devices/linux/editors/VimE
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 import { GridRows } from './EditorGrid';
 import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
-import { useGridGeometry, type GridSize } from '../gridGeometry';
+import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
 import type { CaretShape } from './gridLayout';
 
 /**
@@ -20,7 +20,7 @@ import type { CaretShape } from './gridLayout';
  * over an SSH channel (docs/PRD-SSH-Unification.md §4bis B3).
  */
 export type VimEditorDriver = Pick<VimEngine,
-  | 'applyKey' | 'screen' | 'resize' | 'scrollView' | 'content' | 'mode'
+  | 'applyKey' | 'screen' | 'resize' | 'scrollView' | 'clickAt' | 'content' | 'mode'
   | 'exited' | 'savedOnExit' | 'isReplacing' | 'variant'
   | 'pendingBinaryWarning' | 'pendingSwapRecovery'>;
 
@@ -100,6 +100,16 @@ export const VimEditor: React.FC<VimEditorProps> = ({
     bump();
   }, [engine, bump]);
 
+  const click = useCallback((e: React.MouseEvent) => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const rect = body.getBoundingClientRect();
+    const cell = measureCell(body);
+    if (!(cell > 0)) return;
+    engine.clickAt(Math.floor((e.clientY - rect.top) / GRID_LINE_HEIGHT), Math.floor((e.clientX - rect.left) / cell));
+    bump();
+  }, [engine, bump]);
+
   const caret: CaretShape = engine.mode === 'insert'
     ? (engine.isReplacing ? 'underline' : 'bar')
     : engine.mode === 'command' || engine.mode === 'search' ? 'bar' : 'block';
@@ -154,6 +164,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
         tabIndex={0}
         onKeyDown={dispatch}
         onWheel={wheel}
+        onMouseDown={click}
         className="absolute inset-0 outline-none"
       >
         <GridRows

@@ -8,6 +8,10 @@
  * (EditorScreen n'existe pas), donc les 9 cas tombent avant.  Le TEMOIN est le premier cas, le
  * meme pas de lab que « vim opens a buffer on the remote file » de ssh-wire-editor.test.ts, qui
  * passe avant comme apres : l'editeur s'ouvre bien de l'autre cote du fil.
+ *
+ * Les deux derniers cas (le clic de souris de vim, refuse tant que `mouse=` est vide comme sur un vim
+ * Debian/Ubuntu, honore apres `:set mouse=a`) tombent sur a0acef2cc, ou la session vim n'a pas d'action
+ * `click` ; les neuf autres y passent deja.
  */
 import { describe, it, expect } from 'vitest';
 import type { VimEditorView } from '@/network/devices/linux/editors/EditorView';
@@ -118,5 +122,29 @@ describe('vim over SSH: the screen follows the terminal geometry', () => {
     const rows = (rs: readonly { text: string }[]) => rs.slice(0, -1).map((r) => r.text);
     expect(rows(remote.screen.rows)).toEqual(rows(local.screen.rows));
     expect(remote.screen.cursor).toEqual(local.screen.cursor);
+  }, 30000);
+
+  it('ignores a click while mouse is empty, as a stock Debian vim does', async () => {
+    const { channel } = await wireShellChannel();
+    await channel.runLine(`printf 'alpha\\nbravo charlie\\ndelta\\n' > /tmp/g9.txt`);
+    await channel.openEditor('vim /tmp/g9.txt');
+    const view = await channel.clickEditor(1, 8) as VimEditorView;
+    expect(view.screen.cursor).toEqual({ row: 0, col: 0 });
+  }, 30000);
+
+  it('puts the cursor on the clicked cell once :set mouse=a is typed, tab cells included', async () => {
+    const { channel } = await wireShellChannel();
+    await channel.runLine(`printf 'alpha\\nbravo\\tcharlie\\ndelta\\n' > /tmp/g10.txt`);
+    await channel.openEditor('vim /tmp/g10.txt');
+    for (const key of ':set mouse=a') await channel.sendEditorKey({ key });
+    await channel.sendEditorKey({ key: 'Enter' });
+    let view = await channel.clickEditor(1, 8) as VimEditorView;
+    expect(view.cursorLine).toBe(1);
+    expect(view.screen.cursor).toEqual({ row: 1, col: 8 });
+    view = await channel.clickEditor(2, 3) as VimEditorView;
+    expect(view.cursorLine).toBe(2);
+    expect(view.cursorCol).toBe(3);
+    view = await channel.clickEditor(10, 3) as VimEditorView;
+    expect(view.cursorLine).toBe(2);
   }, 30000);
 });

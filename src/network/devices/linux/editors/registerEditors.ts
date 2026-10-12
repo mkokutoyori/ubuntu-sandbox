@@ -65,6 +65,7 @@ function vimSession(variant: 'vi' | 'vim', seed: EditorSessionSeed): EditorSessi
     get view() { return view(); },
     applyKey: (key) => { engine.applyKey(key); return view(); },
     resize: (rows, cols) => { engine.resize(rows, cols); return view(); },
+    click: (row, col) => { engine.clickAt(row, col); return view(); },
     scroll: (up, count) => { engine.scrollView(up, count); return view(); },
     close: () => { if (!engine.exited) engine.applyKey({ key: 'q', ctrl: false }); },
   };

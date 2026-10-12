@@ -636,6 +636,21 @@ export class VimWindow implements WindowView {
     return { cursor: corrected, failed };
   }
 
+  cellAt(row: number, col: number): { line: number; cell: number } | null {
+    if (row < 0 || row >= this.height) return null;
+    let remaining = row;
+    const textColumn = Math.max(0, col - this.numberColumn);
+    const wrap = this.settings().wrap;
+    for (let lnum = this.topLnum; lnum <= this.lineCount; lnum++) {
+      const rows = this.plines(lnum);
+      if (remaining < rows) {
+        return { line: lnum - 1, cell: wrap ? remaining * this.textWidth + textColumn : this.leftColumn + textColumn };
+      }
+      remaining -= rows;
+    }
+    return { line: this.lineCount - 1, cell: wrap ? textColumn : this.leftColumn + textColumn };
+  }
+
   cursorCell(cursorLine: number, cursorCol: number, onTabEnd: boolean): CursorCell | null {
     if (cursorLine + 1 < this.topLnum) return null;
     let row = 0;

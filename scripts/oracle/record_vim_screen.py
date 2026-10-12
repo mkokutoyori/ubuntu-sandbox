@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Record screen transcripts from a real vim driven through tmux.
 
-usage: record_vim_screen.py --corpus cells|scroll|resize [--seed N] [--cases N] out.json
+usage: record_vim_screen.py --corpus cells|scroll|resize|click [--seed N] [--cases N] out.json
 
 A case is a buffer, a window size, a list of `:set` lines applied before the first step and a
 list of steps (a step is one run of keystrokes in vim notation: <Esc> <CR> <Tab> <BS> <C-x> <Up>
 ...).  The real vim, started with `-u DEFAULTS --noplugin` (defaults.vim, which is what a stock Debian vim loads when there is no ~/.vimrc, without the matchparen plugin whose cursor probes move the window),
 runs the steps one by one in a pane of the given size; after each step the screen rows above the
 command line, the cursor cell, the ruler column and the last line are saved.  A `resize` step is
-`@ROWSxCOLS` and resizes the pane.
+`@ROWSxCOLS` and resizes the pane.  A `click` step is `@click:ROW:COL` (0-based screen cell): a left
+button press and release in the SGR mouse encoding.  The click corpus starts vim with `-c 'set mouse=M ttymouse=sgr'`:
+a Debian/Ubuntu vim reads `defaults.vim` with `mouse=` EMPTY, so a click does nothing until `:set mouse=` names the mode.
 """
 import json, os, random, re, subprocess, sys, tempfile, time
 from concurrent.futures import ThreadPoolExecutor
@@ -68,7 +70,7 @@ def run_case(case, workdir):
     rows, cols = case["rows"], case["cols"]
     tmux("kill-session", "-t", name)
     tmux("new-session", "-d", "-x", str(cols), "-y", str(rows), "-s", name,
-         "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color vim -u DEFAULTS --noplugin -i NONE -n t.txt" % casedir)
+         "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color vim -u DEFAULTS --noplugin -i NONE -n %s t.txt" % (casedir, "-c 'set mouse=%s ttymouse=sgr'" % case["mouse"] if "mouse" in case else ""))
     settled(name)
     for line in case.get("setup", []):
         for k in tmux_keys(":" + line + "<CR>"):
@@ -76,7 +78,12 @@ def run_case(case, workdir):
         settled(name)
     steps = []
     for step in case["steps"]:
-        if step.startswith("@"):
+        if step.startswith("@click:"):
+            _, row, col = step.split(":")
+            for final in ("M", "m"):
+                tmux("send-keys", "-t", name, "-l", "\x1b[<0;%d;%d%s" % (int(col) + 1, int(row) + 1, final))
+            time.sleep(0.1)
+        elif step.startswith("@"):
             r, c = step[1:].split("x")
             tmux("resize-window", "-t", name, "-x", c, "-y", r)
             time.sleep(0.15)
@@ -153,6 +160,24 @@ def gen_resize(seed, count):
                       "setup": r.choice(SCROLL_SETUPS), "steps": steps})
     return cases
 
+CLICK_MOVES = ["l", "j", "k", "$", "0", "w", "G", "gg", "i", "a", "A", "<Esc>", "v", "V", "x", "10l", "20l", "<C-f>", "<C-e>", "3<C-e>", "zz", "zt", "5j", "20j", "<C-d>"]
+
+def gen_click(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        n = r.choice([3, 8, 20, 40])
+        rows, cols = r.choice([6, 10, 14, 24]), r.choice([30, 40, 60, 80])
+        steps = []
+        for _ in range(r.randint(3, 9)):
+            if r.random() < 0.55:
+                steps.append("@click:%d:%d" % (r.randint(0, rows - 1), r.randint(0, cols - 1)))
+            else:
+                steps.append(r.choice(CLICK_MOVES))
+        cases.append({"id": "clk%d-%d" % (seed, i), "text": rand_buffer(r, n), "rows": rows, "cols": cols, "mouse": r.choice(["a", "a", "a", "n", "nv", "i", "v", "nvi", ""]),
+                      "setup": r.choice(CELL_SETUPS + SCROLL_SETUPS), "steps": steps})
+    return cases
+
 def main():
     args = sys.argv[1:]
     seed, count, corpus, out = 1, 60, "cells", None
@@ -162,7 +187,7 @@ def main():
         elif args[i] == "--cases": count = int(args[i + 1]); i += 2
         elif args[i] == "--corpus": corpus = args[i + 1]; i += 2
         else: out = args[i]; i += 1
-    cases = {"cells": gen_cells, "scroll": gen_scroll, "resize": gen_resize}[corpus](seed, count)
+    cases = {"cells": gen_cells, "scroll": gen_scroll, "resize": gen_resize, "click": gen_click}[corpus](seed, count)
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: run_case(c, workdir), cases))

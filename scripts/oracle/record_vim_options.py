@@ -20,6 +20,7 @@ OPTIONS = [
     ("sidescrolloff", "siso", "number"), ("wrapscan", "ws", "bool"), ("display", "dy", "string"),
     ("ruler", "ru", "bool"), ("showcmd", "sc", "bool"), ("showmode", "smd", "bool"),
     ("scroll", "scr", "number"), ("filetype", "ft", "string"), ("fileformat", "ff", "string"), ("fileencoding", "fenc", "string"),
+    ("mouse", "mouse", "string"),
 ]
 
 def forms(name, short, kind):
@@ -74,6 +75,9 @@ EXTRA = [
     ["set cc=80 cc-=80", "set cc?"], ["set cc=80,100 cc-=80", "set cc?"], ["set cc=80,100 cc^=5", "set cc?"],
     ["set lcs=eol:$ lcs+=tab:>-", "set lcs?"], ["set lcs=tab:>-,eol:$ lcs-=tab:>-", "set lcs?"],
     ["set display=lastline display+=uhex", "set display?"], ["set display=lastline,uhex display-=lastline", "set display?"],
+    ["set mouse=a", "set mouse?"], ["set mouse=nvi", "set mouse?"], ["set mouse=x"], ["set mouse=an", "set mouse?"], ["set mouse+=n", "set mouse?"],
+    ["set mouse=a", "set mouse-=a", "set mouse?"], ["set mouse=nn", "set mouse?"], ["set mouse=hr", "set mouse?"], ["set mouse=c", "set mouse?"],
+    ["set mouse=", "set mouse?"], ["set mouse=a", "set mouse&", "set mouse?"], ["set mouse=n,v"], ["set mouse=Na"], ["set mouse=ah", "set mouse?"],
 ]
 
 NAMES = [o[0] for o in OPTIONS]

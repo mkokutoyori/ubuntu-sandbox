@@ -6,7 +6,8 @@
  * boolean forms (`opt` `noopt` `invopt` `opt!` `opt&` `opt?`), the numeric forms (`=` `:` `+=` `-=`
  * `^=`, hexadecimal/binary/octal, the E487/E474/E521/E488 refusals and the clamping vim applies
  * to 'numberwidth'), the comma-list string options, `setlocal`/`setglobal`, and several options
- * per command with the abort at the first bad one.
+ * per command with the abort at the first bad one, and the flag-list option 'mouse' (E539 on an
+ * illegal flag, duplicates dropped, `+=` and `-=` by flag).
  *
  * Measured with `git stash push -- src/network`: the module does not exist on the previous tree,
  * so the whole file cannot import (every replay case fails before, 0 after).  The corpus-size

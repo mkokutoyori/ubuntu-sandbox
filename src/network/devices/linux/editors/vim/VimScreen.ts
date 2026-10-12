@@ -10,7 +10,7 @@ export interface ScreenVisual {
 export interface ScreenInput {
   readonly lines: readonly string[];
   readonly cursor: { readonly line: number; readonly col: number };
-  readonly insertLike: boolean;
+  readonly tabEnd: boolean;
   readonly visual: ScreenVisual | null;
   readonly colorcolumn: string;
   readonly textwidth: number;
@@ -253,10 +253,8 @@ export function relativeLabel(position: 'All' | 'Top' | 'Bot' | number): string 
 export function buildScreen(window: VimWindow, input: ScreenInput): EditorScreen {
   const rows = windowRows(window, input);
   rows.push(bottomRow(window, input, relativeLabel(window.relativePosition())));
-  const tabEnd = !input.insertLike && !(input.visual !== null && (input.cursor.line < input.visual.anchor.line
-    || (input.cursor.line === input.visual.anchor.line && input.cursor.col <= input.visual.anchor.col)));
   const cursor = input.commandLine
     ? { row: window.height, col: Math.min(window.cols - 1, cellsWidth(input.commandLine.prompt + input.commandLine.text)) }
-    : window.cursorCell(input.cursor.line, input.cursor.col, tabEnd);
+    : window.cursorCell(input.cursor.line, input.cursor.col, input.tabEnd);
   return { rows, cursor };
 }

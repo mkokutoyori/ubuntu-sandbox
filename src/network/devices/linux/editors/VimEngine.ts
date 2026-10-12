@@ -1448,7 +1448,7 @@ export class VimEngine {
   private cursorOnTabEnd(): boolean {
     if (this._mode === 'insert') return false;
     if (this._mode === 'visual' || this._mode === 'visual-line' || this._mode === 'visual-block') {
-      return this._cursorLine > this.visualAnchorLine || (this._cursorLine === this.visualAnchorLine && this._cursorCol > this.visualAnchorCol);
+      return this._cursorLine > this.visualAnchorLine || (this._cursorLine === this.visualAnchorLine && this._cursorCol >= this.visualAnchorCol);
     }
     return true;
   }
@@ -1486,6 +1486,26 @@ export class VimEngine {
     this._cursorLine = this.window.scrollLines(up, count, this._cursorLine);
     if (this.options.scrolloff > 0) this.topValidFor = this._cursorLine;
     if (this._cursorLine !== previous) this._cursorCol = colAtVcol(this.line(this._cursorLine), this.currentWant(), this.tabstop, false, this.ctrlTab);
+  }
+
+  private mouseReaches(): boolean {
+    const flags = this.options.string('mouse');
+    if (flags.includes('a')) return true;
+    if (this._mode === 'normal') return flags.includes('n');
+    if (this._mode === 'insert') return flags.includes('i');
+    if (this._mode === 'visual' || this._mode === 'visual-line' || this._mode === 'visual-block') return flags.includes('v');
+    return false;
+  }
+
+  clickAt(row: number, col: number): void {
+    if (!this.mouseReaches()) return;
+    const hit = this.window.cellAt(row, col);
+    if (hit === null) return;
+    if (this._mode === 'visual' || this._mode === 'visual-line' || this._mode === 'visual-block') this.exitVisual();
+    this._cursorLine = hit.line;
+    this._cursorCol = this.window.colAtCell(hit.line, hit.cell, this._mode === 'insert');
+    this.want = hit.cell;
+    this.followCursor();
   }
 
   scrollView(up: boolean, count: number): void {
@@ -1604,7 +1624,7 @@ export class VimEngine {
     return buildScreen(this.window, {
       lines: this.linesArr,
       cursor: { line: this._cursorLine, col: this._cursorCol },
-      insertLike: mode === 'insert',
+      tabEnd: this.cursorOnTabEnd(),
       visual,
       colorcolumn: o.string('colorcolumn'),
       textwidth: 0,
@@ -1672,7 +1692,13 @@ export class VimEngine {
 
   // ── VISUAL / VISUAL LINE / VISUAL BLOCK ─────────────────────────────
 
+  private keepStickyColumn(): void {
+    if (this.want < 0) this.want = this.vcolAt(this.line(this._cursorLine), this._cursorCol);
+    this.keepWantThisKey = true;
+  }
+
   private enterVisual(mode: 'visual' | 'visual-line' | 'visual-block'): void {
+    this.keepStickyColumn();
     this.visualAnchorLine = this._cursorLine;
     this.visualAnchorCol = this._cursorCol;
     this._mode = mode;
@@ -1720,6 +1746,7 @@ export class VimEngine {
         this.visualObjectKind = null;
         return;
       }
+      this.keepStickyColumn();
       this.exitVisual();
       return;
     }
@@ -1747,8 +1774,16 @@ export class VimEngine {
     if (k.ctrl) {
       const lower = key.toLowerCase();
       if (lower === 'v') { this.switchVisualMode('visual-block'); return; }
+      if (lower === 'f') { this.pageScroll(true); return; }
+      if (lower === 'b') { this.pageScroll(false); return; }
+      if (lower === 'd') { this.halfPageScroll(true); return; }
+      if (lower === 'u') { this.halfPageScroll(false); return; }
+      if (lower === 'e') { this.lineScroll(true); return; }
+      if (lower === 'y') { this.lineScroll(false); return; }
       return;
     }
+
+    if (key === 'PageDown' || key === 'PageUp') { this.pageScroll(key === 'PageDown'); return; }
 
     switch (key) {
       case 'g': this.pendingG = true; return;
@@ -1826,6 +1861,7 @@ export class VimEngine {
   }
 
   private switchVisualMode(target: 'visual' | 'visual-line' | 'visual-block'): void {
+    this.keepStickyColumn();
     if (this._mode === target) { this.exitVisual(); return; }
     this._mode = target;
   }
