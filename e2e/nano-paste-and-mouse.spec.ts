@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoText } from './helpers/nanoScreen';
 
 /**
  * Scénario (e2e) — coller depuis le presse-papiers du navigateur dans
@@ -53,14 +54,12 @@ test.describe('Scénario (e2e) — coller et cliquer dans nano', () => {
 
   test('coller un bloc multi-lignes (resolv.conf) insère chaque ligne, comme si tapé', async ({ page }) => {
     await typeCmd(page, 'nano /etc/resolv.conf');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
-    await textarea.click();
     await pasteText(page, 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n');
 
-    await expect(textarea).toHaveValue(/nameserver 8\.8\.8\.8/);
-    await expect(textarea).toHaveValue(/nameserver 1\.1\.1\.1/);
+    await expect.poll(() => nanoText(page)).toMatch(/nameserver 8\.8\.8\.8/);
+    await expect.poll(() => nanoText(page)).toMatch(/nameserver 1\.1\.1\.1/);
 
     const titlebar = page.locator('[data-testid="nano-titlebar"]');
     await expect(titlebar).toContainText('Modified');
@@ -68,35 +67,29 @@ test.describe('Scénario (e2e) — coller et cliquer dans nano', () => {
 
   test('le collage entier s\'annule en un seul Alt+U', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/paste-undo.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
-    await textarea.click();
     await pasteText(page, 'line1\nline2\nline3');
-    await expect(textarea).toHaveValue(/line3/);
+    await expect.poll(() => nanoText(page)).toMatch(/line3/);
 
     await page.keyboard.press('Alt+u');
-    await expect(textarea).not.toHaveValue(/line1/);
+    await expect.poll(() => nanoText(page)).not.toMatch(/line1/);
   });
 
   test('cliquer dans le texte repositionne le curseur : la frappe suivante s\'insère au point cliqué', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/click-test.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
-    await textarea.click();
     await page.keyboard.type('helloworld');
 
-    // Click right after "hello" (offset 5) by setting the native
-    // selection directly and firing a real click — deterministic
-    // regardless of font metrics, still exercises the onMouseUp handler.
-    await page.evaluate(() => {
-      const el = document.querySelector('[data-testid="nano-textarea"]') as HTMLTextAreaElement;
-      el.setSelectionRange(5, 5);
-      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    });
+    const body = await page.locator('[data-testid="nano-body"]').boundingBox();
+    const caret = await page.locator('[data-testid="nano-cursor"]').boundingBox();
+    expect(body).not.toBeNull();
+    expect(caret).not.toBeNull();
+    const cell = caret!.width;
+    await page.mouse.click(body!.x + 5.5 * cell, body!.y + 1.5 * caret!.height);
     await page.keyboard.type('-BIG-');
 
-    await expect(textarea).toHaveValue('hello-BIG-world');
+    await expect.poll(() => nanoText(page)).toBe('hello-BIG-world');
   });
 });

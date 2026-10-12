@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoText, nanoCursor } from './helpers/nanoScreen';
 
 /**
  * Scénario (e2e) — navigation nano manquante : PageUp/PageDown (^V/^Y),
@@ -46,8 +47,7 @@ test.describe('Scénario (e2e) — navigation nano : PageUp/Down, Go To Line, Ta
   test('^_ Go To Line saute directement à la ligne demandée', async ({ page }) => {
     await seedLongFile(page, '/tmp/goto.txt', 100);
     await typeCmd(page, 'nano /tmp/goto.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('Control+_');
     const status = page.locator('[data-testid="nano-status-message"]');
@@ -57,33 +57,31 @@ test.describe('Scénario (e2e) — navigation nano : PageUp/Down, Go To Line, Ta
     await page.keyboard.press('Enter');
     await page.keyboard.type('-HERE-');
 
-    await expect(textarea).toHaveValue(/-HERE-line 42/);
+    await expect.poll(() => nanoText(page)).toMatch(/-HERE-line 42/);
   });
 
   test('^V (Next Page) avance le curseur dans un long fichier', async ({ page }) => {
     await seedLongFile(page, '/tmp/page.txt', 100);
     await typeCmd(page, 'nano /tmp/page.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('Control+v');
     await page.keyboard.type('-MARK-');
 
-    const value = await textarea.inputValue();
+    const value = await nanoText(page);
     expect(value).not.toContain('-MARK-line 1\n');
     expect(value).toMatch(/-MARK-line \d+/);
   });
 
   test('Tab insère une tabulation littérale visible dans le buffer', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/tabtest.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
-    await textarea.click();
     await page.keyboard.type('a');
     await page.keyboard.press('Tab');
     await page.keyboard.type('b');
 
-    await expect(textarea).toHaveValue('a\tb');
+    await expect.poll(() => nanoText(page)).toBe('a       b');
+    expect(await nanoCursor(page)).toEqual({ row: 1, column: 9 });
   });
 });
