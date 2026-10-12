@@ -52,6 +52,7 @@ import type { TcpStream } from '../tcp/types';
 import {
   TelnetClientSession, type TelnetClientTransport,
 } from '../protocols/telnet/TelnetClientSession';
+import { DUAL_STACK } from '../tcp/TcpStack';
 import type { TcpSocket } from '../tcp/TcpStack';
 import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
@@ -804,9 +805,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       accept: () => (socket) => {
         this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
       },
+      families: DUAL_STACK,
     });
     this.servicePortProjection.declare({
-      ports: [445, 139],
+      ports: [445],
+      owner: { image: 'System' },
+      active: () => this.svcMgr.isStarted('LanmanServer'),
+      accept: () => (socket) => this.serveSmb(socket),
+      families: DUAL_STACK,
+    });
+    this.servicePortProjection.declare({
+      ports: [139],
       owner: { image: 'System' },
       active: () => this.svcMgr.isStarted('LanmanServer'),
       accept: () => (socket) => this.serveSmb(socket),
@@ -816,6 +825,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       owner: { image: 'System' },
       active: () => this.winrm.enabled,
       accept: () => (socket) => this.serveWinRm(socket),
+      families: DUAL_STACK,
     });
     for (const implicitTls of [false, true]) {
       this.servicePortProjection.declare({
@@ -836,6 +846,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       owner: { service: 'RpcSs' },
       active: () => this.svcMgr.isStarted('RpcSs'),
       accept: () => (socket) => this.serveReplication(socket),
+      families: DUAL_STACK,
     });
     this.servicePortProjection.declare({
       ports: [DFSR_PORT],

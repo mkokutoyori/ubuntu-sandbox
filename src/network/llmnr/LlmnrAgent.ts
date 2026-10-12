@@ -83,14 +83,16 @@ export class LlmnrAgent {
     return out;
   }
 
-  isRunning(): boolean { return this.bound; }
+  isRunning(): boolean { return this.bound && this.host.isUdpPortServed(LLMNR_BINDING.port); }
 
   start(identity?: ListenerIdentity): void {
-    if (this.bound) return;
+    if (this.isRunning()) return;
+    const resumed = this.bound;
     try {
       bindMulticastDns(this.host, LLMNR_BINDING, (q, src, sport) => this.respond(q, src, sport), undefined, identity);
       this.bound = true;
     } catch { return; }
+    if (resumed) return;
     this.state = 'tentative';
     // La vérification part en tâche de fond : un démon ne bloque pas son
     // démarrage dessus, et il répond déjà — avec le bit T — pendant

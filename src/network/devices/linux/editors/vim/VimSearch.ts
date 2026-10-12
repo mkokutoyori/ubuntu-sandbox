@@ -98,16 +98,19 @@ function posOf(lines: readonly string[], starts: readonly number[], offset: numb
   return { line: low, col: Math.min(offset - starts[low], (lines[low] ?? '').length) };
 }
 
-function allMatches(text: string, regex: RegExp): Located[] {
+function* matchesFrom(text: string, regex: RegExp, from: number): Generator<Located> {
   const global = new RegExp(regex.source, `gm${regex.flags.replace(/[gm]/g, '')}`);
-  const found: Located[] = [];
+  global.lastIndex = from;
   let match: RegExpExecArray | null;
   while ((match = global.exec(text)) !== null) {
-    found.push({ index: match.index, length: match[0].length });
+    yield { index: match.index, length: match[0].length };
     if (match[0].length === 0) global.lastIndex++;
     if (global.lastIndex > text.length) break;
   }
-  return found;
+}
+
+function allMatches(text: string, regex: RegExp): Located[] {
+  return [...matchesFrom(text, regex, 0)];
 }
 
 export interface FindOptions {
@@ -128,7 +131,11 @@ export function findMatch(lines: readonly string[], from: Pos, pattern: string, 
   const matches = allMatches(text, regex);
   if (matches.length === 0) return null;
 
-  const key = (m: Located): number => (options.anchor === 'end' ? m.index + Math.max(0, m.length - 1) : m.index);
+  const onLineEnd = (m: Located): boolean => m.index === text.length || text[m.index] === '\n';
+  const key = (m: Located): number => {
+    if (options.anchor === 'end') return m.index + Math.max(0, m.length - 1);
+    return options.forward && onLineEnd(m) ? m.index - 1 : m.index;
+  };
   const ahead = options.forward
     ? matches.filter((m) => (options.acceptAtCursor ? key(m) >= origin : key(m) > origin))
     : matches.filter((m) => key(m) < origin).reverse();
@@ -231,4 +238,41 @@ export function patternForIdent(ident: IdentUnderCursor, wholeWord: boolean): st
   const open = isKeyword(ident.text[0]) ? '\\<' : '';
   const close = isKeyword(ident.text[ident.text.length - 1]) ? '\\>' : '';
   return open + body + close;
+}
+
+export interface HighlightSpan {
+  readonly from: number;
+  readonly to: number;
+}
+
+export function highlightSpans(
+  lines: readonly string[], pattern: string, ignoreCase: boolean, first: number, last: number,
+): Map<number, HighlightSpan[]> {
+  const found = new Map<number, HighlightSpan[]>();
+  if (pattern === '' || first > last || first >= lines.length) return found;
+  const text = lines.join('\n');
+  const starts = lineStarts(lines);
+  const bottom = Math.min(last, lines.length - 1);
+  for (const located of matchesFrom(text, compileVimPattern(pattern, ignoreCase), starts[first])) {
+    const start = posOf(lines, starts, located.index);
+    if (start.line > bottom) break;
+    const end = posOf(lines, starts, located.index + located.length);
+    const empty = located.length === 0;
+    for (let line = Math.max(start.line, first); line <= Math.min(end.line, bottom); line++) {
+      if (line > start.line && line === end.line && end.col === 0) continue;
+      const length = (lines[line] ?? '').length;
+      const from = line === start.line ? start.col : 0;
+      let to = line === end.line ? end.col : length + 1;
+      if (empty) to = from < length ? from + codePointLength(lines[line], from) : length + 1;
+      const spans = found.get(line);
+      if (spans) spans.push({ from, to });
+      else found.set(line, [{ from, to }]);
+    }
+  }
+  return found;
+}
+
+function codePointLength(text: string, at: number): number {
+  const code = text.codePointAt(at);
+  return code !== undefined && code > 0xffff ? 2 : 1;
 }

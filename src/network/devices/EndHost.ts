@@ -33,7 +33,10 @@ import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters }
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin, IPv6AddressEntry } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
-import { TcpStack, TCP_SOMAXCONN, type TcpOptionPolicy, type TcpMibSink, type OwnerExit } from '../tcp/TcpStack';
+import {
+  TcpStack, TCP_SOMAXCONN, DUAL_STACK, IPV4_ONLY, ipFamilyOf, wildcardAddressOf,
+  type IpFamily, type TcpOptionPolicy, type TcpMibSink, type OwnerExit,
+} from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
@@ -3382,14 +3385,20 @@ export abstract class EndHost extends Equipment {
   }
 
   public udpBind(
-    port: number, listener: UdpListener, processName?: string, owner: { pid?: number; uid?: number; service?: string } = {},
+    port: number, listener: UdpListener, processName?: string,
+    owner: { pid?: number; uid?: number; service?: string; families?: readonly IpFamily[] } = {},
   ): number | false {
-    let bound: number;
+    let bound = port;
+    const taken: IpFamily[] = [];
     try {
       bound = port === PORT_ANY ? this.socketTable.allocateEphemeralPort() : port;
-      this.socketTable.bind('udp', '0.0.0.0', bound, owner.pid, processName, undefined,
-        { ownerUid: owner.uid, serviceName: owner.service });
+      for (const family of owner.families ?? IPV4_ONLY) {
+        this.socketTable.bind('udp', wildcardAddressOf(family), bound, owner.pid, processName, undefined,
+          { ownerUid: owner.uid, serviceName: owner.service });
+        taken.push(family);
+      }
     } catch (error) {
+      for (const family of taken) this.socketTable.unbind('udp', wildcardAddressOf(family), bound);
       if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
       throw error;
     }
@@ -3669,10 +3678,17 @@ export abstract class EndHost extends Equipment {
    */
   public resolverIdentity(): ListenerIdentity { return { processName: 'systemd-resolved' }; }
 
-  /** Close a UDP port: remove the listener and the socket-table entry. */
-  public udpClose(port: number): void {
-    this.udpListeners.delete(port);
-    this.socketTable.unbind('udp', '0.0.0.0', port);
+  public isUdpPortServed(port: number): boolean {
+    return this.udpListeners.has(port);
+  }
+
+  public udpClose(port: number, family?: IpFamily): void {
+    for (const each of family === undefined ? DUAL_STACK : [family]) {
+      this.socketTable.unbind('udp', wildcardAddressOf(each), port);
+    }
+    const stillHeld = this.socketTable.getAll().some((entry) => entry.protocol === 'udp'
+      && entry.localPort === port && entry.localAddress === wildcardAddressOf(ipFamilyOf(entry.localAddress)));
+    if (!stillHeld) this.udpListeners.delete(port);
   }
 
   public reapProcessSockets(pid: number, processName: string | undefined, exit: OwnerExit): number[] {
@@ -3687,7 +3703,8 @@ export abstract class EndHost extends Equipment {
       if (!matchesByPid && !matchesByName) continue;
       if (sock.remoteAddress === '*') {
         if (sock.protocol === 'udp') {
-          if (sock.localAddress === '0.0.0.0') this.udpClose(sock.localPort);
+          const family = ipFamilyOf(sock.localAddress);
+          if (sock.localAddress === wildcardAddressOf(family)) this.udpClose(sock.localPort, family);
           else this.udpCloseAddress(sock.localAddress, sock.localPort);
           continue;
         }

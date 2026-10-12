@@ -1,5 +1,6 @@
-import { codePointWidth, parseListChars, type Cell, type ListSpec } from './VimCells';
+import { EDGE_MARK_COL, codePointWidth, parseListChars, type Cell, type ListSpec } from './VimCells';
 import type { VimWindow } from './VimWindow';
+import type { HighlightSpan } from './VimSearch';
 import { CONTINUATION, type EditorScreen, type ScreenRow, type ScreenSpan, type ScreenStyle } from '../screen/EditorScreen';
 
 export interface ScreenVisual {
@@ -12,6 +13,8 @@ export interface ScreenInput {
   readonly cursor: { readonly line: number; readonly col: number };
   readonly tabEnd: boolean;
   readonly visual: ScreenVisual | null;
+  readonly searchSpans: ReadonlyMap<number, readonly HighlightSpan[]> | null;
+  readonly incSearchSpans: ReadonlyMap<number, readonly HighlightSpan[]> | null;
   readonly colorcolumn: string;
   readonly textwidth: number;
   readonly list: boolean;
@@ -93,7 +96,43 @@ function selectedRanges(window: VimWindow, input: ScreenInput, line: number, cel
   }
   const aSpan = window.cursorSpan(a.line, a.col, false);
   const cSpan = window.cursorSpan(c.line, c.col, false);
-  return [[Math.min(aSpan.start, cSpan.start), Math.max(aSpan.end, cSpan.end) + 1]];
+  let from = Math.min(aSpan.start, cSpan.start);
+  let to = Math.max(aSpan.end, cSpan.end) + 1;
+  while (from > 0 && cells[from]?.ch === '') from--;
+  while (to < cells.length && cells[to]?.ch === '') to++;
+  return [[from, to]];
+}
+
+function withoutCursor(ranges: readonly [number, number][], window: VimWindow, input: ScreenInput): [number, number][] {
+  const { start, end, virt } = window.cursorSpan(input.cursor.line, input.cursor.col, input.tabEnd);
+  const onTab = (input.lines[input.cursor.line] ?? '')[input.cursor.col] === '\t';
+  const first = onTab ? virt : start;
+  const last = onTab ? virt : end;
+  const out: [number, number][] = [];
+  for (const [from, to] of ranges) {
+    if (last < from || first >= to) { out.push([from, to]); continue; }
+    if (from < first) out.push([from, first]);
+    if (last + 1 < to) out.push([last + 1, to]);
+  }
+  return out;
+}
+
+function searchRanges(cells: readonly Cell[], spans: readonly HighlightSpan[] | undefined, textLength: number, eolIndex: number): [number, number][] {
+  if (spans === undefined) return [];
+  const ranges: [number, number][] = [];
+  for (const span of spans) {
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i].col >= span.from && cells[i].col < span.to) {
+        if (first < 0) first = i;
+        last = i;
+      }
+    }
+    if (first >= 0) ranges.push([first, last + 1]);
+    if (span.from <= textLength && span.to > textLength) ranges.push([eolIndex, eolIndex + 1]);
+  }
+  return ranges;
 }
 
 function numberLabel(input: ScreenInput, lnum: number, width: number): string {
@@ -107,21 +146,34 @@ function numberLabel(input: ScreenInput, lnum: number, width: number): string {
 
 function trimEdges(slice: Cell[], all: readonly Cell[], offset: number, spec: ListSpec | null): Cell[] {
   const out = [...slice];
-  if (out.length > 0 && out[0].ch === '') out[0] = { ch: '<', style: 'special', col: -1, first: false };
+  if (out.length > 0 && out[0].ch === '') out[0] = { ch: '<', style: 'special', col: EDGE_MARK_COL, first: false };
   const last = out.length - 1;
   const next = all[offset + out.length];
   if (last >= 0 && next !== undefined) {
-    if (next.ch === '' && out[last].ch !== '') out[last] = { ch: '>', style: 'special', col: -1, first: false };
-    else if (spec !== null && spec.extends !== null && out[last].ch !== '') out[last] = { ch: spec.extends, style: 'special', col: -1, first: false };
+    if (next.ch === '' && out[last].ch !== '') out[last] = { ch: '>', style: 'special', col: EDGE_MARK_COL, first: false };
+    else if (spec !== null && spec.extends !== null && out[last].ch !== '') out[last] = { ch: spec.extends, style: 'special', col: EDGE_MARK_COL, first: false };
   }
-  if (spec !== null && spec.precedes !== null && offset > 0 && out.length > 0) out[0] = { ch: spec.precedes, style: 'special', col: -1, first: false };
+  if (spec !== null && spec.precedes !== null && offset > 0 && out.length > 0) out[0] = { ch: spec.precedes, style: 'special', col: EDGE_MARK_COL, first: false };
   return out;
 }
 
 function cellStyles(
-  slice: readonly Cell[], offset: number, selection: readonly [number, number][], columns: readonly number[], textWidth: number,
+  slice: readonly Cell[], offset: number, selection: readonly [number, number][], found: readonly [number, number][], incremental: readonly [number, number][], columns: readonly number[], textWidth: number,
 ): ScreenSpan[] {
   const kinds: (ScreenStyle | null)[] = slice.map((cell) => (cell.style === 'special' ? 'special' : null));
+  for (const [from, to] of found) {
+    for (let i = Math.max(0, from - offset); i < to - offset && i < textWidth; i++) {
+      if (slice[i] !== undefined && slice[i].col === EDGE_MARK_COL) continue;
+      while (kinds.length <= i) kinds.push(null);
+      kinds[i] = 'search';
+    }
+  }
+  for (const [from, to] of incremental) {
+    for (let i = Math.max(0, from - offset); i < to - offset && i < textWidth; i++) {
+      while (kinds.length <= i) kinds.push(null);
+      kinds[i] = 'incsearch';
+    }
+  }
   for (const [from, to] of selection) {
     for (let i = Math.max(0, from - offset); i < to - offset && i < textWidth; i++) {
       while (kinds.length <= i) kinds.push(null);
@@ -163,7 +215,10 @@ function windowRows(window: VimWindow, input: ScreenInput): ScreenRow[] {
   for (let lnum = window.top; rows.length < height && lnum < input.lines.length; lnum++) {
     const base = window.cellsOf(lnum);
     const cells: Cell[] = eolMark === null ? [...base] : [...base, { ch: eolMark, style: 'special', col: -1, first: false }];
-    const selection = selectedRanges(window, input, lnum, cells);
+    const picked = selectedRanges(window, input, lnum, cells);
+    const selection = input.visual !== null && lnum === input.cursor.line ? withoutCursor(picked, window, input) : picked;
+    const found = searchRanges(cells, input.searchSpans?.get(lnum), (input.lines[lnum] ?? '').length, base.length);
+    const incremental = searchRanges(cells, input.incSearchSpans?.get(lnum), (input.lines[lnum] ?? '').length, base.length);
     const skipped = wrapping && lnum === window.top ? window.skipRows : 0;
     const chunkCount = (wrapping ? Math.max(1, Math.ceil(cells.length / textWidth)) : 1) - skipped;
     const remaining = height - rows.length;
@@ -172,6 +227,8 @@ function windowRows(window: VimWindow, input: ScreenInput): ScreenRow[] {
     for (let chunk = 0; chunk < drawn; chunk++) {
       const offset = wrapping ? (chunk + skipped) * textWidth : window.leftCol;
       let slice = cells.slice(offset, offset + textWidth);
+      const shortLine = !wrapping && slice.length === 0 && eolMark !== null;
+      if (shortLine) slice = cells.slice(-1);
       if (!wrapping) slice = trimEdges(slice, cells, offset, input.list ? spec : null);
       const spans: ScreenSpan[] = [];
       let gutter = '';
@@ -179,7 +236,13 @@ function windowRows(window: VimWindow, input: ScreenInput): ScreenRow[] {
         gutter = chunk === 0 ? numberLabel(input, lnum, numberColumn - 1) : ' '.repeat(numberColumn);
         if (chunk === 0) spans.push({ from: 0, to: numberColumn - 1, style: lnum === input.cursor.line && input.relativenumber ? 'cursorlinenr' : 'linenr' });
       }
-      for (const span of cellStyles(slice, offset, selection, columns, textWidth)) {
+      const atBoundary = (ranges: readonly [number, number][]): [number, number][] => ranges.map(([from, to]): [number, number] => {
+        const onEol = from === base.length && to === from + 1;
+        if (onEol && shortLine) return [offset, offset + 1];
+        if (onEol && eolMark === null && from - offset === textWidth) return [from - 1, from];
+        return [from, to];
+      });
+      for (const span of cellStyles(slice, offset, selection, atBoundary(found), atBoundary(incremental), columns, textWidth)) {
         spans.push({ ...span, from: span.from + numberColumn, to: span.to + numberColumn });
       }
       let text = gutter + rowText(slice);
@@ -207,7 +270,7 @@ function windowRows(window: VimWindow, input: ScreenInput): ScreenRow[] {
         const kept = Math.max(0, cols - 3);
         const shown = padded.slice(0, kept);
         const splitWide = padded[kept] === CONTINUATION && kept > 0;
-        rows[lastRow] = { text: (splitWide ? shown.slice(0, -1) + ' ' : shown) + '@@@', spans: [{ from: cols - 3, to: cols, style: 'nontext' }] };
+        rows[lastRow] = { text: (splitWide ? shown.slice(0, -1) + ' ' : shown) + '@@@', spans: [...rows[lastRow].spans.filter((span) => span.from < kept).map((span) => ({ ...span, to: Math.min(span.to, kept) })), { from: cols - 3, to: cols, style: 'nontext' }] };
       } else {
         rows.length = firstRow;
         while (rows.length < height) rows.push({ text: '@', spans: [{ from: 0, to: 1, style: 'nontext' }] });

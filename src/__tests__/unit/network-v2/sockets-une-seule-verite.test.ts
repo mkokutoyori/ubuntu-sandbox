@@ -230,7 +230,7 @@ describe('§P2 — les entrées décoratives, une par une', () => {
 
     const lignes = pc.getSocketTable().getListening()
       .filter((e) => e.localPort === 139 || e.localPort === 445);
-    expect(lignes).toHaveLength(2);
+    expect([...new Set(lignes.map((e) => e.localPort))].sort()).toEqual([139, 445]);
     for (const l of lignes) expect(l.processName).toBe('System');
   });
 

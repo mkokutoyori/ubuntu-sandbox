@@ -282,10 +282,11 @@ export class MdnsAgent {
     return out;
   }
 
-  isRunning(): boolean { return this.bound; }
+  isRunning(): boolean { return this.bound && this.host.isUdpPortServed(MDNS_BINDING.port); }
 
   start(identity?: ListenerIdentity): void {
-    if (this.bound) return;
+    if (this.isRunning()) return;
+    const resumed = this.bound;
     try {
       bindMulticastDns(
         this.host, MDNS_BINDING,
@@ -294,6 +295,7 @@ export class MdnsAgent {
         identity);
       this.bound = true;
     } catch { return; }
+    if (resumed) return;
     // §8.1 : on ne s'annonce qu'après avoir sondé. Le sondage part en
     // tâche de fond — un démon ne bloque pas son démarrage dessus.
     this.ready = this.claimName();

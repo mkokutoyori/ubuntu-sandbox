@@ -1,5 +1,7 @@
 import { NON_SINGLE_CELL_RANGES } from './VimCharWidth';
 
+export const EDGE_MARK_COL = -2;
+
 export interface ListSpec {
   readonly eol: string | null;
   readonly tab: readonly [string, string, string | null] | null;
@@ -106,7 +108,7 @@ export function expandLine(text: string, options: CellOptions): Cell[] {
     const width = codePointWidth(code);
     const vcol = cells.length;
     const filler = options.wrapWidth !== null && code >= 0x80 && width === 2 && vcol % options.wrapWidth === options.wrapWidth - 1;
-    if (filler) cells.push({ ch: '>', style: 'special', col: -1, first: false });
+    if (filler) cells.push({ ch: '>', style: 'special', col: EDGE_MARK_COL, first: false });
     if (width === 0 && cells.length > 0) {
       const previous = cells[cells.length - 1];
       cells[cells.length - 1] = { ...previous, ch: previous.ch + ch };
