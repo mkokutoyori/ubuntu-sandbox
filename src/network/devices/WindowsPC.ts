@@ -189,7 +189,7 @@ import type { WinRmIdentity, WinRmCommandResult } from './windows/server/winrm/W
 // eslint-disable-next-line no-restricted-imports
 import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import type { EventLogEntry } from './windows/PSEventLogProvider';
-import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
+import { type DomainMembership, type DomainSession, type GroupPolicyClientState, type WindowsDomainState, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
 import { logonDomainUser, lookupDomainGroups } from './windows/domain/DomainLogonClient';
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
@@ -1442,6 +1442,43 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private firstConfiguredDnsServerAddress(): IPAddress | null {
     const first = this.firstConfiguredDnsServer();
     return first ? IPAddress.tryParse(first) : null;
+  }
+
+  captureDomainState(): WindowsDomainState | null {
+    const groupPolicy: GroupPolicyClientState = {
+      appliedComputer: [...this.gpoAppliedNames],
+      appliedUser: [...this.gpoAppliedUserNames],
+      managedValues: [...this.gpoPolicyValues].map(([identity, { key, valueName }]) => ({ identity, key, valueName })),
+      lastAppliedAt: this.gpoLastAppliedAt ? this.gpoLastAppliedAt.toISOString() : null,
+      logonBanner: this.gpoLogonBanner ? { ...this.gpoLogonBanner } : null,
+      startupScript: this.gpoStartupScript,
+      signature: this.gpoLastSignature,
+      refreshCycle: this.gpoRefreshCycle,
+    };
+    const applied = groupPolicy.lastAppliedAt !== null || groupPolicy.logonBanner !== null || groupPolicy.startupScript !== null
+      || groupPolicy.appliedComputer.length + groupPolicy.appliedUser.length + groupPolicy.managedValues.length > 0;
+    const state: WindowsDomainState = {
+      ...(this.domainMembership ? { membership: { ...this.domainMembership } } : {}),
+      ...(this.installedServiceAccounts.size > 0 ? { serviceAccounts: [...this.installedServiceAccounts] } : {}),
+      ...(applied ? { groupPolicy } : {}),
+    };
+    return Object.keys(state).length > 0 ? state : null;
+  }
+
+  restoreDomainState(state: WindowsDomainState): void {
+    if (state.membership) this.domainMembership = { ...state.membership };
+    for (const sam of state.serviceAccounts ?? []) this.installedServiceAccounts.add(sam);
+    const gp = state.groupPolicy;
+    if (!gp) return;
+    this.gpoAppliedNames = [...gp.appliedComputer];
+    this.gpoAppliedUserNames = [...gp.appliedUser];
+    this.gpoPolicyValues.clear();
+    for (const { identity, key, valueName } of gp.managedValues) this.gpoPolicyValues.set(identity, { key, valueName });
+    this.gpoLastAppliedAt = gp.lastAppliedAt ? new Date(gp.lastAppliedAt) : null;
+    this.gpoLogonBanner = gp.logonBanner ? { ...gp.logonBanner } : null;
+    this.gpoStartupScript = gp.startupScript;
+    this.gpoLastSignature = gp.signature;
+    this.gpoRefreshCycle = gp.refreshCycle;
   }
 
   markServiceAccountInstalled(sam: string): void { this.installedServiceAccounts.add(sam.toLowerCase()); }

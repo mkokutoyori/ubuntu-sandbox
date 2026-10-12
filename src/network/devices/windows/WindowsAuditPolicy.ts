@@ -77,6 +77,17 @@ function settingValue(s: AuditSetting): number {
   return s.success && s.failure ? 3 : s.failure ? 2 : s.success ? 1 : 0;
 }
 
+export interface AuditPolicyState {
+  subcategories: Array<{ name: string; success: boolean; failure: boolean }>;
+  options: Partial<Record<AuditGlobalOptionName, boolean>>;
+  perUser: Array<{ account: string; entries: PerUserAuditEntry[] }>;
+  resourceSacl: Array<{
+    type: ResourceType; success: boolean; failure: boolean;
+    perUser: Array<{ account: string; success: boolean; failure: boolean }>;
+  }>;
+  securityDescriptor: string | null;
+}
+
 export class WindowsAuditPolicy {
   private subcategories = new Map<string, AuditEntry>(
     AUDIT_CATEGORIES.map((def) => [def.name.toLowerCase(), { success: false, failure: false, displayName: def.name }]),
@@ -91,6 +102,34 @@ export class WindowsAuditPolicy {
   private perUser = new Map<string, PerUserAuditEntry[]>();
   private resourceSacl = new Map<ResourceType, ResourceSaclEntry>();
   private securityDescriptor: string | null = null;
+
+  exportState(): AuditPolicyState {
+    return {
+      subcategories: [...this.subcategories.values()].map(({ displayName, success, failure }) => ({ name: displayName, success, failure })),
+      options: { ...this.options },
+      perUser: [...this.perUser].map(([account, entries]) => ({ account, entries: entries.map((e) => ({ ...e })) })),
+      resourceSacl: [...this.resourceSacl.values()].map((e) => ({
+        type: e.type, success: e.success, failure: e.failure,
+        perUser: [...(e.perUser ?? [])].map(([account, flags]) => ({ account, ...flags })),
+      })),
+      securityDescriptor: this.securityDescriptor,
+    };
+  }
+
+  importState(state: Partial<AuditPolicyState>): void {
+    for (const { name, success, failure } of state.subcategories ?? []) this.set(name, { success, failure });
+    for (const [name, value] of Object.entries(state.options ?? {})) this.setOption(name, value);
+    if (state.perUser) {
+      this.perUser = new Map(state.perUser.map(({ account, entries }) => [account, entries.map((e) => ({ ...e }))]));
+    }
+    if (state.resourceSacl) {
+      this.resourceSacl = new Map(state.resourceSacl.map((e) => [e.type, {
+        type: e.type, success: e.success, failure: e.failure,
+        perUser: new Map(e.perUser.map(({ account, success, failure }) => [account, { success, failure }])),
+      }]));
+    }
+    if (state.securityDescriptor !== undefined) this.securityDescriptor = state.securityDescriptor;
+  }
 
   isEnabled(subcategory: string, kind: 'success' | 'failure', account?: string): boolean {
     if (account) {

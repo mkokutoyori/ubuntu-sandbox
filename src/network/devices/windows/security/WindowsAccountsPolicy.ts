@@ -50,6 +50,10 @@ export class WindowsAccountsPolicy {
     this.state = { ...this.state, ...overrides };
   }
 
+  restore(saved: Partial<WindowsAccountsPolicyState>): void {
+    this.state = { ...this.state, ...saved };
+  }
+
   apply(flag: string, raw: string): string {
     const value = raw.trim();
     const numOrNever = (v: string): number => v.toLowerCase() === 'never' ? -1 : Number.parseInt(v, 10);
