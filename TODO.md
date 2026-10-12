@@ -217,10 +217,9 @@ mots de passe, GPO, schema, ACL, sites, fonctionnalites optionnelles, proprietai
 entrees des deux annuaires) ; voyagent aussi les postes joints (appartenance, comptes de service, etat client de la
 strategie de groupe) et la politique locale de comptes et d'audit ; ne voyagent pas la session de logon de domaine
 ni le cache de tickets Kerberos (transitoires) ; voyage l'etat de replication (identite d'invocation, vecteur de
-hauts niveaux, options NTDS, journal et compteurs) ; ne voyage pas le niveau fonctionnel de domaine d'un controleur
-supplementaire (il repart au niveau par defaut : le mode de domaine n'est pas un attribut replique) ; IIS (sites,
-pools), ADCS, NPS, WSUS, impression, cluster, Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat
-sauvegarde.
+hauts niveaux, options NTDS, journal et compteurs) ainsi que le niveau fonctionnel de domaine (attribut
+msDS-Behavior-Version de la racine du domaine, replique) ; IIS (sites, pools), ADCS, NPS, WSUS, impression,
+cluster, Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
 **Pourquoi ce n'est pas ferme** : (1) le texte de configuration est rejoue par la CLI dans l'ordre ; un extrait par
 difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations) : il faut un diff
 par bloc de mode. (2) Chaque famille d'objets Oracle demande une section dans `OracleStateDelta.ts` (une entree,

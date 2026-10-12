@@ -32,7 +32,7 @@ import { SchemaValidator } from './schema/SchemaValidator';
 import { SchemaPartition, seedDefaultSchema } from './schema/SchemaPartition';
 import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schema/SchemaValidator';
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
-import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
+import { AD_FUNCTIONAL_LEVELS, DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
 import { OU_PROPERTIES, PROTECTION_OBJECT_RIGHTS, PROTECTION_PARENT_RIGHT, isProtectionAce, protectionAce } from './adOrganizationalUnit';
 import { ACCOUNT_CONTROL_FLAGS, NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
 import { GROUP_PROPERTIES, MEMBER_ALREADY_IN_GROUP, MEMBER_NOT_IN_GROUP, groupNestingProblem, groupTypeParts, groupTypeValue } from './adGroup';
@@ -180,7 +180,20 @@ export class DirectoryStore {
    */
   private readonly now: () => Date;
 
-  domainMode: string = DEFAULT_AD_FUNCTIONAL_LEVEL.domainMode;
+  private static readonly BEHAVIOR_VERSION = 'msDS-Behavior-Version';
+
+  get domainMode(): string {
+    const root = this.tree.getByDn(this.tree.getRootDn());
+    const rank = Number(root?.attributes.get(DirectoryStore.BEHAVIOR_VERSION.toLowerCase())?.[0]);
+    return (AD_FUNCTIONAL_LEVELS.find((l) => l.rank === rank) ?? DEFAULT_AD_FUNCTIONAL_LEVEL).domainMode;
+  }
+
+  set domainMode(mode: string) {
+    const level = AD_FUNCTIONAL_LEVELS.find((l) => l.domainMode === mode);
+    const root = this.tree.getByDn(this.tree.getRootDn());
+    if (!level || !root || mode === this.domainMode) return;
+    this.tree.modifyEntry(root.dn, [{ op: 'replace', type: DirectoryStore.BEHAVIOR_VERSION, values: [String(level.rank)] }]);
+  }
 
   constructor(
     readonly dnsName: string,
@@ -192,7 +205,10 @@ export class DirectoryStore {
     this.now = opts.now ?? (() => simulationDate());
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
     this.schemaValidator = opts.sharedSchemaValidator ?? new SchemaValidator();
-    this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
+    this.tree = new DirectoryTree(rootDn, {
+      objectClass: ['top', 'domain', 'domainDNS'],
+      ...(opts.skipSeed ? {} : { [DirectoryStore.BEHAVIOR_VERSION]: [String(DEFAULT_AD_FUNCTIONAL_LEVEL.rank)] }),
+    }, {
       invocationId: this.invocationId, nextUsn: () => ++this.localUsn, nextGuid: () => this.nextObjectGuid(),
     }, this.schemaValidator, this.now);
     this.domainSidPrefix = `S-1-5-21-${hash32(this.dnsName, 1)}-${hash32(this.dnsName, 2)}-${hash32(this.dnsName, 3)}`;
