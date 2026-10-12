@@ -26,17 +26,17 @@ Les modeles d'ecran sont rejoues contre des binaires reels pilotes par tmux :
 | Ecran de nano | nano 7.2, `-I` | `scripts/oracle/record_nano_screen.py` | cells 150, scroll 200, resize 150, prompts 3 x 150 (seeds 7, 13, 17) | `nano-screen-oracle.test.ts` |
 | Taille du tty | bash 5.2, stty 9.4, six tailles de pty | `scripts/oracle/record_tty_geometry.py` | six tailles | `tty-window-size.test.ts` |
 
-Etat mesure : vim 1193 cas sur 1250 (cellules du curseur comprises), nano 949 cas sur 950,
+Etat mesure : vim 1200 cas sur 1250 (cellules du curseur comprises), plus 2 x 800 transcripts de curseur et de tampon en mode Visuel, nano 949 cas sur 950,
 tty six tailles sur six. Les corpus prompts seed 13 et seed 17 ont ete enregistres APRES
 le code qui les juge : seed 13 a trouve 3 ecarts (corriges), seed 17 est passe 150/150
 sans retouche.
 
 ## 1. vim
 
-### 1.1 Les 57 cas du corpus que le modele n'atteint pas (`UNPORTED_CASES`)
+### 1.1 Les 50 cas du corpus que le modele n'atteint pas (`UNPORTED_CASES`)
 
 Aucun n'est epingle comme contrat ; un cas de la liste qui se met a passer fait echouer le test
-pour qu'on le retire. Sept familles, chacune mesuree :
+pour qu'on le retire. Familles, chacune mesuree :
 
 | Famille | Cas | Constat | Statut |
 | --- | --- | --- | --- |
@@ -44,8 +44,8 @@ pour qu'on le retire. Sept familles, chacune mesuree :
 | `scrolloff` plus grand que la moitie de la fenetre (so=8 dans 12 lignes, so=999, so=5 dans 5 lignes de texte), `display=lastline`/`truncate`/vide avec une ligne partielle | `scr3-76`, `scr3-101`, `scr3-130`, `scr3-144`, `scr3-176`, `scr3-179`, `scr3-194`, `clk9-46`, `-48`, `-69`, `-79`, `-104`, `-133`, `-137`, `-178`, `-191`, `clk21-19`, `-20`, `-69`, `-84`, `-130`, `-144` | `scroll_cursor_*` et `cursor_correct` de vim partent d'un `w_topline` que ce moteur recalcule autrement : la fenetre defile d'une rangee de plus ou de moins apres un saut (Ctrl-D/U/B/F, clic loin du curseur) quand la marge ne tient pas. | Non porte |
 | Redimensionnement avec une ligne du curseur plus haute que la fenetre | `rsz5-36`, `-37`, `-50`, `-56`, `-70`, `-92`, `-117`, `-139`, `-144`, `-155`, `-199` | Meme famille, par `resize`. | Non porte |
 | Ctrl-E, Ctrl-Y, Ctrl-D, Ctrl-F en mode Insertion | `clk9-40`, `-76`, `-96`, `-151`, `-160`, `clk21-10`, `-70`, `-135`, `-136`, `-145`, `-174` | Vim copie le caractere de la ligne voisine (Ctrl-E/Y), retire un niveau d'indentation (Ctrl-D), reindente (Ctrl-F) ; ce moteur les traite comme en mode Normal. | Non porte |
-| `$` en mode Visuel | `clk9-116`, `-153`, `-168`, `clk21-53`, `-122`, `-153`, `-191`, `-194` | Vim pose le curseur APRES le dernier caractere (la selection inclut la fin de ligne : `v$d` joint la ligne suivante, `v$y` yanke un saut de ligne). Ce moteur le laisse sur le dernier caractere, donc l'affichage ET le resultat de `v$d` different. | Non porte |
-| Prefixe d'objet de texte en attente en Visuel (`Vi` puis clic), `A` en Visuel ligne | `clk9-39`, `-113`, `-154` | Le clic ou la touche suivante annule le prefixe chez vim, pas ici. | Non porte |
+| Prefixe d'objet de texte en attente en Visuel (`Vi` puis clic), `A` en Visuel ligne | `clk9-39`, `-113`, `-154`, `-168` | Le clic ou la touche suivante annule le prefixe chez vim, pas ici. | Non porte |
+| Deux clics sur la meme cellule en moins de 'mousetime' | `clk21-53` | Vim y voit un double-clic et selectionne le mot ; ce moteur y voit deux clics simples. | Non porte |
 | Clic sur la rangee `@@@` d'une ligne dont aucune rangee n'est visible | (aucun cas isole du corpus, releve a la main) | Vim l'ignore ; ce moteur la rapporte a la ligne cachee. | Non porte |
 
 ### 1.2 Hors corpus

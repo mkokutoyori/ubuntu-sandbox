@@ -1485,7 +1485,7 @@ export class VimEngine {
     this.keepWantThisKey = true;
     this._cursorLine = this.window.scrollLines(up, count, this._cursorLine);
     if (this.options.scrolloff > 0) this.topValidFor = this._cursorLine;
-    if (this._cursorLine !== previous) this._cursorCol = colAtVcol(this.line(this._cursorLine), this.currentWant(), this.tabstop, false, this.ctrlTab);
+    if (this._cursorLine !== previous) this._cursorCol = colAtVcol(this.line(this._cursorLine), this.currentWant(), this.tabstop, this._mode !== 'normal', this.ctrlTab);
   }
 
   private mouseReaches(): boolean {
@@ -1511,7 +1511,7 @@ export class VimEngine {
   scrollView(up: boolean, count: number): void {
     const previous = this._cursorLine;
     this._cursorLine = this.window.scrollLines(up, count, this._cursorLine);
-    if (this._cursorLine !== previous) this._cursorCol = colAtVcol(this.line(this._cursorLine), this.currentWant(), this.tabstop, false, this.ctrlTab);
+    if (this._cursorLine !== previous) this._cursorCol = colAtVcol(this.line(this._cursorLine), this.currentWant(), this.tabstop, this._mode !== 'normal', this.ctrlTab);
     this.followCursor();
     this.updateWant();
   }
@@ -1651,7 +1651,7 @@ export class VimEngine {
     });
     if (!result) return;
     this._cursorLine = result.pos.line;
-    this._cursorCol = this.clampCol(result.pos.line, result.pos.col);
+    this._cursorCol = this.clampCol(result.pos.line, result.pos.col, this._mode !== 'normal');
     if (result.want !== undefined) this.explicitWant = result.want;
     if (result.keepWant) {
       this.keepWantThisKey = true;
@@ -1746,7 +1746,6 @@ export class VimEngine {
         this.visualObjectKind = null;
         return;
       }
-      this.keepStickyColumn();
       this.exitVisual();
       return;
     }
@@ -1907,7 +1906,7 @@ export class VimEngine {
     const mode = this._mode;
     if (mode === 'visual-line' || lineWise) {
       return {
-        start: { line: bounds.startLine, col: 0 },
+        start: { line: bounds.startLine, col: this._cursorLine < this.visualAnchorLine ? this.clampCol(bounds.startLine, this._cursorCol) : 0 },
         end: { line: bounds.endLine, col: 0 },
         type: 'line', inclusive: false,
       };
@@ -1934,9 +1933,11 @@ export class VimEngine {
 
   private visualJoin(withSpaces: boolean): void {
     const bounds = this.visualBounds();
+    const startCol = this._mode === 'visual-line' ? 0 : bounds.startCol;
     this.exitVisual();
     const count = Math.max(2, bounds.endLine - bounds.startLine + 1);
     this._cursorLine = bounds.startLine;
+    this._cursorCol = this.clampCol(bounds.startLine, startCol);
     this.pendingCountStr = String(count);
     this.joinCommand(withSpaces);
   }

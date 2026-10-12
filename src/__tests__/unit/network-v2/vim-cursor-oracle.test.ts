@@ -12,6 +12,13 @@
  * Replace mode, r<Tab>, >> << > < in Normal and Visual mode, o O <CR> with autoindent and the
  * removal of an unused autoindent on <Esc>.  It is recorded with 'backspace' set the way a stock
  * vim has it (indent,eol,start), which the first two corpora never exercise.
+ * A fourth corpus (seeds 61 and 62, 800 transcripts each, vocabulary `visual`) runs v and V selections ended by
+ * a motion (`$` `j$` `$j` `$k` `2$` `$h` `$l` `l` `w` `e` `}` `fa` `o$` ...) and an operator (d y c ~ u U
+ * J gJ > < x X D r), followed for a yank by p P $p 0P.  In Visual mode vim lets the cursor stand on
+ * the NUL after the last character (`$`, `l` on the last character, `j` into a shorter line with
+ * curswant at its end), and an operator whose range ends there takes the line break with it.  After
+ * a linewise operator the cursor stands on the first selected line, in column 0 unless the selection
+ * grew upwards, in which case it keeps its column (measured by a 21-key matrix, not read in a source).
  *
  * Measured with `git stash push -- src/network` against the first corpus: 1007 of 1200
  * transcripts fail on the previous engine (cursor semantics of w/b/e/f/t/;/,/%/{/}, curswant,
@@ -20,7 +27,10 @@
  * (the 1200 of the first corpus all pass on it); 0 fail after.  The corpus-size case passes either way
  * (witness that the fixture loads).  Against the third corpus the previous engine, whose
  * tabstop and shiftwidth were constants and which refused every one of those :set commands,
- * fails 487 of the 900; 0 fail after.
+ * fails 487 of the 900; 0 fail after.  Against the fourth corpus the engine of the previous commit,
+ * which clamped every Visual-mode cursor to the last character, fails 262 of the 800 (seed 61) and 261
+ * of the 800 (seed 62); 0 fail after.  Seed 62 was recorded after the engine had been fitted to seed 61: it
+ * still found two linewise cursor columns, fixed.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -56,7 +66,9 @@ function loadFixture(name: string): { vim: string; cases: OracleCase[] } {
 const editFixture = loadFixture('vim-9.1-seed12.json');
 const searchFixture = loadFixture('vim-9.1-search-seed31.json');
 const tabsFixture = loadFixture('vim-9.1-tabs-seed40.json');
-const fixture = { vim: editFixture.vim, cases: [...editFixture.cases, ...searchFixture.cases, ...tabsFixture.cases] };
+const visualFixture = loadFixture('vim-9.1-visual-seed61.json');
+const visualFixture2 = loadFixture('vim-9.1-visual-seed62.json');
+const fixture = { vim: editFixture.vim, cases: [...editFixture.cases, ...searchFixture.cases, ...tabsFixture.cases, ...visualFixture.cases, ...visualFixture2.cases] };
 
 function replay(c: OracleCase): string | null {
   const content = c.text.join('\n') + '\n';
@@ -83,6 +95,8 @@ describe('vim cursor and buffer transcripts recorded from a real vim', () => {
     expect(editFixture.cases.length).toBe(1200);
     expect(searchFixture.cases.length).toBe(700);
     expect(tabsFixture.cases.length).toBe(900);
+    expect(visualFixture.cases.length).toBe(800);
+    expect(visualFixture2.cases.length).toBe(800);
   });
 
   it('replays every recorded transcript with the same cursor and the same buffer', () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record cursor/buffer transcripts from a real vim.
 
-usage: record_vim_cursor.py [--seed N] [--cases N] [--vocab cursor|edit|search|tabs|all] out.json
+usage: record_vim_cursor.py [--seed N] [--cases N] [--vocab cursor|edit|search|tabs|visual|all] out.json
 
 Every case is a starting buffer and a list of steps; a step is one complete Normal-mode
 command (ending in <Esc> when it enters Insert mode).  The real vim runs the steps one by
@@ -73,7 +73,19 @@ def tabs_step(r):
     ]
     return r.choice(pool)
 
+def visual_step(r):
+    mode = r.choice(["v", "v", "V"])
+    motion = r.choice(["$", "$", "$", "j$", "$j", "$k", "2$", "$h", "$l", "l", "h", "j", "k", "w", "e", "0", "^", "G", "gg", "}", "g_", "fa", "jj", "kk", "$o", "o$"])
+    ins = r.choice(["ab", "X Y", "z"])
+    op = r.choice(["d", "d", "y", "y", "c" + ins + "<Esc>", "~", "u", "U", "J", ">", "<", "x", "<Esc>", "gJ", "D", "X", "r-"])
+    first = mode + motion + op
+    if op == "y":
+        return [first, r.choice(["p", "P", "$p", "0P"])]
+    return [first]
+
 def rand_step(r, vocab):
+    if vocab == "visual":
+        return visual_step(r)
     if vocab == "tabs":
         return tabs_step(r)
     n = r.choice(["", "", "", "2", "3", "5"])
