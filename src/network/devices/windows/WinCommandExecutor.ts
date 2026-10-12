@@ -123,6 +123,8 @@ export interface WinCommandContext {
   clearDefaultGateway(): void;
   addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number): boolean;
   removeRoute(dest: IPAddress, mask: SubnetMask): boolean;
+  configureIPv6Interface(ifName: string, address: IPv6Address, prefixLength: number): boolean;
+  removeIPv6Interface(ifName: string, address: IPv6Address): boolean;
   addIPv6StaticRoute(prefix: IPv6Address, prefixLength: number,
     nextHop: IPv6Address | null, iface: string, metric?: number): void;
   removeIPv6StaticRoute(prefix: IPv6Address, prefixLength: number,

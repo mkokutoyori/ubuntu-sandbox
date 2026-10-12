@@ -1382,7 +1382,7 @@ To view help for a command, type the command, followed by a space, and then
       let parsed: IPv6Address;
       try { parsed = new IPv6Address(addr); }
       catch { return `The value for the IP address is invalid.`; }
-      port.configureIPv6(parsed, prefixLen);
+      ctx.configureIPv6Interface(portName, parsed, prefixLen);
       return 'Ok.';
     }
 
@@ -1499,7 +1499,7 @@ To view help for a command, type the command, followed by a space, and then
       let parsed: IPv6Address;
       try { parsed = new IPv6Address(addrRaw); }
       catch { return `The value for the IP address is invalid.`; }
-      const removed = port.removeIPv6Address(parsed);
+      const removed = ctx.removeIPv6Interface(portName, parsed);
       return removed ? 'Ok.' : `The specified value does not exist.`;
     }
     if (obj === '?') return `Usage: netsh interface ipv6 delete route|address ...`;
