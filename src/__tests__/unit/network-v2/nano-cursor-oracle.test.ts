@@ -20,7 +20,7 @@ import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey } from '@/network/devices/linux/editors/EditorKeyInput';
 import { displayNotation } from '@/network/devices/linux/editors/editorRender';
-import { expandCells } from '@/components/editors/vimLayout';
+import { expandLine, parseListChars } from '@/network/devices/linux/editors/vim/VimCells';
 
 interface ScreenStep { rows: string[]; y: number; x: number }
 interface NanoCase { id: string; text: string[]; steps: string[]; after: ScreenStep[] }
@@ -44,7 +44,7 @@ function keysOf(token: string) {
 
 function screenRow(text: string): string {
   const shown = [...text].map((c) => (c === '\t' ? c : displayNotation(c))).join('');
-  return expandCells(shown, 8).map((c) => c.ch).join('').replace(/\s+$/, '');
+  return expandLine(shown, { tabstop: 8, list: false, listchars: parseListChars(''), wrapWidth: null }).map((c) => c.ch).join('').replace(/\s+$/, '');
 }
 
 function sameRow(want: string, got: string): boolean {

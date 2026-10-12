@@ -33,6 +33,7 @@ export type EditorAction =
   | { readonly action: 'key'; readonly key: unknown }
   | { readonly action: 'paste'; readonly text: string }
   | { readonly action: 'cursor'; readonly offset: number }
+  | { readonly action: 'scroll'; readonly up: boolean; readonly count: number }
   | { readonly action: 'close' };
 
 export function parseTerminalModes(modes: Uint8Array): Map<number, number> {

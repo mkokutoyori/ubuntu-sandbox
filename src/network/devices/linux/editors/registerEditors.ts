@@ -59,10 +59,13 @@ function vimSession(variant: 'vi' | 'vim', seed: EditorSessionSeed): EditorSessi
     isReplacing: engine.isReplacing,
     searchPromptChar: engine.searchPromptChar,
     visualAnchor: engine.visualAnchor,
+    screen: engine.screen,
   });
   return {
     get view() { return view(); },
     applyKey: (key) => { engine.applyKey(key); return view(); },
+    resize: (rows, cols) => { engine.resize(rows, cols); return view(); },
+    scroll: (up, count) => { engine.scrollView(up, count); return view(); },
     close: () => { if (!engine.exited) engine.applyKey({ key: 'q', ctrl: false }); },
   };
 }

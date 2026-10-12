@@ -119,7 +119,7 @@ test.describe('Scénario 1 (e2e) — cycle de vie complet : nano, vim, vi', () =
   test('vim: add line / change word / delete line via real vim commands, save, clean :q', async ({ page }) => {
     await seedReferenceFile(page, '/tmp/test-vim.txt');
     await typeCmd(page, 'vim /tmp/test-vim.txt');
-    await expect(page.getByText('test-vim.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="vim-cmdline"]')).toContainText('test-vim.txt', { timeout: 5_000 });
     await expect(page.getByText('-- INSERT --')).not.toBeVisible();
 
     await page.keyboard.press('g');
@@ -146,12 +146,12 @@ test.describe('Scénario 1 (e2e) — cycle de vie complet : nano, vim, vi', () =
     await page.keyboard.press(':');
     await typeText(page, 'w');
     await page.keyboard.press('Enter');
-    await expect(page.getByText(/5L, \d+C written/)).toBeVisible();
+    await expect(page.getByText(/5L, \d+B written/)).toBeVisible();
 
     await page.keyboard.press(':');
     await typeText(page, 'q');
     await page.keyboard.press('Enter');
-    await expect(page.getByText('test-vim.txt', { exact: true })).not.toBeVisible();
+    await expect(page.locator('[data-testid="vim-body"]')).not.toBeVisible();
 
     await typeCmd(page, 'cat /tmp/test-vim.txt');
     expect(await modalText(page)).toContain(EXPECTED_RESULT);
@@ -163,7 +163,7 @@ test.describe('Scénario 1 (e2e) — cycle de vie complet : nano, vim, vi', () =
   test('vi: same edit via strict POSIX commands, no -- INSERT -- indicator, byte-identical to vim', async ({ page }) => {
     await seedReferenceFile(page, '/tmp/test-vi.txt');
     await typeCmd(page, 'vi /tmp/test-vi.txt');
-    await expect(page.getByText('test-vi.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="vim-cmdline"]')).toContainText('test-vi.txt', { timeout: 5_000 });
 
     await page.keyboard.press('i');
     await expect(page.getByText('-- INSERT --')).not.toBeVisible();

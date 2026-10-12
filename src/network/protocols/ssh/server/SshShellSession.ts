@@ -9,7 +9,7 @@ import {
   SHELL_INFO_REQUEST, STREAM_BEGIN_REQUEST, TTY_OP_ECHO, TTY_OP_ONLCR, parseTerminalModes,
   type EditorAction, type LineResultPayload, type ShellInfoPayload,
 } from '../connection/SandboxExtensions';
-import { decodeStringPayload, encodeExitStatus, encodeStringPayload, type PtyRequestPayload } from '../connection/ChannelPayloads';
+import { decodeStringPayload, decodeWindowChange, encodeExitStatus, encodeStringPayload, type PtyRequestPayload } from '../connection/ChannelPayloads';
 import type { SshUserContext } from '../SshUserContext';
 import type { ILinuxShell } from './ISshServerContext';
 import type { SshInteractiveShell } from './SshInteractiveShell';
@@ -18,6 +18,8 @@ const CTRL_C = '\x03';
 const CTRL_D = '\x04';
 const BACKSPACE = '\x7f';
 const BACKSPACE_ALT = '\x08';
+const DEFAULT_ROWS = 24;
+const DEFAULT_COLUMNS = 80;
 
 export interface ShellSessionServices {
   readonly shell: ILinuxShell;
@@ -48,12 +50,18 @@ export class SshShellSession {
   private readonly startedAt = simulationNowMs();
   private disposed = false;
   private endOfInput = false;
+  private rows: number;
+  private cols: number;
+  private readonly hasPty: boolean;
 
   constructor(
     private readonly channel: ConnectionChannel,
     pty: PtyRequestPayload | null,
     private readonly services: ShellSessionServices,
   ) {
+    this.hasPty = pty !== null;
+    this.rows = pty !== null && pty.rows > 0 ? pty.rows : DEFAULT_ROWS;
+    this.cols = pty !== null && pty.columns > 0 ? pty.columns : DEFAULT_COLUMNS;
     const modes = pty === null ? new Map<number, number>() : parseTerminalModes(pty.modes);
     this.echo = pty !== null && (modes.get(TTY_OP_ECHO) ?? 1) !== 0;
     this.newlineTranslation = pty !== null && (modes.get(TTY_OP_ONLCR) ?? 1) !== 0;
@@ -66,6 +74,7 @@ export class SshShellSession {
       if (this.busy) this.heldAsync.push(line);
       else this.writeText(line);
     }) ?? null;
+    if (this.hasPty) shell.setWindowSize?.(this.rows, this.cols);
     this.services.opened();
     this.services.rearmIdle();
     const prompt = shell.getPrompt?.() ?? null;
@@ -102,9 +111,12 @@ export class SshShellSession {
         reply(true);
         return;
       }
-      case 'window-change':
+      case 'window-change': {
+        const change = decodeWindowChange(payload);
+        if (change !== null) this.windowChanged(change.rows, change.columns);
         reply(true);
         return;
+      }
       case COMPLETE_REQUEST: {
         const line = decodeStringPayload(payload) ?? '';
         const candidates = this.services.shell.getCompletions?.(line) ?? [];
@@ -123,11 +135,24 @@ export class SshShellSession {
     }
   }
 
+  private windowChanged(rows: number, cols: number): void {
+    if (rows < 1 || cols < 1) return;
+    this.rows = rows;
+    this.cols = cols;
+    this.services.shell.setWindowSize?.(rows, cols);
+    const view = this.editor?.resize?.(rows, cols) ?? null;
+    if (view !== null) {
+      void this.channel.request(EDITOR_VIEW_REQUEST, encodeStringPayload(JSON.stringify({ view, unsolicited: true })), false);
+    }
+  }
+
   private editorAction(action: EditorAction): void {
     let view: unknown = null;
     if (action.action === 'open') {
       this.editor = this.services.shell.openEditor?.(action.commandLine) ?? null;
-      view = this.editor ? this.editor.view : null;
+      view = this.editor ? (this.editor.resize?.(this.rows, this.cols) ?? this.editor.view) : null;
+    } else if (action.action === 'scroll') {
+      view = this.editor?.scroll?.(action.up, action.count) ?? null;
     } else if (action.action === 'key') {
       if (this.editor) {
         const result = this.editor.applyKey(action.key as EditorKeyInput);

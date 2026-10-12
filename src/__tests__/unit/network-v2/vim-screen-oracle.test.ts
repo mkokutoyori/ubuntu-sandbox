@@ -25,7 +25,7 @@ import { readFileSync, readdirSync } from 'fs';
 import { VimEngine } from '@/network/devices/linux/editors/VimEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey, type EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
-import { CONTINUATION } from '@/network/devices/linux/editors/vim/VimScreen';
+import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
 
 interface Recorded { y: number; x: number; rows: string[]; last: string; height: number; width: number }
 interface ScreenCase { id: string; text: string[]; rows: number; cols: number; setup: string[]; steps: string[]; after: Recorded[] }
@@ -54,7 +54,7 @@ function keysOf(step: string): EditorKeyInput[] {
 }
 
 function textRows(engine: VimEngine): string[] {
-  return engine.screen.rows.slice(0, -1).map((row) => row.text.split(CONTINUATION).join('').replace(/\s+$/, ''));
+  return engine.screen.rows.slice(0, -1).map((row) => plainRowText(row).replace(/\s+$/, ''));
 }
 
 function replay(c: ScreenCase): string | null {

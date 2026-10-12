@@ -1,28 +1,6 @@
 import { codePointWidth, parseListChars, type Cell, type ListSpec } from './VimCells';
 import type { VimWindow } from './VimWindow';
-
-export type ScreenStyle = 'linenr' | 'cursorlinenr' | 'nontext' | 'special' | 'visual' | 'colorcolumn' | 'modemsg' | 'error';
-
-export interface ScreenSpan {
-  readonly from: number;
-  readonly to: number;
-  readonly style: ScreenStyle;
-}
-
-export interface ScreenRow {
-  readonly text: string;
-  readonly spans: readonly ScreenSpan[];
-}
-
-export interface ScreenCursor {
-  readonly row: number;
-  readonly col: number;
-}
-
-export interface VimScreen {
-  readonly rows: readonly ScreenRow[];
-  readonly cursor: ScreenCursor | null;
-}
+import { CONTINUATION, type EditorScreen, type ScreenRow, type ScreenSpan, type ScreenStyle } from '../screen/EditorScreen';
 
 export interface ScreenVisual {
   readonly mode: 'visual' | 'visual-line' | 'visual-block';
@@ -48,8 +26,6 @@ export interface ScreenInput {
   readonly showcmd: string | null;
   readonly rulerPosition: string;
 }
-
-export const CONTINUATION = '\u0000';
 
 const RULER_WIDTH = 18;
 const SHOWCMD_WIDTH = 10;
@@ -274,7 +250,7 @@ export function relativeLabel(position: 'All' | 'Top' | 'Bot' | number): string 
   return typeof position === 'number' ? `${String(position).padStart(2)}%` : position;
 }
 
-export function buildScreen(window: VimWindow, input: ScreenInput): VimScreen {
+export function buildScreen(window: VimWindow, input: ScreenInput): EditorScreen {
   const rows = windowRows(window, input);
   rows.push(bottomRow(window, input, relativeLabel(window.relativePosition())));
   const tabEnd = !input.insertLike && !(input.visual !== null && (input.cursor.line < input.visual.anchor.line

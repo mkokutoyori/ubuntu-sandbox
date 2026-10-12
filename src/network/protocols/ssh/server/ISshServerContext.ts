@@ -114,6 +114,8 @@ export interface ILinuxShell {
    * `:!cmd` are the remote's own (docs/PRD-SSH-Unification.md §4bis B3).
    */
   openEditor?(commandLine: string): EditorSession | null;
+  /** The client's terminal changed size (window-change, RFC 4254 §6.7). */
+  setWindowSize?(rows: number, cols: number): void;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
   dispose?(): void;
 }

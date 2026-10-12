@@ -12,6 +12,7 @@
  */
 
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
+import type { EditorScreen } from '@/network/devices/linux/editors/screen/EditorScreen';
 import type {
   EditorView,
   NanoEditorView,
@@ -34,11 +35,15 @@ export interface RemoteEditorTransport {
   sendEditorKey(key: EditorKeyInput): Promise<EditorView | null>;
   pasteIntoEditor(text: string): Promise<EditorView | null>;
   moveEditorCursor(offset: number): Promise<EditorView | null>;
+  scrollEditor(up: boolean, count: number): Promise<EditorView | null>;
+  onEditorView(handler: (view: EditorView) => void): () => void;
+  resize(cols: number, rows: number): void;
   closeEditor(): void;
 }
 
 abstract class BaseRemoteEditorController<V extends EditorView> {
   protected current: V;
+  private readonly stopListening: () => void;
 
   constructor(
     protected readonly transport: RemoteEditorTransport,
@@ -47,6 +52,7 @@ abstract class BaseRemoteEditorController<V extends EditorView> {
     private readonly onUpdate: () => void,
   ) {
     this.current = initial;
+    this.stopListening = transport.onEditorView((view) => this.absorb(view));
   }
 
   get lines(): readonly string[] { return this.current.lines; }
@@ -68,7 +74,12 @@ abstract class BaseRemoteEditorController<V extends EditorView> {
     void this.transport.sendEditorKey(key).then((view) => this.absorb(view));
   }
 
-  dispose(): void { this.transport.closeEditor(); }
+  dispose(): void {
+    this.stopListening();
+    this.transport.closeEditor();
+  }
+
+  resize(rows: number, cols: number): void { this.transport.resize(cols, rows); }
 
   protected absorb(view: EditorView | null): void {
     if (view) this.current = view as V;
@@ -95,6 +106,11 @@ export class RemoteVimController extends BaseRemoteEditorController<VimEditorVie
   get isReplacing(): boolean { return this.current.isReplacing; }
   get searchPromptChar(): '/' | '?' { return this.current.searchPromptChar; }
   get visualAnchor(): { line: number; col: number } { return { ...this.current.visualAnchor }; }
+  get screen(): EditorScreen { return this.current.screen; }
+
+  scrollView(up: boolean, count: number): void {
+    void this.transport.scrollEditor(up, count).then((view) => this.absorb(view));
+  }
 
   renderListLine(line: string): string {
     if (!this.current.listMode) return line;

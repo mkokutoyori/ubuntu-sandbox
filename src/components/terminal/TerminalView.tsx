@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
+import { useGridGeometry } from '../gridGeometry';
 import type {
   RemoteNanoController,
   RemoteVimController,
@@ -76,6 +77,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   const interactiveInputRef = useRef<HTMLInputElement>(null);
   const reverseSearchRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
+  useGridGeometry(terminalRef, session, (size) => session.setWindowSize(size.rows, size.cols));
 
   // Scroll to bottom on output changes — but only while the user hasn't
   // scrolled up to read earlier output. A real terminal freezes the view

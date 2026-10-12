@@ -485,6 +485,7 @@ export class LinuxSshServerContext implements ISshServerContext {
         // The engine runs here, on this channel's own session: the file
         // it opens, the permissions it obeys and the swap file it drops
         // are the remote's, not the client's.
+        setWindowSize: (rows: number, cols: number) => { session.windowSize = { rows, cols }; },
         openEditor: (commandLine: string) => {
           installDefaultEditors();
           const launch = parseEditorLaunch(commandLine);

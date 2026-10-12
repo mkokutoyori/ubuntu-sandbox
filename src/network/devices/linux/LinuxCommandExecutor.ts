@@ -230,7 +230,8 @@ import { cmdTty, cmdRunlevel, formatLocalTime } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
-import type { LinuxShellSession } from './shell/LinuxShellSession';
+import { runStty, runTput } from './tty/Stty';
+import { DEFAULT_WINDOW_SIZE, type LinuxShellSession, type WindowSize } from './shell/LinuxShellSession';
 import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
 import { NameServiceSwitch } from './nss/NameServiceSwitch';
 import type { INssSource } from './nss/INssSource';
@@ -2125,6 +2126,8 @@ export class LinuxCommandExecutor {
     for (const key of ['COLUMNS', 'LINES', 'TERM']) {
       if (env[key] === undefined && this.env.has(key)) env[key] = this.env.get(key)!;
     }
+    env.COLUMNS ??= String(this.terminalColumns());
+    env.LINES ??= String(this.windowSize.rows > 0 ? this.windowSize.rows : DEFAULT_WINDOW_SIZE.rows);
     return {
       args,
       sourceDevice: this.localDevice,
@@ -2762,9 +2765,18 @@ export class LinuxCommandExecutor {
     return renderNetstatStatistics(this.protocolCounters(), this.kernelIpFacts());
   }
 
-  terminalColumns(): number | null {
+  private windowSize: WindowSize = DEFAULT_WINDOW_SIZE;
+
+  getWindowSize(): WindowSize { return this.windowSize; }
+
+  setWindowSize(size: WindowSize): void {
+    this.windowSize = size;
+  }
+
+  terminalColumns(): number {
     const columns = Number.parseInt(this.envOverride?.COLUMNS ?? this.env.get('COLUMNS') ?? '', 10);
-    return Number.isFinite(columns) && columns > 0 ? columns : null;
+    if (Number.isFinite(columns) && columns > 0) return columns;
+    return this.windowSize.cols > 0 ? this.windowSize.cols : DEFAULT_WINDOW_SIZE.cols;
   }
 
   protocolCounters(): ProtocolCounters {
@@ -3512,6 +3524,7 @@ export class LinuxCommandExecutor {
       shellPpid: this.shellPpid,
       jobTable: this.jobTable,
       lastExitCode: this.lastExitCode,
+      windowSize: this.windowSize,
     };
   }
 
@@ -3529,6 +3542,7 @@ export class LinuxCommandExecutor {
     this.shellPpid = s.shellPpid;
     this.jobTable = s.jobTable;
     this.lastExitCode = s.lastExitCode;
+    this.windowSize = s.windowSize;
   }
 
   /** @internal */
@@ -3541,6 +3555,7 @@ export class LinuxCommandExecutor {
     s.env = new Map(this.env);
     s.suStack = [...this.suStack];
     s.lastExitCode = this.lastExitCode;
+    s.windowSize = this.windowSize;
     // commandHistory + jobTable are passed by reference, so any in-place
     // mutations during execute() are already reflected on the session.
   }
@@ -3559,6 +3574,7 @@ export class LinuxCommandExecutor {
     this.shellPpid = b.shellPpid;
     this.jobTable = b.jobTable;
     this.lastExitCode = b.lastExitCode;
+    this.windowSize = b.windowSize;
   }
 
   execute(input: string): string {
@@ -4773,10 +4789,11 @@ export class LinuxCommandExecutor {
       MAIL: `/var/mail/${user}`,
       SHLVL: '1',
     };
-    // Include exported env vars
     for (const [k, v] of this.env) {
       vars[k] = v;
     }
+    vars.COLUMNS ??= String(this.terminalColumns());
+    vars.LINES ??= String(this.windowSize.rows > 0 ? this.windowSize.rows : DEFAULT_WINDOW_SIZE.rows);
     return vars;
   }
 
@@ -5910,7 +5927,10 @@ export class LinuxCommandExecutor {
       // alias / unalias / type / set / unset / declare / local / readonly
       // are shell builtins resolved inside the bash interpreter; they only
       // reach this dispatcher when the interpreter is bypassed.
-      case 'tput':
+      case 'tput': {
+        const result = runTput(args, this.windowSize);
+        return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
+      }
       case 'set':
       case 'unset':
       case 'declare':
@@ -5922,23 +5942,8 @@ export class LinuxCommandExecutor {
       case 'complete':
         return { output: '', exitCode: 0 };
       case 'stty': {
-        // `stty cols 132 rows 50` updates the per-terminal size which is
-        // exported as COLUMNS/LINES; a real TTY drives SIGWINCH.
-        for (let i = 0; i < args.length; i++) {
-          if (args[i] === 'cols' || args[i] === 'columns') {
-            const n = Number.parseInt(args[++i] ?? '', 10);
-            if (Number.isFinite(n)) this.env.set('COLUMNS', String(n));
-          } else if (args[i] === 'rows') {
-            const n = Number.parseInt(args[++i] ?? '', 10);
-            if (Number.isFinite(n)) this.env.set('LINES', String(n));
-          }
-        }
-        if (args.length === 0 || args[0] === '-a' || args[0] === 'size') {
-          const cols = this.env.get('COLUMNS') ?? '80';
-          const rows = this.env.get('LINES') ?? '24';
-          return { output: `${rows} ${cols}`, exitCode: 0 };
-        }
-        return { output: '', exitCode: 0 };
+        const result = runStty(args, this.windowSize, (size) => this.setWindowSize(size));
+        return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
       }
       case 'seq': {
         const r = runSeq(args);

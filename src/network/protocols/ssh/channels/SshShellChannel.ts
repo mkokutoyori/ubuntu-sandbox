@@ -48,6 +48,7 @@ export class SshShellChannel
   private pendingLine: PendingLine | null = null;
   private pendingComplete: ((c: string[]) => void) | null = null;
   private pendingEditor: ((v: EditorView | null) => void) | null = null;
+  private editorViewHandlers: Array<(view: EditorView) => void> = [];
   private inlineHelp = false;
   private openingPrompt: string | null = null;
   private openingMotd: string | null = null;
@@ -149,6 +150,17 @@ export class SshShellChannel
     return this.editorExchange({ action: 'cursor', offset });
   }
 
+  scrollEditor(up: boolean, count: number): Promise<EditorView | null> {
+    return this.editorExchange({ action: 'scroll', up, count });
+  }
+
+  onEditorView(handler: (view: EditorView) => void): () => void {
+    this.editorViewHandlers.push(handler);
+    return () => {
+      this.editorViewHandlers = this.editorViewHandlers.filter((h) => h !== handler);
+    };
+  }
+
   closeEditor(): void {
     if (!this._isOpen || this.channel === null) return;
     void this.channel.request(EDITOR_REQUEST, encodeStringPayload(JSON.stringify({ action: 'close' })), false);
@@ -230,7 +242,11 @@ export class SshShellChannel
         return;
       }
       case EDITOR_VIEW_REQUEST: {
-        const parsed = JSON.parse(text ?? '{}') as { view?: EditorView | null };
+        const parsed = JSON.parse(text ?? '{}') as { view?: EditorView | null; unsolicited?: boolean };
+        if (parsed.unsolicited === true) {
+          if (parsed.view) for (const handler of [...this.editorViewHandlers]) handler(parsed.view);
+          return;
+        }
         this.pendingEditor?.(parsed.view ?? null);
         this.pendingEditor = null;
         return;

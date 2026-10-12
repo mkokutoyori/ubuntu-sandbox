@@ -14,6 +14,7 @@ import type { PendingSubstMatch, PendingSwapRecovery, VimMode, VimVariant } from
 import type { EditorKeyInput } from './EditorKeyInput';
 import type { EditorName } from './editorLaunch';
 import type { ListChars } from './editorRender';
+import type { EditorScreen } from './screen/EditorScreen';
 
 export interface EditorViewBase {
   readonly filePath: string;
@@ -51,6 +52,7 @@ export interface VimEditorView extends EditorViewBase {
   readonly isReplacing: boolean;
   readonly searchPromptChar: '/' | '?';
   readonly visualAnchor: { readonly line: number; readonly col: number };
+  readonly screen: EditorScreen;
 }
 
 export interface NanoEditorView extends EditorViewBase {
@@ -85,6 +87,10 @@ export interface EditorSession {
   applyPaste?(text: string): EditorView;
   /** Click-to-position, in rendered columns. */
   moveCursorToDisplayOffset?(offset: number): EditorView;
+  /** The terminal changed size (RFC 4254 §6.7 window-change, or a local resize). */
+  resize?(rows: number, cols: number): EditorView;
+  /** Mouse wheel: scroll the window without moving the cursor more than the window requires. */
+  scroll?(up: boolean, count: number): EditorView;
   close(): void;
 }
 

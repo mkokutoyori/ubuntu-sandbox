@@ -8,7 +8,8 @@ import { MAXCOL, byteOffset, charCells, colAtByte, colAtVcol, cursorVcol, firstN
 import { runMotion } from './vim/VimMotions';
 import { parseListChars, type ListSpec } from './vim/VimCells';
 import { VimWindow, type WindowSettings } from './vim/VimWindow';
-import { buildScreen, type ScreenStyle, type VimScreen } from './vim/VimScreen';
+import { buildScreen } from './vim/VimScreen';
+import type { EditorScreen, ScreenStyle } from './screen/EditorScreen';
 import { textObject } from './vim/VimTextObjects';
 import { compileVimPattern } from './vim/VimPattern';
 import {
@@ -369,8 +370,8 @@ export class VimEngine {
     this._message = filePath === ''
       ? ''
       : isNewFile
-        ? `"${filePath}" [New File]`
-        : `"${filePath}" ${this.linesArr.length}L, ${initialContent.length}C`;
+        ? `"${filePath}" [New]`
+        : `"${filePath}" ${this.linesArr.length}L, ${new TextEncoder().encode(initialContent).length}B`;
 
     // A genuinely unnamed buffer (filePath === '', real vim's `vim` with
     // no argument) has no real file yet — resolving '' would collapse to
@@ -1609,7 +1610,7 @@ export class VimEngine {
     return { text: this._message, style: /^E\d+:/.test(this._message) ? 'error' : null };
   }
 
-  get screen(): VimScreen {
+  get screen(): EditorScreen {
     const o = this.options;
     const mode = this._mode;
     const visual = mode === 'visual' || mode === 'visual-line' || mode === 'visual-block'

@@ -374,12 +374,24 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
+  protected override applyWindowSize(rows: number, cols: number): void {
+    if (this.shell) this.shell.windowSize = { rows, cols };
+    this.activeSubShell?.resize?.(rows, cols);
+    for (const sub of this.iShellSubStack) sub.resize?.(rows, cols);
+  }
+
+  private adoptWindowSize(shell: LinuxShellSession): LinuxShellSession {
+    const size = this.windowSize;
+    if (size !== null) shell.windowSize = size;
+    return shell;
+  }
+
   constructor(id: string, device: Equipment) {
     super(id, device);
     // Allocate a dedicated -bash on the device when possible so multiple
     // terminals on the same machine have isolated cwd / env / su stack.
     if (device instanceof LinuxMachine) {
-      this.shell = device.openShellSession();
+      this.shell = this.adoptWindowSize(device.openShellSession());
       this.currentPath = this.shell.cwd;
       this.currentUser = this.shell.user;
       // Make sure the terminal tears down its session when the manager
@@ -417,7 +429,7 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
     if (this.shell) dev.closeShellSession(this.shell);
-    this.shell = dev.openShellSession({ user });
+    this.shell = this.adoptWindowSize(dev.openShellSession({ user }));
     this.currentUser = user;
     this.currentPath = this.shell.cwd;
     if (this.rootBash) {
@@ -2536,6 +2548,8 @@ export class LinuxTerminalSession extends TerminalSession {
           (footer) => this.onRemoteHangup(footer),
           (line) => this.addLine(line),
         );
+        const size = this.windowSize;
+        if (size !== null) this.activeSubShell.resize?.(size.rows, size.cols);
         this._inputBuf = '';
         this.notify();
         return;
@@ -3311,7 +3325,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const pausedShell = this.shell;
     let remoteShell: LinuxShellSession | null = null;
     if (remote instanceof LinuxMachine) {
-      remoteShell = remote.openShellSession({ user });
+      remoteShell = this.adoptWindowSize(remote.openShellSession({ user }));
     }
     this.sshStack.push({
       device: this.device,

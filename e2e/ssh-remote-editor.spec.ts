@@ -96,11 +96,10 @@ test.describe('Editors over a real SSH wire edit the remote file', () => {
     // An existing file gets no splash — the buffer shows what is on the
     // remote's disk, and the ruler reports its real size.
     await expect(page.getByText('VIM - Vi IMproved')).toBeHidden();
-    // The buffer itself lives in the editor's textarea, not in the
+    // The buffer is painted by the editor's own grid, not in the
     // terminal's scrollback.
-    expect(await page.locator('textarea').first().inputValue())
-      .toContain('seeded-on-remote');
-    expect(await termText(page), 'and the ruler reports the remote file size')
-      .toContain('1L, 17C');
+    await expect(page.locator('[data-testid="vim-body"]')).toContainText('seeded-on-remote');
+    await expect(page.locator('[data-testid="vim-cmdline"]'), 'and the opening message reports the remote file size')
+      .toContainText('1L, 17B');
   });
 });

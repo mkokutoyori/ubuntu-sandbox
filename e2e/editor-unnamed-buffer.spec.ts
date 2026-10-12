@@ -72,8 +72,7 @@ test.describe('Scénario (e2e) — nano/vim sans nom de fichier', () => {
   test('vim seul : :w sans nom échoue avec E32, ne crée rien sur le disque', async ({ page }) => {
     await typeCmd(page, 'vim');
     await expect(page.getByText('GNU nano')).not.toBeVisible();
-    const textarea = page.locator('textarea').first();
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="vim-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('i');
     await page.keyboard.type('hello');
