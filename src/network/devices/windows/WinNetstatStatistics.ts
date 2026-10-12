@@ -1,4 +1,4 @@
-import type { SnmpSnapshot } from '../linux/ports/PortsFilesystem';
+import type { SnmpSnapshot } from '../../layers/internet/SnmpSnapshot';
 
 export type NetstatProtocolFilter = 'ip' | 'ipv6' | 'icmp' | 'icmpv6' | 'tcp' | 'tcpv6' | 'udp' | 'udpv6';
 

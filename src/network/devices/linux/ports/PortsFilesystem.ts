@@ -3,8 +3,9 @@ import type { KernelSocketRow } from '../network/KernelSocketRows';
 import {
   renderProcNetTcp, renderProcNetUdp, renderProcNetRaw, renderProcNetUnix, renderProcNetSockstat, renderProcNetSockstat6,
 } from './ProcNetTables';
-import { newProtocolCounters, tcpTotals, type ProtocolCounters } from '../../../layers/internet/ProtocolCounters';
-import { STANDALONE_KERNEL_IP_FACTS, type KernelIpFacts } from '../LinuxIpv4Settings';
+import type { ProtocolCounters } from '../../../layers/internet/ProtocolCounters';
+import type { KernelIpFacts } from '../LinuxIpv4Settings';
+import { linuxSnmpSnapshot, renderProcNetSnmp, renderProcNetSnmp6 } from './ProcNetSnmp';
 
 /** Canonical filesystem locations the port subsystem maintains. */
 export const PORT_PATHS = {
@@ -19,6 +20,7 @@ export const PORT_PATHS = {
   procNetRaw6: '/proc/net/raw6',
   procNetUnix: '/proc/net/unix',
   procNetSnmp: '/proc/net/snmp',
+  procNetSnmp6: '/proc/net/snmp6',
   procNetSockstat: '/proc/net/sockstat',
   procNetSockstat6: '/proc/net/sockstat6',
   procNetDir: '/proc/net',
@@ -45,47 +47,8 @@ export class PortsFilesystem {
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetSnmp, () =>
       renderProcNetSnmp(linuxSnmpSnapshot(counters?.(), kernel?.())),
     );
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetSnmp6, () =>
+      renderProcNetSnmp6(linuxSnmpSnapshot(counters?.(), kernel?.())),
+    );
   }
-}
-
-export interface SnmpSnapshot {
-  counters: ProtocolCounters;
-  currEstab: number;
-}
-
-export interface LinuxSnmpSnapshot extends SnmpSnapshot {
-  kernel: KernelIpFacts;
-}
-
-export function linuxSnmpSnapshot(counters?: ProtocolCounters, kernel?: KernelIpFacts): LinuxSnmpSnapshot {
-  return { ...snmpSnapshot(counters), kernel: kernel ?? STANDALONE_KERNEL_IP_FACTS };
-}
-
-export function snmpSnapshot(counters?: ProtocolCounters): SnmpSnapshot {
-  return {
-    counters: counters ?? newProtocolCounters(),
-    currEstab: counters === undefined ? 0 : tcpTotals(counters).CurrEstab,
-  };
-}
-
-/** Render `/proc/net/snmp` — the per-protocol counter blocks (header/value pairs). */
-export function renderProcNetSnmp(snapshot: LinuxSnmpSnapshot): string {
-  const c = snapshot.counters;
-  const k = snapshot.kernel;
-  const t = tcpTotals(c);
-  return [
-    'Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates',
-    `Ip: ${k.forwarding ? 1 : 2} ${k.defaultTtl} ${c.ipInReceives} ${c.ipInHdrErrors} ${c.ipInAddrErrors} ${c.ipForwDatagrams} ${c.ipInUnknownProtos} ${c.ipInDiscards} ${c.ipInDelivers} ${c.ipOutRequests} ${c.ipOutDiscards} ${c.ipOutNoRoutes} 0 ${c.ipReasmReqds} ${c.ipReasmOKs} ${c.ipReasmFails} ${c.ipFragOKs} ${c.ipFragFails} ${c.ipFragCreates}`,
-    'Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps',
-    `Icmp: ${c.icmpInMsgs} ${c.icmpInErrors} 0 ${c.icmpInDestUnreachs} ${c.icmpInTimeExcds} 0 0 ${c.icmpInRedirects} ${c.icmpInEchos} ${c.icmpInEchoReps} 0 0 0 0 ${c.icmpOutMsgs} ${c.icmpOutErrors} ${c.icmpOutDestUnreachs} ${c.icmpOutTimeExcds} 0 0 ${c.icmpOutRedirects} ${c.icmpOutEchos} ${c.icmpOutEchoReps} 0 0 0 0`,
-    'IcmpMsg: InType8 OutType0',
-    `IcmpMsg: ${c.icmpInEchos} ${c.icmpOutEchoReps}`,
-    'Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors',
-    `Tcp: 1 ${k.rtoMinMs} ${k.rtoMaxMs} -1 ${t.ActiveOpens} ${t.PassiveOpens} ${t.AttemptFails} ${t.EstabResets} ${t.CurrEstab} ${t.InSegs} ${t.OutSegs} ${t.RetransSegs} ${t.InErrs} ${t.OutRsts} ${t.InCsumErrors}`,
-    'Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
-    `Udp: ${c.udpInDatagrams} ${c.udpNoPorts} ${c.udpInErrors} ${c.udpOutDatagrams} 0 0 ${c.udpInCsumErrors} 0`,
-    'UdpLite: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
-    `UdpLite: ${c.udpLiteInDatagrams} ${c.udpLiteNoPorts} ${c.udpLiteInErrors} ${c.udpLiteOutDatagrams} 0 0 ${c.udpLiteInCsumErrors} 0`,
-    '',
-  ].join('\n');
 }

@@ -516,6 +516,26 @@ dix-sept lignes de l'IPv4, `ICMPv6 Statistics` les dix-sept lignes Messages à R
 type (numéros de l'IANA). La mise en colonnes du bloc IPv6 reprend celle de l'IPv4 : la page de référence est du HTML, qui réduit les
 espaces, et aucun relevé de texte brut n'a été atteint. Garde-fou : `probe-netstat-s-de-windows-dit-aussi-l-ipv6`.
 
+`netstat -s` de Linux lit les fichiers du noyau, il ne fabrique plus son texte. Mesuré sur `40ec699d0` : il ignorait `-6`, `-t`, `-u`
+et `-w` (le même texte IPv4 sortait toujours), imprimait des lignes que le vrai outil tait (`0 receive buffer errors`), n'imprimait ni
+`IcmpMsg:` ni `UdpLite:`, ajoutait deux en-têtes vides `TcpExt:` et `IpExt:` ; `/proc/net/snmp6` n'existait pas ; `/proc/net/snmp` écrivait
+`IcmpMsg: InType8 OutType0` en dur (`IcmpMsg: 0 0` sur une machine muette), n'avait pas la colonne `MemErrors` de `Udp:` et `UdpLite:`
+et mettait `IgnoredMulti` à zéro. `ProcNetSnmp.ts` écrit les deux fichiers dans le format de `net/ipv4/proc.c` et `net/ipv6/proc.c` du noyau 5.15
+(chaque colonne est déclarée une fois, l'en-tête et les valeurs en sortent ensemble ; les lignes `IcmpMsg` ne nomment que les types comptés ;
+`snmp6` sort `%-32s\t%lu`, les types ICMPv6 nommés d'abord, entrants puis sortants, puis les types comptés par numéro). `NetstatStatistics.ts`
+porte `statistics.c` de net-tools (Ubuntu 22.04, commit `0eebece`, lu sur GitHub) : les tables du C dans leur ordre, y compris celles qui ne
+sont pas triées, et la recherche dichotomique de la glibc — qui ne retrouve pas `Forwarding`, d'où le `Forwarding: 2` que l'outil imprime
+par son chemin « de son mieux » —, les colonnes inconnues imprimées telles quelles quand elles ne sont pas nulles (`IgnoredMulti: 2`,
+`Icmp6InType129: 3`), les tables inconnues (`IcmpMsg:`, `UdpLite:`) imprimées quel que soit l'indicateur, l'indentation d'un titre
+d'histogramme prise à l'état qu'on quitte (le `ICMP output histogram:` d'un `-s -6` sort à huit colonnes), `-6` qui lit `snmp6` puis la
+table `Tcp` de `snmp` (le TCP du noyau est unique), et `-t`, `-u`, `-w` qui choisissent les tables. La famille se décide comme `afname` de
+`lib/af.c` : les noms s'accumulent (`-s -4 -6` donne `inet,inet6`, refusé sur la sortie standard avec le statut 1), les alias sont
+ramenés au nom canonique (`ip` est `inet`, `appletalk` est `ddp`), un nom inconnu est refusé dans les mots d'`aftrans_opt`. Le rendu écrit à la main
+(`renderNetstatStatistics`, `netstatTable('statistics')`, `NetstatHost.statistics`) est supprimé ; `SnmpSnapshot`, que Windows
+importait depuis le répertoire des ports de Linux, vit maintenant dans `layers/internet`. Pas porté : la table SCTP (aucune pile SCTP) ;
+`/proc/net/netstat` n'existe pas encore, si bien que `TcpExt:` et `IpExt:` ne sortent pas (tâche à part, avec leurs compteurs). Garde-fou :
+`probe-netstat-s-de-linux-lit-les-fichiers-du-noyau-comme-net-tools`.
+
 Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
 non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
 Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135

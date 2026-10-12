@@ -30,7 +30,6 @@ export function netstatHostOver(
     programNotice: () => '',
     routes: () => '',
     interfaces: () => '',
-    statistics: () => '',
     ...overrides,
   };
 }

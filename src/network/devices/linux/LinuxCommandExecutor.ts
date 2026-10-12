@@ -121,7 +121,7 @@ import {
 } from './nfs/NfsCommands';
 import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
-import { cmdWget, renderNetstatInterfaces, renderNetstatRoutes, renderNetstatStatistics } from './LinuxNetCommands';
+import { cmdWget, renderNetstatInterfaces, renderNetstatRoutes } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -2759,10 +2759,8 @@ export class LinuxCommandExecutor {
     return destroyKernelSocket(row, this.tcpStackOfHost(), this.userMgr.currentUid === 0);
   }
 
-  netstatTable(kind: 'routes' | 'interfaces' | 'statistics'): string {
-    if (kind === 'routes') return renderNetstatRoutes(this.ipNetworkCtx);
-    if (kind === 'interfaces') return renderNetstatInterfaces(this.ipNetworkCtx);
-    return renderNetstatStatistics(this.protocolCounters(), this.kernelIpFacts());
+  netstatTable(kind: 'routes' | 'interfaces'): string {
+    return kind === 'routes' ? renderNetstatRoutes(this.ipNetworkCtx) : renderNetstatInterfaces(this.ipNetworkCtx);
   }
 
   private windowSize: WindowSize = DEFAULT_WINDOW_SIZE;

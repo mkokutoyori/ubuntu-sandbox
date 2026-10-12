@@ -393,7 +393,7 @@ describe('/proc/net/snmp counts UDP checksum errors beside UDP-Lite ones', () =>
     peer.sendIpv4(createIPv4Packet(
       new IPAddress(PEER_ADDRESS), new IPAddress(DUT_ADDRESS), IP_PROTO_UDP, 64, udp, 13));
     expect(peer.dut.getProtocolCounters().udpInCsumErrors).toBe(1);
-    expect(await peer.dut.executeCommand('cat /proc/net/snmp')).toMatch(/^Udp: 0 0 1 0 0 0 1 0$/m);
+    expect(await peer.dut.executeCommand('cat /proc/net/snmp')).toMatch(/^Udp: 0 0 1 0 0 0 1 0 0$/m);
   });
 });
 
@@ -566,7 +566,7 @@ describe('two machines over a real cable, in IPv4 and IPv6', () => {
     expect(lite).toMatch(/:1B58/);
     expect(plain).not.toMatch(/:1B58/);
     const snmp = await b.executeCommand('cat /proc/net/snmp');
-    expect(snmp).toMatch(/^UdpLite: 0 0 0 0 0 0 0 0$/m);
+    expect(snmp).toMatch(/^UdpLite: 0 0 0 0 0 0 0 0 0$/m);
   });
 
   it('/proc/net/snmp reads the counters of both sides after a delivery and a miss', async () => {
@@ -578,8 +578,8 @@ describe('two machines over a real cable, in IPv4 and IPv6', () => {
     send(LISTEN_PORT);
     send(LISTEN_PORT + 1);
     await waitUntil(() => b.getProtocolCounters().udpLiteNoPorts === 1);
-    expect(await b.executeCommand('cat /proc/net/snmp')).toMatch(/^UdpLite: 1 1 0 0 0 0 0 0$/m);
-    expect(await a.executeCommand('cat /proc/net/snmp')).toMatch(/^UdpLite: 0 0 0 2 0 0 0 0$/m);
+    expect(await b.executeCommand('cat /proc/net/snmp')).toMatch(/^UdpLite: 1 1 0 0 0 0 0 0 0$/m);
+    expect(await a.executeCommand('cat /proc/net/snmp')).toMatch(/^UdpLite: 0 0 0 2 0 0 0 0 0$/m);
   });
 
   it('the sender is told "port unreachable" by the real peer', async () => {

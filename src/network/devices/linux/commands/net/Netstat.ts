@@ -57,7 +57,6 @@ function hostOf(ctx: LinuxCommandContext): NetstatHost {
     programNotice: () => table().notice,
     routes: () => executor.netstatTable('routes'),
     interfaces: () => executor.netstatTable('interfaces'),
-    statistics: () => executor.netstatTable('statistics'),
   };
 }
 
