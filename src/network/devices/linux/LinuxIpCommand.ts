@@ -925,6 +925,7 @@ function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
 
   if (addrStr) {
     const ipStr = addrStr.split('/')[0];
+    if (ipStr.includes(':') && ctx.removeInterfaceIPv6) return ctx.removeInterfaceIPv6(devName, ipStr);
     let ip: IPAddress;
     try { ip = new IPAddress(ipStr); }
     catch { return 'RTNETLINK answers: Cannot assign requested address'; }

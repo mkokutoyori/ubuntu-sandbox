@@ -208,6 +208,11 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   liste en `BOUND` et `Get-NetTCPConnection -State Bound` aussi ; sous Linux `ss`, `netstat` et `/proc/net/tcp` ne la montrent pas, le
   noyau 5.15 ne parcourant que les tables d'écoute et de connexions (`probe-netstat-q-montre-les-ports-lies-sans-ecoute`). Aucune
   application de la simulation n'ouvre encore de telle prise : la brique est dans la pile.
+- **Qui ferme le premier (ssh).** Le client d'OpenSSH envoie `SSH_MSG_DISCONNECT` puis ferme sa prise (`clientloop.c`, `ssh.c`) : il
+  garde le TIME-WAIT, et le serveur passe par CLOSE-WAIT et LAST-ACK sans rien garder, pour `ssh hôte commande`, une session
+  interactive, `scp` et depuis ou vers Windows. Une session que le serveur termine (`kill` du moniteur sshd) laisse au contraire le
+  TIME-WAIT au serveur. La livraison des trames étant synchrone, le démontage d'une session dont le pair annonce la fin attend la fin
+  de l'appel du pair ; sans cette attente le serveur fermait le premier (`probe-le-client-ssh-ferme-le-premier-et-garde-le-time-wait`).
 - **Vues de la pile (Windows).** `netstat` (`WinNetstat.ts`) et `Get-NetTCPConnection` lisent la `SocketTable` et un même modèle de ligne
   TCP : colonnes de 6, 22, 22 et 15 caractères, lignes triées (TCP IPv4, TCP IPv6, UDP IPv4, UDP IPv6), colonne distante nommée par le
   fichier `services`, le fichier `hosts` et une question PTR sur le fil (sauf `-n`), nom de l'ordinateur pour une écoute ou une adresse

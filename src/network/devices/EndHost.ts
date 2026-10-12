@@ -31,7 +31,7 @@ import {
 import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters } from '../layers/internet/ProtocolCounters';
 import { Port } from '../hardware/Port';
-import type { IPv4AddressOrigin } from '../hardware/Port';
+import type { IPv4AddressOrigin, IPv6AddressEntry } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack, TCP_SOMAXCONN, type TcpOptionPolicy, type TcpMibSink, type OwnerExit } from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
@@ -5521,7 +5521,8 @@ export abstract class EndHost extends Equipment {
     // Add connected route for this prefix
     const networkPrefix = address.getNetworkPrefix(prefixLength);
     const existingRoute = this.ipv6RoutingTable.find(r =>
-      r.type === 'connected' && r.iface === ifName && r.prefix.equals(networkPrefix)
+      r.type === 'connected' && r.iface === ifName
+        && r.prefixLength === prefixLength && r.prefix.equals(networkPrefix)
     );
 
     if (!existingRoute) {
@@ -5538,6 +5539,32 @@ export abstract class EndHost extends Equipment {
     Logger.info(this.id, 'host:ipv6-config',
       `${this.name}: ${ifName} configured ${address}/${prefixLength}`);
     return true;
+  }
+
+  removeIPv6Interface(ifName: string, address: IPv6Address): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+    const entry = port.getIPv6Addresses().find((e) => e.address.equals(address));
+    if (!entry || !port.removeIPv6Address(address)) return false;
+    this.withdrawUncoveredConnectedRoute(ifName, entry);
+    Logger.info(this.id, 'host:ipv6-config',
+      `${this.name}: ${ifName} removed ${address}/${entry.prefixLength}`);
+    return true;
+  }
+
+  private withdrawUncoveredConnectedRoute(ifName: string, removed: IPv6AddressEntry): void {
+    const port = this.ports.get(ifName);
+    if (!port) return;
+    const prefix = removed.address.getNetworkPrefix(removed.prefixLength);
+    const stillCovered = port.getIPv6Addresses().some(
+      (e) => e.prefixLength === removed.prefixLength
+        && e.address.getNetworkPrefix(e.prefixLength).equals(prefix),
+    );
+    if (stillCovered) return;
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter(
+      (r) => !(r.type === 'connected' && r.iface === ifName
+        && r.prefixLength === removed.prefixLength && r.prefix.equals(prefix)),
+    );
   }
 
   // ─── IPv6 Routing Table ─────────────────────────────────────────

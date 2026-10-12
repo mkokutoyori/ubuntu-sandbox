@@ -216,8 +216,8 @@ export function buildIpCtx(
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
       try {
-        port.removeIPv6Address(new IPv6Address(addr));
-        return '';
+        return net.removeIPv6Interface(ifName, new IPv6Address(addr))
+          ? '' : 'RTNETLINK answers: Cannot assign requested address';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }

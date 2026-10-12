@@ -164,12 +164,13 @@ function windowRows(window: VimWindow, input: ScreenInput): ScreenRow[] {
     const base = window.cellsOf(lnum);
     const cells: Cell[] = eolMark === null ? [...base] : [...base, { ch: eolMark, style: 'special', col: -1, first: false }];
     const selection = selectedRanges(window, input, lnum, cells);
-    const chunkCount = wrapping ? Math.max(1, Math.ceil(cells.length / textWidth)) : 1;
+    const skipped = wrapping && lnum === window.top ? window.skipRows : 0;
+    const chunkCount = (wrapping ? Math.max(1, Math.ceil(cells.length / textWidth)) : 1) - skipped;
     const remaining = height - rows.length;
     const drawn = Math.min(chunkCount, remaining);
     const firstRow = rows.length;
     for (let chunk = 0; chunk < drawn; chunk++) {
-      const offset = wrapping ? chunk * textWidth : window.leftCol;
+      const offset = wrapping ? (chunk + skipped) * textWidth : window.leftCol;
       let slice = cells.slice(offset, offset + textWidth);
       if (!wrapping) slice = trimEdges(slice, cells, offset, input.list ? spec : null);
       const spans: ScreenSpan[] = [];
@@ -182,6 +183,15 @@ function windowRows(window: VimWindow, input: ScreenInput): ScreenRow[] {
         spans.push({ ...span, from: span.from + numberColumn, to: span.to + numberColumn });
       }
       let text = gutter + rowText(slice);
+      if (skipped > 0 && chunk === 0) {
+        if (input.list && spec.precedes !== null) {
+          text = text.slice(0, numberColumn) + spec.precedes + text.slice(numberColumn + 1);
+        } else {
+          const tail = text.slice(3);
+          text = '<<<' + (tail.startsWith(CONTINUATION) ? ' ' + tail.slice(1) : tail);
+          spans.push({ from: 0, to: 3, style: 'nontext' });
+        }
+      }
       if (columns.length > 0) {
         const reach = Math.max(...columns) - offset + numberColumn;
         text = padEnd(text, Math.min(cols, reach));
@@ -193,8 +203,11 @@ function windowRows(window: VimWindow, input: ScreenInput): ScreenRow[] {
       if (input.display.includes('truncate')) {
         rows[lastRow] = { text: '@@@', spans: [{ from: 0, to: 3, style: 'nontext' }] };
       } else if (input.display.includes('lastline')) {
-        const shown = padEnd(rows[lastRow].text, cols).slice(0, Math.max(0, cols - 3));
-        rows[lastRow] = { text: shown + '@@@', spans: [{ from: cols - 3, to: cols, style: 'nontext' }] };
+        const padded = padEnd(rows[lastRow].text, cols);
+        const kept = Math.max(0, cols - 3);
+        const shown = padded.slice(0, kept);
+        const splitWide = padded[kept] === CONTINUATION && kept > 0;
+        rows[lastRow] = { text: (splitWide ? shown.slice(0, -1) + ' ' : shown) + '@@@', spans: [{ from: cols - 3, to: cols, style: 'nontext' }] };
       } else {
         rows.length = firstRow;
         while (rows.length < height) rows.push({ text: '@', spans: [{ from: 0, to: 1, style: 'nontext' }] });

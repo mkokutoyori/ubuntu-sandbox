@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record cursor/buffer transcripts from a real vim.
 
-usage: record_vim_cursor.py [--seed N] [--cases N] [--vocab cursor|edit|search|tabs|all] out.json
+usage: record_vim_cursor.py [--seed N] [--cases N] [--vocab cursor|edit|search|tabs|visual|insert|all] out.json
 
 Every case is a starting buffer and a list of steps; a step is one complete Normal-mode
 command (ending in <Esc> when it enters Insert mode).  The real vim runs the steps one by
@@ -73,7 +73,29 @@ def tabs_step(r):
     ]
     return r.choice(pool)
 
+def visual_step(r):
+    mode = r.choice(["v", "v", "V"])
+    motion = r.choice(["$", "$", "$", "j$", "$j", "$k", "2$", "$h", "$l", "l", "h", "j", "k", "w", "e", "0", "^", "G", "gg", "}", "g_", "fa", "jj", "kk", "$o", "o$"])
+    ins = r.choice(["ab", "X Y", "z"])
+    op = r.choice(["d", "d", "y", "y", "c" + ins + "<Esc>", "~", "u", "U", "J", ">", "<", "x", "<Esc>", "gJ", "D", "X", "r-"])
+    first = mode + motion + op
+    if op == "y":
+        return [first, r.choice(["p", "P", "$p", "0P"])]
+    return [first]
+
+def insert_step(r):
+    enter = r.choice(["i", "a", "A", "I", "o", "O", "cc", "S", "C"])
+    pre = r.choice(["", "", "x", " ", "  ", "ab", "\t", "x y", "ab "])
+    key = r.choice(["<C-e>", "<C-y>", "<C-d>", "<C-t>", "<C-f>", "<C-w>", "<C-u>", "<C-h>", "<C-e><C-e>", "<C-y><C-y>", "<C-t><C-t>", "<C-t><C-d>", "<C-e><C-y>", "<C-d><C-d>"])
+    post = r.choice(["", "", "z", "<C-e>", "<C-y>", "<C-t>", "<CR>x", "<Left>"])
+    pre_step = r.choice([[], [], ["j"], ["k"], ["$"], ["0"], ["w"], ["G"], [">>"], ["l"]])
+    return pre_step + [enter + pre + key + post + "<Esc>"]
+
 def rand_step(r, vocab):
+    if vocab == "insert":
+        return insert_step(r)
+    if vocab == "visual":
+        return visual_step(r)
     if vocab == "tabs":
         return tabs_step(r)
     n = r.choice(["", "", "", "2", "3", "5"])
@@ -118,7 +140,7 @@ def gen_cases(seed, count, vocab):
     for i in range(count):
         steps = [t for _ in range(r.randint(2, 9)) for t in rand_step(r, vocab)]
         case = {"id": f"c{seed}-{i}", "text": rand_text(r), "steps": steps}
-        if vocab == "tabs":
+        if vocab in ("tabs", "insert"):
             case["options"] = tab_options(r)
         cases.append(case)
     return cases
@@ -133,7 +155,7 @@ set lines=40 columns=200
 let g:cases = json_decode(join(readfile($VCASES), "\n"))
 let g:out = []
 function! Keys(step) abort
-  return substitute(a:step, '<\(CR\|Esc\|Space\|BS\|Tab\|C-r\|C-v\)>', '\=eval("\"\\" . submatch(0) . "\"")', 'g')
+  return substitute(a:step, '<\(CR\|Esc\|Space\|BS\|Tab\|Left\|Right\|C-r\|C-v\|C-e\|C-y\|C-d\|C-t\|C-f\|C-w\|C-u\|C-h\)>', '\=eval("\"\\" . submatch(0) . "\"")', 'g')
 endfunction
 for c in g:cases
   set tabstop=8 shiftwidth=8 softtabstop=0 noexpandtab noautoindent
