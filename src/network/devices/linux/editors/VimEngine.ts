@@ -8,11 +8,12 @@ import { runMotion } from './vim/VimMotions';
 import { parseListChars, type ListSpec } from './vim/VimCells';
 import { VimWindow, type WindowSettings } from './vim/VimWindow';
 import { buildScreen } from './vim/VimScreen';
+import type { ViewState } from './vim/VimWindow';
 import type { EditorScreen, ScreenStyle } from './screen/EditorScreen';
 import { textObject } from './vim/VimTextObjects';
 import { compileVimPattern } from './vim/VimPattern';
 import {
-  NO_OFFSET, findMatch, highlightSpans, identUnderCursor, parseSearchInput, patternForIdent, resolveTarget,
+  NO_OFFSET, findMatch, highlightSpans, identUnderCursor, matchesEverything, parseSearchInput, patternForIdent, resolveTarget, stepBack, stepForward,
   type HighlightSpan, type LastSearch,
 } from './vim/VimSearch';
 import { backspaceTarget, indentString, indentWidth, insertTab, joinText, reindentLine, removeChars, roundedIndent, shiftLine, sliceChars, softBackspace, swapCase, tabSpaces } from './vim/VimEditing';
@@ -167,6 +168,8 @@ function isAbbreviation(word: string, full: string, shortest: number): boolean {
   return word.length >= shortest && full.startsWith(word);
 }
 
+const INC_COMMAND = /^(s(?:u(?:b(?:s(?:t(?:i(?:t(?:u(?:t(?:e)?)?)?)?)?)?)?)?)?|sm(?:a(?:g(?:i(?:c)?)?)?)?|sno(?:m(?:a(?:g(?:i(?:c)?)?)?)?)?|g(?:l(?:o(?:b(?:a(?:l)?)?)?)?)?|v(?:g(?:l(?:o(?:b(?:a(?:l)?)?)?)?)?)?)!?\s*([^\w\s"|\\])(.*)$/;
+
 const SET_COMMAND = /^(se|set|setl|setlo|setloc|setloca|setlocal|setg|setgl|setglo|setglob|setgloba|setglobal)(?:\s+(.*))?$/;
 
 function firstNonWhite(text: string): number {
@@ -201,6 +204,18 @@ const LAYOUT_OPTIONS: ReadonlySet<string> = new Set([
   'number', 'relativenumber', 'numberwidth', 'list', 'listchars', 'hlsearch', 'colorcolumn', 'wrap', 'tabstop', 'scrolloff', 'sidescrolloff', 'display',
 ]);
 
+interface IncSearchState {
+  view: ViewState;
+  readonly origin: { line: number; col: number };
+  searchStart: { line: number; col: number };
+  matchStart: { line: number; col: number };
+  matchEnd: { line: number; col: number } | null;
+  match: { start: { line: number; col: number }; end: { line: number; col: number } } | null;
+  pattern: string | null;
+  range: { first: number; last: number } | null;
+  active: boolean;
+}
+
 const LITERAL_INSERT_CONTROLS: ReadonlySet<string> = new Set(['b', 'f', 'l', 's', 'z']);
 
 export class VimEngine {
@@ -217,6 +232,9 @@ export class VimEngine {
   private searchDraftForward = true;
   private lastSearch: LastSearch | null = null;
   private noHlsearch = false;
+  private jumpOrigin: { line: number; col: number } | null = null;
+  private cmdlineColumn: { line: number; col: number } | null = null;
+  private liveSearch: IncSearchState | null = null;
   private searchContext: { operator: Operator | null; count: number | undefined; returnMode: VimMode } | null = null;
 
   // Command-line history recall (Up/Down in `:` and `/`), scoped to this
@@ -481,6 +499,7 @@ export class VimEngine {
     this.keepWantThisKey = false;
     this.applyKeyInner(k);
     this.followCursor();
+    if (this.cmdlineColumn !== null && (this.cmdlineColumn.line !== this._cursorLine || this.cmdlineColumn.col !== this._cursorCol)) this.cmdlineColumn = null;
     this.updateWant();
     this.trackShowcmd(k);
   }
@@ -926,6 +945,7 @@ export class VimEngine {
         this.commandBuffer = '';
         this._mode = 'command';
         this.historyNavIndex = null;
+        this.beginIncSearch();
         return;
       case 'Escape':
         this._message = '';
@@ -1655,6 +1675,15 @@ export class VimEngine {
   }
 
   private searchHighlight(): ReadonlyMap<number, readonly HighlightSpan[]> | null {
+    if (this.liveSearch !== null && this.liveSearch.active) {
+      const typed = this.liveSearch.pattern;
+      if (!this.options.bool('hlsearch') || typed === null || matchesEverything(typed)) return null;
+      const range = this.liveSearch.range;
+      return highlightSpans(
+        this.linesArr, typed, this.options.bool('ignorecase'),
+        Math.max(this.window.top, range?.first ?? 0), Math.min(this.window.top + this.window.height, range?.last ?? Number.MAX_SAFE_INTEGER),
+      );
+    }
     if (!this.options.bool('hlsearch') || this.noHlsearch || this.lastSearch === null) return null;
     return highlightSpans(this.linesArr, this.lastSearch.pattern, this.options.bool('ignorecase'), this.window.top, this.window.top + this.window.height);
   }
@@ -1667,15 +1696,15 @@ export class VimEngine {
       : null;
     const commandLine = mode === 'command'
       ? { prompt: ':', text: this.commandBuffer }
-      : mode === 'search' ? { prompt: this.searchPromptChar, text: this.searchBuffer } : null;
+      : mode === 'search' ? { prompt: this.searchPromptChar, text: [...this.searchBuffer].map((c) => (c.charCodeAt(0) < 32 ? `^${String.fromCharCode(c.charCodeAt(0) + 64)}` : c)).join('') } : null;
     const bottom = this.bottomMessage();
     return buildScreen(this.window, {
       lines: this.linesArr,
       cursor: { line: this._cursorLine, col: this._cursorCol },
-      tabEnd: this.cursorOnTabEnd(),
+      tabEnd: this.cursorOnTabEnd() && !(this.cmdlineColumn !== null && this.cmdlineColumn.line === this._cursorLine && this.cmdlineColumn.col === this._cursorCol),
       visual,
       searchSpans: this.searchHighlight(),
-      incSearchSpans: null,
+      incSearchSpans: this.incSearchSpans(),
       colorcolumn: o.string('colorcolumn'),
       textwidth: 0,
       list: o.bool('list'),
@@ -1868,6 +1897,7 @@ export class VimEngine {
         this.lastVisualEnd = Math.max(this.visualAnchorLine, this._cursorLine);
         this.commandBuffer = "'<,'>";
         this._mode = 'command';
+        this.beginIncSearch();
         return;
       case 'd': case 'x': case 'Delete': this.visualOperate('d'); return;
       case 'X': case 'D': this.visualOperate('d', true); return;
@@ -2523,11 +2553,15 @@ export class VimEngine {
     if (k.key === 'Enter') {
       if (this.commandBuffer) this.commandHistoryList.push(this.commandBuffer);
       this.historyNavIndex = null;
+      this.finishIncSearch(false);
       this.window.noteWholeLineEdit();
+      const before = this.linesArr.join('\n');
       this.executeExCommand(this.commandBuffer);
+      if (this.cmdlineColumn !== null && this.linesArr.join('\n') !== before) this.cmdlineColumn = null;
       return;
     }
-    if (k.key === 'Escape') {
+    if (k.key === 'Escape' || (k.ctrl && (k.key === 'c' || k.key === '[')) || (k.key === 'Backspace' && this.commandBuffer === '')) {
+      this.finishIncSearch(true);
       this._mode = 'normal';
       this.commandBuffer = '';
       this.historyNavIndex = null;
@@ -2535,18 +2569,23 @@ export class VimEngine {
     }
     if (k.key === 'ArrowUp') {
       this.commandBuffer = this.recallHistory(this.commandHistoryList, this.commandBuffer);
+      this.refreshIncSearch();
       return;
     }
     if (k.key === 'ArrowDown') {
       this.commandBuffer = this.advanceHistory(this.commandHistoryList, this.commandBuffer);
+      this.refreshIncSearch();
       return;
     }
     if (k.key === 'Backspace') {
       this.commandBuffer = this.commandBuffer.slice(0, -1);
+      this.refreshIncSearch();
       return;
     }
+    if (k.ctrl) return;
     if (k.key.length === 1) {
       this.commandBuffer += k.key;
+      this.refreshIncSearch();
     }
   }
 
@@ -2608,18 +2647,22 @@ export class VimEngine {
     if (s.startsWith('%')) {
       return { start: 0, end: this.linesArr.length - 1, rest: s.slice(1), literal: '%' };
     }
-    const m = s.match(/^(\$|\.|'<|'>|\d+)(?:,(\$|\.|'<|'>|\d+))?/);
-    if (!m) return { start: null, end: null, rest: s, literal: '' };
-    const resolve = (tok: string) => {
-      if (tok === '$') return this.linesArr.length - 1;
-      if (tok === '.') return this._cursorLine;
-      if (tok === "'<") return this.lastVisualStart;
-      if (tok === "'>") return this.lastVisualEnd;
-      return parseInt(tok, 10) - 1;
+    const address = (text: string): { line: number; length: number } | null => {
+      const m = /^(\$|\.|'<|'>|\d+)?((?:[+-]\d*)*)/.exec(text);
+      if (m === null || m[0] === '') return null;
+      let line = this._cursorLine;
+      if (m[1] === '$') line = this.linesArr.length - 1;
+      else if (m[1] === "'<") line = this.lastVisualStart;
+      else if (m[1] === "'>") line = this.lastVisualEnd;
+      else if (m[1] !== undefined && m[1] !== '.') line = parseInt(m[1], 10) - 1;
+      for (const step of m[2].matchAll(/([+-])(\d*)/g)) line += (step[1] === '+' ? 1 : -1) * (step[2] === '' ? 1 : parseInt(step[2], 10));
+      return { line, length: m[0].length };
     };
-    const start = resolve(m[1]);
-    const end = m[2] !== undefined ? resolve(m[2]) : start;
-    return { start, end, rest: s.slice(m[0].length), literal: m[0] };
+    const first = address(s);
+    if (first === null) return { start: null, end: null, rest: s, literal: '' };
+    const second = s[first.length] === ',' ? address(s.slice(first.length + 1)) : null;
+    const length = first.length + (second === null ? 0 : 1 + second.length);
+    return { start: first.line, end: second === null ? first.line : second.line, rest: s.slice(length), literal: s.slice(0, length) };
   }
 
   private rangeRefusal(range: ExRange, typed: string): string | null {
@@ -2712,9 +2755,32 @@ export class VimEngine {
   }
 
   private parseSubstituteCmd(s: string): { pattern: string; replacement: string; flags: string } | null {
-    const m = s.match(/^s\/((?:\\.|[^/])*)\/((?:\\.|[^/])*)(?:\/([a-zA-Z]*))?$/);
-    if (!m) return null;
-    return { pattern: m[1], replacement: m[2], flags: m[3] ?? '' };
+    const head = /^s(?:u(?:b(?:s(?:t(?:i(?:t(?:u(?:t(?:e)?)?)?)?)?)?)?)?)?\s*([^\w\s"|\\])/.exec(s);
+    if (head === null) return null;
+    const delimiter = head[1];
+    let at = head[0].length;
+    const take = (): { text: string; closed: boolean } => {
+      let text = '';
+      for (; at < s.length; at++) {
+        const c = s[at];
+        if (c === '\\' && at + 1 < s.length) {
+          text += c + s[at + 1];
+          at++;
+        } else if (c === delimiter) {
+          at++;
+          return { text, closed: true };
+        } else {
+          text += c;
+        }
+      }
+      return { text, closed: false };
+    };
+    const pattern = take();
+    if (!pattern.closed) return { pattern: pattern.text, replacement: '', flags: '' };
+    const replacement = take();
+    if (!replacement.closed) return { pattern: pattern.text, replacement: replacement.text, flags: '' };
+    const flags = s.slice(at);
+    return /^[a-zA-Z&]*$/.test(flags) ? { pattern: pattern.text, replacement: replacement.text, flags } : null;
   }
 
   protected executeExCommand(raw: string): void {
@@ -2807,7 +2873,7 @@ export class VimEngine {
       return;
     }
 
-    if (rest === 's' || rest.startsWith('s/')) {
+    if (rest === 's' || /^s(?:u(?:b(?:s(?:t(?:i(?:t(?:u(?:t(?:e)?)?)?)?)?)?)?)?)?\s*[^\w\s"|\\]/.test(rest)) {
       const parsed = this.parseSubstituteCmd(rest);
       if (!parsed) {
         this._message = 'E486: no previous substitute regular expression';
@@ -2815,20 +2881,26 @@ export class VimEngine {
         return;
       }
       if (parsed.pattern !== '') this.rememberSearchPattern(parsed.pattern);
+      const pattern = parsed.pattern === '' ? this.lastSearch?.pattern ?? '' : parsed.pattern;
+      if (pattern === '') {
+        this._message = 'E35: No previous regular expression';
+        this._mode = 'normal';
+        return;
+      }
       const s = rangeStart ?? this._cursorLine;
       const e = rangeEnd ?? this._cursorLine;
       if (parsed.flags.includes('c')) {
-        this.startConfirmSubstitute(s, e, parsed.pattern, parsed.replacement, parsed.flags);
+        this.startConfirmSubstitute(s, e, pattern, parsed.replacement, parsed.flags);
       } else {
         this.pushUndoSnapshot();
-        const result = this.executeSubstitute(s, e, parsed.pattern, parsed.replacement, parsed.flags);
+        const result = this.executeSubstitute(s, e, pattern, parsed.replacement, parsed.flags);
         if (result.count > 0) {
           this._modified = true;
           this.moveToFirstNonBlank(result.lastLine);
           this._message = `${result.count} substitution${result.count === 1 ? '' : 's'} on ${result.lines} line${result.lines === 1 ? '' : 's'}`;
         } else {
           this.undoStack.pop(); // nothing actually changed
-          this._message = `E486: Pattern not found: ${parsed.pattern}`;
+          this._message = `E486: Pattern not found: ${pattern}`;
         }
         this._mode = 'normal';
       }
@@ -3030,6 +3102,7 @@ export class VimEngine {
       }
     }
     if (this.linesArr.length === 0) this.linesArr.push('');
+    this.cmdlineColumn = null;
     if (deleted > 0 || substituted) {
       this.moveToFirstNonBlank(lastLine);
     } else {
@@ -3161,6 +3234,7 @@ export class VimEngine {
     this.searchBuffer = '';
     this._mode = 'search';
     this.historyNavIndex = null;
+    this.beginIncSearch();
   }
 
   private leaveSearch(cancelled: boolean): { operator: Operator | null; count: number | undefined } {
@@ -3168,11 +3242,27 @@ export class VimEngine {
     this.searchContext = null;
     this._mode = ctx.returnMode;
     this.historyNavIndex = null;
+    this.finishIncSearch(cancelled);
     if (cancelled && ctx.operator) this.cancelOperator();
     return { operator: ctx.operator, count: ctx.count };
   }
 
   private applySearchKey(k: EditorKeyInput): void {
+    if (k.ctrl && k.key !== 'Enter') {
+      if (k.key === 'c' || k.key === '[') this.leaveSearch(true);
+      else if (k.key === 'g' || k.key === 't' || k.key === 'l') {
+        if (this.liveSearch === null) {
+          this.searchBuffer += String.fromCharCode(k.key.charCodeAt(0) - 96);
+        } else if (k.key === 'l') {
+          this.addMatchCharToSearch();
+        } else {
+          this.adjustIncSearch(k.key === 'g');
+        }
+      }
+      else if (k.key === 'u') { this.searchBuffer = ''; this.refreshIncSearch(); }
+      else if (k.key === 'w') { this.searchBuffer = this.searchBuffer.replace(/(\w+|[^\w\s]+)?\s*$/, ''); this.refreshIncSearch(); }
+      return;
+    }
     if (k.key === 'Enter') {
       const typed = this.searchBuffer;
       if (typed) this.searchHistoryList.push(typed);
@@ -3186,20 +3276,181 @@ export class VimEngine {
     }
     if (k.key === 'ArrowUp') {
       this.searchBuffer = this.recallHistory(this.searchHistoryList, this.searchBuffer);
+      this.refreshIncSearch();
       return;
     }
     if (k.key === 'ArrowDown') {
       this.searchBuffer = this.advanceHistory(this.searchHistoryList, this.searchBuffer);
+      this.refreshIncSearch();
       return;
     }
     if (k.key === 'Backspace') {
       if (this.searchBuffer === '') { this.leaveSearch(true); return; }
       this.searchBuffer = this.searchBuffer.slice(0, -1);
+      this.refreshIncSearch();
       return;
     }
     if (k.key.length === 1) {
       this.searchBuffer += k.key;
+      this.refreshIncSearch();
     }
+  }
+
+  private followAt(line: number, col: number): void {
+    this.window.follow(line, col);
+    this.window.followColumn(line, col, true);
+  }
+
+  private beginIncSearch(): void {
+    this.liveSearch = this.options.bool('incsearch')
+      ? {
+        view: this.window.saveView(), origin: { line: this._cursorLine, col: this._cursorCol },
+        searchStart: { line: this._cursorLine, col: this._cursorCol }, matchStart: { line: this._cursorLine, col: this._cursorCol },
+        matchEnd: null, match: null, pattern: null, range: null, active: false,
+      }
+      : null;
+  }
+
+  private incSearchRequest(): { pattern: string; forward: boolean; range: { first: number; last: number } | null } | null {
+    if (this._mode === 'search') {
+      const forward = this.searchDraftForward;
+      const typed = this.searchBuffer;
+      const parsed = parseSearchInput(typed, forward ? '/' : '?');
+      return { pattern: typed === '' ? '' : parsed.pattern === '' ? this.lastSearch?.pattern ?? '' : parsed.pattern, forward, range: null };
+    }
+    const range = this.parseExRange(this.commandBuffer.replace(/^[\s:]+/, ''));
+    const command = INC_COMMAND.exec(range.rest.replace(/^\s+/, ''));
+    if (command === null) return null;
+    const delimiter = command[2];
+    const parsed = parseSearchInput(command[3], delimiter);
+    const closed = command[3].length > parsed.pattern.length;
+    const pattern = parsed.pattern === '' && closed ? this.lastSearch?.pattern ?? '' : parsed.pattern;
+    if (pattern === '' || matchesEverything(pattern)) return null;
+    const global = command[1][0] === 'g' || command[1][0] === 'v';
+    let first: number | null = null;
+    let last: number | null = null;
+    if (range.start !== null && range.end !== null) {
+      first = Math.min(range.start, range.end);
+      last = Math.max(range.start, range.end);
+    } else if (!global) {
+      first = this._cursorLine;
+      last = this._cursorLine;
+    }
+    return { pattern, forward: true, range: first === null || last === null ? null : { first, last } };
+  }
+
+  private refreshIncSearch(): void {
+    const state = this.liveSearch;
+    if (state === null) return;
+    const request = this.incSearchRequest();
+    if (request !== null) state.active = true;
+    state.range = request?.range ?? null;
+    const start = state.range === null ? state.searchStart : state.range.first >= this.linesArr.length
+      ? { line: this.linesArr.length - 1, col: Number.MAX_SAFE_INTEGER } : { line: state.range.first, col: 0 };
+    let found: ReturnType<typeof findMatch> = null;
+    let outside = false;
+    if (request !== null && request.pattern !== '') {
+      found = findMatch(this.linesArr, start, request.pattern, {
+        forward: request.forward, count: this.searchContext?.count ?? 1, wrapscan: this.options.bool('wrapscan'),
+        anchor: 'start', ignoreCase: this.options.bool('ignorecase'), acceptAtCursor: state.range !== null,
+      });
+      outside = found !== null && state.range !== null && (found.start.line < state.range.first || found.start.line > state.range.last);
+      if (outside) found = null;
+    }
+    this.window.noteCursorLine(state.searchStart.line);
+    state.pattern = request === null || request.pattern === '' ? null : request.pattern;
+    state.match = found === null ? null : { start: found.start, end: found.end };
+    if (found !== null) {
+      state.matchStart = found.start;
+      state.matchEnd = found.end;
+    }
+    this.window.restoreView(state.view);
+    const at = found !== null ? found.start : state.range !== null && !outside && state.range.first < this.linesArr.length ? { line: state.range.first, col: 0 } : state.searchStart;
+    this.window.follow(at.line, at.col);
+    if (found === null) this.window.followColumn(at.line, at.col, true);
+    if (found !== null) {
+      const lastLine = this.linesArr.length - 1;
+      const endLine = Math.min(found.end.line, lastLine);
+      this.followAt(endLine, found.end.line > lastLine ? this.line(lastLine).length : found.end.col);
+      this.followAt(found.start.line, found.start.col);
+    }
+  }
+
+  private finishIncSearch(escaped: boolean): void {
+    const state = this.liveSearch;
+    if (state === null) return;
+    this.liveSearch = null;
+    if (!state.active) return;
+    if (!escaped) {
+      const moved = state.searchStart.line !== state.origin.line || state.searchStart.col !== state.origin.col;
+      if (moved) this.jumpOrigin = state.origin;
+      this._cursorLine = state.searchStart.line;
+      this._cursorCol = state.searchStart.col;
+    }
+    this.window.restoreView(state.view);
+    this.followAt(this._cursorLine, this._cursorCol);
+    this.cmdlineColumn = { line: this._cursorLine, col: this._cursorCol };
+    if (escaped && this.line(this._cursorLine)[this._cursorCol] === '\t') {
+      this.explicitWant = cursorVcol(this.line(this._cursorLine), this._cursorCol, this.tabstop, false, this.ctrlTab);
+    }
+  }
+
+  private adjustIncSearch(forward: boolean): void {
+    const state = this.liveSearch;
+    if (state === null || this.searchBuffer === '') return;
+    const delimiter = this.searchDraftForward ? '/' : '?';
+    const parsed = parseSearchInput(this.searchBuffer, delimiter);
+    const pattern = parsed.pattern === '' ? this.lastSearch?.pattern ?? '' : parsed.pattern;
+    if (pattern === '') return;
+    let from = forward ? state.matchEnd ?? { line: 0, col: 0 } : state.matchStart;
+    if (forward && state.matchEnd !== null && (state.matchStart.line < state.matchEnd.line || (state.matchStart.line === state.matchEnd.line && state.matchStart.col < state.matchEnd.col))) {
+      from = stepBack(this.linesArr, from);
+    }
+    const found = findMatch(this.linesArr, from, pattern, {
+      forward, count: this.searchContext?.count ?? 1, wrapscan: this.options.bool('wrapscan'),
+      anchor: 'start', ignoreCase: this.options.bool('ignorecase'),
+    });
+    if (found === null) return;
+    const questionMark = !this.searchDraftForward;
+    state.searchStart = state.matchStart;
+    state.matchStart = found.start;
+    state.matchEnd = found.end;
+    if (!forward && !questionMark) state.searchStart = stepBack(this.linesArr, found.start);
+    else if (forward && questionMark) state.searchStart = stepForward(this.linesArr, found.start);
+    const behind = found.start.line < state.searchStart.line || (found.start.line === state.searchStart.line && found.start.col < state.searchStart.col);
+    if (behind && forward) state.searchStart = questionMark ? stepForward(this.linesArr, found.start) : stepBack(this.linesArr, found.start);
+    state.match = { start: found.start, end: found.end };
+    this.followAt(found.start.line, found.start.col);
+    state.view = this.window.saveView();
+  }
+
+  private addMatchCharToSearch(): void {
+    const state = this.liveSearch;
+    if (state === null || state.matchEnd === null) return;
+    const char = this.line(state.matchEnd.line)[state.matchEnd.col];
+    if (char === undefined) return;
+    const delimiter = this.searchDraftForward ? '/' : '?';
+    this.searchBuffer += char === delimiter || '\\~^$.*['.includes(char) ? `\\${char}` : char;
+    this.refreshIncSearch();
+  }
+
+  private incSearchSpans(): ReadonlyMap<number, readonly HighlightSpan[]> | null {
+    const match = this.liveSearch?.match ?? null;
+    if (match === null) return null;
+    const spans = new Map<number, HighlightSpan[]>();
+    const { start, end } = match;
+    const empty = start.line === end.line && start.col === end.col;
+    for (let line = start.line; line <= Math.min(end.line, this.linesArr.length - 1); line++) {
+      const length = this.line(line).length;
+      const from = line === start.line ? start.col : 0;
+      let to = line === end.line ? end.col : (from === length || line > start.line ? length + 1 : length);
+      if (empty) {
+        if (end.col === 0) continue;
+        to = from + 1;
+      }
+      spans.set(line, [{ from, to }]);
+    }
+    return spans;
   }
 
   private executeTypedSearch(typed: string, forward: boolean, op: Operator | null, count: number | undefined): void {
@@ -3282,7 +3533,8 @@ export class VimEngine {
       }, 1);
       return;
     }
-    this.lastJumpPosition = from;
+    this.lastJumpPosition = this.jumpOrigin ?? from;
+    this.jumpOrigin = null;
     this._cursorLine = target.pos.line;
     const text = this.line(target.pos.line);
     this._cursorCol = this._mode === 'normal'

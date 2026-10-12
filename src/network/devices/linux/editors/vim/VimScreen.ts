@@ -239,7 +239,7 @@ function windowRows(window: VimWindow, input: ScreenInput): ScreenRow[] {
       const atBoundary = (ranges: readonly [number, number][]): [number, number][] => ranges.map(([from, to]): [number, number] => {
         const onEol = from === base.length && to === from + 1;
         if (onEol && shortLine) return [offset, offset + 1];
-        if (onEol && eolMark === null && from - offset === textWidth) return [from - 1, from];
+        if (onEol && eolMark === null && wrapping && from - offset === textWidth) return [from - 1, from];
         return [from, to];
       });
       for (const span of cellStyles(slice, offset, selection, atBoundary(found), atBoundary(incremental), columns, textWidth)) {

@@ -16,14 +16,15 @@
  *
  * Mesure avec `git stash push -- src/network src/components` : le moteur precedent ne peint aucune cellule
  * Search (le style n'existe pas) ; 155, 165 et 188 des 300 cas tombent avant (508 sur 900), les autres transcripts
- * ne surlignent jamais rien (`hlsearch` coupe ou aucune recherche) ; apres, 31 cas restent, tous dans la liste
+ * ne surlignent jamais rien (`hlsearch` coupe ou aucune recherche) ; apres, 29 cas restent, tous dans la liste
  * ci-dessous.  Le TEMOIN que le lab est sain est hls-off-witness de probe-vim-hlsearch.test.ts.  Seed 6 a ete
- * enregistre apres tout ajustement : 11 divergences sur 300, dont 2 portent sur les cellules Search.
+ * enregistre apres tout ajustement : 10 divergences sur 300, dont 2 portent sur les cellules Search.
  *
  * Divergences connues, mesurees et NON portees (UNPORTED_CASES), aucune n'est epinglee comme contrat : un cas de la
  * liste qui se met a passer fait echouer le test pour qu'on le retire.  Les causes identifiees (une partie des cas n'a pas encore de cause attribuee) :
- *   - `incsearch` : pendant la frappe d'un motif, vim fait defiler la fenetre jusqu'a l'occurrence puis restaure la
- *     vue a Entree, et laisse parfois le curseur dessine sur la rangee de l'etat intermediaire ;
+ *   - `incsearch` : a la fin d'une frappe incrementale vim laisse parfois le curseur dessine sur la rangee de
+ *     l'etat intermediaire (w_wrow calcule pendant la saisie, jamais invalide) ; ce defaut de vim n'est pas
+ *     reproduit, la ligne de commande a son propre oracle dans vim-incsearch-oracle.test.ts ;
  *   - une commande ex ou une recherche qui echoue avec un message plus long que la place laissee a la regle
  *     provoque un defilement de l'ecran (invite `Press ENTER`), selon la largeur ;
  *   - `gn` avec un motif qui peut etre vide (`x*`) choisit un autre debut de selection ;
@@ -36,8 +37,8 @@ import { replayScreenCase, type ScreenCase } from '../../support/oracle/vimScree
 
 const UNPORTED_CASES: ReadonlySet<string> = new Set([
   'hl3-20', 'hl3-62', 'hl3-68', 'hl3-71', 'hl3-123', 'hl3-167', 'hl3-239', 'hl3-270',
-  'hl5-28', 'hl5-40', 'hl5-82', 'hl5-120', 'hl5-132', 'hl5-133', 'hl5-142', 'hl5-162', 'hl5-168', 'hl5-194', 'hl5-201', 'hl5-262',
-  'hl6-12', 'hl6-21', 'hl6-56', 'hl6-131', 'hl6-141', 'hl6-168', 'hl6-206', 'hl6-226', 'hl6-243', 'hl6-263', 'hl6-293',
+  'hl5-28', 'hl5-40', 'hl5-82', 'hl5-120', 'hl5-132', 'hl5-142', 'hl5-162', 'hl5-168', 'hl5-194', 'hl5-201', 'hl5-262',
+  'hl6-12', 'hl6-21', 'hl6-56', 'hl6-131', 'hl6-141', 'hl6-168', 'hl6-226', 'hl6-243', 'hl6-263', 'hl6-293',
 ]);
 
 const dir = 'src/__tests__/support/oracle/vim-hlsearch';

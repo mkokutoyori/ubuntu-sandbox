@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record screen transcripts from a real vim driven through tmux.
 
-usage: record_vim_screen.py (--corpus cells|scroll|resize|click|hl|hlwide [--seed N] [--cases N] | --from cases.json) out.json
+usage: record_vim_screen.py (--corpus cells|scroll|resize|click|hl|hlwide|is [--seed N] [--cases N] | --from cases.json) out.json
 
 A case is a buffer, a window size, a list of `:set` lines applied before the first step and a
 list of steps (a step is one run of keystrokes in vim notation: <Esc> <CR> <Tab> <BS> <C-x> <Up>
@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 SPECIAL = {"Esc": "Escape", "CR": "Enter", "Tab": "Tab", "BS": "BSpace", "Space": "Space", "Up": "Up", "Down": "Down",
            "Left": "Left", "Right": "Right", "Home": "Home", "End": "End", "PageUp": "PageUp", "PageDown": "PageDown", "Del": "DC"}
 
-def tmux_keys(step):
+def tmux_keys(step, single=False):
     out = []
     literal = ""
     i = 0
@@ -38,7 +38,10 @@ def tmux_keys(step):
                 out.append([token])
                 i += m.end()
                 continue
-        literal += step[i]
+        if single:
+            out.append(["-l", step[i]])
+        else:
+            literal += step[i]
         i += 1
     if literal:
         out.append(["-l", literal])
@@ -154,8 +157,10 @@ def run_case(case, workdir):
             tmux("resize-window", "-t", name, "-x", c, "-y", r)
             time.sleep(0.15)
         else:
-            for k in tmux_keys(step):
+            for k in tmux_keys(step, case.get("slow", False)):
                 tmux("send-keys", "-t", name, *k)
+                if case.get("slow"):
+                    time.sleep(0.12)
                 if k == ["Escape"]:
                     time.sleep(0.15)
         snap = settled(name, attrs)
@@ -299,6 +304,94 @@ def gen_hl(seed, count, patterns=None):
                       "setup": r.choice(HL_SETUPS), "steps": steps, "attrs": True})
     return cases
 
+IS_SETUPS = [[], [], ["set hls"], ["set hls"], ["set so=3"], ["set nu"], ["set nowrap"], ["set ic"], ["set nows"], ["set nois"], ["set hls", "set nowrap list"],
+             ["set hls", "set ic"], ["set so=0"], ["set so=999"], ["set list lcs=tab:>-,trail:~,eol:$"], ["set sidescroll=0 nowrap"]]
+IS_PATTERNS = ["foo", "bar", "a_b", "x", "o", "e$", "^", "$", "x*", "b\\|f", "tab", "ba.", "end\\.$", "Hello", "world", "(x)", "[1,2]", "foo\\|bar", "[a-z]\\+", "\\.", "."]
+IS_MOVES = ["n", "N", "j", "k", "G", "gg", "<C-e>", "<C-y>", "zt", "zz", "zb", "5j", "5k", "<C-d>", "<C-u>", "$", "0", "w", "x", "dd", "u", ":noh<CR>", "3j", "10l"]
+
+def chunks(r, text):
+    out, i = [], 0
+    while i < len(text):
+        n = r.choice([1, 1, 2, 3])
+        out.append(text[i:i + n])
+        i += n
+    return out
+
+def is_session(r):
+    steps = []
+    opener = r.choice(["/", "/", "/", "?", "?", "2/", "3/", "2?"])
+    pat = r.choice(IS_PATTERNS)
+    parts = chunks(r, pat)
+    steps.append(opener + parts[0])
+    for part in parts[1:]:
+        steps.append(part)
+        if r.random() < 0.15:
+            steps.append("<BS>")
+            steps.append(part[-1:] if part else "x")
+    roll = r.random()
+    if roll < 0.06:
+        steps.append("<C-l>")
+    elif roll < 0.09:
+        steps.append("<C-w>")
+    elif roll < 0.11:
+        steps.append("<C-u>")
+        steps.append(r.choice(IS_PATTERNS))
+    elif roll < 0.18:
+        steps.append("<C-g>")
+    elif roll < 0.26:
+        steps.append("<C-t>")
+    elif roll < 0.32:
+        steps.append("<C-g><C-g>")
+    elif roll < 0.37:
+        steps.append("<C-t><C-t>")
+    steps.append(r.choice(["<CR>", "<CR>", "<CR>", "<Esc>", "<Esc>"]))
+    return steps
+
+def gen_is(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        n = r.choice([20, 40, 80, 150])
+        text = rand_buffer(r, n)
+        steps = []
+        for _ in range(r.randint(1, 3)):
+            if r.random() < 0.5:
+                steps.append(r.choice(IS_MOVES))
+            steps.extend(is_session(r))
+        cases.append({"id": "is%d-%d" % (seed, i), "text": text, "rows": r.choice([6, 8, 10, 14, 24]), "cols": r.choice([40, 60, 80]),
+                      "setup": r.choice(IS_SETUPS), "steps": steps, "attrs": True, "slow": True})
+    return cases
+
+IS_EX_OPENERS = [":s/", ":s/", ":%s/", ":%s/", ":g/", ":v/", ":2,5s/", ":.,+3s/", ":$s/", ":s#", ":g!/"]
+
+def is_ex_session(r):
+    opener = r.choice(IS_EX_OPENERS)
+    pat = r.choice(IS_PATTERNS)
+    parts = chunks(r, pat)
+    steps = [opener + parts[0]]
+    steps.extend(parts[1:])
+    substitute = ":s" in opener or ":%s" in opener or "s#" in opener
+    if substitute and r.random() < 0.5:
+        steps.append("#" if "#" in opener else "/")
+        steps.append(r.choice(["X", "Y/g", "0"]))
+    steps.append(r.choice(["<CR>", "<CR>", "<Esc>"]) if substitute else "<Esc>")
+    return steps
+
+def gen_is_ex(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        n = r.choice([20, 40, 80])
+        text = rand_buffer(r, n)
+        steps = []
+        for _ in range(r.randint(1, 3)):
+            if r.random() < 0.5:
+                steps.append(r.choice(IS_MOVES))
+            steps.extend(is_ex_session(r))
+        cases.append({"id": "ise%d-%d" % (seed, i), "text": text, "rows": r.choice([6, 8, 10, 14, 24]), "cols": r.choice([40, 60, 80]),
+                      "setup": r.choice(IS_SETUPS), "steps": steps, "attrs": True, "slow": True})
+    return cases
+
 def main():
     args = sys.argv[1:]
     seed, count, corpus, out, source = 1, 60, "cells", None, None
@@ -313,7 +406,7 @@ def main():
         cases = json.load(open(source))["cases"]
         corpus = "labs"
     else:
-        cases = {"cells": gen_cells, "scroll": gen_scroll, "resize": gen_resize, "click": gen_click, "hl": gen_hl, "hlwide": lambda seed, count: gen_hl(seed, count, HL_PATTERNS_WIDE)}[corpus](seed, count)
+        cases = {"cells": gen_cells, "scroll": gen_scroll, "resize": gen_resize, "click": gen_click, "hl": gen_hl, "is": gen_is, "isex": gen_is_ex, "hlwide": lambda seed, count: gen_hl(seed, count, HL_PATTERNS_WIDE)}[corpus](seed, count)
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: run_case(c, workdir), cases))

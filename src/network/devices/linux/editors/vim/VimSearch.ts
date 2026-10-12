@@ -47,7 +47,7 @@ function parseOffset(text: string): SearchOffset {
   return { kind: 'line', amount };
 }
 
-export function parseSearchInput(input: string, delimiter: '/' | '?'): ParsedSearch {
+export function parseSearchInput(input: string, delimiter: string): ParsedSearch {
   let pattern = '';
   let i = 0;
   for (; i < input.length; i++) {
@@ -122,13 +122,30 @@ export interface FindOptions {
   readonly acceptAtCursor?: boolean;
 }
 
+function reachableMatches(matches: readonly Located[], text: string): Located[] {
+  const kept: Located[] = [];
+  let lineStart = -1;
+  let seenInLine = false;
+  for (const match of matches) {
+    const begin = match.index === 0 ? 0 : text.lastIndexOf('\n', match.index - 1) + 1;
+    if (begin !== lineStart) {
+      lineStart = begin;
+      seenInLine = false;
+    }
+    const onLineEnd = match.index === text.length || text[match.index] === '\n';
+    if (!(onLineEnd && seenInLine)) kept.push(match);
+    seenInLine = true;
+  }
+  return kept;
+}
+
 export function findMatch(lines: readonly string[], from: Pos, pattern: string, options: FindOptions): MatchResult | null {
   if (pattern === '') return null;
   const regex = compileVimPattern(pattern, options.ignoreCase);
   const text = lines.join('\n');
   const starts = lineStarts(lines);
   const origin = offsetOf(starts, from);
-  const matches = allMatches(text, regex);
+  const matches = reachableMatches(allMatches(text, regex), text);
   if (matches.length === 0) return null;
 
   const onLineEnd = (m: Located): boolean => m.index === text.length || text[m.index] === '\n';
@@ -275,4 +292,27 @@ export function highlightSpans(
 function codePointLength(text: string, at: number): number {
   const code = text.codePointAt(at);
   return code !== undefined && code > 0xffff ? 2 : 1;
+}
+
+export function stepBack(lines: readonly string[], from: Pos): Pos {
+  if (from.col > 0) return { line: from.line, col: from.col - 1 };
+  if (from.line > 0) {
+    const line = from.line - 1;
+    const length = (lines[line] ?? '').length;
+    return { line, col: length > 0 ? length - 1 : 0 };
+  }
+  return from;
+}
+
+export function stepForward(lines: readonly string[], from: Pos): Pos {
+  const length = (lines[from.line] ?? '').length;
+  if (from.col + 1 < length) return { line: from.line, col: from.col + 1 };
+  if (from.line + 1 < lines.length) return { line: from.line + 1, col: 0 };
+  return from;
+}
+
+export function matchesEverything(pattern: string): boolean {
+  let end = pattern.length;
+  while (end >= 2 && pattern[end - 2] === '\\' && 'mMvVcCZ'.includes(pattern[end - 1])) end -= 2;
+  return end === 0 || (end > 1 && pattern[end - 2] === '\\' && pattern[end - 1] === '|');
 }
