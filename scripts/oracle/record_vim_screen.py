@@ -152,6 +152,8 @@ def run_case(case, workdir):
             for final in ("M", "m"):
                 tmux("send-keys", "-t", name, "-l", "\x1b[<0;%d;%d%s" % (int(col) + 1, int(row) + 1, final))
             time.sleep(0.1)
+        elif step == "@wait":
+            time.sleep(0.8)
         elif step.startswith("@"):
             r, c = step[1:].split("x")
             tmux("resize-window", "-t", name, "-x", c, "-y", r)
@@ -392,6 +394,40 @@ def gen_is_ex(seed, count):
                       "setup": r.choice(IS_SETUPS), "steps": steps, "attrs": True, "slow": True})
     return cases
 
+SM_LINES = ["if (x) {", "    foo(bar[1], baz);", "}", "int main(void)", "{", "    return (a + (b * c));", "}", "x = [1, 2, [3, 4]];", "call(a, b", "    , c);",
+            "} else {", "unbalanced )", "plain text", "", "    {", "(a) (b) (c)", "<tag attr=\"v\">", "func(\"a)\", 'b)')", "#define M(x) ((x) + 1)", "a[i] = b[(j + 1) % n];"]
+SM_SETUPS = [["set sm"], ["set sm"], ["set sm"], ["set sm", "set mat=0"], ["set sm", "set mps+=<:>"], ["set sm", "set nowrap"], ["set sm", "set nu"],
+             ["set sm", "set so=0"], [], ["set sm", "set mps="], ["set sm", "set mps=(:)"], ["set sm", "set list"], ["set sm", "set ts=4"], ["set sm", "set nowrap", "set ss=1"]]
+SM_CHUNKS = ["foo", "x", "1", " ", "(", "[", "{", "<", ")", "]", "}", ">", "a)", "b]", "c}", "d>", "(x)", "[y]", "{z}", "\"", "'", ",", ":"]
+
+def sm_session(r):
+    steps = []
+    steps.append(r.choice(["A", "A", "o", "O", "i", "I", "a", "cc", "S"]))
+    for _ in range(r.randint(2, 6)):
+        chunk = r.choice(SM_CHUNKS)
+        steps.append(chunk)
+        if chunk[-1:] in ")]}>":
+            if r.random() < 0.5:
+                steps.append("@wait")
+    steps.append("<Esc>")
+    return steps
+
+def gen_sm(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        n = r.choice([4, 8, 14, 20])
+        text = [r.choice(SM_LINES) for _ in range(n)]
+        steps = []
+        for _ in range(r.randint(1, 2)):
+            steps.append(r.choice(["gg", "G", "j", "k", "2j", "3j", "$", "0", "w", "5j", "%", "l"]))
+            steps.extend(sm_session(r))
+            if r.random() < 0.3:
+                steps.extend(["r" + r.choice(")]}>"), "@wait"])
+        cases.append({"id": "sm%d-%d" % (seed, i), "text": text, "rows": r.choice([5, 6, 8, 10, 24]), "cols": r.choice([30, 40, 60, 80]),
+                      "setup": r.choice(SM_SETUPS), "steps": steps, "attrs": True, "slow": True})
+    return cases
+
 def main():
     args = sys.argv[1:]
     seed, count, corpus, out, source = 1, 60, "cells", None, None
@@ -406,7 +442,7 @@ def main():
         cases = json.load(open(source))["cases"]
         corpus = "labs"
     else:
-        cases = {"cells": gen_cells, "scroll": gen_scroll, "resize": gen_resize, "click": gen_click, "hl": gen_hl, "is": gen_is, "isex": gen_is_ex, "hlwide": lambda seed, count: gen_hl(seed, count, HL_PATTERNS_WIDE)}[corpus](seed, count)
+        cases = {"cells": gen_cells, "scroll": gen_scroll, "resize": gen_resize, "click": gen_click, "hl": gen_hl, "is": gen_is, "isex": gen_is_ex, "sm": gen_sm, "hlwide": lambda seed, count: gen_hl(seed, count, HL_PATTERNS_WIDE)}[corpus](seed, count)
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: run_case(c, workdir), cases))

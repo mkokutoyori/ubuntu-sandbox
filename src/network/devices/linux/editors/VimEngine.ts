@@ -4,7 +4,7 @@ import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { MAXCOL, byteOffset, charCells, colAtByte, colAtVcol, cursorVcol, firstNonBlank, isWhite, type FindState, type MotionBuffer } from './vim/VimCursor';
-import { runMotion } from './vim/VimMotions';
+import { findMatchingBracket, parseMatchPairs, runMotion } from './vim/VimMotions';
 import { parseListChars, type ListSpec } from './vim/VimCells';
 import { VimWindow, type WindowSettings } from './vim/VimWindow';
 import { buildScreen } from './vim/VimScreen';
@@ -234,6 +234,7 @@ export class VimEngine {
   private noHlsearch = false;
   private jumpOrigin: { line: number; col: number } | null = null;
   private cmdlineColumn: { line: number; col: number } | null = null;
+  private matchJump: { line: number; col: number } | null = null;
   private liveSearch: IncSearchState | null = null;
   private searchContext: { operator: Operator | null; count: number | undefined; returnMode: VimMode } | null = null;
 
@@ -495,6 +496,7 @@ export class VimEngine {
   // ── Key dispatch ─────────────────────────────────────────────────
 
   applyKey(k: EditorKeyInput): void {
+    this.matchJump = null;
     this.explicitWant = null;
     this.keepWantThisKey = false;
     this.applyKeyInner(k);
@@ -1330,6 +1332,7 @@ export class VimEngine {
     } else {
       this.setLine(this._cursorLine, text.slice(0, this._cursorCol) + key.repeat(count) + text.slice(this._cursorCol + count));
       this._cursorCol += count - 1;
+      this.armShowMatch(key, this._cursorCol);
     }
     this._modified = true;
   }
@@ -1440,7 +1443,7 @@ export class VimEngine {
   }
 
   private motionBuffer(): MotionBuffer {
-    return { lines: this.linesArr, tabstop: this.tabstop, list: this.listMode, ctrlTab: this.ctrlTab, window: this.window };
+    return { lines: this.linesArr, tabstop: this.tabstop, list: this.listMode, ctrlTab: this.ctrlTab, window: this.window, pairs: parseMatchPairs(this.options.string('matchpairs')) };
   }
 
   private windowSettings(): WindowSettings {
@@ -1652,12 +1655,12 @@ export class VimEngine {
     return chars === bytes ? String(chars) : `${chars}-${bytes}`;
   }
 
-  private rulerPosition(): string {
-    const text = this.line(this._cursorLine);
-    const line = this.mlEmpty ? 0 : this._cursorLine + 1;
+  private rulerPosition(at = this._cursorLine, col = this._cursorCol, tabEnd = this.cursorOnTabEnd()): string {
+    const text = this.line(at);
+    const line = this.mlEmpty ? 0 : at + 1;
     if (text.length === 0) return `${line},0-1`;
-    const bytes = new TextEncoder().encode(text.slice(0, this._cursorCol)).length + 1;
-    const virtual = this.window.cursorSpan(this._cursorLine, this._cursorCol, this.cursorOnTabEnd()).virt + 1;
+    const bytes = new TextEncoder().encode(text.slice(0, col)).length + 1;
+    const virtual = this.window.cursorSpan(at, col, tabEnd).virt + 1;
     return `${line},${bytes === virtual ? bytes : `${bytes}-${virtual}`}`;
   }
 
@@ -1689,6 +1692,13 @@ export class VimEngine {
   }
 
   get screen(): EditorScreen {
+    const settled = this.buildEditorScreen(null);
+    const millis = this.options.number('matchtime') * 100;
+    if (this.matchJump === null || millis <= 0) return settled;
+    return { ...this.buildEditorScreen(this.matchJump), hold: { millis, then: settled } };
+  }
+
+  private buildEditorScreen(jump: { line: number; col: number } | null): EditorScreen {
     const o = this.options;
     const mode = this._mode;
     const visual = mode === 'visual' || mode === 'visual-line' || mode === 'visual-block'
@@ -1717,7 +1727,8 @@ export class VimEngine {
       messageStyle: bottom.style,
       ruler: o.bool('ruler'),
       showcmd: o.bool('showcmd') ? (visual ? this.visualSizeText() : this.showcmdKeys) : null,
-      rulerPosition: this.rulerPosition(),
+      rulerPosition: jump === null ? this.rulerPosition() : this.rulerPosition(jump.line, jump.col, false),
+      cursorAt: jump,
     });
   }
 
@@ -2346,6 +2357,7 @@ export class VimEngine {
       this._cursorCol++;
       this._modified = true;
       this.insertedText += ch;
+      this.armShowMatch(ch, this._cursorCol - 1);
       return;
     }
     this.setLine(this._cursorLine, l.slice(0, this._cursorCol) + ch + l.slice(this._cursorCol));
@@ -2353,6 +2365,21 @@ export class VimEngine {
     this._modified = true;
     this.insertedText += ch;
     if (ch === ' ') this.typedSpace = true;
+    this.armShowMatch(ch, this._cursorCol - 1);
+  }
+
+  private armShowMatch(ch: string, col: number): void {
+    if (!this.options.bool('showmatch')) return;
+    const pairs = parseMatchPairs(this.options.string('matchpairs'));
+    if (!Object.values(pairs).includes(ch)) return;
+    const hit = findMatchingBracket(this.motionBuffer(), { line: this._cursorLine, col });
+    if (hit === null || hit.line < this.window.top || hit.line >= this.window.botLine) return;
+    if (!this.window.wraps) {
+      const left = this.window.leftCol;
+      const virt = this.window.virtColumn(hit.line, hit.col, false);
+      if (virt < left || virt >= left + this.window.textWidth) return;
+    }
+    this.matchJump = hit;
   }
 
   private insertTabKey(): void {

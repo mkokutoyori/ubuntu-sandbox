@@ -28,6 +28,7 @@ export interface ScreenInput {
   readonly ruler: boolean;
   readonly showcmd: string | null;
   readonly rulerPosition: string;
+  readonly cursorAt: { readonly line: number; readonly col: number } | null;
 }
 
 const RULER_WIDTH = 18;
@@ -329,8 +330,9 @@ export function relativeLabel(position: 'All' | 'Top' | 'Bot' | number): string 
 export function buildScreen(window: VimWindow, input: ScreenInput): EditorScreen {
   const rows = windowRows(window, input);
   rows.push(bottomRow(window, input, relativeLabel(window.relativePosition())));
+  const shown = input.cursorAt ?? input.cursor;
   const cursor = input.commandLine
     ? { row: window.height, col: Math.min(window.cols - 1, cellsWidth(input.commandLine.prompt + input.commandLine.text)) }
-    : window.cursorCell(input.cursor.line, input.cursor.col, input.tabEnd);
+    : window.cursorCell(shown.line, shown.col, input.cursorAt === null ? input.tabEnd : false);
   return { rows, cursor };
 }

@@ -1,7 +1,7 @@
 import { VimEngine } from '@/network/devices/linux/editors/VimEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey, type EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
-import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
+import { plainRowText, type EditorScreen } from '@/network/devices/linux/editors/screen/EditorScreen';
 
 type AttrRuns = [from: number, to: number, attr: string][];
 interface Recorded { y: number; x: number; rows: string[]; last: string; height: number; width: number; attrs?: AttrRuns[] }
@@ -30,8 +30,8 @@ function keysOf(step: string): EditorKeyInput[] {
   return out;
 }
 
-function textRows(engine: VimEngine): string[] {
-  return engine.screen.rows.slice(0, -1).map((row) => plainRowText(row).replace(/\s+$/, ''));
+function textRows(screen: EditorScreen): string[] {
+  return screen.rows.slice(0, -1).map((row) => plainRowText(row).replace(/\s+$/, ''));
 }
 
 const STYLE_ATTRIBUTE: Readonly<Record<string, string>> = { search: 'b103', incsearch: '+7' };
@@ -46,9 +46,9 @@ function wantedCells(want: Recorded, rowCount: number, style: string): string[] 
   return cells;
 }
 
-function paintedCells(engine: VimEngine, rowCount: number, style: string): string[] {
+function paintedCells(screen: EditorScreen, rowCount: number, style: string): string[] {
   const cells: string[] = [];
-  engine.screen.rows.slice(0, rowCount).forEach((row, index) => {
+  screen.rows.slice(0, rowCount).forEach((row, index) => {
     for (const span of row.spans) {
       if (span.style === style) for (let col = span.from; col < span.to; col++) cells.push(`${index}:${col}`);
     }
@@ -65,9 +65,12 @@ export function replayScreenCase(c: ScreenCase): string | null {
   for (const line of setup) for (const k of keysOf(`:${line}<CR>`)) engine.applyKey(k);
   for (let s = 0; s < c.after.length; s++) {
     const step = c.steps[s];
+    let waited = false;
     if (step.startsWith('@click:')) {
       const [, row, col] = step.split(':').map(Number);
       engine.clickAt(row, col);
+    } else if (step === '@wait') {
+      waited = true;
     } else if (step.startsWith('@')) {
       const [rows, cols] = step.slice(1).split('x').map(Number);
       engine.resize(rows, cols);
@@ -75,8 +78,9 @@ export function replayScreenCase(c: ScreenCase): string | null {
       for (const k of keysOf(step)) engine.applyKey(k);
     }
     const want = c.after[s];
-    const got = textRows(engine);
-    const screen = engine.screen;
+    const shown = engine.screen;
+    const screen = waited && shown.hold !== undefined ? shown.hold.then : shown;
+    const got = textRows(screen);
     const rowsOk = JSON.stringify(got) === JSON.stringify(want.rows.slice(0, got.length).map((r) => r.replace(/\s+$/, '')));
     const wantAtCommandLine = want.y >= want.height - 1;
     const typing = engine.mode === 'search' || engine.mode === 'command';
@@ -85,7 +89,7 @@ export function replayScreenCase(c: ScreenCase): string | null {
       : wantAtCommandLine || (screen.cursor !== null && screen.cursor.row === want.y && screen.cursor.col === want.x);
     const styleDiffs = want.attrs === undefined ? [] : Object.keys(STYLE_ATTRIBUTE).flatMap((style) => {
       const wanted = wantedCells(want, got.length, style);
-      const painted = paintedCells(engine, got.length, style);
+      const painted = paintedCells(screen, got.length, style);
       return JSON.stringify(wanted) === JSON.stringify(painted) ? [] : [`\n  want ${style}=${JSON.stringify(wanted)}\n  got  ${style}=${JSON.stringify(painted)}`];
     });
     if (!rowsOk || !cursorOk || styleDiffs.length > 0) {
