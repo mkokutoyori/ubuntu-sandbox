@@ -210,13 +210,22 @@ parametres, tables (Data Pump) et vues, sequences, index, synonymes, triggers, p
 ne voyagent pas les vues materialisees, liens de base, repertoires, types objet, taches DBMS_SCHEDULER,
 commentaires, politiques d'audit, VPD/RLS, TDE, Data Vault, partitions de tables (Data Pump ne les porte pas),
 ni les donnees d'une table temporaire. (3) Windows Server : seuls les roles installes, les zones DNS et les
-etendues DHCP IPv4 voyagent ; Active Directory, IIS (sites, pools), ADCS, NPS, DFS, WSUS, impression, cluster,
-Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
+etendues DHCP IPv4 voyagent, ainsi que l'annuaire de chaque controleur de domaine (racine de foret, domaine
+enfant, controleur supplementaire : la promotion est rejouee en local, puis le delta de l'annuaire contre un
+jumeau promu ou, pour un controleur supplementaire, contre l'annuaire vivant de son controleur principal ; objets,
+mots de passe, GPO, schema, ACL, sites, fonctionnalites optionnelles, proprietaires FSMO de foret) ; ne voyagent
+pas les approbations, les machines jointes au domaine, l'etat de replication (vecteurs de haut niveau, journal :
+le premier tirage apres ouverture renvoie tout, sans effet), ni le niveau fonctionnel de domaine d'un controleur
+supplementaire (il repart au niveau par defaut : le mode de domaine n'est pas un attribut replique) ; IIS (sites,
+pools), ADCS, NPS, WSUS, impression, cluster, Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat
+sauvegarde.
 **Pourquoi ce n'est pas ferme** : (1) le texte de configuration est rejoue par la CLI dans l'ordre ; un extrait par
 difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations) : il faut un diff
 par bloc de mode. (2) Chaque famille d'objets Oracle demande une section dans `OracleStateDelta.ts` (une entree,
 un enumerateur sur le catalogue et sa restitution). (3) Chaque role Windows demande un `RolePersister`
-(`src/store/windowsServerRoles.ts`) ; l'annuaire AD est le plus gros et suppose de rejouer un magasin d'objets entier.
+(`src/store/windowsServerRoles.ts`) ; pour AD, les approbations vivent dans deux annuaires a la fois et les machines
+jointes dans l'annuaire d'un controleur et le registre d'un autre poste : il faut un ordre de restauration inter-appareils
+qui n'existe encore que pour les controleurs (`directoryRestoreOrder`).
 
 ### [oracle] fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse, FORCE sans effet, synonymes hors DML
 **Mesure** : `SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et

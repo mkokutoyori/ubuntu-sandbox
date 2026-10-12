@@ -57,6 +57,10 @@ import {
 } from '@/network/devices/windows/netFirewallRule';
 import { buildConnection, type Connection } from './networkStore';
 import { withFactoryTwin } from './factoryTwin';
+import { diffDirectory, promotionKind, type DirectoryPromotion } from '@/network/devices/windows/server/ad/DirectoryDelta';
+import type { DirectoryDelta, DirectorySnapshot } from '@/network/devices/windows/server/ad/DirectoryStore';
+import { resetForestRegistry, withIsolatedForestRegistry, type ForestFsmoRoles } from '@/network/devices/windows/server/ad/forest/Forest';
+import { registerStandInForest } from '@/network/devices/windows/server/ad/forest/StandInForest';
 import {
   captureWindowsServerRoles, restoreWindowsServerRoles, type WindowsServerRolesState,
 } from './windowsServerRoles';
@@ -291,6 +295,7 @@ interface TopologyDeviceExport {
   };
   removedPaths?: string[];
   windowsFeatures?: { installed: string[]; removed?: string[] };
+  activeDirectory?: { promotion: DirectoryPromotion; delta?: DirectoryDelta; baselineDeviceId?: string; forestFsmo?: ForestFsmoRoles };
   windowsRoles?: WindowsServerRolesState;
   /**
    * The machine's registry, as a diff against a pristine hive of the same
@@ -993,7 +998,106 @@ function restoreWindowsFeatures(device: WindowsServer, saved: NonNullable<Topolo
   for (const name of saved.installed) roles.install(name, {}, true);
 }
 
-function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport {
+function directoryBaselineOf(device: WindowsServer, peers: Map<string, Equipment>): { deviceId: string; snapshot: DirectorySnapshot } | null {
+  const domain = device.getDirectoryStore()?.dnsName.toLowerCase();
+  for (const peer of peers.values()) {
+    if (peer === device || !(peer instanceof WindowsServer)) continue;
+    const store = peer.getDirectoryStore();
+    const promotion = peer.getDirectoryPromotion();
+    if (!store || !promotion || promotionKind(promotion) === 'replica') continue;
+    if (store.dnsName.toLowerCase() === domain) return { deviceId: peer.getId(), snapshot: store.exportSnapshot() };
+  }
+  return null;
+}
+
+function withMirroredAddresses<T>(device: WindowsServer, twin: WindowsServer, run: () => T): T {
+  const mirrored = device.getPorts().flatMap((port) => {
+    const address = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    const counterpart = twin.getPort(port.getName());
+    if (!address || !mask || !counterpart) return [];
+    counterpart.configureIP(address, mask);
+    return [counterpart];
+  });
+  try {
+    return run();
+  } finally {
+    for (const port of mirrored) port.clearIP();
+  }
+}
+
+function captureForestFsmo(device: WindowsServer): ForestFsmoRoles | undefined {
+  const roles = device.getForest()?.getFsmoRoles();
+  const founder = device.getHostname();
+  if (!roles || (roles.schemaMaster === founder && roles.domainNamingMaster === founder)) return undefined;
+  return { ...roles };
+}
+
+function captureActiveDirectory(device: WindowsServer, twin: WindowsServer, peers: Map<string, Equipment>): TopologyDeviceExport['activeDirectory'] | undefined {
+  const promotion = device.getDirectoryPromotion();
+  const store = device.getDirectoryStore();
+  if (!promotion || !store) return undefined;
+  const kind = promotionKind(promotion);
+  const baseline = kind === 'replica' ? directoryBaselineOf(device, peers) : null;
+  const sourceForest = kind === 'childDomain' ? device.getForest() : null;
+  const factory = withMirroredAddresses(device, twin, () => withIsolatedForestRegistry(() => {
+    if (sourceForest) {
+      resetForestRegistry();
+      registerStandInForest(sourceForest, store.dnsName);
+    }
+    twin.replayDirectoryPromotion(promotion, baseline?.snapshot);
+    return twin.getDirectoryStore()?.exportSnapshot() ?? null;
+  }));
+  const delta = factory ? diffDirectory(store.exportSnapshot(), factory, kind === 'forest') : null;
+  const forestFsmo = kind === 'forest' ? captureForestFsmo(device) : undefined;
+  return {
+    promotion,
+    ...(delta ? { delta } : {}),
+    ...(baseline ? { baselineDeviceId: baseline.deviceId } : {}),
+    ...(forestFsmo ? { forestFsmo } : {}),
+  };
+}
+
+function restoreActiveDirectory(
+  device: WindowsServer, saved: NonNullable<TopologyDeviceExport['activeDirectory']>, restored: Map<string, Equipment>,
+): void {
+  const baselineDevice = saved.baselineDeviceId ? restored.get(saved.baselineDeviceId) : undefined;
+  const baseline = baselineDevice instanceof WindowsServer ? baselineDevice.getDirectoryStore()?.exportSnapshot() : undefined;
+  const result = device.replayDirectoryPromotion(saved.promotion, baseline);
+  if (!result.ok) {
+    Logger.warn('ad', 'persistence.restore-failed', result.message);
+    return;
+  }
+  if (saved.delta) device.getDirectoryStore()?.importSnapshot(saved.delta);
+  const forest = device.getForest();
+  if (forest && saved.forestFsmo) {
+    forest.transferFsmoRole('schemaMaster', saved.forestFsmo.schemaMaster);
+    forest.transferFsmoRole('domainNamingMaster', saved.forestFsmo.domainNamingMaster);
+  }
+}
+
+function directoryRestoreOrder(devices: TopologyDeviceExport[]): TopologyDeviceExport[] {
+  const byId = new Map(devices.map((d) => [d.id, d]));
+  const domainOwner = new Map<string, TopologyDeviceExport>();
+  for (const d of devices) {
+    const promotion = d.activeDirectory?.promotion;
+    if (promotion && promotionKind(promotion) !== 'replica') domainOwner.set(promotion.domainName.toLowerCase(), d);
+  }
+  const rank = (d: TopologyDeviceExport, visiting: Set<string>): number => {
+    const saved = d.activeDirectory;
+    if (!saved || visiting.has(d.id)) return 0;
+    const promotion = saved.promotion;
+    const kind = promotionKind(promotion);
+    const dependency = kind === 'childDomain'
+      ? domainOwner.get((promotion as { parentDomainName: string }).parentDomainName.toLowerCase())
+      : kind === 'replica' && saved.baselineDeviceId ? byId.get(saved.baselineDeviceId) : undefined;
+    return dependency ? 1 + rank(dependency, new Set(visiting).add(d.id)) : 0;
+  };
+  const ranks = new Map(devices.map((d) => [d.id, rank(d, new Set())]));
+  return [...devices].sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!);
+}
+
+function captureDevice(device: Equipment, twin: Equipment, peers: Map<string, Equipment>): TopologyDeviceExport {
   const pos = device.getPosition();
   const entry: TopologyDeviceExport = {
     id: device.getId(),
@@ -1048,7 +1152,9 @@ function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport
         entry.windowsFeatures = features;
         restoreWindowsFeatures(twin, features);
       }
-      const roles = captureWindowsServerRoles(device);
+      const directory = captureActiveDirectory(device, twin, peers);
+      if (directory) entry.activeDirectory = directory;
+      const roles = captureWindowsServerRoles(device, twin);
       if (roles) entry.windowsRoles = roles;
     }
     const files = captureWindowsFiles(device, twin);
@@ -1098,7 +1204,7 @@ export function exportTopology(
   const devices: TopologyDeviceExport[] = [];
 
   deviceInstances.forEach((device) => {
-    devices.push(withFactoryTwin(device, (twin) => captureDevice(device, twin)));
+    devices.push(withFactoryTwin(device, (twin) => captureDevice(device, twin, deviceInstances)));
   });
 
   const conns: TopologyConnectionExport[] = connections.map((c) => {
@@ -1250,6 +1356,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
 
   resetDeviceCounters();
   resetCounters();
+  resetForestRegistry();
   Logger.reset();
 
   for (const devData of json.devices) {
@@ -1327,7 +1434,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     }
   }
 
-  for (const devData of json.devices) {
+  for (const devData of directoryRestoreOrder(json.devices)) {
     const device = idMap.get(devData.id);
     if (!device) continue;
 
@@ -1419,11 +1526,12 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {
+      if (devData.windowsFeatures && device instanceof WindowsServer) restoreWindowsFeatures(device, devData.windowsFeatures);
+      if (devData.activeDirectory && device instanceof WindowsServer) restoreActiveDirectory(device, devData.activeDirectory, idMap);
       if (devData.files || devData.removedPaths) {
         restoreWindowsFiles(device, devData.files ?? [], devData.removedPaths ?? []);
       }
       if (devData.windowsAccounts) restoreWindowsAccounts(device, devData.windowsAccounts);
-      if (devData.windowsFeatures && device instanceof WindowsServer) restoreWindowsFeatures(device, devData.windowsFeatures);
       if (devData.windowsRoles && device instanceof WindowsServer) restoreWindowsServerRoles(device, devData.windowsRoles);
       // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\
       // Services\<name>` is a projection of the service table, written by

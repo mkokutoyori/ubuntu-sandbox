@@ -101,6 +101,34 @@ export interface OrgUnitWriteOptions {
   protected?: boolean;
 }
 
+export interface DirectoryEntrySnapshot {
+  dn: string;
+  attributes: Record<string, string[]>;
+  replMeta: EntryReplMeta | null;
+}
+
+export interface DirectorySnapshot {
+  entries: DirectoryEntrySnapshot[];
+  acls: Array<{ dn: string; rules: AdAccessRule[] }>;
+  kdsRootKey: { keyId: string; effectiveTime: string } | null;
+  nextRid: number;
+  localUsn: number;
+  optionalFeatureScopes: Array<{ name: string; scopes: string[] }>;
+  schema: { attributes: AttributeSchema[]; classes: ObjectClassSchema[] };
+}
+
+export interface DirectoryDelta {
+  entries: DirectoryEntrySnapshot[];
+  removedDns: string[];
+  acls: Array<{ dn: string; rules: AdAccessRule[] }>;
+  removedAcls: string[];
+  kdsRootKey: { keyId: string; effectiveTime: string } | null;
+  nextRid: number;
+  localUsn: number;
+  optionalFeatureScopes: Array<{ name: string; scopes: string[] }>;
+  schema: { attributes: AttributeSchema[]; classes: ObjectClassSchema[] };
+}
+
 export class DirectoryStore {
   private readonly tree: DirectoryTree;
   private readonly usersOuDn: DistinguishedName;
@@ -179,6 +207,38 @@ export class DirectoryStore {
       if (!opts.sharedSchemaValidator) seedDefaultSchema(this.schema);
       this.seedDefaults(adminPassword);
     }
+  }
+
+  exportSnapshot(): DirectorySnapshot {
+    return {
+      entries: this.tree.allDescendants(this.tree.getRootDn()).map((e) => ({
+        dn: formatDN(e.dn),
+        attributes: Object.fromEntries([...e.attributes].map(([k, v]) => [k, [...v]])),
+        replMeta: e.replMeta,
+      })),
+      acls: [...this.acls].map(([dn, rules]) => ({ dn, rules: rules.map((r) => ({ ...r })) })),
+      kdsRootKey: this.kdsRootKey,
+      nextRid: this.nextRid,
+      localUsn: this.localUsn,
+      optionalFeatureScopes: [...this.optionalFeatureScopes].map(([name, scopes]) => ({ name, scopes: [...scopes] })),
+      schema: { attributes: this.schema.listAttributes(), classes: this.schema.listObjectClasses() },
+    };
+  }
+
+  importSnapshot(delta: DirectoryDelta): void {
+    for (const attribute of delta.schema.attributes) this.schema.newAttribute(attribute);
+    for (const objectClass of delta.schema.classes) this.schema.newObjectClass(objectClass);
+    const depth = (dn: string): number => parseDN(dn).length;
+    for (const entry of [...delta.entries].sort((a, b) => depth(a.dn) - depth(b.dn))) {
+      this.tree.restoreEntry(parseDN(entry.dn), entry.attributes, entry.replMeta);
+    }
+    for (const dn of [...delta.removedDns].sort((a, b) => depth(b) - depth(a))) this.tree.deleteEntry(parseDN(dn));
+    for (const { dn, rules } of delta.acls) this.acls.set(dn, rules.map((r) => ({ ...r })));
+    for (const dn of delta.removedAcls) this.acls.delete(dn);
+    if (delta.kdsRootKey) this.kdsRootKey = { ...delta.kdsRootKey };
+    for (const { name, scopes } of delta.optionalFeatureScopes) this.optionalFeatureScopes.set(name, [...scopes]);
+    this.nextRid = Math.max(this.nextRid, delta.nextRid);
+    this.localUsn = Math.max(this.localUsn, delta.localUsn);
   }
 
   // ─── Schema (PRD-Windows-Server-Advanced.md §5 P7) ─────────────────────
