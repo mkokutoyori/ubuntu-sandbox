@@ -687,6 +687,10 @@ export class VimWindow implements WindowView {
     this.topValid = false;
   }
 
+  noteCursorLine(cursorLine: number): void {
+    this.checkCursorMoved(cursorLine);
+  }
+
   saveView(): ViewState {
     return { top: this.topLnum, left: this.leftColumn, skip: this.skipCol, bot: this.botLnum, empty: this.emptyRowCount };
   }
