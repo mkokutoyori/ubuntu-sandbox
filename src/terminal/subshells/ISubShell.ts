@@ -89,6 +89,9 @@ export interface ISubShell extends IShellBase {
    */
   interruptForeground?(): boolean;
 
+  /** The terminal this sub-shell runs in changed size (SIGWINCH, or a window-change over SSH). */
+  resize?(rows: number, cols: number): void;
+
   /**
    * Tab-completion candidates for the current input line. The owning
    * session decides how to apply them (single match → complete inline,

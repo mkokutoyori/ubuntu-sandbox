@@ -12,8 +12,9 @@
 
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import type { WindowsServiceManager } from './WindowsServiceManager';
+import { SHARED_HOST_IMAGES, type ServiceProcessHost, type WindowsService, type WindowsServiceManager } from './WindowsServiceManager';
 import type { IEventBus } from '@/events/EventBus';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 
 export type ProcessSession = 'Services' | 'Console';
 
@@ -83,13 +84,18 @@ export interface ProcessLeakProfile {
   cpuPercentCap?: number;
 }
 
+const SERVICES_EXE_PID = 620;
+
 const CRITICAL_PROCESSES = new Set([
   'system', 'smss.exe', 'csrss.exe', 'wininit.exe',
   'winlogon.exe', 'services.exe', 'lsass.exe',
 ]);
 
-export class WindowsProcessManager {
+export class WindowsProcessManager implements ServiceProcessHost {
   private processes: Map<number, WindowsProcess> = new Map();
+  private sharedHostOf: Map<string, number> = new Map();
+  private hostedBefore: Set<string> = new Set();
+  private spawnedHosts: Set<number> = new Set();
   private nextPid = 100;
   /** Reactive sink — null until the device attaches its bus. */
   private bus: IEventBus | null = null;
@@ -108,6 +114,7 @@ export class WindowsProcessManager {
   attachServiceManager(mgr: WindowsServiceManager, nowMs: () => number): void {
     this.serviceManager = mgr;
     this.nowMs = nowMs;
+    mgr.attachProcessHost(this);
   }
 
   /**
@@ -119,7 +126,7 @@ export class WindowsProcessManager {
     this.deviceId = deviceId;
   }
 
-  private publishProcess(pid: number, name: string, started: boolean): void {
+  private publishProcess(pid: number, name: string, started: boolean, forced = false): void {
     const proc = this.processes.get(pid);
     this.bus?.publish({
       topic: started ? 'windows.process.started' : 'windows.process.stopped',
@@ -130,6 +137,7 @@ export class WindowsProcessManager {
         owner: proc?.owner,
         commandLine: proc?.commandLine,
         elevation: proc?.elevation,
+        forced,
       },
     });
   }
@@ -151,10 +159,11 @@ export class WindowsProcessManager {
 
     // svchost.exe instances — each hosts a group of services
     this.addSvchost(784, [0, 'NT AUTHORITY\\SYSTEM'], ['RpcSs', 'RpcEptMapper']);
-    this.addSvchost(836, [0, 'NT AUTHORITY\\NetworkService'], ['Dnscache', 'NetBT']);
+    this.addSvchost(836, [0, 'NT AUTHORITY\\NetworkService'], ['Dnscache', 'NetBT', 'LanmanWorkstation']);
     this.addSvchost(912, [0, 'NT AUTHORITY\\LocalService'], ['EventLog', 'W32Time']);
-    this.addSvchost(964, [0, 'NT AUTHORITY\\SYSTEM'], ['Schedule', 'Themes', 'Winmgmt']);
+    this.addSvchost(964, [0, 'NT AUTHORITY\\SYSTEM'], ['Schedule', 'Themes', 'Winmgmt', 'LanmanServer', 'iphlpsvc']);
     this.addSvchost(1048, [0, 'NT AUTHORITY\\LocalService'], ['Dhcp', 'AudioSrv']);
+    this.addSvchost(1096, [0, 'NT AUTHORITY\\NetworkService'], ['TermService']);
     this.addSvchost(1100, [0, 'NT AUTHORITY\\SYSTEM'], ['SamSs', 'CryptSvc']);
     this.addSvchost(1168, [0, 'NT AUTHORITY\\LocalService'], ['mpssvc']);
 
@@ -180,12 +189,6 @@ export class WindowsProcessManager {
     this.addProcess(1800, 'spoolsv.exe', 620, 'Services', 0,
       'NT AUTHORITY\\SYSTEM', 420, 12, 8192, 18000, 0.5, 'Running', '', false, true,
       ['Spooler']);
-    this.addProcess(2200, 'LanmanServer.exe', 620, 'Services', 0,
-      'NT AUTHORITY\\SYSTEM', 320, 10, 6144, 14000, 0.3, 'Running', '', false, true,
-      ['LanmanServer']);
-    this.addProcess(2400, 'LanmanWorkstation.exe', 620, 'Services', 0,
-      'NT AUTHORITY\\NetworkService', 280, 8, 4096, 10000, 0.2, 'Running', '', false, true,
-      ['LanmanWorkstation']);
     this.addProcess(1088, 'sshd.exe', 620, 'Services', 0,
       'NT AUTHORITY\\SYSTEM', 260, 12, 8192, 18000, 0.4, 'Running', 'OpenSSH SSH Server', false, true,
       ['sshd']);
@@ -325,9 +328,11 @@ export class WindowsProcessManager {
     if (proc.systemOwned && !isAdmin) return `ERROR: Access is denied.`;
     if (proc.critical) return `ERROR: The process "${proc.name}" with PID ${pid} is critical and cannot be terminated.`;
 
-    this.publishProcess(pid, proc.name, false);
+    this.publishProcess(pid, proc.name, false, force);
     this.processes.delete(pid);
     for (const serviceName of proc.hostedServices) {
+      this.hostedBefore.add(serviceName.toLowerCase());
+      this.sharedHostOf.delete(serviceName.toLowerCase());
       this.serviceManager?.recordCrash(serviceName, this.nowMs());
     }
     return '';
@@ -361,43 +366,50 @@ export class WindowsProcessManager {
     return results.join('\n');
   }
 
-  /**
-   * Remove processes tied to a service when the service stops.
-   */
   onServiceStopped(serviceName: string): void {
+    const lower = serviceName.toLowerCase();
     for (const proc of [...this.processes.values()]) {
-      if (proc.hostedServices.length === 0) continue;
-      const idx = proc.hostedServices.findIndex(s => s.toLowerCase() === serviceName.toLowerCase());
+      const idx = proc.hostedServices.findIndex(s => s.toLowerCase() === lower);
       if (idx === -1) continue;
-
-      // If this process hosts only this service, kill it
-      if (proc.hostedServices.length === 1) {
-        // Only remove non-svchost processes; svchost stays alive even if one service stops
-        if (proc.name !== 'svchost.exe') {
-          this.processes.delete(proc.pid);
-        } else {
-          proc.hostedServices.splice(idx, 1);
-        }
-      } else {
-        proc.hostedServices.splice(idx, 1);
+      this.hostedBefore.add(lower);
+      const shared = SHARED_HOST_IMAGES.has(proc.name.toLowerCase());
+      if (!shared && proc.hostedServices.length === 1) {
+        this.exit(proc);
+        continue;
       }
+      proc.hostedServices.splice(idx, 1);
+      if (!shared) continue;
+      this.sharedHostOf.set(lower, proc.pid);
+      if (proc.hostedServices.length === 0 && this.spawnedHosts.delete(proc.pid)) this.exit(proc);
     }
   }
 
-  /**
-   * Spawn a process when a service starts (for dedicated-process services).
-   */
-  onServiceStarted(serviceName: string, processName: string): void {
-    // Check if a process already hosts this service
-    for (const proc of this.processes.values()) {
-      if (proc.hostedServices.some(s => s.toLowerCase() === serviceName.toLowerCase())) return;
+  onServiceStarted(service: WindowsService): void {
+    if (this.getPidForService(service.name) !== 0) return;
+    const lower = service.name.toLowerCase();
+    const image = service.processName.toLowerCase();
+    if (!SHARED_HOST_IMAGES.has(image)) {
+      this.spawnProcess(service.processName, SERVICES_EXE_PID, service.account, {
+        hostedServices: [service.name], systemOwned: true, commandLine: service.binaryPath,
+      });
+      return;
     }
-    // If it's a svchost service, add to an existing svchost or don't spawn
-    if (processName === 'svchost.exe') return;
-
-    this.spawnProcess(processName, 620, 'NT AUTHORITY\\SYSTEM', {
-      hostedServices: [serviceName], systemOwned: true,
+    const remembered = this.processes.get(this.sharedHostOf.get(lower) ?? -1);
+    const host = remembered?.name.toLowerCase() === image ? remembered : this.getProcessesByName(image)[0];
+    if (host && (image === 'lsass.exe' || remembered)) {
+      host.hostedServices.push(service.name);
+      return;
+    }
+    if (service.builtIn && !this.hostedBefore.has(lower)) return;
+    const spawned = this.spawnProcess(service.processName, SERVICES_EXE_PID, service.account, {
+      hostedServices: [service.name], systemOwned: true, commandLine: service.binaryPath,
     });
+    this.spawnedHosts.add(spawned.pid);
+  }
+
+  private exit(proc: WindowsProcess): void {
+    this.publishProcess(proc.pid, proc.name, false);
+    this.processes.delete(proc.pid);
   }
 
   /**
@@ -405,6 +417,18 @@ export class WindowsProcessManager {
    */
   resolveOwner(proc: WindowsProcess, currentUser: string): string {
     return proc.owner === '{USER}' ? `${currentUser}` : proc.owner;
+  }
+
+  identityOfService(serviceName: string): ListenerIdentity {
+    return this.identityOf(this.processes.get(this.getPidForService(serviceName)));
+  }
+
+  identityOfImage(image: string): ListenerIdentity {
+    return this.identityOf(this.getProcessesByName(image)[0]);
+  }
+
+  private identityOf(proc: WindowsProcess | undefined): ListenerIdentity {
+    return proc ? { pid: proc.pid, processName: proc.name } : {};
   }
 
   /** PID of the process hosting a given service, or 0 if none is running. */

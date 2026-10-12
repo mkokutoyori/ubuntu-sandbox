@@ -56,11 +56,11 @@ describe('Scénario UI-1 — statut de la barre de titre selon le fichier ouvert
     expect(nano.statusMessage).toBe('[ New File ]');
   });
 
-  it('mode lecture seule (-v) : statut "[ View mode ]", aucun verrou créé', () => {
+  it('mode lecture seule (-v) : statut "[ Read 1 line ]" comme un vrai nano 7.2 (qui ne dit "View" que dans le titre), aucun verrou créé', () => {
     const fs = new InMemoryEditorFsContext({ '/etc/passwd': 'root:x:0:0::/root:/bin/bash\n' });
     const nano = new NanoEngine(fs, '/etc/passwd', 'root:x:0:0::/root:/bin/bash\n', false, true);
     expect(nano.isReadOnly).toBe(true);
-    expect(nano.statusMessage).toBe('[ View mode ]');
+    expect(nano.statusMessage).toBe('[ Read 1 line ]');
     expect(nano.swapFileExists).toBe(false);
   });
 });

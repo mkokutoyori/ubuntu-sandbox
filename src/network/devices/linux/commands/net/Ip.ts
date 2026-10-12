@@ -196,7 +196,7 @@ export function buildIpCtx(
       try {
         const mask = SubnetMask.fromCIDR(cidr);
         if (!port.getIPAddress()) net.configureInterface(ifName, ip, mask);
-        else port.addSecondaryIP(ip, mask);
+        else net.addSecondaryInterfaceIP(ifName, ip, mask);
         return '';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
@@ -226,7 +226,7 @@ export function buildIpCtx(
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
       if (port.getIPAddress()?.equals(ip)) { net.clearInterfaceIP(ifName); return ''; }
-      if (port.getSecondaryIPs().some(e => e.ip.equals(ip))) { port.removeSecondaryIP(ip); return ''; }
+      if (port.getSecondaryIPs().some(e => e.ip.equals(ip))) { net.removeSecondaryInterfaceIP(ifName, ip); return ''; }
       return 'RTNETLINK answers: Cannot assign requested address';
     },
     addIPv6Route(prefix: string, prefixLength: number, gateway: string | null,

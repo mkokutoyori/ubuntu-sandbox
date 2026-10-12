@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { WindowsServer } from '@/network/devices/WindowsServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
@@ -31,7 +32,7 @@ describe('Scénario 9 — panne du contrôleur de domaine DC01', () => {
     sw = new CiscoSwitch('switch-cisco', 'SW-MANDENG-01', 8);
     sw.powerOn();
 
-    dc01 = new WindowsPC('windows-server', 'DC01', 0, 0);
+    dc01 = new WindowsServer('DC01', 0, 0);
     dc02 = new WindowsPC('windows-server', 'DC02', 0, 0);
     poste = new WindowsPC('windows-pc', 'PC-WIN-01', 0, 0);
     for (const m of [dc01, dc02, poste]) m.powerOn();
@@ -46,6 +47,7 @@ describe('Scénario 9 — panne du contrôleur de domaine DC01', () => {
 
     dc01.setCurrentUser('Administrator');
     poste.setCurrentUser('Administrator');
+    await psOn(dc01, 'Install-WindowsFeature AD-Domain-Services');
     await psOn(dc01,
       'Install-ADDSForest -DomainName mandeng.lan -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd!" -AsPlainText -Force) -Force');
 

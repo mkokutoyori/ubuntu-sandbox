@@ -392,6 +392,14 @@ export class SshInteractiveSubShell implements ISubShell {
     return this.channel.openEditor(line);
   }
 
+  private windowSize: { readonly rows: number; readonly cols: number } | null = null;
+
+  resize(rows: number, cols: number): void {
+    this.windowSize = { rows, cols };
+    this.channel.resize(cols, rows);
+    this.nestedHop?.resize(rows, cols);
+  }
+
   /** The channel an open remote editor exchanges keys and screens over. */
   editorTransport(): RemoteEditorTransport {
     if (this.nestedHop) return this.nestedHop.editorTransport();
@@ -819,6 +827,7 @@ export class SshInteractiveSubShell implements ISubShell {
       targetDevice?.getSshHostname() ?? pending.targetHost,
       targetDevice ?? undefined,
     );
+    if (this.windowSize !== null) this.nestedHop.resize(this.windowSize.rows, this.windowSize.cols);
     return done([...infoLines, ...banner], this.getPrompt());
   }
 

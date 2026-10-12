@@ -362,8 +362,17 @@ export class SshSession implements ISshSession {
     });
   }
 
+  private readonly disconnectListeners = new Set<() => void>();
+
+  onDisconnected(listener: () => void): void {
+    this.disconnectListeners.add(listener);
+  }
+
   private transition(next: SshSessionState): void {
+    const wasDisconnected = this._state.kind === 'disconnected';
     this._state = next;
+    if (next.kind !== 'disconnected' || wasDisconnected) return;
+    for (const listener of [...this.disconnectListeners]) listener();
   }
 
   private async doHostKeyCheck(

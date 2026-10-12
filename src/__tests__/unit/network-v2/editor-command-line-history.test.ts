@@ -153,16 +153,13 @@ describe('Scénario 15 — nano : rappel Haut/Bas dans l\'invite Search:', () =>
     expect(nano.searchQuery).toBe('alpha');
   });
 
-  it('plusieurs recherches successives : Haut/Haut recule ; Bas/Bas revient au texte pré-rempli du prompt (le dernier terme cherché — jamais vide, comme le vrai nano)', () => {
+  it('plusieurs recherches successives : Haut/Haut recule ; Bas/Bas revient au champ vide (le dernier terme n est qu un defaut entre crochets)', () => {
     const nano = makeNano('alpha\nbeta\ngamma\n');
     press(nano, 'w', { ctrl: true }); typeText(nano, 'alpha'); press(nano, 'Enter');
-    press(nano, 'w', { ctrl: true }); clearPromptField(nano); typeText(nano, 'beta'); press(nano, 'Enter');
+    press(nano, 'w', { ctrl: true }); typeText(nano, 'beta'); press(nano, 'Enter');
 
-    // Real nano prefills Ctrl+W with the last search term -- here 'beta',
-    // already the newest history entry, so the first Up doesn't visibly
-    // change anything; the second Up reaches the older 'alpha'.
     press(nano, 'w', { ctrl: true });
-    expect(nano.searchQuery).toBe('beta');
+    expect(nano.searchQuery).toBe('');
     press(nano, 'ArrowUp');
     expect(nano.searchQuery).toBe('beta');
     press(nano, 'ArrowUp');
@@ -170,8 +167,8 @@ describe('Scénario 15 — nano : rappel Haut/Bas dans l\'invite Search:', () =>
 
     press(nano, 'ArrowDown');
     expect(nano.searchQuery).toBe('beta');
-    press(nano, 'ArrowDown'); // past the newest entry -- restores the prefilled prompt text, not a blank line
-    expect(nano.searchQuery).toBe('beta');
+    press(nano, 'ArrowDown');
+    expect(nano.searchQuery).toBe('');
   });
 
   it("Haut sans historique ne fait rien", () => {

@@ -4,6 +4,7 @@ import type { LinuxCommandExecutor } from '../../LinuxCommandExecutor';
 import { AUDIT_PATHS } from '../LinuxAuditLog';
 import { hostClock } from './AuditHostClock';
 import type { AuditSearchHost, DateStyle } from './AuditToolHost';
+import type { AuditLoginHost } from './AuditLoginHost';
 
 function parseAuditdConf(text: string): { logFile: string; eoeTimeout: number } {
   let logFile: string = AUDIT_PATHS.log;
@@ -60,5 +61,15 @@ export function auditToolHost(executor: LinuxCommandExecutor): AuditSearchHost {
       vfs.writeFile(path, content, 0, 0, 0o177);
       return true;
     },
+  };
+}
+
+export function auditLoginHost(executor: LinuxCommandExecutor): AuditLoginHost {
+  const base = auditToolHost(executor);
+  return {
+    ...base,
+    writeFile: (path, content) => base.writeFile(executor.vfs.normalizePath(path, executor.getCwd()), content),
+    uid: () => executor.userMgr.currentUid,
+    passwdEntries: () => executor.userMgr.getAllUsers().map((user) => ({ name: user.username, uid: user.uid })),
   };
 }

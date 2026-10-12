@@ -128,6 +128,8 @@ export type InputMode =
       readOnly?: boolean;
       showPosition?: boolean;
       showLineNumbers?: boolean;
+      softwrap?: boolean;
+      displayName?: string;
       initialCursorLine?: number;
       initialCursorCol?: number;
     }
@@ -525,6 +527,21 @@ export abstract class TerminalSession {
   }
 
   get hasActiveChild(): boolean { return this._children.length > 0; }
+
+  private _windowSize: { readonly rows: number; readonly cols: number } | null = null;
+
+  get windowSize(): { readonly rows: number; readonly cols: number } | null { return this._windowSize; }
+
+  setWindowSize(rows: number, cols: number): void {
+    if (rows < 1 || cols < 1) return;
+    const last = this._windowSize;
+    if (last !== null && last.rows === rows && last.cols === cols) return;
+    this._windowSize = { rows, cols };
+    this.applyWindowSize(rows, cols);
+    for (const child of this._children) child.setWindowSize(rows, cols);
+  }
+
+  protected applyWindowSize(_rows: number, _cols: number): void {}
 
   editorSave(content: string, filePath: string): void {
     if (this._children.length > 0) { this.foreground.editorSave(content, filePath); return; }

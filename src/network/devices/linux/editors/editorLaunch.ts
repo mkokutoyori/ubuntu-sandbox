@@ -22,6 +22,7 @@ export interface EditorLaunch {
   readonly readOnly: boolean;
   readonly showPosition: boolean;
   readonly showLineNumbers: boolean;
+  readonly softwrap: boolean;
   readonly initialCursorLine?: number;
   readonly initialCursorCol?: number;
 }
@@ -42,7 +43,10 @@ export function parseEditorLaunch(commandLine: string): EditorLaunch | null {
   const head = parts[0] as EditorName | undefined;
   if (!head || !EDITOR_NAMES.includes(head)) return null;
 
-  const args = parts.slice(1);
+  return parseEditorArgs(head, parts.slice(1));
+}
+
+export function parseEditorArgs(editor: EditorName, args: readonly string[]): EditorLaunch | null {
   if (args.some((a) => NON_OPENING_FLAGS.has(a))) return null;
 
   let filePath = '';
@@ -64,13 +68,14 @@ export function parseEditorLaunch(commandLine: string): EditorLaunch | null {
 
   // nano-only display flags; vi/vim express the same ideas through
   // `:view` and `:set ruler` instead.
-  const isNano = head === 'nano';
+  const isNano = editor === 'nano';
   return {
-    editor: head,
+    editor,
     filePath,
     readOnly: isNano && args.some((a) => a === '-v' || a === '--view'),
     showPosition: isNano && args.some((a) => a === '-c' || a === '--constantshow'),
     showLineNumbers: isNano && args.some((a) => a === '-l' || a === '--linenumbers'),
+    softwrap: isNano && args.some((a) => a === '-S' || a === '--softwrap'),
     initialCursorLine,
     initialCursorCol,
   };

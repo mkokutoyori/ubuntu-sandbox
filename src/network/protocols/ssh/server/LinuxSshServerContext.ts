@@ -458,6 +458,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       });
       const EXIT_WORDS = new Set(['exit', 'logout']);
       return {
+        streamSession: session,
         execute: async (line: string) => {
           if (subShells.active) {
             const routed = await subShells.process(line);
@@ -484,6 +485,7 @@ export class LinuxSshServerContext implements ISshServerContext {
         // The engine runs here, on this channel's own session: the file
         // it opens, the permissions it obeys and the swap file it drops
         // are the remote's, not the client's.
+        setWindowSize: (rows: number, cols: number) => { session.windowSize = { rows, cols }; },
         openEditor: (commandLine: string) => {
           installDefaultEditors();
           const launch = parseEditorLaunch(commandLine);
@@ -499,6 +501,8 @@ export class LinuxSshServerContext implements ISshServerContext {
             readOnly: launch.readOnly,
             showPosition: launch.showPosition,
             showLineNumbers: launch.showLineNumbers,
+            softwrap: launch.softwrap,
+            displayName: launch.filePath,
             initialCursorLine: launch.initialCursorLine,
             initialCursorCol: launch.initialCursorCol,
           });
@@ -613,10 +617,10 @@ export class LinuxSshServerContext implements ISshServerContext {
     }
   }
 
-  connectionClosed(user: string, fromIp: string): void {
-    this.pamAuth?.closeSession({ ip: fromIp, port: this.clientPort(fromIp) });
-    const machine = this.device as { sshWireConnectionClosed?: (u: string, ip: string) => void } | null;
-    machine?.sshWireConnectionClosed?.(user, fromIp);
+  connectionClosed(user: string, fromIp: string, fromPort?: number): void {
+    this.pamAuth?.closeSession({ ip: fromIp, port: fromPort ?? this.clientPort(fromIp) });
+    const machine = this.device as { sshWireConnectionClosed?: (u: string, ip: string, port?: number) => void } | null;
+    machine?.sshWireConnectionClosed?.(user, fromIp, fromPort);
   }
 
   recordAuthFailure(user: string, fromIp: string): void {

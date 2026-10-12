@@ -84,8 +84,8 @@ export function tokenize(input: string): string[] {
 /**
  * Split input by chain operators (&&, ||, ;) respecting quotes.
  */
-export function splitChains(input: string): CommandChain[] {
-  const chains: CommandChain[] = [];
+export function splitChainText(input: string): Array<{ text: string; operator: CommandChain['operator'] }> {
+  const chains: Array<{ text: string; operator: CommandChain['operator'] }> = [];
   let current = '';
   let inSingle = false;
   let inDouble = false;
@@ -108,7 +108,7 @@ export function splitChains(input: string): CommandChain[] {
     if (!inSingle && !inDouble) {
       if (c === '&' && input[i + 1] === '&') {
         if (current.trim()) {
-          chains.push({ pipeline: parsePipeline(current.trim()), operator: '&&' });
+          chains.push({ text: current.trim(), operator: '&&' });
         }
         current = '';
         i++; // skip second &
@@ -116,7 +116,7 @@ export function splitChains(input: string): CommandChain[] {
       }
       if (c === '|' && input[i + 1] === '|') {
         if (current.trim()) {
-          chains.push({ pipeline: parsePipeline(current.trim()), operator: '||' });
+          chains.push({ text: current.trim(), operator: '||' });
         }
         current = '';
         i++;
@@ -124,7 +124,7 @@ export function splitChains(input: string): CommandChain[] {
       }
       if (c === ';') {
         if (current.trim()) {
-          chains.push({ pipeline: parsePipeline(current.trim()), operator: ';' });
+          chains.push({ text: current.trim(), operator: ';' });
         }
         current = '';
         continue;
@@ -135,17 +135,21 @@ export function splitChains(input: string): CommandChain[] {
   }
 
   if (current.trim()) {
-    chains.push({ pipeline: parsePipeline(current.trim()), operator: '' });
+    chains.push({ text: current.trim(), operator: '' });
   }
 
   return chains;
 }
 
+export function splitChains(input: string): CommandChain[] {
+  return splitChainText(input).map(({ text, operator }) => ({ pipeline: parsePipeline(text), operator }));
+}
+
 /**
- * Split a command string by | (pipe) respecting quotes.
+ * Split a command string by | (pipe) respecting quotes, keeping each stage's source text.
  */
-function parsePipeline(input: string): PipelineSegment[] {
-  const segments: PipelineSegment[] = [];
+export function splitPipeStages(input: string): string[] {
+  const stages: string[] = [];
   let current = '';
   let inSingle = false;
   let inDouble = false;
@@ -166,14 +170,11 @@ function parsePipeline(input: string): PipelineSegment[] {
     if (c === '"' && !inSingle) { inDouble = !inDouble; current += c; continue; }
 
     if (!inSingle && !inDouble && c === '|') {
-      // Make sure it's not ||
       if (input[i + 1] === '|') {
         current += c;
         continue;
       }
-      if (current.trim()) {
-        segments.push({ commands: [parseRedirections(current.trim())] });
-      }
+      if (current.trim()) stages.push(current.trim());
       current = '';
       continue;
     }
@@ -181,11 +182,12 @@ function parsePipeline(input: string): PipelineSegment[] {
     current += c;
   }
 
-  if (current.trim()) {
-    segments.push({ commands: [parseRedirections(current.trim())] });
-  }
+  if (current.trim()) stages.push(current.trim());
+  return stages;
+}
 
-  return segments;
+function parsePipeline(input: string): PipelineSegment[] {
+  return splitPipeStages(input).map((stage) => ({ commands: [parseRedirections(stage)] }));
 }
 
 /**

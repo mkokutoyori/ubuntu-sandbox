@@ -54,7 +54,7 @@ test.describe('Scénario 8 (e2e) — récupération swap vim après interruption
 
     await typeCmd(page, 'echo "Contenu original" > /tmp/vim-swap-test.txt');
     await typeCmd(page, 'vim /tmp/vim-swap-test.txt');
-    await expect(page.getByText('vim-swap-test.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="vim-cmdline"]')).toContainText('vim-swap-test.txt', { timeout: 5_000 });
 
     await page.keyboard.press('A');
     await typeText(page, ' MODIFIE');

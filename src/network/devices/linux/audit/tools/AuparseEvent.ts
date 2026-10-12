@@ -3,6 +3,7 @@ import { nameToMessageType } from './AuditEventAssembler';
 import { adjustType, elfToMachine, Interpreter } from './AuditInterpret';
 import { strtoulBig } from './AuditCNumbers';
 import type { EscapeMode } from './AuditPrint';
+import { AuparseFeed } from './AuparseFeed';
 
 export interface AuparseField {
   name: string;
@@ -20,6 +21,7 @@ export interface AuparseRecord {
   item: number;
   fields: AuparseField[];
   cur: number;
+  text: string;
 }
 
 export interface AuparseTime {
@@ -77,7 +79,7 @@ function unsignedParse(text: string, base: number): { value: bigint; failed: boo
 }
 
 export function parseUpRecord(text: string, item: number): AuparseRecord | null {
-  const record: AuparseRecord = { type: 0, machine: -1, syscall: -1, a0: 0n, a1: 0n, cwd: null, item, fields: [], cur: 0 };
+  const record: AuparseRecord = { type: 0, machine: -1, syscall: -1, a0: 0n, a1: 0n, cwd: null, item, fields: [], cur: 0, text };
   const splitter = new Splitter(text);
   let offset = 0;
   const append = (name: string, val: string | null): void => {
@@ -361,8 +363,46 @@ export class AuparseEvent {
     return this.interpretSockParts('fam=');
   }
 
+  rawValueInRecord(name: string): string | null {
+    const record = this.record;
+    if (record === null || record.fields.length === 0) return null;
+    record.cur = 0;
+    return this.findNameFromCurrent(record, name) ? record.fields[record.cur].val : null;
+  }
+
+  recordText(): string | null {
+    return this.record?.text ?? null;
+  }
+
   typeName(messageTypeToName: (type: number) => string | null): string | null {
     const record = this.record;
     return record === null ? null : messageTypeToName(record.type);
   }
+}
+
+export function buildAuparseEvent(lines: readonly string[], time: AuparseTime, interpreter: Interpreter, escapeMode: EscapeMode): AuparseEvent | null {
+  const records: AuparseRecord[] = [];
+  let cwd: string | null = null;
+  for (const line of lines) {
+    const parsed = parseUpRecord(line, records.length);
+    if (parsed === null) continue;
+    if (parsed.cwd !== null) cwd = parsed.cwd;
+    records.push(parsed);
+  }
+  return records.length === 0 ? null : new AuparseEvent(records, time, cwd, interpreter, escapeMode);
+}
+
+export function auparseEvents(texts: readonly string[], eoeTimeout: number, interpreter: Interpreter, escapeMode: EscapeMode = 'tty'): AuparseEvent[] {
+  const events: AuparseEvent[] = [];
+  const feed = new AuparseFeed(eoeTimeout, (ready) => {
+    const built = buildAuparseEvent(ready.lines, ready.time, interpreter, escapeMode);
+    if (built !== null) events.push(built);
+  });
+  for (const text of texts) {
+    const lines = text.split('\n');
+    if (lines[lines.length - 1] === '') lines.pop();
+    for (const line of lines) feed.feed(line);
+  }
+  feed.flush();
+  return events;
 }

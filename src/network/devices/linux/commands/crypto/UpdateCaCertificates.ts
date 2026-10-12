@@ -4,7 +4,6 @@ import { pemToCert } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 
 const LOCAL_DIR = '/usr/local/share/ca-certificates';
-const BUNDLE = '/etc/ssl/certs/ca-certificates.crt';
 
 function identity(cert: X509Certificate): string {
   return `${cert.subject}|${cert.serialNumber}`;
@@ -36,7 +35,6 @@ export const updateCaCertificatesCommand: LinuxCommand = {
     const lines: string[] = [`Updating certificates in /etc/ssl/certs...`];
 
     const names = (vfs.listDirectory(LOCAL_DIR) ?? []).map(entry => entry.name);
-    const pems: string[] = [];
     let added = 0;
 
     for (const name of [...names].sort()) {
@@ -48,18 +46,12 @@ export const updateCaCertificatesCommand: LinuxCommand = {
         lines.push(`W: ${LOCAL_DIR}/${name} does not contain a certificate or CRL: skipping`);
         continue;
       }
-      pems.push(text.trim());
       if (known.has(identity(cert))) continue;
       known.add(identity(cert));
       ctx.addTlsTrustAnchor?.(cert);
       added += 1;
       if (verbose) lines.push(`Adding debian:${name.replace(/\.(crt|pem)$/, '')}.pem`);
     }
-
-    vfs.writeFile(
-      BUNDLE, pems.length > 0 ? `${pems.join('\n')}\n` : '',
-      ctx.executor.userMgr.currentUid, ctx.executor.userMgr.currentGid, 0o022,
-    );
 
     lines.push(`${added} added, 0 removed; done.`);
     lines.push('Running hooks in /etc/ca-certificates/update.d...');

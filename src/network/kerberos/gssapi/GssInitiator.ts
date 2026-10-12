@@ -1,10 +1,12 @@
 import { systemRandom, type RandomSource } from '@/crypto/random';
-import { decodeApRep, decodeEncApRepPart, encodeApReq, encodeAuthenticator } from '../codec';
-import { AES256_CTS_HMAC_SHA1_96, KU_AP_REP_ENC_PART, KU_AP_REQ_AUTHENTICATOR, decryptWithUsage, encryptWithUsage } from '../crypto';
-import { AP_OPT_MUTUAL_REQUIRED, type PrincipalName, type Ticket } from '../types';
+import { decodeApRep, decodeEncApRepPart, encodeApReq, encodeAuthenticator, encodeEncKrbCredPart, encodeKrbCred } from '../codec';
 import {
-  GSS_C_CONF_FLAG, GSS_C_INTEG_FLAG, GSS_C_MUTUAL_FLAG, GSS_C_REPLAY_FLAG, GSS_C_SEQUENCE_FLAG, GSS_C_TRANS_FLAG,
-  TOKEN_ID_AP_REP, TOKEN_ID_AP_REQ, frameInitialContextToken, parseInitialContextToken,
+  AES256_CTS_HMAC_SHA1_96, KU_AP_REP_ENC_PART, KU_AP_REQ_AUTHENTICATOR, KU_KRB_CRED_ENC_PART, decryptWithUsage, encryptWithUsage,
+} from '../crypto';
+import { AP_OPT_MUTUAL_REQUIRED, type KrbCredInfo, type PrincipalName, type Ticket } from '../types';
+import {
+  GSS_C_CONF_FLAG, GSS_C_DELEG_FLAG, GSS_C_INTEG_FLAG, GSS_C_MUTUAL_FLAG, GSS_C_REPLAY_FLAG, GSS_C_SEQUENCE_FLAG, GSS_C_TRANS_FLAG,
+  TOKEN_ID_AP_REP, TOKEN_ID_AP_REQ, channelBindingsDigest, frameInitialContextToken, parseInitialContextToken,
 } from './GssToken';
 import { GssSecurityContext } from './GssSecurityContext';
 import { GSS_S_DEFECTIVE_TOKEN, GSS_S_FAILURE, gssFailure, type GssFailure } from './GssStatus';
@@ -21,17 +23,24 @@ export interface GssClock {
   nowMicroseconds(): number;
 }
 
+export interface ForwardedCredential {
+  readonly ticket: Ticket;
+  readonly info: KrbCredInfo;
+}
+
 export interface GssCredential {
   readonly ticket: Ticket;
   readonly sessionKey: Uint8Array;
   readonly clientName: PrincipalName;
   readonly clientRealm: string;
+  readonly forwarded?: ForwardedCredential | null;
 }
 
 export interface GssInitiatorOptions {
   readonly credential: GssCredential;
   readonly requestedFlags: number;
   readonly layerFlagsOnlyWhenRequested?: boolean;
+  readonly channelBindings?: Uint8Array | null;
   readonly clock: GssClock;
   readonly random?: RandomSource;
 }
@@ -41,15 +50,32 @@ export type GssStep =
   | { readonly kind: 'complete'; readonly output: Uint8Array | null }
   | { readonly kind: 'error'; readonly failure: GssFailure };
 
-function checksumValue(flags: number): Uint8Array {
-  const value = new Uint8Array(4 + BINDING_BYTES + 4);
+const DELEGATION_OPTION = 1;
+const DELEGATION_HEADER_BYTES = 4;
+
+function checksumValue(flags: number, channelBindings: Uint8Array | null, delegation: Uint8Array | null): Uint8Array {
+  const fixed = 4 + BINDING_BYTES + 4;
+  const value = new Uint8Array(delegation === null ? fixed : fixed + DELEGATION_HEADER_BYTES + delegation.length);
   const view = new DataView(value.buffer);
   view.setUint32(0, BINDING_BYTES, true);
+  value.set(channelBindingsDigest(channelBindings), 4);
   view.setUint32(4 + BINDING_BYTES, flags, true);
+  if (delegation !== null) {
+    view.setUint16(fixed, DELEGATION_OPTION, true);
+    view.setUint16(fixed + 2, delegation.length, true);
+    value.set(delegation, fixed + DELEGATION_HEADER_BYTES);
+  }
   return value;
 }
 
-export class GssInitiator {
+export interface GssContextInitiator {
+  readonly flags: number;
+  readonly clientDisplayName: string;
+  readonly securityContext: GssSecurityContext | null;
+  step(input: Uint8Array | null): GssStep;
+}
+
+export class GssInitiator implements GssContextInitiator {
   private state: 'start' | 'awaiting-reply' | 'established' | 'failed' = 'start';
   private sent: { ctime: number; cusec: number; subkey: Uint8Array; sequence: number } | null = null;
   private established: GssSecurityContext | null = null;
@@ -61,8 +87,9 @@ export class GssInitiator {
 
   get flags(): number {
     const requested = this.options.requestedFlags;
-    if (this.options.layerFlagsOnlyWhenRequested === true) return (requested & (GRANTED_ON_REQUEST | LAYER_FLAGS)) | GSS_C_TRANS_FLAG;
-    return (requested & GRANTED_ON_REQUEST) | LAYER_FLAGS | GSS_C_TRANS_FLAG;
+    const delegated = this.options.credential.forwarded ? GSS_C_DELEG_FLAG : 0;
+    if (this.options.layerFlagsOnlyWhenRequested === true) return (requested & (GRANTED_ON_REQUEST | LAYER_FLAGS)) | GSS_C_TRANS_FLAG | delegated;
+    return (requested & GRANTED_ON_REQUEST) | LAYER_FLAGS | GSS_C_TRANS_FLAG | delegated;
   }
 
   get clientDisplayName(): string {
@@ -87,15 +114,17 @@ export class GssInitiator {
 
   private start(): GssStep {
     const { credential } = this.options;
+    const subkey = this.random(SESSION_KEY_BYTES);
+    const drawn = new DataView(this.random(4).buffer).getUint32(0, false) & SEQUENCE_MASK;
+    const delegation = credential.forwarded ? this.forwardingMessage(credential.forwarded, drawn) : null;
+    const sequence = delegation === null ? drawn : (drawn + 1) & SEQUENCE_MASK;
     const microseconds = this.options.clock.nowMicroseconds();
     const ctime = Math.floor(microseconds / 1_000_000);
     const cusec = microseconds % 1_000_000;
-    const subkey = this.random(SESSION_KEY_BYTES);
-    const sequence = new DataView(this.random(4).buffer).getUint32(0, false) & SEQUENCE_MASK;
     const authenticator = encodeAuthenticator({
       crealm: credential.clientRealm,
       cname: credential.clientName,
-      cksum: { type: CHECKSUM_TYPE_GSSAPI, checksum: checksumValue(this.flags) },
+      cksum: { type: CHECKSUM_TYPE_GSSAPI, checksum: checksumValue(this.flags, this.options.channelBindings ?? null, delegation) },
       cusec,
       ctime,
       subkey: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: subkey },
@@ -116,6 +145,15 @@ export class GssInitiator {
     }
     this.establish(null);
     return { kind: 'complete', output };
+  }
+
+  private forwardingMessage(forwarded: ForwardedCredential, nonce: number): Uint8Array {
+    const microseconds = this.options.clock.nowMicroseconds();
+    const part = encodeEncKrbCredPart({
+      ticketInfo: [forwarded.info], nonce, timestamp: Math.floor(microseconds / 1_000_000), usec: microseconds % 1_000_000,
+    });
+    const cipher = encryptWithUsage(this.options.credential.sessionKey, KU_KRB_CRED_ENC_PART, part, this.random);
+    return encodeKrbCred({ tickets: [forwarded.ticket], encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher } });
   }
 
   private finish(input: Uint8Array): GssStep {

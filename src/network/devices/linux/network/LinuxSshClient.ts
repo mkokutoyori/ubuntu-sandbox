@@ -905,7 +905,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   const machine = found.device as LinuxMachine & {
     isServiceActive?: (n: string) => boolean;
-    scheduleSshLogout?: (user: string, fromIp: string, holdSeconds: number, wireOwned?: boolean) => void;
+    scheduleSshLogout?: (
+      user: string, fromIp: string, holdSeconds: number, wireOwned?: boolean, fromPort?: number,
+    ) => void;
     sshdAcceptsLogin?: (
       u: string, ctx?: {
         address?: string; host?: string; method?: 'publickey' | 'password' | 'pending'; keyForcesCommand?: boolean;
@@ -1114,9 +1116,10 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     ? `Warning: your password will expire in ${warningDays} day${warningDays === 1 ? '' : 's'}.\n`
     : '';
 
+  let sessionPort: number | undefined;
   if (opts.wireAuthenticated) {
-    (machine as unknown as {
-      openSshSessionRecord?: (u: string, ip: string, host: string) => void;
+    sessionPort = (machine as unknown as {
+      openSshSessionRecord?: (u: string, ip: string, host: string) => number;
     }).openSshSessionRecord?.(remoteUser, opts.sourceIp, opts.sourceHostname);
   } else {
     machine.recordSshLogin?.(
@@ -1306,7 +1309,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine), opts.wireAuthenticated === true);
+    machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine), opts.wireAuthenticated === true, sessionPort);
     return { output: clientHeader + normalised, exitCode: execRc, connection };
   }
 
@@ -1374,7 +1377,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const relayedShell = opts.shellRelay?.() ?? null;
   if (relayedShell && relayedShell.output.length > 0) lines.push(relayedShell.output);
   lines.push(connectionClosed(host));
-  machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0, opts.wireAuthenticated === true);
+  machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0, opts.wireAuthenticated === true, sessionPort);
   return { output: clientHeader + lines.join('\n'), exitCode: 0, connection };
 }
 

@@ -85,6 +85,13 @@ export interface LinuxShellSessionInit {
  * (`$!`, `wait`, process group signalling, `disown`) plug in without
  * reshaping the data model.
  */
+export interface WindowSize {
+  readonly rows: number;
+  readonly cols: number;
+}
+
+export const DEFAULT_WINDOW_SIZE: WindowSize = { rows: 24, cols: 80 };
+
 export class LinuxShellSession {
   readonly id: string;
 
@@ -114,6 +121,8 @@ export class LinuxShellSession {
   readonly jobTable: LinuxJobTable;
   /** When the shell was opened — backs `$SECONDS`. */
   readonly startTime: number = simulationNowMs();
+  /** The tty's TIOCGWINSZ: what `stty size`, `tput`, `$COLUMNS` and every full-screen program read. */
+  windowSize: WindowSize = DEFAULT_WINDOW_SIZE;
   /** Whether the session has been disposed. */
   disposed: boolean = false;
 

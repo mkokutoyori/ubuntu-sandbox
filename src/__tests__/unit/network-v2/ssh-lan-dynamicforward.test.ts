@@ -8,7 +8,7 @@
  *
  * Scope (parser + SOCKS5 handshake stub — full byte bridging not
  * exercised here, the listener / SOCKS replies are):
- *  - D1..D3 : parseDynamicForwardSpec parses `port` / `bind:port` / rejects.
+ *  - D1..D3 : SshPortForward.parse parses `port` / `bind:port` / rejects.
  *  - D4..D5 : parseSshArgs collects multiple `-D` and `-o DynamicForward=`.
  *  - D6     : SshDynamicForwarder.register() leaves a listener.
  *  - D7     : dispose() unregisters.
@@ -20,10 +20,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
-import {
-  parseDynamicForwardSpec,
-  parseSshArgs,
-} from '@/terminal/sessions/sshArgs';
+import { parseSshArgs } from '@/terminal/sessions/sshArgs';
+import { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
 import { SshDynamicForwarder } from '@/network/protocols/ssh/SshDynamicForwarder';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
@@ -48,27 +46,34 @@ describe('SSH LAN — dynamic forwarding (`ssh -D`)', () => {
   // ─── parser ───────────────────────────────────────────────────
 
   // D1
-  it('D1 — parseDynamicForwardSpec accepts a bare port', () => {
-    expect(parseDynamicForwardSpec('1080')).toEqual({
-      socksPort: 1080,
-      bindAddress: null,
+  it('D1 — SshPortForward.parse accepts a bare -D port and binds the loopback', () => {
+    expect(SshPortForward.parse('dynamic', '1080')).toMatchObject({
+      kind: 'dynamic',
+      listenPort: 1080,
+      bindAddress: '127.0.0.1',
+      destHost: null,
+      destPort: null,
     });
   });
 
   // D2
-  it('D2 — parseDynamicForwardSpec accepts `bindAddress:port`', () => {
-    expect(parseDynamicForwardSpec('127.0.0.1:1080')).toEqual({
-      socksPort: 1080,
+  it('D2 — SshPortForward.parse accepts `bindAddress:port`', () => {
+    expect(SshPortForward.parse('dynamic', '127.0.0.1:1080')).toMatchObject({
+      listenPort: 1080,
       bindAddress: '127.0.0.1',
+    });
+    expect(SshPortForward.parse('dynamic', '0.0.0.0:1080')).toMatchObject({
+      listenPort: 1080,
+      bindAddress: '0.0.0.0',
     });
   });
 
   // D3
-  it('D3 — parseDynamicForwardSpec rejects malformed input', () => {
-    expect(parseDynamicForwardSpec('')).toBeNull();
-    expect(parseDynamicForwardSpec('not-a-port')).toBeNull();
-    expect(parseDynamicForwardSpec('0')).toBeNull();
-    expect(parseDynamicForwardSpec('a:b:c')).toBeNull();
+  it('D3 — SshPortForward.parse rejects malformed -D input', () => {
+    expect(SshPortForward.parse('dynamic', '')).toBeNull();
+    expect(SshPortForward.parse('dynamic', 'not-a-port')).toBeNull();
+    expect(SshPortForward.parse('dynamic', '0')).toBeNull();
+    expect(SshPortForward.parse('dynamic', 'a:b:c')).toBeNull();
   });
 
   // D4
@@ -78,10 +83,9 @@ describe('SSH LAN — dynamic forwarding (`ssh -D`)', () => {
       '-D', '1.2.3.4:1081',
       'user@10.0.0.2',
     ]);
-    expect(parsed!.dynamicForwards).toEqual([
-      { socksPort: 1080, bindAddress: null },
-      { socksPort: 1081, bindAddress: '1.2.3.4' },
-    ]);
+    expect(parsed!.dynamicForwards).toHaveLength(2);
+    expect(parsed!.dynamicForwards[0]).toMatchObject({ listenPort: 1080, bindAddress: '127.0.0.1' });
+    expect(parsed!.dynamicForwards[1]).toMatchObject({ listenPort: 1081, bindAddress: '1.2.3.4' });
   });
 
   // D5
@@ -90,9 +94,8 @@ describe('SSH LAN — dynamic forwarding (`ssh -D`)', () => {
       '-o', 'DynamicForward=1080',
       'user@10.0.0.2',
     ]);
-    expect(parsed!.dynamicForwards).toEqual([
-      { socksPort: 1080, bindAddress: null },
-    ]);
+    expect(parsed!.dynamicForwards).toHaveLength(1);
+    expect(parsed!.dynamicForwards[0]).toMatchObject({ listenPort: 1080, bindAddress: '127.0.0.1' });
   });
 
   // ─── listener registration ────────────────────────────────────

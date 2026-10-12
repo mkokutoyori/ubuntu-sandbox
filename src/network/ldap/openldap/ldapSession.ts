@@ -16,7 +16,7 @@ import { Sockbuf, berGetNext, newBerGetNextState, type BerGetNextState } from '.
 import type { LdapChannel, LdapTransport, TlsUpgradeRequest } from './ldapChannel';
 import { HeapSim } from './ldapHeap';
 import { LDAP_SASL_QUIET } from './lutilSasl';
-import { SaslClientConn, saslErrstring, type SaslHostEnvironment } from './sasl/saslClient';
+import { SaslClientConn, channelBindingData, saslErrstring, type SaslHostEnvironment } from './sasl/saslClient';
 import { SaslProp, SaslRc, type SaslInteract } from './sasl/saslTypes';
 
 export type { LdapChannel, LdapTransport, TlsUpgradeRequest, TlsUpgradeOutcome } from './ldapChannel';
@@ -395,9 +395,9 @@ export class LdapSession {
     conn.lastUsed = conn.created;
     if (srv.scheme === 'ldaps') {
       ++conn.refcnt;
-      const outcome = connected.channel.upgradeTls({ serverName: srv.host ?? '', tls: this.options.tls, implicit: true });
+      const outcome = await connected.channel.upgradeTls({ ...this.tlsRequest(srv.host ?? ''), implicit: true });
       --conn.refcnt;
-      if ('detail' in outcome) {
+      if (outcome.ok === false) {
         this.errno = LdapRc.CONNECT_ERROR;
         this.errorText = outcome.detail;
         this.closeSocket(conn);
@@ -405,6 +405,12 @@ export class LdapSession {
       }
     }
     return conn;
+  }
+
+  private readonly tlsDebug = (level: number, text: string): void => this.log.debug(level, text);
+
+  private tlsRequest(serverName: string): Omit<TlsUpgradeRequest, 'implicit'> {
+    return { serverName, tls: this.options.tls, debug: this.tlsDebug };
   }
 
   private closeSocket(conn: LdapConn): void {
@@ -1590,7 +1596,7 @@ export class LdapSession {
     };
   }
 
-  async startTlsSync(request: Omit<TlsUpgradeRequest, 'implicit'>): Promise<number> {
+  async startTlsSync(request: Omit<TlsUpgradeRequest, 'implicit' | 'debug'>): Promise<number> {
     if (this.options.version < LdapVersion.V3) return LdapRc.PARAM_ERROR;
     const sent = await this.extendedOperation(START_TLS_OID, null);
     if (sent.rc !== LdapRc.SUCCESS) return sent.rc;
@@ -1599,11 +1605,11 @@ export class LdapSession {
     const parsed = this.parseResult(batch.messages[batch.messages.length - 1]);
     if (parsed.code !== LdapRc.SUCCESS) return parsed.code;
     const conn = this.defConn as LdapConn;
-    const outcome = conn.sb.channel.upgradeTls({ ...request, implicit: false });
-    if ('detail' in outcome) {
-      this.errno = LdapRc.CONNECT_ERROR;
+    const outcome = await conn.sb.channel.upgradeTls({ ...request, implicit: false, debug: this.tlsDebug });
+    if (outcome.ok === false) {
+      this.errno = outcome.errno ?? LdapRc.CONNECT_ERROR;
       this.errorText = outcome.detail;
-      return LdapRc.CONNECT_ERROR;
+      return this.errno;
     }
     return LdapRc.SUCCESS;
   }
@@ -1789,7 +1795,10 @@ export class LdapSession {
       ctx = created.conn;
       conn.saslAuthCtx = ctx;
       const tls = conn.sb.channel.tlsState?.() ?? null;
-      if (tls !== null) ctx.setExternal(tls.strength, tls.clientDn);
+      if (tls !== null) {
+        ctx.setExternal(tls.strength, tls.clientDn);
+        ctx.setChannelBinding(channelBindingData(this.options.sasl.channelBinding, tls));
+      }
       ctx.setSecProps(this.options.sasl.secprops);
       let prompts: SaslInteract[] | null = null;
       let pmech: string | null = null;

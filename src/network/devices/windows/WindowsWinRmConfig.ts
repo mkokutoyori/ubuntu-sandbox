@@ -7,12 +7,17 @@ export class WindowsWinRmConfig {
   enabled = false;
   listeners: WinRmListener[] = [];
   credSSP = false;
+  private readonly changeListeners: Array<() => void> = [];
+
+  onChange(listener: () => void): void { this.changeListeners.push(listener); }
 
   enable(): void {
+    const wasEnabled = this.enabled;
     this.enabled = true;
     if (!this.listeners.some(l => l.transport === 'HTTP')) {
       this.listeners.push({ transport: 'HTTP', port: 5985 });
     }
+    if (!wasEnabled) for (const listener of this.changeListeners) listener();
   }
 }
 

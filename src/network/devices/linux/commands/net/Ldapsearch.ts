@@ -1,18 +1,16 @@
-import { reverseNameOfAsync } from '../../network/ReverseName';
+import { forwardHostOfAsync, reverseNameOfAsync } from '../../network/ReverseName';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 import { runLdapsearch, type LdapToolHost } from '@/network/ldap/openldap/ldapsearch';
-import type { LdapChannel, LdapTransport, TlsUpgradeRequest, TlsUpgradeOutcome, ChannelRead, ConnectOutcome } from '@/network/ldap/openldap/ldapChannel';
+import type { LdapChannel, LdapTlsState, LdapTransport, TlsUpgradeRequest, TlsUpgradeOutcome, ChannelRead, ConnectOutcome } from '@/network/ldap/openldap/ldapChannel';
 import { kernelHostname } from '../../KernelHostname';
 import { formatCtime } from '../../time/ctime';
 import { dialLdap, type LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
-import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
-import { pemToCertChain } from '@/network/pki/pem';
-import type { X509Certificate } from '@/network/pki/X509Certificate';
-import { TlsRequireCert } from '@/network/ldap/openldap/ldapOptions';
+import { connectTls, type TlsConnectHost } from '@/network/ldap/openldap/tls/tlsConnect';
+import { ldapDistinguishedName } from '@/network/pki/der/DistinguishedName';
+import type { TlsFiles } from '@/network/ldap/openldap/tls/tlsContext';
 import { SASL_PLUGIN_DIRECTORY, loadClientPlugins } from '@/network/ldap/openldap/sasl/saslPlugins';
-import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { Krb5Context } from '../../kerberos/Krb5Context';
 import { Krb5GssClient } from '../../kerberos/Krb5GssClient';
 import { linuxKrb5Host } from '../../kerberos/Krb5LinuxHost';
@@ -21,7 +19,7 @@ import { linuxKrb5Host } from '../../kerberos/Krb5LinuxHost';
 class ClientChannel implements LdapChannel {
   constructor(
     private readonly client: LdapClient,
-    private readonly upgrade: (client: LdapClient, request: TlsUpgradeRequest) => TlsUpgradeOutcome,
+    private readonly upgrade: (client: LdapClient, request: TlsUpgradeRequest) => Promise<TlsUpgradeOutcome>,
   ) {
     client.openRawLink();
   }
@@ -46,8 +44,19 @@ class ClientChannel implements LdapChannel {
     return this.client.rawReadable();
   }
 
-  upgradeTls(request: TlsUpgradeRequest): TlsUpgradeOutcome {
+  upgradeTls(request: TlsUpgradeRequest): Promise<TlsUpgradeOutcome> {
     return this.upgrade(this.client, request);
+  }
+
+  tlsState(): LdapTlsState | null {
+    const channel = this.client.tlsChannel;
+    return channel === null
+      ? null
+      : {
+        strength: channel.keyBits,
+        clientDn: channel.clientCertificate === null ? null : ldapDistinguishedName(channel.clientCertificate.subject),
+        serverEndPoint: channel.serverEndPoint, unique: channel.unique,
+      };
   }
 
   close(): void {
@@ -55,27 +64,52 @@ class ClientChannel implements LdapChannel {
   }
 }
 
-function trustAnchorsFor(ctx: LinuxCommandContext, request: TlsUpgradeRequest): readonly X509Certificate[] {
-  const bundle = request.tls.caCertFile;
-  if (bundle === null) return ctx.tlsTrustAnchors;
+function readableFile(ctx: LinuxCommandContext, path: string): { bytes: Uint8Array } | { error: string } {
   const vfs = ctx.executor.vfs;
-  const pem = vfs.readFile(vfs.normalizePath(bundle, ctx.executor.getCwd()));
-  return pem === null ? [] : pemToCertChain(pem);
+  const users = ctx.executor.userMgr;
+  const resolved = vfs.normalizePath(path, ctx.executor.getCwd());
+  const inode = vfs.resolveInode(resolved);
+  if (inode === null) return { error: 'No such file or directory' };
+  if (inode.type === 'directory') return { error: 'Is a directory' };
+  if (!vfs.checkAccess(inode, 'r', users.currentUid, users.currentGid)) return { error: 'Permission denied' };
+  return { bytes: bytesOfText(vfs.readFile(resolved) ?? '') };
 }
 
-function upgradeLdapTls(
-  ctx: LinuxCommandContext, client: LdapClient, request: TlsUpgradeRequest,
-): TlsUpgradeOutcome {
-  const mode = request.tls.requireCert;
-  const lenient = mode === TlsRequireCert.NEVER || mode === TlsRequireCert.ALLOW;
-  const config: TlsClientConfig = {
-    verifier: new CertificateVerifier({ trustAnchors: trustAnchorsFor(ctx, request) }),
-    allowUntrustedPeer: lenient,
-    serverName: request.serverName,
+function tlsFilesOf(ctx: LinuxCommandContext): TlsFiles {
+  const vfs = ctx.executor.vfs;
+  return {
+    read: (path) => readableFile(ctx, path),
+    regularFiles(directory) {
+      const resolved = vfs.normalizePath(directory, ctx.executor.getCwd());
+      const entries = vfs.listDirectory(resolved);
+      if (entries === null) return null;
+      return entries
+        .filter((entry) => vfs.resolveInode(`${resolved}/${entry.name}`)?.type === 'file')
+        .map((entry) => entry.name);
+    },
   };
-  const outcome = client.attachTls(config);
-  if (outcome.ok) return { ok: true };
-  return { ok: false, detail: '(unknown error code)' };
+}
+
+function tlsConnectHostOf(ctx: LinuxCommandContext, client: LdapClient): TlsConnectHost {
+  return {
+    files: tlsFilesOf(ctx),
+    async localFqdn() {
+      const hostname = kernelHostname(ctx.executor.vfs);
+      return (await forwardHostOfAsync(ctx.executor.nss, hostname))?.canonicalName ?? hostname;
+    },
+    handshake(config) {
+      const { ok, session } = client.attachTls(config);
+      const verification = session.peerVerified
+        ? { ok: true as const }
+        : { ok: false as const, reason: session.peerVerificationReason ?? 'unknown' };
+      return {
+        established: ok, alert: session.lastAlert !== null,
+        localAlert: session.peerAlert === null ? session.lastAlert?.description ?? null : null, certificate: session.peerCertificate,
+        chain: session.peerCertificateChain, verification,
+      };
+    },
+    detach: () => client.detachTls(),
+  };
 }
 
 const ENETUNREACH = 101;
@@ -94,7 +128,7 @@ function linuxLdapTransport(ctx: LinuxCommandContext): LdapTransport {
       if (!dialed.ok || dialed.client === undefined) {
         return { kind: 'failed', errno: dialed.reason === 'refused' ? ECONNREFUSED : dialed.reason === 'unroutable' ? ENETUNREACH : ETIMEDOUT };
       }
-      return { kind: 'connected', channel: new ClientChannel(dialed.client, (client, request) => upgradeLdapTls(ctx, client, request)) };
+      return { kind: 'connected', channel: new ClientChannel(dialed.client, (client, request) => connectTls(request, tlsConnectHostOf(ctx, client))) };
     },
   };
 }
@@ -112,13 +146,7 @@ function linuxLdapToolHost(ctx: LinuxCommandContext, stdin: string | undefined):
   return {
     environment: (name) => ctx.executor.commandEnvironment()[name] ?? null,
     readTextFile: (path) => vfs.readFile(resolve(path)),
-    readFile(path) {
-      const inode = vfs.resolveInode(resolve(path));
-      if (inode === null) return { error: 'No such file or directory' };
-      if (inode.type === 'directory') return { error: 'Is a directory' };
-      if (!vfs.checkAccess(inode, 'r', users.currentUid, users.currentGid)) return { error: 'Permission denied' };
-      return { bytes: bytesOfText(vfs.readFile(resolve(path)) ?? '') };
-    },
+    readFile: (path) => readableFile(ctx, path),
     fileMode(path) {
       const inode = vfs.resolveInode(resolve(path));
       return inode === null ? null : inode.permissions & 0o7777;

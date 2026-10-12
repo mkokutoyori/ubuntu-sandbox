@@ -27,7 +27,6 @@ import {
 } from './windows/WindowsNicTeam';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
-import type { SocketProtocol } from '../core/SocketTable';
 import { MACAddress } from '../core/types';
 import { toDisplayName, adapterIfIndex, LOOPBACK_IFINDEX } from './windows/WindowsInterfaceNaming';
 import { interfaceGuidFor } from './host/hardware/HardwareIdentity';
@@ -54,6 +53,7 @@ import {
   TelnetClientSession, type TelnetClientTransport,
 } from '../protocols/telnet/TelnetClientSession';
 import type { TcpSocket } from '../tcp/TcpStack';
+import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient, winWireExecTarget } from './windows/network/WindowsSshClient';
@@ -111,9 +111,10 @@ import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
-import { WindowsServicePortProjection } from './windows/WindowsServicePortProjection';
+import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
+import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
-import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
+import { PortProxyEndpoint } from './windows/PortProxyEndpoint';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
@@ -276,6 +277,7 @@ import {
  */
 /** Le pas du planificateur de tâches — la minute, comme sous Windows. */
 const TASK_TICK_MS = 60_000;
+const DNS_CLIENT_SERVICE = 'Dnscache';
 
 /**
  * `ReferenceId` a la mode Windows : l'adresse en hexadecimal suivie de
@@ -356,8 +358,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly ntdsOptions = new Set<NtdsOption>();
   /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
   private ldapStartTlsIdentity: ReturnType<typeof selfSignedLdapCert> | null = null;
-  /** Remote Desktop (PRD-Windows-Server-Advanced.md §5 P17) — disabled by default; toggled via `Enable-RemoteDesktop`. */
-  readonly rdp: WindowsRdpConfig = new WindowsRdpConfig();
   /** Windows Update client redirection toward a WSUS server (PRD-Windows-Server-Advanced.md §5 P19) — unset by default (points at Windows Update directly, out of this simulator's scope); set via `Set-WUSettings -WUServer`. */
   readonly wsus: WindowsWsusClientConfig = new WindowsWsusClientConfig();
   /** Activation/licensing state (PRD-Windows-Server-Advanced.md §5 P21) — ships on every SKU; toggled via `slmgr /ipk`/`/ato`. */
@@ -425,10 +425,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private eventLogProjection: WindowsEventLogProjection | null = null;
   /** Reactive consumer: service lifecycle events → socket-table ports. */
   private servicePortProjection: WindowsServicePortProjection | null = null;
+  private tcpSocketProjection: TcpSocketStateProjection | null = null;
   /** `netsh interface portproxy` rules — port-forwarding entries. */
   readonly portProxyTable: PortProxyTable = new PortProxyTable();
   /** Reactive consumer: port-proxy events → socket-table listeners. */
-  private portProxySocketProjection: PortProxySocketProjection | null = null;
+  private readonly portProxyEndpoint = new PortProxyEndpoint(() => this.portProxyTable.list(), this.getTcpStack());
   /** Service manager (service lifecycle, dependencies) */
   private svcMgr: WindowsServiceManager;
   /** Process manager (process table, PIDs, kill, tree) */
@@ -458,6 +459,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly registry: PSRegistryProvider = new PSRegistryProvider(
     this.getDeviceType() === 'windows-server' ? WINDOWS_SERVER_PRODUCT_IDENTITY : WINDOWS_CLIENT_PRODUCT_IDENTITY,
   );
+  readonly rdp: WindowsRdpConfig = new WindowsRdpConfig(this.registry);
 
   /**
    * Shared scheduled-task table. Both `schtasks` (cmd) and the Get/Register/
@@ -527,12 +529,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
     this.initDefaultSockets();
     this.wireReactiveProjections();
+    this.winrm.onChange(() => this.startWinRmService());
+    this.winrm.onChange(() => this.reconcileListeners());
     this.auditPolicy.seedDefaults(type === 'windows-server' ? 'server' : 'client');
     this.registry.onValueChanged = (change) => {
-      this.syncLinkLocalResponders();
+      this.reconcileListeners();
       if (change) this.auditRegistryChange(change);
     };
-    this.syncLinkLocalResponders();
     this.startScheduledTaskTicker();
   }
 
@@ -721,28 +724,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return false;
   }
 
-  syncLinkLocalResponders(): void {
-    if (!this.getIsPoweredOn()) return;
-    const llmnr = this.getLlmnrAgent();
-    const mdns = this.getMdnsAgent();
-    if (isLlmnrEnabled(this.registry)) llmnr.start(); else llmnr.stop();
-    if (isMdnsEnabled(this.registry)) mdns.start(); else mdns.stop();
-  }
-
   override powerOn(): void {
     super.powerOn();
-    this.syncLinkLocalResponders();
+    this.reconcileListeners();
     this.startScheduledTaskTicker();
   }
 
   override powerOff(): void {
-    this._llmnrAgent?.stop();
-    this._mdnsAgent?.stop();
     if (this.taskTimer !== null) {
       this.hostTimers.clear(this.taskTimer);
       this.taskTimer = null;
     }
     super.powerOff();
+    this.reconcileListeners();
   }
 
   private taskTimer: symbol | null = null;
@@ -798,8 +792,98 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.attachForwarder((logName, entry) => this.tryForwardMatchingEvent(logName, entry));
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
     this.servicePortProjection?.dispose();
-    this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
-    this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable, this.getTcpStack());
+    this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.getTcpStack(), this.procMgr);
+    this.servicePortProjection.declare({
+      ports: [22],
+      owner: { service: 'sshd' },
+      active: () => this.svcMgr.isStarted('sshd'),
+      accept: () => (socket) => {
+        this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+      },
+    });
+    this.servicePortProjection.declare({
+      ports: [445, 139],
+      owner: { image: 'System' },
+      active: () => this.svcMgr.isStarted('LanmanServer'),
+      accept: () => (socket) => this.serveSmb(socket),
+    });
+    this.servicePortProjection.declare({
+      ports: [5985],
+      owner: { image: 'System' },
+      active: () => this.winrm.enabled,
+      accept: () => (socket) => this.serveWinRm(socket),
+    });
+    for (const implicitTls of [false, true]) {
+      this.servicePortProjection.declare({
+        ports: implicitTls ? [636, 3269] : [389, 3268],
+        owner: { image: 'lsass.exe' },
+        active: () => this.isDomainController(),
+        accept: () => (socket) => this.serveLdap(socket, implicitTls),
+      });
+    }
+    this.servicePortProjection.declare({
+      ports: [88],
+      owner: { image: 'lsass.exe' },
+      active: () => this.isDomainController(),
+      accept: () => (socket) => this.serveKdc(socket),
+    });
+    this.servicePortProjection.declare({
+      ports: [AD_REPLICATION_PORT],
+      owner: { service: 'RpcSs' },
+      active: () => this.svcMgr.isStarted('RpcSs'),
+      accept: () => (socket) => this.serveReplication(socket),
+    });
+    this.servicePortProjection.declare({
+      ports: [DFSR_PORT],
+      owner: { service: 'DFSR' },
+      active: () => this.hasFeature('FS-DFS-Replication'),
+      accept: () => (socket) => this.serveDfsr(socket),
+    });
+    this.servicePortProjection.declare({
+      ports: [RDP_PORT],
+      owner: { service: 'TermService' },
+      active: () => this.rdp.enabled,
+      accept: () => (socket) => this.serveRdp(socket),
+    });
+    this.servicePortProjection.declare({
+      ports: [WSUS_PORT],
+      owner: { image: 'System' },
+      active: () => this.hasFeature('UpdateServices'),
+      accept: () => (socket) => this.serveWsus(socket),
+    });
+    this.servicePortProjection.declare({
+      ports: [LPD_PORT],
+      owner: { service: 'Spooler' },
+      active: () => this.hasFeature('Print-Services'),
+      accept: () => (socket) => this.serveLpd(socket),
+    });
+    this.servicePortProjection.declareEndpoint({
+      owner: { service: DNS_CLIENT_SERVICE },
+      active: () => this.getIsPoweredOn() && this.svcMgr.isStarted(DNS_CLIENT_SERVICE) && isLlmnrEnabled(this.registry),
+      endpoint: { open: (identity) => this.getLlmnrAgent().start(identity), close: () => this._llmnrAgent?.stop() },
+    });
+    this.servicePortProjection.declareEndpoint({
+      owner: { service: DNS_CLIENT_SERVICE },
+      active: () => this.getIsPoweredOn() && this.svcMgr.isStarted(DNS_CLIENT_SERVICE) && isMdnsEnabled(this.registry),
+      endpoint: { open: (identity) => this.getMdnsAgent().start(identity), close: () => this._mdnsAgent?.stop() },
+    });
+    this.servicePortProjection.declareEndpoint({
+      owner: { service: 'W32Time' },
+      active: () => this.getIsPoweredOn() && this.svcMgr.isStarted('W32Time'),
+      endpoint: { open: (identity) => this.openNtpPort(identity), close: () => this.udpClose(UDP_PORT_NTP) },
+    });
+    this.servicePortProjection.declareEndpoint({
+      owner: { service: 'iphlpsvc' },
+      active: () => this.svcMgr.isStarted('iphlpsvc'),
+      endpoint: this.portProxyEndpoint,
+    });
+    this._portProxyChangesOff?.();
+    const offAdded = bus.subscribe('windows.portproxy.added', (e) => this.onPortProxyChange(e.payload.deviceId));
+    const offRemoved = bus.subscribe('windows.portproxy.removed', (e) => this.onPortProxyChange(e.payload.deviceId));
+    this._portProxyChangesOff = () => { offAdded(); offRemoved(); };
+    this.servicePortProjection.reconcile();
+    this.tcpSocketProjection?.dispose();
+    this.tcpSocketProjection = new TcpSocketStateProjection(bus, this.socketTable, this.id);
     this.portProxyTable.attachBus(bus, this.id);
     this.rdp.sessions.attachBus(bus, this.getHostname());
 
@@ -830,229 +914,146 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     this._processSocketReaperOff?.();
     this._processSocketReaperOff = bus.subscribe('windows.process.stopped', (e) => {
-      const payload = e.payload as { pid: number; name: string };
-      const { pid, name } = payload;
-      const stack = this.getTcpStack();
-      const toUnbind: Array<{ protocol: SocketProtocol; localAddress: string; localPort: number; state: string }> = [];
-      for (const sock of this.socketTable.getAll()) {
-        const matchesByPid = sock.pid === pid;
-        const matchesByName = name && sock.processName === name;
-        if (!matchesByPid && !matchesByName) continue;
-        toUnbind.push({ protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state });
-      }
-      for (const s of toUnbind) {
-        this.socketTable.unbind(s.protocol, s.localAddress, s.localPort);
-        if (s.protocol === 'tcp' && s.state === 'LISTEN') {
-          stack.closeListener(s.localPort, s.localAddress);
-        }
-      }
-      stack.abortSocketsOwnedBy(pid);
+      const { pid, name, forced } = e.payload;
+      this.reapProcessSockets(pid, name, forced ? 'reset' : 'graceful');
     });
   }
 
   private _processSocketReaperOff: (() => void) | null = null;
+  private _portProxyChangesOff: (() => void) | null = null;
+
+  private onPortProxyChange(deviceId: string): void {
+    if (deviceId === this.id) this.reconcileListeners();
+  }
   private _recoveryRunOff: (() => void) | null = null;
 
-  private initDefaultSockets(): void {
-    // Les quatre `socketTable.bind()` qui ouvraient cette méthode sont
-    // partis (docs/PRD-Sockets-Une-Seule-Verite.md §P2) : trois d'entre
-    // eux doublaient un `listen()` situé quelques lignes plus bas, et
-    // leur identité voyage désormais avec l'écoute elle-même. Le
-    // quatrième, le 139, n'écoutait nulle part — il l'a maintenant.
+  private serveSmb(socket: TcpSocket): void {
+    if (this.svcMgr.getService('LanmanServer')?.state !== 'Running') {
+      socket.close();
+      return;
+    }
+    const clientHost = this.reverseLookupClient(socket.remoteIp);
+    this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
+  }
 
+  private initDefaultSockets(): void {
     // Persist SSH server config + host key under C:\ProgramData\ssh\ on
     // first boot so OpenSSH-for-Windows files are visible from the shell.
     this.getSshServerContext();
+  }
 
-    // TCP SSH server on port 22 — handles SSH auth + SFTP subsystem.
-    this.getTcpStack().listen(22, {
-      identity: { pid: 1088, processName: 'sshd.exe' },
-      onAccept: (socket) => {
-        // TcpSocket structurally satisfies TcpStream (write/send/close/onData/
-        // onClose all present) — the two abstractions just predate a shared
-        // interface, so the handler's nested onData parameter variance needs
-        // an explicit assertion here.
-        this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+  private serveWinRm(socket: TcpSocket): void {
+    this.getWinRmServerHandler().register(socket as unknown as TcpStream);
+  }
+
+  private serveKdc(socket: TcpSocket): void {
+    const store = this.getDirectoryStore();
+    if (!store) { socket.close(); return; }
+    new KdcSessionHandler({
+      store, deviceId: this.getHostname(), bus: this.getBus(), nowMs: () => this.getSystemClockMs(),
+      writeSecurityEvent: (eventId, entryType, message, data) =>
+        this.eventLog.writeEventLog('Security', 'Microsoft-Windows-Security-Auditing', eventId, entryType, message, data),
+    }).register(socket);
+  }
+
+  private serveReplication(socket: TcpSocket): void {
+    const store = this.getDirectoryStore();
+    if (!store) { socket.close(); return; }
+    const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
+    new ReplicationServerHandler(
+      store, this.getHostname(), this.getBus(), ownIp,
+      (partnerIp) => this.replicateFrom(partnerIp),
+      () => this.getReplicationSignals().log.get(),
+      () => this.ntdsOptions.has('DISABLE_OUTBOUND_REPL'),
+      (sourceIp) => this.replicateFrom(sourceIp),
+      (dn) => {
+        try { return store.getTree().getByDn(parseDN(dn))?.replMeta ?? null; } catch { return null; }
       },
-    });
-
-    // TCP SMB server on port 445 (LanmanServer) — real `net use`/UNC traffic.
-    // Refuses (drops) the connection when LanmanServer isn't Running, so the
-    // client's negotiate gets no reply — same "network path not found" a
-    // real client sees when the Server service is stopped.
-    const serveSmb = (socket: TcpSocket): void => {
-      if (this.svcMgr.getService('LanmanServer')?.state !== 'Running') {
-        socket.close();
-        return;
-      }
-      const clientHost = this.reverseLookupClient(socket.remoteIp);
-      this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
-    };
-    this.getTcpStack().listen(445, {
-      identity: { pid: 4, processName: 'System' },
-      onAccept: serveSmb,
-    });
-
-    // NetBIOS Session Service — le transport hérité du même LanmanServer,
-    // que `ss`/`netstat` annonçaient depuis toujours sans que rien ne
-    // réponde derrière (docs/PRD-Sockets-Une-Seule-Verite.md §P2). Il
-    // sert le même SMB que le 445, et s'éteint avec le même service.
-    // Ce que ce raccourci NE fait pas : le préambule NetBIOS
-    // (session request/positive response, RFC 1002 §4.3) — aucune couche
-    // NBSS n'existe ici, et un client qui l'attendrait n'existe pas non
-    // plus. Un port joignable qui parle le bon protocole vaut mieux
-    // qu'un port affiché qui ne parle rien.
-    this.getTcpStack().listen(139, {
-      identity: { pid: 4, processName: 'System' },
-      onAccept: serveSmb,
-    });
-
-    // TCP WinRM server on port 5985 — real Invoke-Command/Enter-PSSession/
-    // Test-WSMan reachability (PRD-Windows-Server.md §5 P4). Refuses
-    // (drops) the connection until `winrm quickconfig`/Enable-PSRemoting.
-    this.getTcpStack().listen(5985, {
-      onAccept: (socket) => {
-        if (!this.winrm.enabled) {
-          socket.close();
-          return;
-        }
-        this.getWinRmServerHandler().register(socket as unknown as TcpStream);
+      (option, enabled) => {
+        if (!NTDS_OPTION_NAMES.includes(option as NtdsOption)) return false;
+        if (enabled) this.ntdsOptions.add(option as NtdsOption); else this.ntdsOptions.delete(option as NtdsOption);
+        return true;
       },
-    });
+    ).register(socket);
+  }
 
-    // TCP LDAP server on port 389 (RFC 4511) — real AD DS directory queries
-    // (PRD-Windows-Server.md §5 P5). Refuses (drops) the connection until
-    // `Install-ADDSForest` promotes this server to a domain controller.
-    for (const [port, implicitTls] of [[389, false], [3268, false], [636, true], [3269, true]] as const) {
-      this.getTcpStack().listen(port, { onAccept: (socket) => this.serveLdap(socket, implicitTls) });
-    }
+  private serveDfsr(socket: TcpSocket): void {
+    const role = this.getDfsrRole();
+    if (!role) { socket.close(); return; }
+    new DfsrServerHandler(role.getGroups()).register(socket);
+  }
 
-    // TCP KDC listener on port 88 (RFC 4120 §7.2.1) — real AS-REQ/AS-REP
-    // Kerberos exchange (PRD-Windows-Server-Advanced.md §5 P1). Refuses
-    // (drops) the connection until this server is a domain controller,
-    // mirroring the LDAP port-389 listener above.
-    this.getTcpStack().listen(88, {
-      onAccept: (socket) => {
-        const store = this.getDirectoryStore();
-        if (!store) { socket.close(); return; }
-        new KdcSessionHandler({
-          store, deviceId: this.getHostname(), bus: this.getBus(), nowMs: () => this.getSystemClockMs(),
-          writeSecurityEvent: (eventId, entryType, message, data) =>
-            this.eventLog.writeEventLog('Security', 'Microsoft-Windows-Security-Auditing', eventId, entryType, message, data),
-        }).register(socket);
+  private serveRdp(socket: TcpSocket): void {
+    new RdpServerHandler({
+      tlsConfig: { serverCert: this.getRdpTlsCertificate()!, serverPrivateKey: this.rdpTlsIdentity!.privateKey },
+      sessions: this.rdp.sessions,
+      auth: {
+        // logonType 10 (RemoteInteractive) — real Windows value for
+        // RDP. publishOnSuccess=false, publishOnFailure=false:
+        // reportLogon below is now the single publisher for every
+        // RDP logon outcome, local or domain (domain auth via
+        // tryDomainAuth never self-publishes at all) — the same fix
+        // P1 made for SSH (PRD-Winlogon.md §2.1 P4).
+        checkLocal: (u, p) => Boolean(this.userMgr.getUser(u)?.enabled) && this.userMgr.checkPassword(u, p, 10, false, false),
+        checkDomain: (u, p) => Boolean(this.tryDomainAuth(u, p)?.ok),
       },
-    });
-
-    // TCP replication listener on port 135 (simplified real-shaped
-    // MS-DRSR pull endpoint — PRD-Windows-Server-Advanced.md §5 P4).
-    // Refuses (drops) the connection until this server is a domain
-    // controller, mirroring the LDAP/KDC listeners above.
-    this.getTcpStack().listen(AD_REPLICATION_PORT, {
-      onAccept: (socket) => {
-        const store = this.getDirectoryStore();
-        if (!store) { socket.close(); return; }
-        const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
-        new ReplicationServerHandler(
-          store, this.getHostname(), this.getBus(), ownIp,
-          (partnerIp) => this.replicateFrom(partnerIp),
-          () => this.getReplicationSignals().log.get(),
-          () => this.ntdsOptions.has('DISABLE_OUTBOUND_REPL'),
-          (sourceIp) => this.replicateFrom(sourceIp),
-          (dn) => {
-            try { return store.getTree().getByDn(parseDN(dn))?.replMeta ?? null; } catch { return null; }
-          },
-          (option, enabled) => {
-            if (!NTDS_OPTION_NAMES.includes(option as NtdsOption)) return false;
-            if (enabled) this.ntdsOptions.add(option as NtdsOption); else this.ntdsOptions.delete(option as NtdsOption);
-            return true;
-          },
-        ).register(socket);
+      // 4624/4625, logonType 10 — single source of truth for both
+      // the local and domain auth path (domain auth never
+      // published one on its own).
+      reportLogon: (user, success) => {
+        this.getBus().publish({
+          topic: 'windows.account.logon',
+          payload: { deviceId: this.id, account: user, success, logonType: 10 },
+        });
       },
-    });
-
-    // TCP DFSR listener on port 5722 (DFSR's real default RPC endpoint —
-    // PRD-Windows-Server-Advanced.md §5 P16). Refuses (drops) the
-    // connection until the FS-DFS-Replication role is installed, mirroring
-    // the LDAP/KDC/replication listeners above.
-    this.getTcpStack().listen(DFSR_PORT, {
-      onAccept: (socket) => {
-        const role = this.getDfsrRole();
-        if (!role) { socket.close(); return; }
-        new DfsrServerHandler(role.getGroups()).register(socket);
+      // 4778 — reconnection to an existing Disconnected session.
+      reportReconnect: (user) => {
+        this.getBus().publish({
+          topic: 'windows.session.reconnected',
+          payload: { deviceId: this.id, account: user, logonType: 10 },
+        });
       },
-    });
-
-    // TCP RDP listener on port 3389 (MS-RDPBCGR §2.2.1 — PRD-Windows-
-    // Server-Advanced.md §5 P17). Refuses (drops) the connection until
-    // `Enable-RemoteDesktop` has been run, mirroring the WinRM/5985
-    // listener's own enabled-flag gating above.
-    this.getTcpStack().listen(RDP_PORT, {
-      identity: { pid: 1096, processName: 'svchost.exe' },
-      onAccept: (socket) => {
-        if (!this.rdp.enabled) { socket.close(); return; }
-        new RdpServerHandler({
-          tlsConfig: { serverCert: this.getRdpTlsCertificate()!, serverPrivateKey: this.rdpTlsIdentity!.privateKey },
-          sessions: this.rdp.sessions,
-          auth: {
-            // logonType 10 (RemoteInteractive) — real Windows value for
-            // RDP. publishOnSuccess=false, publishOnFailure=false:
-            // reportLogon below is now the single publisher for every
-            // RDP logon outcome, local or domain (domain auth via
-            // tryDomainAuth never self-publishes at all) — the same fix
-            // P1 made for SSH (PRD-Winlogon.md §2.1 P4).
-            checkLocal: (u, p) => Boolean(this.userMgr.getUser(u)?.enabled) && this.userMgr.checkPassword(u, p, 10, false, false),
-            checkDomain: (u, p) => Boolean(this.tryDomainAuth(u, p)?.ok),
-          },
-          // 4624/4625, logonType 10 — single source of truth for both
-          // the local and domain auth path (domain auth never
-          // published one on its own).
-          reportLogon: (user, success) => {
-            this.getBus().publish({
-              topic: 'windows.account.logon',
-              payload: { deviceId: this.id, account: user, success, logonType: 10 },
-            });
-          },
-          // 4778 — reconnection to an existing Disconnected session.
-          reportReconnect: (user) => {
-            this.getBus().publish({
-              topic: 'windows.session.reconnected',
-              payload: { deviceId: this.id, account: user, logonType: 10 },
-            });
-          },
-          // 4779 — transport dropped with no explicit logoff.
-          reportDisconnect: (user) => {
-            this.getBus().publish({
-              topic: 'windows.session.disconnected',
-              payload: { deviceId: this.id, account: user, logonType: 10 },
-            });
-          },
-        }).register(socket);
+      // 4779 — transport dropped with no explicit logoff.
+      reportDisconnect: (user) => {
+        this.getBus().publish({
+          topic: 'windows.session.disconnected',
+          payload: { deviceId: this.id, account: user, logonType: 10 },
+        });
       },
-    });
+    }).register(socket);
+  }
 
-    // TCP WSUS listener on port 8530 (WSUS's real default site port —
-    // PRD-Windows-Server-Advanced.md §5 P19). Refuses (drops) the
-    // connection until the UpdateServices role is installed, mirroring
-    // the DFSR/RDP listeners above.
-    this.getTcpStack().listen(WSUS_PORT, {
-      onAccept: (socket) => {
-        const role = this.getWsusRole();
-        if (!role) { socket.close(); return; }
-        new WsusServerHandler(role).register(socket);
-      },
-    });
+  private serveWsus(socket: TcpSocket): void {
+    const role = this.getWsusRole();
+    if (!role) { socket.close(); return; }
+    new WsusServerHandler(role).register(socket);
+  }
 
-    // TCP LPD listener on port 515 (RFC 1179 — PRD-Windows-Server-
-    // Advanced.md §5 P20). Refuses (drops) the connection until the
-    // Print-Services role is installed, mirroring the DFSR/WSUS listeners
-    // above.
-    this.getTcpStack().listen(LPD_PORT, {
-      onAccept: (socket) => {
-        const role = this.getPrintServerRole();
-        if (!role) { socket.close(); return; }
-        new LpdServerHandler(role).register(socket);
-      },
-    });
+  private serveLpd(socket: TcpSocket): void {
+    const role = this.getPrintServerRole();
+    if (!role) { socket.close(); return; }
+    new LpdServerHandler(role).register(socket);
+  }
+
+  private startWinRmService(): void {
+    this.svcMgr.setStartType('WinRM', 'Automatic', true);
+    this.svcMgr.startService('WinRM', true);
+  }
+
+  protected reconcileListeners(): void {
+    this.servicePortProjection?.reconcile();
+  }
+
+  protected declareEndpoint(declaration: WindowsEndpointDeclaration): void {
+    this.servicePortProjection?.declareEndpoint(declaration);
+  }
+
+  private isDomainController(): boolean {
+    return Boolean(this.getDirectoryStore());
+  }
+
+  private hasFeature(name: string): boolean {
+    return this.getRoleManager()?.isInstalled(name) === true;
   }
 
   /** This host's own RDP TLS identity certificate (PRD-Windows-Server-Advanced.md §5 P17) — lazily created once; a real client would present its own trust decision UI for this cert, which a `dialRdp()` caller stands in for via an explicit `CertificateVerifier`. */
@@ -2555,22 +2556,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
     }).then(r => {
       wire?.close();
-      const peerIp = r.exitCode === 0 ? this.resolveSshPeer(args) : null;
-      if (peerIp) {
-        const entry = this.socketTable.connect('tcp', sourceIp, 0, peerIp, 22, undefined, 'ssh.exe');
-        this.socketTable.transition(entry.id, 'TIME_WAIT');
-      }
       return r.output;
     });
-  }
-
-  private resolveSshPeer(args: string[]): string | null {
-    for (const a of args) {
-      if (a.startsWith('-')) continue;
-      const at = a.includes('@') ? a.split('@')[1] : a;
-      if (IPAddress.tryParse(at) !== null) return at;
-    }
-    return null;
   }
 
   private async runPathpingCommand(args: string[]): Promise<string> {
@@ -3463,7 +3450,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const netCtx2 = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
       if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
       if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
-      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
+      const netSvcCtx = { serviceManager: this.svcMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start') return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
       if (subCmd === 'use') return cmdNetUse(this.buildNetContext(), subArgs);
@@ -3989,7 +3976,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const netUserCtx = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
       if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
       if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
-      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
+      const netSvcCtx = { serviceManager: this.svcMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start')       return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop')        return cmdNetStop(netSvcCtx, subArgs);
       if (subCmd === 'share')       return cmdNetShare(this.buildNetContext(), subArgs);
@@ -4118,10 +4105,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.runBackgroundGroupPolicyRefresh(ms);
     this.getDnsServerRole()?.tick();
     this.getDhcpServerRole()?.tick();
-    this.svcMgr.advanceRecoveryTimers(
-      this.simulatedDate().getTime(),
-      (svc) => this.procMgr.onServiceStarted(svc.name, svc.processName),
-    );
+    this.svcMgr.advanceRecoveryTimers(this.simulatedDate().getTime());
   }
 
   /**
@@ -4869,7 +4853,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const store = this.getDirectoryStore();
     if (!store) { socket.close(); return; }
     const serviceSecret = store.getComputerSecret(this.getHostname());
-    if (!this.ldapStartTlsIdentity) this.ldapStartTlsIdentity = selfSignedLdapCert(store.getRealm());
+    if (!this.ldapStartTlsIdentity) {
+      const dnsHostName = `${this.getHostname()}.${store.dnsName}`.toLowerCase();
+      this.ldapStartTlsIdentity = selfSignedLdapCert(dnsHostName, [dnsHostName]);
+    }
     const forest = getForestForDomain(store.dnsName);
     const otherDomainRoots = forest
       ? forest.listDomains()
@@ -5823,16 +5810,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** L'agent NTP de cette machine — le MEME moteur que Cisco et Linux. */
   private _ntpAgent: NtpAgent | null = null;
-  public override resolverProcessName(): string { return 'svchost'; }
+  public override resolverIdentity(): ListenerIdentity { return this.procMgr.identityOfService(DNS_CLIENT_SERVICE); }
 
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
       this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
-      this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
-        this._ntpAgent?.handleUdp(inPort, sourceIP as IPAddress, udp);
-      }, 'svchost');
     }
     return this._ntpAgent;
+  }
+
+  private openNtpPort(identity: ListenerIdentity): void {
+    const agent = this.getNtpAgent();
+    this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
+      agent.handleUdp(inPort, sourceIP as IPAddress, udp);
+    }, identity.processName, { pid: identity.pid });
   }
 
   /** Le service W32Time de cette machine (`PRD-NTP-Tutoriel.md` §5). */

@@ -73,6 +73,10 @@ export interface LinuxNetKernel {
   /** Remove IPv4 address from an interface (`ip addr del`). */
   clearInterfaceIP(name: string): void;
 
+  addSecondaryInterfaceIP(name: string, ip: IPAddress, mask: SubnetMask): void;
+
+  removeSecondaryInterfaceIP(name: string, ip: IPAddress): void;
+
   /** Set admin state up/down (`ip link set dev X up/down`). */
   setInterfaceAdmin(name: string, enabled: boolean): void;
 

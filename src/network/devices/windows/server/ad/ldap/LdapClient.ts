@@ -5,6 +5,7 @@
  * use instead of direct method calls into another device's `DirectoryTree`.
  */
 
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import {
   type LdapMessage, type ProtocolOp, type PartialAttribute, type LdapResult, type LdapControl,
@@ -17,6 +18,7 @@ import type { TlsClientConfig, TlsClientSession } from '@/network/tls/TlsClientS
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
 import { encodeRecords, decodeRecords } from '@/network/http/https/TlsRecordWire';
 import { driveClientHandshake } from './ldapStartTls';
+import { tlsServerEndPoint } from '@/network/tls/channelBinding';
 import { attributeFromWire } from './LdapWireSyntax';
 import type { GssInitiator } from '@/network/kerberos/gssapi/GssInitiator';
 import { describeGssFailure } from '@/network/kerberos/gssapi/GssStatus';
@@ -96,17 +98,31 @@ export class LdapClient {
     return decoded.data;
   }
 
+  get tlsChannel(): { keyBits: number; serverEndPoint: Uint8Array | null; unique: Uint8Array | null; clientCertificate: X509Certificate | null } | null {
+    if (this.tls === null) return null;
+    const certificate = this.tls.peerCertificate;
+    return {
+      keyBits: this.tls.sessionKeyBits ?? 0,
+      serverEndPoint: certificate === null ? null : tlsServerEndPoint(certificate),
+      unique: this.tls.uniqueChannelBinding,
+      clientCertificate: this.tls.clientCertificateSent,
+    };
+  }
+
+  detachTls(): void {
+    this.tls = null;
+  }
+
   get isEncrypted(): boolean {
     return this.tls !== null;
   }
 
-  attachTls(config: TlsClientConfig): { ok: true } | { ok: false; reason: string | null } {
+  attachTls(config: TlsClientConfig): { ok: boolean; session: TlsClientSession } {
     this.rawSuspended = true;
-    const session = driveClientHandshake(this.socket, config);
+    const handshake = driveClientHandshake(this.socket, config);
     this.rawSuspended = false;
-    if (session === null) return { ok: false, reason: null };
-    this.tls = session;
-    return { ok: true };
+    if (handshake.established) this.tls = handshake.session;
+    return { ok: handshake.established, session: handshake.session };
   }
 
   private rawInbox: Uint8Array = new Uint8Array(0);
@@ -181,11 +197,11 @@ export class LdapClient {
     const [reply] = this.roundTrip({ kind: 'extendedRequest', requestName: START_TLS_OID });
     if (!reply || reply.protocolOp.kind !== 'extendedResponse') return { ok: false, result: NO_RESPONSE('extendedResponse') };
     if (reply.protocolOp.result.resultCode !== LdapResultCode.success) return { ok: false, result: reply.protocolOp.result };
-    const tls = driveClientHandshake(this.socket, config);
-    if (!tls) {
+    const handshake = driveClientHandshake(this.socket, config);
+    if (!handshake.established) {
       return { ok: false, result: { resultCode: LdapResultCode.operationsError, matchedDN: '', diagnosticMessage: 'TLS handshake failed' } };
     }
-    this.tls = tls;
+    this.tls = handshake.session;
     return { ok: true, result: reply.protocolOp.result };
   }
 

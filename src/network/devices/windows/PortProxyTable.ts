@@ -4,10 +4,8 @@
  *
  * The table is the single owner of the device's port-proxy state. Every
  * mutation is announced on the event bus (`windows.portproxy.added` /
- * `windows.portproxy.removed`) so reactive consumers — notably
- * {@link PortProxySocketProjection}, which keeps the kernel socket table
- * coherent — can update their derived views without the table reaching
- * into them directly.
+ * `windows.portproxy.removed`) so reactive consumers can update their
+ * derived views without the table reaching into them directly.
  */
 
 import type { IEventBus } from '@/events/EventBus';

@@ -8,7 +8,9 @@ import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 import { runAusearch } from './audit/tools/AusearchTool';
 import { runAureport } from './audit/tools/AureportTool';
 import { runAusyscall } from './audit/tools/AusyscallTool';
-import { auditToolHost } from './audit/tools/LinuxAuditToolHost';
+import { runAulast } from './audit/tools/AulastTool';
+import { runAulastlog } from './audit/tools/AulastlogTool';
+import { auditLoginHost, auditToolHost } from './audit/tools/LinuxAuditToolHost';
 
 import { readSshdConfig } from '../../protocols/ssh/server/SshdConfigText';
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
@@ -207,6 +209,7 @@ import {
 } from '@/network/protocols/telnet/TelnetClientSession';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
+import type { SshClientHandle, SshClientPlacement } from './network/SshClientProcess';
 import type { TcpStack } from '../../tcp/TcpStack';
 import { md5, sha1, sha256 } from '@/crypto/hash';
 import { bytesToHex, fileTextToBytes } from '@/crypto/encoding';
@@ -222,12 +225,13 @@ import { loggerHost } from './syslog/LinuxLoggerHost';
 import { runLogger } from './syslog/LoggerTool';
 import { journalctlHost } from './journal/LinuxJournalctlHost';
 import { runJournalctl } from './journal/JournalctlTool';
-import { renderLoginctl } from './network/loginctlFormatter';
+import { renderLoginctl, type LoginctlSessionAction } from './network/loginctlFormatter';
 import { cmdTty, cmdRunlevel, formatLocalTime } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
-import type { LinuxShellSession } from './shell/LinuxShellSession';
+import { runStty, runTput } from './tty/Stty';
+import { DEFAULT_WINDOW_SIZE, type LinuxShellSession, type WindowSize } from './shell/LinuxShellSession';
 import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
 import { NameServiceSwitch } from './nss/NameServiceSwitch';
 import type { INssSource } from './nss/INssSource';
@@ -273,7 +277,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Users and groups
   'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-  'faillock', 'ausearch', 'ausyscall', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
+  'faillock', 'ausearch', 'ausyscall', 'aulast', 'aulastlog', 'aureport', 'auditctl', 'augenrules', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
   'login', 'logout', 'logname', 'users', 'lid', 'members', 'newgrp',
   // Lookup
@@ -483,7 +487,6 @@ export class LinuxCommandExecutor {
   getSocketTable(): SocketTable | null { return this.socketTable; }
   /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
   private forwarding: SshForwardingTable | null = null;
-  getForwardingTable(): SshForwardingTable | null { return this.forwarding; }
   /** Captured TCP traffic — rendered by `tcpdump`. */
   readonly captureLog = new PacketCaptureLog();
   /** Shared SSH session table — backs `who` / `w` / `last`. */
@@ -1887,7 +1890,7 @@ export class LinuxCommandExecutor {
     } finally {
       if (target?.holdOnly === true) this.forwarding?.holdOpen(session);
       if (this.forwarding?.holds(session)) {
-        this.handSshSessionTo(session, client.pid());
+        this.handSshSessionTo(session, client.pid(), this.userMgr.currentUid);
       } else {
         session.disconnect();
         client.retire();
@@ -1901,7 +1904,7 @@ export class LinuxCommandExecutor {
     let pid: number | null = null;
     return {
       pid: () => {
-        if (pid === null) pid = this.spawnSshClient(args, detached);
+        if (pid === null) pid = this.spawnSshClient(args, this.ownSshClientPlacement(detached));
         return pid;
       },
       retire: () => {
@@ -1912,21 +1915,46 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private spawnSshClient(args: readonly string[], detached: boolean): number {
+  private ownSshClientPlacement(detached: boolean): SshClientPlacement {
     const c = this.ctx();
-    return this.processMgr.spawn({
-      command: ['ssh', ...args].join(' '),
-      comm: 'ssh',
+    return {
+      ppid: detached ? 1 : this.currentBashPid(),
+      tty: detached ? '?' : 'pts/0',
       user: this.userMgr.currentUser,
       uid: c.uid,
       gid: c.gid,
-      ppid: detached ? 1 : this.currentBashPid(),
-      tty: detached ? '?' : 'pts/0',
       cwd: this.cwd,
+    };
+  }
+
+  private spawnSshClient(args: readonly string[], placement: SshClientPlacement): number {
+    return this.processMgr.spawn({
+      command: ['ssh', ...args].join(' '),
+      comm: 'ssh',
+      user: placement.user,
+      uid: placement.uid,
+      gid: placement.gid,
+      ppid: placement.ppid,
+      tty: placement.tty,
+      cwd: placement.cwd,
     }).pid;
   }
 
-  private handSshSessionTo(session: SshSession, pid: number): void {
+  openTerminalSshClient(
+    args: readonly string[], session: SshSession, placement: SshClientPlacement,
+  ): SshClientHandle {
+    const pid = this.spawnSshClient(args, placement);
+    this.handSshSessionTo(session, pid, placement.uid);
+    return {
+      pid,
+      retire: () => {
+        this.forwarding?.closeOwnedBy(pid);
+        if (this.processMgr.get(pid)) this.processMgr.exit(pid, 0);
+      },
+    };
+  }
+
+  private handSshSessionTo(session: SshSession, pid: number, uid: number): void {
     this.forwarding?.adopt(session, pid);
     const endpoint = session.localEndpoint;
     if (endpoint === null || this.socketTable === null) return;
@@ -1936,7 +1964,7 @@ export class LinuxCommandExecutor {
     if (connection === undefined) return;
     connection.pid = pid;
     connection.processName = 'ssh';
-    connection.uid = this.userMgr.currentUid;
+    connection.uid = uid;
   }
 
   releaseSshClient(pid: number): void {
@@ -2098,6 +2126,8 @@ export class LinuxCommandExecutor {
     for (const key of ['COLUMNS', 'LINES', 'TERM']) {
       if (env[key] === undefined && this.env.has(key)) env[key] = this.env.get(key)!;
     }
+    env.COLUMNS ??= String(this.terminalColumns());
+    env.LINES ??= String(this.windowSize.rows > 0 ? this.windowSize.rows : DEFAULT_WINDOW_SIZE.rows);
     return {
       args,
       sourceDevice: this.localDevice,
@@ -2626,6 +2656,12 @@ export class LinuxCommandExecutor {
     this.sessionTable = table;
   }
 
+  private loginctlAction: LoginctlSessionAction | undefined;
+
+  setLoginctlAction(action: LoginctlSessionAction): void {
+    this.loginctlAction = action;
+  }
+
   readonly commandPrivileges: CommandPrivilegePolicy = createDefaultCommandPrivileges();
 
   private portBindingPolicy: PortBindingPolicy | null = null;
@@ -2729,9 +2765,18 @@ export class LinuxCommandExecutor {
     return renderNetstatStatistics(this.protocolCounters(), this.kernelIpFacts());
   }
 
-  terminalColumns(): number | null {
+  private windowSize: WindowSize = DEFAULT_WINDOW_SIZE;
+
+  getWindowSize(): WindowSize { return this.windowSize; }
+
+  setWindowSize(size: WindowSize): void {
+    this.windowSize = size;
+  }
+
+  terminalColumns(): number {
     const columns = Number.parseInt(this.envOverride?.COLUMNS ?? this.env.get('COLUMNS') ?? '', 10);
-    return Number.isFinite(columns) && columns > 0 ? columns : null;
+    if (Number.isFinite(columns) && columns > 0) return columns;
+    return this.windowSize.cols > 0 ? this.windowSize.cols : DEFAULT_WINDOW_SIZE.cols;
   }
 
   protocolCounters(): ProtocolCounters {
@@ -2786,29 +2831,6 @@ export class LinuxCommandExecutor {
 
   setUtmpSync(sync: import('./network/UtmpSync').UtmpSync): void {
     this.utmpSync = sync;
-  }
-
-  private buildLoginctlAction(table: SshSessionTable): import('./network/loginctlFormatter').LoginctlSessionAction {
-    const findSession = (sid: string) => {
-      const sessions = table.list();
-      const idx = sessions.findIndex((s, i) => {
-        const pid = s.shellPid ?? s.sshdPid ?? 0;
-        return (pid > 0 ? String(pid) : String(i + 1)) === sid;
-      });
-      return idx >= 0 ? sessions[idx] : null;
-    };
-    const terminate = (sid: string, signal: 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT') => {
-      const s = findSession(sid);
-      if (!s) return { ok: false, error: `Failed to terminate session: No session '${sid}' known` };
-      if (s.shellPid) this.processMgr.kill(s.shellPid, signal);
-      if (s.sshdPid) this.processMgr.kill(s.sshdPid, signal);
-      table.close(s.tty, 'admin');
-      return { ok: true };
-    };
-    return {
-      terminate: (sid) => terminate(sid, 'SIGTERM'),
-      kill: (sid, signal) => terminate(sid, signal),
-    };
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -3502,6 +3524,7 @@ export class LinuxCommandExecutor {
       shellPpid: this.shellPpid,
       jobTable: this.jobTable,
       lastExitCode: this.lastExitCode,
+      windowSize: this.windowSize,
     };
   }
 
@@ -3519,6 +3542,7 @@ export class LinuxCommandExecutor {
     this.shellPpid = s.shellPpid;
     this.jobTable = s.jobTable;
     this.lastExitCode = s.lastExitCode;
+    this.windowSize = s.windowSize;
   }
 
   /** @internal */
@@ -3531,6 +3555,7 @@ export class LinuxCommandExecutor {
     s.env = new Map(this.env);
     s.suStack = [...this.suStack];
     s.lastExitCode = this.lastExitCode;
+    s.windowSize = this.windowSize;
     // commandHistory + jobTable are passed by reference, so any in-place
     // mutations during execute() are already reflected on the session.
   }
@@ -3549,6 +3574,7 @@ export class LinuxCommandExecutor {
     this.shellPpid = b.shellPpid;
     this.jobTable = b.jobTable;
     this.lastExitCode = b.lastExitCode;
+    this.windowSize = b.windowSize;
   }
 
   execute(input: string): string {
@@ -4763,10 +4789,11 @@ export class LinuxCommandExecutor {
       MAIL: `/var/mail/${user}`,
       SHLVL: '1',
     };
-    // Include exported env vars
     for (const [k, v] of this.env) {
       vars[k] = v;
     }
+    vars.COLUMNS ??= String(this.terminalColumns());
+    vars.LINES ??= String(this.windowSize.rows > 0 ? this.windowSize.rows : DEFAULT_WINDOW_SIZE.rows);
     return vars;
   }
 
@@ -5289,6 +5316,12 @@ export class LinuxCommandExecutor {
         const result = runAusearch(auditToolHost(this), args, stdin ?? null);
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
+      case 'aulast':
+      case 'aulastlog': {
+        const run = cmd === 'aulast' ? runAulast : runAulastlog;
+        const result = run(auditLoginHost(this), args, stdin ?? null);
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
+      }
       case 'ausyscall': {
         const result = runAusyscall({ machine: () => this.identity.kernel.machine }, args);
         return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
@@ -5358,7 +5391,7 @@ export class LinuxCommandExecutor {
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
             now: this.simulatedDate(),
-            action: this.buildLoginctlAction(this.sessionTable),
+            action: this.loginctlAction,
           }, args);
           const exit = out.startsWith('Failed to') || out.startsWith('Unknown command') ? 1 : 0;
           return { output: out, exitCode: exit };
@@ -5894,7 +5927,10 @@ export class LinuxCommandExecutor {
       // alias / unalias / type / set / unset / declare / local / readonly
       // are shell builtins resolved inside the bash interpreter; they only
       // reach this dispatcher when the interpreter is bypassed.
-      case 'tput':
+      case 'tput': {
+        const result = runTput(args, this.windowSize);
+        return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
+      }
       case 'set':
       case 'unset':
       case 'declare':
@@ -5906,23 +5942,8 @@ export class LinuxCommandExecutor {
       case 'complete':
         return { output: '', exitCode: 0 };
       case 'stty': {
-        // `stty cols 132 rows 50` updates the per-terminal size which is
-        // exported as COLUMNS/LINES; a real TTY drives SIGWINCH.
-        for (let i = 0; i < args.length; i++) {
-          if (args[i] === 'cols' || args[i] === 'columns') {
-            const n = Number.parseInt(args[++i] ?? '', 10);
-            if (Number.isFinite(n)) this.env.set('COLUMNS', String(n));
-          } else if (args[i] === 'rows') {
-            const n = Number.parseInt(args[++i] ?? '', 10);
-            if (Number.isFinite(n)) this.env.set('LINES', String(n));
-          }
-        }
-        if (args.length === 0 || args[0] === '-a' || args[0] === 'size') {
-          const cols = this.env.get('COLUMNS') ?? '80';
-          const rows = this.env.get('LINES') ?? '24';
-          return { output: `${rows} ${cols}`, exitCode: 0 };
-        }
-        return { output: '', exitCode: 0 };
+        const result = runStty(args, this.windowSize, (size) => this.setWindowSize(size));
+        return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
       }
       case 'seq': {
         const r = runSeq(args);

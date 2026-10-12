@@ -54,11 +54,11 @@
  * BOOLEENNE a qui l'on donne une valeur rend E474.
  *
  * UNE LIMITE ASSUMEE, et elle se lit dans les cas. Un vrai vim connait des
- * centaines d'options ; ce moteur en honore une vingtaine. `:set tabstop=abc'
- * rend donc ici `E518: Unknown option', et non le `E521' du vrai vim — parce
- * que `tabstop' n'existe PAS dans ce moteur, et que le dire est plus honnete
- * que d'accepter en silence une option qu'il n'appliquerait pas. Le cas E521
- * porte donc sur `colorcolumn', que le moteur porte vraiment.
+ * centaines d'options ; ce moteur en honore une trentaine, toutes dans la
+ * table de VimOptions. `colorcolumn' y est une option CHAINE (liste de
+ * colonnes), donc `:set colorcolumn=abc' rend E474 et non E521 — la premisse
+ * numerique de ce cas etait fausse, le vrai vim le mesure. Le cas E521 porte
+ * sur `tabstop', que le moteur honore desormais.
  *
  * MESURE : 12 cas tombent sur 15.
  * Les trois cas qui passent des deux cotes sont nommes :
@@ -161,8 +161,13 @@ describe('les commandes ex a plage existent, et le disent', () => {
   });
 
   it('une option numerique mal remplie rend E521', () => {
+    expect(ex(vim(), 'set tabstop=abc'))
+      .toBe('E521: Number required after =: tabstop=abc');
+  });
+
+  it('une option chaine mal remplie rend E474, pas E521', () => {
     expect(ex(vim(), 'set colorcolumn=abc'))
-      .toBe('E521: Number required after =: colorcolumn=abc');
+      .toBe('E474: Invalid argument: colorcolumn=abc');
   });
 
   it('une option booleenne a qui l on donne une valeur rend E474', () => {

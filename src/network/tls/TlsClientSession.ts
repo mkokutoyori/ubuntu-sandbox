@@ -19,7 +19,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchangeKeyPair } from './keyExchange';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
-import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { CertificateVerifier, VerificationReason } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { MAX_TLS_RECORD_LENGTH, type CipherSuite } from './types';
 import type { TlsDomainEvent } from './events';
@@ -43,6 +43,8 @@ import {
   type LegacySuiteDefinition, type ResolvedLegacyPolicy, type LegacyVersion, type TlsProtocolVersion,
 } from './legacy/legacyCipherSuites';
 import { LegacyClientHandshake, newHelloRandom } from './legacy/LegacyHandshake';
+import { cipherKeyBits, tlsUnique } from './channelBinding';
+import { hexToBytes } from '@/crypto/encoding';
 import type { TrafficProtection } from './trafficProtection';
 import { suiteInfo } from './suite13';
 import type { Tls13Hash } from './hkdf';
@@ -77,6 +79,7 @@ export interface TlsClientConfig {
   readonly alpn?: readonly string[];
   /** RFC 6066 §3 — the host_name this client is asking for. */
   readonly serverName?: string;
+  readonly verifyHostname?: boolean;
   /** A ticket from a prior session's NewSessionTicket — offers PSK resumption (§4.2.11). */
   readonly resumptionTicket?: SessionTicket;
   /** Sent as 0-RTT data alongside ClientHello (§2.3) — only honored together with `resumptionTicket`. */
@@ -109,6 +112,10 @@ export interface TlsClientConfig {
   readonly maxFragmentLength?: number;
   /** RFC 8701 — inject GREASE values into the ClientHello lists. */
   readonly grease?: boolean;
+  /** RFC 8446 §4.2.3 — signature schemes announced, in preference order; defaults to `CLIENT_HELLO_SIGNATURE_SCHEMES`. */
+  readonly signatureSchemes?: readonly string[];
+  /** Smallest finite-field DH prime (bits) accepted from a TLS ≤ 1.2 server; replaces the OpenSSL security level rule when set. */
+  readonly minimumDhBits?: number;
 }
 
 const GREASE_VALUE = 0x0a0a;
@@ -142,11 +149,12 @@ export class TlsClientSession {
   receivedTicket: SessionTicket | null = null;
   peerCertificate: X509Certificate | null = null;
   peerCertificateChain: readonly X509Certificate[] = [];
+  clientCertificateSent: X509Certificate | null = null;
   receivedStaple: OcspResponseMessage | null = null;
   peerVerified = false;
   peerSignature: { readonly digest: string; readonly type: string } | null = null;
   serverTempKey: string | null = null;
-  peerVerificationReason: string | null = null;
+  peerVerificationReason: VerificationReason | null = null;
   /**
    * RFC 8446 §7.2 — this side's current application traffic secrets, set
    * once the handshake succeeds and ratcheted independently per direction
@@ -235,6 +243,20 @@ export class TlsClientSession {
     return this.legacy?.resumed ?? false;
   }
 
+  private get hostnameToVerify(): string | undefined {
+    return this.config.verifyHostname === false ? undefined : this.config.serverName;
+  }
+
+  get sessionKeyBits(): number | null {
+    return cipherKeyBits({ version: this.negotiatedVersion, suite: this.negotiatedCipherSuite });
+  }
+
+  get uniqueChannelBinding(): Uint8Array | null {
+    if (this.legacy === null) return null;
+    const verifyData = this.legacy.resumed ? this.legacy.serverVerifyData : this.legacy.clientVerifyData;
+    return verifyData === '' ? null : tlsUnique(hexToBytes(verifyData));
+  }
+
   pskResumed = false;
 
   private withGrease<T>(values: readonly T[], grease: T): readonly T[] {
@@ -271,11 +293,11 @@ export class TlsClientSession {
     // fait une vraie pile configurée avec des groupes qu'elle ne sait pas
     // faire — elle échoue avant d'écrire, plutôt que d'ouvrir une
     // conversation qu'elle ne peut pas conclure.
-    if (this.supportedGroups.length === 0) { this.fail('handshake_failure'); return []; }
+    if (this.supportedGroups.length === 0 && this.offersTls13()) { this.fail('handshake_failure'); return []; }
     if (this.versions.length === 0) { this.fail('protocol_version'); return []; }
     if (this.policy.error !== null) { this.fail('handshake_failure'); return []; }
     this.clientRandom = newHelloRandom();
-    const records = this.sendClientHello(this.supportedGroups[0]);
+    const records = this.sendClientHello(this.supportedGroups[0] ?? '');
     const ticket = this.config.resumptionTicket;
     if (!ticket || !this.config.earlyData) return records;
     const hash = suiteInfo(ticket.cipherSuite).hash;
@@ -299,7 +321,7 @@ export class TlsClientSession {
       extensions: {
         supportedVersions: this.offersTls13() ? this.withGrease(this.versions, GREASE_NAME) : [], keyShare: this.clientKeyShare,
         supportedGroups: this.withGrease(this.supportedGroups, GREASE_NAME),
-        signatureAlgorithms: this.withGrease(CLIENT_HELLO_SIGNATURE_SCHEMES, GREASE_NAME),
+        signatureAlgorithms: this.withGrease(this.config.signatureSchemes ?? CLIENT_HELLO_SIGNATURE_SCHEMES, GREASE_NAME),
         alpn: this.config.alpn ? this.withGrease(this.config.alpn, GREASE_NAME) : undefined,
         serverName: this.config.serverName,
         ...(this.config.requestOcspStaple || this.config.requireOcspStaple || this.config.collectOcspStaple ? { statusRequest: true } : {}),
@@ -415,9 +437,10 @@ export class TlsClientSession {
       offeredGroups: this.supportedGroups, clientHelloBytes: this.lastClientHelloBytes,
       clientRandom: this.clientRandom, clientVersionWire: PROTOCOL_VERSION_WIRE[ceiling],
       offersTls13: this.offersTls13(), verifier: this.config.verifier,
-      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.config.serverName,
+      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.hostnameToVerify,
       clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
       securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
+      ...(this.config.minimumDhBits !== undefined ? { minimumDhBits: this.config.minimumDhBits } : {}),
       clientExtensions: this.legacyExtensions(),
       session: this.config.legacySession ?? null,
       allowUnsafeRenegotiation: this.config.allowUnsafeLegacyRenegotiation === true,
@@ -455,7 +478,7 @@ export class TlsClientSession {
       legacyExtensions: extensions,
       extensions: {
         supportedVersions: [], keyShare: '', supportedGroups: this.supportedGroups,
-        signatureAlgorithms: CLIENT_HELLO_SIGNATURE_SCHEMES,
+        signatureAlgorithms: this.config.signatureSchemes ?? CLIENT_HELLO_SIGNATURE_SCHEMES,
         alpn: this.config.alpn, serverName: this.config.serverName,
       },
     };
@@ -468,9 +491,10 @@ export class TlsClientSession {
       offeredGroups: this.supportedGroups, clientHelloBytes: helloBytes,
       clientRandom: this.clientRandom, clientVersionWire: PROTOCOL_VERSION_WIRE[version],
       offersTls13: false, verifier: this.config.verifier,
-      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.config.serverName,
+      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.hostnameToVerify,
       clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
       securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
+      ...(this.config.minimumDhBits !== undefined ? { minimumDhBits: this.config.minimumDhBits } : {}),
       clientExtensions: extensions, session: null,
       allowUnsafeRenegotiation: false,
       requestStatus: false, enforceStaple: false, requireStaple: false,
@@ -523,6 +547,7 @@ export class TlsClientSession {
     const flight = legacy.handle(incoming);
     this.peerCertificate = legacy.peerCertificate;
     this.peerCertificateChain = legacy.peerCertificateChain;
+    this.clientCertificateSent = legacy.clientCertificateSent;
     this.receivedStaple = legacy.receivedStaple;
     this.peerVerified = legacy.peerVerified;
     this.peerVerificationReason = legacy.peerVerificationReason;
@@ -619,7 +644,7 @@ export class TlsClientSession {
       this.peerCertificateChain = certificate!.certificateList;
       this.receivedStaple = certificate!.ocspStaple ?? null;
       const verification = this.config.verifier.verify(
-        leafCert, this.config.serverName, certificate!.certificateList.slice(1), 'serverAuth', this.policy.securityLevel,
+        leafCert, this.hostnameToVerify, certificate!.certificateList.slice(1), 'serverAuth', this.policy.securityLevel,
       );
       this.peerVerified = verification.ok !== false;
       if (verification.ok === false) {
@@ -679,6 +704,7 @@ export class TlsClientSession {
       };
       finalBundle.push(clientCertificate);
       this.transcript.push(encodeHandshakeMessage(clientCertificate));
+      this.clientCertificateSent = this.config.clientCert ?? null;
 
       if (this.config.clientCert && this.config.clientPrivateKey) {
         const clientSignature = signCertificateVerify(

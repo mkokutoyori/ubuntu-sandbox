@@ -390,11 +390,6 @@ export class TcpSocket {
   recvBuffer: StreamPayload | null = null;
   /** 2MSL timer token while in TIME-WAIT (RFC 9293 §3.4.1). */
   timeWaitTimer: symbol | null = null;
-  /**
-   * PID of the userspace process that owns this socket. Set by the
-   * listener via `stack.setSocketOwner(...)` so `abortSocketsOwnedBy(pid)`
-   * can slam-close everything when the process dies.
-   */
   ownerPid: number | null = null;
 
   /** Segments (SYN/data/FIN) sent but not yet covered by an ACK (PRD-TCP.md P1). */
@@ -490,6 +485,7 @@ export class TcpSocket {
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
   private readonly closeHandlers: TcpCloseHandler[] = [];
+  private closeNotified = false;
   private readonly urgentHandlers: Array<(lastUrgentByte: string) => void> = [];
   private readonly endHandlers: Array<() => void> = [];
   private endDelivered = false;
@@ -606,7 +602,7 @@ export class TcpSocket {
   }
 
   onClose(handler: TcpCloseHandler): () => void {
-    if (this.closed) {
+    if (this.closed || this.closeNotified) {
       handler(this.closeReason ?? 'shutdown');
       return () => {};
     }
@@ -709,6 +705,8 @@ export class TcpSocket {
   }
 
   _fireClose(reason: TcpCloseReason): void {
+    if (this.closeNotified) return;
+    this.closeNotified = true;
     this.closeReason = reason;
     for (const h of [...this.closeHandlers]) {
       try { h(reason); } catch { /* swallow per-handler */ }
@@ -748,6 +746,8 @@ export const TCP_DELAYED_ACK_MS = 200;
 const TCP_RECEIVE_MSS_FLOOR = 536;
 const TCP_REORDERING = 3;
 export const TCP_INITIAL_CWND_SEGMENTS = 10;
+
+export type OwnerExit = 'tcp_close' | 'graceful' | 'reset';
 const TCP_ACK_EVERY_N_SEGMENTS = 2;
 const ABORT_SENDS_RESET: ReadonlySet<TcpState> = new Set<TcpState>([
   'syn-received', 'established', 'fin-wait-1', 'fin-wait-2', 'close-wait',
@@ -1017,11 +1017,14 @@ export class TcpStack {
     return socket.cc.duplicateAcks > 0 || sacked > 0 ? 'Disorder' : 'Open';
   }
 
-  abortSocketsOwnedBy(pid: number): number {
+  closeSocketsOwnedBy(pid: number, exit: OwnerExit = 'tcp_close'): number {
     let count = 0;
     for (const sock of Array.from(this.sockets.values())) {
       if (sock.ownerPid !== pid) continue;
-      this._teardown(sock, 'shutdown');
+      const abrupt = exit === 'reset' || (exit === 'tcp_close' && sock.unreadBytes > 0);
+      if (abrupt && sock.state !== 'time-wait') this._abort(sock);
+      else sock.close();
+      sock._fireClose('shutdown');
       count++;
     }
     return count;
@@ -2454,6 +2457,7 @@ export class TcpStack {
     const listener = socket.pendingListener;
     if (!listener) return;
     socket.pendingListener = null;
+    if (listener.identity.pid !== undefined) this.setSocketOwner(socket, listener.identity.pid);
     if (listener.identity.banner) socket.write(listener.identity.banner);
     try { listener.onAccept(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
   }

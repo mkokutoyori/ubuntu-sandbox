@@ -36,7 +36,7 @@ async function typePassword(page: Page, password: string): Promise<void> {
   await page.waitForTimeout(250);
 }
 async function modalText(page: Page): Promise<string> {
-  return (await page.locator('[data-testid="terminal-modal"]').innerText()).trim();
+  return ((await page.locator('[data-testid="terminal-modal"]').textContent()) ?? '').trim();
 }
 async function typeText(page: Page, text: string): Promise<void> {
   for (const ch of text) {
@@ -67,7 +67,7 @@ test.describe('Scénario UI-7 (e2e) — visudo "What now?"', () => {
   test('visudo édite un fichier temporaire (pas /etc/sudoers), erreur de syntaxe déclenche le menu "What now?" hors éditeur', async ({ page }) => {
     await typeCmd(page, 'export EDITOR=vim');
     await typeCmd(page, 'visudo');
-    const statusline = page.locator('[data-testid="vim-statusline"]');
+    const statusline = page.locator('[data-testid="vim-cmdline"]');
     await expect(statusline).toBeVisible({ timeout: 5_000 });
     await expect(statusline).toContainText('visudo.');
     await expect(statusline).not.toContainText('sudoers');
@@ -79,7 +79,7 @@ test.describe('Scénario UI-7 (e2e) — visudo "What now?"', () => {
     await exCmd(page, 'wq');
 
     // The prompt appears in the plain terminal, after the editor closed.
-    await expect(page.locator('[data-testid="vim-statusline"]')).not.toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="vim-body"]')).not.toBeVisible({ timeout: 5_000 });
     const transcript = await modalText(page);
     expect(transcript).toContain('syntax error');
     expect(transcript).toContain('What now?');

@@ -13,7 +13,11 @@ import { encodeRecords, decodeRecords } from '@/network/http/https/TlsRecordWire
 import { selfSignedServiceCertificate } from '@/network/pki/SelfSignedCertificate';
 
 /** A minimal self-signed leaf certificate for a DC's own StartTLS listener — no CA chain (PRD-Windows-Server-Advanced.md §5 P11 doesn't need one; a full AD CS chain is §5 P13's job). */
-export const selfSignedLdapCert = selfSignedServiceCertificate;
+const DOMAIN_CONTROLLER_KEY_BITS = 2048;
+
+export function selfSignedLdapCert(subject: string, subjectAltNames: readonly string[] = []): ReturnType<typeof selfSignedServiceCertificate> {
+  return selfSignedServiceCertificate(subject, subjectAltNames, DOMAIN_CONTROLLER_KEY_BITS);
+}
 
 /** Feeds one incoming wire chunk into an in-progress server-side handshake and sends back any reply flight. */
 export function stepServerHandshake(tls: TlsServerSession, data: Uint8Array): Uint8Array | null {
@@ -27,7 +31,12 @@ export function stepServerHandshake(tls: TlsServerSession, data: Uint8Array): Ui
  * same pattern `LdapClient`/`KerberosClient`'s `roundTrip` already use).
  * Returns the established session, or `null` if it didn't complete.
  */
-export function driveClientHandshake(socket: TcpSocket, config: TlsClientConfig): TlsClientSession | null {
+export interface ClientHandshake {
+  readonly session: TlsClientSession;
+  readonly established: boolean;
+}
+
+export function driveClientHandshake(socket: TcpSocket, config: TlsClientConfig): ClientHandshake {
   const tls = new TlsClientSession(config);
   let flight = tls.start();
   for (let i = 0; i < 10; i++) {
@@ -39,10 +48,10 @@ export function driveClientHandshake(socket: TcpSocket, config: TlsClientConfig)
     // own `Finished`, computed from the *previous* iteration's reply) — once
     // `result` is set there's nothing further to send or wait for.
     if (tls.result !== null) break;
-    if (!reply) return null;
+    if (!reply) return { session: tls, established: false };
     const nextFlight = tls.handle(decodeRecords(reply));
     if (!nextFlight) break;
     flight = nextFlight;
   }
-  return tls.result === 'success' ? tls : null;
+  return { session: tls, established: tls.result === 'success' };
 }

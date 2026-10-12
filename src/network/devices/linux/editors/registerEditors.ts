@@ -27,6 +27,7 @@ function vimSession(variant: 'vi' | 'vim', seed: EditorSessionSeed): EditorSessi
   const engine = new VimEngine(
     seed.fs, seed.filePath, seed.content, seed.isNewFile, variant, seed.owner,
     seed.initialCursorLine !== undefined ? { line: seed.initialCursorLine } : undefined,
+    seed.displayName,
   );
   const view = (): VimEditorView => ({
     kind: 'vim',
@@ -55,14 +56,16 @@ function vimSession(variant: 'vi' | 'vim', seed: EditorSessionSeed): EditorSessi
     pendingBinaryWarning: engine.pendingBinaryWarning,
     pendingSubstMatch: engine.pendingSubstMatch,
     pendingSwapRecovery: engine.pendingSwapRecovery,
-    listChars: engine.listChars,
     isReplacing: engine.isReplacing,
     searchPromptChar: engine.searchPromptChar,
     visualAnchor: engine.visualAnchor,
+    screen: engine.screen,
   });
   return {
     get view() { return view(); },
     applyKey: (key) => { engine.applyKey(key); return view(); },
+    resize: (rows, cols) => { engine.resize(rows, cols); return view(); },
+    scroll: (up, count) => { engine.scrollView(up, count); return view(); },
     close: () => { if (!engine.exited) engine.applyKey({ key: 'q', ctrl: false }); },
   };
 }
@@ -74,6 +77,7 @@ function nanoSession(seed: EditorSessionSeed): EditorSession {
       ? { line: seed.initialCursorLine, col: seed.initialCursorCol }
       : undefined,
     seed.showLineNumbers,
+    { softwrap: seed.softwrap, constantShow: seed.showPosition, displayName: seed.displayName },
   );
   const view = (): NanoEditorView => ({
     kind: 'nano',
@@ -90,8 +94,6 @@ function nanoSession(seed: EditorSessionSeed): EditorSession {
     mode: engine.mode,
     statusMessage: engine.statusMessage,
     helpText: engine.helpText,
-    displayContent: engine.displayContent,
-    displayCursorOffset: engine.displayCursorOffset,
     promptCursor: engine.promptCursor,
     saveFileName: engine.saveFileName,
     searchQuery: engine.searchQuery,
@@ -102,12 +104,15 @@ function nanoSession(seed: EditorSessionSeed): EditorSession {
     replaceSearchQuery: engine.replaceSearchQuery,
     replaceWithText: engine.replaceWithText,
     pendingReplaceMatch: engine.pendingReplaceMatch,
+    screen: engine.screen,
   });
   return {
     get view() { return view(); },
     applyKey: (key) => { engine.applyKey(key); return view(); },
     applyPaste: (text) => { engine.applyPaste(text); return view(); },
-    moveCursorToDisplayOffset: (offset) => { engine.moveCursorToDisplayOffset(offset); return view(); },
+    click: (row, col) => { engine.clickAt(row, col); return view(); },
+    resize: (rows, cols) => { engine.resize(rows, cols); return view(); },
+    scroll: (up, count) => { engine.scrollView(up, count); return view(); },
     close: () => { if (!engine.exited) engine.applyKey({ key: 'x', ctrl: true }); },
   };
 }

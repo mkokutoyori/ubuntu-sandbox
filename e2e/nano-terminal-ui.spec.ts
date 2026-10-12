@@ -62,15 +62,15 @@ test.describe('Scénario UI-1/UI-4 (e2e) — interface nano', () => {
     await expect(titlebar).not.toContainText('Modified');
   });
 
-  test('nano -v ouvre en lecture seule : "[view]" dans le titre, barre de commandes réduite, frappe sans effet', async ({ page }) => {
+  test('nano -v ouvre en lecture seule : "View" dans le titre, barre de commandes entière, frappe sans effet', async ({ page }) => {
     await typeCmd(page, 'echo "secret" > /tmp/nano-readonly.txt');
     await typeCmd(page, 'nano -v /tmp/nano-readonly.txt');
     const titlebar = page.locator('[data-testid="nano-titlebar"]');
     await expect(titlebar).toBeVisible({ timeout: 5_000 });
-    await expect(titlebar).toContainText('[view]');
+    await expect(titlebar).toContainText('View');
 
     const shortcutBar = page.locator('[data-testid="nano-shortcut-bar"]');
-    await expect(shortcutBar).not.toContainText('Write Out');
+    await expect(shortcutBar).toContainText('Write Out');
 
     await page.keyboard.type('HACKED');
     await expect(titlebar).not.toContainText('Modified');
@@ -86,12 +86,12 @@ test.describe('Scénario UI-1/UI-4 (e2e) — interface nano', () => {
 
     await page.keyboard.press('Control+w');
     const shortcutBar = page.locator('[data-testid="nano-shortcut-bar"]');
-    await expect(shortcutBar).toContainText('Search');
-    await expect(shortcutBar).toContainText('Regexp');
+    await expect(shortcutBar).toContainText('Case Sens');
+    await expect(shortcutBar).toContainText('Reg.exp.');
     await expect(shortcutBar).not.toContainText('Write Out');
 
     await page.keyboard.press('Escape');
     await expect(shortcutBar).toContainText('Write Out');
-    await expect(shortcutBar).not.toContainText('Regexp');
+    await expect(shortcutBar).not.toContainText('Reg.exp.');
   });
 });

@@ -15,6 +15,7 @@ export const KU_TGS_REP_ENC_PART_SUBKEY = 9;
 export const KU_AP_REQ_AUTH_CKSUM = 10;
 export const KU_AP_REQ_AUTHENTICATOR = 11;
 export const KU_AP_REP_ENC_PART = 12;
+export const KU_KRB_CRED_ENC_PART = 14;
 export const KU_GSS_ACCEPTOR_SEAL = 22;
 export const KU_GSS_ACCEPTOR_SIGN = 23;
 export const KU_GSS_INITIATOR_SEAL = 24;

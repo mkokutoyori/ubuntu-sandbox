@@ -61,7 +61,7 @@ describe('Scénario 3 — Ctrl+W recherche simple et répétition', () => {
     expect(nano.cursorCol).toBe(0);
 
     ctrl(nano, 'w');
-    expect(nano.searchQuery).toBe('192.168.1'); // prefilled with the last term, like real nano
+    expect(nano.searchQuery).toBe('');
     press(nano, 'Enter');
     expect(nano.cursorLine).toBe(3);
     expect(nano.cursorCol).toBe(0);

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoPromptAnswer } from './helpers/nanoScreen';
 
 /**
  * Scénario 15 (e2e) — Rappel d'historique via Haut/Bas, piloté depuis
@@ -35,9 +36,6 @@ async function typeText(page: Page, text: string): Promise<void> {
     }, ch);
   }
 }
-async function clearPromptField(page: Page, maxLen = 64): Promise<void> {
-  for (let i = 0; i < maxLen; i++) await page.keyboard.press('Backspace');
-}
 
 test.describe('Scénario 15 (e2e) — rappel d\'historique Haut/Bas', () => {
   test.beforeEach(async ({ page }) => {
@@ -51,7 +49,7 @@ test.describe('Scénario 15 (e2e) — rappel d\'historique Haut/Bas', () => {
   test('vim : Haut/Haut dans : recule à travers deux commandes précédentes', async ({ page }) => {
     await typeCmd(page, "printf 'one\\ntwo\\n' > /tmp/vim-hist-e2e.txt");
     await typeCmd(page, 'vim /tmp/vim-hist-e2e.txt');
-    await expect(page.getByText('vim-hist-e2e.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="vim-cmdline"]')).toContainText('vim-hist-e2e.txt', { timeout: 5_000 });
 
     await page.keyboard.press(':');
     await typeText(page, 'set number');
@@ -61,12 +59,12 @@ test.describe('Scénario 15 (e2e) — rappel d\'historique Haut/Bas', () => {
     await typeText(page, 'set list');
     await page.keyboard.press('Enter');
 
-    const cmdInput = page.locator('[data-testid="terminal-modal"] input').last();
+    const cmdline = page.locator('[data-testid="vim-cmdline"]');
     await page.keyboard.press(':');
     await page.keyboard.press('ArrowUp');
-    await expect(cmdInput).toHaveValue('set list');
+    await expect(cmdline).toHaveText(/^:set list\s*$/);
     await page.keyboard.press('ArrowUp');
-    await expect(cmdInput).toHaveValue('set number');
+    await expect(cmdline).toHaveText(/^:set number\s*$/);
     await page.keyboard.press('Escape');
 
     await page.keyboard.press(':');
@@ -84,17 +82,16 @@ test.describe('Scénario 15 (e2e) — rappel d\'historique Haut/Bas', () => {
     await page.keyboard.press('Enter');
 
     await page.keyboard.press('Control+w');
-    await clearPromptField(page);
     await typeText(page, 'gamma');
     await page.keyboard.press('Enter');
 
-    const searchInput = page.locator('[data-testid="terminal-modal"] input').last();
     await page.keyboard.press('Control+w');
-    await expect(searchInput).toHaveValue('gamma');
+    await expect(page.getByText('Search [gamma]:')).toBeVisible();
+    expect(await nanoPromptAnswer(page, ']:')).toBe('');
     await page.keyboard.press('ArrowUp');
-    await expect(searchInput).toHaveValue('gamma');
+    await expect.poll(() => nanoPromptAnswer(page, ']:')).toBe('gamma');
     await page.keyboard.press('ArrowUp');
-    await expect(searchInput).toHaveValue('alpha');
+    await expect.poll(() => nanoPromptAnswer(page, ']:')).toBe('alpha');
 
     await page.keyboard.press('Escape');
     await page.keyboard.press('Control+x');

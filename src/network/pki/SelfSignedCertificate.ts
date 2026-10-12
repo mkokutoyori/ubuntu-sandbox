@@ -66,14 +66,17 @@ export function generateSelfSignedCertificate(
   return { cert: signCertificate(fields, keys.privateKey), privateKey: keys.privateKey };
 }
 
-export function selfSignedServiceCertificate(subject: string): { cert: X509Certificate; keyPair: PkiKeyPair } {
-  const keyPair = PkiKeyPair.generate('rsa');
+export function selfSignedServiceCertificate(
+  subject: string, subjectAltNames: readonly string[] = [], keyBits?: number,
+): { cert: X509Certificate; keyPair: PkiKeyPair } {
+  const keyPair = PkiKeyPair.generate('rsa', keyBits);
   const name = subject.includes('=') ? subject : `CN=${subject}`;
   const now = simulationNowMs();
   const fields: X509CertificateFields = {
     version: 3, serialNumber: '1', subject: name, issuer: name,
     notBefore: now - 1000, notAfter: now + 365 * 24 * 3600 * 1000,
     publicKey: keyPair.publicKey, signatureAlgorithm: 'sha256WithRSAEncryption',
+    ...(subjectAltNames.length > 0 ? { extensions: { subjectAltName: subjectAltNames } } : {}),
   };
   return { cert: signCertificate(fields, keyPair.privateKey), keyPair };
 }

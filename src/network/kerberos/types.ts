@@ -81,8 +81,11 @@ export interface EtypeInfo2Entry {
 export const PA_TGS_REQ = 1;
 export const PA_ENC_TIMESTAMP = 2;
 export const PA_ETYPE_INFO2 = 19;
+export const PA_REQ_ENC_PA_REP = 149;
+export const PA_AS_FRESHNESS = 150;
 
 export const KDC_OPT_FORWARDABLE = 1 << 30;
+export const KDC_OPT_FORWARDED = 1 << 29;
 export const KDC_OPT_PROXIABLE = 1 << 28;
 export const KDC_OPT_RENEWABLE = 1 << 23;
 export const KDC_OPT_RENEWABLE_OK = 1 << 4;
@@ -203,4 +206,29 @@ export function principalName(nameType: number, ...parts: string[]): PrincipalNa
 
 export function principalNameToString(p: PrincipalName): string {
   return p.nameString.join('/');
+}
+
+export interface KrbCredInfo {
+  readonly key: EncryptionKey;
+  readonly prealm: string;
+  readonly pname: PrincipalName;
+  readonly flags: number;
+  readonly authtime: number;
+  readonly starttime?: number;
+  readonly endtime: number;
+  readonly renewTill?: number;
+  readonly srealm: string;
+  readonly sname: PrincipalName;
+}
+
+export interface EncKrbCredPart {
+  readonly ticketInfo: readonly KrbCredInfo[];
+  readonly nonce?: number;
+  readonly timestamp?: number;
+  readonly usec?: number;
+}
+
+export interface KrbCred {
+  readonly tickets: readonly Ticket[];
+  readonly encPart: EncryptedData;
 }

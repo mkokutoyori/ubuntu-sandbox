@@ -1,10 +1,29 @@
 import { RdpSessionTable } from './server/rdp/RdpSession';
 
-/** Remote Desktop toggle (PRD-Windows-Server-Advanced.md §5 P17) — disabled by default, matching real Windows' `fDenyTSConnections=1` out of the box (and this codebase's own `WindowsWinRmConfig` convention). */
+export const TERMINAL_SERVER_KEY = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server';
+export const DENY_CONNECTIONS_VALUE = 'fDenyTSConnections';
+
+export interface RdpRegistry {
+  getItemPropertyValues(path: string): Record<string, string | number> | null;
+  setItemProperty(path: string, name: string, value: string | number): string;
+}
+
 export class WindowsRdpConfig {
-  enabled = false;
   readonly sessions = new RdpSessionTable();
 
-  enable(): void { this.enabled = true; }
-  disable(): void { this.enabled = false; }
+  constructor(private readonly registry: RdpRegistry) {}
+
+  get enabled(): boolean {
+    const values = this.registry.getItemPropertyValues(TERMINAL_SERVER_KEY);
+    if (!values) return false;
+    const wanted = DENY_CONNECTIONS_VALUE.toLowerCase();
+    for (const [name, value] of Object.entries(values)) {
+      if (name.toLowerCase() === wanted) return String(value).trim() !== '' && Number(value) === 0;
+    }
+    return false;
+  }
+
+  enable(): void { this.registry.setItemProperty(TERMINAL_SERVER_KEY, DENY_CONNECTIONS_VALUE, 0); }
+
+  disable(): void { this.registry.setItemProperty(TERMINAL_SERVER_KEY, DENY_CONNECTIONS_VALUE, 1); }
 }

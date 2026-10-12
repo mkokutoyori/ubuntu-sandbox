@@ -1,0 +1,216 @@
+{
+ "bash": "GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)",
+ "stty": "stty (GNU coreutils) 9.4",
+ "sizes": [
+  {
+   "rows": 24,
+   "cols": 80,
+   "probes": {
+    "stty size": [
+     "24 80"
+    ],
+    "stty -a": [
+     "speed 38400 baud; rows 24; columns 80; line = 0;",
+     "intr = ^C; quit = ^\\; erase = ^?; kill = ^U; eof = ^D; eol = <undef>;",
+     "eol2 = <undef>; swtch = <undef>; start = ^Q; stop = ^S; susp = ^Z; rprnt = ^R;",
+     "werase = ^W; lnext = ^V; discard = ^O; min = 1; time = 0;",
+     "-parenb -parodd -cmspar cs8 -hupcl -cstopb cread -clocal -crtscts",
+     "-ignbrk -brkint -ignpar -parmrk -inpck -istrip -inlcr -igncr icrnl ixon -ixoff",
+     "-iuclc -ixany -imaxbel iutf8",
+     "opost -olcuc -ocrnl onlcr -onocr -onlret -ofill -ofdel nl0 cr0 tab0 bs0 vt0 ff0",
+     "isig icanon iexten echo echoe echok -echonl -noflsh -xcase -tostop -echoprt",
+     "echoctl echoke -flusho -extproc"
+    ],
+    "tput cols": [
+     "80"
+    ],
+    "tput lines": [
+     "24"
+    ],
+    "echo \"[$COLUMNS][$LINES]\"": [
+     "[80][24]"
+    ],
+    "env | grep -c '^COLUMNS=\\|^LINES='": [
+     "0"
+    ]
+   }
+  },
+  {
+   "rows": 30,
+   "cols": 100,
+   "probes": {
+    "stty size": [
+     "30 100"
+    ],
+    "stty -a": [
+     "speed 38400 baud; rows 30; columns 100; line = 0;",
+     "intr = ^C; quit = ^\\; erase = ^?; kill = ^U; eof = ^D; eol = <undef>; eol2 = <undef>;",
+     "swtch = <undef>; start = ^Q; stop = ^S; susp = ^Z; rprnt = ^R; werase = ^W; lnext = ^V;",
+     "discard = ^O; min = 1; time = 0;",
+     "-parenb -parodd -cmspar cs8 -hupcl -cstopb cread -clocal -crtscts",
+     "-ignbrk -brkint -ignpar -parmrk -inpck -istrip -inlcr -igncr icrnl ixon -ixoff -iuclc -ixany",
+     "-imaxbel iutf8",
+     "opost -olcuc -ocrnl onlcr -onocr -onlret -ofill -ofdel nl0 cr0 tab0 bs0 vt0 ff0",
+     "isig icanon iexten echo echoe echok -echonl -noflsh -xcase -tostop -echoprt echoctl echoke -flusho",
+     "-extproc"
+    ],
+    "tput cols": [
+     "100"
+    ],
+    "tput lines": [
+     "30"
+    ],
+    "echo \"[$COLUMNS][$LINES]\"": [
+     "[100][30]"
+    ],
+    "env | grep -c '^COLUMNS=\\|^LINES='": [
+     "0"
+    ]
+   }
+  },
+  {
+   "rows": 40,
+   "cols": 50,
+   "probes": {
+    "stty size": [
+     "40 50"
+    ],
+    "stty -a": [
+     "speed 38400 baud; rows 40; columns 50; line = 0;",
+     "intr = ^C; quit = ^\\; erase = ^?; kill = ^U;",
+     "eof = ^D; eol = <undef>; eol2 = <undef>;",
+     "swtch = <undef>; start = ^Q; stop = ^S; susp = ^Z;",
+     "rprnt = ^R; werase = ^W; lnext = ^V; discard = ^O;",
+     "min = 1; time = 0;",
+     "-parenb -parodd -cmspar cs8 -hupcl -cstopb cread",
+     "-clocal -crtscts",
+     "-ignbrk -brkint -ignpar -parmrk -inpck -istrip",
+     "-inlcr -igncr icrnl ixon -ixoff -iuclc -ixany",
+     "-imaxbel iutf8",
+     "opost -olcuc -ocrnl onlcr -onocr -onlret -ofill",
+     "-ofdel nl0 cr0 tab0 bs0 vt0 ff0",
+     "isig icanon iexten echo echoe echok -echonl",
+     "-noflsh -xcase -tostop -echoprt echoctl echoke",
+     "-flusho -extproc"
+    ],
+    "tput cols": [
+     "50"
+    ],
+    "tput lines": [
+     "40"
+    ],
+    "echo \"[$COLUMNS][$LINES]\"": [
+     "[50][40]"
+    ],
+    "env | grep -c '^COLUMNS=\\|^LINES='": [
+     "0"
+    ]
+   }
+  },
+  {
+   "rows": 40,
+   "cols": 72,
+   "probes": {
+    "stty size": [
+     "40 72"
+    ],
+    "stty -a": [
+     "speed 38400 baud; rows 40; columns 72; line = 0;",
+     "intr = ^C; quit = ^\\; erase = ^?; kill = ^U; eof = ^D; eol = <undef>;",
+     "eol2 = <undef>; swtch = <undef>; start = ^Q; stop = ^S; susp = ^Z;",
+     "rprnt = ^R; werase = ^W; lnext = ^V; discard = ^O; min = 1; time = 0;",
+     "-parenb -parodd -cmspar cs8 -hupcl -cstopb cread -clocal -crtscts",
+     "-ignbrk -brkint -ignpar -parmrk -inpck -istrip -inlcr -igncr icrnl ixon",
+     "-ixoff -iuclc -ixany -imaxbel iutf8",
+     "opost -olcuc -ocrnl onlcr -onocr -onlret -ofill -ofdel nl0 cr0 tab0 bs0",
+     "vt0 ff0",
+     "isig icanon iexten echo echoe echok -echonl -noflsh -xcase -tostop",
+     "-echoprt echoctl echoke -flusho -extproc"
+    ],
+    "tput cols": [
+     "72"
+    ],
+    "tput lines": [
+     "40"
+    ],
+    "echo \"[$COLUMNS][$LINES]\"": [
+     "[72][40]"
+    ],
+    "env | grep -c '^COLUMNS=\\|^LINES='": [
+     "0"
+    ]
+   }
+  },
+  {
+   "rows": 10,
+   "cols": 132,
+   "probes": {
+    "stty size": [
+     "10 132"
+    ],
+    "stty -a": [
+     "speed 38400 baud; rows 10; columns 132; line = 0;",
+     "intr = ^C; quit = ^\\; erase = ^?; kill = ^U; eof = ^D; eol = <undef>; eol2 = <undef>; swtch = <undef>; start = ^Q; stop = ^S;",
+     "susp = ^Z; rprnt = ^R; werase = ^W; lnext = ^V; discard = ^O; min = 1; time = 0;",
+     "-parenb -parodd -cmspar cs8 -hupcl -cstopb cread -clocal -crtscts",
+     "-ignbrk -brkint -ignpar -parmrk -inpck -istrip -inlcr -igncr icrnl ixon -ixoff -iuclc -ixany -imaxbel iutf8",
+     "opost -olcuc -ocrnl onlcr -onocr -onlret -ofill -ofdel nl0 cr0 tab0 bs0 vt0 ff0",
+     "isig icanon iexten echo echoe echok -echonl -noflsh -xcase -tostop -echoprt echoctl echoke -flusho -extproc"
+    ],
+    "tput cols": [
+     "132"
+    ],
+    "tput lines": [
+     "10"
+    ],
+    "echo \"[$COLUMNS][$LINES]\"": [
+     "[132][10]"
+    ],
+    "env | grep -c '^COLUMNS=\\|^LINES='": [
+     "0"
+    ]
+   }
+  },
+  {
+   "rows": 50,
+   "cols": 40,
+   "probes": {
+    "stty size": [
+     "50 40"
+    ],
+    "stty -a": [
+     "speed 38400 baud; rows 50; columns 40;",
+     "line = 0;",
+     "intr = ^C; quit = ^\\; erase = ^?;",
+     "kill = ^U; eof = ^D; eol = <undef>;",
+     "eol2 = <undef>; swtch = <undef>;",
+     "start = ^Q; stop = ^S; susp = ^Z;",
+     "rprnt = ^R; werase = ^W; lnext = ^V;",
+     "discard = ^O; min = 1; time = 0;",
+     "-parenb -parodd -cmspar cs8 -hupcl",
+     "-cstopb cread -clocal -crtscts",
+     "-ignbrk -brkint -ignpar -parmrk -inpck",
+     "-istrip -inlcr -igncr icrnl ixon -ixoff",
+     "-iuclc -ixany -imaxbel iutf8",
+     "opost -olcuc -ocrnl onlcr -onocr -onlret",
+     "-ofill -ofdel nl0 cr0 tab0 bs0 vt0 ff0",
+     "isig icanon iexten echo echoe echok",
+     "-echonl -noflsh -xcase -tostop -echoprt",
+     "echoctl echoke -flusho -extproc"
+    ],
+    "tput cols": [
+     "40"
+    ],
+    "tput lines": [
+     "50"
+    ],
+    "echo \"[$COLUMNS][$LINES]\"": [
+     "[40][50]"
+    ],
+    "env | grep -c '^COLUMNS=\\|^LINES='": [
+     "0"
+    ]
+   }
+  }
+ ]
+}

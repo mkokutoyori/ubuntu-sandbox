@@ -35,6 +35,7 @@ export interface SshServerConfig {
 }
 
 export interface ILinuxShell {
+  readonly streamSession?: unknown;
   execute(line: string): Promise<{
     stdout: string;
     stderr: string;
@@ -113,6 +114,8 @@ export interface ILinuxShell {
    * `:!cmd` are the remote's own (docs/PRD-SSH-Unification.md §4bis B3).
    */
   openEditor?(commandLine: string): EditorSession | null;
+  /** The client's terminal changed size (window-change, RFC 4254 §6.7). */
+  setWindowSize?(rows: number, cols: number): void;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
   dispose?(): void;
 }
@@ -173,7 +176,7 @@ export interface ISshServerContext {
    */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
   clientPort?(fromIp: string): number | undefined;
-  connectionClosed?(user: string, fromIp: string): void;
+  connectionClosed?(user: string, fromIp: string, fromPort?: number): void;
   connectionEnded?(fromIp: string, port: number | undefined): void;
   /**
    * Build a fully-populated SshUserContext from /etc/passwd (real uid/gid/groups/home).

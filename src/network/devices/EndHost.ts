@@ -33,9 +33,10 @@ import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters }
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
-import { TcpStack, TCP_SOMAXCONN, type TcpOptionPolicy, type TcpMibSink } from '../tcp/TcpStack';
+import { TcpStack, TCP_SOMAXCONN, type TcpOptionPolicy, type TcpMibSink, type OwnerExit } from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
+import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
 import type { DiffServField, HopLimit, TimeToLive, TtlFloor } from '../core/IpHeaderFields';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
@@ -3662,12 +3663,44 @@ export abstract class EndHost extends Equipment {
    * Linux les deux vivent dans `systemd-resolved`, sous Windows dans le
    * `svchost` du service de client DNS.
    */
-  public resolverProcessName(): string { return 'systemd-resolved'; }
+  public resolverIdentity(): ListenerIdentity { return { processName: 'systemd-resolved' }; }
 
   /** Close a UDP port: remove the listener and the socket-table entry. */
   public udpClose(port: number): void {
     this.udpListeners.delete(port);
     this.socketTable.unbind('udp', '0.0.0.0', port);
+  }
+
+  public reapProcessSockets(pid: number, processName: string | undefined, exit: OwnerExit): number[] {
+    const stack = this.getTcpStack();
+    stack.closeSocketsOwnedBy(pid, exit);
+    const outliving = new Set(stack.listSockets()
+      .map((socket) => `${socket.localPort}|${socket.remoteIp}|${socket.remotePort}`));
+    const closedListeners: number[] = [];
+    for (const sock of this.socketTable.getAll()) {
+      const matchesByPid = sock.pid === pid;
+      const matchesByName = processName && sock.pid === undefined && sock.processName === processName;
+      if (!matchesByPid && !matchesByName) continue;
+      if (sock.remoteAddress === '*') {
+        if (sock.protocol === 'udp') {
+          if (sock.localAddress === '0.0.0.0') this.udpClose(sock.localPort);
+          else this.udpCloseAddress(sock.localAddress, sock.localPort);
+          continue;
+        }
+        this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
+        if (sock.protocol === 'tcp' && sock.state === 'LISTEN') {
+          stack.closeListener(sock.localPort, sock.localAddress);
+          closedListeners.push(sock.localPort);
+        }
+      } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
+        sock.pid = undefined;
+        sock.processName = undefined;
+        sock.uid = undefined;
+      } else {
+        this.socketTable.removeConnection(sock);
+      }
+    }
+    return closedListeners;
   }
 
   /**

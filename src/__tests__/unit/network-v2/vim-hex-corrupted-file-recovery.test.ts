@@ -48,7 +48,7 @@ describe('Scénario 10 — nettoyage CRLF / CR isolé via \\r et :set fileformat
 
     const vim = new VimEngine(fsCtx, '/tmp/crlf-corrupt.txt', fsCtx.readFile('/tmp/crlf-corrupt.txt')!, false, 'vim');
     exCommand(vim, 'set fileformat?');
-    expect(vim.message).toBe('fileformat=dos');
+    expect(vim.message).toBe('  fileformat=dos');
     expect(vim.lines).toEqual(['line1', 'line2\rline2b', 'line3']);
 
     press(vim, '/');
@@ -90,7 +90,7 @@ describe('Scénario 10 — nettoyage CRLF / CR isolé via \\r et :set fileformat
     fsCtx.writeFile('/tmp/unix.txt', content);
     const vim = new VimEngine(fsCtx, '/tmp/unix.txt', fsCtx.readFile('/tmp/unix.txt')!, false, 'vim');
     exCommand(vim, 'set fileformat?');
-    expect(vim.message).toBe('fileformat=unix');
+    expect(vim.message).toBe('  fileformat=unix');
   });
 
   it(':set fileformat=unix force une écriture LF-only au prochain :w, sans toucher le buffer', () => {

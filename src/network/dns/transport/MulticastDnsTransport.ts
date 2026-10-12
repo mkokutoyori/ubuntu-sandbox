@@ -13,6 +13,7 @@
  */
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 
@@ -105,9 +106,15 @@ function leaveIpv6Group(host: EndHost, binding: McastDnsBinding): void {
   for (const iface of realInterfaces(host)) host.leaveIPv6Group(iface, binding.group6);
 }
 
+function bindResolverClientSocket(host: EndHost, sourcePort: number, listener: Parameters<EndHost['udpBind']>[1]): void {
+  const resolver = host.resolverIdentity();
+  host.udpBind(sourcePort, listener, resolver.processName, { pid: resolver.pid });
+}
+
 export function bindMulticastDns(
   host: EndHost, binding: McastDnsBinding, responder: McastDnsResponder,
   observer?: McastDnsObserver,
+  identity: ListenerIdentity = host.resolverIdentity(),
 ): void {
   host.udpBind(binding.port, ({ sourceIP, udp }) => {
     if (!(udp.payload instanceof Uint8Array)) return;
@@ -126,7 +133,7 @@ export function bindMulticastDns(
     } else {
       sendOnBothGroups(host, binding, binding.port, bytes);
     }
-  }, host.resolverProcessName());
+  }, identity.processName, { pid: identity.pid });
   joinIpv6Group(host, binding);
 }
 
@@ -180,13 +187,13 @@ export function queryMulticastDnsSync(
 
   const collected: DnsMessage[] = [];
   try {
-    host.udpBind(sourcePort, ({ udp }) => {
+    bindResolverClientSocket(host, sourcePort, ({ udp }) => {
       if (!(udp.payload instanceof Uint8Array)) return;
       let response: DnsMessage;
       try { response = decodeDnsMessage(udp.payload); } catch { return; }
       if (!response.flags.qr || response.id !== query.id) return;
       collected.push(response);
-    }, `${host.resolverProcessName()}-client`);
+    });
   } catch { return []; }
 
   const bytes = encodeDnsMessage(query);
@@ -219,14 +226,14 @@ export function queryMulticastDns(
     };
 
     try {
-      host.udpBind(sourcePort, ({ udp }) => {
+      bindResolverClientSocket(host, sourcePort, ({ udp }) => {
         if (!(udp.payload instanceof Uint8Array)) return;
         let response: DnsMessage;
         try { response = decodeDnsMessage(udp.payload); } catch { return; }
         if (!response.flags.qr || response.id !== query.id) return;
         collected.push(response);
         if (options.firstOnly) finish();
-      }, `${host.resolverProcessName()}-client`);
+      });
     } catch {
       resolve([]);
       return;

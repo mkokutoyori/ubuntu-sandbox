@@ -1,0 +1,502 @@
+{
+ "files": {
+  "san_ok.pem": "-----BEGIN CERTIFICATE-----\nMIIDGzCCAgOgAwIBAgIUMCcZrJQn0XMI6wjg6tAkEFBGeLIwDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU3WhcNMjYxMDMxMDcwNDU3\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nANG8ybAAEXrPlFnt69kWv9gluNPpQxM20Cu4N8HVJ8y7JP58B9no5mt/URV/4rC1\n6RaCX7JYH/xiQDumDiSB9F4MPJ5NRka10QGyLJmhp+xczEjA+1VHuu2hBkQQ2voX\nDfc0CDgMKRV/eWTIlMhmoAZj54KdOkMX+qsQYrE2Y3qAAFbXTTngvrDOooTwGCCz\nq2NdLtvn2GEoy8AzP8xT79FVxjPwX6tCMJS4dGmifaube4bBRfS6P7iFFrVOanBR\n89zZNgNZ4t51V7II+lJvdOqUF24ujxLVb2M+nsj6JBJYMfxbv2SggnlsEj6XybQo\nQCXlA9yEh7UBZQ109lUqKi0CAwEAAaNzMHEwHQYDVR0OBBYEFODnpOeCN7QIYrv8\njKzcj9J5DPdUMB8GA1UdIwQYMBaAFODnpOeCN7QIYrv8jKzcj9J5DPdUMA8GA1Ud\nEwEB/wQFMAMBAf8wHgYDVR0RBBcwFYICdm2CCWxvY2FsaG9zdIcEfwAAATANBgkq\nhkiG9w0BAQsFAAOCAQEAka11qy5QV53XHZwlVYU6L1OF6HQatcNEugVy/vsSZcYP\nZX0X2IDkL0tyJ9O6/KwUQB9Dx0inDTSxvKx67AFyJ1VBQVqf2A34pyAHdLWOiSDK\nlhw5hbrY/+QSd9g0P4EydExJB9TcyQXEowFA+HbQ1XLiGY0XrfGlehhxdz0Krq2U\nP5jsQYHlE5SRCW6cxhF2xJJlIxQ75UJN91f5hXLMMZL/oBsOSiJwIahgzBdwlxi4\nZXyQ1VxRVC4+BWgMeMmQNc/mfe8+nqCPuYtr3HXonoexiynru7KtmM2XFdW/obLA\nDu6806M4Mz01JDM/p+2l/2WYjdtbSxyLSBPtLY9Iww==\n-----END CERTIFICATE-----\n",
+  "san_ok.key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRvMmwABF6z5RZ\n7evZFr/YJbjT6UMTNtAruDfB1SfMuyT+fAfZ6OZrf1EVf+KwtekWgl+yWB/8YkA7\npg4kgfReDDyeTUZGtdEBsiyZoafsXMxIwPtVR7rtoQZEENr6Fw33NAg4DCkVf3lk\nyJTIZqAGY+eCnTpDF/qrEGKxNmN6gABW10054L6wzqKE8Bggs6tjXS7b59hhKMvA\nMz/MU+/RVcYz8F+rQjCUuHRpon2rm3uGwUX0uj+4hRa1TmpwUfPc2TYDWeLedVey\nCPpSb3TqlBduLo8S1W9jPp7I+iQSWDH8W79koIJ5bBI+l8m0KEAl5QPchIe1AWUN\ndPZVKiotAgMBAAECggEADUDAfn+6mwfeiBeJys7DskJL8rlaH4QxVO86jWPNNIQc\n0HyA4yry0xcZRg0DLjGzIqompuEnqu3VwOR7dKDGPWJzkCMyOMnzWjKVMTiu9jdf\nlzdOil3SeNfZyqzv+/6UnNVrsYhJ2Phpm3iLN5CN4Gl+rwOwCJ5Nch1tHGU4lacU\nqwWsLAuXopMGM51eie1SOHjPrVNKxAMauvHEEw0NxF+asiF20eoBuFgIvSrzDUNx\nUPMQbPgGse+UUAzJBrrtmNpyMx/t+HP1HQ4ORYfVEdDdSeG1pEvhis6NOQ1eQ97v\nJfz1SVQW5/dekaZ1dXtIvPUrOTqg9FKoBDeDDLWqBwKBgQDoDO8MGbZV6rh8U2lb\nDxjgrgjAzNNir8ZPEl59vv2fhcDR/Y2aHRi10S/tRuLb6z0dsfY3C/9MRzkTbggp\nRp8kosR1FxV9l/sS8ddXtXr/nxlhM5jNUOI5nDJlD1j2k/Yxzmavk8kyzeBFNDEl\nUfjRIGCN08u2WYoWhuTepqTqLwKBgQDnYlCSNSBXo8nBbmm52KCKx8UyrIh6EC5M\nIMWu+MuVfrvyXS1fv4D2/JYSPtKzFAzlNbDFxqaXn8RwrbYupbgbCjsjtuuWcuC/\nui0/HHWHVi2Q/76ONgh8TPYH50bcs/TpKDD3pdAYSakMlA7vju0+Wwc5/oKsmVbf\nUoKUO2GGYwKBgQCVGQJbdwXmDGu/TmTqYjfs3UW4g6LqzOARnE7kYtxZLDqpck4S\nkNF4uVEfFyXagjqBov/9fJLr8vNkXZWW186XXpH2Xf+r9AQZtxRTQcMnDZXkE6AB\nhA/nTko/Du5teMJ+XA00kTN8ljWcoZ1WSmYiELiZSFWi88M7GC9kNBTQdwKBgHyG\nFqJ44O0Jgp0NFO0lvlCx7li1LcWzS5dA0+K0lqvfxrpKlw6+e2Nw0DsFgFNL6Ry5\n5map4CIdo5SYiEFWglxbBzTTTrprHLVSNuOOJ1oscN1mJWFXhv2OVaIvP52rY5TP\nQnsky3cmvUm9rMQUAW3bg2ocpKrK40vQleG8i2HNAoGBAI9lVwFwi/axWXe7/17/\nC9Ni0ysDyTD6DMkpr1yzYvgK7a1tMt/5WamhfPBoKC6tzSWHUZEgbhQdI9a1rE8U\ncuZ1t8QC4obRexThYnXV2e24INdg3LuiiE04oenyPeBE4wQEDarsVEYP0fYpM3s8\nmLGPBFghNjiifTpXmBV9JfRC\n-----END PRIVATE KEY-----\n",
+  "cn_only.pem": "-----BEGIN CERTIFICATE-----\nMIIC+zCCAeOgAwIBAgIUIb7ukv0aIiwEjRA60OzXpZIM40QwDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU4WhcNMjYxMDMxMDcwNDU4\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAKESB+Wualpu3LidWizQxDLkqniYj1i6Jr648JQthjB8T4b0OHo+VLvQ6mMcpB0V\nwXpJ9n+oJUeBl0hki9wVrcaISMd+ILgLEIGeyPrLEzxZ3bx5e44ANM1zCFpR2QJG\n0tNah5q8ZgKy5NQQK+2BISTncf5SFEZI+m9EGpmnksOAHZ9RjNR5WPD1QWy0QCka\ns6fchgvTG819svdRvvZeFbLbmF7SCoc6r/qgFPB7RFxt7Jt1pnh/x38t4Q1HcrkH\nHnZbBYe8UDyPBYqeNuRzCBK1CLLNTCEeMLeaEdWdM9vhtp+1MqLcHvpaNOjynGvN\nMz+i4zHq/SLgWgDNOjFysnMCAwEAAaNTMFEwHQYDVR0OBBYEFJmD6X+bYiMHfHJg\n5Xu38En912ZdMB8GA1UdIwQYMBaAFJmD6X+bYiMHfHJg5Xu38En912ZdMA8GA1Ud\nEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAFU309J9TiHCFgYsArgn2jVv\nRCXbiCkmmKGYkNX3OY+n7rcD4H5PvEIprC1rcCftsAkxK/gls1bQfpuJh7dtLQ66\nwZEf5ktER3srz6Thf6m/I6nzYRFhMydM4ab9Eu5NrqWzsTkn9420nGHRChuuM4lL\nwzvTEiFDe0EPcgp4uqNXpXBr/IxcRRdNhzw6p6C1Z5Gkf5kql02QMHcCZm58qq4G\nbdmptES90oMphRP2ukUW6J6PpiRy6arphEz/7cMYVL/19b79zW79QWkEGy+A8xNr\nNTrmURt2v8H2G3iQEbvcNmVLiyihh2Im9Jss26CbPIalAsy8EznO1vsM9BetMQU=\n-----END CERTIFICATE-----\n",
+  "garbage.pem": "garbage\n",
+  "empty.pem": "",
+  "empty.conf": "",
+  "cadir_ok/ca.pem": "-----BEGIN CERTIFICATE-----\nMIIDGzCCAgOgAwIBAgIUMCcZrJQn0XMI6wjg6tAkEFBGeLIwDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU3WhcNMjYxMDMxMDcwNDU3\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nANG8ybAAEXrPlFnt69kWv9gluNPpQxM20Cu4N8HVJ8y7JP58B9no5mt/URV/4rC1\n6RaCX7JYH/xiQDumDiSB9F4MPJ5NRka10QGyLJmhp+xczEjA+1VHuu2hBkQQ2voX\nDfc0CDgMKRV/eWTIlMhmoAZj54KdOkMX+qsQYrE2Y3qAAFbXTTngvrDOooTwGCCz\nq2NdLtvn2GEoy8AzP8xT79FVxjPwX6tCMJS4dGmifaube4bBRfS6P7iFFrVOanBR\n89zZNgNZ4t51V7II+lJvdOqUF24ujxLVb2M+nsj6JBJYMfxbv2SggnlsEj6XybQo\nQCXlA9yEh7UBZQ109lUqKi0CAwEAAaNzMHEwHQYDVR0OBBYEFODnpOeCN7QIYrv8\njKzcj9J5DPdUMB8GA1UdIwQYMBaAFODnpOeCN7QIYrv8jKzcj9J5DPdUMA8GA1Ud\nEwEB/wQFMAMBAf8wHgYDVR0RBBcwFYICdm2CCWxvY2FsaG9zdIcEfwAAATANBgkq\nhkiG9w0BAQsFAAOCAQEAka11qy5QV53XHZwlVYU6L1OF6HQatcNEugVy/vsSZcYP\nZX0X2IDkL0tyJ9O6/KwUQB9Dx0inDTSxvKx67AFyJ1VBQVqf2A34pyAHdLWOiSDK\nlhw5hbrY/+QSd9g0P4EydExJB9TcyQXEowFA+HbQ1XLiGY0XrfGlehhxdz0Krq2U\nP5jsQYHlE5SRCW6cxhF2xJJlIxQ75UJN91f5hXLMMZL/oBsOSiJwIahgzBdwlxi4\nZXyQ1VxRVC4+BWgMeMmQNc/mfe8+nqCPuYtr3HXonoexiynru7KtmM2XFdW/obLA\nDu6806M4Mz01JDM/p+2l/2WYjdtbSxyLSBPtLY9Iww==\n-----END CERTIFICATE-----\n",
+  "emptydir": null,
+  "two.pem": "-----BEGIN CERTIFICATE-----\nMIIDFTCCAf2gAwIBAgIURTcIXtkhk//W6+RfDDQffH4oEgowDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU4WhcNMjYxMDMxMDcwNDU4\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAMNJOUHWSoG2LUe0i3s1fEVh55kSol/4jVTDiwNKkNb+6meMp5l3SWm1QUM2ywrA\nek7i2vsW+yynywduNM6FnuVbJFghfcmrcg9bk263KXOz0Pdtr6znwC5vPVQP99hG\nG10K2W3jz5xGhV+KbJKc1Tk+V7CIal9bu6Oav9365jSNL8kZDMxyMaA4EhTvmai8\nWL7D1d7iUauFxE718xUcXLJGwqHXmdYIlfCNV4MPG3h0/k4nn+c9O2TjO+Unxori\nNpyJJQeRvrOLISV371DFOKQZlT1jSbxcQL9s39pL2aPTo+6NpTrPU/WOVtxN44HR\noX6zfxlpwl0oVrBKxnQz7H0CAwEAAaNtMGswHQYDVR0OBBYEFLfFQ0DEzaLMkU1O\nvnlXVc7NGN1BMB8GA1UdIwQYMBaAFLfFQ0DEzaLMkU1OvnlXVc7NGN1BMA8GA1Ud\nEwEB/wQFMAMBAf8wGAYDVR0RBBEwD4INb3RoZXIuZXhhbXBsZTANBgkqhkiG9w0B\nAQsFAAOCAQEAlhUNwCIvyDPClKnipDrM/G8Iws98R3oZRh/xS3ncnWYw70OnRfrM\nyuewwQpRnh3zjuFqdEML93IZvhSjBSYI79lAJAspufYrNtnL20mmXumpQ4+E+oYy\ne3l2xbD+KULnV/WBWAYSsGLa+UZdZkLt0jTvsUcjcN7PQNsnZ/9TXP2/4HymxlIM\naS9P91PRUSDcChlKH42WmiQJHoCoRxdXQQoFER/4Yz7iVBrpY1IYlcUi3+U20wsT\nwa6KTiiKhkZZL18pIw4hzsUcFUxlgRFzvJMg4F5noBA8qtCuH0yKWvJcKVXn9GzO\nA6FnkE7sbY99/8ItnC7jXKEUeFVnY3kbww==\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIDGzCCAgOgAwIBAgIUMCcZrJQn0XMI6wjg6tAkEFBGeLIwDQYJKoZIhvcNAQEL\nBQAwDTELMAkGA1UEAwwCdm0wHhcNMjYxMDExMDcwNDU3WhcNMjYxMDMxMDcwNDU3\nWjANMQswCQYDVQQDDAJ2bTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nANG8ybAAEXrPlFnt69kWv9gluNPpQxM20Cu4N8HVJ8y7JP58B9no5mt/URV/4rC1\n6RaCX7JYH/xiQDumDiSB9F4MPJ5NRka10QGyLJmhp+xczEjA+1VHuu2hBkQQ2voX\nDfc0CDgMKRV/eWTIlMhmoAZj54KdOkMX+qsQYrE2Y3qAAFbXTTngvrDOooTwGCCz\nq2NdLtvn2GEoy8AzP8xT79FVxjPwX6tCMJS4dGmifaube4bBRfS6P7iFFrVOanBR\n89zZNgNZ4t51V7II+lJvdOqUF24ujxLVb2M+nsj6JBJYMfxbv2SggnlsEj6XybQo\nQCXlA9yEh7UBZQ109lUqKi0CAwEAAaNzMHEwHQYDVR0OBBYEFODnpOeCN7QIYrv8\njKzcj9J5DPdUMB8GA1UdIwQYMBaAFODnpOeCN7QIYrv8jKzcj9J5DPdUMA8GA1Ud\nEwEB/wQFMAMBAf8wHgYDVR0RBBcwFYICdm2CCWxvY2FsaG9zdIcEfwAAATANBgkq\nhkiG9w0BAQsFAAOCAQEAka11qy5QV53XHZwlVYU6L1OF6HQatcNEugVy/vsSZcYP\nZX0X2IDkL0tyJ9O6/KwUQB9Dx0inDTSxvKx67AFyJ1VBQVqf2A34pyAHdLWOiSDK\nlhw5hbrY/+QSd9g0P4EydExJB9TcyQXEowFA+HbQ1XLiGY0XrfGlehhxdz0Krq2U\nP5jsQYHlE5SRCW6cxhF2xJJlIxQ75UJN91f5hXLMMZL/oBsOSiJwIahgzBdwlxi4\nZXyQ1VxRVC4+BWgMeMmQNc/mfe8+nqCPuYtr3HXonoexiynru7KtmM2XFdW/obLA\nDu6806M4Mz01JDM/p+2l/2WYjdtbSxyLSBPtLY9Iww==\n-----END CERTIFICATE-----\n",
+  "san_other.key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDDSTlB1kqBti1H\ntIt7NXxFYeeZEqJf+I1Uw4sDSpDW/upnjKeZd0lptUFDNssKwHpO4tr7Fvssp8sH\nbjTOhZ7lWyRYIX3Jq3IPW5Nutylzs9D3ba+s58Aubz1UD/fYRhtdCtlt48+cRoVf\nimySnNU5PlewiGpfW7ujmr/d+uY0jS/JGQzMcjGgOBIU75movFi+w9Xe4lGrhcRO\n9fMVHFyyRsKh15nWCJXwjVeDDxt4dP5OJ5/nPTtk4zvlJ8aK4jaciSUHkb6ziyEl\nd+9QxTikGZU9Y0m8XEC/bN/aS9mj06PujaU6z1P1jlbcTeOB0aF+s38ZacJdKFaw\nSsZ0M+x9AgMBAAECggEACvmsS2AzB0e5E0DZHvdSUObv+Hkk4Y5rSQKFZ02zRrYE\ncAXmbHhZCqUach/b+PJ43UKgKoDv5GJYxYXi12GInNzKtd5J/sHRMv5DUrNeE8fd\nHG7QcwACW8m6MWWFWSUViBziO+wUALUw7T3vHK1OSX2QuZXtHodeDBOYKW5erkDQ\n5N/gMZiSwhtPRd8+swHOcHWweD/5taY44h0VKTCH6V8oojVI/q+s77Un+G9z9LVX\ntDYkX27r34EEnbMadhzeRaAuAYDSlVgDW7Y16Hdi9Na8OjKRRaJqk5+ZiH5xrrHZ\npX2Qw+NZh2mhCH+RQLQ2VAMmAua94LC7M3k+kTSO4QKBgQDxBuwNBcG63lz7Uu1J\n87Y6iiRP3z9hcH3/ULAkToCMZLd6fiB48ip5WbEYF0hue6IVwETGirFfSUpq7OWA\nQjVSo2BNmymOxgvYQuW1xVWwd4HGu4JujnkkX3e8jeZ7L3mqFIraV6slR8JF8Y6K\nRw+hxa0bWzW6aG1W0Gl1Yu08oQKBgQDPauCpa2mHKj7whKLKbvI+XgnaEVQ6Zl7o\nXV+pVD5/bLW8AvwUXTEteC9y5kyd/5DeVVr/eqfiIASbv9vQkGpHc3jmmOsyKFw5\nLc3nIrUpqwZHRmFEQUhzPAd52+NicPpvxqOtFzn6QTieEgcKq9xAczFOfRzZeuH2\nxc14ceUmXQKBgQDnvaQQEUzngw0bh+wmgnDfcBrhwOCLq0E5zjbNcb0fP2c6GzLV\nluFHs/kWFKzLrYt2Jlr6GjfYSfuHOyaeXwot3m+lrl4SrFCPKiL61jVBamYY0gji\ni5HmavQREs5b+pWb9gxbSpd/TLN51HsccJ6TCCEcgGH0TJt0MQZ0mx1GgQKBgGiO\nK6m7Z3qnJQsBET6SJrKhnL28NoUpzXW8e9hTix2YoxOfPYrWX0/YYbK9vKl4hoJM\n7I4UOkSWdzw7voaoBar23l7/fq/OAI8iM8Trjf7vIz8Sjz1k2yybeflHipu478Ug\nkKlUJ/mqnuuvkrUiZOhoKNaz4rMOapGGrEimwShRAoGAUzyIS6Z2cFKbtT7eHkqn\ngIkvC98BpH+L5UAE9ZaXm/+K6RtCnyvWLYcjsOUG2CSNaT/LZTYea8OWwKzrC/og\nLHmUvdG2cog3akXwh5gh73kJGqgebRMEFJMP+81emf1lq+IDL53+G087UujVNl6+\nVYOJ770goaE4Y6UJx3ZXRBc=\n-----END PRIVATE KEY-----\n"
+ },
+ "scenarios": [
+  {
+   "name": "cacert-missing",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/nonexistent.pem"
+   },
+   "lines": [
+    "TLS: could not use CA certificate file `/tmp/tlslab/nonexistent.pem': Error while reading file. (-64)",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cacert-empty",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/empty.pem"
+   },
+   "lines": [
+    "TLS: warning: no certificate loaded from CA certificate file `/tmp/tlslab/empty.pem'."
+   ],
+   "contextFails": false
+  },
+  {
+   "name": "cacert-garbage",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/garbage.pem"
+   },
+   "lines": [
+    "TLS: warning: no certificate loaded from CA certificate file `/tmp/tlslab/garbage.pem'."
+   ],
+   "contextFails": false
+  },
+  {
+   "name": "cacert-directory",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/cadir_ok"
+   },
+   "lines": [
+    "TLS: could not use CA certificate file `/tmp/tlslab/cadir_ok': Error while reading file. (-64)",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cacertdir-ok",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CACERTDIR": "/tmp/tlslab/cadir_ok"
+   },
+   "lines": [
+    "TLS: loaded 1 CA certificates from directory `/tmp/tlslab/cadir_ok'."
+   ],
+   "contextFails": false
+  },
+  {
+   "name": "cacertdir-missing",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CACERTDIR": "/tmp/tlslab/nonexistent"
+   },
+   "lines": [
+    "TLS: warning: no certificate found in CA certificate directory `/tmp/tlslab/nonexistent'."
+   ],
+   "contextFails": false
+  },
+  {
+   "name": "cacertdir-empty",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CACERTDIR": "/tmp/tlslab/emptydir"
+   },
+   "lines": [
+    "TLS: warning: no certificate found in CA certificate directory `/tmp/tlslab/emptydir'."
+   ],
+   "contextFails": false
+  },
+  {
+   "name": "cacertdir-list",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CACERTDIR": "/tmp/tlslab/cadir_ok;/tmp/tlslab/nonexistent;/tmp/tlslab/emptydir"
+   },
+   "lines": [
+    "TLS: loaded 1 CA certificates from directory `/tmp/tlslab/cadir_ok'.",
+    "TLS: warning: no certificate found in CA certificate directory `/tmp/tlslab/nonexistent'.",
+    "TLS: warning: no certificate found in CA certificate directory `/tmp/tlslab/emptydir'."
+   ],
+   "contextFails": false
+  },
+  {
+   "name": "cacertdir-warning-then-cert-only",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CACERTDIR": "/tmp/tlslab/nonexistent",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.pem"
+   },
+   "lines": [
+    "TLS: warning: no certificate found in CA certificate directory `/tmp/tlslab/nonexistent'.",
+    "TLS: only one of certfile and keyfile specified",
+    "TLS: init_def_ctx: Success.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cacert-warning-then-cert-only",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/empty.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.pem"
+   },
+   "lines": [
+    "TLS: warning: no certificate loaded from CA certificate file `/tmp/tlslab/empty.pem'.",
+    "TLS: only one of certfile and keyfile specified",
+    "TLS: init_def_ctx: Success.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cert-only",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.pem"
+   },
+   "lines": [
+    "TLS: only one of certfile and keyfile specified",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "key-only",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/san_ok.key"
+   },
+   "lines": [
+    "TLS: only one of certfile and keyfile specified",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cert-missing",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/nonexistent",
+    "LDAPTLS_KEY": "/tmp/tlslab/san_ok.key"
+   },
+   "lines": [
+    "TLS: opening `/tmp/tlslab/nonexistent' failed: No such file or directory",
+    "TLS: could not use certificate file `/tmp/tlslab/nonexistent`.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "key-missing",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/nonexistent"
+   },
+   "lines": [
+    "TLS: opening `/tmp/tlslab/nonexistent' failed: No such file or directory",
+    "TLS: could not use private key file `/tmp/tlslab/nonexistent`.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "key-garbage",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/garbage.pem"
+   },
+   "lines": [
+    "TLS: could not use private key: The requested data were not available. (-56)",
+    "TLS: init_def_ctx: The requested data were not available.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cert-garbage",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/garbage.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/san_ok.key"
+   },
+   "lines": [
+    "TLS: could not use certificate: No certificate was found. (-49)",
+    "TLS: init_def_ctx: No certificate was found.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "key-is-the-certificate",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/san_ok.pem"
+   },
+   "lines": [
+    "TLS: could not use private key: The requested data were not available. (-56)",
+    "TLS: init_def_ctx: The requested data were not available.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cert-is-the-key",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.key",
+    "LDAPTLS_KEY": "/tmp/tlslab/san_ok.key"
+   },
+   "lines": [
+    "TLS: could not use certificate: No certificate was found. (-49)",
+    "TLS: init_def_ctx: No certificate was found.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "key-empty",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/empty.pem"
+   },
+   "lines": [
+    "TLS: could not use private key: The requested data were not available. (-56)",
+    "TLS: init_def_ctx: The requested data were not available.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cert-empty",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/empty.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/san_ok.key"
+   },
+   "lines": [
+    "TLS: could not use certificate: No certificate was found. (-49)",
+    "TLS: init_def_ctx: No certificate was found.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "key-directory",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/emptydir"
+   },
+   "lines": [
+    "TLS: could not use private key file `/tmp/tlslab/emptydir`.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cert-directory",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/emptydir",
+    "LDAPTLS_KEY": "/tmp/tlslab/san_ok.key"
+   },
+   "lines": [
+    "TLS: could not use certificate file `/tmp/tlslab/emptydir`.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cert-and-key-mismatch",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "/tmp/tlslab/cn_only.pem",
+    "LDAPTLS_KEY": "/tmp/tlslab/san_ok.key"
+   },
+   "lines": [
+    "TLS: could not use certificate with key: The certificate and the given key do not match. (-60)",
+    "TLS: init_def_ctx: The certificate and the given key do not match.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "crl-missing",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CRLFILE": "/tmp/tlslab/nonexistent"
+   },
+   "lines": [
+    "TLS: init_def_ctx: Error while reading file.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "crl-garbage",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CRLFILE": "/tmp/tlslab/garbage.pem"
+   },
+   "lines": [
+    "TLS: init_def_ctx: Base64 decoding error.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "crl-empty",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CRLFILE": "/tmp/tlslab/empty.pem"
+   },
+   "lines": [
+    "TLS: init_def_ctx: Base64 decoding error.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "crl-directory",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CRLFILE": "/tmp/tlslab/emptydir"
+   },
+   "lines": [
+    "TLS: init_def_ctx: Error while reading file.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "crl-is-a-certificate",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CRLFILE": "/tmp/tlslab/san_ok.pem"
+   },
+   "lines": [
+    "TLS: init_def_ctx: Base64 decoding error.."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "empty-values-are-unset",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CERT": "",
+    "LDAPTLS_KEY": "",
+    "LDAPTLS_CRLFILE": "",
+    "LDAPTLS_CACERTDIR": ""
+   },
+   "lines": [],
+   "contextFails": false
+  },
+  {
+   "name": "cipher-list-unknown-word",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "FOO"
+   },
+   "lines": [
+    "TLS: could not set cipher list FOO.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-without-protocol",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL:-VERS-ALL"
+   },
+   "lines": [
+    "TLS: could not set cipher list NORMAL:-VERS-ALL.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-none",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NONE"
+   },
+   "lines": [
+    "TLS: could not set cipher list NONE.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-without-cipher",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL:-CIPHER-ALL"
+   },
+   "lines": [
+    "TLS: could not set cipher list NORMAL:-CIPHER-ALL.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-without-key-exchange",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NONE:+VERS-TLS1.2:+AES-128-GCM:+AEAD:+ECDHE-RSA"
+   },
+   "lines": [
+    "TLS: could not set cipher list NONE:+VERS-TLS1.2:+AES-128-GCM:+AEAD:+ECDHE-RSA.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-unknown-modifier",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL:%FOO"
+   },
+   "lines": [
+    "TLS: could not set cipher list NORMAL:%FOO.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-trailing-space",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL "
+   },
+   "lines": [
+    "TLS: could not set cipher list NORMAL .",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-leading-space",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": " NORMAL"
+   },
+   "lines": [],
+   "contextFails": false
+  },
+  {
+   "name": "cipher-list-is-judged-before-the-ca-file",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/nonexistent.pem",
+    "LDAPTLS_CIPHER_SUITE": "FOO"
+   },
+   "lines": [
+    "TLS: could not set cipher list FOO.",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-ok-then-ca-file-missing",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/nonexistent.pem",
+    "LDAPTLS_CIPHER_SUITE": "NORMAL:-VERS-TLS1.3"
+   },
+   "lines": [
+    "TLS: could not use CA certificate file `/tmp/tlslab/nonexistent.pem': Error while reading file. (-64)",
+    "TLS: init_def_ctx: ."
+   ],
+   "contextFails": true
+  },
+  {
+   "name": "cipher-list-accepted",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": "SECURE256:-VERS-TLS1.3:%COMPAT"
+   },
+   "lines": [],
+   "contextFails": false
+  },
+  {
+   "name": "cipher-list-empty-is-unset",
+   "env": {
+    "LDAPTLS_CACERT": "/tmp/tlslab/san_ok.pem",
+    "LDAPTLS_CIPHER_SUITE": ""
+   },
+   "lines": [],
+   "contextFails": false
+  }
+ ]
+}

@@ -1,7 +1,7 @@
 import type { AuditEvent } from './AuditSearchParser';
 import { AuparseFeed, type FeedEvent } from './AuparseFeed';
 import { AuditNormalizer } from './AuditNormalize';
-import { AuparseEvent, parseUpRecord, type AuparseRecord } from './AuparseEvent';
+import { buildAuparseEvent, type AuparseEvent } from './AuparseEvent';
 import { AUDIT } from './AuditConstants';
 import { messageTypeToName } from './AuditEventAssembler';
 import { Interpreter } from './AuditInterpret';
@@ -48,17 +48,8 @@ export class NormalizedReport {
   }
 
   private build(event: FeedEvent): { au: AuparseEvent; normalizer: AuditNormalizer } | null {
-    const records: AuparseRecord[] = [];
-    let cwd: string | null = null;
-    for (const line of event.lines) {
-      const parsed = parseUpRecord(line, records.length);
-      if (parsed === null) continue;
-      if (parsed.cwd !== null) cwd = parsed.cwd;
-      records.push(parsed);
-    }
-    if (records.length === 0) return null;
-    const au = new AuparseEvent(records, event.time, cwd, this.interpreter, this.escapeMode);
-    return { au, normalizer: new AuditNormalizer(au, this.host) };
+    const au = buildAuparseEvent(event.lines, event.time, this.interpreter, this.escapeMode);
+    return au === null ? null : { au, normalizer: new AuditNormalizer(au, this.host) };
   }
 
   report(event: AuditEvent, mode: 'csv' | 'text', eoeTimeout: number): void {

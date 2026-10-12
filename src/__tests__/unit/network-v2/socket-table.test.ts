@@ -484,8 +484,10 @@ describe('SP-10 — EndHost integration: OS default sockets', () => {
     expect(pc.getSocketTable()).toBeInstanceOf(SocketTable);
   });
 
-  it('WindowsPC pre-binds RDP on port 3389/tcp', () => {
+  it('WindowsPC binds RDP on port 3389/tcp once Remote Desktop is enabled, and not before', () => {
     const pc = new WindowsPC('windows-pc', 'WinPC1');
+    expect(pc.getSocketTable().isPortBound(3389, 'tcp')).toBe(false);
+    pc.rdp.enable();
     expect(pc.getSocketTable().isPortBound(3389, 'tcp')).toBe(true);
   });
 
@@ -595,8 +597,9 @@ describe('SP-12 — Linux ss: dynamic output from socket table', () => {
 
 describe('SP-13 — Windows netstat: dynamic output from socket table', () => {
 
-  it('netstat -a shows RDP port 3389', async () => {
+  it('netstat -a shows RDP port 3389 once Remote Desktop is enabled', async () => {
     const pc = new WindowsPC('windows-pc', 'WinPC1');
+    pc.rdp.enable();
     const out = await pc.executeCommand('netstat -a');
     expect(out).toContain('3389');
     expect(out).toContain('LISTENING');

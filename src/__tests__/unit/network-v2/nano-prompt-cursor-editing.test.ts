@@ -9,6 +9,7 @@
  * recherche (le plus utilisé) puis croise avec 2-3 autres prompts pour
  * confirmer que le partage fonctionne uniformément.
  */
+import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { describe, it, expect } from 'vitest';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
@@ -105,14 +106,15 @@ describe('Scénario — prompt de recherche : curseur repositionnable au milieu 
     expect(nano.promptCursor).toBe(2);
   });
 
-  it('rouvrir ^W avec un terme préexistant place le curseur en FIN du texte pré-rempli, comme le vrai nano', () => {
+  it('rouvrir ^W avec un terme preexistant laisse le champ vide, le terme est annonce entre crochets', () => {
     const nano = newEngine('eth0 up\neth0 up\n');
     ctrl(nano, 'w');
     typeText(nano, 'eth0');
-    press(nano, 'Enter'); // search performed, lastSearchTerm = "eth0"
-    ctrl(nano, 'w'); // reopen: prefilled with "eth0"
-    expect(nano.searchQuery).toBe('eth0');
-    expect(nano.promptCursor).toBe(4); // at the end, not stuck at a stale mid-field position
+    press(nano, 'Enter');
+    ctrl(nano, 'w');
+    expect(nano.searchQuery).toBe('');
+    expect(nano.promptCursor).toBe(0);
+    expect(plainRowText(nano.screen.rows[nano.screen.rows.length - 3]).trimEnd()).toBe('Search [eth0]:');
   });
 
   it('coller du texte l\'insère à la position du curseur, pas seulement en fin de champ', () => {

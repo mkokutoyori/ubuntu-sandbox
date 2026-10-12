@@ -20,6 +20,7 @@ import {
   type PrincipalName, type EncryptionKey, type EncryptedData, type TicketFlags, NO_TICKET_FLAGS,
   type Ticket, type EncTicketPart, type PaData, type KdcReqBody, type KdcReq,
   type EncKdcRepPart, type KdcRep, type KrbError, type Authenticator, type ApReq, type ApRep, type EncApRepPart, type EtypeInfo2Entry,
+  type KrbCred, type KrbCredInfo, type EncKrbCredPart,
 } from './types';
 
 const GENERALIZED_TIME_TAG = 0x18;
@@ -564,5 +565,81 @@ export function decodeApReq(bytes: Uint8Array): ApReq {
     apOptions: decodeBitmask32(fields.get(2)!.content),
     ticket: decodeTicket(encodeApplicationBytesOf(fields.get(3)!)),
     authenticator: decodeEncryptedData(fields.get(4)!),
+  };
+}
+
+const KRB_CRED_MESSAGE_TYPE = 22;
+const KRB_CRED_APPLICATION_TAG = 22;
+const ENC_KRB_CRED_PART_APPLICATION_TAG = 29;
+
+function encodeKrbCredInfo(info: KrbCredInfo): Uint8Array {
+  const parts = [
+    explicit(0, encodeEncryptionKey(info.key)),
+    explicit(1, encodeKerberosString(info.prealm)),
+    explicit(2, encodePrincipalName(info.pname)),
+    explicit(3, encodeBitmask32(info.flags)),
+    explicit(4, encodeKerberosTime(info.authtime)),
+  ];
+  if (info.starttime !== undefined) parts.push(explicit(5, encodeKerberosTime(info.starttime)));
+  parts.push(explicit(6, encodeKerberosTime(info.endtime)));
+  if (info.renewTill !== undefined) parts.push(explicit(7, encodeKerberosTime(info.renewTill)));
+  parts.push(explicit(8, encodeKerberosString(info.srealm)));
+  parts.push(explicit(9, encodePrincipalName(info.sname)));
+  return encodeSequence(parts);
+}
+
+function decodeKrbCredInfo(node: ParsedTLV): KrbCredInfo {
+  const fields = fieldsOf(node.content);
+  const starttime = fields.get(5);
+  const renewTill = fields.get(7);
+  return {
+    key: decodeEncryptionKey(fields.get(0)!),
+    prealm: decodeOctetString(fields.get(1)!.content),
+    pname: decodePrincipalName(fields.get(2)!),
+    flags: decodeBitmask32(fields.get(3)!.content) >>> 0,
+    authtime: decodeKerberosTime(fields.get(4)!.content),
+    starttime: starttime === undefined ? undefined : decodeKerberosTime(starttime.content),
+    endtime: decodeKerberosTime(fields.get(6)!.content),
+    renewTill: renewTill === undefined ? undefined : decodeKerberosTime(renewTill.content),
+    srealm: decodeOctetString(fields.get(8)!.content),
+    sname: decodePrincipalName(fields.get(9)!),
+  };
+}
+
+export function encodeEncKrbCredPart(part: EncKrbCredPart): Uint8Array {
+  const parts = [explicit(0, encodeSequence(part.ticketInfo.map(encodeKrbCredInfo)))];
+  if (part.nonce !== undefined) parts.push(explicit(1, encodeInteger(part.nonce)));
+  if (part.timestamp !== undefined) parts.push(explicit(2, encodeKerberosTime(part.timestamp)));
+  if (part.usec !== undefined) parts.push(explicit(3, encodeInteger(part.usec)));
+  return encodeApplication(ENC_KRB_CRED_PART_APPLICATION_TAG, true, encodeSequence(parts));
+}
+
+export function decodeEncKrbCredPart(bytes: Uint8Array): EncKrbCredPart {
+  const fields = fieldsOf(parseTLV(parseTLV(bytes, 0).content, 0).content);
+  const nonce = fields.get(1);
+  const timestamp = fields.get(2);
+  const usec = fields.get(3);
+  return {
+    ticketInfo: parseAll(fields.get(0)!.content).map(decodeKrbCredInfo),
+    nonce: nonce === undefined ? undefined : decodeInteger(nonce.content),
+    timestamp: timestamp === undefined ? undefined : decodeKerberosTime(timestamp.content),
+    usec: usec === undefined ? undefined : decodeInteger(usec.content),
+  };
+}
+
+export function encodeKrbCred(cred: KrbCred): Uint8Array {
+  return encodeApplication(KRB_CRED_APPLICATION_TAG, true, encodeSequence([
+    explicit(0, encodeInteger(KRB_PVNO)),
+    explicit(1, encodeInteger(KRB_CRED_MESSAGE_TYPE)),
+    explicit(2, encodeSequence(cred.tickets.map(encodeTicket))),
+    explicit(3, encodeEncryptedData(cred.encPart)),
+  ]));
+}
+
+export function decodeKrbCred(bytes: Uint8Array): KrbCred {
+  const fields = fieldsOf(parseTLV(parseTLV(bytes, 0).content, 0).content);
+  return {
+    tickets: parseAll(fields.get(2)!.content).map(decodeTicketFromNode),
+    encPart: decodeEncryptedData(fields.get(3)!),
   };
 }

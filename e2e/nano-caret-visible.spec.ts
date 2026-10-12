@@ -1,12 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
+import { nanoCursor } from './helpers/nanoScreen';
 
 /**
- * Scénario (e2e) — le curseur doit être visible dans le buffer nano. Le
- * textarea principal est délibérément `readOnly` (le moteur reste seul
- * maître de l'édition) — mais Chromium ne rend JAMAIS de curseur
- * clignotant natif sur un textarea readOnly, quels que soient
- * `caretColor`/`selectionRange`. Un overlay dédié (positionné en ch/em,
- * comme le surlignage de "Replace this instance?") comble ce manque.
+ * Scénario (e2e) — le curseur de nano est la cellule `nano-cursor` du moteur : il se déplace
+ * avec la position réelle, vit sur la rangée d'invite pendant un prompt, et reste visible en
+ * mode vue (-v).
  */
 
 async function waitForStore(page: Page): Promise<void> {
@@ -40,38 +38,35 @@ test.describe('Scénario (e2e) — curseur visible dans le buffer nano', () => {
     await openTerminal(page, id);
   });
 
-  test('un overlay de curseur existe et se déplace avec la position réelle du curseur', async ({ page }) => {
+  test('la cellule du curseur existe et se déplace avec la position réelle du curseur', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/caret.txt');
-    const textarea = page.locator('[data-testid="nano-textarea"]');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
-
-    const caret = page.locator('[data-testid="nano-caret"]');
-    await expect(caret).toBeVisible();
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-cursor"]')).toBeVisible();
 
     await page.keyboard.type('ab');
-    const boxAfterAB = await caret.boundingBox();
+    const afterAB = await nanoCursor(page);
+    expect(afterAB).toEqual({ row: 1, column: 2 });
 
     await page.keyboard.press('Home');
-    const boxAtHome = await caret.boundingBox();
-
-    expect(boxAtHome).not.toBeNull();
-    expect(boxAfterAB).not.toBeNull();
-    // Home moves the caret strictly left of where it was after typing "ab".
-    expect(boxAtHome!.x).toBeLessThan(boxAfterAB!.x);
+    expect(await nanoCursor(page)).toEqual({ row: 1, column: 0 });
   });
 
-  test('aucun overlay de curseur pendant un prompt (le vrai curseur du champ suffit)', async ({ page }) => {
+  test('pendant un prompt, le curseur est sur la rangée d\'invite, à la fin de la réponse', async ({ page }) => {
     await typeCmd(page, 'nano /tmp/caret2.txt');
-    await expect(page.locator('[data-testid="nano-textarea"]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('Control+w');
-    await expect(page.locator('[data-testid="nano-caret"]')).toHaveCount(0);
+    await page.keyboard.type('abc');
+    const status = page.locator('[data-testid="nano-status-message"]');
+    await expect(status).toContainText('Search: abc');
+    const cursor = await nanoCursor(page);
+    expect(cursor.column).toBe('Search: abc'.length);
   });
 
   test('le curseur reste visible en mode vue (-v), lecture seule ou pas', async ({ page }) => {
     await typeCmd(page, 'echo "abc" > /tmp/caret3.txt');
     await typeCmd(page, 'nano -v /tmp/caret3.txt');
-    await expect(page.locator('[data-testid="nano-textarea"]')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('[data-testid="nano-caret"]')).toBeVisible();
+    await expect(page.locator('[data-testid="nano-body"]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="nano-cursor"]')).toBeVisible();
   });
 });
