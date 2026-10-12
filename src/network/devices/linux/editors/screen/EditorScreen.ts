@@ -2,7 +2,7 @@ import { codePointWidth } from '../vim/VimCells';
 
 export type ScreenStyle =
   | 'linenr' | 'cursorlinenr' | 'nontext' | 'special' | 'visual' | 'colorcolumn' | 'modemsg' | 'error'
-  | 'reverse' | 'alert';
+  | 'reverse' | 'alert' | 'search' | 'incsearch';
 
 export interface ScreenSpan {
   readonly from: number;

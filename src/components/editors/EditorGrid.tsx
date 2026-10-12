@@ -14,6 +14,8 @@ const STYLES: Record<ScreenStyle, CSSProperties> = {
   error: { color: '#f38ba8' },
   reverse: { backgroundColor: '#d3d7cf', color: '#300a24' },
   alert: { backgroundColor: '#c01c28', color: '#ffffff', fontWeight: 'bold' },
+  search: { backgroundColor: '#f9e2af', color: '#1e1e2e' },
+  incsearch: { backgroundColor: '#d3d7cf', color: '#300a24' },
 };
 
 const CARETS: Record<CaretShape, CSSProperties> = {
