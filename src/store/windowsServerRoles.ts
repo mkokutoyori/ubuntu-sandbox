@@ -1,6 +1,6 @@
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import type {
-  DnsDynamicUpdateMode, DnsTransferPolicy, DnsZoneType,
+  DnsDynamicUpdateMode, DnsTransferPolicy, DnsZoneInfo, DnsZoneType,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 interface DnsZoneState {
@@ -36,21 +36,25 @@ export interface WindowsServerRolesState {
 }
 
 interface RolePersister {
-  capture(server: WindowsServer): Partial<WindowsServerRolesState>;
+  capture(server: WindowsServer, twin: WindowsServer): Partial<WindowsServerRolesState>;
   restore(server: WindowsServer, state: WindowsServerRolesState): void;
 }
 
+const zoneState = (z: DnsZoneInfo): DnsZoneState => ({
+  name: z.name, type: z.type, zoneFile: z.zoneFile, dynamicUpdate: z.dynamicUpdate,
+  secureSecondaries: z.secureSecondaries, secondaryServers: z.secondaryServers,
+  notify: z.notify, notifyServers: z.notifyServers, masters: z.masterServers,
+});
+
 const dnsZones: RolePersister = {
-  capture(server) {
+  capture(server, twin) {
     const role = server.getDnsServerRole();
     if (!role) return {};
+    const factory = new Set((twin.getDnsServerRole()?.listZones() ?? []).map((z) => JSON.stringify(zoneState(z))));
     const zones = role.listZones()
       .filter((z) => !z.isDsIntegrated)
-      .map((z): DnsZoneState => ({
-        name: z.name, type: z.type, zoneFile: z.zoneFile, dynamicUpdate: z.dynamicUpdate,
-        secureSecondaries: z.secureSecondaries, secondaryServers: z.secondaryServers,
-        notify: z.notify, notifyServers: z.notifyServers, masters: z.masterServers,
-      }));
+      .filter((z) => !factory.has(JSON.stringify(zoneState(z))))
+      .map(zoneState);
     return zones.length > 0 ? { dnsZones: zones } : {};
   },
   restore(server, state) {
@@ -103,8 +107,8 @@ const dhcpScopes: RolePersister = {
 
 const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes];
 
-export function captureWindowsServerRoles(server: WindowsServer): WindowsServerRolesState | undefined {
-  const state = Object.assign({}, ...PERSISTERS.map((p) => p.capture(server))) as WindowsServerRolesState;
+export function captureWindowsServerRoles(server: WindowsServer, twin: WindowsServer): WindowsServerRolesState | undefined {
+  const state = Object.assign({}, ...PERSISTERS.map((p) => p.capture(server, twin))) as WindowsServerRolesState;
   return Object.keys(state).length > 0 ? state : undefined;
 }
 
