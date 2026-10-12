@@ -12,11 +12,11 @@
  * tombent avant.  Le corpus click seul, rejoue sur le moteur de a0acef2cc avec un `clickAt` vide et sans
  * option `mouse` : 107 cas tombent hors de la liste ci-dessous (clics sans effet, `Ctrl-F` en Visuel,
  * colonne d'une tabulation en Visuel), les autres passent par hasard ou parce que `mouse=` est vide.
- * Le TEMOIN que le lab est sain : 1200 cas sur 1250 passent apres, cellule du curseur comprise, dont
+ * Le TEMOIN que le lab est sain : 1213 cas sur 1250 passent apres, cellule du curseur comprise, dont
  * les cas a `mouse=` vide ou un clic ne doit RIEN faire (un vim Debian/Ubuntu lit `defaults.vim` avec la
  * souris coupee) et les cas a clic ignore faute de mode dans `mouse=`.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 50 cas sur 1250, dont ceux du second corpus click, enregistre
+ * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 37 cas sur 1250, dont ceux du second corpus click, enregistre
  * apres le premier : ils tombent tous dans des familles deja nommees, aucune famille nouvelle.  Aucun n'est
  * epingle comme contrat : un cas de la liste qui se met a passer fait echouer le test pour qu'on le
  * retire de la liste.
@@ -26,8 +26,6 @@
  *   - Ctrl-D / Ctrl-U / Ctrl-B / Ctrl-F en fin ou en debut de fichier avec `display=lastline`/`truncate` ;
  *   - redimensionnement quand la ligne du curseur est plus haute que la fenetre ;
  *   - `g$` en `nowrap` avec `sidescroll` et `sidescrolloff` ensemble ;
- *   - Ctrl-E / Ctrl-Y / Ctrl-D / Ctrl-F en mode Insertion (copie du caractere de la ligne voisine,
- *     retrait, re-indentation) : non porte ;
  *   - deux clics sur la meme cellule a moins de 'mousetime' (500 ms) : vim y voit un double-clic et selectionne
  *     le mot, ce moteur y voit deux clics simples (clk21-53) ;
  *   - clic ou touche avec un prefixe d'objet de texte en attente (`Vi` puis clic), `A` en Visuel ligne ;
@@ -104,9 +102,9 @@ function replay(c: ScreenCase): string | null {
 const UNPORTED_CASES: ReadonlySet<string> = new Set([
   'cell2-133', 'cell2-194',
   'scr3-76', 'scr3-101', 'scr3-130', 'scr3-144', 'scr3-176', 'scr3-179', 'scr3-194',
-  'rsz5-36', 'rsz5-37', 'rsz5-50', 'rsz5-56', 'rsz5-70', 'rsz5-92', 'rsz5-117', 'rsz5-139', 'rsz5-144', 'rsz5-155', 'rsz5-199',
-  'clk9-39', 'clk9-40', 'clk9-46', 'clk9-48', 'clk9-69', 'clk9-76', 'clk9-96', 'clk9-104', 'clk9-113', 'clk9-133', 'clk9-137', 'clk9-151', 'clk9-154', 'clk9-160', 'clk9-168', 'clk9-178', 'clk9-191',
-  'clk21-10', 'clk21-19', 'clk21-20', 'clk21-53', 'clk21-69', 'clk21-70', 'clk21-84', 'clk21-130', 'clk21-135', 'clk21-136', 'clk21-144', 'clk21-145', 'clk21-174',
+  'rsz5-36', 'rsz5-50', 'rsz5-56', 'rsz5-70', 'rsz5-92', 'rsz5-117', 'rsz5-139', 'rsz5-144', 'rsz5-155',
+  'clk9-39', 'clk9-46', 'clk9-48', 'clk9-69', 'clk9-104', 'clk9-113', 'clk9-133', 'clk9-137', 'clk9-154', 'clk9-168', 'clk9-178', 'clk9-191',
+  'clk21-19', 'clk21-20', 'clk21-53', 'clk21-69', 'clk21-84', 'clk21-130', 'clk21-144',
 ]);
 
 const dir = 'src/__tests__/support/oracle/vim-screen';

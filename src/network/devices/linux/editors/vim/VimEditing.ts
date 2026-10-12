@@ -44,6 +44,67 @@ export function indentString(width: number, tabstop: number, expandtab = false):
   return '\t'.repeat(Math.floor(width / tabstop)) + ' '.repeat(width % tabstop);
 }
 
+function backspaceClass(ch: string): number {
+  if (ch === ' ' || ch === '\t') return 0;
+  const code = ch.codePointAt(0)!;
+  if (code < 0x80) return /[A-Za-z0-9_]/.test(ch) ? 2 : 1;
+  if (code >= 0x4e00 && code <= 0x9fff) return 0x4e00;
+  if (code >= 0x3040 && code <= 0x30ff) return 0x3040;
+  if (code >= 0xac00 && code <= 0xd7a3) return 0xac00;
+  return code >= 0xc0 ? 2 : 1;
+}
+
+export function backspaceTarget(line: string, col: number, floor: number, stopAt: number, word: boolean): number {
+  let cur = col;
+  let inRun = false;
+  let runClass = 0;
+  for (;;) {
+    cur--;
+    const cls = backspaceClass(line[cur]);
+    if (word) {
+      if (!inRun) {
+        if (cls !== 0) { inRun = true; runClass = cls; }
+      } else if (cls === 0 || cls !== runClass) {
+        cur++;
+        break;
+      }
+    }
+    if (!(cur > floor && cur !== stopAt)) break;
+  }
+  return cur;
+}
+
+export function roundedIndent(width: number, shiftwidth: number, left: boolean): number {
+  const remainder = width % shiftwidth;
+  let units = Math.floor(width / shiftwidth);
+  if (left) {
+    if (remainder === 0) units -= 1;
+  } else {
+    units += 1;
+  }
+  return Math.max(0, units) * shiftwidth;
+}
+
+export function reindentLine(line: string, col: number, tabstop: number, indent: number, expandtab: boolean): LineEdit {
+  const old = indentWidth(line, tabstop);
+  const lead = indentString(indent, tabstop, expandtab);
+  const next = lead + line.slice(old.chars);
+  if (col >= old.chars) return { line: next, col: col - old.chars + lead.length };
+  let before = 0;
+  for (let i = 0; i < col; i++) before += line[i] === '\t' ? tabstop - (before % tabstop) : 1;
+  const target = Math.max(0, indent - (old.width - before));
+  let newCol = 0;
+  let width = 0;
+  while (newCol < lead.length) {
+    const advance = lead[newCol] === '\t' ? tabstop - (width % tabstop) : 1;
+    if (width + advance > target) break;
+    width += advance;
+    newCol++;
+  }
+  const padding = ' '.repeat(target - width);
+  return { line: lead.slice(0, newCol) + padding + lead.slice(newCol) + line.slice(old.chars), col: newCol + padding.length };
+}
+
 export function shiftLine(line: string, tabstop: number, shiftwidth: number, amount: number, expandtab = false): string {
   if (line.length === 0) return line;
   const { width, chars } = indentWidth(line, tabstop);
@@ -68,29 +129,47 @@ export function tabSpaces(line: string, col: number, settings: TabSettings): num
   return step - (cursorVcol(line, col, settings.tabstop, false, settings.ctrlTab) % step);
 }
 
-export function insertTab(line: string, col: number, settings: TabSettings, replacing: { readonly floor: number } | null = null): LineEdit {
+export interface TabEdit extends LineEdit {
+  readonly from: number;
+}
+
+export function insertTab(line: string, col: number, settings: TabSettings, replacing: { readonly floor: number } | null = null): TabEdit {
   if (!settings.expandtab && settings.softtabstop === 0) {
-    return { line: line.slice(0, col) + '\t' + line.slice(col), col: col + 1 };
+    return { line: line.slice(0, col) + '\t' + line.slice(col), col: col + 1, from: col };
   }
   const spaces = tabSpaces(line, col, settings);
   const overwritten = replacing !== null && col < line.length ? 1 : 0;
   const widened = line.slice(0, col) + ' '.repeat(spaces) + line.slice(col + overwritten);
   const cursor = col + spaces;
-  if (settings.expandtab) return { line: widened, col: cursor };
+  if (settings.expandtab) return { line: widened, col: cursor, from: col };
   let first = cursor;
   const floor = replacing === null ? 0 : replacing.floor;
   while (first > floor && isWhite(widened[first - 1])) first--;
   const want = cursorVcol(widened, cursor, settings.tabstop, false, settings.ctrlTab);
+  const chars = widened.split('');
+  let at = first;
   let vcol = cursorVcol(widened, first, settings.tabstop, false, settings.ctrlTab);
-  let run = '';
-  for (;;) {
+  let changed = -1;
+  while (at < chars.length && isWhite(chars[at])) {
     const width = charCells('\t', vcol, settings.tabstop, settings.ctrlTab);
     if (vcol + width > want) break;
-    run += '\t';
+    if (chars[at] !== '\t') {
+      chars[at] = '\t';
+      if (changed < 0) changed = at;
+    }
+    at++;
     vcol += width;
   }
-  run += ' '.repeat(want - vcol);
-  return { line: widened.slice(0, first) + run + widened.slice(cursor), col: first + run.length };
+  if (changed < 0) return { line: widened, col: cursor, from: col };
+  while (at < chars.length && isWhite(chars[at])) {
+    const width = charCells(chars[at], vcol, settings.tabstop, settings.ctrlTab);
+    if (vcol + width > want) break;
+    at++;
+    vcol += width;
+  }
+  const removed = Math.max(0, cursor - at);
+  chars.splice(at, removed);
+  return { line: chars.join(''), col: cursor - removed, from: Math.min(changed, col) };
 }
 
 export function softBackspace(line: string, col: number, settings: TabSettings, typedSpace: boolean): LineEdit | null {

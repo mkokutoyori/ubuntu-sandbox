@@ -22,18 +22,19 @@ Les modeles d'ecran sont rejoues contre des binaires reels pilotes par tmux :
 | Sujet | Binaire | Generateur | Corpus | Test |
 | --- | --- | --- | --- | --- |
 | Ecran de vim | vim 9.1, `-u DEFAULTS --noplugin -i NONE -n` | `scripts/oracle/record_vim_screen.py` | cells 400, scroll 250, resize 200, click 2 x 200 (seeds 9 et 21) | `vim-screen-oracle.test.ts` |
+| Curseur et tampon de vim | vim 9.1, `-u NONE -es` | `scripts/oracle/record_vim_cursor.py` | edit 1200, search 700, tabs 900, visual 2 x 800, insert 2 x 800 (seeds 12, 31, 40, 61, 62, 71, 72) | `vim-cursor-oracle.test.ts` |
 | Options de vim | vim 9.1 | `scripts/oracle/record_vim_options.py` | table des options et de leurs messages | `probe-vim-options-moteur.test.ts` |
 | Ecran de nano | nano 7.2, `-I` | `scripts/oracle/record_nano_screen.py` | cells 150, scroll 200, resize 150, prompts 3 x 150 (seeds 7, 13, 17) | `nano-screen-oracle.test.ts` |
 | Taille du tty | bash 5.2, stty 9.4, six tailles de pty | `scripts/oracle/record_tty_geometry.py` | six tailles | `tty-window-size.test.ts` |
 
-Etat mesure : vim 1200 cas sur 1250 (cellules du curseur comprises), plus 2 x 800 transcripts de curseur et de tampon en mode Visuel, nano 949 cas sur 950,
+Etat mesure : vim 1213 cas sur 1250 (cellules du curseur comprises), plus 6000 transcripts de curseur et de tampon (dont 2 x 800 en mode Visuel et 2 x 800 en mode Insertion), nano 949 cas sur 950,
 tty six tailles sur six. Les corpus prompts seed 13 et seed 17 ont ete enregistres APRES
 le code qui les juge : seed 13 a trouve 3 ecarts (corriges), seed 17 est passe 150/150
 sans retouche.
 
 ## 1. vim
 
-### 1.1 Les 50 cas du corpus que le modele n'atteint pas (`UNPORTED_CASES`)
+### 1.1 Les 37 cas du corpus que le modele n'atteint pas (`UNPORTED_CASES`)
 
 Aucun n'est epingle comme contrat ; un cas de la liste qui se met a passer fait echouer le test
 pour qu'on le retire. Familles, chacune mesuree :
@@ -42,8 +43,7 @@ pour qu'on le retire. Familles, chacune mesuree :
 | --- | --- | --- | --- |
 | `g$` en `nowrap` avec `sidescroll` ET `sidescrolloff` | `cell2-133`, `cell2-194` | La colonne de gauche differe. | Non porte |
 | `scrolloff` plus grand que la moitie de la fenetre (so=8 dans 12 lignes, so=999, so=5 dans 5 lignes de texte), `display=lastline`/`truncate`/vide avec une ligne partielle | `scr3-76`, `scr3-101`, `scr3-130`, `scr3-144`, `scr3-176`, `scr3-179`, `scr3-194`, `clk9-46`, `-48`, `-69`, `-79`, `-104`, `-133`, `-137`, `-178`, `-191`, `clk21-19`, `-20`, `-69`, `-84`, `-130`, `-144` | `scroll_cursor_*` et `cursor_correct` de vim partent d'un `w_topline` que ce moteur recalcule autrement : la fenetre defile d'une rangee de plus ou de moins apres un saut (Ctrl-D/U/B/F, clic loin du curseur) quand la marge ne tient pas. | Non porte |
-| Redimensionnement avec une ligne du curseur plus haute que la fenetre | `rsz5-36`, `-37`, `-50`, `-56`, `-70`, `-92`, `-117`, `-139`, `-144`, `-155`, `-199` | Meme famille, par `resize`. | Non porte |
-| Ctrl-E, Ctrl-Y, Ctrl-D, Ctrl-F en mode Insertion | `clk9-40`, `-76`, `-96`, `-151`, `-160`, `clk21-10`, `-70`, `-135`, `-136`, `-145`, `-174` | Vim copie le caractere de la ligne voisine (Ctrl-E/Y), retire un niveau d'indentation (Ctrl-D), reindente (Ctrl-F) ; ce moteur les traite comme en mode Normal. | Non porte |
+| Redimensionnement avec une ligne du curseur plus haute que la fenetre | `rsz5-36`, `-50`, `-56`, `-70`, `-92`, `-117`, `-139`, `-144`, `-155` | Meme famille, par `resize`. | Non porte |
 | Prefixe d'objet de texte en attente en Visuel (`Vi` puis clic), `A` en Visuel ligne | `clk9-39`, `-113`, `-154`, `-168` | Le clic ou la touche suivante annule le prefixe chez vim, pas ici. | Non porte |
 | Deux clics sur la meme cellule en moins de 'mousetime' | `clk21-53` | Vim y voit un double-clic et selectionne le mot ; ce moteur y voit deux clics simples. | Non porte |
 | Clic sur la rangee `@@@` d'une ligne dont aucune rangee n'est visible | (aucun cas isole du corpus, releve a la main) | Vim l'ignore ; ce moteur la rapporte a la ligne cachee. | Non porte |
@@ -54,6 +54,7 @@ pour qu'on le retire. Familles, chacune mesuree :
 | --- | --- | --- |
 | Caracteres combinants et emoji (largeur 0 / 2 selon `ambiwidth`, sequences ZWJ) | Non porte | `VimCharWidth` suit les plages Unicode des CJK et des accents composes ; une sequence de plusieurs points de code dessinee sur une cellule ou deux place le curseur autrement que vim. |
 | Effets de `filetype plugin indent on` | Non porte | `defaults.vim` charge les ftplugins : un fichier `yaml`, `python`, `make`, `sh`... recoit `shiftwidth`, `expandtab`, `softtabstop`, `textwidth` propres a son type. Le moteur applique les valeurs globales seules, donc une tabulation dans un `Makefile` ou une indentation dans un `.yml` calcule la colonne du curseur autrement que vim. |
+| Touches d'Insertion hors corpus : Ctrl-R {registre}, Ctrl-V / Ctrl-Q (litteral), Ctrl-O (une commande Normale), Ctrl-K (digraphe), Ctrl-A / Ctrl-@ (reinserer le dernier texte), Ctrl-N / Ctrl-P / Ctrl-X (completion), Ctrl-G u / j / k | Non porte | Ctrl-T, Ctrl-D (et `0 Ctrl-D`, `^ Ctrl-D`), Ctrl-E, Ctrl-Y, Ctrl-F (sans `cindent`), Ctrl-U, Ctrl-W, Ctrl-H, Retour arriere, Tab, Entree et les fleches sont rejoues contre un vrai vim (corpus insert). Les touches listees ici sont ignorees en mode Insertion, sans message. |
 | `:set` sans argument | Non porte | Vim liste les options differentes de leur defaut ; le moteur ne rend rien. |
 | `hlsearch`, `incsearch`, `showmatch` | Accepte sans effet (prealable) | Les options sont lues, listees (`:set hls?`) et ignorees : aucun surlignage des occurrences, aucune recherche incrementale pendant la frappe de `/`, aucun saut bref sur la parenthese ouvrante. `incsearch` modifie le TEXTE de l'ecran (la fenetre defile jusqu'a l'occurrence pendant la saisie), donc c'est le plus visible. |
 | Liste de sauts (`Ctrl-O`, `Ctrl-I`, `:jumps`) | Non porte | Seuls les sauts de marques (`` ` `` et `'`) sont suivis ; ni `G`, ni `gg`, ni les recherches ne s'y inscrivent. |

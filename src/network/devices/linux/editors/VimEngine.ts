@@ -15,7 +15,7 @@ import {
   NO_OFFSET, findMatch, identUnderCursor, parseSearchInput, patternForIdent, resolveTarget,
   type LastSearch,
 } from './vim/VimSearch';
-import { indentString, indentWidth, insertTab, joinText, removeChars, shiftLine, sliceChars, softBackspace, swapCase, tabSpaces } from './vim/VimEditing';
+import { backspaceTarget, indentString, indentWidth, insertTab, joinText, reindentLine, removeChars, roundedIndent, shiftLine, sliceChars, softBackspace, swapCase, tabSpaces } from './vim/VimEditing';
 import { VimOptions } from './vim/VimOptions';
 
 export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
@@ -121,16 +121,6 @@ function nextWordStart(line: string, col: number, big = false): number | null {
   if (cls !== 0) { while (i < n && charClass(line[i], big) === cls) i++; }
   while (i < n && charClass(line[i], big) === 0) i++;
   return i < n ? i : null;
-}
-
-/** Column of the start of the previous word on this line, or null if motion must cross a line boundary. */
-function prevWordStart(line: string, col: number, big = false): number | null {
-  let i = col - 1;
-  while (i >= 0 && charClass(line[i], big) === 0) i--;
-  if (i < 0) return null;
-  const cls = charClass(line[i], big);
-  while (i > 0 && charClass(line[i - 1], big) === cls) i--;
-  return i;
 }
 
 /** Find the quote pair (same open/close char) a text object should act on: the pair enclosing `col`, or the next one forward on the line. */
@@ -241,6 +231,7 @@ export class VimEngine {
   private mlEmpty = false;
   private replaceMode = false;
   private typedSpace = false;
+  private lastInsertedChar = '';
   private autoIndentPending = false;
   private insertTouched = false;
   private insertStart = { line: 0, col: 0 };
@@ -979,12 +970,12 @@ export class VimEngine {
     this._message = '';
   }
 
-  private enterInsert(opened = false): void {
+  private enterInsert(opened = false, startsAtLineStart = false, indentedByVim = opened): void {
     this.mlEmpty = false;
     this.typedSpace = false;
     this.insertTouched = opened;
-    this.autoIndentPending = opened && this.options.bool('autoindent');
-    this.insertStart = { line: this._cursorLine, col: this._cursorCol };
+    this.autoIndentPending = indentedByVim && this.options.bool('autoindent');
+    this.insertStart = { line: this._cursorLine, col: startsAtLineStart ? 0 : this._cursorCol };
     this._mode = 'insert';
     this._message = this.variant === 'vim' ? '-- INSERT --' : '';
   }
@@ -1011,7 +1002,7 @@ export class VimEngine {
     this.insertKind = kind === 'o' || kind === 'O' ? kind : 'i';
     this.insertedText = '';
     this.insertUndoDepth = this.undoStack.length;
-    this.enterInsert(kind === 'o' || kind === 'O');
+    this.enterInsert(kind === 'o' || kind === 'O', kind === 'o' || kind === 'O');
   }
 
   private operatorShortcut(op: Operator, motion: string): void {
@@ -1231,7 +1222,7 @@ export class VimEngine {
     if (type === 'line') {
       const removed = this.linesArr.slice(start.line, end.line + 1);
       this.setRegister({ linewise: true, lines: removed });
-      const indent = this.indentFor(this.line(start.line));
+      const indent = this.options.bool('autoindent') ? /^[ \t]*/.exec(this.line(start.line))![0] : '';
       this.linesArr.splice(start.line, end.line - start.line + 1, indent);
       this._cursorLine = start.line;
       this._cursorCol = indent.length;
@@ -1250,7 +1241,7 @@ export class VimEngine {
     this.insertKind = 'i';
     this.insertedText = '';
     this.insertUndoDepth = -1;
-    this.enterInsert(type === 'line' || !emptyChange);
+    this.enterInsert(type === 'line' || !emptyChange, false, type === 'line');
   }
 
   private shiftRange(startLine: number, endLine: number, amount: number): void {
@@ -2173,15 +2164,32 @@ export class VimEngine {
       this.leaveInsert();
       return;
     }
-    const keepsAutoIndent = k.key === 'Enter';
+    const ctrlKey = k.ctrl ? k.key.toLowerCase() : '';
+    const atBufferStart = this._cursorLine === 0 && this._cursorCol === 0;
     this.insertKey(k);
-    if (!keepsAutoIndent) this.autoIndentPending = false;
+    if (k.key === 'Enter' || ctrlKey === 'e' || ctrlKey === 'y') return;
+    if (k.key === 'Backspace' || ctrlKey === 'h' || ctrlKey === 'w' || ctrlKey === 'u') {
+      if (!atBufferStart && this._cursorCol <= 1) this.autoIndentPending = false;
+      return;
+    }
+    if (ctrlKey === 't' || ctrlKey === 'd') {
+      if (/\S/.test(this.line(this._cursorLine))) this.autoIndentPending = false;
+      return;
+    }
+    this.autoIndentPending = false;
   }
 
   private insertKey(k: EditorKeyInput): void {
+    const previousChar = this.lastInsertedChar;
+    this.lastInsertedChar = '';
     if (k.ctrl && k.key.toLowerCase() === 'h') { this.insertBackspace(); return; }
-    if (k.ctrl && k.key.toLowerCase() === 'w') { this.insertDeleteWordBack(); return; }
-    if (k.ctrl && k.key.toLowerCase() === 'u') { this.insertDeleteToLineStart(); return; }
+    if (k.ctrl && k.key.toLowerCase() === 'w') { this.insertDeleteBack(true); return; }
+    if (k.ctrl && k.key.toLowerCase() === 'u') { this.insertDeleteBack(false); return; }
+    if (k.ctrl && k.key.toLowerCase() === 't') { this.insertShiftIndent(false); return; }
+    if (k.ctrl && k.key.toLowerCase() === 'd') { this.insertUnindent(previousChar); return; }
+    if (k.ctrl && k.key.toLowerCase() === 'e') { this.insertCopyAdjacent(true); return; }
+    if (k.ctrl && k.key.toLowerCase() === 'y') { this.insertCopyAdjacent(false); return; }
+    if (k.ctrl && k.key.toLowerCase() === 'f') { this.insertCharacter('\u0006'); return; }
 
     switch (k.key) {
       case 'Backspace': this.insertBackspace(); return;
@@ -2199,7 +2207,42 @@ export class VimEngine {
     }
   }
 
+  private insertShiftIndent(left: boolean): void {
+    const text = this.line(this._cursorLine);
+    const indent = roundedIndent(indentWidth(text, this.tabstop).width, this.options.shiftwidth, left);
+    const edit = reindentLine(text, this._cursorCol, this.tabstop, indent, this.options.expandtab);
+    this.setLine(this._cursorLine, edit.line);
+    this._cursorCol = edit.col;
+    this._modified = true;
+  }
+
+  private insertUnindent(previousChar: string): void {
+    const text = this.line(this._cursorLine);
+    const col = this._cursorCol;
+    if ((previousChar === '0' || previousChar === '^') && col > 0 && text[col - 1] === previousChar) {
+      const stripped = text.slice(0, col - 1) + text.slice(col);
+      const edit = reindentLine(stripped, col - 1, this.tabstop, 0, this.options.expandtab);
+      this.setLine(this._cursorLine, edit.line);
+      this._cursorCol = edit.col;
+      this._modified = true;
+      return;
+    }
+    this.insertShiftIndent(true);
+  }
+
+  private insertCopyAdjacent(below: boolean): void {
+    const neighbourLine = this._cursorLine + (below ? 1 : -1);
+    if (neighbourLine < 0 || neighbourLine >= this.linesArr.length) return;
+    const neighbour = this.line(neighbourLine);
+    const target = this.vcolAt(this.line(this._cursorLine), this._cursorCol, false);
+    if (target >= this.vcolAt(neighbour, neighbour.length, false)) return;
+    const index = colAtVcol(neighbour, target, this.tabstop, false, this.ctrlTab);
+    this.insertCharacter(String.fromCodePoint(neighbour.codePointAt(index)!));
+  }
+
   private insertCharacter(ch: string): void {
+    this.lastInsertedChar = ch;
+    this.autoIndentPending = false;
     const l = this.line(this._cursorLine);
     if (this.replaceMode) {
       const original = this._cursorCol < l.length ? l[this._cursorCol] : null;
@@ -2228,8 +2271,10 @@ export class VimEngine {
       for (let i = 0; i < spaces; i++) this.replacedOriginals.push(i === 0 && col < before.length ? before[col] : null);
     }
     const edit = insertTab(before, col, this.tabSettings(), replacing);
+    if (this.insertStart.line === this._cursorLine && edit.from < this.insertStart.col) this.insertStart = { line: this._cursorLine, col: edit.from };
     this.setLine(this._cursorLine, edit.line);
     this.insertedText += '\t';
+    this.autoIndentPending = false;
     this._cursorCol = edit.col;
     this._modified = true;
     this.typedSpace = false;
@@ -2360,25 +2405,29 @@ export class VimEngine {
       const prevLen = this.line(this._cursorLine - 1).length;
       this.linesArr[this._cursorLine - 1] += this.line(this._cursorLine);
       this.linesArr.splice(this._cursorLine, 1);
+      if (this.insertStart.line === this._cursorLine) this.insertStart = { line: this._cursorLine - 1, col: prevLen };
       this._cursorLine--;
       this._cursorCol = prevLen;
       this._modified = true;
       this.insertTouched = true;
+      this.autoIndentPending = false;
     }
   }
 
-  private insertDeleteWordBack(): void {
-    const l = this.line(this._cursorLine);
-    const prv = prevWordStart(l, this._cursorCol) ?? 0;
-    this.setLine(this._cursorLine, l.slice(0, prv) + l.slice(this._cursorCol));
-    this._cursorCol = prv;
-    this._modified = true;
-  }
-
-  private insertDeleteToLineStart(): void {
-    const l = this.line(this._cursorLine);
-    this.setLine(this._cursorLine, l.slice(this._cursorCol));
-    this._cursorCol = 0;
+  private insertDeleteBack(word: boolean): void {
+    if (this._cursorCol === 0) {
+      this.insertBackspace();
+      return;
+    }
+    const text = this.line(this._cursorLine);
+    const lead = indentWidth(text, this.tabstop).chars;
+    const floor = !word && this.options.bool('autoindent') && this._cursorCol > lead ? lead : 0;
+    const stopAt = this.insertStart.line === this._cursorLine ? this.insertStart.col : -1;
+    const target = backspaceTarget(text, this._cursorCol, floor, stopAt, word);
+    this.setLine(this._cursorLine, text.slice(0, target) + text.slice(this._cursorCol));
+    this._cursorCol = target;
+    if (this.insertStart.line === this._cursorLine && target < this.insertStart.col) this.insertStart = { line: this._cursorLine, col: target };
+    this.typedSpace = false;
     this._modified = true;
   }
 
