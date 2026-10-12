@@ -1,11 +1,11 @@
-import type { SocketProtocol, SocketState } from '@/network/core/SocketTable';
+import type { ProtocolSocketState, SocketProtocol } from '@/network/core/SocketTable';
 import { IPv6Address } from '@/network/core/types';
 import { TCP_INITIAL_CWND_SEGMENTS } from '@/network/tcp/TcpStack';
 import type { KernelSocketRow } from '../network/KernelSocketRows';
 
 export type ProcNetFamily = 4 | 6;
 
-const PROC_STATE_HEX: Record<SocketState, string> = {
+const PROC_STATE_HEX: Record<ProtocolSocketState, string> = {
   ESTABLISHED: '01',
   SYN_SENT: '02',
   SYN_RECEIVED: '03',

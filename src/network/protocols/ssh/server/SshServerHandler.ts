@@ -299,8 +299,12 @@ export class SshServerHandler {
         reason: reason === 'rst' ? 'reset' : 'closed',
         timestamp: simulationNowMs(),
       });
-      if (closedUser !== null) this.ctx.connectionClosed?.(closedUser, clientIp, conn.remotePort);
-      this.ctx.connectionEnded?.(clientIp, closedPort);
+      const releaseSession = (): void => {
+        if (closedUser !== null) this.ctx.connectionClosed?.(closedUser, clientIp, conn.remotePort);
+        this.ctx.connectionEnded?.(clientIp, closedPort);
+      };
+      if (transport.peerDisconnect === null) releaseSession();
+      else queueMicrotask(releaseSession);
       userCtx = null;
     });
 

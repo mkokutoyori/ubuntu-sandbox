@@ -3967,6 +3967,9 @@ export abstract class LinuxMachine extends EndHost
       configureIPv6Interface: (name: string, address: IPv6Address, prefixLength: number): boolean => {
         return this.configureIPv6Interface(name, address, prefixLength);
       },
+      removeIPv6Interface: (name: string, address: IPv6Address): boolean => {
+        return this.removeIPv6Interface(name, address);
+      },
       setDefaultGateway6: (gateway: IPv6Address): void => {
         this.setDefaultGateway6(gateway);
       },

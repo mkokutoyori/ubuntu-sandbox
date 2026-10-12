@@ -203,6 +203,23 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   montre dans Send-Q : sshd 128, nginx et apache 511, vsftpd 32, `nc -l` 1, le résolveur local 4096
   (`probe-tcp-listener-backlog`). Recv-Q d'une écoute est la file des connexions prêtes que `accept()` n'a pas
   prises : les services du dépôt acceptent dès l'établissement, elle vaut donc 0 et ne déborde jamais.
+- **Prise liée qui n'écoute pas.** `TcpStack.bind` tient un port sans écouter ni connecter : la prise refuse les SYN comme un port fermé
+  (RST), n'est pas un port éphémère, disparaît avec son processus et devient une écoute à `startListening`. Sous Windows `netstat -q` la
+  liste en `BOUND` et `Get-NetTCPConnection -State Bound` aussi ; sous Linux `ss`, `netstat` et `/proc/net/tcp` ne la montrent pas, le
+  noyau 5.15 ne parcourant que les tables d'écoute et de connexions (`probe-netstat-q-montre-les-ports-lies-sans-ecoute`). Aucune
+  application de la simulation n'ouvre encore de telle prise : la brique est dans la pile.
+- **Qui ferme le premier (ssh).** Le client d'OpenSSH envoie `SSH_MSG_DISCONNECT` puis ferme sa prise (`clientloop.c`, `ssh.c`) : il
+  garde le TIME-WAIT, et le serveur passe par CLOSE-WAIT et LAST-ACK sans rien garder, pour `ssh hôte commande`, une session
+  interactive, `scp` et depuis ou vers Windows. Une session que le serveur termine (`kill` du moniteur sshd) laisse au contraire le
+  TIME-WAIT au serveur. La livraison des trames étant synchrone, le démontage d'une session dont le pair annonce la fin attend la fin
+  de l'appel du pair ; sans cette attente le serveur fermait le premier (`probe-le-client-ssh-ferme-le-premier-et-garde-le-time-wait`).
+- **Vues de la pile (Windows).** `netstat` (`WinNetstat.ts`) et `Get-NetTCPConnection` lisent la `SocketTable` et un même modèle de ligne
+  TCP : colonnes de 6, 22, 22 et 15 caractères, lignes triées (TCP IPv4, TCP IPv6, UDP IPv4, UDP IPv6), colonne distante nommée par le
+  fichier `services`, le fichier `hosts` et une question PTR sur le fil (sauf `-n`), nom de l'ordinateur pour une écoute ou une adresse
+  de la machine, `-b` (service puis exécutable, session élevée), `-o`, `-p` (plusieurs protocoles), `-q`, `-s` et `-e`, `-t`, `-x`,
+  `-y`, et l'aide de Windows 10 22H2 pour ce qu'il ne connaît pas (`probe-netstat-windows-nomme-trie-et-refuse-comme-windows`,
+  `probe-netstat-b-nomme-le-service-et-l-executable`, `probe-netstat-t-x-y-et-powershell-disent-la-meme-chose`). Pas fait : les
+  compteurs IPv6 de `netstat -s` et les écoutes IPv6 des services Windows.
 - **Windows** : TTL 128 ; n'envoie ni n'accepte ECN (configuration par défaut) ; aucune commande
   `netsh int tcp` ni `Set-NetTCPSetting` n'existe. La documentation en ligne de `Set-NetTCPSetting` donne les
   plages (MinRto de 20 à 300 ms, RTO initial de 300 à 3000 ms, 2 à 8 retransmissions de SYN) mais pas les

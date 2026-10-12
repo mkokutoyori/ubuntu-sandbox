@@ -363,8 +363,8 @@ export class WindowsDnsServerRole {
   start(identity: ListenerIdentity = {}): void {
     if (this.running) return;
     const processName = identity.processName ?? 'dns';
-    bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, processName, undefined, undefined, { pid: identity.pid });
-    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT, { processName, pid: identity.pid });
+    bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, processName, undefined, undefined, { pid: identity.pid, service: identity.service });
+    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT, { processName, pid: identity.pid, service: identity.service });
     this.running = true;
   }
 

@@ -79,6 +79,7 @@ export interface TcpSocketOwnedPayload extends TcpDeviceRef {
   remoteIp: string;
   remotePort: number;
   pid: number;
+  service?: string;
 }
 
 export interface TcpListenerChangedPayload extends TcpDeviceRef {

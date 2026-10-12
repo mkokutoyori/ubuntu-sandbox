@@ -18,9 +18,9 @@ import type {
   TcpSocketOwnedPayload,
 } from '@/network/tcp/events';
 import type { TcpState } from '@/network/tcp/types';
-import type { SocketState, SocketTable } from '@/network/core/SocketTable';
+import type { ProtocolSocketState, SocketTable } from '@/network/core/SocketTable';
 
-const STATE_MAP: Record<TcpState, SocketState | null> = {
+const STATE_MAP: Record<TcpState, ProtocolSocketState | null> = {
   'closed':       null,
   'listen':       'LISTEN',
   'syn-sent':     'SYN_SENT',
@@ -34,7 +34,7 @@ const STATE_MAP: Record<TcpState, SocketState | null> = {
   'time-wait':    'TIME_WAIT',
 };
 
-export function socketStateOfTcp(state: TcpState): SocketState | null {
+export function socketStateOfTcp(state: TcpState): ProtocolSocketState | null {
   return STATE_MAP[state];
 }
 
@@ -87,7 +87,7 @@ export class TcpSocketStateProjection {
       localPort: p.localPort,
       remoteAddress: p.remoteIp,
       remotePort: p.remotePort,
-    }, p.pid);
+    }, p.pid, p.service);
   }
 
   private onClosed(p: TcpConnectionClosedPayload): void {

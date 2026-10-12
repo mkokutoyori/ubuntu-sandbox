@@ -31,7 +31,7 @@ import {
 import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters } from '../layers/internet/ProtocolCounters';
 import { Port } from '../hardware/Port';
-import type { IPv4AddressOrigin } from '../hardware/Port';
+import type { IPv4AddressOrigin, IPv6AddressEntry } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack, TCP_SOMAXCONN, type TcpOptionPolicy, type TcpMibSink, type OwnerExit } from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
@@ -1970,16 +1970,20 @@ export abstract class EndHost extends Equipment {
    */
   private attachListenerProjection(): void {
     this.tcpv2.attachSocketSink({
-      announce: (localIp, localPort, identity, boundDevice) => {
+      announce: (localIp, localPort, identity, boundDevice, bound) => {
         const family = localIp.includes(':') ? 'v6' : 'v4';
         if (this.socketTable.isPortBound(localPort, 'tcp', family)) return;
         try {
-          this.socketTable.bind(
+          const entry = this.socketTable.bind(
             'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,
-            boundDevice === undefined ? undefined : { boundDevice },
+            { boundDevice, serviceName: identity.service },
           );
+          if (bound) entry.state = 'BOUND';
           this.sinkOwnedListeners.add(`${localIp}:${localPort}`);
         } catch { /* déjà annoncé par ailleurs — l'entrée existante fait foi */ }
+      },
+      promote: (localIp, localPort) => {
+        this.socketTable.setListenerState('tcp', localIp, localPort, 'LISTEN');
       },
       withdraw: (localIp, localPort) => {
         if (!this.sinkOwnedListeners.delete(`${localIp}:${localPort}`)) return;
@@ -3378,13 +3382,13 @@ export abstract class EndHost extends Equipment {
   }
 
   public udpBind(
-    port: number, listener: UdpListener, processName?: string, owner: { pid?: number; uid?: number } = {},
+    port: number, listener: UdpListener, processName?: string, owner: { pid?: number; uid?: number; service?: string } = {},
   ): number | false {
     let bound: number;
     try {
       bound = port === PORT_ANY ? this.socketTable.allocateEphemeralPort() : port;
       this.socketTable.bind('udp', '0.0.0.0', bound, owner.pid, processName, undefined,
-        owner.uid === undefined ? undefined : { ownerUid: owner.uid });
+        { ownerUid: owner.uid, serviceName: owner.service });
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
       throw error;
@@ -3688,13 +3692,14 @@ export abstract class EndHost extends Equipment {
           continue;
         }
         this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
-        if (sock.protocol === 'tcp' && sock.state === 'LISTEN') {
+        if (sock.protocol === 'tcp' && (sock.state === 'LISTEN' || sock.state === 'BOUND')) {
           stack.closeListener(sock.localPort, sock.localAddress);
           closedListeners.push(sock.localPort);
         }
       } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
         sock.pid = undefined;
         sock.processName = undefined;
+        sock.serviceName = undefined;
         sock.uid = undefined;
       } else {
         this.socketTable.removeConnection(sock);
@@ -5516,7 +5521,8 @@ export abstract class EndHost extends Equipment {
     // Add connected route for this prefix
     const networkPrefix = address.getNetworkPrefix(prefixLength);
     const existingRoute = this.ipv6RoutingTable.find(r =>
-      r.type === 'connected' && r.iface === ifName && r.prefix.equals(networkPrefix)
+      r.type === 'connected' && r.iface === ifName
+        && r.prefixLength === prefixLength && r.prefix.equals(networkPrefix)
     );
 
     if (!existingRoute) {
@@ -5533,6 +5539,32 @@ export abstract class EndHost extends Equipment {
     Logger.info(this.id, 'host:ipv6-config',
       `${this.name}: ${ifName} configured ${address}/${prefixLength}`);
     return true;
+  }
+
+  removeIPv6Interface(ifName: string, address: IPv6Address): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+    const entry = port.getIPv6Addresses().find((e) => e.address.equals(address));
+    if (!entry || !port.removeIPv6Address(address)) return false;
+    this.withdrawUncoveredConnectedRoute(ifName, entry);
+    Logger.info(this.id, 'host:ipv6-config',
+      `${this.name}: ${ifName} removed ${address}/${entry.prefixLength}`);
+    return true;
+  }
+
+  private withdrawUncoveredConnectedRoute(ifName: string, removed: IPv6AddressEntry): void {
+    const port = this.ports.get(ifName);
+    if (!port) return;
+    const prefix = removed.address.getNetworkPrefix(removed.prefixLength);
+    const stillCovered = port.getIPv6Addresses().some(
+      (e) => e.prefixLength === removed.prefixLength
+        && e.address.getNetworkPrefix(e.prefixLength).equals(prefix),
+    );
+    if (stillCovered) return;
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter(
+      (r) => !(r.type === 'connected' && r.iface === ifName
+        && r.prefixLength === removed.prefixLength && r.prefix.equals(prefix)),
+    );
   }
 
   // ─── IPv6 Routing Table ─────────────────────────────────────────

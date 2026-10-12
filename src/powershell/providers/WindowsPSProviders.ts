@@ -2094,27 +2094,28 @@ class WindowsNetworkAdapter implements INetworkProvider {
         } catch { /* ignore — extraIPs already records the assignment */ }
       }
     }
+    if (ip.includes(':')) {
+      const portName = this.portNameFor(ifAlias);
+      if (this.pc.getPortsMap().has(portName)) {
+        this.pc.configureIPv6Interface(portName, new IPv6Address(ip), prefixLength);
+      }
+    }
   }
   removeIPAddress(ip: string): void {
     if (ip === '127.0.0.1' || ip === '::1') {
       throw new Error('Cannot remove loopback address.');
     }
-    const entry = this.state.extraIPs.get(ip.toLowerCase());
     this.state.extraIPs.delete(ip.toLowerCase());
-    // Also strip the address from the underlying device port so cmd's
-    // `ipconfig` no longer reports it. We only clear if the port currently
-    // carries that exact IP (matches netsh's `delete address` semantics).
-    if (entry && !ip.includes(':')) {
-      const ports = this.pc.getPortsMap();
-      const portName = this.portNameFor(entry.ifAlias);
-      const port = ports.get(portName);
-      // Clear the address AND its connected route via the same device method
-      // cmd's `netsh delete address` uses, so `route print` / `Get-NetRoute`
-      // agree the network is gone (not just the address).
-      if (port && String(port.getIPAddress()) === ip) {
-        (this.pc as unknown as { unconfigureInterface: (n: string) => void }).unconfigureInterface(portName);
-      }
+    if (ip.includes(':')) {
+      const address = new IPv6Address(ip);
+      const carrier = this.pc.getPorts().find(
+        (p) => p.getIPv6Addresses().some((e) => e.address.equals(address)),
+      );
+      if (carrier) this.pc.removeIPv6Interface(carrier.getName(), address);
+      return;
     }
+    const carrier = this.pc.getPorts().find((p) => String(p.getIPAddress()) === ip);
+    if (carrier) this.pc.unconfigureInterface(carrier.getName());
   }
 
   // ─ Routes ───────────────────────────────────────────────────────────────
@@ -2526,10 +2527,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
       .map(s => ({
         localAddress:  s.localAddress,
         localPort:     s.localPort,
-        remoteAddress: s.state === 'LISTEN' ? '0.0.0.0' : s.remoteAddress,
-        remotePort:    s.state === 'LISTEN' ? 0 : s.remotePort,
+        remoteAddress: s.remoteAddress === '*' ? (s.localAddress.includes(':') ? '::' : '0.0.0.0') : s.remoteAddress,
+        remotePort:    s.remoteAddress === '*' ? 0 : s.remotePort,
         state:         s.state === 'LISTEN' ? 'Listen' : s.state,
-        pid:           s.pid,
+        pid:           s.pid ?? 0,
       }));
   }
 
@@ -2541,7 +2542,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
       .map(s => ({
         localAddress: s.localAddress,
         localPort:    s.localPort,
-        pid:          s.pid,
+        pid:          s.pid ?? 0,
         processName:  s.processName,
       }));
   }

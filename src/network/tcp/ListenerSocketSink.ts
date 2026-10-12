@@ -20,6 +20,7 @@ export interface ListenerIdentity {
   pid?: number;
   /** Nom du processus, lu par `ss -p`, `netstat -p` et `lsof`. */
   processName?: string;
+  service?: string;
   /**
    * Salutation applicative : les premiers octets que le service écrit sur
    * une connexion fraîche. `TcpStack` les ÉMET à l'acceptation, avant de
@@ -30,6 +31,7 @@ export interface ListenerIdentity {
 }
 
 export interface ListenerSocketSink {
-  announce(localIp: string, localPort: number, identity: ListenerIdentity, boundDevice?: string): void;
+  announce(localIp: string, localPort: number, identity: ListenerIdentity, boundDevice?: string, bound?: boolean): void;
+  promote(localIp: string, localPort: number): void;
   withdraw(localIp: string, localPort: number): void;
 }

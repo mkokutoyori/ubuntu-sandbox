@@ -380,7 +380,7 @@ export class WindowsDhcpServerRole {
     if (this.running) return;
     this.identity = identity;
     this.engine.enable();
-    this.host.udpBind(DHCP_SERVER_PORT, this.handleDatagram, identity.processName ?? 'dhcpserver', { pid: identity.pid });
+    this.host.udpBind(DHCP_SERVER_PORT, this.handleDatagram, identity.processName ?? 'dhcpserver', { pid: identity.pid, service: identity.service });
     this.running = true;
     this.v6.start(identity);
     this.failover.start();
