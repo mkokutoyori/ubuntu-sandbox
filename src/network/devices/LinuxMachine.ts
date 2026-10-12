@@ -1893,6 +1893,8 @@ export abstract class LinuxMachine extends EndHost
       if (name === 'systemd-resolved') {
         this.loadResolvedConfig();
         this.loadDnssdServices();
+        if (event === 'start') this.bindResolvedStub();
+        this.syncLinkLocalResponders();
       }
     });
   }

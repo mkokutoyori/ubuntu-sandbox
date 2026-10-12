@@ -3669,6 +3669,10 @@ export abstract class EndHost extends Equipment {
    */
   public resolverIdentity(): ListenerIdentity { return { processName: 'systemd-resolved' }; }
 
+  public isUdpPortServed(port: number): boolean {
+    return this.udpListeners.has(port);
+  }
+
   /** Close a UDP port: remove the listener and the socket-table entry. */
   public udpClose(port: number): void {
     this.udpListeners.delete(port);

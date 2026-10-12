@@ -442,6 +442,20 @@ pour interroger le lien appartiennent à `Dnscache` (`EndHost.resolverIdentity()
 unique de la machine que la reconstruction ne remplace pas. Garde-fou :
 `probe-chaque-ecoute-windows-suit-son-service-et-porte-son-processus`.
 
+Le faucheur unique a une conséquence que la mesure a révélée après coup (`a7e9f551f`, deux LinuxPC câblés, mDNS actif) : un démon qui
+redémarre perd ses sockets avec son processus, et rien ne les rouvrait. `systemctl restart systemd-resolved` laissait `ss -ulnp` sans le
+stub `127.0.0.53%lo:53` ni les répondeurs LLMNR (5355) et mDNS (5353) alors que les agents croyaient les tenir (`start()` rendait la main
+parce que `bound` était vrai) : un voisin n'obtenait plus de réponse LLMNR, `dig @127.0.0.53` restait muet, et douze cas de
+`probe-resolvectl-07`, `-08` et `-09` tombaient — rouges depuis `fa7d49a31`, verts à `2d36ab993`, où le faucheur ne retirait d'une prise UDP
+que sa ligne. `EndHost.isUdpPortServed(port)` dit si l'écouteur est tenu ; `isRunning()` de `LlmnrAgent` et de `MdnsAgent` le lit, et leur
+`start()` rouvre la socket partie sans rejouer le sondage du nom. Au démarrage de l'unité — `systemctl start` ou `restart`, ou la relance du
+superviseur après un `kill -9` — le stub est rouvert (`bindResolvedStub`) et les répondeurs sont resynchronisés avec la configuration.
+L'unité de `systemd` v249 (`units/systemd-resolved.service.in`, lue sur GitHub) porte `Restart=always`, `RestartSec=0` et aucun
+`ExecReload` : un démon tué revient, et `systemctl reload` est refusé sans rien toucher. Limite acceptée : un redémarrage garde l'état de
+l'hôte (nom mDNS acquis, services annoncés, nom LLMNR vérifié) au lieu de sonder de nouveau pendant trois quarts de seconde. Mesuré : chaque
+unité active d'un LinuxPC et d'un LinuxServer, redémarrée l'une après l'autre, laisse `ss -tulnH` intact, sauf `systemd-resolved` avant ce
+correctif. Garde-fou : `probe-un-redemarrage-de-systemd-resolved-rend-son-stub-et-ses-repondeurs`.
+
 `netstat` de Windows dit ce que dit le vrai (mesuré sur `fa7d49a31`, un WindowsServer et un LinuxPC câblés) : `netstat -a` listait les lignes
 dans l'ordre d'arrivée dans la table, des adresses IPv6 nues (`:::7200`, `::1:7300`), des écoutes face à `0.0.0.0:0` et aucun nom (ni le
 service du fichier `services`, ni le fichier `hosts`, ni le DNS), et ignorait `-b`, `-q`, `-f`, `-t`, `-x`, `-y`, `-p tcpv6`, `/?`, les
