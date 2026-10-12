@@ -13,6 +13,7 @@ import json, os, subprocess, sys, tempfile
 OPTIONS = [
     ("number", "nu", "bool"), ("relativenumber", "rnu", "bool"), ("numberwidth", "nuw", "number"),
     ("list", "list", "bool"), ("listchars", "lcs", "string"), ("showmatch", "sm", "bool"),
+    ("matchtime", "mat", "number"), ("matchpairs", "mps", "string"),
     ("incsearch", "is", "bool"), ("hlsearch", "hls", "bool"), ("ignorecase", "ic", "bool"),
     ("autoindent", "ai", "bool"), ("colorcolumn", "cc", "string"), ("tabstop", "ts", "number"),
     ("shiftwidth", "sw", "number"), ("softtabstop", "sts", "number"), ("expandtab", "et", "bool"),

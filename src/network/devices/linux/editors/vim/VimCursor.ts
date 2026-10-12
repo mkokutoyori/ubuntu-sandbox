@@ -7,6 +7,7 @@ export interface MotionBuffer {
   readonly list?: boolean;
   readonly ctrlTab?: boolean;
   readonly window?: WindowView;
+  readonly pairs?: Readonly<Record<string, string>>;
 }
 
 export const MAXCOL = Number.MAX_SAFE_INTEGER;

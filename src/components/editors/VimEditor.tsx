@@ -6,7 +6,7 @@
  * space it is given, tells the engine, and paints the cells it gets back.
  */
 
-import React, { useRef, useEffect, useCallback, useReducer } from 'react';
+import React, { useRef, useEffect, useCallback, useReducer, useState } from 'react';
 import { VimEngine, type VimVariant } from '@/network/devices/linux/editors/VimEngine';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 import { GridRows } from './EditorGrid';
@@ -63,6 +63,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   }
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);
+  const [epoch, setEpoch] = useState(0);
+  const [settledEpoch, setSettledEpoch] = useState(-1);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const caretRef = useRef<HTMLSpanElement>(null);
@@ -84,8 +86,16 @@ export const VimEditor: React.FC<VimEditorProps> = ({
     }
   });
 
+  useEffect(() => {
+    const hold = engine.screen.hold;
+    if (hold === undefined) return undefined;
+    const timer = setTimeout(() => setSettledEpoch(epoch), hold.millis);
+    return () => clearTimeout(timer);
+  }, [engine, epoch]);
+
   const dispatch = useCallback((e: React.KeyboardEvent) => {
     e.preventDefault();
+    setEpoch((n) => n + 1);
     engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
     if (engine.exited) {
       onExit(engine.savedOnExit);
@@ -155,7 +165,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
       </div>
     );
   } else {
-    const screen = engine.screen;
+    const live = engine.screen;
+    const screen = live.hold !== undefined && settledEpoch === epoch ? live.hold.then : live;
     const lastRow = screen.rows.length - 1;
     body = (
       <div

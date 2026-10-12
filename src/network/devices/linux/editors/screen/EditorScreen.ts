@@ -23,6 +23,7 @@ export interface ScreenCursor {
 export interface EditorScreen {
   readonly rows: readonly ScreenRow[];
   readonly cursor: ScreenCursor | null;
+  readonly hold?: { readonly millis: number; readonly then: EditorScreen };
 }
 
 export const CONTINUATION = '\u0000';
