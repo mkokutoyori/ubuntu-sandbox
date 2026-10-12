@@ -113,8 +113,10 @@ export interface DirectorySnapshot {
   kdsRootKey: { keyId: string; effectiveTime: string } | null;
   nextRid: number;
   localUsn: number;
+  guidCounter: number;
   optionalFeatureScopes: Array<{ name: string; scopes: string[] }>;
   schema: { attributes: AttributeSchema[]; classes: ObjectClassSchema[] };
+  highWatermark: Array<[string, number]>;
 }
 
 export interface DirectoryDelta {
@@ -125,8 +127,10 @@ export interface DirectoryDelta {
   kdsRootKey: { keyId: string; effectiveTime: string } | null;
   nextRid: number;
   localUsn: number;
+  guidCounter?: number;
   optionalFeatureScopes: Array<{ name: string; scopes: string[] }>;
   schema: { attributes: AttributeSchema[]; classes: ObjectClassSchema[] };
+  highWatermark?: Array<[string, number]>;
 }
 
 export class DirectoryStore {
@@ -142,8 +146,9 @@ export class DirectoryStore {
   /** `Add-KdsRootKey` — real gMSA creation refuses without this present first. */
   private kdsRootKey: { keyId: string; effectiveTime: string } | null = null;
   /** This DC's stable replication identity (PRD-Windows-Server-Advanced.md §5 P4, MS-DRSR's invocationId) — one per `DirectoryStore` instance, for its whole lifetime. */
-  private readonly invocationId = `invocation-${generateId()}`;
+  private readonly invocationId: string;
   private localUsn = 0;
+  private guidCounter = 0;
   /** Highest USN already absorbed from each other known DC, via any replication partner — advances as `applyReplicatedEntry` runs. */
   private readonly inboundHighWatermark: HighWatermarkVector = emptyHighWatermarkVector();
   private readonly sites: SiteRegistry;
@@ -181,13 +186,14 @@ export class DirectoryStore {
     readonly dnsName: string,
     readonly netbiosName: string,
     adminPassword: string,
-    opts: { skipSeed?: boolean; sharedSchemaValidator?: SchemaValidator; now?: () => Date } = {},
+    opts: { skipSeed?: boolean; sharedSchemaValidator?: SchemaValidator; now?: () => Date; invocationId?: string } = {},
   ) {
+    this.invocationId = opts.invocationId ?? `invocation-${generateId()}`;
     this.now = opts.now ?? (() => simulationDate());
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
     this.schemaValidator = opts.sharedSchemaValidator ?? new SchemaValidator();
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
-      invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
+      invocationId: this.invocationId, nextUsn: () => ++this.localUsn, nextGuid: () => this.nextObjectGuid(),
     }, this.schemaValidator, this.now);
     this.domainSidPrefix = `S-1-5-21-${hash32(this.dnsName, 1)}-${hash32(this.dnsName, 2)}-${hash32(this.dnsName, 3)}`;
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
@@ -209,6 +215,13 @@ export class DirectoryStore {
     }
   }
 
+  private nextObjectGuid(): string {
+    const n = ++this.guidCounter;
+    const hex = [1, 2, 3, 4].map((salt) => hash32(`${this.invocationId}:${n}`, salt).toString(16).padStart(8, '0')).join('');
+    const variant = (parseInt(hex[16], 16) & 0x3 | 0x8).toString(16);
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  }
+
   exportSnapshot(): DirectorySnapshot {
     return {
       entries: this.tree.allDescendants(this.tree.getRootDn()).map((e) => ({
@@ -220,8 +233,10 @@ export class DirectoryStore {
       kdsRootKey: this.kdsRootKey,
       nextRid: this.nextRid,
       localUsn: this.localUsn,
+      guidCounter: this.guidCounter,
       optionalFeatureScopes: [...this.optionalFeatureScopes].map(([name, scopes]) => ({ name, scopes: [...scopes] })),
       schema: { attributes: this.schema.listAttributes(), classes: this.schema.listObjectClasses() },
+      highWatermark: [...this.inboundHighWatermark.usnByInvocationId],
     };
   }
 
@@ -239,6 +254,8 @@ export class DirectoryStore {
     for (const { name, scopes } of delta.optionalFeatureScopes) this.optionalFeatureScopes.set(name, [...scopes]);
     this.nextRid = Math.max(this.nextRid, delta.nextRid);
     this.localUsn = Math.max(this.localUsn, delta.localUsn);
+    this.guidCounter = Math.max(this.guidCounter, delta.guidCounter ?? 0);
+    for (const [invocationId, usn] of delta.highWatermark ?? []) recordUsn(this.inboundHighWatermark, invocationId, usn);
   }
 
   // ─── Schema (PRD-Windows-Server-Advanced.md §5 P7) ─────────────────────

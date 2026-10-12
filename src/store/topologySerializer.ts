@@ -62,6 +62,8 @@ import type { DirectoryDelta, DirectorySnapshot } from '@/network/devices/window
 import { resetForestRegistry, withIsolatedForestRegistry, type ForestFsmoRoles } from '@/network/devices/windows/server/ad/forest/Forest';
 import { captureWindowsSecurityPolicy, restoreWindowsSecurityPolicy, type WindowsSecurityPolicyState } from './windowsSecurityPolicy';
 import type { WindowsDomainState } from '@/network/devices/windows/domain/DomainTypes';
+import type { NtdsOption } from '@/network/devices/windows/WinRepadmin';
+import type { ReplicationSignalState } from '@/network/devices/windows/server/ad/replication/observables';
 import { registerStandInForest } from '@/network/devices/windows/server/ad/forest/StandInForest';
 import {
   captureWindowsServerRoles, restoreWindowsServerRoles, type WindowsServerRolesState,
@@ -299,7 +301,10 @@ interface TopologyDeviceExport {
   windowsFeatures?: { installed: string[]; removed?: string[] };
   windowsDomain?: WindowsDomainState;
   windowsSecurity?: WindowsSecurityPolicyState;
-  activeDirectory?: { promotion: DirectoryPromotion; delta?: DirectoryDelta; baselineDeviceId?: string; forestFsmo?: ForestFsmoRoles };
+  activeDirectory?: {
+    promotion: DirectoryPromotion; delta?: DirectoryDelta; baselineDeviceId?: string; forestFsmo?: ForestFsmoRoles;
+    ntdsOptions?: NtdsOption[]; replication?: ReplicationSignalState;
+  };
   windowsRoles?: WindowsServerRolesState;
   /**
    * The machine's registry, as a diff against a pristine hive of the same
@@ -1054,8 +1059,13 @@ function captureActiveDirectory(device: WindowsServer, twin: WindowsServer, peer
   }));
   const delta = factory ? diffDirectory(store.exportSnapshot(), factory, kind === 'forest') : null;
   const forestFsmo = kind === 'forest' ? captureForestFsmo(device) : undefined;
+  const factoryOptions = new Set(twin.getNtdsOptions());
+  const ntdsOptions = device.getNtdsOptions().filter((option) => !factoryOptions.has(option));
+  const replication = device.getReplicationSignals().exportState();
   return {
     promotion,
+    ...(ntdsOptions.length > 0 ? { ntdsOptions } : {}),
+    ...(replication ? { replication } : {}),
     ...(delta ? { delta } : {}),
     ...(baseline ? { baselineDeviceId: baseline.deviceId } : {}),
     ...(forestFsmo ? { forestFsmo } : {}),
@@ -1073,6 +1083,8 @@ function restoreActiveDirectory(
     return;
   }
   if (saved.delta) device.getDirectoryStore()?.importSnapshot(saved.delta);
+  if (saved.ntdsOptions) device.restoreNtdsOptions([...device.getNtdsOptions(), ...saved.ntdsOptions]);
+  if (saved.replication) device.getReplicationSignals().importState(saved.replication);
   const forest = device.getForest();
   if (forest && saved.forestFsmo) {
     forest.transferFsmoRole('schemaMaster', saved.forestFsmo.schemaMaster);

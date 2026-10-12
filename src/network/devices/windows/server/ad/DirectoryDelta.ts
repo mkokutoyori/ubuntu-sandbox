@@ -3,6 +3,8 @@ import type { DirectoryDelta, DirectorySnapshot } from './DirectoryStore';
 
 export interface ForestPromotion {
   kind?: 'forest';
+  promotedAt?: number;
+  invocationId?: string;
   domainName: string;
   netbiosName: string;
   safeModeAdminPassword: string;
@@ -16,6 +18,8 @@ export interface ForestPromotion {
 
 export interface ChildDomainPromotion {
   kind: 'childDomain';
+  promotedAt?: number;
+  invocationId?: string;
   domainName: string;
   netbiosName: string;
   parentDomainName: string;
@@ -25,6 +29,8 @@ export interface ChildDomainPromotion {
 
 export interface ReplicaPromotion {
   kind: 'replica';
+  promotedAt?: number;
+  invocationId?: string;
   domainName: string;
   netbiosName: string;
   sourceDcAddress: string;
@@ -41,9 +47,13 @@ export function promotionKind(promotion: DirectoryPromotion): 'forest' | 'childD
 export function snapshotAsDelta(snapshot: DirectorySnapshot): DirectoryDelta {
   return {
     ...snapshot,
+    nextRid: 0,
+    localUsn: 0,
+    guidCounter: 0,
     removedDns: [],
     removedAcls: [],
     schema: { attributes: [], classes: [] },
+    highWatermark: [],
   };
 }
 
@@ -100,9 +110,12 @@ export function diffDirectory(live: DirectorySnapshot, factory: DirectorySnapsho
   const optionalFeatureScopes = live.optionalFeatureScopes.filter((s) => factoryScopes.get(s.name) !== JSON.stringify(s.scopes));
   const kdsRootKey = live.kdsRootKey && JSON.stringify(live.kdsRootKey) !== JSON.stringify(factory.kdsRootKey) ? live.kdsRootKey : null;
 
-  const unchanged = entries.length + removedDns.length + acls.length + removedAcls.length
+  const factoryWatermark = new Map(factory.highWatermark);
+  const highWatermark = live.highWatermark.filter(([id, usn]) => factoryWatermark.get(id) !== usn);
+
+  const unchanged = highWatermark.length + entries.length + removedDns.length + acls.length + removedAcls.length
     + schema.attributes.length + schema.classes.length + optionalFeatureScopes.length === 0 && kdsRootKey === null;
   return unchanged
     ? null
-    : { entries, removedDns, acls, removedAcls, kdsRootKey, nextRid: live.nextRid, localUsn: live.localUsn, optionalFeatureScopes, schema };
+    : { entries, removedDns, acls, removedAcls, kdsRootKey, nextRid: live.nextRid, localUsn: live.localUsn, guidCounter: live.guidCounter, optionalFeatureScopes, schema, highWatermark };
 }
