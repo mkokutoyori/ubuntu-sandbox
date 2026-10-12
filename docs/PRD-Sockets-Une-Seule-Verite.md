@@ -474,13 +474,30 @@ le noyau 5.15 ne parcourt que les tables d'écoute et de connexions (`net/ipv4/t
 liaison. Garde-fous : `probe-netstat-windows-nomme-trie-et-refuse-comme-windows`, `probe-netstat-b-nomme-le-service-et-l-executable`,
 `probe-netstat-q-montre-les-ports-lies-sans-ecoute` et `probe-netstat-t-x-y-et-powershell-disent-la-meme-chose`.
 
+Les services Windows écoutent sur les deux familles là où le vrai le fait. Prérequis, posé avant (`a7e9f551f`) : une adresse IPv6 d'une
+machine Windows est posée par `EndHost.configureIPv6Interface` (le port et sa route de préfixe) que `netsh interface ipv6 add address`
+et `New-NetIPAddress` appellent comme `ip -6 addr add`, et retirée par `removeIPv6Interface` ; sans cela l'hôte recevait l'écho IPv6 et
+ne savait pas le renvoyer. Mesuré ensuite sur `a7e9f551f` (un LinuxPC et un WindowsServer reliés par `fd00::/64`) : le Linux se
+connectait en IPv6 à 22, 135 et 445 par accident (`TcpStack.findListener` replie une destination IPv6 sur l'écoute `0.0.0.0`) alors que
+`netstat -an` ne montrait aucune ligne `[::]` et que `-p tcpv6` et `-p udpv6` étaient vides. `WindowsListenerDeclaration.families`
+(`IPV4_ONLY` par défaut, `DUAL_STACK`) ouvre et ferme ensemble une écoute `0.0.0.0` et une écoute `[::]`, au même PID, pour `sshd` (22),
+le mappeur RPC (135), le serveur SMB (445) et WinRM (5985) ; la session NetBIOS (139) reste IPv4, NetBIOS sur TCP/IP n'existant pas en
+IPv6. Les deux répondeurs de noms de lien (mDNS 5353, LLMNR 5355) tiennent une socket UDP par famille, sur Windows (transcript d'un
+Windows 10, BleepingComputer) et sur Linux (`systemd` v249, `resolved-llmnr.c` et `resolved-mdns.c` : une socket `AF_INET` et une
+`AF_INET6` en `IPV6_V6ONLY`, liées au joker) : `EndHost.udpBind({ families })` pose une ligne par famille et défait celles déjà posées
+quand l'une est prise, `udpClose(port, famille?)` ne libère l'écouteur que lorsque plus aucune ligne joker ne le tient, et le faucheur
+de processus ferme la ligne du mort. Sources des écoutes TCP : transcript Windows 10 (135, 445), Microsoft Q&A « WinRM Listener not
+bound to IPv4 » (5985, PID 4) et « OpenSSH on Windows does not work » (22). RDP, LDAP, Kerberos, NTP, DNS et DHCP restent comme avant :
+aucun transcript atteint pour dire s'ils tiennent une ligne IPv6. Garde-fous :
+`probe-windows-pose-et-retire-une-adresse-ipv6-comme-linux` et `probe-windows-ecoute-sur-les-deux-familles-ce-que-le-vrai-ecoute-ainsi`.
+
 Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
 non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
 Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135
 d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ; `TermService` est affiché
 Automatic quand un Windows réel le dit Manual ; un service qui n'a jamais eu de processus d'hébergement n'en reçoit pas en
-démarrant ; aucune application de la simulation n'ouvre encore de socket TCP liée sans écoute (la brique est dans la pile) ; les
-services Windows n'écoutent pas en double pile et `netstat -s` ne dit rien d'IPv6 ; le processus par session d'OpenSSH pour Windows, le
+démarrant ; aucune application de la simulation n'ouvre encore de socket TCP liée sans écoute (la brique est dans la pile) ; RDP, LDAP,
+Kerberos, NTP, DNS et DHCP ne tiennent pas de ligne IPv6 faute de source, et `netstat -s` ne dit rien d'IPv6 ; le processus par session d'OpenSSH pour Windows, le
 `ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
 
 ## 7. Hors périmètre
@@ -491,8 +508,9 @@ services Windows n'écoutent pas en double pile et `netstat -s` ne dit rien d'IP
 - **Windows.** Traité en P6 pour les connexions, leur propriétaire, la
   mort d'un processus, les écoutes des services, des fonctionnalités, des
   rôles et du système (UDP compris), et pour `netstat` (`-b`, `-q`, les noms,
-  le tri, `-t`, `-x`, `-y`) ; restent la double pile des services Windows et les
-  compteurs IPv6 de `netstat -s`.
+  le tri, `-t`, `-x`, `-y`) et pour la double pile de `sshd`, du mappeur RPC, de SMB, de
+  WinRM, de mDNS et de LLMNR ; restent la double pile de RDP, LDAP, Kerberos, NTP, DNS et DHCP
+  (sans source) et les compteurs IPv6 de `netstat -s`.
 - **Le listener TNS d'Oracle.** Nommé en P2, traité ailleurs.
 
 ## 8. Vérification

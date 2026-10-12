@@ -146,7 +146,7 @@ describe('the rows come in the order of the real tool', () => {
     const tcp = dataRows(await win.executeCommand('netstat -an')).filter((row) => /^\s*TCP/.test(row));
     expect(tcp.map((row) => cellsOf(row)[1])).toEqual([
       '0.0.0.0:22', '0.0.0.0:135', '0.0.0.0:139', '0.0.0.0:445', '0.0.0.0:7100', '0.0.0.0:9100',
-      '9.9.9.9:8300', '10.0.0.7:8100', '127.0.0.1:8200', '[::]:7200', '[::1]:7300',
+      '9.9.9.9:8300', '10.0.0.7:8100', '127.0.0.1:8200', '[::]:22', '[::]:135', '[::]:445', '[::]:7200', '[::1]:7300',
     ]);
   });
 
@@ -159,10 +159,14 @@ describe('the rows come in the order of the real tool', () => {
     expect(firstUdp).toBeGreaterThan(0);
     expect(rows.slice(0, firstUdp).every((row) => /^\s*TCP/.test(row))).toBe(true);
     expect(rows.slice(firstUdp).every((row) => /^\s*UDP/.test(row))).toBe(true);
-    const ports = rows.slice(firstUdp).map((row) => Number(cellsOf(row)[1].split(':')[1]));
-    expect(ports).toEqual([...ports].sort((a, b) => a - b));
-    expect(ports).toContain(2000);
-    expect(ports).toContain(9300);
+    const udp = rows.slice(firstUdp).map((row) => cellsOf(row)[1]);
+    const portOf = (local: string) => Number(local.slice(local.lastIndexOf(':') + 1));
+    for (const family of [udp.filter((local) => !local.startsWith('[')), udp.filter((local) => local.startsWith('['))]) {
+      const ports = family.map(portOf);
+      expect(ports).toEqual([...ports].sort((a, b) => a - b));
+    }
+    expect(udp).toContain('0.0.0.0:2000');
+    expect(udp).toContain('0.0.0.0:9300');
   });
 });
 
@@ -289,7 +293,7 @@ describe('the protocols the listing is restricted to', () => {
     const { win } = await bench();
     win.getTcpStack().listen(7200, { onAccept: () => undefined }, '::');
     const rows = dataRows(await win.executeCommand('netstat -a -p tcpv6'));
-    expect(rows.map((row) => cellsOf(row)[1])).toEqual(['[::]:7200']);
+    expect(rows.map((row) => cellsOf(row)[1])).toEqual(['[::]:22', '[::]:135', '[::]:445', '[::]:7200']);
   });
 
   it('-p udp without -a lists no endpoint: UDP has no connection', async () => {

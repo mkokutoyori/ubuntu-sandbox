@@ -54,7 +54,7 @@ describe('les vues NetTCPIP / NetConnection / DnsClient filtrent pour de bon', (
   it('-LocalPort ne rend QUE le port demande', async () => {
     const { ps } = await lab();
     const out = await ps('(Get-NetTCPConnection -LocalPort 445).LocalPort');
-    expect(out.trim()).toBe('445');
+    expect([...new Set(out.trim().split(/\s+/))]).toEqual(['445']);
   });
 
   it('-LocalPort sur un port que personne n ecoute REFUSE au lieu de tout rendre', async () => {
