@@ -2,6 +2,7 @@ import { parseDN } from './ldap/LdapDN';
 import type { DirectoryDelta, DirectorySnapshot } from './DirectoryStore';
 
 export interface ForestPromotion {
+  kind?: 'forest';
   domainName: string;
   netbiosName: string;
   safeModeAdminPassword: string;
@@ -11,6 +12,39 @@ export interface ForestPromotion {
   databasePath?: string;
   logPath?: string;
   sysvolPath?: string;
+}
+
+export interface ChildDomainPromotion {
+  kind: 'childDomain';
+  domainName: string;
+  netbiosName: string;
+  parentDomainName: string;
+  safeModeAdminPassword: string;
+  installDns?: boolean;
+}
+
+export interface ReplicaPromotion {
+  kind: 'replica';
+  domainName: string;
+  netbiosName: string;
+  sourceDcAddress: string;
+  safeModeAdminPassword: string;
+  installDns?: boolean;
+}
+
+export type DirectoryPromotion = ForestPromotion | ChildDomainPromotion | ReplicaPromotion;
+
+export function promotionKind(promotion: DirectoryPromotion): 'forest' | 'childDomain' | 'replica' {
+  return promotion.kind ?? 'forest';
+}
+
+export function snapshotAsDelta(snapshot: DirectorySnapshot): DirectoryDelta {
+  return {
+    ...snapshot,
+    removedDns: [],
+    removedAcls: [],
+    schema: { attributes: [], classes: [] },
+  };
 }
 
 const VOLATILE_ATTRIBUTES = new Set([
@@ -38,7 +72,7 @@ function isSchemaEntry(dn: string): boolean {
   return lower.startsWith('cn=schema,cn=configuration,') || lower.includes(',cn=schema,cn=configuration,');
 }
 
-export function diffDirectory(live: DirectorySnapshot, factory: DirectorySnapshot): DirectoryDelta | null {
+export function diffDirectory(live: DirectorySnapshot, factory: DirectorySnapshot, ownsSchema = true): DirectoryDelta | null {
   const factoryEntries = new Map(factory.entries.map((e) => [sameKey(e.dn), signature(e.dn, e.attributes)]));
   const liveKeys = new Set(live.entries.map((e) => sameKey(e.dn)));
   const entries = live.entries.filter((e) =>
@@ -55,10 +89,12 @@ export function diffDirectory(live: DirectorySnapshot, factory: DirectorySnapsho
 
   const factoryAttributes = new Set(factory.schema.attributes.map((a) => JSON.stringify(a)));
   const factoryClasses = new Set(factory.schema.classes.map((c) => JSON.stringify(c)));
-  const schema = {
-    attributes: live.schema.attributes.filter((a) => !factoryAttributes.has(JSON.stringify(a))),
-    classes: live.schema.classes.filter((c) => !factoryClasses.has(JSON.stringify(c))),
-  };
+  const schema = ownsSchema
+    ? {
+      attributes: live.schema.attributes.filter((a) => !factoryAttributes.has(JSON.stringify(a))),
+      classes: live.schema.classes.filter((c) => !factoryClasses.has(JSON.stringify(c))),
+    }
+    : { attributes: [], classes: [] };
 
   const factoryScopes = new Map(factory.optionalFeatureScopes.map((s) => [s.name, JSON.stringify(s.scopes)]));
   const optionalFeatureScopes = live.optionalFeatureScopes.filter((s) => factoryScopes.get(s.name) !== JSON.stringify(s.scopes));
