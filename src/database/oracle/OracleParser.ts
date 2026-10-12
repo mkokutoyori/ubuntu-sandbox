@@ -388,13 +388,17 @@ export class OracleParser extends BaseParser {
     };
 
     this.expectKeyword('USING');
-    const sourceSchema = this.parseSchemaPrefix();
-    const sourceName = this.expectIdentifier();
-    const sourceAlias = this.parseOptionalAlias();
-    const source = {
-      type: 'TableRef' as const, position: pos,
-      schema: sourceSchema, name: sourceName, alias: sourceAlias,
-    };
+    let source: MergeStatement['source'];
+    if (this.match(TokenType.LPAREN)) {
+      const query = this.parseSelect();
+      this.expect(TokenType.RPAREN);
+      source = { type: 'SubqueryTableRef', position: pos, query, alias: this.parseOptionalAlias() ?? 'SOURCE' };
+    } else {
+      const sourceSchema = this.parseSchemaPrefix();
+      const sourceName = this.expectIdentifier();
+      const sourceAlias = this.parseOptionalAlias();
+      source = { type: 'TableRef', position: pos, schema: sourceSchema, name: sourceName, alias: sourceAlias };
+    }
 
     this.expectKeyword('ON');
     this.expect(TokenType.LPAREN);
