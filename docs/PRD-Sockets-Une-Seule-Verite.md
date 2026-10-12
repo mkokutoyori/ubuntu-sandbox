@@ -506,13 +506,23 @@ unique), Windows les affiche à part. Ce que le noyau ne compte pas n'est plus c
 deux étapes, sortie puis entrée ; le `ping` vers soi, qui fabrique son résultat sans paquet, reste à faire. Garde-fou :
 `probe-une-machine-compte-son-trafic-ipv6`.
 
+`netstat -s` de Windows imprime huit blocs, comme le vrai, et non quatre : `IPv4 Statistics`, `IPv6 Statistics`, `ICMPv4 Statistics`,
+`ICMPv6 Statistics`, `TCP Statistics for IPv4`, `TCP Statistics for IPv6`, `UDP Statistics for IPv4` et `UDP Statistics for IPv6`, dans cet
+ordre. `-p ip|ipv6|icmp|icmpv6|tcp|tcpv6|udp|udpv6` en choisit exactement les blocs demandés, par clé exacte (l'ancien choix par préfixe,
+`startsWith('ip')`, aurait rendu `ipv6` avec `ip`), dans l'ordre de l'outil et non celui de la ligne de commande ; `-e -s` imprime
+l'interface puis les huit blocs. Sources : l'aide de `netstat` de Windows 10 22H2 (« By default, statistics are shown for IP, IPv6,
+ICMP, ICMPv6, TCP, TCPv6, UDP, and UDPv6 ») et la sortie relevée par Geekflare pour l'ordre et les intitulés ; les blocs IPv6 portent les
+dix-sept lignes de l'IPv4, `ICMPv6 Statistics` les dix-sept lignes Messages à Router Renumberings, lues dans les compteurs ICMPv6 par
+type (numéros de l'IANA). La mise en colonnes du bloc IPv6 reprend celle de l'IPv4 : la page de référence est du HTML, qui réduit les
+espaces, et aucun relevé de texte brut n'a été atteint. Garde-fou : `probe-netstat-s-de-windows-dit-aussi-l-ipv6`.
+
 Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
 non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
 Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135
 d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ; `TermService` est affiché
 Automatic quand un Windows réel le dit Manual ; un service qui n'a jamais eu de processus d'hébergement n'en reçoit pas en
 démarrant ; aucune application de la simulation n'ouvre encore de socket TCP liée sans écoute (la brique est dans la pile) ; RDP, LDAP,
-Kerberos, NTP, DNS et DHCP ne tiennent pas de ligne IPv6 faute de source, et `netstat -s` ne dit rien d'IPv6 ; le processus par session d'OpenSSH pour Windows, le
+Kerberos, NTP, DNS et DHCP ne tiennent pas de ligne IPv6 faute de source ; le processus par session d'OpenSSH pour Windows, le
 `ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
 
 ## 7. Hors périmètre
@@ -525,7 +535,7 @@ Kerberos, NTP, DNS et DHCP ne tiennent pas de ligne IPv6 faute de source, et `ne
   rôles et du système (UDP compris), et pour `netstat` (`-b`, `-q`, les noms,
   le tri, `-t`, `-x`, `-y`) et pour la double pile de `sshd`, du mappeur RPC, de SMB, de
   WinRM, de mDNS et de LLMNR ; restent la double pile de RDP, LDAP, Kerberos, NTP, DNS et DHCP
-  (sans source) et les compteurs IPv6 de `netstat -s`.
+  (sans source).
 - **Le listener TNS d'Oracle.** Nommé en P2, traité ailleurs.
 
 ## 8. Vérification

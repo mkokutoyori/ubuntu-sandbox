@@ -24,10 +24,10 @@ export interface NetstatMachine {
   resolveAddress(address: string): Promise<string | null>;
   linkCounters(): NetstatLinkCounters;
   routePrint(): string;
-  protocolStatistics(only: NetstatProtocolFilter | null): string;
+  protocolStatistics(only: readonly NetstatProtocolFilter[] | null): string;
 }
 
-type NetstatFamily = 'ip' | 'ipv6' | 'icmp' | 'icmpv6' | 'tcp' | 'tcpv6' | 'udp' | 'udpv6';
+type NetstatFamily = NetstatProtocolFilter;
 
 type NetstatTransport = 'tcp' | 'tcpv6' | 'udp' | 'udpv6';
 
@@ -298,14 +298,8 @@ function interfaceStatistics(counters: NetstatLinkCounters): string {
   ].join('\n');
 }
 
-const STATISTICS_FILTERS: ReadonlyArray<readonly [NetstatFamily, NetstatProtocolFilter]> = [
-  ['ip', 'ip'], ['icmp', 'icmp'], ['tcp', 'tcp'], ['udp', 'udp'],
-];
-
 function protocolStatistics(machine: NetstatMachine, options: NetstatOptions): string {
-  if (options.protocols.length === 0) return machine.protocolStatistics(null);
-  const wanted = STATISTICS_FILTERS.filter(([family]) => options.protocols.includes(family));
-  return wanted.map(([, filter]) => machine.protocolStatistics(filter)).join('\n');
+  return machine.protocolStatistics(options.protocols.length === 0 ? null : options.protocols);
 }
 
 function statistics(machine: NetstatMachine, options: NetstatOptions): string {
