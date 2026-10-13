@@ -43,13 +43,11 @@
  * sur 108 des cas a interface cachee tombent avant ; 0 apres, sauf les cas ci-dessous.  Le seed 1 a guide les
  * reglages, les seeds 2 et 3 ont ete enregistres ensuite.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 12 cas.  Aucun n'est epingle comme contrat : un
+ * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 9 cas.  Aucun n'est epingle comme contrat : un
  * cas de la liste qui se met a passer fait echouer le test pour qu'on le retire.
  *   - lay1-31, lay1-44, lay1-46, lay2-32, lay2-148, lay3-32, lay3-209 : `^R` en mode lecture seule ouvre « File to
  *     read into new buffer » (lecture dans un nouveau tampon) ; le moteur n'a qu'un tampon et repond « Key is
  *     invalid in view mode » ;
- *   - lay1-213, lay2-219, lay3-231 : `Tab` avec une marque indente le bloc marque (do_indent), le moteur insere une
- *     tabulation ;
  *   - lay1-51, lay3-227 : « Replace » avec une marque ne remplace que dans la selection, le moteur remplace
  *     partout.
  */
@@ -63,7 +61,7 @@ const fixtures = readdirSync(dir).filter((f) => f.startsWith('nano-7.2')).sort()
   .map((f) => ({ name: f, ...(JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { nano: string; cases: NanoScreenCase[] }) }));
 
 const UNPORTED_CASES: ReadonlySet<string> = new Set([
-  'lay1-31', 'lay1-44', 'lay1-46', 'lay1-51', 'lay1-213', 'lay2-32', 'lay2-148', 'lay2-219', 'lay3-32', 'lay3-209', 'lay3-227', 'lay3-231',
+  'lay1-31', 'lay1-44', 'lay1-46', 'lay1-51', 'lay2-32', 'lay2-148', 'lay3-32', 'lay3-209', 'lay3-227',
 ]);
 
 describe('nano layout transcripts recorded from a real nano', () => {

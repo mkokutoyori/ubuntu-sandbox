@@ -30,8 +30,7 @@
  * ont ete enregistres ensuite et n'ont rien fait changer : place 0/300 et 0/300, cli 2/300 et 1/300 (les trois
  * cas ci-dessous).
  *
- * Seules les options dont l'effet sur l'ecran est porte (`view`, `constantshow`, `linenumbers`, `softwrap`)
- * sont rejouees sur l'ecran ; avec les autres, le test verifie le classement (imprime, refuse ou ouvre) et le
+ * Seules les options dont l'effet est porte (SCREEN_PORTED_FLAGS) sont rejouees sur l'ecran ; avec les autres, le test verifie le classement (imprime, refuse ou ouvre) et le
  * texte, pas le premier ecran, tant que leur effet n'est pas evalue : voir SCREEN_PORTED_FLAGS.
  *
  * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 3 cas sur 1800.  Aucun n'est epingle comme

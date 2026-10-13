@@ -4,7 +4,7 @@ import { editorKey, type EditorKeyInput } from '@/network/devices/linux/editors/
 import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { parseNanoCommandLine, type NanoInvocation } from '@/network/devices/linux/editors/nano/NanoCommandLine';
 
-export interface NanoRecorded { y: number; x: number; rows: string[]; height: number; width: number }
+export interface NanoRecorded { y: number; x: number; rows: string[]; height: number; width: number; disk?: Record<string, string> }
 
 export interface NanoScreenCase {
   id: string;
@@ -15,6 +15,7 @@ export interface NanoScreenCase {
   flags?: string[];
   args?: string[];
   steps: string[];
+  disk?: boolean;
   opened: NanoRecorded;
   after: NanoRecorded[];
 }
@@ -41,7 +42,7 @@ export function recordedArguments(c: NanoScreenCase): string[] {
   return c.args ?? [...(c.flags ?? []), 't.txt'];
 }
 
-export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>, c: NanoScreenCase): NanoEngine {
+export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>, c: NanoScreenCase): { engine: NanoEngine; fs: InMemoryEditorFsContext } {
   const first = invocation.files[0];
   const name = first?.path ?? '';
   const lines = name === 't.txt' ? c.text : c.files?.[name];
@@ -51,25 +52,32 @@ export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>
     settings: invocation.settings, start: first?.start ?? null, displayName: name,
   });
   engine.resize(c.rows, c.cols);
-  return engine;
+  return { engine, fs };
 }
 
-export function compareNanoScreen(engine: NanoEngine, want: NanoRecorded): string | null {
+function compareDisk(fs: InMemoryEditorFsContext, want: Record<string, string>): string | null {
+  const differing = Object.entries(want).filter(([name, content]) => fs.readFile(`/tmp/${name}`) !== content);
+  if (differing.length === 0) return null;
+  return differing.map(([name, content]) => `\n  disk ${name} want ${JSON.stringify(content)}\n  disk ${name} got  ${JSON.stringify(fs.readFile(`/tmp/${name}`))}`).join('');
+}
+
+export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded): string | null {
   const screen = engine.screen;
   const got = screen.rows.map((row) => plainRowText(row).replace(/\s+$/, ''));
   const rowsOk = JSON.stringify(got) === JSON.stringify(want.rows);
   const cursor = screen.cursor;
   const cursorOk = cursor !== null && cursor.row === want.y && cursor.col === want.x;
-  if (rowsOk && cursorOk) return null;
-  return `\n  want y=${want.y} x=${want.x} rows=${JSON.stringify(want.rows)}\n  got  y=${cursor?.row} x=${cursor?.col} rows=${JSON.stringify(got)}`;
+  const diskFailure = want.disk === undefined ? null : compareDisk(fs, want.disk);
+  if (rowsOk && cursorOk) return diskFailure;
+  return `${diskFailure ?? ''}\n  want y=${want.y} x=${want.x} rows=${JSON.stringify(want.rows)}\n  got  y=${cursor?.row} x=${cursor?.col} rows=${JSON.stringify(got)}`;
 }
 
 export function replayNanoScreenCase(c: NanoScreenCase): string | null {
   const args = recordedArguments(c);
   const invocation = parseNanoCommandLine(args);
   if (invocation.kind !== 'open') return `${c.id} ${JSON.stringify(args)} did not open an editor: ${JSON.stringify(invocation)}`;
-  const engine = launchNano(invocation, c);
-  const opened = compareNanoScreen(engine, c.opened);
+  const { engine, fs } = launchNano(invocation, c);
+  const opened = compareNanoScreen(engine, fs, c.opened);
   if (opened) return `${c.id} ${c.rows}x${c.cols} ${JSON.stringify(args)} opened${opened}`;
   for (let s = 0; s < c.after.length; s++) {
     const step = c.steps[s];
@@ -79,7 +87,7 @@ export function replayNanoScreenCase(c: NanoScreenCase): string | null {
     } else {
       for (const k of nanoKeysOf(step)) engine.applyKey(k);
     }
-    const failure = compareNanoScreen(engine, c.after[s]);
+    const failure = compareNanoScreen(engine, fs, c.after[s]);
     if (failure) return `${c.id} ${c.rows}x${c.cols} ${JSON.stringify(args)} step ${s} ${JSON.stringify(c.steps.slice(0, s + 1))}${failure}`;
   }
   return null;

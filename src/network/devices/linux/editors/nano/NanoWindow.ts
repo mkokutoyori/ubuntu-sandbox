@@ -15,6 +15,7 @@ export interface NanoWindowSettings {
   readonly minibar: boolean;
   readonly emptyline: boolean;
   readonly nohelp: boolean;
+  readonly jumpyscrolling: boolean;
 }
 
 export interface NanoLayoutFlags {
@@ -227,7 +228,7 @@ export class NanoWindow {
     } else {
       rowsFromTail = this.buffer.lineCount() - 1 - current.line;
     }
-    if (rowsFromTail < half) {
+    if (rowsFromTail < half && !this.settings().jumpyscrolling) {
       this.cursorRow = this.editRows - 1 - rowsFromTail;
       this.adjust('stationary', current);
     } else {
@@ -237,7 +238,8 @@ export class NanoWindow {
   }
 
   follow(manner: ViewportManner, current: Position): void {
-    if (manner === 'stationary' || manner === 'recentering' || this.isOffscreen(current)) this.adjust(manner, current);
+    if (manner === 'stationary' || manner === 'recentering') this.adjust(manner, current);
+    else if (this.isOffscreen(current)) this.adjust(this.settings().jumpyscrolling ? 'centering' : manner, current);
     this.cursorRow = this.place(current).row;
   }
 
