@@ -43,7 +43,7 @@ import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
 import { createRemoteEditorController } from '@/terminal/editors/RemoteEditorController';
-import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { parseEditorLaunch, type NanoLaunch } from '@/network/devices/linux/editors/editorLaunch';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -125,10 +125,7 @@ export type InputMode =
       absolutePath: string;
       content: string;
       isNewFile: boolean;
-      readOnly?: boolean;
-      showPosition?: boolean;
-      showLineNumbers?: boolean;
-      softwrap?: boolean;
+      nano?: NanoLaunch;
       displayName?: string;
       initialCursorLine?: number;
       initialCursorCol?: number;

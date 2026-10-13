@@ -1548,7 +1548,7 @@ export class LinuxTerminalSession extends TerminalSession {
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
     const launch = parseEditorArgs(editorCmd, args);
     if (launch === null) return;
-    const { filePath, readOnly, showPosition, showLineNumbers, softwrap, initialCursorLine, initialCursorCol } = launch;
+    const { filePath, nano, initialCursorLine, initialCursorCol } = launch;
 
     // No filename given: a genuinely unnamed buffer. Resolving '' against
     // the cwd would collapse to the cwd's OWN directory path (VFS
@@ -1565,10 +1565,7 @@ export class LinuxTerminalSession extends TerminalSession {
         absolutePath: '',
         content: '',
         isNewFile: true,
-        readOnly,
-        showPosition,
-        showLineNumbers,
-        softwrap,
+        nano: nano ?? undefined,
         displayName: '',
         initialCursorLine,
         initialCursorCol,
@@ -1596,10 +1593,7 @@ export class LinuxTerminalSession extends TerminalSession {
       absolutePath,
       content: existingContent ?? '',
       isNewFile,
-      readOnly,
-      showPosition,
-      showLineNumbers,
-      softwrap,
+      nano: nano ?? undefined,
       displayName: filePath,
       initialCursorLine,
       initialCursorCol,

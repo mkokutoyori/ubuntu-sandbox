@@ -15,7 +15,7 @@ export interface NanoScreenInput {
   readonly tabsize: number;
   readonly softwrap: boolean;
   readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string };
-  readonly status: { readonly text: string; readonly alert: boolean } | null;
+  readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean } | null;
   readonly prompt: { readonly label: string; readonly answer: string; readonly cursor: number } | null;
   readonly yesNo: { readonly question: string; readonly withAll: boolean } | null;
   readonly menu: NanoMenuName;
@@ -216,7 +216,7 @@ function helpRows(input: NanoScreenInput): ScreenRow[] {
   return rows;
 }
 
-function statusRow(cols: number, status: { text: string; alert: boolean } | null, tabsize: number): ScreenRow {
+function statusRow(cols: number, status: { text: string; alert: boolean; more?: boolean } | null, tabsize: number): ScreenRow {
   if (status === null) return SPACE_ROW;
   const canvas = new Canvas(cols);
   const message = displayString(status.text, 0, cols, { isData: false, isPrompt: false, softwrap: false, tabsize }).cells;
@@ -235,6 +235,11 @@ function statusRow(cols: number, status: { text: string; alert: boolean } | null
     at += 2;
   }
   canvas.mark(left, at, style);
+  const dotsAt = cols + 2 - start;
+  if (status.more === true && start > 4 && dotsAt + 3 <= cols) {
+    canvas.put(dotsAt, '...');
+    canvas.mark(dotsAt, dotsAt + 3, style);
+  }
   return canvas.row();
 }
 

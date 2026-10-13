@@ -199,6 +199,24 @@ export class NanoWindow {
     this.firstcolumn = at.leftedge;
   }
 
+  hugFloor(current: Position): void {
+    const half = Math.floor(this.editRows / 2);
+    let rowsFromTail: number;
+    if (this.softwrap) {
+      const at = { line: current.line, leftedge: this.leftedgeFor(this.columnOf(current.line, current.col), current.line) };
+      rowsFromTail = half - this.goForward(half, at);
+    } else {
+      rowsFromTail = this.buffer.lineCount() - 1 - current.line;
+    }
+    if (rowsFromTail < half) {
+      this.cursorRow = this.editRows - 1 - rowsFromTail;
+      this.adjust('stationary', current);
+    } else {
+      this.adjust('centering', current);
+    }
+    this.cursorRow = this.place(current).row;
+  }
+
   follow(manner: ViewportManner, current: Position): void {
     if (manner === 'stationary' || manner === 'recentering' || this.isOffscreen(current)) this.adjust(manner, current);
     this.cursorRow = this.place(current).row;

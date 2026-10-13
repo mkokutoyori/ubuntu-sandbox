@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize [--seed N] [--cases N] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
@@ -10,7 +10,7 @@ no rc file is read); the first record is the screen right after nano opened the 
 record per step: every row of the pane (title bar, edit window, status bar and the two shortcut
 rows), the cursor cell and the pane size.
 """
-import argparse, json, os, random, re, subprocess, tempfile, time
+import argparse, json, os, random, re, shlex, subprocess, tempfile, time
 from concurrent.futures import ThreadPoolExecutor
 
 LITERAL = re.compile(r"^[^A-Z][\s\S]*$")
@@ -40,7 +40,7 @@ def settled(name):
         last = snap
     return last
 
-def record(name):
+def record_screen(name):
     y, x, height, width, pane = settled(name)
     return {"y": y, "x": x, "height": height, "width": width, "rows": [r.rstrip() for r in pane[:height]]}
 
@@ -53,7 +53,7 @@ def run_case(case, workdir):
     flags = " ".join(case.get("flags", []))
     tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name,
          "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s t.txt" % (casedir, flags))
-    opened = record(name)
+    opened = record_screen(name)
     after = []
     for step in case["steps"]:
         if step.startswith("@"):
@@ -64,7 +64,7 @@ def run_case(case, workdir):
             send(name, step)
             if step == "Escape":
                 time.sleep(0.15)
-        after.append(record(name))
+        after.append(record_screen(name))
     tmux("kill-session", "-t", name)
     return dict(case, opened=opened, after=after)
 
@@ -137,9 +137,128 @@ def gen_prompts(seed, count):
         cases.append({"id": "pro%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": r.choice([[], [], ["-l"], ["-S"]]), "steps": steps})
     return cases
 
+ANSI = re.compile(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|[()][A-Za-z0-9]|[=>])|\x0f")
+
+def run_cli_case(case, workdir):
+    casedir = os.path.join(workdir, case["id"])
+    os.makedirs(casedir, exist_ok=True)
+    open(os.path.join(casedir, "t.txt"), "w", encoding="utf-8").write("\n".join(case["text"]) + "\n")
+    env = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8", TERM="xterm-256color")
+    done = subprocess.run(["nano", "-I"] + case["args"], cwd=casedir, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env, timeout=10)
+    stderr = ANSI.sub("", done.stderr).rstrip("\n")
+    opens = stderr.endswith("Standard input is not a terminal")
+    record = dict(case, status=done.returncode)
+    if opens:
+        record["opens"] = True
+        name = "nc%d_%s" % (os.getpid(), re.sub(r"\W", "", case["id"]))
+        tmux("kill-session", "-t", name)
+        tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name,
+             "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s" % (casedir, " ".join(shlex.quote(a) for a in case["args"])))
+        record["opened"] = record_screen(name)
+        record["after"] = []
+        for step in case.get("steps", []):
+            send(name, step)
+            record["after"].append(record_screen(name))
+        tmux("kill-session", "-t", name)
+    else:
+        record["opens"] = False
+        record["stdout"] = ANSI.sub("", done.stdout).rstrip("\n")
+        record["stderr"] = stderr
+    return record
+
+CLI_FLAGS_PLAIN = list("ABDEFGHIKLMNOPRSUWZacdegijklmnpqtuvwxy%_0$")
+CLI_LONG_FLAGS = ["smarthome", "backup", "boldtext", "tabstospaces", "multibuffer", "locking", "historylog", "ignorercfiles", "rawsequences", "nonewlines", "noconvert", "bookstyle", "positionlog", "restricted", "softwrap", "quickblank", "wordbounds", "zap", "atblanks", "breaklonglines", "constantshow", "cutfromcursor", "rebinddelete", "emptyline", "showcursor", "autoindent", "jumpyscrolling", "linenumbers", "mouse", "noread", "preserve", "indicator", "saveonexit", "unix", "view", "nowrap", "nohelp", "afterends", "stateflags", "minibar", "zero", "trimblanks"]
+CLI_NUMBERS = ["4", "4", "8", "2", "0", "-3", "abc", "", "+2", " 4", "4 ", "08", "99999999999999999999", "1k"]
+CLI_PLUS = ["+3", "+1", "+5,2", "+,3", "+0", "+-1", "+99", "+3,", "+5x", "+3.4", "+3:4", "+/foo", "+?foo", "+c/Foo", "+C/Foo", "+r/f.o", "+R/f.o", "+/", "+x", "+b/foo", "+cr/fo+", "+/zzz", "+?", "+ 3", "+3,2,1", "+-2,-1", "+/foo/bar"]
+CLI_ERRORS = ["--zork", "--zork=3", "--no", "--tab", "--tab=4", "--v", "--nowrap=3", "--help=3", "-z", "-?", "-@", "-1", "-Tx", "-T", "-r", "-J", "-!", "--=3"]
+CLI_PRINTS = ["-h", "-V", "--help", "--version", "--he", "--ver", "-vh", "-hv", "-Vh", "-h", "-V"]
+
+def cli_flag_group(r):
+    letters = r.sample(CLI_FLAGS_PLAIN, r.randint(1, 3))
+    return "-" + "".join(letters)
+
+def cli_arguments(r):
+    args = []
+    for _ in range(r.randint(0, 4)):
+        kind = r.random()
+        if kind < 0.35:
+            args.append(cli_flag_group(r))
+        elif kind < 0.50:
+            args.append("--" + r.choice(CLI_LONG_FLAGS))
+        elif kind < 0.58:
+            name = r.choice(CLI_LONG_FLAGS)
+            args.append("--" + name[: r.randint(max(2, len(name) - 4), len(name))])
+        elif kind < 0.70:
+            letter, long = r.choice([("T", "tabsize"), ("r", "fill"), ("J", "guidestripe")])
+            value = r.choice(CLI_NUMBERS)
+            form = r.random()
+            if form < 0.4:
+                args.extend(["-" + letter, value])
+            elif form < 0.6:
+                args.append("-" + letter + value)
+            elif form < 0.8:
+                args.append("--" + long + "=" + value)
+            else:
+                args.extend(["--" + long, value])
+        elif kind < 0.78:
+            args.append(r.choice(CLI_PLUS))
+        elif kind < 0.84:
+            args.append(r.choice(CLI_ERRORS))
+        elif kind < 0.88:
+            args.append(r.choice(CLI_PRINTS))
+        elif kind < 0.92:
+            args.extend([r.choice(["-X", "-Y", "-s", "-Q"]), r.choice(["ab", "sh", "x"])])
+        elif kind < 0.95:
+            args.extend([r.choice(["-o", "-C"]), "/tmp"])
+        else:
+            args.append("--")
+    return args
+
+def gen_cli(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        args = cli_arguments(r)
+        operands = r.choice([["t.txt"], ["t.txt"], ["t.txt"], ["t.txt"], ["u.txt"], [], ["t.txt", "u.txt"], ["+2", "t.txt"]])
+        if r.random() < 0.7:
+            args = args + operands
+        else:
+            at = r.randint(0, len(args))
+            args = args[:at] + operands + args[at:]
+        text = rand_buffer(r, r.choice([3, 6, 12, 30]))
+        text[r.randrange(len(text))] += " foo bar"
+        rows, cols = r.choice([(10, 50), (14, 60), (24, 80), (12, 40)])
+        steps = r.choice([[], [], [], ["C-w"], ["C-w", "C-c"], ["C-w", "Enter"], ["Down", "Right"], ["C-_", "C-c"]])
+        cases.append({"id": "cli%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": args, "steps": steps})
+    return cases
+
+def gen_place(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        n = r.choice([3, 6, 12, 25, 60])
+        text = []
+        for _ in range(n):
+            kind = r.random()
+            if kind < 0.1:
+                text.append("")
+            elif kind < 0.55:
+                text.append(" ".join(r.choice(WORDS) for _ in range(r.randint(1, 6))))
+            else:
+                text.append(" ".join(r.choice(WORDS) for _ in range(r.randint(10, 60))))
+        rows, cols = r.choice([(8, 30), (10, 40), (10, 60), (14, 50), (14, 60), (14, 70), (20, 60), (24, 80)])
+        flags = r.choice([["-S"], ["-S"], ["-Sl"], ["-l"], []])
+        target = r.choice(["+", "+-1", "+99", "+3", "+5", "+%d" % r.randint(2, n + 2), "+%d,%d" % (r.randint(1, n), r.randint(1, 30)), "+%d,-1" % r.randint(1, n)])
+        cases.append({"id": "plc%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + [target, "t.txt"], "steps": []})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
+    if corpus == "cli":
+        return gen_cli(seed, count)
+    if corpus == "place":
+        return gen_place(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):
@@ -172,12 +291,14 @@ def main():
     ap.add_argument("--corpus", default="cells")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--cases", type=int, default=60)
+    ap.add_argument("--from", dest="source")
     ap.add_argument("out")
     a = ap.parse_args()
-    cases = gen(a.seed, a.cases, a.corpus)
+    cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
+    runner = run_cli_case if a.corpus in ("cli", "place") else run_case
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
-            results = list(pool.map(lambda c: run_case(c, workdir), cases))
+            results = list(pool.map(lambda c: runner(c, workdir), cases))
     version = subprocess.run(["nano", "--version"], capture_output=True, text=True).stdout.splitlines()[0].strip()
     json.dump({"nano": version, "corpus": a.corpus, "cases": results}, open(a.out, "w"), ensure_ascii=False, separators=(",", ":"))
     print(len(results), "cases ->", a.out)

@@ -5,6 +5,8 @@
  * lors de la recherche du nom de fichier, donc `nano --version` ouvrait
  * un buffer vide sans nom comme `nano` seul. Même bug pour `--help`/`-h`.
  * Le fallback batch/SSH (LinuxCommandExecutor, sans TTY) a le même trou.
+ * La bannière et l'usage sont ceux de nano 7.2 (releves sur le binaire, via NanoCommandLine) : l'ecran
+ * du moteur annonce « GNU nano 7.2 », la version 6.2 qu'epinglait ce test contredisait la machine.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -38,29 +40,29 @@ describe('Scénario — `nano --version` / `-V` imprime la bannière au lieu d\'
     expect(session.inputMode.type).toBe('normal');
   });
 
-  it('`nano --version` affiche "GNU nano, version 6.2"', async () => {
+  it('`nano --version` affiche "GNU nano, version 7.2"', async () => {
     await type('nano --version');
     const last = session.lines.slice(-5).map((l) => l.text).join('\n');
-    expect(last).toContain('GNU nano, version 6.2');
+    expect(last).toContain('GNU nano, version 7.2');
   });
 
   it('`nano -V` (forme courte) a le même effet', async () => {
     await type('nano -V');
     expect(session.inputMode.type).toBe('normal');
     const last = session.lines.slice(-5).map((l) => l.text).join('\n');
-    expect(last).toContain('GNU nano, version 6.2');
+    expect(last).toContain('GNU nano, version 7.2');
   });
 
   it('`nano --help` / `-h` n\'ouvrent pas non plus l\'éditeur (même trou, même correctif)', async () => {
     await type('nano --help');
     expect(session.inputMode.type).toBe('normal');
-    let last = session.lines.slice(-10).map((l) => l.text).join('\n');
-    expect(last).toContain('Usage:  nano');
+    let last = session.lines.slice(-70).map((l) => l.text).join('\n');
+    expect(last).toContain('Usage: nano');
 
     await type('nano -h');
     expect(session.inputMode.type).toBe('normal');
-    last = session.lines.slice(-10).map((l) => l.text).join('\n');
-    expect(last).toContain('Usage:  nano');
+    last = session.lines.slice(-70).map((l) => l.text).join('\n');
+    expect(last).toContain('Usage: nano');
   });
 
   it('un vrai `nano fichier` ouvre toujours bien l\'éditeur (pas de régression)', async () => {
@@ -72,6 +74,6 @@ describe('Scénario — `nano --version` / `-V` imprime la bannière au lieu d\'
 describe('Scénario — fallback batch/SSH (sans TTY) : `nano --version` imprime aussi la bannière', () => {
   it('exécute `nano --version` via le PC (LinuxCommandExecutor) sans créer de fichier ni planter', async () => {
     const output = await pc.executeCommand('nano --version');
-    expect(output).toContain('GNU nano, version 6.2');
+    expect(output).toContain('GNU nano, version 7.2');
   });
 });

@@ -5,6 +5,8 @@ import { NanoWindow, type ViewportManner } from './nano/NanoWindow';
 import { buildNanoScreen } from './nano/NanoScreen';
 import { actualX, breadth, displayString, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
 import type { NanoMenuName } from './nano/NanoMenus';
+import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
+import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
 import type { EditorScreen } from './screen/EditorScreen';
 
 export type NanoMode =
@@ -19,8 +21,8 @@ const TABSIZE = 8;
 const STATUS_LINGER_KEYS = 20;
 
 export interface NanoLaunchOptions {
-  readonly softwrap?: boolean;
-  readonly constantShow?: boolean;
+  readonly settings?: NanoSettings;
+  readonly start?: NanoStart | null;
   readonly displayName?: string;
 }
 
@@ -64,19 +66,25 @@ export class NanoEngine {
   private statusText = '';
   private statusCountdown = 0;
   private statusAlert = false;
+  private statusMore = false;
   private messageThisKey = false;
   private get _statusMessage(): string { return this.statusText; }
   private set _statusMessage(value: string) {
     this.statusText = value;
     this.statusCountdown = value === '' ? 0 : STATUS_LINGER_KEYS;
-    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty/.test(value);
+    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty|^\[ (Invalid|Empty search string)/.test(value);
+    this.statusMore = false;
     if (value !== '') this.messageThisKey = true;
   }
   private readonly window: NanoWindow;
   private manner: ViewportManner = 'centering';
   private sized = false;
+  private startPlacement: 'hugfloor' | 'centering' | null = null;
+  private marginPending = false;
   private softwrapOn: boolean;
-  private readonly constantShow: boolean;
+  readonly settings: NanoSettings;
+  private readonly _readOnly: boolean;
+  private _showLineNumbers: boolean;
   private readonly titleName: string;
   private _exited = false;
   private _savedOnExit = false;
@@ -128,23 +136,25 @@ export class NanoEngine {
     public readonly filePath: string,
     initialContent: string,
     isNewFile: boolean,
-    private readonly _readOnly = false,
-    /** `nano +LINE[,COLUMN] file` — both 1-indexed, clamped to the buffer. */
+    readOnly = false,
     initialCursor?: { line: number; col?: number },
-    /** `nano -l` / `--linenumbers`. */
-    private _showLineNumbers = false,
+    showLineNumbers = false,
     launch: NanoLaunchOptions = {},
   ) {
-    this.softwrapOn = launch.softwrap === true;
-    this.constantShow = launch.constantShow === true;
+    this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
+    this._readOnly = this.settings.view;
+    this._showLineNumbers = this.settings.linenumbers;
+    this.softwrapOn = this.settings.softwrap;
     this.titleName = launch.displayName ?? filePath;
     this.window = new NanoWindow(
       { lineCount: () => this.linesArr.length, lineAt: (index) => this.linesArr[index] ?? '' },
-      () => ({ softwrap: this.softwrapOn, tabsize: TABSIZE, lineNumbers: this._showLineNumbers }),
+      () => ({ softwrap: this.softwrapOn, tabsize: TABSIZE, lineNumbers: this._showLineNumbers && !this.marginPending }),
     );
     this.linesArr = initialContent.length === 0 ? [''] : initialContent.split('\n');
     this.ensureTrailingBlankLine();
-    this._statusMessage = isNewFile
+    this._statusMessage = filePath === ''
+        ? '[ Welcome to nano.  For basic help, type Ctrl+G. ]'
+        : isNewFile
         ? '[ New File ]'
         : `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
     this.saveFileNameBuffer = this.titleName;
@@ -156,8 +166,9 @@ export class NanoEngine {
     // resolving '' would collapse to the cwd's own directory path — so no
     // lock is created until a real name exists (Write Out gives it one).
     this.lockPath = filePath === '' ? '' : dotSwapPathFor(fs.resolvePath(filePath));
-    if (!_readOnly && this.lockPath !== '') this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
-    if (initialCursor) this.gotoLineNumbers(initialCursor.line, initialCursor.col ?? 1);
+    if (!this._readOnly && this.lockPath !== '') this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
+    const start = launch.start ?? (initialCursor ? { line: initialCursor.line, column: initialCursor.col ?? 0, search: null, caseSensitive: null, regex: null, alerts: [] } : null);
+    if (start !== null) this.applyStart(start);
   }
 
   // ── Public state (read-only) ──────────────────────────────────────
@@ -264,6 +275,7 @@ export class NanoEngine {
     if (this.statusCountdown > 0 && --this.statusCountdown === 0) {
       this.statusText = '';
       this.statusAlert = false;
+      this.statusMore = false;
     }
     this.messageThisKey = false;
     this.manner = 'centering';
@@ -273,7 +285,7 @@ export class NanoEngine {
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
     if (!this.verticalKey) this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
-    if (this.constantShow && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
+    if (this.settings.constantshow && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
     this.followCursor();
   }
 
@@ -341,7 +353,7 @@ export class NanoEngine {
         state: this._mode === 'help' ? '' : this._readOnly ? 'View' : this._modified ? 'Modified' : '',
         branding: 'GNU nano 7.2',
       },
-      status: message === '' ? null : { text: message, alert: this.statusAlert },
+      status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore },
       prompt: prompt === null ? null : { label: prompt.label, answer: prompt.answer, cursor: this._promptCursor },
       yesNo: this._mode === 'exit-save-prompt'
         ? { question: 'Save modified buffer?', withAll: false }
@@ -392,6 +404,7 @@ export class NanoEngine {
     this.statusText = '';
     this.statusCountdown = 0;
     this.statusAlert = false;
+    this.statusMore = false;
   }
 
   private followCursor(): void {
@@ -400,9 +413,20 @@ export class NanoEngine {
 
   resize(rows: number, cols: number): void {
     if (this.sized && (rows !== this.window.rows || cols !== this.window.cols)) this.wipeStatus();
+    const first = !this.sized;
     this.sized = true;
-    this.window.resize(rows, cols, { line: this._cursorLine, col: this._cursorCol });
-    if (this.constantShow && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
+    const cursor = { line: this._cursorLine, col: this._cursorCol };
+    this.window.resize(rows, cols, cursor);
+    if (first && this.startPlacement !== null) {
+      this.marginPending = true;
+      this.window.align();
+      if (this.startPlacement === 'hugfloor') this.window.hugFloor(cursor);
+      else this.window.follow('recentering', cursor);
+      this.marginPending = false;
+      this.window.align();
+      this.window.follow('centering', cursor);
+    }
+    if (this.settings.constantshow && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
   }
 
   scrollView(up: boolean, count: number): void {
@@ -1187,6 +1211,28 @@ export class NanoEngine {
     }
     this.gotoLineNumbers(parsed.line, parsed.column);
     this.manner = 'recentering';
+  }
+
+  private applyStart(start: NanoStart): void {
+    if (start.caseSensitive !== null) this.caseSensitive = start.caseSensitive;
+    if (start.regex !== null) this.useRegex = start.regex;
+    if (start.line !== 0 || start.column !== 0) {
+      this.gotoLineNumbers(start.line, start.column);
+      this.startPlacement = 'hugfloor';
+    } else if (start.search !== null) {
+      this.searchAtStartup(start.search);
+      this.startPlacement = 'centering';
+    }
+    if (start.alerts.length === 0) return;
+    this._statusMessage = `[ ${start.alerts[0]} ]`;
+    this.statusMore = start.alerts.length > 1;
+  }
+
+  private searchAtStartup(request: NanoSearchRequest): void {
+    this.searchDir = request.backwards ? 'backward' : 'forward';
+    this.lastSearchTerm = request.pattern;
+    this.performSearch(request.pattern);
+    if (this.statusText === '[ Search Wrapped ]') this.wipeStatus();
   }
 
   private gotoLineNumbers(line: number, column: number): void {

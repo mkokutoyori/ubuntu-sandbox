@@ -8,6 +8,9 @@
  * a new engine needs to be reachable from both.
  */
 
+import { parseNanoCommandLine, type NanoStart } from './nano/NanoCommandLine';
+import type { NanoSettings } from './nano/NanoSettings';
+
 export type EditorName = 'nano' | 'vi' | 'vim';
 
 const EDITOR_NAMES: readonly EditorName[] = ['nano', 'vi', 'vim'];
@@ -15,14 +18,16 @@ const EDITOR_NAMES: readonly EditorName[] = ['nano', 'vi', 'vim'];
 /** Flags that make the binary print and exit instead of opening a buffer. */
 const NON_OPENING_FLAGS = new Set(['--version', '-V', '--help', '-h']);
 
+export interface NanoLaunch {
+  readonly settings: NanoSettings;
+  readonly start: NanoStart | null;
+}
+
 export interface EditorLaunch {
   readonly editor: EditorName;
   /** Path as typed — still relative; the FS context resolves it. */
   readonly filePath: string;
-  readonly readOnly: boolean;
-  readonly showPosition: boolean;
-  readonly showLineNumbers: boolean;
-  readonly softwrap: boolean;
+  readonly nano: NanoLaunch | null;
   readonly initialCursorLine?: number;
   readonly initialCursorCol?: number;
 }
@@ -47,6 +52,12 @@ export function parseEditorLaunch(commandLine: string): EditorLaunch | null {
 }
 
 export function parseEditorArgs(editor: EditorName, args: readonly string[]): EditorLaunch | null {
+  if (editor === 'nano') {
+    const invocation = parseNanoCommandLine(args);
+    if (invocation.kind !== 'open') return null;
+    const first = invocation.files[0];
+    return { editor, filePath: first?.path ?? '', nano: { settings: invocation.settings, start: first?.start ?? null } };
+  }
   if (args.some((a) => NON_OPENING_FLAGS.has(a))) return null;
 
   let filePath = '';
@@ -54,8 +65,6 @@ export function parseEditorArgs(editor: EditorName, args: readonly string[]): Ed
     if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
   }
 
-  // `+LINE[,COLUMN]` (nano) / `+LINE` (vim/vi): real editors take the
-  // LAST such argument when several are given.
   let initialCursorLine: number | undefined;
   let initialCursorCol: number | undefined;
   for (const arg of args) {
@@ -66,19 +75,7 @@ export function parseEditorArgs(editor: EditorName, args: readonly string[]): Ed
     }
   }
 
-  // nano-only display flags; vi/vim express the same ideas through
-  // `:view` and `:set ruler` instead.
-  const isNano = editor === 'nano';
-  return {
-    editor,
-    filePath,
-    readOnly: isNano && args.some((a) => a === '-v' || a === '--view'),
-    showPosition: isNano && args.some((a) => a === '-c' || a === '--constantshow'),
-    showLineNumbers: isNano && args.some((a) => a === '-l' || a === '--linenumbers'),
-    softwrap: isNano && args.some((a) => a === '-S' || a === '--softwrap'),
-    initialCursorLine,
-    initialCursorCol,
-  };
+  return { editor, filePath, nano: null, initialCursorLine, initialCursorCol };
 }
 
 export function viVariantFor(vimPackageInstalled: boolean): 'vi' | 'vim' {
