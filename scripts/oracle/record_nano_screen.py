@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2 [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
@@ -513,6 +513,51 @@ def gen_open(seed, count):
                       "disk": True, "hidden": True, "files": {"sub/x.txt": ["deep"], "ro.txt": ["read only"]}, "modes": {"ro.txt": 292}, "force_open": True})
     return cases
 
+UNDO_KEYS = ["x", "yz", "hello world", "Enter", "Enter", "BSpace", "BSpace", "DC", "DC", "C-k", "C-k", "C-u", "Tab", "Left", "Right", "Up", "Down", "Home", "End",
+             "M-a", "M-6", "M-}", "M-{", "C-j", "C-Right", "C-Left", "M-u", "M-u", "M-u", "M-e", "M-e", "C-o", "C-d", "M-t", "M-\\", "M-/", "M-3"]
+
+def gen_undo(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5, 8]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50)])
+        flags = r.sample(["-x", "-l", "-S", "-i", "-E", "-L", "-k", "-Z", "-A", "-b", "-%"], r.choice([0, 0, 1, 1, 2]))
+        steps = []
+        for _ in range(r.randint(4, 16)):
+            key = r.choice(UNDO_KEYS)
+            if key == "C-o":
+                steps.extend(["C-o", "Enter"])
+            else:
+                steps.append(key)
+        cases.append({"id": "und%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps, "disk": True, "hidden": True})
+    return cases
+
+UNDO2_FLOWS = [
+    ["C-\\", "a", "Enter", "Z", "Enter", "y"], ["C-\\", "e", "Enter", "E", "Enter", "a"], ["C-\\", "o", "Enter", "0", "Enter", "n", "y", "y"],
+    ["C-\\", "zzz", "Enter", "q", "Enter"], ["C-\\", "t", "Enter", "T", "Enter", "y", "n", "C-c"],
+    ["C-r", "r.txt", "Enter"], ["C-r", "w.txt", "Enter"], ["M-j"], ["C-j"], ["C-o", "Enter"], ["C-w", "a", "Enter"],
+    ["the quick brown fox jumps over the lazy dog and keeps running far away"], ["M-}"], ["M-{"], ["M-3"], ["M-t"],
+]
+
+def gen_undo2(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5, 8]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (10, 30)])
+        flags = r.sample(["-x", "-l", "-S", "-i", "-E", "-L", "-k", "-Z", "-A", "-b", "-b", "-O", "-M", "-%"], r.choice([0, 1, 1, 2]))
+        steps = []
+        for _ in range(r.randint(4, 16)):
+            if r.random() < 0.35:
+                steps.extend(r.choice(UNDO2_FLOWS))
+            else:
+                key = r.choice([k for k in UNDO_KEYS if k != "M-a"])
+                steps.extend(["C-o", "Enter"] if key == "C-o" else [key])
+        cases.append({"id": "un2%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps,
+                      "disk": True, "hidden": True, "files": {"r.txt": ["alpha", "beta gamma", "delta"], "w.txt": ["one"]}})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
@@ -532,6 +577,10 @@ def gen(seed, count, corpus):
         return gen_insert(seed, count)
     if corpus == "open":
         return gen_open(seed, count)
+    if corpus == "undo":
+        return gen_undo(seed, count)
+    if corpus == "undo2":
+        return gen_undo2(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):
@@ -568,7 +617,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2") else run_case
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: runner(c, workdir), cases))

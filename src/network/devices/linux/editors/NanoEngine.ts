@@ -4,6 +4,7 @@ import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { decodeFile, LINE_END, type NanoFileFormat } from './nano/NanoFormat';
 import { directoryNameOf, fullPathOf, openingFor } from './nano/NanoOpening';
+import { NanoUndoStack, type UndoKind, type UndoRestore } from './nano/NanoUndo';
 import { yesNoAnswer } from './nano/NanoYesNo';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
@@ -180,9 +181,7 @@ export class NanoEngine {
   // real nano's action-grouping: a run of consecutive keystrokes of the
   // same coalescable kind (typing, or Backspace, or Delete) is one undo
   // step; a cursor move or a different action kind starts a new step.
-  private undoStack: { lines: string[]; cursorLine: number; cursorCol: number }[] = [];
-  private redoStack: { lines: string[]; cursorLine: number; cursorCol: number }[] = [];
-  private lastEditKind: 'type' | 'backspace' | 'delete' | null = null;
+  private readonly undo = new NanoUndoStack();
 
   constructor(
     private readonly fs: EditorFsContext,
@@ -415,7 +414,6 @@ export class NanoEngine {
     else if (at.line === this._cursorLine) column += window.pageStart(window.columnOf(this._cursorLine, this._cursorCol));
     this._cursorLine = at.line;
     this._cursorCol = actualX(text, column, this.live.tabsize);
-    this.lastEditKind = null;
     this.manner = 'flowing';
     this.placeWant = window.columnOf(this._cursorLine, this._cursorCol);
     this.verticalKey = true;
@@ -599,7 +597,6 @@ export class NanoEngine {
 
   private moveHome(): void {
     this.manner = 'flowing';
-    this.lastEditKind = null;
     const text = this.line(this._cursorLine);
     let chunk: { index: number; leftedge: number } | null = null;
     if (this.live.softwrap) chunk = this.window.chunkLeft(this._cursorLine, this.window.columnOf(this._cursorLine, this._cursorCol));
@@ -632,7 +629,6 @@ export class NanoEngine {
 
   private moveEnd(): void {
     this.manner = 'flowing';
-    this.lastEditKind = null;
     const length = this.line(this._cursorLine).length;
     if (this.live.softwrap) {
       const column = this.window.columnOf(this._cursorLine, this._cursorCol);
@@ -763,26 +759,35 @@ export class NanoEngine {
 
   private pasteIntoBuffer(text: string): void {
     if (this._readOnly) return;
-    this.beginDiscreteEdit();
+    this.undoBegin('PASTE');
     const startedOn = this._cursorLine;
     this.insertText(text);
     if (this.live.breaklonglines && this._cursorLine === startedOn) this.doWrap();
+    this.undoFinish();
     this._modified = true;
-    this.lastEditKind = null;
   }
 
-  private inject(text: string): void {
+  private typeText(text: string): void {
+    this.undo.beginTyping(this.linesArr, { line: this._cursorLine, col: this._cursorCol }, this.window.cursorRow);
+    const wrapped = this.inject(text);
+    this.undoFinish();
+    if (wrapped) this.undo.convertTopToSplit({ line: this._cursorLine, col: this._cursorCol });
+    this._modified = true;
+  }
+
+  private inject(text: string): boolean {
     const window = this.window;
     const softwrap = this.live.softwrap;
     const onLastRow = window.cursorRow === window.editRows - 1;
     const rowBefore = softwrap && onLastRow ? window.chunkFor(window.columnOf(this._cursorLine, this._cursorCol), this._cursorLine) : 0;
     const chunksBefore = softwrap ? window.extraChunksIn(this._cursorLine) : 0;
     this.insertText(text);
-    if (this.live.breaklonglines) this.doWrap();
-    if (!softwrap) return;
+    const wrapped = this.live.breaklonglines && this.doWrap();
+    if (!softwrap) return wrapped;
     const grew = window.extraChunksIn(this._cursorLine) !== chunksBefore;
     const movedDown = onLastRow && window.chunkFor(window.columnOf(this._cursorLine, this._cursorCol), this._cursorLine) > rowBefore;
     if (grew || movedDown) this.manner = 'flowing';
+    return wrapped;
   }
 
   private insertText(text: string): void {
@@ -853,7 +858,6 @@ export class NanoEngine {
     this._cursorCol = landed.col;
     this.placeWant = landed.placeWant;
     this.verticalKey = true;
-    this.lastEditKind = null;
     return 0;
   }
 
@@ -869,45 +873,39 @@ export class NanoEngine {
 
   // ── Undo/redo ────────────────────────────────────────────────────
 
-  private pushUndoSnapshot(): void {
-    this.undoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
-    this.redoStack = [];
+  private undoBegin(kind: UndoKind, message: string | null = null): void {
+    this.undo.begin(kind, this.linesArr, { line: this._cursorLine, col: this._cursorCol }, this.window.cursorRow, message);
   }
 
-  /** Start (or continue) a run of same-kind edits as one undo step; a kind change snapshots the pre-edit state. */
-  private beginCoalescableEdit(kind: 'type' | 'backspace' | 'delete'): void {
-    if (this.lastEditKind !== kind) this.pushUndoSnapshot();
-    this.lastEditKind = kind;
+  private undoFinish(): void {
+    this.undo.finish({ line: this._cursorLine, col: this._cursorCol }, this.window.cursorRow);
   }
 
-  /** Always its own undo step (Enter, Cut, Paste — never coalesced with adjacent edits). */
-  private beginDiscreteEdit(): void {
-    this.pushUndoSnapshot();
-    this.lastEditKind = null;
+  private restoreFromUndo(restore: UndoRestore | null, nothing: string, verb: string): void {
+    if (restore === null) {
+      this._statusMessage = `[ ${nothing} ]`;
+      this.verticalKey = true;
+      return;
+    }
+    this.linesArr = restore.lines;
+    this._cursorLine = Math.min(restore.cursor.line, this.linesArr.length - 1);
+    this._cursorCol = Math.min(restore.cursor.col, this.line(this._cursorLine).length);
+    this.clearMark();
+    this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+    this._modified = this.undo.modified;
+    if (restore.row !== null) {
+      this.window.cursorRow = restore.row;
+      this.manner = 'stationary';
+    }
+    if (restore.message !== null && !this.live.zero) this._statusMessage = `${verb} ${restore.message}`;
   }
 
   private performUndo(): void {
-    const snap = this.undoStack.pop();
-    if (!snap) { this._statusMessage = 'Nothing to undo!'; return; }
-    this.redoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
-    this.linesArr = [...snap.lines];
-    this._cursorLine = Math.min(snap.cursorLine, this.linesArr.length - 1);
-    this._cursorCol = snap.cursorCol;
-    this._modified = this.undoStack.length > 0;
-    this._statusMessage = 'Undid action';
-    this.lastEditKind = null;
+    this.restoreFromUndo(this.undo.undo(this.linesArr, this.window.cursorRow), 'Nothing to undo', 'Undid');
   }
 
   private performRedo(): void {
-    const snap = this.redoStack.pop();
-    if (!snap) { this._statusMessage = 'Nothing to redo!'; return; }
-    this.undoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
-    this.linesArr = [...snap.lines];
-    this._cursorLine = Math.min(snap.cursorLine, this.linesArr.length - 1);
-    this._cursorCol = snap.cursorCol;
-    this._modified = true;
-    this._statusMessage = 'Redid action';
-    this.lastEditKind = null;
+    this.restoreFromUndo(this.undo.redo(), 'Nothing to redo', 'Redid');
   }
 
   // ── Edit mode ────────────────────────────────────────────────────
@@ -928,13 +926,11 @@ export class NanoEngine {
         this.manner = 'flowing';
         if (this._cursorCol > 0) this._cursorCol--;
         else if (this._cursorLine > 0) { this._cursorLine--; this._cursorCol = this.line(this._cursorLine).length; }
-        this.lastEditKind = null;
         return;
       case 'ArrowRight':
         this.manner = 'flowing';
         if (this._cursorCol < this.line(this._cursorLine).length) this._cursorCol++;
         else if (this._cursorLine < this.linesArr.length - 1) { this._cursorLine++; this._cursorCol = 0; }
-        this.lastEditKind = null;
         return;
       case 'ArrowUp':
         this.moveVertical(-1);
@@ -955,19 +951,18 @@ export class NanoEngine {
           this.indentLines();
           return;
         }
-        this.beginCoalescableEdit('type');
         const cur = this.line(this._cursorLine);
         const tab = this.live.tabstospaces
           ? ' '.repeat(this.live.tabsize - (wideness(cur, this._cursorCol, this.live.tabsize) % this.live.tabsize))
           : '\t';
-        this.inject(tab);
-        this._modified = true;
+        this.typeText(tab);
         return;
       }
       case 'Enter': {
         this.manner = 'flowing';
-        this.beginDiscreteEdit();
+        this.undoBegin('ENTER');
         this.breakLine();
+        this.undoFinish();
         this._modified = true;
         return;
       }
@@ -979,23 +974,29 @@ export class NanoEngine {
         }
         if (!this.live.nonewlines && this._cursorCol === 0 && this._cursorLine === this.linesArr.length - 1 && this._cursorLine > 0
           && this.line(this._cursorLine - 1).length > 0) {
+          this.undo.beginJoin(this.linesArr, { line: this._cursorLine, col: 0 });
           this._cursorLine--;
           this._cursorCol = this.line(this._cursorLine).length;
-          this.lastEditKind = null;
+          this.undoFinish();
+          this.manner = 'flowing';
           return;
         }
-        if (this._cursorCol > 0 || this._cursorLine > 0) this.beginCoalescableEdit('backspace');
+        const before = { line: this._cursorLine, col: this._cursorCol };
         if (this._cursorCol > 0) {
           const cur = this.line(this._cursorLine);
+          this.undo.beginDeletion('BACK', this.linesArr, { line: before.line, col: before.col - 1 }, 1, before);
           this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol - 1) + cur.slice(this._cursorCol);
           this._cursorCol--;
           if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - 1;
+          this.undoFinish();
           this._modified = true;
         } else if (this._cursorLine > 0) {
           const prevLen = this.line(this._cursorLine - 1).length;
+          this.undo.beginJoin(this.linesArr, before);
           this.joinWithNext(this._cursorLine - 1);
           this._cursorLine--;
           this._cursorCol = prevLen;
+          this.undoFinish();
           this._modified = true;
         }
         return;
@@ -1007,23 +1008,23 @@ export class NanoEngine {
         }
         const cur = this.line(this._cursorLine);
         if (!this.live.nonewlines && this._cursorCol === cur.length && this._cursorCol !== 0 && this._cursorLine === this.linesArr.length - 2) return;
-        if (this._cursorCol < cur.length || this._cursorLine < this.linesArr.length - 1) this.beginCoalescableEdit('delete');
+        const before = { line: this._cursorLine, col: this._cursorCol };
         if (this._cursorCol < cur.length) {
+          this.undo.beginDeletion('DEL', this.linesArr, before, 1, before);
           this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + cur.slice(this._cursorCol + 1);
           if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - 1;
+          this.undoFinish();
           this._modified = true;
         } else if (this._cursorLine < this.linesArr.length - 1) {
+          this.undo.beginJoin(this.linesArr, before);
           this.joinWithNext(this._cursorLine);
+          this.undoFinish();
           this._modified = true;
         }
         return;
       }
       default:
-        if (k.key.length === 1 && !k.alt) {
-          this.beginCoalescableEdit('type');
-          this.inject(k.key);
-          this._modified = true;
-        }
+        if (k.key.length === 1 && !k.alt) this.typeText(k.key);
         return;
     }
   }
@@ -1143,7 +1144,6 @@ export class NanoEngine {
       this._cursorCol = 0;
       this.placeWant = 0;
       this.verticalKey = true;
-      this.lastEditKind = null;
       return;
     }
     this.manner = 'stationary';
@@ -1156,7 +1156,6 @@ export class NanoEngine {
       this._cursorCol = this.line(last).length;
       this.verticalKey = false;
       this.manner = 'flowing';
-      this.lastEditKind = null;
       return;
     }
     this.manner = 'stationary';
@@ -1196,7 +1195,6 @@ export class NanoEngine {
     if (stepForward) col++;
     this._cursorLine = line;
     this._cursorCol = col;
-    this.lastEditKind = null;
   }
 
   private jumpWordRight(): void {
@@ -1225,7 +1223,6 @@ export class NanoEngine {
     }
     this._cursorLine = line;
     this._cursorCol = col;
-    this.lastEditKind = null;
   }
 
   private applyEditAltKey(k: EditorKeyInput): void {
@@ -1262,6 +1259,11 @@ export class NanoEngine {
       this.justifyText(true);
       return;
     }
+    if (key === 't' || (k.key === '3' && !k.shift)) {
+      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      if (key === 't') this.cutTillEnd(); else this.commentLines();
+      return;
+    }
     const toggle = EDIT_TOGGLES[key];
     if (toggle !== undefined) {
       this.live[toggle.flag] = !this.live[toggle.flag];
@@ -1282,14 +1284,12 @@ export class NanoEngine {
     if (k.key === '\\') { // First Line
       this._cursorLine = 0;
       this._cursorCol = 0;
-      this.lastEditKind = null;
       return;
     }
     if (k.key === '/') { // Last Line
       this.manner = 'flowing';
       this._cursorLine = this.linesArr.length - 1;
       this._cursorCol = this.line(this._cursorLine).length;
-      this.lastEditKind = null;
       return;
     }
     if (key === 'a') { // Mark Text (M-A alias of ^6)
@@ -1368,7 +1368,7 @@ export class NanoEngine {
     if (onlyBlanks && staysBehind) this.markCol = 0;
   }
 
-  private doWrap(): void {
+  private doWrap(): boolean {
     const context = this.justifyContext();
     const line = this._cursorLine;
     let text = this.line(line);
@@ -1376,9 +1376,9 @@ export class NanoEngine {
     const leadLen = quoted + indentLength(text.slice(quoted));
     const cursorX = this._cursorCol;
     const found = breakLine(text.slice(leadLen), context.wrapAt - wideness(text, leadLen, context.tabsize), context.tabsize);
-    if (found < 0 || leadLen + found === text.length) return;
+    if (found < 0 || leadLen + found === text.length) return false;
     const wrapLoc = leadLen + found + 1;
-    if (wrapLoc >= text.length) return;
+    if (wrapLoc >= text.length) return false;
     const remainder = text.slice(wrapLoc);
     if (this.spillageLine === line + 1 && remainder.length + breadth(this.line(line + 1), context.tabsize) <= context.wrapAt) {
       let joined = text;
@@ -1416,6 +1416,7 @@ export class NanoEngine {
     } else {
       this._cursorCol += cursorX - wrapLoc;
     }
+    return true;
   }
 
   private markedLineRange(): { top: number; bottom: number } {
@@ -1434,13 +1435,69 @@ export class NanoEngine {
     }
   }
 
+  private cutTillEnd(): void {
+    const last = this.linesArr.length - 1;
+    const atEol = this._cursorCol >= this.line(this._cursorLine).length;
+    if (atEol && (this._cursorLine === last || (!this.live.nonewlines && this._cursorCol > 0 && this._cursorLine + 1 === last))) {
+      this._statusMessage = '[ Nothing was cut ]';
+      this.verticalKey = true;
+      return;
+    }
+    this.undoBegin('CUT_TO_EOF');
+    this.cutBuffer = null;
+    this.extractSegment(this._cursorLine, this._cursorCol, last, this.line(last).length);
+    this.cutAction = null;
+    this.undoFinish();
+    this._modified = true;
+    this.wipeStatus();
+  }
+
+  private commentLines(): void {
+    const prefix = '#';
+    const range = this.markedLineRange();
+    const last = this.linesArr.length - 1;
+    if (range.top === range.bottom && range.bottom === last && !this.live.nonewlines) {
+      this._statusMessage = '[ Cannot comment past end of file ]';
+      return;
+    }
+    const commentable = (index: number): boolean => this.live.nonewlines || index !== last;
+    let action: 'COMMENT' | 'UNCOMMENT' = 'UNCOMMENT';
+    let allEmpty = true;
+    for (let index = range.top; index <= range.bottom; index++) {
+      const empty = [...this.line(index)].every((ch) => isBlankChar(ch));
+      if (!empty && !(commentable(index) && this.line(index).startsWith(prefix))) {
+        action = 'COMMENT';
+        break;
+      }
+      allEmpty = allEmpty && empty;
+    }
+    if (allEmpty) action = 'COMMENT';
+    this.undoBegin(action);
+    for (let index = range.top; index <= range.bottom; index++) {
+      if (!commentable(index)) continue;
+      const text = this.line(index);
+      if (action === 'COMMENT') {
+        this.linesArr[index] = prefix + text;
+        if (index === this.markLine && (this.markCol ?? 0) > 0) this.markCol = (this.markCol ?? 0) + prefix.length;
+        if (index === this._cursorLine && this._cursorCol > 0) this._cursorCol += prefix.length;
+      } else if (text.startsWith(prefix)) {
+        this.linesArr[index] = text.slice(prefix.length);
+        if (index === this.markLine) this.markCol = Math.max(0, (this.markCol ?? 0) - prefix.length);
+        if (index === this._cursorLine) this._cursorCol = Math.max(0, this._cursorCol - prefix.length);
+      }
+    }
+    this.undoFinish();
+    this._modified = true;
+  }
+
   private indentLines(): void {
     const range = this.markedLineRange();
     let top = range.top;
     while (top <= range.bottom && this.line(top) === '') top++;
     if (top > range.bottom) return;
-    this.beginDiscreteEdit();
+    this.undoBegin('INDENT');
     this.shiftLinesRight(top, range.bottom, this.live.tabstospaces ? ' '.repeat(this.live.tabsize) : '\t');
+    this.undoFinish();
     this._modified = true;
   }
 
@@ -1449,7 +1506,7 @@ export class NanoEngine {
     let top = range.top;
     while (top <= range.bottom && whiteLength(this.line(top), this.live.tabsize) === 0) top++;
     if (top > range.bottom) return;
-    this.beginDiscreteEdit();
+    this.undoBegin('UNINDENT');
     for (let index = top; index <= range.bottom; index++) {
       const removed = whiteLength(this.line(index), this.live.tabsize);
       if (removed === 0) continue;
@@ -1457,6 +1514,7 @@ export class NanoEngine {
       if (index === this.markLine) this.markCol = Math.max(0, (this.markCol ?? 0) - removed);
       if (index === this._cursorLine) this._cursorCol = Math.max(0, this._cursorCol - removed);
     }
+    this.undoFinish();
     this._modified = true;
   }
 
@@ -1487,6 +1545,7 @@ export class NanoEngine {
     if (this.cutAction === null) this.cutBuffer = null;
     const region = this.getMarkedRegion();
     if (region !== null) {
+      this.undo.lastAction = 'OTHER';
       this.clearMark();
       if (region.startLine === region.endLine && region.startCol === region.endCol) {
         this._statusMessage = '[ Copied nothing ]';
@@ -1516,6 +1575,7 @@ export class NanoEngine {
       this._cursorCol = text.length;
     }
     this.cutAction = 'copy';
+    this.undo.lastAction = 'COPY';
   }
 
   private isCuttable(testCliff: boolean): boolean {
@@ -1553,7 +1613,7 @@ export class NanoEngine {
     if (!this.isCuttable(false)) return;
     const region = this.getMarkedRegion();
     if (region === null) return;
-    this.beginDiscreteEdit();
+    if (!this.undo.continuesCut('ZAP', this.cutAction === 'cut')) this.undoBegin('ZAP');
     const kept = this.cutBuffer;
     this.cutBuffer = null;
     this.extractSegment(region.startLine, region.startCol, region.endLine, region.endCol);
@@ -1562,6 +1622,7 @@ export class NanoEngine {
     if (this.linesArr.length === 0) this.linesArr.push('');
     this.wipeStatus();
     this.cutAction = null;
+    this.undoFinish();
     this._modified = true;
   }
 
@@ -1569,7 +1630,7 @@ export class NanoEngine {
     this.wipeStatus();
     const marked = this.markLine !== null;
     if (!this.isCuttable(this.live.cutfromcursor && !marked)) return;
-    this.beginDiscreteEdit();
+    if (!this.undo.continuesCut('CUT', this.cutAction === 'cut')) this.undoBegin('CUT');
     if (marked || this.cutAction !== 'cut') this.cutBuffer = null;
     const line = this._cursorLine;
     const col = this._cursorCol;
@@ -1589,6 +1650,7 @@ export class NanoEngine {
     }
     if (this.linesArr.length === 0) this.linesArr.push('');
     this.cutAction = marked ? null : 'cut';
+    this.undoFinish();
     this._modified = true;
   }
 
@@ -1792,13 +1854,17 @@ export class NanoEngine {
       return;
     }
     if (exiting) {
-      if (overwrite) this._modified = false;
+      if (overwrite) {
+        this._modified = false;
+        this.undo.markSaved();
+      }
       this.finishExit(true);
       return;
     }
     if (overwrite) {
       if (target !== this.bufferPath) this.renameBuffer(name, target);
       this._modified = false;
+      this.undo.markSaved();
     }
     const n = this.writtenLineCount();
     if (this.minibarMode()) this.reportSizePending = true;
@@ -1964,7 +2030,6 @@ export class NanoEngine {
       : column === 0 ? this.window.columnOf(this._cursorLine, this._cursorCol) + 1 : column;
     this._cursorLine = target;
     this._cursorCol = actualX(text, Math.max(0, displayColumn - 1), this.live.tabsize);
-    this.lastEditKind = null;
   }
 
   // ── Help (^G) ────────────────────────────────────────────────────
@@ -2057,11 +2122,11 @@ export class NanoEngine {
     const decoded = decodeFile(this.fs.readFile(name) ?? '', !this.live.noconvert, false);
     const was = { line: this._cursorLine, col: this._cursorCol };
     const wasScreenful = this.screenfulMark();
-    this.beginDiscreteEdit();
+    this.undoBegin('INSERT');
     this.insertText(decoded.lines.join('\n'));
+    this.undoFinish();
     if (this.lessThanScreenful(wasScreenful)) this.manner = 'flowing';
     if (this._cursorLine !== was.line || this._cursorCol !== was.col) this._modified = true;
-    this.lastEditKind = null;
     this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'}${decoded.format === 'unix' ? '' : ` (Converted from ${decoded.format === 'dos' ? 'DOS' : 'Mac'} format)`} ]`;
   }
 
@@ -2140,7 +2205,7 @@ export class NanoEngine {
       const lastLine = wholeBuffer ? last : found.first + found.count - 1;
       end = lastLine < last ? { line: lastLine + 1, col: 0 } : { line: lastLine, col: this.line(lastLine).length };
     }
-    this.beginDiscreteEdit();
+    this.undoBegin('COUPLE', 'justification');
     const region = { startLine: start.line, startCol: start.col, endLine: end.line, endCol: end.col };
     const piece = this.extractRegionText(region).split('\n');
     this.excise(region);
@@ -2173,6 +2238,7 @@ export class NanoEngine {
       this._cursorLine = Math.min(wasLine, this.linesArr.length - 1);
       this._cursorCol = 0;
     }
+    this.undoFinish();
     if (markedRegion !== null) this._statusMessage = '[ Justified selection ]';
     else this._statusMessage = wholeBuffer ? '[ Justified file ]' : '[ Justified paragraph ]';
     this._modified = true;
@@ -2389,9 +2455,11 @@ export class NanoEngine {
     const st = this.replaceState!;
     const pm = this._pendingReplaceMatch!;
     const line = this.linesArr[pm.line];
+    this.undo.begin('REPLACE', this.linesArr, { line: pm.line, col: pm.start }, this.window.cursorRow);
     // Real nano's replacement text is always literal — it does not support
     // \1-style backreferences even when the search side is a regex.
     this.linesArr[pm.line] = line.slice(0, pm.start) + st.replacement + line.slice(pm.end);
+    this.undo.finish({ line: pm.line, col: pm.start });
     st.totalReplaced++;
     this._modified = true;
     st.currentCol = pm.start + st.replacement.length;
