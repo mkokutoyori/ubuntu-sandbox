@@ -4232,6 +4232,7 @@ export class OSPFEngine implements IProtocolEngine {
 
     // RFC 2328 §8.2 — authentication check before any FSM processing.
     const rxIface = this.interfaces.get(ifaceName);
+    if (rxIface?.state === 'Down') return;
     if (rxIface) {
       const localAuthType = rxIface.authType ?? 0;
       const pktAuthType = packet.authType ?? 0;
