@@ -764,23 +764,6 @@ alors `hidden` et le filtre la rendra sans une ligne de plus.
 
 ## Gestion (SNMP, NTP, syslog)
 
-### [ntp] `minpoll`, `maxpoll`, `burst` et `iburst` sont desormais REFUSES
-La queue de `ntp server|peer` ne connait que les quatre formes qu'elle
-declare (`key`, `prefer`, `source`, `version`) ; depuis le lot qui les
-juge, un mot hors de cette liste est refuse au lieu d'etre avale en
-silence. Un vrai IOS accepte pourtant `minpoll`/`maxpoll` (intervalles de
-scrutation) et `burst`/`iburst`.
-**Mesure** : `ntp server 10.0.0.1 iburst` rend `% Invalid input detected`
-ici et est accepte sur une vraie machine.
-**Pourquoi c'est ce refus qui a ete choisi** : `CLAUDE.md` tranche —
-« soit le moteur applique le mot-cle, soit l'analyseur le refuse ». Les
-accepter demanderait de RANGER une valeur que rien ne lit, ce qui est
-l'inverse du defaut que ce lot refermait.
-**Report** : `minpoll`/`maxpoll` sont applicables — `NtpAssociation`
-porte deja `pollSec` et le minuteur de scrutation existe — mais c'est un
-travail de temporisation, pas de CLI. `burst`/`iburst` demandent une
-rafale de huit paquets a l'association, que ce moteur n'a pas.
-
 ### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute
 IOS ecrit `snmp-server host <hote> [vrf <nom>] [traps|informs] …`.
 `configHost` ne connait pas `vrf` : le mot est pris pour la communaute et

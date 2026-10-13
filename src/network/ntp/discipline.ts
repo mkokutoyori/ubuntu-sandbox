@@ -112,6 +112,7 @@ export interface ReglagesDiscipline {
   limiteSauts?: number;
   /** Le seuil de panique ; `0` le desactive (`chronyd -x`, `ntpd -g`). */
   seuilPaniqueMs?: number;
+  reinitialiserAssociationsAuSaut?: boolean;
 }
 
 /**

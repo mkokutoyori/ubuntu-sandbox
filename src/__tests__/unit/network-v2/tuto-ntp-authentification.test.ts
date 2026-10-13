@@ -61,9 +61,15 @@ import {
   calculerMacNtp, serialiserEnteteNtp, verifierMacNtp,
 } from '@/network/ntp/auth';
 import type { NtpPacket } from '@/network/ntp/types';
+import { timestampFromMs } from '@/network/ntp/timestamp';
 import { md5 } from '@/crypto';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -99,6 +105,7 @@ async function paire(o: Options) {
   if (o.fiableClient !== false && o.cleClient) cmds.push('ntp trusted-key 1');
   cmds.push('ntp server 10.0.0.1 key 1', 'end');
   for (const c of cmds) await cli.executeCommand(c);
+  converge(clock);
   return { srv, cli };
 }
 
@@ -108,9 +115,9 @@ const synchronise = (s: string) => /^Clock is synchronized/.test(s);
 const PAQUET: NtpPacket = {
   type: 'ntp', leapIndicator: 0, version: 4, mode: 'server', stratum: 2,
   poll: 6, precision: -20, rootDelay: 1, rootDispersion: 2,
-  refIdentifier: '10.0.0.1', refTimestampMs: 1_700_000_000_000,
-  origTimestampMs: 1_700_000_001_000, rxTimestampMs: 1_700_000_002_000,
-  txTimestampMs: 1_700_000_003_000,
+  refIdentifier: '10.0.0.1', refTimestamp: timestampFromMs(1_700_000_000_000),
+  origTimestamp: timestampFromMs(1_700_000_001_000), rxTimestamp: timestampFromMs(1_700_000_002_000),
+  txTimestamp: timestampFromMs(1_700_000_003_000),
 };
 
 describe('le condensé est celui de RFC 5905, et il est reel', () => {
@@ -135,12 +142,12 @@ describe('le condensé est celui de RFC 5905, et il est reel', () => {
     const variantes: Partial<NtpPacket>[] = [
       { stratum: 3 }, { poll: 7 }, { precision: -19 }, { rootDelay: 9 },
       { rootDispersion: 9 }, { refIdentifier: '10.0.0.2' },
-      { refTimestampMs: 1 }, { origTimestampMs: 1 },
-      { rxTimestampMs: 1 }, { txTimestampMs: 1 },
+      { refTimestamp: 1n }, { origTimestamp: 1n },
+      { rxTimestamp: 1n }, { txTimestamp: 1n },
       { mode: 'client' }, { leapIndicator: 1 },
     ];
     for (const v of variantes) {
-      expect(calculerMacNtp('Secret', { ...PAQUET, ...v }), JSON.stringify(v))
+      expect(calculerMacNtp('Secret', { ...PAQUET, ...v }), Object.keys(v).join())
         .not.toBe(base);
     }
   });
@@ -222,6 +229,7 @@ describe('§3.6 — les trois laboratoires du tutoriel', () => {
       'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
       'ntp authentication-key 1 md5 UneCle', 'ntp trusted-key 1',
       'ntp server 10.0.0.1', 'end']) await cli.executeCommand(c);
+    converge(clock);
     expect(await cli.executeCommand('show ntp status')).toMatch(/stratum 3/);
   });
 });
@@ -262,6 +270,7 @@ describe('le diagnostic est celui d\'un vrai IOS', () => {
     for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
       'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
       'ntp server 10.0.0.1', 'end']) await cli.executeCommand(c);
+    converge(clock);
     const d = await cli.executeCommand('show ntp associations detail');
     expect(d).toContain('configured, our_master');
     expect(d).not.toContain('authenticated');
@@ -296,6 +305,7 @@ describe('Huawei authentifie par le meme moteur', () => {
       'ntp-service reliable authentication-keyid 1',
       'ntp-service unicast-server 10.0.0.1 authentication-keyid 1',
       'quit']) await hw.executeCommand(c);
+    converge(clock);
     expect(await hw.executeCommand('display ntp-service status'))
       .toContain('Clock status: synchronized');
   });

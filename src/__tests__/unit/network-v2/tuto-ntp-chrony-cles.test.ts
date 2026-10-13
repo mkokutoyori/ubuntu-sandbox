@@ -36,8 +36,13 @@ import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { parseChronyKeys, genererCleChrony, CHRONY_KEYS_PATH } from '@/network/devices/linux/time/ChronyKeys';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -87,6 +92,7 @@ async function labo(o: {
     o.ligneServeur ?? 'server 10.0.0.1 iburst',
   ].join('\n'));
   await pc.executeCommand('sudo systemctl restart chrony');
+  converge(clock);
   return { rtr, pc };
 }
 
@@ -233,6 +239,7 @@ describe('une machine Linux authentifie NTP pour de vrai', () => {
     await ecrire(cli, '/etc/chrony/chrony.conf',
       'keyfile /etc/chrony/chrony.keys\nserver 10.0.0.1 iburst key 4');
     for (const pc of [srv, cli]) await pc.executeCommand('sudo systemctl restart chrony');
+    converge(clock);
     expect(await cli.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+3/);
   });
 
@@ -361,6 +368,7 @@ describe('`ntp authenticate` gouverne ce que la machine CROIT, pas ce qu\'elle S
     for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
       'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
       'ntp server 10.0.0.1', 'end']) await cli.executeCommand(c);
+    converge(clock);
     expect(await cli.executeCommand('show ntp status')).toMatch(/stratum 3/);
   });
 });

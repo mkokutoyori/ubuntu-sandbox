@@ -4579,6 +4579,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         { keyword: 'prefer', description: 'Prefer this peer when possible' },
         { keyword: 'source', description: 'Interface for source address' },
         { keyword: 'version', description: 'Configure NTP version' },
+        { keyword: 'maxpoll', description: 'Maximum poll interval' },
+        { keyword: 'minpoll', description: 'Minimum poll interval' },
+        { keyword: 'burst', description: 'Send a burst when the peer is reachable' },
+        { keyword: 'iburst', description: 'Send a burst when the peer is unreachable' },
       ],
     };
 
@@ -8921,7 +8925,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (let i = 2; i < minuscules.length; i++) {
       const mot = minuscules[i];
       if (mot === 'prefer') { queue.prefer = true; continue; }
+      if (mot === 'iburst' || mot === 'burst') {
+        queue.options = { ...queue.options, [mot]: true };
+        continue;
+      }
       const valeur = minuscules[i + 1];
+      if (mot === 'minpoll' || mot === 'maxpoll') {
+        if (valeur === undefined || !/^\d+$/.test(valeur) || Number(valeur) < 4 || Number(valeur) > 17) {
+          return { ...queue, refus: valeur ?? mot };
+        }
+        queue.options = { ...queue.options, [mot]: Number(valeur) };
+        i++;
+        continue;
+      }
       if (mot === 'key') {
         if (!estNumeroDeCleNtp(valeur)) return { ...queue, refus: valeur ?? mot };
         queue.keyId = Number(valeur);

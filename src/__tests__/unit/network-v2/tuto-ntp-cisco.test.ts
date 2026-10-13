@@ -32,8 +32,13 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -70,6 +75,7 @@ async function conf(r: CiscoRouter, ...cmds: string[]) {
   await r.executeCommand('configure terminal');
   for (const c of cmds) sorties.push(await r.executeCommand(c));
   await r.executeCommand('end');
+  converge(clock);
   return sorties;
 }
 
@@ -95,10 +101,11 @@ describe('§3.1 — le client se synchronise pour de vrai', () => {
     const t = await r.executeCommand('show ntp associations');
     const l = ligne(t, '*~');
     expect(l, t).toContain('192.168.100.5');
-    // `reach` est en OCTAL, et une seule reponse pose le bit de poids
-    // fort : 200 en octal, soit 10000000. C'est ce que le §8 du tuto
-    // apprend a lire.
-    expect(l).toMatch(/\b200\b/);
+    // `reach` est un registre a decalage affiche en OCTAL : chaque reponse
+    // y entre par le bit de poids FAIBLE (1, 3, 7, 17, 37, 77, 177), et
+    // huit reponses de suite le remplissent, soit 377. Il etait ecrit par
+    // le bit de poids fort (200, 300, 340...), a l'envers de la RFC 5905.
+    expect(l).toMatch(/\b377\b/);
   });
 
   it('une source injoignable reste `~` et n\'est jamais candidate', async () => {
