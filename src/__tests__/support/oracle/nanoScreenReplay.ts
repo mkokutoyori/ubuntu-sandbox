@@ -35,7 +35,7 @@ export function nanoKeysOf(step: string): EditorKeyInput[] {
   if (control) return [editorKey(control[1], { ctrl: true })];
   const meta = /^M-(.)$/.exec(step);
   if (meta) return [editorKey(meta[1], { alt: true })];
-  return [...step].map((ch) => editorKey(ch));
+  return [...step].map((ch) => (ch === '\t' ? editorKey('Tab') : editorKey(ch)));
 }
 
 export function recordedArguments(c: NanoScreenCase): string[] {

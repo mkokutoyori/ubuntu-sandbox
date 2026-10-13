@@ -17,14 +17,14 @@
  * couper la ligne du haut de la fenetre garde la rangee du curseur ; avec `-L` le tampon n'a pas de ligne magique
  * ajoutee et le fichier n'est pas termine par un saut de ligne.
  *
- * Seuls les cas dont les options sont evaluees (SCREEN_PORTED_FLAGS) sont rejoues : 277 sur 300 par seed.  `-O`
- * (bookstyle) ne l'est pas : la justification de nano garde l'espace en fin de ligne coupee (sans `-M`) et coupe
- * a `COLS - 8` quand `fill` est negatif, le moteur coupe a 72 et rogne les blancs ; `-M -b -r -a` dependent de la
- * meme brique et sont notes dans docs/ASSESSMENT-EDITEURS-NON-PORTE.md.
+ * Tous les cas sont rejoues (SCREEN_PORTED_FLAGS couvre les options en vedette).  Les 23 cas `-O` (bookstyle) par seed
+ * n'ont ete portes qu'avec la justification (nano-wrap-oracle.test.ts) : sur le moteur d'avant, 8 sur 300 (seed
+ * 1), 14 sur 300 (seed 2) et 17 sur 300 (seed 3) tombaient.
  *
- * Mesure avec `git stash push -- src/network src/components src/terminal` : 186 cas sur 277 (seed 1), 177 sur 277
- * (seed 2) et 182 sur 277 (seed 3) tombaient avant, 0 apres.  Les seeds 1 a 3 ont ete enregistres ensemble une fois
- * le premier corpus (non retenu) ayant montre que les options passaient « a vide » faute d'etre exercees.
+ * Mesure avec `git stash push -- src/network src/components src/terminal` : au premier increment (options d'edition,
+ * sur les 277 cas hors `-O`) 186 cas sur 277 (seed 1), 177 sur 277 (seed 2) et 182 sur 277 (seed 3) tombaient
+ * avant, 0 apres.  Les seeds 1 a 3 ont ete enregistres ensemble une fois le premier corpus (non retenu) ayant
+ * montre que les options passaient « a vide » faute d'etre exercees.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';

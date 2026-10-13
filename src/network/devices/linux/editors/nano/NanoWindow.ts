@@ -1,4 +1,4 @@
-import { actualX, advanceOver, wideness } from './NanoText';
+import { actualX, advanceOver, isBlankChar, wideness } from './NanoText';
 
 export type ViewportManner = 'flowing' | 'centering' | 'recentering' | 'stationary';
 
@@ -16,6 +16,7 @@ export interface NanoWindowSettings {
   readonly emptyline: boolean;
   readonly nohelp: boolean;
   readonly jumpyscrolling: boolean;
+  readonly atblanks: boolean;
 }
 
 export interface NanoLayoutFlags {
@@ -103,6 +104,7 @@ export class NanoWindow {
 
   breakpoint(text: string, leftedge: number): { end: number; endOfLine: boolean } {
     const rightside = leftedge + this.editCols;
+    const atBlanks = this.settings().atblanks;
     let index = 0;
     let column = 0;
     while (index < text.length && column < leftedge) {
@@ -111,13 +113,24 @@ export class NanoWindow {
       index += step.length;
     }
     let breaking = rightside;
+    let lastBlankColumn = 0;
+    let farthestBlank = -1;
     while (index < text.length && column <= rightside) {
+      if (atBlanks && isBlankChar(text[index]) && column < rightside) {
+        farthestBlank = index;
+        lastBlankColumn = column;
+      }
       breaking = text[index] === '\t' ? rightside : column;
       const step = advanceOver(text, index, column, this.tabsize);
       column += step.width;
       index += step.length;
     }
     if (column <= rightside) return { end: column, endOfLine: column < rightside };
+    if (farthestBlank >= 0) {
+      const afterTheBlank = lastBlankColumn + advanceOver(text, farthestBlank, lastBlankColumn, this.tabsize).width;
+      if (afterTheBlank <= rightside) return { end: afterTheBlank, endOfLine: false };
+      if (text[farthestBlank] === '\t') breaking = rightside;
+    }
     return { end: this.editCols > 1 ? breaking : column - 1, endOfLine: false };
   }
 

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
-which resizes the pane.  The real nano runs inside a pane of the given size (started with `-I`, so
+which resizes the pane (a run of literal text is sent one character at a time, 40 ms apart, because nano
+wraps a burst of typed characters once at its end).  The real nano runs inside a pane of the given size (started with `-I`, so
 no rc file is read); the first record is the screen right after nano opened the file, then one
 record per step: every row of the pane (title bar, edit window, status bar and the two shortcut
 rows), the cursor cell and the pane size.  A case with `"disk": true` (every case of the edit
@@ -24,7 +25,10 @@ def send(name, token):
     if token in KEYS or re.match(r"^(C|M)-.+$", token) or token in ("C-Left", "C-Right"):
         tmux("send-keys", "-t", name, token)
     else:
-        tmux("send-keys", "-t", name, "-l", token)
+        for index, char in enumerate(token):
+            if index:
+                time.sleep(0.04)
+            tmux("send-keys", "-t", name, "-l", "\\;" if char == ";" else char)
 
 def snapshot(name):
     cur = tmux("display", "-p", "-t", name, "#{cursor_y} #{cursor_x} #{pane_height} #{pane_width}").split()
@@ -351,6 +355,44 @@ def gen_edit(seed, count):
         cases.append({"id": "edt%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "steps": steps, "disk": True})
     return cases
 
+WRAP_FLAGS = ["-O", "-M", "-b", "-r20", "-r30", "-r10", "-r0", "-r-4", "-i", "-w", "-S", "-a", "-k", "-E"]
+WRAP_KEYS = ["C-j", "C-j", "M-j", "M-a", "Down", "Down", "Up", "End", "Home", "C-e", "Enter", "BSpace", "DC", "Tab", "Left", "Right", "C-Right", "PageDown", "M-\\", "M-/", "C-u", "C-k"]
+WRAP_TYPED = ["the quick brown fox jumps over the lazy dog", "a b c d e f g h i j k l m n o p", "supercalifragilisticexpialidocious and more", "x", "yz  ", "end. Next sentence! Another? Yes.", "foo,bar baz;qux", "word ", "  ", "\tindented words keep going on and on"]
+
+def wrap_paragraph(r):
+    prefix = r.choice(["", "", "", "> ", "# ", "// ", ">> ", "  "])
+    indent = r.choice(["", "", "", "  ", "    ", "\t"])
+    lines = []
+    for i in range(r.randint(1, 5)):
+        words = " ".join(r.choice(WORDS + ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "end.", "Hello!", "why?"]) for _ in range(r.randint(2, 14)))
+        lead = prefix + (indent if i == 0 or r.random() < 0.7 else r.choice(["", "  ", "    "]))
+        trail = r.choice(["", "", "", " ", "  ", "\t"]) if r.random() < 0.3 else ""
+        lines.append(lead + words + trail)
+    return lines
+
+def gen_wrap(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = []
+        for _ in range(r.randint(1, 4)):
+            text.extend(wrap_paragraph(r))
+            if r.random() < 0.85:
+                text.append(r.choice(["", "", " "]))
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (10, 30)])
+        flags = r.sample(WRAP_FLAGS, r.choice([0, 1, 1, 2, 2, 3]))
+        if "-r0" in flags or "-r10" in flags:
+            flags = [f for f in flags if f not in ("-r20", "-r30", "-r-4")]
+        steps = []
+        for _ in range(r.randint(3, 10)):
+            if r.random() < 0.3:
+                steps.append(r.choice(WRAP_TYPED))
+            else:
+                steps.append(r.choice(WRAP_KEYS))
+        steps += ["C-o", "Enter"]
+        cases.append({"id": "wrp%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "steps": steps, "disk": True})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
@@ -362,6 +404,8 @@ def gen(seed, count, corpus):
         return gen_layout(seed, count)
     if corpus == "edit":
         return gen_edit(seed, count)
+    if corpus == "wrap":
+        return gen_wrap(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):

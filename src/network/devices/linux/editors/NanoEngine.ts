@@ -5,7 +5,11 @@ import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/N
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
 import type { MinibarInfo } from './nano/NanoScreen';
 import { buildNanoScreen } from './nano/NanoScreen';
-import { actualX, breadth, displayString, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
+import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
+import {
+  DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
+  paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
+} from './nano/NanoJustify';
 import type { NanoMenuName } from './nano/NanoMenus';
 import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
 import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
@@ -16,8 +20,15 @@ export type NanoMode =
   | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line'
   | 'help' | 'execute-prompt' | 'read-file-prompt';
 
-/** Column width `^J` (Justify) wraps a paragraph to. */
-const JUSTIFY_WIDTH = 72;
+const DEFAULT_FILL = -8;
+
+const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 'tabstospaces' | 'autoindent' | 'smarthome' | 'cutfromcursor'; readonly epithet: string }>> = {
+  l: { flag: 'breaklonglines', epithet: 'Hard wrapping of overlong lines' },
+  o: { flag: 'tabstospaces', epithet: 'Conversion of typed tabs to spaces' },
+  i: { flag: 'autoindent', epithet: 'Auto indent' },
+  h: { flag: 'smarthome', epithet: 'Smart home key' },
+  k: { flag: 'cutfromcursor', epithet: 'Cut to end' },
+};
 
 const STATUS_LINGER_KEYS = 20;
 
@@ -43,12 +54,6 @@ function isWordChar(ch: string | undefined, punctuationAsLetters: boolean, wordC
   if (/[\p{L}\p{N}]/u.test(ch)) return true;
   if (punctuationAsLetters && /[\p{P}\p{S}]/u.test(ch)) return true;
   return wordChars !== null && wordChars !== '' && wordChars.includes(ch);
-}
-
-function indentLength(text: string): number {
-  let length = 0;
-  while (length < text.length && (text[length] === ' ' || text[length] === '\t')) length++;
-  return length;
 }
 
 function whiteLength(text: string, tabsize: number): number {
@@ -140,6 +145,7 @@ export class NanoEngine {
   /** Set by ^6/M-A (Set Mark); the region runs from here to the cursor. */
   private markLine: number | null = null;
   private markCol: number | null = null;
+  private spillageLine: number | null = null;
   private readonly lockPath: string;
 
   // Undo/redo (Alt+U / Alt+E — real nano's M-U/M-E), multi-level, with
@@ -161,8 +167,8 @@ export class NanoEngine {
     launch: NanoLaunchOptions = {},
   ) {
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
-    this.live = { ...this.settings };
-    this._readOnly = this.settings.view;
+    this.live = { ...this.settings, view: this.settings.view && filePath !== '' };
+    this._readOnly = this.live.view;
     this.titleName = launch.displayName ?? filePath;
     this.window = new NanoWindow(
       { lineCount: () => this.linesArr.length, lineAt: (index) => this.linesArr[index] ?? '' },
@@ -175,6 +181,7 @@ export class NanoEngine {
         emptyline: this.live.emptyline,
         nohelp: this.live.nohelp,
         jumpyscrolling: this.live.jumpyscrolling,
+        atblanks: this.live.atblanks,
       }),
     );
     this.linesArr = initialContent.length === 0 ? [''] : initialContent.split('\n');
@@ -672,9 +679,25 @@ export class NanoEngine {
   private pasteIntoBuffer(text: string): void {
     if (this._readOnly) return;
     this.beginDiscreteEdit();
+    const startedOn = this._cursorLine;
     this.insertText(text);
+    if (this.live.breaklonglines && this._cursorLine === startedOn) this.doWrap();
     this._modified = true;
     this.lastEditKind = null;
+  }
+
+  private inject(text: string): void {
+    const window = this.window;
+    const softwrap = this.live.softwrap;
+    const onLastRow = window.cursorRow === window.editRows - 1;
+    const rowBefore = softwrap && onLastRow ? window.chunkFor(window.columnOf(this._cursorLine, this._cursorCol), this._cursorLine) : 0;
+    const chunksBefore = softwrap ? window.extraChunksIn(this._cursorLine) : 0;
+    this.insertText(text);
+    if (this.live.breaklonglines) this.doWrap();
+    if (!softwrap) return;
+    const grew = window.extraChunksIn(this._cursorLine) !== chunksBefore;
+    const movedDown = onLastRow && window.chunkFor(window.columnOf(this._cursorLine, this._cursorCol), this._cursorLine) > rowBefore;
+    if (grew || movedDown) this.manner = 'flowing';
   }
 
   private insertText(text: string): void {
@@ -699,9 +722,16 @@ export class NanoEngine {
     } else if (this.markLine !== null && this.markLine > this._cursorLine) {
       this.markLine++;
     }
+    if (this.spillageLine !== null && this.spillageLine > this._cursorLine) this.spillageLine++;
     this.linesArr.splice(this._cursorLine, 1, cur.slice(0, headLength), indent + after);
     this._cursorLine++;
     this._cursorCol = indent.length;
+  }
+
+  private forgetRemovedLines(first: number, last: number): void {
+    if (this.spillageLine === null) return;
+    if (this.spillageLine >= first && this.spillageLine <= last) this.spillageLine = null;
+    else if (this.spillageLine > last) this.spillageLine -= last - first + 1;
   }
 
   private joinWithNext(line: number): void {
@@ -712,6 +742,7 @@ export class NanoEngine {
     } else if (this.markLine !== null && this.markLine > line + 1) {
       this.markLine--;
     }
+    this.forgetRemovedLines(line + 1, line + 1);
     this.linesArr[line] += this.line(line + 1);
     this.linesArr.splice(line + 1, 1);
   }
@@ -844,7 +875,7 @@ export class NanoEngine {
         const tab = this.live.tabstospaces
           ? ' '.repeat(this.live.tabsize - (wideness(cur, this._cursorCol, this.live.tabsize) % this.live.tabsize))
           : '\t';
-        this.insertText(tab);
+        this.inject(tab);
         this._modified = true;
         return;
       }
@@ -905,7 +936,7 @@ export class NanoEngine {
       default:
         if (k.key.length === 1 && !k.alt) {
           this.beginCoalescableEdit('type');
-          this.insertText(k.key);
+          this.inject(k.key);
           this._modified = true;
         }
         return;
@@ -953,6 +984,7 @@ export class NanoEngine {
           this.pasteIntoBuffer(this.cutBuffer.join('\n'));
         } else {
           this._statusMessage = '[ Cutbuffer is empty ]';
+          this.verticalKey = true;
         }
         return;
       case 'w': // Where Is (search)
@@ -975,8 +1007,8 @@ export class NanoEngine {
         this._statusMessage = this.locationMessage();
         return;
       }
-      case 'j': // Justify
-        this.justifyParagraph();
+      case 'j':
+        this.justifyText(false);
         return;
       case '6': // Mark Text (Set Mark) — toggles a mark at the cursor
         this.toggleMark();
@@ -1137,6 +1169,20 @@ export class NanoEngine {
       if (k.key === '}') this.indentLines(); else this.unindentLines();
       return;
     }
+    if (key === 'j') {
+      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      this.justifyText(true);
+      return;
+    }
+    const toggle = EDIT_TOGGLES[key];
+    if (toggle !== undefined) {
+      this.live[toggle.flag] = !this.live[toggle.flag];
+      this.manner = 'flowing';
+      const quietForStateFlags = (toggle.flag === 'autoindent' || toggle.flag === 'breaklonglines')
+        && this.live.minibar && !this.live.zero && this.live.stateflags;
+      if (!quietForStateFlags) this._statusMessage = `[ ${toggle.epithet} ${this.live[toggle.flag] ? 'enabled' : 'disabled'} ]`;
+      return;
+    }
     if (key === 'u') { this.performUndo(); return; }
     if (key === 'e') { this.performRedo(); return; }
     if (key === 'g') { // Go To Line (M-G alias)
@@ -1214,18 +1260,74 @@ export class NanoEngine {
     return parts.join('\n');
   }
 
-  private breakLine(): void {
+  private breakLine(autoindent = this.live.autoindent): void {
     const cur = this.line(this._cursorLine);
     let extra = 0;
     let onlyBlanks = false;
-    if (this.live.autoindent) {
-      extra = indentLength(cur);
+    let sample = cur;
+    if (autoindent) {
+      const next = this.linesArr[this._cursorLine + 1];
+      const context = this.justifyContext();
+      if (this.live.breaklonglines && next !== undefined && inParagraph(next, context.quote)
+        && !beginsParagraph(this.linesArr, this._cursorLine + 1, 0, context)) sample = next;
+      extra = indentLength(sample);
       if (extra > this._cursorCol) extra = this._cursorCol;
       else if (extra === this._cursorCol) onlyBlanks = indentLength(cur) === extra;
     }
     const staysBehind = this.markLine === this._cursorLine && (this.markCol ?? 0) <= this._cursorCol;
-    this.splitLine(onlyBlanks ? 0 : this._cursorCol, cur.slice(0, extra));
+    this.manner = 'flowing';
+    this.splitLine(onlyBlanks ? 0 : this._cursorCol, sample.slice(0, extra));
     if (onlyBlanks && staysBehind) this.markCol = 0;
+  }
+
+  private doWrap(): void {
+    const context = this.justifyContext();
+    const line = this._cursorLine;
+    let text = this.line(line);
+    const quoted = quoteLength(text, context.quote);
+    const leadLen = quoted + indentLength(text.slice(quoted));
+    const cursorX = this._cursorCol;
+    const found = breakLine(text.slice(leadLen), context.wrapAt - wideness(text, leadLen, context.tabsize), context.tabsize);
+    if (found < 0 || leadLen + found === text.length) return;
+    const wrapLoc = leadLen + found + 1;
+    if (wrapLoc >= text.length) return;
+    const remainder = text.slice(wrapLoc);
+    if (this.spillageLine === line + 1 && remainder.length + breadth(this.line(line + 1), context.tabsize) <= context.wrapAt) {
+      let joined = text;
+      if (!isBlankChar(remainder[remainder.length - 1])) joined += ' ';
+      let tail = this.line(line + 1);
+      if (tail.slice(0, leadLen) === joined.slice(0, leadLen)) tail = tail.slice(leadLen);
+      while (isBlankChar(tail[0])) tail = tail.slice(1);
+      this.forgetRemovedLines(line + 1, line + 1);
+      this.linesArr.splice(line + 1, 1);
+      text = joined + tail;
+      this.linesArr[line] = text;
+    }
+    let at = wrapLoc;
+    if (context.trimblanks) {
+      let rear = wrapLoc - 1;
+      const typed = Math.max(0, cursorX - 1);
+      while ((rear !== typed || cursorX >= wrapLoc) && isBlankChar(text[rear])) {
+        at = rear;
+        text = text.slice(0, rear) + text.slice(rear + 1);
+        rear = Math.max(0, rear - 1);
+        if (rear === 0 && !isBlankChar(text[0])) break;
+      }
+      this.linesArr[line] = text;
+    }
+    this._cursorCol = at;
+    this.breakLine(quoted > 0 ? false : this.live.autoindent);
+    if (quoted > 0) {
+      this.linesArr[line + 1] = this.line(line).slice(0, leadLen) + this.line(line + 1);
+      this._cursorCol += leadLen;
+    }
+    this.spillageLine = this._cursorLine;
+    if (cursorX < wrapLoc) {
+      this._cursorLine--;
+      this._cursorCol = cursorX;
+    } else {
+      this._cursorCol += cursorX - wrapLoc;
+    }
   }
 
   private markedLineRange(): { top: number; bottom: number } {
@@ -1281,6 +1383,7 @@ export class NanoEngine {
       this.linesArr[r.startLine] = text.slice(0, r.startCol) + text.slice(r.endCol);
     } else {
       const merged = this.line(r.startLine).slice(0, r.startCol) + this.line(r.endLine).slice(r.endCol);
+      this.forgetRemovedLines(r.startLine + 1, r.endLine);
       this.linesArr.splice(r.startLine, r.endLine - r.startLine + 1, merged);
     }
     this._cursorLine = r.startLine;
@@ -1338,15 +1441,21 @@ export class NanoEngine {
     if (!nothing) return true;
     this._statusMessage = '[ Nothing was cut ]';
     this.clearMark();
+    this.verticalKey = true;
     return false;
+  }
+
+  private excise(region: { startLine: number; startCol: number; endLine: number; endCol: number }): void {
+    const topWasInside = this.window.edittop >= region.startLine && this.window.edittop <= region.endLine;
+    this.deleteRegion(region);
+    this.ensureTrailingBlankLine();
+    if (topWasInside) this.window.adjust('stationary', { line: region.startLine, col: region.startCol });
   }
 
   private extractSegment(topLine: number, topCol: number, bottomLine: number, bottomCol: number): void {
     const region = { startLine: topLine, startCol: topCol, endLine: bottomLine, endCol: bottomCol };
     const piece = this.extractRegionText(region).split('\n');
-    const topWasInside = this.window.edittop >= topLine && this.window.edittop <= bottomLine;
-    this.deleteRegion(region);
-    if (topWasInside) this.manner = 'stationary';
+    this.excise(region);
     if (this.cutBuffer === null) this.cutBuffer = piece;
     else this.cutBuffer = [...this.cutBuffer.slice(0, -1), this.cutBuffer[this.cutBuffer.length - 1] + piece[0], ...piece.slice(1)];
   }
@@ -1627,82 +1736,119 @@ export class NanoEngine {
     this.applyPromptFieldKey(k, () => this.readFileBuffer, (v) => { this.readFileBuffer = v; });
   }
 
-  // ── Justify (^J) — reflow the current paragraph to JUSTIFY_WIDTH ──
+  // ── Justify (^J, M-J) ──
 
-  private indentWidth(text: string): number {
-    const lead = text.match(/^[ \t]*/)?.[0] ?? '';
-    return wideness(lead, lead.length, this.live.tabsize);
+  private get wrapAt(): number {
+    const fill = this.live.fill ?? DEFAULT_FILL;
+    const columns = this.window.cols;
+    if (columns + fill < 0) return 0;
+    return fill <= 0 ? columns + fill : fill;
   }
 
-  private paragraphContaining(target: number): { start: number; end: number } {
-    let blockStart = target;
-    while (blockStart > 0 && this.line(blockStart - 1).trim() !== '') blockStart--;
-    let start = blockStart;
-    while (true) {
-      let end = start;
-      if (start + 1 < this.linesArr.length && this.line(start + 1).trim() !== '') {
-        end = start + 1;
-        const bodyIndent = this.indentWidth(this.line(end));
-        while (end + 1 < this.linesArr.length && this.line(end + 1).trim() !== ''
-          && this.indentWidth(this.line(end + 1)) === bodyIndent) end++;
-      }
-      if (target <= end) return { start, end };
-      start = end + 1;
+  private justifyContext(): JustifyContext {
+    let quote: RegExp;
+    try {
+      quote = new RegExp(this.live.quotestr ?? DEFAULT_QUOTE_PATTERN);
+    } catch {
+      quote = new RegExp(DEFAULT_QUOTE_PATTERN);
     }
+    return {
+      quote,
+      bookstyle: this.live.bookstyle,
+      autoindent: this.live.autoindent,
+      trimblanks: this.live.trimblanks,
+      wrapAt: this.wrapAt,
+      tabsize: this.live.tabsize,
+    };
   }
 
-  private squeezeText(text: string): string {
-    return text.replace(/[ \t]+/g, (run, offset: number, whole: string) => {
-      const endsSentence = /[.?!][)\]"'}>]*$/.test(whole.slice(0, offset));
-      return endsSentence && run.length >= 2 ? '  ' : ' ';
-    });
-  }
-
-  private justifyParagraph(): void {
-    let first = this._cursorLine;
-    while (first < this.linesArr.length && this.line(first).trim() === '') first++;
-    if (first >= this.linesArr.length) return;
-    const { start, end } = this.paragraphContaining(first);
-
-    const indentOf = (i: number): string => this.line(i).match(/^[ \t]*/)?.[0] ?? '';
-    const firstIndent = indentOf(start);
-    const restIndent = end > start ? indentOf(start + 1) : firstIndent;
-    const bodies = this.linesArr.slice(start, end + 1).map((l) => l.replace(/^[ \t]+/, ''));
-    const joined = bodies.map((body, i) => {
-      if (i === bodies.length - 1) return body.trimEnd();
-      const trailing = body.match(/[ \t]*$/)?.[0] ?? '';
-      const endsSentence = /[.?!][)\]"'}>]*$/.test(body.trimEnd());
-      return body.trimEnd() + (endsSentence && (trailing.length >= 2 || trailing === '\t') ? '  ' : ' ');
-    }).join('');
-    const squeezed = this.squeezeText(joined);
-    const words = Array.from(squeezed.matchAll(/(\S+)( {1,2})?/g), (m) => ({ text: m[1], gap: m[2] ?? ' ' }));
-
-    const wrapped: string[] = [];
-    let current = firstIndent;
-    let currentHasWord = false;
-    let pendingGap = '';
-    const widthOf = (text: string): number => wideness(text, text.length, this.live.tabsize);
-    for (const word of words) {
-      if (!currentHasWord) {
-        current += word.text;
-        currentHasWord = true;
-      } else if (widthOf(current + pendingGap + word.text) <= JUSTIFY_WIDTH) {
-        current += pendingGap + word.text;
-      } else {
-        wrapped.push(current);
-        current = restIndent + word.text;
+  private justifyText(wholeBuffer: boolean): void {
+    const context = this.justifyContext();
+    const quote = context.quote;
+    const last = this.linesArr.length - 1;
+    const markedRegion = this.getMarkedRegion();
+    const wasLine = this._cursorLine;
+    let start = { line: 0, col: 0 };
+    let end = { line: 0, col: 0 };
+    let count = 0;
+    let primaryLead = '';
+    let secondaryLead = '';
+    let beforeEol = false;
+    if (markedRegion !== null) {
+      start = { line: markedRegion.startLine, col: markedRegion.startCol };
+      end = { line: markedRegion.endLine, col: markedRegion.endCol };
+      if (start.line === end.line && start.col === end.col) {
+        this._statusMessage = '[ Selection is empty ]';
+        return;
       }
-      pendingGap = word.gap;
+      if (start.col <= leadLength(this.line(start.line), quote)) start.col = 0;
+      while (start.col > 0 && isBlankChar(this.line(start.line)[start.col - 1])) start.col--;
+      if (end.col > 0 && end.col < leadLength(this.line(end.line), quote)) end.col = leadLength(this.line(end.line), quote);
+      while (end.col > 0 && isBlankChar(this.line(end.line)[end.col])) end.col++;
+      let sample = start.line;
+      while (sample > 0 && inParagraph(this.line(sample), quote) && !beginsParagraph(this.linesArr, sample, 0, context)) sample--;
+      while (sample < last && !inParagraph(this.line(sample), quote)) sample++;
+      const sampleText = this.line(sample);
+      const quoted = quoteLength(sampleText, quote);
+      primaryLead = sampleText.slice(0, leadLength(sampleText, quote));
+      if (sample < last && start.line !== end.line) sample++;
+      const other = this.line(sample);
+      const otherQuoted = quoteLength(other, quote);
+      secondaryLead = this.line(start.line).slice(0, quoted) + other.slice(otherQuoted, otherQuoted + indentLength(other.slice(otherQuoted)));
+      count = end.line - start.line + (end.col > 0 ? 1 : 0);
+      beforeEol = end.col < this.line(end.line).length;
+    } else {
+      let from = wholeBuffer ? 0 : this._cursorLine;
+      if (!wholeBuffer && inParagraph(this.line(from), quote) && !beginsParagraph(this.linesArr, from, 0, context)) {
+        from = paragraphStart(this.linesArr, from, context);
+      }
+      const found = findParagraph(this.linesArr, from, context);
+      if (found === null) {
+        this._cursorLine = last;
+        this._cursorCol = this.line(last).length;
+        return;
+      }
+      count = found.count;
+      start = { line: found.first, col: 0 };
+      const lastLine = wholeBuffer ? last : found.first + found.count - 1;
+      end = lastLine < last ? { line: lastLine + 1, col: 0 } : { line: lastLine, col: this.line(lastLine).length };
     }
-    if (currentHasWord) wrapped.push(current);
-    if (wrapped.length === 0) wrapped.push('');
-
     this.beginDiscreteEdit();
-    this.linesArr.splice(start, end - start + 1, ...wrapped);
-    this._cursorLine = start + wrapped.length;
-    this._cursorCol = 0;
+    const region = { startLine: start.line, startCol: start.col, endLine: end.line, endCol: end.col };
+    const piece = this.extractRegionText(region).split('\n');
+    this.excise(region);
+    if (markedRegion !== null) {
+      const first = piece[0];
+      const trimmed = first.slice(leadLength(first, quote));
+      piece[0] = primaryLead + trimmed;
+      concatenateParagraph(piece, 0, count, quote);
+      piece[0] = squeeze(piece[0], primaryLead.length);
+      rewrapParagraph(piece, 0, secondaryLead, context);
+      if (start.col > 0) piece.unshift('');
+      if (end.col > 0 && beforeEol) piece.push(primaryLead);
+    } else {
+      let index = justifyParagraph(piece, 0, count, context);
+      if (wholeBuffer) {
+        let found = findParagraph(piece, index, context);
+        while (found !== null) {
+          index = justifyParagraph(piece, found.first, found.count, context);
+          if (index >= piece.length - 1) break;
+          found = findParagraph(piece, index, context);
+        }
+      }
+    }
+    if (markedRegion !== null) {
+      this.markLine = start.line;
+      this.markCol = start.col;
+    }
+    this.insertText(piece.join('\n'));
+    if (markedRegion === null && wholeBuffer) {
+      this._cursorLine = Math.min(wasLine, this.linesArr.length - 1);
+      this._cursorCol = 0;
+    }
+    if (markedRegion !== null) this._statusMessage = '[ Justified selection ]';
+    else this._statusMessage = wholeBuffer ? '[ Justified file ]' : '[ Justified paragraph ]';
     this._modified = true;
-    this._statusMessage = '[ Justified paragraph ]';
   }
 
   // ── Search ───────────────────────────────────────────────────────
