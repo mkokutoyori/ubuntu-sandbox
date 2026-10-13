@@ -4,9 +4,9 @@ import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type NtpAssociation, type NtpConfig, type NtpPacket, type NtpMode,
-  type NtpCounters, type NtpVersion, createNtpCounters,
+  type NtpCounters, type NtpVersion, type NtpRateLimit, createNtpCounters,
   createDefaultNtpConfig, defaultAssociation,
-  UDP_PORT_NTP, NTP_VERSION, NTP_MAX_STRATUM, NTP_MIN_POLL, NTP_MAX_POLL, NTP_PHI,
+  UDP_PORT_NTP, NTP_VERSION, NTP_MAX_STRATUM, NTP_DEFAULT_MAX_POLL, NTP_MIN_POLL, NTP_MAX_POLL, NTP_PHI,
   NTP_MAX_DISPERSION_MS, NTP_MIN_DISPERSION_MS, NTP_MAX_DISTANCE_MS,
 } from './types';
 import { timestampFromMs, timestampDifferenceMs, NTP_TIMESTAMP_ZERO, type NtpTimestamp } from './timestamp';
@@ -114,6 +114,32 @@ export class NtpAgent {
   }
 
   getConfig(): Readonly<NtpConfig> { return this.config; }
+
+  setRateLimit(limit: NtpRateLimit | null): void {
+    this.config.rateLimit = limit;
+    this.buckets.clear();
+  }
+
+  private readonly buckets = new Map<string, { tokens: number; at: number; excess: number }>();
+
+  private allowedByRate(ip: string): 'serve' | 'kod' | 'drop' {
+    const limit = this.config.rateLimit;
+    if (limit === null) return 'serve';
+    const now = simulationNowMs();
+    const bucket = this.buckets.get(ip) ?? { tokens: limit.burst, at: now, excess: 0 };
+    const refill = ((now - bucket.at) / 1000) / 2 ** limit.intervalExponent;
+    bucket.tokens = Math.min(limit.burst, bucket.tokens + refill);
+    bucket.at = now;
+    this.buckets.set(ip, bucket);
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      return 'serve';
+    }
+    this.config.counters.rateLimited++;
+    bucket.excess++;
+    if (limit.kod) return 'kod';
+    return bucket.excess % 2 ** limit.leakExponent === 0 ? 'serve' : 'drop';
+  }
 
   setProfile(profile: Partial<NtpPlatformProfile>): void { this.profile = { ...this.profile, ...profile }; }
   getProfile(): Readonly<NtpPlatformProfile> { return this.profile; }
@@ -372,6 +398,10 @@ export class NtpAgent {
         a.sourceInterface ? ` source ${a.sourceInterface}` : '',
         a.keyId !== undefined ? ` key ${a.keyId}` : '',
         a.prefer ? ' prefer' : '',
+        a.maxpoll !== NTP_DEFAULT_MAX_POLL ? ` maxpoll ${a.maxpoll}` : '',
+        a.minpoll !== NTP_MIN_POLL ? ` minpoll ${a.minpoll}` : '',
+        a.burstMode ? ' burst' : '',
+        a.iburst ? ' iburst' : '',
       ].join('');
       lines.push(`${famille} ${kind} ${ip}${options}`);
     }
@@ -472,7 +502,11 @@ export class NtpAgent {
     const association = this.config.associations.get(ip);
     if (packet.mode === 'client') {
       if (!this.accesAutorise('serve-time', ip)) { this.refuserAcces(srcIp, 'serve-time'); return; }
-      if (this.mayServe()) this.fastTransmit(inPort, srcIp, packet, 'server', destination);
+      if (!this.mayServe()) return;
+      const rate = this.allowedByRate(ip);
+      if (rate === 'drop') { c.processed--; this.discard(); return; }
+      if (rate === 'kod') { this.kissOfDeath(inPort, srcIp, packet, destination, 'RATE'); return; }
+      this.fastTransmit(inPort, srcIp, packet, 'server', destination);
       return;
     }
     if (packet.mode === 'symmetric-active') {
@@ -641,6 +675,19 @@ export class NtpAgent {
       refIdentifier: this.referenceForWire(),
       refTimestamp: synced ? system.refTimestamp : NTP_TIMESTAMP_ZERO,
     };
+  }
+
+  private kissOfDeath(inPort: string, clientIp: IPAddress, request: NtpPacket, destination: NtpTimestamp, code: string): void {
+    const srcIp = this.host.getPort(inPort)?.getIPAddress();
+    if (!srcIp) return;
+    const kiss: NtpPacket = {
+      type: 'ntp', ...this.systemHeader(), version: request.version, mode: 'server', poll: request.poll,
+      leapIndicator: 3, stratum: 0, refIdentifier: code,
+      origTimestamp: request.txTimestamp, rxTimestamp: destination, txTimestamp: timestampFromMs(this.now()),
+      keyId: request.keyId,
+    };
+    this.sendNtp(srcIp, clientIp, kiss);
+    this.config.counters.kissSent++;
   }
 
   private fastTransmit(inPort: string, clientIp: IPAddress, request: NtpPacket, mode: NtpMode, destination: NtpTimestamp): void {

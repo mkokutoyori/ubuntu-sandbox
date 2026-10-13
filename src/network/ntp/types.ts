@@ -173,7 +173,15 @@ export function createSystemState(): NtpSystemState {
   };
 }
 
+export interface NtpRateLimit {
+  intervalExponent: number;
+  burst: number;
+  leakExponent: number;
+  kod: boolean;
+}
+
 export interface NtpConfig {
+  rateLimit: NtpRateLimit | null;
   enabled: boolean;
   serverMode: boolean;
   associations: Map<string, NtpAssociation>;
@@ -284,6 +292,7 @@ export interface NtpCounters {
   badVersion: number;
   kissReceived: number;
   kissSent: number;
+  rateLimited: number;
   /** Paquet mal forme : ni un mode connu, ni une charge utile lisible. */
   protocolError: number;
   /** Recus par mode, pour le filtre `show ntp packets mode <x>`. */
@@ -298,7 +307,7 @@ export function createNtpCounters(): NtpCounters {
   });
   return {
     received: 0, sent: 0, processed: 0, dropped: 0,
-    authFailures: 0, authOk: 0, accessDenied: 0, badVersion: 0, protocolError: 0, kissReceived: 0, kissSent: 0,
+    authFailures: 0, authOk: 0, accessDenied: 0, badVersion: 0, protocolError: 0, kissReceived: 0, kissSent: 0, rateLimited: 0,
     receivedControl: 0, sentControl: 0, controlDenied: 0,
     receivedByMode: parMode(), sentByMode: parMode(),
   };
@@ -314,6 +323,7 @@ export function createDefaultNtpConfig(): NtpConfig {
     lastSyncMs: 0,
     refIdentifier: '.INIT.',
     system: createSystemState(),
+    rateLimit: null,
     sourceInterface: '',
     authenticate: false,
     authKeys: new Map(),
