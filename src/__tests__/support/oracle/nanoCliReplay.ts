@@ -10,10 +10,10 @@ export interface NanoCliCase extends NanoScreenCase {
   stderr?: string;
 }
 
-const SCREEN_PORTED_FLAGS: ReadonlySet<string> = new Set(['view', 'constantshow', 'linenumbers', 'softwrap']);
+const SCREEN_PORTED_FLAGS: ReadonlySet<string> = new Set(['view', 'constantshow', 'linenumbers', 'softwrap', 'nohelp', 'emptyline', 'stateflags']);
 
-function screenIsPorted(c: NanoCliCase): boolean {
-  const invocation = parseNanoCommandLine(c.args);
+export function screenIsPorted(args: readonly string[]): boolean {
+  const invocation = parseNanoCommandLine(args);
   if (invocation.kind !== 'open' || invocation.files.length > 1) return false;
   const defaults = defaultNanoSettings();
   const differing = (Object.keys(defaults) as (keyof NanoSettings)[]).filter((key) => invocation.settings[key] !== defaults[key]);
@@ -32,6 +32,6 @@ export function replayNanoCliCase(c: NanoCliCase): string | null {
     return JSON.stringify(got) === JSON.stringify(want) ? null : `${c.id} ${JSON.stringify(c.args)}\n  want ${JSON.stringify(want)}\n  got  ${JSON.stringify(got)}`;
   }
   if (invocation.kind !== 'open') return `${c.id} ${JSON.stringify(c.args)} should open the editor, got ${invocation.kind}`;
-  return screenIsPorted(c) ? replayNanoScreenCase(c) : null;
+  return screenIsPorted(c.args) ? replayNanoScreenCase(c) : null;
 }
 

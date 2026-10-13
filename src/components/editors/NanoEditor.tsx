@@ -3,8 +3,7 @@ import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import type { NanoLaunchOptions } from '@/network/devices/linux/editors/NanoEngine';
 import type { NanoLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
-import type { EditorScreen } from '@/network/devices/linux/editors/screen/EditorScreen';
-import { nanoLayout } from '@/network/devices/linux/editors/nano/NanoWindow';
+import type { EditorScreen, ScreenBand } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { GridRows } from './EditorGrid';
 import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
 import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
@@ -102,9 +101,11 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   }, [engine, bump]);
 
   const screen = engine.screen;
-  const layout = nanoLayout(screen.rows.length);
-  const editEnd = layout.editFrom + layout.editRows;
-  const barsEnd = layout.barsFrom === null ? layout.statusRow + 1 : screen.rows.length;
+  const band = (name: ScreenBand['name']): ScreenBand | undefined => screen.bands?.find((candidate) => candidate.name === name);
+  const title = band('title');
+  const edit = band('edit') ?? { name: 'edit', from: 0, to: screen.rows.length };
+  const status = band('status') ?? { name: 'status', from: screen.rows.length - 1, to: screen.rows.length };
+  const bars = band('bars');
 
   return (
     <div
@@ -127,20 +128,20 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         onMouseDown={click}
         className="absolute inset-0 outline-none"
       >
-        {layout.titleRow !== null && (
+        {title !== undefined && (
           <div data-testid="nano-titlebar">
-            <GridRows screen={slice(screen, 0, 1)} caret="block" cursorTestId="nano-cursor" />
+            <GridRows screen={slice(screen, title.from, title.from + 1)} caret="block" cursorTestId="nano-cursor" />
           </div>
         )}
         <div data-testid="nano-edit">
-          <GridRows screen={slice(screen, layout.editFrom, editEnd)} caret="block" cursorTestId="nano-cursor" />
+          <GridRows screen={slice(screen, edit.from, edit.to)} caret="block" cursorTestId="nano-cursor" />
         </div>
         <div data-testid="nano-status-message">
-          <GridRows screen={slice(screen, layout.statusRow, layout.statusRow + 1)} caret="block" cursorTestId="nano-cursor" />
+          <GridRows screen={slice(screen, status.from, status.to)} caret="block" cursorTestId="nano-cursor" />
         </div>
-        {layout.barsFrom !== null && (
+        {bars !== undefined && (
           <div data-testid="nano-shortcut-bar">
-            <GridRows screen={slice(screen, layout.barsFrom, barsEnd)} caret="block" cursorTestId="nano-cursor" />
+            <GridRows screen={slice(screen, bars.from, bars.to)} caret="block" cursorTestId="nano-cursor" />
           </div>
         )}
       </div>

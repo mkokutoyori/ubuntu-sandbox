@@ -1,10 +1,17 @@
-import type { EditorScreen, ScreenRow, ScreenSpan } from '../screen/EditorScreen';
+import type { EditorScreen, ScreenBand, ScreenRow, ScreenSpan } from '../screen/EditorScreen';
 import { CONTINUATION } from '../screen/EditorScreen';
 import { actualX, advanceOver, breadth, DEFAULT_TABSIZE, displayString, wideness, type DisplayResult } from './NanoText';
 import { NANO_MENUS, type NanoMenuName } from './NanoMenus';
 import type { NanoWindow, Position } from './NanoWindow';
 
 export type TitleState = 'View' | 'Modified' | '';
+
+export interface TitleStateFlags {
+  readonly letters: string;
+  readonly modified: boolean;
+}
+
+const STATE_FLAGS_PLACEHOLDER = '+.xxxxx';
 
 export interface NanoScreenInput {
   readonly window: NanoWindow;
@@ -14,7 +21,7 @@ export interface NanoScreenInput {
   readonly spotlight: { readonly line: number; readonly start: number; readonly end: number } | null;
   readonly tabsize: number;
   readonly softwrap: boolean;
-  readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string };
+  readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null };
   readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean } | null;
   readonly prompt: { readonly label: string; readonly answer: string; readonly cursor: number } | null;
   readonly yesNo: { readonly question: string; readonly withAll: boolean } | null;
@@ -66,13 +73,15 @@ function clipped(text: string, width: number, tabsize: number): string {
   return text.slice(0, end);
 }
 
-export function titleRow(cols: number, name: string, state: TitleState, branding: string, tabsize: number): ScreenRow {
+export function titleRow(cols: number, name: string, state: TitleState, branding: string, tabsize: number, flags: TitleStateFlags | null = null): ScreenRow {
   const canvas = new Canvas(cols);
+  const flagged = flags !== null && state !== 'View';
+  const stateWord = flagged ? STATE_FLAGS_PLACEHOLDER : state;
   let upperleft = branding;
   let verlen = breadth(upperleft, tabsize) + 3;
   let pluglen = 0;
-  if (state === '') pluglen = breadth('Modified', tabsize) + 1;
-  let statelen = breadth(state, tabsize) + 2;
+  if (stateWord === '') pluglen = breadth('Modified', tabsize) + 1;
+  let statelen = breadth(stateWord, tabsize) + 2;
   let pathlen = breadth(name, tabsize);
   if (statelen > 2) pathlen++;
 
@@ -91,16 +100,22 @@ export function titleRow(cols: number, name: string, state: TitleState, branding
   let offset = 0;
   if (verlen > 0) offset = verlen + Math.floor((cols - (verlen + pluglen + statelen) - pathlen) / 2);
 
+  let afterPath = offset;
   if (pathlen + pluglen + statelen <= cols) {
     const caption = displayString(name, 0, pathlen, { isData: false, isPrompt: false, softwrap: false, tabsize });
     canvas.putCells(offset, caption.cells);
+    afterPath = offset + caption.cells.length;
   } else if (5 + statelen <= cols) {
     canvas.put(offset, '...');
     const caption = displayString(name, 3 + pathlen - cols + statelen, cols - statelen, { isData: false, isPrompt: false, softwrap: false, tabsize });
     canvas.putCells(offset + 3, caption.cells);
+    afterPath = offset + 3 + caption.cells.length;
   }
 
-  if (statelen > 0 && statelen <= cols) canvas.put(cols - statelen, state);
+  if (flagged && flags !== null) {
+    if (flags.modified && cols > 1) canvas.put(afterPath, ' *');
+    if (statelen < cols) canvas.put(cols + 2 - statelen, flags.letters);
+  } else if (statelen > 0 && statelen <= cols) canvas.put(cols - statelen, state);
   else if (statelen > 0) canvas.put(0, clipped(state, cols, tabsize));
 
   canvas.mark(0, cols, 'reverse');
@@ -315,14 +330,15 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   const window = input.window;
   const cols = window.cols;
   const tabsize = input.tabsize;
-  const rows: ScreenRow[] = [];
+  const layout = window.layout;
+  const rows: ScreenRow[] = new Array(window.rows).fill(SPACE_ROW);
   let cursorAt: { row: number; col: number } | null = null;
 
-  if (window.hasTitleBar) rows.push(titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize));
+  if (layout.titleRows > 0) rows[0] = titleRow(cols, input.title.name, input.title.state, input.title.branding, tabsize, input.title.flags);
 
   const body = input.helpLines === null ? editRows(input) : helpRows(input);
-  const bodyTop = rows.length;
-  rows.push(...body);
+  const bodyTop = layout.editFrom;
+  body.forEach((row, index) => { if (bodyTop + index < rows.length) rows[bodyTop + index] = row; });
 
   let footerStatus: ScreenRow;
   let bars: [ScreenRow, ScreenRow] | null = null;
@@ -348,14 +364,17 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
     }
   }
 
-  if (window.rows < 3) {
-    rows.length = 0;
-    rows.push(footerStatus);
-  } else {
-    rows.push(footerStatus);
-    if (window.hasShortcutBars && bars !== null) rows.push(bars[0], bars[1]);
+  rows[layout.statusRow] = footerStatus;
+  if (layout.barsFrom !== null && bars !== null) {
+    rows[layout.barsFrom] = bars[0];
+    rows[layout.barsFrom + 1] = bars[1];
   }
 
-  if (cursorAt !== null && cursorAt.row === -1) cursorAt = { row: bodyTop + window.editRows, col: cursorAt.col };
-  return { rows, cursor: cursorAt };
+  if (cursorAt !== null && cursorAt.row === -1) cursorAt = { row: layout.statusRow, col: cursorAt.col };
+  const bands: ScreenBand[] = [];
+  if (layout.titleRows > 0) bands.push({ name: 'title', from: 0, to: layout.titleRows });
+  bands.push({ name: 'edit', from: layout.editFrom, to: layout.editFrom + layout.editRows });
+  bands.push({ name: 'status', from: layout.statusRow, to: layout.statusRow + 1 });
+  if (layout.barsFrom !== null) bands.push({ name: 'bars', from: layout.barsFrom, to: layout.barsFrom + 2 });
+  return { rows, cursor: cursorAt, bands };
 }

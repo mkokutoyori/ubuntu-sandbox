@@ -11,6 +11,17 @@ export interface NanoWindowSettings {
   readonly softwrap: boolean;
   readonly tabsize: number;
   readonly lineNumbers: boolean;
+  readonly zero: boolean;
+  readonly minibar: boolean;
+  readonly emptyline: boolean;
+  readonly nohelp: boolean;
+}
+
+export interface NanoLayoutFlags {
+  readonly zero: boolean;
+  readonly minibar: boolean;
+  readonly emptyline: boolean;
+  readonly nohelp: boolean;
 }
 
 export interface Position {
@@ -26,18 +37,24 @@ export interface ScreenPosition {
 const HIGHEST = Number.MAX_SAFE_INTEGER;
 
 export interface NanoLayout {
-  readonly titleRow: number | null;
+  readonly titleRows: number;
   readonly editFrom: number;
   readonly editRows: number;
   readonly statusRow: number;
   readonly barsFrom: number | null;
 }
 
-export function nanoLayout(rows: number): NanoLayout {
-  if (rows < 3) return { titleRow: null, editFrom: 0, editRows: 1, statusRow: rows - 1, barsFrom: null };
-  const bars = rows >= 5;
-  const editRows = rows - 1 - (bars ? 3 : 1);
-  return { titleRow: 0, editFrom: 1, editRows, statusRow: 1 + editRows, barsFrom: bars ? rows - 2 : null };
+export const SHORTCUT_BARS_MINIMUM = 6;
+
+export const PLAIN_LAYOUT: NanoLayoutFlags = { zero: false, minibar: false, emptyline: false, nohelp: false };
+
+export function nanoLayout(rows: number, flags: NanoLayoutFlags = PLAIN_LAYOUT): NanoLayout {
+  if (rows < 3) return { titleRows: 0, editFrom: 0, editRows: flags.zero ? rows : 1, statusRow: rows - 1, barsFrom: null };
+  const bottomRows = flags.nohelp || flags.zero || rows < SHORTCUT_BARS_MINIMUM ? 1 : 3;
+  const titleRows = flags.minibar || flags.zero ? 0 : flags.emptyline && rows > SHORTCUT_BARS_MINIMUM ? 2 : 1;
+  const editRows = rows - titleRows - bottomRows + (flags.zero ? 1 : 0);
+  const statusRow = rows - bottomRows;
+  return { titleRows, editFrom: titleRows, editRows, statusRow, barsFrom: bottomRows === 3 ? statusRow + 1 : null };
 }
 
 export class NanoWindow {
@@ -52,7 +69,9 @@ export class NanoWindow {
     private readonly settings: () => NanoWindowSettings,
   ) {}
 
-  get editRows(): number { return nanoLayout(this.rows).editRows; }
+  get layout(): NanoLayout { return nanoLayout(this.rows, this.settings()); }
+
+  get editRows(): number { return this.layout.editRows; }
 
   get margin(): number {
     if (!this.settings().lineNumbers) return 0;
@@ -62,9 +81,9 @@ export class NanoWindow {
 
   get editCols(): number { return this.cols - this.margin; }
 
-  get hasTitleBar(): boolean { return this.rows >= 3; }
+  get hasTitleBar(): boolean { return this.layout.titleRows > 0; }
 
-  get hasShortcutBars(): boolean { return this.rows >= 5; }
+  get hasShortcutBars(): boolean { return this.layout.barsFrom !== null; }
 
   private get tabsize(): number { return this.settings().tabsize; }
 

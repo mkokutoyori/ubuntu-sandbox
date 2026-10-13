@@ -27,6 +27,8 @@ def send(name, token):
 
 def snapshot(name):
     cur = tmux("display", "-p", "-t", name, "#{cursor_y} #{cursor_x} #{pane_height} #{pane_width}").split()
+    if len(cur) < 4:
+        return None
     pane = tmux("capture-pane", "-p", "-t", name).split("\n")
     return int(cur[0]), int(cur[1]), int(cur[2]), int(cur[3]), pane
 
@@ -35,13 +37,18 @@ def settled(name):
     for _ in range(40):
         time.sleep(0.05)
         snap = snapshot(name)
+        if snap is None:
+            return None
         if snap == last:
             return snap
         last = snap
     return last
 
 def record_screen(name):
-    y, x, height, width, pane = settled(name)
+    snap = settled(name)
+    if snap is None:
+        return None
+    y, x, height, width, pane = snap
     return {"y": y, "x": x, "height": height, "width": width, "rows": [r.rstrip() for r in pane[:height]]}
 
 def run_case(case, workdir):
@@ -64,9 +71,12 @@ def run_case(case, workdir):
             send(name, step)
             if step == "Escape":
                 time.sleep(0.15)
-        after.append(record_screen(name))
+        snap = record_screen(name)
+        if snap is None:
+            break
+        after.append(snap)
     tmux("kill-session", "-t", name)
-    return dict(case, opened=opened, after=after)
+    return dict(case, steps=case["steps"][:len(after)], opened=opened, after=after)
 
 WORDS = ["foo", "bar", "baz", "Hello", "world", "a_b", "x", "tab\there", "中文", "café", "é", "(x)", "[1,2]", "end."]
 
@@ -86,7 +96,7 @@ def rand_buffer(r, n):
 FLAGS = [[], [], ["-l"], ["-S"], ["-l", "-S"], ["-c"], ["-v"]]
 MOVES = ["Left", "Right", "Up", "Down", "Home", "End", "C-a", "C-e", "C-y", "C-v", "PageUp", "PageDown", "C-Left", "C-Right", "M-\\", "M-/", "C-p", "C-n", "C-b", "C-f"]
 EDITS = ["x", "yz", "BSpace", "DC", "Enter", "Tab", "C-k", "C-u", "M-6", "C-d"]
-TOGGLES = ["M-n", "M-s"]
+TOGGLES = ["M-n", "M-s", "M-x", "M-c"]
 SCROLLS = ["M-Up", "M-Down"]
 
 PROMPT_WORDS = ["foo", "bar", "world", "x", "end.", "Hello", "a_b", "tab", "zzz", "é", "中文"]
@@ -252,6 +262,26 @@ def gen_place(seed, count):
         cases.append({"id": "plc%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + [target, "t.txt"], "steps": []})
     return cases
 
+LAYOUT_FLAGS = ["-x", "-e", "-%", "-_", "-0"]
+LAYOUT_EXTRA = ["-l", "-S", "-c", "-v"]
+
+def gen_layout(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = rand_buffer(r, r.choice([1, 3, 8, 20, 40]))
+        rows, cols = r.choice([(2, 40), (3, 40), (4, 40), (5, 40), (6, 40), (7, 50), (8, 40), (10, 30), (10, 60), (14, 60), (24, 80), (24, 40)])
+        flags = r.sample(LAYOUT_FLAGS, r.choice([1, 1, 1, 2, 2, 3])) + r.sample(LAYOUT_EXTRA, r.choice([0, 0, 1, 2]))
+        steps = [r.choice(MOVES + EDITS + ["M-a"]) for _ in range(r.randint(2, 8))]
+        if r.random() < 0.3:
+            steps = steps + prompt_script(r)
+        if r.random() < 0.25:
+            steps.insert(r.randint(0, len(steps)), "@%dx%d" % (r.choice([3, 4, 5, 6, 8, 12, 20]), r.choice([30, 40, 60, 80])))
+        if r.random() < 0.2:
+            steps.insert(r.randint(0, len(steps)), r.choice(TOGGLES))
+        cases.append({"id": "lay%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "steps": steps})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
@@ -259,6 +289,8 @@ def gen(seed, count, corpus):
         return gen_cli(seed, count)
     if corpus == "place":
         return gen_place(seed, count)
+    if corpus == "layout":
+        return gen_layout(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):
