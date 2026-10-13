@@ -1306,7 +1306,7 @@ export class NtpAgent {
     const now = simulationNowMs();
     if (reference === undefined && system.updateMs >= best.updateMs && system.peerIp === best.serverIp) return;
     const combined = reference !== undefined
-      ? { offsetMs: reference.offset * 1000, jitterMs: reference.offsetDeviation * 1000 }
+      ? { offsetMs: -reference.offset * 1000, jitterMs: reference.offsetDeviation * 1000 }
       : best.prefer ? { offsetMs: best.offsetMs, jitterMs: best.jitterMs } : combineOffsets(survivors, now);
     const elapsed = this.horloge.dernierReglageMs
       ? now - this.horloge.dernierReglageMs

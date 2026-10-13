@@ -13,6 +13,13 @@
  * agreeing wrong servers already won; `minsources 2` with two servers;
  * `noselect` already excluded a source; the default maxupdateskew; the same
  * offset without maxchange; the default local distance.
+ *
+ * The two `sign guard` cases pass against HEAD and fell against the first
+ * version of the port, which fed the combined offset to the discipline in
+ * chrony's own sign (local minus remote) instead of the agent's (remote
+ * minus local): with a real offset the clock moved away from the servers
+ * (10000 ms gap after a 5 s step, 800 ms after a 200 ms slew). The earlier
+ * labs had no offset to expose it.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -170,6 +177,22 @@ describe('selection among agreeing and disagreeing sources', () => {
     expect(await stateOf(pc, selected)).toBe('*');
     converge(clock, 120_000);
     expect(await stateOf(pc, selected)).toBe('N');
+  });
+});
+
+describe('the combined offset moves the clock towards the servers', () => {
+  it('sign guard: a client 5 s behind its three servers is stepped forward, not backward', async () => {
+    const ahead = { stratum: 2, offsetMs: 5000 };
+    const { pc, routers } = await lab([ahead, ahead, ahead], (i) => `${servers(i)}`.replace('makestep 1000 3', 'makestep 1 3'));
+    const gap = Math.abs(agentOf(pc).now() - agentOf(routers[0]).now());
+    expect(gap).toBeLessThan(50);
+  });
+
+  it('sign guard: a client 200 ms ahead of its servers slews back, not further away', async () => {
+    const behind = { stratum: 2, offsetMs: -200 };
+    const { pc, routers } = await lab([behind, behind, behind], (i) => `${servers(i)}`.replace('makestep 1000 3', ''), 600_000);
+    const gap = Math.abs(agentOf(pc).now() - agentOf(routers[0]).now());
+    expect(gap).toBeLessThan(200);
   });
 });
 
