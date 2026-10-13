@@ -12,6 +12,10 @@ import {
 import { ReferenceTracking } from './ReferenceTracking';
 import { adjustPoll, pollAdjustment, startBurst, startInitialBurst, chronyTransmitTick, chronyValidResponse } from './chronyPoll';
 import { SourceStatistics } from './SourceStatistics';
+import {
+  ChronySelector, DEFAULT_SELECTION_PARAMETERS, type CombinedReference, type SelectionInput,
+  type SelectionParameters, type SourceVerdict,
+} from './ChronySelection';
 import { timestampFromMs, timestampDifferenceMs, NTP_TIMESTAMP_ZERO, type NtpTimestamp } from './timestamp';
 import {
   clockFilter, isFit, pollTick, pollUpdate, resetPeer, rootDistanceMs, PRECISION_FLOOR_MS,
@@ -22,7 +26,7 @@ import {
   type EthernetFrame, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
-import { isValidIPv4 } from '../core/ip';
+import { isValidIPv4, tryIpToUint32 } from '../core/ip';
 import { calculerMacNtp, verifierMacNtp } from './auth';
 import { decodeNtpPacket, encodeNtpPacket, isCryptoNak, isKissOfDeath } from './wire';
 import { verdictAccesNtp, type ActionNtp } from './accessGroups';
@@ -46,6 +50,8 @@ export interface NtpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
 }
+
+export interface LocalReference { readonly stratum: number; readonly distance: number; readonly orphan: boolean }
 
 export interface NtpPlatformProfile {
   respondsWhenUnsynchronized: boolean;
@@ -306,8 +312,10 @@ export class NtpAgent {
     a.online = online;
     if (!online) {
       this.disarm(serverIp);
-      a.reach = 0;
-      this.reselect();
+      if (this.profile.pollModel !== 'chrony') {
+        a.reach = 0;
+        this.reselect();
+      }
       return true;
     }
     if (a.iburst && this.profile.pollModel === 'chrony') startInitialBurst(a);
@@ -330,7 +338,9 @@ export class NtpAgent {
     }
     if (a.maxpoll < a.minpoll) a.maxpoll = a.minpoll;
     a.hpoll = Math.max(Math.min(a.maxpoll, a.hpoll), a.minpoll);
-    if (criteria.noselect !== undefined || criteria.prefer !== undefined) this.reselect();
+    const selectionChanged = criteria.noselect !== undefined || criteria.prefer !== undefined
+      || criteria.trust !== undefined || criteria.require !== undefined;
+    if (selectionChanged && this.profile.pollModel !== 'chrony') this.reselect();
     return true;
   }
 
@@ -340,7 +350,10 @@ export class NtpAgent {
     this.config.offsetMs = offsetMs;
   }
 
-  reselectSources(): void { this.reselect(); }
+  reselectSources(): void {
+    if (this.profile.pollModel === 'chrony') this.selector.unselect();
+    this.reselect();
+  }
 
   bestMeasuredOffsetMs(): number | null {
     const now = simulationNowMs();
@@ -368,7 +381,9 @@ export class NtpAgent {
       }
     }
     this.reference.reset();
-    this.reselect();
+    const wasSelected = this.selector.selected() !== null;
+    this.selector.clear();
+    if (wasSelected || this.profile.pollModel !== 'chrony') this.reselect();
   }
 
   stepClockBy(deltaMs: number): void {
@@ -518,6 +533,23 @@ export class NtpAgent {
       lines.push(`ntp access-group ${kind} ${acl}`);
     }
     return lines;
+  }
+
+  setLocalReference(reference: LocalReference | null): void {
+    this.localReference = reference;
+    this.selectionParameters = {
+      ...this.selectionParameters,
+      orphanStratum: reference?.orphan ? reference.stratum : NTP_MAX_STRATUM,
+    };
+  }
+
+  private localReference: LocalReference | null = null;
+
+  private localReferenceServing(): LocalReference | null {
+    const reference = this.localReference;
+    if (reference === null || this.config.system.peerIp === null || !this.isSynced()) return null;
+    const distanceMs = this.config.system.rootDelayMs / 2 + this.currentRootDispersionMs();
+    return distanceMs / 1000 > reference.distance ? reference : null;
   }
 
   setLocalStratum(stratum: number): void {
@@ -775,14 +807,14 @@ export class NtpAgent {
     const errorInEstimate = Math.abs(-offset / 1000 - predicted);
     a.statistics.accumulate({
       time: now / 1000, offset: offset / 1000, peerDelay: delay / 1000, peerDispersion: dispersion / 1000,
-      rootDelay: packet.rootDelay / 1000, rootDispersion: packet.rootDispersion / 1000,
+      rootDelay: (packet.rootDelay + delay) / 1000, rootDispersion: (packet.rootDispersion + dispersion) / 1000,
     });
     if (chrony) {
       const delays = a.statistics.peerDelays();
       adjustPoll(a, pollAdjustment(a, errorInEstimate, dispersion / 1000 + 0.5 * delay / 1000), a.reach !== 0, Math.min(...delays));
     }
     const outcome = clockFilter(a, offset, delay, dispersion, now, system);
-    if (outcome.accepted && a.burst === 0) this.reselect();
+    if (outcome.accepted && a.burst === 0) this.reselect(a);
   }
 
   private sampleVerdict(a: NtpAssociation, delayMs: number): { good: boolean; tests: string } {
@@ -816,6 +848,13 @@ export class NtpAgent {
 
   private systemHeader(): Pick<NtpPacket, 'leapIndicator' | 'stratum' | 'precision' | 'rootDelay' | 'rootDispersion' | 'refIdentifier' | 'refTimestamp'> {
     const system = this.config.system;
+    const local = this.localReferenceServing();
+    if (local !== null) {
+      return {
+        leapIndicator: 0, stratum: local.stratum, precision: system.precision, rootDelay: 0, rootDispersion: 0,
+        refIdentifier: '127.127.1.1', refTimestamp: timestampFromMs(this.now()),
+      };
+    }
     const synced = this.isSynced();
     return {
       leapIndicator: synced ? system.leap : 3,
@@ -1016,7 +1055,7 @@ export class NtpAgent {
     const system = this.config.system;
     if (this.profile.pollModel === 'chrony') {
       const tick = chronyTransmitTick(a, now, system.peerIp === a.serverIp);
-      if (tick.missedSample && a.reach === 0) this.reselect();
+      if (tick.missedSample && a.preferred) this.reselect();
       this.transmit(a);
       this.arm(a);
       this.refreshSynchronization();
@@ -1076,7 +1115,69 @@ export class NtpAgent {
     }
   }
 
-  private reselect(): void {
+  private readonly selector = new ChronySelector();
+  private selectionParameters: SelectionParameters = { ...DEFAULT_SELECTION_PARAMETERS };
+
+  setSelectionParameters(parameters: Partial<SelectionParameters>): void {
+    this.selectionParameters = { ...this.selectionParameters, ...parameters };
+  }
+
+  getSelectionParameters(): SelectionParameters { return { ...this.selectionParameters }; }
+
+  selectionVerdict(serverIp: string): SourceVerdict | null { return this.selector.verdict(serverIp); }
+
+  private chronyLocalRefId(a: NtpAssociation): number {
+    const declared = a.localIp ?? this.namedSource(a)?.toString();
+    if (declared !== undefined && isValidIPv4(declared)) return tryIpToUint32(declared) ?? 0;
+    for (const port of this.host.getPorts()) {
+      const address = port.getIPAddress()?.toString();
+      if (address !== undefined && isValidIPv4(address) && address !== '127.0.0.1') return tryIpToUint32(address) ?? 0;
+    }
+    return 0;
+  }
+
+  private chronyReselect(updated?: NtpAssociation): void {
+    const now = simulationNowMs();
+    const system = this.config.system;
+    const associations = [...this.config.associations.values()];
+    const inputs: SelectionInput[] = associations.map((a) => ({
+      key: a.serverIp, noselect: a.noselect, prefer: a.prefer, trust: a.trust, require: a.require,
+      unsynchronised: a.received === 0 || a.leap === 3 || a.stratum >= NTP_MAX_STRATUM,
+      stratum: a.stratum, reachability: a.reach & 0xff, reachabilitySize: Math.min(8, a.sent),
+      refId: tryIpToUint32(a.serverIp) ?? 0, statistics: a.statistics, isNtp: true,
+      localRefId: this.chronyLocalRefId(a),
+    }));
+    const outcome = this.selector.select(inputs, now / 1000, this.selectionParameters, updated?.serverIp ?? null);
+    system.survivors = [];
+    for (const a of associations) {
+      const status = this.selector.verdict(a.serverIp)?.status;
+      a.preferred = status === 'SELECTED' && outcome.selectedKey === a.serverIp;
+      a.selection = status === 'SELECTED' ? 'sys'
+        : status === 'UNSELECTED' ? 'candidate'
+          : status === 'FALSETICKER' ? 'falseticker'
+            : status === 'DISTANT' || status === 'WAITS_SOURCES' || status === 'NONPREFERRED' || status === 'WAITS_UPDATE'
+              ? 'outlier' : 'reject';
+      if (status === 'SELECTED' || status === 'UNSELECTED') system.survivors.push(a.serverIp);
+    }
+    if (outcome.noMajority && system.peerIp !== null) {
+      system.peerIp = null;
+      this.becomeUnsynchronized();
+      this.getBus().publish({
+        topic: 'ntp.unsynced',
+        payload: { deviceId: this.host.id, hostname: this.host.getHostname(), reason: 'unreachable' },
+      });
+      return;
+    }
+    const reference = outcome.reference;
+    if (reference === null) return;
+    const best = this.config.associations.get(reference.key);
+    if (best === undefined) return;
+    const survivors = associations.filter((a) => system.survivors.includes(a.serverIp));
+    this.clockUpdate(best, survivors, system.peerIp !== best.serverIp, reference);
+  }
+
+  private reselect(updated?: NtpAssociation): void {
+    if (this.profile.pollModel === 'chrony') { this.chronyReselect(updated); return; }
     const now = simulationNowMs();
     const system = this.config.system;
     const associations = [...this.config.associations.values()];
@@ -1109,14 +1210,26 @@ export class NtpAgent {
     this.clockUpdate(best, selection.survivors, previous?.serverIp !== best.serverIp);
   }
 
-  private clockUpdate(best: NtpAssociation, survivors: NtpAssociation[], peerChanged: boolean): void {
+  private clockUpdate(
+    best: NtpAssociation,
+    survivors: NtpAssociation[],
+    peerChanged: boolean,
+    reference?: CombinedReference,
+  ): void {
     const system = this.config.system;
     const now = simulationNowMs();
-    if (system.updateMs >= best.updateMs && system.peerIp === best.serverIp) return;
-    const combined = best.prefer ? { offsetMs: best.offsetMs, jitterMs: best.jitterMs } : combineOffsets(survivors, now);
+    if (reference === undefined && system.updateMs >= best.updateMs && system.peerIp === best.serverIp) return;
+    const combined = reference !== undefined
+      ? { offsetMs: reference.offset * 1000, jitterMs: reference.offsetDeviation * 1000 }
+      : best.prefer ? { offsetMs: best.offsetMs, jitterMs: best.jitterMs } : combineOffsets(survivors, now);
     const elapsed = this.horloge.dernierReglageMs
       ? now - this.horloge.dernierReglageMs
       : best.hpoll > 0 ? 2 ** best.hpoll * 1000 : 64000;
+    if (reference !== undefined) {
+      const verdict = this.reference.checkOffset(combined.offsetMs / 1000);
+      if (verdict === 'exit') { this.fatalHandler?.(); return; }
+      if (verdict === 'ignored') return;
+    }
     const target = this.config.offsetMs + combined.offsetMs;
     const decision = disciplinerHorloge(this.horloge.etat, target, elapsed, this.reglagesDiscipline);
     this.horloge.etat = appliquerDecision(this.horloge.etat, decision, elapsed);
@@ -1131,6 +1244,7 @@ export class NtpAgent {
       system.stepCount++;
       system.poll = NTP_MIN_POLL;
       if (this.reglagesDiscipline.reinitialiserAssociationsAuSaut !== false) {
+        this.selector.clear();
         for (const a of this.config.associations.values()) {
           resetPeer(a, system, now);
           this.arm(a);
@@ -1146,13 +1260,18 @@ export class NtpAgent {
     this.config.localStratum = best.stratum + 1;
     this.config.refIdentifier = best.serverIp;
     system.refTimestamp = timestampFromMs(this.now());
-    system.rootDelayMs = best.rootDelayMs + best.delayMs;
-    system.rootDispersionMs = best.rootDispersionMs
-      + Math.sqrt(best.jitterMs ** 2 + combined.jitterMs ** 2)
-      + Math.max(best.dispersionMs + NTP_PHI * (now - best.updateMs) + Math.abs(best.offsetMs), NTP_MIN_DISPERSION_MS);
+    if (reference !== undefined) {
+      system.rootDelayMs = reference.rootDelay * 1000;
+      system.rootDispersionMs = reference.rootDispersion * 1000;
+    } else {
+      system.rootDelayMs = best.rootDelayMs + best.delayMs;
+      system.rootDispersionMs = best.rootDispersionMs
+        + Math.sqrt(best.jitterMs ** 2 + combined.jitterMs ** 2)
+        + Math.max(best.dispersionMs + NTP_PHI * (now - best.updateMs) + Math.abs(best.offsetMs), NTP_MIN_DISPERSION_MS);
+    }
     system.peerIp = best.serverIp;
     this.config.lastSyncMs = now;
-    this.recordReference(best, now);
+    this.recordReference(best, now, reference);
     this.adjustSystemPoll(combined.offsetMs);
     if (!wasSynchronized || peerChanged) {
       this.getBus().publish({
@@ -1176,19 +1295,26 @@ export class NtpAgent {
 
   getPrecisionExponent(): number { return this.config.system.precision; }
 
-  private recordReference(best: NtpAssociation, nowMs: number): void {
+  private recordReference(best: NtpAssociation, nowMs: number, reference?: CombinedReference): void {
     const track = best.statistics.tracking();
     if (track === null) return;
     const nowSeconds = nowMs / 1000;
+    const measuredFrequency = reference?.frequency ?? track.frequency;
+    const measuredSkew = reference?.skew ?? track.skew;
+    const estimate = this.reference.estimate(false, measuredFrequency, measuredSkew);
     this.reference.record({
-      offset: track.averageOffset + (nowSeconds - track.referenceTime) * track.frequency,
+      offset: (reference?.offset ?? track.averageOffset) + (nowSeconds - (reference?.referenceTime ?? track.referenceTime)) * measuredFrequency,
       nowSeconds,
-      referenceTime: track.referenceTime,
-      residualFrequency: track.frequency,
-      skew: track.skew,
-      frequency: track.frequency,
+      referenceTime: reference?.referenceTime ?? track.referenceTime,
+      residualFrequency: estimate.residualFrequency,
+      skew: estimate.skew,
+      frequency: estimate.frequency,
     });
   }
+
+  setFatalHandler(handler: (() => void) | null): void { this.fatalHandler = handler; }
+
+  private fatalHandler: (() => void) | null = null;
 
   private adjustSystemPoll(offsetMs: number): void {
     const system = this.config.system;

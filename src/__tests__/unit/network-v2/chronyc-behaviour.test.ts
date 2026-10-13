@@ -152,7 +152,7 @@ describe('chronyc changes what chronyd does', () => {
     converge(clock, 300_000);
     expect(agent.getAssociation('10.0.0.1')!.sent).toBe(before);
     expect(await pc.executeCommand('sudo chronyc activity')).toContain('1 sources offline');
-    expect(await pc.executeCommand('sudo chronyc sources')).toMatch(/\^\? 10\.0\.0\.1/);
+    expect(await pc.executeCommand('sudo chronyc sources')).toMatch(/\^\* 10\.0\.0\.1 +\d+ +\d+ +377/);
     expect(await pc.executeCommand('sudo chronyc online 10.0.0.1')).toBe('200 OK');
     converge(clock, 300_000);
     expect(agent.getAssociation('10.0.0.1')!.sent).toBeGreaterThan(before);
@@ -180,6 +180,7 @@ describe('chronyc changes what chronyd does', () => {
     const { pc } = await lab(SYNCED_CONF);
     expect(await pc.executeCommand('sudo chronyc sources')).toContain('^* 10.0.0.1');
     expect(await pc.executeCommand('sudo chronyc selectopts 10.0.0.1 +noselect')).toBe('200 OK');
+    converge(clock, 120_000);
     expect(await pc.executeCommand('sudo chronyc sources')).not.toContain('^* 10.0.0.1');
     expect(await pc.executeCommand('sudo chronyc selectdata')).toMatch(/^N 10\.0\.0\.1 +N N/m);
   });

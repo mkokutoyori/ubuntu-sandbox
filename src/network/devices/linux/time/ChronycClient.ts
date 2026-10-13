@@ -317,7 +317,7 @@ export class ChronycSession {
       case 'polltarget': return this.sourceValue(line, view, 'integer', (a, v) => view.setCriteria(a, { pollTarget: v }));
       case 'minpoll': return this.sourceValue(line, view, 'integer', (a, v) => view.setCriteria(a, v >= -6 && v <= 24 ? { minpoll: v } : {}));
       case 'maxpoll': return this.sourceValue(line, view, 'integer', (a, v) => view.setCriteria(a, v >= -6 && v <= 24 ? { maxpoll: v } : {}));
-      case 'maxupdateskew': return scanDouble(line) === null ? false : this.privilegedOk();
+      case 'maxupdateskew': return this.maxUpdateSkew(line, view);
       case 'ntpdata': return this.ntpData(line, view);
       case 'offline': return this.connectivity(line, view, false);
       case 'online': return this.connectivity(line, view, true);
@@ -325,7 +325,7 @@ export class ChronycSession {
       case 'rekey': return this.rekey(service);
       case 'reload': return this.reload(line);
       case 'reselect': return this.reselect(view);
-      case 'reselectdist': return scanDouble(line) === null ? false : this.privilegedOk();
+      case 'reselectdist': return this.reselectDistance(line, view);
       case 'reset': return this.resetSources(line, view);
       case 'retries': return this.retries(line);
       case 'rtcdata': return this.status('nortc', false);
@@ -541,6 +541,22 @@ export class ChronycSession {
     return this.fail(result.erreur);
   }
 
+  private maxUpdateSkew(line: string, view: ChronyDaemonView): boolean {
+    const value = scanDouble(line);
+    if (value === null) return false;
+    if (!this.authorised(false)) return false;
+    view.setMaxUpdateSkew(value);
+    return this.status('success', true);
+  }
+
+  private reselectDistance(line: string, view: ChronyDaemonView): boolean {
+    const value = scanDouble(line);
+    if (value === null) return false;
+    if (!this.authorised(false)) return false;
+    view.setReselectDistance(value);
+    return this.status('success', true);
+  }
+
   private local(line: string, service: LinuxChronyService): boolean {
     if (line === 'off') {
       if (!this.authorised(false)) return false;
@@ -548,6 +564,8 @@ export class ChronycSession {
       return this.status('success', true);
     }
     let stratum = 10;
+    let distance = 1.0;
+    let orphan = false;
     const words = line === '' ? [] : line.split(' ');
     for (let i = 0; i < words.length; i++) {
       const word = words[i].toLowerCase();
@@ -557,16 +575,18 @@ export class ChronycSession {
         stratum = value;
         i++;
       } else if (word === 'orphan') {
-        continue;
+        orphan = true;
       } else if (word === 'distance') {
-        if (scanDouble(words[i + 1] ?? '') === null) return this.fail('Invalid syntax for local command');
+        const value = scanDouble(words[i + 1] ?? '');
+        if (value === null) return this.fail('Invalid syntax for local command');
+        distance = value;
         i++;
       } else {
         return this.fail('Invalid syntax for local command');
       }
     }
     if (!this.authorised(false)) return false;
-    service.setLocal(stratum);
+    service.setLocal({ stratum, distance, orphan });
     return this.status('success', true);
   }
 

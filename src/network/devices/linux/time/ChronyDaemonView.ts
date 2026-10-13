@@ -1,5 +1,6 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 import type { NtpAgent } from '../../../ntp/NtpAgent';
+import { STATUS_CHARACTER, type ChronyStatus } from '../../../ntp/ChronySelection';
 import type { NtpAssociation } from '../../../ntp/types';
 import { isValidIPv4, tryIpToUint32 as ipv4ToUint32 } from '../../../core/ip';
 import type { LinuxChronyService } from './LinuxChronyService';
@@ -161,6 +162,10 @@ export class ChronyDaemonView {
 
   reselect(): void { this.agent.reselectSources(); }
 
+  setMaxUpdateSkew(ppm: number): void { this.agent.getReference().setMaxUpdateSkewPpm(ppm); }
+
+  setReselectDistance(seconds: number): void { this.agent.setSelectionParameters({ reselectDistance: seconds }); }
+
   resetSources(): void { this.agent.resetSources(); }
 
   clearClients(): void { this.agent.clearClientLog(); }
@@ -178,12 +183,19 @@ export class ChronyDaemonView {
     return all.filter((a) => ((ipv4ToUint32(a.serverIp) ?? 0) & bits) >>> 0 === (wanted & bits) >>> 0);
   }
 
+  private statusOf(a: NtpAssociation): ChronyStatus {
+    return this.agent.selectionVerdict(a.serverIp)?.status ?? 'BAD_STATS';
+  }
+
   private stateOf(a: NtpAssociation): SourceState {
-    if (a.preferred) return 'selected';
-    if (a.selection === 'falseticker') return 'falseticker';
-    if (a.selection === 'candidate') return 'unselected';
-    if (a.selection === 'outlier') return 'selectable';
-    return 'nonselectable';
+    switch (this.statusOf(a)) {
+      case 'SELECTED': return 'selected';
+      case 'FALSETICKER': return 'falseticker';
+      case 'JITTERY': return 'jittery';
+      case 'UNSELECTED': return 'unselected';
+      case 'WAITS_SOURCES': case 'NONPREFERRED': case 'WAITS_UPDATE': case 'DISTANT': return 'selectable';
+      default: return 'nonselectable';
+    }
   }
 
   sources(): SourceReport[] {
@@ -283,20 +295,15 @@ export class ChronyDaemonView {
   }
 
   private selectState(a: NtpAssociation): string {
-    if (a.noselect) return 'N';
-    if (a.statistics.getSampleCount() === 0) return 'M';
-    if (a.preferred) return '*';
-    if (a.selection === 'falseticker') return 'x';
-    if (a.selection === 'candidate') return '+';
-    if (a.selection === 'outlier') return '-';
-    if (a.reach === 0) return 'S';
-    return 's';
+    const status = this.statusOf(a);
+    return status === 'OK' ? '?' : STATUS_CHARACTER[status];
   }
 
   selectData(): SelectReport[] {
     const now = this.nowSeconds();
     return this.associations().map((a) => {
       const selection = a.statistics.selection(now);
+      const verdict = this.agent.selectionVerdict(a.serverIp);
       return {
         ip: a.serverIp,
         stateChar: this.selectState(a),
@@ -304,9 +311,9 @@ export class ChronyDaemonView {
         configuredOptions: this.optionString(a, false),
         effectiveOptions: this.optionString(a, true),
         lastSampleAgo: selection === null ? 0 : Math.max(0, Math.floor(selection.lastSampleAgo)),
-        score: 1,
-        low: selection?.offsetLow ?? 0,
-        high: selection?.offsetHigh ?? 0,
+        score: verdict?.score ?? 1,
+        low: verdict?.low ?? 0,
+        high: verdict?.high ?? 0,
         leap: a.received === 0 ? 3 : a.leap,
       };
     });

@@ -1721,6 +1721,7 @@ export abstract class LinuxMachine extends EndHost
           this.getNtpAgent().handleUdp(inPort, sourceIP as IPAddress, udp);
         }, 'chronyd') !== false),
       releaseNtpPort: (port) => { this.udpClose(port); this.ntpPortBound = false; },
+      daemonExited: (reason) => this.executor.serviceMgr.markFailed('chrony', reason),
     });
     this.executor.chronyService = this.chronyService;
     this.executor.registerServiceSocketServer('chrony', this.chronyService);

@@ -1,3 +1,4 @@
+import type { SelectionParameters } from '../../../ntp/ChronySelection';
 /**
  * PRD-NTP-Tutoriel.md §4 / lot N3 — `/etc/chrony/chrony.conf`, lu.
  *
@@ -158,6 +159,11 @@ export interface ChronyConf {
   /** `local stratum N` : servir le temps meme sans source, comme `ntp master`. */
   readonly localStratum: number | null;
   readonly maxdistanceSec: number | null;
+  readonly localDistance: number;
+  readonly localOrphan: boolean;
+  readonly selection: Partial<SelectionParameters>;
+  readonly maxUpdateSkewPpm: number | null;
+  readonly maxChange: { offset: number; delay: number; ignore: number } | null;
   /** Les lignes que chronyd connait mais que ce simulateur n'applique pas. */
   readonly acceptesSansEffet: readonly string[];
   /** Les lignes qu'aucun chronyd ne connait : elles sont signalees. */
@@ -167,16 +173,17 @@ export interface ChronyConf {
 /** Ce que chronyd connait et que ce simulateur n'applique pas. */
 const CONNUES_SANS_EFFET = new Set([
   'refclock', 'hwtimestamp', 'leapsectz', 'initstepslew',
-  'cmdratelimit', 'ntsdumpdir', 'ntstrustedcerts', 'minsources', 'lock_all',
+  'cmdratelimit', 'ntsdumpdir', 'ntstrustedcerts', 'lock_all',
   'sched_priority', 'user', 'pidfile', 'bindcmdaddress', 'cmdport',
-  'noclientlog', 'clientloglimit', 'dumpdir', 'stratumweight', 'corrtimeratio',
-  'maxupdateskew', 'maxchange', 'maxdrift', 'rtcfile', 'hwclockfile', 'leapsecmode',
+  'noclientlog', 'clientloglimit', 'dumpdir', 'corrtimeratio',
+  'maxdrift', 'rtcfile', 'hwclockfile', 'leapsecmode',
 ]);
 
 const CONF_VIDE: ChronyConf = {
   sources: [], makestep: null, access: [], ratelimit: null,
   driftfile: '', logdir: '', logs: [], keyfile: '',
   rtcsync: false, manual: false, localStratum: null, maxdistanceSec: null,
+  localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
   acceptesSansEffet: [], inconnues: [],
 };
 
@@ -200,6 +207,11 @@ export function parseChronyConf(texte: string): ChronyConf {
   let manual = false;
   let localStratum: number | null = null;
   let maxdistanceSec: number | null = null;
+  let localDistance = 1.0;
+  let localOrphan = false;
+  const selection: Partial<SelectionParameters> = {};
+  let maxUpdateSkewPpm: number | null = null;
+  let maxChange: { offset: number; delay: number; ignore: number } | null = null;
 
   const lignes = texte.split('\n');
   for (let i = 0; i < lignes.length; i++) {
@@ -253,14 +265,50 @@ export function parseChronyConf(texte: string): ChronyConf {
       case 'rtcsync': rtcsync = true; break;
       case 'manual': manual = true; break;
       case 'local': {
-        const iStr = args.findIndex((m) => m.toLowerCase() === 'stratum');
-        const s = iStr >= 0 ? entier(args[iStr + 1]) : null;
-        localStratum = s !== null && s >= 1 && s <= 15 ? s : 10;
+        let stratum = 10;
+        let distance = 1.0;
+        let orphan = false;
+        let valid = true;
+        for (let k = 0; k < args.length; k++) {
+          const word = args[k].toLowerCase();
+          if (word === 'orphan') orphan = true;
+          else if (word === 'stratum') {
+            const v = entier(args[++k]);
+            if (v === null || v <= 0 || v >= 16) valid = false; else stratum = v;
+          } else if (word === 'distance') {
+            const v = parseFloat(args[++k] ?? '');
+            if (isNaN(v)) valid = false; else distance = v;
+          } else valid = false;
+        }
+        if (!valid) { inconnues.push({ ligne: i + 1, texte: nue }); break; }
+        localStratum = stratum; localDistance = distance; localOrphan = orphan;
         break;
       }
-      case 'maxdistance': {
-        const d = parseFloat(args[0] ?? '');
-        if (!isNaN(d)) maxdistanceSec = d;
+      case 'maxdistance': case 'maxjitter': case 'reselectdist': case 'stratumweight':
+      case 'combinelimit': case 'maxclockerror': case 'maxupdateskew': {
+        const value = parseFloat(args[0] ?? '');
+        if (isNaN(value) || args.length !== 1) { inconnues.push({ ligne: i + 1, texte: nue }); break; }
+        if (cle === 'maxdistance') { maxdistanceSec = value; selection.maxDistance = value; }
+        else if (cle === 'maxjitter') selection.maxJitter = value;
+        else if (cle === 'reselectdist') selection.reselectDistance = value;
+        else if (cle === 'stratumweight') selection.stratumWeight = value;
+        else if (cle === 'combinelimit') selection.combineLimit = value;
+        else if (cle === 'maxclockerror') selection.maxClockError = value * 1e-6;
+        else maxUpdateSkewPpm = value;
+        break;
+      }
+      case 'minsources': {
+        const v = entier(args[0]);
+        if (v === null || args.length !== 1) inconnues.push({ ligne: i + 1, texte: nue });
+        else selection.minSources = v;
+        break;
+      }
+      case 'maxchange': {
+        const offset = parseFloat(args[0] ?? '');
+        const delay = entier(args[1]);
+        const ignore = entier(args[2]);
+        if (isNaN(offset) || delay === null || ignore === null || args.length !== 3) inconnues.push({ ligne: i + 1, texte: nue });
+        else maxChange = { offset, delay, ignore };
         break;
       }
       default:
@@ -271,6 +319,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   return {
     ...CONF_VIDE, sources, makestep, access, ratelimit,
     driftfile, logdir, logs, keyfile, rtcsync, manual, localStratum, maxdistanceSec,
+    localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
     acceptesSansEffet, inconnues,
   };
 }

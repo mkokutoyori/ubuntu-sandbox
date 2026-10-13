@@ -51,7 +51,8 @@
 
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import type { NtpAgent, NtpPlatformProfile } from '../../../ntp/NtpAgent';
+import type { LocalReference, NtpAgent, NtpPlatformProfile } from '../../../ntp/NtpAgent';
+import { DEFAULT_SELECTION_PARAMETERS } from '../../../ntp/ChronySelection';
 import { UDP_PORT_NTP, type NtpVersion } from '../../../ntp/types';
 import { parseChronyConf, parseChronySource, type ChronyConf, type ChronySource, CHRONY_CONF_DEBIAN } from './ChronyConfig';
 import { ChronyAccessTable, parseChronySubnet } from './ChronyAccess';
@@ -73,6 +74,7 @@ export interface ChronyHost {
   ntp(): NtpAgent;
   bindNtpPort?(port: number): boolean;
   releaseNtpPort?(port: number): void;
+  daemonExited?(reason: string): void;
 }
 
 const CHRONY_PROFILE: Partial<NtpPlatformProfile> = {
@@ -197,7 +199,7 @@ export class LinuxChronyService implements ServiceSocketServer {
   private readonly cmdAccess = new ChronyAccessTable();
   private manualEnabled = false;
   private manualSamples: { atMs: number; slewed: number; original: number; residual: number }[] = [];
-  private localOverride: number | 'off' | null = null;
+  private localOverride: LocalReference | 'off' | null = null;
   private commandPackets = 0;
 
   getCommandPackets(): number { return this.commandPackets; }
@@ -251,20 +253,24 @@ export class LinuxChronyService implements ServiceSocketServer {
     return { ok: true, deltaMs };
   }
 
-  setLocal(stratum: number | 'off'): void {
-    this.localOverride = stratum;
+  setLocal(reference: LocalReference | 'off'): void {
+    this.localOverride = reference;
     this.applyLocal();
   }
 
   private applyLocal(): void {
     const agent = this.host.ntp();
-    const stratum = this.localOverride ?? this.conf.localStratum;
-    if (stratum === null || stratum === 'off') {
+    const declared: LocalReference | null = this.conf.localStratum === null ? null
+      : { stratum: this.conf.localStratum, distance: this.conf.localDistance, orphan: this.conf.localOrphan };
+    const reference = this.localOverride ?? declared;
+    if (reference === null || reference === 'off') {
+      agent.setLocalReference(null);
       if (this.localOverride === 'off') agent.setServerMode(false);
       return;
     }
     agent.setServerMode(true);
-    agent.setLocalStratum(stratum);
+    agent.setLocalStratum(reference.stratum);
+    agent.setLocalReference(reference);
   }
 
   addSource(kind: 'server' | 'peer' | 'pool', host: string, words: readonly string[]): { ok: true } | { ok: false; status: string } {
@@ -363,6 +369,15 @@ export class LinuxChronyService implements ServiceSocketServer {
     agent.setReglagesDiscipline(this.conf.makestep
       ? { seuilSautMs: this.conf.makestep.seuilSec * 1000, limiteSauts: this.conf.makestep.limite, reinitialiserAssociationsAuSaut: false }
       : { reinitialiserAssociationsAuSaut: false });
+    agent.setSelectionParameters({
+      ...DEFAULT_SELECTION_PARAMETERS, ...this.conf.selection,
+    });
+    agent.getReference().setMaxUpdateSkewPpm(this.conf.maxUpdateSkewPpm ?? 1000);
+    agent.getReference().setMaxChange(this.conf.maxChange);
+    agent.setFatalHandler(() => {
+      this.stop();
+      this.host.daemonExited?.('exit-code');
+    });
     this.applyLocal();
     this.manualEnabled = this.conf.manual;
     this.rebuildAccess();
