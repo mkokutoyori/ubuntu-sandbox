@@ -33,12 +33,8 @@
  * Seules les options dont l'effet est porte (SCREEN_PORTED_FLAGS) sont rejouees sur l'ecran ; avec les autres, le test verifie le classement (imprime, refuse ou ouvre) et le
  * texte, pas le premier ecran, tant que leur effet n'est pas evalue : voir SCREEN_PORTED_FLAGS.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 5 cas sur 1800.  Aucun n'est epingle comme
- * contrat : un cas de la liste qui se met a passer fait echouer le test pour qu'on le retire.
- *   - cli1-255, cli2-17, cli2-148, cli3-114, cli3-180 : un fichier dont le dossier n'existe pas (`+C/Foo` est un chemin) : nano
- *     affiche `[ Directory '+C' does not exist ]` au lieu de `[ New File ]`.  EditorFsContext ne sait pas
- *     dire qu'un chemin est un dossier ; `"x" is a directory`, `is meant to be read-only` et les fichiers de
- *     peripherique sont dans le meme cas.
+ * Fichier cible (dossier, peripherique, lecture seule, dossier absent, chemin qui n'est pas un dossier) : voir
+ * probe-nano-open.test.ts et nano-open-oracle.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
@@ -48,16 +44,11 @@ const dir = 'src/__tests__/support/oracle/nano-cli';
 const fixtures = readdirSync(dir).filter((f) => f.startsWith('nano-7.2')).sort()
   .map((f) => ({ name: f, ...(JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { nano: string; cases: NanoCliCase[] }) }));
 
-const UNPORTED_CASES: ReadonlySet<string> = new Set(['cli1-255', 'cli2-17', 'cli2-148', 'cli3-114', 'cli3-180']);
-
 describe('nano command lines recorded from a real nano', () => {
   for (const fixture of fixtures) {
     it(`${fixture.name} gives the same output, status and first screen`, () => {
-      const outcomes = fixture.cases.map((c) => ({ id: c.id, failure: replayNanoCliCase(c) }));
-      const unexpected = outcomes.filter((o) => o.failure !== null && !UNPORTED_CASES.has(o.id)).map((o) => o.failure);
-      const nowPassing = outcomes.filter((o) => o.failure === null && UNPORTED_CASES.has(o.id)).map((o) => o.id);
-      expect(unexpected.length > 0 ? `${unexpected.length} of ${fixture.cases.length}\n${unexpected.slice(0, 4).join('\n')}` : '').toBe('');
-      expect(nowPassing).toEqual([]);
+      const failures = fixture.cases.map((c) => replayNanoCliCase(c)).filter((f): f is string => f !== null);
+      expect(failures.length > 0 ? `${failures.length} of ${fixture.cases.length}\n${failures.slice(0, 4).join('\n')}` : '').toBe('');
     });
   }
 });

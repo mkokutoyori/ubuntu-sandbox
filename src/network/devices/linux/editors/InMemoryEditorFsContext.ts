@@ -1,4 +1,4 @@
-import type { EditorFsContext, EditorIdentity } from './EditorFsContext';
+import type { EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
 
 /**
  * Minimal in-memory EditorFsContext for unit tests. Not used in
@@ -19,8 +19,12 @@ function builtinFilter(cmd: string, input: string): string | null {
   return null;
 }
 
+const DEVICE_PATHS: ReadonlySet<string> = new Set(['/dev/null', '/dev/zero', '/dev/random', '/dev/urandom', '/dev/tty']);
+
 export class InMemoryEditorFsContext implements EditorFsContext {
   private files = new Map<string, string>();
+  private modes = new Map<string, number>();
+  private strictDirectories = false;
   private shellLog: string[] = [];
   private shellHandler: (cmd: string) => string;
   private filterHandler?: (cmd: string, input: string) => string;
@@ -46,8 +50,7 @@ export class InMemoryEditorFsContext implements EditorFsContext {
   }
 
   resolvePath(path: string): string {
-    if (path.startsWith('/')) return path;
-    return `/tmp/${path}`;
+    return this.normalize(path.startsWith('/') ? path : `/tmp/${path}`);
   }
 
   readFile(path: string): string | null {
@@ -56,12 +59,45 @@ export class InMemoryEditorFsContext implements EditorFsContext {
   }
 
   writeFile(path: string, content: string): boolean {
-    this.files.set(this.resolvePath(path), content);
+    const target = this.resolvePath(path);
+    if (this.strictDirectories && this.kindOf(target.slice(0, target.lastIndexOf('/')) || '/') !== 'directory') return false;
+    this.files.set(target, content);
     return true;
+  }
+
+  refuseWritesIntoMissingDirectories(): void {
+    this.strictDirectories = true;
   }
 
   exists(path: string): boolean {
     return this.files.has(this.resolvePath(path));
+  }
+
+  kindOf(path: string): EditorPathKind {
+    const resolved = this.resolvePath(path);
+    if (this.files.has(resolved)) return 'file';
+    if (DEVICE_PATHS.has(resolved)) return 'device';
+    if (resolved === '/' || resolved === '/tmp') return 'directory';
+    const prefix = `${resolved}/`;
+    return [...this.files.keys()].some((name) => name.startsWith(prefix)) ? 'directory' : 'missing';
+  }
+
+  setMode(path: string, mode: number): void {
+    this.modes.set(this.resolvePath(path), mode);
+  }
+
+  isReadOnly(path: string): boolean {
+    const mode = this.modes.get(this.resolvePath(path));
+    return mode !== undefined && (mode & 0o222) === 0;
+  }
+
+  private normalize(path: string): string {
+    const parts: string[] = [];
+    for (const part of path.split('/')) {
+      if (part === '..') parts.pop();
+      else if (part !== '' && part !== '.') parts.push(part);
+    }
+    return `/${parts.join('/')}`;
   }
 
   deleteFile(path: string): boolean {

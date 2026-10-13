@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools|insert|open|undo|undo2 [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
@@ -201,6 +201,8 @@ def run_cli_case(case, workdir):
         open(os.path.join(casedir, extra_name), "w", encoding="utf-8").write("\n".join(extra_lines) + "\n")
     for raw_name, hexdata in case.get("raw", {}).items():
         open(os.path.join(casedir, raw_name), "wb").write(bytes.fromhex(hexdata))
+    for mode_name, mode in case.get("modes", {}).items():
+        os.chmod(os.path.join(casedir, mode_name), mode)
     for lock_name, fields in case.get("locks", {}).items():
         open(os.path.join(casedir, lock_name), "wb").write(lock_bytes(fields["program"], fields["pid"], fields["user"], fields["host"], fields["name"], fields.get("modified", False)))
     env = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8", TERM="xterm-256color")
@@ -462,6 +464,100 @@ def gen_tools(seed, count):
                       "disk": True, "hidden": True, "files": {"u.txt": ["other"]}})
     return cases
 
+INSERT_FILES = {"r.txt": ["alpha", "beta gamma", "delta"], "w.txt": ["one"], "sub/x.txt": ["deep"], "big.txt": ["line %d of the big file" % n for n in range(1, 31)]}
+INSERT_RAW = {"n.txt": "6e6f206e65776c696e65", "e.txt": "", "c.txt": "610d0a620d0a", "b.txt": "0a0a610a"}
+INSERT_NAMES = ["r.txt", "big.txt", "big.txt", "w.txt", "n.txt", "e.txt", "c.txt", "b.txt", "nope.txt", "sub", "sub/x.txt", ".", "", "r.txt ", "../t.txt"]
+INSERT_KEYS = ["x", "yz", "Enter", "Left", "Right", "Up", "Down", "Home", "End", "BSpace", "C-k", "C-u", "M-a", "M-6", "PageDown", "M-\\", "M-/", "C-Right"]
+
+def gen_insert(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5, 12]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (8, 40), (6, 30)])
+        flags = r.sample(["-x", "-l", "-S", "-S", "-i", "-E", "-L", "-k", "-Z", "-A", "-y", "-N", "-u"], r.choice([0, 0, 1, 1, 2]))
+        steps = []
+        for _ in range(r.randint(2, 8)):
+            kind = r.random()
+            if kind < 0.45:
+                steps.append(r.choice(INSERT_KEYS))
+            elif kind < 0.85:
+                name = r.choice(INSERT_NAMES)
+                flow = ["C-r"]
+                if r.random() < 0.15:
+                    flow.append("M-n")
+                if name:
+                    flow.append(name)
+                flow.append(r.choice(["Enter", "Enter", "Enter", "C-c"]))
+                steps.extend(flow)
+            else:
+                steps.extend(["C-o", "Enter"])
+        steps += ["C-o", "Enter"]
+        cases.append({"id": "ins%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps,
+                      "disk": True, "hidden": True, "files": INSERT_FILES, "raw": INSERT_RAW})
+    return cases
+
+OPEN_TARGETS = ["t.txt", "t.txt", "new.txt", "sub", "sub/", "sub/x.txt", "sub/new.txt", "nodir/new.txt", "nodir/", "nodir/a/b.txt", "t.txt/x", ".", "..", "/", "/dev/null", "./t.txt", "sub/../t.txt", "ro.txt", ""]
+OPEN_STEPS = [[], [], ["x"], ["x", "C-o"], ["x", "C-o", "Enter"], ["C-x"], ["x", "C-x"], ["C-r"], ["C-w"], ["C-c"], ["x", "C-o", "BSpace", "Enter"]]
+
+def gen_open(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 6]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50)])
+        flags = r.sample(["-x", "-l", "-S", "-G", "-v", "-n", "-R", "-t", "-B", "-%", "-_", "-0", "-e"], r.choice([0, 0, 1, 1, 2]))
+        target = r.choice(OPEN_TARGETS)
+        args = flags + ([target] if target else [])
+        cases.append({"id": "opn%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": args, "steps": r.choice(OPEN_STEPS),
+                      "disk": True, "hidden": True, "files": {"sub/x.txt": ["deep"], "ro.txt": ["read only"]}, "modes": {"ro.txt": 292}, "force_open": True})
+    return cases
+
+UNDO_KEYS = ["x", "yz", "hello world", "Enter", "Enter", "BSpace", "BSpace", "DC", "DC", "C-k", "C-k", "C-u", "Tab", "Left", "Right", "Up", "Down", "Home", "End",
+             "M-a", "M-6", "M-}", "M-{", "C-j", "C-Right", "C-Left", "M-u", "M-u", "M-u", "M-e", "M-e", "C-o", "C-d", "M-t", "M-\\", "M-/", "M-3"]
+
+def gen_undo(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5, 8]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50)])
+        flags = r.sample(["-x", "-l", "-S", "-i", "-E", "-L", "-k", "-Z", "-A", "-b", "-%"], r.choice([0, 0, 1, 1, 2]))
+        steps = []
+        for _ in range(r.randint(4, 16)):
+            key = r.choice(UNDO_KEYS)
+            if key == "C-o":
+                steps.extend(["C-o", "Enter"])
+            else:
+                steps.append(key)
+        cases.append({"id": "und%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps, "disk": True, "hidden": True})
+    return cases
+
+UNDO2_FLOWS = [
+    ["C-\\", "a", "Enter", "Z", "Enter", "y"], ["C-\\", "e", "Enter", "E", "Enter", "a"], ["C-\\", "o", "Enter", "0", "Enter", "n", "y", "y"],
+    ["C-\\", "zzz", "Enter", "q", "Enter"], ["C-\\", "t", "Enter", "T", "Enter", "y", "n", "C-c"],
+    ["C-r", "r.txt", "Enter"], ["C-r", "w.txt", "Enter"], ["M-j"], ["C-j"], ["C-o", "Enter"], ["C-w", "a", "Enter"],
+    ["the quick brown fox jumps over the lazy dog and keeps running far away"], ["M-}"], ["M-{"], ["M-3"], ["M-t"],
+]
+
+def gen_undo2(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5, 8]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (10, 30)])
+        flags = r.sample(["-x", "-l", "-S", "-i", "-E", "-L", "-k", "-Z", "-A", "-b", "-b", "-O", "-M", "-%"], r.choice([0, 1, 1, 2]))
+        steps = []
+        for _ in range(r.randint(4, 16)):
+            if r.random() < 0.35:
+                steps.extend(r.choice(UNDO2_FLOWS))
+            else:
+                key = r.choice([k for k in UNDO_KEYS if k != "M-a"])
+                steps.extend(["C-o", "Enter"] if key == "C-o" else [key])
+        cases.append({"id": "un2%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + ["t.txt"], "steps": steps,
+                      "disk": True, "hidden": True, "files": {"r.txt": ["alpha", "beta gamma", "delta"], "w.txt": ["one"]}})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
@@ -477,6 +573,14 @@ def gen(seed, count, corpus):
         return gen_wrap(seed, count)
     if corpus == "tools":
         return gen_tools(seed, count)
+    if corpus == "insert":
+        return gen_insert(seed, count)
+    if corpus == "open":
+        return gen_open(seed, count)
+    if corpus == "undo":
+        return gen_undo(seed, count)
+    if corpus == "undo2":
+        return gen_undo2(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):
@@ -513,7 +617,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place", "tools") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "place", "tools", "insert", "open", "undo", "undo2") else run_case
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: runner(c, workdir), cases))

@@ -1,7 +1,7 @@
 import type { EditorScreen, ScreenBand, ScreenRow, ScreenSpan } from '../screen/EditorScreen';
 import { CONTINUATION } from '../screen/EditorScreen';
 import { actualX, advanceOver, breadth, DEFAULT_TABSIZE, displayString, wideness, type DisplayResult } from './NanoText';
-import { menuEntries, type MenuOptions, type NanoMenuName } from './NanoMenus';
+import { menuLayout, type MenuOptions, type NanoMenuName } from './NanoMenus';
 import type { NanoWindow, Position } from './NanoWindow';
 
 export type TitleState = 'View' | 'Modified' | 'Restricted' | '';
@@ -357,13 +357,13 @@ function postOneKey(canvas: Canvas, at: number, key: string, tag: string, width:
 }
 
 function shortcutRows(cols: number, menu: NanoMenuName, tabsize: number, options: MenuOptions): [ScreenRow, ScreenRow] {
-  const entries = menuEntries(menu, options);
+  const { entries, slots } = menuLayout(menu, options);
   const maximum = Math.floor((cols + 40) / 20) * 2;
-  const number = Math.min(entries.length, maximum);
+  const number = Math.min(slots, maximum);
   const itemwidth = Math.floor(cols / Math.floor((number + 1) / 2));
   const canvases = [new Canvas(cols), new Canvas(cols)];
   if (itemwidth === 0) return [SPACE_ROW, SPACE_ROW];
-  for (let index = 0; index < number; index++) {
+  for (let index = 0; index < Math.min(entries.length, number); index++) {
     let width = itemwidth;
     if (number % 2 === 1 && index + 2 === number) width += itemwidth;
     if (index + 2 >= number) width += cols % itemwidth;

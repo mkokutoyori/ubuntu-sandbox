@@ -46,17 +46,17 @@ function make(content: string, path = '/tmp/undo.txt'): NanoEngine {
 }
 
 describe('Scénario 14 — Alt+U annule, Alt+E rétablit, sur pile vide', () => {
-  it('Alt+U sur un buffer non modifié affiche "Nothing to undo!" et ne change rien', () => {
+  it('Alt+U sur un buffer non modifié affiche "Nothing to undo" et ne change rien', () => {
     const nano = make('hello\n');
     undo(nano);
-    expect(nano.statusMessage).toBe('Nothing to undo!');
+    expect(nano.statusMessage).toBe('[ Nothing to undo ]');
     expect(nano.lines).toEqual(['hello']);
   });
 
-  it('Alt+E sans annulation préalable affiche "Nothing to redo!"', () => {
+  it('Alt+E sans annulation préalable affiche "Nothing to redo"', () => {
     const nano = make('hello\n');
     redo(nano);
-    expect(nano.statusMessage).toBe('Nothing to redo!');
+    expect(nano.statusMessage).toBe('[ Nothing to redo ]');
   });
 });
 
@@ -67,7 +67,7 @@ describe('Scénario 14 — une frappe continue de caractères forme un seul grou
     expect(nano.lines[0]).toBe('abc');
     undo(nano);
     expect(nano.lines[0]).toBe('');
-    expect(nano.statusMessage).toBe('Undid action');
+    expect(nano.statusMessage).toBe('Undid addition');
   });
 
   it('Alt+E après Alt+U rétablit exactement le texte tapé', () => {
@@ -76,7 +76,7 @@ describe('Scénario 14 — une frappe continue de caractères forme un seul grou
     undo(nano);
     redo(nano);
     expect(nano.lines[0]).toBe('abc');
-    expect(nano.statusMessage).toBe('Redid action');
+    expect(nano.statusMessage).toBe('Redid addition');
   });
 
   it('un déplacement du curseur ferme le groupe : deux frappes séparées par un mouvement s\'annulent séparément', () => {
@@ -143,7 +143,7 @@ describe('Scénario 14 — une nouvelle modification après une annulation vide 
     typeText(nano, 'xyz');
     expect(nano.lines[0]).toBe('xyz');
     redo(nano);
-    expect(nano.statusMessage).toBe('Nothing to redo!');
+    expect(nano.statusMessage).toBe('[ Nothing to redo ]');
     expect(nano.lines[0]).toBe('xyz'); // unchanged -- "abc" was never coming back
   });
 });

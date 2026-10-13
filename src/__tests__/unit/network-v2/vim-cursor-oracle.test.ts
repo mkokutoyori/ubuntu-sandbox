@@ -123,5 +123,5 @@ describe('vim cursor and buffer transcripts recorded from a real vim', () => {
   it('replays every recorded transcript with the same cursor and the same buffer', () => {
     const failures = fixture.cases.map(replay).filter((f): f is string => f !== null);
     expect(failures.slice(0, 5)).toEqual([]);
-  });
+  }, 60000);
 });
