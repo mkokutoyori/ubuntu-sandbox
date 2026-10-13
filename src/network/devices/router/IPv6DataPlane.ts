@@ -25,6 +25,7 @@ import {
   IPV6_ALL_NODES_MULTICAST,
 } from '../../core/types';
 import { Logger } from '../../core/Logger';
+import { iosInterfaceUsable } from '../inspection/InterfaceStatusView';
 import { NeighborCache, type NeighborCacheEntry } from '../host/NeighborCache';
 import { DHCPv6Server } from '../../dhcpv6/DHCPv6Server';
 import { startReconfigure } from '../../dhcpv6/Dhcpv6Reconfigure';
@@ -599,12 +600,18 @@ export class IPv6DataPlane {
    * next hop cannot be resolved — the three distinct reasons a probe
    * never reaches the wire.
    */
+  private interfaceUsable(name: string): boolean {
+    const ports = this.ctx.getPorts();
+    const port = ports.get(name);
+    return port !== undefined && iosInterfaceUsable(port, name, ports);
+  }
+
   resolvePath(destIP: IPv6Address): IPv6PathResolution | null {
     let iface: string | null = null;
     let nextHopIP = destIP;
     if (destIP.isLinkLocal() || destIP.isMulticast()) {
       for (const [name, p] of this.ctx.getPorts()) {
-        if (p.isIPv6Enabled() && p.isOperationallyUp()) { iface = name; break; }
+        if (p.isIPv6Enabled() && this.interfaceUsable(name)) { iface = name; break; }
       }
     } else {
       const route = this.lookupRoute(destIP);
@@ -614,7 +621,7 @@ export class IPv6DataPlane {
     }
     if (!iface) return null;
     const port = this.ctx.getPorts().get(iface);
-    if (!port || !port.isOperationallyUp()) return null;
+    if (!port || !this.interfaceUsable(iface)) return null;
     return { iface, port, nextHopIP };
   }
 

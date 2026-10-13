@@ -65,6 +65,7 @@ export interface NamedInterfacePort {
 
 export interface NamedInterfaceHost {
   getPort(name: string): NamedInterfacePort | undefined;
+  isInterfaceUsable?(name: string): boolean;
   sendFrame(portName: string, frame: EthernetFrame): boolean | void;
 }
 
@@ -73,7 +74,9 @@ export function sendOnNamedInterface(
 ): boolean {
   if (!request.iface) return false;
   const port = host.getPort(request.iface);
-  if (!port || !port.isOperationallyUp()) return false;
+  if (!port) return false;
+  const usable = host.isInterfaceUsable ? host.isInterfaceUsable(request.iface) : port.isOperationallyUp();
+  if (!usable) return false;
   const source = request.source ?? port.getIPAddress();
   if (!source) return false;
   const linkDestination = linkDestinationFor(request.destination);
