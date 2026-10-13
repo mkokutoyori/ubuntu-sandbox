@@ -1468,6 +1468,26 @@ le point de couture dans `runSshClient` est UNIQUE : le bloc
 qui suit le calcul de `forwarded` et de `effectiveCmd`. Tout ce qui est
 au-dessus (auth, politique, forwarding, `.bashrc` sous `-t`) reste client.
 
+### [ssh] `sftp` depuis Windows ne fait franchir AUCUNE trame au cable
+**Mesure** (WindowsPC -> LinuxServer, un cable, compteur `Cable.getStats().framesTransmitted`
+lu avant/apres `sftp -b lot.txt bob@10.93.0.20`) : un lot `bye` coute 0 trame ; un lot
+`get /home/bob/big.txt C:\big.txt` d'un fichier de 200001 octets coute 0 trame, et le fichier
+arrive (`dir` le montre). Meme la negociation d'authentification ne traverse pas le cable : la
+sonde `runWindowsSshClient` retrouve la machine par `findHostByAddress` et interroge ses
+methodes, puis `resolveRemoteSftpFs` lit le `VirtualFileSystem` / `WindowsFileSystem` de la
+machine distante en memoire. La regle 4 est violee de bout en bout, et aucun mot de passe n'est
+demande au client.
+**Ce qui existe deja** : `runWindowsScpClient` (meme dossier) ouvre un vrai `SftpSession` sur TCP
+et la sonde `windows-scp` mesure l'echange sur le fil ; `LinuxCommandExecutor.tryOpenWireSftpFs`
+fait de meme pour `sftp` Linux et enveloppe le canal dans `WireSftpFileSystem`, que
+`SftpInteractiveSession` consomme sans changement.
+**Pourquoi ce n'est pas ferme** : le mot de passe. `cmdScp` n'en fournit aucun a
+`SilentSshInteractionHandler`, et `sftp.exe` en demande un a la saisie ; il faut d'abord un
+passage de justificatif du flux interactif de Windows (le meme que celui de `ssh`) jusqu'a
+`runWindowsSftpClient`, sans quoi la migration refuserait toute connexion. A faire dans l'ordre :
+justificatif -> `SshSession` avec `WindowsLocalFs` -> `WireSftpFileSystem` -> retrait de
+`resolveRemoteSftpFs` et de la sonde en memoire.
+
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
 BGP, DHCP et IPsec, et laisse GRE dehors.

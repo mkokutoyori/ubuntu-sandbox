@@ -22,6 +22,8 @@ export interface KernelByteKnob {
   readonly initial: number;
   readonly minimum: number;
   readonly maximum: number;
+  readonly minimumFrom?: string;
+  readonly maximumFrom?: string;
 }
 
 export const LINUX_IPV4_KNOBS: readonly KernelByteKnob[] = [
@@ -59,7 +61,10 @@ export class KernelKnobStore {
 
   set(name: string, value: number): boolean {
     const knob = this.knobs.find((candidate) => candidate.name === name);
-    if (knob === undefined || value < knob.minimum || value > knob.maximum) return false;
+    if (knob === undefined) return false;
+    const minimum = knob.minimumFrom === undefined ? knob.minimum : this.get(knob.minimumFrom);
+    const maximum = knob.maximumFrom === undefined ? knob.maximum : this.get(knob.maximumFrom);
+    if (value < minimum || value > maximum) return false;
     this.values.set(name, value);
     return true;
   }

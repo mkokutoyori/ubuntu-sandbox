@@ -70,8 +70,9 @@ function ipv6Block(s: SnmpSnapshot): string[] {
     received: c.ip6InReceives, headerErrors: c.ip6InHdrErrors, addressErrors: c.ip6InAddrErrors,
     forwarded: 0, unknownProtocols: c.ip6InUnknownProtos, discarded: c.ip6InDiscards,
     delivered: c.ip6InDelivers, requests: c.ip6OutRequests, outputDiscards: c.ip6OutDiscards,
-    noRoute: c.ip6OutNoRoutes, reassemblyRequired: 0, reassembled: 0,
-    reassemblyFailures: 0, fragmented: 0, fragmentationFailures: 0, fragmentsCreated: 0,
+    noRoute: c.ip6OutNoRoutes, reassemblyRequired: c.ip6ReasmReqds, reassembled: c.ip6ReasmOKs,
+    reassemblyFailures: c.ip6ReasmFails, fragmented: c.ip6FragOKs, fragmentationFailures: c.ip6FragFails,
+    fragmentsCreated: c.ip6FragCreates,
   });
 }
 

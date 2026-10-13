@@ -21,6 +21,7 @@ import {
   type UDPPacket,
   type UDPLitePacket,
 } from '@/network/core/types';
+import { ipv6FirstFragmentView, ipv6FragmentOf } from '@/network/layers/internet/Ipv6Fragmentation';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
 import { computeTcpChecksum } from '@/network/tcp/types';
@@ -49,6 +50,13 @@ export interface CaptureTcpFlags {
   cwr?: boolean;
 }
 
+export interface Fragment6Info {
+  identification: number;
+  offsetBytes: number;
+  length: number;
+  inner?: CaptureFrame;
+}
+
 export interface CaptureFrame {
   at: Date;
   atMicros?: number;
@@ -73,6 +81,8 @@ export interface CaptureFrame {
   ipHeaderLen?: number;
   ipFlags?: number;
   ipFragmentOffset?: number;
+  fragment6?: Fragment6Info;
+  icmpPointer?: number;
   srcPort?: number;
   dstPort?: number;
   payloadLength?: number;
@@ -338,6 +348,15 @@ function synthL4BytesV6(pkt: IPv6Packet): number[] {
   return [];
 }
 
+function synthIpv6PayloadBytes(pkt: IPv6Packet): number[] {
+  const fragment = ipv6FragmentOf(pkt);
+  if (fragment === null) return synthL4BytesV6(pkt);
+  const offsetField = ((fragment.fragmentOffset & 0x1fff) << 3) | (fragment.moreFragments ? 1 : 0);
+  const header = [fragment.nextHeader & 0xff, 0, ...u16(offsetField), ...u32(fragment.identification >>> 0)];
+  const first = ipv6FirstFragmentView(pkt);
+  return first === null ? header : [...header, ...synthL4BytesV6(first)];
+}
+
 function synthIpv6Bytes(pkt: IPv6Packet): number[] {
   const versionTrafficFlow = (6 << 28) | ((pkt.trafficClass & 0xff) << 20) | (pkt.flowLabel & 0xfffff);
   const header = [
@@ -348,7 +367,7 @@ function synthIpv6Bytes(pkt: IPv6Packet): number[] {
     ...ipv6Bytes(pkt.sourceIP.getHextets()),
     ...ipv6Bytes(pkt.destinationIP.getHextets()),
   ];
-  return [...header, ...synthL4BytesV6(pkt)];
+  return [...header, ...synthIpv6PayloadBytes(pkt)];
 }
 
 function synthArpBytes(arp: ARPPacket): number[] {
@@ -461,7 +480,7 @@ export function decodeEthernetFrame(
     base.ipProtocol = ip6.nextHeader;
     base.ipTotalLength = ip6.payloadLength + 40;
     base.ipHeaderLen = 40;
-    decodeIpv6Payload(base, ip6);
+    decodeIpv6Fragmentable(base, ip6);
     const built = withEthernet(frame, synthIpv6Bytes(ip6));
     base.raw = built.raw;
     base.rawLinkOffset = built.offset;
@@ -569,6 +588,55 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
   base.l4 = 'other';
 }
 
+function decodeIpv6Fragmentable(base: CaptureFrame, ip6: IPv6Packet): void {
+  const fragment = ipv6FragmentOf(ip6);
+  if (fragment === null) {
+    decodeIpv6Payload(base, ip6);
+    return;
+  }
+  base.l4 = 'other';
+  base.fragment6 = {
+    identification: fragment.identification,
+    offsetBytes: fragment.fragmentOffset * 8,
+    length: ip6.payloadLength - 8,
+  };
+  const first = ipv6FirstFragmentView(ip6);
+  if (first === null) return;
+  const inner: CaptureFrame = { ...base, l4: 'none', fragment6: undefined, ipProtocol: first.nextHeader };
+  decodeIpv6Payload(inner, first);
+  base.fragment6.inner = inner;
+}
+
+function decodeIcmpOrig6(orig: IPv6Packet): IcmpOrigInfo {
+  const info: IcmpOrigInfo = {
+    srcIp: orig.sourceIP.toString(),
+    dstIp: orig.destinationIP.toString(),
+    ttl: orig.hopLimit,
+    ipId: 0,
+    ipTos: orig.trafficClass,
+    protocol: orig.nextHeader,
+    ipFlags: 0,
+    ipTotalLength: 40 + orig.payloadLength,
+    l4: 'other',
+  };
+  if (orig.nextHeader === IP_PROTO_UDP) {
+    const udp = orig.payload as UDPPacket;
+    info.l4 = 'udp';
+    info.srcPort = udp.sourcePort;
+    info.dstPort = udp.destinationPort;
+    info.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
+  } else if (orig.nextHeader === IP_PROTO_TCP) {
+    const seg = normalizeTcpSegment(orig.payload);
+    info.l4 = 'tcp';
+    info.srcPort = seg.sourcePort;
+    info.dstPort = seg.destinationPort;
+    info.payloadLength = Math.max(0, orig.payloadLength - seg.dataOffset * 4);
+  } else if (orig.nextHeader === IP_PROTO_ICMPV6) {
+    info.l4 = 'icmp';
+  }
+  return info;
+}
+
 function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
   if (ip6.nextHeader === IP_PROTO_ICMPV6) {
     const icmp = ip6.payload as ICMPv6Packet;
@@ -577,6 +645,9 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.icmpCode = icmp.code;
     base.icmpId = icmp.id;
     base.icmpSeq = icmp.sequence;
+    base.icmpNextHopMtu = icmp.mtu;
+    base.icmpPointer = icmp.pointer;
+    if (icmp.invokingPacket) base.icmpOrig = decodeIcmpOrig6(icmp.invokingPacket);
     base.payloadLength = ip6.payloadLength;
     const ndp = icmp.ndp as { targetAddress?: { toString(): string } } | undefined;
     if (ndp?.targetAddress) base.ndpTarget = ndp.targetAddress.toString();

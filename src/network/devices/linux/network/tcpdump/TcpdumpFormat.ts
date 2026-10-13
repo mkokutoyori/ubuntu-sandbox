@@ -1,10 +1,15 @@
 import { bootpText } from './TcpdumpBootp';
-import { icmpTimeExceededPhrase, icmpUnreachablePhrase } from '@/network/core/IcmpPhrase';
-import type { CaptureFrame } from './CaptureFrame';
+import {
+  icmpTimeExceededPhrase, icmpUnreachablePhrase, icmpv6ParameterProblemPhrase, icmpv6TimeExceededPhrase,
+  icmpv6UnreachablePhrase,
+} from '@/network/core/IcmpPhrase';
+import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
 import { decodeOptions } from '@/network/tcp/TcpOptionsCodec';
 import { EcnCodepoint } from '@/network/core/IpHeaderFields';
-import { IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
+import {
+  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_IPV6_FRAGMENT, IP_PROTO_TCP, IP_PROTO_UDP,
+} from '@/network/core/types';
 
 export interface AddressNames {
   host(ip: string): string;
@@ -171,6 +176,7 @@ const ICMP6_PHRASE: Record<string, string> = {
   'destination-unreachable': 'destination unreachable',
   'packet-too-big': 'packet too big',
   'time-exceeded': 'time exceeded',
+  'parameter-problem': 'parameter problem',
   'router-solicitation': 'router solicitation',
   'router-advertisement': 'router advertisement',
   'neighbor-solicitation': 'neighbor solicitation',
@@ -353,6 +359,8 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     const phrase = ICMP6_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
     const length = `length ${frame.payloadLength ?? 0}`;
     if (opt.quiet) return `ICMP6, ${phrase}, ${length}`;
+    const errorPhrase = icmp6ErrorPhrase(frame, state);
+    if (errorPhrase !== null) return `ICMP6, ${errorPhrase}, ${length}`;
     if (frame.icmpType === 'echo-request' || frame.icmpType === 'echo-reply') {
       return `ICMP6, ${phrase}, id ${frame.icmpId ?? 0}, seq ${frame.icmpSeq ?? 0}, ${length}`;
     }
@@ -373,6 +381,33 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
   return `length ${frame.payloadLength ?? frame.length}`;
 }
 
+function icmp6ErrorPhrase(frame: CaptureFrame, state: TcpdumpRenderState): string | null {
+  const orig = frame.icmpOrig;
+  const code = frame.icmpCode ?? 0;
+  switch (frame.icmpType) {
+    case 'destination-unreachable': {
+      if (orig === undefined) return null;
+      const transport = transportOf(orig.l4);
+      return `destination unreachable, ${icmpv6UnreachablePhrase({
+        code,
+        quotedDestination: state.host(orig.dstIp),
+        quotedSource: state.host(orig.srcIp),
+        quotedProtocol: orig.protocol,
+        quotedTransport: transport,
+        quotedDestinationPort: orig.dstPort === undefined ? undefined : state.port(orig.dstPort, transport),
+      })}`;
+    }
+    case 'packet-too-big':
+      return `packet too big, mtu ${frame.icmpNextHopMtu ?? 0}`;
+    case 'time-exceeded':
+      return icmpv6TimeExceededPhrase(code, state.host(orig?.dstIp ?? frame.srcIp ?? ''));
+    case 'parameter-problem':
+      return icmpv6ParameterProblemPhrase(code, frame.icmpPointer ?? 0);
+    default:
+      return null;
+  }
+}
+
 const L4_MIN_HEADER_BYTES: Partial<Record<CaptureFrame['l4'], number>> = { tcp: 20, udp: 8, icmp: 8 };
 
 function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | null {
@@ -390,6 +425,7 @@ function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | nu
  */
 const IP_PROTO_NAMES: Readonly<Record<number, string>> = {
   [IP_PROTO_ICMP]: 'ICMP', [IP_PROTO_TCP]: 'TCP', [IP_PROTO_UDP]: 'UDP', [IP_PROTO_ICMPV6]: 'ICMPv6',
+  [IP_PROTO_IPV6_FRAGMENT]: 'Fragment',
 };
 
 function ipProtoName(frame: CaptureFrame): string {
@@ -446,7 +482,25 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderSt
   return `IP ${src} > ${dst}: ${detail}`;
 }
 
+function ip6FragmentLine(
+  frame: CaptureFrame, fragment: Fragment6Info, opt: TcpdumpOptions, state: TcpdumpRenderState,
+): string {
+  const header = opt.verbose > 0 ? `${ip6VerboseHeader(frame)} ` : '';
+  const identification = opt.verbose > 0 ? `0x${fragment.identification.toString(16).padStart(8, '0')}:` : '';
+  const head = `IP6 ${header}${endpoint(state, frame.srcIp, undefined, 'other')} > `
+    + `${endpoint(state, frame.dstIp, undefined, 'other')}: `
+    + `frag (${identification}${fragment.offsetBytes}|${fragment.length})`;
+  const inner = fragment.inner;
+  if (inner === undefined) return head;
+  const protocol = transportOf(inner.l4);
+  const ports = inner.l4 === 'tcp' || inner.l4 === 'udp'
+    ? `${state.port(inner.srcPort ?? 0, protocol)} > ${state.port(inner.dstPort ?? 0, protocol)}: `
+    : '';
+  return `${head} ${ports}${l4Detail(inner, { ...opt, skipChecksumCheck: true }, state)}`;
+}
+
 function ip6Line(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
+  if (frame.fragment6 !== undefined) return ip6FragmentLine(frame, frame.fragment6, opt, state);
   const trunc = truncationMarker(frame, opt);
   const withPort = !trunc && (frame.l4 === 'tcp' || frame.l4 === 'udp');
   const src = endpoint(state, frame.srcIp, withPort ? frame.srcPort : undefined, transportOf(frame.l4));
