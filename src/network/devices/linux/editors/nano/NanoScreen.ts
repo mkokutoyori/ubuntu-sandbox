@@ -416,7 +416,8 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
     }
   }
 
-  rows[layout.statusRow] = footerStatus;
+  const footerHasContent = input.yesNo !== null || input.prompt !== null || input.status !== null || input.minibar !== null;
+  if (layout.statusRow >= layout.editFrom + layout.editRows || footerHasContent) rows[layout.statusRow] = footerStatus;
   if (layout.barsFrom !== null && bars !== null) {
     rows[layout.barsFrom] = bars[0];
     rows[layout.barsFrom + 1] = bars[1];

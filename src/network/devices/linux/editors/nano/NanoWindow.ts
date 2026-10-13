@@ -50,7 +50,7 @@ export const PLAIN_LAYOUT: NanoLayoutFlags = { zero: false, minibar: false, empt
 
 export function nanoLayout(rows: number, flags: NanoLayoutFlags = PLAIN_LAYOUT): NanoLayout {
   if (rows < 3) return { titleRows: 0, editFrom: 0, editRows: flags.zero ? rows : 1, statusRow: rows - 1, barsFrom: null };
-  const bottomRows = flags.nohelp || flags.zero || rows < SHORTCUT_BARS_MINIMUM ? 1 : 3;
+  const bottomRows = flags.nohelp || rows < SHORTCUT_BARS_MINIMUM ? 1 : 3;
   const titleRows = flags.minibar || flags.zero ? 0 : flags.emptyline && rows > SHORTCUT_BARS_MINIMUM ? 2 : 1;
   const editRows = rows - titleRows - bottomRows + (flags.zero ? 1 : 0);
   const statusRow = rows - bottomRows;

@@ -74,7 +74,7 @@ export class NanoEngine {
   private set _statusMessage(value: string) {
     this.statusText = value;
     this.statusCountdown = value === '' ? 0 : STATUS_LINGER_KEYS;
-    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty|^\[ (Invalid|Empty search string|Too tiny)/.test(value);
+    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty|^\[ (Invalid|Empty search string|Too tiny|Not possible)/.test(value);
     this.statusMore = false;
     if (value !== '') this.messageThisKey = true;
   }
@@ -289,7 +289,7 @@ export class NanoEngine {
     this.messageThisKey = false;
     this.manner = 'centering';
     this.verticalKey = false;
-    if (this.minibarMode()) this.wipeStatus();
+    if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
     if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') this.toggleHelpInPrompt();
     else this.dispatchKey(k);
@@ -298,7 +298,15 @@ export class NanoEngine {
     if (!this.verticalKey) this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
     if (this.reportsPositionAsMessage() && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
     this.followCursor();
+    this.makeRoomForMessage();
     this.settleTally();
+  }
+
+  private makeRoomForMessage(): void {
+    if (!this.zeroMode() || this.isPrompting() || messageLevel(this.statusText) <= MESSAGE_LEVEL.hush) return;
+    if (this.window.cursorRow !== this.window.editRows - 1) return;
+    this.window.scroll(true);
+    this.window.cursorRow = this.window.place({ line: this._cursorLine, col: this._cursorCol }).row;
   }
 
   private settleTally(): void {
@@ -308,7 +316,7 @@ export class NanoEngine {
   }
 
   private reportsPositionAsMessage(): boolean {
-    return this.live.constantshow && !(this.live.minibar && !this.live.zero);
+    return this.live.constantshow && !this.live.minibar && !this.live.zero;
   }
 
   private minibarInfo(messageExpired: boolean): MinibarInfo | null {
@@ -383,7 +391,7 @@ export class NanoEngine {
   get screen(): EditorScreen {
     const live = this.paintScreen(false);
     const level = messageLevel(this.statusText);
-    const transient = this.minibarMode() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
+    const transient = this.bareDisplay() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
     if (!transient || this.isPrompting()) return live;
     return { ...live, hold: { millis: 1500, then: this.paintScreen(true) } };
   }
@@ -392,9 +400,18 @@ export class NanoEngine {
     return this.live.minibar && !this.live.zero && this.window.rows > 1;
   }
 
+  private zeroMode(): boolean {
+    return this.live.zero && this.window.rows > 1;
+  }
+
+  private bareDisplay(): boolean {
+    return this.minibarMode() || this.zeroMode();
+  }
+
   private paintScreen(messageExpired: boolean): EditorScreen {
     const prompt = this.promptView();
-    const message = messageExpired ? '' : this.statusText.replace(/^\[ (.*) \]$/, '$1');
+    const hidden = messageExpired || (this.bareDisplay() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark);
+    const message = hidden ? '' : this.statusText.replace(/^\[ (.*) \]$/, '$1');
     return buildNanoScreen({
       window: this.window,
       lines: this.linesArr,
@@ -432,6 +449,14 @@ export class NanoEngine {
     if (!this.bareInterface()) this._statusMessage = `[ Help mode ${this.live.nohelp ? 'disabled' : 'enabled'} ]`;
   }
 
+  private toggleHiddenInterface(): void {
+    this.verticalKey = true;
+    this.manner = 'flowing';
+    this.live.zero = !this.live.zero;
+    this.window.align();
+    this.wipeStatus();
+  }
+
   private toggleHelpInPrompt(): void {
     this.verticalKey = true;
     this.manner = 'flowing';
@@ -447,6 +472,10 @@ export class NanoEngine {
     this.verticalKey = true;
     if (this.window.rows === 1) {
       this._statusMessage = '[ Too tiny ]';
+      return;
+    }
+    if (this.live.zero) {
+      this._statusMessage = '[ Not possible ]';
       return;
     }
     this.live.constantshow = !this.live.constantshow;
@@ -1050,6 +1079,7 @@ export class NanoEngine {
     const key = k.key.toLowerCase();
     if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollView(false, 1); return; }
     if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollView(true, 1); return; }
+    if (key === 'z') { this.toggleHiddenInterface(); return; }
     if (key === 'x') { this.toggleHelpLines(); return; }
     if (key === 'c') { this.toggleConstantShow(); return; }
     if (key === 'n') {
@@ -1116,6 +1146,7 @@ export class NanoEngine {
   // ── Mark / region (^6, M-A, M-6) ─────────────────────────────────
 
   private toggleMark(): void {
+    this.verticalKey = true;
     if (this.markLine !== null) {
       this.clearMark();
       this._statusMessage = 'Mark Unset';

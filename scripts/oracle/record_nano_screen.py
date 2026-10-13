@@ -96,7 +96,7 @@ def rand_buffer(r, n):
 FLAGS = [[], [], ["-l"], ["-S"], ["-l", "-S"], ["-c"], ["-v"]]
 MOVES = ["Left", "Right", "Up", "Down", "Home", "End", "C-a", "C-e", "C-y", "C-v", "PageUp", "PageDown", "C-Left", "C-Right", "M-\\", "M-/", "C-p", "C-n", "C-b", "C-f"]
 EDITS = ["x", "yz", "BSpace", "DC", "Enter", "Tab", "C-k", "C-u", "M-6", "C-d"]
-TOGGLES = ["M-n", "M-s", "M-x", "M-c"]
+TOGGLES = ["M-n", "M-s", "M-x", "M-c", "M-z"]
 SCROLLS = ["M-Up", "M-Down"]
 
 PROMPT_WORDS = ["foo", "bar", "world", "x", "end.", "Hello", "a_b", "tab", "zzz", "é", "中文"]

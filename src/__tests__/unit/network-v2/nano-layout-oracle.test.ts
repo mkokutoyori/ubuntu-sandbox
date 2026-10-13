@@ -25,21 +25,33 @@
  * Un message de niveau REMARK ou plus prend la place de la barre jusqu'a la touche suivante (le moteur le montre
  * 1,5 s : `EditorScreen.hold`), les bascules `M-n` / `M-x` y sont muettes, « Read N lines » n'est pas dit.
  *
- * Seuls les cas dont les options sont evaluees (SCREEN_PORTED_FLAGS : `view constantshow linenumbers softwrap
- * nohelp emptyline stateflags minibar`) sont rejoues ; `-0` (zero) le sera quand il sera porte.
+ * `-0` (zero, interface cachee) : plus de titre, plus de barres de raccourcis, plus de rangee d'etat ; la fenetre
+ * d'edition prend tout l'ecran et la rangee d'etat n'est reprise que le temps d'un message (makeRoomForMessage :
+ * la ligne du curseur remonte d'une rangee quand elle serait recouverte).  Un message de niveau inferieur a REMARK
+ * reste invisible ; `M-z` bascule le mode en cours de route, `M-c` y est refusee (« Not possible »).  Le source 8.x
+ * (nano.c, winio.c) a ete confronte au binaire 7.2 et le binaire l'a emporte : `-0` implique `-x`, et l'invite de
+ * ^W ^O ^R retrouve sa rangee du bas.
+ *
+ * Tous les cas sont rejoues (SCREEN_PORTED_FLAGS couvre desormais `view constantshow linenumbers softwrap nohelp
+ * emptyline stateflags minibar zero`).
  *
  * Mesure avec `git stash push -- src/network src/components src/terminal` : l'ancien moteur n'a ni `-x` ni `-e`
- * ni `-%` ni `-_`, et ses barres de raccourcis apparaissent des 5 lignes.  Sans `-_` (premier increment) 117 cas
+ * ni `-%` ni `-_` ni `-0`, et ses barres de raccourcis apparaissent des 5 lignes.  Sans `-_` (premier increment) 117 cas
  * sur 137 (seed 1), 108 sur 124 (seed 2) et 100 sur 118 (seed 3) tombaient avant ; avec `-_` (second increment, mesure sur
- * le moteur du premier) 70 sur 70, 66 sur 66 et 75 sur 75 des cas a minibarre tombent avant.  0 apres, sauf les cas
- * ci-dessous.  Le seed 1 a guide les reglages, les seeds 2 et 3 ont ete enregistres ensuite.
+ * le moteur du premier) 70 sur 70, 66 sur 66 et 75 sur 75 des cas a minibarre tombent avant.  Avec `-0` (troisieme
+ * increment, corpus reenregistre avec la bascule `M-z`, mesure sur le moteur du second) 87 sur 104, 89 sur 101 et 99
+ * sur 108 des cas a interface cachee tombent avant ; 0 apres, sauf les cas ci-dessous.  Le seed 1 a guide les
+ * reglages, les seeds 2 et 3 ont ete enregistres ensuite.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 6 cas.  Aucun n'est epingle comme contrat : un
+ * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 12 cas.  Aucun n'est epingle comme contrat : un
  * cas de la liste qui se met a passer fait echouer le test pour qu'on le retire.
- *   - lay1-193, lay1-50, lay2-32, lay3-32, lay3-214 : `^R` en mode lecture seule ouvre « File to read into new
- *     buffer » (lecture dans un nouveau tampon) ; le moteur n'a qu'un tampon et repond « Key is invalid in view
- *     mode » ;
- *   - lay2-118 : `Tab` avec une marque indente le bloc marque (do_indent), le moteur insere une tabulation.
+ *   - lay1-31, lay1-44, lay1-46, lay2-32, lay2-148, lay3-32, lay3-209 : `^R` en mode lecture seule ouvre « File to
+ *     read into new buffer » (lecture dans un nouveau tampon) ; le moteur n'a qu'un tampon et repond « Key is
+ *     invalid in view mode » ;
+ *   - lay1-213, lay2-219, lay3-231 : `Tab` avec une marque indente le bloc marque (do_indent), le moteur insere une
+ *     tabulation ;
+ *   - lay1-51, lay3-227 : « Replace » avec une marque ne remplace que dans la selection, le moteur remplace
+ *     partout.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
@@ -50,7 +62,9 @@ const dir = 'src/__tests__/support/oracle/nano-layout';
 const fixtures = readdirSync(dir).filter((f) => f.startsWith('nano-7.2')).sort()
   .map((f) => ({ name: f, ...(JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { nano: string; cases: NanoScreenCase[] }) }));
 
-const UNPORTED_CASES: ReadonlySet<string> = new Set(['lay1-193', 'lay1-50', 'lay2-32', 'lay2-118', 'lay3-32', 'lay3-214']);
+const UNPORTED_CASES: ReadonlySet<string> = new Set([
+  'lay1-31', 'lay1-44', 'lay1-46', 'lay1-51', 'lay1-213', 'lay2-32', 'lay2-148', 'lay2-219', 'lay3-32', 'lay3-209', 'lay3-227', 'lay3-231',
+]);
 
 describe('nano layout transcripts recorded from a real nano', () => {
   for (const fixture of fixtures) {
