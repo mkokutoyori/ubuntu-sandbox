@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
-which resizes the pane.  The real nano runs inside a pane of the given size (started with `-I`, so
+which resizes the pane (a run of literal text is sent one character at a time, 40 ms apart, because nano
+wraps a burst of typed characters once at its end).  The real nano runs inside a pane of the given size (started with `-I`, so
 no rc file is read); the first record is the screen right after nano opened the file, then one
 record per step: every row of the pane (title bar, edit window, status bar and the two shortcut
-rows), the cursor cell and the pane size.
+rows), the cursor cell and the pane size.  A case with `"disk": true` (every case of the edit
+corpus) also records the files left in the directory after each step.
 """
 import argparse, json, os, random, re, shlex, subprocess, tempfile, time
 from concurrent.futures import ThreadPoolExecutor
@@ -23,7 +25,10 @@ def send(name, token):
     if token in KEYS or re.match(r"^(C|M)-.+$", token) or token in ("C-Left", "C-Right"):
         tmux("send-keys", "-t", name, token)
     else:
-        tmux("send-keys", "-t", name, "-l", token)
+        for index, char in enumerate(token):
+            if index:
+                time.sleep(0.04)
+            tmux("send-keys", "-t", name, "-l", "\\;" if char == ";" else char)
 
 def snapshot(name):
     cur = tmux("display", "-p", "-t", name, "#{cursor_y} #{cursor_x} #{pane_height} #{pane_width}").split()
@@ -44,12 +49,23 @@ def settled(name):
         last = snap
     return last
 
-def record_screen(name):
+def record_disk(casedir):
+    disk = {}
+    for entry in sorted(os.listdir(casedir)):
+        path = os.path.join(casedir, entry)
+        if not entry.startswith(".") and os.path.isfile(path):
+            disk[entry] = open(path, "rb").read().decode("utf-8", "replace")
+    return disk
+
+def record_screen(name, casedir=None):
     snap = settled(name)
     if snap is None:
         return None
     y, x, height, width, pane = snap
-    return {"y": y, "x": x, "height": height, "width": width, "rows": [r.rstrip() for r in pane[:height]]}
+    record = {"y": y, "x": x, "height": height, "width": width, "rows": [r.rstrip() for r in pane[:height]]}
+    if casedir is not None:
+        record["disk"] = record_disk(casedir)
+    return record
 
 def run_case(case, workdir):
     name = "ns%d_%s" % (os.getpid(), re.sub(r"\W", "", case["id"]))
@@ -60,7 +76,7 @@ def run_case(case, workdir):
     flags = " ".join(case.get("flags", []))
     tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name,
          "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s t.txt" % (casedir, flags))
-    opened = record_screen(name)
+    opened = record_screen(name, casedir if case.get("disk") else None)
     after = []
     for step in case["steps"]:
         if step.startswith("@"):
@@ -71,7 +87,7 @@ def run_case(case, workdir):
             send(name, step)
             if step == "Escape":
                 time.sleep(0.15)
-        snap = record_screen(name)
+        snap = record_screen(name, casedir if case.get("disk") else None)
         if snap is None:
             break
         after.append(snap)
@@ -166,7 +182,7 @@ def run_cli_case(case, workdir):
         tmux("kill-session", "-t", name)
         tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name,
              "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s" % (casedir, " ".join(shlex.quote(a) for a in case["args"])))
-        record["opened"] = record_screen(name)
+        record["opened"] = record_screen(name, casedir if case.get("disk") else None)
         record["after"] = []
         for step in case.get("steps", []):
             if step.startswith("@"):
@@ -175,7 +191,7 @@ def run_cli_case(case, workdir):
                 time.sleep(0.2)
             else:
                 send(name, step)
-            snap = record_screen(name)
+            snap = record_screen(name, casedir if case.get("disk") else None)
             if snap is None:
                 break
             record["after"].append(snap)
@@ -293,6 +309,90 @@ def gen_layout(seed, count):
         cases.append({"id": "lay%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "steps": steps})
     return cases
 
+EDIT_FOCUS = {
+    "-i": ["Enter", "Enter", "End", "Home", "C-e", "Tab", "x"],
+    "-E": ["Tab", "Tab", "BSpace", "Enter", "Home", "x"],
+    "-T3": ["Tab", "Tab", "Enter", "Home", "End"],
+    "-T4": ["Tab", "Tab", "Enter", "Home", "End"],
+    "-A": ["Home", "Home", "Home", "C-a", "End", "Down", "Up"],
+    "-k": ["C-k", "C-k", "C-u", "Right", "Right", "M-6", "C-u"],
+    "-Z": ["M-a", "Right", "Right", "Down", "BSpace", "DC", "M-a"],
+    "-L": ["Enter", "C-e", "M-/", "BSpace", "x"],
+    "-y": ["C-Right", "C-Right", "C-Left", "C-Right"],
+    "-W": ["C-Right", "C-Right", "C-Left", "C-Right"],
+    "-Xab": ["C-Right", "C-Right", "C-Left", "C-Right"],
+    "-j": ["Down", "Down", "Down", "Up", "Up", "PageDown", "Down"],
+    "-O": ["C-j", "Down", "M-j"],
+}
+EDIT_KEYS = ["Tab", "Tab", "Enter", "Enter", "Home", "End", "C-a", "C-e", "C-k", "C-k", "C-u", "C-d", "BSpace", "DC", "Left", "Right", "Up", "Down", "C-Left", "C-Right", "M-6", "M-a", "x", "yz", " ", "  ", "a_b", "M-\\", "M-/", "PageDown", "PageUp"]
+
+def edit_line(r):
+    line = rand_line(r, long_chance=0.1)
+    if r.random() < 0.35:
+        line = r.choice([" ", "  ", "\t", "    ", " \t", "\t\t", "   "]) + line.lstrip()
+    if r.random() < 0.2:
+        line += r.choice([" ", "  ", "\t", " \t "])
+    if r.random() < 0.2:
+        line = line.replace(" ", "." if r.random() < 0.5 else ",", 1)
+    return line
+
+def gen_edit(seed, count):
+    r = random.Random(seed)
+    focus = list(EDIT_FOCUS)
+    cases = []
+    for i in range(count):
+        flag = focus[i % len(focus)]
+        n = r.choice([3, 6, 12, 40]) if flag == "-j" else r.choice([1, 3, 6, 12])
+        text = [edit_line(r) for _ in range(n)]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50)]) if flag != "-j" else r.choice([(6, 40), (8, 50), (10, 40)])
+        others = r.sample(["-i", "-E", "-T2", "-T4", "-A", "-k", "-Z", "-L", "-y", "-W", "-l", "-S"], r.choice([0, 0, 1, 1, 2]))
+        flags = list(dict.fromkeys([flag] + others))
+        steps = [r.choice(EDIT_FOCUS[flag] * 2 + EDIT_KEYS) for _ in range(r.randint(4, 14))]
+        for _ in range(r.choice([0, 1, 1])):
+            at = r.randint(1, len(steps))
+            steps[at:at] = ["C-o", "Enter"]
+        steps = steps + ["C-o", "Enter"]
+        cases.append({"id": "edt%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "steps": steps, "disk": True})
+    return cases
+
+WRAP_FLAGS = ["-O", "-M", "-b", "-r20", "-r30", "-r10", "-r0", "-r-4", "-i", "-w", "-S", "-a", "-k", "-E"]
+WRAP_KEYS = ["C-j", "C-j", "M-j", "M-a", "Down", "Down", "Up", "End", "Home", "C-e", "Enter", "BSpace", "DC", "Tab", "Left", "Right", "C-Right", "PageDown", "M-\\", "M-/", "C-u", "C-k"]
+WRAP_TYPED = ["the quick brown fox jumps over the lazy dog", "a b c d e f g h i j k l m n o p", "supercalifragilisticexpialidocious and more", "x", "yz  ", "end. Next sentence! Another? Yes.", "foo,bar baz;qux", "word ", "  ", "\tindented words keep going on and on"]
+
+def wrap_paragraph(r):
+    prefix = r.choice(["", "", "", "> ", "# ", "// ", ">> ", "  "])
+    indent = r.choice(["", "", "", "  ", "    ", "\t"])
+    lines = []
+    for i in range(r.randint(1, 5)):
+        words = " ".join(r.choice(WORDS + ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "end.", "Hello!", "why?"]) for _ in range(r.randint(2, 14)))
+        lead = prefix + (indent if i == 0 or r.random() < 0.7 else r.choice(["", "  ", "    "]))
+        trail = r.choice(["", "", "", " ", "  ", "\t"]) if r.random() < 0.3 else ""
+        lines.append(lead + words + trail)
+    return lines
+
+def gen_wrap(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = []
+        for _ in range(r.randint(1, 4)):
+            text.extend(wrap_paragraph(r))
+            if r.random() < 0.85:
+                text.append(r.choice(["", "", " "]))
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50), (10, 30)])
+        flags = r.sample(WRAP_FLAGS, r.choice([0, 1, 1, 2, 2, 3]))
+        if "-r0" in flags or "-r10" in flags:
+            flags = [f for f in flags if f not in ("-r20", "-r30", "-r-4")]
+        steps = []
+        for _ in range(r.randint(3, 10)):
+            if r.random() < 0.3:
+                steps.append(r.choice(WRAP_TYPED))
+            else:
+                steps.append(r.choice(WRAP_KEYS))
+        steps += ["C-o", "Enter"]
+        cases.append({"id": "wrp%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "steps": steps, "disk": True})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
@@ -302,6 +402,10 @@ def gen(seed, count, corpus):
         return gen_place(seed, count)
     if corpus == "layout":
         return gen_layout(seed, count)
+    if corpus == "edit":
+        return gen_edit(seed, count)
+    if corpus == "wrap":
+        return gen_wrap(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):
