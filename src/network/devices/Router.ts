@@ -5273,6 +5273,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (requiresNamedInterface(request.destination)) {
       return sendOnNamedInterface({
         getPort: (name) => this.getPort(name),
+        isInterfaceUsable: (name) => this.interfaceUsable(name),
         sendFrame: (name, frame) => this.sendFrame(name, frame),
       }, request);
     }
