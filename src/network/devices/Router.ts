@@ -6282,6 +6282,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** Trigger OSPF convergence. @internal */
   _ospfAutoConverge(): void { this.ospfIntegration.autoConverge(); }
 
+  reconvergeRouting(): void {
+    this._ospfAutoConverge();
+    if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
+  }
+
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return this.shell.getOSType(); }
