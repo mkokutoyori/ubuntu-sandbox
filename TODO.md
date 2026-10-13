@@ -1468,6 +1468,20 @@ le point de couture dans `runSshClient` est UNIQUE : le bloc
 qui suit le calcul de `forwarded` et de `effectiveCmd`. Tout ce qui est
 au-dessus (auth, politique, forwarding, `.bashrc` sous `-t`) reste client.
 
+### [ssh] `ssh` depuis Windows sans justificatif execute la commande EN MEMOIRE
+**Mesure** (WindowsPC -> LinuxServer, un cable, `framesTransmitted` avant/apres) : avec le mot de
+passe en entree standard, `ssh bob@host hostname` coute 61 trames et `ssh bob@host cat big.txt`
+(200001 octets) 274 : la commande traverse le cable. SANS mot de passe, les deux coutent 37 trames :
+l'authentification filaire echoue, `openWireSsh` rend `null` (le refus n'est remonte que si un mot de
+passe a ete offert), et `runWindowsSshClient` retombe sur la « convention du simulateur » : il trouve
+la machine par `findHostByAddress`, accepte la connexion et execute la commande sur son objet.
+**Pourquoi ce n'est pas ferme** : retirer la convention (remonter le refus aussi sans mot de passe)
+fait tomber 22 cas de 67 fichiers Windows/ssh, dont `probe-cle-publique-depuis-windows` (la cle de
+l'agent n'est pas offerte par la session filaire de Windows : `ssh-add` puis `ssh` ne s'authentifie
+que par la convention) et `probe-ssh-interactif-vers-windows`. Ordre de fermeture : (1) faire offrir
+les cles de l'agent Windows par `openWireSshConnection`, (2) mettre un mot de passe sur l'entree
+standard des tests qui reposent sur la convention, (3) remonter le refus.
+
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
 BGP, DHCP et IPsec, et laisse GRE dehors.
