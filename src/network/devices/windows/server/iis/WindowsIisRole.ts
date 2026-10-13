@@ -80,6 +80,13 @@ interface SiteState extends WebsiteInfo {
   httpsServer: HttpsServerSession | null;
 }
 
+export interface IisStateDelta {
+  sites: WebsiteInfo[];
+  removedSites: string[];
+  appPools: AppPoolInfo[];
+  removedAppPools: string[];
+}
+
 export class WindowsIisRole {
   private readonly sites = new Map<string, SiteState>();
   private readonly appPools = new Map<string, AppPoolInfo>();
@@ -289,6 +296,20 @@ export class WindowsIisRole {
 
   listAppPools(): AppPoolInfo[] {
     return [...this.appPools.values()].map(p => ({ ...p }));
+  }
+
+  restoreState(state: IisStateDelta): void {
+    for (const name of state.removedSites) this.removeWebsite(name);
+    for (const name of state.removedAppPools) this.appPools.delete(name);
+    for (const pool of state.appPools) this.appPools.set(pool.name, { ...pool });
+    for (const info of state.sites) {
+      const existing = this.sites.get(info.name);
+      if (existing) this.unlisten(existing);
+      this.fs.mkdirp(info.physicalPath);
+      const site: SiteState = { ...info, server: null, httpsServer: null };
+      this.sites.set(info.name, site);
+      if (this.listening) this.listen(site);
+    }
   }
 
   // ─── Global modules (Get-WebGlobalModule) — PRD §5 P15 ─────────────────

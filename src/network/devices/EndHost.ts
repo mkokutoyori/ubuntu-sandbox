@@ -29,7 +29,11 @@ import {
   connectedPrefixesOfPort, isDirectedBroadcast, martianSource, type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
 import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
-import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters } from '../layers/internet/ProtocolCounters';
+import {
+  newProtocolCounters, countIcmpIn, countIcmpOut, countIcmp6In, countIcmp6Out, tcpCounterName,
+  type ProtocolCounters, type TcpCounterSuffix,
+} from '../layers/internet/ProtocolCounters';
+import { ipv6HeaderProblem, ipv6PacketBytes } from '../layers/internet/Ipv6Ingress';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin, IPv6AddressEntry } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -82,7 +86,7 @@ import {
   IPv6Address, IPv6Packet, ICMPv6Packet, NDPNeighborSolicitation, NDPNeighborAdvertisement,
   NDPRouterAdvertisement, NDPOptionPrefixInfo,
   createIPv6Packet, createNeighborSolicitation, createNeighborAdvertisement,
-  createICMPv6EchoRequest, createICMPv6EchoReply, createRouterSolicitation,
+  createICMPv6EchoRequest, createICMPv6EchoReply, createRouterSolicitation, icmpv6TypeNumber,
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST, addressTextWithoutScope,
 } from '../core/types';
 import {
@@ -593,21 +597,25 @@ export abstract class EndHost extends Equipment {
 
   getProtocolCounters(): ProtocolCounters { return this.protocolCounters; }
 
+  private bumpTcp(suffix: TcpCounterSuffix, family: IpFamily, by = 1): void {
+    this.protocolCounters[tcpCounterName(suffix, family)] += by;
+  }
+
   private readonly tcpMib: TcpMibSink = {
-    activeOpen: () => { this.protocolCounters.tcpActiveOpens++; },
-    passiveOpen: () => { this.protocolCounters.tcpPassiveOpens++; },
-    attemptFail: () => { this.protocolCounters.tcpAttemptFails++; },
-    establishedReset: () => { this.protocolCounters.tcpEstabResets++; },
-    establishedEntered: () => { this.protocolCounters.tcpCurrEstab++; },
-    establishedLeft: () => { this.protocolCounters.tcpCurrEstab--; },
-    segmentIn: () => { this.protocolCounters.tcpInSegs++; },
-    segmentOut: () => { this.protocolCounters.tcpOutSegs++; },
-    retransmitted: () => { this.protocolCounters.tcpRetransSegs++; },
-    inError: (checksum) => {
-      this.protocolCounters.tcpInErrs++;
-      if (checksum) this.protocolCounters.tcpInCsumErrors++;
+    activeOpen: (family) => this.bumpTcp('ActiveOpens', family),
+    passiveOpen: (family) => this.bumpTcp('PassiveOpens', family),
+    attemptFail: (family) => this.bumpTcp('AttemptFails', family),
+    establishedReset: (family) => this.bumpTcp('EstabResets', family),
+    establishedEntered: (family) => this.bumpTcp('CurrEstab', family),
+    establishedLeft: (family) => this.bumpTcp('CurrEstab', family, -1),
+    segmentIn: (family) => this.bumpTcp('InSegs', family),
+    segmentOut: (family) => this.bumpTcp('OutSegs', family),
+    retransmitted: (family) => this.bumpTcp('RetransSegs', family),
+    inError: (checksum, family) => {
+      this.bumpTcp('InErrs', family);
+      if (checksum) this.bumpTcp('InCsumErrors', family);
     },
-    outReset: () => { this.protocolCounters.tcpOutRsts++; },
+    outReset: (family) => this.bumpTcp('OutRsts', family),
   };
 
   ignoresBroadcastEcho(): boolean { return this.broadcastEchoIgnored; }
@@ -2337,6 +2345,9 @@ export abstract class EndHost extends Equipment {
       if (ipPkt && ipPkt.type === 'ipv4' && !this.forwardedDatagrams.has(ipPkt)) {
         this.countLocallyOriginated(ipPkt);
       }
+    } else if (frame.etherType === ETHERTYPE_IPV6) {
+      const ipv6 = frame.payload as IPv6Packet;
+      if (ipv6 && ipv6.type === 'ipv6') this.countLocallyOriginated6(ipv6);
     }
     const sub = this.vlanSubInterfaces.get(portName);
     if (!sub) return super.sendFrame(portName, frame);
@@ -2746,7 +2757,6 @@ export abstract class EndHost extends Equipment {
       // ── Firewall: filter incoming packets ──
       const verdict = this.firewallFilter(portName, ipPkt, 'in');
       if (verdict === 'drop' || verdict === 'reject') {
-        this.protocolCounters.ipInDiscards++;
         Logger.info(this.id, 'ipv4:firewall-blocked',
           `${this.name}: firewall ${verdict} ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${portName}`);
         if (verdict === 'reject') {
@@ -2963,6 +2973,55 @@ export abstract class EndHost extends Equipment {
       this.protocolCounters.udpOutDatagrams++;
     } else if (ipPkt.protocol === IP_PROTO_UDPLITE) {
       this.protocolCounters.udpLiteOutDatagrams++;
+    }
+  }
+
+  private countLocallyOriginated6(ipPkt: IPv6Packet): void {
+    const counters = this.protocolCounters;
+    const octets = ipv6PacketBytes(ipPkt);
+    counters.ip6OutRequests++;
+    counters.ip6OutOctets += octets;
+    if (ipPkt.destinationIP.isMulticast()) {
+      counters.ip6OutMcastPkts++;
+      counters.ip6OutMcastOctets += octets;
+    }
+    if (ipPkt.nextHeader === IP_PROTO_ICMPV6) {
+      const icmp = ipPkt.payload as ICMPv6Packet;
+      if (icmp && icmp.type === 'icmpv6') countIcmp6Out(counters, icmpv6TypeNumber(icmp.icmpType));
+    } else if (ipPkt.nextHeader === IP_PROTO_UDP) {
+      counters.udp6OutDatagrams++;
+    } else if (ipPkt.nextHeader === IP_PROTO_UDPLITE) {
+      counters.udpLite6OutDatagrams++;
+    }
+  }
+
+  private countReceived6(ipPkt: IPv6Packet): void {
+    const counters = this.protocolCounters;
+    counters.ip6InReceives++;
+    counters.ip6InOctets += ipv6PacketBytes(ipPkt);
+    switch (ipPkt.trafficClass & 0b11) {
+      case 0b00: counters.ip6InNoECTPkts++; break;
+      case 0b01: counters.ip6InECT1Pkts++; break;
+      case 0b10: counters.ip6InECT0Pkts++; break;
+      default: counters.ip6InCEPkts++;
+    }
+  }
+
+  private countLoopbackLeg(packet: IPv4Packet | IPv6Packet, step: 'sent' | 'delivered'): void {
+    if (packet.type === 'ipv6') {
+      if (step === 'sent') {
+        this.countLocallyOriginated6(packet);
+        this.countReceived6(packet);
+      } else {
+        this.protocolCounters.ip6InDelivers++;
+      }
+      return;
+    }
+    if (step === 'sent') {
+      this.countLocallyOriginated(packet);
+      this.protocolCounters.ipInReceives++;
+    } else {
+      this.protocolCounters.ipInDelivers++;
     }
   }
 
@@ -3184,13 +3243,14 @@ export abstract class EndHost extends Equipment {
     for (const direction of ['out', 'in'] as const) {
       if (family === 'ipv6') {
         if (this.firewallFilter6('lo', packet as IPv6Packet, direction) !== 'accept') return false;
-        continue;
+      } else {
+        const verdict = this.firewallFilter('lo', packet as IPv4Packet, direction);
+        if (verdict !== 'accept') {
+          if (verdict === 'reject') this.sendICMPReject('lo', packet as IPv4Packet);
+          return false;
+        }
       }
-      const verdict = this.firewallFilter('lo', packet as IPv4Packet, direction);
-      if (verdict === 'accept') continue;
-      if (direction === 'in') this.protocolCounters.ipInDiscards++;
-      if (verdict === 'reject') this.sendICMPReject('lo', packet as IPv4Packet);
-      return false;
+      this.countLoopbackLeg(packet, direction === 'out' ? 'sent' : 'delivered');
     }
     return true;
   }
@@ -3255,6 +3315,8 @@ export abstract class EndHost extends Equipment {
       });
       const verdict = this.firewallFilter('lo', looped, 'out');
       if (verdict === 'drop' || verdict === 'reject') return;
+      this.countLoopbackLeg(looped, 'sent');
+      this.countLoopbackLeg(looped, 'delivered');
       this.handleICMP('lo', looped);
       return;
     }
@@ -3629,6 +3691,10 @@ export abstract class EndHost extends Equipment {
       replyPortUnreachable: (portName, offending) =>
         this.sendICMPError(portName, offending, 'destination-unreachable', ICMP_UNREACH_PORT),
       replyPortUnreachable6: (portName, offending) => this.sendICMPv6Unreachable(portName, offending),
+      countLoopbackDatagram: (packet) => {
+        this.countLoopbackLeg(packet, 'sent');
+        this.countLoopbackLeg(packet, 'delivered');
+      },
     };
     this.udpLite = new UdpLiteEndpoint(host);
     return this.udpLite;
@@ -3816,6 +3882,8 @@ export abstract class EndHost extends Equipment {
       const localPkt = createIPv4Packet(
         destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
       );
+      this.countLoopbackLeg(localPkt, 'sent');
+      this.countLoopbackLeg(localPkt, 'delivered');
       this.deliverUDP('lo', localPkt, false);
       return true;
     }
@@ -4018,6 +4086,8 @@ export abstract class EndHost extends Equipment {
         stampUdpChecksum(udp, origin.toString(), destinationIP.toString()),
         udp.length,
       ));
+      this.countLoopbackLeg(localPkt, 'sent');
+      this.countLoopbackLeg(localPkt, 'delivered');
       this.deliverUDP6('lo', localPkt);
       return true;
     }
@@ -4038,7 +4108,10 @@ export abstract class EndHost extends Equipment {
     destination: IPv6Address, build: (source: IPv6Address) => IPv6Packet, forcedSource?: IPv6Address,
   ): boolean {
     const route = this.resolveIPv6Route(destination);
-    if (!route) return false;
+    if (!route) {
+      this.protocolCounters.ip6OutNoRoutes++;
+      return false;
+    }
     const srcIP = forcedSource ?? selectIpv6SourceAddress(route.port, destination);
     if (!srcIP) return false;
 
@@ -4124,13 +4197,15 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    this.protocolCounters.udpNoPorts++;
-    if (!wasBroadcast) {
-      Logger.info(this.id, 'udp:port-unreachable',
-        `${this.name}: no listener on UDP ${udp.destinationPort}, ` +
-        `replying port unreachable to ${ipPkt.sourceIP}`);
-      this.sendICMPError(portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT);
+    if (wasBroadcast) {
+      this.protocolCounters.udpIgnoredMulti++;
+      return;
     }
+    this.protocolCounters.udpNoPorts++;
+    Logger.info(this.id, 'udp:port-unreachable',
+      `${this.name}: no listener on UDP ${udp.destinationPort}, ` +
+      `replying port unreachable to ${ipPkt.sourceIP}`);
+    this.sendICMPError(portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT);
   }
 
   private deliverUDP6(portName: string, ipv6: IPv6Packet, sourceMac?: string): void {
@@ -4142,14 +4217,24 @@ export abstract class EndHost extends Equipment {
       availableBytes: ipv6.payloadLength,
     });
     if (verdict.accepted === false) {
+      this.protocolCounters.udp6InErrors++;
+      if (verdict.refusal === 'checksum-fail') this.protocolCounters.udp6InCsumErrors++;
       Logger.warn(this.id, `udp6:${verdict.refusal}`,
         `${this.name}: ${verdict.refusal} over IPv6, dropping`);
       return;
     }
 
     if (this.dispatchUdpToListener(
-      portName, verdict.datagram, ipv6.sourceIP, ipv6.destinationIP, sourceMac)) return;
+      portName, verdict.datagram, ipv6.sourceIP, ipv6.destinationIP, sourceMac)) {
+      this.protocolCounters.udp6InDatagrams++;
+      return;
+    }
 
+    if (ipv6.destinationIP.isMulticast()) {
+      this.protocolCounters.udp6IgnoredMulti++;
+      return;
+    }
+    this.protocolCounters.udp6NoPorts++;
     this.sendICMPv6Unreachable(portName, ipv6);
   }
 
@@ -5684,8 +5769,24 @@ export abstract class EndHost extends Equipment {
   private handleIPv6(portName: string, ipv6: IPv6Packet, sourceMac?: string): void {
     if (!ipv6 || ipv6.type !== 'ipv6') return;
 
+    this.countReceived6(ipv6);
     const port = this.ports.get(portName);
-    if (!port || !port.isIPv6Enabled()) return;
+    if (!port || !port.isIPv6Enabled()) {
+      this.protocolCounters.ip6InDiscards++;
+      return;
+    }
+
+    const headerProblem = ipv6HeaderProblem(ipv6, portName === 'lo');
+    if (headerProblem) {
+      this.protocolCounters.ip6InHdrErrors++;
+      Logger.warn(this.id, `ipv6:${headerProblem}`,
+        `${this.name}: IPv6 ${headerProblem} ${ipv6.sourceIP} → ${ipv6.destinationIP}, dropping packet`);
+      return;
+    }
+    if (ipv6.destinationIP.isMulticast()) {
+      this.protocolCounters.ip6InMcastPkts++;
+      this.protocolCounters.ip6InMcastOctets += ipv6PacketBytes(ipv6);
+    }
 
     // ── PREROUTING: evaluate ip6tables DNAT rules before the local-
     // destination check, symmetrically to handleIPv4's evaluatePreRouting.
@@ -5722,11 +5823,15 @@ export abstract class EndHost extends Equipment {
             return;
           }
         }
+        this.protocolCounters.ip6InDelivers++;
         this.handleICMPv6(portName, ipv6);
         return;
       }
       const isUdpLite = ipv6.nextHeader === IP_PROTO_UDPLITE && this.udpLite !== null;
-      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP && !isUdpLite) return;
+      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP && !isUdpLite) {
+        this.protocolCounters.ip6InUnknownProtos++;
+        return;
+      }
 
       const verdict = this.firewallFilter6(portName, ipv6, 'in');
       if (verdict === 'drop') return;
@@ -5741,6 +5846,7 @@ export abstract class EndHost extends Equipment {
         return;
       }
 
+      this.protocolCounters.ip6InDelivers++;
       if (ipv6.nextHeader === IP_PROTO_UDP) {
         this.deliverUDP6(portName, ipv6, sourceMac);
       } else if (isUdpLite) {
@@ -5748,7 +5854,9 @@ export abstract class EndHost extends Equipment {
       } else {
         this.tcpv2.handleIp6(portName, ipv6.sourceIP, ipv6);
       }
+      return;
     }
+    this.protocolCounters.ip6InAddrErrors++;
   }
 
   // ─── ICMPv6 Handling (RFC 4443, RFC 4861) ──────────────────────
@@ -5756,6 +5864,7 @@ export abstract class EndHost extends Equipment {
   private handleICMPv6(portName: string, ipv6: IPv6Packet): void {
     const icmpv6 = ipv6.payload as ICMPv6Packet;
     if (!icmpv6 || icmpv6.type !== 'icmpv6') return;
+    countIcmp6In(this.protocolCounters, icmpv6TypeNumber(icmpv6.icmpType));
 
     switch (icmpv6.icmpType) {
       case 'echo-request':

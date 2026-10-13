@@ -30,6 +30,10 @@ export class WindowsCertStore {
     return this.entries.get(thumbprint) ?? null;
   }
 
+  entriesSnapshot(): StoredCertEntry[] {
+    return [...this.entries.values()];
+  }
+
   list(): X509Certificate[] {
     return [...this.entries.values()].map(e => e.cert);
   }

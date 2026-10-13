@@ -60,6 +60,7 @@ import { withFactoryTwin } from './factoryTwin';
 import { diffDirectory, promotionKind, type DirectoryPromotion } from '@/network/devices/windows/server/ad/DirectoryDelta';
 import type { DirectoryDelta, DirectorySnapshot } from '@/network/devices/windows/server/ad/DirectoryStore';
 import { resetForestRegistry, withIsolatedForestRegistry, type ForestFsmoRoles } from '@/network/devices/windows/server/ad/forest/Forest';
+import { captureWindowsCertificates, restoreWindowsCertificates, type WindowsCertificateState } from './windowsCertificates';
 import { captureWindowsSecurityPolicy, restoreWindowsSecurityPolicy, type WindowsSecurityPolicyState } from './windowsSecurityPolicy';
 import type { WindowsDomainState } from '@/network/devices/windows/domain/DomainTypes';
 import type { NtdsOption } from '@/network/devices/windows/WinRepadmin';
@@ -299,6 +300,7 @@ interface TopologyDeviceExport {
   };
   removedPaths?: string[];
   windowsFeatures?: { installed: string[]; removed?: string[] };
+  windowsCertificates?: WindowsCertificateState;
   windowsDomain?: WindowsDomainState;
   windowsSecurity?: WindowsSecurityPolicyState;
   activeDirectory?: {
@@ -1179,6 +1181,8 @@ function captureDevice(device: Equipment, twin: Equipment, peers: Map<string, Eq
     if (removed.length > 0) entry.removedPaths = removed;
     const accounts = captureWindowsAccounts(device, twin);
     if (accounts) entry.windowsAccounts = accounts;
+    const certificates = captureWindowsCertificates(device, twin);
+    if (certificates) entry.windowsCertificates = certificates;
     const security = captureWindowsSecurityPolicy(device, twin);
     if (security) entry.windowsSecurity = security;
     const domain = device.captureDomainState();
@@ -1554,6 +1558,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (devData.windowsAccounts) restoreWindowsAccounts(device, devData.windowsAccounts);
       if (devData.windowsSecurity) restoreWindowsSecurityPolicy(device, devData.windowsSecurity);
       if (devData.windowsDomain) device.restoreDomainState(devData.windowsDomain);
+      if (devData.windowsCertificates) restoreWindowsCertificates(device, devData.windowsCertificates);
       if (devData.windowsRoles && device instanceof WindowsServer) restoreWindowsServerRoles(device, devData.windowsRoles);
       // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\
       // Services\<name>` is a projection of the service table, written by

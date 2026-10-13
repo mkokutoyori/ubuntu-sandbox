@@ -2,12 +2,12 @@ import { parseNetstatArguments, type NetstatOptions } from './NetstatArguments';
 import {
   renderInternetConnections, renderUnixSockets, type NetstatInternetHost,
 } from './NetstatInternet';
+import { runStatistics } from './NetstatStatistics';
 
 export interface NetstatHost extends NetstatInternetHost {
   programNotice(): string;
   routes(options: NetstatOptions): string;
   interfaces(options: NetstatOptions): string;
-  statistics(options: NetstatOptions): string;
 }
 
 export interface NetstatResult {
@@ -26,10 +26,10 @@ export function runNetstat(args: readonly string[], host: NetstatHost): NetstatR
   if (parsed.exit !== null) return parsed.exit;
   const options = parsed.options as NetstatOptions;
   if (options.masquerade) return unsupported('ip_masquerade');
-  if (options.groups) return unsupported('AF INET (igmp)');
-  if (options.statistics) return { stdout: host.statistics(options), stderr: '', exitCode: 0 };
+  if (options.statistics) return runStatistics(options, host);
   if (options.routes) return { stdout: host.routes(options), stderr: '', exitCode: 0 };
   if (options.interfaces) return { stdout: host.interfaces(options), stderr: '', exitCode: 0 };
+  if (options.groups) return unsupported('AF INET (igmp)');
   if (options.unsupportedFamilies.length > 0 && options.argumentCount === options.unsupportedFamilies.length) {
     return unsupported(`AF ${options.unsupportedFamilies[0].toUpperCase()}`);
   }
