@@ -1,84 +1,49 @@
-/**
- * PRD-NTP-Tutoriel.md §4 / lot N3 — `chronyc`, le §5.3 du tutoriel.
- *
- * La commande n'existait pas (`chronyc: command not found`) sur une
- * machine dont `dpkg` declarait le paquet installe.
- *
- * Elle parle au demon, et non a l'agent directement : sans chronyd,
- * elle repond `506 Cannot talk to daemon`, ce qui est la vraie reponse
- * et la premiere chose qu'un lab de depannage doit pouvoir montrer.
- */
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import {
-  chronycTracking, chronycSources, chronycSourcestats, chronycActivity, chronycServerstats,
-  chronycAuthdata, CHRONYC_SANS_DEMON,
-} from '../../time/ChronycViews';
-import { genererCleChrony } from '../../time/ChronyKeys';
+import { ChronycSession } from '../../time/ChronycClient';
+import { ChronyDaemonView } from '../../time/ChronyDaemonView';
+import { VirtualTimeScheduler, getDefaultScheduler } from '@/events/Scheduler';
 
-/** Les sous-commandes que ce build implemente. */
-const CONNUES = ['tracking', 'sources', 'sourcestats', 'activity', 'makestep', 'reload',
-  'serverstats', 'authdata', 'keygen'];
+async function waitSeconds(seconds: number): Promise<void> {
+  const scheduler = getDefaultScheduler();
+  if (scheduler instanceof VirtualTimeScheduler) {
+    scheduler.advance(seconds * 1000);
+    return;
+  }
+  await new Promise<void>((resolve) => { setTimeout(resolve, seconds * 1000); });
+}
 
-/**
- * `keygen` ne parle PAS au demon : elle calcule une cle et l'ecrit sur
- * la sortie standard, ce qui est tout ce qu'elle fait. La refuser quand
- * chronyd est arrete empecherait de preparer un fichier de cles AVANT de
- * demarrer le service — c'est-a-dire l'ordre normal des operations.
- */
-const SANS_DEMON = ['keygen'];
+async function runChronyc(ctx: LinuxCommandContext, args: string[], stdin?: string) {
+  const service = ctx.executor.chronyService;
+  const agent = service ? ctx.executor.ntpAgent?.() ?? null : null;
+  const addresses: string[] = [];
+  for (const port of ctx.net.getPorts().values()) {
+    const address = port.getIPAddress();
+    if (address) addresses.push(address.toString());
+  }
+  const session = new ChronycSession({
+    service,
+    view: service && agent ? new ChronyDaemonView(service, agent) : null,
+    privileged: ctx.executor.userMgr.currentUid === 0,
+    programName: 'chronyc',
+    localAddresses: addresses,
+    hostsFile: () => ctx.executor.vfs.readFile('/etc/hosts') ?? '',
+    wait: waitSeconds,
+  });
+  const result = await session.run(args, stdin);
+  return { output: result.stdout.replace(/\n$/, ''), exitCode: result.exitCode, stderr: result.stderr.replace(/\n$/, '') };
+}
 
 export const chronycCommand: LinuxCommand = {
   name: 'chronyc',
   needsNetworkContext: true,
   binaryPath: '/usr/bin/chronyc',
-  usage: 'chronyc [-n] [-v] <command>',
-  run(ctx: LinuxCommandContext, argv: string[]): string {
-    const args = argv.filter((a) => !a.startsWith('-'));
-    const verbose = argv.includes('-v');
-    const service = ctx.executor.chronyService;
-    const agent = service ? ctx.executor.ntpAgent?.() : null;
-    if (!service || !agent) return CHRONYC_SANS_DEMON;
-
-    const sous = (args[0] ?? '').toLowerCase();
-    // `chronyc` sans argument ouvre une invite interactive ; ce terminal
-    // n'en a pas, donc la forme sans sous-commande est refusee plutot
-    // que d'ouvrir un shell dont on ne pourrait pas sortir.
-    if (!sous) return 'chronyc: no command given (interactive mode is not available here)';
-    if (!CONNUES.includes(sous)) {
-      return `chronyc: unknown command "${sous}"`;
-    }
-    if (sous === 'keygen') {
-      const r = genererCleChrony(
-        args[1] !== undefined ? Number(args[1]) : undefined,
-        args[2],
-        args[3] !== undefined ? Number(args[3]) : undefined,
-      );
-      return r.ok === true ? r.ligne : r.erreur;
-    }
-    if (!service.isRunning() && !SANS_DEMON.includes(sous)) return CHRONYC_SANS_DEMON;
-
-    switch (sous) {
-      case 'tracking': return chronycTracking(agent);
-      case 'sources': return chronycSources(agent, verbose);
-      case 'sourcestats': return chronycSourcestats(agent);
-      case 'activity': return chronycActivity(agent);
-      case 'serverstats': return chronycServerstats(agent);
-      case 'authdata': return chronycAuthdata(agent);
-      case 'reload': {
-        const r = service.reload();
-        return r.ok === true ? '200 OK' : r.erreur;
-      }
-      case 'makestep': {
-        const r = service.makestep();
-        if (r.ok === false) return r.erreur;
-        // Un saut consomme la mesure courante : la vraie commande force
-        // une nouvelle interrogation, et sans elle `tracking` rendrait
-        // l'ancien ecart juste apres avoir annonce l'avoir corrige.
-        agent.pollAll();
-        return '200 OK';
-      }
-      default: return '';
-    }
+  usage: 'chronyc [-4|-6] [-n] [-N] [-c] [-e] [-m] [-h host] [-p port] [-v] [command]',
+  async run(ctx: LinuxCommandContext, argv: string[], stdin?: string): Promise<string> {
+    const result = await runChronyc(ctx, argv, stdin);
+    return `${result.output}${result.stderr}`;
+  },
+  runWithStatus(ctx: LinuxCommandContext, argv: string[], stdin?: string) {
+    return runChronyc(ctx, argv, stdin);
   },
 };

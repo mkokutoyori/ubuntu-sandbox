@@ -52,8 +52,10 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { NtpAgent, NtpPlatformProfile } from '../../../ntp/NtpAgent';
-import { UDP_PORT_NTP } from '../../../ntp/types';
-import { parseChronyConf, type ChronyConf, CHRONY_CONF_DEBIAN } from './ChronyConfig';
+import { UDP_PORT_NTP, type NtpVersion } from '../../../ntp/types';
+import { parseChronyConf, parseChronySource, type ChronyConf, type ChronySource, CHRONY_CONF_DEBIAN } from './ChronyConfig';
+import { ChronyAccessTable, parseChronySubnet } from './ChronyAccess';
+import { IPAddress } from '../../../core/types';
 import { parseChronyKeys, type ChronyKeysLecture } from './ChronyKeys';
 import { isValidIPv4 } from '../../../core/ip';
 import type { ServiceSocketServer } from '../ports/ServiceSocketServer';
@@ -80,6 +82,7 @@ const CHRONY_PROFILE: Partial<NtpPlatformProfile> = {
   acceptsExtensionFields: false,
   statelessSymmetricReply: true,
   localReferenceIsAddress: true,
+  pollModel: 'chrony',
 };
 
 export class LinuxChronyService implements ServiceSocketServer {
@@ -144,6 +147,9 @@ export class LinuxChronyService implements ServiceSocketServer {
     this.actif = true;
     this.demarreALe = simulationNowMs();
     this.sautsFaits = 0;
+    this.localOverride = null;
+    this.commandPackets = 0;
+    this.manualSamples = [];
     this.host.ntp().start();
     return { ok: true };
   }
@@ -182,15 +188,109 @@ export class LinuxChronyService implements ServiceSocketServer {
    */
   makestep(): { ok: true } | { ok: false; erreur: string } {
     if (!this.actif) return { ok: false, erreur: '506 Cannot talk to daemon' };
-    const m = this.conf.makestep;
-    if (m && m.limite >= 0 && this.sautsFaits >= m.limite) {
-      return { ok: false, erreur: '505 No such source' };
-    }
+    if (!this.host.ntp().forcerSaut()) return { ok: false, erreur: '500 Failure' };
     this.sautsFaits++;
-    // La commande FORCE le saut : sans cela elle ne faisait que compter,
-    // et l'ecart restait celui d'avant.
-    this.host.ntp().forcerSaut();
     return { ok: true };
+  }
+
+  private readonly ntpAccess = new ChronyAccessTable();
+  private readonly cmdAccess = new ChronyAccessTable();
+  private manualEnabled = false;
+  private manualSamples: { atMs: number; slewed: number; original: number; residual: number }[] = [];
+  private localOverride: number | 'off' | null = null;
+  private commandPackets = 0;
+
+  getCommandPackets(): number { return this.commandPackets; }
+  countCommandPacket(): void { this.commandPackets++; }
+  isManualEnabled(): boolean { return this.manualEnabled; }
+  getManualSamples(): readonly { atMs: number; slewed: number; original: number; residual: number }[] { return this.manualSamples; }
+
+  isNtpClientAllowed(address: IPAddress): boolean { return this.ntpAccess.isAllowed(address); }
+  isCommandClientAllowed(address: IPAddress): boolean { return this.cmdAccess.isAllowed(address); }
+
+  private rebuildAccess(): void {
+    this.ntpAccess.clear();
+    this.cmdAccess.clear();
+    for (const directive of this.conf.access) this.applyAccess(directive.kind, directive.subnet, directive.includingChildren);
+  }
+
+  applyAccess(kind: 'allow' | 'deny' | 'cmdallow' | 'cmddeny', subnet: { network: number; prefix: number }, includingChildren: boolean): void {
+    const table = kind === 'allow' || kind === 'deny' ? this.ntpAccess : this.cmdAccess;
+    table.apply(kind === 'allow' || kind === 'cmdallow', subnet, includingChildren);
+  }
+
+  setMakestep(thresholdSeconds: number, limit: number): void {
+    this.host.ntp().setReglagesDiscipline({
+      seuilSautMs: thresholdSeconds * 1000, limiteSauts: limit, reinitialiserAssociationsAuSaut: false,
+    });
+  }
+
+  removeSource(ip: string): boolean {
+    const agent = this.host.ntp();
+    if (agent.getAssociation(ip) === undefined) return false;
+    agent.removeServer(ip);
+    return true;
+  }
+
+  setManual(enabled: boolean): void { this.manualEnabled = enabled; }
+  resetManual(): void { this.manualSamples = []; }
+  deleteManualSample(index: number): boolean {
+    if (index < 0 || index >= this.manualSamples.length) return false;
+    this.manualSamples.splice(index, 1);
+    return true;
+  }
+
+  settime(targetMs: number): { ok: true; deltaMs: number } | { ok: false; status: string } {
+    if (!this.manualEnabled) return { ok: false, status: '505 Facility not enabled in daemon' };
+    const agent = this.host.ntp();
+    const deltaMs = targetMs - agent.now();
+    const last = this.manualSamples[this.manualSamples.length - 1];
+    if (last !== undefined && simulationNowMs() - last.atMs < 1000) return { ok: false, status: '500 Failure' };
+    agent.stepClockBy(deltaMs);
+    this.manualSamples.push({ atMs: agent.now(), slewed: 0, original: -deltaMs / 1000, residual: 0 });
+    return { ok: true, deltaMs };
+  }
+
+  setLocal(stratum: number | 'off'): void {
+    this.localOverride = stratum;
+    this.applyLocal();
+  }
+
+  private applyLocal(): void {
+    const agent = this.host.ntp();
+    const stratum = this.localOverride ?? this.conf.localStratum;
+    if (stratum === null || stratum === 'off') {
+      if (this.localOverride === 'off') agent.setServerMode(false);
+      return;
+    }
+    agent.setServerMode(true);
+    agent.setLocalStratum(stratum);
+  }
+
+  addSource(kind: 'server' | 'peer' | 'pool', host: string, words: readonly string[]): { ok: true } | { ok: false; status: string } {
+    const source = parseChronySource(kind, [host, ...words]);
+    if (source === null) return { ok: false, status: 'Invalid syntax for add command' };
+    if (!isValidIPv4(host)) return { ok: false, status: 'Invalid host/IP address' };
+    if (this.host.ntp().getAssociation(host) !== undefined) return { ok: false, status: 'already' };
+    this.installSource(source);
+    return { ok: true };
+  }
+
+  private installSource(source: ChronySource): void {
+    const agent = this.host.ntp();
+    const options = {
+      iburst: source.iburst, burst: source.burst, minpoll: source.minpoll, maxpoll: source.maxpoll,
+      online: !source.offline, version: source.version as NtpVersion | undefined,
+    };
+    if (source.genre === 'peer') agent.addPeer(source.hote, source.prefer, source.keyId, options);
+    else agent.addServer(source.hote, source.prefer, source.keyId, 'ntp', options);
+    agent.setSourceCriteria(source.hote, {
+      noselect: source.noselect, trust: source.trust, require: source.require,
+      maxDelayMs: source.maxdelay === undefined ? undefined : source.maxdelay * 1000,
+      maxDelayRatio: source.maxdelayratio, maxDelayDevRatio: source.maxdelaydevratio,
+      minStratum: source.minstratum, pollTarget: source.polltarget, fixedOffsetMs: source.offsetCorrection === undefined ? undefined : source.offsetCorrection * 1000,
+      statistics: { minSamples: source.minsamples, maxSamples: source.maxsamples, minDelay: source.mindelay },
+    });
   }
 
   /**
@@ -217,6 +317,8 @@ export class LinuxChronyService implements ServiceSocketServer {
    * n'exige une reponse authentifiee que d'une association qui NOMME une
    * cle — sans `key N`, le drapeau ne change rien.
    */
+  reloadKeys(): void { this.chargerCles(); }
+
   private chargerCles(): void {
     const agent = this.host.ntp();
     for (const id of [...agent.getConfig().authKeys.keys()]) {
@@ -246,8 +348,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     for (const s of this.conf.sources) {
       if (!isValidIPv4(s.hote)) continue;
       voulues.add(s.hote);
-      if (s.genre === 'peer') agent.addPeer(s.hote, s.prefer, s.keyId, { iburst: s.iburst });
-      else agent.addServer(s.hote, s.prefer, s.keyId, 'ntp', { iburst: s.iburst });
+      this.installSource(s);
     }
     // Ce que le fichier ne declare plus doit disparaitre : sans cela un
     // `reload` ne serait qu'un ajout, et retirer une ligne du fichier
@@ -262,10 +363,15 @@ export class LinuxChronyService implements ServiceSocketServer {
     agent.setReglagesDiscipline(this.conf.makestep
       ? { seuilSautMs: this.conf.makestep.seuilSec * 1000, limiteSauts: this.conf.makestep.limite, reinitialiserAssociationsAuSaut: false }
       : { reinitialiserAssociationsAuSaut: false });
-    if (this.conf.localStratum !== null) {
-      agent.setServerMode(true);
-      agent.setLocalStratum(this.conf.localStratum);
-    }
+    this.applyLocal();
+    this.manualEnabled = this.conf.manual;
+    this.rebuildAccess();
+    agent.setClientAdmission((ip) => {
+      const address = IPAddress.tryParse(ip);
+      return address !== null && this.ntpAccess.isAllowed(address);
+    });
+    const limit = this.conf.ratelimit;
+    agent.setRateLimit(limit === null ? null : { intervalExponent: limit.interval, burst: limit.burst, leakExponent: limit.leak, kod: false });
     agent.setEnabled(true);
   }
 

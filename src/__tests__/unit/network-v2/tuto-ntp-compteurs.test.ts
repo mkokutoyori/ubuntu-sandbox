@@ -43,6 +43,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { installVirtualClock, converge } from '../../support/ntpTime';
 
 beforeEach(() => {
   resetCounters();
@@ -281,6 +282,7 @@ describe('§8 — les trois plateformes lisent UN seul comptage', () => {
   });
 
   it('chrony rend `serverstats`', async () => {
+    const clock = installVirtualClock();
     const srv = new CiscoRouter(`S${++serie}`);
     const pc = new LinuxPC(`L${++serie}`);
     new Cable(`r${serie}`).connect(
@@ -290,16 +292,15 @@ describe('§8 — les trois plateformes lisent UN seul comptage', () => {
       'ntp master 2', 'end']) await srv.executeCommand(c);
     await pc.executeCommand('ip addr add 10.0.2.2/24 dev eth0');
     await pc.executeCommand(
-      "printf 'server 10.0.2.1 iburst\\n' | sudo tee /etc/chrony/chrony.conf");
+      "printf 'server 10.0.2.1 iburst\\nallow 10.0.2.0/24\\n' | sudo tee /etc/chrony/chrony.conf");
     await pc.executeCommand('sudo systemctl restart chrony');
+    for (const c of ['configure terminal', 'ntp server 10.0.2.2', 'end']) await srv.executeCommand(c);
+    converge(clock, 120_000);
 
-    const out = await pc.executeCommand('chronyc serverstats');
+    const out = await pc.executeCommand('sudo chronyc serverstats');
     expect(out).toContain('NTP packets received');
     expect(lu(out, 'NTP packets received')).toBeGreaterThan(0);
-    // chrony distingue les paquets NTP des paquets de COMMANDE ; ce
-    // simulateur n'a pas de socket de controle, donc ces deux-la sont a
-    // zero pour de vrai.
-    expect(lu(out, 'Command packets received')).toBe(0);
+    expect(lu(out, 'Command packets received')).toBeGreaterThanOrEqual(1);
   });
 
   it('sans demon, `serverstats` parle au vide comme les autres', async () => {

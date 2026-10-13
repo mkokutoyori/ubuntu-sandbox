@@ -1,3 +1,4 @@
+import { SourceStatistics } from './SourceStatistics';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
@@ -141,6 +142,48 @@ export interface NtpAssociation {
   ephemeral?: boolean;
   localIp?: string;
   selection?: 'sys' | 'candidate' | 'outlier' | 'falseticker' | 'reject';
+  online: boolean;
+  noselect: boolean;
+  trust: boolean;
+  require: boolean;
+  maxDelayMs?: number;
+  maxDelayRatio?: number;
+  maxDelayDevRatio?: number;
+  minStratum?: number;
+  pollTarget?: number;
+  fixedOffsetMs?: number;
+  pollScore: number;
+  txCount: number;
+  burstGood: number;
+  statistics: SourceStatistics;
+  sent: number;
+  received: number;
+  validReceived: number;
+  goodReceived: number;
+  lastTests: string;
+  response: NtpResponseInfo | null;
+}
+
+export interface NtpResponseInfo {
+  readonly version: number;
+  readonly mode: NtpMode;
+  readonly precision: number;
+  readonly poll: number;
+  readonly responseTimeMs: number;
+  readonly authenticated: boolean;
+  readonly offsetMs: number;
+  readonly delayMs: number;
+  readonly dispersionMs: number;
+}
+
+
+export interface NtpClientLogEntry {
+  ntpHits: number;
+  ntpDrops: number;
+  firstNtpMs: number;
+  lastNtpMs: number;
+  intervalExponent: number;
+  limitedIntervalExponent: number;
 }
 
 export interface NtpAuthKey {
@@ -293,6 +336,10 @@ export interface NtpCounters {
   kissReceived: number;
   kissSent: number;
   rateLimited: number;
+  serverRequests: number;
+  serverDropped: number;
+  serverReplies: number;
+  serverAuthenticated: number;
   /** Paquet mal forme : ni un mode connu, ni une charge utile lisible. */
   protocolError: number;
   /** Recus par mode, pour le filtre `show ntp packets mode <x>`. */
@@ -308,6 +355,7 @@ export function createNtpCounters(): NtpCounters {
   return {
     received: 0, sent: 0, processed: 0, dropped: 0,
     authFailures: 0, authOk: 0, accessDenied: 0, badVersion: 0, protocolError: 0, kissReceived: 0, kissSent: 0, rateLimited: 0,
+    serverRequests: 0, serverDropped: 0, serverReplies: 0, serverAuthenticated: 0,
     receivedControl: 0, sentControl: 0, controlDenied: 0,
     receivedByMode: parMode(), sentByMode: parMode(),
   };
@@ -356,6 +404,8 @@ export function defaultAssociation(serverIp: string, prefer = false, mode: NtpMo
     updateMs: 0, filter: emptyFilter(), jitterMs: 0,
     hpoll: NTP_MIN_POLL, ppoll: NTP_MAX_POLL, minpoll: NTP_MIN_POLL, maxpoll: NTP_DEFAULT_MAX_POLL,
     burst: 0, unreach: 0, outdateMs: 0, nextdateMs: 0, iburst: false, burstMode: false,
+    online: true, noselect: false, trust: false, require: false, pollScore: 0, txCount: 0, burstGood: 0,
+    statistics: new SourceStatistics(2 ** -20), sent: 0, received: 0, validReceived: 0, goodReceived: 0, lastTests: '000 000 0000', response: null,
   };
 }
 

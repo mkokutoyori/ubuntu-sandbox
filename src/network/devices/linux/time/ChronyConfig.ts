@@ -25,6 +25,8 @@
  * comme le vrai chronyd, au lieu d'etre ignoree en silence.
  */
 
+import { parseChronySubnet, type ChronySubnet } from './ChronyAccess';
+
 export interface ChronySource {
   /** `server`, `pool` ou `peer` — le mot-cle qui l'a declaree. */
   readonly genre: 'server' | 'pool' | 'peer';
@@ -34,6 +36,105 @@ export interface ChronySource {
   readonly keyId?: number;
   /** `maxsources` pour un `pool` ; sans objet ailleurs. */
   readonly maxsources?: number;
+  readonly minpoll?: number;
+  readonly maxpoll?: number;
+  readonly offline: boolean;
+  readonly noselect: boolean;
+  readonly trust: boolean;
+  readonly require: boolean;
+  readonly maxdelay?: number;
+  readonly maxdelayratio?: number;
+  readonly maxdelaydevratio?: number;
+  readonly minstratum?: number;
+  readonly polltarget?: number;
+  readonly burst: boolean;
+  readonly version?: number;
+  readonly minsamples?: number;
+  readonly maxsamples?: number;
+  readonly mindelay?: number;
+  readonly offsetCorrection?: number;
+  readonly unevaluated: readonly string[];
+}
+
+const VALUE_OPTIONS: Readonly<Record<string, 'integer' | 'number' | 'hex'>> = {
+  certset: 'integer', key: 'integer', asymmetry: 'number', extfield: 'hex', filter: 'integer',
+  maxdelay: 'number', maxdelayratio: 'number', maxdelaydevratio: 'number', maxdelayquant: 'number',
+  maxpoll: 'integer', maxsamples: 'integer', maxsources: 'integer', mindelay: 'number',
+  minpoll: 'integer', minsamples: 'integer', minstratum: 'integer', ntsport: 'integer',
+  offset: 'number', port: 'integer', polltarget: 'integer', presend: 'integer', version: 'integer',
+};
+
+const FLAG_OPTIONS = new Set([
+  'auto_offline', 'burst', 'copy', 'iburst', 'offline', 'nts', 'xleave',
+  'prefer', 'noselect', 'trust', 'require',
+]);
+
+const UNEVALUATED_OPTIONS = new Set([
+  'auto_offline', 'copy', 'certset', 'asymmetry', 'extfield', 'filter', 'maxdelayquant', 'nts', 'ntsport',
+  'port', 'presend', 'xleave',
+]);
+
+export function parseChronySource(genre: ChronySource['genre'], args: readonly string[]): ChronySource | null {
+  if (!args[0]) return null;
+  const flags = new Set<string>();
+  const values = new Map<string, number>();
+  const unevaluated: string[] = [];
+  for (let i = 1; i < args.length; i++) {
+    const option = args[i].toLowerCase();
+    const kind = VALUE_OPTIONS[option];
+    if (kind !== undefined) {
+      const text = args[i + 1];
+      const pattern = kind === 'integer' ? /^[+-]?\d+$/ : kind === 'hex' ? /^[0-9a-f]+$/i : /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+      if (text === undefined || !pattern.test(text)) return null;
+      values.set(option, kind === 'hex' ? parseInt(text, 16) : Number(text));
+      i++;
+    } else if (FLAG_OPTIONS.has(option)) {
+      flags.add(option);
+    } else {
+      return null;
+    }
+    if (UNEVALUATED_OPTIONS.has(option)) unevaluated.push(option);
+  }
+  const key = values.get('key');
+  if (key === 0xffffffff) return null;
+  return {
+    genre,
+    hote: args[0],
+    iburst: flags.has('iburst'),
+    prefer: flags.has('prefer'),
+    keyId: key,
+    maxsources: values.get('maxsources'),
+    minpoll: values.get('minpoll'),
+    maxpoll: values.get('maxpoll'),
+    offline: flags.has('offline'),
+    noselect: flags.has('noselect'),
+    trust: flags.has('trust'),
+    require: flags.has('require'),
+    maxdelay: values.get('maxdelay'),
+    maxdelayratio: values.get('maxdelayratio'),
+    maxdelaydevratio: values.get('maxdelaydevratio'),
+    minstratum: values.get('minstratum'),
+    polltarget: values.get('polltarget'),
+    burst: flags.has('burst'),
+    version: values.get('version'),
+    minsamples: values.get('minsamples'),
+    maxsamples: values.get('maxsamples'),
+    mindelay: values.get('mindelay'),
+    offsetCorrection: values.get('offset'),
+    unevaluated,
+  };
+}
+
+export interface ChronyAccessDirective {
+  readonly kind: 'allow' | 'deny' | 'cmdallow' | 'cmddeny';
+  readonly subnet: ChronySubnet;
+  readonly includingChildren: boolean;
+}
+
+export interface ChronyRateLimit {
+  readonly interval: number;
+  readonly burst: number;
+  readonly leak: number;
 }
 
 export interface ChronyMakestep {
@@ -46,14 +147,14 @@ export interface ChronyMakestep {
 export interface ChronyConf {
   readonly sources: readonly ChronySource[];
   readonly makestep: ChronyMakestep | null;
-  /** Les reseaux autorises a interroger CETTE machine comme serveur. */
-  readonly allow: readonly string[];
-  readonly deny: readonly string[];
+  readonly access: readonly ChronyAccessDirective[];
+  readonly ratelimit: ChronyRateLimit | null;
   readonly driftfile: string;
   readonly logdir: string;
   readonly logs: readonly string[];
   readonly keyfile: string;
   readonly rtcsync: boolean;
+  readonly manual: boolean;
   /** `local stratum N` : servir le temps meme sans source, comme `ntp master`. */
   readonly localStratum: number | null;
   readonly maxdistanceSec: number | null;
@@ -65,7 +166,7 @@ export interface ChronyConf {
 
 /** Ce que chronyd connait et que ce simulateur n'applique pas. */
 const CONNUES_SANS_EFFET = new Set([
-  'refclock', 'hwtimestamp', 'leapsectz', 'initstepslew', 'ratelimit',
+  'refclock', 'hwtimestamp', 'leapsectz', 'initstepslew',
   'cmdratelimit', 'ntsdumpdir', 'ntstrustedcerts', 'minsources', 'lock_all',
   'sched_priority', 'user', 'pidfile', 'bindcmdaddress', 'cmdport',
   'noclientlog', 'clientloglimit', 'dumpdir', 'stratumweight', 'corrtimeratio',
@@ -73,9 +174,9 @@ const CONNUES_SANS_EFFET = new Set([
 ]);
 
 const CONF_VIDE: ChronyConf = {
-  sources: [], makestep: null, allow: [], deny: [],
+  sources: [], makestep: null, access: [], ratelimit: null,
   driftfile: '', logdir: '', logs: [], keyfile: '',
-  rtcsync: false, localStratum: null, maxdistanceSec: null,
+  rtcsync: false, manual: false, localStratum: null, maxdistanceSec: null,
   acceptesSansEffet: [], inconnues: [],
 };
 
@@ -86,8 +187,8 @@ function entier(mot: string | undefined): number | null {
 /** Analyse le texte d'un `chrony.conf`. Un fichier vide est legal. */
 export function parseChronyConf(texte: string): ChronyConf {
   const sources: ChronySource[] = [];
-  const allow: string[] = [];
-  const deny: string[] = [];
+  const access: ChronyAccessDirective[] = [];
+  let ratelimit: ChronyRateLimit | null = null;
   const logs: string[] = [];
   const acceptesSansEffet: string[] = [];
   const inconnues: { ligne: number; texte: string }[] = [];
@@ -96,6 +197,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   let logdir = '';
   let keyfile = '';
   let rtcsync = false;
+  let manual = false;
   let localStratum: number | null = null;
   let maxdistanceSec: number | null = null;
 
@@ -111,17 +213,9 @@ export function parseChronyConf(texte: string): ChronyConf {
       case 'server':
       case 'pool':
       case 'peer': {
-        if (!args[0]) { inconnues.push({ ligne: i + 1, texte: nue }); break; }
-        const iKey = args.findIndex((m) => m.toLowerCase() === 'key');
-        const iMax = args.findIndex((m) => m.toLowerCase() === 'maxsources');
-        sources.push({
-          genre: cle as ChronySource['genre'],
-          hote: args[0],
-          iburst: args.some((m) => m.toLowerCase() === 'iburst'),
-          prefer: args.some((m) => m.toLowerCase() === 'prefer'),
-          keyId: iKey >= 0 ? entier(args[iKey + 1]) ?? undefined : undefined,
-          maxsources: iMax >= 0 ? entier(args[iMax + 1]) ?? undefined : undefined,
-        });
+        const source = parseChronySource(cle as ChronySource['genre'], args);
+        if (source === null) inconnues.push({ ligne: i + 1, texte: nue });
+        else sources.push(source);
         break;
       }
       case 'makestep': {
@@ -133,13 +227,31 @@ export function parseChronyConf(texte: string): ChronyConf {
       }
       // `allow` sans argument autorise TOUT le monde, ce qui est une
       // vraie forme de chronyd et un vrai risque : elle est distinguee.
-      case 'allow': allow.push(args[0] ?? 'all'); break;
-      case 'deny': deny.push(args[0] ?? 'all'); break;
+      case 'allow':
+      case 'deny':
+      case 'cmdallow':
+      case 'cmddeny': {
+        const includingChildren = args[0]?.toLowerCase() === 'all';
+        const target = includingChildren ? args[1] : args[0];
+        const subnet = parseChronySubnet(target ?? '');
+        if (subnet === null) inconnues.push({ ligne: i + 1, texte: nue });
+        else access.push({ kind: cle, subnet, includingChildren });
+        break;
+      }
+      case 'ratelimit': {
+        const read = (name: string, fallback: number): number => {
+          const at = args.findIndex((m) => m.toLowerCase() === name);
+          return at >= 0 ? entier(args[at + 1]) ?? fallback : fallback;
+        };
+        ratelimit = { interval: read('interval', 3), burst: read('burst', 8), leak: read('leak', 2) };
+        break;
+      }
       case 'driftfile': driftfile = args[0] ?? ''; break;
       case 'logdir': logdir = args[0] ?? ''; break;
       case 'log': logs.push(...args.map((m) => m.toLowerCase())); break;
       case 'keyfile': keyfile = args[0] ?? ''; break;
       case 'rtcsync': rtcsync = true; break;
+      case 'manual': manual = true; break;
       case 'local': {
         const iStr = args.findIndex((m) => m.toLowerCase() === 'stratum');
         const s = iStr >= 0 ? entier(args[iStr + 1]) : null;
@@ -157,8 +269,8 @@ export function parseChronyConf(texte: string): ChronyConf {
     }
   }
   return {
-    ...CONF_VIDE, sources, makestep, allow, deny,
-    driftfile, logdir, logs, keyfile, rtcsync, localStratum, maxdistanceSec,
+    ...CONF_VIDE, sources, makestep, access, ratelimit,
+    driftfile, logdir, logs, keyfile, rtcsync, manual, localStratum, maxdistanceSec,
     acceptesSansEffet, inconnues,
   };
 }
