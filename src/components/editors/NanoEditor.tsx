@@ -5,6 +5,7 @@ import type { NanoLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 import type { EditorScreen, ScreenBand } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { GridRows } from './EditorGrid';
+import { useHeldScreen } from './useHeldScreen';
 import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
 import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
 
@@ -53,6 +54,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     engineRef.current = driver ?? new NanoEngine(fsContext!, filePath, initialContent, isNewFile, false, undefined, false, options);
   }
   const engine = engineRef.current;
+  const { advance, shown } = useHeldScreen(engine);
   const [, bump] = useReducer((x: number) => x + 1, 0);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,13 +72,14 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
 
   const dispatch = useCallback((e: React.KeyboardEvent) => {
     e.preventDefault();
+    advance();
     engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
     if (engine.exited) {
       onExit(engine.savedOnExit);
       return;
     }
     bump();
-  }, [engine, onExit, bump]);
+  }, [engine, onExit, bump, advance]);
 
   const paste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
@@ -100,7 +103,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     bump();
   }, [engine, bump]);
 
-  const screen = engine.screen;
+  const screen = shown(engine.screen);
   const band = (name: ScreenBand['name']): ScreenBand | undefined => screen.bands?.find((candidate) => candidate.name === name);
   const title = band('title');
   const edit = band('edit') ?? { name: 'edit', from: 0, to: screen.rows.length };

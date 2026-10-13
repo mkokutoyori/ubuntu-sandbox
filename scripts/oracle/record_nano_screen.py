@@ -153,6 +153,8 @@ def run_cli_case(case, workdir):
     casedir = os.path.join(workdir, case["id"])
     os.makedirs(casedir, exist_ok=True)
     open(os.path.join(casedir, "t.txt"), "w", encoding="utf-8").write("\n".join(case["text"]) + "\n")
+    for extra_name, extra_lines in case.get("files", {}).items():
+        open(os.path.join(casedir, extra_name), "w", encoding="utf-8").write("\n".join(extra_lines) + "\n")
     env = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8", TERM="xterm-256color")
     done = subprocess.run(["nano", "-I"] + case["args"], cwd=casedir, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env, timeout=10)
     stderr = ANSI.sub("", done.stderr).rstrip("\n")
@@ -167,8 +169,17 @@ def run_cli_case(case, workdir):
         record["opened"] = record_screen(name)
         record["after"] = []
         for step in case.get("steps", []):
-            send(name, step)
-            record["after"].append(record_screen(name))
+            if step.startswith("@"):
+                rows_, cols_ = step[1:].split("x")
+                tmux("resize-window", "-t", name, "-x", cols_, "-y", rows_)
+                time.sleep(0.2)
+            else:
+                send(name, step)
+            snap = record_screen(name)
+            if snap is None:
+                break
+            record["after"].append(snap)
+        record["steps"] = case.get("steps", [])[:len(record["after"])]
         tmux("kill-session", "-t", name)
     else:
         record["opens"] = False

@@ -10,7 +10,7 @@ export interface NanoCliCase extends NanoScreenCase {
   stderr?: string;
 }
 
-const SCREEN_PORTED_FLAGS: ReadonlySet<string> = new Set(['view', 'constantshow', 'linenumbers', 'softwrap', 'nohelp', 'emptyline', 'stateflags']);
+const SCREEN_PORTED_FLAGS: ReadonlySet<string> = new Set(['view', 'constantshow', 'linenumbers', 'softwrap', 'nohelp', 'emptyline', 'stateflags', 'minibar']);
 
 export function screenIsPorted(args: readonly string[]): boolean {
   const invocation = parseNanoCommandLine(args);

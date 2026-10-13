@@ -12,6 +12,19 @@ export interface TitleStateFlags {
 }
 
 const STATE_FLAGS_PLACEHOLDER = '+.xxxxx';
+const DOTTED_NAME_START = 5;
+
+export interface MinibarInfo {
+  readonly name: string;
+  readonly modified: boolean;
+  readonly line: number;
+  readonly column: number;
+  readonly lineCount: number | null;
+  readonly showPosition: boolean;
+  readonly hex: string;
+  readonly stateLetters: string | null;
+  readonly percent: number;
+}
 
 export interface NanoScreenInput {
   readonly window: NanoWindow;
@@ -23,6 +36,7 @@ export interface NanoScreenInput {
   readonly softwrap: boolean;
   readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null };
   readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean } | null;
+  readonly minibar: MinibarInfo | null;
   readonly prompt: { readonly label: string; readonly answer: string; readonly cursor: number } | null;
   readonly yesNo: { readonly question: string; readonly withAll: boolean } | null;
   readonly menu: NanoMenuName;
@@ -258,6 +272,44 @@ function statusRow(cols: number, status: { text: string; alert: boolean; more?: 
   return canvas.row();
 }
 
+export function minibarRow(cols: number, info: MinibarInfo, tabsize: number): ScreenRow {
+  const canvas = new Canvas(cols);
+  const options = { isData: false, isPrompt: false, softwrap: false, tabsize };
+  const namewidth = breadth(info.name, tabsize);
+  const padding = namewidth + 19 > cols ? 0 : 2;
+  let at = 0;
+  if (cols > 4) {
+    at = padding;
+    if (namewidth > cols - 2) {
+      canvas.put(at, '...');
+      at += 3;
+      const shown = displayString(info.name, DOTTED_NAME_START, cols - 5, options);
+      canvas.putCells(at, shown.cells);
+      at += shown.cells.length;
+    } else {
+      const shown = displayString(info.name, 0, cols - 2, options);
+      canvas.putCells(at, shown.cells);
+      at += shown.cells.length;
+    }
+    canvas.put(at, info.modified ? ' *' : '  ');
+    at += 2;
+  }
+  const location = `${info.line},${info.column}`;
+  let tallywidth = 0;
+  if (info.lineCount !== null && cols > 35) {
+    const tally = ` (${info.lineCount} line${info.lineCount === 1 ? '' : 's'})`;
+    tallywidth = breadth(tally, tabsize);
+    if (namewidth + tallywidth + 11 < cols) canvas.put(at, tally);
+    else tallywidth = 0;
+  }
+  if (info.showPosition && namewidth + tallywidth + location.length + 32 < cols) canvas.put(cols - 27 - location.length, location);
+  if (info.showPosition && namewidth + tallywidth + 28 < cols) canvas.put(cols - 23, info.hex);
+  if (info.stateLetters !== null && namewidth + tallywidth + 14 + 2 * padding < cols) canvas.put(cols - 11 - padding, info.stateLetters);
+  if (namewidth + 6 < cols) canvas.put(cols - 4 - padding, `${String(info.percent).padStart(3)}%`);
+  canvas.mark(0, cols, 'reverse');
+  return canvas.fullRow();
+}
+
 function promptPageStart(base: number, column: number, cols: number): number {
   if (column === base || column < cols - 1) return 0;
   if (cols > base + 2) return column - base - 1 - ((column - base - 1) % (cols - base - 2));
@@ -356,7 +408,7 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
     bars = shortcutRows(cols, input.menu, tabsize);
     cursorAt = { row: -1, col: view.cursorColumn };
   } else {
-    footerStatus = statusRow(cols, input.status, tabsize);
+    footerStatus = input.minibar !== null ? minibarRow(cols, input.minibar, tabsize) : statusRow(cols, input.status, tabsize);
     bars = shortcutRows(cols, input.menu, tabsize);
     if (input.helpLines === null) {
       const place = window.place(input.cursor);

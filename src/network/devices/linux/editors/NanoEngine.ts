@@ -2,6 +2,8 @@ import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
+import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
+import type { MinibarInfo } from './nano/NanoScreen';
 import { buildNanoScreen } from './nano/NanoScreen';
 import { actualX, breadth, displayString, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
 import type { NanoMenuName } from './nano/NanoMenus';
@@ -80,6 +82,8 @@ export class NanoEngine {
   private manner: ViewportManner = 'centering';
   private sized = false;
   private startPlacement: 'hugfloor' | 'centering' | null = null;
+  private reportSizePending = false;
+  private tally: number | null = null;
   private marginPending = false;
   readonly settings: NanoSettings;
   private readonly live: { -readonly [K in keyof NanoSettings]: NanoSettings[K] };
@@ -158,11 +162,10 @@ export class NanoEngine {
     );
     this.linesArr = initialContent.length === 0 ? [''] : initialContent.split('\n');
     this.ensureTrailingBlankLine();
-    this._statusMessage = filePath === ''
-        ? '[ Welcome to nano.  For basic help, type Ctrl+G. ]'
-        : isNewFile
-        ? '[ New File ]'
-        : `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
+    if (filePath === '') this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
+    else if (isNewFile) this._statusMessage = '[ New File ]';
+    else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
+    this.reportSizePending = true;
     this.saveFileNameBuffer = this.titleName;
     // GNU nano creates a `.<file>.swp` lock file for the duration of the
     // editing session to prevent two nano instances from editing the same
@@ -286,14 +289,47 @@ export class NanoEngine {
     this.messageThisKey = false;
     this.manner = 'centering';
     this.verticalKey = false;
+    if (this.minibarMode()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
     if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') this.toggleHelpInPrompt();
     else this.dispatchKey(k);
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
     if (!this.verticalKey) this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
-    if (this.live.constantshow && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
+    if (this.reportsPositionAsMessage() && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
     this.followCursor();
+    this.settleTally();
+  }
+
+  private settleTally(): void {
+    const drawn = this.minibarMode() && this.window.cols > 35 && !this.isPrompting() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark;
+    this.tally = this.reportSizePending && drawn ? this.writtenLineCount() : null;
+    if (drawn) this.reportSizePending = false;
+  }
+
+  private reportsPositionAsMessage(): boolean {
+    return this.live.constantshow && !(this.live.minibar && !this.live.zero);
+  }
+
+  private minibarInfo(messageExpired: boolean): MinibarInfo | null {
+    const prompting = this.isPrompting() || this._mode === 'help';
+    if (!this.minibarMode() || prompting) return null;
+    if (!messageExpired && messageLevel(this.statusText) >= MESSAGE_LEVEL.remark) return null;
+    const text = this.line(this._cursorLine);
+    const code = this._cursorCol < text.length
+      ? `U+${text.codePointAt(this._cursorCol)!.toString(16).toUpperCase().padStart(4, '0')}`
+      : this._cursorLine < this.linesArr.length - 1 ? 'U+000A' : '  ----';
+    return {
+      name: this.titleName === '' ? '(nameless)' : this.titleName,
+      modified: this._modified,
+      line: this._cursorLine + 1,
+      column: this.window.columnOf(this._cursorLine, this._cursorCol) + 1,
+      lineCount: this.tally,
+      showPosition: this.live.constantshow,
+      hex: code,
+      stateLetters: this.live.stateflags ? this.stateLetters() : null,
+      percent: Math.floor((100 * (this._cursorLine + 1)) / this.linesArr.length),
+    };
   }
 
   clickAt(row: number, col: number): void {
@@ -345,8 +381,20 @@ export class NanoEngine {
   }
 
   get screen(): EditorScreen {
+    const live = this.paintScreen(false);
+    const level = messageLevel(this.statusText);
+    const transient = this.minibarMode() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
+    if (!transient || this.isPrompting()) return live;
+    return { ...live, hold: { millis: 1500, then: this.paintScreen(true) } };
+  }
+
+  private minibarMode(): boolean {
+    return this.live.minibar && !this.live.zero && this.window.rows > 1;
+  }
+
+  private paintScreen(messageExpired: boolean): EditorScreen {
     const prompt = this.promptView();
-    const message = this.statusText.replace(/^\[ (.*) \]$/, '$1');
+    const message = messageExpired ? '' : this.statusText.replace(/^\[ (.*) \]$/, '$1');
     return buildNanoScreen({
       window: this.window,
       lines: this.linesArr,
@@ -362,6 +410,7 @@ export class NanoEngine {
         flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
       },
       status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore },
+      minibar: this.minibarInfo(messageExpired),
       prompt: prompt === null ? null : { label: prompt.label, answer: prompt.answer, cursor: this._promptCursor },
       yesNo: this._mode === 'exit-save-prompt'
         ? { question: 'Save modified buffer?', withAll: false }
@@ -380,7 +429,7 @@ export class NanoEngine {
     }
     this.live.nohelp = !this.live.nohelp;
     this.window.align();
-    if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Help mode ${this.live.nohelp ? 'disabled' : 'enabled'} ]`;
+    if (!this.bareInterface()) this._statusMessage = `[ Help mode ${this.live.nohelp ? 'disabled' : 'enabled'} ]`;
   }
 
   private toggleHelpInPrompt(): void {
@@ -388,6 +437,10 @@ export class NanoEngine {
     this.manner = 'flowing';
     this.live.nohelp = !this.live.nohelp;
     this.window.align();
+  }
+
+  private bareInterface(): boolean {
+    return this.live.minibar || this.live.zero || this.window.rows === 1;
   }
 
   private toggleConstantShow(): void {
@@ -459,6 +512,7 @@ export class NanoEngine {
     this.sized = true;
     const cursor = { line: this._cursorLine, col: this._cursorCol };
     this.window.resize(rows, cols, cursor);
+    this.settleTally();
     if (first && this.startPlacement !== null) {
       this.marginPending = true;
       this.window.align();
@@ -468,7 +522,7 @@ export class NanoEngine {
       this.window.align();
       this.window.follow('centering', cursor);
     }
-    if (this.live.constantshow && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
+    if (this.reportsPositionAsMessage() && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
   }
 
   scrollView(up: boolean, count: number): void {
@@ -1001,7 +1055,7 @@ export class NanoEngine {
     if (key === 'n') {
       this.verticalKey = true;
       this.live.linenumbers = !this.live.linenumbers;
-      this._statusMessage = `[ Line numbering ${this.live.linenumbers ? 'enabled' : 'disabled'} ]`;
+      if (!this.bareInterface()) this._statusMessage = `[ Line numbering ${this.live.linenumbers ? 'enabled' : 'disabled'} ]`;
       this.manner = 'flowing';
       this.window.align();
       return;
@@ -1009,7 +1063,7 @@ export class NanoEngine {
     if (key === 's') {
       this.verticalKey = true;
       this.live.softwrap = !this.live.softwrap;
-      this._statusMessage = `[ Soft wrapping of overlong lines ${this.live.softwrap ? 'enabled' : 'disabled'} ]`;
+      if (!(this.live.minibar && !this.live.zero && this.live.stateflags)) this._statusMessage = `[ Soft wrapping of overlong lines ${this.live.softwrap ? 'enabled' : 'disabled'} ]`;
       this.manner = 'flowing';
       this.window.firstcolumn = 0;
       this.window.align();

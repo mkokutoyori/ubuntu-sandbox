@@ -18,18 +18,27 @@
  * `M-x` bascule les lignes d'aide meme dans une invite (prompt.c), sans message ni verification de hauteur ; hors
  * invite il dit « Help mode enabled / disabled » ou « Too tiny » sous 6 lignes.
  *
+ * `-_` (minibar) : une seule barre en bas remplace le titre et la rangee d'etat (minibar() de winio.c) : nom
+ * (« ... » et le nom a partir du 5e caractere quand il ne tient pas, ce que fait le binaire 7.2), « * » si modifie,
+ * nombre de lignes au premier dessin quand la fenetre depasse 35 colonnes (il attend sinon le premier
+ * redimensionnement assez large), position et code du caractere avec `-c`, lettres d'etat avec `-%`, pourcentage.
+ * Un message de niveau REMARK ou plus prend la place de la barre jusqu'a la touche suivante (le moteur le montre
+ * 1,5 s : `EditorScreen.hold`), les bascules `M-n` / `M-x` y sont muettes, « Read N lines » n'est pas dit.
+ *
  * Seuls les cas dont les options sont evaluees (SCREEN_PORTED_FLAGS : `view constantshow linenumbers softwrap
- * nohelp emptyline stateflags`) sont rejoues ; `-_` (minibar) et `-0` (zero) le seront quand ils seront portes.
+ * nohelp emptyline stateflags minibar`) sont rejoues ; `-0` (zero) le sera quand il sera porte.
  *
- * Mesure avec `git stash push -- src/network src/components src/terminal` (l'ancien moteur n'a ni `-x` ni `-e`
- * ni `-%`, et ses barres de raccourcis apparaissent des 5 lignes) : 117 cas sur 137 (seed 1), 108 sur 124
- * (seed 2) et 100 sur 118 (seed 3) tombent avant, 0 apres sauf les 4 cas ci-dessous.  Le seed 1 a guide les
- * reglages, les seeds 2 et 3 ont ete enregistres ensuite.
+ * Mesure avec `git stash push -- src/network src/components src/terminal` : l'ancien moteur n'a ni `-x` ni `-e`
+ * ni `-%` ni `-_`, et ses barres de raccourcis apparaissent des 5 lignes.  Sans `-_` (premier increment) 117 cas
+ * sur 137 (seed 1), 108 sur 124 (seed 2) et 100 sur 118 (seed 3) tombaient avant ; avec `-_` (second increment, mesure sur
+ * le moteur du premier) 70 sur 70, 66 sur 66 et 75 sur 75 des cas a minibarre tombent avant.  0 apres, sauf les cas
+ * ci-dessous.  Le seed 1 a guide les reglages, les seeds 2 et 3 ont ete enregistres ensuite.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 4 cas.  Aucun n'est epingle comme contrat : un
+ * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 6 cas.  Aucun n'est epingle comme contrat : un
  * cas de la liste qui se met a passer fait echouer le test pour qu'on le retire.
- *   - lay1-193, lay2-32, lay3-32 : `^R` en mode lecture seule ouvre « File to read into new buffer » (lecture
- *     dans un nouveau tampon) ; le moteur n'a qu'un tampon et repond « Key is invalid in view mode » ;
+ *   - lay1-193, lay1-50, lay2-32, lay3-32, lay3-214 : `^R` en mode lecture seule ouvre « File to read into new
+ *     buffer » (lecture dans un nouveau tampon) ; le moteur n'a qu'un tampon et repond « Key is invalid in view
+ *     mode » ;
  *   - lay2-118 : `Tab` avec une marque indente le bloc marque (do_indent), le moteur insere une tabulation.
  */
 import { describe, it, expect } from 'vitest';
@@ -41,7 +50,7 @@ const dir = 'src/__tests__/support/oracle/nano-layout';
 const fixtures = readdirSync(dir).filter((f) => f.startsWith('nano-7.2')).sort()
   .map((f) => ({ name: f, ...(JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { nano: string; cases: NanoScreenCase[] }) }));
 
-const UNPORTED_CASES: ReadonlySet<string> = new Set(['lay1-193', 'lay2-32', 'lay2-118', 'lay3-32']);
+const UNPORTED_CASES: ReadonlySet<string> = new Set(['lay1-193', 'lay1-50', 'lay2-32', 'lay2-118', 'lay3-32', 'lay3-214']);
 
 describe('nano layout transcripts recorded from a real nano', () => {
   for (const fixture of fixtures) {

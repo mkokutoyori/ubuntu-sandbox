@@ -4,11 +4,12 @@
  * corpus aleatoires de nano-layout-oracle.test.ts couvrent le meme terrain a l'echelle ; ici chaque cas nomme la
  * regle qu'il isole.
  *
- * Mesure avec `git stash push -- src/network src/components src/terminal` (le moteur du commit precedent) :
- * 18 des 23 tests tombent avant, 0 apres.  Les 5 qui passent avant comme apres sont nommes : le test de
- * chargement (structurel), lay-witness (le lab lit l'ecran correctement), lay-emptyline-too-short, lay-bars-at-
- * six-rows et lay-stateflags-view (aucune option n'y change l'ecran : `-e` a 6 lignes, barres a 6 lignes, `View`
- * prime sur `-%`).
+ * Mesure avec `git stash push -- src/network src/components src/terminal` : au premier increment (sans `-_`) 18 des 23
+ * tests tombaient sur le moteur d'avant, 0 apres ; au second (les 12 laboratoires `lay-minibar-*`, mesures sur le
+ * moteur du premier) 12 des 35 tombent avant, 0 apres.  Les tests qui passent avant comme apres sont nommes :
+ * le test de chargement (structurel), lay-witness (le lab lit l'ecran correctement), lay-emptyline-too-short,
+ * lay-bars-at-six-rows et lay-stateflags-view (aucune option n'y change l'ecran : `-e` a 6 lignes, barres a 6
+ * lignes, `View` prime sur `-%`).
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -20,7 +21,7 @@ const labs = (JSON.parse(readFileSync('src/__tests__/support/oracle/nano-layout/
 
 describe('nano layout, one measured laboratory per rule', () => {
   it('loads the recorded laboratories', () => {
-    expect(labs.length).toBe(22);
+    expect(labs.length).toBe(34);
   });
 
   it.each(labs.map((lab) => [lab.id, lab.why, lab] as const))('%s: %s', (_id, _why, lab) => {
