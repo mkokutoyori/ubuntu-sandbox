@@ -12,6 +12,8 @@ export interface EditorIdentity {
   readonly pid: number;
 }
 
+export type EditorPathKind = 'missing' | 'file' | 'directory' | 'device' | 'fifo';
+
 export interface EditorFsContext {
   identity?(): EditorIdentity;
   /** Resolve a (possibly relative) path against the current working directory. */
@@ -20,6 +22,8 @@ export interface EditorFsContext {
   readFile(path: string): string | null;
   /** Write a file's content, creating it if necessary. Returns success. */
   writeFile(path: string, content: string): boolean;
+  kindOf?(path: string): EditorPathKind;
+  isReadOnly?(path: string): boolean;
   /** Whether a file exists at this (already-resolved) path. */
   exists(path: string): boolean;
   /** Delete a file. Returns whether a file was actually removed. */

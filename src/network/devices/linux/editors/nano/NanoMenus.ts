@@ -58,6 +58,7 @@ export const NANO_MENUS: Readonly<Record<NanoMenuName, readonly MenuEntry[]>> = 
 export interface MenuOptions {
   readonly restricted: boolean;
   readonly discard: boolean;
+  readonly view: boolean;
 }
 
 const RESTRICTED_HIDDEN: Readonly<Partial<Record<NanoMenuName, readonly string[]>>> = {
@@ -66,10 +67,27 @@ const RESTRICTED_HIDDEN: Readonly<Partial<Record<NanoMenuName, readonly string[]
   'read-file': ['Browse', 'Execute Command', 'New Buffer'],
 };
 
-export function menuEntries(menu: NanoMenuName, options: MenuOptions): readonly MenuEntry[] {
-  const entries = NANO_MENUS[menu].filter((entry) => options.discard || entry.tag !== 'Discard buffer');
-  if (!options.restricted) return entries;
+const VIEW_HIDDEN: Readonly<Partial<Record<NanoMenuName, readonly string[]>>> = {
+  'write-out': ['Append', 'Prepend', 'Backup File'],
+  'read-file': ['Execute Command', 'New Buffer'],
+};
+
+export interface MenuLayout {
+  readonly entries: readonly MenuEntry[];
+  readonly slots: number;
+}
+
+const VIEW_UNBOUND_ONLY: Readonly<Partial<Record<NanoMenuName, number>>> = { 'write-out': 3 };
+
+export function menuLayout(menu: NanoMenuName, options: MenuOptions): MenuLayout {
+  const viewHidden = options.view ? VIEW_HIDDEN[menu] ?? [] : [];
+  const entries = NANO_MENUS[menu].filter((entry) => (options.discard || entry.tag !== 'Discard buffer') && !viewHidden.includes(entry.tag));
+  if (!options.restricted) {
+    const unbound = options.view ? VIEW_UNBOUND_ONLY[menu] ?? 0 : 0;
+    return { entries, slots: entries.length + unbound };
+  }
   const hidden = RESTRICTED_HIDDEN[menu] ?? [];
   const shown = entries.filter((entry) => !hidden.includes(entry.tag));
-  return menu === 'main' ? shown.map((entry) => (entry.tag === 'Read File' ? E('^J', 'Justify') : entry)) : shown;
+  const restricted = menu === 'main' ? shown.map((entry) => (entry.tag === 'Read File' ? E('^J', 'Justify') : entry)) : shown;
+  return { entries: restricted, slots: restricted.length };
 }

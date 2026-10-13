@@ -1,6 +1,6 @@
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
-import type { EditorFsContext, EditorIdentity } from '@/network/devices/linux/editors/EditorFsContext';
+import type { EditorFsContext, EditorIdentity, EditorPathKind } from '@/network/devices/linux/editors/EditorFsContext';
 
 /**
  * Production EditorFsContext: wires NanoEngine/VimEngine to the real
@@ -39,6 +39,14 @@ export class LinuxEditorFsContext implements EditorFsContext {
 
   exists(path: string): boolean {
     return this.readFile(path) !== null;
+  }
+
+  kindOf(path: string): EditorPathKind {
+    return this.dev.editorPathKind(this.resolvePath(path));
+  }
+
+  isReadOnly(path: string): boolean {
+    return this.dev.editorPathIsReadOnly(this.resolvePath(path));
   }
 
   deleteFile(path: string): boolean {

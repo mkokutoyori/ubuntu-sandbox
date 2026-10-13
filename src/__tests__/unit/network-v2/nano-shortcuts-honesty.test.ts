@@ -207,7 +207,7 @@ describe('Scénario — ^R Read File insère le contenu d\'un fichier au curseur
     typeText(nano, '/tmp/snippet.txt');
     press(nano, 'Enter');
     expect(nano.mode).toBe('edit');
-    expect(nano.lines).toEqual(['L1', 'L2AFTER']);
+    expect(nano.lines).toEqual(['L1', 'L2', 'AFTER']);
   });
 
   it('fichier introuvable : message d\'erreur, buffer inchangé', () => {
@@ -216,7 +216,7 @@ describe('Scénario — ^R Read File insère le contenu d\'un fichier au curseur
     ctrl(nano, 'r');
     typeText(nano, '/tmp/missing.txt');
     press(nano, 'Enter');
-    expect(nano.statusMessage).toContain('No such file or directory');
+    expect(nano.statusMessage).toBe('[ File "/tmp/missing.txt" not found ]');
     expect(nano.lines).toEqual(['AFTER']);
   });
 
