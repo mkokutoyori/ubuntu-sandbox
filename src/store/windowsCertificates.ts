@@ -1,4 +1,5 @@
 import type { WindowsPC } from '@/network/devices/WindowsPC';
+import { reserveCertificateSerial } from '@/network/pki/serialReservation';
 import { certToPem, pemToCert, pemToPrivateKey, privateKeyToPem } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
@@ -47,13 +48,18 @@ export function captureWindowsCertificates(device: WindowsPC, twin: WindowsPC): 
 export function restoreWindowsCertificates(device: WindowsPC, saved: WindowsCertificateState): void {
   for (const entry of saved.personal ?? []) {
     const identity = identityOf(entry);
-    if (identity) device.getCertStore().add(identity.cert, identity.privateKey);
+    if (!identity) continue;
+    reserveCertificateSerial(identity.cert.serialNumber);
+    device.getCertStore().add(identity.cert, identity.privateKey);
   }
   for (const pem of saved.trustedAuthorities ?? []) {
     const cert = pemToCert(pem);
-    if (cert) device.addTrustedCertificateAuthority(cert);
+    if (!cert) continue;
+    reserveCertificateSerial(cert.serialNumber);
+    device.addTrustedCertificateAuthority(cert);
   }
   const rdp = saved.rdpIdentity ? identityOf(saved.rdpIdentity) : null;
   const ldap = saved.ldapIdentity ? identityOf(saved.ldapIdentity) : null;
+  for (const identity of [rdp, ldap]) if (identity) reserveCertificateSerial(identity.cert.serialNumber);
   device.restoreTlsIdentities({ ...(rdp ? { rdp } : {}), ...(ldap ? { ldap } : {}) });
 }
