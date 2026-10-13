@@ -13,13 +13,14 @@ import { ReferenceTracking } from './ReferenceTracking';
 import { adjustPoll, pollAdjustment, startBurst, startInitialBurst, chronyTransmitTick, chronyValidResponse } from './chronyPoll';
 import { SourceStatistics, type MeasurementSample } from './SourceStatistics';
 import { evaluateSampleTests } from './chronySampleTests';
+import { TimeSmoothing } from './TimeSmoothing';
 import { DelayQuantile } from './DelayQuantile';
 import { SampleFilter } from './SampleFilter';
 import {
   ChronySelector, DEFAULT_SELECTION_PARAMETERS, type CombinedReference, type SelectionInput,
   type SelectionParameters, type SourceVerdict,
 } from './ChronySelection';
-import { timestampFromMs, timestampDifferenceMs, NTP_TIMESTAMP_ZERO, type NtpTimestamp } from './timestamp';
+import { timestampFromMs, timestampToMs, timestampDifferenceMs, NTP_TIMESTAMP_ZERO, type NtpTimestamp } from './timestamp';
 import {
   clockFilter, isFit, pollTick, pollUpdate, resetPeer, rootDistanceMs, PRECISION_FLOOR_MS,
 } from './peerProcess';
@@ -53,6 +54,8 @@ export interface NtpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
 }
+
+const SMOOTH_REFERENCE_ID = '83.77.79.79';
 
 interface UdpPorts { readonly source: number; readonly destination: number }
 
@@ -364,8 +367,23 @@ export class NtpAgent {
     return true;
   }
 
-  private setClockOffset(offsetMs: number): void {
+  private smoothing: TimeSmoothing | null = null;
+
+  setSmoothing(smoothing: TimeSmoothing | null): void { this.smoothing = smoothing; }
+
+  getSmoothing(): TimeSmoothing | null { return this.smoothing; }
+
+  private smoothedOffsetMs(): number {
+    return this.smoothing === null ? 0 : this.smoothing.offsetAt(this.now() / 1000) * 1000;
+  }
+
+  private setClockOffset(offsetMs: number, kind: 'slew' | 'step' = 'slew'): void {
     const delta = offsetMs - this.config.offsetMs;
+    if (this.smoothing !== null) {
+      const cooked = this.now() / 1000;
+      if (kind === 'step') this.smoothing.stepped(cooked, -delta / 1000);
+      else this.smoothing.adjust(cooked, -delta / 1000, 0, this.reference.skew());
+    }
     if (delta !== 0) for (const a of this.config.associations.values()) a.statistics.correctOffset(delta / 1000);
     this.config.offsetMs = offsetMs;
   }
@@ -414,7 +432,7 @@ export class NtpAgent {
     this.horloge.etat = appliquerDecision(
       this.horloge.etat, { quoi: 'step', nouvelOffset: this.config.offsetMs + deltaMs }, 0);
     this.horloge.derniereDecision = 'step';
-    this.setClockOffset(this.horloge.etat.offsetApplique);
+    this.setClockOffset(this.horloge.etat.offsetApplique, 'step');
     for (const a of this.config.associations.values()) {
       a.offsetMs -= deltaMs;
       a.filter = a.filter.map((stage) => ({ ...stage, offsetMs: stage.offsetMs - deltaMs }));
@@ -986,11 +1004,20 @@ export class NtpAgent {
   private fastTransmit(inPort: string, clientIp: IPAddress, request: NtpPacket, mode: NtpMode, destination: NtpTimestamp): void {
     const srcIp = this.host.getPort(inPort)?.getIPAddress();
     if (!srcIp) return;
+    const header = this.systemHeader();
+    const smoothMs = mode === 'server' ? this.smoothedOffsetMs() : 0;
+    const smoothed = Math.abs(smoothMs) > 1000 * 2 ** this.config.system.precision;
     const reply: NtpPacket = {
-      type: 'ntp', ...this.systemHeader(), version: request.version, mode, poll: request.poll,
-      origTimestamp: request.txTimestamp, rxTimestamp: destination,
-      txTimestamp: timestampFromMs(this.now()),
+      type: 'ntp', ...header, version: request.version, mode, poll: request.poll,
+      origTimestamp: request.txTimestamp,
+      rxTimestamp: smoothed ? timestampFromMs(timestampToMs(destination, this.now()) + smoothMs) : destination,
+      txTimestamp: timestampFromMs(this.now() + (mode === 'server' ? smoothMs : 0)),
       keyId: request.keyId,
+      ...(smoothed ? {
+        refIdentifier: SMOOTH_REFERENCE_ID,
+        refTimestamp: header.refTimestamp === NTP_TIMESTAMP_ZERO ? header.refTimestamp
+          : timestampFromMs(timestampToMs(header.refTimestamp, this.now()) + smoothMs),
+      } : {}),
     };
     this.sendNtp(srcIp, clientIp, reply, this.replyPorts());
     this.config.counters.serverReplies++;
@@ -1325,7 +1352,7 @@ export class NtpAgent {
     system.updateMs = best.updateMs;
     system.offsetMs = combined.offsetMs;
     system.jitterMs = combined.jitterMs;
-    this.setClockOffset(this.horloge.etat.offsetApplique);
+    this.setClockOffset(this.horloge.etat.offsetApplique, decision.quoi === 'step' ? 'step' : 'slew');
     if (decision.quoi === 'step') {
       system.stepCount++;
       system.poll = NTP_MIN_POLL;

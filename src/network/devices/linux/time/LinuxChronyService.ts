@@ -53,6 +53,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { LocalReference, NtpAgent, NtpPlatformProfile } from '../../../ntp/NtpAgent';
 import { DEFAULT_SELECTION_PARAMETERS } from '../../../ntp/ChronySelection';
+import { TimeSmoothing } from '../../../ntp/TimeSmoothing';
 import { UDP_PORT_NTP, type NtpVersion } from '../../../ntp/types';
 import { parseChronyConf, parseChronySource, type ChronyConf, type ChronySource, CHRONY_CONF_DEBIAN } from './ChronyConfig';
 import { ChronyAccessTable, parseChronySubnet } from './ChronyAccess';
@@ -200,6 +201,7 @@ export class LinuxChronyService implements ServiceSocketServer {
   private readonly cmdAccess = new ChronyAccessTable();
   private manualEnabled = false;
   private manualSamples: { atMs: number; slewed: number; original: number; residual: number }[] = [];
+  private smoothKey = '';
   private localOverride: LocalReference | 'off' | null = null;
   private commandPackets = 0;
 
@@ -381,6 +383,12 @@ export class LinuxChronyService implements ServiceSocketServer {
     agent.getReference().setMaxChange(this.conf.maxChange);
     if (this.conf.ntpPort !== UDP_PORT_NTP && this.conf.ntpPort > 0) this.host.bindNtpPort?.(this.conf.ntpPort);
     agent.setServerPort(this.conf.ntpPort);
+    const smooth = this.conf.smooth;
+    const smoothKey = smooth === null ? '' : `${smooth.maxFrequencyPpm}:${smooth.maxWanderPpm}:${smooth.leapOnly}`;
+    if (smoothKey !== this.smoothKey) {
+      this.smoothKey = smoothKey;
+      agent.setSmoothing(smooth === null ? null : new TimeSmoothing(smooth.maxFrequencyPpm, smooth.maxWanderPpm, smooth.leapOnly));
+    }
     agent.setFatalHandler(() => {
       this.stop();
       this.host.daemonExited?.('exit-code');

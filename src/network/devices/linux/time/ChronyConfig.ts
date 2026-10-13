@@ -171,6 +171,7 @@ export interface ChronyConf {
   readonly localStratum: number | null;
   readonly maxdistanceSec: number | null;
   readonly ntpPort: number;
+  readonly smooth: { maxFrequencyPpm: number; maxWanderPpm: number; leapOnly: boolean } | null;
   readonly localDistance: number;
   readonly localOrphan: boolean;
   readonly selection: Partial<SelectionParameters>;
@@ -195,7 +196,7 @@ const CONF_VIDE: ChronyConf = {
   sources: [], makestep: null, access: [], ratelimit: null,
   driftfile: '', logdir: '', logs: [], keyfile: '',
   rtcsync: false, manual: false, localStratum: null, maxdistanceSec: null,
-  ntpPort: 123, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
+  ntpPort: 123, smooth: null, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
   acceptesSansEffet: [], inconnues: [],
 };
 
@@ -221,6 +222,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   let maxdistanceSec: number | null = null;
   let localDistance = 1.0;
   let ntpPort = 123;
+  let smooth: { maxFrequencyPpm: number; maxWanderPpm: number; leapOnly: boolean } | null = null;
   let localOrphan = false;
   const selection: Partial<SelectionParameters> = {};
   let maxUpdateSkewPpm: number | null = null;
@@ -297,6 +299,17 @@ export function parseChronyConf(texte: string): ChronyConf {
         localStratum = stratum; localDistance = distance; localOrphan = orphan;
         break;
       }
+      case 'smoothtime': {
+        const maxFrequency = parseFloat(args[0] ?? '');
+        const maxWander = parseFloat(args[1] ?? '');
+        const leapOnly = args[2]?.toLowerCase() === 'leaponly';
+        if (isNaN(maxFrequency) || isNaN(maxWander) || args.length < 2 || args.length > 3 || (args.length === 3 && !leapOnly)) {
+          inconnues.push({ ligne: i + 1, texte: nue });
+        } else {
+          smooth = maxFrequency > 0 && maxWander > 0 ? { maxFrequencyPpm: maxFrequency, maxWanderPpm: maxWander, leapOnly } : null;
+        }
+        break;
+      }
       case 'port': {
         const v = entier(args[0]);
         if (v === null || args.length !== 1 || v < 0 || v > 65535) inconnues.push({ ligne: i + 1, texte: nue });
@@ -338,7 +351,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   return {
     ...CONF_VIDE, sources, makestep, access, ratelimit,
     driftfile, logdir, logs, keyfile, rtcsync, manual, localStratum, maxdistanceSec,
-    ntpPort, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
+    ntpPort, smooth, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
     acceptesSansEffet, inconnues,
   };
 }

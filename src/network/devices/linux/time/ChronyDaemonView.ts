@@ -1,6 +1,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 import type { NtpAgent } from '../../../ntp/NtpAgent';
 import { STATUS_CHARACTER, type ChronyStatus } from '../../../ntp/ChronySelection';
+import type { SmoothingReport } from '../../../ntp/TimeSmoothing';
 import type { NtpAssociation } from '../../../ntp/types';
 import { isValidIPv4, tryIpToUint32 as ipv4ToUint32 } from '../../../core/ip';
 import type { LinuxChronyService } from './LinuxChronyService';
@@ -166,6 +167,19 @@ export class ChronyDaemonView {
   }
 
   reselect(): void { this.agent.reselectSources(); }
+
+  smoothingReport(): SmoothingReport | null {
+    const smoothing = this.agent.getSmoothing();
+    return smoothing === null ? null : smoothing.report(this.agent.now() / 1000);
+  }
+
+  smoothTime(option: 'reset' | 'activate'): boolean {
+    const smoothing = this.agent.getSmoothing();
+    if (smoothing === null) return false;
+    if (option === 'reset') smoothing.reset(this.agent.now() / 1000);
+    else smoothing.activate(this.agent.now() / 1000);
+    return true;
+  }
 
   setMaxUpdateSkew(ppm: number): void { this.agent.getReference().setMaxUpdateSkewPpm(ppm); }
 

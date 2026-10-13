@@ -336,8 +336,8 @@ export class ChronycSession {
       case 'serverstats': return this.serverStats(view);
       case 'settime': return this.setTime(line, service);
       case 'shutdown': return this.shutdown(service);
-      case 'smoothing': return this.status('notenabled', false);
-      case 'smoothtime': return this.smoothTime(line);
+      case 'smoothing': return this.smoothing(view);
+      case 'smoothtime': return this.smoothTime(line, view);
       case 'sourcename': return this.sourceName(line, view);
       case 'sources': return this.sources(line, view);
       case 'sourcestats': return this.sourcestats(line, view);
@@ -670,11 +670,28 @@ export class ChronycSession {
     return this.status('success', true);
   }
 
-  private smoothTime(line: string): boolean {
+  private smoothTime(line: string, view: ChronyDaemonView): boolean {
     if (line !== 'reset' && line !== 'activate') return this.fail('Invalid syntax for smoothtime command');
     if (!this.authorised(false)) return false;
-    this.status('notenabled', false);
-    return false;
+    if (!view.smoothTime(line)) {
+      this.status('notenabled', false);
+      return false;
+    }
+    return this.status('success', true);
+  }
+
+  private smoothing(view: ChronyDaemonView): boolean {
+    const report = view.smoothingReport();
+    if (report === null) {
+      this.status('notenabled', false);
+      return false;
+    }
+    this.report(
+      'Active         : %B %s\nOffset         : %+.9f seconds\nFrequency      : %+.6f ppm\n'
+      + 'Wander         : %+.6f ppm per second\nLast update    : %.1f seconds ago\nRemaining time : %.1f seconds\n',
+      [report.active ? 1 : 0, report.leapOnly ? '(leap second only)' : '', report.offset, report.frequencyPpm,
+        report.wanderPpm, report.lastUpdateAgo, report.remainingTime]);
+    return true;
   }
 
   private setTime(line: string, service: LinuxChronyService): boolean {
