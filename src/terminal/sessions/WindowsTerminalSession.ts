@@ -40,7 +40,7 @@ import {
 } from '@/terminal/ssh/wireSshLogin';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
-import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
+import { parseSshCommandLine, WINDOWS_SSH_COMMAND_WORD } from '@/terminal/sessions/sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { firstConfiguredIp, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
@@ -774,7 +774,7 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.tryStartWinNetstatStream(trimmed)) return;
     if (this.tryStartWinPathpingStream(trimmed)) return;
 
-    const withoutSession = lower === 'ssh' || lower.startsWith('ssh ')
+    const withoutSession = WINDOWS_SSH_COMMAND_WORD.test(trimmed)
       ? sshReplyWithoutSession(trimmed.split(/\s+/).slice(1), OPENSSH_WINDOWS_8_6)
       : null;
     if (withoutSession) {
@@ -800,7 +800,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // sub-shell against the resolved peer instead of falling through to
     // the device-level `cmdSsh` (which only prints the banner and the
     // closed line). Exec mode (`ssh user@host whoami`) falls through.
-    if (lower === 'ssh' || lower.startsWith('ssh ')) {
+    if (WINDOWS_SSH_COMMAND_WORD.test(trimmed)) {
       if (await this.tryEnterSshInteractive(trimmed)) {
         this.notify();
         return;
@@ -855,7 +855,7 @@ export class WindowsTerminalSession extends TerminalSession {
   private parseInteractiveSsh(
     line: string,
   ): { user: string | null; host: string; port: number; quiet: boolean; algorithms: SshAlgorithmPreferences } | null {
-    const parsed = parseSshCommandLine(line);
+    const parsed = parseSshCommandLine(line, WINDOWS_SSH_COMMAND_WORD);
     if (parsed === null || parsed.host === '' || parsed.command !== null) return null;
     return parsed;
   }
