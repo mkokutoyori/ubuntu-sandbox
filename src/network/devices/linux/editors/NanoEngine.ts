@@ -3,6 +3,7 @@ import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { decodeFile, LINE_END, type NanoFileFormat } from './nano/NanoFormat';
+import { yesNoAnswer } from './nano/NanoYesNo';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
 import type { MinibarInfo } from './nano/NanoScreen';
@@ -33,6 +34,7 @@ const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 
 };
 
 const STATUS_LINGER_KEYS = 20;
+const PAUSE_MILLIS = 1800;
 
 export interface Confirmation {
   readonly question: string | ((columns: number) => string);
@@ -105,6 +107,7 @@ export class NanoEngine {
   private statusText = '';
   private statusCountdown = 0;
   private statusAlert = false;
+  private pauseNote: string | null = null;
   private statusMore = false;
   private messageThisKey = false;
   private get _statusMessage(): string { return this.statusText; }
@@ -192,6 +195,7 @@ export class NanoEngine {
   ) {
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
     this.live = { ...this.settings, view: this.settings.view && filePath !== '' };
+    if (this.live.restricted) this.live.backup = false;
     this._readOnly = this.live.view;
     this.titleName = launch.displayName ?? filePath;
     this.bufferPath = filePath;
@@ -210,13 +214,15 @@ export class NanoEngine {
         atblanks: this.live.atblanks,
       }),
     );
-    const decoded = initialContent.length === 0 ? { lines: [''], format: 'unix' as NanoFileFormat, count: 0 } : decodeFile(initialContent, !this.live.noconvert, !this.live.nonewlines);
+    const unread = this.live.noread && filePath !== '';
+    const decoded = unread || initialContent.length === 0 ? { lines: [''], format: 'unix' as NanoFileFormat, count: 0 } : decodeFile(initialContent, !this.live.noconvert, !this.live.nonewlines);
     this.linesArr = decoded.lines;
     this.fileFormat = this.live.unix ? 'unix' : decoded.format;
     this.ensureTrailingBlankLine();
     if (filePath === '') {
       if (!this.live.nohelp) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
-    } else if (isNewFile) this._statusMessage = '[ New File ]';
+    } else if (unread) this._statusMessage = '';
+    else if (isNewFile) this._statusMessage = '[ New File ]';
     else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'}${decoded.format === 'unix' ? '' : ` (Converted from ${decoded.format === 'dos' ? 'DOS' : 'Mac'} format)`} ]`;
     this.reportSizePending = true;
     this.saveFileNameBuffer = this.titleName;
@@ -229,9 +235,8 @@ export class NanoEngine {
 
   get content(): string { return this.lines.join('\n'); }
   /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
-  private serialize(): string {
+  private serialize(end: string = LINE_END[this.fileFormat]): string {
     const body = this.linesArr;
-    const end = LINE_END[this.fileFormat];
     return body.join(end) + (this.live.nonewlines || body[body.length - 1] === '' ? '' : end);
   }
 
@@ -240,7 +245,7 @@ export class NanoEngine {
     const line = this._cursorLine + 1;
     const column = this.window.columnOf(this._cursorLine, this._cursorCol) + 1;
     const fullWidth = this.window.columnOf(this._cursorLine, this.line(this._cursorLine).length) + 1;
-    const fullSize = [...this.serialize()].length;
+    const fullSize = [...this.serialize('\n')].length;
     let before = 0;
     for (let i = 0; i < this._cursorLine; i++) before += [...this.line(i)].length + 1;
     before += [...this.line(this._cursorLine).slice(0, this._cursorCol)].length;
@@ -328,6 +333,7 @@ export class NanoEngine {
 
   applyKey(k: EditorKeyInput): void {
     if (this._exited) return;
+    this.pauseNote = null;
     if (this.statusCountdown > 0 && --this.statusCountdown === 0) {
       this.statusText = '';
       this.statusAlert = false;
@@ -426,8 +432,35 @@ export class NanoEngine {
     return ` [${shown.cells.join('')}${breadth(this.lastSearchTerm, this.live.tabsize) > limit ? '...' : ''}]`;
   }
 
+  private pauseWith(note: string): void {
+    this.pauseNote = note;
+  }
+
+  private refuseWhenRestricted(): boolean {
+    if (!this.live.restricted) return false;
+    this._statusMessage = '[ This function is disabled in restricted mode ]';
+    return true;
+  }
+
+  private discardEnabled(): boolean {
+    return this.live.saveonexit && !this.live.preserve;
+  }
+
+  private writeNameFrozen(): boolean {
+    return this.live.restricted && this.titleName !== '';
+  }
+
+  private beginWriteOut(exiting: boolean): void {
+    this.exitAfterSave = exiting;
+    this.writeMethod = 'overwrite';
+    this.saveFileNameBuffer = this.markLine !== null && !exiting ? '' : this.titleName;
+    this._promptCursor = this.saveFileNameBuffer.length;
+    this._mode = 'save-prompt';
+    if (exiting && this.live.saveonexit && this.titleName !== '') this.submitWriteName();
+  }
+
   private writeOutLabel(): string {
-    const selection = this.markLine !== null && !this.exitAfterSave;
+    const selection = this.markLine !== null && !this.exitAfterSave && !this.live.restricted;
     const method = this.writeMethod;
     const base = selection
       ? method === 'prepend' ? 'Prepend Selection to File' : method === 'append' ? 'Append Selection to File' : 'Write Selection to File'
@@ -451,6 +484,7 @@ export class NanoEngine {
 
   get screen(): EditorScreen {
     const live = this.paintScreen(false);
+    if (this.pauseNote !== null) return { ...live, hold: { millis: PAUSE_MILLIS, then: this.paintScreen(true) } };
     const level = messageLevel(this.statusText);
     const transient = this.bareDisplay() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
     if (!transient || this.isPrompting()) return live;
@@ -483,7 +517,7 @@ export class NanoEngine {
       softwrap: this.live.softwrap,
       title: {
         name: this._mode === 'help' ? 'Main nano help text' : this.titleName === '' ? 'New Buffer' : this.titleName,
-        state: this._mode === 'help' ? '' : this._readOnly ? 'View' : this._modified ? 'Modified' : '',
+        state: this._mode === 'help' ? '' : this._readOnly ? 'View' : this._modified ? 'Modified' : this.live.restricted ? 'Restricted' : '',
         branding: 'GNU nano 7.2',
         flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
       },
@@ -495,6 +529,8 @@ export class NanoEngine {
         : this._mode === 'confirm' ? { question: this.confirmationQuestion(), withAll: false }
         : this._mode === 'replace-confirm' ? { question: 'Replace this instance?', withAll: true } : null,
       menu: this._mode === 'help' ? 'help' : prompt === null ? 'main' : prompt.menu,
+      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled() },
+      pause: messageExpired ? null : this.pauseNote,
       helpLines: this._mode === 'help' ? this.helpText.split('\n') : null,
     });
     if (this._mode !== 'confirm' || !this.confirmation!.startup) return screen;
@@ -682,6 +718,7 @@ export class NanoEngine {
    */
   applyPaste(text: string): void {
     if (this._exited || !text) return;
+    this.pauseNote = null;
     const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const firstLine = normalized.split('\n')[0];
     switch (this._mode) {
@@ -689,6 +726,7 @@ export class NanoEngine {
         this.pasteIntoBuffer(normalized);
         return;
       case 'save-prompt':
+        if (this.writeNameFrozen()) return;
         this.insertIntoPromptField(() => this.saveFileNameBuffer, (v) => { this.saveFileNameBuffer = v; }, firstLine);
         return;
       case 'search':
@@ -990,6 +1028,7 @@ export class NanoEngine {
     const key = k.key.toLowerCase();
     const emacs: Record<string, string> = { b: 'ArrowLeft', f: 'ArrowRight', p: 'ArrowUp', n: 'ArrowDown', a: 'Home', e: 'End', d: 'Delete', h: 'Backspace' };
     if (emacs[key]) { this.applyEditKey({ ...k, key: emacs[key], ctrl: false }); return; }
+    if (key === 'r' && this.refuseWhenRestricted()) return;
     // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
     // File or Execute Command — real nano has none of these bound while
     // read-only, since every one of them would mutate the buffer.
@@ -1000,17 +1039,15 @@ export class NanoEngine {
     }
     switch (key) {
       case 'o':
-        this.writeMethod = 'overwrite';
-        this.saveFileNameBuffer = this.markLine !== null ? '' : this.titleName;
-        this._promptCursor = this.saveFileNameBuffer.length;
-        this._mode = 'save-prompt';
+        this.beginWriteOut(false);
         return;
       case 'x': // Exit
-        if (this._modified) {
+        if (!this._modified) this.finishExit(true);
+        else if (this.live.saveonexit && this.titleName !== '') this.beginWriteOut(true);
+        else {
+          if (this.live.saveonexit) this.pauseWith('No file name');
           this._mode = 'exit-save-prompt';
           this._statusMessage = 'Save modified buffer?';
-        } else {
-          this.finishExit(true);
         }
         return;
       case 'k':
@@ -1058,6 +1095,7 @@ export class NanoEngine {
         this._mode = 'read-file-prompt';
         return;
       case 't': // Execute Command (insert a shell command's output at the cursor)
+        if (this.refuseWhenRestricted()) return;
         this.executeCmdBuffer = '';
         this._promptCursor = 0;
         this._mode = 'execute-prompt';
@@ -1556,6 +1594,22 @@ export class NanoEngine {
    */
   private applyPromptFieldKey(k: EditorKeyInput, get: () => string, set: (v: string) => void): boolean {
     const text = get();
+    if (k.ctrl && k.key.toLowerCase() === 'k') {
+      if (this._promptCursor === text.length) this._promptCursor = 0;
+      set(text.slice(0, this._promptCursor));
+      return true;
+    }
+    if (k.alt && k.key === '6') {
+      if (text !== '') {
+        this.cutBuffer = [text];
+        this._promptCursor = 0;
+      }
+      return true;
+    }
+    if (k.ctrl && k.key.toLowerCase() === 'u') {
+      if (this.cutBuffer !== null) this.insertIntoPromptField(get, set, this.cutBuffer[0]);
+      return true;
+    }
     if (k.key === 'ArrowLeft') { this._promptCursor = Math.max(0, this._promptCursor - 1); return true; }
     if (k.key === 'ArrowRight') { this._promptCursor = Math.min(text.length, this._promptCursor + 1); return true; }
     if (k.key === 'Home') { this._promptCursor = 0; return true; }
@@ -1617,6 +1671,14 @@ export class NanoEngine {
       this.cancelPrompt();
       return;
     }
+    if (k.ctrl && k.key.toLowerCase() === 'q' && this.discardEnabled()) {
+      this.exitAfterSave = false;
+      this.finishExit(false);
+      return;
+    }
+    const editsName = k.key === 'Backspace' || k.key === 'Delete' || (!k.ctrl && !k.alt && k.key.length === 1)
+      || (k.ctrl && ['k', 'u'].includes(k.key.toLowerCase()));
+    if (editsName && this.writeNameFrozen()) return;
     this.applyPromptFieldKey(k, () => this.saveFileNameBuffer, (v) => { this.saveFileNameBuffer = v; });
   }
 
@@ -1626,6 +1688,7 @@ export class NanoEngine {
   }
 
   private toggleWriteOption(key: string): boolean {
+    if (this.live.restricted && (key === 'a' || key === 'b' || key === 'p')) return true;
     if (key === 'd') this.fileFormat = this.fileFormat === 'dos' ? 'unix' : 'dos';
     else if (key === 'm') this.fileFormat = this.fileFormat === 'mac' ? 'unix' : 'mac';
     else if (key === 'b') this.live.backup = !this.live.backup;
@@ -1645,8 +1708,8 @@ export class NanoEngine {
 
   private applyConfirmKey(k: EditorKeyInput): void {
     const confirmation = this.confirmation!;
-    const key = k.key.toLowerCase();
-    const answer = k.key === 'Escape' || (k.ctrl && key === 'c') ? confirmation.cancel : !k.ctrl && key === 'y' ? confirmation.yes : !k.ctrl && key === 'n' ? confirmation.no : null;
+    const given = yesNoAnswer(k, false);
+    const answer = given === 'cancel' ? confirmation.cancel : given === 'yes' ? confirmation.yes : given === 'no' ? confirmation.no : null;
     if (answer === null) return;
     this.confirmation = null;
     this._mode = 'edit';
@@ -1666,13 +1729,17 @@ export class NanoEngine {
       return;
     }
     const exiting = this.exitAfterSave;
-    const selection = !exiting && this.markLine !== null;
+    const selection = !exiting && this.markLine !== null && !this.live.restricted;
     const target = this.writeTarget(name);
     const nameExists = this.fs.exists(target);
     const warn = this.bufferPath === '' ? nameExists : target !== this.bufferPath;
     const write = (): void => this.writeBuffer(name, target, exiting, selection);
     if (!warn || this.writeMethod !== 'overwrite') {
       write();
+      return;
+    }
+    if (this.live.restricted) {
+      this.pauseWith('File exists -- cannot overwrite');
       return;
     }
     const overwrite = (): void => {
@@ -1817,22 +1884,10 @@ export class NanoEngine {
   // ── Exit-save (Y/N/^C) prompt ───────────────────────────────────
 
   private applyExitSavePromptKey(k: EditorKeyInput): void {
-    const key = k.key.toLowerCase();
-    if (!k.ctrl && key === 'y') {
-      // Real nano always chains to "File Name to Write:" here, exactly
-      // like a plain ^O — it never writes directly.
-      this.exitAfterSave = true;
-      this.writeMethod = 'overwrite';
-      this.saveFileNameBuffer = this.titleName;
-      this._promptCursor = this.saveFileNameBuffer.length;
-      this._mode = 'save-prompt';
-      return;
-    }
-    if (!k.ctrl && key === 'n') {
-      this.finishExit(false);
-      return;
-    }
-    if (k.key === 'Escape' || (k.ctrl && key === 'c')) this.cancelPrompt();
+    const given = yesNoAnswer(k, false);
+    if (given === 'yes') this.beginWriteOut(true);
+    else if (given === 'no') this.finishExit(false);
+    else if (given === 'cancel') this.cancelPrompt();
   }
 
   // ── Go To Line (^_ / M-G) ────────────────────────────────────────
@@ -1928,6 +1983,10 @@ export class NanoEngine {
 
   private applyReadFilePromptKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
+      if (this.readFileBuffer === '') {
+        this.cancelPrompt();
+        return;
+      }
       const content = this.fs.readFile(this.readFileBuffer);
       this._mode = 'edit';
       if (content === null) {
@@ -2279,15 +2338,15 @@ export class NanoEngine {
   }
 
   private applyReplaceConfirmKey(k: EditorKeyInput): void {
-    const key = k.key.toLowerCase();
-    if (k.key === 'Escape' || (k.ctrl && key === 'c')) { this.finishReplace(); return; }
-    if (key === 'y') {
+    const given = yesNoAnswer(k, true);
+    if (given === 'cancel') { this.finishReplace(); return; }
+    if (given === 'yes') {
       this.applyPendingReplaceMatch();
       this._pendingReplaceMatch = null;
       if (!this.advanceReplaceMatch()) this.finishReplace();
       return;
     }
-    if (key === 'n') {
+    if (given === 'no') {
       const st = this.replaceState!;
       const pm = this._pendingReplaceMatch!;
       st.currentCol = pm.end;
@@ -2295,7 +2354,7 @@ export class NanoEngine {
       if (!this.advanceReplaceMatch()) this.finishReplace();
       return;
     }
-    if (key === 'a') {
+    if (given === 'all') {
       this.applyPendingReplaceMatch();
       this._pendingReplaceMatch = null;
       while (this.advanceReplaceMatch()) this.applyPendingReplaceMatch();

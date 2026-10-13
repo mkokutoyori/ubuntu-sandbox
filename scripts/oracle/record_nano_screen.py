@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record whole-screen transcripts from a real GNU nano driven through tmux.
 
-usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap [--seed N] [--cases N] [--from cases.json] out.json
+usage: record_nano_screen.py --corpus cells|scroll|resize|prompts|cli|place|layout|edit|wrap|tools [--seed N] [--cases N] [--from cases.json] out.json
 
 A case is a buffer, a pane size, nano's command-line flags and a list of steps; a step is a tmux
 key token (`Left`, `C-a`, `M-n`, `PageDown`, ...), a run of literal text (`-l`) or `@ROWSxCOLS`,
@@ -433,6 +433,35 @@ def gen_wrap(seed, count):
         cases.append({"id": "wrp%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "flags": flags, "steps": steps, "disk": True})
     return cases
 
+TOOL_MODES = ["-t", "-n", "-R"]
+TOOL_OTHERS = ["-B", "-L", "-l", "-x", "-%", "-k", "-E", "-S"]
+TOOL_KEYS = ["x", "yz", "Enter", "Left", "Right", "Up", "Down", "Home", "End", "BSpace", "C-k", "C-u", "M-a", "M-6", "C-c"]
+TOOL_FLOWS = [
+    ["C-o"], ["C-o", "Enter"], ["C-o", "C-c"], ["C-o", "M-d", "Enter"], ["C-o", "M-m", "Enter"], ["C-o", "M-a", "Enter"],
+    ["C-o", "M-p", "Enter"], ["C-o", "M-b", "Enter"], ["C-o", "C-q"], ["C-o", "BSpace"], ["C-o", "x"], ["C-o", "Home", "z"],
+    ["C-o", "BSpace", "BSpace", "BSpace", "BSpace", "BSpace", "u.txt", "Enter"], ["C-o", "BSpace", "BSpace", "BSpace", "BSpace", "BSpace", "w.txt", "Enter"],
+    ["C-r", "C-c"], ["C-t", "C-c"], ["C-r", "Enter"], ["C-x"], ["C-x", "n"], ["C-x", "C-c"], ["C-x", "y"], ["C-x", "y", "Enter"], ["C-x", "y", "C-c"],
+]
+
+def gen_tools(seed, count):
+    r = random.Random(seed)
+    cases = []
+    for i in range(count):
+        text = [edit_line(r) for _ in range(r.choice([1, 2, 3, 5]))]
+        rows, cols = r.choice([(10, 40), (14, 60), (24, 80), (12, 50)])
+        modes = r.sample(TOOL_MODES, r.choice([1, 1, 2]))
+        flags = modes + r.sample(TOOL_OTHERS, r.choice([0, 0, 1, 2]))
+        target = r.choice(["t.txt", "t.txt", "t.txt", "new.txt"])
+        steps = []
+        for _ in range(r.randint(3, 9)):
+            if r.random() < 0.45:
+                steps.extend(r.choice(TOOL_FLOWS))
+            else:
+                steps.append(r.choice(TOOL_KEYS))
+        cases.append({"id": "tol%d-%d" % (seed, i), "text": text, "rows": rows, "cols": cols, "args": flags + [target], "steps": steps,
+                      "disk": True, "hidden": True, "files": {"u.txt": ["other"]}})
+    return cases
+
 def gen(seed, count, corpus):
     if corpus == "prompts":
         return gen_prompts(seed, count)
@@ -446,6 +475,8 @@ def gen(seed, count, corpus):
         return gen_edit(seed, count)
     if corpus == "wrap":
         return gen_wrap(seed, count)
+    if corpus == "tools":
+        return gen_tools(seed, count)
     r = random.Random(seed)
     cases = []
     for i in range(count):
@@ -482,7 +513,7 @@ def main():
     ap.add_argument("out")
     a = ap.parse_args()
     cases = json.load(open(a.source))["cases"] if a.source else gen(a.seed, a.cases, a.corpus)
-    runner = run_cli_case if a.corpus in ("cli", "place") else run_case
+    runner = run_cli_case if a.corpus in ("cli", "place", "tools") else run_case
     with tempfile.TemporaryDirectory() as workdir:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda c: runner(c, workdir), cases))
@@ -490,4 +521,5 @@ def main():
     json.dump({"nano": version, "corpus": a.corpus, "cases": results}, open(a.out, "w"), ensure_ascii=False, separators=(",", ":"))
     print(len(results), "cases ->", a.out)
 
-main()
+if __name__ == "__main__":
+    main()

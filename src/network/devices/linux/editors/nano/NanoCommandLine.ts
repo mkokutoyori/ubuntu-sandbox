@@ -1,5 +1,5 @@
 import { defaultNanoSettings, type NanoFlag, type NanoSettings } from './NanoSettings';
-import { NANO_USAGE, NANO_VERSION } from './NanoUsage';
+import { NANO_VERSION, nanoUsage } from './NanoUsage';
 
 export interface NanoSearchRequest {
   readonly pattern: string;
@@ -150,7 +150,7 @@ function applyEffect(draft: Draft, spec: OptionSpec, value: string): NanoInvocat
       return null;
     }
     case 'help':
-      return { kind: 'print', stdout: NANO_USAGE };
+      return { kind: 'print', stdout: nanoUsage(draft.restricted) };
     case 'version':
       return { kind: 'print', stdout: NANO_VERSION };
   }
