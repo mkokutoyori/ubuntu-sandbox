@@ -94,7 +94,16 @@ function findParagraph(buf: MotionBuffer, from: Pos, forward: boolean, count: nu
   return { pos: { line: curr, col: 0 }, inclusive: false };
 }
 
-const MATCH_PAIRS: Readonly<Record<string, string>> = { '(': ')', '[': ']', '{': '}' };
+export const DEFAULT_MATCH_PAIRS: Readonly<Record<string, string>> = { '(': ')', '[': ']', '{': '}' };
+
+export function parseMatchPairs(spec: string): Readonly<Record<string, string>> {
+  const pairs: Record<string, string> = {};
+  for (const item of spec.split(',')) {
+    const chars = [...item];
+    if (chars.length === 3 && chars[1] === ':') pairs[chars[0]] = chars[2];
+  }
+  return pairs;
+}
 
 function previousBackslashes(line: string, col: number): number {
   let count = 0;
@@ -104,6 +113,7 @@ function previousBackslashes(line: string, col: number): number {
 
 export function findMatchingBracket(buf: MotionBuffer, from: Pos, what?: string, forced?: 'forward' | 'backward'): Pos | null {
   const lines = buf.lines;
+  const MATCH_PAIRS = buf.pairs ?? DEFAULT_MATCH_PAIRS;
   let lnum = from.line;
   let col = from.col;
   let linep = lines[lnum] ?? '';

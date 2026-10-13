@@ -393,7 +393,7 @@ describe('/proc/net/snmp counts UDP checksum errors beside UDP-Lite ones', () =>
     peer.sendIpv4(createIPv4Packet(
       new IPAddress(PEER_ADDRESS), new IPAddress(DUT_ADDRESS), IP_PROTO_UDP, 64, udp, 13));
     expect(peer.dut.getProtocolCounters().udpInCsumErrors).toBe(1);
-    expect(await peer.dut.executeCommand('cat /proc/net/snmp')).toMatch(/^Udp: 0 0 1 0 0 0 1 0$/m);
+    expect(await peer.dut.executeCommand('cat /proc/net/snmp')).toMatch(/^Udp: 0 0 1 0 0 0 1 0 0$/m);
   });
 });
 
@@ -566,7 +566,7 @@ describe('two machines over a real cable, in IPv4 and IPv6', () => {
     expect(lite).toMatch(/:1B58/);
     expect(plain).not.toMatch(/:1B58/);
     const snmp = await b.executeCommand('cat /proc/net/snmp');
-    expect(snmp).toMatch(/^UdpLite: 0 0 0 0 0 0 0 0$/m);
+    expect(snmp).toMatch(/^UdpLite: 0 0 0 0 0 0 0 0 0$/m);
   });
 
   it('/proc/net/snmp reads the counters of both sides after a delivery and a miss', async () => {
@@ -578,8 +578,8 @@ describe('two machines over a real cable, in IPv4 and IPv6', () => {
     send(LISTEN_PORT);
     send(LISTEN_PORT + 1);
     await waitUntil(() => b.getProtocolCounters().udpLiteNoPorts === 1);
-    expect(await b.executeCommand('cat /proc/net/snmp')).toMatch(/^UdpLite: 1 1 0 0 0 0 0 0$/m);
-    expect(await a.executeCommand('cat /proc/net/snmp')).toMatch(/^UdpLite: 0 0 0 2 0 0 0 0$/m);
+    expect(await b.executeCommand('cat /proc/net/snmp')).toMatch(/^UdpLite: 1 1 0 0 0 0 0 0 0$/m);
+    expect(await a.executeCommand('cat /proc/net/snmp')).toMatch(/^UdpLite: 0 0 0 2 0 0 0 0 0$/m);
   });
 
   it('the sender is told "port unreachable" by the real peer', async () => {
@@ -606,10 +606,10 @@ describe('two machines over a real cable, in IPv4 and IPv6', () => {
     await waitUntil(() => received.length > 0);
     expect(received.map((d) => d.udp.payload)).toEqual(['six']);
     expect(String(received[0].sourceIP)).toBe('2001:db8::1');
-    expect(b.getProtocolCounters().udpLiteInDatagrams).toBe(1);
+    expect(b.getProtocolCounters().udpLite6InDatagrams).toBe(1);
     expect(sendTo(LISTEN_PORT + 1)).toBe(true);
-    await waitUntil(() => b.getProtocolCounters().udpLiteNoPorts === 1);
-    expect(b.getProtocolCounters().udpLiteNoPorts).toBe(1);
+    await waitUntil(() => b.getProtocolCounters().udpLite6NoPorts === 1);
+    expect(b.getProtocolCounters().udpLite6NoPorts).toBe(1);
   });
 
   it('a datagram to a group goes out on the link, with the group\'s MAC', async () => {
@@ -641,6 +641,7 @@ describe('the same rules hold over IPv6 (RFC 3828 §3.2: the pseudo-header is th
       emitIpv4: () => false, emitIpv4ToGroup: () => false, emitIpv6: () => false, emitIpv6ToGroup: () => false,
       replyPortUnreachable: () => { replies.push('v4'); },
       replyPortUnreachable6: () => { replies.push('v6'); },
+      countLoopbackDatagram: () => undefined,
     });
     const delivered: UdpLiteDelivery[] = [];
     endpoint.bind(LISTEN_PORT, (d) => { delivered.push(d); }, { minimumCoverage: ChecksumCoverage.of(8) });
@@ -667,14 +668,14 @@ describe('the same rules hold over IPv6 (RFC 3828 §3.2: the pseudo-header is th
     const { endpoint, counters, delivered } = endpointOverStub();
     endpoint.receive6('eth0', packet6());
     expect(delivered.map((d) => d.udp.payload)).toEqual(['hello']);
-    expect(counters.udpLiteInDatagrams).toBe(1);
+    expect(counters.udpLite6InDatagrams).toBe(1);
   });
 
   it.each([1, 7])('a coverage of %s is dropped, counted, and not answered', (coverageField) => {
     const { endpoint, counters, replies, delivered } = endpointOverStub();
     endpoint.receive6('eth0', packet6({ coverageField }));
     expect(delivered).toHaveLength(0);
-    expect(counters.udpLiteInErrors).toBe(1);
+    expect(counters.udpLite6InErrors).toBe(1);
     expect(replies).toEqual([]);
   });
 
@@ -684,15 +685,15 @@ describe('the same rules hold over IPv6 (RFC 3828 §3.2: the pseudo-header is th
     endpoint.receive6('eth0', packet6({ checksum: 'zero' }));
     endpoint.receive6('eth0', packet6({ checksum: 'wrong' }));
     expect(delivered).toHaveLength(0);
-    expect(counters.udpLiteInErrors).toBe(3);
-    expect(counters.udpLiteInCsumErrors).toBe(3);
+    expect(counters.udpLite6InErrors).toBe(3);
+    expect(counters.udpLite6InCsumErrors).toBe(3);
   });
 
   it('a datagram for a port nobody holds is answered "port unreachable" once', () => {
     const { endpoint, counters, replies } = endpointOverStub();
     endpoint.receive6('eth0', packet6({ port: 7001 }));
     expect(replies).toEqual(['v6']);
-    expect(counters.udpLiteNoPorts).toBe(1);
+    expect(counters.udpLite6NoPorts).toBe(1);
   });
 
   it('an IPv6 pseudo-header differs from the IPv4 one: the same bytes do not verify across families', () => {

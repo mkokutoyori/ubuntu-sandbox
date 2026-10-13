@@ -104,6 +104,10 @@ export function getForestForDomain(dnsName: string): Forest | null {
   return domainToForest.get(key(dnsName))?.forest ?? null;
 }
 
+export function getSchemaValidatorForDomain(dnsName: string): SchemaValidator | null {
+  return domainToForest.get(key(dnsName))?.schemaValidator ?? null;
+}
+
 export function withIsolatedForestRegistry<T>(run: () => T): T {
   const saved = new Map(domainToForest);
   try {

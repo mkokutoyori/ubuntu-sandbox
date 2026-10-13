@@ -38,7 +38,7 @@ import { randomSecret } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { locateDomainController } from './windows/domain/DcLocator';
 import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
-import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
+import { createForest, joinForestAsChildDomain, getForestForDomain, getSchemaValidatorForDomain, type Forest } from './windows/server/ad/forest/Forest';
 import { getExchangeOrganization, getOrCreateExchangeOrganization, type ExchangeServerRecord } from './windows/server/exchange/ExchangeOrganization';
 import { MailboxStore, type MailboxOpResult, type DeliverResult, type StoredMailItem } from './windows/server/exchange/MailboxStore';
 import { DistributionGroupStore, deliverExpanded, type DistributionGroupOpResult, type DistributionGroupType } from './windows/server/exchange/DistributionGroupStore';
@@ -56,7 +56,8 @@ import { createResponse, type HttpMessage } from '@/network/http/semantics/types
 import { IPAddress } from '@/network/core/types';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 import { type AddsForestOptions, DEFAULT_AD_FUNCTIONAL_LEVEL, netbiosNameProblem, parseAdFunctionalLevel } from './windows/server/ad/adFunctionalLevels';
-import type { ForestPromotion } from './windows/server/ad/DirectoryDelta';
+import { promotionKind, snapshotAsDelta, type ChildDomainPromotion, type DirectoryPromotion, type ForestPromotion, type ReplicaPromotion } from './windows/server/ad/DirectoryDelta';
+import type { DirectorySnapshot } from './windows/server/ad/DirectoryStore';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -98,7 +99,8 @@ const AUTODISCOVER_PORT = 80;
 export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
   private directoryStore: DirectoryStore | null = null;
-  private forestPromotion: ForestPromotion | null = null;
+  private directoryPromotion: DirectoryPromotion | null = null;
+  private promotionClockMs: number | null = null;
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
   private npsRoleInstance: WindowsNpsRole | null = null;
@@ -195,7 +197,11 @@ export class WindowsServer extends WindowsPC {
   /** PRD Phase 5 (§5 P5): the real AD DS directory, once `Install-ADDSForest` has promoted this server. */
   getDirectoryStore(): DirectoryStore | null { return this.directoryStore; }
 
-  getForestPromotion(): ForestPromotion | null { return this.forestPromotion; }
+  getDirectoryPromotion(): DirectoryPromotion | null { return this.directoryPromotion; }
+
+  private directoryDate(): Date {
+    return this.promotionClockMs !== null ? new Date(this.promotionClockMs) : this.simulatedDate();
+  }
 
   protected override logonDomainNames(): { netbios: string; dns: string } | null {
     const store = this.directoryStore;
@@ -453,12 +459,13 @@ export class WindowsServer extends WindowsPC {
     if (opts.whatIf) {
       return { ok: true, message: `What if: Performing the operation "Install-ADDSForest" on target "${this.getHostname()}".` };
     }
-    this.forestPromotion = {
-      domainName, netbiosName: netbios, safeModeAdminPassword,
+    this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { now: () => this.directoryDate(), invocationId: opts.invocationId });
+    this.directoryPromotion = {
+      kind: 'forest', domainName, netbiosName: netbios, safeModeAdminPassword,
       forestMode: forestLevel.keyword, domainMode: domainLevel.keyword,
       installDns: opts.installDns, databasePath: opts.databasePath, logPath: opts.logPath, sysvolPath: opts.sysvolPath,
+      invocationId: this.directoryStore.getInvocationId(), promotedAt: this.directoryDate().getTime(),
     };
-    this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { now: () => this.simulatedDate() });
     this.directoryStore.domainMode = domainLevel.domainMode;
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSecret());
@@ -482,15 +489,41 @@ export class WindowsServer extends WindowsPC {
     return { ok: true, message: '' };
   }
 
-  replayForestPromotion(promotion: ForestPromotion): AdDsOpResult {
-    return this.installADDSForest(promotion.domainName, promotion.netbiosName, promotion.safeModeAdminPassword, {
-      forestMode: parseAdFunctionalLevel(promotion.forestMode) ?? undefined,
-      domainMode: parseAdFunctionalLevel(promotion.domainMode) ?? undefined,
-      installDns: promotion.installDns,
-      databasePath: promotion.databasePath,
-      logPath: promotion.logPath,
-      sysvolPath: promotion.sysvolPath,
-    });
+  replayDirectoryPromotion(promotion: DirectoryPromotion, baseline?: DirectorySnapshot): AdDsOpResult {
+    this.promotionClockMs = promotion.promotedAt ?? null;
+    try {
+      return this.replayPinnedPromotion(promotion, baseline);
+    } finally {
+      this.promotionClockMs = null;
+    }
+  }
+
+  private replayPinnedPromotion(promotion: DirectoryPromotion, baseline?: DirectorySnapshot): AdDsOpResult {
+    switch (promotionKind(promotion)) {
+      case 'childDomain': {
+        const child = promotion as ChildDomainPromotion;
+        return this.provisionChildDomain(child);
+      }
+      case 'replica': {
+        const replica = promotion as ReplicaPromotion;
+        const store = this.newReplicaStore(replica);
+        if (baseline) store.importSnapshot(snapshotAsDelta(baseline));
+        store.promoteDomainController(this.getHostname(), replica.safeModeAdminPassword);
+        return this.completeReplicaPromotion(store, replica);
+      }
+      default: {
+        const forest = promotion as ForestPromotion;
+        return this.installADDSForest(forest.domainName, forest.netbiosName, forest.safeModeAdminPassword, {
+          forestMode: parseAdFunctionalLevel(forest.forestMode) ?? undefined,
+          domainMode: parseAdFunctionalLevel(forest.domainMode) ?? undefined,
+          installDns: forest.installDns,
+          databasePath: forest.databasePath,
+          logPath: forest.logPath,
+          sysvolPath: forest.sysvolPath,
+          invocationId: forest.invocationId,
+        });
+      }
+    }
   }
 
   private pointDnsClientAtLoopback(): void {
@@ -1186,12 +1219,23 @@ export class WindowsServer extends WindowsPC {
     }
 
     const netbios = netbiosName ?? newDomainDnsName.split('.')[0].toUpperCase();
+    return this.provisionChildDomain({
+      kind: 'childDomain', domainName: newDomainDnsName, netbiosName: netbios, parentDomainName,
+      safeModeAdminPassword, installDns: opts.installDns,
+    });
+  }
+
+  private provisionChildDomain(promotion: ChildDomainPromotion): AdDsOpResult {
+    const { domainName: newDomainDnsName, netbiosName: netbios, parentDomainName, safeModeAdminPassword } = promotion;
     const join = joinForestAsChildDomain(parentDomainName, newDomainDnsName, netbios);
     if (!join.ok) {
       return { ok: false, message: `New-ADDomain : ${join.message}` };
     }
 
-    this.directoryStore = new DirectoryStore(newDomainDnsName, netbios, safeModeAdminPassword, { sharedSchemaValidator: join.schemaValidator, now: () => this.simulatedDate() });
+    this.directoryStore = new DirectoryStore(newDomainDnsName, netbios, safeModeAdminPassword, {
+      sharedSchemaValidator: join.schemaValidator, now: () => this.directoryDate(), invocationId: promotion.invocationId,
+    });
+    this.directoryPromotion = { ...promotion, invocationId: this.directoryStore.getInvocationId(), promotedAt: promotion.promotedAt ?? this.directoryDate().getTime() };
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSecret());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
@@ -1199,7 +1243,7 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.assignServerToSite(this.getHostname(), DEFAULT_SITE_NAME, this.getInterfaces().find(p => p.getIPAddress() !== null)?.getIPAddress()?.toString());
     this.provisionSysvol(newDomainDnsName);
     this.registerDcServices();
-    if (opts.installDns !== false) this.roleManager.install('DNS');
+    if (promotion.installDns !== false) this.roleManager.install('DNS');
     this.provisionDomainDnsZone(newDomainDnsName);
     this.provisionDefaultDomainPolicy();
     this.logDirectoryServiceStartup();
@@ -1421,7 +1465,10 @@ export class WindowsServer extends WindowsPC {
     }
 
     const netbios = netbiosName ?? domainName.split('.')[0].toUpperCase();
-    const store = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { skipSeed: true, now: () => this.simulatedDate() });
+    const promotion: ReplicaPromotion = {
+      kind: 'replica', domainName, netbiosName: netbios, sourceDcAddress, safeModeAdminPassword, installDns: opts.installDns,
+    };
+    const store = this.newReplicaStore(promotion);
     const sync = pullReplication(this.getTcpStack(), sourceDcAddress, store);
     /**
      * The initial sync (PRD-Windows-Server-Advanced.md §5 P12) has no
@@ -1438,6 +1485,30 @@ export class WindowsServer extends WindowsPC {
     if (!promote.ok) {
       return { ok: false, message: `Install-ADDSDomainController : ${promote.message}` };
     }
+    const completed = this.completeReplicaPromotion(store, promotion);
+    /**
+     * Real DCPromo urgently replicates the new DC's own computer object
+     * back out (a critical-object push, distinct from the initial sync
+     * above) so the rest of the domain learns about it immediately rather
+     * than waiting for the source DC's next scheduled cycle. Best-effort:
+     * a source DC that doesn't support the push notification (unlikely —
+     * this simulator's DCs all do) just stays unaware until it next pulls.
+     */
+    notifySyncNow(this.getTcpStack(), sourceDcAddress);
+    return completed;
+  }
+
+  private newReplicaStore(promotion: ReplicaPromotion): DirectoryStore {
+    return new DirectoryStore(promotion.domainName, promotion.netbiosName, promotion.safeModeAdminPassword, {
+      skipSeed: true,
+      sharedSchemaValidator: getSchemaValidatorForDomain(promotion.domainName) ?? undefined,
+      now: () => this.directoryDate(),
+      invocationId: promotion.invocationId,
+    });
+  }
+
+  private completeReplicaPromotion(store: DirectoryStore, promotion: ReplicaPromotion): AdDsOpResult {
+    const { domainName } = promotion;
     /**
      * Real DCPromo places a new replica DC in whichever site's subnet
      * matches its own IP (already known from the source DC's replicated
@@ -1451,22 +1522,14 @@ export class WindowsServer extends WindowsPC {
     // Default-First-Site-Name always already exists at this point — replicated in above from the source DC, which created it at its own promotion.
     const initialSite = (ownIp ? store.siteForIp(ownIp) : null) ?? DEFAULT_SITE_NAME;
     store.assignServerToSite(this.getHostname(), initialSite, ownIp ?? undefined);
+    this.directoryPromotion = { ...promotion, invocationId: store.getInvocationId(), promotedAt: promotion.promotedAt ?? this.directoryDate().getTime() };
     this.directoryStore = store;
     this.provisionSysvol(domainName);
     this.registerDcServices();
-    if (opts.installDns !== false) this.roleManager.install('DNS');
+    if (promotion.installDns !== false) this.roleManager.install('DNS');
     this.provisionDomainDnsZone(domainName);
     this.logDirectoryServiceStartup();
     this.auditPolicy.seedDefaults('domain-controller');
-    /**
-     * Real DCPromo urgently replicates the new DC's own computer object
-     * back out (a critical-object push, distinct from the initial sync
-     * above) so the rest of the domain learns about it immediately rather
-     * than waiting for the source DC's next scheduled cycle. Best-effort:
-     * a source DC that doesn't support the push notification (unlikely —
-     * this simulator's DCs all do) just stays unaware until it next pulls.
-     */
-    notifySyncNow(this.getTcpStack(), sourceDcAddress);
     return { ok: true, message: '' };
   }
 

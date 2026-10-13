@@ -169,6 +169,12 @@ export class RadiusServerAgent {
 
   removeUser(username: string): void { this.config.users.delete(username); }
 
+  requireAuthorizedClient(on: boolean): void { this.config.requireAuthorizedClient = on; }
+
+  private clientRefused(senderIp: string): boolean {
+    return (this.config.requireAuthorizedClient === true || this.config.clients.size > 0) && !this.config.clients.has(senderIp);
+  }
+
   authorizeClient(clientIp: string): void { this.config.clients.add(clientIp); }
   revokeClient(clientIp: string): void { this.config.clients.delete(clientIp); }
 
@@ -216,6 +222,7 @@ export class RadiusServerAgent {
     }
 
     const senderIp = srcIp.toString();
+    if (this.clientRefused(senderIp)) return;
     const dedupKey = `acct:${senderIp}:${udp.sourcePort}:${payload.identifier}:${payload.authenticator}`;
     this.pruneAcctDedupCache();
     const cached = this.recentAcctReplies.get(dedupKey);
@@ -304,7 +311,7 @@ export class RadiusServerAgent {
       },
     });
 
-    if (this.config.clients.size > 0 && !this.config.clients.has(senderIp)) {
+    if (this.clientRefused(senderIp)) {
       this.publishRejected(senderIp, getAttr(payload, 'user-name')?.value as string ?? '', 'client-not-authorized');
       return;
     }

@@ -43,11 +43,27 @@ export class ReplicationSignalStore {
     });
   }
 
+  exportState(): ReplicationSignalState | null {
+    const log = this.log.get();
+    const stats = this.stats.get();
+    return log.length === 0 && JSON.stringify(stats) === JSON.stringify(EMPTY_STATS) ? null : { log: log.map((e) => ({ ...e })), stats: { ...stats } };
+  }
+
+  importState(state: ReplicationSignalState): void {
+    this.log.set(state.log.map((e) => ({ ...e })).slice(-LOG_CAPACITY));
+    this.stats.set({ ...state.stats });
+  }
+
   recordServed(entry: ReplicationLogEntry): void {
     this.log.set([...this.log.get(), entry].slice(-LOG_CAPACITY));
     const stats = this.stats.get();
     this.stats.set({ ...stats, served: stats.served + 1, changesServed: stats.changesServed + entry.applied });
   }
+}
+
+export interface ReplicationSignalState {
+  log: ReplicationLogEntry[];
+  stats: ReplicationStatsVM;
 }
 
 export interface ReplicationObservables {

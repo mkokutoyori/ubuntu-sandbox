@@ -38,7 +38,7 @@ import { IPAddress } from '@/network/core/types';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
 import type { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
-import { NpsSqlAccountingTable } from './NpsSqlAccounting';
+import { NpsSqlAccountingTable, type NpsAccountingRecordInput } from './NpsSqlAccounting';
 import type { ResultSet } from '@/database/engine/executor/ResultSet';
 
 export interface NpsOpResult { ok: boolean; message: string }
@@ -61,6 +61,14 @@ export interface ConnectionRequestPolicyConditions {
 export interface ConnectionRequestPolicyInfo {
   name: string;
   conditions: ConnectionRequestPolicyConditions;
+}
+
+export interface NpsState {
+  nasClients: NasClientInfo[];
+  sharedSecret: string;
+  networkPolicies: NetworkPolicyInfo[];
+  connectionRequestPolicies: ConnectionRequestPolicyInfo[];
+  sqlAccounting?: { enabled: boolean; records: NpsAccountingRecordInput[] };
 }
 
 export interface NpsUserStore {
@@ -106,6 +114,7 @@ export class WindowsNpsRole {
     };
     this.agent = new RadiusServerAgent(radiusHost, () => this.getHostBus());
     this.agent.setUserResolver((username, context) => this.resolveUser(username, context));
+    this.agent.requireAuthorizedClient(true);
   }
 
   isRunning(): boolean { return this.running; }
@@ -156,6 +165,34 @@ export class WindowsNpsRole {
     this.unsubscribeAccounting?.();
     this.unsubscribeAccounting = null;
     this.running = false;
+  }
+
+  exportState(): NpsState | null {
+    const state: NpsState = {
+      nasClients: this.listNasClients(),
+      sharedSecret: this.agent.getConfig().sharedSecret,
+      networkPolicies: this.listNetworkPolicies(),
+      connectionRequestPolicies: this.listConnectionRequestPolicies(),
+      ...(this.sqlAccounting ? { sqlAccounting: { enabled: this.sqlLoggingEnabled, records: this.sqlAccounting.records() } } : {}),
+    };
+    const configured = state.nasClients.length + state.networkPolicies.length + state.connectionRequestPolicies.length > 0;
+    return configured || state.sqlAccounting ? state : null;
+  }
+
+  restoreState(state: NpsState): void {
+    this.nasClients.clear();
+    for (const client of state.nasClients) {
+      this.nasClients.set(client.name, { ...client });
+      this.agent.authorizeClient(client.ipAddress);
+    }
+    this.agent.setSharedSecret(state.sharedSecret);
+    this.policies.splice(0, this.policies.length, ...state.networkPolicies.map((p) => ({ ...p })));
+    this.connectionRequestPolicies.splice(0, this.connectionRequestPolicies.length, ...state.connectionRequestPolicies.map((p) => ({ ...p, conditions: { ...p.conditions } })));
+    if (state.sqlAccounting) {
+      this.setSqlAccounting(true);
+      for (const record of state.sqlAccounting.records) this.sqlAccounting?.insert(record);
+      this.sqlLoggingEnabled = state.sqlAccounting.enabled;
+    }
   }
 
   // ─── SQL accounting (PRD-Windows-Server-Advanced.md §5 P22) ─────────

@@ -52,6 +52,7 @@ import type { TcpStream } from '../tcp/types';
 import {
   TelnetClientSession, type TelnetClientTransport,
 } from '../protocols/telnet/TelnetClientSession';
+import { DUAL_STACK } from '../tcp/TcpStack';
 import type { TcpSocket } from '../tcp/TcpStack';
 import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
@@ -189,7 +190,7 @@ import type { WinRmIdentity, WinRmCommandResult } from './windows/server/winrm/W
 // eslint-disable-next-line no-restricted-imports
 import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import type { EventLogEntry } from './windows/PSEventLogProvider';
-import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
+import { type DomainMembership, type DomainSession, type GroupPolicyClientState, type WindowsDomainState, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
 import { logonDomainUser, lookupDomainGroups } from './windows/domain/DomainLogonClient';
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
@@ -222,6 +223,7 @@ import { cmdSlmgr } from './windows/WinSlmgr';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl } from '@/network/http/curl/CurlEngine';
 import { linkNeighbourOf, type ScanHost } from '@/network/scan/nmap/NmapProbes';
@@ -271,7 +273,7 @@ import {
 import { runNetstat, type NetstatMachine } from './windows/WinNetstat';
 import { netstatStatistics } from './windows/WinNetstatStatistics';
 import { showRoutePrint } from './windows/WinRoute';
-import { snmpSnapshot } from './linux/ports/PortsFilesystem';
+import { snmpSnapshot } from '../layers/internet/SnmpSnapshot';
 
 /**
  * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
@@ -361,7 +363,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** `repadmin /options` (PRD-Repadmin.md P8) — this DC's NTDS Settings flags. `DISABLE_OUTBOUND_REPL`/`DISABLE_INBOUND_REPL` have a real causal effect on `ReplicationServerHandler`/`replicateFrom`; `IS_GC`/`DISABLE_SPN_REGISTRATION` are declarative storage only (§2.1 P8). */
   private readonly ntdsOptions = new Set<NtdsOption>();
   /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
-  private ldapStartTlsIdentity: ReturnType<typeof selfSignedLdapCert> | null = null;
+  private ldapStartTlsIdentity: { cert: X509Certificate; keyPair: { privateKey: PkiPrivateKey } } | null = null;
   /** Windows Update client redirection toward a WSUS server (PRD-Windows-Server-Advanced.md §5 P19) — unset by default (points at Windows Update directly, out of this simulator's scope); set via `Set-WUSettings -WUServer`. */
   readonly wsus: WindowsWsusClientConfig = new WindowsWsusClientConfig();
   /** Activation/licensing state (PRD-Windows-Server-Advanced.md §5 P21) — ships on every SKU; toggled via `slmgr /ipk`/`/ato`. */
@@ -804,9 +806,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       accept: () => (socket) => {
         this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
       },
+      families: DUAL_STACK,
     });
     this.servicePortProjection.declare({
-      ports: [445, 139],
+      ports: [445],
+      owner: { image: 'System' },
+      active: () => this.svcMgr.isStarted('LanmanServer'),
+      accept: () => (socket) => this.serveSmb(socket),
+      families: DUAL_STACK,
+    });
+    this.servicePortProjection.declare({
+      ports: [139],
       owner: { image: 'System' },
       active: () => this.svcMgr.isStarted('LanmanServer'),
       accept: () => (socket) => this.serveSmb(socket),
@@ -816,6 +826,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       owner: { image: 'System' },
       active: () => this.winrm.enabled,
       accept: () => (socket) => this.serveWinRm(socket),
+      families: DUAL_STACK,
     });
     for (const implicitTls of [false, true]) {
       this.servicePortProjection.declare({
@@ -836,6 +847,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       owner: { service: 'RpcSs' },
       active: () => this.svcMgr.isStarted('RpcSs'),
       accept: () => (socket) => this.serveReplication(socket),
+      families: DUAL_STACK,
     });
     this.servicePortProjection.declare({
       ports: [DFSR_PORT],
@@ -1061,6 +1073,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /** This host's own RDP TLS identity certificate (PRD-Windows-Server-Advanced.md §5 P17) — lazily created once; a real client would present its own trust decision UI for this cert, which a `dialRdp()` caller stands in for via an explicit `CertificateVerifier`. */
+  getTlsIdentities(): { rdp?: { cert: X509Certificate; privateKey: PkiPrivateKey }; ldap?: { cert: X509Certificate; privateKey: PkiPrivateKey } } {
+    return {
+      ...(this.rdpTlsIdentity ? { rdp: { cert: this.rdpTlsIdentity.cert, privateKey: this.rdpTlsIdentity.privateKey } } : {}),
+      ...(this.ldapStartTlsIdentity ? { ldap: { cert: this.ldapStartTlsIdentity.cert, privateKey: this.ldapStartTlsIdentity.keyPair.privateKey } } : {}),
+    };
+  }
+
+  restoreTlsIdentities(identities: { rdp?: { cert: X509Certificate; privateKey: PkiPrivateKey }; ldap?: { cert: X509Certificate; privateKey: PkiPrivateKey } }): void {
+    if (identities.rdp) this.rdpTlsIdentity = { cert: identities.rdp.cert, privateKey: identities.rdp.privateKey };
+    if (identities.ldap) this.ldapStartTlsIdentity = { cert: identities.ldap.cert, keyPair: { privateKey: identities.ldap.privateKey } };
+  }
+
   getRdpTlsCertificate(): X509Certificate {
     if (!this.rdpTlsIdentity) {
       this.rdpTlsIdentity = generateSelfSignedCertificate(`CN=${this.getHostname()}`, { now: this.simulatedDate().getTime() });
@@ -1126,6 +1150,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
             },
           },
     );
+  }
+
+  getNtdsOptions(): NtdsOption[] { return [...this.ntdsOptions]; }
+
+  restoreNtdsOptions(options: readonly NtdsOption[]): void {
+    this.ntdsOptions.clear();
+    for (const option of options) this.ntdsOptions.add(option);
   }
 
   /** PRD-Windows-Server-Advanced.md §5 P6 — every past `replicateFrom` cycle, annotated intra-/inter-site. */
@@ -1442,6 +1473,43 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private firstConfiguredDnsServerAddress(): IPAddress | null {
     const first = this.firstConfiguredDnsServer();
     return first ? IPAddress.tryParse(first) : null;
+  }
+
+  captureDomainState(): WindowsDomainState | null {
+    const groupPolicy: GroupPolicyClientState = {
+      appliedComputer: [...this.gpoAppliedNames],
+      appliedUser: [...this.gpoAppliedUserNames],
+      managedValues: [...this.gpoPolicyValues].map(([identity, { key, valueName }]) => ({ identity, key, valueName })),
+      lastAppliedAt: this.gpoLastAppliedAt ? this.gpoLastAppliedAt.toISOString() : null,
+      logonBanner: this.gpoLogonBanner ? { ...this.gpoLogonBanner } : null,
+      startupScript: this.gpoStartupScript,
+      signature: this.gpoLastSignature,
+      refreshCycle: this.gpoRefreshCycle,
+    };
+    const applied = groupPolicy.lastAppliedAt !== null || groupPolicy.logonBanner !== null || groupPolicy.startupScript !== null
+      || groupPolicy.appliedComputer.length + groupPolicy.appliedUser.length + groupPolicy.managedValues.length > 0;
+    const state: WindowsDomainState = {
+      ...(this.domainMembership ? { membership: { ...this.domainMembership } } : {}),
+      ...(this.installedServiceAccounts.size > 0 ? { serviceAccounts: [...this.installedServiceAccounts] } : {}),
+      ...(applied ? { groupPolicy } : {}),
+    };
+    return Object.keys(state).length > 0 ? state : null;
+  }
+
+  restoreDomainState(state: WindowsDomainState): void {
+    if (state.membership) this.domainMembership = { ...state.membership };
+    for (const sam of state.serviceAccounts ?? []) this.installedServiceAccounts.add(sam);
+    const gp = state.groupPolicy;
+    if (!gp) return;
+    this.gpoAppliedNames = [...gp.appliedComputer];
+    this.gpoAppliedUserNames = [...gp.appliedUser];
+    this.gpoPolicyValues.clear();
+    for (const { identity, key, valueName } of gp.managedValues) this.gpoPolicyValues.set(identity, { key, valueName });
+    this.gpoLastAppliedAt = gp.lastAppliedAt ? new Date(gp.lastAppliedAt) : null;
+    this.gpoLogonBanner = gp.logonBanner ? { ...gp.logonBanner } : null;
+    this.gpoStartupScript = gp.startupScript;
+    this.gpoLastSignature = gp.signature;
+    this.gpoRefreshCycle = gp.refreshCycle;
   }
 
   markServiceAccountInstalled(sam: string): void { this.installedServiceAccounts.add(sam.toLowerCase()); }

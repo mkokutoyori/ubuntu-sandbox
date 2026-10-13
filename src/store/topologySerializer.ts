@@ -57,9 +57,15 @@ import {
 } from '@/network/devices/windows/netFirewallRule';
 import { buildConnection, type Connection } from './networkStore';
 import { withFactoryTwin } from './factoryTwin';
-import { diffDirectory, type ForestPromotion } from '@/network/devices/windows/server/ad/DirectoryDelta';
-import type { DirectoryDelta } from '@/network/devices/windows/server/ad/DirectoryStore';
-import { resetForestRegistry, withIsolatedForestRegistry } from '@/network/devices/windows/server/ad/forest/Forest';
+import { diffDirectory, promotionKind, type DirectoryPromotion } from '@/network/devices/windows/server/ad/DirectoryDelta';
+import type { DirectoryDelta, DirectorySnapshot } from '@/network/devices/windows/server/ad/DirectoryStore';
+import { resetForestRegistry, withIsolatedForestRegistry, type ForestFsmoRoles } from '@/network/devices/windows/server/ad/forest/Forest';
+import { captureWindowsCertificates, restoreWindowsCertificates, type WindowsCertificateState } from './windowsCertificates';
+import { captureWindowsSecurityPolicy, restoreWindowsSecurityPolicy, type WindowsSecurityPolicyState } from './windowsSecurityPolicy';
+import type { WindowsDomainState } from '@/network/devices/windows/domain/DomainTypes';
+import type { NtdsOption } from '@/network/devices/windows/WinRepadmin';
+import type { ReplicationSignalState } from '@/network/devices/windows/server/ad/replication/observables';
+import { registerStandInForest } from '@/network/devices/windows/server/ad/forest/StandInForest';
 import {
   captureWindowsServerRoles, restoreWindowsServerRoles, type WindowsServerRolesState,
 } from './windowsServerRoles';
@@ -291,10 +297,17 @@ interface TopologyDeviceExport {
     groups: WindowsGroup[];
     removedUsers?: string[];
     removedGroups?: string[];
+    passwords?: Record<string, string>;
   };
   removedPaths?: string[];
   windowsFeatures?: { installed: string[]; removed?: string[] };
-  activeDirectory?: { promotion: ForestPromotion; delta?: DirectoryDelta };
+  windowsCertificates?: WindowsCertificateState;
+  windowsDomain?: WindowsDomainState;
+  windowsSecurity?: WindowsSecurityPolicyState;
+  activeDirectory?: {
+    promotion: DirectoryPromotion; delta?: DirectoryDelta; baselineDeviceId?: string; forestFsmo?: ForestFsmoRoles;
+    ntdsOptions?: NtdsOption[]; replication?: ReplicationSignalState;
+  };
   windowsRoles?: WindowsServerRolesState;
   /**
    * The machine's registry, as a diff against a pristine hive of the same
@@ -939,9 +952,9 @@ function sameText(a: string | null | undefined, b: string | null | undefined): b
   return provisioned(a) === provisioned(b);
 }
 
-function userSignature(user: WindowsUser): string {
+function userSignature(user: WindowsUser, password: string | null): string {
   const { passwordLastSet: _passwordLastSet, lastLogon: _lastLogon, ...rest } = user;
-  return JSON.stringify(rest);
+  return JSON.stringify({ ...rest, secret: password });
 }
 
 function groupSignature(group: WindowsGroup): string {
@@ -953,9 +966,9 @@ function captureWindowsAccounts(
 ): TopologyDeviceExport['windowsAccounts'] | undefined {
   const mgr = device.getUserManager();
   const factory = twin.getUserManager();
-  const factoryUsers = new Map(factory.getAllUsers().map((u) => [u.name.toLowerCase(), userSignature(u)]));
+  const factoryUsers = new Map(factory.getAllUsers().map((u) => [u.name.toLowerCase(), userSignature(u, factory.getPlaintextPassword(u.name))]));
   const factoryGroups = new Map(factory.getAllGroups().map((g) => [g.name.toLowerCase(), groupSignature(g)]));
-  const users = mgr.getAllUsers().filter((u) => factoryUsers.get(u.name.toLowerCase()) !== userSignature(u));
+  const users = mgr.getAllUsers().filter((u) => factoryUsers.get(u.name.toLowerCase()) !== userSignature(u, mgr.getPlaintextPassword(u.name)));
   const groups = mgr.getAllGroups().filter((g) => factoryGroups.get(g.name.toLowerCase()) !== groupSignature(g));
   const liveUsers = new Set(mgr.getAllUsers().map((u) => u.name.toLowerCase()));
   const liveGroups = new Set(mgr.getAllGroups().map((g) => g.name.toLowerCase()));
@@ -963,6 +976,11 @@ function captureWindowsAccounts(
   const removedGroups = factory.getAllGroups().map((g) => g.name).filter((n) => !liveGroups.has(n.toLowerCase()));
   if (users.length + groups.length + removedUsers.length + removedGroups.length === 0) return undefined;
   const out: NonNullable<TopologyDeviceExport['windowsAccounts']> = { users, groups };
+  const passwords = Object.fromEntries(users.flatMap((u) => {
+    const secret = mgr.getPlaintextPassword(u.name);
+    return secret === null ? [] : [[u.name, secret]];
+  }));
+  if (Object.keys(passwords).length > 0) out.passwords = passwords;
   if (removedUsers.length > 0) out.removedUsers = removedUsers;
   if (removedGroups.length > 0) out.removedGroups = removedGroups;
   return out;
@@ -975,6 +993,7 @@ function restoreWindowsAccounts(
     reviveWindowsUsers(saved.users),
     saved.groups,
     { users: saved.removedUsers, groups: saved.removedGroups },
+    saved.passwords,
   );
 }
 
@@ -997,28 +1016,113 @@ function restoreWindowsFeatures(device: WindowsServer, saved: NonNullable<Topolo
   for (const name of saved.installed) roles.install(name, {}, true);
 }
 
-function captureActiveDirectory(device: WindowsServer, twin: WindowsServer): TopologyDeviceExport['activeDirectory'] | undefined {
-  const promotion = device.getForestPromotion();
-  const store = device.getDirectoryStore();
-  if (!promotion || !store) return undefined;
-  const factory = withIsolatedForestRegistry(() => {
-    twin.replayForestPromotion(promotion);
-    return twin.getDirectoryStore()?.exportSnapshot() ?? null;
-  });
-  const delta = factory ? diffDirectory(store.exportSnapshot(), factory) : null;
-  return delta ? { promotion, delta } : { promotion };
+function directoryBaselineOf(device: WindowsServer, peers: Map<string, Equipment>): { deviceId: string; snapshot: DirectorySnapshot } | null {
+  const domain = device.getDirectoryStore()?.dnsName.toLowerCase();
+  for (const peer of peers.values()) {
+    if (peer === device || !(peer instanceof WindowsServer)) continue;
+    const store = peer.getDirectoryStore();
+    const promotion = peer.getDirectoryPromotion();
+    if (!store || !promotion || promotionKind(promotion) === 'replica') continue;
+    if (store.dnsName.toLowerCase() === domain) return { deviceId: peer.getId(), snapshot: store.exportSnapshot() };
+  }
+  return null;
 }
 
-function restoreActiveDirectory(device: WindowsServer, saved: NonNullable<TopologyDeviceExport['activeDirectory']>): void {
-  const result = device.replayForestPromotion(saved.promotion);
+function withMirroredAddresses<T>(device: WindowsServer, twin: WindowsServer, run: () => T): T {
+  const mirrored = device.getPorts().flatMap((port) => {
+    const address = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    const counterpart = twin.getPort(port.getName());
+    if (!address || !mask || !counterpart) return [];
+    counterpart.configureIP(address, mask);
+    return [counterpart];
+  });
+  try {
+    return run();
+  } finally {
+    for (const port of mirrored) port.clearIP();
+  }
+}
+
+function captureForestFsmo(device: WindowsServer): ForestFsmoRoles | undefined {
+  const roles = device.getForest()?.getFsmoRoles();
+  const founder = device.getHostname();
+  if (!roles || (roles.schemaMaster === founder && roles.domainNamingMaster === founder)) return undefined;
+  return { ...roles };
+}
+
+function captureActiveDirectory(device: WindowsServer, twin: WindowsServer, peers: Map<string, Equipment>): TopologyDeviceExport['activeDirectory'] | undefined {
+  const promotion = device.getDirectoryPromotion();
+  const store = device.getDirectoryStore();
+  if (!promotion || !store) return undefined;
+  const kind = promotionKind(promotion);
+  const baseline = kind === 'replica' ? directoryBaselineOf(device, peers) : null;
+  const sourceForest = kind === 'childDomain' ? device.getForest() : null;
+  const factory = withMirroredAddresses(device, twin, () => withIsolatedForestRegistry(() => {
+    if (sourceForest) {
+      resetForestRegistry();
+      registerStandInForest(sourceForest, store.dnsName);
+    }
+    twin.replayDirectoryPromotion(promotion, baseline?.snapshot);
+    return twin.getDirectoryStore()?.exportSnapshot() ?? null;
+  }));
+  const delta = factory ? diffDirectory(store.exportSnapshot(), factory, kind === 'forest') : null;
+  const forestFsmo = kind === 'forest' ? captureForestFsmo(device) : undefined;
+  const factoryOptions = new Set(twin.getNtdsOptions());
+  const ntdsOptions = device.getNtdsOptions().filter((option) => !factoryOptions.has(option));
+  const replication = device.getReplicationSignals().exportState();
+  return {
+    promotion,
+    ...(ntdsOptions.length > 0 ? { ntdsOptions } : {}),
+    ...(replication ? { replication } : {}),
+    ...(delta ? { delta } : {}),
+    ...(baseline ? { baselineDeviceId: baseline.deviceId } : {}),
+    ...(forestFsmo ? { forestFsmo } : {}),
+  };
+}
+
+function restoreActiveDirectory(
+  device: WindowsServer, saved: NonNullable<TopologyDeviceExport['activeDirectory']>, restored: Map<string, Equipment>,
+): void {
+  const baselineDevice = saved.baselineDeviceId ? restored.get(saved.baselineDeviceId) : undefined;
+  const baseline = baselineDevice instanceof WindowsServer ? baselineDevice.getDirectoryStore()?.exportSnapshot() : undefined;
+  const result = device.replayDirectoryPromotion(saved.promotion, baseline);
   if (!result.ok) {
     Logger.warn('ad', 'persistence.restore-failed', result.message);
     return;
   }
   if (saved.delta) device.getDirectoryStore()?.importSnapshot(saved.delta);
+  if (saved.ntdsOptions) device.restoreNtdsOptions([...device.getNtdsOptions(), ...saved.ntdsOptions]);
+  if (saved.replication) device.getReplicationSignals().importState(saved.replication);
+  const forest = device.getForest();
+  if (forest && saved.forestFsmo) {
+    forest.transferFsmoRole('schemaMaster', saved.forestFsmo.schemaMaster);
+    forest.transferFsmoRole('domainNamingMaster', saved.forestFsmo.domainNamingMaster);
+  }
 }
 
-function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport {
+function directoryRestoreOrder(devices: TopologyDeviceExport[]): TopologyDeviceExport[] {
+  const byId = new Map(devices.map((d) => [d.id, d]));
+  const domainOwner = new Map<string, TopologyDeviceExport>();
+  for (const d of devices) {
+    const promotion = d.activeDirectory?.promotion;
+    if (promotion && promotionKind(promotion) !== 'replica') domainOwner.set(promotion.domainName.toLowerCase(), d);
+  }
+  const rank = (d: TopologyDeviceExport, visiting: Set<string>): number => {
+    const saved = d.activeDirectory;
+    if (!saved || visiting.has(d.id)) return 0;
+    const promotion = saved.promotion;
+    const kind = promotionKind(promotion);
+    const dependency = kind === 'childDomain'
+      ? domainOwner.get((promotion as { parentDomainName: string }).parentDomainName.toLowerCase())
+      : kind === 'replica' && saved.baselineDeviceId ? byId.get(saved.baselineDeviceId) : undefined;
+    return dependency ? 1 + rank(dependency, new Set(visiting).add(d.id)) : 0;
+  };
+  const ranks = new Map(devices.map((d) => [d.id, rank(d, new Set())]));
+  return [...devices].sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!);
+}
+
+function captureDevice(device: Equipment, twin: Equipment, peers: Map<string, Equipment>): TopologyDeviceExport {
   const pos = device.getPosition();
   const entry: TopologyDeviceExport = {
     id: device.getId(),
@@ -1073,7 +1177,7 @@ function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport
         entry.windowsFeatures = features;
         restoreWindowsFeatures(twin, features);
       }
-      const directory = captureActiveDirectory(device, twin);
+      const directory = captureActiveDirectory(device, twin, peers);
       if (directory) entry.activeDirectory = directory;
       const roles = captureWindowsServerRoles(device, twin);
       if (roles) entry.windowsRoles = roles;
@@ -1084,6 +1188,12 @@ function captureDevice(device: Equipment, twin: Equipment): TopologyDeviceExport
     if (removed.length > 0) entry.removedPaths = removed;
     const accounts = captureWindowsAccounts(device, twin);
     if (accounts) entry.windowsAccounts = accounts;
+    const certificates = captureWindowsCertificates(device, twin);
+    if (certificates) entry.windowsCertificates = certificates;
+    const security = captureWindowsSecurityPolicy(device, twin);
+    if (security) entry.windowsSecurity = security;
+    const domain = device.captureDomainState();
+    if (domain) entry.windowsDomain = domain;
     const registry = captureRegistry(device, twin);
     if (registry) entry.registry = registry;
     const teams = captureWindowsTeams(device);
@@ -1125,7 +1235,7 @@ export function exportTopology(
   const devices: TopologyDeviceExport[] = [];
 
   deviceInstances.forEach((device) => {
-    devices.push(withFactoryTwin(device, (twin) => captureDevice(device, twin)));
+    devices.push(withFactoryTwin(device, (twin) => captureDevice(device, twin, deviceInstances)));
   });
 
   const conns: TopologyConnectionExport[] = connections.map((c) => {
@@ -1355,7 +1465,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     }
   }
 
-  for (const devData of json.devices) {
+  for (const devData of directoryRestoreOrder(json.devices)) {
     const device = idMap.get(devData.id);
     if (!device) continue;
 
@@ -1448,11 +1558,14 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {
       if (devData.windowsFeatures && device instanceof WindowsServer) restoreWindowsFeatures(device, devData.windowsFeatures);
-      if (devData.activeDirectory && device instanceof WindowsServer) restoreActiveDirectory(device, devData.activeDirectory);
+      if (devData.activeDirectory && device instanceof WindowsServer) restoreActiveDirectory(device, devData.activeDirectory, idMap);
       if (devData.files || devData.removedPaths) {
         restoreWindowsFiles(device, devData.files ?? [], devData.removedPaths ?? []);
       }
       if (devData.windowsAccounts) restoreWindowsAccounts(device, devData.windowsAccounts);
+      if (devData.windowsSecurity) restoreWindowsSecurityPolicy(device, devData.windowsSecurity);
+      if (devData.windowsDomain) device.restoreDomainState(devData.windowsDomain);
+      if (devData.windowsCertificates) restoreWindowsCertificates(device, devData.windowsCertificates);
       if (devData.windowsRoles && device instanceof WindowsServer) restoreWindowsServerRoles(device, devData.windowsRoles);
       // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\
       // Services\<name>` is a projection of the service table, written by

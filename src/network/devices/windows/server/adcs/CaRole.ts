@@ -37,6 +37,13 @@ export interface CertificateRequestResult extends AdcsOpResult {
   readonly privateKey?: PkiPrivateKey;
 }
 
+export interface AdcsState {
+  caCommonName: string;
+  caCertificate: X509Certificate;
+  caPrivateKey: PkiPrivateKey;
+  issued: IssuedCertificate[];
+}
+
 export class WindowsAdcsRole {
   private ca: CertificateAuthority | null = null;
   private caCommonName: string | null = null;
@@ -60,6 +67,21 @@ export class WindowsAdcsRole {
     this.caCommonName = caCommonName;
     this.ca = CertificateAuthority.generate(`CN=${caCommonName}`, { now: this.now() });
     return { ok: true, message: `Active Directory Certificate Services\n\nThe installation of Active Directory Certificate Services completed successfully.\nCA name: ${caCommonName}` };
+  }
+
+  exportState(): AdcsState | null {
+    if (!this.ca || this.caCommonName === null) return null;
+    return {
+      caCommonName: this.caCommonName, caCertificate: this.ca.rootCertificate, caPrivateKey: this.ca.signingKey,
+      issued: [...this.issued.values()],
+    };
+  }
+
+  restoreState(state: AdcsState): void {
+    this.caCommonName = state.caCommonName;
+    this.ca = CertificateAuthority.fromKeyPair(state.caCertificate, state.caPrivateKey);
+    this.issued.clear();
+    for (const entry of state.issued) this.issued.set(entry.cert.serialNumber, entry);
   }
 
   getCaCommonName(): string | null { return this.caCommonName; }

@@ -32,6 +32,10 @@ export function advanceOver(text: string, index: number, column: number, tabsize
   return { length, width: glyphWidth(code) };
 }
 
+export function isBlankChar(ch: string | undefined): boolean {
+  return ch !== undefined && /^[ \t\u1680\u2000-\u2006\u2008-\u200a\u202f\u205f\u3000]$/.test(ch);
+}
+
 export function wideness(text: string, count: number, tabsize: number): number {
   let width = 0;
   let index = 0;

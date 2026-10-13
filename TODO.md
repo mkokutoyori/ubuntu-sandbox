@@ -210,18 +210,36 @@ parametres, tables (Data Pump) et vues, sequences, index, synonymes, triggers, p
 ne voyagent pas les vues materialisees, liens de base, repertoires, types objet, taches DBMS_SCHEDULER,
 commentaires, politiques d'audit, VPD/RLS, TDE, Data Vault, partitions de tables (Data Pump ne les porte pas),
 ni les donnees d'une table temporaire. (3) Windows Server : seuls les roles installes, les zones DNS et les
-etendues DHCP IPv4 voyagent, ainsi que l'annuaire d'un controleur de domaine racine de foret (la promotion est
-rejouee, puis le delta de l'annuaire contre un jumeau promu : objets, mots de passe, GPO, schema, ACL, sites,
-fonctionnalites optionnelles) ; ne voyagent pas les domaines enfants, les controleurs supplementaires, les
-approbations, les machines jointes au domaine, ni le journal de replication ; IIS (sites, pools), ADCS, NPS, DFS,
-WSUS, impression, cluster, Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
+etendues DHCP IPv4 voyagent, ainsi que l'annuaire de chaque controleur de domaine (racine de foret, domaine
+enfant, controleur supplementaire : la promotion est rejouee en local, puis le delta de l'annuaire contre un
+jumeau promu ou, pour un controleur supplementaire, contre l'annuaire vivant de son controleur principal ; objets,
+mots de passe, GPO, schema, ACL, sites, fonctionnalites optionnelles, proprietaires FSMO de foret ; les approbations sont des
+entrees des deux annuaires) ; voyagent aussi les postes joints (appartenance, comptes de service, etat client de la
+strategie de groupe) et la politique locale de comptes et d'audit ; ne voyagent pas la session de logon de domaine
+ni le cache de tickets Kerberos (transitoires) ; voyage l'etat de replication (identite d'invocation, vecteur de
+hauts niveaux, options NTDS, journal et compteurs) ainsi que le niveau fonctionnel de domaine (attribut
+msDS-Behavior-Version de la racine du domaine, replique) ; voyagent aussi IIS (sites, pools d'applications,
+liaisons HTTPS) et les certificats d'une machine Windows (magasin personnel avec cle privee, ancres de confiance,
+identites TLS RDP et LDAP, en PEM via les codecs de pki/pem.ts) ; l'autorite ADCS d'entreprise et ce qu'elle a emis (PEM, adoptee par
+CertificateAuthority.fromKeyPair) ; la revocation n'est pas ecrite, le role n'en expose aucune ; NPS (clients RADIUS et secret partage, strategies
+reseau et de demande de connexion, comptabilite SQL avec ses enregistrements) et les mots de passe des comptes
+locaux ; WSUS, impression,
+cluster, Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
 **Pourquoi ce n'est pas ferme** : (1) le texte de configuration est rejoue par la CLI dans l'ordre ; un extrait par
 difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations) : il faut un diff
 par bloc de mode. (2) Chaque famille d'objets Oracle demande une section dans `OracleStateDelta.ts` (une entree,
 un enumerateur sur le catalogue et sa restitution). (3) Chaque role Windows demande un `RolePersister`
-(`src/store/windowsServerRoles.ts`) ; pour AD, les foret a plusieurs domaines ou controleurs demandent de nommer
-chaque controleur par sa promotion (`Install-ADDSDomain`, `Install-ADDSDomainController`) et de rejouer dans l'ordre
-des dependances, la replication entre eux restant a reconstituer sur le fil.
+(`src/store/windowsServerRoles.ts`).
+
+### [persistance] PkiCaRegistry : un singleton de processus que ni la sauvegarde ni l'import ne touchent
+**Mesure** : lecture du code, effet non mesure. `getOrCreateCA(cle)` (trustpoints Cisco, DNS sur TLS, EAP-TLS) range
+les autorites par cle dans une table de module : une reouverture dans un meme processus reutilise l'autorite
+precedente, un chargement de page neuf en fabrique une autre avec une autre cle, sans que les certificats deja
+emis a des routeurs (enrolement) cessent d'exister dans leur configuration. Un routeur qui s'enrole de nouveau
+aupres de « la meme » AC obtiendrait un certificat d'un emetteur different de celui de ses voisins.
+**Pourquoi ce n'est pas ferme** : il faut d'abord mesurer ce que la configuration d'un routeur ecrit de son
+enrolement, puis decider si l'autorite se sauvegarde avec le premier appareil qui l'a creee (comme l'ADCS) ou
+dans une section de topologie propre ; le choix change le format du fichier.
 
 ### [oracle] fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse, FORCE sans effet, synonymes hors DML
 **Mesure** : `SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et

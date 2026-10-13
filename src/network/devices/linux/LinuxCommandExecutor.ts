@@ -121,7 +121,7 @@ import {
 } from './nfs/NfsCommands';
 import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
-import { cmdWget, renderNetstatInterfaces, renderNetstatRoutes, renderNetstatStatistics } from './LinuxNetCommands';
+import { cmdWget, renderNetstatInterfaces, renderNetstatRoutes } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -245,6 +245,7 @@ import type { GetentResult } from './nss/GetentCommand';
 import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
+import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -2759,10 +2760,8 @@ export class LinuxCommandExecutor {
     return destroyKernelSocket(row, this.tcpStackOfHost(), this.userMgr.currentUid === 0);
   }
 
-  netstatTable(kind: 'routes' | 'interfaces' | 'statistics'): string {
-    if (kind === 'routes') return renderNetstatRoutes(this.ipNetworkCtx);
-    if (kind === 'interfaces') return renderNetstatInterfaces(this.ipNetworkCtx);
-    return renderNetstatStatistics(this.protocolCounters(), this.kernelIpFacts());
+  netstatTable(kind: 'routes' | 'interfaces'): string {
+    return kind === 'routes' ? renderNetstatRoutes(this.ipNetworkCtx) : renderNetstatInterfaces(this.ipNetworkCtx);
   }
 
   private windowSize: WindowSize = DEFAULT_WINDOW_SIZE;
@@ -5959,36 +5958,18 @@ export class LinuxCommandExecutor {
       case 'nano':
       case 'vi':
       case 'vim': {
-        // `--version`/`-V` and `--help`/`-h` print and exit — they never
-        // touch the filesystem, so check them before the "create file if
-        // missing" behaviour below.
-        if (cmd === 'nano' && (args.includes('--version') || args.includes('-V'))) {
-          return {
-            output:
-              ' GNU nano, version 6.2\n' +
-              ' (C) 1999-2021 the Nano development team and Chris Allegretta\n' +
-              ' Compiled options: --enable-utf8',
-            exitCode: 0,
-          };
-        }
-        if (cmd === 'nano' && (args.includes('--help') || args.includes('-h'))) {
-          return {
-            output:
-              'Usage:  nano [OPTIONS] [[+LINE[,COLUMN]] FILE]...\n\n' +
-              'Option           Long option          Meaning\n' +
-              '-h, -?           --help               Show this help text and exit\n' +
-              '-c               --constantshow       Constantly show the cursor position\n' +
-              '-l               --linenumbers        Show line numbers in front of the text\n' +
-              '-v               --view               View mode (read-only)\n' +
-              '-V               --version            Show version information and exit\n\n' +
-              '  +LINE[,COLUMN]  Start at line LINE, column COLUMN (default column 1)',
-            exitCode: 0,
-          };
+        let target: string | undefined;
+        if (cmd === 'nano') {
+          const invocation = parseNanoCommandLine(args, cmd);
+          if (invocation.kind === 'print') return { output: invocation.stdout, exitCode: 0 };
+          if (invocation.kind === 'fail') return { output: [invocation.stderr, invocation.stdout].filter((part) => part !== '').join('\n'), exitCode: 1 };
+          target = invocation.files[0]?.path;
+        } else {
+          target = args.find((a) => !a.startsWith('-'));
         }
         // `nano file` opens (or creates) the file in the editor. In batch
         // mode we honour the "create if missing" behaviour so that
         // subsequent SSH commands can write to it.
-        const target = args.find((a) => !a.startsWith('-'));
         if (target) {
           const abs = this.vfs.normalizePath(target, this.cwd);
           if (!this.vfs.exists(abs)) {

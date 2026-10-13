@@ -240,9 +240,8 @@ describe('Scénario — ^J Justify reformate le paragraphe courant', () => {
     const fs = new InMemoryEditorFsContext({ '/tmp/x.txt': content });
     const nano = new NanoEngine(fs, '/tmp/x.txt', content, false);
     ctrl(nano, 'j');
-    for (const line of nano.lines) expect(line.length).toBeLessThanOrEqual(72);
-    // Every original word survives the reflow, in order.
-    expect(nano.lines.join(' ')).toBe(words.join(' '));
+    for (const line of nano.lines) expect(line.trimEnd().length).toBeLessThanOrEqual(72);
+    expect(nano.lines.map((line) => line.trimEnd()).join(' ')).toBe(words.join(' '));
   });
 
   it('ne touche pas aux paragraphes voisins séparés par une ligne vide', () => {

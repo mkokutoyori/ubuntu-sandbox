@@ -1,10 +1,18 @@
 import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
-import { NanoWindow, type ViewportManner } from './nano/NanoWindow';
+import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
+import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
+import type { MinibarInfo } from './nano/NanoScreen';
 import { buildNanoScreen } from './nano/NanoScreen';
-import { actualX, breadth, displayString, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
+import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
+import {
+  DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
+  paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
+} from './nano/NanoJustify';
 import type { NanoMenuName } from './nano/NanoMenus';
+import type { NanoSearchRequest, NanoStart } from './nano/NanoCommandLine';
+import { defaultNanoSettings, type NanoSettings } from './nano/NanoSettings';
 import type { EditorScreen } from './screen/EditorScreen';
 
 export type NanoMode =
@@ -12,15 +20,21 @@ export type NanoMode =
   | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line'
   | 'help' | 'execute-prompt' | 'read-file-prompt';
 
-/** Column width `^J` (Justify) wraps a paragraph to. */
-const JUSTIFY_WIDTH = 72;
+const DEFAULT_FILL = -8;
 
-const TABSIZE = 8;
+const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 'tabstospaces' | 'autoindent' | 'smarthome' | 'cutfromcursor'; readonly epithet: string }>> = {
+  l: { flag: 'breaklonglines', epithet: 'Hard wrapping of overlong lines' },
+  o: { flag: 'tabstospaces', epithet: 'Conversion of typed tabs to spaces' },
+  i: { flag: 'autoindent', epithet: 'Auto indent' },
+  h: { flag: 'smarthome', epithet: 'Smart home key' },
+  k: { flag: 'cutfromcursor', epithet: 'Cut to end' },
+};
+
 const STATUS_LINGER_KEYS = 20;
 
 export interface NanoLaunchOptions {
-  readonly softwrap?: boolean;
-  readonly constantShow?: boolean;
+  readonly settings?: NanoSettings;
+  readonly start?: NanoStart | null;
   readonly displayName?: string;
 }
 
@@ -35,9 +49,20 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Ctrl+Left/Right word-jump boundary: any non-whitespace character. */
-function isWordChar(ch: string | undefined): boolean {
-  return ch !== undefined && /[\p{L}\p{N}]/u.test(ch);
+function isWordChar(ch: string | undefined, punctuationAsLetters: boolean, wordChars: string | null): boolean {
+  if (ch === undefined || ch === '') return false;
+  if (/[\p{L}\p{N}]/u.test(ch)) return true;
+  if (punctuationAsLetters && /[\p{P}\p{S}]/u.test(ch)) return true;
+  return wordChars !== null && wordChars !== '' && wordChars.includes(ch);
+}
+
+function whiteLength(text: string, tabsize: number): number {
+  let count = 0;
+  while (true) {
+    if (text[count] === '\t') return count + 1;
+    if (text[count] !== ' ') return count;
+    if (++count === tabsize) return tabsize;
+  }
 }
 
 /** Search `line` for the next match of `regex` at or after column `fromCol`. */
@@ -64,19 +89,26 @@ export class NanoEngine {
   private statusText = '';
   private statusCountdown = 0;
   private statusAlert = false;
+  private statusMore = false;
   private messageThisKey = false;
   private get _statusMessage(): string { return this.statusText; }
   private set _statusMessage(value: string) {
     this.statusText = value;
     this.statusCountdown = value === '' ? 0 : STATUS_LINGER_KEYS;
-    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty/.test(value);
+    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty|^\[ (Invalid|Empty search string|Too tiny|Not possible)/.test(value);
+    this.statusMore = false;
     if (value !== '') this.messageThisKey = true;
   }
   private readonly window: NanoWindow;
   private manner: ViewportManner = 'centering';
   private sized = false;
-  private softwrapOn: boolean;
-  private readonly constantShow: boolean;
+  private startPlacement: 'hugfloor' | 'centering' | null = null;
+  private reportSizePending = false;
+  private tally: number | null = null;
+  private marginPending = false;
+  readonly settings: NanoSettings;
+  private readonly live: { -readonly [K in keyof NanoSettings]: NanoSettings[K] };
+  private readonly _readOnly: boolean;
   private readonly titleName: string;
   private _exited = false;
   private _savedOnExit = false;
@@ -105,14 +137,15 @@ export class NanoEngine {
   private replaceWithBuffer = '';
   private replaceState: {
     regex: RegExp; replacement: string; currentLine: number; currentCol: number; totalReplaced: number;
-    originLine: number; originCol: number; wrapped: boolean;
+    originLine: number; originCol: number; wrapped: boolean; originEdittop: number; originFirstcolumn: number;
   } | null = null;
   private _pendingReplaceMatch: PendingReplaceMatch | null = null;
-  private cutBuffer: { kind: 'lines'; lines: string[] } | { kind: 'chars'; text: string } | null = null;
-  private lastActionWasCut = false;
+  private cutBuffer: string[] | null = null;
+  private cutAction: 'cut' | 'copy' | null = null;
   /** Set by ^6/M-A (Set Mark); the region runs from here to the cursor. */
   private markLine: number | null = null;
   private markCol: number | null = null;
+  private spillageLine: number | null = null;
   private readonly lockPath: string;
 
   // Undo/redo (Alt+U / Alt+E — real nano's M-U/M-E), multi-level, with
@@ -128,25 +161,36 @@ export class NanoEngine {
     public readonly filePath: string,
     initialContent: string,
     isNewFile: boolean,
-    private readonly _readOnly = false,
-    /** `nano +LINE[,COLUMN] file` — both 1-indexed, clamped to the buffer. */
+    readOnly = false,
     initialCursor?: { line: number; col?: number },
-    /** `nano -l` / `--linenumbers`. */
-    private _showLineNumbers = false,
+    showLineNumbers = false,
     launch: NanoLaunchOptions = {},
   ) {
-    this.softwrapOn = launch.softwrap === true;
-    this.constantShow = launch.constantShow === true;
+    this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
+    this.live = { ...this.settings, view: this.settings.view && filePath !== '' };
+    this._readOnly = this.live.view;
     this.titleName = launch.displayName ?? filePath;
     this.window = new NanoWindow(
       { lineCount: () => this.linesArr.length, lineAt: (index) => this.linesArr[index] ?? '' },
-      () => ({ softwrap: this.softwrapOn, tabsize: TABSIZE, lineNumbers: this._showLineNumbers }),
+      () => ({
+        softwrap: this.live.softwrap,
+        tabsize: this.live.tabsize,
+        lineNumbers: this.live.linenumbers && !this.marginPending,
+        zero: this.live.zero,
+        minibar: this.live.minibar,
+        emptyline: this.live.emptyline,
+        nohelp: this.live.nohelp,
+        jumpyscrolling: this.live.jumpyscrolling,
+        atblanks: this.live.atblanks,
+      }),
     );
     this.linesArr = initialContent.length === 0 ? [''] : initialContent.split('\n');
     this.ensureTrailingBlankLine();
-    this._statusMessage = isNewFile
-        ? '[ New File ]'
-        : `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
+    if (filePath === '') {
+      if (!this.live.nohelp) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
+    } else if (isNewFile) this._statusMessage = '[ New File ]';
+    else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
+    this.reportSizePending = true;
     this.saveFileNameBuffer = this.titleName;
     // GNU nano creates a `.<file>.swp` lock file for the duration of the
     // editing session to prevent two nano instances from editing the same
@@ -156,8 +200,9 @@ export class NanoEngine {
     // resolving '' would collapse to the cwd's own directory path — so no
     // lock is created until a real name exists (Write Out gives it one).
     this.lockPath = filePath === '' ? '' : dotSwapPathFor(fs.resolvePath(filePath));
-    if (!_readOnly && this.lockPath !== '') this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
-    if (initialCursor) this.gotoLineNumbers(initialCursor.line, initialCursor.col ?? 1);
+    if (!this._readOnly && this.lockPath !== '') this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
+    const start = launch.start ?? (initialCursor ? { line: initialCursor.line, column: initialCursor.col ?? 0, search: null, caseSensitive: null, regex: null, alerts: [] } : null);
+    if (start !== null) this.applyStart(start);
   }
 
   // ── Public state (read-only) ──────────────────────────────────────
@@ -165,9 +210,8 @@ export class NanoEngine {
   get content(): string { return this.lines.join('\n'); }
   /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
   private serialize(): string {
-    const body = this.linesArr.slice();
-    if (body[body.length - 1] === '') body.pop();
-    return body.length === 0 ? '' : body.join('\n') + '\n';
+    const body = this.linesArr;
+    return body.join('\n') + (this.live.nonewlines || body[body.length - 1] === '' ? '' : '\n');
   }
 
   private locationMessage(): string {
@@ -189,14 +233,15 @@ export class NanoEngine {
   }
 
   private ensureTrailingBlankLine(): void {
+    if (this.live.nonewlines) return;
     if (this.linesArr[this.linesArr.length - 1] !== '') this.linesArr.push('');
   }
 
   private writtenLineCount(): number {
-    return this.linesArr.length - 1;
+    return this.linesArr[this.linesArr.length - 1] === '' ? this.linesArr.length - 1 : this.linesArr.length;
   }
   get lines(): readonly string[] {
-    return this.linesArr.length > 1 ? this.linesArr.slice(0, -1) : this.linesArr;
+    return this.linesArr.length > 1 && !this.live.nonewlines ? this.linesArr.slice(0, -1) : this.linesArr;
   }
   get bufferLines(): readonly string[] { return this.linesArr; }
   get mode(): NanoMode { return this._mode; }
@@ -250,7 +295,7 @@ export class NanoEngine {
   /** True when opened with `-v` (view mode) — real nano refuses all edits and offers no Write Out. */
   get isReadOnly(): boolean { return this._readOnly; }
   /** `nano -l`/`--linenumbers` at open, toggled at runtime by M-#. */
-  get lineNumbersShown(): boolean { return this._showLineNumbers; }
+  get lineNumbersShown(): boolean { return this.live.linenumbers; }
   /** Real nano's regex-search toggle (Meta+R / Alt+R inside a search or replace prompt). */
   get regexSearchEnabled(): boolean { return this.useRegex; }
   get replaceSearchQuery(): string { return this.replaceSearchBuffer; }
@@ -264,32 +309,79 @@ export class NanoEngine {
     if (this.statusCountdown > 0 && --this.statusCountdown === 0) {
       this.statusText = '';
       this.statusAlert = false;
+      this.statusMore = false;
     }
     this.messageThisKey = false;
     this.manner = 'centering';
     this.verticalKey = false;
+    if (!this.isPrompting() && !((k.ctrl && k.key.toLowerCase() === 'k') || (k.alt && k.key === '6'))) this.cutAction = null;
+    if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
-    this.dispatchKey(k);
+    const cursorBefore = { line: this._cursorLine, col: this._cursorCol };
+    if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') this.toggleHelpInPrompt();
+    else this.dispatchKey(k);
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
-    if (!this.verticalKey) this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
-    if (this.constantShow && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
+    const promptLeftCursorAlone = (wasPrompting || this.isPrompting())
+      && cursorBefore.line === this._cursorLine && cursorBefore.col === this._cursorCol;
+    if (!this.verticalKey && !promptLeftCursorAlone) this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
+    if (this.reportsPositionAsMessage() && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
     this.followCursor();
+    this.makeRoomForMessage();
+    this.settleTally();
+  }
+
+  private makeRoomForMessage(): void {
+    if (!this.zeroMode() || this.isPrompting() || messageLevel(this.statusText) <= MESSAGE_LEVEL.hush) return;
+    if (this.window.cursorRow !== this.window.editRows - 1) return;
+    this.window.scroll(true);
+    this.window.cursorRow = this.window.place({ line: this._cursorLine, col: this._cursorCol }).row;
+  }
+
+  private settleTally(): void {
+    const drawn = this.minibarMode() && this.window.cols > 35 && !this.isPrompting() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark;
+    this.tally = this.reportSizePending && drawn ? this.writtenLineCount() : null;
+    if (drawn) this.reportSizePending = false;
+  }
+
+  private reportsPositionAsMessage(): boolean {
+    return this.live.constantshow && !this.live.minibar && !this.live.zero;
+  }
+
+  private minibarInfo(messageExpired: boolean): MinibarInfo | null {
+    const prompting = this.isPrompting() || this._mode === 'help';
+    if (!this.minibarMode() || prompting) return null;
+    if (!messageExpired && messageLevel(this.statusText) >= MESSAGE_LEVEL.remark) return null;
+    const text = this.line(this._cursorLine);
+    const code = this._cursorCol < text.length
+      ? `U+${text.codePointAt(this._cursorCol)!.toString(16).toUpperCase().padStart(4, '0')}`
+      : this._cursorLine < this.linesArr.length - 1 ? 'U+000A' : '  ----';
+    return {
+      name: this.titleName === '' ? '(nameless)' : this.titleName,
+      modified: this._modified,
+      line: this._cursorLine + 1,
+      column: this.window.columnOf(this._cursorLine, this._cursorCol) + 1,
+      lineCount: this.tally,
+      showPosition: this.live.constantshow,
+      hex: code,
+      stateLetters: this.live.stateflags ? this.stateLetters() : null,
+      percent: Math.floor((100 * (this._cursorLine + 1)) / this.linesArr.length),
+    };
   }
 
   clickAt(row: number, col: number): void {
     if (this._mode !== 'edit') return;
     const window = this.window;
-    const top = window.hasTitleBar ? 1 : 0;
+    const top = window.layout.editFrom;
     if (row < top || row >= top + window.editRows) return;
     const at = { line: window.edittop, leftedge: window.firstcolumn };
     window.goForward(row - top, at);
     const text = this.line(at.line);
     let column = Math.max(0, col - window.margin);
-    if (this.softwrapOn) column += at.leftedge;
+    if (this.live.softwrap) column += at.leftedge;
     else if (at.line === this._cursorLine) column += window.pageStart(window.columnOf(this._cursorLine, this._cursorCol));
     this._cursorLine = at.line;
-    this._cursorCol = actualX(text, column, TABSIZE);
+    this._cursorCol = actualX(text, column, this.live.tabsize);
     this.lastEditKind = null;
     this.manner = 'flowing';
     this.placeWant = window.columnOf(this._cursorLine, this._cursorCol);
@@ -297,7 +389,7 @@ export class NanoEngine {
     this.followCursor();
   }
 
-  get softwrapEnabled(): boolean { return this.softwrapOn; }
+  get softwrapEnabled(): boolean { return this.live.softwrap; }
 
   private searchPromptLabel(replacing: boolean): string {
     const replaceNote = replacing ? (this.markLine === null ? ' (to replace)' : ' (to replace) in selection') : '';
@@ -308,13 +400,13 @@ export class NanoEngine {
   private searchDefaultNote(): string {
     if (this.lastSearchTerm === '') return '';
     const limit = Math.floor(this.window.cols / 3);
-    const shown = displayString(this.lastSearchTerm, 0, limit, { isData: false, isPrompt: false, softwrap: false, tabsize: TABSIZE });
-    return ` [${shown.cells.join('')}${breadth(this.lastSearchTerm, TABSIZE) > limit ? '...' : ''}]`;
+    const shown = displayString(this.lastSearchTerm, 0, limit, { isData: false, isPrompt: false, softwrap: false, tabsize: this.live.tabsize });
+    return ` [${shown.cells.join('')}${breadth(this.lastSearchTerm, this.live.tabsize) > limit ? '...' : ''}]`;
   }
 
   private promptView(): { label: string; answer: string; menu: NanoMenuName } | null {
     switch (this._mode) {
-      case 'save-prompt': return { label: 'File Name to Write', answer: this.saveFileNameBuffer, menu: 'write-out' };
+      case 'save-prompt': return { label: this.markLine !== null && !this.exitAfterSave ? 'Write Selection to File' : 'File Name to Write', answer: this.saveFileNameBuffer, menu: 'write-out' };
       case 'search': return { label: this.searchPromptLabel(false), answer: this.searchQueryBuffer, menu: 'search' };
       case 'replace-search': return { label: this.searchPromptLabel(true), answer: this.replaceSearchBuffer, menu: 'replace' };
       case 'replace-with': return { label: 'Replace with', answer: this.replaceWithBuffer, menu: 'replace-with' };
@@ -326,22 +418,45 @@ export class NanoEngine {
   }
 
   get screen(): EditorScreen {
+    const live = this.paintScreen(false);
+    const level = messageLevel(this.statusText);
+    const transient = this.bareDisplay() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
+    if (!transient || this.isPrompting()) return live;
+    return { ...live, hold: { millis: 1500, then: this.paintScreen(true) } };
+  }
+
+  private minibarMode(): boolean {
+    return this.live.minibar && !this.live.zero && this.window.rows > 1;
+  }
+
+  private zeroMode(): boolean {
+    return this.live.zero && this.window.rows > 1;
+  }
+
+  private bareDisplay(): boolean {
+    return this.minibarMode() || this.zeroMode();
+  }
+
+  private paintScreen(messageExpired: boolean): EditorScreen {
     const prompt = this.promptView();
-    const message = this.statusText.replace(/^\[ (.*) \]$/, '$1');
+    const hidden = messageExpired || (this.bareDisplay() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark);
+    const message = hidden ? '' : this.statusText.replace(/^\[ (.*) \]$/, '$1');
     return buildNanoScreen({
       window: this.window,
       lines: this.linesArr,
       cursor: { line: this._cursorLine, col: this._cursorCol },
       mark: this.markLine === null ? null : { line: this.markLine, col: this.markCol ?? 0 },
       spotlight: this._pendingReplaceMatch === null ? null : { line: this._pendingReplaceMatch.line, start: this._pendingReplaceMatch.start, end: this._pendingReplaceMatch.end },
-      tabsize: TABSIZE,
-      softwrap: this.softwrapOn,
+      tabsize: this.live.tabsize,
+      softwrap: this.live.softwrap,
       title: {
         name: this._mode === 'help' ? 'Main nano help text' : this.titleName === '' ? 'New Buffer' : this.titleName,
         state: this._mode === 'help' ? '' : this._readOnly ? 'View' : this._modified ? 'Modified' : '',
         branding: 'GNU nano 7.2',
+        flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
       },
-      status: message === '' ? null : { text: message, alert: this.statusAlert },
+      status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore },
+      minibar: this.minibarInfo(messageExpired),
       prompt: prompt === null ? null : { label: prompt.label, answer: prompt.answer, cursor: this._promptCursor },
       yesNo: this._mode === 'exit-save-prompt'
         ? { question: 'Save modified buffer?', withAll: false }
@@ -351,29 +466,94 @@ export class NanoEngine {
     });
   }
 
+  private toggleHelpLines(): void {
+    this.verticalKey = true;
+    this.manner = 'flowing';
+    if (this.window.rows < SHORTCUT_BARS_MINIMUM) {
+      this._statusMessage = '[ Too tiny ]';
+      return;
+    }
+    this.live.nohelp = !this.live.nohelp;
+    this.window.align();
+    if (!this.bareInterface()) this._statusMessage = `[ Help mode ${this.live.nohelp ? 'disabled' : 'enabled'} ]`;
+  }
+
+  private toggleHiddenInterface(): void {
+    this.verticalKey = true;
+    this.manner = 'flowing';
+    this.live.zero = !this.live.zero;
+    this.window.align();
+    this.wipeStatus();
+  }
+
+  private toggleHelpInPrompt(): void {
+    this.verticalKey = true;
+    this.manner = 'flowing';
+    this.live.nohelp = !this.live.nohelp;
+    this.window.align();
+  }
+
+  private bareInterface(): boolean {
+    return this.live.minibar || this.live.zero || this.window.rows === 1;
+  }
+
+  private toggleConstantShow(): void {
+    this.verticalKey = true;
+    if (this.window.rows === 1) {
+      this._statusMessage = '[ Too tiny ]';
+      return;
+    }
+    if (this.live.zero) {
+      this._statusMessage = '[ Not possible ]';
+      return;
+    }
+    this.live.constantshow = !this.live.constantshow;
+    if (!this.live.minibar) this.wipeStatus();
+  }
+
+  private stateLetters(): string {
+    return (this.live.autoindent ? 'I' : ' ') + (this.markLine !== null ? 'M' : ' ')
+      + (this.live.breaklonglines ? 'L' : ' ') + ' ' + (this.live.softwrap ? 'S' : ' ');
+  }
+
   private moveHome(): void {
     this.manner = 'flowing';
     this.lastEditKind = null;
-    if (this.softwrapOn) {
-      const column = this.window.columnOf(this._cursorLine, this._cursorCol);
-      const chunk = this.window.chunkLeft(this._cursorLine, column);
-      if (this._cursorCol === chunk.index) {
-        this._cursorCol = 0;
-      } else {
-        this._cursorCol = chunk.index;
-        this.placeWant = chunk.leftedge;
-        this.verticalKey = true;
+    const text = this.line(this._cursorLine);
+    let chunk: { index: number; leftedge: number } | null = null;
+    if (this.live.softwrap) chunk = this.window.chunkLeft(this._cursorLine, this.window.columnOf(this._cursorLine, this._cursorCol));
+    const leftX = chunk === null ? 0 : chunk.index;
+    let moved = false;
+    if (this.live.smarthome) {
+      const indentX = indentLength(text);
+      if (indentX < text.length) {
+        if (this._cursorCol === indentX) {
+          this._cursorCol = 0;
+          moved = true;
+        } else if (leftX <= indentX) {
+          this._cursorCol = indentX;
+          moved = true;
+        }
       }
+    }
+    if (moved || chunk === null) {
+      if (!moved) this._cursorCol = 0;
       return;
     }
-    this._cursorCol = 0;
+    if (this._cursorCol === chunk.index) {
+      this._cursorCol = 0;
+    } else {
+      this._cursorCol = chunk.index;
+      this.placeWant = chunk.leftedge;
+      this.verticalKey = true;
+    }
   }
 
   private moveEnd(): void {
     this.manner = 'flowing';
     this.lastEditKind = null;
     const length = this.line(this._cursorLine).length;
-    if (this.softwrapOn) {
+    if (this.live.softwrap) {
       const column = this.window.columnOf(this._cursorLine, this._cursorCol);
       const chunk = this.window.chunkRight(this._cursorLine, column);
       if (this._cursorCol === chunk.index) {
@@ -392,6 +572,7 @@ export class NanoEngine {
     this.statusText = '';
     this.statusCountdown = 0;
     this.statusAlert = false;
+    this.statusMore = false;
   }
 
   private followCursor(): void {
@@ -400,9 +581,21 @@ export class NanoEngine {
 
   resize(rows: number, cols: number): void {
     if (this.sized && (rows !== this.window.rows || cols !== this.window.cols)) this.wipeStatus();
+    const first = !this.sized;
     this.sized = true;
-    this.window.resize(rows, cols, { line: this._cursorLine, col: this._cursorCol });
-    if (this.constantShow && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
+    const cursor = { line: this._cursorLine, col: this._cursorCol };
+    this.window.resize(rows, cols, cursor);
+    this.settleTally();
+    if (first && this.startPlacement !== null) {
+      this.marginPending = true;
+      this.window.align();
+      if (this.startPlacement === 'hugfloor') this.window.hugFloor(cursor);
+      else this.window.follow('recentering', cursor);
+      this.marginPending = false;
+      this.window.align();
+      this.window.follow('centering', cursor);
+    }
+    if (this.reportsPositionAsMessage() && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
   }
 
   scrollView(up: boolean, count: number): void {
@@ -419,7 +612,7 @@ export class NanoEngine {
     } else {
       if (window.cursorRow === 0) this.moveRows(1, true);
       const more = window.edittop < this.linesArr.length - 1
-        || (this.softwrapOn && window.extraChunksIn(window.edittop) > window.chunkFor(window.firstcolumn, window.edittop));
+        || (this.live.softwrap && window.extraChunksIn(window.edittop) > window.chunkFor(window.firstcolumn, window.edittop));
       if (window.editRows > 1 && more) window.scroll(true);
     }
     window.cursorRow = window.place({ line: this._cursorLine, col: this._cursorCol }).row;
@@ -486,23 +679,72 @@ export class NanoEngine {
   private pasteIntoBuffer(text: string): void {
     if (this._readOnly) return;
     this.beginDiscreteEdit();
+    const startedOn = this._cursorLine;
+    this.insertText(text);
+    if (this.live.breaklonglines && this._cursorLine === startedOn) this.doWrap();
+    this._modified = true;
+    this.lastEditKind = null;
+  }
+
+  private inject(text: string): void {
+    const window = this.window;
+    const softwrap = this.live.softwrap;
+    const onLastRow = window.cursorRow === window.editRows - 1;
+    const rowBefore = softwrap && onLastRow ? window.chunkFor(window.columnOf(this._cursorLine, this._cursorCol), this._cursorLine) : 0;
+    const chunksBefore = softwrap ? window.extraChunksIn(this._cursorLine) : 0;
+    this.insertText(text);
+    if (this.live.breaklonglines) this.doWrap();
+    if (!softwrap) return;
+    const grew = window.extraChunksIn(this._cursorLine) !== chunksBefore;
+    const movedDown = onLastRow && window.chunkFor(window.columnOf(this._cursorLine, this._cursorCol), this._cursorLine) > rowBefore;
+    if (grew || movedDown) this.manner = 'flowing';
+  }
+
+  private insertText(text: string): void {
     for (const ch of text) {
       if (ch === '\n') {
-        const cur = this.line(this._cursorLine);
-        const before = cur.slice(0, this._cursorCol);
-        const after = cur.slice(this._cursorCol);
-        this.linesArr.splice(this._cursorLine, 1, before, after);
-        this._cursorLine++;
-        this._cursorCol = 0;
-      } else {
-        const cur = this.line(this._cursorLine);
-        this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + ch + cur.slice(this._cursorCol);
-        this._cursorCol++;
+        this.splitLine(this._cursorCol, '');
+        continue;
       }
+      const cur = this.line(this._cursorLine);
+      this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + ch + cur.slice(this._cursorCol);
+      if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) + ch.length;
+      this._cursorCol += ch.length;
     }
-    this._modified = true;
-    this.lastActionWasCut = false;
-    this.lastEditKind = null;
+  }
+
+  private splitLine(headLength: number, indent: string): void {
+    const cur = this.line(this._cursorLine);
+    const after = cur.slice(this._cursorCol);
+    if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) {
+      this.markLine++;
+      this.markCol = (this.markCol ?? 0) + indent.length - this._cursorCol;
+    } else if (this.markLine !== null && this.markLine > this._cursorLine) {
+      this.markLine++;
+    }
+    if (this.spillageLine !== null && this.spillageLine > this._cursorLine) this.spillageLine++;
+    this.linesArr.splice(this._cursorLine, 1, cur.slice(0, headLength), indent + after);
+    this._cursorLine++;
+    this._cursorCol = indent.length;
+  }
+
+  private forgetRemovedLines(first: number, last: number): void {
+    if (this.spillageLine === null) return;
+    if (this.spillageLine >= first && this.spillageLine <= last) this.spillageLine = null;
+    else if (this.spillageLine > last) this.spillageLine -= last - first + 1;
+  }
+
+  private joinWithNext(line: number): void {
+    const head = this.line(line).length;
+    if (this.markLine === line + 1) {
+      this.markLine = line;
+      this.markCol = (this.markCol ?? 0) + head;
+    } else if (this.markLine !== null && this.markLine > line + 1) {
+      this.markLine--;
+    }
+    this.forgetRemovedLines(line + 1, line + 1);
+    this.linesArr[line] += this.line(line + 1);
+    this.linesArr.splice(line + 1, 1);
   }
 
   private line(i: number): string { return this.linesArr[i] ?? ''; }
@@ -511,14 +753,14 @@ export class NanoEngine {
   private verticalKey = false;
 
   private columnAtDisplay(line: number, want: number): number {
-    return actualX(this.line(line), want, TABSIZE);
+    return actualX(this.line(line), want, this.live.tabsize);
   }
 
-  private moveRows(count: number, forward: boolean): number {
+  private moveRows(count: number, forward: boolean, origin?: { line: number; leftedge: number; target: number }): number {
     const window = this.window;
     const cursor = { line: this._cursorLine, col: this._cursorCol };
-    const { leftedge, target } = window.edgeAndTarget(cursor, this.placeWant);
-    const at = { line: this._cursorLine, leftedge };
+    const { leftedge, target } = origin ?? window.edgeAndTarget(cursor, this.placeWant);
+    const at = { line: origin?.line ?? this._cursorLine, leftedge };
     const left = forward ? window.goForward(count, at) : window.goBack(count, at);
     if (left > 0) return left;
     const landed = window.landOn(at.line, at.leftedge, target, forward);
@@ -624,30 +866,33 @@ export class NanoEngine {
         this.pageDown();
         return;
       case 'Tab': {
+        if (this.markLine !== null && this.markLine !== this._cursorLine) {
+          this.indentLines();
+          return;
+        }
         this.beginCoalescableEdit('type');
         const cur = this.line(this._cursorLine);
-        this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + '\t' + cur.slice(this._cursorCol);
-        this._cursorCol++;
+        const tab = this.live.tabstospaces
+          ? ' '.repeat(this.live.tabsize - (wideness(cur, this._cursorCol, this.live.tabsize) % this.live.tabsize))
+          : '\t';
+        this.inject(tab);
         this._modified = true;
-        this.lastActionWasCut = false;
         return;
       }
       case 'Enter': {
         this.manner = 'flowing';
         this.beginDiscreteEdit();
-        const cur = this.line(this._cursorLine);
-        const before = cur.slice(0, this._cursorCol);
-        const after = cur.slice(this._cursorCol);
-        this.linesArr.splice(this._cursorLine, 1, before, after);
-        this._cursorLine++;
-        this._cursorCol = 0;
+        this.breakLine();
         this._modified = true;
-        this.lastActionWasCut = false;
         return;
       }
       case 'Backspace': {
         this.manner = 'flowing';
-        if (this._cursorCol === 0 && this._cursorLine === this.linesArr.length - 1 && this._cursorLine > 0
+        if (this.live.zap && this.markLine !== null) {
+          this.zapText();
+          return;
+        }
+        if (!this.live.nonewlines && this._cursorCol === 0 && this._cursorLine === this.linesArr.length - 1 && this._cursorLine > 0
           && this.line(this._cursorLine - 1).length > 0) {
           this._cursorLine--;
           this._cursorCol = this.line(this._cursorLine).length;
@@ -659,41 +904,40 @@ export class NanoEngine {
           const cur = this.line(this._cursorLine);
           this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol - 1) + cur.slice(this._cursorCol);
           this._cursorCol--;
+          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - 1;
           this._modified = true;
         } else if (this._cursorLine > 0) {
           const prevLen = this.line(this._cursorLine - 1).length;
-          this.linesArr[this._cursorLine - 1] += this.line(this._cursorLine);
-          this.linesArr.splice(this._cursorLine, 1);
+          this.joinWithNext(this._cursorLine - 1);
           this._cursorLine--;
           this._cursorCol = prevLen;
           this._modified = true;
         }
-        this.lastActionWasCut = false;
         return;
       }
       case 'Delete': {
+        if (this.live.zap && this.markLine !== null) {
+          this.zapText();
+          return;
+        }
         const cur = this.line(this._cursorLine);
-        if (this._cursorCol === cur.length && this._cursorCol !== 0 && this._cursorLine === this.linesArr.length - 2) return;
+        if (!this.live.nonewlines && this._cursorCol === cur.length && this._cursorCol !== 0 && this._cursorLine === this.linesArr.length - 2) return;
         if (this._cursorCol < cur.length || this._cursorLine < this.linesArr.length - 1) this.beginCoalescableEdit('delete');
         if (this._cursorCol < cur.length) {
           this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + cur.slice(this._cursorCol + 1);
+          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - 1;
           this._modified = true;
         } else if (this._cursorLine < this.linesArr.length - 1) {
-          this.linesArr[this._cursorLine] = cur + this.line(this._cursorLine + 1);
-          this.linesArr.splice(this._cursorLine + 1, 1);
+          this.joinWithNext(this._cursorLine);
           this._modified = true;
         }
-        this.lastActionWasCut = false;
         return;
       }
       default:
         if (k.key.length === 1 && !k.alt) {
           this.beginCoalescableEdit('type');
-          const cur = this.line(this._cursorLine);
-          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + k.key + cur.slice(this._cursorCol);
-          this._cursorCol++;
+          this.inject(k.key);
           this._modified = true;
-          this.lastActionWasCut = false;
         }
         return;
     }
@@ -718,7 +962,7 @@ export class NanoEngine {
     }
     switch (key) {
       case 'o': // Write Out
-        this.saveFileNameBuffer = this.titleName;
+        this.saveFileNameBuffer = this.markLine !== null ? '' : this.titleName;
         this._promptCursor = this.saveFileNameBuffer.length;
         this._mode = 'save-prompt';
         return;
@@ -730,45 +974,18 @@ export class NanoEngine {
           this.finishExit(true);
         }
         return;
-      case 'k': { // Cut line, or the marked region if a mark is active
-        this.wipeStatus();
-        const region = this.getMarkedRegion();
-        if (region) {
-          this.beginDiscreteEdit();
-          this.cutBuffer = { kind: 'chars', text: this.extractRegionText(region) };
-          this.deleteRegion(region);
-          this.clearMark();
-          this._modified = true;
-          this.lastActionWasCut = false; // a region cut is discrete, never accumulated
-          return;
-        }
-        if (this._cursorLine === this.linesArr.length - 1) {
-          this._statusMessage = '[ Nothing was cut ]';
-          this.lastActionWasCut = false;
-          return;
-        }
-        if (this._cursorLine < this.linesArr.length) {
-          this.beginDiscreteEdit();
-          const cut = this.linesArr[this._cursorLine];
-          const prevLines = this.lastActionWasCut && this.cutBuffer?.kind === 'lines' ? this.cutBuffer.lines : [];
-          this.cutBuffer = { kind: 'lines', lines: [...prevLines, cut] };
-          this.linesArr.splice(this._cursorLine, 1);
-          if (this.linesArr.length === 0) this.linesArr.push('');
-          this._cursorCol = 0;
-          this._modified = true;
-          this.lastActionWasCut = true;
-        }
+      case 'k':
+        this.cutText();
         return;
-      }
-      case 'u': // Paste (uncut)
+      case 'u':
         this.wipeStatus();
         this.manner = 'flowing';
         if (this.cutBuffer) {
-          this.pasteIntoBuffer(this.cutBuffer.kind === 'lines' ? `${this.cutBuffer.lines.join('\n')}\n` : this.cutBuffer.text);
+          this.pasteIntoBuffer(this.cutBuffer.join('\n'));
         } else {
           this._statusMessage = '[ Cutbuffer is empty ]';
+          this.verticalKey = true;
         }
-        this.lastActionWasCut = false;
         return;
       case 'w': // Where Is (search)
         this.searchQueryBuffer = '';
@@ -776,60 +993,48 @@ export class NanoEngine {
         this._promptCursor = 0;
         this._mode = 'search';
         this.historyNavIndex = null;
-        this.lastActionWasCut = false;
         return;
       case '\\': // Replace
         this.replaceSearchBuffer = '';
         this.searchDir = 'forward';
         this._promptCursor = 0;
         this._mode = 'replace-search';
-        this.lastActionWasCut = false;
         return;
       case 'g': // Get Help
         this._mode = 'help';
-        this.lastActionWasCut = false;
         return;
       case 'c': { // Cur Pos
         this._statusMessage = this.locationMessage();
-        this.lastActionWasCut = false;
         return;
       }
-      case 'j': // Justify
-        this.justifyParagraph();
-        this.lastActionWasCut = false;
+      case 'j':
+        this.justifyText(false);
         return;
       case '6': // Mark Text (Set Mark) — toggles a mark at the cursor
         this.toggleMark();
-        this.lastActionWasCut = false;
         return;
       case 'r': // Read File (insert another file's content at the cursor)
         this.readFileBuffer = '';
         this._promptCursor = 0;
         this._mode = 'read-file-prompt';
-        this.lastActionWasCut = false;
         return;
       case 't': // Execute Command (insert a shell command's output at the cursor)
         this.executeCmdBuffer = '';
         this._promptCursor = 0;
         this._mode = 'execute-prompt';
-        this.lastActionWasCut = false;
         return;
       case 'y': // Prev Page
         this.pageUp();
-        this.lastActionWasCut = false;
         return;
       case 'v': // Next Page
         this.pageDown();
-        this.lastActionWasCut = false;
         return;
       case '_': // Go To Line
         this.gotoLineBuffer = '';
         this._promptCursor = 0;
         this._mode = 'goto-line';
-        this.lastActionWasCut = false;
         return;
       default:
-        this.lastActionWasCut = false;
         return;
     }
   }
@@ -838,8 +1043,14 @@ export class NanoEngine {
     return this.window.editRows < 3 ? 1 : this.window.editRows - 2;
   }
 
+  private movePage(forward: boolean): number {
+    if (!this.live.jumpyscrolling) return this.moveRows(this.pageRows, forward);
+    this.window.cursorRow = 0;
+    return this.moveRows(this.pageRows, forward, { line: this.window.edittop, leftedge: this.window.firstcolumn, target: 0 });
+  }
+
   private pageUp(): void {
-    if (this.moveRows(this.pageRows, false) > 0) {
+    if (this.movePage(false) > 0) {
       this._cursorLine = 0;
       this._cursorCol = 0;
       this.placeWant = 0;
@@ -851,7 +1062,7 @@ export class NanoEngine {
   }
 
   private pageDown(): void {
-    if (this.moveRows(this.pageRows, true) > 0) {
+    if (this.movePage(true) > 0) {
       const last = this.linesArr.length - 1;
       this._cursorLine = last;
       this._cursorCol = this.line(last).length;
@@ -869,6 +1080,10 @@ export class NanoEngine {
    * at the line's very edge) into the adjacent line. Crossing both in
    * a single press would skip past the last word of a line entirely.
    */
+  private isWordAt(line: number, col: number): boolean {
+    return isWordChar(this.line(line)[col], this.live.wordbounds, this.live.wordchars);
+  }
+
   private jumpWordLeft(): void {
     this.manner = 'flowing';
     let line = this._cursorLine;
@@ -882,7 +1097,7 @@ export class NanoEngine {
         col = this.line(line).length;
       }
       if (col > 0) col--;
-      if (isWordChar(this.line(line)[col])) {
+      if (this.isWordAt(line, col)) {
         seenWord = true;
         if (col === 0) break;
       } else if (seenWord) {
@@ -900,7 +1115,9 @@ export class NanoEngine {
     this.manner = 'flowing';
     let line = this._cursorLine;
     let col = this._cursorCol;
-    let seenSpace = !isWordChar(this.line(line)[col]);
+    const startedOnWord = this.isWordAt(line, col);
+    let seenSpace = !startedOnWord;
+    let seenWord = startedOnWord;
     while (line < this.linesArr.length - 1 || col < this.line(line).length) {
       if (col >= this.line(line).length) {
         line++;
@@ -909,10 +1126,13 @@ export class NanoEngine {
       } else {
         col++;
       }
-      if (isWordChar(this.line(line)[col])) {
-        if (seenSpace) break;
-      } else {
+      if (this.live.afterends) {
+        if (this.isWordAt(line, col)) seenWord = true;
+        else if (seenWord) break;
+      } else if (!this.isWordAt(line, col)) {
         seenSpace = true;
+      } else if (seenSpace) {
+        break;
       }
     }
     this._cursorLine = line;
@@ -924,35 +1144,57 @@ export class NanoEngine {
     const key = k.key.toLowerCase();
     if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollView(false, 1); return; }
     if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollView(true, 1); return; }
+    if (key === 'z') { this.toggleHiddenInterface(); return; }
+    if (key === 'x') { this.toggleHelpLines(); return; }
+    if (key === 'c') { this.toggleConstantShow(); return; }
     if (key === 'n') {
-      this._showLineNumbers = !this._showLineNumbers;
-      this._statusMessage = `[ Line numbering ${this._showLineNumbers ? 'enabled' : 'disabled'} ]`;
+      this.verticalKey = true;
+      this.live.linenumbers = !this.live.linenumbers;
+      if (!this.bareInterface()) this._statusMessage = `[ Line numbering ${this.live.linenumbers ? 'enabled' : 'disabled'} ]`;
       this.manner = 'flowing';
       this.window.align();
       return;
     }
     if (key === 's') {
-      this.softwrapOn = !this.softwrapOn;
-      this._statusMessage = `[ Soft wrapping of overlong lines ${this.softwrapOn ? 'enabled' : 'disabled'} ]`;
+      this.verticalKey = true;
+      this.live.softwrap = !this.live.softwrap;
+      if (!(this.live.minibar && !this.live.zero && this.live.stateflags)) this._statusMessage = `[ Soft wrapping of overlong lines ${this.live.softwrap ? 'enabled' : 'disabled'} ]`;
       this.manner = 'flowing';
       this.window.firstcolumn = 0;
       this.window.align();
       return;
     }
-    if (key === 'u') { this.performUndo(); this.lastActionWasCut = false; return; }
-    if (key === 'e') { this.performRedo(); this.lastActionWasCut = false; return; }
+    if (k.key === '}' || k.key === '{') {
+      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      if (k.key === '}') this.indentLines(); else this.unindentLines();
+      return;
+    }
+    if (key === 'j') {
+      if (this._readOnly) { this._statusMessage = '[ Key is invalid in view mode ]'; return; }
+      this.justifyText(true);
+      return;
+    }
+    const toggle = EDIT_TOGGLES[key];
+    if (toggle !== undefined) {
+      this.live[toggle.flag] = !this.live[toggle.flag];
+      this.manner = 'flowing';
+      const quietForStateFlags = (toggle.flag === 'autoindent' || toggle.flag === 'breaklonglines')
+        && this.live.minibar && !this.live.zero && this.live.stateflags;
+      if (!quietForStateFlags) this._statusMessage = `[ ${toggle.epithet} ${this.live[toggle.flag] ? 'enabled' : 'disabled'} ]`;
+      return;
+    }
+    if (key === 'u') { this.performUndo(); return; }
+    if (key === 'e') { this.performRedo(); return; }
     if (key === 'g') { // Go To Line (M-G alias)
       this.gotoLineBuffer = '';
       this._promptCursor = 0;
       this._mode = 'goto-line';
-      this.lastActionWasCut = false;
       return;
     }
     if (k.key === '\\') { // First Line
       this._cursorLine = 0;
       this._cursorCol = 0;
       this.lastEditKind = null;
-      this.lastActionWasCut = false;
       return;
     }
     if (k.key === '/') { // Last Line
@@ -960,17 +1202,14 @@ export class NanoEngine {
       this._cursorLine = this.linesArr.length - 1;
       this._cursorCol = this.line(this._cursorLine).length;
       this.lastEditKind = null;
-      this.lastActionWasCut = false;
       return;
     }
     if (key === 'a') { // Mark Text (M-A alias of ^6)
       this.toggleMark();
-      this.lastActionWasCut = false;
       return;
     }
     if (k.key === '6') { // Copy Text — the marked region, or the current line without a mark
       this.copyMark();
-      this.lastActionWasCut = false;
       return;
     }
     // Toggle line numbers — a display setting, not a buffer edit. Real
@@ -978,7 +1217,7 @@ export class NanoEngine {
     // physical Alt+Shift+3 on a US layout reports key:'3', not '#'), so
     // both the literal character and the raw shifted digit are accepted.
     if (k.key === '#' || (k.shift && k.key === '3')) {
-      this._showLineNumbers = !this._showLineNumbers;
+      this.live.linenumbers = !this.live.linenumbers;
       return;
     }
   }
@@ -986,6 +1225,7 @@ export class NanoEngine {
   // ── Mark / region (^6, M-A, M-6) ─────────────────────────────────
 
   private toggleMark(): void {
+    this.verticalKey = true;
     if (this.markLine !== null) {
       this.clearMark();
       this._statusMessage = 'Mark Unset';
@@ -1020,12 +1260,130 @@ export class NanoEngine {
     return parts.join('\n');
   }
 
+  private breakLine(autoindent = this.live.autoindent): void {
+    const cur = this.line(this._cursorLine);
+    let extra = 0;
+    let onlyBlanks = false;
+    let sample = cur;
+    if (autoindent) {
+      const next = this.linesArr[this._cursorLine + 1];
+      const context = this.justifyContext();
+      if (this.live.breaklonglines && next !== undefined && inParagraph(next, context.quote)
+        && !beginsParagraph(this.linesArr, this._cursorLine + 1, 0, context)) sample = next;
+      extra = indentLength(sample);
+      if (extra > this._cursorCol) extra = this._cursorCol;
+      else if (extra === this._cursorCol) onlyBlanks = indentLength(cur) === extra;
+    }
+    const staysBehind = this.markLine === this._cursorLine && (this.markCol ?? 0) <= this._cursorCol;
+    this.manner = 'flowing';
+    this.splitLine(onlyBlanks ? 0 : this._cursorCol, sample.slice(0, extra));
+    if (onlyBlanks && staysBehind) this.markCol = 0;
+  }
+
+  private doWrap(): void {
+    const context = this.justifyContext();
+    const line = this._cursorLine;
+    let text = this.line(line);
+    const quoted = quoteLength(text, context.quote);
+    const leadLen = quoted + indentLength(text.slice(quoted));
+    const cursorX = this._cursorCol;
+    const found = breakLine(text.slice(leadLen), context.wrapAt - wideness(text, leadLen, context.tabsize), context.tabsize);
+    if (found < 0 || leadLen + found === text.length) return;
+    const wrapLoc = leadLen + found + 1;
+    if (wrapLoc >= text.length) return;
+    const remainder = text.slice(wrapLoc);
+    if (this.spillageLine === line + 1 && remainder.length + breadth(this.line(line + 1), context.tabsize) <= context.wrapAt) {
+      let joined = text;
+      if (!isBlankChar(remainder[remainder.length - 1])) joined += ' ';
+      let tail = this.line(line + 1);
+      if (tail.slice(0, leadLen) === joined.slice(0, leadLen)) tail = tail.slice(leadLen);
+      while (isBlankChar(tail[0])) tail = tail.slice(1);
+      this.forgetRemovedLines(line + 1, line + 1);
+      this.linesArr.splice(line + 1, 1);
+      text = joined + tail;
+      this.linesArr[line] = text;
+    }
+    let at = wrapLoc;
+    if (context.trimblanks) {
+      let rear = wrapLoc - 1;
+      const typed = Math.max(0, cursorX - 1);
+      while ((rear !== typed || cursorX >= wrapLoc) && isBlankChar(text[rear])) {
+        at = rear;
+        text = text.slice(0, rear) + text.slice(rear + 1);
+        rear = Math.max(0, rear - 1);
+        if (rear === 0 && !isBlankChar(text[0])) break;
+      }
+      this.linesArr[line] = text;
+    }
+    this._cursorCol = at;
+    this.breakLine(quoted > 0 ? false : this.live.autoindent);
+    if (quoted > 0) {
+      this.linesArr[line + 1] = this.line(line).slice(0, leadLen) + this.line(line + 1);
+      this._cursorCol += leadLen;
+    }
+    this.spillageLine = this._cursorLine;
+    if (cursorX < wrapLoc) {
+      this._cursorLine--;
+      this._cursorCol = cursorX;
+    } else {
+      this._cursorCol += cursorX - wrapLoc;
+    }
+  }
+
+  private markedLineRange(): { top: number; bottom: number } {
+    const region = this.getMarkedRegion();
+    if (region === null) return { top: this._cursorLine, bottom: this._cursorLine };
+    const dropsLast = region.endCol === 0 && region.endLine !== region.startLine;
+    return { top: region.startLine, bottom: dropsLast ? region.endLine - 1 : region.endLine };
+  }
+
+  private shiftLinesRight(top: number, bottom: number, unit: string): void {
+    for (let index = top; index <= bottom; index++) {
+      if (this.line(index) === '') continue;
+      this.linesArr[index] = unit + this.line(index);
+      if (index === this.markLine && (this.markCol ?? 0) > 0) this.markCol = (this.markCol ?? 0) + unit.length;
+      if (index === this._cursorLine && this._cursorCol > 0) this._cursorCol += unit.length;
+    }
+  }
+
+  private indentLines(): void {
+    const range = this.markedLineRange();
+    let top = range.top;
+    while (top <= range.bottom && this.line(top) === '') top++;
+    if (top > range.bottom) return;
+    this.beginDiscreteEdit();
+    this.shiftLinesRight(top, range.bottom, this.live.tabstospaces ? ' '.repeat(this.live.tabsize) : '\t');
+    this._modified = true;
+  }
+
+  private unindentLines(): void {
+    const range = this.markedLineRange();
+    let top = range.top;
+    while (top <= range.bottom && whiteLength(this.line(top), this.live.tabsize) === 0) top++;
+    if (top > range.bottom) return;
+    this.beginDiscreteEdit();
+    for (let index = top; index <= range.bottom; index++) {
+      const removed = whiteLength(this.line(index), this.live.tabsize);
+      if (removed === 0) continue;
+      this.linesArr[index] = this.line(index).slice(removed);
+      if (index === this.markLine) this.markCol = Math.max(0, (this.markCol ?? 0) - removed);
+      if (index === this._cursorLine) this._cursorCol = Math.max(0, this._cursorCol - removed);
+    }
+    this._modified = true;
+  }
+
+  private serializeRegion(r: { startLine: number; startCol: number; endLine: number; endCol: number }): string {
+    const text = this.extractRegionText(r);
+    return text === '' || text.endsWith('\n') ? text : text + '\n';
+  }
+
   private deleteRegion(r: { startLine: number; startCol: number; endLine: number; endCol: number }): void {
     if (r.startLine === r.endLine) {
       const text = this.line(r.startLine);
       this.linesArr[r.startLine] = text.slice(0, r.startCol) + text.slice(r.endCol);
     } else {
       const merged = this.line(r.startLine).slice(0, r.startCol) + this.line(r.endLine).slice(r.endCol);
+      this.forgetRemovedLines(r.startLine + 1, r.endLine);
       this.linesArr.splice(r.startLine, r.endLine - r.startLine + 1, merged);
     }
     this._cursorLine = r.startLine;
@@ -1035,19 +1393,114 @@ export class NanoEngine {
   private copyMark(): void {
     this.wipeStatus();
     this.manner = 'flowing';
+    const marked = this.markLine !== null;
+    if (marked || this.cutAction !== 'copy') this.cutAction = null;
+    if (this.cutAction === null) this.cutBuffer = null;
     const region = this.getMarkedRegion();
-    if (region) {
-      this.cutBuffer = { kind: 'chars', text: this.extractRegionText(region) };
+    if (region !== null) {
       this.clearMark();
-    } else if (this._cursorLine === this.linesArr.length - 1) {
-      this._statusMessage = '[ Copied nothing ]';
-    } else {
-      this.cutBuffer = { kind: 'lines', lines: [this.line(this._cursorLine)] };
-      if (this._cursorLine < this.linesArr.length - 1) {
-        this._cursorLine++;
-        this._cursorCol = 0;
+      if (region.startLine === region.endLine && region.startCol === region.endCol) {
+        this._statusMessage = '[ Copied nothing ]';
+        return;
       }
+      this.cutBuffer = this.extractRegionText(region).split('\n');
+      return;
     }
+    const text = this.line(this._cursorLine);
+    const atEol = this._cursorCol >= text.length;
+    const onLast = this._cursorLine === this.linesArr.length - 1;
+    const fromCursor = this.live.cutfromcursor;
+    if (onLast && atEol && (fromCursor || this._cursorCol === 0 || this.cutBuffer !== null)) {
+      this._statusMessage = '[ Copied nothing ]';
+      return;
+    }
+    const addition = text.slice(fromCursor ? this._cursorCol : 0);
+    const withoutNewline = fromCursor ? !atEol : this.live.nonewlines && onLast;
+    if (this.cutBuffer === null) this.cutBuffer = withoutNewline ? [addition] : [addition, ''];
+    else if (withoutNewline) this.cutBuffer = [...this.cutBuffer.slice(0, -1), addition];
+    else if (fromCursor) this.cutBuffer = [...this.cutBuffer, addition];
+    else this.cutBuffer = [...this.cutBuffer.slice(0, -1), addition, this.cutBuffer[this.cutBuffer.length - 1]];
+    if ((!fromCursor || atEol) && !onLast) {
+      this._cursorLine++;
+      this._cursorCol = 0;
+    } else {
+      this._cursorCol = text.length;
+    }
+    this.cutAction = 'copy';
+  }
+
+  private isCuttable(testCliff: boolean): boolean {
+    const text = this.line(this._cursorLine);
+    const from = testCliff ? this._cursorCol : 0;
+    const atEol = from >= text.length;
+    const onLast = this._cursorLine === this.linesArr.length - 1;
+    const beforeLast = this._cursorLine === this.linesArr.length - 2;
+    const nothing = (onLast && atEol && this.markLine === null)
+      || (this.markLine === this._cursorLine && this.markCol === this._cursorCol)
+      || (from > 0 && !this.live.nonewlines && atEol && beforeLast);
+    if (!nothing) return true;
+    this._statusMessage = '[ Nothing was cut ]';
+    this.clearMark();
+    this.verticalKey = true;
+    return false;
+  }
+
+  private excise(region: { startLine: number; startCol: number; endLine: number; endCol: number }): void {
+    const topWasInside = this.window.edittop >= region.startLine && this.window.edittop <= region.endLine;
+    this.deleteRegion(region);
+    this.ensureTrailingBlankLine();
+    if (topWasInside) this.window.adjust('stationary', { line: region.startLine, col: region.startCol });
+  }
+
+  private extractSegment(topLine: number, topCol: number, bottomLine: number, bottomCol: number): void {
+    const region = { startLine: topLine, startCol: topCol, endLine: bottomLine, endCol: bottomCol };
+    const piece = this.extractRegionText(region).split('\n');
+    this.excise(region);
+    if (this.cutBuffer === null) this.cutBuffer = piece;
+    else this.cutBuffer = [...this.cutBuffer.slice(0, -1), this.cutBuffer[this.cutBuffer.length - 1] + piece[0], ...piece.slice(1)];
+  }
+
+  private zapText(): void {
+    if (!this.isCuttable(false)) return;
+    const region = this.getMarkedRegion();
+    if (region === null) return;
+    this.beginDiscreteEdit();
+    const kept = this.cutBuffer;
+    this.cutBuffer = null;
+    this.extractSegment(region.startLine, region.startCol, region.endLine, region.endCol);
+    this.cutBuffer = kept;
+    this.clearMark();
+    if (this.linesArr.length === 0) this.linesArr.push('');
+    this.wipeStatus();
+    this.cutAction = null;
+    this._modified = true;
+  }
+
+  private cutText(): void {
+    this.wipeStatus();
+    const marked = this.markLine !== null;
+    if (!this.isCuttable(this.live.cutfromcursor && !marked)) return;
+    this.beginDiscreteEdit();
+    if (marked || this.cutAction !== 'cut') this.cutBuffer = null;
+    const line = this._cursorLine;
+    const col = this._cursorCol;
+    const text = this.line(line);
+    const onLast = line === this.linesArr.length - 1;
+    const region = this.getMarkedRegion();
+    if (region !== null) {
+      this.extractSegment(region.startLine, region.startCol, region.endLine, region.endCol);
+      this.clearMark();
+    } else if (this.live.cutfromcursor) {
+      if (col < text.length) this.extractSegment(line, col, line, text.length);
+      else if (!onLast) this.extractSegment(line, col, line + 1, 0);
+    } else if (!onLast) {
+      this.extractSegment(line, 0, line + 1, 0);
+    } else {
+      this.extractSegment(line, 0, line, text.length);
+    }
+    if (this.linesArr.length === 0) this.linesArr.push('');
+    this.cutAction = marked ? null : 'cut';
+    this._modified = true;
   }
 
   // ── Shared single-line prompt field editing ───────────────────────
@@ -1115,12 +1568,24 @@ export class NanoEngine {
 
   private applySavePromptKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
-      const ok = this.fs.writeFile(this.writeTarget(this.saveFileNameBuffer), this.serialize());
+      if (this.saveFileNameBuffer === '') {
+        this.exitAfterSave = false;
+        this.cancelPrompt();
+        return;
+      }
       const wasExitFlow = this.exitAfterSave;
+      const region = wasExitFlow ? null : this.getMarkedRegion();
+      const written = region === null ? this.serialize() : this.serializeRegion(region);
+      const ok = this.fs.writeFile(this.writeTarget(this.saveFileNameBuffer), written);
       this.exitAfterSave = false;
       this._mode = 'edit';
       if (!ok) {
         this._statusMessage = `[ Error writing ${this.saveFileNameBuffer} ]`;
+        return;
+      }
+      if (region !== null) {
+        const count = written.split('\n').length - 1;
+        this._statusMessage = `[ Wrote ${count} line${count === 1 ? '' : 's'} ]`;
         return;
       }
       this._modified = false;
@@ -1189,16 +1654,38 @@ export class NanoEngine {
     this.manner = 'recentering';
   }
 
+  private applyStart(start: NanoStart): void {
+    if (start.caseSensitive !== null) this.caseSensitive = start.caseSensitive;
+    if (start.regex !== null) this.useRegex = start.regex;
+    if (start.line !== 0 || start.column !== 0) {
+      this.gotoLineNumbers(start.line, start.column);
+      this.startPlacement = 'hugfloor';
+    } else if (start.search !== null) {
+      this.searchAtStartup(start.search);
+      this.startPlacement = 'centering';
+    }
+    if (start.alerts.length === 0) return;
+    this._statusMessage = `[ ${start.alerts[0]} ]`;
+    this.statusMore = start.alerts.length > 1;
+  }
+
+  private searchAtStartup(request: NanoSearchRequest): void {
+    this.searchDir = request.backwards ? 'backward' : 'forward';
+    this.lastSearchTerm = request.pattern;
+    this.performSearch(request.pattern);
+    if (this.statusText === '[ Search Wrapped ]') this.wipeStatus();
+  }
+
   private gotoLineNumbers(line: number, column: number): void {
     const last = this.linesArr.length;
     const wanted = line < 0 ? last + line + 1 : line === 0 ? this._cursorLine + 1 : line;
     const target = Math.min(Math.max(1, wanted), last) - 1;
     const text = this.line(target);
     const displayColumn = column < 0
-      ? wideness(text, text.length, TABSIZE) + column + 2
+      ? wideness(text, text.length, this.live.tabsize) + column + 2
       : column === 0 ? this.window.columnOf(this._cursorLine, this._cursorCol) + 1 : column;
     this._cursorLine = target;
-    this._cursorCol = actualX(text, Math.max(0, displayColumn - 1), TABSIZE);
+    this._cursorCol = actualX(text, Math.max(0, displayColumn - 1), this.live.tabsize);
     this.lastEditKind = null;
   }
 
@@ -1249,82 +1736,119 @@ export class NanoEngine {
     this.applyPromptFieldKey(k, () => this.readFileBuffer, (v) => { this.readFileBuffer = v; });
   }
 
-  // ── Justify (^J) — reflow the current paragraph to JUSTIFY_WIDTH ──
+  // ── Justify (^J, M-J) ──
 
-  private indentWidth(text: string): number {
-    const lead = text.match(/^[ \t]*/)?.[0] ?? '';
-    return wideness(lead, lead.length, TABSIZE);
+  private get wrapAt(): number {
+    const fill = this.live.fill ?? DEFAULT_FILL;
+    const columns = this.window.cols;
+    if (columns + fill < 0) return 0;
+    return fill <= 0 ? columns + fill : fill;
   }
 
-  private paragraphContaining(target: number): { start: number; end: number } {
-    let blockStart = target;
-    while (blockStart > 0 && this.line(blockStart - 1).trim() !== '') blockStart--;
-    let start = blockStart;
-    while (true) {
-      let end = start;
-      if (start + 1 < this.linesArr.length && this.line(start + 1).trim() !== '') {
-        end = start + 1;
-        const bodyIndent = this.indentWidth(this.line(end));
-        while (end + 1 < this.linesArr.length && this.line(end + 1).trim() !== ''
-          && this.indentWidth(this.line(end + 1)) === bodyIndent) end++;
-      }
-      if (target <= end) return { start, end };
-      start = end + 1;
+  private justifyContext(): JustifyContext {
+    let quote: RegExp;
+    try {
+      quote = new RegExp(this.live.quotestr ?? DEFAULT_QUOTE_PATTERN);
+    } catch {
+      quote = new RegExp(DEFAULT_QUOTE_PATTERN);
     }
+    return {
+      quote,
+      bookstyle: this.live.bookstyle,
+      autoindent: this.live.autoindent,
+      trimblanks: this.live.trimblanks,
+      wrapAt: this.wrapAt,
+      tabsize: this.live.tabsize,
+    };
   }
 
-  private squeezeText(text: string): string {
-    return text.replace(/[ \t]+/g, (run, offset: number, whole: string) => {
-      const endsSentence = /[.?!][)\]"'}>]*$/.test(whole.slice(0, offset));
-      return endsSentence && run.length >= 2 ? '  ' : ' ';
-    });
-  }
-
-  private justifyParagraph(): void {
-    let first = this._cursorLine;
-    while (first < this.linesArr.length && this.line(first).trim() === '') first++;
-    if (first >= this.linesArr.length) return;
-    const { start, end } = this.paragraphContaining(first);
-
-    const indentOf = (i: number): string => this.line(i).match(/^[ \t]*/)?.[0] ?? '';
-    const firstIndent = indentOf(start);
-    const restIndent = end > start ? indentOf(start + 1) : firstIndent;
-    const bodies = this.linesArr.slice(start, end + 1).map((l) => l.replace(/^[ \t]+/, ''));
-    const joined = bodies.map((body, i) => {
-      if (i === bodies.length - 1) return body.trimEnd();
-      const trailing = body.match(/[ \t]*$/)?.[0] ?? '';
-      const endsSentence = /[.?!][)\]"'}>]*$/.test(body.trimEnd());
-      return body.trimEnd() + (endsSentence && (trailing.length >= 2 || trailing === '\t') ? '  ' : ' ');
-    }).join('');
-    const squeezed = this.squeezeText(joined);
-    const words = Array.from(squeezed.matchAll(/(\S+)( {1,2})?/g), (m) => ({ text: m[1], gap: m[2] ?? ' ' }));
-
-    const wrapped: string[] = [];
-    let current = firstIndent;
-    let currentHasWord = false;
-    let pendingGap = '';
-    const widthOf = (text: string): number => wideness(text, text.length, TABSIZE);
-    for (const word of words) {
-      if (!currentHasWord) {
-        current += word.text;
-        currentHasWord = true;
-      } else if (widthOf(current + pendingGap + word.text) <= JUSTIFY_WIDTH) {
-        current += pendingGap + word.text;
-      } else {
-        wrapped.push(current);
-        current = restIndent + word.text;
+  private justifyText(wholeBuffer: boolean): void {
+    const context = this.justifyContext();
+    const quote = context.quote;
+    const last = this.linesArr.length - 1;
+    const markedRegion = this.getMarkedRegion();
+    const wasLine = this._cursorLine;
+    let start = { line: 0, col: 0 };
+    let end = { line: 0, col: 0 };
+    let count = 0;
+    let primaryLead = '';
+    let secondaryLead = '';
+    let beforeEol = false;
+    if (markedRegion !== null) {
+      start = { line: markedRegion.startLine, col: markedRegion.startCol };
+      end = { line: markedRegion.endLine, col: markedRegion.endCol };
+      if (start.line === end.line && start.col === end.col) {
+        this._statusMessage = '[ Selection is empty ]';
+        return;
       }
-      pendingGap = word.gap;
+      if (start.col <= leadLength(this.line(start.line), quote)) start.col = 0;
+      while (start.col > 0 && isBlankChar(this.line(start.line)[start.col - 1])) start.col--;
+      if (end.col > 0 && end.col < leadLength(this.line(end.line), quote)) end.col = leadLength(this.line(end.line), quote);
+      while (end.col > 0 && isBlankChar(this.line(end.line)[end.col])) end.col++;
+      let sample = start.line;
+      while (sample > 0 && inParagraph(this.line(sample), quote) && !beginsParagraph(this.linesArr, sample, 0, context)) sample--;
+      while (sample < last && !inParagraph(this.line(sample), quote)) sample++;
+      const sampleText = this.line(sample);
+      const quoted = quoteLength(sampleText, quote);
+      primaryLead = sampleText.slice(0, leadLength(sampleText, quote));
+      if (sample < last && start.line !== end.line) sample++;
+      const other = this.line(sample);
+      const otherQuoted = quoteLength(other, quote);
+      secondaryLead = this.line(start.line).slice(0, quoted) + other.slice(otherQuoted, otherQuoted + indentLength(other.slice(otherQuoted)));
+      count = end.line - start.line + (end.col > 0 ? 1 : 0);
+      beforeEol = end.col < this.line(end.line).length;
+    } else {
+      let from = wholeBuffer ? 0 : this._cursorLine;
+      if (!wholeBuffer && inParagraph(this.line(from), quote) && !beginsParagraph(this.linesArr, from, 0, context)) {
+        from = paragraphStart(this.linesArr, from, context);
+      }
+      const found = findParagraph(this.linesArr, from, context);
+      if (found === null) {
+        this._cursorLine = last;
+        this._cursorCol = this.line(last).length;
+        return;
+      }
+      count = found.count;
+      start = { line: found.first, col: 0 };
+      const lastLine = wholeBuffer ? last : found.first + found.count - 1;
+      end = lastLine < last ? { line: lastLine + 1, col: 0 } : { line: lastLine, col: this.line(lastLine).length };
     }
-    if (currentHasWord) wrapped.push(current);
-    if (wrapped.length === 0) wrapped.push('');
-
     this.beginDiscreteEdit();
-    this.linesArr.splice(start, end - start + 1, ...wrapped);
-    this._cursorLine = start + wrapped.length;
-    this._cursorCol = 0;
+    const region = { startLine: start.line, startCol: start.col, endLine: end.line, endCol: end.col };
+    const piece = this.extractRegionText(region).split('\n');
+    this.excise(region);
+    if (markedRegion !== null) {
+      const first = piece[0];
+      const trimmed = first.slice(leadLength(first, quote));
+      piece[0] = primaryLead + trimmed;
+      concatenateParagraph(piece, 0, count, quote);
+      piece[0] = squeeze(piece[0], primaryLead.length);
+      rewrapParagraph(piece, 0, secondaryLead, context);
+      if (start.col > 0) piece.unshift('');
+      if (end.col > 0 && beforeEol) piece.push(primaryLead);
+    } else {
+      let index = justifyParagraph(piece, 0, count, context);
+      if (wholeBuffer) {
+        let found = findParagraph(piece, index, context);
+        while (found !== null) {
+          index = justifyParagraph(piece, found.first, found.count, context);
+          if (index >= piece.length - 1) break;
+          found = findParagraph(piece, index, context);
+        }
+      }
+    }
+    if (markedRegion !== null) {
+      this.markLine = start.line;
+      this.markCol = start.col;
+    }
+    this.insertText(piece.join('\n'));
+    if (markedRegion === null && wholeBuffer) {
+      this._cursorLine = Math.min(wasLine, this.linesArr.length - 1);
+      this._cursorCol = 0;
+    }
+    if (markedRegion !== null) this._statusMessage = '[ Justified selection ]';
+    else this._statusMessage = wholeBuffer ? '[ Justified file ]' : '[ Justified paragraph ]';
     this._modified = true;
-    this._statusMessage = '[ Justified paragraph ]';
   }
 
   // ── Search ───────────────────────────────────────────────────────
@@ -1501,6 +2025,7 @@ export class NanoEngine {
     this.replaceState = {
       regex, replacement: this.replaceWithBuffer, currentLine: this._cursorLine, currentCol: this._cursorCol, totalReplaced: 0,
       originLine: this._cursorLine, originCol: this._cursorCol, wrapped: false,
+      originEdittop: this.window.edittop, originFirstcolumn: this.window.firstcolumn,
     };
     if (this.advanceReplaceMatch()) return;
     this.replaceState = null;
@@ -1578,6 +2103,8 @@ export class NanoEngine {
     this._pendingReplaceMatch = null;
     this.replaceState = null;
     if (st) {
+      this.window.edittop = Math.min(st.originEdittop, this.linesArr.length - 1);
+      this.window.firstcolumn = st.originFirstcolumn;
       this._cursorLine = Math.min(st.originLine, this.linesArr.length - 1);
       this._cursorCol = Math.min(st.originCol, this.line(this._cursorLine).length);
       this._statusMessage = `Replaced ${st.totalReplaced} occurrence${st.totalReplaced === 1 ? '' : 's'}`;

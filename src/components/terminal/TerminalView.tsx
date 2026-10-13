@@ -308,13 +308,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             filePath={editorMode.absolutePath}
             initialContent={editorMode.content}
             isNewFile={editorMode.isNewFile}
-            readOnly={editorMode.readOnly}
-            showPosition={editorMode.showPosition}
-            showLineNumbers={editorMode.showLineNumbers}
-            softwrap={editorMode.softwrap}
+            launch={editorMode.nano}
             displayName={editorMode.displayName}
-            initialCursorLine={editorMode.initialCursorLine}
-            initialCursorCol={editorMode.initialCursorCol}
             fsContext={fsContext}
             onExit={(saved: boolean) => session.editorExit(saved)}
           />

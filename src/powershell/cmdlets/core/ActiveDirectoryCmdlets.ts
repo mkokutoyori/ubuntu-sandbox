@@ -28,6 +28,7 @@ import type {
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { namedCredential } from './RemotingCmdlets';
+import { securePasswordOf } from './SecurePassword';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
 import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import { OU_PROPERTIES, OU_PROPERTY_PARAMETERS } from '@/network/devices/windows/server/ad/adOrganizationalUnit';
@@ -64,16 +65,6 @@ function subjectUserOf(ctx: CmdletContext): string {
   if (!credential) return 'Administrator';
   const { username } = credential;
   return username.includes('\\') ? username.split('\\').pop()! : username;
-}
-
-/** Unwraps a `ConvertTo-SecureString "x" -AsPlainText -Force` result (`{SecureString, Length}`) or accepts a plain string directly. */
-function securePasswordOf(ctx: CmdletContext, key: string): string | undefined {
-  const raw = ctx.named[key];
-  if (raw === undefined) return undefined;
-  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw) && 'SecureString' in (raw as Record<string, PSValue>)) {
-    return psValueToString((raw as Record<string, PSValue>).SecureString);
-  }
-  return psValueToString(raw);
 }
 
 function identityOf(ctx: CmdletContext): string {

@@ -1,4 +1,8 @@
 import { WindowsServer } from '@/network/devices/WindowsServer';
+import { certToPem, pemToCert, pemToPrivateKey, privateKeyToPem } from '@/network/pki/pem';
+import { reserveCertificateSerial } from '@/network/pki/serialReservation';
+import type { NpsState } from '@/network/devices/windows/server/nps/WindowsNpsRole';
+import type { AppPoolInfo, IisStateDelta, WebsiteInfo } from '@/network/devices/windows/server/iis/WindowsIisRole';
 import type {
   DnsDynamicUpdateMode, DnsTransferPolicy, DnsZoneInfo, DnsZoneType,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
@@ -28,11 +32,25 @@ interface DhcpScopeState {
 
 export interface WindowsServerRolesState {
   dnsZones?: DnsZoneState[];
+  iis?: IisStateDelta;
+  adcs?: AdcsPersistedState;
+  nps?: NpsState;
   dhcp?: {
     scopes: DhcpScopeState[];
     exclusions: Array<{ start: string; end: string }>;
     serverOptions: Array<{ optionId: number; values: string[] }>;
   };
+}
+
+interface PemIdentity {
+  certificate: string;
+  privateKey: string;
+}
+
+interface AdcsPersistedState {
+  caCommonName: string;
+  ca: PemIdentity;
+  issued: PemIdentity[];
 }
 
 interface RolePersister {
@@ -105,7 +123,80 @@ const dhcpScopes: RolePersister = {
   },
 };
 
-const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes];
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+const differing = <T extends { name: string }>(live: readonly T[], factory: readonly T[]): T[] => {
+  const baseline = new Map(factory.map((item) => [item.name, item]));
+  return live.filter((item) => !same(item, baseline.get(item.name)));
+};
+
+const missing = <T extends { name: string }>(live: readonly T[], factory: readonly T[]): string[] => {
+  const present = new Set(live.map((item) => item.name));
+  return factory.map((item) => item.name).filter((name) => !present.has(name));
+};
+
+const iisSites: RolePersister = {
+  capture(server, twin) {
+    const role = server.getIisRole();
+    if (!role) return {};
+    const factory = twin.getIisRole();
+    const liveSites: WebsiteInfo[] = role.listWebsites();
+    const factorySites: WebsiteInfo[] = factory?.listWebsites() ?? [];
+    const livePools: AppPoolInfo[] = role.listAppPools();
+    const factoryPools: AppPoolInfo[] = factory?.listAppPools() ?? [];
+    const delta: IisStateDelta = {
+      sites: differing(liveSites, factorySites), removedSites: missing(liveSites, factorySites),
+      appPools: differing(livePools, factoryPools), removedAppPools: missing(livePools, factoryPools),
+    };
+    return Object.values(delta).some((list) => list.length > 0) ? { iis: delta } : {};
+  },
+  restore(server, state) {
+    if (state.iis) server.getIisRole()?.restoreState(state.iis);
+  },
+};
+
+const adcsAuthority: RolePersister = {
+  capture(server) {
+    const state = server.getAdcsRole()?.exportState();
+    if (!state) return {};
+    return {
+      adcs: {
+        caCommonName: state.caCommonName,
+        ca: { certificate: certToPem(state.caCertificate), privateKey: privateKeyToPem(state.caPrivateKey) },
+        issued: state.issued.map((i) => ({ certificate: certToPem(i.cert), privateKey: privateKeyToPem(i.privateKey) })),
+      },
+    };
+  },
+  restore(server, state) {
+    const role = server.getAdcsRole();
+    const saved = state.adcs;
+    if (!role || !saved) return;
+    const caCertificate = pemToCert(saved.ca.certificate);
+    const caPrivateKey = pemToPrivateKey(saved.ca.privateKey);
+    if (!caCertificate || !caPrivateKey) return;
+    const issued = saved.issued.flatMap((i) => {
+      const cert = pemToCert(i.certificate);
+      const privateKey = pemToPrivateKey(i.privateKey);
+      return cert && privateKey ? [{ cert, privateKey }] : [];
+    });
+    for (const certificate of [caCertificate, ...issued.map((i) => i.cert)]) reserveCertificateSerial(certificate.serialNumber);
+    role.restoreState({
+      caCommonName: saved.caCommonName, caCertificate, caPrivateKey, issued,
+    });
+  },
+};
+
+const npsPolicies: RolePersister = {
+  capture(server) {
+    const state = server.getNpsRole()?.exportState();
+    return state ? { nps: state } : {};
+  },
+  restore(server, state) {
+    if (state.nps) server.getNpsRole()?.restoreState(state.nps);
+  },
+};
+
+const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes, iisSites, adcsAuthority, npsPolicies];
 
 export function captureWindowsServerRoles(server: WindowsServer, twin: WindowsServer): WindowsServerRolesState | undefined {
   const state = Object.assign({}, ...PERSISTERS.map((p) => p.capture(server, twin))) as WindowsServerRolesState;

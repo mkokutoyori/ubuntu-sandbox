@@ -62,6 +62,10 @@ function displayValid(value: string): boolean {
   return value.split(',').every((item) => DISPLAY_WORDS.has(item));
 }
 
+function matchpairsValid(value: string): boolean {
+  return value === '' || value.split(',').every((item) => [...item].length === 3 && [...item][1] === ':');
+}
+
 function same<T extends OptionValue>(value: T): ProfileDefaults {
   return { vim: value, vi: value };
 }
@@ -73,6 +77,8 @@ const DEFS: readonly OptionDef[] = [
   { name: 'list', short: 'list', kind: 'bool', scope: 'local', reset: same(false) },
   { name: 'listchars', short: 'lcs', kind: 'string', scope: 'local', reset: same('eol:$'), commaList: true, normalize: (v) => (listcharsValid(v) ? v : null) },
   { name: 'showmatch', short: 'sm', kind: 'bool', scope: 'global', reset: same(false) },
+  { name: 'matchtime', short: 'mat', kind: 'number', scope: 'global', reset: same(5), number: { min: Number.MIN_SAFE_INTEGER, max: Number.MAX_SAFE_INTEGER, belowMin: 'E487', clamp: false } },
+  { name: 'matchpairs', short: 'mps', kind: 'string', scope: 'local', reset: same('(:),{:},[:]'), commaList: true, normalize: (v) => (matchpairsValid(v) ? v : null) },
   { name: 'incsearch', short: 'is', kind: 'bool', scope: 'global', reset: same(false), startup: { vim: true, vi: false } },
   { name: 'hlsearch', short: 'hls', kind: 'bool', scope: 'global', reset: same(false) },
   { name: 'ignorecase', short: 'ic', kind: 'bool', scope: 'global', reset: same(false) },
@@ -103,7 +109,7 @@ const BY_NAME: ReadonlyMap<string, OptionDef> = new Map(
 );
 
 export type OptionName =
-  | 'number' | 'relativenumber' | 'numberwidth' | 'list' | 'listchars' | 'showmatch' | 'incsearch'
+  | 'number' | 'relativenumber' | 'numberwidth' | 'list' | 'listchars' | 'showmatch' | 'matchtime' | 'matchpairs' | 'incsearch'
   | 'hlsearch' | 'ignorecase' | 'autoindent' | 'colorcolumn' | 'tabstop' | 'shiftwidth' | 'softtabstop'
   | 'expandtab' | 'wrap' | 'scrolloff' | 'sidescroll' | 'sidescrolloff' | 'wrapscan' | 'display'
   | 'ruler' | 'showcmd' | 'showmode' | 'scroll' | 'filetype' | 'fileformat' | 'fileencoding' | 'mouse';

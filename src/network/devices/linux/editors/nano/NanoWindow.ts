@@ -1,4 +1,4 @@
-import { actualX, advanceOver, wideness } from './NanoText';
+import { actualX, advanceOver, isBlankChar, wideness } from './NanoText';
 
 export type ViewportManner = 'flowing' | 'centering' | 'recentering' | 'stationary';
 
@@ -11,6 +11,19 @@ export interface NanoWindowSettings {
   readonly softwrap: boolean;
   readonly tabsize: number;
   readonly lineNumbers: boolean;
+  readonly zero: boolean;
+  readonly minibar: boolean;
+  readonly emptyline: boolean;
+  readonly nohelp: boolean;
+  readonly jumpyscrolling: boolean;
+  readonly atblanks: boolean;
+}
+
+export interface NanoLayoutFlags {
+  readonly zero: boolean;
+  readonly minibar: boolean;
+  readonly emptyline: boolean;
+  readonly nohelp: boolean;
 }
 
 export interface Position {
@@ -26,18 +39,24 @@ export interface ScreenPosition {
 const HIGHEST = Number.MAX_SAFE_INTEGER;
 
 export interface NanoLayout {
-  readonly titleRow: number | null;
+  readonly titleRows: number;
   readonly editFrom: number;
   readonly editRows: number;
   readonly statusRow: number;
   readonly barsFrom: number | null;
 }
 
-export function nanoLayout(rows: number): NanoLayout {
-  if (rows < 3) return { titleRow: null, editFrom: 0, editRows: 1, statusRow: rows - 1, barsFrom: null };
-  const bars = rows >= 5;
-  const editRows = rows - 1 - (bars ? 3 : 1);
-  return { titleRow: 0, editFrom: 1, editRows, statusRow: 1 + editRows, barsFrom: bars ? rows - 2 : null };
+export const SHORTCUT_BARS_MINIMUM = 6;
+
+export const PLAIN_LAYOUT: NanoLayoutFlags = { zero: false, minibar: false, emptyline: false, nohelp: false };
+
+export function nanoLayout(rows: number, flags: NanoLayoutFlags = PLAIN_LAYOUT): NanoLayout {
+  if (rows < 3) return { titleRows: 0, editFrom: 0, editRows: flags.zero ? rows : 1, statusRow: rows - 1, barsFrom: null };
+  const bottomRows = flags.nohelp || rows < SHORTCUT_BARS_MINIMUM ? 1 : 3;
+  const titleRows = flags.minibar || flags.zero ? 0 : flags.emptyline && rows > SHORTCUT_BARS_MINIMUM ? 2 : 1;
+  const editRows = rows - titleRows - bottomRows + (flags.zero ? 1 : 0);
+  const statusRow = rows - bottomRows;
+  return { titleRows, editFrom: titleRows, editRows, statusRow, barsFrom: bottomRows === 3 ? statusRow + 1 : null };
 }
 
 export class NanoWindow {
@@ -52,7 +71,9 @@ export class NanoWindow {
     private readonly settings: () => NanoWindowSettings,
   ) {}
 
-  get editRows(): number { return nanoLayout(this.rows).editRows; }
+  get layout(): NanoLayout { return nanoLayout(this.rows, this.settings()); }
+
+  get editRows(): number { return this.layout.editRows; }
 
   get margin(): number {
     if (!this.settings().lineNumbers) return 0;
@@ -62,9 +83,9 @@ export class NanoWindow {
 
   get editCols(): number { return this.cols - this.margin; }
 
-  get hasTitleBar(): boolean { return this.rows >= 3; }
+  get hasTitleBar(): boolean { return this.layout.titleRows > 0; }
 
-  get hasShortcutBars(): boolean { return this.rows >= 5; }
+  get hasShortcutBars(): boolean { return this.layout.barsFrom !== null; }
 
   private get tabsize(): number { return this.settings().tabsize; }
 
@@ -83,6 +104,7 @@ export class NanoWindow {
 
   breakpoint(text: string, leftedge: number): { end: number; endOfLine: boolean } {
     const rightside = leftedge + this.editCols;
+    const atBlanks = this.settings().atblanks;
     let index = 0;
     let column = 0;
     while (index < text.length && column < leftedge) {
@@ -91,13 +113,24 @@ export class NanoWindow {
       index += step.length;
     }
     let breaking = rightside;
+    let lastBlankColumn = 0;
+    let farthestBlank = -1;
     while (index < text.length && column <= rightside) {
+      if (atBlanks && isBlankChar(text[index]) && column < rightside) {
+        farthestBlank = index;
+        lastBlankColumn = column;
+      }
       breaking = text[index] === '\t' ? rightside : column;
       const step = advanceOver(text, index, column, this.tabsize);
       column += step.width;
       index += step.length;
     }
     if (column <= rightside) return { end: column, endOfLine: column < rightside };
+    if (farthestBlank >= 0) {
+      const afterTheBlank = lastBlankColumn + advanceOver(text, farthestBlank, lastBlankColumn, this.tabsize).width;
+      if (afterTheBlank <= rightside) return { end: afterTheBlank, endOfLine: false };
+      if (text[farthestBlank] === '\t') breaking = rightside;
+    }
     return { end: this.editCols > 1 ? breaking : column - 1, endOfLine: false };
   }
 
@@ -199,8 +232,27 @@ export class NanoWindow {
     this.firstcolumn = at.leftedge;
   }
 
+  hugFloor(current: Position): void {
+    const half = Math.floor(this.editRows / 2);
+    let rowsFromTail: number;
+    if (this.softwrap) {
+      const at = { line: current.line, leftedge: this.leftedgeFor(this.columnOf(current.line, current.col), current.line) };
+      rowsFromTail = half - this.goForward(half, at);
+    } else {
+      rowsFromTail = this.buffer.lineCount() - 1 - current.line;
+    }
+    if (rowsFromTail < half && !this.settings().jumpyscrolling) {
+      this.cursorRow = this.editRows - 1 - rowsFromTail;
+      this.adjust('stationary', current);
+    } else {
+      this.adjust('centering', current);
+    }
+    this.cursorRow = this.place(current).row;
+  }
+
   follow(manner: ViewportManner, current: Position): void {
-    if (manner === 'stationary' || manner === 'recentering' || this.isOffscreen(current)) this.adjust(manner, current);
+    if (manner === 'stationary' || manner === 'recentering') this.adjust(manner, current);
+    else if (this.isOffscreen(current)) this.adjust(this.settings().jumpyscrolling ? 'centering' : manner, current);
     this.cursorRow = this.place(current).row;
   }
 

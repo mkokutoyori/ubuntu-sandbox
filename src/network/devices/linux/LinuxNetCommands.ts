@@ -9,9 +9,6 @@ import { simulationDate } from '@/network/core/SystemClock';
 
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import { broadcastAddress } from '../../core/ip';
-import { linuxSnmpSnapshot, type LinuxSnmpSnapshot } from './ports/PortsFilesystem';
-import type { KernelIpFacts } from './LinuxIpv4Settings';
-import type { ProtocolCounters } from '../../layers/internet/ProtocolCounters';
 
 // ─── ifconfig ───────────────────────────────────────────────────────
 
@@ -144,68 +141,6 @@ export function renderNetstatInterfaces(ctx: IpNetworkContext | null): string {
     lines.push(`${name.padEnd(11)}${mtu} ${rx}      0      0 0        ${tx}      0      0      0 ${flags}`);
   }
   return lines.join('\n');
-}
-
-export function renderNetstatStatistics(counters?: ProtocolCounters, kernel?: KernelIpFacts): string {
-  return cmdNetstatStatistics(linuxSnmpSnapshot(counters, kernel));
-}
-
-function cmdNetstatStatistics(snapshot: LinuxSnmpSnapshot): string {
-  const c = snapshot.counters;
-  return [
-    'Ip:',
-    `    Forwarding: ${snapshot.kernel.forwarding ? 1 : 2}`,
-    `    ${c.ipInReceives} total packets received`,
-    `    ${c.ipForwDatagrams} forwarded`,
-    `    ${c.ipInDiscards} incoming packets discarded`,
-    `    ${c.ipInDelivers} incoming packets delivered`,
-    `    ${c.ipOutRequests} requests sent out`,
-    ...(c.ipOutNoRoutes > 0 ? [`    ${c.ipOutNoRoutes} dropped because of missing route`] : []),
-    'Icmp:',
-    `    ${c.icmpInMsgs} ICMP messages received`,
-    `    ${c.icmpInErrors} input ICMP message failed`,
-    '    ICMP input histogram:',
-    ...icmpHistogram({
-      'destination unreachable': c.icmpInDestUnreachs,
-      'timeout in transit': c.icmpInTimeExcds,
-      redirects: c.icmpInRedirects,
-      'echo requests': c.icmpInEchos,
-      'echo replies': c.icmpInEchoReps,
-    }),
-    `    ${c.icmpOutMsgs} ICMP messages sent`,
-    `    ${c.icmpOutErrors} ICMP messages failed`,
-    '    ICMP output histogram:',
-    ...icmpHistogram({
-      'destination unreachable': c.icmpOutDestUnreachs,
-      'time exceeded': c.icmpOutTimeExcds,
-      redirects: c.icmpOutRedirects,
-      'echo requests': c.icmpOutEchos,
-      'echo replies': c.icmpOutEchoReps,
-    }),
-    'Tcp:',
-    `    ${c.tcpActiveOpens} active connection openings`,
-    `    ${c.tcpPassiveOpens} passive connection openings`,
-    `    ${c.tcpAttemptFails} failed connection attempts`,
-    `    ${c.tcpEstabResets} connection resets received`,
-    `    ${snapshot.currEstab} connections established`,
-    `    ${c.tcpInSegs} segments received`,
-    `    ${c.tcpOutSegs} segments sent out`,
-    `    ${c.tcpRetransSegs} segments retransmitted`,
-    'Udp:',
-    `    ${c.udpInDatagrams} packets received`,
-    `    ${c.udpNoPorts} packets to unknown port received`,
-    `    ${c.udpInErrors} packet receive errors`,
-    `    ${c.udpOutDatagrams} packets sent`,
-    '    0 receive buffer errors',
-    'TcpExt:',
-    'IpExt:',
-  ].join('\n');
-}
-
-function icmpHistogram(lignes: Record<string, number>): string[] {
-  return Object.entries(lignes)
-    .filter(([, n]) => n > 0)
-    .map(([nom, n]) => `        ${nom}: ${n}`);
 }
 
 // ─── wget ───────────────────────────────────────────────────────────

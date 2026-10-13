@@ -1,3 +1,5 @@
+const NEVER_MATCHES = /(?!)/;
+
 export function compileVimPattern(pattern: string, ignoreCase: boolean): RegExp {
   let out = '';
   for (let i = 0; i < pattern.length; i++) {
@@ -39,8 +41,27 @@ export function compileVimPattern(pattern: string, ignoreCase: boolean): RegExp 
       out += '\\' + c; // literal in vim's default magic mode
       continue;
     }
+    if (c === '[' && !hasClosingBracket(pattern, i)) {
+      out += '\\[';
+      continue;
+    }
     out += c; // . * ^ $ [ ] pass through — same meaning in both dialects
   }
-  return new RegExp(out, ignoreCase ? 'i' : undefined);
+  try {
+    return new RegExp(out, ignoreCase ? 'i' : undefined);
+  } catch {
+    return NEVER_MATCHES;
+  }
 }
 
+
+function hasClosingBracket(pattern: string, open: number): boolean {
+  let at = open + 1;
+  if (pattern[at] === '^') at++;
+  if (pattern[at] === ']') at++;
+  for (; at < pattern.length; at++) {
+    if (pattern[at] === '\\') at++;
+    else if (pattern[at] === ']') return true;
+  }
+  return false;
+}

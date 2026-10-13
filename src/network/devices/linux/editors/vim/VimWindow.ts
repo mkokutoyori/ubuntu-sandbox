@@ -39,6 +39,14 @@ export interface WindowView {
   colAtCell(line: number, cell: number, allowEol: boolean): number;
 }
 
+export interface ViewState {
+  readonly top: number;
+  readonly left: number;
+  readonly skip: number;
+  readonly bot: number;
+  readonly empty: number;
+}
+
 const UNBOUNDED = Number.MAX_SAFE_INTEGER;
 const FRACTION_MULT = 16384;
 
@@ -57,6 +65,7 @@ export class VimWindow implements WindowView {
   private botApprox = false;
   private validCursor = -1;
   private redrawing = false;
+  private wholeLineEdit = false;
   private topValid = false;
   private skipCol = 0;
   private wrow = 0;
@@ -294,6 +303,7 @@ export class VimWindow implements WindowView {
     this.cursorPos = { line: cursorLine, col: cursorCol, tabEnd: onTabEnd };
     const previousCount = this.knownLines.length;
     const change = this.firstChange();
+    this.wholeLineEdit = false;
     if (change !== null) {
       if (change.line < cursorLine || (change.line === cursorLine && change.col <= cursorCol)) this.topValid = false;
       if (this.botLnum >= change.line + 1) {
@@ -312,6 +322,10 @@ export class VimWindow implements WindowView {
     if (this.height > 1) this.fraction = Math.floor((this.wrow * FRACTION_MULT + FRACTION_MULT / 2) / this.height);
   }
 
+  noteWholeLineEdit(): void {
+    this.wholeLineEdit = true;
+  }
+
   private firstChange(): { line: number; col: number } | null {
     const count = this.lineCount;
     const known = this.knownLines;
@@ -321,7 +335,9 @@ export class VimWindow implements WindowView {
       const now = index < count ? this.host.lineAt(index) : '';
       const before = index < known.length ? known[index] : '';
       let col = 0;
-      while (col < now.length && col < before.length && now[col] === before[col]) col++;
+      if (!this.wholeLineEdit) {
+        while (col < now.length && col < before.length && now[col] === before[col]) col++;
+      }
       this.knownLines = Array.from({ length: count }, (_, line) => this.host.lineAt(line));
       return { line: index, col };
     }
@@ -669,6 +685,22 @@ export class VimWindow implements WindowView {
 
   invalidateTop(): void {
     this.topValid = false;
+  }
+
+  noteCursorLine(cursorLine: number): void {
+    this.checkCursorMoved(cursorLine);
+  }
+
+  saveView(): ViewState {
+    return { top: this.topLnum, left: this.leftColumn, skip: this.skipCol, bot: this.botLnum, empty: this.emptyRowCount };
+  }
+
+  restoreView(view: ViewState): void {
+    this.topLnum = view.top;
+    this.leftColumn = view.left;
+    this.skipCol = view.skip;
+    this.botLnum = view.bot;
+    this.emptyRowCount = view.empty;
   }
 
   private checkCursorMoved(cursorLine: number): void {
