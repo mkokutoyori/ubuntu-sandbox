@@ -16,7 +16,11 @@ export interface W32tmContext {
   readonly serviceRunning: boolean;
   readonly resolve: (name: string) => string | null;
   readonly wait: (seconds: number) => Promise<void>;
-  readonly monitorTargets: () => Array<{ readonly name: string; readonly address: string; readonly pdc: boolean }>;
+  readonly monitorTargets: (domain: string | undefined, computers: readonly string[]) => Array<{ readonly name: string; readonly address: string; readonly pdc: boolean }>;
+  readonly remote: (computer: string, line: string) => { readonly ok: boolean; readonly output?: string; readonly error?: string };
+  readonly timeZone: () => { readonly standardName: string; readonly daylightName: string; readonly standardBias: number; readonly daylightBias: number; readonly state: 'STANDARD' | 'DAYLIGHT' | 'UNUSED' };
+  readonly register: () => void;
+  readonly unregister: () => void;
 }
 
 const HELP = [
@@ -122,7 +126,7 @@ function parse(args: readonly string[]): Parsed {
     const colon = token.indexOf(':');
     const name = (colon < 0 ? token.slice(1) : token.slice(1, colon)).toLowerCase();
     const value = colon < 0 ? '' : token.slice(colon + 1).replace(/^"|"$/g, '');
-    if (command === '' && ['query', 'config', 'resync', 'stripchart', 'monitor', 'dumpreg'].includes(name)) command = name;
+    if (command === '' && ['query', 'config', 'resync', 'stripchart', 'monitor', 'dumpreg', 'ntte', 'ntpte', 'tz', 'register', 'unregister'].includes(name)) command = name;
     else switches.set(name, value);
   }
   return { command, switches, positional };
@@ -333,20 +337,90 @@ async function stripchart(parsed: Parsed, context: W32tmContext): Promise<string
 }
 
 function monitor(parsed: Parsed, context: W32tmContext): string {
-  const targets = context.monitorTargets();
+  const computers = (parsed.switches.get('computers') ?? '').split(',').map((name) => name.trim()).filter(Boolean);
+  const targets = context.monitorTargets(parsed.switches.get('domain'), computers);
   if (targets.length === 0) return RPC_UNAVAILABLE;
-  void parsed;
   const lines: string[] = [];
   for (const target of targets) {
     lines.push(`${target.name}${target.pdc ? ' *** PDC ***' : ''}[${target.address}:123]:`);
-    const association = context.agent.getAssociation(target.address);
-    const delay = association?.response ? association.response.delayMs : 0;
-    lines.push(`    ICMP: ${Math.round(delay)}ms delay`);
-    lines.push(`    NTP: ${association?.response ? `${association.response.offsetMs >= 0 ? '+' : '-'}${Math.abs(association.response.offsetMs / 1000).toFixed(7)}s` : '+0.0000000s'} offset from ${target.name}`);
-    lines.push(`        RefID: ${association?.refId || 'unspecified'}`);
-    lines.push(`        Stratum: ${association && association.stratum < 16 ? association.stratum : context.agent.getStratum()}`);
+    const sample = measure(context.agent, target.address);
+    if (sample === null) {
+      lines.push('    ICMP: error 0x800705B4 - This operation returned because the timeout period expired.');
+      lines.push('    NTP: error 0x800705B4 - This operation returned because the timeout period expired.');
+      continue;
+    }
+    lines.push(`    ICMP: ${Math.max(0, Math.round(sample.delayMs))}ms delay`);
+    lines.push(`    NTP: ${sample.offsetMs >= 0 ? '+' : '-'}${Math.abs(sample.offsetMs / 1000).toFixed(7)}s offset from ${target.name}`);
+    lines.push(`        RefID: ${monitorReference(sample.refId)}`);
+    lines.push(`        Stratum: ${sample.stratum}`);
   }
   return lines.join('\n');
+}
+
+function monitorReference(refId: string): string {
+  if (isValidIPv4(refId)) return `${refId} [0x${(tryIpToUint32(refId) ?? 0).toString(16).toUpperCase().padStart(8, '0')}]`;
+  const hex = Array.from(refId.padEnd(4, '\0').slice(0, 4)).map((c) => c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')).join('');
+  return `'${refId}' [0x${hex}]`;
+}
+
+interface Measurement {
+  readonly offsetMs: number;
+  readonly delayMs: number;
+  readonly stratum: number;
+  readonly refId: string;
+}
+
+function measure(agent: NtpAgent, address: string): Measurement | null {
+  const existing = agent.getAssociation(address) !== undefined;
+  const seen = existing ? agent.getAssociation(address)!.received : 0;
+  if (!existing) agent.addServer(address);
+  let association = agent.getAssociation(address);
+  if (association !== undefined && association.received === seen) {
+    agent.pollAll();
+    association = agent.getAssociation(address);
+  }
+  const result: Measurement | null = association !== undefined && association.received > seen && association.response !== null
+    ? { offsetMs: association.response.offsetMs, delayMs: association.response.delayMs, stratum: association.stratum, refId: association.refId }
+    : null;
+  if (!existing) agent.removeServer(address);
+  return result;
+}
+
+const NT_EPOCH_SHIFT_MS = Date.UTC(1601, 0, 1);
+const NTP_EPOCH_SHIFT_MS = Date.UTC(1900, 0, 1);
+
+function convertEpoch(raw: string | undefined, originMs: number, perSecond: bigint, context: W32tmContext): string {
+  if (raw === undefined || !/^\d+$/.test(raw)) return HELP;
+  const units = BigInt(raw);
+  const seconds = units / perSecond;
+  const fraction = ((units % perSecond) * 10_000_000n) / perSecond;
+  const days = seconds / 86_400n;
+  const rest = Number(seconds % 86_400n);
+  const two = (n: number): string => String(n).padStart(2, '0');
+  const time = `${two(Math.floor(rest / 3600))}:${two(Math.floor((rest % 3600) / 60))}:${two(rest % 60)}.${String(fraction).padStart(7, '0')}`;
+  return `${days} ${time} - ${localDateTime(originMs + Number(seconds) * 1000, context.timezone)}`;
+}
+
+function timeZoneLines(context: W32tmContext): string {
+  const zone = context.timeZone();
+  const bias = (minutes: number): string => `${minutes}min`;
+  return [
+    `Time zone: Current:TIME_ZONE_ID_${zone.state} Bias: ${bias(zone.state === 'DAYLIGHT' ? zone.daylightBias : zone.standardBias)} (UTC=LocalTime+Bias)`,
+    `  [Standard Name:"${zone.standardName}" Bias:${bias(zone.standardBias)} Date:(unspecified)]`,
+    `  [Daylight Name:"${zone.daylightName}" Bias:${bias(zone.daylightBias)} Date:(unspecified)]`,
+  ].join('\n');
+}
+
+function registerService(context: W32tmContext): string {
+  if (!context.isAdministrator) return ACCESS_DENIED;
+  context.register();
+  return 'W32Time successfully registered.';
+}
+
+function unregisterService(context: W32tmContext): string {
+  if (!context.isAdministrator) return ACCESS_DENIED;
+  context.unregister();
+  return 'W32Time successfully unregistered.';
 }
 
 const TYPE_NAMES: Readonly<Record<string, string>> = { String: 'REG_SZ', ExpandString: 'REG_EXPAND_SZ', DWord: 'REG_DWORD' };
@@ -368,8 +442,26 @@ function dumpReg(parsed: Parsed, context: W32tmContext): string {
   return lines.join('\n');
 }
 
+function remoteTarget(parsed: Parsed, context: W32tmContext): string | undefined {
+  const target = parsed.switches.get('computer');
+  return parsed.command !== 'stripchart' && parsed.command !== 'monitor' && target !== undefined && !isLocalTarget(target, context)
+    ? target : undefined;
+}
+
+function runRemote(args: readonly string[], target: string, context: W32tmContext): string {
+  const forwarded = mergeQuoted(args).filter((token) => !token.toLowerCase().startsWith('/computer:'));
+  const result = context.remote(target, `w32tm ${forwarded.join(' ')}`);
+  if (result.ok) return result.output ?? '';
+  const error = result.error ?? '';
+  if (/could not be resolved/i.test(error)) return 'The following error occurred: No such host is known. (0x80072AF9)';
+  if (/denied/i.test(error)) return ACCESS_DENIED;
+  return RPC_UNAVAILABLE;
+}
+
 export async function runW32tm(args: readonly string[], context: W32tmContext): Promise<string> {
   const parsed = parse(args);
+  const target = remoteTarget(parsed, context);
+  if (target !== undefined) return runRemote(args, target, context);
   switch (parsed.command) {
     case 'query': return query(parsed, context);
     case 'config': return config(parsed, context);
@@ -377,6 +469,11 @@ export async function runW32tm(args: readonly string[], context: W32tmContext): 
     case 'stripchart': return await stripchart(parsed, context);
     case 'monitor': return monitor(parsed, context);
     case 'dumpreg': return dumpReg(parsed, context);
+    case 'ntte': return convertEpoch(parsed.positional[0], NT_EPOCH_SHIFT_MS, 10_000_000n, context);
+    case 'ntpte': return convertEpoch(parsed.positional[0], NTP_EPOCH_SHIFT_MS, 4_294_967_296n, context);
+    case 'tz': return timeZoneLines(context);
+    case 'register': return registerService(context);
+    case 'unregister': return unregisterService(context);
     default: return HELP;
   }
 }

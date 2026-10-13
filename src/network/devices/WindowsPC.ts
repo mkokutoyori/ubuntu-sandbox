@@ -127,7 +127,7 @@ import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { defaultHostClockPort, type HostClockPort } from '../core/time/HostClockPort';
 import { PathClock } from '../core/time/PathClock';
-import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue, type RegistryValueChange } from './windows/PSRegistryProvider';
+import { PSRegistryProvider, parseRegistryAddress, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY, type RegistryValue, type RegistryValueChange } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
@@ -242,7 +242,10 @@ import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { formatLocalTime } from './linux/system/SystemInfo';
-import { windowsZoneNameAt } from '../core/time/WindowsTimeZones';
+import { windowsZoneNameAt, windowsZoneOf } from '../core/time/WindowsTimeZones';
+import { TimeZone } from '../core/time/TimeZone';
+import { isDaylightSavingAt, observesDaylightSaving, standardOffsetMinutes } from '../core/time/TimeZoneRegistry';
+import { W32TIME_KEY } from './windows/W32TimeRegistry';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdAssoc, cmdFtype } from './windows/WinAssoc';
 import { cmdTzutil } from './windows/WinTzutil';
@@ -6000,6 +6003,57 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this._w32time;
   }
 
+  private w32MonitorTargets(domain: string | undefined, computers: readonly string[]): Array<{ name: string; address: string; pdc: boolean }> {
+    const targets: Array<{ name: string; address: string; pdc: boolean }> = [];
+    for (const entry of computers) {
+      const pdc = entry.startsWith('*');
+      const name = pdc ? entry.slice(1) : entry;
+      const address = this.resolveHostnameSync(name)?.toString();
+      if (address) targets.push({ name, address, pdc });
+    }
+    if (computers.length > 0) return targets;
+    const store = this.getDirectoryStore();
+    if (!store || (domain !== undefined && domain.toLowerCase() !== store.dnsName.toLowerCase())) return targets;
+    const pdcName = store.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+    for (const controller of store.listDomainControllers()) {
+      const name = controller.name.replace(/\$$/, '');
+      const address = name === this.getHostname() ? '127.0.0.1' : store.ipForDc(name);
+      if (address) targets.push({ name: `${name}.${store.dnsName}`, address, pdc: name === pdcName });
+    }
+    return targets;
+  }
+
+  private w32TimeZone(): { standardName: string; daylightName: string; standardBias: number; daylightBias: number; state: 'STANDARD' | 'DAYLIGHT' | 'UNUSED' } {
+    const zone = windowsZoneOf(this.identity.timezone);
+    const parsed = TimeZone.parse(zone.iana);
+    const now = simulationNowMs();
+    const observes = parsed !== null && observesDaylightSaving(parsed, now);
+    const standardBias = parsed === null ? 0 : -standardOffsetMinutes(parsed, now);
+    const standardName = zone.id === 'UTC' ? 'Coordinated Universal Time' : zone.id;
+    if (!observes) return { standardName, daylightName: standardName, standardBias, daylightBias: standardBias, state: 'UNUSED' };
+    return {
+      standardName, daylightName: standardName.replace(/Standard Time$/, 'Daylight Time'),
+      standardBias, daylightBias: standardBias - 60,
+      state: isDaylightSavingAt(parsed!, now) ? 'DAYLIGHT' : 'STANDARD',
+    };
+  }
+
+  private registerW32Time(): void {
+    this.getW32Time().registry.seed({ serverEdition: this.getDeviceType() === 'windows-server', domainMember: this.domainMembership !== null });
+    this.svcMgr.setStartType('W32Time', 'Automatic', true);
+    this.svcMgr.startService('W32Time', true);
+  }
+
+  private unregisterW32Time(): void {
+    this.svcMgr.stopService('W32Time', true);
+    this.svcMgr.setStartType('W32Time', 'Disabled', true);
+    for (const key of ['Parameters', 'Config', 'TimeProviders']) {
+      const address = parseRegistryAddress(`${W32TIME_KEY}\\${key}`);
+      if (address !== null) this.registry.deleteKey(address);
+    }
+    this._w32time = null;
+  }
+
   private w32DomainSource(): { name: string; address: string } | null {
     const store = this.getDirectoryStore();
     if (store) {
@@ -6024,12 +6078,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       serviceRunning: this.svcMgr.isStarted('W32Time'),
       resolve: (name) => this.resolveHostnameSync(name)?.toString() ?? null,
       wait: simulatedWait,
-      monitorTargets: () => {
-        if (!store) return [];
-        const pdc = store.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
-        const address = pdc === this.getHostname() ? '127.0.0.1' : store.ipForDc(pdc);
-        return pdc && address ? [{ name: `${pdc}.${store.dnsName}`, address, pdc: true }] : [];
-      },
+      monitorTargets: (domain, computers) => this.w32MonitorTargets(domain, computers),
+      remote: (computer, line) => this.runRemoteCommand(computer, line),
+      timeZone: () => this.w32TimeZone(),
+      register: () => this.registerW32Time(),
+      unregister: () => this.unregisterW32Time(),
     });
   }
 

@@ -162,3 +162,55 @@ describe('the System log receives the Time-Service events', () => {
     expect(out).toContain('The time service is now synchronizing the system time with the time source 10.0.0.1 (ntp.m|0x8|0.0.0.0:123->10.0.0.1:123).');
   });
 });
+
+describe('conversion, time zone, registration and remote targets', () => {
+  it('/ntte converts an NT epoch to days, time of day and local date', async () => {
+    const { pc } = await lab();
+    const units = 132156458800000000n;
+    const seconds = units / 10_000_000n;
+    const days = seconds / 86_400n;
+    const out = await pc.executeCommand(`w32tm /ntte ${units}`);
+    expect(out.startsWith(`${days} `)).toBe(true);
+    expect(out).toMatch(/^\d+ \d\d:\d\d:\d\d\.\d{7} - \d+\/\d+\/\d{4} \d+:\d\d:\d\d [AP]M$/);
+    expect(out).toBe(`${days} 20:44:40.0000000 - 10/15/2019 8:44:40 PM`);
+  });
+
+  it('/ntpte converts an NTP timestamp', async () => {
+    const { pc } = await lab();
+    const out = await pc.executeCommand(`w32tm /ntpte ${3_786_825_600n << 32n}`);
+    expect(out).toContain('1/1/2020');
+  });
+
+  it('/tz follows the time zone of the machine', async () => {
+    const { pc } = await lab();
+    expect(await pc.executeCommand('w32tm /tz')).toContain('Time zone: Current:TIME_ZONE_ID_UNUSED Bias: 0min (UTC=LocalTime+Bias)');
+    await pc.executeCommand('tzutil /s "Romance Standard Time"');
+    const out = await pc.executeCommand('w32tm /tz');
+    expect(out).toContain('[Standard Name:"Romance Standard Time" Bias:-60min');
+    expect(out).toContain('[Daylight Name:"Romance Daylight Time" Bias:-120min');
+  });
+
+  it('/unregister stops and disables the service and /register restores it', async () => {
+    const { pc } = await lab();
+    expect(await pc.executeCommand('w32tm /unregister')).toBe('W32Time successfully unregistered.');
+    expect(await pc.executeCommand('sc query w32time')).toContain('STOPPED');
+    expect(await pc.executeCommand('w32tm /query /status')).toContain('0x80070426');
+    expect(await pc.executeCommand('w32tm /register')).toBe('W32Time successfully registered.');
+    expect(await pc.executeCommand('sc query w32time')).toContain('RUNNING');
+    expect(await pc.executeCommand(`reg query ${PARAMETERS} /v Type`)).toContain('REG_SZ');
+  });
+
+  it('a remote /computer that does not resolve is reported as the real tool does', async () => {
+    const { pc } = await lab();
+    expect(await pc.executeCommand('w32tm /query /status /computer:nowhere.example'))
+      .toBe('The following error occurred: No such host is known. (0x80072AF9)');
+  });
+
+  it('/monitor queries the given computers over the wire', async () => {
+    const { pc } = await lab();
+    const out = await pc.executeCommand('w32tm /monitor /computers:10.0.0.1');
+    expect(out).toContain('10.0.0.1[10.0.0.1:123]:');
+    expect(out).toMatch(/NTP: [+-]\d\.\d{7}s offset from 10\.0\.0\.1/);
+    expect(out).toContain('Stratum: 2');
+  });
+});
