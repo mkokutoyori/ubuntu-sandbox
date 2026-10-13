@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useReducer } from 'react';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import type { NanoLaunchOptions } from '@/network/devices/linux/editors/NanoEngine';
+import type { NanoLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 import type { EditorScreen } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { nanoLayout } from '@/network/devices/linux/editors/nano/NanoWindow';
@@ -24,15 +25,7 @@ interface NanoEditorProps {
   /** Drive an already-open buffer instead of constructing a local one. */
   driver?: NanoEditorDriver;
   onExit: (saved: boolean) => void;
-  /** `nano -v`: buffer is immutable, no Write Out. */
-  readOnly?: boolean;
-  showPosition?: boolean;
-  /** `nano -l`/`--linenumbers`: line-number gutter shown at open. */
-  showLineNumbers?: boolean;
-  softwrap?: boolean;
-  /** `nano +LINE[,COLUMN] file`: initial cursor position (1-indexed). */
-  initialCursorLine?: number;
-  initialCursorCol?: number;
+  launch?: NanoLaunch;
   displayName?: string;
 }
 
@@ -52,22 +45,13 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   fsContext,
   driver,
   onExit,
-  readOnly = false,
-  showPosition = false,
-  showLineNumbers = false,
-  softwrap = false,
-  initialCursorLine,
-  initialCursorCol,
+  launch,
   displayName,
 }) => {
   const engineRef = useRef<NanoEditorDriver>();
   if (!engineRef.current) {
-    const launch: NanoLaunchOptions = { softwrap, constantShow: showPosition, displayName };
-    engineRef.current = driver ?? new NanoEngine(
-      fsContext!, filePath, initialContent, isNewFile, readOnly,
-      initialCursorLine !== undefined ? { line: initialCursorLine, col: initialCursorCol } : undefined,
-      showLineNumbers, launch,
-    );
+    const options: NanoLaunchOptions = { settings: launch?.settings, start: launch?.start, displayName };
+    engineRef.current = driver ?? new NanoEngine(fsContext!, filePath, initialContent, isNewFile, false, undefined, false, options);
   }
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);

@@ -22,6 +22,7 @@ import React from 'react';
 import { render, cleanup, fireEvent, act } from '@testing-library/react';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
+import { defaultNanoSettings } from '@/network/devices/linux/editors/nano/NanoSettings';
 
 interface MountOptions { line?: number; col?: number; lineNumbers?: boolean; softwrap?: boolean; readOnly?: boolean }
 
@@ -30,8 +31,11 @@ function mount(content: string, options: MountOptions = {}) {
   return render(
     <NanoEditor
       filePath="/tmp/n.txt" initialContent={content} isNewFile={false} fsContext={fs}
-      onExit={() => {}} initialCursorLine={options.line} initialCursorCol={options.col}
-      showLineNumbers={options.lineNumbers} softwrap={options.softwrap} readOnly={options.readOnly}
+      onExit={() => {}}
+      launch={{
+        settings: defaultNanoSettings({ linenumbers: options.lineNumbers === true, softwrap: options.softwrap === true, view: options.readOnly === true }),
+        start: options.line === undefined ? null : { line: options.line, column: options.col ?? 0, search: null, caseSensitive: null, regex: null, alerts: [] },
+      }}
     />,
   );
 }

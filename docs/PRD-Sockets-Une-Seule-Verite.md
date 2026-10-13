@@ -491,13 +491,58 @@ bound to IPv4 » (5985, PID 4) et « OpenSSH on Windows does not work » (22). R
 aucun transcript atteint pour dire s'ils tiennent une ligne IPv6. Garde-fous :
 `probe-windows-pose-et-retire-une-adresse-ipv6-comme-linux` et `probe-windows-ecoute-sur-les-deux-familles-ce-que-le-vrai-ecoute-ainsi`.
 
+Les deux familles se comptent. Mesuré sur `a7e9f551f` (un LinuxPC et un WindowsPC reliés par `fd00::/64`, trois `ping -6` puis deux
+`ping`) : `netstat -s` de Linux voyait cinq paquets reçus — les deux échos IPv4 et trois datagrammes UDP multicast de fond —, rien des
+trois échos IPv6, des sollicitations de voisin ni de leurs annonces ; Windows n'imprimait que les quatre blocs IPv4 ;
+`/proc/net/snmp6` n'existait pas ; et le TCP IPv6 s'ajoutait aux compteurs IPv4 (un seul jeu de compteurs `tcp*` pour les deux
+familles). `ProtocolCounters` porte maintenant un jeu `ip6*`, `icmp6*` (par type, indices de l'IANA), `udp6*`, `udpLite6*` et `tcp6*`,
+rempli à deux endroits seulement : la sortie unique de trame (`EndHost.sendFrame`, qui compte aussi les octets, en-tête compris, et le
+multicast) et l'entrée unique (`handleIPv6`, qui compte d'abord et valide ensuite : `ipv6HeaderProblem` refuse l'adresse de bouclage
+hors `lo`, la portée 0 ou 1 d'un groupe et la source multicast, comme `ip6_rcv_core` du noyau 5.15, et une interface sans IPv6 jette le
+paquet après l'avoir reçu). Le TCP reçoit la famille par `TcpMibSink` : Linux additionne les deux familles (la MIB TCP du noyau est
+unique), Windows les affiche à part. Ce que le noyau ne compte pas n'est plus compté : un paquet que netfilter jette n'est pas un
+`InDiscards` (l'ancien code IPv4 le comptait) et un datagramme UDP multicast ou diffusé sans écouteur est un `IgnoredMulti`, pas un
+`NoPorts` (`__udp4_lib_mcast_deliver`). Les paquets réels qui ne quittent pas la machine (UDP, TCP, erreur ICMP vers soi) passent les
+deux étapes, sortie puis entrée ; le `ping` vers soi, qui fabrique son résultat sans paquet, reste à faire. Garde-fou :
+`probe-une-machine-compte-son-trafic-ipv6`.
+
+`netstat -s` de Windows imprime huit blocs, comme le vrai, et non quatre : `IPv4 Statistics`, `IPv6 Statistics`, `ICMPv4 Statistics`,
+`ICMPv6 Statistics`, `TCP Statistics for IPv4`, `TCP Statistics for IPv6`, `UDP Statistics for IPv4` et `UDP Statistics for IPv6`, dans cet
+ordre. `-p ip|ipv6|icmp|icmpv6|tcp|tcpv6|udp|udpv6` en choisit exactement les blocs demandés, par clé exacte (l'ancien choix par préfixe,
+`startsWith('ip')`, aurait rendu `ipv6` avec `ip`), dans l'ordre de l'outil et non celui de la ligne de commande ; `-e -s` imprime
+l'interface puis les huit blocs. Sources : l'aide de `netstat` de Windows 10 22H2 (« By default, statistics are shown for IP, IPv6,
+ICMP, ICMPv6, TCP, TCPv6, UDP, and UDPv6 ») et la sortie relevée par Geekflare pour l'ordre et les intitulés ; les blocs IPv6 portent les
+dix-sept lignes de l'IPv4, `ICMPv6 Statistics` les dix-sept lignes Messages à Router Renumberings, lues dans les compteurs ICMPv6 par
+type (numéros de l'IANA). La mise en colonnes du bloc IPv6 reprend celle de l'IPv4 : la page de référence est du HTML, qui réduit les
+espaces, et aucun relevé de texte brut n'a été atteint. Garde-fou : `probe-netstat-s-de-windows-dit-aussi-l-ipv6`.
+
+`netstat -s` de Linux lit les fichiers du noyau, il ne fabrique plus son texte. Mesuré sur `40ec699d0` : il ignorait `-6`, `-t`, `-u`
+et `-w` (le même texte IPv4 sortait toujours), imprimait des lignes que le vrai outil tait (`0 receive buffer errors`), n'imprimait ni
+`IcmpMsg:` ni `UdpLite:`, ajoutait deux en-têtes vides `TcpExt:` et `IpExt:` ; `/proc/net/snmp6` n'existait pas ; `/proc/net/snmp` écrivait
+`IcmpMsg: InType8 OutType0` en dur (`IcmpMsg: 0 0` sur une machine muette), n'avait pas la colonne `MemErrors` de `Udp:` et `UdpLite:`
+et mettait `IgnoredMulti` à zéro. `ProcNetSnmp.ts` écrit les deux fichiers dans le format de `net/ipv4/proc.c` et `net/ipv6/proc.c` du noyau 5.15
+(chaque colonne est déclarée une fois, l'en-tête et les valeurs en sortent ensemble ; les lignes `IcmpMsg` ne nomment que les types comptés ;
+`snmp6` sort `%-32s\t%lu`, les types ICMPv6 nommés d'abord, entrants puis sortants, puis les types comptés par numéro). `NetstatStatistics.ts`
+porte `statistics.c` de net-tools (Ubuntu 22.04, commit `0eebece`, lu sur GitHub) : les tables du C dans leur ordre, y compris celles qui ne
+sont pas triées, et la recherche dichotomique de la glibc — qui ne retrouve pas `Forwarding`, d'où le `Forwarding: 2` que l'outil imprime
+par son chemin « de son mieux » —, les colonnes inconnues imprimées telles quelles quand elles ne sont pas nulles (`IgnoredMulti: 2`,
+`Icmp6InType129: 3`), les tables inconnues (`IcmpMsg:`, `UdpLite:`) imprimées quel que soit l'indicateur, l'indentation d'un titre
+d'histogramme prise à l'état qu'on quitte (le `ICMP output histogram:` d'un `-s -6` sort à huit colonnes), `-6` qui lit `snmp6` puis la
+table `Tcp` de `snmp` (le TCP du noyau est unique), et `-t`, `-u`, `-w` qui choisissent les tables. La famille se décide comme `afname` de
+`lib/af.c` : les noms s'accumulent (`-s -4 -6` donne `inet,inet6`, refusé sur la sortie standard avec le statut 1), les alias sont
+ramenés au nom canonique (`ip` est `inet`, `appletalk` est `ddp`), un nom inconnu est refusé dans les mots d'`aftrans_opt`. Le rendu écrit à la main
+(`renderNetstatStatistics`, `netstatTable('statistics')`, `NetstatHost.statistics`) est supprimé ; `SnmpSnapshot`, que Windows
+importait depuis le répertoire des ports de Linux, vit maintenant dans `layers/internet`. Pas porté : la table SCTP (aucune pile SCTP) ;
+`/proc/net/netstat` n'existe pas encore, si bien que `TcpExt:` et `IpExt:` ne sortent pas (tâche à part, avec leurs compteurs). Garde-fou :
+`probe-netstat-s-de-linux-lit-les-fichiers-du-noyau-comme-net-tools`.
+
 Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
 non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
 Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135
 d'une machine qui n'est pas contrôleur de domaine accepte puis ferme (le mappeur RPC n'existe pas) ; `TermService` est affiché
 Automatic quand un Windows réel le dit Manual ; un service qui n'a jamais eu de processus d'hébergement n'en reçoit pas en
 démarrant ; aucune application de la simulation n'ouvre encore de socket TCP liée sans écoute (la brique est dans la pile) ; RDP, LDAP,
-Kerberos, NTP, DNS et DHCP ne tiennent pas de ligne IPv6 faute de source, et `netstat -s` ne dit rien d'IPv6 ; le processus par session d'OpenSSH pour Windows, le
+Kerberos, NTP, DNS et DHCP ne tiennent pas de ligne IPv6 faute de source ; le processus par session d'OpenSSH pour Windows, le
 `ssh.exe` client comme processus et `ssh -N` vers ou depuis Windows sont traités après.
 
 ## 7. Hors périmètre
@@ -510,7 +555,7 @@ Kerberos, NTP, DNS et DHCP ne tiennent pas de ligne IPv6 faute de source, et `ne
   rôles et du système (UDP compris), et pour `netstat` (`-b`, `-q`, les noms,
   le tri, `-t`, `-x`, `-y`) et pour la double pile de `sshd`, du mappeur RPC, de SMB, de
   WinRM, de mDNS et de LLMNR ; restent la double pile de RDP, LDAP, Kerberos, NTP, DNS et DHCP
-  (sans source) et les compteurs IPv6 de `netstat -s`.
+  (sans source).
 - **Le listener TNS d'Oracle.** Nommé en P2, traité ailleurs.
 
 ## 8. Vérification

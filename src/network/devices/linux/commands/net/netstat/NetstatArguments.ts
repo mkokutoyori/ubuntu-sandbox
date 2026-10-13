@@ -52,15 +52,24 @@ const E_OPTERR = 3;
 const E_USAGE = 4;
 const E_VERSION = 5;
 
-const ADDRESS_FAMILY_FLAGS = new Set([
-  'inet', 'ip', 'inet6', 'unix', 'local', 'ax25', 'netrom', 'ipx', 'ddp', 'appletalk', 'x25', 'rose',
-  'ash', 'bluetooth', 'econet', 'irda',
+const FAMILY_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['ax25', 'ax25'], ['ip', 'inet'], ['ip6', 'inet6'], ['ipx', 'ipx'], ['rose', 'rose'], ['appletalk', 'ddp'],
+  ['netrom', 'netrom'], ['inet', 'inet'], ['inet6', 'inet6'], ['ddp', 'ddp'], ['unix', 'unix'], ['tcpip', 'inet'],
+  ['econet', 'ec'], ['x25', 'x25'], ['ash', 'ash'], ['bluetooth', 'bluetooth'],
 ]);
 
-const ADDRESS_FAMILY_LETTER = '\u0001';
+const FAMILY_LONG_OPTION_NAMES = [
+  'ax25', 'x25', 'ip', 'ipx', 'appletalk', 'netrom', 'inet', 'inet6', 'ddp', 'rose', 'unix', 'bluetooth',
+] as const;
 
-const FAMILY_LONG_OPTIONS: readonly LongOption[] = [...ADDRESS_FAMILY_FLAGS].map((name) => ({
-  name, letter: ADDRESS_FAMILY_LETTER, takesArgument: false,
+const FAMILY_LETTER_BASE = 1;
+
+const FAMILY_BY_LETTER: ReadonlyMap<string, string> = new Map(
+  FAMILY_LONG_OPTION_NAMES.map((name, index) => [String.fromCharCode(FAMILY_LETTER_BASE + index), name] as const),
+);
+
+const FAMILY_LONG_OPTIONS: readonly LongOption[] = [...FAMILY_BY_LETTER].map(([letter, name]) => ({
+  name, letter, takesArgument: false,
 }));
 
 const LONG_OPTIONS: readonly LongOption[] = [
@@ -126,6 +135,7 @@ export interface NetstatOptions {
   readonly inet: boolean;
   readonly inet6: boolean;
   readonly noProtocol: boolean;
+  readonly addressFamily: string;
   readonly unsupportedFamilies: readonly string[];
   readonly argumentCount: number;
 }
@@ -149,15 +159,18 @@ export function parseNetstatArguments(args: readonly string[]): NetstatParseResu
     numericHosts: false, numericPorts: false, numericUsers: false,
   };
   const unsupportedFamilies: string[] = [];
+  const familyNames: string[] = [];
   const failure = (stderr: string): NetstatParseResult => ({
     options: null, exit: { stdout: '', stderr, exitCode: 1 },
   });
-  const takeFamily = (name: string): string | null => {
-    if (name === 'inet' || name === 'ip') flags.inet++;
+  const takeFamily = (alias: string): string | null => {
+    const name = FAMILY_ALIASES.get(alias);
+    if (name === undefined) return alias;
+    familyNames.push(name);
+    if (name === 'inet') flags.inet++;
     else if (name === 'inet6') flags.inet6++;
-    else if (name === 'unix' || name === 'local') flags.unix++;
-    else if (ADDRESS_FAMILY_FLAGS.has(name)) unsupportedFamilies.push(name);
-    else return name;
+    else if (name === 'unix') flags.unix++;
+    else unsupportedFamilies.push(alias);
     return null;
   };
 
@@ -166,12 +179,16 @@ export function parseNetstatArguments(args: readonly string[]): NetstatParseResu
     if (item.kind !== 'option') {
       return { options: null, exit: { stdout: '', stderr: `${getoptDiagnostic('netstat', item)}\n${NETSTAT_USAGE}`, exitCode: E_OPTERR } };
     }
+    const familyOption = FAMILY_BY_LETTER.get(item.letter);
+    if (familyOption !== undefined) {
+      takeFamily(familyOption);
+      continue;
+    }
     switch (item.letter) {
-      case ADDRESS_FAMILY_LETTER: break;
       case 'A': {
         for (const name of (item.argument ?? '').split(',')) {
           const unknown = takeFamily(name);
-          if (unknown !== null) return failure(`netstat: unknown address family '${unknown}'\n`);
+          if (unknown !== null) return failure(`Unknown address family \`${unknown}'.\n`);
         }
         break;
       }
@@ -193,8 +210,8 @@ export function parseNetstatArguments(args: readonly string[]): NetstatParseResu
       case 'C': flags.routingCache++; break;
       case 'F': break;
       case 'o': flags.timers++; break;
-      case '6': flags.inet6++; break;
-      case '4': flags.inet++; break;
+      case '6': takeFamily('inet6'); break;
+      case '4': takeFamily('inet'); break;
       case 'V': return { options: null, exit: { stdout: NETSTAT_VERSION, stderr: '', exitCode: E_VERSION } };
       case 'v': flags.verbose++; break;
       case 'r': flags.routes++; break;
@@ -205,7 +222,7 @@ export function parseNetstatArguments(args: readonly string[]): NetstatParseResu
       case 'w': flags.raw++; break;
       case '2': flags.l2cap++; break;
       case 'f': flags.rfcomm++; break;
-      case 'x': flags.unix++; break;
+      case 'x': takeFamily('unix'); break;
       case 'Z':
         return failure('SELinux is not enabled on this machine.\n');
       case 'h': return { options: null, exit: { stdout: '', stderr: NETSTAT_USAGE, exitCode: E_USAGE } };
@@ -240,7 +257,7 @@ export function parseNetstatArguments(args: readonly string[]): NetstatParseResu
       groups: flags.groups > 0, routingCache: flags.routingCache > 0,
       tcp: flags.tcp > 0, udp: flags.udp > 0, udpLite: flags.udpLite > 0, sctp: flags.sctp > 0,
       raw: flags.raw > 0, unix: flags.unix > 0, inet: flags.inet > 0, inet6: flags.inet6 > 0,
-      noProtocol, unsupportedFamilies, argumentCount,
+      noProtocol, addressFamily: familyNames.join(','), unsupportedFamilies, argumentCount,
     },
     exit: null,
   };

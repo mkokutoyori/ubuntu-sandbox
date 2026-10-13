@@ -9,6 +9,7 @@
  */
 
 import type { EditorFsContext } from './EditorFsContext';
+import type { NanoLaunch } from './editorLaunch';
 import type { NanoMode, PendingReplaceMatch } from './NanoEngine';
 import type { PendingSubstMatch, PendingSwapRecovery, VimMode, VimVariant } from './VimEngine';
 import type { EditorKeyInput } from './EditorKeyInput';
@@ -100,10 +101,7 @@ export interface EditorSessionSeed {
   readonly content: string;
   readonly isNewFile: boolean;
   readonly owner: string;
-  readonly readOnly: boolean;
-  readonly showPosition: boolean;
-  readonly showLineNumbers: boolean;
-  readonly softwrap: boolean;
+  readonly nano: NanoLaunch | null;
   readonly displayName: string;
   readonly initialCursorLine?: number;
   readonly initialCursorCol?: number;

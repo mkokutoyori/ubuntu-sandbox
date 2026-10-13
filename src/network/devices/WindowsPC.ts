@@ -273,7 +273,7 @@ import {
 import { runNetstat, type NetstatMachine } from './windows/WinNetstat';
 import { netstatStatistics } from './windows/WinNetstatStatistics';
 import { showRoutePrint } from './windows/WinRoute';
-import { snmpSnapshot } from './linux/ports/PortsFilesystem';
+import { snmpSnapshot } from '../layers/internet/SnmpSnapshot';
 
 /**
  * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).

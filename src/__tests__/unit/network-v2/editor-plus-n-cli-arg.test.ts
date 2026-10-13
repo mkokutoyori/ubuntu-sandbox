@@ -43,9 +43,9 @@ describe('Scénario — `nano +N fichier` positionne le curseur à la ligne N à
   it('filePath/absolutePath restent le VRAI nom de fichier, pas "+42"', async () => {
     await pc.executeCommand('for i in $(seq 1 50); do echo "line $i" >> /tmp/big.txt; done');
     await type('nano +42 /tmp/big.txt');
-    const mode = session.inputMode as { absolutePath: string; initialCursorLine?: number };
+    const mode = session.inputMode as { absolutePath: string; nano?: { start: { line: number } | null } };
     expect(mode.absolutePath).toBe('/tmp/big.txt');
-    expect(mode.initialCursorLine).toBe(42);
+    expect(mode.nano?.start?.line).toBe(42);
   });
 
   it('le moteur NanoEngine se retrouve avec le curseur à la ligne 42 (1-indexée)', async () => {

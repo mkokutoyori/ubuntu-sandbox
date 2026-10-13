@@ -76,6 +76,7 @@ export interface UdpLiteHost {
   ): boolean;
   replyPortUnreachable(portName: string, offending: IPv4Packet): void;
   replyPortUnreachable6(portName: string, offending: IPv6Packet): void;
+  countLoopbackDatagram(packet: IPv4Packet | IPv6Packet): void;
 }
 
 interface UdpLiteBinding {
@@ -141,7 +142,9 @@ export class UdpLiteEndpoint {
     const ttl = request.ttl?.value ?? this.host.defaultTtl();
 
     if (this.host.isLocalAddress(destination)) {
-      this.receive4('lo', packetFrom(destination, this.host.defaultTtl()), false);
+      const looped = packetFrom(destination, this.host.defaultTtl());
+      this.host.countLoopbackDatagram(looped);
+      this.receive4('lo', looped, false);
       return true;
     }
     if (isMulticastIpv4(destination.toString()) || destination.toString() === LIMITED_BROADCAST) {
@@ -162,7 +165,9 @@ export class UdpLiteEndpoint {
     const hopLimit = request.ttl?.value ?? this.host.defaultHopLimit();
 
     if (this.host.isLocalAddress6(destination)) {
-      this.receive6('lo', packetFrom(destination, this.host.defaultHopLimit()));
+      const looped = packetFrom(destination, this.host.defaultHopLimit());
+      this.host.countLoopbackDatagram(looped);
+      this.receive6('lo', looped);
       return true;
     }
     if (destination.isMulticast()) {
@@ -209,8 +214,12 @@ export class UdpLiteEndpoint {
         counters.udpLiteInErrors++;
         return;
       case 'no-socket':
+        if (wasBroadcast) {
+          counters.udpLiteIgnoredMulti++;
+          return;
+        }
         counters.udpLiteNoPorts++;
-        if (!wasBroadcast) this.host.replyPortUnreachable(portName, packet);
+        this.host.replyPortUnreachable(portName, packet);
         return;
     }
   }
@@ -225,8 +234,8 @@ export class UdpLiteEndpoint {
       availableBytes: packet.payloadLength,
     });
     if (verdict.accepted === false) {
-      counters.udpLiteInErrors++;
-      if (verdict.refusal !== 'short-datagram') counters.udpLiteInCsumErrors++;
+      counters.udpLite6InErrors++;
+      if (verdict.refusal !== 'short-datagram') counters.udpLite6InCsumErrors++;
       Logger.warn(this.host.id, `udplite6:${verdict.refusal}`,
         `${this.host.name}: ${verdict.refusal} over IPv6, dropping`);
       return;
@@ -238,13 +247,17 @@ export class UdpLiteEndpoint {
       ...(sourceMac === undefined ? {} : { sourceMAC: sourceMac }),
     }, packet.payloadLength)) {
       case 'delivered':
-        counters.udpLiteInDatagrams++;
+        counters.udpLite6InDatagrams++;
         return;
       case 'below-minimum-coverage':
-        counters.udpLiteInErrors++;
+        counters.udpLite6InErrors++;
         return;
       case 'no-socket':
-        counters.udpLiteNoPorts++;
+        if (packet.destinationIP.isMulticast()) {
+          counters.udpLite6IgnoredMulti++;
+          return;
+        }
+        counters.udpLite6NoPorts++;
         this.host.replyPortUnreachable6(portName, packet);
         return;
     }
