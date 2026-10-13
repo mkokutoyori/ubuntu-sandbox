@@ -1,10 +1,10 @@
 import type { EditorScreen, ScreenBand, ScreenRow, ScreenSpan } from '../screen/EditorScreen';
 import { CONTINUATION } from '../screen/EditorScreen';
 import { actualX, advanceOver, breadth, DEFAULT_TABSIZE, displayString, wideness, type DisplayResult } from './NanoText';
-import { NANO_MENUS, type NanoMenuName } from './NanoMenus';
+import { menuEntries, type MenuOptions, type NanoMenuName } from './NanoMenus';
 import type { NanoWindow, Position } from './NanoWindow';
 
-export type TitleState = 'View' | 'Modified' | '';
+export type TitleState = 'View' | 'Modified' | 'Restricted' | '';
 
 export interface TitleStateFlags {
   readonly letters: string;
@@ -40,6 +40,8 @@ export interface NanoScreenInput {
   readonly prompt: { readonly label: string; readonly answer: string; readonly cursor: number } | null;
   readonly yesNo: { readonly question: string; readonly withAll: boolean } | null;
   readonly menu: NanoMenuName;
+  readonly menuOptions: MenuOptions;
+  readonly pause: string | null;
   readonly helpLines: readonly string[] | null;
 }
 
@@ -354,8 +356,8 @@ function postOneKey(canvas: Canvas, at: number, key: string, tag: string, width:
   canvas.put(at + breadth(key, tabsize) + 1, clipped(tag, remaining, tabsize));
 }
 
-function shortcutRows(cols: number, menu: NanoMenuName, tabsize: number): [ScreenRow, ScreenRow] {
-  const entries = NANO_MENUS[menu];
+function shortcutRows(cols: number, menu: NanoMenuName, tabsize: number, options: MenuOptions): [ScreenRow, ScreenRow] {
+  const entries = menuEntries(menu, options);
   const maximum = Math.floor((cols + 40) / 20) * 2;
   const number = Math.min(entries.length, maximum);
   const itemwidth = Math.floor(cols / Math.floor((number + 1) / 2));
@@ -398,7 +400,11 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
 
   let footerStatus: ScreenRow;
   let bars: [ScreenRow, ScreenRow] | null = null;
-  if (input.yesNo !== null) {
+  if (input.pause !== null) {
+    footerStatus = statusRow(cols, { text: input.pause, alert: true }, tabsize);
+    bars = [SPACE_ROW, SPACE_ROW];
+    cursorAt = { row: -1, col: footerStatus.text.trimEnd().length };
+  } else if (input.yesNo !== null) {
     const question = clipped(input.yesNo.question, cols - 1, tabsize);
     const canvas = new Canvas(cols);
     canvas.put(0, question);
@@ -409,18 +415,18 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
   } else if (input.prompt !== null) {
     const view = promptRow(cols, input.prompt.label, input.prompt.answer, input.prompt.cursor, tabsize);
     footerStatus = view.row;
-    bars = shortcutRows(cols, input.menu, tabsize);
+    bars = shortcutRows(cols, input.menu, tabsize, input.menuOptions);
     cursorAt = { row: -1, col: view.cursorColumn };
   } else {
     footerStatus = input.minibar !== null ? minibarRow(cols, input.minibar, tabsize) : statusRow(cols, input.status, tabsize);
-    bars = shortcutRows(cols, input.menu, tabsize);
+    bars = shortcutRows(cols, input.menu, tabsize, input.menuOptions);
     if (input.helpLines === null) {
       const place = window.place(input.cursor);
       cursorAt = { row: bodyTop + place.row, col: window.margin + place.column };
     }
   }
 
-  const footerHasContent = input.yesNo !== null || input.prompt !== null || input.status !== null || input.minibar !== null;
+  const footerHasContent = input.pause !== null || input.yesNo !== null || input.prompt !== null || input.status !== null || input.minibar !== null;
   if (layout.statusRow >= layout.editFrom + layout.editRows || footerHasContent) rows[layout.statusRow] = footerStatus;
   if (layout.barsFrom !== null && bars !== null) {
     rows[layout.barsFrom] = bars[0];

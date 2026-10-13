@@ -821,8 +821,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return iface ? this.d().getPort(iface) : undefined;
     };
     const effacerMtu = (): string => {
-      const p = port() as unknown as { ipv6Mtu?: number } | undefined;
-      if (p) delete p.ipv6Mtu;
+      port()?.setIPv6MTU(null);
       return '';
     };
     const effacerFiltre = (): string => {
@@ -891,8 +890,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         undoDescription: 'Restore the default IPv6 MTU',
         modes: ['config-if', 'config-subif'], minPrivilege: 15,
         run: (_session, args) => {
-          const p = port() as unknown as { ipv6Mtu?: number } | undefined;
-          if (p) p.ipv6Mtu = parseInt(args.octets, 10);
+          port()?.setIPv6MTU(parseInt(args.octets, 10));
           return '';
         },
         undo: effacerMtu,

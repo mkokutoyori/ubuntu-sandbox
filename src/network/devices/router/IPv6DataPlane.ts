@@ -14,6 +14,8 @@ import type { IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import { stampUdpChecksum } from '../../layers/transport/UdpChecksum';
 import { selectIpv6SourceAddress } from '../../layers/internet/Ipv6Egress';
+import { ipv6PacketBytes } from '../../layers/internet/Ipv6Ingress';
+import { MTU } from '../../core/constants';
 import { ICMPV6_UNREACH_PORT, mayGenerateICMPv6Error } from '../../core/IcmpErrors';
 import {
   IPv6Address, IPv6Packet, ICMPv6Packet, MACAddress, UDPPacket,
@@ -146,6 +148,7 @@ export interface Ipv6Counters {
   inFiltered: number;
   outFiltered: number;
   outForwarded: number;
+  outTooBig: number;
   outRequests: number;
   icmpInEchoRequests: number;
   icmpInEchoReplies: number;
@@ -163,7 +166,7 @@ export function emptyIpv6Counters(): Ipv6Counters {
   return {
     inReceives: 0, inDelivers: 0, inNoRoutes: 0, inHopLimitExceeded: 0,
     inFiltered: 0, outFiltered: 0,
-    outForwarded: 0, outRequests: 0,
+    outForwarded: 0, outTooBig: 0, outRequests: 0,
     icmpInEchoRequests: 0, icmpInEchoReplies: 0, icmpOutEchoReplies: 0,
     icmpOutErrors: 0,
     ndInSolicits: 0, ndInAdverts: 0, ndOutSolicits: 0, ndOutAdverts: 0,
@@ -1022,6 +1025,18 @@ export class IPv6DataPlane {
       return;
     }
 
+    const outPort = this.ctx.getPorts().get(route.iface);
+    if (!outPort) return;
+
+    const mtu = Math.max(outPort.getIPv6MTU(), MTU.MIN_IPV6);
+    if (ipv6PacketBytes(ipv6) > mtu) {
+      this.v6Counters.outTooBig++;
+      Logger.info(this.ctx.id, 'router:ipv6-too-big',
+        `${this.ctx.name}: ${ipv6PacketBytes(ipv6)} bytes exceed the ${mtu} MTU of ${route.iface}`);
+      this.sendICMPv6Error(route.iface, ipv6, 'packet-too-big', 0, mtu);
+      return;
+    }
+
     const fwdPkt: IPv6Packet = {
       ...ipv6,
       hopLimit: newHopLimit,
@@ -1039,8 +1054,6 @@ export class IPv6DataPlane {
     }
 
     const nextHopIP = route.nextHop || ipv6.destinationIP;
-    const outPort = this.ctx.getPorts().get(route.iface);
-    if (!outPort) return;
 
     const cached = this.neighborCache.markUsed(nextHopIP.toString());
     if (cached) {
