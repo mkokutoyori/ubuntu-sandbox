@@ -1,7 +1,9 @@
 import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
-import { NanoWindow, type ViewportManner } from './nano/NanoWindow';
+import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
+import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
+import type { MinibarInfo } from './nano/NanoScreen';
 import { buildNanoScreen } from './nano/NanoScreen';
 import { actualX, breadth, displayString, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
 import type { NanoMenuName } from './nano/NanoMenus';
@@ -72,7 +74,7 @@ export class NanoEngine {
   private set _statusMessage(value: string) {
     this.statusText = value;
     this.statusCountdown = value === '' ? 0 : STATUS_LINGER_KEYS;
-    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty|^\[ (Invalid|Empty search string)/.test(value);
+    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty|^\[ (Invalid|Empty search string|Too tiny|Not possible)/.test(value);
     this.statusMore = false;
     if (value !== '') this.messageThisKey = true;
   }
@@ -80,11 +82,12 @@ export class NanoEngine {
   private manner: ViewportManner = 'centering';
   private sized = false;
   private startPlacement: 'hugfloor' | 'centering' | null = null;
+  private reportSizePending = false;
+  private tally: number | null = null;
   private marginPending = false;
-  private softwrapOn: boolean;
   readonly settings: NanoSettings;
+  private readonly live: { -readonly [K in keyof NanoSettings]: NanoSettings[K] };
   private readonly _readOnly: boolean;
-  private _showLineNumbers: boolean;
   private readonly titleName: string;
   private _exited = false;
   private _savedOnExit = false;
@@ -113,7 +116,7 @@ export class NanoEngine {
   private replaceWithBuffer = '';
   private replaceState: {
     regex: RegExp; replacement: string; currentLine: number; currentCol: number; totalReplaced: number;
-    originLine: number; originCol: number; wrapped: boolean;
+    originLine: number; originCol: number; wrapped: boolean; originEdittop: number; originFirstcolumn: number;
   } | null = null;
   private _pendingReplaceMatch: PendingReplaceMatch | null = null;
   private cutBuffer: { kind: 'lines'; lines: string[] } | { kind: 'chars'; text: string } | null = null;
@@ -142,21 +145,27 @@ export class NanoEngine {
     launch: NanoLaunchOptions = {},
   ) {
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
+    this.live = { ...this.settings };
     this._readOnly = this.settings.view;
-    this._showLineNumbers = this.settings.linenumbers;
-    this.softwrapOn = this.settings.softwrap;
     this.titleName = launch.displayName ?? filePath;
     this.window = new NanoWindow(
       { lineCount: () => this.linesArr.length, lineAt: (index) => this.linesArr[index] ?? '' },
-      () => ({ softwrap: this.softwrapOn, tabsize: TABSIZE, lineNumbers: this._showLineNumbers && !this.marginPending }),
+      () => ({
+        softwrap: this.live.softwrap,
+        tabsize: TABSIZE,
+        lineNumbers: this.live.linenumbers && !this.marginPending,
+        zero: this.live.zero,
+        minibar: this.live.minibar,
+        emptyline: this.live.emptyline,
+        nohelp: this.live.nohelp,
+      }),
     );
     this.linesArr = initialContent.length === 0 ? [''] : initialContent.split('\n');
     this.ensureTrailingBlankLine();
-    this._statusMessage = filePath === ''
-        ? '[ Welcome to nano.  For basic help, type Ctrl+G. ]'
-        : isNewFile
-        ? '[ New File ]'
-        : `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
+    if (filePath === '') this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
+    else if (isNewFile) this._statusMessage = '[ New File ]';
+    else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
+    this.reportSizePending = true;
     this.saveFileNameBuffer = this.titleName;
     // GNU nano creates a `.<file>.swp` lock file for the duration of the
     // editing session to prevent two nano instances from editing the same
@@ -261,7 +270,7 @@ export class NanoEngine {
   /** True when opened with `-v` (view mode) — real nano refuses all edits and offers no Write Out. */
   get isReadOnly(): boolean { return this._readOnly; }
   /** `nano -l`/`--linenumbers` at open, toggled at runtime by M-#. */
-  get lineNumbersShown(): boolean { return this._showLineNumbers; }
+  get lineNumbersShown(): boolean { return this.live.linenumbers; }
   /** Real nano's regex-search toggle (Meta+R / Alt+R inside a search or replace prompt). */
   get regexSearchEnabled(): boolean { return this.useRegex; }
   get replaceSearchQuery(): string { return this.replaceSearchBuffer; }
@@ -280,25 +289,67 @@ export class NanoEngine {
     this.messageThisKey = false;
     this.manner = 'centering';
     this.verticalKey = false;
+    if (this.bareDisplay()) this.wipeStatus();
     const wasPrompting = this.isPrompting();
-    this.dispatchKey(k);
+    if (wasPrompting && k.alt && k.key.toLowerCase() === 'x') this.toggleHelpInPrompt();
+    else this.dispatchKey(k);
     if ((wasPrompting || this.isPrompting()) && !this.messageThisKey) this.wipeStatus();
     this.ensureTrailingBlankLine();
     if (!this.verticalKey) this.placeWant = this.window.columnOf(this._cursorLine, this._cursorCol);
-    if (this.settings.constantshow && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
+    if (this.reportsPositionAsMessage() && this._mode === 'edit' && !this.messageThisKey) this._statusMessage = this.locationMessage();
     this.followCursor();
+    this.makeRoomForMessage();
+    this.settleTally();
+  }
+
+  private makeRoomForMessage(): void {
+    if (!this.zeroMode() || this.isPrompting() || messageLevel(this.statusText) <= MESSAGE_LEVEL.hush) return;
+    if (this.window.cursorRow !== this.window.editRows - 1) return;
+    this.window.scroll(true);
+    this.window.cursorRow = this.window.place({ line: this._cursorLine, col: this._cursorCol }).row;
+  }
+
+  private settleTally(): void {
+    const drawn = this.minibarMode() && this.window.cols > 35 && !this.isPrompting() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark;
+    this.tally = this.reportSizePending && drawn ? this.writtenLineCount() : null;
+    if (drawn) this.reportSizePending = false;
+  }
+
+  private reportsPositionAsMessage(): boolean {
+    return this.live.constantshow && !this.live.minibar && !this.live.zero;
+  }
+
+  private minibarInfo(messageExpired: boolean): MinibarInfo | null {
+    const prompting = this.isPrompting() || this._mode === 'help';
+    if (!this.minibarMode() || prompting) return null;
+    if (!messageExpired && messageLevel(this.statusText) >= MESSAGE_LEVEL.remark) return null;
+    const text = this.line(this._cursorLine);
+    const code = this._cursorCol < text.length
+      ? `U+${text.codePointAt(this._cursorCol)!.toString(16).toUpperCase().padStart(4, '0')}`
+      : this._cursorLine < this.linesArr.length - 1 ? 'U+000A' : '  ----';
+    return {
+      name: this.titleName === '' ? '(nameless)' : this.titleName,
+      modified: this._modified,
+      line: this._cursorLine + 1,
+      column: this.window.columnOf(this._cursorLine, this._cursorCol) + 1,
+      lineCount: this.tally,
+      showPosition: this.live.constantshow,
+      hex: code,
+      stateLetters: this.live.stateflags ? this.stateLetters() : null,
+      percent: Math.floor((100 * (this._cursorLine + 1)) / this.linesArr.length),
+    };
   }
 
   clickAt(row: number, col: number): void {
     if (this._mode !== 'edit') return;
     const window = this.window;
-    const top = window.hasTitleBar ? 1 : 0;
+    const top = window.layout.editFrom;
     if (row < top || row >= top + window.editRows) return;
     const at = { line: window.edittop, leftedge: window.firstcolumn };
     window.goForward(row - top, at);
     const text = this.line(at.line);
     let column = Math.max(0, col - window.margin);
-    if (this.softwrapOn) column += at.leftedge;
+    if (this.live.softwrap) column += at.leftedge;
     else if (at.line === this._cursorLine) column += window.pageStart(window.columnOf(this._cursorLine, this._cursorCol));
     this._cursorLine = at.line;
     this._cursorCol = actualX(text, column, TABSIZE);
@@ -309,7 +360,7 @@ export class NanoEngine {
     this.followCursor();
   }
 
-  get softwrapEnabled(): boolean { return this.softwrapOn; }
+  get softwrapEnabled(): boolean { return this.live.softwrap; }
 
   private searchPromptLabel(replacing: boolean): string {
     const replaceNote = replacing ? (this.markLine === null ? ' (to replace)' : ' (to replace) in selection') : '';
@@ -326,7 +377,7 @@ export class NanoEngine {
 
   private promptView(): { label: string; answer: string; menu: NanoMenuName } | null {
     switch (this._mode) {
-      case 'save-prompt': return { label: 'File Name to Write', answer: this.saveFileNameBuffer, menu: 'write-out' };
+      case 'save-prompt': return { label: this.markLine !== null && !this.exitAfterSave ? 'Write Selection to File' : 'File Name to Write', answer: this.saveFileNameBuffer, menu: 'write-out' };
       case 'search': return { label: this.searchPromptLabel(false), answer: this.searchQueryBuffer, menu: 'search' };
       case 'replace-search': return { label: this.searchPromptLabel(true), answer: this.replaceSearchBuffer, menu: 'replace' };
       case 'replace-with': return { label: 'Replace with', answer: this.replaceWithBuffer, menu: 'replace-with' };
@@ -338,8 +389,29 @@ export class NanoEngine {
   }
 
   get screen(): EditorScreen {
+    const live = this.paintScreen(false);
+    const level = messageLevel(this.statusText);
+    const transient = this.bareDisplay() && level > MESSAGE_LEVEL.hush && level < MESSAGE_LEVEL.alert && level !== MESSAGE_LEVEL.info;
+    if (!transient || this.isPrompting()) return live;
+    return { ...live, hold: { millis: 1500, then: this.paintScreen(true) } };
+  }
+
+  private minibarMode(): boolean {
+    return this.live.minibar && !this.live.zero && this.window.rows > 1;
+  }
+
+  private zeroMode(): boolean {
+    return this.live.zero && this.window.rows > 1;
+  }
+
+  private bareDisplay(): boolean {
+    return this.minibarMode() || this.zeroMode();
+  }
+
+  private paintScreen(messageExpired: boolean): EditorScreen {
     const prompt = this.promptView();
-    const message = this.statusText.replace(/^\[ (.*) \]$/, '$1');
+    const hidden = messageExpired || (this.bareDisplay() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark);
+    const message = hidden ? '' : this.statusText.replace(/^\[ (.*) \]$/, '$1');
     return buildNanoScreen({
       window: this.window,
       lines: this.linesArr,
@@ -347,13 +419,15 @@ export class NanoEngine {
       mark: this.markLine === null ? null : { line: this.markLine, col: this.markCol ?? 0 },
       spotlight: this._pendingReplaceMatch === null ? null : { line: this._pendingReplaceMatch.line, start: this._pendingReplaceMatch.start, end: this._pendingReplaceMatch.end },
       tabsize: TABSIZE,
-      softwrap: this.softwrapOn,
+      softwrap: this.live.softwrap,
       title: {
         name: this._mode === 'help' ? 'Main nano help text' : this.titleName === '' ? 'New Buffer' : this.titleName,
         state: this._mode === 'help' ? '' : this._readOnly ? 'View' : this._modified ? 'Modified' : '',
         branding: 'GNU nano 7.2',
+        flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
       },
       status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore },
+      minibar: this.minibarInfo(messageExpired),
       prompt: prompt === null ? null : { label: prompt.label, answer: prompt.answer, cursor: this._promptCursor },
       yesNo: this._mode === 'exit-save-prompt'
         ? { question: 'Save modified buffer?', withAll: false }
@@ -363,10 +437,60 @@ export class NanoEngine {
     });
   }
 
+  private toggleHelpLines(): void {
+    this.verticalKey = true;
+    this.manner = 'flowing';
+    if (this.window.rows < SHORTCUT_BARS_MINIMUM) {
+      this._statusMessage = '[ Too tiny ]';
+      return;
+    }
+    this.live.nohelp = !this.live.nohelp;
+    this.window.align();
+    if (!this.bareInterface()) this._statusMessage = `[ Help mode ${this.live.nohelp ? 'disabled' : 'enabled'} ]`;
+  }
+
+  private toggleHiddenInterface(): void {
+    this.verticalKey = true;
+    this.manner = 'flowing';
+    this.live.zero = !this.live.zero;
+    this.window.align();
+    this.wipeStatus();
+  }
+
+  private toggleHelpInPrompt(): void {
+    this.verticalKey = true;
+    this.manner = 'flowing';
+    this.live.nohelp = !this.live.nohelp;
+    this.window.align();
+  }
+
+  private bareInterface(): boolean {
+    return this.live.minibar || this.live.zero || this.window.rows === 1;
+  }
+
+  private toggleConstantShow(): void {
+    this.verticalKey = true;
+    if (this.window.rows === 1) {
+      this._statusMessage = '[ Too tiny ]';
+      return;
+    }
+    if (this.live.zero) {
+      this._statusMessage = '[ Not possible ]';
+      return;
+    }
+    this.live.constantshow = !this.live.constantshow;
+    if (!this.live.minibar) this.wipeStatus();
+  }
+
+  private stateLetters(): string {
+    return (this.live.autoindent ? 'I' : ' ') + (this.markLine !== null ? 'M' : ' ')
+      + (this.live.breaklonglines ? 'L' : ' ') + ' ' + (this.live.softwrap ? 'S' : ' ');
+  }
+
   private moveHome(): void {
     this.manner = 'flowing';
     this.lastEditKind = null;
-    if (this.softwrapOn) {
+    if (this.live.softwrap) {
       const column = this.window.columnOf(this._cursorLine, this._cursorCol);
       const chunk = this.window.chunkLeft(this._cursorLine, column);
       if (this._cursorCol === chunk.index) {
@@ -385,7 +509,7 @@ export class NanoEngine {
     this.manner = 'flowing';
     this.lastEditKind = null;
     const length = this.line(this._cursorLine).length;
-    if (this.softwrapOn) {
+    if (this.live.softwrap) {
       const column = this.window.columnOf(this._cursorLine, this._cursorCol);
       const chunk = this.window.chunkRight(this._cursorLine, column);
       if (this._cursorCol === chunk.index) {
@@ -417,6 +541,7 @@ export class NanoEngine {
     this.sized = true;
     const cursor = { line: this._cursorLine, col: this._cursorCol };
     this.window.resize(rows, cols, cursor);
+    this.settleTally();
     if (first && this.startPlacement !== null) {
       this.marginPending = true;
       this.window.align();
@@ -426,7 +551,7 @@ export class NanoEngine {
       this.window.align();
       this.window.follow('centering', cursor);
     }
-    if (this.settings.constantshow && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
+    if (this.reportsPositionAsMessage() && this._mode === 'edit' && this.statusText === '') this._statusMessage = this.locationMessage();
   }
 
   scrollView(up: boolean, count: number): void {
@@ -443,7 +568,7 @@ export class NanoEngine {
     } else {
       if (window.cursorRow === 0) this.moveRows(1, true);
       const more = window.edittop < this.linesArr.length - 1
-        || (this.softwrapOn && window.extraChunksIn(window.edittop) > window.chunkFor(window.firstcolumn, window.edittop));
+        || (this.live.softwrap && window.extraChunksIn(window.edittop) > window.chunkFor(window.firstcolumn, window.edittop));
       if (window.editRows > 1 && more) window.scroll(true);
     }
     window.cursorRow = window.place({ line: this._cursorLine, col: this._cursorCol }).row;
@@ -742,7 +867,7 @@ export class NanoEngine {
     }
     switch (key) {
       case 'o': // Write Out
-        this.saveFileNameBuffer = this.titleName;
+        this.saveFileNameBuffer = this.markLine !== null ? '' : this.titleName;
         this._promptCursor = this.saveFileNameBuffer.length;
         this._mode = 'save-prompt';
         return;
@@ -757,6 +882,12 @@ export class NanoEngine {
       case 'k': { // Cut line, or the marked region if a mark is active
         this.wipeStatus();
         const region = this.getMarkedRegion();
+        if (region && region.startLine === region.endLine && region.startCol === region.endCol) {
+          this.clearMark();
+          this._statusMessage = '[ Nothing was cut ]';
+          this.lastActionWasCut = false;
+          return;
+        }
         if (region) {
           this.beginDiscreteEdit();
           this.cutBuffer = { kind: 'chars', text: this.extractRegionText(region) };
@@ -948,16 +1079,21 @@ export class NanoEngine {
     const key = k.key.toLowerCase();
     if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollView(false, 1); return; }
     if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollView(true, 1); return; }
+    if (key === 'z') { this.toggleHiddenInterface(); return; }
+    if (key === 'x') { this.toggleHelpLines(); return; }
+    if (key === 'c') { this.toggleConstantShow(); return; }
     if (key === 'n') {
-      this._showLineNumbers = !this._showLineNumbers;
-      this._statusMessage = `[ Line numbering ${this._showLineNumbers ? 'enabled' : 'disabled'} ]`;
+      this.verticalKey = true;
+      this.live.linenumbers = !this.live.linenumbers;
+      if (!this.bareInterface()) this._statusMessage = `[ Line numbering ${this.live.linenumbers ? 'enabled' : 'disabled'} ]`;
       this.manner = 'flowing';
       this.window.align();
       return;
     }
     if (key === 's') {
-      this.softwrapOn = !this.softwrapOn;
-      this._statusMessage = `[ Soft wrapping of overlong lines ${this.softwrapOn ? 'enabled' : 'disabled'} ]`;
+      this.verticalKey = true;
+      this.live.softwrap = !this.live.softwrap;
+      if (!(this.live.minibar && !this.live.zero && this.live.stateflags)) this._statusMessage = `[ Soft wrapping of overlong lines ${this.live.softwrap ? 'enabled' : 'disabled'} ]`;
       this.manner = 'flowing';
       this.window.firstcolumn = 0;
       this.window.align();
@@ -1002,7 +1138,7 @@ export class NanoEngine {
     // physical Alt+Shift+3 on a US layout reports key:'3', not '#'), so
     // both the literal character and the raw shifted digit are accepted.
     if (k.key === '#' || (k.shift && k.key === '3')) {
-      this._showLineNumbers = !this._showLineNumbers;
+      this.live.linenumbers = !this.live.linenumbers;
       return;
     }
   }
@@ -1010,6 +1146,7 @@ export class NanoEngine {
   // ── Mark / region (^6, M-A, M-6) ─────────────────────────────────
 
   private toggleMark(): void {
+    this.verticalKey = true;
     if (this.markLine !== null) {
       this.clearMark();
       this._statusMessage = 'Mark Unset';
@@ -1060,7 +1197,10 @@ export class NanoEngine {
     this.wipeStatus();
     this.manner = 'flowing';
     const region = this.getMarkedRegion();
-    if (region) {
+    if (region && region.startLine === region.endLine && region.startCol === region.endCol) {
+      this.clearMark();
+      this._statusMessage = '[ Copied nothing ]';
+    } else if (region) {
       this.cutBuffer = { kind: 'chars', text: this.extractRegionText(region) };
       this.clearMark();
     } else if (this._cursorLine === this.linesArr.length - 1) {
@@ -1547,6 +1687,7 @@ export class NanoEngine {
     this.replaceState = {
       regex, replacement: this.replaceWithBuffer, currentLine: this._cursorLine, currentCol: this._cursorCol, totalReplaced: 0,
       originLine: this._cursorLine, originCol: this._cursorCol, wrapped: false,
+      originEdittop: this.window.edittop, originFirstcolumn: this.window.firstcolumn,
     };
     if (this.advanceReplaceMatch()) return;
     this.replaceState = null;
@@ -1624,6 +1765,8 @@ export class NanoEngine {
     this._pendingReplaceMatch = null;
     this.replaceState = null;
     if (st) {
+      this.window.edittop = Math.min(st.originEdittop, this.linesArr.length - 1);
+      this.window.firstcolumn = st.originFirstcolumn;
       this._cursorLine = Math.min(st.originLine, this.linesArr.length - 1);
       this._cursorCol = Math.min(st.originCol, this.line(this._cursorLine).length);
       this._statusMessage = `Replaced ${st.totalReplaced} occurrence${st.totalReplaced === 1 ? '' : 's'}`;

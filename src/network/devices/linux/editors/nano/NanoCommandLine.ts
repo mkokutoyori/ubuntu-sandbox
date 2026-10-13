@@ -275,5 +275,6 @@ export function parseNanoCommandLine(args: readonly string[], programName = 'nan
     if (index < operands.length - 1 && operands[index].startsWith('+')) start = parseStart(operands[index++]);
     files.push({ path: operands[index++], start });
   }
+  if (draft.zero) draft.nohelp = true;
   return { kind: 'open', settings: draft, files };
 }

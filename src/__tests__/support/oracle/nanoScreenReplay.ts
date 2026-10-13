@@ -9,6 +9,7 @@ export interface NanoRecorded { y: number; x: number; rows: string[]; height: nu
 export interface NanoScreenCase {
   id: string;
   text: string[];
+  files?: Record<string, string[]>;
   rows: number;
   cols: number;
   flags?: string[];
@@ -43,7 +44,8 @@ export function recordedArguments(c: NanoScreenCase): string[] {
 export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>, c: NanoScreenCase): NanoEngine {
   const first = invocation.files[0];
   const name = first?.path ?? '';
-  const content = name === 't.txt' ? c.text.join('\n') + '\n' : null;
+  const lines = name === 't.txt' ? c.text : c.files?.[name];
+  const content = lines === undefined ? null : lines.join('\n') + '\n';
   const fs = new InMemoryEditorFsContext(content === null ? {} : { [`/tmp/${name}`]: content });
   const engine = new NanoEngine(fs, name === '' ? '' : `/tmp/${name}`, content ?? '', content === null, false, undefined, false, {
     settings: invocation.settings, start: first?.start ?? null, displayName: name,

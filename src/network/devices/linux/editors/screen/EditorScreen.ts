@@ -20,9 +20,16 @@ export interface ScreenCursor {
   readonly col: number;
 }
 
+export interface ScreenBand {
+  readonly name: 'title' | 'edit' | 'status' | 'bars';
+  readonly from: number;
+  readonly to: number;
+}
+
 export interface EditorScreen {
   readonly rows: readonly ScreenRow[];
   readonly cursor: ScreenCursor | null;
+  readonly bands?: readonly ScreenBand[];
   readonly hold?: { readonly millis: number; readonly then: EditorScreen };
 }
 
