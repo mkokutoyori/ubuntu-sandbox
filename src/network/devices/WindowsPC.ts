@@ -2562,7 +2562,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       io: silentConnectIo(),
       password,
       credentialless: password === undefined,
-      identityFiles: target.identities,
+      identityFiles: target.identities.map(sshPathOfWindowsPath),
       algorithms: target.algorithms,
     });
     if (outcome.kind === 'auth-failed' && password !== undefined) {
