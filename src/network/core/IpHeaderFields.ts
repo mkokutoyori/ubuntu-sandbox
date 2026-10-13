@@ -139,6 +139,23 @@ export class EcnCodepoint {
   }
 }
 
+export type FragmentEcnVerdict = 'keep' | 'congestion-experienced' | 'discard';
+
+export class FragmentEcn {
+  private static readonly NOT_ECT = 0x01;
+  private static readonly CE = 0x08;
+  private seen = 0;
+
+  note(field: number): void {
+    this.seen |= 1 << (field & EcnCodepoint.MASK);
+  }
+
+  get verdict(): FragmentEcnVerdict {
+    if ((this.seen & FragmentEcn.NOT_ECT) !== 0 && (this.seen & ~FragmentEcn.NOT_ECT) !== 0) return 'discard';
+    return (this.seen & FragmentEcn.CE) !== 0 ? 'congestion-experienced' : 'keep';
+  }
+}
+
 export class DiffServField {
   static readonly MAX = 255;
   static readonly DSCP_SHIFT = 2;

@@ -123,8 +123,6 @@ import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
 import { cmdWget, renderNetstatInterfaces, renderNetstatRoutes } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
-import { publishWireSegment } from './network/WireCaptureBus';
-import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
 import type { SocketTable } from '../../core/SocketTable';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
@@ -2254,7 +2252,6 @@ export class LinuxCommandExecutor {
     if (wireCapable) {
       return { output: `${header}\n`, exitCode: 0, wireTarget: { ip: found.ip, port } };
     }
-    this.emitTelnetWire(sourceIp, found.ip, port);
     return { output: `${header}\n`, exitCode: 0 };
   }
 
@@ -2312,27 +2309,6 @@ export class LinuxCommandExecutor {
     await LinuxCommandExecutor.settleWire();
     const farewell = closedByPeer ? 'Connection closed by foreign host.\n' : '';
     return { output: `${probe.output}${transcript}${farewell}`, exitCode: 0 };
-  }
-
-  private emitTelnetWire(srcIp: string, dstIp: string, dstPort: number): void {
-    ensureCaptureRouterInstalled();
-    const stdin = this._scenarioStdin ?? '';
-    const srcPort = 49152 + Math.floor(Math.random() * 1000);
-    const enc = new TextEncoder();
-    const iac = new Uint8Array([0xff, 0xfd, 0x18, 0xff, 0xfd, 0x20, 0xff, 0xfd, 0x23]);
-    publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: iac });
-    publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 10, ack: 1, payload: enc.encode('login: ') });
-    let seq = 1;
-    for (const raw of stdin.split('\n')) {
-      const line = raw + '\n';
-      if (!line.trim() && !line.includes('\n')) continue;
-      publishWireSegment({ srcDevice: this.localDevice,
-        srcIp, srcPort, dstIp, dstPort,
-        flags: 'P.', seq, ack: 1,
-        payload: enc.encode(line),
-      });
-      seq += line.length;
-    }
   }
 
   private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string; interleaved?: string } {

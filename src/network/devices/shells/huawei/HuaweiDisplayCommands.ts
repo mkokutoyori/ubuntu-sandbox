@@ -903,7 +903,7 @@ export function displayIpv6Interface(router: Router, ifName: string): string {
   const isUp = port.getIsUp();
   const isConn = port.isConnected();
   const isVirtual = /^(LoopBack|Tunnel)/i.test(portName);
-  const ipv6Mtu = (port as any).ipv6Mtu;
+  const ipv6Mtu = port.getIPv6MTU();
   const raHalt = (port as any).ipv6NdRaHalt === true;
   const lines = [
     `${portName} current state : ${isUp ? (isConn || isVirtual ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
@@ -914,7 +914,7 @@ export function displayIpv6Interface(router: Router, ifName: string): string {
     lines.push(`  Global unicast address(es):`);
     lines.push(`    ${a.address}, subnet is ${a.address}/${a.prefixLength}`);
   }
-  if (ipv6Mtu) lines.push(`MTU is ${ipv6Mtu} bytes`);
+  lines.push(`MTU is ${ipv6Mtu} bytes`);
   if (raHalt) lines.push('ND RA messages are suppressed');
   return lines.join('\n');
 }
@@ -988,6 +988,7 @@ export function displayIpv6Statistics(router: Router): string {
     `    Total: ${c.outRequests}`,
     `    Forwarded: ${c.outForwarded}`,
     `    Filtered: ${c.outFiltered}`,
+    `    Too big: ${c.outTooBig}`,
   ].join('\n');
 }
 
@@ -1385,7 +1386,7 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   const v3 = (router as any)._getOSPFv3EngineInternal?.();
   const v3Iface = v3?.getInterface?.(portName);
   if (v3Iface) lines.push(` ospfv3 ${v3.getProcessId?.() ?? 1} area ${v3Iface.areaId}`);
-  if (port.ipv6Mtu) lines.push(` ipv6 mtu ${port.ipv6Mtu}`);
+  if (port.getIPv6MtuSetting() !== null) lines.push(` ipv6 mtu ${port.getIPv6MtuSetting()}`);
   if (port.ipv6NdRaHalt) lines.push(` ipv6 nd ra halt`);
   return lines;
 }

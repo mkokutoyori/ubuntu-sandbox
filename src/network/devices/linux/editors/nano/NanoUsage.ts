@@ -1,4 +1,4 @@
-export const NANO_USAGE: string = [
+const USAGE_LINES: readonly string[] = [
   'Usage: nano [OPTIONS] [[+LINE[,COLUMN]] FILE]...',
   '',
   'To place the cursor on a specific line of a file, put the line number with',
@@ -60,7 +60,13 @@ export const NANO_USAGE: string = [
   ' -%             --stateflags            Show some states on the title bar',
   ' -_             --minibar               Show a feedback bar at the bottom',
   ' -0             --zero                  Hide all bars, use whole terminal',
-].join('\n');
+];
+
+const HIDDEN_WHEN_RESTRICTED = ['B', 'C', 'F', 'H', 'P', 'R', 'Y', 's'].map((letter) => ` -${letter} `);
+
+export function nanoUsage(restricted: boolean): string {
+  return USAGE_LINES.filter((line) => !restricted || !HIDDEN_WHEN_RESTRICTED.some((prefix) => line.startsWith(prefix))).join('\n');
+}
 
 export const NANO_VERSION: string = [
   ' GNU nano, version 7.2',

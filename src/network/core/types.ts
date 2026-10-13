@@ -902,6 +902,14 @@ export function resetIPv4IdCounter(): void {
   ipIdCounter = 0;
 }
 
+let ipv6FragmentIdCounter = 0;
+
+export function nextIPv6FragmentId(): number {
+  ipv6FragmentIdCounter = (ipv6FragmentIdCounter + 1) >>> 0;
+  if (ipv6FragmentIdCounter === 0) ipv6FragmentIdCounter = 1;
+  return ipv6FragmentIdCounter;
+}
+
 /**
  * Compute the IPv4 header checksum per RFC 791.
  * Serialises the header into 10 × 16-bit words (IHL=5), sums them
@@ -1271,6 +1279,7 @@ export interface IKESimMessage extends NetworkPdu {
 /** IPv6 Next Header / Protocol values */
 export const IP_PROTO_ICMPV6 = 58;
 export const IP_PROTO_NONE = 59;   // No next header
+export const IP_PROTO_IPV6_FRAGMENT = 44;
 
 export interface IPv6Packet extends NetworkPdu {
   type: 'ipv6';
@@ -1352,6 +1361,7 @@ export const ICMPV6_NEIGHBOR_ADVERTISEMENT = 136;
 export const ICMPV6_DEST_UNREACHABLE = 1;
 export const ICMPV6_PACKET_TOO_BIG = 2;
 export const ICMPV6_TIME_EXCEEDED = 3;
+export const ICMPV6_PARAMETER_PROBLEM = 4;
 
 export type ICMPv6Type =
   | 'echo-request'
@@ -1362,7 +1372,8 @@ export type ICMPv6Type =
   | 'neighbor-advertisement'
   | 'destination-unreachable'
   | 'packet-too-big'
-  | 'time-exceeded';
+  | 'time-exceeded'
+  | 'parameter-problem';
 
 const ICMPV6_TYPE_NUMBER: Readonly<Record<ICMPv6Type, number>> = {
   'echo-request': ICMPV6_ECHO_REQUEST,
@@ -1374,6 +1385,7 @@ const ICMPV6_TYPE_NUMBER: Readonly<Record<ICMPv6Type, number>> = {
   'destination-unreachable': ICMPV6_DEST_UNREACHABLE,
   'packet-too-big': ICMPV6_PACKET_TOO_BIG,
   'time-exceeded': ICMPV6_TIME_EXCEEDED,
+  'parameter-problem': ICMPV6_PARAMETER_PROBLEM,
 };
 
 /** The number the type carries on the wire (RFC 4443). */
@@ -1395,6 +1407,7 @@ export interface ICMPv6Packet extends NetworkPdu {
   dataSize?: number;
   /** For Packet Too Big: MTU that should be used */
   mtu?: number;
+  pointer?: number;
   /** NDP-specific fields (for NS/NA/RS/RA) */
   ndp?: NDPMessage;
   invokingPacket?: IPv6Packet;
@@ -1770,5 +1783,6 @@ export function generateId(): string {
 export function resetCounters(): void {
   idCounter = 0;
   ipIdCounter = 0;
+  ipv6FragmentIdCounter = 0;
   MACAddress.resetCounter();
 }

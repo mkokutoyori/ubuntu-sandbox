@@ -536,6 +536,44 @@ importait depuis le répertoire des ports de Linux, vit maintenant dans `layers/
 `/proc/net/netstat` n'existe pas encore, si bien que `TcpExt:` et `IpExt:` ne sortent pas (tâche à part, avec leurs compteurs). Garde-fou :
 `probe-netstat-s-de-linux-lit-les-fichiers-du-noyau-comme-net-tools`.
 
+Un paquet IPv6 plus gros que le chemin est fragmenté par sa source, jamais en route, et réassemblé à l'arrivée (RFC 8200 §4.5 et §5,
+RFC 8201). Mesure de départ (`f4e83899f`, un LinuxPC et un WindowsPC reliés par `fd00::/64`, puis un CiscoRouter entre eux) : un datagramme
+UDP de 3000 octets partait en UN paquet de 3040 octets que le câble portait sans objection ; `Ip6ReasmReqds`, `Ip6FragOKs` et leurs
+voisins de `/proc/net/snmp6` et du bloc `IPv6 Statistics` de Windows ne bougeaient jamais ; un routeur dont l'interface portait
+`ipv6 mtu 1400` laissait passer un paquet de 1500 octets — la commande rangeait une propriété attachée au port par un `as any`, la
+réaffichait, et personne ne la lisait : `show ipv6 interface` disait `MTU is 1500 bytes` à côté —, si bien que la découverte du MTU de
+chemin n'avait rien à découvrir ; `tcpdump` ne nommait ni l'en-tête de fragment, ni `packet too big, mtu N`, ni `parameter problem`, ni
+`time exceeded in-transit (reassembly)`. Construit : `layers/internet/Ipv6Fragmentation.ts` porte l'en-tête de fragment comme une vraie
+extension (`nextHeader = 44`, charge utile `IPv6FragmentHeader` qui garde la vraie charge sur le fragment de décalage zéro et ne déclare
+que sa longueur sur les autres, comme `Ipv4Fragmentation`), la découpe (`(MTU − 48) & ~7` octets par fragment, soit 1448 sur 1500 : la
+valeur de `ip6_fragment`), et `IPv6Reassembler` — clé (source, destination, identification, plus l'interface pour un lien local ou un
+groupe), délai de 60 s armé au premier fragment et non repoussé, queue tuée par tout recouvrement (RFC 5722 ; `inet_frag_queue_insert` :
+un doublon contenu dans une même suite de fragments arrivés dans l'ordre est ignoré, le même intervalle à cheval sur deux fragments
+arrivés dans le désordre est un recouvrement), par une fin contradictoire ou un fragment vide, refus au-delà de
+`net.ipv6.ip6frag_high_thresh` (`inet_frag_find`), fragment non terminal dont la fin n'est pas multiple de 8 ou fragment qui finit
+au-delà de 65535 répondus par un Parameter Problem de pointeur 4 ou 42, fusion de l'ECN des fragments par la table de
+`inet_fragment.c` (`FragmentEcn`, dans `IpHeaderFields`). `EndHost.sendFrame` fragmente à l'émission — le point de sortie unique, donc
+l'écho, l'UDP, l'UDP-Lite et les groupes — sauf le TCP, qui ne dépasse jamais le MTU du chemin parce que la pile l'y borne ; la demande
+est comptée UNE fois par datagramme (`ip6_xmit` et `__ip6_make_skb` comptent `OutRequests` avant la fragmentation), `FragOKs` une fois,
+`FragCreates` par fragment. `handleIPv6` réassemble avant le pare-feu et la remise, comme `handleIPv4`, compte `ReasmReqds` par paquet
+portant un en-tête de fragment, `ReasmOKs` une fois par datagramme, `ReasmFails` par queue tuée, refusée ou expirée, `ReasmTimeout` à
+l'expiration, et envoie un Time Exceeded de code 1 si, et seulement si, le fragment de décalage zéro est arrivé. Le minuteur est celui de
+l'hôte (`hostTimers`), annulé à l'achèvement ; un hôte éteint oublie ses datagrammes en cours. `net.ipv6.ip6frag_time`,
+`ip6frag_high_thresh` et `ip6frag_low_thresh` sont des sysctl de Linux, la seconde bornée par la première comme `proc_doulongvec_minmax`.
+Côté routeur, `IPv6DataPlane.forwardPacket` répond Packet Too Big (code 0, MTU de l'interface de sortie, jamais sous 1280, adresse source
+de l'interface de sortie comme `ip6_forward`) à un paquet que l'interface de sortie ne porte pas, et le compte (`too big`) ;
+`ipv6 mtu` — Cisco comme Huawei — est enfin un champ typé de `Port` (`getIPv6MTU`, plafonné par le MTU du lien) que l'hôte, le routeur et
+`show ipv6 interface` / `display ipv6 interface` lisent. `tcpdump` nomme `next-header Fragment (44)`, imprime `frag (0x…:décalage|longueur)`
+puis, sur le fragment de décalage zéro, les ports et l'en-tête de transport (`print-frag6.c`, `print-udp.c`) sans qu'un filtre `udp` ne les
+retienne (libpcap ne regarde que l'en-tête de base), et dit `packet too big, mtu 1400`, `time exceeded in-transit for …`,
+`time exceeded in-transit (reassembly)`, `parameter problem, erroneous - octet 4`, `unreachable port, … udp port N`
+(`print-icmp6.c`). Sources lues : `net/ipv6/ip6_output.c`, `reassembly.c`, `route.c`, `net/ipv4/inet_fragment.c` du noyau 5.15 ;
+`print-frag6.c`, `print-ip6.c`, `print-udp.c`, `print-icmp6.c`, `ipproto.c` de tcpdump 4.99.1. Gardes-fous :
+`probe-ipv6-se-fragmente-a-la-source-et-se-reassemble-a-l-arrivee`. Ce que le lot a vu sans le fermer, dans la liste des tâches :
+l'IPv4 garde son réassembleur qui remplace un fragment de même décalage et n'additionne pas l'ECN ; `ip -6 route get` et `netsh interface
+ipv6 show destinationcache` n'existent pas, si bien que le MTU de chemin appris n'a aucune vue ; un routeur ne réassemble pas ce qui lui est
+adressé ; les erreurs ICMPv6 citent 48 octets au lieu de `min(paquet, 1232)`.
+
 Pas construit dans ce lot : le propriétaire de l'UDP 3343 du cluster est `System` (le pilote NetFT d'après une source tierce,
 non confirmé par Microsoft) ; l'Autodiscover d'Exchange n'est pas lié à W3SVC ; la requête en bloc DHCP des hôtes autres que
 Windows garde son identité fixe `1067/dhcpd` ; les sockets du client DHCP (UDP 68 et 546) ne publient aucune ligne ; le port 135

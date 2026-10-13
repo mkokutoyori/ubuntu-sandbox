@@ -59,6 +59,14 @@ export const ICMPV6_UNREACH_PORT = 4;
 export const ICMPV6_UNREACH_POLICY_FAILED = 5;
 export const ICMPV6_UNREACH_REJECT_ROUTE = 6;
 
+export const ICMPV6_EXCEEDED_HOP_LIMIT = 0;
+export const ICMPV6_EXCEEDED_REASSEMBLY = 1;
+
+export const ICMPV6_PARAMPROB_HEADER_FIELD = 0;
+export const ICMPV6_PARAMPROB_UNKNOWN_NEXT_HEADER = 1;
+export const ICMPV6_PARAMPROB_UNKNOWN_OPTION = 2;
+export const ICMPV6_PARAMPROB_INCOMPLETE_HEADER_CHAIN = 3;
+
 const ICMPV6_UNREACHABLE_CODE_NAMES: Readonly<Record<number, UnreachableCodeName>> = {
   [ICMPV6_UNREACH_NO_ROUTE]: 'net-unreachable',
   [ICMPV6_UNREACH_ADMIN_PROHIBITED]: 'admin-prohibited',
@@ -218,7 +226,7 @@ export function mayGenerateICMPError(offendingPkt: IPv4Packet): boolean {
 }
 
 const ICMPV6_ERROR_TYPES: ReadonlySet<ICMPv6Type> = new Set<ICMPv6Type>([
-  'destination-unreachable', 'packet-too-big', 'time-exceeded',
+  'destination-unreachable', 'packet-too-big', 'time-exceeded', 'parameter-problem',
 ]);
 
 export function isICMPv6ErrorMessage(pkt: IPv6Packet): boolean {

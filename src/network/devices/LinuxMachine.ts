@@ -78,6 +78,7 @@ import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
   LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
+import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
 import type { TcpStream } from '../tcp/types';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
@@ -286,7 +287,12 @@ export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   private readonly ipv4Settings = new LinuxIpv4Settings();
   private readonly coreSettings = new LinuxCoreSettings();
+  private readonly ipv6Settings = new LinuxIpv6Settings();
   protected get defaultTTL(): number { return this.ipv4Settings.defaultTtl; }
+  protected override get ipv6FragmentTimeoutMs(): number { return this.ipv6Settings.fragmentTimeoutMs; }
+  protected override get ipv6FragmentHighThresholdBytes(): number {
+    return this.ipv6Settings.fragmentHighThresholdBytes;
+  }
   getKernelIpFacts(): KernelIpFacts { return this.ipv4Settings.kernelIpFacts(this.ipForwardEnabled); }
   protected override dhcpIpEmission(): DhcpIpEmission { return ISC_DHCP_EMISSION; }
   protected override get defaultHopLimit(): number { return 64; }
@@ -424,6 +430,12 @@ export abstract class LinuxMachine extends EndHost
       this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
         () => `${this.ipv4Settings.get(knob.name)}\n`,
         (text) => this.ipv4Settings.write(knob.name, text));
+    }
+    this.executor.vfs.mkdirp('/proc/sys/net/ipv6', 0o755, 0, 0);
+    for (const knob of LINUX_IPV6_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv6/${knob.name}`,
+        () => `${this.ipv6Settings.get(knob.name)}\n`,
+        (text) => this.ipv6Settings.write(knob.name, text));
     }
     this.executor.vfs.registerGeneratedFile(CA_BUNDLE_PATH, () => caBundlePem(this.trustedCAs), 0o644);
     this.executor.vfs.mkdirp('/proc/sys/net/core', 0o755, 0, 0);

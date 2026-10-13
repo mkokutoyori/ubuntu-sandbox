@@ -34,7 +34,7 @@ export const NANO_MENUS: Readonly<Record<NanoMenuName, readonly MenuEntry[]>> = 
   'replace-with': [E('^G', 'Help'), E('^C', 'Cancel'), E('^P', 'Older'), E('^N', 'Newer')],
   'write-out': [
     E('^G', 'Help'), E('^C', 'Cancel'), E('M-D', 'DOS Format'), E('M-M', 'Mac Format'), E('M-A', 'Append'),
-    E('M-P', 'Prepend'), E('M-B', 'Backup File'), E('^T', 'Browse'),
+    E('M-P', 'Prepend'), E('M-B', 'Backup File'), E('^T', 'Browse'), E('^Q', 'Discard buffer'),
   ],
   'read-file': [
     E('^G', 'Help'), E('^C', 'Cancel'), E('M-F', 'New Buffer'), E('M-N', 'No Conversion'),
@@ -54,3 +54,22 @@ export const NANO_MENUS: Readonly<Record<NanoMenuName, readonly MenuEntry[]>> = 
     E('M-\\', 'First Line'), E('M-/', 'Last Line'),
   ],
 };
+
+export interface MenuOptions {
+  readonly restricted: boolean;
+  readonly discard: boolean;
+}
+
+const RESTRICTED_HIDDEN: Readonly<Partial<Record<NanoMenuName, readonly string[]>>> = {
+  main: ['Execute', 'Justify'],
+  'write-out': ['Append', 'Prepend', 'Backup File', 'Browse'],
+  'read-file': ['Browse', 'Execute Command', 'New Buffer'],
+};
+
+export function menuEntries(menu: NanoMenuName, options: MenuOptions): readonly MenuEntry[] {
+  const entries = NANO_MENUS[menu].filter((entry) => options.discard || entry.tag !== 'Discard buffer');
+  if (!options.restricted) return entries;
+  const hidden = RESTRICTED_HIDDEN[menu] ?? [];
+  const shown = entries.filter((entry) => !hidden.includes(entry.tag));
+  return menu === 'main' ? shown.map((entry) => (entry.tag === 'Read File' ? E('^J', 'Justify') : entry)) : shown;
+}

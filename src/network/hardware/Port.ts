@@ -776,6 +776,18 @@ export class Port {
 
   getMTU(): number { return this.mtu; }
 
+  private ipv6MtuSetting: number | null = null;
+
+  getIPv6MtuSetting(): number | null { return this.ipv6MtuSetting; }
+
+  getIPv6MTU(): number {
+    return this.ipv6MtuSetting === null ? this.mtu : Math.min(this.ipv6MtuSetting, this.mtu);
+  }
+
+  setIPv6MTU(mtu: number | null): void {
+    this.ipv6MtuSetting = mtu;
+  }
+
   /**
    * Le plafond de MTU dépend du MÉDIUM, pas du port.
    *
