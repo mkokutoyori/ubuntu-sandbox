@@ -13,6 +13,7 @@ import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { UserInfo, GroupInfo, IUserProvider } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { securePasswordOf } from './SecurePassword';
 
 function requireUsers(ctx: CmdletContext): IUserProvider {
   if (!ctx.providers.users) {
@@ -108,7 +109,7 @@ export class NewLocalUserCmdlet implements ICmdlet {
     if (!name) { ctx.emitError('New-LocalUser requires -Name'); return null; }
 
     const opts = {
-      password:    ctx.named['password']    ? psValueToString(ctx.named['password'])    : undefined,
+      password:    ctx.named['password']    ? securePasswordOf(ctx, 'password')    : undefined,
       fullName:    ctx.named['fullname']    ? psValueToString(ctx.named['fullname'])    : undefined,
       description: ctx.named['description'] ? psValueToString(ctx.named['description']) : undefined,
     };
@@ -136,7 +137,7 @@ export class SetLocalUserCmdlet implements ICmdlet {
     const opts: { enabled?: boolean; fullName?: string; description?: string; password?: string } = {};
     if (ctx.named['fullname']    !== undefined) opts.fullName    = psValueToString(ctx.named['fullname']);
     if (ctx.named['description'] !== undefined) opts.description = psValueToString(ctx.named['description']);
-    if (ctx.named['password']    !== undefined) opts.password    = psValueToString(ctx.named['password']);
+    if (ctx.named['password']    !== undefined) opts.password    = securePasswordOf(ctx, 'password');
     if (ctx.named['enabled']     !== undefined) opts.enabled     = ctx.named['enabled'] === true;
 
     const msg = users.setUser(name, opts);

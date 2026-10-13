@@ -297,6 +297,7 @@ interface TopologyDeviceExport {
     groups: WindowsGroup[];
     removedUsers?: string[];
     removedGroups?: string[];
+    passwords?: Record<string, string>;
   };
   removedPaths?: string[];
   windowsFeatures?: { installed: string[]; removed?: string[] };
@@ -951,9 +952,9 @@ function sameText(a: string | null | undefined, b: string | null | undefined): b
   return provisioned(a) === provisioned(b);
 }
 
-function userSignature(user: WindowsUser): string {
+function userSignature(user: WindowsUser, password: string | null): string {
   const { passwordLastSet: _passwordLastSet, lastLogon: _lastLogon, ...rest } = user;
-  return JSON.stringify(rest);
+  return JSON.stringify({ ...rest, secret: password });
 }
 
 function groupSignature(group: WindowsGroup): string {
@@ -965,9 +966,9 @@ function captureWindowsAccounts(
 ): TopologyDeviceExport['windowsAccounts'] | undefined {
   const mgr = device.getUserManager();
   const factory = twin.getUserManager();
-  const factoryUsers = new Map(factory.getAllUsers().map((u) => [u.name.toLowerCase(), userSignature(u)]));
+  const factoryUsers = new Map(factory.getAllUsers().map((u) => [u.name.toLowerCase(), userSignature(u, factory.getPlaintextPassword(u.name))]));
   const factoryGroups = new Map(factory.getAllGroups().map((g) => [g.name.toLowerCase(), groupSignature(g)]));
-  const users = mgr.getAllUsers().filter((u) => factoryUsers.get(u.name.toLowerCase()) !== userSignature(u));
+  const users = mgr.getAllUsers().filter((u) => factoryUsers.get(u.name.toLowerCase()) !== userSignature(u, mgr.getPlaintextPassword(u.name)));
   const groups = mgr.getAllGroups().filter((g) => factoryGroups.get(g.name.toLowerCase()) !== groupSignature(g));
   const liveUsers = new Set(mgr.getAllUsers().map((u) => u.name.toLowerCase()));
   const liveGroups = new Set(mgr.getAllGroups().map((g) => g.name.toLowerCase()));
@@ -975,6 +976,11 @@ function captureWindowsAccounts(
   const removedGroups = factory.getAllGroups().map((g) => g.name).filter((n) => !liveGroups.has(n.toLowerCase()));
   if (users.length + groups.length + removedUsers.length + removedGroups.length === 0) return undefined;
   const out: NonNullable<TopologyDeviceExport['windowsAccounts']> = { users, groups };
+  const passwords = Object.fromEntries(users.flatMap((u) => {
+    const secret = mgr.getPlaintextPassword(u.name);
+    return secret === null ? [] : [[u.name, secret]];
+  }));
+  if (Object.keys(passwords).length > 0) out.passwords = passwords;
   if (removedUsers.length > 0) out.removedUsers = removedUsers;
   if (removedGroups.length > 0) out.removedGroups = removedGroups;
   return out;
@@ -987,6 +993,7 @@ function restoreWindowsAccounts(
     reviveWindowsUsers(saved.users),
     saved.groups,
     { users: saved.removedUsers, groups: saved.removedGroups },
+    saved.passwords,
   );
 }
 

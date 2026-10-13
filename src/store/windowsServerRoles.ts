@@ -1,6 +1,7 @@
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { certToPem, pemToCert, pemToPrivateKey, privateKeyToPem } from '@/network/pki/pem';
 import { reserveCertificateSerial } from '@/network/pki/serialReservation';
+import type { NpsState } from '@/network/devices/windows/server/nps/WindowsNpsRole';
 import type { AppPoolInfo, IisStateDelta, WebsiteInfo } from '@/network/devices/windows/server/iis/WindowsIisRole';
 import type {
   DnsDynamicUpdateMode, DnsTransferPolicy, DnsZoneInfo, DnsZoneType,
@@ -33,6 +34,7 @@ export interface WindowsServerRolesState {
   dnsZones?: DnsZoneState[];
   iis?: IisStateDelta;
   adcs?: AdcsPersistedState;
+  nps?: NpsState;
   dhcp?: {
     scopes: DhcpScopeState[];
     exclusions: Array<{ start: string; end: string }>;
@@ -184,7 +186,17 @@ const adcsAuthority: RolePersister = {
   },
 };
 
-const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes, iisSites, adcsAuthority];
+const npsPolicies: RolePersister = {
+  capture(server) {
+    const state = server.getNpsRole()?.exportState();
+    return state ? { nps: state } : {};
+  },
+  restore(server, state) {
+    if (state.nps) server.getNpsRole()?.restoreState(state.nps);
+  },
+};
+
+const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes, iisSites, adcsAuthority, npsPolicies];
 
 export function captureWindowsServerRoles(server: WindowsServer, twin: WindowsServer): WindowsServerRolesState | undefined {
   const state = Object.assign({}, ...PERSISTERS.map((p) => p.capture(server, twin))) as WindowsServerRolesState;
