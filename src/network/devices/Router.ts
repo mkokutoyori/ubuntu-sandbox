@@ -854,12 +854,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   ): IpSlaEgress | null {
     if (sourceInterface) {
       const pinned = this.ports.get(sourceInterface);
-      if (!pinned || !pinned.isOperationallyUp() || !pinned.getIPAddress()) return null;
+      if (!pinned || !this.interfaceUsable(sourceInterface) || !pinned.getIPAddress()) return null;
     }
     const route = this.lookupRoute(destination);
     if (!route) return null;
     const egressPort = this.ports.get(route.iface);
-    if (!egressPort || !egressPort.isOperationallyUp()) return null;
+    if (!egressPort || !this.interfaceUsable(route.iface)) return null;
 
     let source = egressPort.getIPAddress();
     if (sourceInterface) {
@@ -936,7 +936,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!route) return false;
     const egress = this.ports.get(route.iface);
     const sourceIp = egress?.getIPAddress();
-    if (!egress || !sourceIp || !egress.isOperationallyUp()) return false;
+    if (!egress || !sourceIp || !this.interfaceUsable(route.iface)) return false;
     const udp: UDPPacket = {
       type: 'udp', sourcePort, destinationPort,
       length: 8 + 64, checksum: 0, payload,
@@ -1603,6 +1603,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (vlan === vid) return name;
     }
     return null;
+  }
+
+  private interfaceUsable(name: string): boolean {
+    const port = this.ports.get(name);
+    return port !== undefined && iosInterfaceUsable(port, name, this.ports);
   }
 
   override sendFrame(portName: string, frame: EthernetFrame): boolean {
@@ -5275,7 +5280,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const route = this.lookupRoute(request.destination);
     if (!route) return false;
     const egress = this.ports.get(route.iface);
-    if (!egress || !egress.isOperationallyUp()) return false;
+    if (!egress || !this.interfaceUsable(route.iface)) return false;
     const source = request.source ?? egress.getIPAddress();
     if (!source) return false;
 
@@ -6060,7 +6065,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // Line protocol down — the probe fails immediately instead of burning a
     // full timeout waiting for a reply the severed link can never carry
     // (docs/PRD-Link-State.md §2.1 P4).
-    if (!port.isOperationallyUp()) {
+    if (!this.interfaceUsable(iface)) {
       throw new Error(`Destination unreachable from ${myIP}`);
     }
 

@@ -29,6 +29,7 @@ import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
 import type { BfdAgent } from '../../bfd/BfdAgent';
+import { carrierBearer } from '../inspection/InterfaceStatusView';
 import type { Equipment } from '@/network/equipment/Equipment';
 
 // ─── OSPF Extra Config Type ─────────────────────────────────────
@@ -454,7 +455,9 @@ export class RouterOSPFIntegration {
 
   /** True when the engine interface maps to a cabled physical port. */
   private static isCabled(peer: RouterOSPFIntegration, ifaceName: string): boolean {
-    return !!peer.ctx.getPorts().get(ifaceName)?.getCable();
+    const ports = peer.ctx.getPorts();
+    const port = ports.get(ifaceName);
+    return port !== undefined && carrierBearer(ifaceName, port, ports).getCable() !== null;
   }
 
   /** One real Hello per cabled, non-passive interface of every peer. */
