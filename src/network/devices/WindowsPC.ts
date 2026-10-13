@@ -77,7 +77,10 @@ import {
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { findHostByAddress } from './linux/network/HostLookup';
-import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
+import { runWindowsSftpClient, type WindowsSftpRemote } from './windows/network/WindowsSftpClient';
+import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSshLocalFs';
+import { WireSftpFileSystem } from '@/network/protocols/ssh/sftp/WireSftpFileSystem';
+import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { runWindowsScpClient } from './windows/network/WindowsScpClient';
 import { splitCmdArgs, separateCommandWord } from './windows/cmdline';
 import { BatchInterpreter } from '@/cmd/interpreter/BatchInterpreter';
@@ -2655,13 +2658,52 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return runWindowsSftpClient({
       args,
       stdin,
-      sourceDevice: this,
-      sourceHostname: this.hostname,
-      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
       sourceUser: user,
       sourceHome: `C:\\Users\\${user}`,
       localFs: this.fs,
+      openRemote: (target) => this.openWireSftp(target, (this._scenarioStdin ?? '').split('\n')[0] || undefined),
     }).then(r => r.output);
+  }
+
+  private async openWireSftp(target: WinWireTarget, password: string | undefined): Promise<WindowsSftpRemote> {
+    const reach = await wireReachOutcomeRetransmitting(this, target.host, target.port);
+    if (reach !== 'open') {
+      return {
+        kind: 'refused',
+        message: `sftp: ${sshWireFailureLine(OPENSSH_SSH, reach, target.host, target.port).replace(/^ssh:\s*/, '')}`,
+      };
+    }
+    const outcome = await openWireSshConnection({
+      device: this,
+      localUser: this.userMgr.currentUser,
+      user: target.user,
+      host: target.host,
+      port: target.port,
+      io: silentConnectIo(),
+      password,
+      credentialless: password === undefined,
+      identityFiles: target.identities.map(sshPathOfWindowsPath),
+      algorithms: target.algorithms,
+    });
+    if (outcome.kind === 'auth-failed') {
+      return {
+        kind: 'refused',
+        message: `sftp: ${target.user}@${target.host}: Permission denied (${outcome.methods ?? 'publickey,password'}).`,
+      };
+    }
+    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') {
+      return { kind: 'refused', message: outcome.message.replace(/^ssh:\s*/, 'sftp: ') };
+    }
+    if (outcome.kind !== 'connected') {
+      return { kind: 'refused', message: `sftp: ${target.host}: Connection closed` };
+    }
+    const { session } = outcome;
+    const channel = session.openSftpChannel();
+    if (!isOk(channel) || !(await channel.value.accepted())) {
+      session.disconnect();
+      return { kind: 'refused', message: 'subsystem request failed on channel 0\nConnection closed' };
+    }
+    return { kind: 'opened', fs: new WireSftpFileSystem(channel.value), release: () => session.disconnect() };
   }
 
   private cmdScp(args: string[]): Promise<string> {

@@ -112,13 +112,14 @@ interface Row {
   setup?: (lan: Lan) => Promise<void> | void;
   on: (lan: Lan) => Dev;
   cmd: string;
+  stdin?: string;
   contains?: (string | RegExp)[];
   excludes?: (string | RegExp)[];
 }
 
 async function runRow(lan: Lan, row: Row): Promise<string> {
   if (row.setup) await row.setup(lan);
-  return row.on(lan).executeCommand(row.cmd);
+  return row.on(lan).executeCommand(row.cmd, row.stdin);
 }
 
 function assertRow(out: string, row: Row): void {
@@ -149,9 +150,9 @@ function passwordFor(user: string, host: string): string {
 /**
  * Build a here-doc sftp invocation, carrying the account's password.
  *
- * `fromWindows` drops it: a Windows box ships no `sshpass`, and its own
- * client (`WindowsSftpClient`) is a separate path that still resolves the
- * remote in memory — §26 measures that client, not this one.
+ * `fromWindows` drops it: a Windows box ships no `sshpass`, so the account's
+ * password reaches its client on the first line of standard input (`stdin`
+ * on the row), the way `ssh` from Windows already takes it.
  */
 function sftp(
   dest: string, verbs: string[], opts: { flags?: string; fromWindows?: boolean } = {},
@@ -1491,6 +1492,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       name: 'win1 → linux pc2: sftp alice@10.0.0.2 connects',
       on: l => l.win1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { fromWindows: true }),
+      stdin: 'alice',
       contains: [/Connected to 10\.0\.0\.2/],
       excludes: [/not recognized|command not found/i],
     },
@@ -1498,12 +1500,14 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       name: 'win1 → linux server: sftp alice@srv1 connects',
       on: l => l.win1,
       cmd: sftp('alice@10.0.0.10', ['pwd'], { fromWindows: true }),
+      stdin: 'alice',
       contains: [/Connected to 10\.0\.0\.10/],
     },
     {
       name: 'win1 → win2: cross-Windows sftp connects',
       on: l => l.win1,
       cmd: sftp('User@10.0.0.21', ['pwd'], { fromWindows: true }),
+      stdin: 'user',
       contains: [/Connected to 10\.0\.0\.21/],
     },
     {
@@ -1514,6 +1518,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       },
       on: l => l.win1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222', fromWindows: true }),
+      stdin: 'alice',
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
@@ -1536,6 +1541,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
         await l.win1.executeCommand('echo from-win > C:\\Users\\User\\to-linux.txt');
         await l.win1.executeCommand(
           sftp('alice@10.0.0.2', ['put /C:/Users/User/to-linux.txt /tmp/from-win.txt'], { fromWindows: true }),
+          'alice',
         );
       },
       on: l => l.pc2,

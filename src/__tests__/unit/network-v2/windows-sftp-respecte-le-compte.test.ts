@@ -55,7 +55,7 @@ async function lab() {
  */
 async function sftpBatch(win: WindowsPC, verbs: string[], target: string): Promise<string> {
   await win.executeCommand(`echo ${verbs.join(' & echo ')} > C:\\lot.txt`);
-  return win.executeCommand(`sftp -b C:\\lot.txt ${target}`);
+  return win.executeCommand(`sftp -b C:\\lot.txt ${target}`, 'secret');
 }
 
 describe('le client sftp de Windows obéit au compte nommé', () => {
