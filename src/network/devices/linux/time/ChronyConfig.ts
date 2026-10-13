@@ -171,6 +171,9 @@ export interface ChronyConf {
   readonly localStratum: number | null;
   readonly maxdistanceSec: number | null;
   readonly ntpPort: number;
+  readonly commandPort: number;
+  readonly bindCommandAddresses: readonly string[];
+  readonly commandRateLimit: ChronyRateLimit | null;
   readonly smooth: { maxFrequencyPpm: number; maxWanderPpm: number; leapOnly: boolean } | null;
   readonly localDistance: number;
   readonly localOrphan: boolean;
@@ -186,8 +189,8 @@ export interface ChronyConf {
 /** Ce que chronyd connait et que ce simulateur n'applique pas. */
 const CONNUES_SANS_EFFET = new Set([
   'refclock', 'hwtimestamp', 'leapsectz', 'initstepslew',
-  'cmdratelimit', 'ntsdumpdir', 'ntstrustedcerts', 'lock_all',
-  'sched_priority', 'user', 'pidfile', 'bindcmdaddress', 'cmdport',
+  'ntsdumpdir', 'ntstrustedcerts', 'lock_all',
+  'sched_priority', 'user', 'pidfile',
   'noclientlog', 'clientloglimit', 'dumpdir', 'corrtimeratio',
   'maxdrift', 'rtcfile', 'hwclockfile', 'leapsecmode',
 ]);
@@ -196,7 +199,7 @@ const CONF_VIDE: ChronyConf = {
   sources: [], makestep: null, access: [], ratelimit: null,
   driftfile: '', logdir: '', logs: [], keyfile: '',
   rtcsync: false, manual: false, localStratum: null, maxdistanceSec: null,
-  ntpPort: 123, smooth: null, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
+  ntpPort: 123, commandPort: 323, bindCommandAddresses: [], commandRateLimit: null, smooth: null, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
   acceptesSansEffet: [], inconnues: [],
 };
 
@@ -222,6 +225,9 @@ export function parseChronyConf(texte: string): ChronyConf {
   let maxdistanceSec: number | null = null;
   let localDistance = 1.0;
   let ntpPort = 123;
+  let commandPort = 323;
+  const bindCommandAddresses: string[] = [];
+  let commandRateLimit: ChronyRateLimit | null = null;
   let smooth: { maxFrequencyPpm: number; maxWanderPpm: number; leapOnly: boolean } | null = null;
   let localOrphan = false;
   const selection: Partial<SelectionParameters> = {};
@@ -299,6 +305,26 @@ export function parseChronyConf(texte: string): ChronyConf {
         localStratum = stratum; localDistance = distance; localOrphan = orphan;
         break;
       }
+      case 'cmdport': {
+        const v = entier(args[0]);
+        if (v === null || args.length !== 1 || v < 0 || v > 65535) inconnues.push({ ligne: i + 1, texte: nue });
+        else commandPort = v;
+        break;
+      }
+      case 'bindcmdaddress': {
+        if (args.length !== 1) inconnues.push({ ligne: i + 1, texte: nue });
+        else if (/^\d{1,3}(\.\d{1,3}){3}$/.test(args[0])) bindCommandAddresses.push(args[0]);
+        else if (!args[0].startsWith('/') && !args[0].includes(':')) inconnues.push({ ligne: i + 1, texte: nue });
+        break;
+      }
+      case 'cmdratelimit': {
+        const read = (name: string, fallback: number): number => {
+          const at = args.findIndex((m) => m.toLowerCase() === name);
+          return at >= 0 ? entier(args[at + 1]) ?? fallback : fallback;
+        };
+        commandRateLimit = { interval: read('interval', -4), burst: read('burst', 8), leak: read('leak', 2) };
+        break;
+      }
       case 'smoothtime': {
         const maxFrequency = parseFloat(args[0] ?? '');
         const maxWander = parseFloat(args[1] ?? '');
@@ -351,7 +377,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   return {
     ...CONF_VIDE, sources, makestep, access, ratelimit,
     driftfile, logdir, logs, keyfile, rtcsync, manual, localStratum, maxdistanceSec,
-    ntpPort, smooth, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
+    ntpPort, commandPort, bindCommandAddresses, commandRateLimit, smooth, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
     acceptesSansEffet, inconnues,
   };
 }

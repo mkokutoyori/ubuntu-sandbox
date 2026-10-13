@@ -33,6 +33,7 @@ export interface SourcestatsReport {
   readonly residualFrequencyPpm: number;
   readonly skewPpm: number;
   readonly estimatedOffset: number;
+  readonly estimatedOffsetError: number;
   readonly standardDeviation: number;
 }
 
@@ -41,6 +42,7 @@ export interface TrackingReport {
   readonly referenceName: string;
   readonly stratum: number;
   readonly referenceTime: number;
+  readonly referenceTimeNanoseconds?: number;
   readonly currentCorrection: number;
   readonly lastOffset: number;
   readonly rmsOffset: number;
@@ -141,6 +143,11 @@ function refIdOf(identifier: string): number {
 function wholeSecondsSince(sampleTime: number, nowSeconds: number): number {
   return Math.max(0, Math.floor(nowSeconds - Math.floor(sampleTime)));
 }
+
+export type ChronyViewPort = Pick<ChronyDaemonView,
+  'activity' | 'authData' | 'clearClients' | 'clients' | 'findSource' | 'matching' | 'ntpData' | 'reselect' | 'resetSources'
+  | 'selectData' | 'serverStats' | 'setCriteria' | 'setMaxUpdateSkew' | 'setOnline' | 'setReselectDistance' | 'smoothTime'
+  | 'smoothingReport' | 'sources' | 'sourcestats' | 'startBurst' | 'tracking'>;
 
 export class ChronyDaemonView {
   constructor(
@@ -248,6 +255,7 @@ export class ChronyDaemonView {
         residualFrequencyPpm: report.residualFrequencyPpm,
         skewPpm: report.skewPpm,
         estimatedOffset: report.estimatedOffset,
+        estimatedOffsetError: report.estimatedOffsetError,
         standardDeviation: report.standardDeviation,
       };
     });

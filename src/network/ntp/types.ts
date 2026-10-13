@@ -1,6 +1,7 @@
 import { SourceStatistics } from './SourceStatistics';
 import type { DelayQuantile } from './DelayQuantile';
 import type { SampleFilter } from './SampleFilter';
+import type { RateLimit } from './RateLimiter';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
@@ -230,12 +231,7 @@ export function createSystemState(): NtpSystemState {
   };
 }
 
-export interface NtpRateLimit {
-  intervalExponent: number;
-  burst: number;
-  leakExponent: number;
-  kod: boolean;
-}
+export type NtpRateLimit = RateLimit;
 
 export interface NtpConfig {
   rateLimit: NtpRateLimit | null;

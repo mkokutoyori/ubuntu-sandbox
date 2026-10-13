@@ -54,6 +54,11 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { LocalReference, NtpAgent, NtpPlatformProfile } from '../../../ntp/NtpAgent';
 import { DEFAULT_SELECTION_PARAMETERS } from '../../../ntp/ChronySelection';
 import { TimeSmoothing } from '../../../ntp/TimeSmoothing';
+import type { UdpListener } from '../../EndHost';
+import type { UdpSendRequest } from '../../../layers/transport/UdpEgress';
+import { IPAddress as WireAddress } from '../../../core/types';
+import { ChronyCommandServer } from './ChronyCommandServer';
+import { ChronyDaemonView } from './ChronyDaemonView';
 import { UDP_PORT_NTP, type NtpVersion } from '../../../ntp/types';
 import { parseChronyConf, parseChronySource, type ChronyConf, type ChronySource, CHRONY_CONF_DEBIAN } from './ChronyConfig';
 import { ChronyAccessTable, parseChronySubnet } from './ChronyAccess';
@@ -76,6 +81,9 @@ export interface ChronyHost {
   bindNtpPort?(port: number): boolean;
   releaseNtpPort?(port: number): void;
   daemonExited?(reason: string): void;
+  bindCommandAddress?(address: string, port: number, listener: UdpListener): boolean;
+  releaseCommandAddress?(address: string, port: number): void;
+  sendUdpDatagram?(request: UdpSendRequest): boolean;
 }
 
 const CHRONY_PROFILE: Partial<NtpPlatformProfile> = {
@@ -157,8 +165,52 @@ export class LinuxChronyService implements ServiceSocketServer {
     return { ok: true };
   }
 
+  private openCommandChannel(): void {
+    const port = this.conf.commandPort;
+    const addresses = port === 0 ? [] : this.conf.bindCommandAddresses.length > 0 ? [...this.conf.bindCommandAddresses] : ['127.0.0.1'];
+    const key = `${port}:${addresses.join(',')}`;
+    if (key === this.commandKey && this.commandServer !== null) {
+      const limit = this.conf.commandRateLimit;
+      this.commandServer.setRateLimit(limit === null ? null
+        : { intervalExponent: limit.interval, burst: limit.burst, leakExponent: limit.leak, kod: false });
+      return;
+    }
+    this.closeCommandChannel();
+    this.commandKey = key;
+    if (addresses.length === 0) return;
+    const server = new ChronyCommandServer(
+      this,
+      () => (this.actif ? new ChronyDaemonView(this, this.host.ntp()) : null),
+      {
+        send: (destination, destinationPort, sourcePort, source, payload) => this.host.sendUdpDatagram?.({
+          destination, destinationPort, sourcePort, payload, payloadBytes: payload.length,
+          ...(source === undefined ? {} : { source }),
+        }) ?? false,
+      },
+    );
+    const limit = this.conf.commandRateLimit;
+    server.setRateLimit(limit === null ? null
+      : { intervalExponent: limit.interval, burst: limit.burst, leakExponent: limit.leak, kod: false });
+    this.commandServer = server;
+    for (const address of addresses) {
+      const bound = this.host.bindCommandAddress?.(address, port, ({ sourceIP, destinationIP, udp }) => {
+        if (!(sourceIP instanceof WireAddress) || !(destinationIP instanceof WireAddress) || !(udp.payload instanceof Uint8Array)) return;
+        server.handle(sourceIP, udp.sourcePort, destinationIP, udp.destinationPort, udp.payload);
+      });
+      if (bound) this.commandBindings.push({ address, port });
+    }
+  }
+
+  private closeCommandChannel(): void {
+    for (const binding of this.commandBindings) this.host.releaseCommandAddress?.(binding.address, binding.port);
+    this.commandBindings = [];
+    this.commandServer = null;
+    this.commandKey = '';
+  }
+
   stop(): void {
     if (!this.actif) return;
+    this.closeCommandChannel();
     this.actif = false;
     this.host.releaseNtpPort?.(UDP_PORT_NTP);
     if (this.conf.ntpPort !== UDP_PORT_NTP && this.conf.ntpPort > 0) this.host.releaseNtpPort?.(this.conf.ntpPort);
@@ -202,6 +254,9 @@ export class LinuxChronyService implements ServiceSocketServer {
   private manualEnabled = false;
   private manualSamples: { atMs: number; slewed: number; original: number; residual: number }[] = [];
   private smoothKey = '';
+  private commandServer: ChronyCommandServer | null = null;
+  private commandBindings: { address: string; port: number }[] = [];
+  private commandKey = '';
   private localOverride: LocalReference | 'off' | null = null;
   private commandPackets = 0;
 
@@ -396,6 +451,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     this.applyLocal();
     this.manualEnabled = this.conf.manual;
     this.rebuildAccess();
+    this.openCommandChannel();
     agent.setClientAdmission((ip) => {
       const address = IPAddress.tryParse(ip);
       return address !== null && this.ntpAccess.isAllowed(address);

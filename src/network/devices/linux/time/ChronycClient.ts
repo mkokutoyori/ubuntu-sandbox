@@ -4,8 +4,10 @@ import { IPAddress } from '../../../core/types';
 import type { NtpAssociation } from '../../../ntp/types';
 import { CHRONYC_HELP, CHRONYC_USAGE } from './ChronycHelp';
 import { printHeader, printReport, ReportTime, type ReportValue } from './ChronycFormat';
-import type { ChronyDaemonView } from './ChronyDaemonView';
+import type { ChronyViewPort } from './ChronyDaemonView';
 import { NO_ELAPSED } from './ChronyDaemonView';
+import { ChronyCommandClient, RemoteChronyView, statusLine, type CommandTransport, type FetchOutcome } from './ChronyRemote';
+import { CMDMON_PORT, STT } from './ChronyCmdmon';
 import { parseChronySource } from './ChronyConfig';
 import { parseChronySubnet, formatChronySubnet } from './ChronyAccess';
 import { genererCleChrony } from './ChronyKeys';
@@ -17,7 +19,8 @@ const OPEN_ERROR = '506 Cannot talk to daemon';
 
 export interface ChronycHost {
   readonly service: LinuxChronyService | null;
-  readonly view: ChronyDaemonView | null;
+  readonly view: ChronyViewPort | null;
+  readonly transport?: CommandTransport;
   readonly privileged: boolean;
   readonly programName: string;
   readonly localAddresses: readonly string[];
@@ -110,6 +113,12 @@ export class ChronycSession {
   private noDns = false;
   private sourceNames = false;
   private quit = false;
+  private commandPort = CMDMON_PORT;
+  private remoteViews: RemoteChronyView[] = [];
+  private remoteIndex = 0;
+  private remoteDenied = false;
+  private remoteTimeoutMs = 1000;
+  private remoteRetries = 2;
 
   constructor(private readonly host: ChronycHost) {}
 
@@ -117,9 +126,11 @@ export class ChronycSession {
     const parsed = this.parseOptions(argv);
     if (typeof parsed === 'number') return this.finish(parsed);
     const { rest, multi, target } = parsed;
-    if (target !== null && !this.isLocalTarget(target)) {
-      this.io.out(`${OPEN_ERROR}\n`);
-      return this.finish(1);
+    if (target !== null && !this.isUnixTarget(target)) {
+      if (!this.connectRemote(target)) {
+        this.io.out(`${OPEN_ERROR}\n`);
+        return this.finish(1);
+      }
     }
     let ok = 1;
     if (rest.length > 0) {
@@ -144,9 +155,25 @@ export class ChronycSession {
     return { stdout: this.io.stdout, stderr: this.io.stderr, exitCode };
   }
 
-  private isLocalTarget(target: string): boolean {
-    return target.split(',').every((entry) => entry === SOCKET_PATH || entry === 'localhost' || entry === '127.0.0.1'
-      || entry === '::1' || this.host.localAddresses.includes(entry));
+  private isUnixTarget(target: string): boolean {
+    return target.split(',').every((entry) => entry === SOCKET_PATH);
+  }
+
+  private connectRemote(target: string): boolean {
+    const transport = this.host.transport;
+    if (transport === undefined) return false;
+    this.remoteViews = [];
+    for (const entry of target.split(',')) {
+      const address = this.resolveAddress(entry);
+      if (address === null) continue;
+      const client = new ChronyCommandClient(transport, address, this.commandPort, this.host.wait);
+      this.remoteViews.push(new RemoteChronyView(client));
+    }
+    return this.remoteViews.length > 0;
+  }
+
+  private get remote(): RemoteChronyView | null {
+    return this.remoteViews.length === 0 ? null : this.remoteViews[Math.min(this.remoteIndex, this.remoteViews.length - 1)];
   }
 
   private parseOptions(argv: readonly string[]):
@@ -158,6 +185,7 @@ export class ChronycSession {
     let multi = false;
     let target: string | null = null;
     let index = 0;
+    this.commandPort = CMDMON_PORT;
     while (index < argv.length && argv[index].length > 1 && argv[index][0] === '-') {
       const cluster = argv[index];
       index++;
@@ -176,6 +204,7 @@ export class ChronycSession {
               value = argv[index++];
             }
             if (flag === 'h') target = value;
+            if (flag === 'p') this.commandPort = Number.parseInt(value, 10) || CMDMON_PORT;
             break;
           }
           if (flag === 'c') this.csv = true;
@@ -246,7 +275,11 @@ export class ChronycSession {
   }
 
   private authorised(open: boolean): boolean {
-    if (open || this.host.privileged) return true;
+    if (open || (this.host.privileged && this.remote === null)) return true;
+    if (this.remote !== null) {
+      this.remoteDenied = true;
+      return false;
+    }
     this.io.out('501 Not authorised\n');
     return false;
   }
@@ -259,7 +292,9 @@ export class ChronycSession {
     const service = this.host.service;
     const view = this.host.view;
     const local = ['help', 'exit', 'quit', 'keygen', 'dns', 'timeout', 'retries', 'authhash', 'password'];
-    if (!local.includes(command) && (service === null || view === null || !service.isRunning())) {
+    if (this.remote !== null && !local.includes(command)) {
+      result = await this.processRemote(command, rest);
+    } else if (!local.includes(command) && (service === null || view === null || !service.isRunning())) {
       if (!this.knownCommands().has(command)) {
         this.io.err('Unrecognized command');
         result = false;
@@ -274,6 +309,75 @@ export class ChronycSession {
     return result;
   }
 
+  private async remoteFetch(command: string, line: string): Promise<FetchOutcome> {
+    for (; this.remoteIndex < this.remoteViews.length; this.remoteIndex++) {
+      const view = this.remoteViews[this.remoteIndex];
+      view.configure(this.remoteTimeoutMs, this.remoteRetries);
+      const outcome = await view.fetch(command, line);
+      if (outcome.ok || outcome.text !== null) return outcome;
+    }
+    this.remoteIndex = 0;
+    return { ok: false, text: null };
+  }
+
+  private async freshTracking(): Promise<boolean> {
+    if (this.remote === null) return true;
+    const outcome = await this.remoteFetch('tracking', '');
+    if (outcome.ok) return true;
+    this.io.out(`${outcome.text ?? OPEN_ERROR}\n`);
+    return false;
+  }
+
+  private async processRemote(command: string, rest: string): Promise<boolean> {
+    if (!this.knownCommands().has(command)) {
+      this.io.err('Unrecognized command');
+      return false;
+    }
+    const remote = this.remote!;
+    const stub = null as unknown as LinuxChronyService;
+    const fetched = command === 'manual' ? (rest.startsWith('list') ? 'manual' : null)
+      : ['tracking', 'sources', 'sourcestats', 'activity', 'smoothing', 'rtcdata', 'sourcename'].includes(command) ? command : null;
+    if (fetched !== null) {
+      const address = command === 'sourcename' ? this.resolveAddress(rest) : '';
+      if (address !== null) {
+        const outcome = await this.remoteFetch(fetched, command === 'sourcename' ? address : rest);
+        if (!outcome.ok) {
+          this.io.out(`${outcome.text ?? OPEN_ERROR}\n`);
+          return false;
+        }
+      }
+      return this.dispatch(command, rest, stub, remote);
+    }
+    if (['selectdata', 'authdata'].includes(command) || (command === 'ntpdata' && rest === '')) {
+      const outcome = await this.remoteFetch('count', '');
+      if (!outcome.ok) {
+        this.io.out(`${outcome.text ?? OPEN_ERROR}\n`);
+        return false;
+      }
+    }
+    this.remoteDenied = false;
+    let result = await this.dispatch(command, rest, stub, remote);
+    if (this.remoteDenied) {
+      this.remoteDenied = false;
+      const denial = await this.remoteDenial(command, rest);
+      if (denial === null) this.io.out(`${OPEN_ERROR}\n`);
+      else if (denial !== STT.SUCCESS) this.io.out(`${statusLine(denial)}\n`);
+      result = denial === STT.SUCCESS;
+    }
+    return result;
+  }
+
+  private async remoteDenial(command: string, line: string): Promise<number | null> {
+    for (; this.remoteIndex < this.remoteViews.length; this.remoteIndex++) {
+      const view = this.remoteViews[this.remoteIndex];
+      view.configure(this.remoteTimeoutMs, this.remoteRetries);
+      const denial = await view.denied(command, line);
+      if (denial !== null) return denial.status;
+    }
+    this.remoteIndex = 0;
+    return null;
+  }
+
   private knownCommands(): Set<string> {
     return new Set([
       'accheck', 'activity', 'add', 'allow', 'authdata', 'burst', 'clients', 'cmdaccheck', 'cmdallow', 'cmddeny',
@@ -285,7 +389,7 @@ export class ChronycSession {
     ]);
   }
 
-  private async dispatch(command: string, line: string, service: LinuxChronyService, view: ChronyDaemonView): Promise<boolean> {
+  private async dispatch(command: string, line: string, service: LinuxChronyService, view: ChronyViewPort): Promise<boolean> {
     switch (command) {
       case 'accheck': return this.accessCheck(line, service, 'ntp');
       case 'cmdaccheck': return this.accessCheck(line, service, 'cmd');
@@ -391,7 +495,7 @@ export class ChronycSession {
     return null;
   }
 
-  private connectivity(line: string, view: ChronyDaemonView, online: boolean): boolean {
+  private connectivity(line: string, view: ChronyViewPort, online: boolean): boolean {
     const target = this.readMaskAddress(line);
     if (target === null) return false;
     if (!this.authorised(false)) return false;
@@ -401,13 +505,13 @@ export class ChronycSession {
     return this.status('success', true);
   }
 
-  private onOffline(view: ChronyDaemonView): boolean {
+  private onOffline(view: ChronyViewPort): boolean {
     if (!this.authorised(false)) return false;
     for (const a of view.matching(null, null)) view.setOnline(a, true);
     return this.status('success', true);
   }
 
-  private burst(line: string, view: ChronyDaemonView): boolean {
+  private burst(line: string, view: ChronyViewPort): boolean {
     const [first, remainder] = splitWord(line);
     const match = /^(-?\d+)\/(-?\d+)/.exec(first);
     if (match === null) {
@@ -424,7 +528,7 @@ export class ChronycSession {
   }
 
   private sourceValue(
-    line: string, view: ChronyDaemonView, kind: 'double' | 'integer',
+    line: string, view: ChronyViewPort, kind: 'double' | 'integer',
     apply: (association: NtpAssociation, value: number) => void,
   ): boolean {
     const [hostname, rest] = splitWord(line);
@@ -541,7 +645,7 @@ export class ChronycSession {
     return this.fail(result.erreur);
   }
 
-  private maxUpdateSkew(line: string, view: ChronyDaemonView): boolean {
+  private maxUpdateSkew(line: string, view: ChronyViewPort): boolean {
     const value = scanDouble(line);
     if (value === null) return false;
     if (!this.authorised(false)) return false;
@@ -549,7 +653,7 @@ export class ChronycSession {
     return this.status('success', true);
   }
 
-  private reselectDistance(line: string, view: ChronyDaemonView): boolean {
+  private reselectDistance(line: string, view: ChronyViewPort): boolean {
     const value = scanDouble(line);
     if (value === null) return false;
     if (!this.authorised(false)) return false;
@@ -619,7 +723,7 @@ export class ChronycSession {
   }
 
   private manualList(service: LinuxChronyService): boolean {
-    const samples = service.getManualSamples();
+    const samples = this.remote !== null ? this.remote.manualSamples : service.getManualSamples();
     if (!this.csv) this.io.out(`210 n_samples = ${samples.length}\n`);
     this.header('#    Date     Time(UTC)    Slewed   Original   Residual');
     samples.forEach((sample, index) => {
@@ -639,13 +743,13 @@ export class ChronycSession {
     return this.privilegedOk();
   }
 
-  private reselect(view: ChronyDaemonView): boolean {
+  private reselect(view: ChronyViewPort): boolean {
     if (!this.authorised(false)) return false;
     view.reselect();
     return this.status('success', true);
   }
 
-  private resetSources(line: string, view: ChronyDaemonView): boolean {
+  private resetSources(line: string, view: ChronyViewPort): boolean {
     if (line !== 'sources') return this.fail('Invalid syntax for reset command');
     if (!this.authorised(false)) return false;
     view.resetSources();
@@ -655,12 +759,14 @@ export class ChronycSession {
   private retries(line: string): boolean {
     const value = Number.parseInt(line, 10) || 0;
     if (value < 0 || value > 30) return this.fail('Invalid maximum number of retries');
+    this.remoteRetries = value;
     return true;
   }
 
   private timeout(line: string): boolean {
     const value = Number.parseInt(line, 10) || 0;
     if (value < 100) return this.fail(`Timeout ${value} is too short`);
+    this.remoteTimeoutMs = value;
     return true;
   }
 
@@ -670,7 +776,7 @@ export class ChronycSession {
     return this.status('success', true);
   }
 
-  private smoothTime(line: string, view: ChronyDaemonView): boolean {
+  private smoothTime(line: string, view: ChronyViewPort): boolean {
     if (line !== 'reset' && line !== 'activate') return this.fail('Invalid syntax for smoothtime command');
     if (!this.authorised(false)) return false;
     if (!view.smoothTime(line)) {
@@ -680,7 +786,7 @@ export class ChronycSession {
     return this.status('success', true);
   }
 
-  private smoothing(view: ChronyDaemonView): boolean {
+  private smoothing(view: ChronyViewPort): boolean {
     const report = view.smoothingReport();
     if (report === null) {
       this.status('notenabled', false);
@@ -711,7 +817,7 @@ export class ChronycSession {
     return true;
   }
 
-  private sourceName(line: string, view: ChronyDaemonView): boolean {
+  private sourceName(line: string, view: ChronyViewPort): boolean {
     const address = this.resolveAddress(line);
     if (address === null) return this.fail('Could not read address');
     if (view.findSource(address) === undefined) {
@@ -722,7 +828,7 @@ export class ChronycSession {
     return true;
   }
 
-  private activity(view: ChronyDaemonView): boolean {
+  private activity(view: ChronyViewPort): boolean {
     const report = view.activity();
     if (!this.csv) this.io.out('200 OK\n');
     this.report(
@@ -732,7 +838,7 @@ export class ChronycSession {
     return true;
   }
 
-  private sources(line: string, view: ChronyDaemonView): boolean {
+  private sources(line: string, view: ChronyViewPort): boolean {
     const { verbose } = this.parseSourcesOptions(line);
     if (verbose) {
       this.io.out('\n');
@@ -757,7 +863,7 @@ export class ChronycSession {
     return true;
   }
 
-  private sourcestats(line: string, view: ChronyDaemonView): boolean {
+  private sourcestats(line: string, view: ChronyViewPort): boolean {
     const { verbose } = this.parseSourcesOptions(line);
     if (verbose) {
       this.io.out('                             .- Number of sample points in measurement set.\n');
@@ -780,7 +886,7 @@ export class ChronycSession {
     return true;
   }
 
-  private tracking(view: ChronyDaemonView): boolean {
+  private tracking(view: ChronyViewPort): boolean {
     const t = view.tracking();
     this.report(
       'Reference ID    : %R (%s)\nStratum         : %u\nRef time (UTC)  : %T\nSystem time     : %.9O of NTP time\n'
@@ -788,14 +894,14 @@ export class ChronycSession {
       + 'Residual freq   : %+.3f ppm\nSkew            : %.3f ppm\nRoot delay      : %.9f seconds\n'
       + 'Root dispersion : %.9f seconds\nUpdate interval : %.1f seconds\nLeap status     : %L\n',
       [
-        t.referenceId, t.referenceName, t.stratum, toTime(t.referenceTime), t.currentCorrection, t.lastOffset,
+        t.referenceId, t.referenceName, t.stratum, new ReportTime(t.referenceTime, t.referenceTimeNanoseconds), t.currentCorrection, t.lastOffset,
         t.rmsOffset, t.frequencyPpm, t.residualFrequencyPpm, t.skewPpm, t.rootDelay, t.rootDispersion,
         t.updateInterval, t.leap,
       ]);
     return true;
   }
 
-  private selectData(line: string, view: ChronyDaemonView): boolean {
+  private selectData(line: string, view: ChronyViewPort): boolean {
     const { verbose } = this.parseSourcesOptions(line);
     if (verbose) {
       this.io.out('  . State: N - noselect, s - unsynchronised, M - missing samples,\n');
@@ -820,7 +926,7 @@ export class ChronycSession {
     return true;
   }
 
-  private authData(line: string, view: ChronyDaemonView): boolean {
+  private authData(line: string, view: ChronyViewPort): boolean {
     const { verbose } = this.parseSourcesOptions(line);
     if (verbose) {
       this.io.out('                             .- Auth. mechanism (NTS, SK - symmetric key)\n');
@@ -840,7 +946,7 @@ export class ChronycSession {
     return true;
   }
 
-  private ntpData(line: string, view: ChronyDaemonView): boolean {
+  private ntpData(line: string, view: ChronyViewPort): boolean {
     let targets: NtpAssociation[];
     const specified = line !== '';
     if (specified) {
@@ -878,7 +984,7 @@ export class ChronycSession {
     return true;
   }
 
-  private selectOptions(line: string, view: ChronyDaemonView): boolean {
+  private selectOptions(line: string, view: ChronyViewPort): boolean {
     const [source, rest] = splitWord(line);
     const address = isValidIPv4(source) ? source : null;
     if (address === null && !/^\S{1,4}$/.test(source)) return this.fail('Invalid syntax for selectopts command');
@@ -897,7 +1003,7 @@ export class ChronycSession {
     return this.status('success', true);
   }
 
-  private serverStats(view: ChronyDaemonView): boolean {
+  private serverStats(view: ChronyViewPort): boolean {
     if (!this.authorised(false)) return false;
     this.report(
       'NTP packets received       : %Q\nNTP packets dropped        : %Q\nCommand packets received   : %Q\n'
@@ -910,7 +1016,7 @@ export class ChronycSession {
     return true;
   }
 
-  private clients(line: string, view: ChronyDaemonView): boolean {
+  private clients(line: string, view: ChronyViewPort): boolean {
     let minimumHits = 0;
     let keyEstablishment = false;
     let reset = false;
@@ -937,13 +1043,14 @@ export class ChronycSession {
     return true;
   }
 
-  private async waitSync(line: string, view: ChronyDaemonView): Promise<boolean> {
+  private async waitSync(line: string, view: ChronyViewPort): Promise<boolean> {
     const numbers = line.split(' ').filter((word) => word !== '');
     const maxTries = Number.parseInt(numbers[0] ?? '', 10) || 0;
     const maxCorrection = Number.parseFloat(numbers[1] ?? '') || 0;
     const maxSkew = Number.parseFloat(numbers[2] ?? '') || 0;
     const interval = Math.max(0.1, Number.parseFloat(numbers[3] ?? '') || 10);
     for (let attempt = 1; ; attempt++) {
+      if (!(await this.freshTracking())) return false;
       const t = view.tracking();
       const correction = Math.abs(t.currentCorrection);
       this.report('try: %d, refid: %R, correction: %.9f, skew: %.3f\n', [attempt, t.referenceId, correction, t.skewPpm]);

@@ -1,5 +1,5 @@
 export class ReportTime {
-  constructor(readonly epochSeconds: number) {}
+  constructor(readonly epochSeconds: number, readonly nanoseconds?: number) {}
 }
 
 export type ReportValue = number | string | ReportTime;
@@ -106,7 +106,7 @@ function dateText(time: ReportTime): string {
 
 function epochText(time: ReportTime): string {
   const seconds = Math.floor(time.epochSeconds);
-  const nanoseconds = Math.round((time.epochSeconds - seconds) * 1e9);
+  const nanoseconds = time.nanoseconds ?? Math.round((time.epochSeconds - seconds) * 1e9);
   return `${seconds}.${String(nanoseconds).padStart(9, '0')}`;
 }
 

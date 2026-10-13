@@ -1729,6 +1729,16 @@ export abstract class LinuxMachine extends EndHost
         this.udpClose(port);
       },
       daemonExited: (reason) => this.executor.serviceMgr.markFailed('chrony', reason),
+      bindCommandAddress: (address, port, listener) => {
+        if (address === '0.0.0.0') return this.udpBind(port, listener, 'chronyd') !== false;
+        this.udpBindAddress(address, port, listener, 'chronyd');
+        return true;
+      },
+      releaseCommandAddress: (address, port) => {
+        if (address === '0.0.0.0') this.udpClose(port);
+        else this.udpCloseAddress(address, port);
+      },
+      sendUdpDatagram: (request) => this.sendUdpDatagram(request),
     });
     this.executor.chronyService = this.chronyService;
     this.executor.registerServiceSocketServer('chrony', this.chronyService);

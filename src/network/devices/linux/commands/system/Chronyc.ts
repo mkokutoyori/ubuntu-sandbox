@@ -3,6 +3,24 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { ChronycSession } from '../../time/ChronycClient';
 import { ChronyDaemonView } from '../../time/ChronyDaemonView';
 import { simulatedWait } from '@/network/core/SimulatedWait';
+import { IPAddress } from '@/network/core/types';
+import type { CommandTransport } from '../../time/ChronyRemote';
+
+function commandTransport(ctx: LinuxCommandContext): CommandTransport {
+  return {
+    open: (host, port, onDatagram) => {
+      const socket = ctx.net.udpConnect(new IPAddress(host), port, {
+        processName: 'chronyc',
+        pid: ctx.executor.currentPid(),
+        uid: ctx.executor.userMgr.currentUid,
+        onDatagram: ({ udp }) => {
+          if (udp.payload instanceof Uint8Array) onDatagram(udp.payload);
+        },
+      });
+      return typeof socket === 'string' ? null : socket;
+    },
+  };
+}
 
 async function runChronyc(ctx: LinuxCommandContext, args: string[], stdin?: string) {
   const service = ctx.executor.chronyService;
@@ -18,6 +36,7 @@ async function runChronyc(ctx: LinuxCommandContext, args: string[], stdin?: stri
     privileged: ctx.executor.userMgr.currentUid === 0,
     programName: 'chronyc',
     localAddresses: addresses,
+    transport: commandTransport(ctx),
     hostsFile: () => ctx.executor.vfs.readFile('/etc/hosts') ?? '',
     wait: simulatedWait,
   });

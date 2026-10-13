@@ -764,26 +764,6 @@ alors `hidden` et le filtre la rendra sans une ligne de plus.
 
 ## Gestion (SNMP, NTP, syslog)
 
-### [chrony] options et commandes que le vrai chronyd accepte et que ce moteur n'honore pas
-Mesure contre chronyd/chronyc 4.5 (fixtures `chronyc-4.5-*.json`). Acceptes
-comme chez le vrai, rendus la ou le vrai les rend, sans effet sur la
-selection ni sur l'horloge :
-- options de source `auto_offline`, `copy`, `certset`, `asymmetry`,
-  `extfield`, `filter`, `maxdelayquant`, `nts`, `ntsport`, `port`,
-  `presend`, `xleave` (liste `UNEVALUATED_OPTIONS` de `ChronyConfig.ts`) ;
-- `trust` et `require` sont rendus par `selectdata` (COpts/EOpts, y compris
-  l'effet `authselectmode mix`) mais la selection RFC 5905 de
-  `systemProcess.ts` ne les connait pas ;
-- `chronyc maxupdateskew`, `reselectdist`, `local ... orphan|distance` ;
-- `chronyc -h <hote distant>` : le canal de commande UDP 323 n'existe pas,
-  la commande repond `506 Cannot talk to daemon` ;
-- `chronyc smoothtime`/`smoothing` (repondent `505`), `rtcdata`, `trimrtc`,
-  `writertc` (repondent `513`, ce que dit chronyd sans `rtcfile`).
-**Report** : chaque ligne demande une brique distincte (NTS RFC 8915,
-selection a la chrony, lissage, pilote RTC). Le port de `sourcestats.c` et
-de `regress.c` (SourceStatistics) est fait ; la selection de `sources.c`
-reste a porter pour que `trust`/`require`/`selectopts` decident.
-
 ### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute
 IOS ecrit `snmp-server host <hote> [vrf <nom>] [traps|informs] …`.
 `configHost` ne connait pas `vrf` : le mot est pris pour la communaute et

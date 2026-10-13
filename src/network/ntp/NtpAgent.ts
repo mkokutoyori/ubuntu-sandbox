@@ -14,6 +14,7 @@ import { adjustPoll, pollAdjustment, startBurst, startInitialBurst, chronyTransm
 import { SourceStatistics, type MeasurementSample } from './SourceStatistics';
 import { evaluateSampleTests } from './chronySampleTests';
 import { TimeSmoothing } from './TimeSmoothing';
+import { TokenBucketLimiter } from './RateLimiter';
 import { DelayQuantile } from './DelayQuantile';
 import { SampleFilter } from './SampleFilter';
 import {
@@ -138,28 +139,15 @@ export class NtpAgent {
 
   setRateLimit(limit: NtpRateLimit | null): void {
     this.config.rateLimit = limit;
-    this.buckets.clear();
+    this.rateLimiter.configure(limit);
   }
 
-  private readonly buckets = new Map<string, { tokens: number; at: number; excess: number }>();
+  private readonly rateLimiter = new TokenBucketLimiter(null);
 
   private allowedByRate(ip: string): 'serve' | 'kod' | 'drop' {
-    const limit = this.config.rateLimit;
-    if (limit === null) return 'serve';
-    const now = simulationNowMs();
-    const bucket = this.buckets.get(ip) ?? { tokens: limit.burst, at: now, excess: 0 };
-    const refill = ((now - bucket.at) / 1000) / 2 ** limit.intervalExponent;
-    bucket.tokens = Math.min(limit.burst, bucket.tokens + refill);
-    bucket.at = now;
-    this.buckets.set(ip, bucket);
-    if (bucket.tokens >= 1) {
-      bucket.tokens -= 1;
-      return 'serve';
-    }
-    this.config.counters.rateLimited++;
-    bucket.excess++;
-    if (limit.kod) return 'kod';
-    return bucket.excess % 2 ** limit.leakExponent === 0 ? 'serve' : 'drop';
+    const decision = this.rateLimiter.check(ip, simulationNowMs());
+    if (decision.limited) this.config.counters.rateLimited++;
+    return decision.verdict;
   }
 
   setProfile(profile: Partial<NtpPlatformProfile>): void { this.profile = { ...this.profile, ...profile }; }
