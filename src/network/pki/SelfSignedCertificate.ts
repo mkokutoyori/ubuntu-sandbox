@@ -39,6 +39,11 @@ export interface SelfSignedCertificateOptions {
 }
 
 let serialCounter = 0x5000;
+export function reserveSelfSignedSerial(serial: string): void {
+  const value = Number.parseInt(serial, 16);
+  if (Number.isSafeInteger(value) && value > serialCounter) serialCounter = value;
+}
+
 function nextSerial(): string {
   serialCounter += 1;
   return serialCounter.toString(16).padStart(16, '0');

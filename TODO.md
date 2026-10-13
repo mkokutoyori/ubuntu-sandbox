@@ -220,13 +220,24 @@ ni le cache de tickets Kerberos (transitoires) ; voyage l'etat de replication (i
 hauts niveaux, options NTDS, journal et compteurs) ainsi que le niveau fonctionnel de domaine (attribut
 msDS-Behavior-Version de la racine du domaine, replique) ; voyagent aussi IIS (sites, pools d'applications,
 liaisons HTTPS) et les certificats d'une machine Windows (magasin personnel avec cle privee, ancres de confiance,
-identites TLS RDP et LDAP, en PEM via les codecs de pki/pem.ts) ; ADCS (l'autorite et ce qu'elle a emis), NPS, WSUS, impression,
+identites TLS RDP et LDAP, en PEM via les codecs de pki/pem.ts) ; l'autorite ADCS d'entreprise et ce qu'elle a emis (PEM, adoptee par
+CertificateAuthority.fromKeyPair) ; la revocation n'est pas ecrite, le role n'en expose aucune ; NPS, WSUS, impression,
 cluster, Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
 **Pourquoi ce n'est pas ferme** : (1) le texte de configuration est rejoue par la CLI dans l'ordre ; un extrait par
 difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations) : il faut un diff
 par bloc de mode. (2) Chaque famille d'objets Oracle demande une section dans `OracleStateDelta.ts` (une entree,
 un enumerateur sur le catalogue et sa restitution). (3) Chaque role Windows demande un `RolePersister`
 (`src/store/windowsServerRoles.ts`).
+
+### [persistance] PkiCaRegistry : un singleton de processus que ni la sauvegarde ni l'import ne touchent
+**Mesure** : lecture du code, effet non mesure. `getOrCreateCA(cle)` (trustpoints Cisco, DNS sur TLS, EAP-TLS) range
+les autorites par cle dans une table de module : une reouverture dans un meme processus reutilise l'autorite
+precedente, un chargement de page neuf en fabrique une autre avec une autre cle, sans que les certificats deja
+emis a des routeurs (enrolement) cessent d'exister dans leur configuration. Un routeur qui s'enrole de nouveau
+aupres de « la meme » AC obtiendrait un certificat d'un emetteur different de celui de ses voisins.
+**Pourquoi ce n'est pas ferme** : il faut d'abord mesurer ce que la configuration d'un routeur ecrit de son
+enrolement, puis decider si l'autorite se sauvegarde avec le premier appareil qui l'a creee (comme l'ADCS) ou
+dans une section de topologie propre ; le choix change le format du fichier.
 
 ### [oracle] fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse, FORCE sans effet, synonymes hors DML
 **Mesure** : `SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et

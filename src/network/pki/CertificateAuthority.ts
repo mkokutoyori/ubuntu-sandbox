@@ -36,6 +36,11 @@ export interface CertificateAuthorityOptions {
 }
 
 let serialCounter = 0x1000;
+export function reserveCaSerial(serial: string): void {
+  const value = Number.parseInt(serial, 16);
+  if (Number.isSafeInteger(value) && value > serialCounter) serialCounter = value;
+}
+
 function nextSerial(): string {
   serialCounter += 1;
   const hex = serialCounter.toString(16);

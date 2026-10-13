@@ -1,4 +1,6 @@
 import { WindowsServer } from '@/network/devices/WindowsServer';
+import { certToPem, pemToCert, pemToPrivateKey, privateKeyToPem } from '@/network/pki/pem';
+import { reserveCertificateSerial } from '@/network/pki/serialReservation';
 import type { AppPoolInfo, IisStateDelta, WebsiteInfo } from '@/network/devices/windows/server/iis/WindowsIisRole';
 import type {
   DnsDynamicUpdateMode, DnsTransferPolicy, DnsZoneInfo, DnsZoneType,
@@ -30,11 +32,23 @@ interface DhcpScopeState {
 export interface WindowsServerRolesState {
   dnsZones?: DnsZoneState[];
   iis?: IisStateDelta;
+  adcs?: AdcsPersistedState;
   dhcp?: {
     scopes: DhcpScopeState[];
     exclusions: Array<{ start: string; end: string }>;
     serverOptions: Array<{ optionId: number; values: string[] }>;
   };
+}
+
+interface PemIdentity {
+  certificate: string;
+  privateKey: string;
+}
+
+interface AdcsPersistedState {
+  caCommonName: string;
+  ca: PemIdentity;
+  issued: PemIdentity[];
 }
 
 interface RolePersister {
@@ -139,7 +153,38 @@ const iisSites: RolePersister = {
   },
 };
 
-const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes, iisSites];
+const adcsAuthority: RolePersister = {
+  capture(server) {
+    const state = server.getAdcsRole()?.exportState();
+    if (!state) return {};
+    return {
+      adcs: {
+        caCommonName: state.caCommonName,
+        ca: { certificate: certToPem(state.caCertificate), privateKey: privateKeyToPem(state.caPrivateKey) },
+        issued: state.issued.map((i) => ({ certificate: certToPem(i.cert), privateKey: privateKeyToPem(i.privateKey) })),
+      },
+    };
+  },
+  restore(server, state) {
+    const role = server.getAdcsRole();
+    const saved = state.adcs;
+    if (!role || !saved) return;
+    const caCertificate = pemToCert(saved.ca.certificate);
+    const caPrivateKey = pemToPrivateKey(saved.ca.privateKey);
+    if (!caCertificate || !caPrivateKey) return;
+    const issued = saved.issued.flatMap((i) => {
+      const cert = pemToCert(i.certificate);
+      const privateKey = pemToPrivateKey(i.privateKey);
+      return cert && privateKey ? [{ cert, privateKey }] : [];
+    });
+    for (const certificate of [caCertificate, ...issued.map((i) => i.cert)]) reserveCertificateSerial(certificate.serialNumber);
+    role.restoreState({
+      caCommonName: saved.caCommonName, caCertificate, caPrivateKey, issued,
+    });
+  },
+};
+
+const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes, iisSites, adcsAuthority];
 
 export function captureWindowsServerRoles(server: WindowsServer, twin: WindowsServer): WindowsServerRolesState | undefined {
   const state = Object.assign({}, ...PERSISTERS.map((p) => p.capture(server, twin))) as WindowsServerRolesState;
