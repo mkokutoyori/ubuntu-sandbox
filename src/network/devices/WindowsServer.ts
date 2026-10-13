@@ -58,6 +58,7 @@ import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecor
 import { type AddsForestOptions, DEFAULT_AD_FUNCTIONAL_LEVEL, netbiosNameProblem, parseAdFunctionalLevel } from './windows/server/ad/adFunctionalLevels';
 import { promotionKind, snapshotAsDelta, type ChildDomainPromotion, type DirectoryPromotion, type ForestPromotion, type ReplicaPromotion } from './windows/server/ad/DirectoryDelta';
 import type { DirectorySnapshot } from './windows/server/ad/DirectoryStore';
+import { W32TIME_NTP_SERVER_KEY } from './windows/W32TimeRegistry';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -1633,12 +1634,17 @@ export class WindowsServer extends WindowsPC {
 
   private startDomainTimeServer(): void {
     const agent = this.getNtpAgent();
+    const w32time = this.getW32Time();
+    w32time.registry.writeNumber(W32TIME_NTP_SERVER_KEY, 'Enabled', 1);
+    w32time.registry.writeNumber(W32TIME_NTP_SERVER_KEY, 'InputProvider', 1);
+    w32time.setType('NT5DS');
     if (this.directoryStore?.getDomainFsmoRoleOwner('PDCEmulator') === this.getHostname()) {
       agent.setServerMode(true);
       agent.setLocalStratum(1);
+      w32time.applyConfiguration();
       return;
     }
-    this.getW32Time().configure({ update: true });
+    w32time.applyConfiguration();
     agent.setServerMode(true, false);
   }
 

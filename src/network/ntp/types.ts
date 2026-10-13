@@ -152,6 +152,8 @@ export interface NtpAssociation {
   minStratum?: number;
   pollTarget?: number;
   fixedOffsetMs?: number;
+  fixedPollSec?: number;
+  fallbackOnly: boolean;
   pollScore: number;
   txCount: number;
   burstGood: number;
@@ -404,7 +406,7 @@ export function defaultAssociation(serverIp: string, prefer = false, mode: NtpMo
     updateMs: 0, filter: emptyFilter(), jitterMs: 0,
     hpoll: NTP_MIN_POLL, ppoll: NTP_MAX_POLL, minpoll: NTP_MIN_POLL, maxpoll: NTP_DEFAULT_MAX_POLL,
     burst: 0, unreach: 0, outdateMs: 0, nextdateMs: 0, iburst: false, burstMode: false,
-    online: true, noselect: false, trust: false, require: false, pollScore: 0, txCount: 0, burstGood: 0,
+    online: true, noselect: false, trust: false, require: false, pollScore: 0, txCount: 0, burstGood: 0, fallbackOnly: false,
     statistics: new SourceStatistics(2 ** -20), sent: 0, received: 0, validReceived: 0, goodReceived: 0, lastTests: '000 000 0000', response: null,
   };
 }

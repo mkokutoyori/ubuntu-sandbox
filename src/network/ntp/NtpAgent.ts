@@ -318,7 +318,7 @@ export class NtpAgent {
   setSourceCriteria(
     serverIp: string,
     criteria: Partial<Pick<NtpAssociation, 'noselect' | 'trust' | 'require' | 'prefer' | 'maxDelayMs'
-    | 'maxDelayRatio' | 'maxDelayDevRatio' | 'minStratum' | 'pollTarget' | 'minpoll' | 'maxpoll' | 'fixedOffsetMs'>>
+    | 'maxDelayRatio' | 'maxDelayDevRatio' | 'minStratum' | 'pollTarget' | 'minpoll' | 'maxpoll' | 'fixedOffsetMs' | 'fixedPollSec' | 'fallbackOnly'>>
     & { statistics?: { minSamples?: number; maxSamples?: number; minDelay?: number } },
   ): boolean {
     const a = this.config.associations.get(serverIp);
@@ -341,6 +341,15 @@ export class NtpAgent {
   }
 
   reselectSources(): void { this.reselect(); }
+
+  bestMeasuredOffsetMs(): number | null {
+    const now = simulationNowMs();
+    const reachable = [...this.config.associations.values()].filter((a) => a.reach !== 0 && a.stratum < NTP_MAX_STRATUM);
+    if (reachable.length === 0) return null;
+    const best = reachable.find((a) => a.preferred)
+      ?? reachable.sort((x, y) => rootDistanceMs(x, now) - rootDistanceMs(y, now))[0];
+    return best.offsetMs;
+  }
 
   resetSources(): void {
     for (const a of this.config.associations.values()) {
@@ -1023,6 +1032,10 @@ export class NtpAgent {
       return;
     }
     this.transmit(a);
+    if (a.fixedPollSec !== undefined && a.burst === 0) {
+      a.nextdateMs = simulationNowMs() + a.fixedPollSec * 1000;
+      a.pollSec = a.fixedPollSec;
+    }
     this.arm(a);
     this.refreshSynchronization();
   }
@@ -1067,7 +1080,9 @@ export class NtpAgent {
     const now = simulationNowMs();
     const system = this.config.system;
     const associations = [...this.config.associations.values()];
-    const fitPeers = associations.filter((a) => !a.noselect && this.fits(a, now));
+    const usable = associations.filter((a) => !a.noselect && this.fits(a, now));
+    const primary = usable.filter((a) => !a.fallbackOnly);
+    const fitPeers = primary.length > 0 ? primary : usable;
     const selection = selectSources(fitPeers, now);
     for (const a of associations) {
       a.preferred = false;

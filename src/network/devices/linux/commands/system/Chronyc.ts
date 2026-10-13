@@ -2,16 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { ChronycSession } from '../../time/ChronycClient';
 import { ChronyDaemonView } from '../../time/ChronyDaemonView';
-import { VirtualTimeScheduler, getDefaultScheduler } from '@/events/Scheduler';
-
-async function waitSeconds(seconds: number): Promise<void> {
-  const scheduler = getDefaultScheduler();
-  if (scheduler instanceof VirtualTimeScheduler) {
-    scheduler.advance(seconds * 1000);
-    return;
-  }
-  await new Promise<void>((resolve) => { setTimeout(resolve, seconds * 1000); });
-}
+import { simulatedWait } from '@/network/core/SimulatedWait';
 
 async function runChronyc(ctx: LinuxCommandContext, args: string[], stdin?: string) {
   const service = ctx.executor.chronyService;
@@ -28,7 +19,7 @@ async function runChronyc(ctx: LinuxCommandContext, args: string[], stdin?: stri
     programName: 'chronyc',
     localAddresses: addresses,
     hostsFile: () => ctx.executor.vfs.readFile('/etc/hosts') ?? '',
-    wait: waitSeconds,
+    wait: simulatedWait,
   });
   const result = await session.run(args, stdin);
   return { output: result.stdout.replace(/\n$/, ''), exitCode: result.exitCode, stderr: result.stderr.replace(/\n$/, '') };
