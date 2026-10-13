@@ -81,7 +81,7 @@ async function typeSshSub(t: TerminalSession, line: string, pw: string): Promise
 
 async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
-  for (let i = 0; i < 4 && t.foreground.currentInputMode.type !== 'normal'; i++) {
+  for (let i = 0; i < 4 && t.foreground.currentInputMode.type !== 'normal' && !t.activeShell; i++) {
     if (t.foreground.currentInputMode.type === 'password') t.setPasswordBuf(pw);
     else if (t.foreground.currentInputMode.type === 'interactive-text') t.setInputBuf('yes');
     else break;

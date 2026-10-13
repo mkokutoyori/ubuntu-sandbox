@@ -206,9 +206,11 @@ export interface ParsedSshLine {
   readonly strict: StrictHostKeyChecking | undefined;
 }
 
-export function parseSshCommandLine(line: string): ParsedSshLine | null {
+export function parseSshCommandLine(
+  line: string, commandWord: RegExp = /^ssh(\s|$)/,
+): ParsedSshLine | null {
   const trimmed = line.trim();
-  if (!/^ssh(\s|$)/.test(trimmed)) return null;
+  if (!commandWord.test(trimmed)) return null;
   const tokens = trimmed.split(/\s+/).slice(1);
 
   const login = tokens.indexOf('-l');
@@ -230,3 +232,5 @@ export function parseSshCommandLine(line: string): ParsedSshLine | null {
     strict: parsed.strict,
   };
 }
+
+export const WINDOWS_SSH_COMMAND_WORD = /^ssh(\.exe)?(\s|$)/i;

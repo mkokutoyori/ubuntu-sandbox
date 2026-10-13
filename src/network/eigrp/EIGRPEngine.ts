@@ -60,6 +60,7 @@ import {
   type EigrpStubTlv,
 } from './packets';
 import { md5Hex } from '@/crypto/hash/md5';
+import { electRouterId } from '../routing/RouterIdElection';
 
 export interface EigrpNetworkStmt {
   /** Network address as configured (classful base). */
@@ -250,13 +251,9 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
 
   effectiveRouterId(): string {
     if (this.config.routerId) return this.config.routerId;
-    const connected = this.deviceCtx.connectedNetworks();
-    const highest = (list: ConnectedNetwork[]): string | undefined =>
-      list.map((c) => String(c.localIp))
-        .sort((a, b) => toNum(b) - toNum(a))[0];
-    return highest(connected.filter((c) => /^Loopback/i.test(c.iface)))
-      ?? highest(connected)
-      ?? '0.0.0.0';
+    return electRouterId(this.deviceCtx.connectedNetworks().map((c) => ({
+      iface: c.iface, ip: String(c.localIp),
+    }))) ?? '0.0.0.0';
   }
 
   /** Inject the frame transport (device integration responsibility). */

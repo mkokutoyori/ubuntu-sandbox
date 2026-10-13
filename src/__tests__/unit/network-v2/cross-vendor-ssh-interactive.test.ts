@@ -286,7 +286,7 @@ describe('§1 — Windows → Linux interactive SSH (regression for the reported
   });
 
   test('Permission denied is surfaced without entering a sub-shell', async () => {
-    await type(term, 'ssh root@10.0.0.1'); // default PermitRootLogin no
+    await sshLogin(term, 'ssh root@10.0.0.1', 'admin');
     expectContains(term, /Permission denied/);
     // Prompt stays on Windows — no sub-shell was pushed.
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);

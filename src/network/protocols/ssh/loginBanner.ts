@@ -57,7 +57,6 @@ export function composeSshLoginBanner(
       lines.push(`Last login: ${formatLoginDate(last.at)} from ${last.from}`);
     }
   }
-  dev.recordSshLogin?.(user, sourceIp, sourceHost, true, 'password');
   // Real IOS: `banner exec` is shown on every successful EXEC session
   // start (unlike `banner login`, which SSH2 never sends — it
   // authenticates before any banner exchange). Applies regardless of

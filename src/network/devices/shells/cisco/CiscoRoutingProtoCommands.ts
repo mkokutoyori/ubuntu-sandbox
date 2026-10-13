@@ -822,7 +822,7 @@ export function registerRoutingProtoShow(
     const c = e.getConfig();
     const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
     const rows = [
-      `BGP router identifier ${c.routerId ?? '0.0.0.0'}, local AS number ${c.asn}`,
+      `BGP router identifier ${e.getRouterId()}, local AS number ${c.asn}`,
       '',
       'Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State/PfxRcd',
     ];
@@ -894,7 +894,7 @@ export function registerRoutingProtoShow(
       if (table.length === 0) return '% Network not in table';
     }
     const rows = [
-      `BGP table version is 1, local router ID is ${c.routerId ?? '0.0.0.0'}`,
+      `BGP table version is 1, local router ID is ${bgpE().getRouterId()}`,
       BGP_TABLE_HEAD,
       ...bgpTableRows(table),
     ];
@@ -923,7 +923,7 @@ export function registerRoutingProtoShow(
       `  Metric weight K1=1, K2=0, K3=1, K4=0, K5=0`,
       `  Soft SIA disabled`,
       `  NSF-aware route hold timer is 240`,
-      `  Router-ID: ${c.routerId ?? '0.0.0.0'}`,
+      `  Router-ID: ${eigrpE().effectiveRouterId()}`,
       `  Topology : 0 (base)`,
       `    Active Timer: 3 min`,
       `    Distance: internal 90 external 170`,

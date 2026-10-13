@@ -2329,6 +2329,10 @@ export abstract class LinuxMachine extends EndHost
     return peerPort;
   }
 
+  openSshSessionPort(user: string, fromIp: string): number | undefined {
+    return this.sessionTable.list().filter((s) => s.user === user && s.fromIp === fromIp && !s.closed).at(-1)?.fromPort;
+  }
+
   private readonly heldSshRecords = new Map<string, number>();
 
   private sshRecordKey(user: string, fromIp: string, fromPort: number | undefined): string {

@@ -162,6 +162,8 @@ describe('SSH edge cases — redirection, pipes, banners, output formatting', ()
   test('§E10 — Windows→Linux: /etc/issue.net is shown pre-prompt', async () => {
     const { winA, linuxSrv } = await buildLan();
     await linuxSrv.executeCommand('echo "AUTHORIZED USE ONLY" > /etc/issue.net');
+    await linuxSrv.executeCommand('echo "Banner /etc/issue.net" >> /etc/ssh/sshd_config');
+    await linuxSrv.executeCommand('systemctl reload ssh');
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');

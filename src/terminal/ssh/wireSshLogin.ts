@@ -102,6 +102,7 @@ export interface WireSshLoginRequest {
   readonly strict?: StrictHostKeyChecking;
   readonly identityFiles?: readonly string[];
   readonly credentialless?: boolean;
+  readonly quiet?: boolean;
   readonly algorithms?: SshAlgorithmPreferences;
 }
 
@@ -212,7 +213,7 @@ export async function openWireSshConnection(
     ...(profile ? { clientExtInfo: profile.extInfo } : {}),
     interactionHandler: req.credentialless
       ? new SilentSshInteractionHandler('')
-      : new TerminalSshInteractionHandler(req.io),
+      : new TerminalSshInteractionHandler(req.io, req.quiet === true),
   });
 
   const builder = SshConnectOptionsBuilder.create()

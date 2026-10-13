@@ -30,6 +30,7 @@ import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
 import type { BfdAgent } from '../../bfd/BfdAgent';
 import { carrierBearer } from '../inspection/InterfaceStatusView';
+import { electRouterId, type RouterIdCandidate } from '../../routing/RouterIdElection';
 import type { Equipment } from '@/network/equipment/Equipment';
 
 // ─── OSPF Extra Config Type ─────────────────────────────────────
@@ -154,21 +155,14 @@ export class RouterOSPFIntegration {
   routerIdManuel = false;
 
   routerIdAutomatique(): string | null {
-    let loopback: { ip: string; n: number } | null = null;
-    let physique: { ip: string; n: number } | null = null;
+    const candidates: RouterIdCandidate[] = [];
     for (const [nom, port] of this.ctx.getPorts()) {
       const ip = port.getIPAddress();
       if (!ip) continue;
-      const estLoopback = /^Loopback/i.test(nom);
-      if (!estLoopback && !(port.getIsUp() && !port.isAdminDown())) continue;
-      const n = ip.toUint32();
-      const cible = estLoopback ? loopback : physique;
-      if (!cible || n > cible.n) {
-        if (estLoopback) loopback = { ip: ip.toString(), n };
-        else physique = { ip: ip.toString(), n };
-      }
+      if (!/^Loopback/i.test(nom) && !(port.getIsUp() && !port.isAdminDown())) continue;
+      candidates.push({ iface: nom, ip: ip.toString() });
     }
-    return (loopback ?? physique)?.ip ?? null;
+    return electRouterId(candidates);
   }
 
   reelireRouterId(): string | null {

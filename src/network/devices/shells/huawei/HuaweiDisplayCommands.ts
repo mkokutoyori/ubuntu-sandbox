@@ -1761,7 +1761,7 @@ export function registerDisplayCommands(
     const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
     const established = [...byId.values()].filter((n) => n.state === 'Established').length;
     const lines = [
-      `BGP local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
+      `BGP local router ID : ${bgp.routerId ?? e.getRouterId()}`,
       `Local AS number : ${bgp.asn}`,
       `Total number of peers : ${bgp.peers.size}              Peers in established state : ${established}`,
       '  Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv',
@@ -1788,7 +1788,7 @@ export function registerDisplayCommands(
     getRouter().convergeDynamicRouting();
     const table = e.getBgpTable();
     const lines = [
-      `BGP Local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
+      `BGP Local router ID : ${bgp.routerId ?? e.getRouterId()}`,
       ' Total Number of Routes: ' + table.length,
       ' Network            NextHop         MED        LocPrf    PrefVal Path/Ogn',
     ];

@@ -34,7 +34,7 @@ export interface ITerminalIO {
 }
 
 export class TerminalSshInteractionHandler implements ISshInteractionHandler {
-  constructor(private readonly io: ITerminalIO) {}
+  constructor(private readonly io: ITerminalIO, private readonly quiet: boolean = false) {}
 
   async promptHostKeyConfirmation(
     host: string,
@@ -70,12 +70,14 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
   }
 
   showWarning(message: string): void {
+    if (this.quiet) return;
     for (const line of message.split('\n')) {
       this.io.writeLine(line, 'warning');
     }
   }
 
   showInfo(message: string): void {
+    if (this.quiet) return;
     this.io.writeLine(message, 'info');
   }
 

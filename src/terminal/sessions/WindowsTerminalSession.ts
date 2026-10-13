@@ -14,7 +14,6 @@
 import { SCREEN_REPAINT_MARK } from '@/network/protocols/ssh/server/SshScreenRepaint';
 import { Equipment } from '@/network';
 import { primaryShellKindFor } from '@/shell/shellKind';
-import { SSH_PASSWORD_PROMPTS } from '@/shell/sshLauncher';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
 import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
@@ -36,13 +35,15 @@ import { parseWinPathpingArgs, runPathping } from '@/network/devices/windows/Win
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
 import {
-  openWireSshShell, silentConnectIo, wireReachOutcomeRetransmitting,
+  openWireSshShell, silentConnectIo, wireReachOutcomeRetransmitting, sshUnreachableReason,
 } from '@/terminal/ssh/wireSshLogin';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
-import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
+import { parseSshCommandLine, WINDOWS_SSH_COMMAND_WORD } from '@/terminal/sessions/sshArgs';
+import { parseBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
-import { firstConfiguredIp, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import type { StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
+import { firstConfiguredIp, establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -235,7 +236,7 @@ export class WindowsTerminalSession extends TerminalSession {
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
     }
-    if ((this.pendingSshPush || this.pendingRunas) && this.inputMode.type === 'password') {
+    if ((this.pendingSshIO?.isWaitingForInput || this.pendingRunas) && this.inputMode.type === 'password') {
       return this.inputMode;
     }
     if (this.inputMode.type === 'remote-editor') {
@@ -283,30 +284,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
     if (this.inputMode.type === 'remote-editor') return false;
 
-    // SSH password challenge — when an `ssh user@host` push is waiting
-    // for the password, every keystroke routes through the password
-    // mode (the input is masked by the view). Enter submits; Ctrl+C
-    // aborts the challenge.
-    if (this.pendingSshPush && this.inputMode.type === 'password') {
-      if (e.key === 'Enter') {
-        const pw = this.getPasswordBuf();
-        this.setPasswordBuf('');
-        void this.submitSshPassword(pw);
-        return true;
-      }
-      if (e.key === 'c' && e.ctrlKey) {
-        this.pendingSshPush = null;
-        this.sshPasswordAttempts = 0;
-        this.setPasswordBuf('');
-        this.inputMode = { type: 'normal' };
-        this.addLine('^C');
-        this.notify();
-        return true;
-      }
-      // Let the view drive the character-by-character input into the
-      // masked password buffer.
-      return false;
-    }
+    if (this.pendingSshIO?.isWaitingForInput) return this.handleSshIOKey(e);
 
     // `runas` password challenge — same masked-input pattern as the SSH
     // one above, but a single attempt (no retry): real runas.exe fails
@@ -774,7 +752,7 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.tryStartWinNetstatStream(trimmed)) return;
     if (this.tryStartWinPathpingStream(trimmed)) return;
 
-    const withoutSession = lower === 'ssh' || lower.startsWith('ssh ')
+    const withoutSession = WINDOWS_SSH_COMMAND_WORD.test(trimmed)
       ? sshReplyWithoutSession(trimmed.split(/\s+/).slice(1), OPENSSH_WINDOWS_8_6)
       : null;
     if (withoutSession) {
@@ -800,7 +778,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // sub-shell against the resolved peer instead of falling through to
     // the device-level `cmdSsh` (which only prints the banner and the
     // closed line). Exec mode (`ssh user@host whoami`) falls through.
-    if (lower === 'ssh' || lower.startsWith('ssh ')) {
+    if (WINDOWS_SSH_COMMAND_WORD.test(trimmed)) {
       if (await this.tryEnterSshInteractive(trimmed)) {
         this.notify();
         return;
@@ -854,219 +832,117 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private parseInteractiveSsh(
     line: string,
-  ): { user: string | null; host: string; port: number; quiet: boolean; algorithms: SshAlgorithmPreferences } | null {
-    const parsed = parseSshCommandLine(line);
+  ): { user: string | null; host: string; port: number; quiet: boolean; algorithms: SshAlgorithmPreferences; strict: StrictHostKeyChecking | undefined } | null {
+    const parsed = parseSshCommandLine(line, WINDOWS_SSH_COMMAND_WORD);
     if (parsed === null || parsed.host === '' || parsed.command !== null) return null;
     return parsed;
   }
 
   /**
-   * Validate the target and, on success, push a {@link RemoteDeviceSubShell}
-   * onto the Windows sub-shell stack so the user lands in an interactive
-   * remote prompt (bash, IOS, VRP, cmd) — `exit` / `logout` / `quit` pops
-   * back to the local cmd.exe. Returns `true` when the SSH path was
-   * handled (success *or* a printed failure); `false` only when the
-   * input is not interactive SSH (exec mode falls back to cmdSsh).
+   * `ssh [user@]host` typed at the prompt. The client resolves the name
+   * with the machine's own resolver, asks the wire whether anything
+   * answers on the port, then lets the SSH layer raise the host-key and
+   * password dialogs when — and only when — the server asks for them.
+   * Refusals, banners and the greeting all come from the server over the
+   * connection; nothing about the remote is read from its object.
+   * Returns `true` once the line was handled (a success or a printed
+   * failure); `false` when it is not an interactive ssh (exec mode falls
+   * through to the device-level command).
    */
   private async tryEnterSshInteractive(line: string): Promise<boolean> {
     const parsed = this.parseInteractiveSsh(line);
     if (!parsed) return false;
 
-    const { host, port } = parsed;
+    const { host: typedHost, port } = parsed;
     const sourceIp = this.firstLocalIp();
     if (!sourceIp) {
-      this.addLine(`ssh: connect to host ${host} port ${port}: Network is unreachable`);
+      this.addLine(`ssh: connect to host ${typedHost} port ${port}: Network is unreachable`);
       return true;
     }
 
-    const dev = this.device as unknown as {
-      getHostname(): string;
-      userMgr?: { currentUser: string };
-    };
-    const localUser = dev.userMgr?.currentUser ?? 'User';
+    const localUser = (this.device as unknown as { userMgr?: { currentUser: string } })
+      .userMgr?.currentUser ?? 'User';
     const user = parsed.user ?? localUser;
 
-    // Passing this.device as `from` restricts the search to what a real
-    // client can actually reach across the cable plant (docs/PRD-Link-
-    // State.md §2.1 P6) — a pulled cable stops the target from being
-    // found at all, not just from reporting a fake "interface down".
-    const found = findHostByAddress(host, undefined, this.device);
-    if (!found) {
-      // A numeric IPv4 that nothing reachable owns is a routing failure
-      // ("No route to host"); a name that fails to resolve at all keeps
-      // the DNS-style error — matches the same distinction LinuxSshClient
-      // already draws for the non-interactive path.
-      this.addLine(IPAddress.isValid(host)
-        ? `ssh: connect to host ${host} port ${port}: No route to host`
-        : `ssh: Could not resolve hostname ${host}: Name or service not known`);
+    const resolver = this.device as unknown as {
+      resolveHostname(name: string): Promise<IPAddress | null>;
+    };
+    const resolved = IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
+    if (!resolved) {
+      this.addLine(`ssh: Could not resolve hostname ${typedHost}: Name or service not known`);
       return true;
     }
-    if (found.poweredOff || found.interfaceDown) {
-      this.addLine(`ssh: connect to host ${host} port ${port}: No route to host`);
+    const host = resolved.toString();
+
+    if (!peerLiveness(this.device, host)()) {
+      this.addLine(`ssh: connect to host ${typedHost} port ${port}: ${sshUnreachableReason(this.device, host)}`);
+      return true;
+    }
+    const reach = await wireReachOutcomeRetransmitting(this.device, host, port);
+    if (reach !== 'open') {
+      this.addLine(sshWireFailureLine(OPENSSH_SSH, reach, typedHost, port));
       return true;
     }
 
-    type RemoteSurface = {
-      isSshActive?: () => boolean;
-      sshdAcceptsLogin?: (u: string) => { ok: boolean; reason?: string };
-      recordSshLogin?: (
-        u: string, fromIp: string, fromHost: string, accepted: boolean,
-      ) => void;
-      sshBanner?: () => string;
-      getSshHost?: () => { acceptsLogin?: (u: string) => { ok: boolean; reason?: string } };
-    };
-    const remote = found.device as unknown as RemoteSurface;
-    const declared = typeof remote.isSshActive === 'function'
-      ? remote.isSshActive()
-      // Cross-vendor hosts expose service state through getSshHost().
-      : (remote.getSshHost?.() as unknown as { isSshActive?: () => boolean })?.isSshActive?.();
-    if (declared === false) {
-      remote.recordSshLogin?.(user, sourceIp, dev.getHostname(), false);
-      this.addLine(`ssh: connect to host ${host} port ${port}: Connection refused`);
+    const io = this.createSshTerminalIO();
+    let outcome: Awaited<ReturnType<typeof openWireSshShell>>;
+    try {
+      outcome = await openWireSshShell({
+        device: this.device,
+        localUser,
+        user,
+        host,
+        port,
+        io,
+        strict: parsed.strict ?? 'accept-new',
+        quiet: parsed.quiet,
+        algorithms: parsed.algorithms,
+      });
+    } finally {
+      this.pendingSshIO = null;
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        this.inputMode = { type: 'normal' };
+      }
+      this.notify();
+    }
+
+    if (outcome.kind === 'cancelled') {
+      this.addLine('^C');
       return true;
     }
-    if (declared === undefined) {
-      const wire = await wireReachOutcomeRetransmitting(this.device, found.ip, port);
-      if (wire !== 'open') {
-        this.addLine(sshWireFailureLine(OPENSSH_SSH, wire, host, port));
-        return true;
+    if (outcome.kind === 'host-key-changed') {
+      this.addLine('Host key verification failed.');
+      return true;
+    }
+    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') {
+      this.addLine(outcome.message);
+      return true;
+    }
+    if (outcome.kind !== 'connected') return true;
+
+    const { session, channel } = outcome;
+    if (!parsed.quiet) {
+      const greeting = (channel as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
+      for (const greetingLine of greeting.replace(/\n+$/, '').split('\n')) {
+        if (greetingLine.length > 0) this.addLine(greetingLine);
       }
     }
-
-    const gate = remote.sshdAcceptsLogin?.(user)
-      ?? remote.getSshHost?.().acceptsLogin?.(user)
-      ?? { ok: true };
-    if (!gate.ok) {
-      remote.recordSshLogin?.(user, sourceIp, dev.getHostname(), false);
-      this.addLine(`${user}@${host}: Permission denied (publickey,password).`);
-      return true;
-    }
-
-    // Stash the validated push so the password handler can finish it
-    // after the user authenticates. OpenSSH-for-Windows always prompts
-    // for a password on first connect (no key cached); the simulator
-    // now models that explicitly instead of pushing silently.
-    this.pendingSshPush = {
-      user, host, port,
-      device: found.device,
-      sourceIp,
-      sourceHostname: dev.getHostname(),
-      localUser,
-      quiet: parsed.quiet,
-      algorithms: parsed.algorithms,
-    };
-    if (this.inputHostImpl.capabilities().interactive) {
-      await this.runTopLevelSshAuthViaBroker();
-      return true;
-    }
-    this.inputMode = { type: 'password', promptText: `${user}@${host}'s password: ` };
-    this.addLine(`${user}@${host}'s password:`, 'prompt');
+    const opening = (channel as { initialPrompt?: () => string | null }).initialPrompt?.() ?? null;
+    const promptHost = (opening !== null ? parseBashPrompt(opening)?.hostname : undefined) ?? typedHost;
+    this.activeSubShell = new SshInteractiveSubShell(
+      session, channel, user, typedHost, `/home/${user}`,
+      () => session.disconnect(),
+      promptHost, findLinuxMachineByIp(host) ?? undefined,
+      establishedSessionLiveness(session, this.device, host),
+      (footer) => this.onRemoteHangup(footer),
+      (outputLine) => this.addLine(outputLine),
+    );
+    this._inputBuf = '';
     this.notify();
     return true;
   }
 
-  private async runTopLevelSshAuthViaBroker(): Promise<void> {
-    const pending = this.pendingSshPush;
-    if (!pending) return;
-    const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
-    const promptText = `${pending.user}@${pending.host}'s password: `;
-    for (;;) {
-      const pw = await broker.password(promptText);
-      if (pw === null) {
-        this.endSshPrompt();
-        this.notify();
-        return;
-      }
-      await this.submitSshPassword(pw);
-      if (this.pendingSshPush === null) return;
-    }
-  }
-
-  /**
-   * Pending SSH push waiting for the password challenge to complete.
-   * Set by {@link tryEnterSshInteractive} when validation succeeds.
-   */
-  private pendingSshPush: {
-    user: string; host: string; port: number;
-    device: Equipment; sourceIp: string; sourceHostname: string;
-    localUser: string; quiet: boolean; algorithms: SshAlgorithmPreferences;
-  } | null = null;
-
-  /**
-   * Pending `runas` invocation waiting for the password challenge to
-   * complete. Set by {@link tryStartRunasInteractive} once the target
-   * account is confirmed to exist and be enabled — real `runas.exe`
-   * always prompts before checking the password (PRD-Nslookup-Dig-Rndc-Runas.md P11).
-   */
   private pendingRunas: { userName: string; command: string; saveCred: boolean } | null = null;
-
-  /**
-   * Drive the SSH password challenge. Up to three attempts are allowed
-   * (OpenSSH default); a wrong password is logged via `recordSshLogin`
-   * and surfaces as "Permission denied (publickey,password).".
-   */
-  private sshPasswordAttempts = 0;
-
-  private async submitSshPassword(password: string): Promise<void> {
-    const pending = this.pendingSshPush;
-    if (!pending) return;
-
-    const outcome = await openWireSshShell({
-      device: this.device,
-      localUser: pending.localUser,
-      user: pending.user,
-      host: pending.host,
-      port: pending.port,
-      io: silentConnectIo(),
-      password,
-      strict: 'accept-new',
-      algorithms: pending.algorithms,
-    });
-
-    if (outcome.kind === 'auth-failed') {
-      this.sshPasswordAttempts++;
-      if (this.sshPasswordAttempts < SSH_PASSWORD_PROMPTS) {
-        this.addLine('Permission denied, please try again.');
-        this.notify();
-        return;
-      }
-      this.endSshPrompt();
-      this.addLine(`${pending.user}@${pending.host}: Permission denied (${outcome.methods ?? 'publickey,password'}).`);
-      this.notify();
-      return;
-    }
-
-    if (outcome.kind !== 'connected') {
-      this.endSshPrompt();
-      const refusal = outcome.kind === 'host-key-changed'
-        ? 'Host key verification failed.'
-        : outcome.kind === 'cancelled' ? null : outcome.message;
-      if (refusal !== null) this.addLine(refusal);
-      this.notify();
-      return;
-    }
-
-    this.endSshPrompt();
-    const session = outcome.session;
-    const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
-    const sourceHost = (this.device as unknown as { getHostname(): string }).getHostname();
-    if (!pending.quiet) {
-      for (const line of this.composeLoginBanner(
-        pending.device, pending.user, sourceIp, sourceHost, false)) this.addLine(line);
-    }
-    const promptHost = (pending.device as unknown as { getSshHostname?: () => string })
-      .getSshHostname?.() ?? pending.host;
-    this.activeSubShell = new SshInteractiveSubShell(
-      session, outcome.channel, pending.user, pending.host, `/home/${pending.user}`,
-      () => session.disconnect(),
-      promptHost, findLinuxMachineByIp(pending.host) ?? undefined,
-      establishedSessionLiveness(session, this.device, pending.host),
-      (footer) => this.onRemoteHangup(footer),
-      (line) => this.addLine(line),
-    );
-    this._inputBuf = '';
-    this.notify();
-  }
 
   private onRemoteHangup(footer: string): void {
     if (!this.activeSubShell) return;
@@ -1076,19 +952,13 @@ export class WindowsTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  private endSshPrompt(): void {
-    this.pendingSshPush = null;
-    this.sshPasswordAttempts = 0;
-    this.inputMode = { type: 'normal' };
-  }
-
   private remoteCredentialsAccepted(
     device: Equipment, user: string, password: string,
   ): boolean {
     return verifyRemoteCredentials(device, {
       user, password,
-      host: this.pendingSshPush?.host ?? '',
-      port: this.pendingSshPush?.port ?? 22,
+      host: '',
+      port: 22,
       sourceIp: this.firstLocalIp() ?? '0.0.0.0',
       sourceHostname: (this.device as unknown as { getHostname(): string }).getHostname(),
     });
