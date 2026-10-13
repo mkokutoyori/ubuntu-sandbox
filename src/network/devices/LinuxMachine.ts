@@ -4504,6 +4504,11 @@ export abstract class LinuxMachine extends EndHost
     return type === 'chardev' ? 'device' : type === 'symlink' ? 'file' : type;
   }
 
+  editorPathIsReadOnly(path: string): boolean {
+    const inode = this.executor.vfs.resolveInode(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
+    return inode !== null && (inode.permissions & 0o222) === 0;
+  }
+
   /**
    * Synchronous bash-only execution path. Bypasses the network-command
    * dispatcher (so it's safe to call from synchronous contexts like

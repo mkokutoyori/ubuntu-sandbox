@@ -3,6 +3,7 @@ import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { decodeFile, LINE_END, type NanoFileFormat } from './nano/NanoFormat';
+import { directoryNameOf, fullPathOf, openingFor } from './nano/NanoOpening';
 import { yesNoAnswer } from './nano/NanoYesNo';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
@@ -194,12 +195,15 @@ export class NanoEngine {
     launch: NanoLaunchOptions = {},
   ) {
     this.settings = launch.settings ?? defaultNanoSettings({ view: readOnly, linenumbers: showLineNumbers });
-    this.live = { ...this.settings, view: this.settings.view && filePath !== '' };
+    this.launchIdentity = launch.identity;
+    const typedName = launch.displayName ?? filePath;
+    const opening = openingFor(typedName, filePath, fs, this.identity().user);
+    const named = opening.path !== '';
+    this.live = { ...this.settings, view: this.settings.view && named };
     if (this.live.restricted) this.live.backup = false;
     this._readOnly = this.live.view;
-    this.titleName = launch.displayName ?? filePath;
-    this.bufferPath = filePath;
-    this.launchIdentity = launch.identity;
+    this.titleName = named ? typedName : '';
+    this.bufferPath = opening.path;
     this.window = new NanoWindow(
       { lineCount: () => this.linesArr.length, lineAt: (index) => this.linesArr[index] ?? '' },
       () => ({
@@ -214,19 +218,20 @@ export class NanoEngine {
         atblanks: this.live.atblanks,
       }),
     );
-    const unread = this.live.noread && filePath !== '';
+    const unread = this.live.noread && named;
     const decoded = unread || initialContent.length === 0 ? { lines: [''], format: 'unix' as NanoFileFormat, count: 0 } : decodeFile(initialContent, !this.live.noconvert, !this.live.nonewlines);
     this.linesArr = decoded.lines;
     this.fileFormat = this.live.unix ? 'unix' : decoded.format;
     this.ensureTrailingBlankLine();
-    if (filePath === '') {
+    if (opening.alert !== null) this._statusMessage = `[ ${opening.alert} ]`;
+    else if (!named) {
       if (!this.live.nohelp) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
     } else if (unread) this._statusMessage = '';
     else if (isNewFile) this._statusMessage = '[ New File ]';
     else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'}${decoded.format === 'unix' ? '' : ` (Converted from ${decoded.format === 'dos' ? 'DOS' : 'Mac'} format)`} ]`;
     this.reportSizePending = true;
     this.saveFileNameBuffer = this.titleName;
-    if (this.live.locking && !this._readOnly && filePath !== '') this.beginLocking();
+    if (this.live.locking && !this._readOnly && named && opening.lockable) this.beginLocking();
     const start = launch.start ?? (initialCursor ? { line: initialCursor.line, column: initialCursor.col ?? 0, search: null, caseSensitive: null, regex: null, alerts: [] } : null);
     if (start !== null) this.applyStart(start);
   }
@@ -533,7 +538,7 @@ export class NanoEngine {
         : this._mode === 'confirm' ? { question: this.confirmationQuestion(), withAll: false }
         : this._mode === 'replace-confirm' ? { question: 'Replace this instance?', withAll: true } : null,
       menu: this._mode === 'help' ? 'help' : prompt === null ? 'main' : prompt.menu,
-      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled() },
+      menuOptions: { restricted: this.live.restricted, discard: this.discardEnabled(), view: this.settings.view },
       pause: messageExpired ? null : this.pauseNote,
       helpLines: this._mode === 'help' ? this.helpText.split('\n') : null,
     });
@@ -1694,7 +1699,7 @@ export class NanoEngine {
   }
 
   private toggleWriteOption(key: string): boolean {
-    if (this.live.restricted && (key === 'a' || key === 'b' || key === 'p')) return true;
+    if ((this.live.restricted || this.settings.view) && (key === 'a' || key === 'b' || key === 'p')) return true;
     if (key === 'd') this.fileFormat = this.fileFormat === 'dos' ? 'unix' : 'dos';
     else if (key === 'm') this.fileFormat = this.fileFormat === 'mac' ? 'unix' : 'mac';
     else if (key === 'b') this.live.backup = !this.live.backup;
@@ -1737,8 +1742,8 @@ export class NanoEngine {
     const exiting = this.exitAfterSave;
     const selection = !exiting && this.markLine !== null && !this.live.restricted;
     const target = this.writeTarget(name);
-    const nameExists = this.fs.exists(target);
-    const warn = this.bufferPath === '' ? nameExists : target !== this.bufferPath;
+    const nameExists = this.pathKind(target) !== 'missing';
+    const warn = this.bufferPath === '' ? nameExists : this.namesDiffer(name);
     const write = (): void => this.writeBuffer(name, target, exiting, selection);
     if (!warn || this.writeMethod !== 'overwrite') {
       write();
@@ -1776,8 +1781,8 @@ export class NanoEngine {
       return;
     }
     const content = existing === null ? written : method === 'append' ? existing + written : method === 'prepend' ? written + existing : written;
-    if (!this.fs.writeFile(target, content)) {
-      this._statusMessage = `[ Error writing ${name} ]`;
+    if (name.endsWith('/') || !this.fs.writeFile(target, content)) {
+      this._statusMessage = `[ Error writing ${name}: ${this.writeFailureReason(name, target)} ]`;
       return;
     }
     const overwrite = method === 'overwrite';
@@ -1796,13 +1801,15 @@ export class NanoEngine {
       this._modified = false;
     }
     const n = this.writtenLineCount();
-    this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
+    if (this.minibarMode()) this.reportSizePending = true;
+    else this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
   }
 
   private backupPathFor(target: string): string {
     const directory = this.live.backupdir;
     if (directory === null) return `${target}~`;
-    const base = `${this.fs.resolvePath(directory.endsWith('/') ? directory : `${directory}/`)}${target.replaceAll('/', '!')}`;
+    const folder = this.fs.resolvePath(directory);
+    const base = `${folder.endsWith('/') ? folder : `${folder}/`}${target.replaceAll('/', '!')}`;
     let candidate = `${base}~`;
     for (let attempt = 1; this.fs.exists(candidate); attempt++) candidate = `${base}~.${attempt}`;
     return candidate;
@@ -2016,6 +2023,21 @@ export class NanoEngine {
     const at = this.screenfulMark();
     const left = this.window.goBack(this.window.editRows - 1, at);
     return left > 0 || at.line < was.line || (at.line === was.line && at.leftedge <= was.leftedge);
+  }
+
+  private namesDiffer(name: string): boolean {
+    const answer = fullPathOf(name, this.fs);
+    const current = fullPathOf(this.titleName, this.fs);
+    return answer !== null && current !== null ? answer !== current : name !== this.titleName;
+  }
+
+  private writeFailureReason(name: string, target: string): string {
+    const parentKind = this.pathKind(directoryNameOf(target));
+    if (parentKind === 'missing') return 'No such file or directory';
+    if (parentKind !== 'directory') return 'Not a directory';
+    const kind = this.pathKind(target);
+    if (name.endsWith('/')) return kind === 'file' ? 'Not a directory' : 'Is a directory';
+    return kind === 'directory' ? 'Is a directory' : 'Permission denied';
   }
 
   private pathKind(path: string): EditorPathKind {

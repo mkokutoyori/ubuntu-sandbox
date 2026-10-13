@@ -23,6 +23,7 @@ export interface EditorFsContext {
   /** Write a file's content, creating it if necessary. Returns success. */
   writeFile(path: string, content: string): boolean;
   kindOf?(path: string): EditorPathKind;
+  isReadOnly?(path: string): boolean;
   /** Whether a file exists at this (already-resolved) path. */
   exists(path: string): boolean;
   /** Delete a file. Returns whether a file was actually removed. */

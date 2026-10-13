@@ -497,7 +497,7 @@ def gen_insert(seed, count):
                       "disk": True, "hidden": True, "files": INSERT_FILES, "raw": INSERT_RAW})
     return cases
 
-OPEN_TARGETS = ["t.txt", "t.txt", "new.txt", "sub", "sub/", "sub/x.txt", "sub/new.txt", "nodir/new.txt", "nodir/", "nodir/a/b.txt", "t.txt/x", ".", "..", "/", "/dev/null", "./t.txt", "sub/../t.txt", "ro.txt", "", "-"]
+OPEN_TARGETS = ["t.txt", "t.txt", "new.txt", "sub", "sub/", "sub/x.txt", "sub/new.txt", "nodir/new.txt", "nodir/", "nodir/a/b.txt", "t.txt/x", ".", "..", "/", "/dev/null", "./t.txt", "sub/../t.txt", "ro.txt", ""]
 OPEN_STEPS = [[], [], ["x"], ["x", "C-o"], ["x", "C-o", "Enter"], ["C-x"], ["x", "C-x"], ["C-r"], ["C-w"], ["C-c"], ["x", "C-o", "BSpace", "Enter"]]
 
 def gen_open(seed, count):

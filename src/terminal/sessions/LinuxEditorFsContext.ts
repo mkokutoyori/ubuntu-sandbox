@@ -45,6 +45,10 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorPathKind(this.resolvePath(path));
   }
 
+  isReadOnly(path: string): boolean {
+    return this.dev.editorPathIsReadOnly(this.resolvePath(path));
+  }
+
   deleteFile(path: string): boolean {
     const abs = this.resolvePath(path);
     return this.session

@@ -44,7 +44,7 @@ describe('Scénario — ^O (Write Out) échoue silencieusement en écriture', ()
     expect(nano.mode).toBe('save-prompt');
     press(nano, 'Enter');
     expect(nano.mode).toBe('edit');
-    expect(nano.statusMessage).toBe('[ Error writing /etc/shadow ]');
+    expect(nano.statusMessage).toBe('[ Error writing /etc/shadow: Permission denied ]');
     expect(nano.modified).toBe(true);
   });
 
@@ -72,7 +72,7 @@ describe('Scénario — ^X puis Y (exit-save) échoue en écriture : ne PAS quit
     press(nano, 'Enter');
     expect(nano.exited).toBe(false);
     expect(nano.mode).toBe('edit');
-    expect(nano.statusMessage).toBe('[ Error writing /etc/sudoers ]');
+    expect(nano.statusMessage).toBe('[ Error writing /etc/sudoers: Permission denied ]');
     expect(nano.modified).toBe(true);
   });
 
@@ -106,7 +106,7 @@ describe('Scénario — permission refusée réelle (LinuxPC + LinuxEditorFsCont
     ctrl(nano, 'o');
     press(nano, 'Enter');
 
-    expect(nano.statusMessage).toBe('[ Error writing /etc/fstab ]');
+    expect(nano.statusMessage).toBe('[ Error writing /etc/fstab: Permission denied ]');
     expect(nano.modified).toBe(true);
     expect(fsCtx.readFile('/etc/fstab')).toBe(avant); // unchanged — the write never landed
   });
@@ -120,7 +120,7 @@ describe('Scénario — permission refusée réelle (LinuxPC + LinuxEditorFsCont
     press(nano, 'Enter');
 
     expect(nano.exited).toBe(false);
-    expect(nano.statusMessage).toBe('[ Error writing /etc/fstab ]');
+    expect(nano.statusMessage).toBe('[ Error writing /etc/fstab: Permission denied ]');
   });
 
   it('en root (session privilégiée), la même écriture réussit', () => {
