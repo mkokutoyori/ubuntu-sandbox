@@ -70,14 +70,18 @@ def lock_bytes(program, pid, user, host, name, modified):
 
 def record_disk(casedir, hidden=False):
     disk = {}
-    for entry in sorted(os.listdir(casedir)):
-        path = os.path.join(casedir, entry)
-        if (hidden or not entry.startswith(".")) and os.path.isfile(path):
-            raw = open(path, "rb").read()
+    sim_root = casedir.replace("/", "!")
+    for here, _dirs, names in os.walk(casedir):
+        for entry in sorted(names):
+            relative = os.path.relpath(os.path.join(here, entry), casedir)
+            if not hidden and any(part.startswith(".") for part in relative.split(os.sep)):
+                continue
+            raw = open(os.path.join(here, entry), "rb").read()
+            key = relative.replace(sim_root, "!tmp")
             if len(raw) == LOCK_SIZE and raw[0] == 0x62 and raw[1] == 0x30:
-                disk[entry] = lock_fields(raw)
+                disk[key] = lock_fields(raw)
             else:
-                disk[entry] = raw.decode("utf-8", "replace")
+                disk[key] = raw.decode("utf-8", "replace")
     return disk
 
 def record_screen(name, casedir=None, hidden=False):
@@ -193,7 +197,10 @@ def run_cli_case(case, workdir):
     os.makedirs(casedir, exist_ok=True)
     open(os.path.join(casedir, "t.txt"), "w", encoding="utf-8").write("\n".join(case["text"]) + "\n")
     for extra_name, extra_lines in case.get("files", {}).items():
+        os.makedirs(os.path.dirname(os.path.join(casedir, extra_name)), exist_ok=True)
         open(os.path.join(casedir, extra_name), "w", encoding="utf-8").write("\n".join(extra_lines) + "\n")
+    for raw_name, hexdata in case.get("raw", {}).items():
+        open(os.path.join(casedir, raw_name), "wb").write(bytes.fromhex(hexdata))
     for lock_name, fields in case.get("locks", {}).items():
         open(os.path.join(casedir, lock_name), "wb").write(lock_bytes(fields["program"], fields["pid"], fields["user"], fields["host"], fields["name"], fields.get("modified", False)))
     env = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8", TERM="xterm-256color")

@@ -20,6 +20,7 @@ export interface NanoScreenCase {
   steps: string[];
   disk?: boolean;
   hidden?: boolean;
+  raw?: Record<string, string>;
   locks?: Record<string, NanoLockData>;
   exit_step?: string;
   final_disk?: RecordedDisk;
@@ -52,10 +53,12 @@ export function recordedArguments(c: NanoScreenCase): string[] {
 export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>, c: NanoScreenCase): { engine: NanoEngine; fs: InMemoryEditorFsContext } {
   const first = invocation.files[0];
   const name = first?.path ?? '';
+  const rawContent = c.raw?.[name] === undefined ? undefined : Buffer.from(c.raw[name], 'hex').toString('utf8');
   const lines = name === 't.txt' ? c.text : c.files?.[name];
-  const content = lines === undefined ? null : lines.join('\n') + '\n';
+  const content = rawContent ?? (lines === undefined ? null : lines.join('\n') + '\n');
   const initial: Record<string, string> = { '/tmp/t.txt': c.text.join('\n') + '\n' };
   for (const [extra, extraLines] of Object.entries(c.files ?? {})) initial[`/tmp/${extra}`] = extraLines.join('\n') + '\n';
+  for (const [rawName, hex] of Object.entries(c.raw ?? {})) initial[`/tmp/${rawName}`] = Buffer.from(hex, 'hex').toString('utf8');
   for (const [lockName, lock] of Object.entries(c.locks ?? {})) initial[`/tmp/${lockName}`] = buildNanoLock(lock);
   const fs = new InMemoryEditorFsContext(initial);
   if (content === null) fs.deleteFile(`/tmp/${name}`);

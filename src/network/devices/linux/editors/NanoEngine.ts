@@ -2,6 +2,7 @@ import type { EditorFsContext, EditorIdentity } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
+import { decodeFile, LINE_END, type NanoFileFormat } from './nano/NanoFormat';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
 import type { MinibarInfo } from './nano/NanoScreen';
@@ -127,6 +128,8 @@ export class NanoEngine {
   private _readOnly: boolean;
   private titleName: string;
   private bufferPath: string;
+  private fileFormat: NanoFileFormat = 'unix';
+  private writeMethod: 'overwrite' | 'append' | 'prepend' = 'overwrite';
   private lockPath = '';
   private lockHolder: EditorIdentity | null = null;
   private confirmation: Confirmation | null = null;
@@ -207,12 +210,14 @@ export class NanoEngine {
         atblanks: this.live.atblanks,
       }),
     );
-    this.linesArr = initialContent.length === 0 ? [''] : initialContent.split('\n');
+    const decoded = initialContent.length === 0 ? { lines: [''], format: 'unix' as NanoFileFormat, count: 0 } : decodeFile(initialContent, !this.live.noconvert, !this.live.nonewlines);
+    this.linesArr = decoded.lines;
+    this.fileFormat = this.live.unix ? 'unix' : decoded.format;
     this.ensureTrailingBlankLine();
     if (filePath === '') {
       if (!this.live.nohelp) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
     } else if (isNewFile) this._statusMessage = '[ New File ]';
-    else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
+    else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'}${decoded.format === 'unix' ? '' : ` (Converted from ${decoded.format === 'dos' ? 'DOS' : 'Mac'} format)`} ]`;
     this.reportSizePending = true;
     this.saveFileNameBuffer = this.titleName;
     if (this.live.locking && !this._readOnly && filePath !== '') this.beginLocking();
@@ -226,7 +231,8 @@ export class NanoEngine {
   /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
   private serialize(): string {
     const body = this.linesArr;
-    return body.join('\n') + (this.live.nonewlines || body[body.length - 1] === '' ? '' : '\n');
+    const end = LINE_END[this.fileFormat];
+    return body.join(end) + (this.live.nonewlines || body[body.length - 1] === '' ? '' : end);
   }
 
   private locationMessage(): string {
@@ -420,9 +426,19 @@ export class NanoEngine {
     return ` [${shown.cells.join('')}${breadth(this.lastSearchTerm, this.live.tabsize) > limit ? '...' : ''}]`;
   }
 
+  private writeOutLabel(): string {
+    const selection = this.markLine !== null && !this.exitAfterSave;
+    const method = this.writeMethod;
+    const base = selection
+      ? method === 'prepend' ? 'Prepend Selection to File' : method === 'append' ? 'Append Selection to File' : 'Write Selection to File'
+      : method === 'prepend' ? 'File Name to Prepend to' : method === 'append' ? 'File Name to Append to' : 'File Name to Write';
+    const format = this.fileFormat === 'dos' ? ' [DOS Format]' : this.fileFormat === 'mac' ? ' [Mac Format]' : '';
+    return `${base}${format}${this.live.backup ? ' [Backup]' : ''}`;
+  }
+
   private promptView(): { label: string; answer: string; menu: NanoMenuName } | null {
     switch (this._mode) {
-      case 'save-prompt': return { label: this.markLine !== null && !this.exitAfterSave ? 'Write Selection to File' : 'File Name to Write', answer: this.saveFileNameBuffer, menu: 'write-out' };
+      case 'save-prompt': return { label: this.writeOutLabel(), answer: this.saveFileNameBuffer, menu: 'write-out' };
       case 'search': return { label: this.searchPromptLabel(false), answer: this.searchQueryBuffer, menu: 'search' };
       case 'replace-search': return { label: this.searchPromptLabel(true), answer: this.replaceSearchBuffer, menu: 'replace' };
       case 'replace-with': return { label: 'Replace with', answer: this.replaceWithBuffer, menu: 'replace-with' };
@@ -983,7 +999,8 @@ export class NanoEngine {
       return;
     }
     switch (key) {
-      case 'o': // Write Out
+      case 'o':
+        this.writeMethod = 'overwrite';
         this.saveFileNameBuffer = this.markLine !== null ? '' : this.titleName;
         this._promptCursor = this.saveFileNameBuffer.length;
         this._mode = 'save-prompt';
@@ -1395,8 +1412,9 @@ export class NanoEngine {
   }
 
   private serializeRegion(r: { startLine: number; startCol: number; endLine: number; endCol: number }): string {
-    const text = this.extractRegionText(r);
-    return text === '' || text.endsWith('\n') ? text : text + '\n';
+    const end = LINE_END[this.fileFormat];
+    const text = this.extractRegionText(r).split('\n').join(end);
+    return text === '' || text.endsWith(end) ? text : text + end;
   }
 
   private deleteRegion(r: { startLine: number; startCol: number; endLine: number; endCol: number }): void {
@@ -1593,6 +1611,7 @@ export class NanoEngine {
       this.submitWriteName();
       return;
     }
+    if (k.alt && this.toggleWriteOption(k.key.toLowerCase())) return;
     if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
       this.exitAfterSave = false;
       this.cancelPrompt();
@@ -1604,6 +1623,19 @@ export class NanoEngine {
   private confirmationQuestion(): string {
     const question = this.confirmation!.question;
     return typeof question === 'string' ? question : question(this.window.cols);
+  }
+
+  private toggleWriteOption(key: string): boolean {
+    if (key === 'd') this.fileFormat = this.fileFormat === 'dos' ? 'unix' : 'dos';
+    else if (key === 'm') this.fileFormat = this.fileFormat === 'mac' ? 'unix' : 'mac';
+    else if (key === 'b') this.live.backup = !this.live.backup;
+    else if (key === 'a' || key === 'p') {
+      const method = key === 'a' ? 'append' : 'prepend';
+      this.writeMethod = this.writeMethod === method ? 'overwrite' : method;
+      if (this.saveFileNameBuffer === this.titleName) this.saveFileNameBuffer = '';
+      this._promptCursor = this.saveFileNameBuffer.length;
+    } else return false;
+    return true;
   }
 
   private ask(question: string | ((columns: number) => string), yes: () => void, no: () => void, cancel: () => void = no, startup = false): void {
@@ -1639,7 +1671,7 @@ export class NanoEngine {
     const nameExists = this.fs.exists(target);
     const warn = this.bufferPath === '' ? nameExists : target !== this.bufferPath;
     const write = (): void => this.writeBuffer(name, target, exiting, selection);
-    if (!warn) {
+    if (!warn || this.writeMethod !== 'overwrite') {
       write();
       return;
     }
@@ -1658,27 +1690,49 @@ export class NanoEngine {
   private writeBuffer(name: string, target: string, exiting: boolean, selection: boolean): void {
     const region = selection ? this.getMarkedRegion() : null;
     const written = region === null ? this.serialize() : this.serializeRegion(region);
-    const ok = this.fs.writeFile(target, written);
+    const method = this.writeMethod;
+    const existing = this.fs.exists(target) ? this.fs.readFile(target) : null;
     this.exitAfterSave = false;
     this._mode = 'edit';
-    if (!ok) {
+    if (method === 'prepend' && existing === null) {
+      this._statusMessage = `[ Error reading ${name}: No such file or directory ]`;
+      return;
+    }
+    if (this.live.backup && existing !== null && !this.fs.writeFile(this.backupPathFor(target), existing)) {
+      this._statusMessage = '[ Cannot make backup ]';
+      return;
+    }
+    const content = existing === null ? written : method === 'append' ? existing + written : method === 'prepend' ? written + existing : written;
+    if (!this.fs.writeFile(target, content)) {
       this._statusMessage = `[ Error writing ${name} ]`;
       return;
     }
+    const overwrite = method === 'overwrite';
     if (region !== null) {
-      const count = written.split('\n').length - 1;
+      const count = written.split(LINE_END[this.fileFormat]).length - 1;
       this._statusMessage = `[ Wrote ${count} line${count === 1 ? '' : 's'} ]`;
       return;
     }
     if (exiting) {
-      this._modified = false;
+      if (overwrite) this._modified = false;
       this.finishExit(true);
       return;
     }
-    if (target !== this.bufferPath) this.renameBuffer(name, target);
-    this._modified = false;
+    if (overwrite) {
+      if (target !== this.bufferPath) this.renameBuffer(name, target);
+      this._modified = false;
+    }
     const n = this.writtenLineCount();
     this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
+  }
+
+  private backupPathFor(target: string): string {
+    const directory = this.live.backupdir;
+    if (directory === null) return `${target}~`;
+    const base = `${this.fs.resolvePath(directory.endsWith('/') ? directory : `${directory}/`)}${target.replaceAll('/', '!')}`;
+    let candidate = `${base}~`;
+    for (let attempt = 1; this.fs.exists(candidate); attempt++) candidate = `${base}~.${attempt}`;
+    return candidate;
   }
 
   private renameBuffer(name: string, target: string): void {
@@ -1768,6 +1822,7 @@ export class NanoEngine {
       // Real nano always chains to "File Name to Write:" here, exactly
       // like a plain ^O — it never writes directly.
       this.exitAfterSave = true;
+      this.writeMethod = 'overwrite';
       this.saveFileNameBuffer = this.titleName;
       this._promptCursor = this.saveFileNameBuffer.length;
       this._mode = 'save-prompt';
