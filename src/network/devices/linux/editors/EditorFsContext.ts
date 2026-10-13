@@ -6,7 +6,14 @@
  * a plain in-memory fake and wired to the real VFS in production via a
  * thin adapter.
  */
+export interface EditorIdentity {
+  readonly user: string;
+  readonly host: string;
+  readonly pid: number;
+}
+
 export interface EditorFsContext {
+  identity?(): EditorIdentity;
   /** Resolve a (possibly relative) path against the current working directory. */
   resolvePath(path: string): string;
   /** Read a file's content, or null if it doesn't exist. */

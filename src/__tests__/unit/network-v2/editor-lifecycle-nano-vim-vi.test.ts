@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import { VimEngine } from '@/network/devices/linux/editors/VimEngine';
+import { defaultNanoSettings } from '@/network/devices/linux/editors/nano/NanoSettings';
 import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemoryEditorFsContext';
 import { editorKey } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
@@ -58,12 +59,18 @@ describe('Scénario 1 — nano: cycle de vie complet', () => {
     nano = new NanoEngine(fs, '/tmp/test-nano.txt', REFERENCE_FILE, false);
   });
 
-  it('creates a lock/swap file while editing and removes it on clean exit', () => {
-    expect(nano.swapFileExists).toBe(true);
-    expect(nano.swapFilePath).toBe('/tmp/.test-nano.txt.swp');
-    ctrl(nano, 'x'); // no modification yet -> exits immediately
-    expect(nano.exited).toBe(true);
+  it('creates no lock file by default, as the real nano does', () => {
     expect(nano.swapFileExists).toBe(false);
+    expect(fs.exists('/tmp/.test-nano.txt.swp')).toBe(false);
+  });
+
+  it('with -G creates a lock file while editing and removes it on clean exit', () => {
+    const locking = new NanoEngine(fs, '/tmp/test-nano.txt', REFERENCE_FILE, false, false, undefined, false, { settings: defaultNanoSettings({ locking: true }) });
+    expect(locking.swapFileExists).toBe(true);
+    expect(locking.swapFilePath).toBe('/tmp/.test-nano.txt.swp');
+    ctrl(locking, 'x'); // no modification yet -> exits immediately
+    expect(locking.exited).toBe(true);
+    expect(locking.swapFileExists).toBe(false);
   });
 
   it('Ctrl+X with no prior modification exits immediately without a prompt', () => {

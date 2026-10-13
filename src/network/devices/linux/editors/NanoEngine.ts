@@ -1,6 +1,7 @@
-import type { EditorFsContext } from './EditorFsContext';
+import type { EditorFsContext, EditorIdentity } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
+import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/NanoWindow';
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
 import type { MinibarInfo } from './nano/NanoScreen';
@@ -18,7 +19,7 @@ import type { EditorScreen } from './screen/EditorScreen';
 export type NanoMode =
   | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
   | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line'
-  | 'help' | 'execute-prompt' | 'read-file-prompt';
+  | 'help' | 'execute-prompt' | 'read-file-prompt' | 'confirm';
 
 const DEFAULT_FILL = -8;
 
@@ -32,7 +33,16 @@ const EDIT_TOGGLES: Readonly<Record<string, { readonly flag: 'breaklonglines' | 
 
 const STATUS_LINGER_KEYS = 20;
 
+export interface Confirmation {
+  readonly question: string | ((columns: number) => string);
+  readonly startup: boolean;
+  readonly yes: () => void;
+  readonly no: () => void;
+  readonly cancel: () => void;
+}
+
 export interface NanoLaunchOptions {
+  readonly identity?: EditorIdentity;
   readonly settings?: NanoSettings;
   readonly start?: NanoStart | null;
   readonly displayName?: string;
@@ -85,7 +95,12 @@ export class NanoEngine {
   private _mode: NanoMode = 'edit';
   private _cursorLine = 0;
   private _cursorCol = 0;
-  private _modified = false;
+  private modifiedState = false;
+  private get _modified(): boolean { return this.modifiedState; }
+  private set _modified(value: boolean) {
+    if (value && !this.modifiedState) this.lockAsModified();
+    this.modifiedState = value;
+  }
   private statusText = '';
   private statusCountdown = 0;
   private statusAlert = false;
@@ -95,7 +110,8 @@ export class NanoEngine {
   private set _statusMessage(value: string) {
     this.statusText = value;
     this.statusCountdown = value === '' ? 0 : STATUS_LINGER_KEYS;
-    this.statusAlert = /not found|^\[ Error|invalid in view mode|Cutbuffer is empty|^\[ (Invalid|Empty search string|Too tiny|Not possible)/.test(value);
+    this.statusAlert = messageLevel(value) >= MESSAGE_LEVEL.ahem;
+    this.statusRaw = false;
     this.statusMore = false;
     if (value !== '') this.messageThisKey = true;
   }
@@ -108,8 +124,14 @@ export class NanoEngine {
   private marginPending = false;
   readonly settings: NanoSettings;
   private readonly live: { -readonly [K in keyof NanoSettings]: NanoSettings[K] };
-  private readonly _readOnly: boolean;
-  private readonly titleName: string;
+  private _readOnly: boolean;
+  private titleName: string;
+  private bufferPath: string;
+  private lockPath = '';
+  private lockHolder: EditorIdentity | null = null;
+  private confirmation: Confirmation | null = null;
+  private statusRaw = false;
+  private launchIdentity: EditorIdentity | undefined;
   private _exited = false;
   private _savedOnExit = false;
   private saveFileNameBuffer: string;
@@ -146,7 +168,6 @@ export class NanoEngine {
   private markLine: number | null = null;
   private markCol: number | null = null;
   private spillageLine: number | null = null;
-  private readonly lockPath: string;
 
   // Undo/redo (Alt+U / Alt+E — real nano's M-U/M-E), multi-level, with
   // real nano's action-grouping: a run of consecutive keystrokes of the
@@ -158,7 +179,7 @@ export class NanoEngine {
 
   constructor(
     private readonly fs: EditorFsContext,
-    public readonly filePath: string,
+    filePath: string,
     initialContent: string,
     isNewFile: boolean,
     readOnly = false,
@@ -170,6 +191,8 @@ export class NanoEngine {
     this.live = { ...this.settings, view: this.settings.view && filePath !== '' };
     this._readOnly = this.live.view;
     this.titleName = launch.displayName ?? filePath;
+    this.bufferPath = filePath;
+    this.launchIdentity = launch.identity;
     this.window = new NanoWindow(
       { lineCount: () => this.linesArr.length, lineAt: (index) => this.linesArr[index] ?? '' },
       () => ({
@@ -192,15 +215,7 @@ export class NanoEngine {
     else if (!this.live.minibar && !this.live.zero) this._statusMessage = `[ Read ${this.writtenLineCount()} line${this.writtenLineCount() === 1 ? '' : 's'} ]`;
     this.reportSizePending = true;
     this.saveFileNameBuffer = this.titleName;
-    // GNU nano creates a `.<file>.swp` lock file for the duration of the
-    // editing session to prevent two nano instances from editing the same
-    // file concurrently; removed on clean exit (see swapFilePath below).
-    // View mode (-v) never locks — it never intends to write. A genuinely
-    // unnamed buffer (filePath === '') has no real file to protect yet —
-    // resolving '' would collapse to the cwd's own directory path — so no
-    // lock is created until a real name exists (Write Out gives it one).
-    this.lockPath = filePath === '' ? '' : dotSwapPathFor(fs.resolvePath(filePath));
-    if (!this._readOnly && this.lockPath !== '') this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
+    if (this.live.locking && !this._readOnly && filePath !== '') this.beginLocking();
     const start = launch.start ?? (initialCursor ? { line: initialCursor.line, column: initialCursor.col ?? 0, search: null, caseSensitive: null, regex: null, alerts: [] } : null);
     if (start !== null) this.applyStart(start);
   }
@@ -290,8 +305,9 @@ export class NanoEngine {
     ].join('\n');
   }
   get searchQuery(): string { return this.searchQueryBuffer; }
+  get filePath(): string { return this.bufferPath; }
   get swapFilePath(): string { return this.lockPath; }
-  get swapFileExists(): boolean { return this.fs.exists(this.lockPath); }
+  get swapFileExists(): boolean { return this.lockPath !== '' && this.fs.exists(this.lockPath); }
   /** True when opened with `-v` (view mode) — real nano refuses all edits and offers no Write Out. */
   get isReadOnly(): boolean { return this._readOnly; }
   /** `nano -l`/`--linenumbers` at open, toggled at runtime by M-#. */
@@ -441,7 +457,7 @@ export class NanoEngine {
     const prompt = this.promptView();
     const hidden = messageExpired || (this.bareDisplay() && messageLevel(this.statusText) < MESSAGE_LEVEL.remark);
     const message = hidden ? '' : this.statusText.replace(/^\[ (.*) \]$/, '$1');
-    return buildNanoScreen({
+    const screen = buildNanoScreen({
       window: this.window,
       lines: this.linesArr,
       cursor: { line: this._cursorLine, col: this._cursorCol },
@@ -455,15 +471,19 @@ export class NanoEngine {
         branding: 'GNU nano 7.2',
         flags: this.live.stateflags ? { letters: this.stateLetters(), modified: this._modified } : null,
       },
-      status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore },
+      status: message === '' ? null : { text: message, alert: this.statusAlert, more: this.statusMore, raw: this.statusRaw },
       minibar: this.minibarInfo(messageExpired),
       prompt: prompt === null ? null : { label: prompt.label, answer: prompt.answer, cursor: this._promptCursor },
       yesNo: this._mode === 'exit-save-prompt'
-        ? { question: 'Save modified buffer?', withAll: false }
+        ? { question: 'Save modified buffer? ', withAll: false }
+        : this._mode === 'confirm' ? { question: this.confirmationQuestion(), withAll: false }
         : this._mode === 'replace-confirm' ? { question: 'Replace this instance?', withAll: true } : null,
       menu: this._mode === 'help' ? 'help' : prompt === null ? 'main' : prompt.menu,
       helpLines: this._mode === 'help' ? this.helpText.split('\n') : null,
     });
+    if (this._mode !== 'confirm' || !this.confirmation!.startup) return screen;
+    const footerFrom = this.window.layout.statusRow;
+    return { ...screen, rows: screen.rows.map((row, index) => (index < footerFrom ? { text: '', spans: [] } : row)) };
   }
 
   private toggleHelpLines(): void {
@@ -573,6 +593,7 @@ export class NanoEngine {
     this.statusCountdown = 0;
     this.statusAlert = false;
     this.statusMore = false;
+    this.statusRaw = false;
   }
 
   private followCursor(): void {
@@ -623,6 +644,7 @@ export class NanoEngine {
       case 'edit': return this.applyEditKey(k);
       case 'save-prompt': return this.applySavePromptKey(k);
       case 'exit-save-prompt': return this.applyExitSavePromptKey(k);
+      case 'confirm': return this.applyConfirmKey(k);
       case 'search': return this.applySearchKey(k);
       case 'replace-search': return this.applyReplaceSearchKey(k);
       case 'replace-with': return this.applyReplaceWithKey(k);
@@ -1568,33 +1590,7 @@ export class NanoEngine {
 
   private applySavePromptKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
-      if (this.saveFileNameBuffer === '') {
-        this.exitAfterSave = false;
-        this.cancelPrompt();
-        return;
-      }
-      const wasExitFlow = this.exitAfterSave;
-      const region = wasExitFlow ? null : this.getMarkedRegion();
-      const written = region === null ? this.serialize() : this.serializeRegion(region);
-      const ok = this.fs.writeFile(this.writeTarget(this.saveFileNameBuffer), written);
-      this.exitAfterSave = false;
-      this._mode = 'edit';
-      if (!ok) {
-        this._statusMessage = `[ Error writing ${this.saveFileNameBuffer} ]`;
-        return;
-      }
-      if (region !== null) {
-        const count = written.split('\n').length - 1;
-        this._statusMessage = `[ Wrote ${count} line${count === 1 ? '' : 's'} ]`;
-        return;
-      }
-      this._modified = false;
-      if (wasExitFlow) {
-        this.finishExit(true);
-        return;
-      }
-      const n = this.writtenLineCount();
-      this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
+      this.submitWriteName();
       return;
     }
     if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
@@ -1603,6 +1599,165 @@ export class NanoEngine {
       return;
     }
     this.applyPromptFieldKey(k, () => this.saveFileNameBuffer, (v) => { this.saveFileNameBuffer = v; });
+  }
+
+  private confirmationQuestion(): string {
+    const question = this.confirmation!.question;
+    return typeof question === 'string' ? question : question(this.window.cols);
+  }
+
+  private ask(question: string | ((columns: number) => string), yes: () => void, no: () => void, cancel: () => void = no, startup = false): void {
+    this.confirmation = { question, startup, yes, no, cancel };
+    this._mode = 'confirm';
+  }
+
+  private applyConfirmKey(k: EditorKeyInput): void {
+    const confirmation = this.confirmation!;
+    const key = k.key.toLowerCase();
+    const answer = k.key === 'Escape' || (k.ctrl && key === 'c') ? confirmation.cancel : !k.ctrl && key === 'y' ? confirmation.yes : !k.ctrl && key === 'n' ? confirmation.no : null;
+    if (answer === null) return;
+    this.confirmation = null;
+    this._mode = 'edit';
+    answer();
+  }
+
+  private backToWritePrompt(): void {
+    this._mode = 'save-prompt';
+    this._promptCursor = this.saveFileNameBuffer.length;
+  }
+
+  private submitWriteName(): void {
+    const name = this.saveFileNameBuffer;
+    if (name === '') {
+      this.exitAfterSave = false;
+      this.cancelPrompt();
+      return;
+    }
+    const exiting = this.exitAfterSave;
+    const selection = !exiting && this.markLine !== null;
+    const target = this.writeTarget(name);
+    const nameExists = this.fs.exists(target);
+    const warn = this.bufferPath === '' ? nameExists : target !== this.bufferPath;
+    const write = (): void => this.writeBuffer(name, target, exiting, selection);
+    if (!warn) {
+      write();
+      return;
+    }
+    const overwrite = (): void => {
+      if (!nameExists) {
+        write();
+        return;
+      }
+      const room = this.window.cols - 'File "%s" exists; OVERWRITE? '.length + 1;
+      this.ask(`File "${cropToFit(name, room)}" exists; OVERWRITE? `, write, () => this.backToWritePrompt());
+    };
+    if (this.bufferPath !== '' && (exiting || !selection)) this.ask('Save file under DIFFERENT NAME? ', overwrite, () => this.backToWritePrompt());
+    else overwrite();
+  }
+
+  private writeBuffer(name: string, target: string, exiting: boolean, selection: boolean): void {
+    const region = selection ? this.getMarkedRegion() : null;
+    const written = region === null ? this.serialize() : this.serializeRegion(region);
+    const ok = this.fs.writeFile(target, written);
+    this.exitAfterSave = false;
+    this._mode = 'edit';
+    if (!ok) {
+      this._statusMessage = `[ Error writing ${name} ]`;
+      return;
+    }
+    if (region !== null) {
+      const count = written.split('\n').length - 1;
+      this._statusMessage = `[ Wrote ${count} line${count === 1 ? '' : 's'} ]`;
+      return;
+    }
+    if (exiting) {
+      this._modified = false;
+      this.finishExit(true);
+      return;
+    }
+    if (target !== this.bufferPath) this.renameBuffer(name, target);
+    this._modified = false;
+    const n = this.writtenLineCount();
+    this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
+  }
+
+  private renameBuffer(name: string, target: string): void {
+    this.dropLock();
+    this.titleName = name;
+    this.bufferPath = target;
+    if (this.live.locking) this.acquireLock(name, false);
+  }
+
+  private identity(): EditorIdentity {
+    this.lockHolder ??= this.launchIdentity ?? this.fs.identity?.() ?? { user: 'root', host: 'localhost', pid: 1 };
+    return this.lockHolder;
+  }
+
+  private lockFileFor(typedName: string): { path: string; shown: string } {
+    const path = dotSwapPathFor(this.fs.resolvePath(typedName));
+    const slash = typedName.lastIndexOf('/');
+    const directory = slash < 0 ? '.' : slash === 0 ? '' : typedName.slice(0, slash);
+    return { path, shown: `${directory}/.${typedName.slice(slash + 1)}.swp` };
+  }
+
+  private writeLock(typedName: string, modified: boolean): void {
+    const holder = this.identity();
+    this.lockPath = this.lockFileFor(typedName).path;
+    this.fs.writeFile(this.lockPath, buildNanoLock({ program: 'nano 7.2', pid: holder.pid, user: holder.user, host: holder.host, name: typedName, modified }));
+  }
+
+  private acquireLock(typedName: string, ask: boolean): void {
+    const lock = this.lockFileFor(typedName);
+    const existing = this.fs.readFile(lock.path);
+    if (existing === null) {
+      this.writeLock(typedName, false);
+      return;
+    }
+    if (!ask) {
+      this._statusMessage = '[ Someone else is also editing this file ]';
+      this.writeLock(typedName, false);
+      return;
+    }
+    const holder = parseNanoLock(existing);
+    if (holder === null) {
+      this._statusMessage = `[ Bad lock file is ignored: ${lock.shown} ]`;
+      return;
+    }
+    const question = (columns: number): string => lockQuestion(typedName, holder, columns);
+    const takeIt = (): void => {
+      this.writeLock(typedName, false);
+      this._statusMessage = question(this.window.cols);
+      this.statusRaw = true;
+      this.statusCountdown = 0;
+    };
+    this.ask(question, takeIt, () => this.skipFile(), () => this.finishExit(false), true);
+  }
+
+  private beginLocking(): void {
+    this.acquireLock(this.titleName, true);
+  }
+
+  private skipFile(): void {
+    this.bufferPath = '';
+    this.titleName = '';
+    this.saveFileNameBuffer = '';
+    this.linesArr = [''];
+    this._cursorLine = 0;
+    this._cursorCol = 0;
+    this.live.view = false;
+    this._readOnly = false;
+    this.wipeStatus();
+    if (!this.live.nohelp) this._statusMessage = '[ Welcome to nano.  For basic help, type Ctrl+G. ]';
+  }
+
+  private lockAsModified(): void {
+    if (this.lockPath === '') return;
+    this.writeLock(this.titleName, true);
+  }
+
+  private dropLock(): void {
+    if (this.lockPath !== '') this.fs.deleteFile(this.lockPath);
+    this.lockPath = '';
   }
 
   // ── Exit-save (Y/N/^C) prompt ───────────────────────────────────
@@ -1735,8 +1890,6 @@ export class NanoEngine {
     }
     this.applyPromptFieldKey(k, () => this.readFileBuffer, (v) => { this.readFileBuffer = v; });
   }
-
-  // ── Justify (^J, M-J) ──
 
   private get wrapAt(): number {
     const fill = this.live.fill ?? DEFAULT_FILL;
@@ -2116,6 +2269,6 @@ export class NanoEngine {
   private finishExit(saved: boolean): void {
     this._exited = true;
     this._savedOnExit = saved;
-    if (this.lockPath !== '') this.fs.deleteFile(this.lockPath);
+    this.dropLock();
   }
 }

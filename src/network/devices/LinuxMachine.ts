@@ -4476,6 +4476,11 @@ export abstract class LinuxMachine extends EndHost
 
   // ─── Editor / session pass-throughs ─────────────────────────────────
 
+  editorIdentity(session?: LinuxShellSession): { user: string; host: string; pid: number } {
+    const uid = session !== undefined && !session.disposed ? session.uid : this.executor.userMgr.currentUid;
+    return { user: this.executor.userMgr.uidToName(uid), host: this.getHostname(), pid: this.executor.logMgr.allocatePid() };
+  }
+
   readFileForEditor(path: string): string | null {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     return this.executor.vfs.readFile(absPath);

@@ -33,9 +33,9 @@
  * Seules les options dont l'effet est porte (SCREEN_PORTED_FLAGS) sont rejouees sur l'ecran ; avec les autres, le test verifie le classement (imprime, refuse ou ouvre) et le
  * texte, pas le premier ecran, tant que leur effet n'est pas evalue : voir SCREEN_PORTED_FLAGS.
  *
- * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 3 cas sur 1800.  Aucun n'est epingle comme
+ * Divergences connues, mesurees et NON portees (UNPORTED_CASES) : 4 cas sur 1800.  Aucun n'est epingle comme
  * contrat : un cas de la liste qui se met a passer fait echouer le test pour qu'on le retire.
- *   - cli2-17, cli2-148, cli3-180 : un fichier dont le dossier n'existe pas (`+C/Foo` est un chemin) : nano
+ *   - cli1-255, cli2-17, cli2-148, cli3-180 : un fichier dont le dossier n'existe pas (`+C/Foo` est un chemin) : nano
  *     affiche `[ Directory '+C' does not exist ]` au lieu de `[ New File ]`.  EditorFsContext ne sait pas
  *     dire qu'un chemin est un dossier ; `"x" is a directory`, `is meant to be read-only` et les fichiers de
  *     peripherique sont dans le meme cas.
@@ -48,7 +48,7 @@ const dir = 'src/__tests__/support/oracle/nano-cli';
 const fixtures = readdirSync(dir).filter((f) => f.startsWith('nano-7.2')).sort()
   .map((f) => ({ name: f, ...(JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { nano: string; cases: NanoCliCase[] }) }));
 
-const UNPORTED_CASES: ReadonlySet<string> = new Set(['cli2-17', 'cli2-148', 'cli3-180']);
+const UNPORTED_CASES: ReadonlySet<string> = new Set(['cli1-255', 'cli2-17', 'cli2-148', 'cli3-180']);
 
 describe('nano command lines recorded from a real nano', () => {
   for (const fixture of fixtures) {
