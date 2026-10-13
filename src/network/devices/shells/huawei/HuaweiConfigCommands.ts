@@ -1083,7 +1083,7 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) (port as any).ipv6Mtu = n;
+    if (port && !isNaN(n)) port.setIPv6MTU(n);
     return '';
   });
   trie.register('ipv6 nd ra halt', 'Halt IPv6 RA messages', () => {

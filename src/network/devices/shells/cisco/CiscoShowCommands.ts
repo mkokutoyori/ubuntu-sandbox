@@ -1533,8 +1533,8 @@ function runningConfigInterfaceIPv6(port: import('../../../hardware/Port').Port)
     }
     if (lines.length === 0) lines.push(' ipv6 enable');
   }
-  const mtu = (port as unknown as { ipv6Mtu?: number }).ipv6Mtu;
-  if (mtu !== undefined) lines.push(` ipv6 mtu ${mtu}`);
+  const mtu = port.getIPv6MtuSetting();
+  if (mtu !== null) lines.push(` ipv6 mtu ${mtu}`);
   return lines;
 }
 
@@ -1560,7 +1560,7 @@ export function showIpv6Interface(router: Router, ifName: string): string {
       + `line protocol is ${iosInterfaceStatus(port, ifName, router._getPortsInternal()).protocol}`,
     `  IPv6 is ${v6.length > 0 ? 'enabled' : 'disabled'}`,
     ...v6.map(a => `  Address: ${a}`),
-    `  MTU is ${port.getMTU()} bytes`,
+    `  MTU is ${port.getIPv6MTU()} bytes`,
   ].join('\n');
 }
 
@@ -1610,7 +1610,7 @@ export function showIpv6Traffic(router: Router): string {
     `         ${c.inHopLimitExceeded} hop count exceeded`,
     `         ${c.inNoRoutes} no route, ${c.inFiltered} access denied`,
     `  Sent:  ${c.outRequests} generated, ${c.outForwarded} forwarded`,
-    `         ${c.outFiltered} access denied`,
+    `         ${c.outFiltered} access denied, ${c.outTooBig} too big`,
     '',
     'ICMP statistics:',
     `  Rcvd: ${icmpIn} input`,

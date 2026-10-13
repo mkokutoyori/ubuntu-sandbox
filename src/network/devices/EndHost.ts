@@ -34,6 +34,10 @@ import {
   type ProtocolCounters, type TcpCounterSuffix,
 } from '../layers/internet/ProtocolCounters';
 import { ipv6HeaderProblem, ipv6PacketBytes } from '../layers/internet/Ipv6Ingress';
+import {
+  fragmentIPv6, IPv6Reassembler, ipv6FragmentOf, IPV6_REASSEMBLY_TIMEOUT_MS,
+  IPV6_REASSEMBLY_HIGH_THRESHOLD_BYTES,
+} from '../layers/internet/Ipv6Fragmentation';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin, IPv6AddressEntry } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -80,8 +84,8 @@ import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, type IPv4Option, type UDPLitePacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
-  createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum, ipv4HeaderBytesFor,
+  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, IP_PROTO_IPV6_FRAGMENT,
+  nextIPv6FragmentId, createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum, ipv4HeaderBytesFor,
   // IPv6 types
   IPv6Address, IPv6Packet, ICMPv6Packet, NDPNeighborSolicitation, NDPNeighborAdvertisement,
   NDPRouterAdvertisement, NDPOptionPrefixInfo,
@@ -118,6 +122,8 @@ import {
   ICMP_UNREACH_FRAG_NEEDED,
   ICMPV6_UNREACH_ADMIN_PROHIBITED,
   ICMPV6_UNREACH_PORT,
+  ICMPV6_EXCEEDED_REASSEMBLY,
+  ICMPV6_PARAMPROB_HEADER_FIELD,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   udpSocketErrorFor,
   udpSocketErrorForV6,
@@ -524,6 +530,14 @@ export abstract class EndHost extends Equipment {
       this.sendICMPError(ingressPort ?? '', firstFragment, 'time-exceeded',
         ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED);
     });
+  private readonly ipv6Reassembler = new IPv6Reassembler({
+    highThresholdBytes: () => this.ipv6FragmentHighThresholdBytes,
+  });
+  private readonly ipv6ReassemblyTimers = new Map<string, symbol>();
+
+  protected get ipv6FragmentTimeoutMs(): number { return IPV6_REASSEMBLY_TIMEOUT_MS; }
+  protected get ipv6FragmentHighThresholdBytes(): number { return IPV6_REASSEMBLY_HIGH_THRESHOLD_BYTES; }
+
   /** Monotonically increasing ICMP echo identifier */
   protected pingIdCounter: number = 0;
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
@@ -1713,6 +1727,7 @@ export abstract class EndHost extends Equipment {
     if (wasOn) this.lifecycle.powerOff();
     this.stopArpAgingTimer();
     this.neighborCache.stop();
+    this.discardIpv6Reassembly();
   }
 
   // ─── System identity ────────────────────────────────────────────
@@ -2347,8 +2362,32 @@ export abstract class EndHost extends Equipment {
       }
     } else if (frame.etherType === ETHERTYPE_IPV6) {
       const ipv6 = frame.payload as IPv6Packet;
-      if (ipv6 && ipv6.type === 'ipv6') this.countLocallyOriginated6(ipv6);
+      if (ipv6 && ipv6.type === 'ipv6') {
+        this.countLocallyOriginated6(ipv6);
+        const pieces = this.fragmentsForEgress6(portName, ipv6);
+        if (pieces.length > 1) {
+          let sent = true;
+          for (const piece of pieces) sent = this.transmitFrame(portName, { ...frame, payload: piece }) && sent;
+          return sent;
+        }
+      }
     }
+    return this.transmitFrame(portName, frame);
+  }
+
+  private fragmentsForEgress6(portName: string, packet: IPv6Packet): IPv6Packet[] {
+    if (packet.nextHeader === IP_PROTO_TCP || packet.nextHeader === IP_PROTO_IPV6_FRAGMENT) return [packet];
+    const port = this.ports.get(portName);
+    if (!port) return [packet];
+    const mtu = this.pathMtuTo(packet.destinationIP, port.getIPv6MTU());
+    const pieces = fragmentIPv6(packet, mtu, nextIPv6FragmentId);
+    if (pieces.length === 1) return pieces;
+    this.protocolCounters.ip6FragOKs++;
+    this.protocolCounters.ip6FragCreates += pieces.length;
+    return pieces;
+  }
+
+  private transmitFrame(portName: string, frame: EthernetFrame): boolean {
     const sub = this.vlanSubInterfaces.get(portName);
     if (!sub) return super.sendFrame(portName, frame);
     const tagged: TaggedEthernetFrame = {
@@ -4239,14 +4278,21 @@ export abstract class EndHost extends Equipment {
   }
 
   private sendICMPv6Unreachable(portName: string, offendingPkt: IPv6Packet, code: number = ICMPV6_UNREACH_PORT): void {
-    if (!mayGenerateICMPv6Error(offendingPkt, 'destination-unreachable')) return;
+    this.sendICMPv6Error(portName, offendingPkt, 'destination-unreachable', code);
+  }
+
+  private sendICMPv6Error(
+    portName: string, offendingPkt: IPv6Packet, icmpType: ICMPv6Packet['icmpType'], code: number,
+    extra: { pointer?: number; mtu?: number } = {},
+  ): void {
+    if (!mayGenerateICMPv6Error(offendingPkt, icmpType)) return;
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
     const srcIP = offendingPkt.destinationIP;
     if (!srcIP) return;
 
     const icmpError: ICMPv6Packet = {
-      type: 'icmpv6', icmpType: 'destination-unreachable', code, invokingPacket: offendingPkt,
+      type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra,
     };
     const errorPkt = createIPv6Packet(
       srcIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit, icmpError, 48,
@@ -5804,6 +5850,9 @@ export abstract class EndHost extends Equipment {
     const isLoopback = ipv6.destinationIP.isLoopback();
 
     if (isForUs || isMulticast || isLoopback) {
+      const whole = this.reassembleIPv6(portName, ipv6);
+      if (whole === null) return;
+      ipv6 = whole;
       if (ipv6.nextHeader === IP_PROTO_ICMPV6) {
         // Neighbor Discovery (RFC 4861) must never be filtered — blocking it
         // would break address resolution itself, taking the whole interface
@@ -5857,6 +5906,73 @@ export abstract class EndHost extends Equipment {
       return;
     }
     this.protocolCounters.ip6InAddrErrors++;
+  }
+
+  private reassembleIPv6(portName: string, packet: IPv6Packet): IPv6Packet | null {
+    if (ipv6FragmentOf(packet) === null) return packet;
+    const counters = this.protocolCounters;
+    counters.ip6ReasmReqds++;
+    const outcome = this.ipv6Reassembler.add(packet, portName);
+    switch (outcome.kind) {
+      case 'passthrough':
+        return outcome.packet;
+      case 'atomic':
+        counters.ip6ReasmOKs++;
+        return outcome.packet;
+      case 'refused':
+        counters.ip6ReasmFails++;
+        return null;
+      case 'malformed':
+        this.armIpv6ReassemblyTimer(outcome.key, outcome.created);
+        counters.ip6InHdrErrors++;
+        this.sendICMPv6Error(portName, packet, 'parameter-problem', ICMPV6_PARAMPROB_HEADER_FIELD, {
+          pointer: outcome.pointer,
+        });
+        return null;
+      case 'queued':
+        this.armIpv6ReassemblyTimer(outcome.key, outcome.created);
+        return null;
+      case 'duplicate':
+        return null;
+      case 'discarded':
+        this.disarmIpv6ReassemblyTimer(outcome.key);
+        counters.ip6ReasmFails++;
+        return null;
+      case 'complete':
+        this.disarmIpv6ReassemblyTimer(outcome.key);
+        counters.ip6ReasmOKs++;
+        return outcome.packet;
+    }
+  }
+
+  private armIpv6ReassemblyTimer(key: string, created: boolean): void {
+    if (!created) return;
+    this.ipv6ReassemblyTimers.set(
+      key, this.hostTimers.setTimeout(() => this.expireIpv6Reassembly(key), this.ipv6FragmentTimeoutMs));
+  }
+
+  private disarmIpv6ReassemblyTimer(key: string): void {
+    const timer = this.ipv6ReassemblyTimers.get(key);
+    if (timer === undefined) return;
+    this.hostTimers.clear(timer);
+    this.ipv6ReassemblyTimers.delete(key);
+  }
+
+  private expireIpv6Reassembly(key: string): void {
+    this.ipv6ReassemblyTimers.delete(key);
+    const expired = this.ipv6Reassembler.expire(key);
+    if (expired === null) return;
+    this.protocolCounters.ip6ReasmFails++;
+    this.protocolCounters.ip6ReasmTimeout++;
+    if (expired.first !== null) {
+      this.sendICMPv6Error(expired.ingress, expired.first, 'time-exceeded', ICMPV6_EXCEEDED_REASSEMBLY);
+    }
+  }
+
+  private discardIpv6Reassembly(): void {
+    for (const timer of this.ipv6ReassemblyTimers.values()) this.hostTimers.clear(timer);
+    this.ipv6ReassemblyTimers.clear();
+    this.ipv6Reassembler.clear();
   }
 
   // ─── ICMPv6 Handling (RFC 4443, RFC 4861) ──────────────────────
