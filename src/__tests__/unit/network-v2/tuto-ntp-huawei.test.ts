@@ -70,7 +70,7 @@ async function conf(r: HuaweiRouter, ...cmds: string[]) {
   await r.executeCommand('system-view');
   for (const c of cmds) sorties.push(await r.executeCommand(c));
   await r.executeCommand('quit');
-  converge(clock);
+  if (cmds.some((c) => /unicast-server|ntp-service/.test(c))) converge(clock);
   return sorties;
 }
 

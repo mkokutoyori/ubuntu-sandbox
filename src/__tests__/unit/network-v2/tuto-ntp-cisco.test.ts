@@ -75,7 +75,7 @@ async function conf(r: CiscoRouter, ...cmds: string[]) {
   await r.executeCommand('configure terminal');
   for (const c of cmds) sorties.push(await r.executeCommand(c));
   await r.executeCommand('end');
-  converge(clock);
+  if (cmds.some((c) => /^ntp (server|peer)/.test(c))) converge(clock);
   return sorties;
 }
 
