@@ -25,8 +25,13 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -293,6 +298,7 @@ describe('le moteur est le meme sur les trois plateformes', () => {
     for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
       'ip address 192.168.101.9 255.255.255.0', 'no shutdown', 'exit',
       'ntp server 192.168.101.5', 'end']) await cisco.executeCommand(c);
+    converge(clock);
 
     expect(ligne(await win.executeCommand('w32tm /query /status'), 'Stratum'))
       .toContain('Stratum: 3');

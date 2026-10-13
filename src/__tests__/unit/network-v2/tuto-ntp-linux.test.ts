@@ -27,8 +27,13 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { parseChronyConf } from '@/network/devices/linux/time/ChronyConfig';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -150,6 +155,7 @@ describe('§5.3 — la machine se synchronise, et `chronyc` le montre', () => {
     const pc = await poste(srv);
     await ecrireConf(pc, CONF_TUTO);
     await pc.executeCommand('sudo systemctl restart chrony');
+    converge(clock);
     return { srv, pc };
   }
 
@@ -175,7 +181,7 @@ describe('§5.3 — la machine se synchronise, et `chronyc` le montre', () => {
     // la peine d'expliquer, et l'ecrire en secondes la rendrait fausse.
     const { pc } = await labo();
     const l = ligne(await pc.executeCommand('chronyc sources'), '^*');
-    expect(l.split(/\s+/)).toContain('6');
+    expect(l.split(/\s+/).some((mot) => /^(6|7|8|9|10)$/.test(mot))).toBe(true);
     expect(l).not.toContain('64');
   });
 
@@ -279,6 +285,7 @@ describe('§5.3 — `timedatectl` dit ce qu\'il sait', () => {
     const pc = await poste(srv);
     await ecrireConf(pc, CONF_TUTO);
     await pc.executeCommand('sudo systemctl restart chrony');
+    converge(clock);
     const t = await pc.executeCommand('timedatectl');
     expect(ligne(t, 'System clock synchronized')).toBe('System clock synchronized: yes');
     expect(ligne(t, 'NTP service')).toBe('NTP service: active');

@@ -8,8 +8,14 @@ import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { UDP_PORT_NTP, computeOffsetMs } from '@/network/ntp/types';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -76,6 +82,7 @@ describe('NTP — client / server exchange', () => {
     await client.executeCommand('configure terminal');
     await client.executeCommand('ntp server 10.0.0.1');
     await client.executeCommand('end');
+    converge(clock);
 
     expect(client.getNtpAgent().isSynced()).toBe(true);
     expect(client.getNtpAgent().getStratum()).toBe(4);
@@ -112,6 +119,7 @@ describe('NTP — client / server exchange', () => {
     await client.executeCommand('configure terminal');
     await client.executeCommand('ntp server 10.0.0.1');
     await client.executeCommand('end');
+    converge(clock);
 
     expect(sent).toContain('10.0.0.1');
     expect(received.length).toBeGreaterThan(0);
@@ -150,6 +158,7 @@ describe('NTP — wire format', () => {
     await client.executeCommand('configure terminal');
     await client.executeCommand('ntp server 10.0.0.1');
     await client.executeCommand('end');
+    converge(clock);
 
     expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen.every(s => s.src === UDP_PORT_NTP && s.dst === UDP_PORT_NTP)).toBe(true);
@@ -175,6 +184,7 @@ describe('NTP — show commands', () => {
     await client.executeCommand('configure terminal');
     await client.executeCommand('ntp server 10.0.0.1');
     await client.executeCommand('end');
+    converge(clock);
     const status = await client.executeCommand('show ntp status');
     expect(status).toMatch(/Clock is synchronized/);
     expect(status).toMatch(/stratum 9/);
@@ -228,6 +238,7 @@ describe('NTP — Cisco↔Huawei interop', () => {
     cisco.getNtpAgent().setLocalStratum(3);
 
     huawei.getNtpAgent().addServer('10.0.0.1');
+    converge(clock);
 
     expect(huawei.getNtpAgent().isSynced()).toBe(true);
     expect(huawei.getNtpAgent().getStratum()).toBe(4);
@@ -255,9 +266,10 @@ describe('NTP — agent clock', () => {
     await client.executeCommand('configure terminal');
     await client.executeCommand('ntp server 10.0.0.1');
     await client.executeCommand('end');
+    converge(clock);
 
     const offset = client.getNtpAgent().getOffsetMs();
-    const skew = client.getNtpAgent().now() - Date.now();
+    const skew = client.getNtpAgent().now() - simulationNowMs();
     expect(Math.abs(skew - offset)).toBeLessThan(5);
   });
 });

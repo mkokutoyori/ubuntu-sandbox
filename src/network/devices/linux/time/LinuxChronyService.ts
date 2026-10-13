@@ -51,7 +51,7 @@
 
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import type { NtpAgent } from '../../../ntp/NtpAgent';
+import type { NtpAgent, NtpPlatformProfile } from '../../../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../../../ntp/types';
 import { parseChronyConf, type ChronyConf, CHRONY_CONF_DEBIAN } from './ChronyConfig';
 import { parseChronyKeys, type ChronyKeysLecture } from './ChronyKeys';
@@ -72,6 +72,15 @@ export interface ChronyHost {
   bindNtpPort?(port: number): boolean;
   releaseNtpPort?(port: number): void;
 }
+
+const CHRONY_PROFILE: Partial<NtpPlatformProfile> = {
+  respondsWhenUnsynchronized: true,
+  unsynchronizedRootBoundMs: 1000,
+  silentOnBadAuthentication: true,
+  acceptsExtensionFields: false,
+  statelessSymmetricReply: true,
+  localReferenceIsAddress: true,
+};
 
 export class LinuxChronyService implements ServiceSocketServer {
   private actif = false;
@@ -130,6 +139,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     }
     this.conf = parseChronyConf(this.host.readFile(chemin) ?? '');
     this.host.bindNtpPort?.(UDP_PORT_NTP);
+    this.host.ntp().setProfile(CHRONY_PROFILE);
     this.appliquer();
     this.actif = true;
     this.demarreALe = simulationNowMs();
@@ -236,8 +246,8 @@ export class LinuxChronyService implements ServiceSocketServer {
     for (const s of this.conf.sources) {
       if (!isValidIPv4(s.hote)) continue;
       voulues.add(s.hote);
-      if (s.genre === 'peer') agent.addPeer(s.hote, s.prefer, s.keyId);
-      else agent.addServer(s.hote, s.prefer, s.keyId);
+      if (s.genre === 'peer') agent.addPeer(s.hote, s.prefer, s.keyId, { iburst: s.iburst });
+      else agent.addServer(s.hote, s.prefer, s.keyId, 'ntp', { iburst: s.iburst });
     }
     // Ce que le fichier ne declare plus doit disparaitre : sans cela un
     // `reload` ne serait qu'un ajout, et retirer une ligne du fichier
@@ -250,17 +260,13 @@ export class LinuxChronyService implements ServiceSocketServer {
     // glisser, et combien de fois. Il etait lu et range sans jamais
     // atteindre le moteur (lot N9).
     agent.setReglagesDiscipline(this.conf.makestep
-      ? { seuilSautMs: this.conf.makestep.seuilSec * 1000, limiteSauts: this.conf.makestep.limite }
-      : {});
+      ? { seuilSautMs: this.conf.makestep.seuilSec * 1000, limiteSauts: this.conf.makestep.limite, reinitialiserAssociationsAuSaut: false }
+      : { reinitialiserAssociationsAuSaut: false });
     if (this.conf.localStratum !== null) {
       agent.setServerMode(true);
       agent.setLocalStratum(this.conf.localStratum);
     }
     agent.setEnabled(true);
-    // `iburst` demande une rafale immediate : la convergence ne doit pas
-    // attendre le premier intervalle de scrutation. C'est le seul effet
-    // observable de la directive, et le tutoriel l'annonce.
-    if (this.conf.sources.some((s) => s.iburst)) agent.pollAll();
   }
 
   /** Le texte que le paquet Debian depose a l'installation. */

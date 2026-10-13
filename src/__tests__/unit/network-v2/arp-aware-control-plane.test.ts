@@ -20,8 +20,13 @@ import { UDP_PORT_SYSLOG } from '@/network/syslog/types';
 import { UDP_PORT_NETFLOW } from '@/network/netflow/types';
 import { UDP_PORT_SNMP_TRAP } from '@/network/snmp/types';
 import { UDP_PORT_RADIUS_AUTH } from '@/network/radius/types';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -77,6 +82,7 @@ describe('ARP-aware control-plane sends (audit #26)', () => {
     await client.executeCommand('configure terminal');
     await client.executeCommand('ntp server 10.0.0.1');
     await client.executeCommand('end');
+    converge(clock);
 
     expect(client.getNtpAgent().isSynced()).toBe(true);
     expect(arpTargets).toContain('10.0.0.1');

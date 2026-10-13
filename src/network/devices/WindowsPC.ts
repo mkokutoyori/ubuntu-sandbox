@@ -5976,6 +5976,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
       this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
+      this._ntpAgent.setProfile({ enforcesRootDistance: false });
     }
     return this._ntpAgent;
   }
