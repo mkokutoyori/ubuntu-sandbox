@@ -130,9 +130,7 @@ export const MODE_CONTROLE = 6;
 /**
  * Les douze octets d'en-tete d'un message de controle.
  *
- * Ce simulateur ne serialise pas ses paquets NTP — ils voyagent comme
- * objets, comme le dit `auth.ts` — mais cet en-tete est ecrit pour de
- * vrai parce qu'il porte des CHAMPS DE BITS : `R`, `E` et `M` partagent
+ * Cet en-tete porte des CHAMPS DE BITS : `R`, `E` et `M` partagent
  * un octet avec l'opcode, et rien n'oblige un code qui les manipule
  * separement a rester d'accord avec la RFC. L'ecrire une fois donne un
  * endroit unique ou la disposition est vraie, et un test qui la verifie.
@@ -150,6 +148,36 @@ export function serialiserEnteteControle(pkt: NtpControlPacket): Uint8Array {
   vue.setUint16(8, pkt.offset & 0xffff);
   vue.setUint16(10, pkt.count & 0xffff);
   return octets;
+}
+
+export function encodeControlPacket(pkt: NtpControlPacket): Uint8Array {
+  const data = new TextEncoder().encode(pkt.data);
+  const padded = new Uint8Array(12 + Math.ceil(data.length / 4) * 4);
+  padded.set(serialiserEnteteControle({ ...pkt, count: data.length }), 0);
+  padded.set(data, 12);
+  return padded;
+}
+
+export function decodeControlPacket(bytes: Uint8Array): NtpControlPacket | null {
+  if (bytes.length < 12 || (bytes[0] & 0x7) !== MODE_CONTROLE) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = view.getUint16(10);
+  if (12 + count > bytes.length) return null;
+  return {
+    type: 'ntp-control',
+    leapIndicator: bytes[0] >> 6,
+    version: (bytes[0] >> 3) & 0x7,
+    response: (bytes[1] & 0x80) !== 0,
+    error: (bytes[1] & 0x40) !== 0,
+    more: (bytes[1] & 0x20) !== 0,
+    opcode: bytes[1] & 0x1f,
+    sequence: view.getUint16(2),
+    status: view.getUint16(4),
+    associationId: view.getUint16(6),
+    offset: view.getUint16(8),
+    count,
+    data: new TextDecoder().decode(bytes.slice(12, 12 + count)),
+  };
 }
 
 /**

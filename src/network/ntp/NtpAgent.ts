@@ -25,7 +25,7 @@ import { decodeNtpPacket, encodeNtpPacket, isCryptoNak, isKissOfDeath } from './
 import { verdictAccesNtp, type ActionNtp } from './accessGroups';
 import {
   type NtpControlPacket, OPCODES_SERVIS, ERREURS_CONTROLE,
-  motEtatSysteme, motEtatPair, SELECT,
+  motEtatSysteme, motEtatPair, SELECT, MODE_CONTROLE, encodeControlPacket, decodeControlPacket,
   formaterVariables, formaterListeAssociations,
 } from './control';
 import {
@@ -438,14 +438,15 @@ export class NtpAgent {
     if (!this.config.enabled) return;
     if (udp.destinationPort !== UDP_PORT_NTP && udp.sourcePort !== UDP_PORT_NTP) return;
     const destination = timestampFromMs(this.now());
-    const brut = udp.payload as { type?: string } | undefined;
-    if (brut && !(brut instanceof Uint8Array) && brut.type === 'ntp-control') {
-      this.handleControl(inPort, srcIp, brut as NtpControlPacket);
-      return;
-    }
     const c = this.config.counters;
     if (!(udp.payload instanceof Uint8Array)) {
       c.protocolError++;
+      return;
+    }
+    if ((udp.payload[0] & 0x7) === MODE_CONTROLE) {
+      const control = decodeControlPacket(udp.payload);
+      if (control === null) c.protocolError++;
+      else this.handleControl(inPort, srcIp, control);
       return;
     }
     const decoded = decodeNtpPacket(udp.payload);
@@ -1246,7 +1247,8 @@ export class NtpAgent {
   private envoyerControle(
     srcIp: IPAddress | undefined, dstIp: IPAddress, pkt: NtpControlPacket,
   ): void {
-    if (!this.emettreUdp(srcIp, dstIp, pkt, 12 + pkt.data.length, `ctl|${dstIp.toString()}`)) return;
+    const payload = encodeControlPacket(pkt);
+    if (!this.emettreUdp(srcIp, dstIp, payload, payload.length, `ctl|${dstIp.toString()}`)) return;
     this.config.counters.sent++;
     this.config.counters.sentControl++;
   }
