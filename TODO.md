@@ -221,7 +221,9 @@ hauts niveaux, options NTDS, journal et compteurs) ainsi que le niveau fonctionn
 msDS-Behavior-Version de la racine du domaine, replique) ; voyagent aussi IIS (sites, pools d'applications,
 liaisons HTTPS) et les certificats d'une machine Windows (magasin personnel avec cle privee, ancres de confiance,
 identites TLS RDP et LDAP, en PEM via les codecs de pki/pem.ts) ; l'autorite ADCS d'entreprise et ce qu'elle a emis (PEM, adoptee par
-CertificateAuthority.fromKeyPair) ; la revocation n'est pas ecrite, le role n'en expose aucune ; NPS, WSUS, impression,
+CertificateAuthority.fromKeyPair) ; la revocation n'est pas ecrite, le role n'en expose aucune ; NPS (clients RADIUS et secret partage, strategies
+reseau et de demande de connexion, comptabilite SQL avec ses enregistrements) et les mots de passe des comptes
+locaux ; WSUS, impression,
 cluster, Exchange, DHCP v6 et le vieillissement DNS n'ont aucun etat sauvegarde.
 **Pourquoi ce n'est pas ferme** : (1) le texte de configuration est rejoue par la CLI dans l'ordre ; un extrait par
 difference de lignes casserait les dependances (`interface` puis ses sous-commandes, negations) : il faut un diff

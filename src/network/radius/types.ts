@@ -197,6 +197,7 @@ export interface RadiusServerAgentConfig {
   sharedSecret: string;
   users: Map<string, RadiusUser>;
   clients: Set<string>;
+  requireAuthorizedClient?: boolean;
 }
 
 export function createDefaultClientConfig(): RadiusClientConfig {

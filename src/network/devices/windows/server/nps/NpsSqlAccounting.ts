@@ -54,6 +54,14 @@ export class NpsSqlAccountingTable {
     this.db.executeSql(this.executor, sql);
   }
 
+  records(): NpsAccountingRecordInput[] {
+    const result = this.query(`SELECT SESSION_ID, USERNAME, STATUS, SESSION_TIME_SEC, INPUT_OCTETS, OUTPUT_OCTETS FROM ${TABLE_NAME}`);
+    return result.rows.map((row) => ({
+      sessionId: String(row[0]), username: String(row[1]), status: String(row[2]),
+      sessionTimeSec: Number(row[3]), inputOctets: Number(row[4]), outputOctets: Number(row[5]),
+    }));
+  }
+
   /** Runs an arbitrary read (or write) query against the accounting table/schema — e.g. `SELECT * FROM RADIUS_ACCOUNTING`. */
   query(sql: string): ResultSet {
     return this.db.executeSql(this.executor, sql);
