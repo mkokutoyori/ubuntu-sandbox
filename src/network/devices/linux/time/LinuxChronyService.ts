@@ -160,6 +160,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     if (!this.actif) return;
     this.actif = false;
     this.host.releaseNtpPort?.(UDP_PORT_NTP);
+    if (this.conf.ntpPort !== UDP_PORT_NTP && this.conf.ntpPort > 0) this.host.releaseNtpPort?.(this.conf.ntpPort);
     const agent = this.host.ntp();
     agent.stop();
     // Un demon arrete ne laisse pas ses associations derriere lui : c'est
@@ -284,9 +285,10 @@ export class LinuxChronyService implements ServiceSocketServer {
 
   private installSource(source: ChronySource): void {
     const agent = this.host.ntp();
+    const existed = agent.getAssociation(source.hote) !== undefined;
     const options = {
       iburst: source.iburst, burst: source.burst, minpoll: source.minpoll, maxpoll: source.maxpoll,
-      online: !source.offline, version: source.version as NtpVersion | undefined,
+      online: existed ? !source.offline : false, version: source.version as NtpVersion | undefined,
     };
     if (source.genre === 'peer') agent.addPeer(source.hote, source.prefer, source.keyId, options);
     else agent.addServer(source.hote, source.prefer, source.keyId, 'ntp', options);
@@ -294,9 +296,12 @@ export class LinuxChronyService implements ServiceSocketServer {
       noselect: source.noselect, trust: source.trust, require: source.require,
       maxDelayMs: source.maxdelay === undefined ? undefined : source.maxdelay * 1000,
       maxDelayRatio: source.maxdelayratio, maxDelayDevRatio: source.maxdelaydevratio,
-      minStratum: source.minstratum, pollTarget: source.polltarget, fixedOffsetMs: source.offsetCorrection === undefined ? undefined : source.offsetCorrection * 1000,
-      statistics: { minSamples: source.minsamples, maxSamples: source.maxsamples, minDelay: source.mindelay },
+      minStratum: source.minstratum, pollTarget: source.polltarget, port: source.port,
+      presend: source.presend, autoOffline: source.autoOffline, copy: source.copy,
+      maxDelayQuant: source.maxdelayquant, filterLength: source.filter, fixedOffsetMs: source.offsetCorrection === undefined ? undefined : source.offsetCorrection * 1000,
+      statistics: { minSamples: source.minsamples, maxSamples: source.maxsamples, minDelay: source.mindelay, asymmetry: source.asymmetry },
     });
+    if (!existed && !source.offline) agent.setSourceOnline(source.hote, true);
   }
 
   /**
@@ -374,6 +379,8 @@ export class LinuxChronyService implements ServiceSocketServer {
     });
     agent.getReference().setMaxUpdateSkewPpm(this.conf.maxUpdateSkewPpm ?? 1000);
     agent.getReference().setMaxChange(this.conf.maxChange);
+    if (this.conf.ntpPort !== UDP_PORT_NTP && this.conf.ntpPort > 0) this.host.bindNtpPort?.(this.conf.ntpPort);
+    agent.setServerPort(this.conf.ntpPort);
     agent.setFatalHandler(() => {
       this.stop();
       this.host.daemonExited?.('exit-code');

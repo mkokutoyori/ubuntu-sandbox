@@ -19,12 +19,25 @@ def series(seed, count, drift_ppb, noise, spike_rate, spike):
         out.append([round(t, 9), offset, 0.0002 + abs(rng.gauss(0, 0.0001)), 2.3e-6, 0.0390625, 0.03125])
     return out
 
+def asymmetric(seed, count):
+    rng = random.Random(seed)
+    t = 1.79e9
+    out = []
+    for i in range(count):
+        t += 1 + rng.gauss(0, 0.002)
+        delay = 0.0002 + abs(rng.gauss(0, 0.004))
+        out.append([round(t, 9), 0.0125 + 0.5 * (delay - 0.0002) + rng.gauss(0, 0.00005), delay, 2.3e-6, 0.0390625, 0.03125])
+    return out
+
 SERIES = {
     "quiet": series(3, 70, 20, 0.0006, 0.15, 0.004),
     "steady": series(5, 40, 0, 0.00002, 0.0, 0.0),
     "drifting": series(9, 90, 5000, 0.0001, 0.05, 0.002),
     "short": series(11, 6, 0, 0.0003, 0.0, 0.0),
+    "asymmetric": asymmetric(21, 80),
 }
+
+ASYMMETRY = {"asymmetric": [1.0, 0.0, 0.3]}
 
 def main():
     src, target = sys.argv[1], sys.argv[2]
@@ -35,9 +48,10 @@ def main():
         cases = []
         for name, rows in SERIES.items():
             text = "\n".join(" ".join(("%.9f" if k == 0 else "%.12e") % v for k, v in enumerate(r)) for r in rows) + "\n"
-            result = subprocess.run([binary], input=text, capture_output=True, text=True, check=True).stdout.strip().split("\n")
-            cases.append({"series": name, "samples": rows, "expected": [line.split() for line in result]})
-    json.dump({"tool": "chrony 4.5 sourcestats.c", "columns": ["n", "runs", "span", "offset", "offsetError", "freqPpm", "skewPpm", "sd", "lo", "hi", "ok"], "cases": cases}, open(target, "w"), separators=(",", ":"))
+            for asymmetry in ASYMMETRY.get(name, [0.0]):
+                result = subprocess.run([binary, str(asymmetry)], input=text, capture_output=True, text=True, check=True).stdout.strip().split("\n")
+                cases.append({"series": name, "asymmetry": asymmetry, "samples": rows, "expected": [line.split() for line in result]})
+    json.dump({"tool": "chrony 4.5 sourcestats.c", "columns": ["n", "runs", "span", "offset", "offsetError", "freqPpm", "skewPpm", "sd", "lo", "hi", "ok", "jitterAsymmetry", "delayTestOk", "predictedOffset", "minDelay", "skew", "sd2"], "cases": cases}, open(target, "w"), separators=(",", ":"))
     print(len(cases), "series")
 
 main()

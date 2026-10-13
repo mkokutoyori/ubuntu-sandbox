@@ -76,6 +76,7 @@ export interface AuthReport {
 export interface NtpDataReport {
   readonly remoteIp: string;
   readonly remotePort: number;
+  readonly jitterAsymmetry: number;
   readonly localIp: string;
   readonly leap: number;
   readonly version: number;
@@ -128,8 +129,12 @@ const KEY_TYPES: Readonly<Record<string, number>> = {
   MD5: 1, SHA1: 2, SHA256: 3, SHA384: 4, SHA512: 5, RMD160: 6,
 };
 
-function refIdOf(ip: string): number {
-  return ipv4ToUint32(ip) ?? 0;
+function refIdOf(identifier: string): number {
+  const address = ipv4ToUint32(identifier);
+  if (address !== null) return address;
+  let value = 0;
+  for (let i = 0; i < 4; i++) value = (value * 256 + (identifier.charCodeAt(i) || 0)) >>> 0;
+  return value;
 }
 
 function wholeSecondsSince(sampleTime: number, nowSeconds: number): number {
@@ -251,7 +256,7 @@ export class ChronyDaemonView {
     if (peer !== undefined && this.agent.isSynced()) {
       const report = peer.statistics.sourcestats(now);
       return {
-        referenceId: refIdOf(peer.serverIp),
+        referenceId: refIdOf(this.agent.getConfig().refIdentifier),
         referenceName: peer.serverIp,
         stratum: this.agent.getStratum(),
         referenceTime: reference.referenceTime(),
@@ -343,7 +348,8 @@ export class ChronyDaemonView {
     const tests = Number.parseInt(a.lastTests.replace(/ /g, ''), 2);
     return {
       remoteIp: a.serverIp,
-      remotePort: 123,
+      remotePort: a.port ?? 123,
+      jitterAsymmetry: a.statistics.jitterAsymmetry(),
       localIp: localIp ?? '[UNSPEC]',
       leap: heard ? a.leap : 0,
       version: heard ? response.version : 0,

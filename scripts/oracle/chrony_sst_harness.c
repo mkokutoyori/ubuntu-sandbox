@@ -13,7 +13,8 @@ double CNF_GetMaxJitter(void) { return 10.0; }
 double LCL_GetSysPrecisionAsQuantum(void) { return 1.0e-9; }
 int main(int argc, char **argv) {
   double prec = 1e-9;
-  SST_Stats s = SST_CreateInstance(0x7f000002, NULL, 1, 0, 0.0, 0.0);
+  double asymmetry = argc > 1 ? atof(argv[1]) : 0.0;
+  SST_Stats s = SST_CreateInstance(0x7f000002, NULL, 1, 0, 0.0, asymmetry);
   char line[512];
   while (fgets(line, sizeof line, stdin)) {
     double t, off, pd, pdisp, rd, rdisp;
@@ -28,7 +29,9 @@ int main(int argc, char **argv) {
     SST_DoSourcestatsReport(s, &r, &now);
     double ol, oh, rdist, sd, fa, la; int ok;
     SST_GetSelectionData(s, &now, &ol, &oh, &rdist, &sd, &fa, &la, &ok);
-    printf("%lu %lu %ld %.12e %.12e %.12e %.12e %.12e %.12e %.12e %d\n", r.n_samples, r.n_runs, (long)r.span_seconds, r.est_offset, r.est_offset_err, r.resid_freq_ppm, r.skew_ppm, r.sd, ol, oh, ok);
+    double lsa = 0, po = 0, md = 0, sk = 0, dsd = 0;
+    int dok = SST_GetDelayTestData(s, &now, &lsa, &po, &md, &sk, &dsd);
+    printf("%lu %lu %ld %.12e %.12e %.12e %.12e %.12e %.12e %.12e %d %.12e %d %.12e %.12e %.12e %.12e\n", r.n_samples, r.n_runs, (long)r.span_seconds, r.est_offset, r.est_offset_err, r.resid_freq_ppm, r.skew_ppm, r.sd, ol, oh, ok, SST_GetJitterAsymmetry(s), dok, po, md, sk, dsd);
   }
   return 0;
 }

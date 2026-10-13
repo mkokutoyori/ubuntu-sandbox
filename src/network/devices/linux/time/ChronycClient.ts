@@ -853,7 +853,7 @@ export class ChronycSession {
           d.remoteIp, tryIpToUint32(d.remoteIp) ?? 0, d.remotePort, d.localIp,
           tryIpToUint32(d.localIp) ?? 0, d.leap, d.version, d.mode, d.stratum, d.poll, 2 ** d.poll,
           d.precision, 2 ** d.precision, d.rootDelay, d.rootDispersion, d.referenceId, d.referenceName,
-          toTime(d.referenceTime), d.offset, d.peerDelay, d.peerDispersion, d.responseTime, 0,
+          toTime(d.referenceTime), d.offset, d.peerDelay, d.peerDispersion, d.responseTime, d.jitterAsymmetry,
           d.tests >> 7, d.tests >> 4, d.tests, d.interleaved ? 1 : 0, d.authenticated ? 1 : 0,
           d.transmitSource, d.receiveSource, d.totalTransmitted, d.totalReceived, d.totalValid, d.totalGood,
         ]);

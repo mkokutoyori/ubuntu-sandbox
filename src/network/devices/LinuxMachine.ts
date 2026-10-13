@@ -1684,7 +1684,7 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le démon chrony — `null` avant l'amorçage. */
   chronyService: LinuxChronyService | null = null;
-  private ntpPortBound = false;
+  private ntpPortsBound = new Set<number>();
 
   /**
    * chrony (`docs/PRD-NTP-Tutoriel.md` §4) — le paquet était déclaré
@@ -1716,11 +1716,18 @@ export abstract class LinuxMachine extends EndHost
     this.chronyService = new LinuxChronyService({
       readFile: (p) => vfs.readFile(p),
       ntp: () => this.getNtpAgent(),
-      bindNtpPort: (port) => this.ntpPortBound
-        || (this.ntpPortBound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
+      bindNtpPort: (port) => {
+        if (this.ntpPortsBound.has(port)) return true;
+        const bound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
           this.getNtpAgent().handleUdp(inPort, sourceIP as IPAddress, udp);
-        }, 'chronyd') !== false),
-      releaseNtpPort: (port) => { this.udpClose(port); this.ntpPortBound = false; },
+        }, 'chronyd') !== false;
+        if (bound) this.ntpPortsBound.add(port);
+        return bound;
+      },
+      releaseNtpPort: (port) => {
+        if (!this.ntpPortsBound.delete(port)) return;
+        this.udpClose(port);
+      },
       daemonExited: (reason) => this.executor.serviceMgr.markFailed('chrony', reason),
     });
     this.executor.chronyService = this.chronyService;

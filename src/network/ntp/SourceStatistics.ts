@@ -7,6 +7,11 @@ const MAX_SKEW = 1e2;
 const MIN_STANDARD_DEVIATION = 1e-9;
 const WORST_CASE_STANDARD_DEVIATION = 4;
 const SD_TO_DISTANCE_RATIO = 0.7;
+const MAX_ASYMMETRY = 0.5;
+const MIN_ASYMMETRY = 0.45;
+const MIN_ASYMMETRY_RUN = 10;
+const MAX_ASYMMETRY_RUN = 15;
+const MIN_SAMPLES_FOR_DELAY_TEST = 6;
 
 const CRITICAL_RUNS: readonly number[] = [
   0, 0, 0, 0, 0, 0, 0, 0, 2, 3,
@@ -34,6 +39,8 @@ const STUDENT_T_QUANTILES: readonly number[] = [
   3.633, 3.622, 3.611, 3.601, 3.591,
   3.582, 3.574, 3.566, 3.558, 3.551,
 ];
+
+import { multipleRegressionSecondSlope } from './Regression';
 
 export interface MeasurementSample {
   readonly time: number;
@@ -196,6 +203,8 @@ export class SourceStatistics {
   private frequencyDeviation = WORST_CASE_FREQUENCY_BOUND;
   private skew = WORST_CASE_FREQUENCY_BOUND;
   private standardDeviation = WORST_CASE_STANDARD_DEVIATION;
+  private asymmetry = 0;
+  private asymmetryRun = 0;
 
   private readonly minSamples: number;
   private readonly maxSamples: number;
@@ -205,6 +214,7 @@ export class SourceStatistics {
     minSamples = 1,
     maxSamples = 0,
     private readonly fixedMinDelay = 0,
+    private readonly fixedAsymmetry = 1.0,
   ) {
     this.maxSamples = maxSamples > 0 ? clamp(1, maxSamples, MAX_SAMPLES) : MAX_SAMPLES;
     this.minSamples = clamp(1, minSamples, this.maxSamples);
@@ -224,6 +234,8 @@ export class SourceStatistics {
     this.frequencyDeviation = WORST_CASE_FREQUENCY_BOUND;
     this.skew = WORST_CASE_FREQUENCY_BOUND;
     this.standardDeviation = WORST_CASE_STANDARD_DEVIATION;
+    this.asymmetry = 0;
+    this.asymmetryRun = 0;
   }
 
   getSampleCount(): number { return this.count; }
@@ -281,6 +293,7 @@ export class SourceStatistics {
       const weight = distance > minDistance ? 1 + (distance - minDistance) / sd : 1;
       return weight * weight;
     });
+    this.correctAsymmetry(timesBack, offsets);
     const result = findBestRegression(timesBack, offsets, weights, n, extra, this.minSamples);
     this.regressionOk = result !== null;
     let timesBackStart = 0;
@@ -305,6 +318,56 @@ export class SourceStatistics {
       this.offsetTime = lastTime;
     }
     this.findBestSample(timesBack.slice(timesBackStart));
+  }
+
+  minRoundTripDelay(): number {
+    if (this.fixedMinDelay > 0) return this.fixedMinDelay;
+    if (this.count === 0) return Number.MAX_VALUE;
+    let minimum = Number.MAX_VALUE;
+    for (const sample of this.records) minimum = Math.min(minimum, sample.peerDelay);
+    return minimum;
+  }
+
+  private estimateAsymmetry(timesBack: readonly number[], offsets: readonly number[], delays: readonly number[]): boolean {
+    const slope = multipleRegressionSecondSlope(timesBack, delays, offsets, delays.length);
+    if (slope === null || slope * this.asymmetryRun < 0.0) {
+      this.asymmetry = 0;
+      this.asymmetryRun = 0;
+      return false;
+    }
+    if (slope <= -MIN_ASYMMETRY && this.asymmetryRun > -MAX_ASYMMETRY_RUN) this.asymmetryRun--;
+    else if (slope >= MIN_ASYMMETRY && this.asymmetryRun < MAX_ASYMMETRY_RUN) this.asymmetryRun++;
+    if (Math.abs(this.asymmetryRun) < MIN_ASYMMETRY_RUN) return false;
+    this.asymmetry = clamp(-MAX_ASYMMETRY, slope, MAX_ASYMMETRY);
+    return true;
+  }
+
+  private correctAsymmetry(timesBack: readonly number[], offsets: number[]): void {
+    if (this.fixedAsymmetry === 0.0) return;
+    const minimum = this.minRoundTripDelay();
+    const delays = this.records.map((sample) => sample.peerDelay - minimum);
+    if (Math.abs(this.fixedAsymmetry) <= MAX_ASYMMETRY) this.asymmetry = this.fixedAsymmetry;
+    else if (!this.estimateAsymmetry(timesBack, offsets, delays)) return;
+    for (let i = 0; i < offsets.length; i++) offsets[i] -= this.asymmetry * delays[i];
+  }
+
+  jitterAsymmetry(): number { return this.asymmetry; }
+
+  delayTestData(sampleTime: number): { lastSampleAgo: number; predictedOffset: number; minDelay: number; skew: number; standardDeviation: number } | null {
+    if (this.count < MIN_SAMPLES_FOR_DELAY_TEST) return null;
+    const lastSampleAgo = sampleTime - this.offsetTime;
+    return {
+      lastSampleAgo,
+      predictedOffset: this.estimatedOffset + lastSampleAgo * this.frequency,
+      minDelay: this.minRoundTripDelay(),
+      skew: this.skew,
+      standardDeviation: this.standardDeviation,
+    };
+  }
+
+  frequencyRange(): { low: number; high: number } {
+    if (this.skew > WORST_CASE_FREQUENCY_BOUND) return { low: -WORST_CASE_FREQUENCY_BOUND, high: WORST_CASE_FREQUENCY_BOUND };
+    return { low: this.frequency - this.skew, high: this.frequency + this.skew };
   }
 
   private findBestSample(timesBack: readonly number[]): void {

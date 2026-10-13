@@ -1,6 +1,7 @@
 import type { NtpAssociation } from './types';
 
 const BURST_INTERVAL_SECONDS = 2;
+const WARM_UP_DELAY_SECONDS = 2;
 const BURST_POLL_RATIO = 0.25;
 const IBURST_GOOD_SAMPLES = 4;
 const IBURST_TOTAL_SAMPLES = 8;
@@ -65,11 +66,18 @@ export function chronyTransmitTick(peer: NtpAssociation, nowMs: number, isSystem
     peer.reach = (peer.reach << 1) & ((1 << REACH_BITS) - 1);
     missedSample = true;
   }
+  if (peer.presend !== undefined && peer.presend <= peer.hpoll && peer.presendDone === 0 && peer.burst === 0) {
+    peer.presendDone = 1;
+  } else if (peer.presendDone > 0) {
+    peer.presendDone--;
+  }
   const interval = 2 ** peer.hpoll;
   let delay = interval;
   if (peer.burst > 0) {
     delay = Math.min(BURST_INTERVAL_SECONDS, BURST_POLL_RATIO * interval);
     peer.burst--;
+  } else if (peer.presendDone > 0) {
+    delay = WARM_UP_DELAY_SECONDS;
   } else if (peer.burstMode && peer.hpoll > peer.minpoll) {
     startBurst(peer, 1, Math.min(2 ** (peer.hpoll - peer.minpoll), 8));
   }

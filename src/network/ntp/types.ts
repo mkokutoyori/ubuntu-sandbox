@@ -1,4 +1,6 @@
 import { SourceStatistics } from './SourceStatistics';
+import type { DelayQuantile } from './DelayQuantile';
+import type { SampleFilter } from './SampleFilter';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
@@ -153,6 +155,16 @@ export interface NtpAssociation {
   pollTarget?: number;
   fixedOffsetMs?: number;
   fixedPollSec?: number;
+  port?: number;
+  presend?: number;
+  presendDone: number;
+  autoOffline: boolean;
+  copy: boolean;
+  maxDelayQuant?: number;
+  filterLength?: number;
+  delayQuantile?: DelayQuantile;
+  sampleFilter?: SampleFilter;
+  filterCount: number;
   fallbackOnly: boolean;
   pollScore: number;
   txCount: number;
@@ -407,6 +419,7 @@ export function defaultAssociation(serverIp: string, prefer = false, mode: NtpMo
     hpoll: NTP_MIN_POLL, ppoll: NTP_MAX_POLL, minpoll: NTP_MIN_POLL, maxpoll: NTP_DEFAULT_MAX_POLL,
     burst: 0, unreach: 0, outdateMs: 0, nextdateMs: 0, iburst: false, burstMode: false,
     online: true, noselect: false, trust: false, require: false, pollScore: 0, txCount: 0, burstGood: 0, fallbackOnly: false,
+    presendDone: 0, autoOffline: false, copy: false, filterCount: 0,
     statistics: new SourceStatistics(2 ** -20), sent: 0, received: 0, validReceived: 0, goodReceived: 0, lastTests: '000 000 0000', response: null,
   };
 }

@@ -54,6 +54,13 @@ export interface ChronySource {
   readonly maxsamples?: number;
   readonly mindelay?: number;
   readonly offsetCorrection?: number;
+  readonly port?: number;
+  readonly presend?: number;
+  readonly autoOffline: boolean;
+  readonly copy: boolean;
+  readonly maxdelayquant?: number;
+  readonly filter?: number;
+  readonly asymmetry?: number;
   readonly unevaluated: readonly string[];
 }
 
@@ -70,10 +77,7 @@ const FLAG_OPTIONS = new Set([
   'prefer', 'noselect', 'trust', 'require',
 ]);
 
-const UNEVALUATED_OPTIONS = new Set([
-  'auto_offline', 'copy', 'certset', 'asymmetry', 'extfield', 'filter', 'maxdelayquant', 'nts', 'ntsport',
-  'port', 'presend', 'xleave',
-]);
+const UNEVALUATED_OPTIONS = new Set(['certset', 'extfield', 'nts', 'ntsport', 'xleave']);
 
 export function parseChronySource(genre: ChronySource['genre'], args: readonly string[]): ChronySource | null {
   if (!args[0]) return null;
@@ -122,6 +126,13 @@ export function parseChronySource(genre: ChronySource['genre'], args: readonly s
     maxsamples: values.get('maxsamples'),
     mindelay: values.get('mindelay'),
     offsetCorrection: values.get('offset'),
+    port: values.get('port'),
+    presend: values.get('presend'),
+    autoOffline: flags.has('auto_offline'),
+    copy: flags.has('copy'),
+    maxdelayquant: values.get('maxdelayquant'),
+    filter: values.get('filter'),
+    asymmetry: values.get('asymmetry'),
     unevaluated,
   };
 }
@@ -159,6 +170,7 @@ export interface ChronyConf {
   /** `local stratum N` : servir le temps meme sans source, comme `ntp master`. */
   readonly localStratum: number | null;
   readonly maxdistanceSec: number | null;
+  readonly ntpPort: number;
   readonly localDistance: number;
   readonly localOrphan: boolean;
   readonly selection: Partial<SelectionParameters>;
@@ -183,7 +195,7 @@ const CONF_VIDE: ChronyConf = {
   sources: [], makestep: null, access: [], ratelimit: null,
   driftfile: '', logdir: '', logs: [], keyfile: '',
   rtcsync: false, manual: false, localStratum: null, maxdistanceSec: null,
-  localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
+  ntpPort: 123, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
   acceptesSansEffet: [], inconnues: [],
 };
 
@@ -208,6 +220,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   let localStratum: number | null = null;
   let maxdistanceSec: number | null = null;
   let localDistance = 1.0;
+  let ntpPort = 123;
   let localOrphan = false;
   const selection: Partial<SelectionParameters> = {};
   let maxUpdateSkewPpm: number | null = null;
@@ -284,6 +297,12 @@ export function parseChronyConf(texte: string): ChronyConf {
         localStratum = stratum; localDistance = distance; localOrphan = orphan;
         break;
       }
+      case 'port': {
+        const v = entier(args[0]);
+        if (v === null || args.length !== 1 || v < 0 || v > 65535) inconnues.push({ ligne: i + 1, texte: nue });
+        else ntpPort = v;
+        break;
+      }
       case 'maxdistance': case 'maxjitter': case 'reselectdist': case 'stratumweight':
       case 'combinelimit': case 'maxclockerror': case 'maxupdateskew': {
         const value = parseFloat(args[0] ?? '');
@@ -319,7 +338,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   return {
     ...CONF_VIDE, sources, makestep, access, ratelimit,
     driftfile, logdir, logs, keyfile, rtcsync, manual, localStratum, maxdistanceSec,
-    localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
+    ntpPort, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
     acceptesSansEffet, inconnues,
   };
 }
