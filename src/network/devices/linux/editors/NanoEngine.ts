@@ -1,4 +1,4 @@
-import type { EditorFsContext, EditorIdentity } from './EditorFsContext';
+import type { EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
@@ -459,6 +459,10 @@ export class NanoEngine {
     if (exiting && this.live.saveonexit && this.titleName !== '') this.submitWriteName();
   }
 
+  private readFileLabel(): string {
+    return `File to insert${this.live.noconvert ? ' unconverted' : ''} [from ./]`;
+  }
+
   private writeOutLabel(): string {
     const selection = this.markLine !== null && !this.exitAfterSave && !this.live.restricted;
     const method = this.writeMethod;
@@ -477,7 +481,7 @@ export class NanoEngine {
       case 'replace-with': return { label: 'Replace with', answer: this.replaceWithBuffer, menu: 'replace-with' };
       case 'goto-line': return { label: 'Enter line number, column number', answer: this.gotoLineBuffer, menu: 'goto' };
       case 'execute-prompt': return { label: 'Command to execute', answer: this.executeCmdBuffer, menu: 'execute' };
-      case 'read-file-prompt': return { label: 'File to insert [from ./]', answer: this.readFileBuffer, menu: 'read-file' };
+      case 'read-file-prompt': return { label: this.readFileLabel(), answer: this.readFileBuffer, menu: 'read-file' };
       default: return null;
     }
   }
@@ -1057,7 +1061,9 @@ export class NanoEngine {
         this.wipeStatus();
         this.manner = 'flowing';
         if (this.cutBuffer) {
+          const wasScreenful = this.screenfulMark();
           this.pasteIntoBuffer(this.cutBuffer.join('\n'));
+          this.manner = this.lessThanScreenful(wasScreenful) ? 'flowing' : 'centering';
         } else {
           this._statusMessage = '[ Cutbuffer is empty ]';
           this.verticalKey = true;
@@ -1983,26 +1989,58 @@ export class NanoEngine {
 
   private applyReadFilePromptKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
-      if (this.readFileBuffer === '') {
-        this.cancelPrompt();
-        return;
-      }
-      const content = this.fs.readFile(this.readFileBuffer);
+      const name = this.readFileBuffer;
       this._mode = 'edit';
-      if (content === null) {
-        this._statusMessage = `[ Error reading ${this.readFileBuffer}: No such file or directory ]`;
-        return;
-      }
-      const body = content.endsWith('\n') ? content.slice(0, -1) : content;
-      if (body.length > 0) this.pasteIntoBuffer(body);
-      this._statusMessage = '';
+      if (name === '') this.cancelPrompt();
+      else this.insertFileNamed(name);
       return;
     }
     if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
       this.cancelPrompt();
       return;
     }
+    if (k.alt && k.key.toLowerCase() === 'n') {
+      this.live.noconvert = !this.live.noconvert;
+      return;
+    }
     this.applyPromptFieldKey(k, () => this.readFileBuffer, (v) => { this.readFileBuffer = v; });
+  }
+
+  private screenfulMark(): { line: number; leftedge: number } {
+    const leftedge = this.live.softwrap ? this.window.leftedgeFor(this.window.columnOf(this._cursorLine, this._cursorCol), this._cursorLine) : 0;
+    return { line: this._cursorLine, leftedge };
+  }
+
+  private lessThanScreenful(was: { line: number; leftedge: number }): boolean {
+    if (!this.live.softwrap) return this._cursorLine - was.line < this.window.editRows;
+    const at = this.screenfulMark();
+    const left = this.window.goBack(this.window.editRows - 1, at);
+    return left > 0 || at.line < was.line || (at.line === was.line && at.leftedge <= was.leftedge);
+  }
+
+  private pathKind(path: string): EditorPathKind {
+    return this.fs.kindOf?.(path) ?? (this.fs.exists(path) ? 'file' : 'missing');
+  }
+
+  private insertFileNamed(name: string): void {
+    const kind = this.pathKind(name);
+    if (kind === 'missing') {
+      this._statusMessage = `[ File "${name}" not found ]`;
+      return;
+    }
+    if (kind !== 'file') {
+      this._statusMessage = `[ "${name}" is ${kind === 'directory' ? 'a directory' : kind === 'device' ? 'a device file' : 'a FIFO'} ]`;
+      return;
+    }
+    const decoded = decodeFile(this.fs.readFile(name) ?? '', !this.live.noconvert, false);
+    const was = { line: this._cursorLine, col: this._cursorCol };
+    const wasScreenful = this.screenfulMark();
+    this.beginDiscreteEdit();
+    this.insertText(decoded.lines.join('\n'));
+    if (this.lessThanScreenful(wasScreenful)) this.manner = 'flowing';
+    if (this._cursorLine !== was.line || this._cursorCol !== was.col) this._modified = true;
+    this.lastEditKind = null;
+    this._statusMessage = `[ Read ${decoded.count} line${decoded.count === 1 ? '' : 's'}${decoded.format === 'unix' ? '' : ` (Converted from ${decoded.format === 'dos' ? 'DOS' : 'Mac'} format)`} ]`;
   }
 
   private get wrapAt(): number {

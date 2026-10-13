@@ -4498,6 +4498,12 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.vfs.readFile(absPath);
   }
 
+  editorPathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo' {
+    const type = this.executor.vfs.getType(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
+    if (type === null) return 'missing';
+    return type === 'chardev' ? 'device' : type === 'symlink' ? 'file' : type;
+  }
+
   /**
    * Synchronous bash-only execution path. Bypasses the network-command
    * dispatcher (so it's safe to call from synchronous contexts like

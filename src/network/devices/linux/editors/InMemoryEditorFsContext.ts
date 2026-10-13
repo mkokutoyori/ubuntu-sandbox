@@ -1,4 +1,4 @@
-import type { EditorFsContext, EditorIdentity } from './EditorFsContext';
+import type { EditorFsContext, EditorIdentity, EditorPathKind } from './EditorFsContext';
 
 /**
  * Minimal in-memory EditorFsContext for unit tests. Not used in
@@ -62,6 +62,15 @@ export class InMemoryEditorFsContext implements EditorFsContext {
 
   exists(path: string): boolean {
     return this.files.has(this.resolvePath(path));
+  }
+
+  kindOf(path: string): EditorPathKind {
+    const resolved = this.resolvePath(path);
+    if (this.files.has(resolved)) return 'file';
+    const directory = resolved.split('/').filter((part) => part !== '' && part !== '.').join('/');
+    const prefix = directory === '' ? '/' : `/${directory}/`;
+    const implied = [...this.files.keys()].some((name) => name.startsWith(prefix)) || directory === 'tmp';
+    return implied ? 'directory' : 'missing';
   }
 
   deleteFile(path: string): boolean {
