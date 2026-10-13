@@ -12,7 +12,7 @@ export interface NanoCliCase extends NanoScreenCase {
 
 const SCREEN_PORTED_FLAGS: ReadonlySet<string> = new Set(['view', 'constantshow', 'linenumbers', 'softwrap', 'nohelp', 'emptyline', 'stateflags', 'minibar', 'zero',
   'tabsize', 'tabstospaces', 'autoindent', 'smarthome', 'cutfromcursor', 'zap', 'nonewlines', 'afterends', 'wordbounds', 'wordchars', 'jumpyscrolling',
-  'bookstyle', 'trimblanks', 'breaklonglines', 'fill', 'atblanks', 'quotestr', 'locking',
+  'bookstyle', 'trimblanks', 'breaklonglines', 'fill', 'atblanks', 'quotestr', 'locking', 'backup', 'backupdir', 'noconvert', 'unix',
 ]);
 
 export function screenIsPorted(args: readonly string[]): boolean {
