@@ -1,4 +1,4 @@
-import type { EditorFsContext } from './EditorFsContext';
+import type { EditorFsContext, EditorIdentity } from './EditorFsContext';
 
 /**
  * Minimal in-memory EditorFsContext for unit tests. Not used in
@@ -35,6 +35,14 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     }
     this.shellHandler = shellHandler;
     this.filterHandler = filterHandler;
+  }
+
+  fileNames(): string[] {
+    return [...this.files.keys()];
+  }
+
+  identity(): EditorIdentity {
+    return { user: 'root', host: 'vm', pid: 4321 };
   }
 
   resolvePath(path: string): string {

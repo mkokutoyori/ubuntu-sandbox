@@ -12,9 +12,10 @@ record per step: every row of the pane (title bar, edit window, status bar and t
 rows), the cursor cell and the pane size.  A case with `"disk": true` (every case of the edit
 corpus) also records the files left in the directory after each step.
 """
-import argparse, json, os, random, re, shlex, subprocess, tempfile, time
+import argparse, itertools, json, os, random, re, shlex, subprocess, tempfile, time
 from concurrent.futures import ThreadPoolExecutor
 
+SESSION_NUMBERS = itertools.count()
 LITERAL = re.compile(r"^[^A-Z][\s\S]*$")
 KEYS = {"Left", "Right", "Up", "Down", "Home", "End", "PageUp", "PageDown", "Enter", "Tab", "BSpace", "DC", "Escape", "Space"}
 
@@ -49,26 +50,48 @@ def settled(name):
         last = snap
     return last
 
-def record_disk(casedir):
+LOCK_SIZE = 1024
+
+def lock_fields(data):
+    text = lambda a, b: data[a:b].split(b"\0")[0].decode("utf-8", "replace")
+    return {"lock": {"program": text(2, 12), "pid": int.from_bytes(data[24:28], "little"), "user": text(28, 44),
+                     "host": text(68, 100), "name": text(108, 876), "modified": data[1007] == 0x55}}
+
+def lock_bytes(program, pid, user, host, name, modified):
+    data = bytearray(LOCK_SIZE)
+    data[0], data[1] = 0x62, 0x30
+    data[2:2 + len(program)] = program.encode()
+    data[24:28] = pid.to_bytes(4, "little")
+    data[28:28 + len(user)] = user.encode()
+    data[68:68 + len(host)] = host.encode()
+    data[108:108 + len(name)] = name.encode()
+    data[1007] = 0x55 if modified else 0
+    return bytes(data)
+
+def record_disk(casedir, hidden=False):
     disk = {}
     for entry in sorted(os.listdir(casedir)):
         path = os.path.join(casedir, entry)
-        if not entry.startswith(".") and os.path.isfile(path):
-            disk[entry] = open(path, "rb").read().decode("utf-8", "replace")
+        if (hidden or not entry.startswith(".")) and os.path.isfile(path):
+            raw = open(path, "rb").read()
+            if len(raw) == LOCK_SIZE and raw[0] == 0x62 and raw[1] == 0x30:
+                disk[entry] = lock_fields(raw)
+            else:
+                disk[entry] = raw.decode("utf-8", "replace")
     return disk
 
-def record_screen(name, casedir=None):
+def record_screen(name, casedir=None, hidden=False):
     snap = settled(name)
     if snap is None:
         return None
     y, x, height, width, pane = snap
     record = {"y": y, "x": x, "height": height, "width": width, "rows": [r.rstrip() for r in pane[:height]]}
     if casedir is not None:
-        record["disk"] = record_disk(casedir)
+        record["disk"] = record_disk(casedir, hidden)
     return record
 
 def run_case(case, workdir):
-    name = "ns%d_%s" % (os.getpid(), re.sub(r"\W", "", case["id"]))
+    name = "ns%d_%06d" % (os.getpid(), next(SESSION_NUMBERS))
     casedir = os.path.join(workdir, case["id"])
     os.makedirs(casedir, exist_ok=True)
     open(os.path.join(casedir, "t.txt"), "w", encoding="utf-8").write("\n".join(case["text"]) + "\n")
@@ -171,18 +194,24 @@ def run_cli_case(case, workdir):
     open(os.path.join(casedir, "t.txt"), "w", encoding="utf-8").write("\n".join(case["text"]) + "\n")
     for extra_name, extra_lines in case.get("files", {}).items():
         open(os.path.join(casedir, extra_name), "w", encoding="utf-8").write("\n".join(extra_lines) + "\n")
+    for lock_name, fields in case.get("locks", {}).items():
+        open(os.path.join(casedir, lock_name), "wb").write(lock_bytes(fields["program"], fields["pid"], fields["user"], fields["host"], fields["name"], fields.get("modified", False)))
     env = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8", TERM="xterm-256color")
-    done = subprocess.run(["nano", "-I"] + case["args"], cwd=casedir, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env, timeout=10)
-    stderr = ANSI.sub("", done.stderr).rstrip("\n")
-    opens = stderr.endswith("Standard input is not a terminal")
-    record = dict(case, status=done.returncode)
+    if case.get("force_open"):
+        opens, done = True, None
+    else:
+        done = subprocess.run(["nano", "-I"] + case["args"], cwd=casedir, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env, timeout=10)
+        opens = ANSI.sub("", done.stderr).rstrip("\n").endswith("Standard input is not a terminal")
+    record = dict(case, status=0 if done is None else done.returncode)
+    hidden = bool(case.get("hidden"))
+    disk_dir = casedir if case.get("disk") else None
     if opens:
         record["opens"] = True
-        name = "nc%d_%s" % (os.getpid(), re.sub(r"\W", "", case["id"]))
+        name = "nc%d_%06d" % (os.getpid(), next(SESSION_NUMBERS))
         tmux("kill-session", "-t", name)
         tmux("new-session", "-d", "-x", str(case["cols"]), "-y", str(case["rows"]), "-s", name,
              "cd %s && env LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color nano -I %s" % (casedir, " ".join(shlex.quote(a) for a in case["args"])))
-        record["opened"] = record_screen(name, casedir if case.get("disk") else None)
+        record["opened"] = record_screen(name, disk_dir, hidden)
         record["after"] = []
         for step in case.get("steps", []):
             if step.startswith("@"):
@@ -191,8 +220,12 @@ def run_cli_case(case, workdir):
                 time.sleep(0.2)
             else:
                 send(name, step)
-            snap = record_screen(name, casedir if case.get("disk") else None)
+            snap = record_screen(name, disk_dir, hidden)
             if snap is None:
+                record["exit_step"] = step
+                if disk_dir is not None:
+                    time.sleep(0.3)
+                    record["final_disk"] = record_disk(casedir, hidden)
                 break
             record["after"].append(snap)
         record["steps"] = case.get("steps", [])[:len(record["after"])]
@@ -200,7 +233,7 @@ def run_cli_case(case, workdir):
     else:
         record["opens"] = False
         record["stdout"] = ANSI.sub("", done.stdout).rstrip("\n")
-        record["stderr"] = stderr
+        record["stderr"] = ANSI.sub("", done.stderr).rstrip("\n")
     return record
 
 CLI_FLAGS_PLAIN = list("ABDEFGHIKLMNOPRSUWZacdegijklmnpqtuvwxy%_0$")
