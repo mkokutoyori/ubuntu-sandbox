@@ -35,7 +35,7 @@ export interface NanoScreenInput {
   readonly tabsize: number;
   readonly softwrap: boolean;
   readonly title: { readonly name: string; readonly state: TitleState; readonly branding: string; readonly flags: TitleStateFlags | null };
-  readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean } | null;
+  readonly status: { readonly text: string; readonly alert: boolean; readonly more?: boolean; readonly raw?: boolean } | null;
   readonly minibar: MinibarInfo | null;
   readonly prompt: { readonly label: string; readonly answer: string; readonly cursor: number } | null;
   readonly yesNo: { readonly question: string; readonly withAll: boolean } | null;
@@ -245,8 +245,14 @@ function helpRows(input: NanoScreenInput): ScreenRow[] {
   return rows;
 }
 
-function statusRow(cols: number, status: { text: string; alert: boolean; more?: boolean } | null, tabsize: number): ScreenRow {
+function statusRow(cols: number, status: { text: string; alert: boolean; more?: boolean; raw?: boolean } | null, tabsize: number): ScreenRow {
   if (status === null) return SPACE_ROW;
+  if (status.raw === true) {
+    const left = new Canvas(cols);
+    left.put(0, clipped(status.text, cols - 1, tabsize));
+    left.mark(0, cols, 'reverse');
+    return left.fullRow();
+  }
   const canvas = new Canvas(cols);
   const message = displayString(status.text, 0, cols, { isData: false, isPrompt: false, softwrap: false, tabsize }).cells;
   const width = message.length;
@@ -365,8 +371,6 @@ function shortcutRows(cols: number, menu: NanoMenuName, tabsize: number): [Scree
   return [canvases[0].row(), canvases[1].row()];
 }
 
-const YES_NO_CURSOR_COLUMN = 22;
-
 function yesNoRows(cols: number, withAll: boolean, tabsize: number): [ScreenRow, ScreenRow] {
   const width = cols < 32 ? Math.floor(cols / 2) : 16;
   const first = new Canvas(cols);
@@ -401,7 +405,7 @@ export function buildNanoScreen(input: NanoScreenInput): EditorScreen {
     canvas.mark(0, cols, 'reverse');
     footerStatus = canvas.fullRow();
     bars = yesNoRows(cols, input.yesNo.withAll, tabsize);
-    cursorAt = { row: -1, col: Math.min(YES_NO_CURSOR_COLUMN, cols - 1) };
+    cursorAt = { row: -1, col: Math.min(breadth(input.yesNo.question, tabsize), cols - 1) };
   } else if (input.prompt !== null) {
     const view = promptRow(cols, input.prompt.label, input.prompt.answer, input.prompt.cursor, tabsize);
     footerStatus = view.row;

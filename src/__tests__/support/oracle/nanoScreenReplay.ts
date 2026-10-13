@@ -3,8 +3,11 @@ import { InMemoryEditorFsContext } from '@/network/devices/linux/editors/InMemor
 import { editorKey, type EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import { plainRowText } from '@/network/devices/linux/editors/screen/EditorScreen';
 import { parseNanoCommandLine, type NanoInvocation } from '@/network/devices/linux/editors/nano/NanoCommandLine';
+import { buildNanoLock, parseNanoLock, type NanoLockData } from '@/network/devices/linux/editors/nano/NanoLock';
 
-export interface NanoRecorded { y: number; x: number; rows: string[]; height: number; width: number; disk?: Record<string, string> }
+export type RecordedDisk = Record<string, string | { lock: NanoLockData }>;
+
+export interface NanoRecorded { y: number; x: number; rows: string[]; height: number; width: number; disk?: RecordedDisk }
 
 export interface NanoScreenCase {
   id: string;
@@ -16,6 +19,10 @@ export interface NanoScreenCase {
   args?: string[];
   steps: string[];
   disk?: boolean;
+  hidden?: boolean;
+  locks?: Record<string, NanoLockData>;
+  exit_step?: string;
+  final_disk?: RecordedDisk;
   opened: NanoRecorded;
   after: NanoRecorded[];
 }
@@ -47,7 +54,11 @@ export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>
   const name = first?.path ?? '';
   const lines = name === 't.txt' ? c.text : c.files?.[name];
   const content = lines === undefined ? null : lines.join('\n') + '\n';
-  const fs = new InMemoryEditorFsContext(content === null ? {} : { [`/tmp/${name}`]: content });
+  const initial: Record<string, string> = { '/tmp/t.txt': c.text.join('\n') + '\n' };
+  for (const [extra, extraLines] of Object.entries(c.files ?? {})) initial[`/tmp/${extra}`] = extraLines.join('\n') + '\n';
+  for (const [lockName, lock] of Object.entries(c.locks ?? {})) initial[`/tmp/${lockName}`] = buildNanoLock(lock);
+  const fs = new InMemoryEditorFsContext(initial);
+  if (content === null) fs.deleteFile(`/tmp/${name}`);
   const engine = new NanoEngine(fs, name === '' ? '' : `/tmp/${name}`, content ?? '', content === null, false, undefined, false, {
     settings: invocation.settings, start: first?.start ?? null, displayName: name,
   });
@@ -55,19 +66,39 @@ export function launchNano(invocation: Extract<NanoInvocation, { kind: 'open' }>
   return { engine, fs };
 }
 
-function compareDisk(fs: InMemoryEditorFsContext, want: Record<string, string>): string | null {
-  const differing = Object.entries(want).filter(([name, content]) => fs.readFile(`/tmp/${name}`) !== content);
-  if (differing.length === 0) return null;
-  return differing.map(([name, content]) => `\n  disk ${name} want ${JSON.stringify(content)}\n  disk ${name} got  ${JSON.stringify(fs.readFile(`/tmp/${name}`))}`).join('');
+function compareLock(name: string, want: NanoLockData, content: string | null): string | null {
+  if (content === null) return `\n  disk ${name} want a lock file, got none`;
+  const got = parseNanoLock(content);
+  if (got === null) return `\n  disk ${name} want a lock file, got ${JSON.stringify(content.slice(0, 40))}`;
+  const holderKnown = got.pid > 0 && got.user !== '' && got.host !== '';
+  const same = got.program === want.program && got.name === want.name && got.modified === want.modified && holderKnown;
+  return same ? null : `\n  disk ${name} want ${JSON.stringify(want)} got ${JSON.stringify(got)}`;
 }
 
-export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded): string | null {
+function compareDisk(fs: InMemoryEditorFsContext, want: RecordedDisk, hidden: boolean): string | null {
+  const failures: string[] = [];
+  for (const [name, expected] of Object.entries(want)) {
+    const content = fs.readFile(`/tmp/${name}`);
+    if (typeof expected === 'string') {
+      if (content !== expected) failures.push(`\n  disk ${name} want ${JSON.stringify(expected)}\n  disk ${name} got  ${JSON.stringify(content)}`);
+    } else {
+      const failure = compareLock(name, expected.lock, content);
+      if (failure !== null) failures.push(failure);
+    }
+  }
+  const present = fs.fileNames().map((path) => path.replace(/^\/tmp\//, '')).filter((file) => hidden || !file.startsWith('.'));
+  const unexpected = present.filter((file) => !(file in want));
+  if (unexpected.length > 0) failures.push(`\n  disk has unexpected files ${JSON.stringify(unexpected)}`);
+  return failures.length === 0 ? null : failures.join('');
+}
+
+export function compareNanoScreen(engine: NanoEngine, fs: InMemoryEditorFsContext, want: NanoRecorded, hidden = false): string | null {
   const screen = engine.screen;
   const got = screen.rows.map((row) => plainRowText(row).replace(/\s+$/, ''));
   const rowsOk = JSON.stringify(got) === JSON.stringify(want.rows);
   const cursor = screen.cursor;
   const cursorOk = cursor !== null && cursor.row === want.y && cursor.col === want.x;
-  const diskFailure = want.disk === undefined ? null : compareDisk(fs, want.disk);
+  const diskFailure = want.disk === undefined ? null : compareDisk(fs, want.disk, hidden);
   if (rowsOk && cursorOk) return diskFailure;
   return `${diskFailure ?? ''}\n  want y=${want.y} x=${want.x} rows=${JSON.stringify(want.rows)}\n  got  y=${cursor?.row} x=${cursor?.col} rows=${JSON.stringify(got)}`;
 }
@@ -77,7 +108,7 @@ export function replayNanoScreenCase(c: NanoScreenCase): string | null {
   const invocation = parseNanoCommandLine(args);
   if (invocation.kind !== 'open') return `${c.id} ${JSON.stringify(args)} did not open an editor: ${JSON.stringify(invocation)}`;
   const { engine, fs } = launchNano(invocation, c);
-  const opened = compareNanoScreen(engine, fs, c.opened);
+  const opened = compareNanoScreen(engine, fs, c.opened, c.hidden === true);
   if (opened) return `${c.id} ${c.rows}x${c.cols} ${JSON.stringify(args)} opened${opened}`;
   for (let s = 0; s < c.after.length; s++) {
     const step = c.steps[s];
@@ -87,8 +118,12 @@ export function replayNanoScreenCase(c: NanoScreenCase): string | null {
     } else {
       for (const k of nanoKeysOf(step)) engine.applyKey(k);
     }
-    const failure = compareNanoScreen(engine, fs, c.after[s]);
+    const failure = compareNanoScreen(engine, fs, c.after[s], c.hidden === true);
     if (failure) return `${c.id} ${c.rows}x${c.cols} ${JSON.stringify(args)} step ${s} ${JSON.stringify(c.steps.slice(0, s + 1))}${failure}`;
   }
-  return null;
+  if (c.exit_step === undefined) return null;
+  for (const k of nanoKeysOf(c.exit_step)) engine.applyKey(k);
+  if (!engine.exited) return `${c.id} ${JSON.stringify(args)} ${JSON.stringify(c.exit_step)} should have made nano exit`;
+  const final = c.final_disk === undefined ? null : compareDisk(fs, c.final_disk, c.hidden === true);
+  return final === null ? null : `${c.id} ${JSON.stringify(args)} after exit${final}`;
 }

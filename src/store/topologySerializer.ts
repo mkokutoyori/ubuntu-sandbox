@@ -1588,6 +1588,10 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     }
   }
 
+  for (const device of deviceInstances.values()) {
+    if (device instanceof Router) device.reconvergeRouting();
+  }
+
   return {
     projectName: json.projectName,
     deviceInstances,

@@ -1,6 +1,6 @@
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
-import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
+import type { EditorFsContext, EditorIdentity } from '@/network/devices/linux/editors/EditorFsContext';
 
 /**
  * Production EditorFsContext: wires NanoEngine/VimEngine to the real
@@ -12,6 +12,10 @@ export class LinuxEditorFsContext implements EditorFsContext {
     private readonly dev: LinuxMachine,
     private readonly session?: LinuxShellSession,
   ) {}
+
+  identity(): EditorIdentity {
+    return this.dev.editorIdentity(this.session);
+  }
 
   resolvePath(path: string): string {
     return this.session

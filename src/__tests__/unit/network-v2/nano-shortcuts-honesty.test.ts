@@ -114,6 +114,8 @@ describe('Scénario — ^X puis Y enchaîne réellement sur "File Name to Write:
     for (let i = 0; i < 20; i++) press(nano, 'Backspace');
     typeText(nano, '/tmp/other.txt');
     press(nano, 'Enter');
+    expect(nano.mode).toBe('confirm');
+    press(nano, 'y');
     expect(nano.exited).toBe(true);
     expect(fs.readFile('/tmp/other.txt')).toBe('za\n');
     expect(fs.readFile('/tmp/x.txt')).toBe('a\n'); // "Save As" writes a new file, the original is untouched
