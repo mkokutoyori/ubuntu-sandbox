@@ -315,7 +315,7 @@ describe('ce que le correctif ne doit pas casser — les NON-REGRESSIONS', () =>
   it('un routeur Cisco reste joignable depuis Windows', async () => {
     const { posteWindows } = await laboratoire();
 
-    expect(await posteWindows.executeCommand(`ssh bob@${ROUTEUR}`))
+    expect(await posteWindows.executeCommand(`ssh bob@${ROUTEUR}`, SECRET))
       .toMatch(/R1#/);
   });
 

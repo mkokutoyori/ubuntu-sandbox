@@ -2646,6 +2646,8 @@ export class LinuxTerminalSession extends TerminalSession {
       requestTty: parsed.requestTty,
       authentication: parsed.authentication,
       algorithms: parsed.algorithms,
+      loginName: parsed.loginName,
+      quiet: parsed.quiet,
     };
   }
 

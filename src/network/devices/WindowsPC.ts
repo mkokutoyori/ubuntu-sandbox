@@ -57,12 +57,12 @@ import type { TcpSocket } from '../tcp/TcpStack';
 import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
-import { runWindowsSshClient, winWireExecTarget } from './windows/network/WindowsSshClient';
 import type { WinWireTarget } from './windows/network/WindowsSshClient';
 import {
-  openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcomeRetransmitting,
+  openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcomeRetransmitting, resolveSshTarget,
 } from '@/terminal/ssh/wireSshLogin';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { parseSshArgs } from '@/terminal/sessions/sshArgs';
 import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { isOk } from '@/network/protocols/ssh/Result';
@@ -1232,6 +1232,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
       getCwd: () => this.getCwd(),
       createVtyShell: (user: string) => this.createVtyShell(user),
+      shellBanner: () => this.getSshMotd(),
     },
     // Publish a `windows.account.logon` per inbound SSH auth attempt
     // — the SecurityAuditProjection turns each into a 4624 / 4625 in
@@ -2494,6 +2495,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private readonly sshAgent: SshAgent = new SshAgent();
 
+  sshAgentIfRunning(): SshAgent | undefined {
+    return this.svcMgr.getService('ssh-agent')?.state === 'Running' ? this.sshAgent : undefined;
+  }
+
   private userProfileDir(): string {
     return `C:\\Users\\${this.userMgr.currentUser}`;
   }
@@ -2543,96 +2548,66 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
-  private async openWireSsh(
-    target: WinWireTarget, password: string | undefined,
-  ): Promise<{
-    exec: ((command: string) => { output: string; exitCode: number } | null) | undefined;
-    shell: (() => { output: string; exitCode: number } | null) | undefined;
-    authRefused: boolean;
-    deniedMethods?: string;
-    negotiationFailure?: string;
-    close: () => void;
-  } | null> {
-    const outcome = await openWireSshConnection({
-      device: this,
-      localUser: this.userMgr.currentUser,
-      user: target.user,
-      host: target.host,
-      port: target.port,
-      io: silentConnectIo(),
-      password,
-      credentialless: password === undefined,
-      identityFiles: target.identities.map(sshPathOfWindowsPath),
-      algorithms: target.algorithms,
-    });
-    if (outcome.kind === 'auth-failed' && password !== undefined) {
-      return { exec: undefined, shell: undefined, authRefused: true, deniedMethods: outcome.methods, close: () => undefined };
-    }
-    if (outcome.kind === 'rejected' && outcome.message.startsWith('Unable to negotiate')) {
-      return { exec: undefined, shell: undefined, authRefused: false, negotiationFailure: outcome.message, close: () => undefined };
-    }
-    if (outcome.kind !== 'connected') return null;
-    const { session } = outcome;
-    const close = () => session.disconnect();
-
-    if (target.command) {
-      const channel = session.openExecChannel(target.command);
-      if (!isOk(channel)) { close(); return null; }
-      const result = await channel.value.execute();
-      channel.value.close();
-      const settled = result === null
-        ? null
-        : { output: result.stdout, exitCode: result.exitCode };
-      return { exec: () => settled, shell: undefined, authRefused: false, close };
-    }
-
-    const channel = session.openShellChannel();
-    if (!isOk(channel)) { close(); return null; }
-    const shell = channel.value;
-    const settled = await relayScriptedShell(
-      shell, this._scenarioStdin ?? '', password === undefined ? 0 : 1);
-    shell.close();
-    return { exec: undefined, shell: () => settled, authRefused: false, close };
-  }
-
   private async cmdSsh(args: string[]): Promise<string> {
     const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_8_6);
     if (withoutSession) return withoutSession.output;
-    const user = this.userMgr.currentUser;
-    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
-    const target = winWireExecTarget(args, user);
-    const password = (this._scenarioStdin ?? '').split('\n')[0] || undefined;
-    const reach = target === null
-      ? undefined
-      : await wireReachOutcomeRetransmitting(this, target.host, target.port);
-    const wire = target && reach === 'open' ? await this.openWireSsh(target, password) : null;
-    if (wire?.negotiationFailure !== undefined) return wire.negotiationFailure;
-    return runWindowsSshClient({
-      args,
-      wireOutcome: reach,
-      sourceDevice: this,
-      sourceHostname: this.hostname,
-      sourceIp,
-      sourceUser: user,
-      sourceHome: `C:\\Users\\${user}`,
-      localAgent: this.sshAgent,
-      execRelay: wire?.exec,
-      shellRelay: wire?.shell,
-      wireAuthRefused: wire?.authRefused,
-      wireDeniedMethods: wire?.deniedMethods,
-      wireAuthenticated: wire?.authRefused === false,
-      localFs: {
-        readFile: (p: string) => this.fs.readFile(p),
-        createFile: (p: string, c: string) => {
-          const dir = p.substring(0, p.lastIndexOf('\\'));
-          if (dir && !this.fs.exists(dir)) this.fs.mkdirp(dir);
-          return this.fs.createFile(p, c);
-        },
-      },
-    }).then(r => {
-      wire?.close();
-      return r.output;
+    const parsed = parseSshArgs(args);
+    if (parsed === null) return OPENSSH_WINDOWS_8_6.sshUsage;
+    const localUser = this.userMgr.currentUser;
+    const at = parsed.userAtHost.indexOf('@');
+    const typedHost = at >= 0 ? parsed.userAtHost.slice(at + 1) : parsed.userAtHost;
+    const user = at >= 0 ? parsed.userAtHost.slice(0, at) : parsed.loginName ?? localUser;
+    if (this.firstConfiguredIp() === null) {
+      return `ssh: connect to host ${typedHost} port ${parsed.port}: Network is unreachable`;
+    }
+    const target = await resolveSshTarget(this, typedHost, parsed.port);
+    if (target.kind === 'failed') return target.line;
+
+    const stdin = this._scenarioStdin ?? '';
+    const password = stdin.split('\n')[0] || undefined;
+    const outcome = await openWireSshConnection({
+      device: this,
+      localUser,
+      user,
+      host: target.address,
+      port: parsed.port,
+      io: silentConnectIo(),
+      password,
+      credentialless: password === undefined,
+      strict: parsed.strict ?? 'accept-new',
+      quiet: parsed.quiet,
+      identityFiles: parsed.identityFiles.map(sshPathOfWindowsPath),
+      authentication: parsed.authentication,
+      agent: this.sshAgentIfRunning(),
+      algorithms: parsed.algorithms,
     });
+    if (outcome.kind === 'auth-failed') {
+      return `${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`;
+    }
+    if (outcome.kind === 'host-key-changed') return 'Host key verification failed.';
+    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') return outcome.message;
+    if (outcome.kind !== 'connected') return '';
+
+    const { session } = outcome;
+    try {
+      if (parsed.command !== null) {
+        const channel = session.openExecChannel(parsed.command);
+        if (!isOk(channel)) return '';
+        const result = await channel.value.execute();
+        channel.value.close();
+        const body = result?.stdout ?? '';
+        return body && !body.endsWith('\n') ? `${body}\n` : body;
+      }
+      const channel = session.openShellChannel();
+      if (!isOk(channel)) return '';
+      const settled = await relayScriptedShell(
+        channel.value, stdin, password === undefined ? 0 : 1, !parsed.quiet);
+      channel.value.close();
+      return [settled.output, ...(parsed.quiet ? [] : [`Connection to ${typedHost} closed.`])]
+        .filter((part) => part.length > 0).join('\n');
+    } finally {
+      session.disconnect();
+    }
   }
 
   private async runPathpingCommand(args: string[]): Promise<string> {

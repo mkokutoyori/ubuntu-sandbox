@@ -20,7 +20,7 @@ import { opensshIdentificationFor } from '@/network/protocols/ssh/serverIdentifi
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpConnector } from '@/network/tcp/types';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
-import { SshConnectOptionsBuilder, type StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
+import { SshConnectOptionsBuilder, type SshClientAuthentication, type StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
 import { sshClientProfileOf } from '@/network/protocols/ssh/SshClientProfile';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
@@ -29,8 +29,10 @@ import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols
 import { isOk } from '@/network/protocols/ssh/Result';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
-import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
+import type { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor, defaultIdentityFilesFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { IPAddress } from '@/network/core/types';
+import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
 import type { TcpFlags, TcpWireOutcome } from '@/network/tcp/types';
 import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
@@ -103,6 +105,8 @@ export interface WireSshLoginRequest {
   readonly identityFiles?: readonly string[];
   readonly credentialless?: boolean;
   readonly quiet?: boolean;
+  readonly authentication?: SshClientAuthentication;
+  readonly agent?: SshAgent;
   readonly algorithms?: SshAlgorithmPreferences;
 }
 
@@ -183,6 +187,27 @@ export function sshUnreachableReason(device: unknown, host: string): string {
   return routed ? 'No route to host' : 'Network is unreachable';
 }
 
+export type SshTargetResolution =
+  | { readonly kind: 'ready'; readonly address: string }
+  | { readonly kind: 'failed'; readonly line: string };
+
+export async function resolveSshTarget(
+  device: Equipment, typedHost: string, port: number,
+): Promise<SshTargetResolution> {
+  const resolver = device as unknown as { resolveHostname(name: string): Promise<IPAddress | null> };
+  const resolved = IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
+  if (!resolved) {
+    return { kind: 'failed', line: `ssh: Could not resolve hostname ${typedHost}: Name or service not known` };
+  }
+  const address = resolved.toString();
+  if (!peerLiveness(device, address)()) {
+    return { kind: 'failed', line: `ssh: connect to host ${typedHost} port ${port}: ${sshUnreachableReason(device, address)}` };
+  }
+  const reach = await wireReachOutcomeRetransmitting(device, address, port);
+  if (reach !== 'open') return { kind: 'failed', line: sshWireFailureLine(OPENSSH_SSH, reach, typedHost, port) };
+  return { kind: 'ready', address };
+}
+
 function unreachableMessage(req: WireSshLoginRequest): string {
   return `ssh: connect to host ${req.host} port ${req.port}: `
     + sshUnreachableReason(req.device, req.host);
@@ -209,6 +234,7 @@ export async function openWireSshConnection(
     localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     credentialless: req.credentialless,
+    ...(req.agent ? { agentKeys: () => req.agent!.list() } : {}),
     clientIdentification: profile?.identification ?? opensshIdentificationFor(req.device.getOSType()),
     ...(profile ? { clientExtInfo: profile.extInfo } : {}),
     interactionHandler: req.credentialless
@@ -224,7 +250,11 @@ export async function openWireSshConnection(
   if (req.password !== undefined) builder.password(req.password);
   const algorithms = req.algorithms ?? profile?.algorithms;
   if (algorithms) builder.algorithms(algorithms);
-  for (const id of req.identityFiles ?? []) builder.addIdentityFile(id);
+  if (req.authentication) builder.authentication(req.authentication);
+  const identities = req.identityFiles && req.identityFiles.length > 0
+    ? req.identityFiles
+    : defaultIdentityFilesFor(req.device, req.localUser);
+  for (const id of identities) builder.addIdentityFile(id);
 
   let result: Awaited<ReturnType<typeof session.connect>> | null = null;
   try {

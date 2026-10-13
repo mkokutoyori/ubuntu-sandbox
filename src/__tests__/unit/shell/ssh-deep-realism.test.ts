@@ -477,19 +477,19 @@ describe('SSH realism deep dive — file transfer, env, identity, batch', () => 
 
   test('§D40 — Windows→Linux: ssh user@host -- "remote command" runs exec mode', async () => {
     const { winA } = await buildLan();
-    const out = await winA.executeCommand('ssh alice@10.0.0.3 hostname');
+    const out = await winA.executeCommand('ssh alice@10.0.0.3 hostname', 'alice');
     expect(out).toMatch(/linuxSrv/);
   });
 
   test('§D41 — Windows→Linux: ssh exec mode preserves the user identity (whoami)', async () => {
     const { winA } = await buildLan();
-    const out = await winA.executeCommand('ssh alice@10.0.0.3 whoami');
+    const out = await winA.executeCommand('ssh alice@10.0.0.3 whoami', 'alice');
     expect(out).toMatch(/alice/);
   });
 
   test('§D42 — Windows→Linux exec mode: pwd is /home/<user>', async () => {
     const { winA } = await buildLan();
-    const out = await winA.executeCommand('ssh alice@10.0.0.3 pwd');
+    const out = await winA.executeCommand('ssh alice@10.0.0.3 pwd', 'alice');
     expect(out).toMatch(/\/home\/alice/);
   });
 

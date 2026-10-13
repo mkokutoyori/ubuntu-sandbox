@@ -524,13 +524,13 @@ describe('SSH edge cases — redirection, pipes, banners, output formatting', ()
   test('§E46 — exec mode `ssh user@host ls /tmp` returns the listing', async () => {
     const { winA, linuxSrv } = await buildLan();
     await linuxSrv.executeCommand('echo body > /tmp/listme.txt');
-    const out = await winA.executeCommand('ssh alice@10.0.0.3 ls /tmp');
+    const out = await winA.executeCommand('ssh alice@10.0.0.3 ls /tmp', 'alice');
     expect(out).toMatch(/listme\.txt/);
   });
 
   test('§E47 — exec mode: long output is fully returned', async () => {
     const { winA } = await buildLan();
-    const out = await winA.executeCommand('ssh alice@10.0.0.3 cat /etc/passwd');
+    const out = await winA.executeCommand('ssh alice@10.0.0.3 cat /etc/passwd', 'alice');
     expect(out.split('\n').length).toBeGreaterThan(2);
   });
 

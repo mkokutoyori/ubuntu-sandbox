@@ -52,6 +52,7 @@ export interface WindowsShellExecutor {
    * (docs/PRD-SSH-Unification.md §4bis B2).
    */
   createVtyShell?(user: string): SshVtyShell | null;
+  shellBanner?(): string;
 }
 
 /**
@@ -187,7 +188,8 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   getMotd(): string {
-    return `Welcome to ${this.hostname}\n`;
+    const banner = this.shellExecutor?.shellBanner?.();
+    return banner !== undefined ? `${banner}\n` : `Welcome to ${this.hostname}\n`;
   }
 
   getLastLogin(user: string): string | null {
