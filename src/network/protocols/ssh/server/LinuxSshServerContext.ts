@@ -65,6 +65,7 @@ import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch'
 import { createEditorSession } from '@/network/devices/linux/editors/EditorView';
 import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 import { SSHD_LISTEN_BACKLOG } from '@/network/devices/linux/ports/ListenBacklogs';
+import { formatLoginDate } from '../loginBanner';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -568,10 +569,18 @@ export class LinuxSshServerContext implements ISshServerContext {
     const policy = this.effectiveSshdServerConfig();
     if (session !== undefined && this.hushLogin(session.user)) return '';
     const pam = this.sshdPam();
-    if (pam !== null && session !== undefined) return pam.sessionMessages({ ip: session.ip, port: session.port }).join('');
+    if (pam !== null && session !== undefined) {
+      return `${pam.sessionMessages({ ip: session.ip, port: session.port }).join('')}${this.previousLoginLine(session.user, policy.printLastLog)}`;
+    }
     if (!policy.printMotd) return '';
     const motd = this.vfs.readFile('/etc/motd');
     return motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`;
+  }
+
+  private previousLoginLine(user: string, printLastLog: boolean): string {
+    const previous = this.executor?.lastlog.getPrevious(user);
+    if (!printLastLog || previous === undefined) return '';
+    return `Last login: ${formatLoginDate(new Date(previous.when))} from ${previous.sourceHost}\n`;
   }
 
   private hushLogin(user: string): boolean {
@@ -587,7 +596,8 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   recordLogin(user: string, fromIp: string): void {
     this.openPamSession(user, fromIp);
-    this.executor?.lastlog.record(user, fromIp, 'pts/0');
+    if (this.device instanceof LinuxMachine) this.device.openSshSessionRecord(user, fromIp, fromIp);
+    else this.executor?.lastlog.record(user, fromIp, 'pts/0');
   }
 
   clientPort(fromIp: string): number | undefined {

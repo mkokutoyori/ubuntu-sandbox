@@ -334,7 +334,8 @@ describe('SSH realism — backup/restore, signals, concurrency', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh root@10.0.0.3');
+    t.setPasswordBuf('root'); t.handleKey(key('Enter')); await flush();
     const log = await linuxSrv.executeCommand('cat /var/log/auth.log');
-    expect(log).toMatch(/Failed|denied|root/);
+    expect(log).toMatch(/Failed password for root from 10\.0\.0\.4/);
   });
 });

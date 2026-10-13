@@ -1119,8 +1119,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   let sessionPort: number | undefined;
   if (opts.wireAuthenticated) {
     sessionPort = (machine as unknown as {
-      openSshSessionRecord?: (u: string, ip: string, host: string) => number;
-    }).openSshSessionRecord?.(remoteUser, opts.sourceIp, opts.sourceHostname);
+      openSshSessionPort?: (u: string, ip: string) => number | undefined;
+    }).openSshSessionPort?.(remoteUser, opts.sourceIp);
   } else {
     machine.recordSshLogin?.(
       remoteUser,
