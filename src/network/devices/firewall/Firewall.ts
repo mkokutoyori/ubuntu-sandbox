@@ -20,6 +20,8 @@ import {
   type IPv6Packet,
   IPAddress,
   IP_PROTO_UDP,
+  IP_PROTO_TCP,
+  createIPv4Packet,
   MACAddress,
   type ARPPacket,
   type DeviceType,
@@ -30,7 +32,7 @@ import {
 import { recordRoute } from '../../layers/internet/Ipv4Options';
 import {
   buildICMPError, mayGenerateICMPError,
-  ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
+  ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED, ICMP_UNREACH_PORT,
   ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
 } from '../../core/IcmpErrors';
 import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
@@ -50,7 +52,8 @@ import { RevisionStore } from './config/RevisionStore';
 import { LdbMonitorTable } from './health/LdbMonitor';
 import { LinkMonitorTable, type LinkMonitorStatus } from './health/LinkMonitor';
 import { dialTcp, parseDialAddress } from '../../tcp/dial';
-import { isDialFailure } from '../../tcp/types';
+import { isDialFailure, type TcpSegment } from '../../tcp/types';
+import { resetSegmentFor } from '../../tcp/TcpStack';
 import { PortNumber } from '../../core/ports/PortNumber';
 import {
   RealServerPool, type LdbMethod, type RealServer,
@@ -2638,6 +2641,9 @@ export class Firewall extends Equipment {
       if (context.verdict?.reason === 'auth-required') {
         this.captivePortal.capture(portName, packet);
       }
+      if (context.verdict?.reason === 'policy-deny' && context.matchedPolicy?.sendDenyPacket === true) {
+        this.sendDenyReply(portName, packet);
+      }
       if (context.verdict?.reason === 'ttl-expired') {
         this.sendTimeExceeded(portName, packet);
       }
@@ -2664,6 +2670,21 @@ export class Firewall extends Equipment {
     if (!address) return packet;
     const outcome = recordRoute(packet, new IPAddress(address));
     return outcome.kind === 'error' ? null : outcome.packet;
+  }
+
+  private sendDenyReply(ingressPort: string, packet: IPv4Packet): void {
+    if (packet.protocol === IP_PROTO_UDP) {
+      this.sendIcmpError(ingressPort, packet, 'destination-unreachable', ICMP_UNREACH_PORT, {});
+      return;
+    }
+    const offending = packet.payload as TcpSegment | undefined;
+    if (packet.protocol !== IP_PROTO_TCP || offending?.type !== 'tcp' || offending.flags.rst) return;
+    const local = packet.destinationIP.toString();
+    const remote = packet.sourceIP.toString();
+    const reset = resetSegmentFor(offending, local, remote);
+    const route = this.vdoms.contextOfInterface(ingressPort).routes.resolveNextHop(remote);
+    this.forward(route?.iface ?? ingressPort, createIPv4Packet(
+      packet.destinationIP, packet.sourceIP, IP_PROTO_TCP, ICMP_ERROR_TTL, reset, 20));
   }
 
   private sendTimeExceeded(ingressPort: string, packet: IPv4Packet): void {

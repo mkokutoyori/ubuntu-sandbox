@@ -109,7 +109,7 @@ export const POLICY_REFERENCE_ATTRIBUTES: readonly FortiAttributeSpec[] = Object
   { ...enable('rtp-nat', 'Enable Real Time Protocol (RTP) NAT.', false), unimplemented: 'there is no VoIP or PCP engine behind it.' },
   { ...enable('schedule-timeout', 'Enable to force current sessions to end when the schedule object times out. Disable allows them to end from inactivity.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...word('sctp-filter-profile', 'Name of an existing SCTP filter profile.'), unimplemented: 'there is no inspection engine behind this profile type in this simulator.' },
-  { ...enable('send-deny-packet', 'Enable to send a reply when a session is denied or blocked by a firewall policy.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  enable('send-deny-packet', 'Enable to send a reply when a session is denied or blocked by a firewall policy.', false),
   { ...count('sgt', 'Security group tags. Security group tag (1 - 65535).', 1, 65535, 0), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...enable('sgt-check', 'Enable/disable security group tags (SGT) check.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...list('src-vendor-mac', 'Vendor MAC source ID. Vendor MAC ID.'), unimplemented: 'it needs reputation, vendor-MAC or GeoIP data that this simulator does not ship.' },

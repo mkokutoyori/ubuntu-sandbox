@@ -28,6 +28,8 @@ export interface SecurityRule {
   destination6Negated?: boolean;
   tos?: { value: number; mask: number; negated: boolean };
   expiresAt?: number;
+  sendDenyPacket?: boolean;
+  sendDenyPacket?: boolean;
 
   service: string[];
   serviceNegated: boolean;
@@ -92,6 +94,7 @@ export interface SecurityRuleInit {
   destination6Negated?: boolean;
   tos?: { value: number; mask: number; negated: boolean };
   expiresAt?: number;
+  sendDenyPacket?: boolean;
   service?: string[];
   serviceNegated?: boolean;
   application?: string[];
@@ -156,6 +159,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     destination6Negated: init.destination6Negated,
     tos: init.tos,
     expiresAt: init.expiresAt,
+    sendDenyPacket: init.sendDenyPacket,
     service: [...(init.service ?? ['any'])],
     serviceNegated: init.serviceNegated ?? false,
     application: [...(init.application ?? [])],
