@@ -1,5 +1,6 @@
 import type { IPv4Packet } from '../../../core/types';
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { ftpDataExpectation } from './FtpInspection';
 import {
   FlowTable, flowOf, protocolLabel, protocolMatches, IP_TCP,
   type FlowSession, type FlowView, type FlowTimeouts, type FlowEndReason,
@@ -81,6 +82,16 @@ interface HostBlock {
   untilMs: number;
 }
 
+interface PendingDataChannel {
+  readonly initiator: string;
+  readonly responder: string;
+  readonly responderPort: number;
+  readonly expiresMs: number;
+  readonly owner: string;
+  readonly context: string;
+  readonly audit: boolean;
+}
+
 const RATE_WINDOW_MS = 60_000;
 
 export class CbacFirewall implements CbacPort {
@@ -89,6 +100,7 @@ export class CbacFirewall implements CbacPort {
   private readonly creationTimes: number[] = [];
   private readonly blockedHosts = new Map<string, HostBlock>();
   private readonly hostAlerted = new Set<string>();
+  private readonly pendingData: PendingDataChannel[] = [];
   private aggressive = false;
   private statistics: CbacStatistics = CbacFirewall.freshStatistics(null);
 
@@ -221,23 +233,59 @@ export class CbacFirewall implements CbacPort {
     }
   }
 
+  private pendingDataFor(flow: FlowView, now: number): number {
+    if (!flow.synOnly) return -1;
+    return this.pendingData.findIndex((p) => p.expiresMs > now && p.initiator === flow.source
+      && p.responder === flow.destination && p.responderPort === flow.destinationPort);
+  }
+
   admitsReturn(packet: IPv4Packet): boolean {
-    this.flows.expire(simulationNowMs());
-    const known = this.flows.lookup(flowOf(packet));
-    return known !== null && !known.forward;
+    const now = simulationNowMs();
+    this.flows.expire(now);
+    const flow = flowOf(packet);
+    const known = this.flows.lookup(flow);
+    if (known !== null) return !known.forward || known.session.label === 'ftp-data';
+    return this.pendingDataFor(flow, now) >= 0;
+  }
+
+  private followFtpControl(session: FlowSession, packet: IPv4Packet, now: number): void {
+    if (session.label !== 'ftp') return;
+    const expected = ftpDataExpectation(packet);
+    if (expected === null) return;
+    this.pendingData.push({
+      ...expected, expiresMs: now + this.config.settings.tcpSynwaitSec * 1000,
+      owner: session.owner, context: session.context, audit: session.audit,
+    });
   }
 
   inspect(inIface: string, outIface: string, packet: IPv4Packet): CbacVerdict {
     const now = simulationNowMs();
     const config = this.config;
     this.releaseHostBlocks(now);
+    this.pendingData.splice(0, this.pendingData.length, ...this.pendingData.filter((p) => p.expiresMs > now));
     const flow = flowOf(packet);
     const known = this.flows.observe(flow, now);
     if (known) {
       this.countPacket(flow, known.label);
+      this.followFtpControl(known, packet, now);
       return { permit: true };
     }
 
+    const pending = this.pendingDataFor(flow, now);
+    if (pending >= 0) {
+      const [channel] = this.pendingData.splice(pending, 1);
+      this.flows.create(flow, channel.owner, 'ftp-data', now, { audit: channel.audit, context: channel.context });
+      this.creationTimes.push(now);
+      this.statistics.created += 1;
+      this.updateStatistics(now);
+      if (channel.audit) {
+        this.logs.push({
+          severity: 'informational', mnemonic: 'SESS_AUDIT_TRAIL_START',
+          text: `Start ftp-data session: initiator (${flow.source}:${flow.sourcePort}) -- responder (${flow.destination}:${flow.destinationPort})`,
+        });
+      }
+      return { permit: true };
+    }
     const ruleName = config.inspectRuleOf(inIface, 'in') ?? config.inspectRuleOf(outIface, 'out');
     const rule = ruleName === undefined ? undefined : config.rules.get(ruleName);
     if (!rule) return { permit: true };
