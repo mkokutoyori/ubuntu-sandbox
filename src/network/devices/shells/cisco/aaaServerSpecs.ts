@@ -2,6 +2,7 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
 import { CliIncomplete, CliInvalidInput } from '../cli/CliDiagnostic';
+import type { DomainStripping } from '../../router/aaa/UsernameRouting';
 import type {
   CiscoSecurityConfig, RadiusServer, TacacsServer,
 } from '../../router/security/CiscoSecurityConfig';
@@ -42,6 +43,64 @@ export const RADIUS_DEAD_CRITERIA_RANGES: Readonly<Record<'time' | 'tries', read
   time: [1, 120],
   tries: [1, 100],
 };
+
+const DELIMITER_CHARACTERS = '@/$%\\#-';
+
+function delimiterSet(text: string | undefined): string {
+  if (text === undefined) return '';
+  const chars = text.replace(/\\\\/g, '\\');
+  if (chars.length === 0 || chars.length > 7) throw new CliInvalidInput({ token: text });
+  for (const c of chars) if (!DELIMITER_CHARACTERS.includes(c)) throw new CliInvalidInput({ token: text });
+  return chars;
+}
+
+function domainStrippingSpec(
+  id: string, head: 'radius-server' | 'tacacs-server', who: string,
+  stripping: () => DomainStripping,
+): CommandSpec {
+  const options: OptionSpec[] = [
+    { keyword: 'right-to-left', description: 'Parse the username from right to left' },
+    {
+      keyword: 'prefix-delimiter', description: 'Strip a prefix up to one of these characters',
+      argument: { name: 'prefix-delimiter', type: 'WORD', description: 'Prefix delimiter characters (@ / $ % \\ # -)' },
+    },
+    {
+      keyword: 'delimiter', description: 'Strip a suffix from one of these characters',
+      argument: { name: 'delimiter', type: 'WORD', description: 'Suffix delimiter characters (@ / $ % \\ # -)' },
+    },
+    {
+      keyword: 'strip-suffix', description: 'Strip only this suffix',
+      argument: { name: 'strip-suffix', type: 'WORD', description: 'Suffix to strip' },
+    },
+    {
+      keyword: 'vrf', description: 'Restrict the rule to one VRF',
+      argument: { name: 'vrf', type: 'WORD', description: 'VRF name' },
+    },
+  ];
+  return {
+    id, path: [head, 'domain-stripping'],
+    description: `Strip the domain from the username sent to the ${who} server`,
+    modes: MODES, minPrivilege: 15,
+    options,
+    run: (_s, args) => {
+      if (args['strip-suffix'] !== undefined) {
+        stripping().addSuffix(args.vrf, args['strip-suffix']);
+        return '';
+      }
+      stripping().configure(args.vrf, {
+        rightToLeft: args['right-to-left'] !== undefined,
+        prefixDelimiters: delimiterSet(args['prefix-delimiter']),
+        suffixDelimiters: args.delimiter !== undefined ? delimiterSet(args.delimiter) : undefined,
+      });
+      return '';
+    },
+    undo: (_s, args) => {
+      if (args['strip-suffix'] !== undefined) stripping().removeSuffix(args.vrf, args['strip-suffix']);
+      else stripping().remove(args.vrf);
+      return '';
+    },
+  };
+}
 
 export interface AaaServerHost {
   security(): CiscoSecurityConfig;
@@ -322,6 +381,46 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
         return '';
       },
     },
+    {
+      id: 'radius-server-directed-request',
+      path: ['radius-server', 'directed-request'],
+      description: 'Allow user to specify the RADIUS server to use with @server',
+      undoDescription: 'Disable directed-request',
+      modes: MODES, minPrivilege: 15,
+      options: [{ keyword: 'restricted', description: 'Restrict queries to directed request servers only' }],
+      run: (_s, args) => {
+        ctx().security().radiusDefaults.directedRequest = { restricted: args.restricted !== undefined };
+        return '';
+      },
+      undo: (_s, args) => {
+        const defaults = ctx().security().radiusDefaults;
+        if (args.restricted !== undefined && defaults.directedRequest) defaults.directedRequest.restricted = false;
+        else defaults.directedRequest = undefined;
+        return '';
+      },
+    },
+    {
+      id: 'tacacs-server-directed-request',
+      path: ['tacacs-server', 'directed-request'],
+      description: 'Allow user to specify the TACACS+ server to use with @server',
+      undoDescription: 'Send the entire string to the default server',
+      modes: MODES, minPrivilege: 15,
+      options: [
+        { keyword: 'restricted', description: 'Restrict queries to directed request servers only' },
+        { keyword: 'no-truncate', description: 'Do not truncate the @hostname from the username' },
+      ],
+      run: (_s, args) => {
+        ctx().security().tacacsDefaults.directedRequest = {
+          restricted: args.restricted !== undefined, noTruncate: args['no-truncate'] !== undefined,
+        };
+        return '';
+      },
+      undo: () => { ctx().security().tacacsDefaults.directedRequest = undefined; return ''; },
+    },
+    domainStrippingSpec('radius-server-domain-stripping', 'radius-server', 'RADIUS',
+      () => ctx().security().radiusStripping),
+    domainStrippingSpec('tacacs-server-domain-stripping', 'tacacs-server', 'TACACS+',
+      () => ctx().security().tacacsStripping),
     globalRadius('radius-server-auth-port', 'auth-port', RADIUS_RANGES['auth-port'],
       'UDP port for RADIUS authentication server', 'Port number',
       (n) => { ctx().security().radiusDefaults.authPort = n; },

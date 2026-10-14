@@ -1,4 +1,5 @@
 import { ServerLiveness } from '../../../radius/ServerLiveness';
+import { DomainStripping } from '../aaa/UsernameRouting';
 import { SshPubkeyChain } from './SshPubkeyChain';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -57,12 +58,14 @@ export interface RadiusGlobalDefaults {
   deadtimeMinutes?: number;
   deadCriteriaTimeSec?: number;
   deadCriteriaTries?: number;
+  directedRequest?: { restricted: boolean };
 }
 
 export interface TacacsGlobalDefaults {
   key?: string;
   timeoutSec?: number;
   port?: number;
+  directedRequest?: { restricted: boolean; noTruncate: boolean };
 }
 
 export interface RadiusServer {
@@ -406,6 +409,8 @@ export class CiscoSecurityConfig {
   legacyHosts: AaaLegacyServerHost[] = [];
   radiusDefaults: RadiusGlobalDefaults = {};
   readonly radiusLiveness = new ServerLiveness();
+  readonly radiusStripping = new DomainStripping();
+  readonly tacacsStripping = new DomainStripping();
   tacacsDefaults: TacacsGlobalDefaults = {};
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
@@ -673,6 +678,10 @@ export class CiscoSecurityConfig {
       const tries = this.radiusDefaults.deadCriteriaTries;
       lines.push(`radius-server dead-criteria${time !== undefined ? ` time ${time}` : ''}${tries !== undefined ? ` tries ${tries}` : ''}`);
     }
+    if (this.radiusDefaults.directedRequest) {
+      lines.push(`radius-server directed-request${this.radiusDefaults.directedRequest.restricted ? ' restricted' : ''}`);
+    }
+    lines.push(...this.radiusStripping.render('radius-server domain-stripping'));
     if (this.radiusDefaults.acctPort !== undefined) {
       lines.push(`radius-server acct-port ${this.radiusDefaults.acctPort}`);
     }
@@ -680,6 +689,11 @@ export class CiscoSecurityConfig {
     if (this.tacacsDefaults.timeoutSec !== undefined) {
       lines.push(`tacacs-server timeout ${this.tacacsDefaults.timeoutSec}`);
     }
+    if (this.tacacsDefaults.directedRequest) {
+      const directed = this.tacacsDefaults.directedRequest;
+      lines.push(`tacacs-server directed-request${directed.restricted ? ' restricted' : ''}${directed.noTruncate ? ' no-truncate' : ''}`);
+    }
+    lines.push(...this.tacacsStripping.render('tacacs-server domain-stripping'));
     if (this.tacacsDefaults.port !== undefined) {
       lines.push(`tacacs-server port ${this.tacacsDefaults.port}`);
     }

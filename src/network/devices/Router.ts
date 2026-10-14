@@ -2076,6 +2076,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * does it on the events that actually change routing: configuration,
    * interface up/down, and protocol packets arriving from the wire.
    */
+  egressInterfaceFor(address: string): string | null {
+    return this.lookupRoute(new IPAddress(address))?.iface ?? null;
+  }
+
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
     // ECMP: collect every route genuinely tied for best (same prefix
     // length, AD, and metric) instead of freezing on whichever happened
