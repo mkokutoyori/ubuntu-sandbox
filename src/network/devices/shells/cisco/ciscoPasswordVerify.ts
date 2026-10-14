@@ -8,7 +8,7 @@ function decouperCrypt(valeur: string): { id: string; sel: string } | null {
 }
 
 export function ciscoPasswordMatches(saisi: string, stocke: string, algo?: string): boolean {
-  if (stocke === '') return false;
+  if (stocke === '' || algo === 'type-4') return false;
 
   const crypt = decouperCrypt(stocke);
   if (crypt) {

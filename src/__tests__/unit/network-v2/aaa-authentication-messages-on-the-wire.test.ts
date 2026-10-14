@@ -15,40 +15,9 @@ import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { parseTelnetChunk, toNvtText, fromNvtText } from '@/network/protocols/telnet/TelnetCodec';
-import { TelnetNegotiator } from '@/network/protocols/telnet/TelnetNegotiator';
+import { connectTelnet, settle, type WireTelnet } from './_helpers/telnetWireClient';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
-
-interface WireSocket {
-  write(data: string): void;
-  close(): void;
-  onData(handler: (data: string) => void): () => void;
-}
-
-class WireTelnet {
-  private carry: readonly number[] = [];
-  private readonly negotiator = new TelnetNegotiator({ offer: [], request: [] });
-  received = '';
-
-  constructor(private readonly socket: WireSocket) {
-    socket.onData((chunk) => {
-      const parsed = parseTelnetChunk(chunk, this.carry);
-      this.carry = parsed.carry;
-      const reply = this.negotiator.respond(parsed.negotiations);
-      if (reply) socket.write(reply);
-      this.received += fromNvtText(parsed.data);
-    });
-  }
-
-  send(line: string): void { this.socket.write(toNvtText(`${line}\n`)); }
-  close(): void { this.socket.close(); }
-}
-
-const settle = async (): Promise<void> => {
-  for (let i = 0; i < 8; i++) await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 20));
-};
 
 async function lab(extra: string[]): Promise<{ telnet: WireTelnet }> {
   const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
@@ -65,12 +34,7 @@ async function lab(extra: string[]): Promise<{ telnet: WireTelnet }> {
     ...extra, 'end',
   ]) await router.executeCommand(c);
   await pc.executeCommand('ping -c 1 10.0.0.6');
-  const socket = await (pc as unknown as { tcpConnect: (h: string, p: number) => Promise<WireSocket | null> })
-    .tcpConnect('10.0.0.6', 23);
-  if (!socket) throw new Error('no telnet socket');
-  const telnet = new WireTelnet(socket);
-  await settle();
-  return { telnet };
+  return { telnet: await connectTelnet(pc, '10.0.0.6') };
 }
 
 describe('aaa authentication messages over a real telnet session', () => {
