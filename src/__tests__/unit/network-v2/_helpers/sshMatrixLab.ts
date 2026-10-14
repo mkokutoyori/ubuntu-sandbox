@@ -8,9 +8,7 @@ import { createSessionForDevice } from '@/terminal/sessions/sessionFactory';
 import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { DeviceType } from '@/network/core/types';
 import type { Equipment } from '@/network/equipment/Equipment';
-import {
-  allowLegacyIosSsh, allowLegacyIosSshServer, allowLegacyIosSshServerOnFortiOs,
-} from '../iosLegacySsh';
+import { interoperateWithIos15 } from '../iosLegacySsh';
 
 export const SECRET = 'Secret123';
 export const ADMIN = 'netadmin';
@@ -135,50 +133,6 @@ async function configureNode(node: Node, mask: string): Promise<void> {
   }
 }
 
-const VRP_ALGORITHMS = [
-  'ssh server key-exchange dh_group1_sha1 dh_group_exchange_sha1 dh_group14_sha1 dh_group14_sha256 dh_group_exchange_sha256 ecdh_sha2_nistp256 curve25519_sha256',
-  'ssh server publickey rsa rsa_sha2_256 rsa_sha2_512',
-  'ssh server cipher aes128_ctr aes192_ctr aes256_ctr aes128_cbc aes256_cbc 3des_cbc',
-  'ssh server hmac sha1 sha1_96 sha2_256 sha2_512',
-  'ssh client key-exchange dh_group_exchange_sha1 dh_group14_sha1',
-  'ssh client publickey rsa',
-  'ssh client cipher aes128_ctr aes128_cbc',
-  'ssh client hmac sha1',
-];
-
-const IOS_ALGORITHMS = [
-  'ip ssh server algorithm kex ecdh-sha2-nistp256 diffie-hellman-group-exchange-sha1 diffie-hellman-group14-sha1 diffie-hellman-group1-sha1',
-  'ip ssh server algorithm hostkey rsa-sha2-512 rsa-sha2-256 ssh-rsa',
-  'ip ssh server algorithm mac hmac-sha1 hmac-sha2-256 hmac-sha2-512',
-  'ip ssh server algorithm encryption aes128-ctr aes192-ctr aes256-ctr aes128-cbc aes192-cbc aes256-cbc 3des-cbc',
-];
-
-async function negotiateAcrossGenerations(node: Node): Promise<void> {
-  switch (node.kind) {
-    case 'linux-pc':
-    case 'linux-server':
-    case 'windows-pc':
-    case 'windows-server':
-      allowLegacyIosSsh(node.device);
-      allowLegacyIosSshServer(node.device);
-      return;
-    case 'router-cisco':
-    case 'switch-cisco':
-      await run(node.device, ['configure terminal', ...IOS_ALGORITHMS, 'end']);
-      return;
-    case 'router-huawei':
-    case 'switch-huawei':
-      await run(node.device, ['system-view', ...VRP_ALGORITHMS, 'quit']);
-      return;
-    case 'firewall-cisco':
-      await run(node.device, ['configure terminal', 'ssh key-exchange group dh-group14-sha1', 'end']);
-      return;
-    case 'firewall-fortinet':
-      allowLegacyIosSshServerOnFortiOs((node.device as unknown as { getShell(): { execute(l: string): unknown } }).getShell());
-      return;
-  }
-}
-
 function firstPort(kind: Kind, device: Equipment): Parameters<Cable['connect']>[0] {
   if (kind === 'firewall-fortinet') {
     return (device as unknown as { getPort(n: string): never }).getPort('port1');
@@ -203,7 +157,7 @@ export async function buildMatrixLab(kinds: readonly Kind[] = ALL_KINDS): Promis
     });
   }
   for (const node of nodes) await configureNode(node, '255.255.255.0');
-  for (const node of nodes) await negotiateAcrossGenerations(node);
+  for (const node of nodes) await interoperateWithIos15(node.device);
   return { nodes, switchDevice };
 }
 

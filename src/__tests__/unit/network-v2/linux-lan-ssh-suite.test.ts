@@ -1413,7 +1413,7 @@ describe('§21 — background ssh and job control', () => {
     },
     {
       name: 'jobs lists the background ssh',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n'); },
       on: l => l.pc1,
       cmd: 'jobs',
       contains: [/\[1\][-+ ]+Running\s+ssh alice@10\.0\.0\.2/],
@@ -1446,7 +1446,7 @@ describe('§21 — background ssh and job control', () => {
     },
     {
       name: 'wait %1 returns when the background ssh finishes',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 true &', 'admin\n'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 true &', 'admin\n'); },
       on: l => l.pc1,
       cmd: 'wait %1',
       excludes: [/no such job/],
@@ -1660,14 +1660,14 @@ describe('§25 — full end-to-end audit story', () => {
   const rows: Row[] = [
     {
       name: 'after an ssh login, w on the remote lists the user',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
       on: l => l.srv1,
       cmd: 'w',
       contains: [/alice.*pts\/\d+\s+10\.0\.0\.1/],
     },
     {
       name: 'cat /var/log/auth.log + ps -ef tell a coherent story (both PIDs match)',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
       on: l => l.srv1,
       cmd: 'sh -c "tail -3 /var/log/auth.log; ps -ef | grep sshd | grep alice"',
       contains: [/Accepted password for alice/, /sshd.*alice/],
@@ -1722,7 +1722,7 @@ describe('§25 — full end-to-end audit story', () => {
     },
     {
       name: 'a full audit query via ssh: who+last+ps in one line',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'ssh bob@10.0.0.10 "who; last -n 1; ps -ef | grep sshd | head -3"',
       contains: [/alice/, /sshd/],
@@ -2042,7 +2042,7 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
     },
     {
       name: 'while session is active, ss -t shows an ESTABLISHED connection',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'ss -t state established',
       contains: [/10\.0\.0\.2:(ssh|22)\s+10\.0\.0\.1:\d+/],

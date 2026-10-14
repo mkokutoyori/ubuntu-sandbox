@@ -162,7 +162,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import {
-  execChannelOptionsFor, runSshClient, splitSshFlags, sshClientRefusal, sshWireFailureResult, sshWireSuccessResult,
+  execChannelOptionsFor, joinRemoteCommand, remoteQuotingOf, runSshClient, splitSshFlags, sshClientRefusal, sshWireFailureResult, sshWireSuccessResult,
   wireExecTarget,
 } from './network/LinuxSshClient';
 import { resolveSshTarget } from '@/terminal/ssh/wireSshLogin';
@@ -201,9 +201,12 @@ import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem'
 import { SshSession } from '../../protocols/ssh/session/SshSession';
 import type { ExecChannelOptions } from '../../protocols/ssh/channels/ISshChannel';
 import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
-import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
+import {
+  parseStrictHostKeyChecking, sshClientAlgorithms, sshClientAuthentication, type SshClientAuthentication,
+} from '../../protocols/ssh/SshConnectOptions';
+import { firstSshOption } from '../../protocols/ssh/SshClientOptions';
 import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
-import { sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
+import { sshOptionValues, sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
 import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
 import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
 import { isOk } from '../../protocols/ssh/Result';
@@ -409,6 +412,14 @@ function transferAuthority(
     }
   }
   return null;
+}
+
+interface TransferWireOptions {
+  readonly port: number;
+  readonly identities: string[];
+  readonly strict: StrictHostKeyChecking;
+  readonly authentication: SshClientAuthentication;
+  readonly algorithms: SshAlgorithmPreferences;
 }
 
 type SshHostKeyProbe = (ip: string, port: number, hostKeyAlgorithms: readonly string[]) => HostKeyProbeResult | null;
@@ -1427,101 +1438,75 @@ export class LinuxCommandExecutor {
     }).run();
   }
 
-  runSshTransport(
-    cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string, offeredPassword?: string,
-  ): { output: string; exitCode: number } {
-    // Extract the destination spec: user@host[:path] (positional argv).
+  async runRsyncAsync(
+    args: string[], offeredPassword?: string,
+  ): Promise<{ output: string; exitCode: number }> {
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
-    // scp needs both source AND target: any other count yields usage.
-    if (cmd === 'scp' && positional.length < 2) {
-      return { output: 'usage: scp [-options] source ... target', exitCode: 1 };
+    if (!dest) return { output: 'rsync: no destination specified', exitCode: 1 };
+    const authority = transferAuthority('rsync', positional, dest);
+    if (!authority) return { output: `rsync: ${dest}: no route to host`, exitCode: 1 };
+    const remoteUser = authority.user ?? this.userMgr.currentUser;
+    const options = this.transferWireOptions(args);
+    const failure = await this.openTransferSession(authority.host, remoteUser, offeredPassword, options);
+    if (failure.session === null) {
+      return { output: `rsync: connection unexpectedly closed ${failure.output}\n`, exitCode: failure.exitCode };
     }
-    if (!dest) {
-      const usage = cmd === 'sftp'
-        ? 'usage: sftp [-options] [user@]host[:path]'
-        : cmd === 'scp'
-          ? 'usage: scp [-options] source ... target'
-          : 'rsync: no destination specified';
-      return { output: usage, exitCode: 1 };
-    }
-    const authority = transferAuthority(cmd, positional, dest);
-    if (!authority) {
-      if (cmd === 'scp') return this.runLocalScp(args);
-      return { output: `${cmd}: ${dest}: no route to host`, exitCode: 1 };
-    }
-    const hostPart = authority.host;
-    const userMatch = authority.user;
-    const probeTarget = userMatch ? `${userMatch}@${hostPart}` : hostPart;
-    // scp / sftp select an alternate port with -P (rsync uses -e); translate
-    // it into the ssh client's own -p so the probe targets the right port.
+    failure.session.disconnect();
+    return {
+      output: 'sent 128 bytes  received 32 bytes  160.00 bytes/sec\ntotal size is 1024  speedup is 6.40',
+      exitCode: 0,
+    };
+  }
+
+  private transferWireOptions(args: string[]): TransferWireOptions {
+    const identities: string[] = [];
+    const optionValues: string[] = [];
+    let port = 22;
     const pIdx = args.indexOf('-P');
-    const probeArgs: string[] = [];
-    if (pIdx >= 0 && args[pIdx + 1]) probeArgs.push('-p', args[pIdx + 1]);
+    if (pIdx >= 0 && args[pIdx + 1]) {
+      const parsed = Number(args[pIdx + 1]);
+      if (Number.isFinite(parsed) && parsed > 0) port = parsed;
+    }
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-o' && args[i + 1]) { probeArgs.push('-o', args[i + 1]); i++; }
-      else if (args[i] === '-i' && args[i + 1]) { probeArgs.push('-i', args[i + 1]); i++; }
-    }
-    if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
-    probeArgs.push(probeTarget, 'hostname');
-    // Probe via the same ssh client; if it returns Connection refused, propagate.
-    const probe = runSshClient({
-      ...this.buildSshClientOpts(probeArgs, undefined, offeredPassword || undefined),
-    });
-    if (probe.exitCode !== 0) {
-      // scp prefixes with "scp:" / "rsync:" but reuses the ssh message body.
-      const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
-      return { output: prefix + probe.output, exitCode: probe.exitCode };
-    }
-    // scp delegates to the ScpSession model — it handles -r, -p, push/pull,
-    // and resolves the remote endpoint to an ISftpFileSystem adapter.
-    if (cmd === 'scp') {
-      const localFs = new VfsSftpFileSystem(this.vfs, {
-        uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
-      });
-      const session = new ScpSession({
-        args,
-        local: { fs: localFs, cwd: this.cwd },
-        resolveRemote: (host) => this.resolveRemoteSftpFs(host, userMatch),
-      });
-      return session.run();
-    }
-
-    if (cmd === 'sftp') {
-      const bIdx = args.indexOf('-b');
-      let stdin = stdinArg ?? '';
-      if (bIdx >= 0) {
-        const batch = this.readSftpBatch(args[bIdx + 1], stdin);
-        if (typeof batch !== 'string') return batch;
-        stdin = batch;
+      if (args[i] === '-o' && args[i + 1]) {
+        optionValues.push('-o', args[i + 1]);
+        const portOption = /^Port[=\s]+(\d+)$/i.exec(args[i + 1]);
+        if (portOption) port = Number(portOption[1]);
+        i++;
+      } else if (args[i] === '-i' && args[i + 1]) {
+        identities.push(this.vfs.normalizePath(args[i + 1], this.cwd));
+        i++;
       }
-      const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
-      const remoteUserName = userMatch ?? this.userMgr.currentUser;
-      let remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
-      if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
-      const remoteChroot = this.readChrootDirectory(found?.device, remoteUserName, this.firstConfiguredIp());
-      if (remoteChroot) {
-        remoteFs = new ChrootedSftpFileSystem(remoteFs, remoteChroot);
-      }
-      const remoteEvents = (found?.device as { getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; channelType?: string; durationMs?: number }) => void } } } | undefined)
-        ?.getSshServerContext?.()?.events;
-      const t0 = simulationNowMs();
-      remoteEvents?.emit({ kind: 'channel_opened', user: remoteUserName, channelType: 'sftp' });
-      const session = new SftpInteractiveSession({
-        local: new VfsSftpFileSystem(this.vfs, {
-          uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
-        }),
-        remote: remoteFs,
-        initialLocalCwd: this.cwd,
-      });
-      session.run(SftpCommandScript.parse(stdin));
-      remoteEvents?.emit({ kind: 'channel_closed', user: remoteUserName, channelType: 'sftp', durationMs: simulationNowMs() - t0 });
-      return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
     }
+    const values = sshOptionValues(optionValues);
+    return {
+      port,
+      identities,
+      strict: parseStrictHostKeyChecking((firstSshOption(values, 'stricthostkeychecking') ?? '').split(/\s+/)[0]?.toLowerCase() || null) ?? 'accept-new',
+      authentication: sshClientAuthentication(values),
+      algorithms: sshClientAlgorithms(values),
+    };
+  }
 
-    // Only rsync falls through to here — scp/sftp both return above.
-    const summary = `sent 128 bytes  received 32 bytes  160.00 bytes/sec\ntotal size is 1024  speedup is 6.40`;
-    return { output: summary, exitCode: 0 };
+  private async openTransferSession(
+    host: string, user: string, password: string | undefined,
+    options: TransferWireOptions,
+  ): Promise<
+    { session: SshSession; output: ''; exitCode: 0 } | { session: null; output: string; exitCode: number }
+  > {
+    if (this.firstConfiguredIp() === null) {
+      return { session: null, output: `ssh: connect to host ${host} port ${options.port}: Network is unreachable`, exitCode: 255 };
+    }
+    const resolution = await resolveSshTarget(this.localDevice as never, host, options.port, OPENSSH_SSH);
+    if (resolution.kind === 'failed') return { session: null, output: resolution.line, exitCode: 255 };
+    const wire = await this.connectWireSsh(
+      host, user, password || undefined, options.port, options.identities, options.strict, options.authentication,
+      options.algorithms, resolution.address);
+    if (wire.session) return { session: wire.session, output: '', exitCode: 0 };
+    const reason = wire.keyExchangeFailure ?? wire.hostKeyRefusal ?? wire.connectionFailure ?? wire.denial
+      ?? `${user}@${host}: Permission denied (publickey,password).`;
+    return { session: null, output: reason, exitCode: 255 };
   }
 
   /**
@@ -1629,60 +1614,26 @@ export class LinuxCommandExecutor {
     }
     const hostPart = authority.host;
     const remoteUser = authority.user ?? this.userMgr.currentUser;
+    const options = this.transferWireOptions(args);
+    if (this.firstConfiguredIp() === null) {
+      return { output: `${cmd}: ssh: connect to host ${hostPart} port ${options.port}: Network is unreachable\n`, exitCode: 255 };
+    }
+    const resolution = await resolveSshTarget(this.localDevice as never, hostPart, options.port, OPENSSH_SSH);
+    if (resolution.kind === 'failed') return { output: `${cmd}: ${resolution.line}\n`, exitCode: 255 };
 
-    const probeArgs: string[] = [];
-    const identities: string[] = [];
-    let port = 22;
-    const pIdx = args.indexOf('-P');
-    if (pIdx >= 0 && args[pIdx + 1]) {
-      probeArgs.push('-p', args[pIdx + 1]);
-      const parsed = Number(args[pIdx + 1]);
-      if (Number.isFinite(parsed) && parsed > 0) port = parsed;
+    const { fs: wireFs, denial, release } = await this.tryOpenWireSftpFs(
+      hostPart, remoteUser, offeredPassword, options, cmd === 'scp' ? 'scp' : 'sftp', resolution.address);
+    if (!wireFs) {
+      return { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 };
     }
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-o' && args[i + 1]) {
-        probeArgs.push('-o', args[i + 1]);
-        const portOption = /^Port[=\s]+(\d+)$/i.exec(args[i + 1]);
-        if (portOption) port = Number(portOption[1]);
-        i++;
-      }
-      else if (args[i] === '-i' && args[i + 1]) {
-        probeArgs.push('-i', args[i + 1]);
-        identities.push(this.vfs.normalizePath(args[i + 1], this.cwd));
-        i++;
-      }
-    }
-    if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
-    probeArgs.push(`${remoteUser}@${hostPart}`, 'hostname');
-    // La sonde tourne TOUJOURS, avec ou sans mot de passe : c'est elle qui
-    // porte la politique de comptes — mot de passe expiré, compte
-    // verrouillé, utilisateur refusé par `AllowUsers`. La sauter quand rien
-    // n'est offert ferait de `scp` le seul chemin d'entrée que la politique
-    // ne garde pas. Sans justificatif on la lance exactement comme le
-    // chemin synchrone le fait, c'est-à-dire sans en fournir.
-    const probe = runSshClient({
-      ...this.buildSshClientOpts(probeArgs, undefined, offeredPassword || undefined),
-    });
-    if (probe.exitCode !== 0) {
-      return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
-    }
-
-    const { fs: wireFs, denial, release } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities, cmd === 'scp' ? 'scp' : 'sftp');
-    const unauthenticated = (): { output: string; exitCode: number } | null => (
-      !wireFs && this.tcpConnector
-        ? { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
-        : null
-    );
     if (cmd === 'scp') {
-      const refused = unauthenticated();
-      if (refused) return refused;
       const localFs = new VfsSftpFileSystem(this.vfs, {
         uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
       });
       const session = new ScpSession({
         args,
         local: { fs: localFs, cwd: this.cwd },
-        resolveRemote: (host) => wireFs ?? this.resolveRemoteSftpFs(host, remoteUser),
+        resolveRemote: () => wireFs,
       });
       try {
         return await session.run();
@@ -1691,33 +1642,15 @@ export class LinuxCommandExecutor {
       }
     }
 
-    // sftp
-    const stdin = batchVerbs ?? stdinArg ?? '';
-    const refusedSftp = unauthenticated();
-    if (refusedSftp) return refusedSftp;
-    let remoteFs = wireFs;
-    let found: ReturnType<typeof findHostByAddress> = null;
-    if (!remoteFs) {
-      found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
-      remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUser);
-    }
-    if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
-    // Chroot decoration only applies to the direct in-memory resolution —
-    // over the real wire, any chroot the remote sshd enforces already
-    // happens server-side, inside its own getFilesystem() dispatch.
-    if (found) {
-      const remoteChroot = this.readChrootDirectory(found.device, remoteUser, this.firstConfiguredIp());
-      if (remoteChroot) remoteFs = new ChrootedSftpFileSystem(remoteFs, remoteChroot);
-    }
     const session = new SftpInteractiveSession({
       local: new VfsSftpFileSystem(this.vfs, {
         uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
       }),
-      remote: remoteFs,
+      remote: wireFs,
       initialLocalCwd: this.cwd,
-      initialRemoteCwd: remoteFs.initialCwd?.() ?? undefined,
+      initialRemoteCwd: wireFs.initialCwd?.() ?? undefined,
     });
-    session.run(SftpCommandScript.parse(stdin));
+    session.run(SftpCommandScript.parse(batchVerbs ?? stdinArg ?? ''));
     release?.();
     return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
   }
@@ -1790,10 +1723,14 @@ export class LinuxCommandExecutor {
   }
 
   private async tryOpenWireSftpFs(
-    host: string, user: string, password: string, port = 22, identities: string[] = [],
-    command: 'scp' | 'sftp' = 'sftp',
+    host: string, user: string, password: string, options: TransferWireOptions,
+    command: 'scp' | 'sftp' = 'sftp', dialAddress?: string,
   ): Promise<{ fs: ISftpFileSystem | null; denial?: string; release?: () => void }> {
-    const { session, denial } = await this.connectWireSsh(host, user, password, port, identities);
+    const wire = await this.connectWireSsh(
+      host, user, password, options.port, options.identities, options.strict, options.authentication,
+      options.algorithms, dialAddress);
+    const { session } = wire;
+    const denial = wire.denial ?? wire.keyExchangeFailure ?? wire.hostKeyRefusal ?? wire.connectionFailure;
     if (!session) return { fs: null, denial };
     const channelResult = session.openSftpChannel();
     if (!isOk(channelResult)) { session.disconnect(); return { fs: null }; }
@@ -1832,6 +1769,7 @@ export class LinuxCommandExecutor {
   async runSshExecAsync(
     rawArgs: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
+    const backgroundPid = this.takeBackgroundJobPid();
     const args = rawArgs.map(word => this.expandTilde(word));
     const stdinPwd = (offeredPassword
       ?? this._scenarioStdin ?? '')
@@ -1862,7 +1800,8 @@ export class LinuxCommandExecutor {
         authRefused: wire.authRefused,
       }), wire.authRefused);
     }
-    const command = /^(exit|logout)\s*$/i.test(target.command) ? '' : target.command;
+    const joined = joinRemoteCommand(target.commandWords, remoteQuotingOf(session.serverIdentification));
+    const command = /^(exit|logout)\s*$/i.test(joined) ? '' : joined;
     const execOptions = execChannelOptionsFor(opts, args);
     const settled = command && !target.holdOnly
       ? await this.relayOverWire(session, command, execOptions)
@@ -1895,14 +1834,23 @@ export class LinuxCommandExecutor {
         notices: interactif ? wire.notices : [],
       }), true);
     } finally {
-      if (target.holdOnly) this.forwarding?.holdOpen(session);
+      if (target.holdOnly || backgroundPid !== null) this.forwarding?.holdOpen(session);
       if (this.forwarding?.holds(session)) {
-        this.handSshSessionTo(session, client.pid(), this.userMgr.currentUid);
+        this.handSshSessionTo(session, backgroundPid ?? client.pid(), this.userMgr.currentUid);
+        if (backgroundPid !== null) client.retire();
       } else {
         session.disconnect();
         client.retire();
       }
     }
+  }
+
+  private runningBackgroundJobPid: number | null = null;
+
+  private takeBackgroundJobPid(): number | null {
+    const pid = this.runningBackgroundJobPid;
+    this.runningBackgroundJobPid = null;
+    return pid;
   }
 
   private sshClientProcess(
@@ -2918,6 +2866,17 @@ export class LinuxCommandExecutor {
    * Returns null when the input is not a backgrounded command.
    */
   private handleBackgroundIfTrailing(input: string): string | null {
+    return this.startBackgroundJob(input)?.announcement ?? null;
+  }
+
+  private async handleBackgroundIfTrailingAsync(input: string): Promise<string | null> {
+    const started = this.startBackgroundJob(input);
+    if (started === null) return null;
+    await started.settled;
+    return started.announcement;
+  }
+
+  private startBackgroundJob(input: string): { announcement: string; settled: Promise<unknown> } | null {
     if (!endsWithUnquotedAmp(input)) return null;
     let cmdLine = input.replace(/\s*&\s*$/, '').trim();
     if (!cmdLine) return null;
@@ -2932,13 +2891,13 @@ export class LinuxCommandExecutor {
     // §F5.8 — la table des processus de cet utilisateur est pleine : le
     // `fork()` échoue et le job n'existe jamais.
     const refusal = this.forkRefusal();
-    if (refusal) return refusal;
+    if (refusal) return { announcement: refusal, settled: Promise.resolve() };
     const spawned = this.spawnBackgroundJob(cmdLine, nohup);
     if (!spawned) return null;
     const lines: string[] = [];
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
     lines.push(`[${spawned.jobId}] ${spawned.pid}`);
-    return lines.join('\n');
+    return { announcement: lines.join('\n'), settled: spawned.settled };
   }
 
   /**
@@ -2983,7 +2942,9 @@ export class LinuxCommandExecutor {
       : LinuxCommandExecutor.FORK_EAGAIN;
   }
 
-  private spawnBackgroundJob(cmdLine: string, nohup: boolean): { pid: number; jobId: number } | null {
+  private spawnBackgroundJob(
+    cmdLine: string, nohup: boolean,
+  ): { pid: number; jobId: number; settled: Promise<unknown> } | null {
     const argv = simpleTokenize(cmdLine);
     if (argv.length === 0) return null;
     const c = this.ctx();
@@ -3016,7 +2977,7 @@ export class LinuxCommandExecutor {
       const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
       this.processMgr.enterUninterruptibleSleep(proc.pid, deadMount.target);
       this.env.set('!', String(proc.pid));
-      return { pid: proc.pid, jobId: job.id };
+      return { pid: proc.pid, jobId: job.id, settled: Promise.resolve() };
     }
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
     // `$!` — PID of the most-recently backgrounded process. Bash exposes
@@ -3048,18 +3009,28 @@ export class LinuxCommandExecutor {
     // syncProcPids() already materialized its fresh /proc/<pid>/fd/ — so
     // anything it opens during that run is invisible until refreshed here.
     this.materializeProcFd(proc.pid);
+    const noNetworkWork: Promise<unknown> = Promise.resolve();
+    let settled: Promise<unknown> = noNetworkWork;
     if (exitCode === 127 && this.networkRunner) {
       const netArgv = simpleTokenize(cmdLine.replace(/^sudo\s+/, ''));
       const runner = this.networkRunner;
+      this.runningBackgroundJobPid = proc.pid;
       const pending = netArgv.length > 0
         ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined))
         : null;
+      this.runningBackgroundJobPid = null;
       if (pending) {
         captured = '';
         exitCode = 0;
-        void pending
+        settled = pending
           .then((r) => { job.capturedOutput = r.output; job.exitCode = r.exitCode; })
-          .catch(() => { job.exitCode = 1; });
+          .catch(() => { job.exitCode = 1; })
+          .then(() => {
+            if (!parked) {
+              job.durationMs = parseBackgroundDurationMs(cmdLine);
+              job.completesAt = this.logicalNow() + job.durationMs;
+            }
+          });
       }
     }
     // The sync simulator executes the work eagerly. We still want
@@ -3069,13 +3040,15 @@ export class LinuxCommandExecutor {
     // captured output and exit code are stashed on the job for cmdFg
     // to drain when the user actually waits on it. A parked job never
     // auto-completes — only actually signalling it removes it.
-    if (!parked) {
+    if (!parked && settled === noNetworkWork) {
       job.durationMs = parseBackgroundDurationMs(cmdLine);
       job.completesAt = this.logicalNow() + job.durationMs;
     }
-    job.capturedOutput = captured;
-    job.exitCode = exitCode;
-    return { pid: proc.pid, jobId: job.id };
+    if (settled === noNetworkWork) {
+      job.capturedOutput = captured;
+      job.exitCode = exitCode;
+    }
+    return { pid: proc.pid, jobId: job.id, settled };
   }
 
   /** Current simulated-clock time in milliseconds. */
@@ -3257,6 +3230,7 @@ export class LinuxCommandExecutor {
     job.wallTimeMs = job.durationMs ?? 0;
     job.cpuTimeMs = proc?.cpuTime ?? 0;
     job.complete({ exitCode: job.exitCode ?? 0 });
+    this.forwarding?.closeOwnedBy(job.pid);
     if (proc) this.processMgr.setState(job.pid, 'Z');
   }
 
@@ -3748,7 +3722,7 @@ export class LinuxCommandExecutor {
     const builtin = this.runJobBuiltinIfMatching(trimmed);
     if (builtin !== null) return builtin;
 
-    const bgHandled = this.handleBackgroundIfTrailing(trimmed);
+    const bgHandled = await this.handleBackgroundIfTrailingAsync(trimmed);
     if (bgHandled !== null) return bgHandled;
 
     const io = this.buildIOContext();
@@ -5841,56 +5815,6 @@ export class LinuxCommandExecutor {
       // désormais la règle des autres commandes asynchrones (`ping`,
       // `curl`) : hors du pont, le registre les déclare introuvables au
       // lieu d'en servir une version infidèle.
-      case 'rsync': {
-        return this.runSshTransport(cmd, args, stdin);
-      }
-      case 'sshpass': {
-        // sshpass [-p PASSWORD | -f FILE | -e] ssh ...
-        // We support -p <pw> only — the most common form. The wrapped
-        // command must be `ssh` (rejecting other wrappers matches the
-        // typical brute-force script shape).
-        let password: string | undefined;
-        let i = 0;
-        while (i < args.length) {
-          if (args[i] === '-p' && args[i + 1] !== undefined) {
-            password = args[i + 1];
-            i += 2;
-            continue;
-          }
-          break;
-        }
-        if (args[i] === 'scp' || args[i] === 'sftp' || args[i] === 'rsync') {
-          return this.runSshTransport(
-            args[i] as 'scp' | 'sftp' | 'rsync', args.slice(i + 1), stdin, password);
-        }
-        if (args[i] !== 'ssh') {
-          return { output: 'sshpass: only `sshpass -p <pw> ssh|scp|sftp …` is supported in the simulator', exitCode: 1 };
-        }
-        const sshArgs = args.slice(i + 1);
-        const sshpassResult = runSshClient(this.buildSshClientOpts(sshArgs, this._cmdEnv, password));
-        if (sshpassResult.connection) {
-          const srcPort = this.socketTable?.allocateEphemeralPort()
-            ?? 49152 + Math.floor(Math.random() * 16000);
-          this.mirrorSshHandshakeCapture(
-            { ip: sshpassResult.connection.localIp, port: srcPort },
-            { ip: sshpassResult.connection.peerIp, port: sshpassResult.connection.peerPort },
-          );
-        }
-        if (sshpassResult.droppedSyn) {
-          const srcPort = this.socketTable?.allocateEphemeralPort()
-            ?? 49152 + Math.floor(Math.random() * 16000);
-          this.captureLog.captureTcpSynDropped(
-            { ip: sshpassResult.droppedSyn.localIp, port: srcPort },
-            { ip: sshpassResult.droppedSyn.peerIp, port: sshpassResult.droppedSyn.peerPort },
-          );
-        }
-        return { output: sshpassResult.output, exitCode: sshpassResult.exitCode };
-      }
-      case 'ssh': {
-        const stdinPwd = (this._scenarioStdin ?? '').split('\n')[0] || undefined;
-        return this.finishSshClientResult(
-          runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd)));
-      }
       case 'telnet':
         return this.runTelnetClient(args);
       case 'ssh-add':

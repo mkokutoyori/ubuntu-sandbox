@@ -90,6 +90,7 @@ import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
+import { allowLegacyIosSshServer, interoperateWithIos15 } from '@/__tests__/unit/network-v2/iosLegacySsh';
 
 interface Boitier { getPort(n: string): never; executeCommand(c: string): Promise<string> | string }
 
@@ -123,6 +124,8 @@ async function labo(): Promise<{ srv: LinuxPC; cli: LinuxPC; journal: () => Prom
   await srv.executeCommand('sudo useradd -m -s /bin/bash alice');
   await srv.executeCommand('echo "alice:secret" | sudo chpasswd');
   await srv.executeCommand('sudo systemctl start ssh');
+  allowLegacyIosSshServer(srv);
+  await interoperateWithIos15(hw);
 
   await cli.executeCommand('ssh alice@10.0.0.1 whoami', 'secret\n');
   await r.executeCommand('ssh -l alice 10.0.0.1', { passwordInput: 'secret' });
@@ -165,7 +168,7 @@ describe('le journal porte les messages d\'OpenSSH', () => {
 
   it('chaque pair a un vrai port source ephemere, jamais la constante 50000', async () => {
     const { srv, journal } = await labo();
-    const ports = [...(await journal()).matchAll(/ port (\d+) ssh2/g)].map(m => Number(m[1]));
+    const ports = [...(await journal()).matchAll(/(?:Accepted|Failed) password for .* port (\d+) ssh2/g)].map(m => Number(m[1]));
     const { min, max } = srv.getTcpStack().getEphemeralRange();
     expect(ports.length).toBe(4);
     for (const p of ports) {

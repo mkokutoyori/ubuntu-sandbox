@@ -157,6 +157,12 @@ export class SshSession implements ISshSession {
     return this.hostKeyBlob;
   }
 
+  private peerIdentificationLine: string | null = null;
+
+  get serverIdentification(): string | null {
+    return this.peerIdentificationLine;
+  }
+
   get isConnected(): boolean {
     return this._state.kind === 'connected';
   }
@@ -209,6 +215,7 @@ export class SshSession implements ISshSession {
     }
     this.sessionId = established.sessionId;
     this.hostKeyBlob = established.hostKeyBlob;
+    this.peerIdentificationLine = established.peerIdentification.line;
     const conn = transportLink(transport, dialed);
     this.conn = conn;
     this.connection = new SshConnection(transport);

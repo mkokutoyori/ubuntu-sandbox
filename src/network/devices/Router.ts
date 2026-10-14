@@ -57,7 +57,7 @@ import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } fr
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
 import {
-  hasHeadlessAnswers, runInteractionPlanHeadless, type HeadlessAnswers,
+  hasHeadlessAnswers, opensOutboundSession, runInteractionPlanHeadless, type HeadlessAnswers,
 } from '@/shell/interaction/HeadlessInteraction';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
@@ -3653,8 +3653,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   async executeCommand(command: string, answers?: HeadlessAnswers): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
-    if (hasHeadlessAnswers(answers)) {
-      const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
+    if (hasHeadlessAnswers(answers) || opensOutboundSession(command)) {
+      const dialogue = await this.jouerDialogueSansTerminal(command, answers ?? {});
       if (dialogue !== null) { this.syncRouteDebug(); return dialogue; }
     }
     const porteAaa = this.refusAutorisationAaa(command);
@@ -4542,7 +4542,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
   /** Outbound-SSH known-hosts store (Cisco `show ip ssh known-hosts`). */
-  readonly sshKnownHosts = new RouterSshKnownHosts();
+  readonly sshKnownHosts = new RouterSshKnownHosts(this);
   _getSshKnownHosts(): RouterSshKnownHosts { return this.sshKnownHosts; }
   /** Vendor-neutral CLI alias table (Huawei command-alias, Cisco alias). */
   readonly commandAliases = new CommandAliasTable();

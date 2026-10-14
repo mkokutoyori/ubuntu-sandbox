@@ -611,6 +611,7 @@ export interface WireExecTarget {
   port: number;
   identities: string[];
   command: string;
+  commandWords: string[];
   holdOnly: boolean;
   forksToBackground: boolean;
   strict: StrictHostKeyChecking;
@@ -652,6 +653,7 @@ export function wireExecTarget(
     port: flags.includes('-p') ? clientPort(flags) : entry?.port ?? 22,
     identities,
     command: joinRemoteCommand(positional.slice(1)),
+    commandWords: positional.slice(1),
     holdOnly: flags.includes('-N'),
     forksToBackground: flags.includes('-f'),
     strict: parseStrictHostKeyChecking(asked) ?? entry?.strictHostKeyChecking ?? 'accept-new',
@@ -1529,7 +1531,7 @@ function sessionHold(machine: unknown): number {
   return held;
 }
 
-type RemoteQuoting = 'posix' | 'cmd';
+export type RemoteQuoting = 'posix' | 'cmd';
 
 function remoteQuoting(device: unknown): RemoteQuoting {
   const os = (device as { getOSType?: () => string } | undefined)?.getOSType?.();
@@ -1543,7 +1545,7 @@ function remoteQuoting(device: unknown): RemoteQuoting {
  * any containing whitespace are re-quoted to survive the remote shell's
  * re-parse intact (`ssh host bash -lc 'echo $0'`).
  */
-function joinRemoteCommand(tokens: string[], quoting: RemoteQuoting = 'posix'): string {
+export function joinRemoteCommand(tokens: string[], quoting: RemoteQuoting = 'posix'): string {
   if (tokens.length === 0) return '';
   if (tokens.length === 1) return tokens[0].trim();
   const quote = quoting === 'cmd'
@@ -1771,4 +1773,8 @@ function runCrossPlatformExec(
   lines.push(connectionClosed(host));
   closeSession();
   return { output: lines.join('\n'), exitCode: 0 };
+}
+
+export function remoteQuotingOf(serverIdentification: string | null): RemoteQuoting {
+  return serverIdentification !== null && /windows/i.test(serverIdentification) ? 'cmd' : 'posix';
 }

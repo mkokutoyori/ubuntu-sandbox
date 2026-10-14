@@ -22,6 +22,7 @@ function splitSshpass(args: string[]): { password?: string; wrapped: string[] } 
 export const sshpassCommand: LinuxCommand = {
   name: 'sshpass',
   needsNetworkContext: true,
+  opensWireSession: true,
   readsStdin: true,
   manSection: 1,
   usage: SSHPASS_USAGE,
@@ -45,7 +46,7 @@ export const sshpassCommand: LinuxCommand = {
       return ctx.executor.runSshTransportAsync(verb, wrapped.slice(1), password ?? '', stdin);
     }
     if (verb === 'rsync') {
-      return ctx.executor.runSshTransport('rsync', wrapped.slice(1), stdin, password);
+      return ctx.executor.runRsyncAsync(wrapped.slice(1), password);
     }
     if (verb === undefined) {
       return { output: SSHPASS_USAGE, exitCode: 1 };

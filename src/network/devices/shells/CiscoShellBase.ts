@@ -12,6 +12,8 @@
  *                     Subclasses use this for typed access to device-specific APIs.
  */
 
+import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
+import type { Equipment } from '@/network/equipment/Equipment';
 import { monitorCaptureSpecs, type MonitorCaptureHost } from './cisco/monitorCaptureSpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { FrameSource } from '../../hardware/PortTap';
@@ -8695,7 +8697,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return 'Connection closed.';
   }
 
-  protected avecReferenceAppareil(device: TDevice, action: () => string): string {
+  protected avecReferenceAppareil<T = string>(device: TDevice, action: () => T): T {
     const precedente = this.deviceRef;
     this.deviceRef = device;
     try {
@@ -9387,7 +9389,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return `[Resuming connection ${n} to ${s.host} ... ]`;
     });
     trie.registerGreedy('ssh', 'Open an SSH connection to a remote host',
-      (args) => this.runOutboundSshClient(args));
+      () => '% Password: required. Outbound SSH asks for it through its interaction prompt.');
     trie.registerGreedy('telnet', 'Open a Telnet session',
       (args) => this.runOutboundTelnet(args));
   }
@@ -9951,7 +9953,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         {
           kind: 'run',
           run: async (rt) => {
-            rt.output(this.avecReferenceAppareil(device, () =>
+            rt.output(await this.avecReferenceAppareil(device, () =>
               this.runOutboundSshClient(args, rt.values.get('ssh_password'))));
           },
         },
@@ -9959,7 +9961,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
-  private runOutboundSshClient(args: string[], offeredPassword?: string): string {
+  private async runOutboundSshClient(args: string[], offeredPassword?: string): Promise<string> {
     let user = 'admin';
     let port: string | null = null;
     const rest: string[] = [];
@@ -9974,66 +9976,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (rest.length === 0) return '% Incomplete command.';
     let host = rest[0];
     const cmd = rest.slice(1).join(' ');
-    const router = this.d() as unknown as {
+    const device = this.d();
+    const router = device as unknown as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
-      _getHostnameInternal: () => string;
       _getHostsTable?: () => { resolve: (n: string) => string | null };
     };
-    // Resolve through the static `ip host` table before any DNS fallback.
     const resolved = router._getHostsTable?.().resolve(host);
     if (resolved) host = resolved;
-    let sourceIp: string | null = null;
+    let hasSourceAddress = false;
     for (const [, p] of router._getPortsInternal()) {
-      const ip = p.getIPAddress();
-      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+      if (p.getIPAddress() && p.getIsUp()) { hasSourceAddress = true; break; }
     }
-    if (!sourceIp) return '% No usable interface IP for outbound SSH';
-    const sshStack = (this.d() as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } })
-      .getTcpStack?.();
-    if (sshStack && IPAddress.tryParse(host) && !sshStack.hasEgressTo(host)) {
-      return IOS_SSH.unreachable(host, Number(port ?? 22));
-    }
-    const clientArgs: string[] = [];
-    if (port) clientArgs.push('-p', port);
-    clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
-    // Cisco IOS' built-in ssh client always allocates a line-mode PTY on
-    // the VTY — opposite of OpenSSH's exec-mode default.
-    clientArgs.push('-t');
-    clientArgs.push(`${user}@${host}`);
-    if (cmd) clientArgs.push(cmd);
-    const result = runSshClient({
-      args: clientArgs,
-      sourceHostname: router._getHostnameInternal(),
-      sourceIp,
-      sourceUser: user,
-      offeredPassword,
-      localVfs: {
-        readFile: () => null,
-        writeFile: () => undefined,
-      },
+    if (!hasSourceAddress) return '% No usable interface IP for outbound SSH';
+    return runRouterOutboundSsh({
+      device: device as unknown as Equipment,
+      dialect: IOS_SSH,
+      allocatePty: true,
+      user,
+      host,
+      port: Number(port ?? 22),
+      command: cmd,
+      password: offeredPassword,
     });
-    // TOFU: record the remote host key in this router's local
-    // known-hosts table so `show ip ssh known-hosts` reflects it.
-    if (result.exitCode === 0) {
-      const dev = this.d() as unknown as {
-        _getSshKnownHosts?: () => { add: (e: { host: string; keyType: string; publicKey: string }) => void };
-      };
-      const remoteHk = this.lookupRemoteSshHostKey(host);
-      if (remoteHk) {
-        dev._getSshKnownHosts?.().add({ host, ...remoteHk });
-      }
-      if (!cmd) {
-        this.outgoingSessions.open({ host: rest[0], address: host, protocol: 'ssh', user });
-      }
-    }
-    return result.output;
-  }
-
-  /** Read the remote machine's host key via the topology registry. */
-  private lookupRemoteSshHostKey(host: string): { keyType: string; publicKey: string } | null {
-    const found = findHostByAddress(host, undefined, this.d() as never) as { device?: { getSshHostKey?: () => { type: string; publicKey: string } } } | null;
-    const hk = found?.device?.getSshHostKey?.();
-    return hk ? { keyType: hk.type, publicKey: hk.publicKey } : null;
   }
 
   private registerCommonConfigCommands(trie: CommandTrie = this.configTrie): void {

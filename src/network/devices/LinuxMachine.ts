@@ -584,6 +584,7 @@ export abstract class LinuxMachine extends EndHost
       if (registered.runWithStatusSync) {
         return registered.runWithStatusSync(this.buildCommandContext(), argv, input);
       }
+      if (registered.opensWireSession === true) return null;
       const result = registered.run(this.buildCommandContext(), argv, input);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };

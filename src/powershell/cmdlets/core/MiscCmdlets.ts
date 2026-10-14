@@ -238,6 +238,26 @@ export class ReadHostCmdlet implements ICmdlet {
   }
 }
 
+export class GetHostCmdlet implements ICmdlet {
+  readonly name = 'get-host';
+  readonly displayName = 'Get-Host';
+  readonly description = 'Gets an object that represents the current host program.';
+  readonly parameters = [] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const version = ctx.env.get('PSVersionTable') as Record<string, PSValue> | undefined;
+    return {
+      Name: 'ConsoleHost',
+      Version: version?.['PSVersion'] ?? '5.1.0',
+      InstanceId: '00000000-0000-0000-0000-000000000000',
+      CurrentCulture: 'en-US',
+      CurrentUICulture: 'en-US',
+      IsRunspacePushed: false,
+    } as Record<string, PSValue>;
+  }
+}
+
 // ─── Get-Help ─────────────────────────────────────────────────────────────
 
 export class GetHelpCmdlet implements ICmdlet {

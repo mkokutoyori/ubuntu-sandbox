@@ -1258,7 +1258,7 @@ describe('§21 — auth.log records sftp sessions', () => {
       contains: [/Accepted password for alice from 10\.0\.0\.1/],
     },
     {
-      name: 'refused sftp (sshd stopped) records Failed password',
+      name: 'refused sftp (sshd stopped) leaves no Failed password line: nothing was listening',
       setup: async (l) => {
         await l.pc2.executeCommand('systemctl stop ssh');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
@@ -1266,7 +1266,7 @@ describe('§21 — auth.log records sftp sessions', () => {
       },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
-      contains: [/Failed password for alice/],
+      excludes: [/Failed password for alice/],
     },
     {
       name: 'auth.log carries the source IP',
@@ -2119,7 +2119,7 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
       contains: [/Timeout, server.*not responding|Connection closed|Permission denied/i],
     },
     {
-      name: 'auth.log records "Disconnecting" lines for throttled sessions',
+      name: 'auth.log records the pre-auth disconnect of a client that has nothing left to try',
       setup: async (l) => {
         await l.pc2.executeCommand('printf "MaxAuthTries 1\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
@@ -2127,7 +2127,7 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
       },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
-      contains: [/Disconnecting|Too many authentication failures|Connection closed by/i],
+      contains: [/Disconnected from 10\.0\.0\.1 port \d+ \[preauth\]/],
     },
   ];
 

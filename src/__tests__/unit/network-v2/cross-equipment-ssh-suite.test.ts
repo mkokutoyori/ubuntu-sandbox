@@ -32,7 +32,7 @@
  *     section so adding cases is one row of data.
  */
 
-import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
+import { allowLegacyIosSsh, interoperateWithIos15 } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, expect, beforeEach, test } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -130,6 +130,7 @@ async function buildXLan(): Promise<XLan> {
   }
 
   for (const d of [linux1, linux2, lxsrv1, win1, win2]) allowLegacyIosSsh(d);
+  for (const d of [linux1, linux2, lxsrv1, win1, win2, ciscoR1, hwR1]) await interoperateWithIos15(d);
 
   return {
     linux1, linux2, lxsrv1, win1, win2, ciscoR1, ciscoS1, hwR1, hwS1, sw,
@@ -1250,8 +1251,12 @@ describe('§17 — Banner, MOTD and last-login per platform', () => {
 
   const rows: Row[] = [
     {
-      name: 'Linux: /etc/issue.net is displayed pre-auth',
-      setup: (l) => { void l.linux2.executeCommand(`sudo sh -c "echo 'AUTHORIZED USE ONLY' > /etc/issue.net"`); },
+      name: 'Linux: /etc/issue.net is displayed pre-auth once Banner names it',
+      setup: async (l) => {
+        await l.linux2.executeCommand(`sudo sh -c "echo 'AUTHORIZED USE ONLY' > /etc/issue.net"`);
+        await l.linux2.executeCommand(`sudo sh -c "echo 'Banner /etc/issue.net' >> /etc/ssh/sshd_config"`);
+        await l.linux2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
       contains: ['AUTHORIZED USE ONLY'],
     },
@@ -1323,14 +1328,13 @@ describe('§18 — Brute-force protection on every SSH server', () => {
 
   const rows: Row[] = [
     {
-      name: 'Linux: repeated unknown-user attempts trip MaxStartups limits',
+      name: 'Linux: repeated unknown-user attempts get the source banned by fail2ban',
       setup: async (l) => {
-        await l.linux2.executeCommand('sudo sed -i "s/^#\\?MaxStartups.*/MaxStartups 2:100:3/" /etc/ssh/sshd_config');
-        await l.linux2.executeCommand('sudo systemctl restart ssh');
+        await l.linux2.executeCommand('sudo systemctl start fail2ban');
       },
       on: l => l.linux1,
-      cmd: 'for i in 1 2 3 4 5; do ssh -o NumberOfPasswordPrompts=1 ghost$i@10.0.0.2 hostname; done',
-      contains: [/Connection (closed|refused)|too many|drop/i],
+      cmd: 'for i in 1 2 3 4 5 6 7 8; do ssh -o NumberOfPasswordPrompts=1 ghost$i@10.0.0.2 hostname; done',
+      contains: [/Connection (closed|refused)|timed out|too many|drop/i],
     },
     {
       name: 'Cisco: login block-for is configurable and reflected in show running-config',
@@ -1405,7 +1409,7 @@ describe('§19 — PTY allocation, signals and window size', () => {
     },
     {
       name: 'Cisco IOS: ssh client uses a line-mode pty for the VTY',
-      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      setup: async (l) => { await l.ciscoR1.executeCommand('enable'); },
       on: l => l.ciscoR1, cmd: 'ssh -l alice 10.0.0.1 tty',
       contains: [/\/dev\/pts\/\d+/],
     },
