@@ -5,9 +5,15 @@
  * (RFC 2131 §4.3.1), so an ISC-style Linux client receives it and a Windows
  * client, whose list does not contain 42, does not.
  *
+ * On the Linux client the lease reaches chrony the way the Debian package
+ * does it: dhclient publishes /run/chrony-dhcp/<iface>.sources, the default
+ * chrony.conf has `sourcedir /run/chrony-dhcp`, and the daemon follows the
+ * server.
+ *
  * Measured against the previous tree (git worktree of HEAD): 3 of the 4
- * cases fall (option 42 was refused by the Windows scope and ignored by the
- * client); the witness (the Windows client leases an address) passes either way.
+ * option cases fall (option 42 was refused by the Windows scope and ignored
+ * by the client), and the chrony case falls; the witness (the Windows client
+ * leases an address) passes either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, IPAddress, SubnetMask, MACAddress } from '@/network/core/types';
@@ -17,10 +23,15 @@ import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
 import { WindowsDhcpServerRole } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import type { EndHost } from '@/network/devices/EndHost';
 
+let clock: VirtualTimeScheduler;
+
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -39,7 +50,7 @@ function lab() {
   const role = new WindowsDhcpServerRole(server as unknown as EndHost);
   role.start();
   role.addScope('LAN', '192.168.70.100', '192.168.70.200', '255.255.255.0');
-  return { role, linux, windows };
+  return { role, linux, windows, server };
 }
 
 describe('DHCP option 42 from a Windows Server scope', () => {
@@ -70,5 +81,17 @@ describe('DHCP option 42 from a Windows Server scope', () => {
     const lease = windows.getDHCPClient().getState(name).lease;
     expect(lease?.ipAddress).toMatch(/^192\.168\.70\./);
     expect(lease?.ntpServers).toEqual([]);
+  });
+
+  it('[fails before] chrony on the Linux client follows the server learned by DHCP, through sourcedir', async () => {
+    const { role, linux, server } = lab();
+    role.setOptionValue('LAN', 42, ['192.168.70.10']);
+    await server.executeCommand("printf 'local stratum 5\\nallow\\n' | sudo tee /etc/chrony/chrony.conf");
+    await server.executeCommand('sudo systemctl restart chrony');
+    await linux.executeCommand('sudo systemctl restart chrony');
+    linux.getDHCPClient().requestLease('eth0', { verbose: true });
+    converge(clock, 200_000);
+    expect(await linux.executeCommand('cat /run/chrony-dhcp/eth0.sources')).toBe('server 192.168.70.10 iburst');
+    expect(await linux.executeCommand('chronyc sources')).toMatch(/\^\* 192\.168\.70\.10 +5 /);
   });
 });

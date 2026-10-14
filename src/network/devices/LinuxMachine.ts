@@ -2798,6 +2798,7 @@ export abstract class LinuxMachine extends EndHost
 
   protected override onDhcpLeaseConfigured(iface: string): void {
     const lease = this.dhcpClient.getState(iface)?.lease;
+    this.publishDhcpTimeSources(iface, lease?.ntpServers ?? []);
     const dns = lease?.dnsServers ?? [];
     if (dns.length === 0) return;
     const lines: string[] = [];
@@ -2831,8 +2832,19 @@ export abstract class LinuxMachine extends EndHost
     if (!this.dnsResolverIP && dnsServers[0]) this.dnsResolverIP = dnsServers[0];
   }
 
+  private publishDhcpTimeSources(iface: string, servers: readonly string[]): void {
+    const path = `/run/chrony-dhcp/${iface}.sources`;
+    const vfs = this.executor.vfs;
+    if (servers.length === 0) {
+      if (vfs.exists(path)) vfs.deleteFile?.(path);
+    } else {
+      vfs.writeFile(path, servers.map((ip) => `server ${ip} iburst`).join('\n') + '\n', 0, 0, 0o022);
+    }
+    if (this.chronyService?.isRunning()) this.chronyService.reload();
+  }
+
   protected override onDhcpLeaseReleased(iface: string): void {
-    void iface;
+    this.publishDhcpTimeSources(iface, []);
     this.executor.vfs.writeFile('/etc/resolv.conf', '', 0, 0, 0o022);
     this.dnsResolverIP = '';
   }

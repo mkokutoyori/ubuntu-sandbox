@@ -201,6 +201,7 @@ export interface ChronyConf {
   readonly maxUpdateSkewPpm: number | null;
   readonly maxChange: { offset: number; delay: number; ignore: number } | null;
   readonly nts: ChronyNtsConf;
+  readonly sourceDirs: readonly string[];
   /** Les lignes que chronyd connait mais que ce simulateur n'applique pas. */
   readonly acceptesSansEffet: readonly string[];
   /** Les lignes qu'aucun chronyd ne connait : elles sont signalees. */
@@ -222,7 +223,7 @@ const CONF_VIDE: ChronyConf = {
   rtcsync: false, manual: false, localStratum: null, maxdistanceSec: null,
   ntpPort: 123, commandPort: 323, bindCommandAddresses: [], commandRateLimit: null, smooth: null, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
   nts: { serverCerts: [], serverKeys: [], port: 4460, processes: 1, maxConnections: 100, dumpDir: '', ntpServer: null, rotateSeconds: 604800, refreshSeconds: 2419200, trustedCerts: [], systemCerts: true },
-  acceptesSansEffet: [], inconnues: [],
+  sourceDirs: [], acceptesSansEffet: [], inconnues: [],
 };
 
 function entier(mot: string | undefined): number | null {
@@ -255,6 +256,7 @@ export function parseChronyConf(texte: string): ChronyConf {
   const selection: Partial<SelectionParameters> = {};
   let maxUpdateSkewPpm: number | null = null;
   let maxChange: { offset: number; delay: number; ignore: number } | null = null;
+  const sourceDirs: string[] = [];
   const serverCerts: string[] = [];
   const serverKeys: string[] = [];
   const trustedCerts: { set: number; path: string }[] = [];
@@ -420,6 +422,11 @@ export function parseChronyConf(texte: string): ChronyConf {
         trustedCerts.push({ set, path: args[args.length - 1] });
         break;
       }
+      case 'sourcedir': {
+        if (args.length !== 1) inconnues.push({ ligne: i + 1, texte: nue });
+        else sourceDirs.push(args[0]);
+        break;
+      }
       case 'nosystemcert': ntsSettings.systemCerts = false; break;
       default:
         if (CONNUES_SANS_EFFET.has(cle)) acceptesSansEffet.push(nue);
@@ -430,7 +437,7 @@ export function parseChronyConf(texte: string): ChronyConf {
     ...CONF_VIDE, sources, makestep, access, ratelimit,
     driftfile, logdir, logs, keyfile, rtcsync, manual, localStratum, maxdistanceSec,
     ntpPort, commandPort, bindCommandAddresses, commandRateLimit, smooth, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
-    nts: { ...ntsSettings, serverCerts, serverKeys, trustedCerts },
+    nts: { ...ntsSettings, serverCerts, serverKeys, trustedCerts }, sourceDirs,
     acceptesSansEffet, inconnues,
   };
 }
@@ -441,6 +448,12 @@ export const CHRONY_CONF_DEBIAN = `# Welcome to the chrony configuration file. S
 
 # Use Debian vendor zone.
 pool 2.debian.pool.ntp.org iburst
+
+# Use time sources from DHCP.
+sourcedir /run/chrony-dhcp
+
+# Use NTP sources found in /etc/chrony/sources.d.
+sourcedir /etc/chrony/sources.d
 
 # This directive specify the location of the file containing ID/key pairs for
 # NTP authentication.

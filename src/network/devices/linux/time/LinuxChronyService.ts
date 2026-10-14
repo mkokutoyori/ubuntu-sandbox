@@ -353,6 +353,24 @@ export class LinuxChronyService implements ServiceSocketServer {
     return { ok: true };
   }
 
+  private declaredSources(): ChronySource[] {
+    const sources = [...this.conf.sources];
+    for (const directory of this.conf.sourceDirs) {
+      const names = (this.host.listDirectory?.(directory) ?? []).filter((name) => name.endsWith('.sources')).sort();
+      for (const name of names) {
+        const text = this.host.readFile(`${directory.replace(/\/$/, '')}/${name}`) ?? '';
+        for (const line of text.split('\n')) {
+          const words = line.replace(/[#!].*$/, '').trim().split(/\s+/);
+          const kind = words[0]?.toLowerCase();
+          if (kind !== 'server' && kind !== 'pool' && kind !== 'peer') continue;
+          const source = parseChronySource(kind, words.slice(1));
+          if (source !== null && !sources.some((s) => s.hote === source.hote)) sources.push(source);
+        }
+      }
+    }
+    return sources;
+  }
+
   private installSource(source: ChronySource): void {
     const agent = this.host.ntp();
     const existed = agent.getAssociation(source.hote) !== undefined;
@@ -431,7 +449,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     this.chargerCles();
     this.nts.apply(this.conf.nts);
     const voulues = new Set<string>();
-    for (const s of this.conf.sources) {
+    for (const s of this.declaredSources()) {
       if (!isValidIPv4(s.hote)) continue;
       voulues.add(s.hote);
       this.installSource(s);
