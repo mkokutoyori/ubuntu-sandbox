@@ -4,7 +4,7 @@ import { hostClock } from '../audit/tools/AuditHostClock';
 import { parseAccountDatabase } from '../iam/fs/AccountDatabaseParser';
 import { LASTLOG_PATH } from '../LinuxLastlogRegistry';
 import type { LastlogFile, LastlogHost } from './LastlogTool';
-import { binaryStringToBytes, bytesToBinaryString } from './UtmpxRecord';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 export function lastlogHost(executor: LinuxCommandExecutor): LastlogHost {
   const { vfs, userMgr } = executor;

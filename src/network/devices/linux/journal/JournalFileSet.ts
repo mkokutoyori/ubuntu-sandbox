@@ -1,6 +1,7 @@
 import { type JournalRecord } from './JournalRecord';
 import { type JournalFileInfo } from './JournalctlTool';
 import { concat, utf8 } from './JournalText';
+import { bytesToBinaryString } from '@/crypto/encoding';
 
 const ENTRY_ARRAY_MINIMUM = 4;
 const FIELD_HASH_TABLE_ITEMS = 333;
@@ -11,11 +12,7 @@ const FNV_OFFSET = 0xcbf29ce484222325n;
 const FNV_PRIME = 0x100000001b3n;
 const MASK64 = (1n << 64n) - 1n;
 
-const key = (bytes: Uint8Array): string => {
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 8192) out += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  return out;
-};
+const key = (bytes: Uint8Array): string => bytesToBinaryString(bytes);
 
 class EntryChain {
   count = 0;
