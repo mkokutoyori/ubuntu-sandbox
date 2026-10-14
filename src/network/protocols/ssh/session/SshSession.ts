@@ -95,6 +95,7 @@ export interface SshSessionDeps {
   readonly clientIdentification?: string;
   readonly clientExtInfo?: boolean;
   readonly agent?: AgentPort;
+  readonly hostKeyAuthority?: (host: string, key: SshHostKey) => boolean;
 }
 
 
@@ -403,6 +404,11 @@ export class SshSession implements ISshSession {
     key: SshHostKey,
     opts: SshConnectOptions,
   ): Promise<Result<void>> {
+    if (this.deps.hostKeyAuthority !== undefined) {
+      if (this.deps.hostKeyAuthority(host, key)) return ok(undefined);
+      this.deps.interactionHandler.showWarning('Host key verification failed.');
+      return err({ kind: 'HOST_KEY_REJECTED', host, fingerprint: key.fingerprint.toString() });
+    }
     const strategy: IHostKeyVerificationStrategy = createVerificationStrategy(
       opts.strictHostKeyChecking,
     );

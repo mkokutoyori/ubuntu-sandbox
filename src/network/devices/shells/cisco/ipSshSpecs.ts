@@ -163,6 +163,10 @@ export function ipSshSpecs(ctx: () => IpSshHost): CommandSpec[] {
       (_session, args) => { ctx().sshConfig().dhMinBits = Number(args.bits); return ''; },
       () => { ctx().sshConfig().dhMinBits = SSH_DEFAULTS.dhMinBits; return ''; }),
 
+    spec('stricthostkeycheck', ['ip', 'ssh', 'stricthostkeycheck'], 'Strict host key checking of SSH servers',
+      () => { ctx().sshConfig().strictHostKeyCheck = true; return ''; },
+      () => { ctx().sshConfig().strictHostKeyCheck = false; return ''; }),
+
     spec('maxstartups', ['ip', 'ssh', 'maxstartups', {
       name: 'nombre', type: 'INT', range: SSH_MAXSTARTUPS_RANGE, optional: true,
       description: 'Number of connections accepted concurrently',

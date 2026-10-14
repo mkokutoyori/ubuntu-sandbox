@@ -162,7 +162,7 @@ export interface AaaLegacyServerHost {
 }
 
 export const SSH_DEFAULTS = Object.freeze({
-  version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false, maxStartups: 128,
+  version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false, maxStartups: 128, strictHostKeyCheck: false,
   macAlgorithms: [] as string[], encryptionAlgorithms: [] as string[],
   kexAlgorithms: [] as string[], hostKeyAlgorithms: [] as string[],
   clientEncryptionAlgorithms: [] as string[], clientMacAlgorithms: [] as string[], scpServerEnabled: false,
@@ -176,6 +176,7 @@ export interface SshConfig {
   dhMinBits: number;
   loggingEvents: boolean;
   maxStartups: number;
+  strictHostKeyCheck: boolean;
   rekeyTimeMinutes?: number;
   rekeyVolumeKb?: number;
   macAlgorithms: string[];
@@ -651,6 +652,7 @@ export class CiscoSecurityConfig {
       lines.push(`ip ssh dh min size ${this.ssh.dhMinBits}`);
     }
     if (this.ssh.loggingEvents) lines.push('ip ssh logging events');
+    if (this.ssh.strictHostKeyCheck) lines.push('ip ssh stricthostkeycheck');
     if (this.ssh.maxStartups !== SSH_DEFAULTS.maxStartups) lines.push(`ip ssh maxstartups ${this.ssh.maxStartups}`);
     if (this.ssh.rekeyTimeMinutes !== undefined) lines.push(`ip ssh rekey time ${this.ssh.rekeyTimeMinutes}`);
     if (this.ssh.rekeyVolumeKb !== undefined) lines.push(`ip ssh rekey volume ${this.ssh.rekeyVolumeKb}`);

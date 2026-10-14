@@ -1,3 +1,4 @@
+import type { SshHostKey } from '@/network/protocols/ssh/SshHostKey';
 /**
  * wireSshLogin — opening an SSH session over the real wire, for any
  * terminal that can type `ssh`.
@@ -232,6 +233,9 @@ export async function openWireSshConnection(
   }
 
   const profile = sshClientProfileOf(req.device);
+  const hostKeyAuthority = (req.device as unknown as {
+    sshHostKeyAuthority?: () => ((host: string, key: SshHostKey) => boolean) | undefined;
+  }).sshHostKeyAuthority?.();
   const session = new SshSession({
     tcpConnector,
     vfs: sshLocalFsFor(req.device) as never,
@@ -241,6 +245,7 @@ export async function openWireSshConnection(
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     credentialless: req.credentialless,
     ...(req.agent ? { agent: req.agent } : {}),
+    ...(hostKeyAuthority ? { hostKeyAuthority } : {}),
     clientIdentification: profile?.identification ?? opensshIdentificationFor(req.device.getOSType()),
     ...(profile ? { clientExtInfo: profile.extInfo } : {}),
     interactionHandler: req.credentialless

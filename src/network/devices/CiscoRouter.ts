@@ -11,7 +11,7 @@ import { ciscoSshIdentification } from '@/network/protocols/ssh/serverIdentifica
 import { C2900_SOFTWARE, ciscoSoftwareDescriptor, type CiscoSoftwareIdentity } from './shells/cisco/CiscoPlatform';
 import { effectiveIosSshAlgorithms, iosSshClientProfile, iosSshTransportPolicy } from './router/security/CiscoSshAlgorithms';
 import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
-import type { SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
+import type { SshHostKey, SshKeyAlgorithm } from '../protocols/ssh/SshHostKey';
 import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
@@ -511,6 +511,12 @@ export class CiscoRouter extends Router {
     if (ssh.encryptionAlgorithms.length === 0 && ssh.macAlgorithms.length === 0) return null;
     const effective = effectiveIosSshAlgorithms(ssh, C2900_SOFTWARE);
     return { chiffrement: effective.encryption[0], hmac: effective.mac[0] };
+  }
+
+  sshHostKeyAuthority(): ((host: string, key: SshHostKey) => boolean) | undefined {
+    const security = getSecurityConfig(this);
+    if (!security.ssh.strictHostKeyCheck) return undefined;
+    return (host, key) => security.sshPubkeys.admitsServer(host, key.publicKey);
   }
 
   protected override sshPublicKeyAdmitted(user: string, offeredKeyMaterial: string): boolean {
