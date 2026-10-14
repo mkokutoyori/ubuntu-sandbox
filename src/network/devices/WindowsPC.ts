@@ -3599,10 +3599,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nmap':
       case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
-      case 'ssh-keygen':
-      case 'ssh-agent':
       case 'ssh-add':
         return runSshAddCommand(args, this.agentHost()).then((outcome) => outcome.output);
+      case 'ssh-keygen':
+      case 'ssh-agent':
       case 'ssh-keyscan':
         return Promise.resolve(this.runOpenSshTool(cmd, args));
       case 'pathping': return this.runPathpingCommand(args);

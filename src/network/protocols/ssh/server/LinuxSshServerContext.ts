@@ -446,6 +446,11 @@ export class LinuxSshServerContext implements ISshServerContext {
       .allowAgentForwarding;
   }
 
+  userPolicyRefusal(user: string, address: string): string | null {
+    const groups = this.userManager.getUserGroups(user).map((g) => g.name);
+    return this.effectiveSshdServerConfig().userRefusal(user, groups, address === '' ? undefined : { address });
+  }
+
   acceptsEnvironment(name: string): boolean {
     return this.effectiveSshdServerConfig().acceptEnv.some((pattern) => sshWildcardMatches(pattern, name));
   }
@@ -636,9 +641,10 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (pam !== null && session !== undefined) {
       return `${pam.sessionMessages({ ip: session.ip, port: session.port }).join('')}${this.previousLoginLine(session.user, policy.printLastLog)}`;
     }
-    if (!policy.printMotd) return '';
+    const lastLogin = session === undefined ? '' : this.previousLoginLine(session.user, policy.printLastLog);
+    if (!policy.printMotd) return lastLogin;
     const motd = this.vfs.readFile('/etc/motd');
-    return motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`;
+    return `${lastLogin}${motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`}`;
   }
 
   private previousLoginLine(user: string, printLastLog: boolean): string {

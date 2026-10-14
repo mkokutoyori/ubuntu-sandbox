@@ -298,7 +298,7 @@ describe('TP 10 — freiner les tentatives', () => {
     const attempt = (secret: string) => (from.device as unknown as Cli).executeCommand(BY_PASSWORD(ADMIN, secret, target.ip, 'show clock'));
     expect(await attempt('wrong')).toContain('Permission denied');
     expect(await attempt('wrong')).toContain('Permission denied');
-    expect(await attempt(SECRET)).toContain('Quiet-Mode');
+    expect(await attempt(SECRET)).toContain('Connection refused');
     expect(await ios.executeCommand('show login')).toContain('Router presently in Quiet-Mode.');
   });
 

@@ -303,6 +303,10 @@ export async function relayScriptedShell(
     const motd = (shell as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
     if (motd.trim().length > 0) lines.push(motd.replace(/\n+$/, ''));
   }
+  await shell.untilQuiet?.();
+  const unsolicited = shell.takeUnclaimedOutput?.() ?? '';
+  if (unsolicited !== '') lines.push(unsolicited.replace(/\n+$/, ''));
+  if (!shell.isOpen) return { output: lines.join('\n'), exitCode: shell.remoteExitStatus?.() ?? 0 };
   let prompt = shell.initialPrompt() ?? '';
   let awaitingChallenge = false;
   let remaining = skipLines;

@@ -59,6 +59,9 @@ export interface ISshShellChannel extends ISshChannel {
   resize(cols: number, rows: number): void;
   send(data: string): void;
   onData(handler: (data: string) => void): () => void;
+  untilQuiet?(): Promise<void>;
+  takeUnclaimedOutput?(): string;
+  remoteExitStatus?(): number | null;
   /**
    * Dispatch a single line of shell input to the server's persistent
    * shell session for this channel. Resolves with the captured output.

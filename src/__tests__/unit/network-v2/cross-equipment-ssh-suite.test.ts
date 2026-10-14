@@ -183,6 +183,8 @@ function secretOf(destination: string): string | undefined {
 function motDePasseTape(cmd: string): string | undefined {
   if (!APPEL_CLIENT.test(cmd) || /\bsshpass\b/.test(cmd)) return undefined;
   const rebond = /\s-J\s+(\S+)\s+(\S+)/.exec(cmd);
+  const relais = /ProxyCommand="ssh [^"]*?(\S+)"/.exec(cmd);
+  if (relais) return `${secretOf(` ${relais[1]}`) ?? ''}${secretOf(cmd.replace(/-o ProxyCommand="[^"]*"/, '')) ?? ''}`;
   if (!rebond) return secretOf(cmd);
   return [...rebond[1].split(','), rebond[2]].map((saut) => secretOf(` ${saut}`) ?? '').join('');
 }
@@ -1069,12 +1071,9 @@ describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
       contains: [/^lxsrv1$/m],
     },
     {
-      name: '-D 1080 SOCKS proxy: ssh -o ProxyCommand uses it to reach lxsrv1',
-      setup: async (l) => {
-        await l.linux1.executeCommand('ssh -f -N -D 1080 alice@10.0.0.2', 'admin\n');
-      },
+      name: 'ProxyCommand ssh -W: the second hop relays the connection to lxsrv1',
       on: l => l.linux1,
-      cmd: 'ssh -o ProxyCommand="ssh -W %h:%p -p 1080 -o StrictHostKeyChecking=no" alice@10.0.0.3 hostname',
+      cmd: 'ssh -o ProxyCommand="ssh -W %h:%p alice@10.0.0.2" -o StrictHostKeyChecking=no alice@10.0.0.3 hostname',
       contains: [/^lxsrv1$/m],
     },
     {

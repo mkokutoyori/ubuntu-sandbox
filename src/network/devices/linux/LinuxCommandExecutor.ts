@@ -163,8 +163,8 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import {
-  execChannelOptionsFor, joinRemoteCommand, remoteQuotingOf, runSshClient, splitSshFlags, sshClientRefusal, sshWireFailureResult, sshWireSuccessResult,
-  wireExecTarget,
+  execChannelOptionsFor, joinRemoteCommand, remoteQuotingOf, splitSshFlags, sshClientRefusal, sshWireFailureResult, sshWireSuccessResult,
+  wireExecTarget, type SshClientOpts, type SshClientResult, type WireExecTarget,
 } from './network/LinuxSshClient';
 import { resolveSshTarget } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH } from '@/terminal/ssh/sshDialect';
@@ -256,6 +256,8 @@ import { openDescriptors, descriptorCount, type DescriptorSources } from './proc
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
 
 /** Commands that commonly read from stdin when piped. */
+const PROXY_COMMAND_CLOSED = 'Connection closed by UNKNOWN port 65535';
+const STDIO_FORWARD_SETTLE_TURNS = 8;
 const STDIN_COMMANDS = new Set([
   'sort', 'wc', 'grep', 'head', 'tail', 'tr', 'cut', 'uniq', 'tee',
   'awk', 'sed', 'cat', 'xargs', 'less', 'more',
@@ -1681,12 +1683,13 @@ export class LinuxCommandExecutor {
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
     authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences, dialAddress?: string,
+    proxy?: TcpConnector,
   ): Promise<{
     session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
     hostKeyRefusal?: string; connectionFailure?: string;
   }> {
-    if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
-    const connector = this.tcpConnector;
+    if (!this.tcpConnector && proxy === undefined) return { session: null, authRefused: false, notices: [] };
+    const connector = proxy ?? this.tcpConnector!;
     const outcome = await connectWireSsh(
       this.wireSshClient(), { host, user, port, password, identities, strict, authentication, algorithms },
       ((h, p) => connector(dialAddress !== undefined && h === host ? dialAddress : h, p)) as unknown as TcpConnector);
@@ -1773,35 +1776,153 @@ export class LinuxCommandExecutor {
   ): Promise<{ output: string; exitCode: number }> {
     const backgroundPid = this.takeBackgroundJobPid();
     const args = rawArgs.map(word => this.expandTilde(word));
-    const stdinPwd = (offeredPassword
-      ?? this._scenarioStdin ?? '')
-      .split('\n')[0] || undefined;
-    const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
+    const typed = (offeredPassword ?? this._scenarioStdin ?? '').split('\n');
+    const opts = this.buildSshClientOpts(args, this._cmdEnv, typed[0] || undefined);
     const refusal = sshClientRefusal(opts);
     if (refusal) return this.finishSshClientResult(refusal);
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir());
-    if (target === null) return this.finishSshClientResult(runSshClient(opts));
-    const resolution = await resolveSshTarget(this.localDevice as never, target.host, target.port, OPENSSH_SSH);
+    if (target === null) return { output: OPENSSH_UBUNTU_22_04.sshUsage, exitCode: 255 };
+    if (target.stdioForward?.kind === 'invalid') {
+      return { output: `Bad stdio forwarding specification '${target.stdioForward.spec}'\n`, exitCode: 255 };
+    }
+    const proxy = target.proxyCommand === null ? null : this.proxyCommandRoute(target, typed);
+    const innerAsks = target.proxyCommand !== null && /^\s*ssh\s/.test(target.proxyCommand);
+    const stdinPwd = (innerAsks ? typed[1] : typed[0]) || undefined;
+    const consumed = (typed[0] ? 1 : 0) + (innerAsks && typed[1] ? 1 : 0);
+    try {
+      const dialed = await this.dialSshTarget(args, target, opts, stdinPwd, proxy?.connector);
+      if (dialed.kind === 'failed') {
+        return proxy !== null && proxy.diagnostics.length > 0
+          ? { output: [...proxy.diagnostics, PROXY_COMMAND_CLOSED].join('\n'), exitCode: 255 }
+          : dialed.result;
+      }
+      const { session, wire, resolution } = dialed;
+      if (target.stdioForward?.kind === 'target') {
+        try {
+          return await this.relayStdioForward(session, target.stdioForward, this._scenarioStdin ?? '', consumed);
+        } finally {
+          session.disconnect();
+        }
+      }
+      return await this.runSshExecOnSession(
+        session, wire, resolution, args, target, opts, offeredPassword === undefined ? consumed : 0, backgroundPid);
+    } finally {
+      for (const inner of proxy?.sessions ?? []) inner.disconnect();
+    }
+  }
+
+  private async dialSshTarget(
+    args: string[], target: WireExecTarget, opts: SshClientOpts, stdinPwd: string | undefined,
+    proxy?: TcpConnector,
+  ): Promise<
+    | { kind: 'failed'; result: { output: string; exitCode: number } }
+    | { kind: 'connected'; session: SshSession; wire: Awaited<ReturnType<LinuxCommandExecutor['connectWireSsh']>>; resolution: { address: string } }
+  > {
+    const resolution = proxy === undefined
+      ? await resolveSshTarget(this.localDevice as never, target.host, target.port, OPENSSH_SSH)
+      : { kind: 'resolved' as const, address: target.host };
     if (resolution.kind === 'failed') {
-      return this.finishSshClientResult(sshWireFailureResult(opts, {
-        host: target.host, user: target.user, address: resolution.address ?? null, port: target.port,
-        ...(resolution.outcome !== undefined ? { reach: resolution.outcome } : { unreachableLine: resolution.line }),
-      }));
+      return {
+        kind: 'failed',
+        result: this.finishSshClientResult(sshWireFailureResult(opts, {
+          host: target.host, user: target.user, address: resolution.address ?? null, port: target.port,
+          ...(resolution.outcome !== undefined ? { reach: resolution.outcome } : { unreachableLine: resolution.line }),
+        })),
+      };
     }
     const wire = await this.connectWireSsh(
       target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication,
-      target.algorithms, resolution.address);
-    const session = wire.session;
-    if (!session) {
-      return this.finishSshClientResult(sshWireFailureResult(opts, {
-        host: target.host, user: target.user, address: resolution.address, port: target.port,
-        ...(wire.keyExchangeFailure !== undefined ? { keyExchange: wire.keyExchangeFailure } : {}),
-        ...(wire.hostKeyRefusal !== undefined ? { hostKey: wire.hostKeyRefusal } : {}),
-        ...(wire.denial !== undefined ? { denial: wire.denial } : {}),
-        ...(wire.connectionFailure !== undefined ? { connectionLine: wire.connectionFailure } : {}),
-        authRefused: wire.authRefused,
-      }), wire.authRefused);
+      target.algorithms, resolution.address, proxy);
+    if (wire.session === null) {
+      return {
+        kind: 'failed',
+        result: this.finishSshClientResult(sshWireFailureResult(opts, {
+          host: target.host, user: target.user, address: resolution.address, port: target.port,
+          ...(wire.keyExchangeFailure !== undefined ? { keyExchange: wire.keyExchangeFailure } : {}),
+          ...(wire.hostKeyRefusal !== undefined ? { hostKey: wire.hostKeyRefusal } : {}),
+          ...(wire.denial !== undefined ? { denial: wire.denial } : {}),
+          ...(wire.connectionFailure !== undefined ? { connectionLine: wire.connectionFailure } : {}),
+          authRefused: wire.authRefused,
+        }), wire.authRefused),
+      };
     }
+    return { kind: 'connected', session: wire.session, wire, resolution };
+  }
+
+  private async relayStdioForward(
+    session: SshSession, forward: { readonly host: string; readonly port: number }, stdin: string, skipLines: number,
+  ): Promise<{ output: string; exitCode: number }> {
+    const opened = await session.openDirectTcpip(forward.host, forward.port);
+    if (!isOk(opened)) {
+      const reason = opened.error.kind === 'CHANNEL_ERROR' ? opened.error.message : opened.error.kind;
+      return {
+        output: `channel 0: open failed: ${reason}\nStdio forwarding request failed: Session open refused by peer\n`,
+        exitCode: 255,
+      };
+    }
+    const stream = opened.value;
+    const received: string[] = [];
+    stream.onData((chunk) => { received.push(chunk); });
+    const payload = stdin.split('\n').slice(skipLines).join('\n');
+    if (payload !== '') stream.write(payload);
+    for (let turn = 0; turn < STDIO_FORWARD_SETTLE_TURNS; turn++) await Promise.resolve();
+    stream.close();
+    return { output: received.join(''), exitCode: 0 };
+  }
+
+  private proxyCommandRoute(
+    target: WireExecTarget, typed: readonly string[],
+  ): { connector: TcpConnector; diagnostics: string[]; sessions: SshSession[] } {
+    const diagnostics: string[] = [];
+    const sessions: SshSession[] = [];
+    const refused = { dialFailed: 'refused' } as const;
+    const connector: TcpConnector = async (host, port) => {
+      const words = (target.proxyCommand ?? '')
+        .replace(/%h/g, host).replace(/%p/g, String(port)).replace(/%r/g, target.user).replace(/%%/g, '%')
+        .split(/\s+/).filter((word) => word !== '');
+      const [program, ...rest] = words;
+      if (program === 'nc' || program === 'ncat' || program === 'netcat') {
+        const operands = rest.filter((word) => !word.startsWith('-'));
+        const dialed = this.tcpConnector === null
+          ? null : await this.tcpConnector(operands[0] ?? host, Number(operands[1] ?? port));
+        return (dialed ?? refused) as Awaited<ReturnType<TcpConnector>>;
+      }
+      if (program !== 'ssh') {
+        diagnostics.push(`sh: 1: ${program ?? ''}: not found`);
+        return refused;
+      }
+      const inner = rest.map((word) => this.expandTilde(word));
+      const innerTarget = wireExecTarget(inner, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir());
+      if (innerTarget === null || innerTarget.stdioForward?.kind !== 'target') {
+        diagnostics.push(...OPENSSH_UBUNTU_22_04.sshUsage.split('\n').filter((line) => line !== ''));
+        return refused;
+      }
+      const innerOpts = this.buildSshClientOpts(inner, this._cmdEnv, typed[0] || undefined);
+      const dialed = await this.dialSshTarget(inner, innerTarget, innerOpts, typed[0] || undefined);
+      if (dialed.kind === 'failed') {
+        diagnostics.push(dialed.result.output.replace(/\n+$/, ''));
+        return refused;
+      }
+      sessions.push(dialed.session);
+      const opened = await dialed.session.openDirectTcpip(innerTarget.stdioForward.host, innerTarget.stdioForward.port);
+      if (isOk(opened)) return opened.value as Awaited<ReturnType<TcpConnector>>;
+      const reason = opened.error.kind === 'CHANNEL_ERROR' ? opened.error.message : opened.error.kind;
+      diagnostics.push(`channel 0: open failed: ${reason}`, 'stdio forwarding failed');
+      return refused;
+    };
+    return { connector, diagnostics, sessions };
+  }
+
+  private async runSshExecOnSession(
+    session: SshSession,
+    wire: { notices: string[] },
+    resolution: { address: string },
+    args: string[],
+    target: WireExecTarget,
+    opts: SshClientOpts,
+    skipLines: number,
+    backgroundPid: number | null,
+  ): Promise<{ output: string; exitCode: number }> {
     if (target.forwardAgent) session.forwardAgent(this.agentPort());
     const joined = joinRemoteCommand(target.commandWords, remoteQuotingOf(session.serverIdentification));
     const command = /^(exit|logout)\s*$/i.test(joined) ? '' : joined;
@@ -1812,7 +1933,7 @@ export class LinuxCommandExecutor {
     const interactif = !command && !target.holdOnly;
     const relayedShell = interactif
       ? await this.relayShellOverWire(
-        session, offeredPassword === undefined && stdinPwd ? 1 : 0, true, target.forwardAgent)
+        session, skipLines, true, target.forwardAgent)
       : null;
     const client = this.sshClientProcess(args, target.forksToBackground);
     try {
@@ -1941,7 +2062,7 @@ export class LinuxCommandExecutor {
   }
 
   private finishSshClientResult(
-    result: ReturnType<typeof runSshClient>, onWire = false,
+    result: SshClientResult, onWire = false,
   ): { output: string; exitCode: number } {
     if (result.connection && !onWire) {
       const entry = this.socketTable?.connect(

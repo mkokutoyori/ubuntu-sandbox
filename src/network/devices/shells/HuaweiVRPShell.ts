@@ -42,7 +42,6 @@ import {
   type VrpTimeRange, type VrpNamedLines, type VrpInterfaceBucket,
 } from './huawei/vrpShellStores';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
-import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
 import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
@@ -1547,8 +1546,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
 
     // `stelnet [user@]host [port]` and `ssh [-l user] host` — outbound
-    // SSH client, dispatched through the shared runSshClient so every
-    // gate (host key TOFU, sshd policy, VTY ACL) applies uniformly.
+    // SSH client, opened over the wire so every gate (host key TOFU,
+    // sshd policy, VTY ACL) applies uniformly.
     for (const verb of OUTBOUND_SSH_CLIENT_VERBS) {
       t.registerGreedy(verb, `${verb} client`, () => 'Error: The password is requested by the interaction prompt.');
     }

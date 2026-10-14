@@ -603,6 +603,15 @@ export class SshServerHandler {
 
   }
 
+  private announcePolicyRefusal(user: string, clientIp: string): void {
+    const rootRefused = user === 'root' && !(this.ctx.rootMayLogIn?.('password') ?? this.ctx.config.permitRootLogin);
+    const reason = rootRefused ? 'PermitRootLogin' : this.ctx.userPolicyRefusal?.(user, clientIp) ?? null;
+    if (reason === null) return;
+    this.eventBus.emit({
+      kind: 'auth_policy_refused', user, ip: clientIp, reason, port: this.ctx.clientPort?.(clientIp),
+    });
+  }
+
   private async handleAuth(
     payload: Record<string, unknown>,
     clientIp: string,
@@ -617,6 +626,7 @@ export class SshServerHandler {
     const user = (payload.user as string | undefined) ?? '';
     const peer: SshPeer = { ip: clientIp, port: this.ctx.clientPort?.(clientIp) };
     const credentialless = payload.method === 'none';
+    if (firstRequest) this.announcePolicyRefusal(user, clientIp);
     if (credentialless && this.ctx.buildUserContext(user) !== null
       && !(this.ctx.auth.acceptsWithoutCredential?.(user) ?? false)) return { ok: false };
     let password = (payload.password as string | undefined) ?? '';
@@ -659,6 +669,12 @@ export class SshServerHandler {
         method,
       });
       this.ctx.recordAuthFailure?.(user, clientIp, 'root login disabled');
+      return { ok: false };
+    }
+
+    const policyRefusal = this.ctx.userPolicyRefusal?.(user, clientIp) ?? null;
+    if (policyRefusal !== null) {
+      this.ctx.recordAuthFailure?.(user, clientIp, policyRefusal);
       return { ok: false };
     }
 

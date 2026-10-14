@@ -9,7 +9,7 @@ import {
   type EditorAction, type LineResultPayload, type ShellInfoPayload,
 } from '../connection/SandboxExtensions';
 import {
-  decodeStringPayload, encodePtyRequest, encodeStringPayload, encodeWindowChange,
+  decodeExitStatus, decodeStringPayload, encodePtyRequest, encodeStringPayload, encodeWindowChange,
 } from '../connection/ChannelPayloads';
 import { AbstractSshChannel } from './AbstractSshChannel';
 import type { ExecResult, ISshShellChannel } from './ISshChannel';
@@ -33,6 +33,8 @@ function joinBytes(chunks: readonly Uint8Array[]): Uint8Array {
   }
   return out;
 }
+
+const QUIET_TURNS_BEFORE_SETTLED = 12;
 
 const lineFeeds = (text: string): string => text.replace(/\r\n/g, '\n');
 
@@ -198,8 +200,28 @@ export class SshShellChannel
     });
   }
 
+  private unclaimedOutput: string[] = [];
+  private remoteExit: number | null = null;
+
+  async untilQuiet(): Promise<void> {
+    for (let quietTurns = 0; quietTurns < QUIET_TURNS_BEFORE_SETTLED; quietTurns++) {
+      const before = this.unclaimedOutput.length + (this._isOpen ? 1 : 0);
+      await Promise.resolve();
+      if (this.unclaimedOutput.length + (this._isOpen ? 1 : 0) !== before) quietTurns = 0;
+    }
+  }
+
+  takeUnclaimedOutput(): string {
+    return this.unclaimedOutput.splice(0).join('');
+  }
+
+  remoteExitStatus(): number | null {
+    return this.remoteExit;
+  }
+
   private emit(text: string): void {
     if (text === '') return;
+    if (this.dataHandlers.length === 0) this.unclaimedOutput.push(text);
     for (const handler of [...this.dataHandlers]) handler(text);
   }
 
@@ -256,6 +278,8 @@ export class SshShellChannel
         return;
       }
       case 'exit-status':
+        this.remoteExit = decodeExitStatus(payload);
+        return;
       case 'exit-signal':
         return;
       default:
