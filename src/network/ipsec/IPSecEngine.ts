@@ -62,7 +62,7 @@ import {
 import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/des';
 import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
 import type { IkeKeyPair } from './IkeKeyExchange';
-import type { IkeConfigRequest, IkeConfigReply } from './IPSecTypes';
+import type { IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint } from './IPSecTypes';
 import {
   IPSecSignalStore,
   makeReadonlyIPSecObservables,
@@ -643,6 +643,10 @@ export class IPSecEngine implements IProtocolEngine {
   private dynamicCryptoMaps: Map<string, DynamicCryptoMap> = new Map();
   /** interface name → crypto map name */
   private ifaceCryptoMap: Map<string, string> = new Map();
+  private dfBitGlobal: DfBitPolicy = 'copy';
+  private readonly dfBitByInterface = new Map<string, DfBitPolicy>();
+  private fragmentationGlobal: FragmentationPoint = 'before-encryption';
+  private readonly fragmentationByInterface = new Map<string, FragmentationPoint>();
   private pendingIke = new Map<string, {
     entry: CryptoMapEntry; egressIface: string; localIP: string;
     apparentSrcIP: string; spiInitIn: number; offer: IkeOfferMessage;
@@ -1416,6 +1420,32 @@ export class IPSecEngine implements IProtocolEngine {
   addDynamicRefToCryptoMap(staticMapName: string, seq: number, dynMapName: string): void {
     const map = this.getOrCreateCryptoMap(staticMapName);
     map.dynamicEntries.set(seq, dynMapName);
+  }
+
+  setDfBit(policy: DfBitPolicy | null, ifName?: string): void {
+    if (ifName === undefined) {
+      this.dfBitGlobal = policy ?? 'copy';
+      return;
+    }
+    if (policy === null) this.dfBitByInterface.delete(ifName);
+    else this.dfBitByInterface.set(ifName, policy);
+  }
+
+  resolveDfBit(ifName: string): DfBitPolicy {
+    return this.dfBitByInterface.get(ifName) ?? this.dfBitGlobal;
+  }
+
+  setFragmentationPoint(point: FragmentationPoint | null, ifName?: string): void {
+    if (ifName === undefined) {
+      this.fragmentationGlobal = point ?? 'before-encryption';
+      return;
+    }
+    if (point === null) this.fragmentationByInterface.delete(ifName);
+    else this.fragmentationByInterface.set(ifName, point);
+  }
+
+  resolveFragmentationPoint(ifName: string): FragmentationPoint {
+    return this.fragmentationByInterface.get(ifName) ?? this.fragmentationGlobal;
   }
 
   applyCryptoMapToInterface(ifName: string, mapName: string): void {
@@ -2649,6 +2679,28 @@ export class IPSecEngine implements IProtocolEngine {
           `Crypto tunnel is UP. Peer ${peerIP}:500 Id: ${peerIP}`, true, 'SESSION_STATUS');
     }
 
+    const overhead = computeIPSecOverhead(sa.hasESP, sa.hasAH);
+    const interfaceMtu = this.router.getPort(egressIface)?.getMTU() ?? sa.pathMTU;
+    const limit = Math.min(sa.pathMTU, interfaceMtu);
+    const innerMayBeFragmented = (pkt.flags & 0b010) === 0 && (pkt.flags & 0b100) === 0 && pkt.fragmentOffset === 0;
+    const exceeds = pkt.totalLength + overhead > limit;
+    const prefragment = exceeds && innerMayBeFragmented
+      && (sa.dfBitPolicy === 'set' || this.resolveFragmentationPoint(egressIface) === 'before-encryption');
+    if (prefragment) {
+      const pieces = fragmentIPv4Packet(pkt, Math.max(MIN_IPV4_MTU, limit - overhead));
+      if (this.debugIpsec) {
+        Logger.info(this.router.id, 'debug:ipsec',
+          `IPSEC: pre-encryption fragmentation: ${pkt.totalLength} + ${overhead} > MTU ${limit}, ${pieces.length} fragments`);
+      }
+      const encapsulated: IPv4Packet[] = [];
+      for (const piece of pieces) {
+        const wrapped = this.encapsulate(piece, sa, egressIface, true);
+        if (!wrapped) return null;
+        encapsulated.push(wrapped);
+      }
+      return encapsulated;
+    }
+
     // Wrap in ESP (or AH for AH-only)
     const outerPkt = this.encapsulate(pkt, sa, egressIface);
     if (!outerPkt) return null;
@@ -2723,7 +2775,7 @@ export class IPSecEngine implements IProtocolEngine {
     return sas && sas.length > 0 ? sas[0] : null;
   }
 
-  private encapsulate(innerPkt: IPv4Packet, sa: IPSec_SA, egressIface: string): IPv4Packet | null {
+  private encapsulate(innerPkt: IPv4Packet, sa: IPSec_SA, egressIface: string, prefragmented = false): IPv4Packet | null {
     const localAddress = this.router._ipsecLocalIp(egressIface);
     if (!localAddress) return null;
     const localIP: IPAddress = new IPAddress(localAddress);
@@ -2732,7 +2784,7 @@ export class IPSecEngine implements IProtocolEngine {
     // In tunnel mode, fragments should be reassembled before IPsec processing.
     // Check if the inner packet is a fragment (MF set or offset > 0).
     // MF = bit 2 of flags field (0b100 = 0x4).
-    if (sa.statefulFragCheck && sa.mode === 'Tunnel') {
+    if (sa.statefulFragCheck && sa.mode === 'Tunnel' && !prefragmented) {
       const mfSet = (innerPkt.flags & 0b100) !== 0; // MF flag = bit 2
       const isFragment = mfSet || innerPkt.fragmentOffset !== 0;
       if (isFragment) {
@@ -2945,15 +2997,14 @@ export class IPSecEngine implements IProtocolEngine {
    * Controls the DF bit per the SA's dfBitPolicy.
    */
   private computeOuterFlags(innerPkt: IPv4Packet, sa: IPSec_SA): number {
+    const innerDf = (innerPkt.flags & 0b010) !== 0;
     switch (sa.dfBitPolicy) {
-      case 'copy':
-        return innerPkt.flags; // preserve DF from inner
       case 'set':
-        return innerPkt.flags | 0b010; // force DF on
+        return 0b010;
       case 'clear':
-        return innerPkt.flags & ~0b010; // force DF off
+        return 0;
       default:
-        return innerPkt.flags;
+        return innerDf ? 0b010 : 0;
     }
   }
 
@@ -3443,7 +3494,7 @@ export class IPSecEngine implements IProtocolEngine {
       lifetime: p.lifetime, lifetimeKB: p.lifetimeKB,
       mode: p.mode, trafficSelectors: p.trafficSelectors,
       statefulFragCheck: p.mode === 'Tunnel',
-      dfBitPolicy: 'copy', dscpEcnConfig: defaultDscpEcnConfig(),
+      dfBitPolicy: this.resolveDfBit(p.outIface), dscpEcnConfig: defaultDscpEcnConfig(),
       pathMTU, ipMTU: pathMTU - overhead, pathMTULastUpdated: now,
       transforms: p.transforms, aclName: p.aclName,
       pktsEncaps: 0, pktsDecaps: 0, sendErrors: 0, recvErrors: 0,
@@ -4684,111 +4735,14 @@ export class IPSecEngine implements IProtocolEngine {
     return lines.join('\n');
   }
 
-  showRunningConfig(): string[] {
-    const lines: string[] = [];
-
-    // Global IPSec settings
-    if (this.globalSALifetimeSeconds !== 3600) {
-      lines.push(`crypto ipsec security-association lifetime seconds ${this.globalSALifetimeSeconds}`);
-    }
-    if (this.globalSALifetimeKB !== 4608000) {
-      lines.push(`crypto ipsec security-association lifetime kilobytes ${this.globalSALifetimeKB}`);
-    }
-    if (this.replayWindowSize !== 64) {
-      lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
-    }
-    if (this.aggressiveMode) {
-      lines.push(`no crypto isakmp aggressive-mode disable`);
-    }
-    if (this.esnDefault) {
-      lines.push(`crypto ipsec security-association esn`);
-    }
-
-    // ISAKMP policies
-    for (const [, p] of [...this.isakmpPolicies.entries()].sort((a, b) => a[0] - b[0])) {
-      lines.push('!');
-      lines.push(`crypto isakmp policy ${p.priority}`);
-      lines.push(` encryption ${p.encryption}`);
-      lines.push(` hash ${p.hash}`);
-      lines.push(` authentication ${p.auth}`);
-      lines.push(` group ${p.group}`);
-      if (p.lifetime !== 86400) lines.push(` lifetime ${p.lifetime}`);
-    }
-    // PSKs
-    for (const [ident, e] of this.preSharedKeys) {
-      lines.push(`crypto isakmp key ${e.key} ${e.byHostname ? 'hostname' : 'address'} ${ident}`);
-    }
-    if (this.natKeepaliveInterval > 0) {
-      lines.push(`crypto isakmp nat keepalive ${this.natKeepaliveInterval}`);
-    }
-    if (this.dpdConfig) {
-      lines.push(`crypto isakmp keepalive ${this.dpdConfig.interval} ${this.dpdConfig.retries} ${this.dpdConfig.mode}`);
-    }
-
-    // Transform sets
-    for (const [, ts] of this.transformSets) {
-      lines.push('!');
-      lines.push(`crypto ipsec transform-set ${ts.name} ${ts.transforms.join(' ')}`);
-      lines.push(` mode ${ts.mode}`);
-    }
-
-    // Crypto maps
-    for (const [, cmap] of this.cryptoMaps) {
-      for (const [, entry] of [...cmap.staticEntries.entries()].sort((a, b) => a[0] - b[0])) {
-        lines.push('!');
-        lines.push(`crypto map ${cmap.name} ${entry.seq} ipsec-isakmp`);
-        for (const peer of entry.peers) lines.push(` set peer ${peer}`);
-        for (const ts of entry.transformSets) lines.push(` set transform-set ${ts}`);
-        if (entry.aclName) lines.push(` match address ${entry.aclName}`);
-        if (entry.pfsGroup) lines.push(` set pfs ${entry.pfsGroup}`);
-        if (entry.saLifetimeSeconds) lines.push(` set security-association lifetime seconds ${entry.saLifetimeSeconds}`);
-        if (entry.ikev2ProfileName) lines.push(` set ikev2-profile ${entry.ikev2ProfileName}`);
-      }
-      for (const [seq, dynName] of cmap.dynamicEntries) {
-        lines.push('!');
-        lines.push(`crypto map ${cmap.name} ${seq} ipsec-isakmp dynamic ${dynName}`);
-      }
-    }
-
-    // IKEv2
-    for (const [, prop] of this.ikev2Proposals) {
-      lines.push('!');
-      lines.push(`crypto ikev2 proposal ${prop.name}`);
-      if (prop.encryption.length) lines.push(` encryption ${prop.encryption.join(' ')}`);
-      if (prop.integrity.length) lines.push(` integrity ${prop.integrity.join(' ')}`);
-      if (prop.dhGroup.length) lines.push(` group ${prop.dhGroup.join(' ')}`);
-    }
-    for (const [, pol] of this.ikev2Policies) {
-      lines.push('!');
-      lines.push(`crypto ikev2 policy ${pol.priority}`);
-      for (const p of pol.proposalNames) lines.push(` proposal ${p}`);
-    }
-    for (const [, kr] of this.ikev2Keyrings) {
-      lines.push('!');
-      lines.push(`crypto ikev2 keyring ${kr.name}`);
-      for (const [, peer] of kr.peers) {
-        lines.push(` peer ${peer.name}`);
-        lines.push(`  address ${peer.address}`);
-        lines.push(`  pre-shared-key ${peer.preSharedKey}`);
-      }
-    }
-    for (const [, prof] of this.ikev2Profiles) {
-      lines.push('!');
-      lines.push(`crypto ikev2 profile ${prof.name}`);
-      if (prof.matchIdentityRemoteAddress) lines.push(` match identity remote address ${prof.matchIdentityRemoteAddress} 255.255.255.255`);
-      lines.push(` authentication local ${prof.authLocal}`);
-      lines.push(` authentication remote ${prof.authRemote}`);
-      if (prof.keyringName) lines.push(` keyring local ${prof.keyringName}`);
-      if (prof.keyringLocalName) lines.push(` keyring local ${prof.keyringLocalName}`);
-    }
-
-    return lines;
-  }
-
   showRunningConfigInterface(ifName: string): string[] {
     const lines: string[] = [];
     const mapName = this.ifaceCryptoMap.get(ifName);
     if (mapName) lines.push(` crypto map ${mapName}`);
+    const df = this.dfBitByInterface.get(ifName);
+    if (df) lines.push(` crypto ipsec df-bit ${df}`);
+    const fragmentation = this.fragmentationByInterface.get(ifName);
+    if (fragmentation) lines.push(` crypto ipsec fragmentation ${fragmentation}`);
     const tp = this.tunnelProtection.get(ifName);
     if (tp) lines.push(` tunnel protection ipsec profile ${tp.profileName}${tp.shared ? ' shared' : ''}`);
     return lines;
@@ -4896,6 +4850,19 @@ export class IPSecEngine implements IProtocolEngine {
 
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
+    if (this.globalSALifetimeSeconds !== 3600) {
+      lines.push(`crypto ipsec security-association lifetime seconds ${this.globalSALifetimeSeconds}`);
+    }
+    if (this.globalSALifetimeKB !== 4608000) {
+      lines.push(`crypto ipsec security-association lifetime kilobytes ${this.globalSALifetimeKB}`);
+    }
+    if (this.replayWindowSize !== 64) {
+      lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
+    }
+    if (this.aggressiveMode) lines.push('no crypto isakmp aggressive-mode disable');
+    if (this.esnDefault) lines.push('crypto ipsec security-association esn');
+    if (this.dfBitGlobal !== 'copy') lines.push(`crypto ipsec df-bit ${this.dfBitGlobal}`);
+    if (this.fragmentationGlobal !== 'before-encryption') lines.push(`crypto ipsec fragmentation ${this.fragmentationGlobal}`);
     for (const [, p] of [...this.isakmpPolicies].sort((a, b) => a[0] - b[0])) {
       lines.push(`crypto isakmp policy ${p.priority}`);
       if (p.encryption) lines.push(` encryption ${p.encryption}`);
@@ -4908,7 +4875,10 @@ export class IPSecEngine implements IProtocolEngine {
       lines.push(`crypto isakmp key ${e.key} ${e.byHostname ? 'hostname' : 'address'} ${ident}`);
     }
     if (this.natKeepaliveInterval > 0) {
-      lines.push(`crypto isakmp keepalive ${this.natKeepaliveInterval} ${(this.dpdConfig as DPDConfig & { retryInterval?: number } | null)?.retryInterval ?? 3}`);
+      lines.push(`crypto isakmp nat keepalive ${this.natKeepaliveInterval}`);
+    }
+    if (this.dpdConfig) {
+      lines.push(`crypto isakmp keepalive ${this.dpdConfig.interval} ${this.dpdConfig.retries} ${this.dpdConfig.mode}`);
     }
     for (const [, ts] of this.transformSets) {
       lines.push(`crypto ipsec transform-set ${ts.name} ${ts.transforms.join(' ')}`);

@@ -1215,6 +1215,7 @@ function interfaceConfigLines(
   if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
   const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
   if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
+  lines.push(...(router._getIPSecEngineInternal?.()?.showRunningConfigInterface(name) ?? []));
   const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
   if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
   lines.push(...legacyInterfaceLines(port, router));

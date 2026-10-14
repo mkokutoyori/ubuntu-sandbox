@@ -88,6 +88,7 @@ import { terminalSpecs } from './cisco/terminalSpecs';
 import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
 import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
+import { ipsecDataPlaneSpecs, type IpsecDataPlaneEngine } from './cisco/ipsecDataPlaneSpecs';
 import { ServerCounters } from '../../radius/ServerCounters';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import { showDebuggingSpecs, type ShowDebuggingHost } from './cisco/showDebuggingSpecs';
@@ -6090,6 +6091,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
       ...testAaaSpecs(() => this.testAaaHost()),
       ...aaaShowSpecs(() => this.aaaShowHost()),
+      ...this.ipsecDataPlaneSpecs(),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
       ...monitorCaptureSpecs(() => this.monitorCaptureHost()),
     ];
@@ -10405,6 +10407,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return '';
       },
     };
+  }
+
+  protected ipsecDataPlaneSpecs(): readonly CommandSpec[] {
+    return ipsecDataPlaneSpecs(() => {
+      const device = this.d() as unknown as { _getOrCreateIPSecEngine: () => IpsecDataPlaneEngine };
+      return {
+        engine: () => device._getOrCreateIPSecEngine(),
+        selectedInterfaces: () => this.selectedPortsForConfigIf(),
+      };
+    });
   }
 
   private aaaShowHost(): AaaShowHost {
