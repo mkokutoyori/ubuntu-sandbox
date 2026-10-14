@@ -284,6 +284,8 @@ export class NtpAgent {
 
   setSourceInterface(name: string): void { this.config.sourceInterface = name; }
 
+  portNames(): string[] { return this.host.getPorts().map((port) => port.getName()); }
+
   /**
    * Comment cette machine evalue une liste d'acces (lot N6).
    *

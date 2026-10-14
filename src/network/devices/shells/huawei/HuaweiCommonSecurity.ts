@@ -312,7 +312,8 @@ export function registerHuaweiCommonSecurity(
     if (!agent) return dispatch('ntp-service', args);
     const a = analyserNtpVrp(args);
     if (a.statut === 'refus') return rendreErreurVrp(a.err, raw ?? `ntp-service ${args.join(' ')}`);
-    appliquerNtpVrp(agent, a.action);
+    const portNames = agent.portNames();
+    appliquerNtpVrp(agent, a.action, (name) => resolveHuaweiInterfaceName(portNames, name));
     return '';
   });
   trie.registerGreedy('undo ntp-service', 'Remove NTP service configuration', (args) => {
