@@ -456,7 +456,7 @@ interface DhcpConfigServer {
   disable(): void;
 }
 
-type BannerKind = 'motd' | 'login' | 'exec' | 'incoming';
+type BannerKind = 'motd' | 'login' | 'exec' | 'incoming' | 'aaa-banner' | 'aaa-fail-message';
 
 const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
   ['exec', 'Set EXEC process creation banner'],
@@ -1642,6 +1642,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           bm[1].toLowerCase() as 'motd' | 'login' | 'exec' | 'incoming', bm[2], ctx?.device,
         );
       }
+      const am = /^aaa\s+authentication\s+(banner|fail-message)\s+(\S)\s*$/i.exec(line);
+      if (am) {
+        return this.bannerCaptureInteractionPlan(
+          am[1].toLowerCase() === 'banner' ? 'aaa-banner' : 'aaa-fail-message', am[2], ctx?.device,
+        );
+      }
       return null;
     }
 
@@ -1838,7 +1844,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           // `enable` a chaque fois, ce qu'aucune machine reelle ne
           // demande, et `% Bad secrets` n'existait nulle part.
           kind: 'password',
-          prompt: 'Password: ',
+          prompt: getSecurityConfig((deviceCtx ?? this.d()) as object).loginMessages().passwordPrompt,
           validate: (value) => {
             if (correspond(value)) return { valid: true };
             essais += 1;
@@ -2228,14 +2234,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       _setIncomingBanner?: (b: string) => void;
     } | null;
     if (!dev) return;
-    if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
+    if (kind === 'aaa-banner' || kind === 'aaa-fail-message') {
+      const security = getSecurityConfig(dev ?? this.d());
+      if (kind === 'aaa-banner') security.aaaLoginBanner = text;
+      else security.aaaFailMessage = text;
+    }
+    else if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
     else if (kind === 'login') dev._setLoginBanner?.(text);
     else if (kind === 'exec') dev._setExecBanner?.(text);
     else if (kind === 'incoming') dev._setIncomingBanner?.(text);
   }
 
   private bannerCaptureInteractionPlan(
-    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    kind: BannerKind,
     delim: string,
     device?: unknown,
   ): CommandInteractionPlan {
@@ -5950,6 +5961,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       parseMethodList: (phase, args) =>
         parseAaaMethod(getSecurityConfig(this.d()), phase, [...args]),
+      placeAaaMessage: (kind, rest) =>
+        this.placeBanner(kind === 'banner' ? 'aaa-banner' : 'aaa-fail-message', rest),
     };
   }
 
@@ -6311,25 +6324,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * plus specifique gagnait, donc la branche `motd` de l'autre etait
    * morte. Il n'en reste qu'une.
    */
+  protected placeBanner(sorte: BannerKind, reste: string): string {
+    const texte = reste.replace(/^\s+/, '');
+    if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const delim = texte.startsWith('^C') ? '^C' : texte[0];
+    const corps = texte.slice(delim.length);
+    const fin = corps.indexOf(delim);
+    if (fin !== -1) {
+      this.setBanner(sorte, corps.slice(0, fin));
+      return '';
+    }
+    this.bannerCollector = {
+      type: sorte, delimiter: delim,
+      lines: corps.length > 0 ? [corps] : [],
+    };
+    return `Enter TEXT message.  End with the character '${delim}'.`;
+  }
+
   protected bannerSpecs(): CommandSpec[] {
     const sortes = BANNER_SORTES.map(([keyword, description]) =>
       ({ keyword, description }));
-    const poser = (sorte: string, reste: string): string => {
-      const texte = reste.replace(/^\s+/, '');
-      if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      const delim = texte.startsWith('^C') ? '^C' : texte[0];
-      const corps = texte.slice(delim.length);
-      const fin = corps.indexOf(delim);
-      if (fin !== -1) {
-        this.setBanner(sorte as BannerKind, corps.slice(0, fin));
-        return '';
-      }
-      this.bannerCollector = {
-        type: sorte as BannerKind, delimiter: delim,
-        lines: corps.length > 0 ? [corps] : [],
-      };
-      return `Enter TEXT message.  End with the character '${delim}'.`;
-    };
+    const poser = (sorte: string, reste: string): string => this.placeBanner(sorte as BannerKind, reste);
     const retirer = (sorte: string): string => {
       const dev = this.d() as unknown as {
         _setMotdBanner?: (b: string) => void;

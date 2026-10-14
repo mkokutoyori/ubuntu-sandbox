@@ -23,6 +23,8 @@ export interface RouterTelnetServerDeps {
   /** `password …` set on the line, used when the mode is `password`. */
   linePassword(): { value: string; algo: 'plain' | 'type-7' } | null;
   authHeader(): string | null;
+  credentialPrompts?(): { readonly username: string; readonly password: string };
+  authFailureMessage?(): string;
   loginBanner(): string | null;
   motd(): string | null;
   admit(sourceIp: string, localIp?: string): TelnetAdmission;
@@ -47,6 +49,12 @@ export class RouterTelnetServerContext implements ITelnetServerContext {
   authHeader(): string | null {
     return this.authPrompt() === 'none' ? null : this.deps.authHeader();
   }
+
+  credentialPrompts(): { readonly username: string; readonly password: string } {
+    return this.deps.credentialPrompts?.() ?? { username: 'Username: ', password: 'Password: ' };
+  }
+
+  authFailureMessage(): string { return this.deps.authFailureMessage?.() ?? '% Login invalid'; }
 
   authPrompt(): TelnetAuthPrompt {
     switch (this.deps.loginMode()) {

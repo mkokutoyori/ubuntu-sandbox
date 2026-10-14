@@ -1145,7 +1145,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   /** Header printed above the telnet credential prompts — IOS wording by default. */
-  protected getVtyAuthHeader(): string { return 'User Access Verification'; }
+  protected getVtyAuthHeader(): string {
+    return this.securityConfig()?.loginMessages().banner ?? 'User Access Verification';
+  }
 
   private buildRouterTelnetServerHandler(): TelnetServerHandler {
     const ctx = new RouterTelnetServerContext({
@@ -1156,6 +1158,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         return l?.linePassword ? { value: l.linePassword, algo: l.linePasswordAlgo } : null;
       },
       authHeader: () => this.getVtyAuthHeader(),
+      credentialPrompts: () => {
+        const messages = this.securityConfig()?.loginMessages();
+        return { username: messages?.usernamePrompt ?? 'Username: ', password: messages?.passwordPrompt ?? 'Password: ' };
+      },
+      authFailureMessage: () => this.securityConfig()?.loginMessages().failMessage ?? '% Login invalid',
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
       admit: (ip, localIp) => this.vtyAdmissionVerdict('telnet', ip, localIp),
