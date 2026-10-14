@@ -63,6 +63,7 @@ import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/de
 import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
 import type { IkeKeyPair } from './IkeKeyExchange';
 import type { IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint } from './IPSecTypes';
+import { renderCryptoSessions, type CryptoSession, type CryptoSessionMode } from './CryptoSessionView';
 import {
   IPSecSignalStore,
   makeReadonlyIPSecObservables,
@@ -643,6 +644,10 @@ export class IPSecEngine implements IProtocolEngine {
   private dynamicCryptoMaps: Map<string, DynamicCryptoMap> = new Map();
   /** interface name → crypto map name */
   private ifaceCryptoMap: Map<string, string> = new Map();
+  private ikeEnabled = true;
+  private passiveMode = false;
+  private replayCheckingDisabled = false;
+  private idleTimeGlobalSec: number | null = null;
   private dfBitGlobal: DfBitPolicy = 'copy';
   private readonly dfBitByInterface = new Map<string, DfBitPolicy>();
   private fragmentationGlobal: FragmentationPoint = 'before-encryption';
@@ -957,6 +962,7 @@ export class IPSecEngine implements IProtocolEngine {
       if (!this.running) return;
       this.recheckIKESALifetimes();
       this.runDPDCheck();
+      this.expireIdleSAs();
     }, 1000);
   }
 
@@ -1422,6 +1428,64 @@ export class IPSecEngine implements IProtocolEngine {
     map.dynamicEntries.set(seq, dynMapName);
   }
 
+  setIkeEnabled(enabled: boolean): void {
+    this.ikeEnabled = enabled;
+  }
+
+  setPassiveMode(enabled: boolean): void {
+    this.passiveMode = enabled;
+  }
+
+  rejectsClearText(inPort: string, pkt: IPv4Packet): boolean {
+    if (this.passiveMode) return false;
+    if (pkt.protocol === IP_PROTO_ESP || pkt.protocol === IP_PROTO_AH) return false;
+    const mapName = this.ifaceCryptoMap.get(inPort);
+    if (!mapName) return false;
+    const cmap = this.cryptoMaps.get(mapName);
+    if (!cmap) return false;
+    const transport = pkt.payload as { type?: string; sourcePort?: number; destinationPort?: number } | undefined;
+    if (transport?.type === 'udp' && (transport.sourcePort === 500 || transport.destinationPort === 500
+        || transport.sourcePort === 4500 || transport.destinationPort === 4500)) return false;
+    const mirrored: IPv4Packet = {
+      ...pkt,
+      sourceIP: pkt.destinationIP,
+      destinationIP: pkt.sourceIP,
+      payload: transport && (transport.type === 'udp' || transport.type === 'tcp')
+        ? { ...transport, sourcePort: transport.destinationPort, destinationPort: transport.sourcePort } as unknown as IPv4Packet['payload']
+        : pkt.payload,
+    };
+    for (const entry of cmap.staticEntries.values()) {
+      if (entry.aclName && this.matchACL(entry.aclName, mirrored)) return true;
+    }
+    return false;
+  }
+
+  setReplayCheckingDisabled(disabled: boolean): void {
+    this.replayCheckingDisabled = disabled;
+  }
+
+  setIdleTime(seconds: number | null): void {
+    this.idleTimeGlobalSec = seconds;
+  }
+
+  getIdleTime(): number | null {
+    return this.idleTimeGlobalSec;
+  }
+
+  expireIdleSAs(): void {
+    const now = simulationNowMs();
+    for (const [peerIP, sas] of [...this.ipsecSADB.entries()]) {
+      const idle = sas.filter((sa) => sa.idleTimeSec !== undefined && now - sa.lastActivityMs >= sa.idleTimeSec * 1000);
+      if (idle.length === 0) continue;
+      if (idle.length === sas.length) {
+        this.clearSAsForPeer(peerIP, 'lifetime');
+        continue;
+      }
+      for (const sa of idle) this.spiToSA.delete(sa.spiIn);
+      this.ipsecSADB.set(peerIP, sas.filter((sa) => !idle.includes(sa)));
+    }
+  }
+
   setDfBit(policy: DfBitPolicy | null, ifName?: string): void {
     if (ifName === undefined) {
       this.dfBitGlobal = policy ?? 'copy';
@@ -1708,6 +1772,7 @@ export class IPSecEngine implements IProtocolEngine {
 
   /** ISAKMP on UDP 500 — DPD R-U-THERE/ACK notifies (RFC 3706). */
   handleIkeUdp(_inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
+    if (!this.ikeEnabled) return;
     const payload = udp.payload;
     const srcIp = ipPkt.sourceIP.toString();
     if (isIkeMessage(payload)) {
@@ -2864,6 +2929,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsEncaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.outboundSeqNum++;
     sa.bytesEncaps += innerPkt.totalLength;
 
@@ -3239,6 +3306,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsDecaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.bytesDecaps += (inner?.totalLength || 0);
 
     if (inner && !this.acceptsEcnOnDecap(outerPkt, inner, sa)) return null;
@@ -3267,6 +3336,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsDecaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.bytesDecaps += (ah.innerPacket?.totalLength || 0);
 
     // SA bundle (RFC 4301 §4.5): combined AH+ESP — unwrap both layers here
@@ -3277,6 +3348,7 @@ export class IPSecEngine implements IProtocolEngine {
         const espInner = openEsp(sa.cryptoKeys, esp);
         if (espInner === null) { sa.recvErrors++; return null; }
         sa.pktsDecaps++;
+        sa.lastActivityMs = simulationNowMs();
         sa.bytesDecaps += (espInner?.totalLength || 0);
         if (espInner && !this.acceptsEcnOnDecap(outerPkt, espInner, sa)) return null;
         return espInner;
@@ -3486,8 +3558,8 @@ export class IPSecEngine implements IProtocolEngine {
     return {
       peerIP: p.peerIP, localIP: p.localIP, spiIn: p.spiIn, spiOut: p.spiOut,
       outboundSeqNum: 0, seqOverflowFlag: true,
-      replayWindowSize: this.replayWindowSize,
-      replayBitmap: createReplayBitmap(this.replayWindowSize),
+      replayWindowSize: this.replayCheckingDisabled ? 0 : this.replayWindowSize,
+      replayBitmap: createReplayBitmap(this.replayCheckingDisabled ? 0 : this.replayWindowSize),
       replayWindowLastSeq: 0, esnEnabled: this.esnDefault,
       outboundSeqNumHigh: 0, replayWindowLastSeqHigh: 0,
       cryptoKeys: p.cryptoKeys, created: now,
@@ -3495,6 +3567,7 @@ export class IPSecEngine implements IProtocolEngine {
       mode: p.mode, trafficSelectors: p.trafficSelectors,
       statefulFragCheck: p.mode === 'Tunnel',
       dfBitPolicy: this.resolveDfBit(p.outIface), dscpEcnConfig: defaultDscpEcnConfig(),
+      idleTimeSec: this.idleTimeGlobalSec ?? undefined, lastActivityMs: now,
       pathMTU, ipMTU: pathMTU - overhead, pathMTULastUpdated: now,
       transforms: p.transforms, aclName: p.aclName,
       pktsEncaps: 0, pktsDecaps: 0, sendErrors: 0, recvErrors: 0,
@@ -3988,6 +4061,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   private negotiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
+    if (!this.ikeEnabled) return false;
     if (this.router._ipsecInterfaceDown(egressIface)) {
       Logger.info(this.router.id, 'ipsec:port-down',
         `${this.router.name}: IKE negotiation failed — interface ${egressIface} is down`);
@@ -4130,7 +4204,7 @@ export class IPSecEngine implements IProtocolEngine {
     const lines = ['IPv4 Crypto ISAKMP SA', 'dst             src             state          conn-id status'];
     for (const [, sa] of this.ikeSADB) {
       lines.push(
-        `${sa.peerIP.padEnd(16)}${sa.localIP.padEnd(16)}${sa.status.padEnd(15)}${String(1).padEnd(8)}ACTIVE`,
+        `${sa.peerIP.padEnd(16)}${sa.localIP.padEnd(16)}${sa.status.padEnd(15)}${String(this.connIdOf(sa)).padEnd(8)}ACTIVE`,
       );
     }
     return lines.join('\n');
@@ -4446,7 +4520,7 @@ export class IPSecEngine implements IProtocolEngine {
         lines.push(`Crypto Map "${cmap.name}" ${entry.seq} ipsec-isakmp`);
         lines.push(`\tPeer = ${entry.peers.join(', ')}`);
         lines.push(`\tExtended IP access list ${entry.aclName}`);
-        lines.push(`\tSecurity association lifetime: 4608000 kilobytes/${entry.saLifetimeSeconds || this.globalSALifetimeSeconds} seconds`);
+        lines.push(`\tSecurity association lifetime: ${this.globalSALifetimeKB} kilobytes/${entry.saLifetimeSeconds || this.globalSALifetimeSeconds} seconds`);
         if (entry.pfsGroup) {
           lines.push(`\tPFS (Y/N): Y`);
           lines.push(`\tDH group: ${entry.pfsGroup}`);
@@ -4515,22 +4589,84 @@ export class IPSecEngine implements IProtocolEngine {
     return algo.toUpperCase();
   }
 
-  showCryptoSession(): string {
-    const lines: string[] = [];
-    for (const [peerIP, sas] of this.ipsecSADB) {
-      if (sas.length === 0) continue;
-      const sa = sas[0];
-      lines.push(`Crypto session current status`);
-      lines.push('');
-      lines.push(`Interface: ${sa.outIface || 'GigabitEthernet0/1'}`);
-      lines.push(`Session status: UP-ACTIVE`);
-      lines.push(`Peer: ${peerIP} port ${sa.natT ? '4500' : '500'}`);
-      lines.push(`  Session ID: 1`);
-      lines.push(`  IKEv1 SA: local ${sa.localIP}/500 remote ${peerIP}/500 Active`);
-      lines.push(`  IPSEC FLOW: permit ip ${this.getACLSrcNet(sa.aclName)} ${this.getACLDstNet(sa.aclName)}`);
-      lines.push(`        Active SAs: ${sas.length * 2}, origin: crypto map`);
+  private connIds = new WeakMap<object, number>();
+  private lastConnId = 0;
+
+  private connIdOf(sa: object): number {
+    let id = this.connIds.get(sa);
+    if (id === undefined) {
+      this.lastConnId += 1;
+      id = this.lastConnId;
+      this.connIds.set(sa, id);
     }
-    return lines.length ? lines.join('\n') : 'No active crypto sessions.';
+    return id;
+  }
+
+  private flowText(sa: IPSec_SA): string {
+    const selector = sa.trafficSelectors;
+    if (!selector) return `permit ip ${this.getACLSrcNet(sa.aclName)} ${this.getACLDstNet(sa.aclName)}`;
+    const protocol = ({ 0: 'ip', 1: 'icmp', 6: 'tcp', 17: 'udp' } as Record<number, string>)[selector.protocol] ?? String(selector.protocol);
+    const side = (address: string, wildcard: string): string => {
+      if (!address || address === 'any') return '0.0.0.0/0.0.0.0';
+      if (!wildcard || wildcard === '0.0.0.0') return `host ${address}`;
+      const mask = wildcard.split('.').map((octet) => 255 - Number(octet)).join('.');
+      return `${address}/${mask}`;
+    };
+    return `permit ${protocol} ${side(selector.srcAddress, selector.srcWildcard)} ${side(selector.dstAddress, selector.dstWildcard)}`;
+  }
+
+  cryptoSessions(): CryptoSession[] {
+    const now = simulationNowMs();
+    const peers = new Set<string>([...this.ikeSADB.keys(), ...this.ikev2SADB.keys(), ...this.ipsecSADB.keys()]);
+    const sessions: CryptoSession[] = [];
+    for (const peer of peers) {
+      const ipsec = this.ipsecSADB.get(peer) ?? [];
+      const ike: CryptoSession['ike'] = [];
+      let created = now;
+      let natT = false;
+      const v1 = this.ikeSADB.get(peer);
+      if (v1) {
+        created = Math.min(created, v1.created);
+        natT = natT || v1.natT;
+        const capabilities = `${v1.dpdEnabled ? 'D' : ''}${v1.natT ? 'N' : ''}` || '(none)';
+        ike.push({
+          local: v1.localIP, remote: peer, active: v1.status === 'QM_IDLE', connId: this.connIdOf(v1),
+          remainingSeconds: Math.max(0, v1.lifetime - Math.floor((now - v1.created) / 1000)), capabilities,
+        });
+      }
+      const v2 = this.ikev2SADB.get(peer);
+      if (v2) {
+        created = Math.min(created, v2.created);
+        natT = natT || v2.natT;
+        const capabilities = `${v2.dpdEnabled ? 'D' : ''}${v2.natT ? 'N' : ''}` || '(none)';
+        ike.push({
+          local: v2.localIP, remote: peer, active: v2.status === 'READY', connId: this.connIdOf(v2),
+          remainingSeconds: Math.max(0, v2.lifetime - Math.floor((now - v2.created) / 1000)), capabilities,
+        });
+      }
+      for (const sa of ipsec) created = Math.min(created, sa.created);
+      const interfaceName = ipsec[0]?.outIface || this.router._ipsecEgressInterfaceFor(peer) || '';
+      sessions.push({
+        peer, port: natT ? 4500 : 500, interfaceName, phase1Id: peer,
+        uptimeSeconds: Math.floor((now - created) / 1000), ike,
+        flows: ipsec.map((sa) => ({
+          permit: this.flowText(sa), activeSas: 2, origin: 'crypto map',
+          decapsulated: sa.pktsDecaps, decapsulationDrops: sa.recvErrors,
+          encapsulated: sa.pktsEncaps, encapsulationDrops: sa.sendErrors,
+          remainingKilobytes: Math.max(0, sa.lifetimeKB - Math.floor((sa.bytesEncaps + sa.bytesDecaps) / 1024)),
+          remainingSeconds: Math.max(0, sa.lifetime - Math.floor((now - sa.created) / 1000)),
+        })),
+      });
+    }
+    return sessions;
+  }
+
+  showCryptoIPSecSALifetime(): string {
+    return `Security-association lifetime: ${this.globalSALifetimeKB} kilobytes/${this.globalSALifetimeSeconds} seconds`;
+  }
+
+  showCryptoSession(mode: CryptoSessionMode = 'plain'): string {
+    return renderCryptoSessions(this.cryptoSessions(), mode);
   }
 
   private getACLSrcNet(aclName: string): string {
@@ -4859,6 +4995,10 @@ export class IPSecEngine implements IProtocolEngine {
     if (this.replayWindowSize !== 64) {
       lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
     }
+    if (!this.ikeEnabled) lines.push('no crypto isakmp enable');
+    if (this.passiveMode) lines.push('crypto ipsec optional');
+    if (this.replayCheckingDisabled) lines.push('crypto ipsec security-association replay disable');
+    if (this.idleTimeGlobalSec !== null) lines.push(`crypto ipsec security-association idle-time ${this.idleTimeGlobalSec}`);
     if (this.aggressiveMode) lines.push('no crypto isakmp aggressive-mode disable');
     if (this.esnDefault) lines.push('crypto ipsec security-association esn');
     if (this.dfBitGlobal !== 'copy') lines.push(`crypto ipsec df-bit ${this.dfBitGlobal}`);

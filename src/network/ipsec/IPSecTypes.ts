@@ -588,6 +588,8 @@ export interface IPSec_SA {
    *   - 'clear' : always clear DF in outer header
    */
   dfBitPolicy: DfBitPolicy;
+  idleTimeSec?: number;
+  lastActivityMs: number;
 
   // ── Field #15: DSCP / ECN (RFC 4301 §5.1.2 / RFC 6040) ──
   dscpEcnConfig: SADscpEcnConfig;
