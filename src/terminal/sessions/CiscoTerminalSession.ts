@@ -1099,7 +1099,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
       label: 'IOS debug output',
       run: (ctx) => new Promise<void>((resolve) => {
         if (ctx.cancelled()) { resolve(); return; }
-        this.debugUnsubscribe = svc.subscribe((line) => ctx.sink.line(line));
+        this.debugUnsubscribe = svc.subscribe(
+          (line) => ctx.sink.line(line),
+          this.vty?.lineKind === 'vty' ? 'monitor' : 'console',
+        );
         ctx.onCancel(() => {
           this.debugUnsubscribe?.();
           this.debugUnsubscribe = null;

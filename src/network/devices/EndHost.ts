@@ -163,6 +163,8 @@ import { IP_PROTO_GRE } from '../gre/types';
 import { IP_PROTO_IGMP } from '../igmp/types';
 import { IgmpHostAgent } from '../igmp/IgmpHostAgent';
 import { LldpAgent } from '../lldp/LldpAgent';
+import { MvrpAgent } from '../mvrp/MvrpAgent';
+import { MVRP_ETHERTYPE } from '../mvrp/MvrpPdu';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import type { LldpNeighbor } from '../lldp/LldpAgent';
 import { parseNatAddress, rewriteNatAddress } from '../nat/rewrite';
@@ -646,6 +648,7 @@ export abstract class EndHost extends Equipment {
    */
   private _igmpHostAgent: IgmpHostAgent | null = null;
   private _lldpAgent: LldpAgent | null = null;
+  private _mvrpAgent: MvrpAgent | null = null;
 
   /**
    * IPv4 host model (RFC 1122 §3.3.4.2).
@@ -767,6 +770,34 @@ export abstract class EndHost extends Equipment {
       this._lldpAgent.start();
     }
     return this._lldpAgent;
+  }
+
+  getMvrpAgent(): MvrpAgent {
+    if (!this._mvrpAgent) {
+      this._mvrpAgent = new MvrpAgent({
+        id: this.id,
+        name: this.name,
+        getHostname: () => this.getHostname(),
+        getPort: (n: string) => this.ports.get(n),
+        portNames: () => this.ports.keys(),
+        sendOnLink: (request) => this.getLinkLayer().send(request),
+        onVlanRegistered: () => {},
+        onVlanDeregistered: () => {},
+      }, () => this.getBus(), () => this.getScheduler());
+      this._mvrpAgent.setEnabled(true);
+      this._mvrpAgent.start();
+    }
+    return this._mvrpAgent;
+  }
+
+  protected declareVlanOverMvrp(parentPort: string, vid: number): void {
+    const agent = this.getMvrpAgent();
+    agent.configurePort(parentPort, { enabled: true, applicantOnly: true });
+    agent.registerVlanMemberOn(parentPort, vid);
+  }
+
+  protected withdrawVlanFromMvrp(parentPort: string, vid: number): void {
+    this._mvrpAgent?.deregisterVlanMemberOn(parentPort, vid);
   }
 
   protected lldpSystemDescription(): string { return this.getType(); }
@@ -2442,6 +2473,8 @@ export abstract class EndHost extends Equipment {
       this.getLldpAgent().handleFrame(portName, frame);
       return;
     }
+
+    if (frame.etherType === MVRP_ETHERTYPE && this._mvrpAgent?.handleFrame(portName, frame)) return;
 
     if (frame.etherType === 0x8809) {
       this.receiveSlowProtocol(portName, frame);

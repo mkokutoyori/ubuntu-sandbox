@@ -8,16 +8,18 @@ export interface DebugLineJournal {
   record(text: string): string;
 }
 
+export type DebugDestination = 'console' | 'monitor';
+
 export interface TerminalDebugSource {
   hasAnyFlag(): boolean;
-  subscribe(listener: DebugLineListener): () => void;
+  subscribe(listener: DebugLineListener, destination?: DebugDestination): () => void;
 }
 
 /** Console rate limit, in lines per second. IOS's own `logging rate-limit`. */
 export const DEFAULT_DEBUG_RATE_LIMIT = 1000;
 
 export class DebugBroadcast {
-  private readonly listeners = new Set<DebugLineListener>();
+  private readonly listeners = new Map<DebugLineListener, DebugDestination>();
   private busSubs: Unsubscribe[] = [];
   private attachedBus: IEventBus | null = null;
   private attachedDeviceId: string | null = null;
@@ -42,10 +44,9 @@ export class DebugBroadcast {
   }
 
   /**
-   * `logging on` is the master switch: `no logging on` silences every
-   * channel at once, debug included. The flags stay set — the operator
-   * turned the output off, not the instrumentation — so `show debug`
-   * still lists what would be traced.
+   * `no logging on` keeps system messages on the console only: the
+   * buffer and the monitor lines go quiet, the console stays audible.
+   * The flags stay set, so `show debug` still lists what is traced.
    */
   private outputGate: (() => boolean) | null = null;
 
@@ -56,8 +57,8 @@ export class DebugBroadcast {
   /** Lines the rate limiter has dropped since the device came up. */
   getDroppedCount(): number { return this.droppedTotal; }
 
-  subscribe(listener: DebugLineListener): () => void {
-    this.listeners.add(listener);
+  subscribe(listener: DebugLineListener, destination: DebugDestination = 'console'): () => void {
+    this.listeners.set(listener, destination);
     return () => { this.listeners.delete(listener); };
   }
 
@@ -73,10 +74,12 @@ export class DebugBroadcast {
   setJournal(journal: DebugLineJournal | null): void { this.journal = journal; }
 
   fan(line: string): void {
-    if (this.outputGate && !this.outputGate()) return;
+    const loggingOn = !this.outputGate || this.outputGate();
     const rendu = this.journal ? this.journal.record(line) : line;
     if (!this.admit()) return;
-    for (const listener of this.listeners) listener(rendu);
+    for (const [listener, destination] of this.listeners) {
+      if (loggingOn || destination === 'console') listener(rendu);
+    }
   }
 
   /**
@@ -119,7 +122,7 @@ export class DebugBroadcast {
     this.linesThisWindow++;
     const notice = `NOTE: ${dropped} debug message${dropped === 1 ? '' : 's'} dropped by the console rate limit (${this.rateLimit} msg/sec)`;
     const rendu = this.journal ? this.journal.record(notice) : notice;
-    for (const listener of this.listeners) listener(rendu);
+    for (const listener of this.listeners.keys()) listener(rendu);
   }
 
   /**

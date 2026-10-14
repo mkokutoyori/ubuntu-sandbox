@@ -18,7 +18,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { IEventBus } from '@/events/EventBus';
 import type { BgpUpdateTracedPayload } from '@/network/bgp/events';
 import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortTap';
-import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import { DebugBroadcast, type DebugDestination, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { huaweiDisplayInterfaceName } from '@/network/devices/shells/cli-utils';
 import {
   type HuaweiDebugCategory,
@@ -93,8 +93,8 @@ export class HuaweiDebugService implements TerminalDebugSource {
       : `Info: ${n} debugging switch(es) have been turned off.`;
   }
 
-  subscribe(listener: DebugLineListener): () => void {
-    return this.broadcast.subscribe(listener);
+  subscribe(listener: DebugLineListener, destination?: DebugDestination): () => void {
+    return this.broadcast.subscribe(listener, destination);
   }
 
   subscriberCount(): number { return this.broadcast.subscriberCount(); }

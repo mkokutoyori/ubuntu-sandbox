@@ -744,11 +744,20 @@ export const ETHERTYPE_ARP  = 0x0806;
 export const ETHERTYPE_IPV4 = 0x0800;
 export const ETHERTYPE_IPV6 = 0x86dd;
 
+export interface Dot1QTag {
+  tpid: number;
+  pcp: number;
+  dei: number;
+  vid: number;
+}
+
 export interface EthernetFrame {
   srcMAC: MACAddress;
   dstMAC: MACAddress;
   etherType: number;
   payload: ARPPacket | IPv4Packet | IPv6Packet | unknown;
+  dot1q?: Dot1QTag;
+  outerDot1q?: Dot1QTag;
 }
 
 export const ETHERNET_FRAME_OVERHEAD_BYTES = 18;

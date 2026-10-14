@@ -89,7 +89,10 @@ import { GlbpAgent } from '../glbp/GlbpAgent';
 import { FhrpRepository } from './inspection/config/FhrpRepository';
 import { UDP_PORT_GLBP } from '../glbp/types';
 import { IP_PROTO_UDP } from '../core/types';
-import type { UDPPacket } from '../core/types';
+import type { UDPPacket, Dot1QTag } from '../core/types';
+import { makeVlanTag, TPID_S_TAG } from '../layers/link/vlan/VlanTag';
+import { VID_WILDCARD, VlanId } from '../layers/link/vlan/VlanId';
+import { isReservedBridgeAddress } from '../layers/link/vlan/ReservedAddresses';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
@@ -135,6 +138,7 @@ import { lineIdleTimeoutMs, vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { KeypairService } from './router/security/KeypairService';
 import { classifyIpv4Destination } from '../layers/internet/InternetLayer';
 import type { LldpHost } from '../lldp/LldpAgent';
+import { MvrpAgent, type MvrpPortConfig } from '../mvrp/MvrpAgent';
 import { DhcpBulkLeasequeryService } from '../dhcp/DhcpBulkLeasequery';
 
 // Re-export shell classes for backward compatibility
@@ -144,12 +148,7 @@ export { HuaweiSwitchShell as HuaweiVRPSwitchShell } from './shells/HuaweiSwitch
 
 // ─── 802.1Q Tag ─────────────────────────────────────────────────────
 
-export interface Dot1QTag {
-  tpid: number;   // 0x8100
-  pcp: number;    // Priority Code Point (0-7)
-  dei: number;    // Drop Eligible Indicator
-  vid: number;    // VLAN ID (1-4094)
-}
+export type { Dot1QTag };
 
 // ─── Extended Ethernet Frame (with optional VLAN tag) ───────────────
 
@@ -473,6 +472,9 @@ export abstract class Switch extends Equipment {
 
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
+  private mvrpAgent: MvrpAgent | null = null;
+  private readonly mvrpDynamicVlans = new Set<number>();
+  private readonly mvrpMembers = new Map<number, Set<string>>();
   private stpVlanStates: Map<string, STPPortState> = new Map();
 
   // ─── MAC Move Detection ───────────────────────────────────────
@@ -1102,7 +1104,7 @@ export abstract class Switch extends Equipment {
   }
 
   createVLAN(id: number, name?: string): boolean {
-    if (id < 1 || id > 4094) return false;
+    if (!VlanId.tryParse(id)?.isConfigurable) return false;
     if (this.isReservedVlanId(id)) return false;
     if (this.vlans.has(id)) return false;
     const newVlan: VLANEntry = { id, name: name || this.defaultVlanName(id), ports: new Set() };
@@ -1115,6 +1117,7 @@ export abstract class Switch extends Equipment {
     }
 
     Logger.info(this.id, 'switch:vlan-create', `${this.name}: created VLAN ${id}`);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -1237,6 +1240,12 @@ export abstract class Switch extends Equipment {
    * as opaque data (L2PT) instead of handed to this switch's own agent —
    * true only on a dot1q-tunnel port with that protocol listed.
    */
+  private reservedFrameIsTunneled(portName: string, destination: string): boolean {
+    if (destination === '01:80:c2:00:00:00') return this.isL2ProtocolTunneled(portName, 'stp');
+    if (destination === '01:80:c2:00:00:0e') return this.isL2ProtocolTunneled(portName, 'lldp');
+    return false;
+  }
+
   protected isL2ProtocolTunneled(portName: string, proto: 'cdp' | 'stp' | 'vtp' | 'lldp'): boolean {
     const cfg = this.switchportConfigs.get(portName);
     return cfg?.mode === 'dot1q-tunnel' && (cfg.l2ptProtocols?.has(proto) ?? false);
@@ -1320,6 +1329,7 @@ export abstract class Switch extends Equipment {
 
     this.flushDynamicMacsOnPort(portName, 'access-vlan-change');
 
+    this.mvrpTopologyChanged();
     Logger.info(this.id, 'switch:access-vlan', `${this.name}: ${portName} access VLAN ${vlanId}`);
     return true;
   }
@@ -2014,6 +2024,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = VlanSet.from(vlans);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2021,6 +2032,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans.add(vlanId);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2028,6 +2040,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     for (const v of vlans) cfg.trunkAllowedVlans.add(v);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2035,6 +2048,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans.delete(vlanId);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2042,6 +2056,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     for (const v of vlans) cfg.trunkAllowedVlans.delete(v);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2049,6 +2064,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = VlanSet.all();
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2056,6 +2072,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = VlanSet.none();
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2063,10 +2080,88 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = VlanSet.allExcept(vlans);
+    this.mvrpTopologyChanged();
     return true;
   }
 
   // ─── STP API ──────────────────────────────────────────────────────
+
+  getMvrpAgent(): MvrpAgent {
+    if (!this.mvrpAgent) {
+      this.mvrpAgent = new MvrpAgent({
+        id: this.id,
+        name: this.name,
+        getHostname: () => this.getHostname(),
+        getPort: (n: string) => this.getPort(n),
+        sendOnLink: (request) => this.getLinkLayer().send(request),
+        portForwarding: (n: string) => this.getSTPState(n) === 'forwarding',
+        portNames: () => this.switchportConfigs.keys(),
+        pvidOf: (n: string) => this.mvrpPvid(n),
+        fixedRegistrations: (n: string) => this.mvrpStaticVlans(n),
+        onVlanRegistered: (n, vid) => this.mvrpRegister(n, vid),
+        onVlanDeregistered: (n, vid) => this.mvrpDeregister(n, vid),
+      }, () => this.getBus(), () => this.getScheduler());
+    }
+    return this.mvrpAgent;
+  }
+
+  setMvrpEnabled(enabled: boolean): void {
+    this.getMvrpAgent().setEnabled(enabled);
+  }
+
+  configureMvrpPort(portName: string, patch: Partial<MvrpPortConfig>): void {
+    if (!this.switchportConfigs.has(portName)) return;
+    this.getMvrpAgent().configurePort(portName, patch);
+  }
+
+  isMvrpDynamicVlan(vlan: number): boolean {
+    return this.mvrpDynamicVlans.has(vlan);
+  }
+
+  private mvrpPvid(portName: string): number {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return 1;
+    if (cfg.mode === 'access') return cfg.accessVlan;
+    if (cfg.mode === 'hybrid') return cfg.hybridPvid ?? 1;
+    return cfg.trunkNativeVlan;
+  }
+
+  private mvrpStaticVlans(portName: string): ReadonlySet<number> {
+    const cfg = this.switchportConfigs.get(portName);
+    const carried = new Set<number>();
+    if (!cfg) return carried;
+    for (const id of this.vlans.keys()) {
+      if (this.mvrpDynamicVlans.has(id)) continue;
+      if (cfg.mode === 'access' ? cfg.accessVlan === id
+        : cfg.mode === 'hybrid' ? (cfg.hybridUntaggedVlans?.has(id) || cfg.hybridTaggedVlans?.has(id))
+          : cfg.mode === 'trunk' && cfg.trunkAllowedVlans.has(id)) carried.add(id);
+    }
+    return carried;
+  }
+
+  private mvrpRegister(portName: string, vlan: number): void {
+    let members = this.mvrpMembers.get(vlan);
+    if (!members) this.mvrpMembers.set(vlan, members = new Set());
+    members.add(portName);
+    if (!this.vlans.has(vlan) && this.createVLAN(vlan)) this.mvrpDynamicVlans.add(vlan);
+  }
+
+  private mvrpDeregister(portName: string, vlan: number): void {
+    const members = this.mvrpMembers.get(vlan);
+    members?.delete(portName);
+    if (members && members.size > 0) return;
+    this.mvrpMembers.delete(vlan);
+    if (this.mvrpDynamicVlans.delete(vlan)) this.deleteVLAN(vlan);
+  }
+
+  private mvrpEgressPermitted(portName: string, vlan: number): boolean {
+    if (!this.mvrpDynamicVlans.has(vlan)) return true;
+    return this.mvrpMembers.get(vlan)?.has(portName) ?? false;
+  }
+
+  private mvrpTopologyChanged(): void {
+    this.mvrpAgent?.refreshFixedRegistrations();
+  }
 
   getSTPState(portName: string): STPPortState {
     return this.stpStates.get(portName) || 'disabled';
@@ -2101,6 +2196,7 @@ export abstract class Switch extends Equipment {
 
   setSTPState(portName: string, state: STPPortState): void {
     this.stpStates.set(portName, state);
+    this.mvrpAgent?.onPortForwardingChanged(portName);
   }
 
   /** Advance STP timer for a port: listening→learning→forwarding */
@@ -2304,6 +2400,8 @@ export abstract class Switch extends Equipment {
     // SPAN ingress copy must happen before any DAI/STP/VLAN drop.
     this.mirrorIngress(portName, frame);
 
+    if (this.mvrpAgent?.handleFrame(portName, frame)) return;
+
     if (!this.macAclPermits(portName, frame)) {
       Logger.debug(this.id, 'switch:mac-acl-drop',
         `${this.name}: inbound MAC ACL dropped frame on ${portName}`);
@@ -2320,6 +2418,12 @@ export abstract class Switch extends Equipment {
     if (!this.policeIngress(portName, frame)) return;
 
     const taggedFrame = frame as TaggedEthernetFrame;
+
+    if (taggedFrame.dot1q?.vid === VID_WILDCARD || taggedFrame.outerDot1q?.vid === VID_WILDCARD) {
+      Logger.debug(this.id, 'switch:reserved-vid-drop',
+        `${this.name}: dropped frame on ${portName} carrying the reserved VID 0xFFF`);
+      return;
+    }
 
     // ─── Step 1: Determine ingress VLAN ─────────────────────────
     let ingressVlan: number;
@@ -2593,6 +2697,13 @@ export abstract class Switch extends Equipment {
 
     const dstMAC = frame.dstMAC.toString().toLowerCase();
 
+    if (isReservedBridgeAddress(isQinQ ? 's-vlan' : 'c-vlan', dstMAC)
+      && !this.reservedFrameIsTunneled(portName, dstMAC)) {
+      Logger.debug(this.id, 'switch:reserved-address-not-relayed',
+        `${this.name}: ${dstMAC} on ${portName} is a reserved bridge address, not relayed (IEEE 802.1Q 8.13.4)`);
+      return;
+    }
+
     // IEEE 802.3 §3.2.3 — the I/G bit (LSB of the first octet) marks
     // ANY group address: IPv4 multicast 01:00:5e, IPv6 33:33, protocol
     // MACs 01:80:c2/01:00:0c, … Group frames are never unicast-matched
@@ -2780,7 +2891,7 @@ export abstract class Switch extends Equipment {
         }
       } else {
         // Trunk: send if VLAN is allowed
-        if (cfg.trunkAllowedVlans.has(vlan) && !this.getVtpAgentOrNull()?.isVlanPruned(portName, vlan)) {
+        if (cfg.trunkAllowedVlans.has(vlan) && this.mvrpEgressPermitted(portName, vlan) && !this.getVtpAgentOrNull()?.isVlanPruned(portName, vlan)) {
           const pv = this.pvlanPorts.get(portName);
           if (pv && this.resolvePvlanPrimary(vlan) !== undefined) {
             if (!this.pvlanEgressAllowed(exceptPort, portName, vlan)) continue;
@@ -2838,7 +2949,7 @@ export abstract class Switch extends Equipment {
       }
     } else {
       // Trunk port: check if VLAN is allowed before sending
-      if (!cfg.trunkAllowedVlans.has(vlan)) {
+      if (!cfg.trunkAllowedVlans.has(vlan) || !this.mvrpEgressPermitted(portName, vlan)) {
         Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${vlan} not allowed on trunk ${portName} (egress)`);
         return;
       }
@@ -3463,7 +3574,7 @@ export abstract class Switch extends Equipment {
   private addTag(frame: EthernetFrame, vlan: number, cos: number = 0): TaggedEthernetFrame {
     return {
       ...frame,
-      dot1q: { tpid: 0x8100, pcp: cos & 7, dei: 0, vid: vlan },
+      dot1q: makeVlanTag({ vid: vlan, pcp: cos & 7 }),
     };
   }
 
@@ -3484,7 +3595,7 @@ export abstract class Switch extends Equipment {
   private addOuterTag(frame: EthernetFrame, vlan: number, cos: number = 0): TaggedEthernetFrame {
     return {
       ...frame,
-      outerDot1q: { tpid: 0x88a8, pcp: cos & 7, dei: 0, vid: vlan },
+      outerDot1q: makeVlanTag({ vid: vlan, pcp: cos & 7, tpid: TPID_S_TAG }),
     } as TaggedEthernetFrame;
   }
 

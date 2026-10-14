@@ -3057,7 +3057,7 @@ export abstract class LinuxMachine extends EndHost
         bondOption: (bond: string, key: string, value: string) =>
           this.setBondOption(bond, key, value),
         addVeth: (name: string, peerName: string) => this.addVethPair(name, peerName),
-        addVlan: (name: string, parent: string, vid: number) => this.addVlanSubInterface(name, parent, vid),
+        addVlan: (name: string, parent: string, vid: number, mvrp?: boolean) => this.addVlanSubInterface(name, parent, vid, mvrp),
         deleteLink: (name: string) => this.deleteVirtualInterface(name),
       },
       netns: {
@@ -3347,7 +3347,7 @@ export abstract class LinuxMachine extends EndHost
     return '';
   }
 
-  private addVlanSubInterface(name: string, parent: string, vid: number): string {
+  private addVlanSubInterface(name: string, parent: string, vid: number, mvrp = false): string {
     if (this.ports.has(name)) return 'RTNETLINK answers: File exists';
     const parentPort = this.ports.get(parent);
     if (!parentPort) return `Cannot find device "${parent}"`;
@@ -3356,6 +3356,7 @@ export abstract class LinuxMachine extends EndHost
     this.addPort(port);
     this.virtualInterfaces.add(name);
     this.registerVlanSubInterface(name, parent, vid);
+    if (mvrp) this.declareVlanOverMvrp(parent, vid);
     return '';
   }
 
@@ -3365,9 +3366,11 @@ export abstract class LinuxMachine extends EndHost
         ? `RTNETLINK answers: Operation not permitted`
         : `Cannot find device "${name}"`;
     }
+    const vlan = this.getVlanSubInterface(name);
     this.ports.delete(name);
     this.virtualInterfaces.delete(name);
     this.unregisterVlanSubInterface(name);
+    if (vlan) this.withdrawVlanFromMvrp(vlan.parent, vlan.vid);
     return '';
   }
 
