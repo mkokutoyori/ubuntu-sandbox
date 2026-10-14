@@ -89,7 +89,9 @@ import { GlbpAgent } from '../glbp/GlbpAgent';
 import { FhrpRepository } from './inspection/config/FhrpRepository';
 import { UDP_PORT_GLBP } from '../glbp/types';
 import { IP_PROTO_UDP } from '../core/types';
-import type { UDPPacket } from '../core/types';
+import type { UDPPacket, Dot1QTag } from '../core/types';
+import { makeVlanTag, TPID_S_TAG } from '../layers/link/vlan/VlanTag';
+import { VID_WILDCARD, VlanId } from '../layers/link/vlan/VlanId';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
@@ -144,12 +146,7 @@ export { HuaweiSwitchShell as HuaweiVRPSwitchShell } from './shells/HuaweiSwitch
 
 // ─── 802.1Q Tag ─────────────────────────────────────────────────────
 
-export interface Dot1QTag {
-  tpid: number;   // 0x8100
-  pcp: number;    // Priority Code Point (0-7)
-  dei: number;    // Drop Eligible Indicator
-  vid: number;    // VLAN ID (1-4094)
-}
+export type { Dot1QTag };
 
 // ─── Extended Ethernet Frame (with optional VLAN tag) ───────────────
 
@@ -1102,7 +1099,7 @@ export abstract class Switch extends Equipment {
   }
 
   createVLAN(id: number, name?: string): boolean {
-    if (id < 1 || id > 4094) return false;
+    if (!VlanId.tryParse(id)?.isConfigurable) return false;
     if (this.isReservedVlanId(id)) return false;
     if (this.vlans.has(id)) return false;
     const newVlan: VLANEntry = { id, name: name || this.defaultVlanName(id), ports: new Set() };
@@ -2321,6 +2318,12 @@ export abstract class Switch extends Equipment {
 
     const taggedFrame = frame as TaggedEthernetFrame;
 
+    if (taggedFrame.dot1q?.vid === VID_WILDCARD || taggedFrame.outerDot1q?.vid === VID_WILDCARD) {
+      Logger.debug(this.id, 'switch:reserved-vid-drop',
+        `${this.name}: dropped frame on ${portName} carrying the reserved VID 0xFFF`);
+      return;
+    }
+
     // ─── Step 1: Determine ingress VLAN ─────────────────────────
     let ingressVlan: number;
 
@@ -3463,7 +3466,7 @@ export abstract class Switch extends Equipment {
   private addTag(frame: EthernetFrame, vlan: number, cos: number = 0): TaggedEthernetFrame {
     return {
       ...frame,
-      dot1q: { tpid: 0x8100, pcp: cos & 7, dei: 0, vid: vlan },
+      dot1q: makeVlanTag({ vid: vlan, pcp: cos & 7 }),
     };
   }
 
@@ -3484,7 +3487,7 @@ export abstract class Switch extends Equipment {
   private addOuterTag(frame: EthernetFrame, vlan: number, cos: number = 0): TaggedEthernetFrame {
     return {
       ...frame,
-      outerDot1q: { tpid: 0x88a8, pcp: cos & 7, dei: 0, vid: vlan },
+      outerDot1q: makeVlanTag({ vid: vlan, pcp: cos & 7, tpid: TPID_S_TAG }),
     } as TaggedEthernetFrame;
   }
 

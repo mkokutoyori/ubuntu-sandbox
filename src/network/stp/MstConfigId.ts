@@ -1,8 +1,9 @@
 import { hmac } from '@/crypto/mac/hmac';
 import { MD5 } from '@/crypto/hash';
 import type { MstRegion } from '@/network/stp/types';
+import { VID_MAX_CONFIGURABLE } from '../layers/link/vlan/VlanId';
 
-const MAX_VID = 4094;
+const MAX_VID = VID_MAX_CONFIGURABLE;
 const TABLE_ENTRIES = MAX_VID + 2;
 
 const DIGEST_KEY = Uint8Array.from([

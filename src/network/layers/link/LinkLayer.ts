@@ -1,4 +1,4 @@
-import type { EthernetFrame } from '../../core/types';
+import type { Dot1QTag, EthernetFrame } from '../../core/types';
 import { MACAddress } from '../../core/types';
 import type { Port } from '../../hardware/Port';
 
@@ -37,7 +37,7 @@ export interface LinkSendRequest {
   readonly payload: unknown;
   readonly source?: MACAddress;
   readonly vlanId?: number;
-  readonly dot1q?: { tpid: number; pcp: number; dei: number; vid: number };
+  readonly dot1q?: Dot1QTag;
 }
 
 export interface LinkLayerPorts {
