@@ -38,6 +38,8 @@
 import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
 import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
 import type { CbacPort } from './router/security/CbacFirewall';
+import type { TcpInterceptPort } from './router/security/TcpIntercept';
+import type { TcpSegment } from '../tcp/types';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
@@ -2807,17 +2809,47 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!cbac) return true;
     const verdict = cbac.inspect(inIface, outIface, packet);
     this.flushCbacLogs();
-    if (cbac.hasWork() && this.cbacSweep === null) {
-      this.cbacSweep = this.routerTimers.setInterval(() => {
-        cbac.sweep();
-        this.flushCbacLogs();
-        if (!cbac.hasWork() && this.cbacSweep !== null) {
-          this.routerTimers.clear(this.cbacSweep);
-          this.cbacSweep = null;
-        }
-      }, 1000);
-    }
+    this.armSecuritySweep();
     return verdict.permit;
+  }
+
+  private tcpIntercept(): TcpInterceptPort | undefined {
+    return (this as unknown as { [s: symbol]: { tcpIntercept?: TcpInterceptPort } | undefined })[Symbol.for('CiscoSecurityConfig')]?.tcpIntercept;
+  }
+
+  private interceptSender() {
+    return (source: string, destination: string, segment: TcpSegment): void => {
+      this.sendIpv4Packet({
+        destination: new IPAddress(destination), source: new IPAddress(source), protocol: 6,
+        payload: segment, payloadBytes: segment.dataOffset * 4,
+      });
+    };
+  }
+
+  private tcpInterceptProcess(packet: IPv4Packet): IPv4Packet | null {
+    const intercept = this.tcpIntercept();
+    if (!intercept) return packet;
+    const result = intercept.process(packet,
+      (list, candidate) => this.aclEngine.evaluateACLByName(String(list), candidate) === 'permit',
+      this.interceptSender());
+    this.armSecuritySweep();
+    return result;
+  }
+
+  private armSecuritySweep(): void {
+    const cbac = this.cbac();
+    const intercept = this.tcpIntercept();
+    const busy = (): boolean => (cbac?.hasWork() ?? false) || (intercept?.hasWork() ?? false);
+    if (!busy() || this.cbacSweep !== null) return;
+    this.cbacSweep = this.routerTimers.setInterval(() => {
+      cbac?.sweep();
+      this.flushCbacLogs();
+      intercept?.sweep(this.interceptSender());
+      if (!busy() && this.cbacSweep !== null) {
+        this.routerTimers.clear(this.cbacSweep);
+        this.cbacSweep = null;
+      }
+    }, 500);
   }
 
   private zoneFirewallPermits(inIface: string | null, outIface: string | null, packet: IPv4Packet): boolean {
@@ -3248,6 +3280,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         `${this.name}: zone firewall dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
       return;
     }
+    const intercepted = this.tcpInterceptProcess(fwdPkt);
+    if (intercepted === null) return;
+    fwdPkt = intercepted;
     if (!this.cbacPermits(inPort, route.iface, fwdPkt)) {
       Logger.info(this.id, 'router:cbac-drop',
         `${this.name}: inspection dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);

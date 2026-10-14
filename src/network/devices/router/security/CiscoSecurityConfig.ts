@@ -9,6 +9,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
 import { ZoneFirewall } from './ZoneFirewall';
+import { TcpIntercept, DEFAULT_INTERCEPT_SETTINGS, type TcpInterceptSettings } from './TcpIntercept';
 import { CbacFirewall, DEFAULT_INSPECT_SETTINGS, type InspectRule, type InspectSettings } from './CbacFirewall';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
@@ -459,6 +460,9 @@ export class CiscoSecurityConfig {
 
   interfaceFlags: Map<string, InterfaceSecurityFlags> = new Map();
 
+  tcpInterceptSettings: TcpInterceptSettings = { ...DEFAULT_INTERCEPT_SETTINGS };
+  readonly tcpIntercept: TcpIntercept = new TcpIntercept(() => ({ settings: this.tcpInterceptSettings }));
+
   inspectRules: Map<string, InspectRule> = new Map();
   inspectSettings: InspectSettings = { ...DEFAULT_INSPECT_SETTINGS };
   readonly cbac: CbacFirewall = new CbacFirewall(() => ({
@@ -855,7 +859,7 @@ export class CiscoSecurityConfig {
       if (this.controlPlane.servicePolicyInput) lines.push(` service-policy input ${this.controlPlane.servicePolicyInput}`);
       if (this.controlPlane.servicePolicyOutput) lines.push(` service-policy output ${this.controlPlane.servicePolicyOutput}`);
     }
-    lines.push(...this.inspectRunningConfigLines());
+    lines.push(...this.inspectRunningConfigLines(), ...this.tcpInterceptRunningConfigLines());
     for (const z of this.zones.values()) lines.push(`zone security ${z.name}`);
     for (const zp of this.zonePairs.values()) {
       lines.push(`zone-pair security ${zp.name} source ${zp.source} destination ${zp.destination}`);
@@ -881,6 +885,25 @@ export class CiscoSecurityConfig {
     if (f.inspectIn) lines.push(` ip inspect ${f.inspectIn} in`);
     if (f.inspectOut) lines.push(` ip inspect ${f.inspectOut} out`);
     if (f.ipv6TrafficFilter) lines.push(` ipv6 traffic-filter ${f.ipv6TrafficFilter.name} ${f.ipv6TrafficFilter.direction}`);
+    return lines;
+  }
+
+  private tcpInterceptRunningConfigLines(): string[] {
+    const s = this.tcpInterceptSettings;
+    const d = DEFAULT_INTERCEPT_SETTINGS;
+    const lines: string[] = [];
+    if (s.list !== null) lines.push(`ip tcp intercept list ${s.list}`);
+    if (s.mode !== d.mode) lines.push(`ip tcp intercept mode ${s.mode}`);
+    if (s.dropMode !== d.dropMode) lines.push(`ip tcp intercept drop-mode ${s.dropMode}`);
+    if (s.connectionTimeoutSec !== d.connectionTimeoutSec) lines.push(`ip tcp intercept connection-timeout ${s.connectionTimeoutSec}`);
+    if (s.finrstTimeoutSec !== d.finrstTimeoutSec) lines.push(`ip tcp intercept finrst-timeout ${s.finrstTimeoutSec}`);
+    if (s.watchTimeoutSec !== d.watchTimeoutSec) lines.push(`ip tcp intercept watch-timeout ${s.watchTimeoutSec}`);
+    if (s.maxIncompleteLow !== d.maxIncompleteLow || s.maxIncompleteHigh !== d.maxIncompleteHigh) {
+      lines.push(`ip tcp intercept max-incomplete low ${s.maxIncompleteLow} high ${s.maxIncompleteHigh}`);
+    }
+    if (s.oneMinuteLow !== d.oneMinuteLow || s.oneMinuteHigh !== d.oneMinuteHigh) {
+      lines.push(`ip tcp intercept one-minute low ${s.oneMinuteLow} high ${s.oneMinuteHigh}`);
+    }
     return lines;
   }
 
