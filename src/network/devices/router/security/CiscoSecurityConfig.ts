@@ -391,6 +391,10 @@ export class CiscoSecurityConfig {
   aaaSessionId?: string;
   /** `aaa local authentication attempts max-fail <n>` — per-account lockout threshold. */
   localAuthMaxFailAttempts?: number;
+  aaaLoginBanner?: string;
+  aaaFailMessage?: string;
+  aaaUsernamePrompt?: string;
+  aaaPasswordPrompt?: string;
   aaaMethods: AaaMethodEntry[] = [];
   radiusServers: Map<string, RadiusServer> = new Map();
   tacacsServers: Map<string, TacacsServer> = new Map();
@@ -560,6 +564,18 @@ export class CiscoSecurityConfig {
     return lines;
   }
 
+  loginMessages(): { banner: string | null; failMessage: string | null; usernamePrompt: string; passwordPrompt: string } {
+    const list = this.aaaMethods.find((m) =>
+      m.phase === 'authentication' && (m.service as string) === 'login' && m.listName === 'default');
+    const tacacsFirst = list?.methods[0]?.toLowerCase() === 'group' && list.methods[1]?.toLowerCase() === 'tacacs+';
+    return {
+      banner: tacacsFirst ? null : this.aaaLoginBanner ?? null,
+      failMessage: this.aaaFailMessage ?? null,
+      usernamePrompt: this.aaaUsernamePrompt ?? 'Username: ',
+      passwordPrompt: this.aaaPasswordPrompt ?? 'Password: ',
+    };
+  }
+
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
     if (this.aaaNewModel) {
@@ -570,6 +586,10 @@ export class CiscoSecurityConfig {
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
     }
+    if (this.aaaLoginBanner !== undefined) lines.push(`aaa authentication banner ^C\n${this.aaaLoginBanner}\n^C`);
+    if (this.aaaFailMessage !== undefined) lines.push(`aaa authentication fail-message ^C\n${this.aaaFailMessage}\n^C`);
+    if (this.aaaUsernamePrompt !== undefined) lines.push(`aaa authentication username-prompt "${this.aaaUsernamePrompt}"`);
+    if (this.aaaPasswordPrompt !== undefined) lines.push(`aaa authentication password-prompt "${this.aaaPasswordPrompt}"`);
     // Les comptes locaux sont rendus par le magasin d'identifiants
     // (`_listLocalUsers`), qui est le seul a les porter. Un second
     // magasin a existe ici : ecrit par une ligne, lu par personne, et
