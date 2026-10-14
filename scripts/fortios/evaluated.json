@@ -10,7 +10,8 @@
   "policy-expiry-date",
   "send-deny-packet",
   "tcp-mss-sender",
-  "tcp-mss-receiver"
+  "tcp-mss-receiver",
+  "schedule-timeout"
  ],
  "firewall vip": [],
  "firewall address": []

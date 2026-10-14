@@ -224,6 +224,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       expiresAt: expiryOf(object),
       tcpMssSender: Number.parseInt(object.effective('tcp-mss-sender')[0] ?? '0', 10) || undefined,
       tcpMssReceiver: Number.parseInt(object.effective('tcp-mss-receiver')[0] ?? '0', 10) || undefined,
+      scheduleTimeout: object.effective('schedule-timeout')[0] === 'enable',
       sendDenyPacket: action === 'deny' && object.effective('send-deny-packet')[0] === 'enable',
       destinationNegated: object.effective('dstaddr-negate')[0] === 'enable',
       serviceNegated: object.effective('service-negate')[0] === 'enable',

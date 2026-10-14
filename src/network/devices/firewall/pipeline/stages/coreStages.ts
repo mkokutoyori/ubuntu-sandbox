@@ -12,6 +12,7 @@ import type { RouteTable } from '../../l3/RouteTable';
 import type { IntraSwitchPolicy } from '../../l3/SwitchGroupTable';
 import type { SdwanSteeringProbe } from '../../sdwan/SdwanTable';
 import type { ObjectStore } from '../../model/ObjectStore';
+import type { ScheduleStore } from '../../model/ScheduleObject';
 import type { PolicyStore } from '../../model/PolicyStore';
 import type { SessionTimeoutProfile } from '../../FirewallProfile';
 import type { SessionTtlTable } from '../../session/SessionTtlTable';
@@ -70,6 +71,7 @@ export interface VdomServices {
   dos?: DosPolicyStore;
   dosSensor?: DosSensor;
   expectedFlows?: ExpectedFlowTable;
+  schedules?: ScheduleStore;
 }
 
 export interface HaStandby {
@@ -1151,6 +1153,12 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       if (translation) {
         session.translation = translation;
         session.natRuleId = translation.natRuleId;
+      }
+
+      const rule = context.matchedPolicy;
+      if (rule?.scheduleTimeout === true && rule.schedule !== undefined) {
+        const ends = vdom(services, context).schedules?.endOfActivity(rule.schedule, services.now());
+        if (ends !== undefined) sessions.endAt(session, ends);
       }
 
       vdom(services, context).sessions.recordTraffic(session, 'c2s', packet.totalLength);

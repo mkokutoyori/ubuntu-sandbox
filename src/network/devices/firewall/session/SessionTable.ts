@@ -9,7 +9,7 @@ import { TimerSet } from '@/events/TimerSet';
 export type SessionState = 'init' | 'opening' | 'active' | 'closing' | 'closed' | 'discard';
 
 export type SessionCloseReason =
-  | 'tcp-fin' | 'tcp-rst' | 'timeout' | 'clear' | 'parent-closed' | 'policy-change';
+  | 'tcp-fin' | 'tcp-rst' | 'timeout' | 'clear' | 'parent-closed' | 'policy-change' | 'schedule-end';
 
 export interface SessionCounters {
   packetsC2S: number;
@@ -52,6 +52,7 @@ export interface FirewallSession {
   readonly counters: SessionCounters;
   timeoutSec: number;
   expiresAt: number;
+  endsAt?: number;
   parentSessionId?: number;
   algName?: string;
   isPinhole: boolean;
@@ -109,7 +110,8 @@ export interface SessionTableView {
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
-function retirementReason(session: FirewallSession): SessionCloseReason {
+function retirementReason(session: FirewallSession, now: number): SessionCloseReason {
+  if (session.endsAt !== undefined && now >= session.endsAt) return 'schedule-end';
   if (session.tcpState === 'closed') return 'tcp-rst';
   if (session.tcpState === 'time-wait') return 'tcp-fin';
   return 'timeout';
@@ -207,14 +209,25 @@ export class SessionTable {
 
   refresh(session: FirewallSession): void {
     session.lastSeenAt = this.now();
-    session.expiresAt = session.lastSeenAt + session.timeoutSec * 1000;
+    session.expiresAt = this.deadlineOf(session, session.timeoutSec);
     this.armExpiry(session.expiresAt);
   }
 
   setTimeout(session: FirewallSession, timeoutSec: number): void {
     session.timeoutSec = timeoutSec;
-    session.expiresAt = session.lastSeenAt + timeoutSec * 1000;
+    session.expiresAt = this.deadlineOf(session, timeoutSec);
     this.armExpiry(session.expiresAt);
+  }
+
+  endAt(session: FirewallSession, at: number): void {
+    session.endsAt = at;
+    session.expiresAt = this.deadlineOf(session, session.timeoutSec);
+    this.armExpiry(session.expiresAt);
+  }
+
+  private deadlineOf(session: FirewallSession, timeoutSec: number): number {
+    const idle = session.lastSeenAt + timeoutSec * 1000;
+    return session.endsAt === undefined ? idle : Math.min(idle, session.endsAt);
   }
 
   close(session: FirewallSession, reason: SessionCloseReason): void {
@@ -243,7 +256,7 @@ export class SessionTable {
     let purged = 0;
     for (const session of [...this.sessions.values()]) {
       if (session.expiresAt <= deadline) {
-        this.close(session, retirementReason(session));
+        this.close(session, retirementReason(session, deadline));
         purged++;
       }
     }
