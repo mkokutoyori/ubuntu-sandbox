@@ -639,6 +639,7 @@ export class Firewall extends Equipment {
       portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
       createManagementCli: (user, origin) => this.createManagementCli(user, origin),
+      routingVrfs: () => this.routingVrfs(),
       leaveCluster: (iface, ip, mask) => this.leaveCluster(iface, ip, mask),
       setDevicePriority: (priority) => this.setDevicePriority(priority),
       authenticateAdmin: (user, password, source) =>

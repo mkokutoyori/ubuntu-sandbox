@@ -51,7 +51,7 @@
  * vrai `chronyd` ou `ntpd` pour MD5 et SHA1, ce que le test d'oracle verifie.
  */
 
-import { md5, sha1 } from '@/crypto';
+import { md5, sha1, sha256 } from '@/crypto';
 import type { NtpPacket } from './types';
 import { signedOctets } from './wire';
 
@@ -94,7 +94,7 @@ function cleEnOctets(cle: string): Uint8Array {
  * calculant comme un condensé donnerait une valeur qu'aucune vraie
  * machine ne reconnaitrait.
  */
-export const CONDENSES_NTP = ['MD5', 'SHA1'] as const;
+export const CONDENSES_NTP = ['MD5', 'SHA1', 'SHA256'] as const;
 export type CondenseNtp = (typeof CONDENSES_NTP)[number];
 
 export function estCondenseNtp(mot: string): mot is CondenseNtp {
@@ -114,7 +114,8 @@ export function calculerMacNtp(cle: string, pkt: NtpPacket, algo: string = 'MD5'
   const entree = new Uint8Array(cleOctets.length + entete.length);
   entree.set(cleOctets, 0);
   entree.set(entete, cleOctets.length);
-  const brut = algo.toUpperCase() === 'SHA1' ? sha1(entree) : md5(entree);
+  const nom = algo.toUpperCase();
+  const brut = nom === 'SHA256' ? sha256(entree) : nom === 'SHA1' ? sha1(entree) : md5(entree);
   return [...brut].map((o) => o.toString(16).padStart(2, '0')).join('');
 }
 

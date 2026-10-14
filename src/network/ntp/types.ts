@@ -256,6 +256,9 @@ export interface NtpConfig {
   refIdentifier: string;
   system: NtpSystemState;
   sourceInterface: string;
+  sourceAddress: string;
+  servingInterfaces: Set<string> | null;
+  requireRequestAuthentication: boolean;
   authenticate: boolean;
   authKeys: Map<number, NtpAuthKey>;
   trustedKeys: Set<number>;
@@ -389,6 +392,9 @@ export function createDefaultNtpConfig(): NtpConfig {
     system: createSystemState(),
     rateLimit: null,
     sourceInterface: '',
+    sourceAddress: '',
+    servingInterfaces: null,
+    requireRequestAuthentication: false,
     authenticate: false,
     authKeys: new Map(),
     trustedKeys: new Set(),

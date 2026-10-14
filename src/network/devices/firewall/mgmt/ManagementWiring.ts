@@ -70,6 +70,7 @@ export interface ManagementHost {
   adminServerCertificate(): AdminServerCertificate | undefined;
   managementServedAnywhere(service: 'http' | 'https'): boolean;
   adminHttpApp(): AdminHttpApp | null;
+  routingVrfs?(): readonly number[];
 }
 
 export interface ManagementServices {
@@ -139,6 +140,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     ports: () => host.ports(),
     sendFrame: (name, frame) => { host.sendFrame(name, frame); },
     sendUdpDatagram: (request) => host.sendUdpDatagram(request),
+    vrfs: () => host.routingVrfs?.() ?? [0],
     bus: () => host.bus(),
   });
 

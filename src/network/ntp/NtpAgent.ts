@@ -289,6 +289,14 @@ export class NtpAgent {
 
   setSourceInterface(name: string): void { this.config.sourceInterface = name; }
 
+  setSourceAddress(address: string): void { this.config.sourceAddress = address; }
+
+  setServingInterfaces(interfaces: ReadonlySet<string> | null): void {
+    this.config.servingInterfaces = interfaces === null ? null : new Set(interfaces);
+  }
+
+  setRequireRequestAuthentication(on: boolean): void { this.config.requireRequestAuthentication = on; }
+
   associationId(serverIp: string): number { return this.idAssoc(serverIp); }
 
   portNames(): string[] { return this.host.getPorts().map((port) => port.getName()); }
@@ -628,6 +636,7 @@ export class NtpAgent {
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, destinationIp?: IPAddress): void {
     this.requestDestination = destinationIp?.toString() ?? '';
     if (!this.config.enabled) return;
+    if (this.config.disabledInterfaces.has(inPort)) { this.config.counters.dropped++; return; }
     if (udp.destinationPort !== UDP_PORT_NTP && udp.sourcePort !== UDP_PORT_NTP && udp.destinationPort !== this.serverPort) return;
     this.requestSourcePort = udp.sourcePort;
     if (udp.payload instanceof Uint8Array) this.rawPayload = udp.payload;
@@ -639,6 +648,7 @@ export class NtpAgent {
     }
     if ((udp.payload[0] & 0x7) === MODE_CONTROLE) {
       const control = decodeControlPacket(udp.payload);
+      if (this.config.servingInterfaces !== null && !this.config.servingInterfaces.has(inPort)) { c.dropped++; return; }
       if (control === null) c.protocolError++;
       else this.handleControl(inPort, srcIp, control);
       return;
@@ -661,6 +671,7 @@ export class NtpAgent {
     }
     if ((payload.mode === 'client' || payload.mode === 'symmetric-active') && udp.destinationPort !== this.serverPort) return;
     c.received++;
+    if (this.refusesRequestOn(inPort, payload)) { c.dropped++; return; }
     if (payload.mode in c.receivedByMode) c.receivedByMode[payload.mode]++;
     this.getBus().publish({
       topic: 'ntp.packet.received',
@@ -670,6 +681,13 @@ export class NtpAgent {
       },
     });
     this.receive(inPort, srcIp, payload, destination);
+  }
+
+  private refusesRequestOn(inPort: string, packet: NtpPacket): boolean {
+    if (packet.mode !== 'client' && packet.mode !== 'symmetric-active') return false;
+    const serving = this.config.servingInterfaces;
+    if (serving !== null && !serving.has(inPort)) return true;
+    return this.config.requireRequestAuthentication && packet.keyId === undefined;
   }
 
   private discard(): void {
@@ -1657,7 +1675,8 @@ export class NtpAgent {
 
   private namedSource(association?: NtpAssociation): IPAddress | undefined {
     const declared = association?.sourceInterface || this.config.sourceInterface;
-    return declared ? this.host.getPort(declared)?.getIPAddress() ?? undefined : undefined;
+    if (declared) return this.host.getPort(declared)?.getIPAddress() ?? undefined;
+    return isValidIPv4(this.config.sourceAddress) && this.config.sourceAddress !== '0.0.0.0' ? new IPAddress(this.config.sourceAddress) : undefined;
   }
 
   private serverPort = UDP_PORT_NTP;
