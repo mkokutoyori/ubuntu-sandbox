@@ -92,6 +92,7 @@ import { IP_PROTO_UDP } from '../core/types';
 import type { UDPPacket, Dot1QTag } from '../core/types';
 import { makeVlanTag, TPID_S_TAG } from '../layers/link/vlan/VlanTag';
 import { VID_WILDCARD, VlanId } from '../layers/link/vlan/VlanId';
+import { isReservedBridgeAddress } from '../layers/link/vlan/ReservedAddresses';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
@@ -1234,6 +1235,12 @@ export abstract class Switch extends Equipment {
    * as opaque data (L2PT) instead of handed to this switch's own agent —
    * true only on a dot1q-tunnel port with that protocol listed.
    */
+  private reservedFrameIsTunneled(portName: string, destination: string): boolean {
+    if (destination === '01:80:c2:00:00:00') return this.isL2ProtocolTunneled(portName, 'stp');
+    if (destination === '01:80:c2:00:00:0e') return this.isL2ProtocolTunneled(portName, 'lldp');
+    return false;
+  }
+
   protected isL2ProtocolTunneled(portName: string, proto: 'cdp' | 'stp' | 'vtp' | 'lldp'): boolean {
     const cfg = this.switchportConfigs.get(portName);
     return cfg?.mode === 'dot1q-tunnel' && (cfg.l2ptProtocols?.has(proto) ?? false);
@@ -2595,6 +2602,13 @@ export abstract class Switch extends Equipment {
     }
 
     const dstMAC = frame.dstMAC.toString().toLowerCase();
+
+    if (isReservedBridgeAddress(isQinQ ? 's-vlan' : 'c-vlan', dstMAC)
+      && !this.reservedFrameIsTunneled(portName, dstMAC)) {
+      Logger.debug(this.id, 'switch:reserved-address-not-relayed',
+        `${this.name}: ${dstMAC} on ${portName} is a reserved bridge address, not relayed (IEEE 802.1Q 8.13.4)`);
+      return;
+    }
 
     // IEEE 802.3 §3.2.3 — the I/G bit (LSB of the first octet) marks
     // ANY group address: IPv4 multicast 01:00:5e, IPv6 33:33, protocol
