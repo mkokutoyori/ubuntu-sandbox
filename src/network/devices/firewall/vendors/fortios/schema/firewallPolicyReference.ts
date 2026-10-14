@@ -69,7 +69,7 @@ export const POLICY_REFERENCE_ATTRIBUTES: readonly FortiAttributeSpec[] = Object
   { ...word('ips-sensor', 'Name of an existing IPS sensor.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...word('ips-voip-filter', 'Name of an existing VoIP (ips) profile.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...enable('log-http-transaction', 'Enable/disable HTTP transaction log.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
-  { ...enable('match-vip-only', 'Enable/disable matching of only those packets that have had their destination addresses changed by a VIP.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  enable('match-vip-only', 'Enable/disable matching of only those packets that have had their destination addresses changed by a VIP.', false),
   { ...enable('nat46', 'Enable/disable NAT46.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...enable('nat64', 'Enable/disable NAT64.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...enable('natinbound', 'Policy-based IPsec VPN: apply destination NAT to inbound traffic.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },

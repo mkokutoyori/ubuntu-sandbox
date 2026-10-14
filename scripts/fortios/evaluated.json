@@ -16,7 +16,8 @@
   "diffserv-reverse",
   "diffservcode-forward",
   "diffservcode-rev",
-  "diffserv-copy"
+  "diffserv-copy",
+  "match-vip-only"
  ],
  "firewall vip": [
   "src-filter"

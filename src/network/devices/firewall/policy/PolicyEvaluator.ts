@@ -169,6 +169,7 @@ export class PolicyEvaluator {
   }
 
   private matchesTranslatedDestination(rule: SecurityRule, probe: PolicyProbe): boolean {
+    if (rule.matchVipOnly === true && !(probe.destinationNatRuleId ?? '').startsWith(VIP_RULE_PREFIX)) return false;
     if (probe.destinationTranslated !== true) return true;
     if (rule.matchTranslatedDestination !== false) return true;
     return rule.destination.some(name => name !== ANY);
