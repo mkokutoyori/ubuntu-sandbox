@@ -132,7 +132,7 @@ import {
   type ProxyHop,
 } from './sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
-import type { TcpConnector } from '@/network/tcp/types';
+import type { TcpConnector, TcpDialFailure } from '@/network/tcp/types';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
@@ -2214,22 +2214,6 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     // BRD SSH-06: merge ~/.ssh/config defaults under CLI overrides.
     const merged = this.mergeWithSshConfig(parsed);
-    // OpenSSH `-J host1[,host2,...]` (ProxyJump): walk each hop before
-    // opening the final connection. Each hop is pushed onto the SSH
-    // stack so `exit` unwinds one hop at a time, matching real ssh -J.
-    if (merged.jumpHosts && merged.jumpHosts.length > 0) {
-      const hops = merged.jumpHosts.flatMap((h) => [
-        ...parseProxyJumpSpec(h),
-      ]);
-      if (!this.pushSshChain(hops)) {
-        this.addLine(
-          `ssh: could not resolve one or more jump hosts: ${merged.jumpHosts.join(', ')}`,
-          'error',
-        );
-        this.notify();
-        return;
-      }
-    }
     // Reactive approach: connect directly — password (and host-key confirmation)
     // are prompted lazily by TerminalSshInteractionHandler via QueuedTerminalIO,
     // only when the SSH layer actually needs them (e.g. public-key auth succeeds
@@ -2295,6 +2279,7 @@ export class LinuxTerminalSession extends TerminalSession {
       strict: StrictHostKeyChecking | undefined;
       command: string | null;
       hashKnownHosts?: boolean;
+      jumpHosts?: readonly string[];
       localForwards?: readonly SshPortForward[];
       remoteForwards?: readonly SshPortForward[];
       dynamicForwards?: readonly SshPortForward[];
@@ -2345,14 +2330,10 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    // Reactive IO: password and host-key prompts are shown on demand by
-    // TerminalSshInteractionHandler → QueuedTerminalIO → handleSshIOKey().
-    // Public-key auth that succeeds silently will never trigger a password prompt.
-    const io = this.createSshTerminalIO();
     const localDevice = this.getLocalDevice();
     const localAgent = localDevice instanceof LinuxMachine ? localDevice.sshAgentPort() : undefined;
-    const session = new SshSession({
-      tcpConnector,
+    const newSession = (connector: TcpConnector, io: QueuedTerminalIO): SshSession => new SshSession({
+      tcpConnector: connector,
       ...(localAgent === undefined ? {} : { agent: localAgent }),
       vfs: localVfs as never,
       localUser: this.currentUser,
@@ -2362,12 +2343,46 @@ export class LinuxTerminalSession extends TerminalSession {
       interactionHandler: new TerminalSshInteractionHandler(io),
     });
 
+    const jumpSessions: SshSession[] = [];
+    const releaseJumps = (): void => {
+      for (const jump of jumpSessions.splice(0).reverse()) jump.disconnect();
+    };
+    let connector = tcpConnector;
+    let inheritedUser = this.currentUser;
+    const hops = (meta.jumpHosts ?? []).flatMap((spec) => [...parseProxyJumpSpec(spec)]);
+    for (const hop of hops) {
+      const hopHost = this.resolveSshHost(hop.host);
+      if (!hopHost) {
+        this.addLine(`ssh: Could not resolve hostname ${hop.host}: Name or service not known`, 'error');
+        releaseJumps();
+        this.notify();
+        return;
+      }
+      const hopUser = hop.user ?? inheritedUser;
+      const hopPort = hop.port ?? 22;
+      const hopIo = this.createSshTerminalIO();
+      const hopSession = newSession(connector, hopIo);
+      const hopOptions = SshConnectOptionsBuilder.create()
+        .host(hopHost).user(hopUser).port(hopPort)
+        .strictHostKeyChecking(meta.strict ?? 'ask');
+      for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) hopOptions.addIdentityFile(id);
+      if (!await this.connectSshSession(hopSession, hopOptions.build(), hopHost, hopPort, hopUser, jumpSessions.length === 0)) {
+        releaseJumps();
+        return;
+      }
+      jumpSessions.push(hopSession);
+      connector = this.tunnelThroughJump(hopSession);
+      inheritedUser = hopUser;
+    }
+
+    const io = this.createSshTerminalIO();
+    const session = newSession(connector, io);
+
     const builder = SshConnectOptionsBuilder.create()
       .host(host)
       .user(user)
       .port(meta.port)
       .strictHostKeyChecking(meta.strict ?? 'ask');
-    // Analysis doc §1.6: forward HashKnownHosts (CLI -o or ~/.ssh/config).
     if (meta.hashKnownHosts) builder.hashKnownHosts(true);
     if (meta.authentication) builder.authentication(meta.authentication);
     if (meta.algorithms) builder.algorithms(meta.algorithms);
@@ -2375,76 +2390,8 @@ export class LinuxTerminalSession extends TerminalSession {
       builder.addIdentityFile(id);
     }
 
-    // No usable path to the host — a real client fails here, before any
-    // key exchange or password prompt (docs/PRD-Link-State.md §2.1 P6).
-    const reachable = this.remoteLivenessProbe(host);
-    if (reachable && !reachable()) {
-      this.addLine(`ssh: connect to host ${host} port ${meta.port}: ${sshUnreachableReason(this.device, host)}`, 'error');
-      session.disconnect();
-      this.pendingSshIO = null;
-      this.notify();
-      return;
-    }
-
-    let result: Awaited<ReturnType<typeof session.connect>> | null = null;
-    let cancelled = false;
-    try {
-      result = await session.connect(builder.build());
-    } catch (err) {
-      if (err instanceof QueuedTerminalIOCancelled) {
-        cancelled = true;
-      } else {
-        throw err;
-      }
-    } finally {
-      // Always release the reactive IO once the connection phase is over,
-      // regardless of success or failure.
-      this.pendingSshIO = null;
-      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
-        this.inputMode = { type: 'normal' };
-      }
-      this.notify();
-    }
-
-    if (cancelled) {
-      this.addLine('^C', 'normal');
-      session.disconnect();
-      this.notify();
-      return;
-    }
-
-    if (!result || !isOk(result)) {
-      const errKind = result
-        ? (result as { error: { kind: string } }).error.kind
-        : 'UNKNOWN';
-      // AUTH_FAILED is already surfaced via showWarning() inside doAuthenticate();
-      // do not duplicate it. Other errors have no prior warning, so display them here.
-      if (errKind !== 'AUTH_FAILED') {
-        const msg =
-          // A refused connection is `Connection refused`, not `No route to
-          // host` — the unreachable case was already decided above, by the
-          // liveness probe, before any session was opened, so reaching
-          // here means the path was fine and the far end said no. That is
-          // what a router in quiet-mode, a `transport input none`, or a
-          // stopped daemon look like from the client, and calling it a
-          // routing failure sends the operator to check cables instead.
-          errKind === 'CONNECTION_REFUSED'
-            ? `ssh: connect to host ${host} port ${meta.port}: Connection refused`
-            : errKind === 'CONNECTION_TIMEOUT'
-            ? `ssh: connect to host ${host} port ${meta.port}: Connection timed out`
-            : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
-            ? 'Host key verification failed.'
-            : errKind === 'KEX_FAILED'
-            ? (result as { error: { message: string } }).error.message
-            : `${user}@${host}: Permission denied (publickey,password).`;
-        this.addLine(msg, 'error');
-      }
-      // A failed connection attempt (bad auth, rejected host key, refused
-      // admission, …) must not linger: a real ssh client tears down its
-      // TCP connection on failure rather than leaving the vty/pty line it
-      // occupied on the server dangling until some other timeout fires.
-      session.disconnect();
-      this.notify();
+    if (!await this.connectSshSession(session, builder.build(), host, meta.port, user, hops.length === 0)) {
+      releaseJumps();
       return;
     }
 
@@ -2463,6 +2410,7 @@ export class LinuxTerminalSession extends TerminalSession {
       if (!isOk(channelResult)) {
         this.addLine('ssh: failed to open exec channel', 'error');
         session.disconnect();
+        releaseJumps();
         this.notify();
         return;
       }
@@ -2479,6 +2427,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       channelResult.value.close();
       session.disconnect();
+      releaseJumps();
       this.notify();
       return;
     }
@@ -2495,6 +2444,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const onSessionEnd = () => {
       if (client !== null) client.retire();
       else session.disconnect();
+      releaseJumps();
     };
 
     // Every vendor is driven over the real, authenticated SSH channel.
@@ -2530,6 +2480,81 @@ export class LinuxTerminalSession extends TerminalSession {
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
     this.notify();
+  }
+
+  private tunnelThroughJump(jump: SshSession): TcpConnector {
+    return async (host, port) => {
+      const opened = await jump.openDirectTcpip(host, port);
+      if (isOk(opened)) return opened.value as Awaited<ReturnType<TcpConnector>>;
+      const refused: TcpDialFailure = { dialFailed: 'refused' };
+      return refused;
+    };
+  }
+
+  private async connectSshSession(
+    session: SshSession,
+    options: ReturnType<SshConnectOptionsBuilder['build']>,
+    host: string,
+    port: number,
+    user: string,
+    probeFromHere: boolean,
+  ): Promise<boolean> {
+    const reachable = probeFromHere ? this.remoteLivenessProbe(host) : null;
+    if (reachable && !reachable()) {
+      this.addLine(`ssh: connect to host ${host} port ${port}: ${sshUnreachableReason(this.device, host)}`, 'error');
+      session.disconnect();
+      this.pendingSshIO = null;
+      this.notify();
+      return false;
+    }
+
+    let result: Awaited<ReturnType<typeof session.connect>> | null = null;
+    let cancelled = false;
+    try {
+      result = await session.connect(options);
+    } catch (err) {
+      if (err instanceof QueuedTerminalIOCancelled) {
+        cancelled = true;
+      } else {
+        throw err;
+      }
+    } finally {
+      this.pendingSshIO = null;
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        this.inputMode = { type: 'normal' };
+      }
+      this.notify();
+    }
+
+    if (cancelled) {
+      this.addLine('^C', 'normal');
+      session.disconnect();
+      this.notify();
+      return false;
+    }
+
+    if (!result || !isOk(result)) {
+      const errKind = result
+        ? (result as { error: { kind: string } }).error.kind
+        : 'UNKNOWN';
+      if (errKind !== 'AUTH_FAILED') {
+        const msg =
+          errKind === 'CONNECTION_REFUSED'
+            ? `ssh: connect to host ${host} port ${port}: Connection refused`
+            : errKind === 'CONNECTION_TIMEOUT'
+            ? `ssh: connect to host ${host} port ${port}: Connection timed out`
+            : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
+            ? 'Host key verification failed.'
+            : errKind === 'KEX_FAILED'
+            ? (result as { error: { message: string } }).error.message
+            : `${user}@${host}: Permission denied (publickey,password).`;
+        this.addLine(msg, 'error');
+      }
+      session.disconnect();
+      this.notify();
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -3253,17 +3278,6 @@ export class LinuxTerminalSession extends TerminalSession {
       || this.activeSubShell?.connection === 'ssh';
   }
 
-  /**
-   * OpenSSH `ssh -J <hops>` ProxyJump support. Pushes one SSH stack
-   * frame per hop in order, resolving each `host` to a local Equipment
-   * via the SSH-LAN registry. Returns `false` (and rolls back) if any
-   * hop fails to resolve.
-   *
-   * For the simulator, "connecting" to a LAN-local device is the same
-   * as pushing it on the stack — the underlying SSH session is what
-   * `connectAndEnterSsh` opens afterwards for the final hop. Each hop
-   * defaults its user to the previous hop's user when omitted.
-   */
   private openSshForwards(
     session: SshSession,
     client: SshClientHandle | null,
@@ -3293,25 +3307,6 @@ export class LinuxTerminalSession extends TerminalSession {
         this.addLine(remoteForwardFailure(forward.listenPort));
       }
     }
-  }
-
-  pushSshChain(hops: readonly ProxyHop[]): boolean {
-    const pushed: number[] = [];
-    let inheritedUser = this.currentUser;
-    for (const hop of hops) {
-      const remote = findLinuxMachineByIp(hop.host);
-      if (!remote) {
-        // Roll back any successful hops so the stack is unchanged.
-        for (let i = 0; i < pushed.length; i++) this.popRemoteDevice();
-        return false;
-      }
-      const user = hop.user ?? inheritedUser;
-      const label = `${user}@${hop.host}`;
-      this.pushRemoteDevice(remote, user, label, () => undefined);
-      pushed.push(1);
-      inheritedUser = user;
-    }
-    return true;
   }
 
   /**

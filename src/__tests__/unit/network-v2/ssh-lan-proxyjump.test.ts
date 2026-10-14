@@ -3,16 +3,26 @@
  *
  * OpenSSH's `-J host1[,host2,...]` connects through one or more
  * intermediate hosts (jump hosts) before reaching the final target.
- * The simulator implements this by pushing each hop onto the SSH stack
- * in order, then opening the final connection from the topmost jump
- * host. The user's `exit` semantics therefore unwind hop-by-hop, which
- * matches real OpenSSH (`logout` only closes the topmost session).
+ * Each hop is a real SSH session; the next connection rides a
+ * `direct-tcpip` channel opened on it (OpenSSH `ProxyJump` is
+ * `ProxyCommand ssh -W`), so the final server sees the jump host's
+ * address as the client and the jump host's sshd logs the tunnel.
  *
  * Scope:
  *  - J1..J3 : parser recognises `-J host`, `-J h1,h2`, `-o ProxyJump=`.
- *  - J4..J5 : end-to-end SSH connection chain via the terminal.
+ *  - J4..J5 : end-to-end connection through the jump host, asked for a
+ *             password per hop, tunnelled on the wire; `exit` closes both.
  *  - J6     : explicit error path — empty `-J` value.
  *  - J7     : per-hop user prefix `user@host` is preserved.
+ *
+
+ * Discriminee par `git stash push -- src/network src/terminal src/shell` :
+ * avant, J4, J5 et J8 tombent (3 sur 8) ; J1-J3, J6, J7 sont des
+ * parseurs, TEMOINS qui passent des deux cotes.
+ *
+ * Avant la bascule sur le fil, J4 et J5 testaient `pushSshChain`, qui
+ * empilait les OBJETS des hotes de rebond en memoire : aucune trame ne
+ * partait vers eux et le serveur final voyait le poste d'origine.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -20,6 +30,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
+import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   parseSshArgs,
@@ -102,53 +113,54 @@ describe('SSH LAN — ProxyJump (`ssh -J`)', () => {
     expect(parseProxyJumpSpec('')).toEqual([]);
   });
 
-  // ─── end-to-end (LAN-resolved jump chain) ────────────────────
+  // ─── end-to-end (real tunnel through the jump host) ──────────
 
   // J4
-  it('J4 — pushSshChain stacks one frame per hop in order, end-on-final', () => {
-    // The simulator short-circuits the SSH handshake whenever every jump
-    // host is resolvable to a local `Equipment` (the common case for the
-    // tutorial LAN). pushSshChain walks the hops and pushes the device
-    // for each — the result is the same stack shape a real `-J` flow
-    // produces, but without needing the reactive password prompt.
-    term.pushSshChain([
-      { user: 'user', host: PC2_IP },
-      { user: 'alice', host: PC3_IP },
-    ]);
-    expect(term.device).toBe(lan.pc3);
-    const ctx = term.getSshContextInfo();
-    expect(ctx.active).toBe(true);
-    expect(ctx.chain).toEqual([
-      { host: PC2_IP, user: 'user' },
-      { host: PC3_IP, user: 'alice' },
-    ]);
-    // The InfoBar header still names the local box (subshell behaviour).
-    expect(term.getLocalDevice()).toBe(lan.pc1);
+  it('J4 — the final server sees the jump host as the client, and asks for each password', async () => {
+    await runLine(term, `ssh -o StrictHostKeyChecking=no -J user@${PC2_IP} user@${PC3_IP}`, ['admin', 'admin']);
+    await runLine(term, 'hostname', []);
+    expect(term.lines.map((l) => l.text)).toContain('PC3');
+    const authLog = await lan.pc3.executeCommand('sudo cat /var/log/auth.log');
+    expect(authLog).toMatch(new RegExp(`Accepted password for user from ${PC2_IP.replace(/\./g, '\\.')} `));
+    expect(authLog).not.toMatch(new RegExp(`Accepted password for user from 10\\.0\\.0\\.1 `));
+    expect(await lan.pc2.executeCommand('sudo cat /var/log/auth.log')).toMatch(/Accepted password for user from 10\.0\.0\.1 /);
   });
 
   // J5
-  it('J5 — `exit` after a -J chain unwinds one hop at a time (OpenSSH parity)', async () => {
-    term.pushSshChain([
-      { user: 'user', host: PC2_IP },
-      { user: 'alice', host: PC3_IP },
-    ]);
-    expect(term.device).toBe(lan.pc3);
-    await pressEnterWith(term, 'exit');
-    expect(term.device).toBe(lan.pc2);
-    await pressEnterWith(term, 'exit');
-    expect(term.device).toBe(lan.pc1);
+  it('J5 — `exit` closes the final session and the tunnel, back on the local prompt', async () => {
+    await runLine(term, `ssh -o StrictHostKeyChecking=no -J user@${PC2_IP} user@${PC3_IP}`, ['admin', 'admin']);
+    await runLine(term, 'exit', []);
+    await runLine(term, 'hostname', []);
+    expect(term.lines.map((l) => l.text).filter((t) => t === 'PC1').length).toBeGreaterThan(0);
     expect(term.isInsideSshSession).toBe(false);
+  });
+
+  // J8
+  it('J8 — a wrong password on the jump host stops the chain before the final host', async () => {
+    await runLine(term, `ssh -o StrictHostKeyChecking=no -J user@${PC2_IP} user@${PC3_IP}`, ['bad', 'bad', 'bad']);
+    expect(term.isInsideSshSession).toBe(false);
+    expect(await lan.pc3.executeCommand('sudo cat /var/log/auth.log')).not.toMatch(/Accepted|Failed/);
   });
 });
 
 // ─── test helpers ───────────────────────────────────────────────
 
-async function pressEnterWith(
-  term: LinuxTerminalSession,
-  line: string,
-): Promise<void> {
-  // executeCommand is private; the test reaches into the prototype the
-  // same way `ssh-lan-remote-shell.test.ts` does (via a typed cast).
-  const t = term as unknown as { executeCommand(s: string): Promise<void> };
-  await t.executeCommand(line);
+function key(k: string): KeyEvent {
+  return { key: k, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false };
+}
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
+
+async function runLine(term: LinuxTerminalSession, line: string, passwords: string[]): Promise<void> {
+  const host = term as unknown as TerminalSession;
+  const target = (host.foreground ?? host) as TerminalSession;
+  target.setInput(line);
+  target.setInputBuf(line);
+  target.handleKey(key('Enter'));
+  for (const password of passwords) {
+    for (let i = 0; i < 60 && target.currentInputMode.type !== 'password'; i++) await tick();
+    if (target.currentInputMode.type !== 'password') break;
+    target.setPasswordBuf(password);
+    target.handleKey(key('Enter'));
+  }
+  for (let i = 0; i < 20; i++) await tick();
 }
