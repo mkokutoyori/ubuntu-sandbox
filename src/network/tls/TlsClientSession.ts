@@ -32,7 +32,7 @@ import {
 import { sealKeyUpdate, openKeyUpdate } from './keyUpdateRecords';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { hashLength } from './hkdf';
-import { collapseFirstClientHello, deriveKeySchedule, computePskBinder, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
+import { exportKeyingMaterial, collapseFirstClientHello, deriveKeySchedule, computePskBinder, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, CLIENT_HELLO_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { DEFAULT_CIPHER_SUITES, parseTls13Ciphersuites } from './cipherSuites';
@@ -160,6 +160,13 @@ export class TlsClientSession {
    * once the handshake succeeds and ratcheted independently per direction
    * by `sendKeyUpdate`/`receiveKeyUpdate` (§4.6.3).
    */
+  private exporterMasterSecret: string | null = null;
+
+  /** RFC 8446 §7.5 — keying material bound to this connection; null before a TLS 1.3 handshake completes. */
+  exportKeyingMaterial(label: string, context: Uint8Array, length: number): Uint8Array | null {
+    return this.exporterMasterSecret === null ? null : exportKeyingMaterial(this.exporterMasterSecret, label, context, length, this.hash);
+  }
+
   clientApplicationTrafficSecret: string | null = null;
   serverApplicationTrafficSecret: string | null = null;
   /**
@@ -696,6 +703,7 @@ export class TlsClientSession {
     );
     this.clientApplicationTrafficSecret = applicationPhase.clientApplicationTrafficSecret;
     this.serverApplicationTrafficSecret = applicationPhase.serverApplicationTrafficSecret;
+    this.exporterMasterSecret = applicationPhase.exporterMasterSecret;
 
     const finalBundle: TlsHandshakeMessage[] = [];
     if (certificateRequest) {

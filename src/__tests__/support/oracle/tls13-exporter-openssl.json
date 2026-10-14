@@ -1,0 +1,61 @@
+{
+ "tool": "openssl OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)",
+ "cases": [
+  {
+   "hash": "sha256",
+   "exporterSecret": "0022f86afa454d7a65a9403c973ff6818b6e3201bdfaf411d2963590b45c5918",
+   "label": "EXPORTER-test label",
+   "length": 40,
+   "material": "4bcf595824f71f6ef61367c4f4af9936eb8cdb1d8b0519507c0cbe8e3f08f4cbc8cf3d431d23844b"
+  },
+  {
+   "hash": "sha256",
+   "exporterSecret": "890ffd172962d9809f3f28efc992297f8758fc0f77df6e5de03c5f8705f01e31",
+   "label": "EXPORTER-network-time-security",
+   "length": 32,
+   "material": "93b4147c8c0d9cc97de3ed7b919d32a08c5f902265e3e71a780bcf7e9e74b179"
+  },
+  {
+   "hash": "sha256",
+   "exporterSecret": "b752a9d7f7188ba7f47f21b71ff35a61fb87beefde400b8fb66b1e86078907ba",
+   "label": "EXPORTER-x",
+   "length": 1,
+   "material": "8f"
+  },
+  {
+   "hash": "sha256",
+   "exporterSecret": "f0ceaca6e29d5540fd29c68702852cde5e113cb96f71efb69a388a0e43692cae",
+   "label": "EXPORTER-long",
+   "length": 100,
+   "material": "8ffda2364bd09d587b1c4e60817b273a11c1bf84d7a8f659d1c1278b12a121647d7467d1ecf5647e69c9fd0ddc7caac89cd3814798867c712d71dc5fc2a011539cef8d8d051a9e25d1ddd6b2baf463e0be8dd1adc307b2a930f6a631c531aab037ccfa11"
+  },
+  {
+   "hash": "sha384",
+   "exporterSecret": "3d33d76622da765ad800cfc79e05aac7b153be376262fa2ff7e8536507c7ff2504ca21e2323207eb15d8528a0f3035d3",
+   "label": "EXPORTER-test label",
+   "length": 40,
+   "material": "d41e5afaf0782b87d7e0abc427b2a3ef213fc0d849a9a94cb26e21b049bc0bff6df1142e35100bff"
+  },
+  {
+   "hash": "sha384",
+   "exporterSecret": "198bd0976d279aef8681cc7d088cd74c4d288d2299a396db0c44bad4d32aca6dab8c648cc7de37b303f35ec28cd3b212",
+   "label": "EXPORTER-network-time-security",
+   "length": 32,
+   "material": "70cfd97730d2486db8113b4d71f7966109bb31c17bb553799e475daaca1e91c0"
+  },
+  {
+   "hash": "sha384",
+   "exporterSecret": "d01a7fac367f0fbc6d4f575a905c87c91f446595b05d7423edb74b215dd942e8ed74b604e8b13ee71f3f591afe5f74d6",
+   "label": "EXPORTER-x",
+   "length": 1,
+   "material": "fc"
+  },
+  {
+   "hash": "sha384",
+   "exporterSecret": "65e71dfca8219913cdc725297d03f0485ed27881cdd721833423b181e0ca6a8b02b81921e31b69c6641d79ea40023172",
+   "label": "EXPORTER-long",
+   "length": 100,
+   "material": "0d811d674f5aa0d17883c8db7e0d5c43abbecf6394c02431f8d8e9d0b7969b30ecd0139236fa2c65874863c3c6dffe21da9e95cc3aa85505dd4af59a2f78f23d967e1bbd8a8c37368805693a78144aa370cd967654f6ee32e2d43d2537d0ed0d6ace8b78"
+  }
+ ]
+}

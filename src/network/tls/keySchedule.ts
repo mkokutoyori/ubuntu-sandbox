@@ -1,17 +1,3 @@
-/**
- * TLS 1.3 (RFC 8446 §7.1) key schedule — the derivation tree from
- * PSK/(EC)DHE input keying material down to the traffic secrets each side
- * actually uses. Real derivation uses HKDF-Extract and
- * HKDF-Expand-Label("tls13 " + label, transcript-hash, length); this
- * module keeps the exact same tree shape and label names but derives
- * every secret via `simulatedDigest` (already the project's stand-in for
- * a keyed hash, used by `SimulatedTls.ts`/`EapTlsHandshake.ts`) rather
- * than a real HMAC-based HKDF. Two sessions with different transcripts or
- * different PSK/DHE input always diverge; the tree's internal separations
- * (early vs. handshake vs. master, handshake vs. application, client vs.
- * server) are exact structural properties, testable without any real
- * cryptography.
- */
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@/crypto/encoding';
 import {
   extractHex, expandLabelHex, HASH_LEN, toBytes, hashFunction, hashLength, type Tls13Hash,
@@ -66,6 +52,14 @@ export function transcriptHash(messageBytesList: readonly Uint8Array[], hash: Tl
  * ClientHello`, if any), through ServerHello, through the server's
  * Finished, and through the client's Finished.
  */
+export function exportKeyingMaterial(
+  exporterMasterSecret: string, label: string, context: Uint8Array, length: number, hash: Tls13Hash = 'sha256',
+): Uint8Array {
+  const derived = expandLabel(exporterMasterSecret, label, emptyTranscript(hash), hash);
+  const contextHash = bytesToHex(hashFunction(hash).digest(context));
+  return hexToBytes(expandLabelHex(derived, 'exporter', contextHash, length, hash));
+}
+
 export interface KeyScheduleTranscripts {
   readonly clientHello: string;
   readonly serverHello: string;
