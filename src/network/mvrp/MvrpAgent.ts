@@ -40,6 +40,7 @@ export interface MvrpPortConfig {
   registration: RegistrarAdminControl;
   participant: ApplicantParticipation['mode'];
   pointToPoint: boolean;
+  applicantOnly: boolean;
 }
 
 export interface MvrpPortStats {
@@ -93,6 +94,7 @@ export class MvrpAgent extends ReactiveAgentBase {
   private timers: MrpTimers = { ...MRP_TIMERS_CENTISECONDS };
   private readonly ports = new Map<string, PortRuntime>();
   private readonly local = new Set<number>();
+  private readonly localOn = new Map<string, Set<number>>();
   private readonly ownTimers = new TimerSet(() => this.getScheduler());
   private random: () => number = Math.random;
 
@@ -172,6 +174,19 @@ export class MvrpAgent extends ReactiveAgentBase {
     this.reconcile(vid, false);
   }
 
+  registerVlanMemberOn(portName: string, vid: number): void {
+    if (vid < 1 || vid > MVRP_MAX_VID) return;
+    let vids = this.localOn.get(portName);
+    if (!vids) this.localOn.set(portName, vids = new Set());
+    vids.add(vid);
+    this.reconcile(vid, true);
+  }
+
+  deregisterVlanMemberOn(portName: string, vid: number): void {
+    if (!this.localOn.get(portName)?.delete(vid)) return;
+    this.reconcile(vid, false);
+  }
+
   refreshFixedRegistrations(): void {
     const vids = new Set<number>(this.local);
     for (const runtime of this.ports.values()) {
@@ -240,7 +255,7 @@ export class MvrpAgent extends ReactiveAgentBase {
     let runtime = this.ports.get(portName);
     if (!runtime) {
       runtime = {
-        config: { enabled: false, registration: 'normal', participant: 'normal', pointToPoint: true },
+        config: { enabled: false, registration: 'normal', participant: 'normal', pointToPoint: true, applicantOnly: false },
         applicants: new Map(), registrars: new Map(), declared: new Set(), pendingNew: new Set(),
         leaveAll: new LeaveAllMachine(), leaveTimers: new Map(), stats: emptyStats(),
       };
@@ -250,7 +265,7 @@ export class MvrpAgent extends ReactiveAgentBase {
   }
 
   private participation(runtime: PortRuntime): ApplicantParticipation {
-    return { ...DEFAULT_PARTICIPATION, pointToPoint: runtime.config.pointToPoint, mode: runtime.config.participant };
+    return { ...DEFAULT_PARTICIPATION, pointToPoint: runtime.config.pointToPoint, applicantOnly: runtime.config.applicantOnly, mode: runtime.config.participant };
   }
 
   private applicantOf(runtime: PortRuntime, vid: number): ApplicantMachine {
@@ -453,7 +468,7 @@ export class MvrpAgent extends ReactiveAgentBase {
     for (const [name, runtime] of this.ports) {
       if (!this.active(runtime)) continue;
       const forwarding = this.host.portForwarding?.(name) ?? true;
-      const want = forwarding && this.sourcesOf(vid, name);
+      const want = forwarding && (this.sourcesOf(vid, name) || this.localOn.get(name)?.has(vid) === true);
       const has = runtime.declared.has(vid);
       if (want && !has) {
         runtime.declared.add(vid);

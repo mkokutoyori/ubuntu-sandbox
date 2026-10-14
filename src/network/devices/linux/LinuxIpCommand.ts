@@ -115,7 +115,7 @@ export interface IpLinkOpsContext {
   release(iface: string): string;
   bondOption(bond: string, key: string, value: string): boolean;
   addVeth(name: string, peerName: string): string;
-  addVlan(name: string, parent: string, vid: number): string;
+  addVlan(name: string, parent: string, vid: number, mvrp?: boolean): string;
   deleteLink(name: string): string;
 }
 
@@ -961,9 +961,11 @@ function ipLinkAdd(ctx: IpNetworkContext, args: string[]): string {
   let type: string | null = null;
   let peerName: string | null = null;
   let vlanId: number | undefined;
+  let mvrp = false;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'name' && args[i + 1]) { name = args[++i]; }
+    if (args[i] === 'mvrp' && args[i + 1]) { mvrp = args[++i] === 'on'; }
+    else if (args[i] === 'name' && args[i + 1]) { name = args[++i]; }
     else if (args[i] === 'link' && args[i + 1]) { linkDev = args[++i]; }
     else if (args[i] === 'type' && args[i + 1]) { type = args[++i]; }
     else if (args[i] === 'peer' && args[i + 1] === 'name' && args[i + 2]) { peerName = args[i + 2]; i += 2; }
@@ -986,7 +988,7 @@ function ipLinkAdd(ctx: IpNetworkContext, args: string[]): string {
   if (type === 'vlan') {
     if (!linkDev) return 'Error: vlan requires "link DEV".';
     if (vlanId === undefined || isNaN(vlanId)) return 'Error: vlan requires "id VLANID".';
-    return linkOps.addVlan(name, linkDev, vlanId);
+    return linkOps.addVlan(name, linkDev, vlanId, mvrp);
   }
 
   return `Error: unknown link type "${type}", try "ip link help".`;
