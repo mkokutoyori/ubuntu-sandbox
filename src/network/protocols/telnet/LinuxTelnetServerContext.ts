@@ -42,11 +42,6 @@ export class LinuxTelnetServerContext implements ITelnetServerContext {
     return issue && issue.trim().length > 0 ? issue : null;
   }
 
-  motd(): string | null {
-    const motd = this.host.readFile('/etc/motd');
-    return motd && motd.trim().length > 0 ? motd : null;
-  }
-
   authPrompt(): TelnetAuthPrompt {
     return 'username-password';
   }

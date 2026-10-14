@@ -8,6 +8,7 @@ import { pamLimitsModule } from './modules/PamLimitsModule';
 import { pamListfileModule, pamSucceedIfModule, pamWheelModule } from './modules/PamAccessControlModules';
 import { pamGroupModule } from './modules/PamGroupModule';
 import { pamKeyinitModule } from './modules/PamKeyinitModule';
+import { pamLastlogModule } from './modules/PamLastlogModule';
 import { pamMailModule } from './modules/PamMailModule';
 import { pamMotdModule } from './modules/PamMotdModule';
 import { pamDenyModule, pamNologinModule, pamPermitModule, pamRootokModule, pamSelinuxModule } from './modules/PamTrivialModules';
@@ -34,6 +35,7 @@ export function createLinuxPamModules(): PamModuleRegistry<LinuxPamHost> {
     .register('pam_pwquality', pamPwqualityModule)
     .register('pam_group', pamGroupModule)
     .register('pam_keyinit', pamKeyinitModule)
+    .register('pam_lastlog', pamLastlogModule)
     .register('pam_mail', pamMailModule)
     .register('pam_motd', pamMotdModule)
     .register('pam_selinux', pamSelinuxModule)
