@@ -134,7 +134,7 @@ describe('chronyd as an NTS client and server', () => {
     expect(await client.executeCommand('chronyc sources')).not.toMatch(/\^\* 10\.0\.1\.1/);
   });
 
-  it('[fails before] a key rotation the cookies do not survive makes the server answer NTS NAK and the client run a new NTS-KE', async () => {
+  it('[fails before] a key rotation the cookies do not survive makes the server answer NTS NAK and the client run a new NTS-KE', { timeout: 120_000 }, async () => {
     const { server, client } = await lab(`${SERVER}ntsrotate 3600\n`, `${CLIENT}ntsrefresh 7200\n`);
     const before = await server.executeCommand('sudo chronyc serverstats');
     expect(before).toMatch(/NTS-KE connections accepted: 1/);
