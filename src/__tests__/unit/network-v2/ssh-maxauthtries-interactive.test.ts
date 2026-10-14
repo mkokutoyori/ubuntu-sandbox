@@ -38,7 +38,6 @@ import {
   tryInterpretSshLaunch, finalisePendingAuth, SSH_PASSWORD_PROMPTS,
   type SshLaunchOptions, type PendingSshAuth, type FinaliseAuthOutcome,
 } from '@/shell/sshLauncher';
-import { readMaxAuthTries } from '@/network/devices/linux/network/LinuxSshClient';
 import { reinstallDefaultShells } from '@/shell/registerDefaults';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
@@ -82,7 +81,6 @@ function lab(): Lab {
     client, server,
     opts: {
       defaultUser: 'root', sourceIp: CLIENT_IP, sourceDevice: client,
-      wireProbe: (h, p) => client.tcpConnectOutcome(new IPAddress(h), p),
     },
   };
 }
@@ -171,12 +169,7 @@ describe('MaxAuthTries is read from the server, not the client', () => {
     expect((await finalisePendingAuth(bobAuth, 'wrong2')).kind).toBe('bad-password');
   });
 
-  it('a target with no sshd_config gets no server-side cap at all', () => {
-    expect(readMaxAuthTries({}, 'alice')).toBeNull();
-    expect(readMaxAuthTries({ executor: {} }, 'alice')).toBeNull();
-  });
-
-  it('and a nonsense value in the file does not become a cap', async () => {
+  it('and a nonsense value in the file falls back to the server default, not a cap', async () => {
     const { server, opts } = lab();
     await setMaxAuthTries(server, 0);
     const auth = await pendingAuth(opts);

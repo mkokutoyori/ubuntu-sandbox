@@ -26,7 +26,6 @@ import { ShellFactory } from '../ShellFactory';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
-  wireProbeFor,
   SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
 } from '../sshLauncher';
@@ -66,7 +65,6 @@ export class WindowsPowerShellShell extends AbstractShell {
   private readonly ownsSession: boolean;
   private pendingSshAuth: PendingSshAuth | null = null;
   private pendingExecCommand: string | null = null;
-  private readonly knownHostsTracker = new Set<string>();
 
   /** PowerShell exposes BOTH `clear` and `cls` as aliases of Clear-Host. */
   protected override clearWords: ReadonlySet<string> = new Set(['clear', 'cls', 'clear-host']);
@@ -124,11 +122,9 @@ export class WindowsPowerShellShell extends AbstractShell {
     }
     const sshAttempt = await tryInterpretSshLaunch(line, {
       defaultUser: this.user,
-      knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIpPs(this.device),
       sourceDevice: this.device,
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
-      wireProbe: wireProbeFor(this.device),
     });
     if (sshAttempt) {
       if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'

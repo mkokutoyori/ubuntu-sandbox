@@ -33,7 +33,6 @@ function launchOpts(pc: LinuxPC): SshLaunchOptions {
     defaultUser: 'root',
     sourceIp: PC_IP,
     sourceDevice: pc,
-    wireProbe: (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port),
   };
 }
 

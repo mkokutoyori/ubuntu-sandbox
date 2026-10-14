@@ -23,7 +23,6 @@ import {
   withTimeout, DeviceOfflineError,
   type InputMode,
 } from './TerminalSession';
-import { createSessionForDevice } from './sessionFactory';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
 import { runTracert } from '@/network/devices/windows/WinTracert';

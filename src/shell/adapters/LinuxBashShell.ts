@@ -18,7 +18,6 @@ import { parseReadInvocation, performInteractiveRead } from '../input';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
-  wireProbeFor,
   SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
 } from '../sshLauncher';
@@ -86,7 +85,6 @@ export class LinuxBashShell extends AbstractShell {
   /** Remote command to exec after auth (exec mode); null = push a shell. */
   private pendingExecCommand: string | null = null;
   /** Per-shell known_hosts tracker — first connection prints the warning. */
-  private readonly knownHostsTracker = new Set<string>();
 
   constructor(opts: LinuxBashShellOptions) {
     super(opts);
@@ -192,10 +190,8 @@ export class LinuxBashShell extends AbstractShell {
     // OpenSSH banner (known_hosts, MOTD, Last login) on success.
     const sshAttempt = await tryInterpretSshLaunch(line, {
       defaultUser: this.user,
-      knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIp(this.device),
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
-      wireProbe: wireProbeFor(this.device),
       sourceDevice: this.device,
     });
     if (sshAttempt) {

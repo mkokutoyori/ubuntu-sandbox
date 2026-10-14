@@ -55,6 +55,7 @@ export class SshShellChannel
   private inlineHelp = false;
   private openingPrompt: string | null = null;
   private openingMotd: string | null = null;
+  private openingShellKind: string | null = null;
   private posix = true;
   private bannerBytesLeft = 0;
 
@@ -69,6 +70,8 @@ export class SshShellChannel
   initialPrompt(): string | null { return this.openingPrompt; }
 
   initialMotd(): string | null { return this.openingMotd; }
+
+  loginShellKind(): string | null { return this.openingShellKind; }
 
   isPosixShell(): boolean { return this.posix; }
 
@@ -251,6 +254,7 @@ export class SshShellChannel
         this.inlineHelp = info.inlineHelp === true;
         this.openingPrompt = info.prompt;
         this.openingMotd = info.motd;
+        this.openingShellKind = info.shellKind ?? null;
         this.posix = info.posixShell !== false;
         this.bannerBytesLeft = info.bannerBytes;
         return;

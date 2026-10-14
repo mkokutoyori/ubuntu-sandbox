@@ -167,6 +167,7 @@ export class WindowsSshServerContext implements ISshServerContext {
         isNested: vty.isNested ? () => vty.isNested!() : undefined,
         // cmd.exe ignores Ctrl+D and has no `clear` — it has `cls`.
         posixShell: false,
+        loginShellKind: 'cmd',
       };
     }
 

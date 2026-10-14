@@ -564,7 +564,7 @@ export class SshServerHandler {
       }
       pendingInfoResponse?.(null);
       pendingInfoResponse = null;
-      const cap = this.ctx.config.maxAuthTries;
+      const cap = this.ctx.maxAuthTriesFor?.(request.user, clientIp) ?? this.ctx.config.maxAuthTries;
       authRequests += 1;
       const penaltyFree = authRequests === 1 && request.method === 'none';
       if (authFailures >= cap) {

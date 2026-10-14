@@ -57,7 +57,6 @@ function launchOpts(client: LinuxPC): SshLaunchOptions {
     }).executor.userMgr.currentUser,
     sourceIp: CLIENT_IP,
     sourceDevice: client,
-    wireProbe: (host, port) => client.tcpConnectOutcome(new IPAddress(host), port),
   };
 }
 
@@ -131,7 +130,7 @@ describe('ssh interactif (terminal réel) — détection MITM par changement de 
     expect(kh).toContain(readPubKey(server));
   });
 
-  it('reconnexion interactive après rotation de la clé serveur est refusée avec le WARNING MITM', async () => {
+  it('reconnexion interactive après rotation de la clé serveur est refusée avec le WARNING MITM, avant toute invite de mot de passe', async () => {
     const { client, server } = await buildLab();
 
     const first = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
@@ -141,12 +140,13 @@ describe('ssh interactif (terminal réel) — détection MITM par changement de 
 
     await server.executeCommand('rm -f /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub');
     await server.executeCommand('ssh-keygen -A');
+    await server.executeCommand('systemctl restart ssh');
 
-    const second = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    const finalised = await finalisePendingAuth(second, 'alice');
-    expect(finalised.kind).toBe('refused');
-    if (finalised.kind !== 'refused') throw new Error('unreachable');
-    expect(finalised.message).toMatch(/WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!/);
+    const second = await tryInterpretSshLaunch(`ssh alice@${SERVER_IP}`, launchOpts(client));
+    expect(second?.kind).toBe('error');
+    const shown = second?.result.output.join('\n') ?? '';
+    expect(shown).toMatch(/WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!/);
+    expect(shown).toMatch(/Host key verification failed\./);
   });
 
   it('la connexion réussit à nouveau après ssh-keygen -R côté client', async () => {
@@ -158,9 +158,10 @@ describe('ssh interactif (terminal réel) — détection MITM par changement de 
 
     await server.executeCommand('rm -f /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub');
     await server.executeCommand('ssh-keygen -A');
+    await server.executeCommand('systemctl restart ssh');
 
-    const blockedAuth = await pendingAuthFor(`ssh alice@${SERVER_IP}`, client);
-    expect((await finalisePendingAuth(blockedAuth, 'alice')).kind).toBe('refused');
+    const blocked = await tryInterpretSshLaunch(`ssh alice@${SERVER_IP}`, launchOpts(client));
+    expect(blocked?.kind).toBe('error');
 
     await client.executeCommand(`ssh-keygen -R ${SERVER_IP}`);
 

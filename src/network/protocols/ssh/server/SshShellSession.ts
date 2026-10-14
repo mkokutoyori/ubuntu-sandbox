@@ -84,6 +84,7 @@ export class SshShellSession {
       inlineHelp: shell.supportsInlineHelp === true,
       prompt,
       posixShell: shell.posixShell !== false,
+      shellKind: shell.loginShellKind ?? null,
       motd,
       bannerBytes: utf8ToBytes(banner).length,
     };
