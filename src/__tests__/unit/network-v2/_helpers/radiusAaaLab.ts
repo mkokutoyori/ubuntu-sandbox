@@ -29,7 +29,9 @@ function arrivals(device: CiscoRouter): Arrivals {
 
 export interface Lab { nas: CiscoRouter; silent: CiscoRouter; live: CiscoRouter; toSilent: Arrivals; toLive: Arrivals }
 
-export async function radiusLab(globalLines: string[]): Promise<Lab> {
+export interface LabOptions { group?: string; silentUp?: boolean; liveUp?: boolean }
+
+export async function radiusLab(globalLines: string[], options: LabOptions = {}): Promise<Lab> {
   const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
   const nas = new CiscoRouter('NAS');
   const silent = new CiscoRouter('SILENT');
@@ -46,15 +48,15 @@ export async function radiusLab(globalLines: string[]): Promise<Lab> {
     agent.authorizeClient('10.0.0.1');
     agent.addUser('alice', 'pw');
   }
-  silent.getRadiusServer().setEnabled(false);
-  live.getRadiusServer().setEnabled(true);
+  silent.getRadiusServer().setEnabled(options.silentUp === true);
+  live.getRadiusServer().setEnabled(options.liveUp !== false);
   nas.getRadiusClient().start();
   for (const c of [
     'enable', 'configure terminal', 'aaa new-model',
     'radius-server host 10.0.0.2 auth-port 1812 key secret', 'radius-server host 10.0.0.3 auth-port 1812 key secret',
     'radius-server timeout 1', 'radius-server retransmit 0',
     'aaa group server radius G', 'server name 10.0.0.2', 'server name 10.0.0.3', 'exit',
-    'aaa authentication login default group G',
+    `aaa authentication login default group ${options.group ?? 'G'}`,
     ...globalLines, 'end',
   ]) await nas.executeCommand(c);
   return { nas, silent, live, toSilent: arrivals(silent), toLive: arrivals(live) };

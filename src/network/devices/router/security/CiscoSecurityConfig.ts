@@ -1,5 +1,6 @@
 import { ServerLiveness } from '../../../radius/ServerLiveness';
 import { DomainStripping } from '../aaa/UsernameRouting';
+import { ServerSelector, type LoadBalanceSetting } from '../../../radius/ServerSelector';
 import { SshPubkeyChain } from './SshPubkeyChain';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -59,6 +60,9 @@ export interface RadiusGlobalDefaults {
   deadCriteriaTimeSec?: number;
   deadCriteriaTries?: number;
   directedRequest?: { restricted: boolean };
+  retryReorder?: boolean;
+  transactionMaxTries?: number;
+  loadBalance?: LoadBalanceSetting;
 }
 
 export interface TacacsGlobalDefaults {
@@ -410,6 +414,7 @@ export class CiscoSecurityConfig {
   radiusDefaults: RadiusGlobalDefaults = {};
   readonly radiusLiveness = new ServerLiveness();
   readonly radiusStripping = new DomainStripping();
+  readonly radiusSelector = new ServerSelector();
   readonly tacacsStripping = new DomainStripping();
   tacacsDefaults: TacacsGlobalDefaults = {};
 
@@ -682,6 +687,14 @@ export class CiscoSecurityConfig {
       lines.push(`radius-server directed-request${this.radiusDefaults.directedRequest.restricted ? ' restricted' : ''}`);
     }
     lines.push(...this.radiusStripping.render('radius-server domain-stripping'));
+    if (this.radiusDefaults.retryReorder) lines.push('radius-server retry method reorder');
+    if (this.radiusDefaults.transactionMaxTries !== undefined) {
+      lines.push(`radius-server transaction max-tries ${this.radiusDefaults.transactionMaxTries}`);
+    }
+    if (this.radiusDefaults.loadBalance) {
+      const balance = this.radiusDefaults.loadBalance;
+      lines.push(`radius-server load-balance method least-outstanding batch-size ${balance.batchSize}${balance.ignorePreferredServer ? ' ignore-preferred-server' : ''}`);
+    }
     if (this.radiusDefaults.acctPort !== undefined) {
       lines.push(`radius-server acct-port ${this.radiusDefaults.acctPort}`);
     }

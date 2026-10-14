@@ -11,6 +11,7 @@ import type { HuaweiAaaService } from './HuaweiAaaService';
 import { ciscoPasswordMatches } from '../../shells/cisco/ciscoPasswordVerify';
 import { DEFAULT_DEAD_CRITERIA } from '../../../radius/ServerLiveness';
 import { splitDirected } from './UsernameRouting';
+import { DEFAULT_TRANSACTION_MAX_TRIES } from '../../../radius/ServerSelector';
 import { vrfStoreOf, type VrfHost } from '../../shells/cisco/ciscoVrfStore';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -367,10 +368,16 @@ export class AaaAuthenticator {
 
   private async tryGroup(sec: CiscoSecurityConfig, groupName: string | undefined, username: string, password: string): Promise<{ verdict: MethodVerdict; privLvl?: number | null }> {
     if (!groupName) return { verdict: 'continue' };
-    const group = sec.aaaGroups.get(groupName);
+    const group = sec.aaaGroups.get(groupName) ?? this.builtinGroup(sec, groupName);
     if (!group) return { verdict: 'continue' };
     if (group.kind === 'radius') return { verdict: await this.tryRadiusGroup(sec, group, username, password) };
     return this.tryTacacsGroup(sec, group, username, password);
+  }
+
+  private builtinGroup(sec: CiscoSecurityConfig, groupName: string): AaaServerGroup | undefined {
+    if (groupName === 'radius') return { name: 'radius', kind: 'radius', members: [...sec.radiusServers.keys()] };
+    if (groupName === 'tacacs+') return { name: 'tacacs+', kind: 'tacacs+', members: [...sec.tacacsServers.keys()] };
+    return undefined;
   }
 
   private async tryRadiusGroup(sec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise<MethodVerdict> {
@@ -388,21 +395,43 @@ export class AaaAuthenticator {
     const directed = this.radiusDirected(sec, username);
     const asked = directed !== null ? directed.user : username;
     const alive = candidates.filter((server) => !sec.radiusLiveness.isDead(server.address as string, simulationNowMs()));
-    let order = alive.length > 0 ? alive : candidates;
+    const pool = alive.length > 0 ? alive : candidates;
+    const reorder = defaults.retryReorder === true;
+    const selector = sec.radiusSelector;
+    const isGlobal = group.name === 'radius' && !sec.aaaGroups.has('radius');
+    const orderedAddresses = selector.order({
+      group: group.name, user: asked, reorder,
+      candidates: pool.map((server) => server.address as string),
+      loadBalance: isGlobal ? defaults.loadBalance : undefined,
+    });
+    let order = orderedAddresses.map((address) => pool.find((server) => server.address === address) as RadiusServer);
     if (directed !== null) {
       const others = order.filter((server) => server !== directed.server);
       order = defaults.directedRequest?.restricted ? [directed.server] : [directed.server, ...others];
     }
-    for (const server of order) {
+    const budget = reorder ? defaults.transactionMaxTries ?? DEFAULT_TRANSACTION_MAX_TRIES : Infinity;
+    const maxAttempts = reorder ? Infinity : order.length;
+    let used = 0;
+    for (let attempt = 0; attempt < maxAttempts && used < budget; attempt++) {
+      const server = order[attempt % order.length];
       const address = server.address as string;
       this.syncRadiusServer(client, server);
       const wireName = sec.radiusStripping.apply(asked, this.vrfOfServer(address));
-      const outcome = await client.authenticateWithOutcome(wireName, password, address);
+      selector.acquire(address);
+      let outcome: Awaited<ReturnType<typeof client.authenticateWithOutcome>>;
+      try {
+        outcome = await client.authenticateWithOutcome(wireName, password, address);
+      } finally {
+        selector.release(address);
+      }
       if (outcome === 'timeout') {
         const transmissions = (server.retransmit ?? defaults.retransmit ?? RADIUS_CLIENT_DEFAULT_RETRANSMIT) + 1;
+        used += transmissions;
         sec.radiusLiveness.recordTimeout(address, transmissions, simulationNowMs(), criteria, deadtime);
+        if (reorder) selector.noteFailure(group.name, address, orderedAddresses);
       } else {
         sec.radiusLiveness.recordValidReply(address, simulationNowMs());
+        selector.noteAnswer(group.name, address);
       }
       if (outcome === 'accept') return 'accept';
       if (outcome === 'reject') return 'reject';

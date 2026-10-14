@@ -3,6 +3,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
 import { CliIncomplete, CliInvalidInput } from '../cli/CliDiagnostic';
 import type { DomainStripping } from '../../router/aaa/UsernameRouting';
+import { DEFAULT_LOAD_BALANCE_BATCH } from '../../../radius/ServerSelector';
 import type {
   CiscoSecurityConfig, RadiusServer, TacacsServer,
 } from '../../router/security/CiscoSecurityConfig';
@@ -416,6 +417,57 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
         return '';
       },
       undo: () => { ctx().security().tacacsDefaults.directedRequest = undefined; return ''; },
+    },
+    {
+      id: 'radius-server-retry-method-reorder',
+      path: ['radius-server', 'retry', 'method', 'reorder'],
+      description: 'Reorder RADIUS traffic retries among the server group',
+      undoDescription: 'Do not reorder retries',
+      modes: MODES, minPrivilege: 15,
+      run: () => { ctx().security().radiusDefaults.retryReorder = true; return ''; },
+      undo: () => { ctx().security().radiusDefaults.retryReorder = undefined; return ''; },
+    },
+    {
+      id: 'radius-server-transaction-max-tries',
+      path: ['radius-server', 'transaction', 'max-tries', {
+        name: 'nombre', type: 'INT', range: [1, 2147483647],
+        description: 'Total number of transmissions per transaction',
+      }],
+      description: 'Maximum number of transmissions per RADIUS transaction',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => { ctx().security().radiusDefaults.transactionMaxTries = Number(args.nombre); return ''; },
+      undo: () => { ctx().security().radiusDefaults.transactionMaxTries = undefined; return ''; },
+    },
+    {
+      id: 'radius-server-load-balance',
+      path: ['radius-server', 'load-balance', 'method', 'least-outstanding'],
+      description: 'Balance the global RADIUS server group by least outstanding transactions',
+      modes: MODES, minPrivilege: 15,
+      options: [
+        {
+          keyword: 'batch-size', description: 'Number of transactions assigned per batch',
+          argument: { name: 'batch-size', type: 'INT', range: [1, 2147483647], description: 'Transactions per batch (default 25)' },
+        },
+        { keyword: 'ignore-preferred-server', description: 'Do not reuse the server of the AAA session' },
+      ],
+      run: (_s, args) => {
+        ctx().security().radiusDefaults.loadBalance = {
+          batchSize: args['batch-size'] !== undefined ? Number(args['batch-size']) : DEFAULT_LOAD_BALANCE_BATCH,
+          ignorePreferredServer: args['ignore-preferred-server'] !== undefined,
+        };
+        return '';
+      },
+    },
+    {
+      id: 'radius-server-load-balance-no',
+      path: ['radius-server', 'load-balance'],
+      description: 'Balance the global RADIUS server group by least outstanding transactions',
+      undoDescription: 'Disable RADIUS server load balancing',
+      modes: MODES, minPrivilege: 15,
+      existsOnlyNegated: true,
+      run: () => { throw new CliIncomplete(); },
+      undo: () => { ctx().security().radiusDefaults.loadBalance = undefined; return ''; },
     },
     domainStrippingSpec('radius-server-domain-stripping', 'radius-server', 'RADIUS',
       () => ctx().security().radiusStripping),
