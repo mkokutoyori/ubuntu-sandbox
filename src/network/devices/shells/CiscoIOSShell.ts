@@ -61,6 +61,7 @@ import {
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
+import { inspectSpecs } from './cisco/inspectSpecs';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -469,6 +470,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...mapSpecs(() => this.mapHost()),
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
+      ...inspectSpecs(() => ({
+        security: () => getSecurityConfig(this.d()),
+        selectedInterfaces: () => this.selectedPortsForConfigIf(),
+      })),
       ...dhcpClientFamily(),
       ...arpTimeoutFamily(),
       ...icmpRateLimitFamily(() => ({
@@ -1579,6 +1584,18 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       declareZonePair: (name, source, destination) => {
         sec().zonePairs.set(name, { name, source, destination });
         this.selectedZonePair = name;
+      },
+      removeZone: (name) => {
+        sec().zones.delete(name);
+        for (const flags of sec().interfaceFlags.values()) if (flags.zoneMember === name) delete flags.zoneMember;
+        for (const [pairName, pair] of sec().zonePairs) if (pair.source === name || pair.destination === name) sec().zonePairs.delete(pairName);
+      },
+      removeZonePair: (name) => { sec().zonePairs.delete(name); },
+      setZoneMember: (zone) => {
+        for (const iface of this.selectedPortsForConfigIf()) {
+          if (zone === null) delete sec().ifaceFlags(iface).zoneMember;
+          else sec().ifaceFlags(iface).zoneMember = zone;
+        }
       },
     };
   }

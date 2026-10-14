@@ -189,7 +189,8 @@ export type CLIMode =
   | 'config-std-nacl' | 'config-ext-nacl' | 'config-ext-macl'
   | 'config-access-map' | 'config-archive' | 'config-archive-log'
   | 'config-time-range'
-  | 'config-ssh-pubkey' | 'config-ssh-pubkey-user' | 'config-ssh-pubkey-server' | 'config-ssh-pubkey-data';
+  | 'config-ssh-pubkey' | 'config-ssh-pubkey-user' | 'config-ssh-pubkey-server' | 'config-ssh-pubkey-data'
+  | 'config-pubkey-chain' | 'config-pubkey-key' | 'config-pubkey-data';
 
 /**
  * Raised when a command needs a protocol this switch does not run.

@@ -35,6 +35,9 @@
  *   - SNMP-ready performance counters
  */
 
+import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
+import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
+import type { CbacPort } from './router/security/CbacFirewall';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
@@ -541,6 +544,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ── Reactive (Phase 5.8) — scheduler + TimerSet + event helpers ──
   private routerScheduler: IScheduler | null = null;
+  private cbacSweep: symbol | null = null;
   protected readonly routerTimers = new TimerSet(() => this.getRouterScheduler());
   readonly icmpUnreachableRateLimit = new IcmpUnreachableRateLimit(
     this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now());
@@ -1552,6 +1556,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.shell.getLoggingConfig?.().detachFromBus();
     this.ospfIntegration?.dispose();
     this.routerTimers.clearAll();
+    this.cbacSweep = null;
     super.dispose();
   }
 
@@ -2742,6 +2747,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
     if (inboundACL === null) return false;
     if (this.aclEngine.evaluateForDataPlane(inboundACL, ipPkt) !== 'deny') return false;
+    if (this.cbac()?.admitsReturn(ipPkt)) return false;
 
     Logger.info(this.id, 'router:acl-deny-in',
       `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
@@ -2784,7 +2790,54 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
 
+  private cbac(): CbacPort | undefined {
+    return (this as unknown as { [s: symbol]: { cbac?: CbacPort } | undefined })[Symbol.for('CiscoSecurityConfig')]?.cbac;
+  }
+
+  private flushCbacLogs(): void {
+    const cbac = this.cbac();
+    if (!cbac) return;
+    const logging = (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r: boolean, mn: string) => void } | null })
+      .getLoggingConfig?.();
+    for (const line of cbac.drainLogs()) logging?.append(line.severity, 'FW', line.text, true, line.mnemonic);
+  }
+
+  private cbacPermits(inIface: string, outIface: string, packet: IPv4Packet): boolean {
+    const cbac = this.cbac();
+    if (!cbac) return true;
+    const verdict = cbac.inspect(inIface, outIface, packet);
+    this.flushCbacLogs();
+    if (cbac.hasWork() && this.cbacSweep === null) {
+      this.cbacSweep = this.routerTimers.setInterval(() => {
+        cbac.sweep();
+        this.flushCbacLogs();
+        if (!cbac.hasWork() && this.cbacSweep !== null) {
+          this.routerTimers.clear(this.cbacSweep);
+          this.cbacSweep = null;
+        }
+      }, 1000);
+    }
+    return verdict.permit;
+  }
+
+  private zoneFirewallPermits(inIface: string | null, outIface: string | null, packet: IPv4Packet): boolean {
+    const security = (this as unknown as { [s: symbol]: { zoneFirewall?: ZoneFirewallPort } | undefined })[Symbol.for('CiscoSecurityConfig')];
+    if (!security?.zoneFirewall) return true;
+    const verdict = security.zoneFirewall.permits(inIface, outIface, packet,
+      (name, candidate) => this.aclEngine.evaluateACLByName(name, candidate) === 'permit');
+    if (verdict.logLine) {
+      (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
+        .getLoggingConfig?.()?.append('informational', 'FW', verdict.logLine, true, 'DROP_PKT');
+    }
+    return verdict.permit;
+  }
+
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
+    if (!this.zoneFirewallPermits(inPort, null, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} to the router (${inPort} → self)`);
+      return;
+    }
     // RFC 791 §3.2: hold non-first/more-fragments datagrams until the full
     // set arrives — buffered fragments return null here and are simply
     // dropped from this call; the reassembled datagram continues through
@@ -2894,6 +2947,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           ? this.arpTable.get(replyTarget.toString())
           : undefined;
         if (sameSubnetMac && !this.ipsecEngine) {
+          if (!this.zoneFirewallPermits(null, inPort, replyIP)) return;
           this.counters.ifOutOctets += replyIP.totalLength;
           this.sendFrame(inPort, {
             srcMAC: port.getMAC(), dstMAC: sameSubnetMac.mac,
@@ -3189,6 +3243,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
+    if (!this.zoneFirewallPermits(inPort, route.iface, fwdPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
+      return;
+    }
+    if (!this.cbacPermits(inPort, route.iface, fwdPkt)) {
+      Logger.info(this.id, 'router:cbac-drop',
+        `${this.name}: inspection dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
+      return;
+    }
     const effectiveMtu = outPort.getMTU();
 
     if (fwdPkt.totalLength > effectiveMtu) {
@@ -3647,6 +3711,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.ports.get(outPortName);
     if (!port) return;
+    if (!this.zoneFirewallPermits(null, outPortName, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} from the router (self → ${outPortName})`);
+      return;
+    }
     const cached = this.arpTable.get(nextHopIP.toString());
     if (cached) {
       this.sendFrame(outPortName, {
@@ -5983,12 +6052,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         };
         const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
 
-        this.sendFrame(route.iface, {
-          srcMAC: outPort.getMAC(),
-          dstMAC: nextHopMAC!,
-          etherType: ETHERTYPE_IPV4,
-          payload: ipPkt,
-        });
+        if (this.zoneFirewallPermits(null, route.iface, ipPkt)) {
+          this.sendFrame(route.iface, {
+            srcMAC: outPort.getMAC(),
+            dstMAC: nextHopMAC!,
+            etherType: ETHERTYPE_IPV4,
+            payload: ipPkt,
+          });
+        }
 
         const replyOutcome = replyP.then((pl) => ({
           ip: pl.fromIp,
@@ -6159,7 +6230,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
 
     // IPSec outbound processing for locally-originated packets
-    if (this.ipsecEngine) {
+    if (!this.zoneFirewallPermits(null, iface, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} from the router (self → ${iface})`);
+    } else if (this.ipsecEngine) {
       const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
       if (entry) {
         const encPkts = this.ipsecEngine.processOutbound(ipPkt, iface, entry);
@@ -6232,6 +6306,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getNATEngine(): NATEngine { return this.natEngine; }
 
   /** @internal Lazily create + return the IPSec engine for this router */
+  _ikeRsaProvider(): IkeRsaProvider | null {
+    return null;
+  }
+
+  _ipsecInterfaceMtu(iface: string): number | undefined {
+    return this.ports.get(iface)?.getMTU();
+  }
+
   _getOrCreateIPSecEngine(): IPSecEngine {
     if (!this.ipsecEngine) {
       this.ipsecEngine = new IPSecEngine(this);

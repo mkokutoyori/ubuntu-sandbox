@@ -3,9 +3,13 @@ import { ServerLiveness } from '../../../radius/ServerLiveness';
 import { DomainStripping } from '../aaa/UsernameRouting';
 import { ServerSelector, type LoadBalanceSetting } from '../../../radius/ServerSelector';
 import { SshPubkeyChain } from './SshPubkeyChain';
+import { IkePubkeyChain } from './IkePubkeyChain';
+import { groupedHex } from '../../../ipsec/RsaPublicKeyDer';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
+import { ZoneFirewall } from './ZoneFirewall';
+import { CbacFirewall, DEFAULT_INSPECT_SETTINGS, type InspectRule, type InspectSettings } from './CbacFirewall';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
 import { type PolicyMapAction, policyMapActionLine } from './policyMapActions';
@@ -240,6 +244,8 @@ export interface InterfaceSecurityFlags {
   noProxyArp: boolean;
   maskReply: boolean;
   zoneMember?: string;
+  inspectIn?: string;
+  inspectOut?: string;
   ipv6TrafficFilter?: { name: string; direction: 'in' | 'out' };
   urpf?: InterfaceUrpf;
 }
@@ -409,6 +415,7 @@ export class CiscoSecurityConfig {
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
   sshPubkeys = new SshPubkeyChain();
+  readonly ikePubkeys = new IkePubkeyChain();
 
   sshServerLimits(): {
     maxAuthTries: number; loginGraceTime: number;
@@ -442,7 +449,27 @@ export class CiscoSecurityConfig {
 
   zones: Map<string, Zone> = new Map();
   zonePairs: Map<string, ZonePair> = new Map();
+  readonly zoneFirewall: ZoneFirewall = new ZoneFirewall(() => ({
+    zones: this.zones,
+    zonePairs: this.zonePairs,
+    classMaps: this.classMaps,
+    policyMaps: this.policyMaps,
+    zoneOfInterface: (iface) => this.interfaceFlags.get(iface)?.zoneMember,
+  }));
+
   interfaceFlags: Map<string, InterfaceSecurityFlags> = new Map();
+
+  inspectRules: Map<string, InspectRule> = new Map();
+  inspectSettings: InspectSettings = { ...DEFAULT_INSPECT_SETTINGS };
+  readonly cbac: CbacFirewall = new CbacFirewall(() => ({
+    rules: this.inspectRules,
+    settings: this.inspectSettings,
+    inspectRuleOf: (iface, direction) => {
+      const flags = this.interfaceFlags.get(iface);
+      return direction === 'in' ? flags?.inspectIn : flags?.inspectOut;
+    },
+    inspectedInterfaces: () => [...this.interfaceFlags.values()].filter((f) => f.inspectIn || f.inspectOut).length,
+  }));
 
   timeRanges: Map<string, TimeRange> = new Map();
   parameterMapsInspect: Map<string, ParameterMapInspect> = new Map();
@@ -661,6 +688,19 @@ export class CiscoSecurityConfig {
     }
     if (this.ssh.scpServerEnabled) lines.push('ip scp server enable');
     lines.push(...this.sshPubkeys.configLines());
+    if (this.ikePubkeys.list().length > 0) {
+      lines.push('crypto key pubkey-chain rsa');
+      for (const key of this.ikePubkeys.list()) {
+        const usage = key.usage === 'general' ? '' : ` ${key.usage}`;
+        lines.push(` ${key.kind === 'named' ? 'named-key' : 'addressed-key'} ${key.name}${usage}`);
+        if (key.kind === 'named' && key.address) lines.push(`  address ${key.address}`);
+        if (key.spki !== null) {
+          lines.push('  key-string');
+          for (const row of groupedHex(key.spki)) lines.push(`   ${row}`);
+          lines.push('  quit');
+        }
+      }
+    }
     for (const k of this.cryptoKeys) {
       if (k.general) lines.push(`crypto key generate rsa general-keys modulus ${k.modulus} label ${k.label}`);
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);
@@ -815,6 +855,7 @@ export class CiscoSecurityConfig {
       if (this.controlPlane.servicePolicyInput) lines.push(` service-policy input ${this.controlPlane.servicePolicyInput}`);
       if (this.controlPlane.servicePolicyOutput) lines.push(` service-policy output ${this.controlPlane.servicePolicyOutput}`);
     }
+    lines.push(...this.inspectRunningConfigLines());
     for (const z of this.zones.values()) lines.push(`zone security ${z.name}`);
     for (const zp of this.zonePairs.values()) {
       lines.push(`zone-pair security ${zp.name} source ${zp.source} destination ${zp.destination}`);
@@ -837,7 +878,42 @@ export class CiscoSecurityConfig {
         + (f.urpf.allowDefault ? ' allow-default' : ''));
     }
     if (f.zoneMember) lines.push(` zone-member security ${f.zoneMember}`);
+    if (f.inspectIn) lines.push(` ip inspect ${f.inspectIn} in`);
+    if (f.inspectOut) lines.push(` ip inspect ${f.inspectOut} out`);
     if (f.ipv6TrafficFilter) lines.push(` ipv6 traffic-filter ${f.ipv6TrafficFilter.name} ${f.ipv6TrafficFilter.direction}`);
+    return lines;
+  }
+
+  private inspectRunningConfigLines(): string[] {
+    const lines: string[] = [];
+    const s = this.inspectSettings;
+    const d = DEFAULT_INSPECT_SETTINGS;
+    if (s.alertOff) lines.push('ip inspect alert-off');
+    if (s.auditTrail) lines.push('ip inspect audit-trail');
+    if (s.logDropPkt) lines.push('ip inspect log drop-pkt');
+    if (s.dnsTimeoutSec !== d.dnsTimeoutSec) lines.push(`ip inspect dns-timeout ${s.dnsTimeoutSec}`);
+    if (s.tcpIdleSec !== d.tcpIdleSec) lines.push(`ip inspect tcp idle-time ${s.tcpIdleSec}`);
+    if (s.tcpSynwaitSec !== d.tcpSynwaitSec) lines.push(`ip inspect tcp synwait-time ${s.tcpSynwaitSec}`);
+    if (s.tcpFinwaitSec !== d.tcpFinwaitSec) lines.push(`ip inspect tcp finwait-time ${s.tcpFinwaitSec}`);
+    if (s.udpIdleSec !== d.udpIdleSec) lines.push(`ip inspect udp idle-time ${s.udpIdleSec}`);
+    if (s.maxIncompleteHigh !== d.maxIncompleteHigh) lines.push(`ip inspect max-incomplete high ${s.maxIncompleteHigh}`);
+    if (s.maxIncompleteLow !== d.maxIncompleteLow) lines.push(`ip inspect max-incomplete low ${s.maxIncompleteLow}`);
+    if (s.oneMinuteHigh !== d.oneMinuteHigh) lines.push(`ip inspect one-minute high ${s.oneMinuteHigh}`);
+    if (s.oneMinuteLow !== d.oneMinuteLow) lines.push(`ip inspect one-minute low ${s.oneMinuteLow}`);
+    if (s.hostMaxIncomplete !== d.hostMaxIncomplete || s.hostBlockMinutes !== d.hostBlockMinutes) {
+      lines.push(`ip inspect tcp max-incomplete host ${s.hostMaxIncomplete} block-time ${s.hostBlockMinutes}`);
+    }
+    for (const rule of this.inspectRules.values()) {
+      for (const [keyword, options] of rule.protocols) {
+        let line = `ip inspect name ${rule.name}`;
+        if (rule.maxSessions !== undefined) line += ` parameter max-sessions ${rule.maxSessions}`;
+        line += ` ${keyword}`;
+        if (options.alert !== undefined) line += ` alert ${options.alert ? 'on' : 'off'}`;
+        if (options.auditTrail !== undefined) line += ` audit-trail ${options.auditTrail ? 'on' : 'off'}`;
+        if (options.timeoutSec !== undefined) line += ` timeout ${options.timeoutSec}`;
+        lines.push(line);
+      }
+    }
     return lines;
   }
 

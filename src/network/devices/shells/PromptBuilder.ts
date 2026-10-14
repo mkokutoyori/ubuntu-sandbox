@@ -117,6 +117,9 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-ssh-pubkey-user':    '{host}(conf-ssh-pubkey-user)#',
   'config-ssh-pubkey-server':  '{host}(conf-ssh-pubkey-server)#',
   'config-ssh-pubkey-data':   '{host}(conf-ssh-pubkey-data)#',
+  'config-pubkey-chain':      '{host}(config-pubkey-chain)#',
+  'config-pubkey-key':        '{host}(config-pubkey-key)#',
+  'config-pubkey-data':       '{host}(config-pubkey)#',
   'config-network-group':      '{host}(config-network-group)#',
 };
 
