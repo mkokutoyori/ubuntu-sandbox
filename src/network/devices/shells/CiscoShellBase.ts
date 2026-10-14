@@ -87,6 +87,9 @@ import { effectiveIosSshAlgorithms } from '../router/security/CiscoSshAlgorithms
 import { terminalSpecs } from './cisco/terminalSpecs';
 import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
+import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
+import { ServerCounters } from '../../radius/ServerCounters';
+import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import { showDebuggingSpecs, type ShowDebuggingHost } from './cisco/showDebuggingSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
@@ -6086,6 +6089,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       })),
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
       ...testAaaSpecs(() => this.testAaaHost()),
+      ...aaaShowSpecs(() => this.aaaShowHost()),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
       ...monitorCaptureSpecs(() => this.monitorCaptureHost()),
     ];
@@ -10400,6 +10404,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
         return '';
       },
+    };
+  }
+
+  private aaaShowHost(): AaaShowHost {
+    const device = this.d();
+    return {
+      security: () => getSecurityConfig(device as object),
+      counters: () => (device as unknown as { getRadiusClient?: () => RadiusClientAgent })
+        .getRadiusClient?.().counters ?? new ServerCounters(simulationNowMs),
     };
   }
 

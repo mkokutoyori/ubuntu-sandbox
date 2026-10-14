@@ -10,6 +10,8 @@ import {
   type EthernetFrame, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { PathClock } from '../core/time/PathClock';
+import { ServerCounters } from './ServerCounters';
 import { type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface RadiusAcctServerConfig {
@@ -57,6 +59,8 @@ interface PendingAcct {
   firstAttemptAt: number;
   timer: TimerHandle | null;
   attemptsLeft: number;
+  transmissions: number;
+  sentAtMs: number;
 }
 
 /** NAS-side RADIUS accounting client (RFC 2866): Start/Interim-Update/Stop with retransmission. */
@@ -67,6 +71,9 @@ export class RadiusAccountingClient {
   private nextIdentifier = 1;
   private scheduler: IScheduler | null = null;
   private running = false;
+  private counters = new ServerCounters(simulationNowMs);
+
+  useCounters(shared: ServerCounters): void { this.counters = shared; }
 
   constructor(
     private readonly host: RadiusAccountingHost,
@@ -165,6 +172,12 @@ export class RadiusAccountingClient {
     }
     if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
     this.pending.delete(payload.identifier);
+    const answered = this.counters.phase(pending.server.ip, 'accounting');
+    answered.transactionSuccess++;
+    answered.lastResponseMs = Math.max(0, Math.round(PathClock.now() - pending.sentAtMs));
+    if (pending.record.status === 'start') answered.startResponses++;
+    else if (pending.record.status === 'stop') answered.stopResponses++;
+    else answered.interimResponses++;
     this.getBus().publish({
       topic: 'radius.packet.received',
       payload: {
@@ -182,6 +195,7 @@ export class RadiusAccountingClient {
     const pending: PendingAcct = {
       identifier, server, record, authenticator: '',
       firstAttemptAt: simulationNowMs(), timer: null, attemptsLeft: server.retransmit,
+      transmissions: 0, sentAtMs: 0,
     };
     this.pending.set(identifier, pending);
     this.transmit(pending);
@@ -193,11 +207,14 @@ export class RadiusAccountingClient {
     this.scheduler = s;
     pending.timer = s.setTimeout(() => {
       if (!this.pending.has(pending.identifier)) return;
+      const silent = this.counters.phase(pending.server.ip, 'accounting');
+      silent.timeouts++;
       if (pending.attemptsLeft > 0) {
         pending.attemptsLeft--;
         this.transmit(pending);
         this.armTimeout(pending);
       } else {
+        silent.transactionFailure++;
         this.pending.delete(pending.identifier);
         Logger.warn(this.host.id, 'radius:acct-timeout',
           `${this.host.name}: ${pending.record.status} for ${pending.record.sessionId} never acknowledged`);
@@ -233,6 +250,14 @@ export class RadiusAccountingClient {
         identifier: pending.identifier, username: pending.record.username,
       },
     });
+    const sent = this.counters.phase(pending.server.ip, 'accounting');
+    sent.requests++;
+    if (pending.transmissions > 0) sent.retransmissions++;
+    if (pending.record.status === 'start') sent.starts++;
+    else if (pending.record.status === 'stop') sent.stops++;
+    else sent.interims++;
+    pending.transmissions++;
+    pending.sentAtMs = PathClock.now();
     this.host.sendUdpDatagram(datagram);
   }
 

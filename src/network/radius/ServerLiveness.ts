@@ -9,6 +9,19 @@ interface ServerRecord {
   consecutiveTransmissions: number;
   lastValidReplyAtMs: number | null;
   deadUntilMs: number | null;
+  stateSinceMs: number | null;
+  previousDurationMs: number;
+  deadCount: number;
+  deadTotalMs: number;
+}
+
+export interface LivenessView {
+  readonly alive: boolean;
+  readonly durationMs: number;
+  readonly previousDurationMs: number;
+  readonly deadCount: number;
+  readonly deadTotalMs: number;
+  readonly consecutiveTransmissions: number;
 }
 
 export class ServerLiveness {
@@ -17,17 +30,30 @@ export class ServerLiveness {
   private recordOf(server: string): ServerRecord {
     let record = this.records.get(server);
     if (!record) {
-      record = { consecutiveTransmissions: 0, lastValidReplyAtMs: null, deadUntilMs: null };
+      record = {
+        consecutiveTransmissions: 0, lastValidReplyAtMs: null, deadUntilMs: null,
+        stateSinceMs: null, previousDurationMs: 0, deadCount: 0, deadTotalMs: 0,
+      };
       this.records.set(server, record);
     }
     return record;
+  }
+
+  private leaveDead(record: ServerRecord, nowMs: number): void {
+    if (record.deadUntilMs === null) return;
+    const since = record.stateSinceMs ?? nowMs;
+    const spent = Math.max(0, Math.min(nowMs, record.deadUntilMs) - since);
+    record.deadTotalMs += spent;
+    record.previousDurationMs = spent;
+    record.stateSinceMs = Math.min(nowMs, record.deadUntilMs);
+    record.deadUntilMs = null;
   }
 
   recordValidReply(server: string, nowMs: number): void {
     const record = this.recordOf(server);
     record.consecutiveTransmissions = 0;
     record.lastValidReplyAtMs = nowMs;
-    record.deadUntilMs = null;
+    this.leaveDead(record, nowMs);
   }
 
   recordTimeout(
@@ -38,8 +64,11 @@ export class ServerLiveness {
     if (deadtimeMinutes <= 0) return;
     const silentLongEnough = record.lastValidReplyAtMs === null
       || nowMs - record.lastValidReplyAtMs >= criteria.timeSec * 1000;
-    if (silentLongEnough && record.consecutiveTransmissions >= criteria.tries) {
+    if (silentLongEnough && record.consecutiveTransmissions >= criteria.tries && record.deadUntilMs === null) {
+      record.previousDurationMs = Math.max(0, nowMs - (record.stateSinceMs ?? nowMs));
+      record.stateSinceMs = nowMs;
       record.deadUntilMs = nowMs + deadtimeMinutes * 60_000;
+      record.deadCount += 1;
     }
   }
 
@@ -47,7 +76,7 @@ export class ServerLiveness {
     const record = this.records.get(server);
     if (!record || record.deadUntilMs === null) return false;
     if (nowMs >= record.deadUntilMs) {
-      record.deadUntilMs = null;
+      this.leaveDead(record, nowMs);
       record.consecutiveTransmissions = 0;
       return false;
     }
@@ -57,6 +86,21 @@ export class ServerLiveness {
   deadForMs(server: string, nowMs: number): number {
     const record = this.records.get(server);
     return record?.deadUntilMs != null ? Math.max(0, record.deadUntilMs - nowMs) : 0;
+  }
+
+  view(server: string, nowMs: number, configuredAtMs: number): LivenessView {
+    const dead = this.isDead(server, nowMs);
+    const record = this.records.get(server);
+    const since = record?.stateSinceMs ?? configuredAtMs;
+    const deadSoFar = record ? record.deadTotalMs + (dead ? Math.max(0, nowMs - (record.stateSinceMs ?? nowMs)) : 0) : 0;
+    return {
+      alive: !dead,
+      durationMs: Math.max(0, nowMs - since),
+      previousDurationMs: record?.previousDurationMs ?? 0,
+      deadCount: record?.deadCount ?? 0,
+      deadTotalMs: deadSoFar,
+      consecutiveTransmissions: record?.consecutiveTransmissions ?? 0,
+    };
   }
 
   forget(server: string): void {

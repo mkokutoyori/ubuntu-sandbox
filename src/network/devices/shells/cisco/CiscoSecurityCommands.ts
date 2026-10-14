@@ -6,10 +6,7 @@ import { CommandTrie } from '../CommandTrie';
 import { showIpTraffic } from './CiscoCommonShow';
 import {
   CiscoSecurityConfig,
-  newRadiusServerStats,
   newTacacsServerStats,
-  radiusAuthPort,
-  radiusAcctPort,
   tacacsServerPort,
   type AaaServiceKind,
   type AaaPhase,
@@ -1198,31 +1195,6 @@ export function buildIdentityShowCommands(
     path: readonly string[], description: string, niveau: number, render: () => string,
   ): void => { vues.push({ path, description, niveau, render }); };
 
-  vue(['show', 'aaa', 'servers'], 'Display AAA servers', 1, () => {
-    const s = sec();
-    const lines: string[] = [];
-    let idx = 1;
-    for (const r of s.radiusServers.values()) {
-      const st = r.stats;
-      lines.push(`RADIUS: id ${idx++}, priority 1, host ${r.address ?? '<no address>'}`
-        + `, auth-port ${radiusAuthPort(r, s.radiusDefaults)}`
-        + `, acct-port ${radiusAcctPort(r, s.radiusDefaults)}`);
-      lines.push(`    State: current UP, duration ${secondsSince(st.upSinceMs)}s, previous duration 0s`);
-      lines.push(`    Authen: request ${st.authRequests}, timeouts ${st.authTimeouts}, retransmission ${st.authRetransmits}`);
-      lines.push(`            Response: accept ${st.authAccepts}, reject ${st.authRejects}, challenge 0`);
-      lines.push(`    Account: request ${st.acctRequests}, timeouts ${st.acctTimeouts}, retransmission ${st.acctRetransmits}`);
-      lines.push(`            Response: ${st.acctResponses}`);
-    }
-    for (const t of s.tacacsServers.values()) {
-      const st = t.stats;
-      lines.push(`TACACS+: id ${idx++}, host ${t.address ?? '<no address>'}`
-        + `, port ${tacacsServerPort(t, s.tacacsDefaults)}`);
-      lines.push(`    Socket opens: ${st.socketOpens}, closes: ${st.socketCloses}, aborts: ${st.socketAborts}, errors: ${st.socketErrors}`);
-      lines.push(`    Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
-    }
-    return lines.length ? lines.join('\n') : 'No AAA servers configured';
-  });
-
   vue(['show', 'aaa', 'local', 'user', 'lockout'],
     'Local users currently locked out', 1, () => {
     const lines = [
@@ -1274,19 +1246,6 @@ export function buildIdentityShowCommands(
     if (active.length > 0) {
       lines.push('Session-Id Unique Id User       IP Address    Session Type');
       for (const s of active) lines.push(`${s.id.padEnd(11)}1          ${s.user.padEnd(11)}${s.fromIp.padEnd(14)}${s.line}`);
-    }
-    return lines.join('\n');
-  });
-
-  vue(['show', 'radius', 'statistics'], 'Display Radius stats', 1, () => {
-    const s = sec();
-    if (s.radiusServers.size === 0) return 'No RADIUS servers configured';
-    const lines = ['  Radius Statistics:'];
-    for (const r of s.radiusServers.values()) {
-      const st = r.stats;
-      lines.push(`  Server: ${r.name} (${r.address ?? 'unconfigured'})`);
-      lines.push(`    Auth requests: ${st.authRequests}, retransmits: ${st.authRetransmits}, accepts: ${st.authAccepts}, rejects: ${st.authRejects}`);
-      lines.push(`    Acct requests: ${st.acctRequests}, retransmits: ${st.acctRetransmits}, responses: ${st.acctResponses}`);
     }
     return lines.join('\n');
   });
@@ -1604,10 +1563,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       return lines.join('\n');
     }).join('\n');
   });
-}
-
-function secondsSince(ms: number): number {
-  return Math.max(0, Math.floor((simulationNowMs() - ms) / 1000));
 }
 
 /** `10:04:36 UTC Aug 6 2026` — la date telle qu'IOS l'écrit ici. */

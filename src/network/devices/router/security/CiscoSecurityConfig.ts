@@ -23,19 +23,6 @@ export interface AaaMethodEntry {
   methods: string[];
 }
 
-export interface RadiusServerStats {
-  upSinceMs: number;
-  authRequests: number;
-  authAccepts: number;
-  authRejects: number;
-  authTimeouts: number;
-  authRetransmits: number;
-  acctRequests: number;
-  acctResponses: number;
-  acctTimeouts: number;
-  acctRetransmits: number;
-}
-
 export interface TacacsServerStats {
   upSinceMs: number;
   socketOpens: number;
@@ -83,7 +70,8 @@ export interface RadiusServer {
   timeoutSec?: number;
   /** Voir `TacacsServer.legacySpelling` : `radius-server host <ip>` alimente ce magasin-ci. */
   legacySpelling?: boolean;
-  stats: RadiusServerStats;
+  configuredAtMs: number;
+  serverId: number;
 }
 
 export interface TacacsServer {
@@ -127,16 +115,6 @@ export function tacacsServerPort(
   server: TacacsServer, defaults: TacacsGlobalDefaults,
 ): number {
   return server.port ?? defaults.port ?? TACACS_DEFAULT_PORT;
-}
-
-export function newRadiusServerStats(): RadiusServerStats {
-  return {
-    upSinceMs: simulationNowMs(),
-    authRequests: 0, authAccepts: 0, authRejects: 0,
-    authTimeouts: 0, authRetransmits: 0,
-    acctRequests: 0, acctResponses: 0,
-    acctTimeouts: 0, acctRetransmits: 0,
-  };
 }
 
 export function newTacacsServerStats(): TacacsServerStats {
@@ -415,6 +393,12 @@ export class CiscoSecurityConfig {
   radiusServers: Map<string, RadiusServer> = new Map();
   tacacsServers: Map<string, TacacsServer> = new Map();
   aaaGroups: Map<string, AaaServerGroup> = new Map();
+  private lastServerId = 0;
+
+  allocateServerId(): number {
+    this.lastServerId += 1;
+    return this.lastServerId;
+  }
   legacyHosts: AaaLegacyServerHost[] = [];
   radiusDefaults: RadiusGlobalDefaults = {};
   readonly radiusLiveness = new ServerLiveness();

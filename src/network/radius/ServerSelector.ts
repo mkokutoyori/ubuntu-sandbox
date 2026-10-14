@@ -21,12 +21,23 @@ interface Batch {
 
 export class ServerSelector {
   private readonly outstanding = new Map<string, number>();
+  private readonly peak = new Map<string, number>();
   private readonly batches = new Map<string, Batch>();
   private readonly sessionServer = new Map<string, string>();
   private readonly stickyStart = new Map<string, string>();
 
   acquire(server: string): void {
-    this.outstanding.set(server, (this.outstanding.get(server) ?? 0) + 1);
+    const now = (this.outstanding.get(server) ?? 0) + 1;
+    this.outstanding.set(server, now);
+    if (now > (this.peak.get(server) ?? 0)) this.peak.set(server, now);
+  }
+
+  peakOutstandingOf(server: string): number {
+    return this.peak.get(server) ?? 0;
+  }
+
+  resetPeak(server: string): void {
+    this.peak.delete(server);
   }
 
   release(server: string): void {
