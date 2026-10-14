@@ -63,9 +63,10 @@ interface SessionChannelInfo {
 
 const PREAUTH_COUNT = new WeakMap<object, { value: number }>();
 
-function preauthSlot(ctx: object): { value: number } {
-  let s = PREAUTH_COUNT.get(ctx);
-  if (!s) { s = { value: 0 }; PREAUTH_COUNT.set(ctx, s); }
+function preauthSlot(ctx: ISshServerContext): { value: number } {
+  const scope = ctx.connectionLimitScope ?? ctx;
+  let s = PREAUTH_COUNT.get(scope);
+  if (!s) { s = { value: 0 }; PREAUTH_COUNT.set(scope, s); }
   return s;
 }
 

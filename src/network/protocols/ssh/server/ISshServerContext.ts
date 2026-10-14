@@ -132,6 +132,7 @@ export interface SshTransportPolicy {
 
 export interface ISshServerContext {
   readonly hostKey: SshHostKey;
+  readonly connectionLimitScope?: object;
   additionalHostKeys?(): SshHostKey[];
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;

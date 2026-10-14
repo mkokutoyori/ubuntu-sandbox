@@ -4,7 +4,7 @@ import { SSH_DEFAULTS, type SshConfig } from '../../router/security/CiscoSecurit
 import {
   IOS_ALGORITHM_VALUES, iosSshDefaults, type IosSshAlgorithmFamily,
 } from '../../router/security/CiscoSshAlgorithms';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliIncomplete, CliInvalidInput } from '../cli/CliDiagnostic';
 import type { CiscoSoftwareIdentity } from './CiscoPlatform';
 
 export interface IpSshHost {
@@ -15,6 +15,9 @@ export interface IpSshHost {
 
 export const SSH_TIMEOUT_RANGE: readonly [number, number] = [1, 120];
 export const SSH_RETRIES_RANGE: readonly [number, number] = [0, 5];
+export const SSH_MAXSTARTUPS_RANGE: readonly [number, number] = [2, 128];
+export const SSH_REKEY_TIME_RANGE: readonly [number, number] = [10, 1440];
+export const SSH_REKEY_VOLUME_RANGE: readonly [number, number] = [100, 4194303];
 
 const VERSION: ArgumentSpec = {
   name: 'version', type: 'ENUM', description: 'SSH protocol version',
@@ -159,6 +162,52 @@ export function ipSshSpecs(ctx: () => IpSshHost): CommandSpec[] {
       'Diffie-Hellman key exchange parameters',
       (_session, args) => { ctx().sshConfig().dhMinBits = Number(args.bits); return ''; },
       () => { ctx().sshConfig().dhMinBits = SSH_DEFAULTS.dhMinBits; return ''; }),
+
+    spec('maxstartups', ['ip', 'ssh', 'maxstartups', {
+      name: 'nombre', type: 'INT', range: SSH_MAXSTARTUPS_RANGE, optional: true,
+      description: 'Number of connections accepted concurrently',
+    }], 'Maximum concurrent SSH sessions being started',
+    (_session, args) => {
+      ctx().sshConfig().maxStartups = args.nombre === undefined
+        ? SSH_DEFAULTS.maxStartups : Number(args.nombre);
+      return '';
+    },
+    () => { ctx().sshConfig().maxStartups = SSH_DEFAULTS.maxStartups; return ''; }),
+
+    {
+      id: 'config-ip-ssh-rekey-time',
+      path: ['ip', 'ssh', 'rekey', 'time', {
+        name: 'minutes', type: 'INT', range: SSH_REKEY_TIME_RANGE,
+        description: 'Rekey time in minutes',
+      }],
+      description: 'Time-based rekey of an SSH session',
+      modes: ['config'], minPrivilege: 15,
+      run: (_session, args) => { ctx().sshConfig().rekeyTimeMinutes = Number(args.minutes); return ''; },
+    },
+    {
+      id: 'config-ip-ssh-rekey-volume',
+      path: ['ip', 'ssh', 'rekey', 'volume', {
+        name: 'kilooctets', type: 'INT', range: SSH_REKEY_VOLUME_RANGE,
+        description: 'Rekeyed data volume in kilobytes',
+      }],
+      description: 'Volume-based rekey of an SSH session',
+      modes: ['config'], minPrivilege: 15,
+      run: (_session, args) => { ctx().sshConfig().rekeyVolumeKb = Number(args.kilooctets); return ''; },
+    },
+    {
+      id: 'config-ip-ssh-rekey-no',
+      path: ['ip', 'ssh', 'rekey'],
+      description: 'Rekey of an SSH session',
+      undoDescription: 'Disable the time-based and the volume-based rekey',
+      modes: ['config'], minPrivilege: 15,
+      existsOnlyNegated: true,
+      run: () => { throw new CliIncomplete(); },
+      undo: () => {
+        delete ctx().sshConfig().rekeyTimeMinutes;
+        delete ctx().sshConfig().rekeyVolumeKb;
+        return '';
+      },
+    },
 
     spec('logging-events', ['ip', 'ssh', 'logging', 'events'], 'Log SSH events',
       () => { ctx().sshConfig().loggingEvents = true; return ''; },

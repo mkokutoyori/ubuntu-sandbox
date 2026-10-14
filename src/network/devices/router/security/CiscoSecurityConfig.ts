@@ -162,7 +162,7 @@ export interface AaaLegacyServerHost {
 }
 
 export const SSH_DEFAULTS = Object.freeze({
-  version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false,
+  version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false, maxStartups: 128,
   macAlgorithms: [] as string[], encryptionAlgorithms: [] as string[],
   kexAlgorithms: [] as string[], hostKeyAlgorithms: [] as string[],
   clientEncryptionAlgorithms: [] as string[], clientMacAlgorithms: [] as string[], scpServerEnabled: false,
@@ -175,6 +175,9 @@ export interface SshConfig {
   sourceInterface?: string;
   dhMinBits: number;
   loggingEvents: boolean;
+  maxStartups: number;
+  rekeyTimeMinutes?: number;
+  rekeyVolumeKb?: number;
   macAlgorithms: string[];
   encryptionAlgorithms: string[];
   kexAlgorithms: string[];
@@ -421,8 +424,15 @@ export class CiscoSecurityConfig {
   ssh: SshConfig = { ...SSH_DEFAULTS };
   sshPubkeys = new SshPubkeyChain();
 
-  sshServerLimits(): { maxAuthTries: number; loginGraceTime: number } {
-    return { maxAuthTries: this.ssh.authRetries, loginGraceTime: this.ssh.timeoutSec };
+  sshServerLimits(): {
+    maxAuthTries: number; loginGraceTime: number;
+    maxStartups: { start: number; rate: number; full: number };
+  } {
+    return {
+      maxAuthTries: this.ssh.authRetries,
+      loginGraceTime: this.ssh.timeoutSec,
+      maxStartups: { start: this.ssh.maxStartups, rate: 100, full: this.ssh.maxStartups },
+    };
   }
   cryptoKeys: CryptoRsaKey[] = [];
   enableSecret?: string;
@@ -641,6 +651,9 @@ export class CiscoSecurityConfig {
       lines.push(`ip ssh dh min size ${this.ssh.dhMinBits}`);
     }
     if (this.ssh.loggingEvents) lines.push('ip ssh logging events');
+    if (this.ssh.maxStartups !== SSH_DEFAULTS.maxStartups) lines.push(`ip ssh maxstartups ${this.ssh.maxStartups}`);
+    if (this.ssh.rekeyTimeMinutes !== undefined) lines.push(`ip ssh rekey time ${this.ssh.rekeyTimeMinutes}`);
+    if (this.ssh.rekeyVolumeKb !== undefined) lines.push(`ip ssh rekey volume ${this.ssh.rekeyVolumeKb}`);
     if (this.ssh.macAlgorithms.length) {
       lines.push(`ip ssh server algorithm mac ${this.ssh.macAlgorithms.join(' ')}`);
     }
