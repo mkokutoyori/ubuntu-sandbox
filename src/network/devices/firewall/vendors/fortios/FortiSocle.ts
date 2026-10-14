@@ -87,7 +87,7 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
 export const VALUE_LIST_VERBS = Object.freeze(
   ['set', 'append', 'select', 'unselect'] as const);
 
-export const FORTI_TOKENS = Object.freeze({ escapesAnyCharacter: true });
+export const FORTI_TOKENS = Object.freeze({ escapesAnyCharacter: true, singleQuotes: true });
 
 const FORTI_MODES = Object.freeze({ forti: { parent: null } });
 const FORTI_PROMPTS = Object.freeze({ forti: '{host} # ' });
@@ -755,6 +755,18 @@ export class FortiSocle {
       if (attribute.readOnly) continue;
       if (!writable) continue;
       out.push(...this.attributeSpecs(attribute));
+    }
+
+    for (const attribute of object.spec.attributes) {
+      if (attribute.readOnly || !writable || object.isAvailable(attribute)) continue;
+      out.push({
+        ...this.withArgument(`set ${attribute.name}`,
+          ['set', attribute.name, { name: 'value', type: 'REST', description: attribute.help }],
+          attribute.help,
+          () => FortiMessages.commandFail(
+            `\`${attribute.name}\` does not apply in the current configuration of this object.`)),
+        hidden: true,
+      });
     }
 
     for (const name of object.childNames()) {

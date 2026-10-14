@@ -70,7 +70,9 @@ HELP_OVERRIDES = {
     'vlan-filter': 'VLAN ranges to allow.',
 }
 
-LISTS = {'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
+REF_TARGETS = {'per-ip-shaper': ['firewall shaper per-ip-shaper'], 'traffic-shaper': ['firewall shaper traffic-shaper'], 'traffic-shaper-reverse': ['firewall shaper traffic-shaper']}
+HANDWRITTEN = {'firewall policy': ('ips-sensor',)}
+LISTS = {'macaddr', 'src-filter', 'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
          'internet-service-group', 'internet-service-name', 'internet-service-src-custom', 'internet-service-src-custom-group',
          'internet-service-src-fortiguard', 'internet-service-src-group', 'internet-service-src-name',
          'internet-service6-custom', 'internet-service6-custom-group', 'internet-service6-fortiguard',
@@ -143,9 +145,17 @@ def emit(e, schema_names):
     elif typ == 'ipv4-classnet':
         body = f"addressMask({q(name)}, {q(help_text)}, ['0.0.0.0', '0.0.0.0'])"
     elif typ == 'datetime':
-        body = f"moment({q(name)}, {q(help_text)})"
+        body = f"{'isoMoment' if name == 'policy-expiry-date' else 'moment'}({q(name)}, {q(help_text)})"
     else:
         body = f"{'text' if typ == 'var-string' else 'word'}({q(name)}, {q(help_text)})"
+    if name in REF_TARGETS:
+        body = f"reference({q(name)}, {q(help_text)}, {REF_TARGETS[name]!r})".replace('"', "'")
+    if name == 'macaddr':
+        body = "{ ...%s, availableWhen: (object) => object.effective('type')[0] === 'mac', acceptsValue: (value: string) => /^([0-9a-f]{2}:){5}[0-9a-f]{2}(-([0-9a-f]{2}:){5}[0-9a-f]{2})?$/i.test(value) }" % body
+    if name == 'src-filter':
+        body = "{ ...%s, acceptsValue: (value: string) => /^\\d+(\\.\\d+){3}(\\/\\d+|-\\d+(\\.\\d+){3})?$/.test(value) }" % body
+    if name.startswith('diffservcode'):
+        body = "{ ...%s, acceptsValue: (value: string) => /^[01]{6}$/.test(value) }" % body
     return body
 
 def main():
@@ -153,13 +163,13 @@ def main():
     for title, (module, const) in TABLES.items():
         entries = [{**detail(e), 'path': ''} for e in parse_toplevel(title)[0]]
         have = {a.lower() for a in dump[title]}
-        lines = ["import { addressMask, choice, count, enable, moment, text, word, type FortiAttributeSpec } from './types';", '',
+        lines = ["import { addressMask, choice, count, enable, isoMoment, moment, reference, text, word, type FortiAttributeSpec } from './types';", '',
                  "const list = (name: string, help: string): FortiAttributeSpec => ({",
                  "  name, help, quoted: true, multiValue: true, parts: [{ name, type: 'WORD', description: help }],", "});", '',
                  f"export const {const}: readonly FortiAttributeSpec[] = Object.freeze(["]
         seen = set()
         for e in entries:
-            if e['path'] != '' or e['name'].lower() in have or e['name'] in seen: continue
+            if e['path'] != '' or e['name'].lower() in have or e['name'] in seen or e['name'] in HANDWRITTEN.get(title, ()): continue
             seen.add(e['name'])
             spec = emit(e, have)
             evaluated = e['name'] in EVALUATED.get(title, [])

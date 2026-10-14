@@ -1,3 +1,4 @@
+import type { ShaperStore } from './model/TrafficShaper';
 import { Equipment } from '../../equipment/Equipment';
 import type { SshKeyAlgorithm } from '../../protocols/ssh/SshHostKey';
 import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
@@ -22,6 +23,8 @@ import {
   type IPv6Packet,
   IPAddress,
   IP_PROTO_UDP,
+  IP_PROTO_TCP,
+  createIPv4Packet,
   MACAddress,
   type ARPPacket,
   type DeviceType,
@@ -32,7 +35,7 @@ import {
 import { recordRoute } from '../../layers/internet/Ipv4Options';
 import {
   buildICMPError, mayGenerateICMPError,
-  ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
+  ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED, ICMP_UNREACH_PORT,
   ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
 } from '../../core/IcmpErrors';
 import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
@@ -52,7 +55,8 @@ import { RevisionStore } from './config/RevisionStore';
 import { LdbMonitorTable } from './health/LdbMonitor';
 import { LinkMonitorTable, type LinkMonitorStatus } from './health/LinkMonitor';
 import { dialTcp, parseDialAddress } from '../../tcp/dial';
-import { isDialFailure } from '../../tcp/types';
+import { isDialFailure, type TcpSegment } from '../../tcp/types';
+import { resetSegmentAt, resetSegmentFor } from '../../tcp/TcpStack';
 import { PortNumber } from '../../core/ports/PortNumber';
 import {
   RealServerPool, type LdbMethod, type RealServer,
@@ -501,8 +505,9 @@ export class Firewall extends Equipment {
       interfaceHasBoundPolicy: (iface) => this.boundPolicyInterfaces.has(iface),
       securityLevelOf: (vdom, zone) => this.vdoms.require(vdom).zones.getZone(zone)?.securityLevel,
       sameSecurityInterAllowed: () => this.sameSecurityInter,
-      onSessionClosed: (_vdom, session, reason) => {
+      onSessionClosed: (vdom, session, reason) => {
         this.streams.forget(session.c2s);
+        if (reason === 'timeout') this.resetExpiredSession(vdom, session);
         this.trafficLogger?.onSessionClosed(session, reason);
         this.sessionObserver?.(session, reason);
       },
@@ -1921,6 +1926,7 @@ export class Firewall extends Equipment {
 
   getSessionTtl(vdom?: string): SessionTtlTable { return this.getVdom(vdom).sessionTtl; }
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
+  getShaperStore(vdom?: string): ShaperStore { return this.getVdom(vdom).shapers; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
 
   getLogSettings(vdom?: string): LogSettings { return this.getVdom(vdom).logSettings; }
@@ -2639,6 +2645,7 @@ export class Firewall extends Equipment {
     const context = makePacketContext({
       ingressPort: portName, packet, arrivedAt: this.services.now(),
       ingressFrameDestination: frame?.dstMAC,
+      ingressFrameSource: frame?.srcMAC,
     });
     const outcome = this.processPipeline(context);
     this.traces.remember(context);
@@ -2647,6 +2654,9 @@ export class Firewall extends Equipment {
     if (outcome.verdict !== 'accepted') {
       if (context.verdict?.reason === 'auth-required') {
         this.captivePortal.capture(portName, packet);
+      }
+      if (context.verdict?.reason === 'policy-deny' && context.matchedPolicy?.sendDenyPacket === true) {
+        this.sendDenyReply(portName, packet);
       }
       if (context.verdict?.reason === 'ttl-expired') {
         this.sendTimeExceeded(portName, packet);
@@ -2674,6 +2684,48 @@ export class Firewall extends Equipment {
     if (!address) return packet;
     const outcome = recordRoute(packet, new IPAddress(address));
     return outcome.kind === 'error' ? null : outcome.packet;
+  }
+
+  private resetExpiredSession(vdomName: string, session: FirewallSession): void {
+    if (session.c2s.protocol !== IP_PROTO_TCP || session.nextSequence === undefined) return;
+    const rule = this.vdoms.require(vdomName).policy.ordered().find(r => r.id === session.policyId);
+    if (rule?.timeoutSendRst !== true) return;
+
+    const towardServer = session.nextSequence.c2s;
+    const towardClient = session.nextSequence.s2c;
+    if (towardServer !== undefined) {
+      this.sendSessionReset(vdomName, session.s2c.destIP, session.s2c.destPort,
+        session.s2c.sourceIP, session.s2c.sourcePort, towardServer);
+    }
+    if (towardClient !== undefined) {
+      this.sendSessionReset(vdomName, session.c2s.destIP, session.c2s.destPort,
+        session.c2s.sourceIP, session.c2s.sourcePort, towardClient);
+    }
+  }
+
+  private sendSessionReset(
+    vdomName: string, fromIp: string, fromPort: number, toIp: string, toPort: number, sequence: number,
+  ): void {
+    const route = this.vdoms.require(vdomName).routes.resolveNextHop(toIp);
+    if (route === undefined) return;
+    const reset = resetSegmentAt(fromPort, toPort, sequence, fromIp, toIp);
+    this.forward(route.iface, createIPv4Packet(
+      new IPAddress(fromIp), new IPAddress(toIp), IP_PROTO_TCP, ICMP_ERROR_TTL, reset, 20), route.nextHop);
+  }
+
+  private sendDenyReply(ingressPort: string, packet: IPv4Packet): void {
+    if (packet.protocol === IP_PROTO_UDP) {
+      this.sendIcmpError(ingressPort, packet, 'destination-unreachable', ICMP_UNREACH_PORT, {});
+      return;
+    }
+    const offending = packet.payload as TcpSegment | undefined;
+    if (packet.protocol !== IP_PROTO_TCP || offending?.type !== 'tcp' || offending.flags.rst) return;
+    const local = packet.destinationIP.toString();
+    const remote = packet.sourceIP.toString();
+    const reset = resetSegmentFor(offending, local, remote);
+    const route = this.vdoms.contextOfInterface(ingressPort).routes.resolveNextHop(remote);
+    this.forward(route?.iface ?? ingressPort, createIPv4Packet(
+      packet.destinationIP, packet.sourceIP, IP_PROTO_TCP, ICMP_ERROR_TTL, reset, 20));
   }
 
   private sendTimeExceeded(ingressPort: string, packet: IPv4Packet): void {

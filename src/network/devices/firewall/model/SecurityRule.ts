@@ -24,6 +24,20 @@ export interface SecurityRule {
   destination6: string[];
   sourceNegated: boolean;
   destinationNegated: boolean;
+  source6Negated?: boolean;
+  destination6Negated?: boolean;
+  tos?: { value: number; mask: number; negated: boolean };
+  expiresAt?: number;
+  sendDenyPacket?: boolean;
+  scheduleTimeout?: boolean;
+  trafficShaper?: string;
+  trafficShaperReverse?: string;
+  perIpShaper?: string;
+  timeoutSendRst?: boolean;
+  matchVipOnly?: boolean;
+  diffserv?: { forward?: number; reverse?: number; copy: boolean };
+  tcpMssSender?: number;
+  tcpMssReceiver?: number;
 
   service: string[];
   serviceNegated: boolean;
@@ -55,6 +69,7 @@ export interface SecurityRule {
   antivirusProfile?: string;
   webFilterProfile?: string;
   applicationList?: string;
+  ipsSensor?: string;
   dnsFilterProfile?: string;
   fileFilterProfile?: string;
   sslSshProfile?: string;
@@ -84,6 +99,20 @@ export interface SecurityRuleInit {
   destination6?: string[];
   sourceNegated?: boolean;
   destinationNegated?: boolean;
+  source6Negated?: boolean;
+  destination6Negated?: boolean;
+  tos?: { value: number; mask: number; negated: boolean };
+  expiresAt?: number;
+  sendDenyPacket?: boolean;
+  scheduleTimeout?: boolean;
+  trafficShaper?: string;
+  trafficShaperReverse?: string;
+  perIpShaper?: string;
+  timeoutSendRst?: boolean;
+  matchVipOnly?: boolean;
+  diffserv?: { forward?: number; reverse?: number; copy: boolean };
+  tcpMssSender?: number;
+  tcpMssReceiver?: number;
   service?: string[];
   serviceNegated?: boolean;
   application?: string[];
@@ -109,6 +138,7 @@ export interface SecurityRuleInit {
   antivirusProfile?: string;
   webFilterProfile?: string;
   applicationList?: string;
+  ipsSensor?: string;
   dnsFilterProfile?: string;
   fileFilterProfile?: string;
   sslSshProfile?: string;
@@ -144,6 +174,20 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     destination6: [...(init.destination6 ?? [])],
     sourceNegated: init.sourceNegated ?? false,
     destinationNegated: init.destinationNegated ?? false,
+    source6Negated: init.source6Negated,
+    destination6Negated: init.destination6Negated,
+    tos: init.tos,
+    expiresAt: init.expiresAt,
+    sendDenyPacket: init.sendDenyPacket,
+    scheduleTimeout: init.scheduleTimeout,
+    trafficShaper: init.trafficShaper,
+    trafficShaperReverse: init.trafficShaperReverse,
+    perIpShaper: init.perIpShaper,
+    timeoutSendRst: init.timeoutSendRst,
+    matchVipOnly: init.matchVipOnly,
+    diffserv: init.diffserv,
+    tcpMssSender: init.tcpMssSender,
+    tcpMssReceiver: init.tcpMssReceiver,
     service: [...(init.service ?? ['any'])],
     serviceNegated: init.serviceNegated ?? false,
     application: [...(init.application ?? [])],
@@ -169,6 +213,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     antivirusProfile: init.antivirusProfile,
     webFilterProfile: init.webFilterProfile,
     applicationList: init.applicationList,
+    ipsSensor: init.ipsSensor,
     dnsFilterProfile: init.dnsFilterProfile,
     fileFilterProfile: init.fileFilterProfile,
     sslSshProfile: init.sslSshProfile,

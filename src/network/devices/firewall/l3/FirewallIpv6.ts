@@ -137,6 +137,7 @@ export class FirewallIpv6 {
       ingressInterface: ingress ?? '',
       egressInterface: egress,
       sourceIP: source, destIP: destination, protocol,
+      tos: packet.trafficClass,
       ...ports,
     });
     if (!permitted) return false;
