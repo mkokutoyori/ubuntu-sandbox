@@ -113,6 +113,9 @@ export interface ReglagesDiscipline {
   /** Le seuil de panique ; `0` le desactive (`chronyd -x`, `ntpd -g`). */
   seuilPaniqueMs?: number;
   reinitialiserAssociationsAuSaut?: boolean;
+  slewRatePpm?: number;
+  spikeThresholdMs?: number;
+  spikeWatchMs?: number;
 }
 
 /**
@@ -129,6 +132,8 @@ export function disciplinerHorloge(
   reglages: ReglagesDiscipline = {},
 ): DecisionDiscipline {
   const seuilSaut = reglages.seuilSautMs ?? SEUIL_SAUT_MS;
+  const seuilAberration = reglages.spikeThresholdMs ?? seuilSaut;
+  const seuilSortie = reglages.spikeWatchMs ?? SEUIL_SORTIE_MS;
   const seuilPanique = reglages.seuilPaniqueMs ?? SEUIL_PANIQUE_MS;
   const limite = reglages.limiteSauts ?? -1;
   const ecart = Math.abs(offsetMesureMs - etat.offsetApplique);
@@ -139,7 +144,9 @@ export function disciplinerHorloge(
   if (seuilPanique > 0 && ecart > seuilPanique) return { quoi: 'panic' };
 
   // Sous le seuil, le glissement suffit — et c'est le regime normal.
-  if (ecart <= seuilSaut) return { quoi: 'slew', nouvelOffset: glisser(etat, offsetMesureMs, ecoulementMs) };
+  if (ecart <= seuilSaut && ecart <= seuilAberration) {
+    return { quoi: 'slew', nouvelOffset: glisser(etat, offsetMesureMs, ecoulementMs, reglages.slewRatePpm ?? PPM_MAX) };
+  }
 
   // Au-dessus, deux cas seulement. Le PREMIER reglage a le droit de
   // sauter — c'est ce que `ntpd -g` et `makestep <seuil> <limite>`
@@ -152,7 +159,7 @@ export function disciplinerHorloge(
   // Sinon l'ecart est tenu pour ABERRANT, et seule sa persistance
   // au-dela du seuil de sortie le rend credible. C'est la nuance que le
   // tutoriel omet, et c'est elle qui protege d'une mesure isolee.
-  if (etat.aberrationDepuisMs >= SEUIL_SORTIE_MS && sautPermis) {
+  if (etat.aberrationDepuisMs >= seuilSortie && sautPermis) {
     return { quoi: 'step', nouvelOffset: offsetMesureMs };
   }
   return { quoi: 'spike' };
@@ -165,9 +172,9 @@ export function disciplinerHorloge(
  * `0,5 ms par seconde ecoulee`. Un ecart de 50 ms demande cent secondes,
  * ce que le tutoriel annonce et ce qui est desormais observable.
  */
-function glisser(etat: EtatHorloge, offsetMesureMs: number, ecoulementMs: number): number {
+function glisser(etat: EtatHorloge, offsetMesureMs: number, ecoulementMs: number, ratePpm: number): number {
   const reste = offsetMesureMs - etat.offsetApplique;
-  const maxCorrection = (PPM_MAX / 1e6) * ecoulementMs;
+  const maxCorrection = (ratePpm / 1e6) * ecoulementMs;
   if (Math.abs(reste) <= maxCorrection) return offsetMesureMs;
   return etat.offsetApplique + Math.sign(reste) * maxCorrection;
 }

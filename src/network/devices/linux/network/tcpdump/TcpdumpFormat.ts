@@ -1,4 +1,5 @@
 import { bootpText } from './TcpdumpBootp';
+import { ntpText } from './TcpdumpNtp';
 import {
   icmpTimeExceededPhrase, icmpUnreachablePhrase, icmpv6ParameterProblemPhrase, icmpv6TimeExceededPhrase,
   icmpv6UnreachablePhrase,
@@ -260,11 +261,12 @@ function tcpChecksumToken(frame: CaptureFrame): string {
   return `, cksum 0x${hex} (incorrect -> 0x${expected})`;
 }
 
-function udpChecksumToken(frame: CaptureFrame): string {
-  if (frame.udpChecksum === undefined) return '';
-  if (frame.udpChecksum === 0) return ', cksum 0x0000 (unverified)';
-  const hex = frame.udpChecksum.toString(16).padStart(4, '0');
-  return frame.udpChecksumOk ? `, cksum 0x${hex} (correct)` : `, cksum 0x${hex} (incorrect)`;
+function udpSumToken(frame: CaptureFrame, verbose: number): string {
+  if (verbose === 0 || frame.udpChecksum === undefined) return '';
+  if (frame.udpChecksum === 0) return '[no cksum] ';
+  if (frame.udpChecksumOk) return verbose >= 2 ? '[udp sum ok] ' : '';
+  const hex = (n: number): string => `0x${n.toString(16).padStart(4, '0')}`;
+  return `[bad udp cksum ${hex(frame.udpChecksum)} -> ${hex(frame.udpChecksumComputed ?? 0)}!] `;
 }
 
 const DNS_RCODE_TEXT: Record<number, string> = {
@@ -352,8 +354,11 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
   if (frame.l4 === 'udp') {
     if (frame.dnsQr !== undefined) return dnsLine(frame, opt);
     if (frame.bootp && !opt.quiet) return bootpText(frame.bootp, opt.verbose, frame.payloadLength ?? 0);
-    const cksum = opt.verbose > 0 && !opt.skipChecksumCheck ? udpChecksumToken(frame) : '';
-    return `UDP${cksum}, length ${frame.payloadLength ?? 0}`;
+    if (!opt.quiet && frame.appPayload && (frame.srcPort === 123 || frame.dstPort === 123)) {
+      return ntpText(frame.appPayload, opt.verbose, opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose));
+    }
+    const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
+    return `${cksum}UDP, length ${frame.payloadLength ?? 0}`;
   }
   if (frame.l4 === 'icmp6') {
     const phrase = ICMP6_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
@@ -456,7 +461,7 @@ function ipFlagsToken(frame: CaptureFrame): string {
 
 function ipChecksumSuffix(frame: CaptureFrame, opt: TcpdumpOptions): string {
   if (opt.skipChecksumCheck || frame.ipChecksumOk === undefined) return '';
-  if (frame.ipChecksumOk) return opt.verbose >= 2 ? ', ip sum ok' : '';
+  if (frame.ipChecksumOk) return '';
   const hex = (frame.ipChecksum ?? 0).toString(16).padStart(4, '0');
   return `, bad ip cksum 0x${hex}!`;
 }

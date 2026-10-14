@@ -33,6 +33,8 @@ function offerPacket(pkt: DHCPPacket, offer: DHCPOfferResult, leaseDuration: num
     bootfile: offer.pool.bootfile,
     netbiosServers: offer.pool.netbiosServers,
     netbiosNodeType: offer.pool.netbiosNodeType,
+    ntpServers: offer.pool.ntpServers,
+    requestedOptions: pkt.getOption(DHCP_OPTION.PARAMETER_REQUEST_LIST) as number[] | undefined,
     rawOptions: offer.pool.options,
   });
 }
@@ -223,6 +225,8 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         bootfile: pool?.bootfile,
         netbiosServers: pool?.netbiosServers,
         netbiosNodeType: pool?.netbiosNodeType,
+        ntpServers: pool?.ntpServers,
+        requestedOptions: pkt.getOption(DHCP_OPTION.PARAMETER_REQUEST_LIST) as number[] | undefined,
         rawOptions: pool?.options,
       });
   }

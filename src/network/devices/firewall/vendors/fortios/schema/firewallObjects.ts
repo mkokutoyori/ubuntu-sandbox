@@ -1,3 +1,4 @@
+import { ADDRESS_REFERENCE_ATTRIBUTES } from './firewallAddressReference';
 import {
   icmpService, ipProtocolService, makeService,
   type PortRange, type ServiceEntry,
@@ -77,6 +78,7 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
       ['system interface', 'system zone']),
     text('comment', 'Comment.'),
     count('color', 'Color of icon on the GUI.', 0, 32, 0),
+    ...ADDRESS_REFERENCE_ATTRIBUTES,
   ],
   onCommit(object, context) {
     const kind = object.effective('type')[0];

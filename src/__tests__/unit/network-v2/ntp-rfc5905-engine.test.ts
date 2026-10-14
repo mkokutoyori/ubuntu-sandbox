@@ -225,6 +225,19 @@ describe('kiss-o\'-death codes', () => {
     expect(agent.getCounters().kissReceived).toBe(1);
   });
 
+  it('RFC 8633 5.4: repeated RATE kisses never push the poll interval past 13 (two hours)', () => {
+    const { agent, replyTo } = lab();
+    agent.addServer(SERVER);
+    for (let i = 0; i < 12; i++) {
+      replyTo({ leapIndicator: 3, stratum: 0, refIdentifier: 'RATE' });
+      clock.advance(60_000 * 60 * 3);
+    }
+    const a = agent.getAssociation(SERVER)!;
+    expect(a.kiss).toBe('RATE');
+    expect(a.minpoll).toBe(13);
+    expect(a.maxpoll).toBeGreaterThanOrEqual(13);
+  });
+
   it('DENY silences the client: no further packet is ever sent to that server', () => {
     const { agent, sent, replyTo } = lab();
     agent.addServer(SERVER);

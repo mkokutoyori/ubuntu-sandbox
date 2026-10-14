@@ -206,7 +206,7 @@ describe('une machine Linux authentifie NTP pour de vrai', () => {
       clesClient: '1 MD5 CelleDeLAttaquant',
       ligneServeur: 'server 10.0.0.1 iburst key 1',
     });
-    expect(await pc.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+16/);
+    expect(await pc.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+0/);
   });
 
   it('`key 1` sans fichier de cles ne suffit pas', async () => {
@@ -215,7 +215,7 @@ describe('une machine Linux authentifie NTP pour de vrai', () => {
       clesClient: '# aucune cle ici',
       ligneServeur: 'server 10.0.0.1 iburst key 1',
     });
-    expect(await pc.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+16/);
+    expect(await pc.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+0/);
   });
 
   it('une cle SHA1 fonctionne, entre deux chrony', async () => {
@@ -251,7 +251,7 @@ describe('une machine Linux authentifie NTP pour de vrai', () => {
       clesClient: '1 MD5 41424344',
       ligneServeur: 'server 10.0.0.1 iburst key 1',
     });
-    expect(await pc.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+16/);
+    expect(await pc.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+0/);
   });
 
   it('retirer la cle du fichier et recharger la retire de la source', async () => {
@@ -267,12 +267,12 @@ describe('une machine Linux authentifie NTP pour de vrai', () => {
       clesClient: '1 MD5 LeSecretPartage',
       ligneServeur: 'server 10.0.0.1 iburst key 1',
     });
-    const avant = (await pc.executeCommand('chronyc authdata'))
+    const avant = (await pc.executeCommand('sudo chronyc authdata'))
       .split('\n').find((l) => l.includes('10.0.0.1'))!;
     expect(avant.trim().split(/\s+/).slice(1, 3)).toEqual(['SK', '1']);
     await ecrire(pc, CHRONY_KEYS_PATH, '# plus de cle');
-    await pc.executeCommand('chronyc reload');
-    const apres = (await pc.executeCommand('chronyc authdata'))
+    await pc.executeCommand('sudo systemctl restart chrony');
+    const apres = (await pc.executeCommand('sudo chronyc authdata'))
       .split('\n').find((l) => l.includes('10.0.0.1'))!;
     expect(apres.trim().split(/\s+/).slice(1, 3)).toEqual(['-', '0']);
   });
@@ -281,7 +281,7 @@ describe('une machine Linux authentifie NTP pour de vrai', () => {
 describe('`chronyc authdata` decrit ce qui authentifie chaque source', () => {
   it('l\'en-tete est celui de la documentation de chrony', async () => {
     const { pc } = await labo({ ligneServeur: 'server 10.0.0.1 iburst' });
-    const out = await pc.executeCommand('chronyc authdata');
+    const out = await pc.executeCommand('sudo chronyc authdata');
     expect(out.split('\n')[0])
       .toBe('Name/IP address             Mode KeyID Type KLen Last Atmp  NAK Cook CLen');
   });
@@ -292,7 +292,7 @@ describe('`chronyc authdata` decrit ce qui authentifie chaque source', () => {
       clesClient: '1 MD5 LeSecretPartage',
       ligneServeur: 'server 10.0.0.1 iburst key 1',
     });
-    const ligne = (await pc.executeCommand('chronyc authdata'))
+    const ligne = (await pc.executeCommand('sudo chronyc authdata'))
       .split('\n').find((l) => l.includes('10.0.0.1'))!;
     // `Type` 1 = MD5 dans la table de chrony ; 15 caracteres = 120 bits.
     expect(ligne).toContain('SK');
@@ -307,7 +307,7 @@ describe('`chronyc authdata` decrit ce qui authentifie chaque source', () => {
       clesClient: '2 SHA1 HEX:B2159C05D6A219673A3B7E896B6DE07F6A440995',
       ligneServeur: 'server 10.0.0.1 iburst key 2',
     });
-    const ligne = (await pc.executeCommand('chronyc authdata'))
+    const ligne = (await pc.executeCommand('sudo chronyc authdata'))
       .split('\n').find((l) => l.includes('10.0.0.1'))!;
     // 20 octets = 160 bits, et le code 2 designe SHA1.
     expect(ligne.trim().split(/\s+/).slice(1, 5)).toEqual(['SK', '2', '2', '160']);
@@ -315,7 +315,7 @@ describe('`chronyc authdata` decrit ce qui authentifie chaque source', () => {
 
   it('une source SANS authentification porte `-` et des zeros', async () => {
     const { pc } = await labo({ ligneServeur: 'server 10.0.0.1 iburst' });
-    const ligne = (await pc.executeCommand('chronyc authdata'))
+    const ligne = (await pc.executeCommand('sudo chronyc authdata'))
       .split('\n').find((l) => l.includes('10.0.0.1'))!;
     expect(ligne.trim().split(/\s+/).slice(1, 5)).toEqual(['-', '0', '0', '0']);
   });
@@ -324,7 +324,7 @@ describe('`chronyc authdata` decrit ce qui authentifie chaque source', () => {
     // Il valait `recus - echecs`, donc il comptait comme authentifie tout
     // paquet nu. Sur une machine sans cle, la reponse juste est zero.
     const { pc } = await labo({ ligneServeur: 'server 10.0.0.1 iburst' });
-    expect(await pc.executeCommand('chronyc serverstats'))
+    expect(await pc.executeCommand('sudo chronyc serverstats'))
       .toContain('Authenticated NTP packets  : 0');
   });
 });
@@ -350,7 +350,7 @@ describe('`ntp authenticate` gouverne ce que la machine CROIT, pas ce qu\'elle S
       clesClient: '1 MD5 CelleDeLAttaquant',
       ligneServeur: 'server 10.0.0.1 iburst key 1',
     });
-    expect(await pc.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+16/);
+    expect(await pc.executeCommand('chronyc tracking')).toMatch(/Stratum\s+:\s+0/);
   });
 
   it('cote Cisco, le client sans `ntp authenticate` accepte une reponse nue', async () => {

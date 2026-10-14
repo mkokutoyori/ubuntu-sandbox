@@ -51,9 +51,9 @@ describe('tcpdump verbosity levels + TCP options + checksum display (PRD-tcpdump
     expect(output).not.toContain('ip sum ok');
   });
 
-  it('-vv additionally reports the IP header checksum explicitly as ok', async () => {
+  it('-vv keeps the TCP checksum and never prints an IP header checksum verdict when it is good (tcpdump 4.99.4)', async () => {
     const output = await captureOneSyn('sudo tcpdump -c 1 -nn -vv tcp');
-    expect(output).toContain('ip sum ok');
+    expect(output).not.toContain('ip sum ok');
     expect(output).toMatch(/cksum 0x[0-9a-f]{4} \(correct\)/);
   });
 

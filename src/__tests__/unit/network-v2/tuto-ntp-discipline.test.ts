@@ -289,7 +289,7 @@ describe('§5.4 — `chronyc makestep` force le saut', () => {
     converge(clock, 130_000);
     const ecarte = agent.getEtatHorloge().offsetApplique;
 
-    expect(await pc.executeCommand('chronyc makestep')).toBe('200 OK');
+    expect(await pc.executeCommand('sudo chronyc makestep')).toBe('200 OK');
     // Ce qui compte est que l'ecart soit RATTRAPE, pas le libelle de la
     // derniere decision : la commande reinterroge apres avoir saute, et
     // cette mesure-la ne trouve plus rien a corriger — elle glisse de

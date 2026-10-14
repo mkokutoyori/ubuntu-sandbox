@@ -639,6 +639,7 @@ export class Firewall extends Equipment {
       portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
       createManagementCli: (user, origin) => this.createManagementCli(user, origin),
+      routingVrfs: () => this.routingVrfs(),
       leaveCluster: (iface, ip, mask) => this.leaveCluster(iface, ip, mask),
       setDevicePriority: (priority) => this.setDevicePriority(priority),
       authenticateAdmin: (user, password, source) =>
@@ -2740,6 +2741,7 @@ export class Firewall extends Equipment {
         const udp = p.payload as UDPPacket | undefined;
         return udp?.type === 'udp' && this.dnsServer.handleUdp(iface, p, udp);
       },
+      answeredByNtp: (iface, p) => this.ntp.observe(iface, p),
       snmpListens: (p) => this.snmpService?.listensOn(p) ?? false,
       allowsSnmp: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'snmp'),
       handleSnmp: (iface, p) => { this.snmpService?.handleUdp(iface, p); },

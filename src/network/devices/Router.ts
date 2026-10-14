@@ -2621,6 +2621,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (isMulticast) {
       // Globally/admin-scoped multicast (224.0.1.0-239.255.255.255) —
       // real PIM-routed application traffic, RFC 1112 §6.4.
+      if (this.joinedLocalMulticast.get(inPort)?.has(destIP.toString())) this.handleLocalDelivery(inPort, ipPkt);
       this.forwardMulticast(inPort, ipPkt);
       return;
     }
@@ -5245,6 +5246,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * retrait d'IPv4 de la RFC 768, et c'est ce que font déjà tous les
    * agents internes de ce simulateur.
    */
+  private readonly joinedLocalMulticast = new Map<string, Set<string>>();
+
+  joinLocalMulticast(iface: string, group: string): void {
+    const groups = this.joinedLocalMulticast.get(iface) ?? new Set<string>();
+    groups.add(group);
+    this.joinedLocalMulticast.set(iface, groups);
+  }
+
+  leaveLocalMulticast(iface: string, group: string): void {
+    this.joinedLocalMulticast.get(iface)?.delete(group);
+  }
+
   sendUdpDatagram(request: UdpSendRequest): boolean {
     const datagram = buildUdpDatagram(request);
     return this.sendIpv4Packet({

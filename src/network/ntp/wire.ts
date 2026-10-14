@@ -168,7 +168,7 @@ export function decodeNtpPacket(bytes: Uint8Array): NtpDecodeResult {
   let mac: string | undefined;
   if (remaining === 4) {
     keyId = view.getUint32(position);
-  } else if (remaining === 20 || remaining === 24) {
+  } else if (remaining === 20 || remaining === 24 || remaining === 36) {
     keyId = view.getUint32(position);
     mac = bytesToHex(bytes.slice(position + 4, bytes.length));
   } else if (remaining !== 0) {

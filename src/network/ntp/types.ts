@@ -1,3 +1,7 @@
+import { SourceStatistics } from './SourceStatistics';
+import type { DelayQuantile } from './DelayQuantile';
+import type { SampleFilter } from './SampleFilter';
+import type { RateLimit } from './RateLimiter';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
@@ -77,11 +81,23 @@ export const NTP_PHI = 15e-6;
 export const NTP_MIN_POLL = 6;
 export const NTP_MAX_POLL = 17;
 export const NTP_DEFAULT_MAX_POLL = 10;
+export const NTP_RATE_POLL_CEILING = 13;
 export const NTP_MAX_STRATUM = 16;
 export const NTP_BURST_COUNT = 8;
 export const NTP_BURST_INTERVAL_MS = 2000;
 export const NTP_UNREACH_LIMIT = 12;
 export const NTP_SPIKE_GATE = 3;
+
+export const NTP_DEFAULT_BROADCAST_DELAY_US = 3000;
+export const NTP_MULTICAST_ADDRESS = '224.0.1.1';
+
+export interface NtpBroadcastServer {
+  readonly destination: string | null;
+  readonly version: NtpVersion;
+  readonly keyId?: number;
+  readonly ttl?: number;
+  readonly pollExponent: number;
+}
 
 export interface NtpAssociation {
   serverIp: string;
@@ -141,6 +157,60 @@ export interface NtpAssociation {
   ephemeral?: boolean;
   localIp?: string;
   selection?: 'sys' | 'candidate' | 'outlier' | 'falseticker' | 'reject';
+  online: boolean;
+  noselect: boolean;
+  trust: boolean;
+  require: boolean;
+  maxDelayMs?: number;
+  maxDelayRatio?: number;
+  maxDelayDevRatio?: number;
+  minStratum?: number;
+  pollTarget?: number;
+  fixedOffsetMs?: number;
+  fixedPollSec?: number;
+  port?: number;
+  presend?: number;
+  presendDone: number;
+  autoOffline: boolean;
+  copy: boolean;
+  maxDelayQuant?: number;
+  filterLength?: number;
+  delayQuantile?: DelayQuantile;
+  sampleFilter?: SampleFilter;
+  filterCount: number;
+  fallbackOnly: boolean;
+  pollScore: number;
+  txCount: number;
+  burstGood: number;
+  statistics: SourceStatistics;
+  sent: number;
+  received: number;
+  validReceived: number;
+  goodReceived: number;
+  lastTests: string;
+  response: NtpResponseInfo | null;
+}
+
+export interface NtpResponseInfo {
+  readonly version: number;
+  readonly mode: NtpMode;
+  readonly precision: number;
+  readonly poll: number;
+  readonly responseTimeMs: number;
+  readonly authenticated: boolean;
+  readonly offsetMs: number;
+  readonly delayMs: number;
+  readonly dispersionMs: number;
+}
+
+
+export interface NtpClientLogEntry {
+  ntpHits: number;
+  ntpDrops: number;
+  firstNtpMs: number;
+  lastNtpMs: number;
+  intervalExponent: number;
+  limitedIntervalExponent: number;
 }
 
 export interface NtpAuthKey {
@@ -173,12 +243,7 @@ export function createSystemState(): NtpSystemState {
   };
 }
 
-export interface NtpRateLimit {
-  intervalExponent: number;
-  burst: number;
-  leakExponent: number;
-  kod: boolean;
-}
+export type NtpRateLimit = RateLimit;
 
 export interface NtpConfig {
   rateLimit: NtpRateLimit | null;
@@ -191,6 +256,9 @@ export interface NtpConfig {
   refIdentifier: string;
   system: NtpSystemState;
   sourceInterface: string;
+  sourceAddress: string;
+  servingInterfaces: Set<string> | null;
+  requireRequestAuthentication: boolean;
   authenticate: boolean;
   authKeys: Map<number, NtpAuthKey>;
   trustedKeys: Set<number>;
@@ -238,16 +306,10 @@ export interface NtpConfig {
    * rendue est rejouee a l'import d'une topologie.
    */
   loggingSpelling: 'ntp' | 'sntp';
-  /**
-   * `sntp broadcast client` — accepte les annonces de mode 5.
-   *
-   * Range et RENDU, jamais evalue : ce moteur ne connait pas le mode
-   * diffusion (aucun `broadcast` dans `NtpAgent`), donc la commande ne
-   * fait rien d'observable. Elle est acceptee parce que la refuser
-   * ferait disparaitre a l'import d'une topologie une ligne qu'une vraie
-   * machine accepte ; le manquement est inscrit au `TODO.md`.
-   */
   sntpBroadcastClient: boolean;
+  broadcastServers: Map<string, NtpBroadcastServer>;
+  broadcastClientInterfaces: Map<string, string | null>;
+  broadcastDelayUs: number;
   /** Les compteurs de paquets (lot N8). */
   counters: NtpCounters;
 }
@@ -293,6 +355,10 @@ export interface NtpCounters {
   kissReceived: number;
   kissSent: number;
   rateLimited: number;
+  serverRequests: number;
+  serverDropped: number;
+  serverReplies: number;
+  serverAuthenticated: number;
   /** Paquet mal forme : ni un mode connu, ni une charge utile lisible. */
   protocolError: number;
   /** Recus par mode, pour le filtre `show ntp packets mode <x>`. */
@@ -308,6 +374,7 @@ export function createNtpCounters(): NtpCounters {
   return {
     received: 0, sent: 0, processed: 0, dropped: 0,
     authFailures: 0, authOk: 0, accessDenied: 0, badVersion: 0, protocolError: 0, kissReceived: 0, kissSent: 0, rateLimited: 0,
+    serverRequests: 0, serverDropped: 0, serverReplies: 0, serverAuthenticated: 0,
     receivedControl: 0, sentControl: 0, controlDenied: 0,
     receivedByMode: parMode(), sentByMode: parMode(),
   };
@@ -325,6 +392,9 @@ export function createDefaultNtpConfig(): NtpConfig {
     system: createSystemState(),
     rateLimit: null,
     sourceInterface: '',
+    sourceAddress: '',
+    servingInterfaces: null,
+    requireRequestAuthentication: false,
     authenticate: false,
     authKeys: new Map(),
     trustedKeys: new Set(),
@@ -337,6 +407,9 @@ export function createDefaultNtpConfig(): NtpConfig {
     logging: false,
     loggingSpelling: 'ntp',
     sntpBroadcastClient: false,
+    broadcastServers: new Map(),
+    broadcastClientInterfaces: new Map(),
+    broadcastDelayUs: NTP_DEFAULT_BROADCAST_DELAY_US,
     counters: createNtpCounters(),
   };
 }
@@ -356,6 +429,9 @@ export function defaultAssociation(serverIp: string, prefer = false, mode: NtpMo
     updateMs: 0, filter: emptyFilter(), jitterMs: 0,
     hpoll: NTP_MIN_POLL, ppoll: NTP_MAX_POLL, minpoll: NTP_MIN_POLL, maxpoll: NTP_DEFAULT_MAX_POLL,
     burst: 0, unreach: 0, outdateMs: 0, nextdateMs: 0, iburst: false, burstMode: false,
+    online: true, noselect: false, trust: false, require: false, pollScore: 0, txCount: 0, burstGood: 0, fallbackOnly: false,
+    presendDone: 0, autoOffline: false, copy: false, filterCount: 0,
+    statistics: new SourceStatistics(2 ** -20), sent: 0, received: 0, validReceived: 0, goodReceived: 0, lastTests: '000 000 0000', response: null,
   };
 }
 

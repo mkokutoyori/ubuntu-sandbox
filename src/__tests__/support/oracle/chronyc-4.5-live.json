@@ -1,0 +1,426 @@
+{
+ "tool": "chrony 4.5",
+ "cases": [
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "tracking"
+   ],
+   "stdout": "Reference ID    : 7F000002 (127.0.0.2)\nStratum         : 3\nRef time (UTC)  : Tue Oct 13 17:22:14 2026\nSystem time     : 0.012542075 seconds slow of NTP time\nLast offset     : +0.000001494 seconds\nRMS offset      : 0.000060094 seconds\nFrequency       : 1.874 ppm fast\nResidual freq   : +0.044 ppm\nSkew            : 2.793 ppm\nRoot delay      : 0.039200544 seconds\nRoot dispersion : 0.031258781 seconds\nUpdate interval : 1.0 seconds\nLeap status     : Normal\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "sources"
+   ],
+   "stdout": "MS Name/IP address         Stratum Poll Reach LastRx Last sample               \n===============================================================================\n^* 127.0.0.2                     2   0   377     0  +2141ns[+3635ns] +/-   51ms\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "sources",
+    "-v"
+   ],
+   "stdout": "\n  .-- Source mode  '^' = server, '=' = peer, '#' = local clock.\n / .- Source state '*' = current best, '+' = combined, '-' = not combined,\n| /             'x' = may be in error, '~' = too variable, '?' = unusable.\n||                                                 .- xxxx [ yyyy ] +/- zzzz\n||      Reachability register (octal) -.           |  xxxx = adjusted offset,\n||      Log2(Polling interval) --.      |          |  yyyy = measured offset,\n||                                \\     |          |  zzzz = estimated error.\n||                                 |    |           \\\nMS Name/IP address         Stratum Poll Reach LastRx Last sample               \n===============================================================================\n^* 127.0.0.2                     2   0   377     0  +2141ns[+3635ns] +/-   51ms\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "sourcestats"
+   ],
+   "stdout": "Name/IP Address            NP  NR  Span  Frequency  Freq Skew  Offset  Std Dev\n==============================================================================\n127.0.0.2                   9   5     8     +0.044      2.529    +36ns  3423ns\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "sourcestats",
+    "-v"
+   ],
+   "stdout": "                             .- Number of sample points in measurement set.\n                            /    .- Number of residual runs with same sign.\n                           |    /    .- Length of measurement set (time).\n                           |   |    /      .- Est. clock freq error (ppm).\n                           |   |   |      /           .- Est. error in freq.\n                           |   |   |     |           /         .- Est. offset.\n                           |   |   |     |          |          |   On the -.\n                           |   |   |     |          |          |   samples. \\\n                           |   |   |     |          |          |             |\nName/IP Address            NP  NR  Span  Frequency  Freq Skew  Offset  Std Dev\n==============================================================================\n127.0.0.2                   9   5     8     +0.044      2.529    +36ns  3423ns\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "ntpdata"
+   ],
+   "stdout": "\nRemote address  : 127.0.0.2 (7F000002)\nRemote port     : 12399\nLocal address   : 127.0.0.1 (7F000001)\nLeap status     : Normal\nVersion         : 4\nMode            : Server\nStratum         : 2\nPoll interval   : 0 (1 seconds)\nPrecision       : -20 (0.000000954 seconds)\nRoot delay      : 0.039062 seconds\nRoot dispersion : 0.031250 seconds\nReference ID    : C0000209 ()\nReference time  : Tue Oct 13 17:21:45 2026\nOffset          : -0.000003635 seconds\nPeer delay      : 0.000144440 seconds\nPeer dispersion : 0.000000985 seconds\nResponse time   : 0.000045776 seconds\nJitter asymmetry: +0.00\nNTP tests       : 111 111 1111\nInterleaved     : No\nAuthenticated   : No\nTX timestamping : Kernel\nRX timestamping : Kernel\nTotal TX        : 17\nTotal RX        : 17\nTotal valid RX  : 17\nTotal good RX   : 17\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "selectdata"
+   ],
+   "stdout": "S Name/IP Address        Auth COpts EOpts Last Score     Interval  Leap\n=======================================================================\n* 127.0.0.2                 N ----- -----    0   1.0   -51ms   +51ms  N\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "selectdata",
+    "-v"
+   ],
+   "stdout": "  . State: N - noselect, s - unsynchronised, M - missing samples,\n /         d/D - large distance, ~ - jittery, w/W - waits for others,\n|          S - stale, O - orphan, T - not trusted, P - not preferred,\n|          U - waits for update,, x - falseticker, + - combined, * - best.\n|   Effective options   ---------.  (N - noselect, P - prefer\n|   Configured options  ----.     \\  T - trust, R - require)\n|   Auth. enabled (Y/N) -.   \\     \\     Offset interval --.\n|                        |    |     |                       |\nS Name/IP Address        Auth COpts EOpts Last Score     Interval  Leap\n=======================================================================\n* 127.0.0.2                 N ----- -----    0   1.0   -51ms   +51ms  N\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "activity"
+   ],
+   "stdout": "200 OK\n1 sources online\n0 sources offline\n0 sources doing burst (return to online)\n0 sources doing burst (return to offline)\n0 sources with unknown address\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "serverstats"
+   ],
+   "stdout": "NTP packets received       : 3\nNTP packets dropped        : 0\nCommand packets received   : 18\nCommand packets dropped    : 0\nClient log records dropped : 0\nNTS-KE connections accepted: 0\nNTS-KE connections dropped : 0\nAuthenticated NTP packets  : 0\nInterleaved NTP packets    : 0\nNTP timestamps held        : 0\nNTP timestamp span         : 0\nNTP daemon RX timestamps   : 0\nNTP daemon TX timestamps   : 3\nNTP kernel RX timestamps   : 3\nNTP kernel TX timestamps   : 0\nNTP hardware RX timestamps : 0\nNTP hardware TX timestamps : 0\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "clients"
+   ],
+   "stdout": "Hostname                      NTP   Drop Int IntL Last     Cmd   Drop Int  Last\n===============================================================================\nlocalhost                       3      0  -2   -     0       0      0   -     -\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "clients",
+    "-k"
+   ],
+   "stdout": "Hostname                      NTP   Drop Int IntL Last  NTS-KE   Drop Int  Last\n===============================================================================\nlocalhost                       3      0  -2   -     0       0      0   -     -\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "authdata"
+   ],
+   "stdout": "Name/IP address             Mode KeyID Type KLen Last Atmp  NAK Cook CLen\n=========================================================================\n127.0.0.2                      -     0    0    0    -    0    0    0    0\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "manual",
+    "list"
+   ],
+   "stdout": "210 n_samples = 0\n#    Date     Time(UTC)    Slewed   Original   Residual\n=======================================================\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "accheck",
+    "127.0.0.1"
+   ],
+   "stdout": "208 Access allowed\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "waitsync",
+    "1",
+    "1",
+    "0",
+    "0.1"
+   ],
+   "stdout": "try: 1, refid: 7F000002, correction: 0.012542013, skew: 2.793\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "makestep"
+   ],
+   "stdout": "500 Failure\n",
+   "stderr": "",
+   "code": 1
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "tracking"
+   ],
+   "stdout": "Reference ID    : 7F000002 (127.0.0.2)\nStratum         : 3\nRef time (UTC)  : Tue Oct 13 17:22:14 2026\nSystem time     : 0.000000003 seconds fast of NTP time\nLast offset     : +0.000001494 seconds\nRMS offset      : 0.000060094 seconds\nFrequency       : 1.874 ppm fast\nResidual freq   : +0.044 ppm\nSkew            : 2.793 ppm\nRoot delay      : 0.039200544 seconds\nRoot dispersion : 0.031258926 seconds\nUpdate interval : 1.0 seconds\nLeap status     : Normal\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "tracking"
+   ],
+   "stdout": "7F000002,127.0.0.2,3,1791912134.925188399,-0.000000008,0.000001494,0.000060094,1.874,0.044,2.793,0.039200544,0.031258933,1.0,Normal\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "sources"
+   ],
+   "stdout": "^,*,127.0.0.2,2,0,377,0,-0.012539868,0.000003635,0.050854456\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "sourcestats"
+   ],
+   "stdout": "127.0.0.2,9,5,8,0.044,2.529,-0.012541972,0.000003423\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "ntpdata"
+   ],
+   "stdout": "127.0.0.2,7F000002,12399,127.0.0.1,7F000001,Normal,4,Server,2,0,1,-20,0.000000954,0.039062,0.031250,C0000209,,1791912105.051905632,-0.000003635,0.000144440,0.000000985,0.000045776,0.00,111,111,1111,No,No,Kernel,Kernel,17,17,17,17\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "selectdata"
+   ],
+   "stdout": "*,127.0.0.2,N,-,-,-,-,-,-,-,-,-,-,0,1.0,-0.050852217,0.050855376,Normal\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "activity"
+   ],
+   "stdout": "1,0,0,0,0\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "serverstats"
+   ],
+   "stdout": "3,0,40,0,0,0,0,0,0,0,0,0,3,3,0,0,0\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "clients"
+   ],
+   "stdout": "127.0.0.1,3,0,-2,127,0,0,0,127,4294967295\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "authdata"
+   ],
+   "stdout": "127.0.0.2,-,0,0,0,4294967295,0,0,0,0\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "manual",
+    "list"
+   ],
+   "stdout": "",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-c",
+    "accheck",
+    "127.0.0.1"
+   ],
+   "stdout": "208 Access allowed\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-n",
+    "sources"
+   ],
+   "stdout": "MS Name/IP address         Stratum Poll Reach LastRx Last sample               \n===============================================================================\n^* 127.0.0.2                     2   0   377     0    -13ms[+3635ns] +/-   51ms\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "-N",
+    "sources"
+   ],
+   "stdout": "MS Name/IP address         Stratum Poll Reach LastRx Last sample               \n===============================================================================\n^* 127.0.0.2                     2   0   377     0    -13ms[+3635ns] +/-   51ms\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "sources",
+    "-a"
+   ],
+   "stdout": "MS Name/IP address         Stratum Poll Reach LastRx Last sample               \n===============================================================================\n^* 127.0.0.2                     2   0   377     0    -13ms[+3635ns] +/-   51ms\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "offline",
+    "127.0.0.2"
+   ],
+   "stdout": "200 OK\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "sources"
+   ],
+   "stdout": "MS Name/IP address         Stratum Poll Reach LastRx Last sample               \n===============================================================================\n^? 127.0.0.2                     2   0     0     0    -13ms[+3635ns] +/-   51ms\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "activity"
+   ],
+   "stdout": "200 OK\n0 sources online\n1 sources offline\n0 sources doing burst (return to online)\n0 sources doing burst (return to offline)\n0 sources with unknown address\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "online",
+    "127.0.0.2"
+   ],
+   "stdout": "200 OK\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "burst",
+    "2/4",
+    "127.0.0.2"
+   ],
+   "stdout": "200 OK\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "activity"
+   ],
+   "stdout": "200 OK\n0 sources online\n0 sources offline\n1 sources doing burst (return to online)\n0 sources doing burst (return to offline)\n0 sources with unknown address\n",
+   "stderr": "",
+   "code": 0
+  },
+  {
+   "scenario": "live",
+   "offset_ms": 12.5,
+   "args": [
+    "ntpdata",
+    "127.0.0.2"
+   ],
+   "stdout": "Remote address  : 127.0.0.2 (7F000002)\nRemote port     : 12399\nLocal address   : 127.0.0.1 (7F000001)\nLeap status     : Normal\nVersion         : 4\nMode            : Server\nStratum         : 2\nPoll interval   : 0 (1 seconds)\nPrecision       : -20 (0.000000954 seconds)\nRoot delay      : 0.039062 seconds\nRoot dispersion : 0.031250 seconds\nReference ID    : C0000209 ()\nReference time  : Tue Oct 13 17:21:45 2026\nOffset          : -0.000003635 seconds\nPeer delay      : 0.000144440 seconds\nPeer dispersion : 0.000000985 seconds\nResponse time   : 0.000045776 seconds\nJitter asymmetry: +0.00\nNTP tests       : 111 111 1111\nInterleaved     : No\nAuthenticated   : No\nTX timestamping : Kernel\nRX timestamping : Kernel\nTotal TX        : 17\nTotal RX        : 17\nTotal valid RX  : 17\nTotal good RX   : 17\n",
+   "stderr": "",
+   "code": 0
+  }
+ ]
+}

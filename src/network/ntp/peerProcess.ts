@@ -43,6 +43,7 @@ export function resetPeer(peer: NtpAssociation, system: NtpSystemState, nowMs: n
   peer.burst = 0;
   peer.unreach = 0;
   peer.synced = false;
+  peer.statistics.reset();
   peer.filter = emptyFilter();
   peer.updateMs = nowMs;
   peer.outdateMs = nowMs;

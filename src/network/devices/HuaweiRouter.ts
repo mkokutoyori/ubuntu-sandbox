@@ -43,6 +43,7 @@ import { RadiusTcpClient, RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
 import { SnmpAgent } from '../snmp/SnmpAgent';
+import { ntpV4MibRows } from '../snmp/mibs/NtpV4Mib';
 import { projectSnmpServiceOntoAgent } from '../snmp/snmpProjection';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
@@ -173,6 +174,9 @@ export class HuaweiRouter extends Router {
       this.tacacsClient, this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+    this.snmpAgent.registerSubtree(() => ntpV4MibRows(this.ntpAgent, {
+      softwareName: 'VRP NTP', softwareVersion: 'Huawei Versatile Routing Platform', vendor: 'Huawei Technologies Co., Ltd.', systemType: 'Huawei VRP',
+    }));
     projectSnmpServiceOntoAgent(this.getSnmpService(), this.snmpAgent);
   }
 

@@ -1,3 +1,4 @@
+import { POLICY_REFERENCE_ATTRIBUTES } from './firewallPolicyReference';
 import {
   choice, count, enable, reference, refList, text, word,
   type FortiCommitContext, type FortiObjectView, type FortiTableSpec,
@@ -189,6 +190,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
         + 'database; accepting this attribute would install a rule that could '
         + 'never match.',
     },
+    ...POLICY_REFERENCE_ATTRIBUTES,
   ],
   onCommit(object, context) {
     const absent = attributManquant(object);

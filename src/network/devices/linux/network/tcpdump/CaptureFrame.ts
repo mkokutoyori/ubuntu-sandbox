@@ -108,6 +108,7 @@ export interface CaptureFrame {
   tcpChecksumOk?: boolean;
   udpChecksum?: number;
   udpChecksumOk?: boolean;
+  udpChecksumComputed?: number;
   ipChecksum?: number;
   ipChecksumOk?: boolean;
   arpOp?: 'request' | 'reply';
@@ -572,8 +573,8 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.srcPort = udp.sourcePort;
     base.dstPort = udp.destinationPort;
     base.udpChecksum = udp.checksum;
-    base.udpChecksumOk = udp.checksum === 0
-      || computeUdpChecksum(udp, base.srcIp!, base.dstIp!) === udp.checksum;
+    base.udpChecksumComputed = computeUdpChecksum(udp, base.srcIp!, base.dstIp!);
+    base.udpChecksumOk = udp.checksum === 0 || base.udpChecksumComputed === udp.checksum;
     base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
     base.appPayload = appPayloadBytes(udp.payload);
     if (udp.sourcePort === 53 || udp.destinationPort === 53) {

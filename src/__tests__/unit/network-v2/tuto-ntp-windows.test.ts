@@ -49,9 +49,20 @@ async function serveur() {
   return r;
 }
 
+function admin(pc: WindowsPC): WindowsPC {
+  pc.setCurrentUser('Administrator');
+  return pc;
+}
+
+async function configure(pc: WindowsPC, command: string): Promise<string> {
+  const out = await pc.executeCommand(command);
+  converge(clock, 300_000);
+  return out;
+}
+
 /** Un poste Windows cable au serveur. */
 async function poste(srv: CiscoRouter) {
-  const pc = new WindowsPC('windows-pc', `W${++serie}`);
+  const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
   new Cable(`n${serie}`).connect(srv.getPort('GigabitEthernet0/0')!, pc.getPorts()[0]);
   await pc.executeCommand(
     'netsh interface ip set address "Ethernet0" static 192.168.100.9 255.255.255.0');
@@ -68,7 +79,7 @@ describe('§6.2 — le PDC Emulator se configure, et ca se voit', () => {
   it('avant configuration, la machine ne pretend pas etre synchronisee', async () => {
     // `Stratum: 3` etait ecrit en dur sur une machine qui n'interrogeait
     // personne.
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     const st = await pc.executeCommand('w32tm /query /status');
     expect(ligne(st, 'Stratum')).toBe('Stratum: 0 (unspecified)');
     expect(ligne(st, 'Source')).toBe('Source: Local CMOS Clock');
@@ -77,10 +88,10 @@ describe('§6.2 — le PDC Emulator se configure, et ca se voit', () => {
   it('`/config ... /update` fait vraiment interroger le serveur', async () => {
     const srv = await serveur();
     const pc = await poste(srv);
-    expect(await pc.executeCommand(CONFIG)).toContain('The command completed successfully');
+    expect(await configure(pc, CONFIG)).toContain('The command completed successfully');
     const st = await pc.executeCommand('w32tm /query /status');
     expect(ligne(st, 'Stratum')).toContain('Stratum: 3');
-    expect(ligne(st, 'Source')).toBe('Source: 192.168.100.5');
+    expect(ligne(st, 'Source')).toBe('Source: 192.168.100.5,0x8');
     expect(ligne(st, 'ReferenceId')).toContain('(source IP:  192.168.100.5)');
   });
 
@@ -93,7 +104,7 @@ describe('§6.2 — le PDC Emulator se configure, et ca se voit', () => {
       'w32tm /config /manualpeerlist:"192.168.100.5,0x8" /syncfromflags:manual');
     expect(ligne(await pc.executeCommand('w32tm /query /status'), 'Stratum'))
       .toBe('Stratum: 0 (unspecified)');
-    await pc.executeCommand('w32tm /config /update');
+    await configure(pc, 'w32tm /config /update');
     expect(ligne(await pc.executeCommand('w32tm /query /status'), 'Stratum'))
       .toContain('Stratum: 3');
   });
@@ -103,7 +114,7 @@ describe('§6.3 — chaque `/query` est une vue distincte', () => {
   async function labo() {
     const srv = await serveur();
     const pc = await poste(srv);
-    await pc.executeCommand(CONFIG);
+    await configure(pc, CONFIG);
     return pc;
   }
 
@@ -134,8 +145,17 @@ describe('§6.3 — chaque `/query` est une vue distincte', () => {
     expect(ligne(c, 'Type:')).toBe('Type: NTP (Local)');
   });
 
-  it('sans pair configure, `/peers` le dit', async () => {
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+  it('a machine never configured lists the default pair as Pending', async () => {
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
+    const peers = await pc.executeCommand('w32tm /query /peers');
+    expect(peers).toContain('#Peers: 1');
+    expect(ligne(peers, 'Peer:')).toBe('Peer: time.windows.com,0x9');
+    expect(ligne(peers, 'State:')).toBe('State: Pending');
+  });
+
+  it('with NoSync there is no pair', async () => {
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
+    await pc.executeCommand('w32tm /config /syncfromflags:no /update');
     expect(await pc.executeCommand('w32tm /query /peers')).toBe('#Peers: 0');
   });
 });
@@ -144,16 +164,16 @@ describe('§6.3 — `/resync` et `/stripchart` mesurent', () => {
   it('`/resync` sans aucune source echoue en le disant', async () => {
     // Le vrai message, et il est utile : il dit que la machine n'a
     // aucune source, pas que le reseau a echoue.
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     const r = await pc.executeCommand('w32tm /resync /force');
-    expect(r).toContain('no time data was available');
-    expect(r).toContain('The command failed to complete successfully');
+    expect(r).toBe('Sending resync command to local computer\n'
+      + 'The computer did not resync because no time data was available.');
   });
 
   it('`/resync` avec une source aboutit', async () => {
     const srv = await serveur();
     const pc = await poste(srv);
-    await pc.executeCommand(CONFIG);
+    await configure(pc, CONFIG);
     expect(await pc.executeCommand('w32tm /resync /force'))
       .toContain('The command completed successfully');
   });
@@ -168,7 +188,7 @@ describe('§6.3 — `/resync` et `/stripchart` mesurent', () => {
     // Chaque echantillon porte un ecart signe, comme le tutoriel le
     // montre — et c'est une VRAIE interrogation, pas une suite de
     // nombres plausibles.
-    const mesures = out.split('\n').filter((l) => /^\d\d:\d\d:\d\d, [+-]/.test(l));
+    const mesures = out.split('\n').filter((l) => /^\d\d:\d\d:\d\d, d:[+-]\d\d\.\d{7}s o:[+-]\d\d\.\d{7}s  \[[ *|]+\]$/.test(l));
     expect(mesures).toHaveLength(3);
   });
 
@@ -181,36 +201,36 @@ describe('§6.3 — `/resync` et `/stripchart` mesurent', () => {
   });
 
   it('`/stripchart` ne laisse pas de pair derriere lui', async () => {
-    // Il mesure, il ne configure pas : la cible ne doit pas apparaitre
-    // dans `/query /peers` apres coup.
     const srv = await serveur();
     const pc = await poste(srv);
+    const before = await pc.executeCommand('w32tm /query /peers');
     await pc.executeCommand('w32tm /stripchart /computer:192.168.100.5 /samples:2');
-    expect(await pc.executeCommand('w32tm /query /peers')).toBe('#Peers: 0');
+    expect(await pc.executeCommand('w32tm /query /peers')).toBe(before);
   });
 });
 
 describe('§6.2 — les drapeaux choisissent vraiment le mode', () => {
-  it('`0x1` cree un pair symetrique, `0x8` un client', async () => {
+  it('`0x4` creates a symmetric active pair, `0x8` a client, `0x1` only sets the special interval', async () => {
     const srv = await serveur();
     const pc = await poste(srv);
     await pc.executeCommand('w32tm /config /manualpeerlist:"192.168.100.5,0x1" '
       + '/syncfromflags:manual /update');
     expect(ligne(await pc.executeCommand('w32tm /query /peers'), 'Mode:'))
+      .toBe('Mode: 3 (Client)');
+    await pc.executeCommand('w32tm /config /manualpeerlist:"192.168.100.5,0x4" '
+      + '/syncfromflags:manual /update');
+    expect(ligne(await pc.executeCommand('w32tm /query /peers'), 'Mode:'))
       .toBe('Mode: 1 (Symmetric Active)');
-    await pc.executeCommand(CONFIG);
+    await configure(pc, CONFIG);
     expect(ligne(await pc.executeCommand('w32tm /query /peers'), 'Mode:'))
       .toBe('Mode: 3 (Client)');
   });
 
-  it('un drapeau que ce simulateur ne sert pas est REFUSE', async () => {
-    // `0x2` est le mode broadcast : ce simulateur n'en a pas, et
-    // l'accepter ferait croire a une ecoute qui n'existe pas.
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+  it('a flag outside 0x1-0x8 is refused', async () => {
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     const out = await pc.executeCommand(
-      'w32tm /config /manualpeerlist:"1.2.3.4,0x2" /update');
-    expect(out).toContain('The following flag is not supported: 0x2');
-    expect(out).toContain('The command failed to complete successfully');
+      'w32tm /config /manualpeerlist:"1.2.3.4,0x10" /update');
+    expect(out).toContain('The parameter is incorrect');
   });
 
   it('`/syncfromflags:manual` est ce qui fait lire la liste manuelle', async () => {
@@ -220,21 +240,22 @@ describe('§6.2 — les drapeaux choisissent vraiment le mode', () => {
     const pc = await poste(srv);
     await pc.executeCommand(
       'w32tm /config /manualpeerlist:"192.168.100.5,0x8" /syncfromflags:domhier /update');
+    converge(clock, 300_000);
     expect(ligne(await pc.executeCommand('w32tm /query /status'), 'Stratum'))
       .toBe('Stratum: 0 (unspecified)');
-    await pc.executeCommand(CONFIG);
+    await configure(pc, CONFIG);
     expect(ligne(await pc.executeCommand('w32tm /query /status'), 'Stratum'))
       .toContain('Stratum: 3');
   });
 
   it('un `syncfromflags` inconnu est refuse', async () => {
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     expect(await pc.executeCommand('w32tm /config /syncfromflags:zzz /update'))
       .toContain('The parameter is incorrect');
   });
 
   it('une sous-commande inconnue rend l\'aide, pas une autre commande', async () => {
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     const out = await pc.executeCommand('w32tm /zzz');
     expect(out).toContain('/stripchart /computer:<target>');
     expect(out).not.toBe('w32tm /query /status');
@@ -244,14 +265,14 @@ describe('§6.2 — les drapeaux choisissent vraiment le mode', () => {
 describe('§6.3 — le fuseau horaire', () => {
   it('`Get-TimeZone` existe et decrit le fuseau courant', async () => {
     // L'applet n'existait ni en cmd ni en PowerShell.
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     const out = await pc.executeCommand('powershell -c "Get-TimeZone"');
     expect(out).not.toContain('not recognized');
     expect(out).toContain('Id                         : UTC');
   });
 
   it('`Set-TimeZone` change vraiment le fuseau', async () => {
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     await pc.executeCommand(
       'powershell -c "Set-TimeZone -Id \'W. Central Africa Standard Time\'"');
     const out = await pc.executeCommand('powershell -c "Get-TimeZone"');
@@ -260,14 +281,14 @@ describe('§6.3 — le fuseau horaire', () => {
   });
 
   it('un identifiant inconnu est refuse', async () => {
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     const out = await pc.executeCommand('powershell -c "Set-TimeZone -Id \'Mars/Olympus\'"');
     expect(out).toContain('Cannot find the time zone');
     expect(await pc.executeCommand('powershell -c "Get-TimeZone"')).toContain(': UTC');
   });
 
   it('`-ListAvailable` rend la liste', async () => {
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     const out = await pc.executeCommand('powershell -c "Get-TimeZone -ListAvailable"');
     expect(out).toContain('W. Central Africa Standard Time');
     expect(out).toContain('Eastern Standard Time');
@@ -276,7 +297,7 @@ describe('§6.3 — le fuseau horaire', () => {
   it('le decalage sort de la MEME table que celle de Linux', async () => {
     // Sans magasin partage, une machine Windows et une machine Linux du
     // meme laboratoire donneraient deux decalages pour `WAT`.
-    const pc = new WindowsPC('windows-pc', `W${++serie}`);
+    const pc = admin(new WindowsPC('windows-pc', `W${++serie}`));
     await pc.executeCommand(
       'powershell -c "Set-TimeZone -Id \'W. Central Africa Standard Time\'"');
     expect(pc.getTimezoneStore().timezone).toBe('Africa/Douala');
@@ -287,7 +308,7 @@ describe('le moteur est le meme sur les trois plateformes', () => {
   it('un Windows et un Cisco branches au meme maitre atteignent la meme strate', async () => {
     const srv = await serveur();
     const win = await poste(srv);
-    await win.executeCommand(CONFIG);
+    await configure(win, CONFIG);
     const cisco = new CiscoRouter(`CX${++serie}`);
     new Cable(`x${serie}`).connect(
       srv.getPort('GigabitEthernet0/1')!, cisco.getPort('GigabitEthernet0/0')!);

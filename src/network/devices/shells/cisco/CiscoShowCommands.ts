@@ -59,6 +59,7 @@ import { getHttpService } from '@/network/equipment/RouterServiceCapabilities';
 import { IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE, type Ipv6NeighborRow } from './ciscoTableLayouts';
 import { vrfRunningConfigLines, type VrfHost } from './ciscoVrfStore';
 import { formatIosElapsed } from './iosElapsed';
+import { renderNtpBroadcastLines } from './ciscoNtpBroadcast';
 
 export function serviceFlagLines(
   device: { getServiceFlags?: () => ReadonlyMap<string, boolean> },
@@ -1188,6 +1189,8 @@ function interfaceConfigLines(
   // `ntp disable` posé sur un lien exterieur disparaissait a l'import
   // de la topologie et l'interface revenait servante.
   if (ntpAgentOf(router)?.isInterfaceDisabled(name)) lines.push(` ntp disable`);
+  const ntpConfig = ntpAgentOf(router)?.getConfig();
+  lines.push(...renderNtpBroadcastLines(ntpConfig?.broadcastServers.get(name), ntpConfig?.broadcastClientInterfaces.get(name)));
   if (!port.isNegotiationAuto?.()) {
     const sp = port.getSpeed?.();
     if (sp) lines.push(` speed ${sp}`);
