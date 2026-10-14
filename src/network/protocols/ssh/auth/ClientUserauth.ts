@@ -20,7 +20,7 @@ export type UserauthReply =
   | { readonly kind: 'closed' };
 
 export type UserauthOutcome =
-  | { readonly kind: 'success' }
+  | { readonly kind: 'success'; readonly method?: AuthMethodType }
   | { readonly kind: 'denied'; readonly methods: string }
   | { readonly kind: 'disconnect'; readonly reason: string }
   | { readonly kind: 'closed' };
@@ -137,8 +137,10 @@ export async function runUserauth(
   };
 
   let reply = await transport.request('none', {});
+  let lastMethod: AuthMethodType | undefined;
   for (;;) {
     if (reply.kind === 'pk_ok') return { kind: 'closed' };
+    if (reply.kind === 'success') return lastMethod === undefined ? reply : { kind: 'success', method: lastMethod };
     if (reply.kind !== 'failure') return reply;
     let sent: UserauthReply | null = null;
     while (sent === null) {
@@ -146,6 +148,7 @@ export async function runUserauth(
       if (method === null) return { kind: 'denied', methods: reply.methods };
       sent = await attempt(method);
       if (sent === null) disabled.add(method);
+      else lastMethod = method;
     }
     reply = sent;
   }

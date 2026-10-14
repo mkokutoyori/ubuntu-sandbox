@@ -22,6 +22,7 @@ import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 import { readSshdConfig } from '../../../protocols/ssh/server/SshdConfigText';
 import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
 import { findHostByAddress, isPathReachable } from './HostLookup';
+import type { ExecChannelOptions } from '../../../protocols/ssh/channels/ISshChannel';
 import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
@@ -55,7 +56,7 @@ import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
 import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
-import { authorizedKeyAdmits, parseAuthorizedKeysLine, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
+import { authorizedKeyAdmits, parseAuthorizedKeysLine, sshWildcardMatches, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
 import { parseProxyJumpSpec, type ProxyHop } from '@/terminal/sessions/sshArgs';
 import { localListenerFailure, NO_LOCAL_FORWARDING, remoteForwardFailure } from '../../../protocols/ssh/ForwardOpening';
 
@@ -118,6 +119,7 @@ export interface SshClientOpts {
     command: string, env: Record<string, string>,
   ) => { output: string; exitCode: number } | null;
   wireAuthenticated?: boolean;
+  wireMethod?: string;
   wireAuthRefused?: boolean;
   wireDenial?: string;
   wireOutcome?: TcpWireOutcome;
@@ -517,19 +519,7 @@ const DEFAULT_ENV_PATTERNS: readonly string[] = ['LANG', 'LC_*'];
 
 /** Match an environment variable name against a glob pattern set. */
 function envNameMatches(name: string, patterns: readonly string[]): boolean {
-  return patterns.some((p) => {
-    if (p === name) return true;
-    if (!p.includes('*') && !p.includes('?')) return false;
-    const re = new RegExp(
-      '^' +
-        p
-          .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-          .replace(/\*/g, '.*')
-          .replace(/\?/g, '.') +
-        '$',
-    );
-    return re.test(name);
-  });
+  return patterns.some((p) => sshWildcardMatches(p, name));
 }
 
 /** Collect every value of a directive from an sshd_config / ssh_config blob. */
@@ -591,6 +581,29 @@ function computeForwardedEnv(
   return forwarded;
 }
 
+export function execChannelOptionsFor(opts: SshClientOpts, args: string[]): ExecChannelOptions {
+  const { flags } = splitSshArgs(args);
+  const callerEnv = opts.callerEnv ?? {};
+  const send = clientSendEnvPatterns(opts, flags);
+  const environment = new Map<string, string>();
+  for (const [name, value] of Object.entries(callerEnv)) {
+    if (envNameMatches(name, send)) environment.set(name, value);
+  }
+  const wantsTty = (flags.includes('-t') || flags.includes('-tt')) && !flags.includes('-T');
+  return {
+    environment,
+    ...(wantsTty
+      ? {
+        pty: {
+          term: callerEnv['TERM'] ?? 'xterm',
+          columns: Number(callerEnv['COLUMNS'] ?? 80) || 80,
+          rows: Number(callerEnv['LINES'] ?? 24) || 24,
+        },
+      }
+      : {}),
+  };
+}
+
 /** Extract -p <port> from argv (default 22). */
 export interface WireExecTarget {
   host: string;
@@ -607,9 +620,10 @@ export interface WireExecTarget {
 
 export function wireExecTarget(
   args: string[],
-  vfs: { normalizePath(path: string, cwd: string): string },
+  vfs: { normalizePath(path: string, cwd: string): string; readFile(path: string): string | null },
   cwd: string,
   defaultUser: string,
+  home = '/root',
 ): WireExecTarget | null {
   const { positional, flags } = splitSshArgs(args);
   const target = positional[0];
@@ -618,20 +632,29 @@ export function wireExecTarget(
     if (flags.includes(blocking)) return null;
   }
   const at = target.indexOf('@');
-  const host = at >= 0 ? target.slice(at + 1) : target;
-  const user = at >= 0 ? target.slice(0, at) : defaultUser;
-  if (host === '') return null;
+  const typedHost = at >= 0 ? target.slice(at + 1) : target;
+  if (typedHost === '') return null;
+  const configText = vfs.readFile(`${home}/.ssh/config`);
+  const entry = configText ? SshConfig.parse(configText).resolve(typedHost) : null;
+  const host = entry?.hostName ?? typedHost;
+  const user = at >= 0 ? target.slice(0, at) : entry?.user ?? defaultUser;
   const identities: string[] = [];
   for (let i = 0; i < flags.length; i++) {
     if (flags[i] === '-i' && flags[i + 1]) identities.push(vfs.normalizePath(flags[i + 1], cwd));
   }
+  if (identities.length === 0 && entry?.identityFile) {
+    identities.push(vfs.normalizePath(
+      entry.identityFile.startsWith('~/') ? `${home}/${entry.identityFile.slice(2)}` : entry.identityFile, cwd));
+  }
   const asked = clientOption(flags, 'StrictHostKeyChecking');
   return {
-    host, user, port: clientPort(flags), identities,
+    host, user,
+    port: flags.includes('-p') ? clientPort(flags) : entry?.port ?? 22,
+    identities,
     command: joinRemoteCommand(positional.slice(1)),
     holdOnly: flags.includes('-N'),
     forksToBackground: flags.includes('-f'),
-    strict: parseStrictHostKeyChecking(asked) ?? 'accept-new',
+    strict: parseStrictHostKeyChecking(asked) ?? entry?.strictHostKeyChecking ?? 'accept-new',
     authentication: sshClientAuthentication(sshOptionValues(flags)),
     algorithms: sshClientAlgorithms(sshOptionValues(flags)),
   };
@@ -986,7 +1009,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   };
 
   // Login policy gate (root login, allowed users, etc.).
-  const login = machine.sshdAcceptsLogin?.(
+  const wireDecided = opts.wireAuthenticated === true;
+  const login = wireDecided ? { ok: true, reason: undefined } : machine.sshdAcceptsLogin?.(
     remoteUser, { address: opts.sourceIp, host: opts.sourceHostname, method: 'pending' }) ?? { ok: true };
   if (!login.ok) {
     noteRefusal();
@@ -1022,7 +1046,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const remoteEvents = (machine as unknown as {
     getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; ip: string; path?: string; port?: number; reason?: string; method?: string }) => void } };
   }).getSshServerContext?.()?.events;
-  const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser, advertisedSshMethods(machine), (offendingPath) => {
+  const auth = wireDecided
+    ? { method: (opts.wireMethod ?? 'password') as 'password' | 'publickey', serverMethods: '', matchedKey: undefined }
+    : resolveSshAuthMethod(opts, flags, remoteExec, remoteUser, advertisedSshMethods(machine), (offendingPath) => {
     remoteEvents?.emit({
       kind: 'auth_strict_modes_refused',
       user: remoteUser,
@@ -1031,7 +1057,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       port: 22,
     });
   });
-  const methodGate = auth.method === null ? { ok: true } : machine.sshdAcceptsLogin?.(remoteUser, {
+  const methodGate = wireDecided || auth.method === null ? { ok: true } : machine.sshdAcceptsLogin?.(remoteUser, {
     address: opts.sourceIp, host: opts.sourceHostname, method: auth.method,
     keyForcesCommand: auth.matchedKey?.options?.command !== undefined,
   }) ?? { ok: true };
@@ -1046,7 +1072,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // When the client supplied a password (via sshpass), validate it now.
   // Wrong passwords drive the brute-force detection chain: the
   // auth_failure event lands on the throttler which trips fail2ban.
-  const offered = auth.method === 'password'
+  const offered = auth.method === 'password' && !wireDecided
     ? verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword, machine)
     : 'ok';
   if (offered === 'wrong-password') {
@@ -1078,7 +1104,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // PAM account phase: credentials are correct, but chage-tracked account
   // or password expiry can still refuse the session — independently of
   // whether the password/key offered was right.
-  const lifecycleGate = (remoteExec?.userMgr as unknown as {
+  const lifecycleGate = wireDecided ? undefined : (remoteExec?.userMgr as unknown as {
     accountLifecycleGate?: (u: string) => AccountLifecycleVerdict;
   } | undefined)?.accountLifecycleGate?.(remoteUser);
   if (lifecycleGate && !lifecycleGate.ok) {
@@ -1109,7 +1135,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // PAM login banner: inside chage -W's warning window, a successful
   // login still shows "Warning: your password will expire in N day(s)."
   // without blocking the session.
-  const warningDays = (remoteExec?.userMgr as unknown as {
+  const warningDays = wireDecided ? null : (remoteExec?.userMgr as unknown as {
     passwordExpiryWarningDays?: (u: string) => number | null;
   } | undefined)?.passwordExpiryWarningDays?.(remoteUser) ?? null;
   const warningBanner = warningDays !== null
@@ -1192,8 +1218,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const sIdx = flags.indexOf('-s');
   const isSftpSubsystem = sIdx >= 0 && flags[sIdx + 1] === 'sftp';
   if (remoteCmd && !isSftpSubsystem) {
-    const globalForced = readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
-    const keyForced = auth.matchedKey?.options?.command ?? null;
+    const globalForced = wireDecided ? null : readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
+    const keyForced = wireDecided ? null : auth.matchedKey?.options?.command ?? null;
     const forced = globalForced ?? keyForced;
     if (forced === 'internal-sftp') {
       return {
@@ -1203,7 +1229,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     }
     const originalCmd = remoteCmd;
     if (forced) remoteCmd = forced;
-    const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
+    const remoteUidBeforeAfter = wireDecided ? null : swapRemoteUser(machine, remoteUser);
     const keyBansAgent = auth.matchedKey?.options?.noAgentForwarding === true;
     const effView = effectiveSshdView(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
     const serverBansAgent = effView
@@ -1282,7 +1308,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // Prepend the rc body and `shopt -s expand_aliases` so alias
       // expansion stays on for non-interactive expansion too.
       let effectiveCmd = remoteCmd;
-      if (hasTty) {
+      if (hasTty && !wireDecided) {
         const entry = remoteExec?.userMgr.getUser(remoteUser);
         const home = entry?.home ?? `/home/${remoteUser}`;
         const rc = remoteExec?.vfs.readFile(`${home}/.bashrc`) ?? '';

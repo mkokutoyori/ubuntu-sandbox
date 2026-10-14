@@ -134,6 +134,15 @@ export function parseSshConfigBlock(block: string): SshHostConfig {
   };
 }
 
+export function sshWildcardMatches(pattern: string, text: string): boolean {
+  if (pattern === text) return true;
+  if (!pattern.includes('*') && !pattern.includes('?')) return false;
+  const re = new RegExp(
+    '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+  );
+  return re.test(text);
+}
+
 export function expandTilde(path: string, homeDir: string): string {
   if (path === '~') return homeDir;
   if (path.startsWith('~/')) return `${homeDir}/${path.slice(2)}`;

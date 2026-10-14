@@ -2357,6 +2357,12 @@ export abstract class LinuxMachine extends EndHost
     return peerPort;
   }
 
+  takeSessionHold(): number {
+    const held = this.executor.sessionHoldSeconds;
+    this.executor.sessionHoldSeconds = 0;
+    return held;
+  }
+
   openSshSessionPort(user: string, fromIp: string): number | undefined {
     return this.sessionTable.list().filter((s) => s.user === user && s.fromIp === fromIp && !s.closed).at(-1)?.fromPort;
   }

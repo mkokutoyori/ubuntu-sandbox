@@ -161,7 +161,7 @@ import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Geto
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
-import { runSshClient, wireExecTarget } from './network/LinuxSshClient';
+import { execChannelOptionsFor, runSshClient, wireExecTarget } from './network/LinuxSshClient';
 import { wireReachOutcomeRetransmitting } from '@/terminal/ssh/wireSshLogin';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
@@ -194,6 +194,7 @@ import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
 import { SshSession } from '../../protocols/ssh/session/SshSession';
+import type { ExecChannelOptions } from '../../protocols/ssh/channels/ISshChannel';
 import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
 import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
 import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
@@ -1807,9 +1808,9 @@ export class LinuxCommandExecutor {
   }
 
   private async relayOverWire(
-    session: SshSession, command: string,
+    session: SshSession, command: string, options?: ExecChannelOptions,
   ): Promise<{ output: string; exitCode: number } | null> {
-    const channel = session.openExecChannel(command);
+    const channel = session.openExecChannel(command, options);
     if (!isOk(channel)) return null;
     const result = await channel.value.execute();
     channel.value.close();
@@ -1826,9 +1827,7 @@ export class LinuxCommandExecutor {
       ?? this._scenarioStdin ?? '')
       .split('\n')[0] || undefined;
     const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
-    const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
-    const peer = target !== null ? this.sshPeerDevice(target.host) : null;
-    const linuxPeer = (peer as { executor?: unknown } | null)?.executor !== undefined;
+    const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir());
     const reach = target === null
       ? undefined
       : await wireReachOutcomeRetransmitting(this.localDevice, target.host, target.port);
@@ -1852,8 +1851,9 @@ export class LinuxCommandExecutor {
         }),
         wire.authRefused);
     }
-    const settled = !linuxPeer && target !== null && target.command
-      ? await this.relayOverWire(session, target.command)
+    const execOptions = execChannelOptionsFor(opts, args);
+    const settled = target !== null && target.command && !target.holdOnly
+      ? await this.relayOverWire(session, target.command, execOptions)
       : null;
     const interactif = target !== null && !target.command && !target.holdOnly;
     const relayedShell = interactif
@@ -1865,6 +1865,7 @@ export class LinuxCommandExecutor {
       return this.finishSshClientResult(runSshClient({
         ...opts,
         wireAuthenticated: true,
+        wireMethod: session.authenticatedMethod ?? undefined,
         wireOutcome: reach,
         wirePeerIp: this.machineAnswering(session) ?? undefined,
         wireNotices: interactif ? wire.notices : undefined,
@@ -1877,7 +1878,7 @@ export class LinuxCommandExecutor {
         },
         execRelay: (command) => {
           if (settled && target !== null && command === target.command) return settled;
-          const channel = session.openExecChannel(command);
+          const channel = session.openExecChannel(command, execOptions);
           if (!isOk(channel)) return null;
           const result = channel.value.run();
           channel.value.close();

@@ -2306,7 +2306,7 @@ describe('§34 — sudo over ssh', () => {
       name: 'sudo with bad password is rejected and audit logs the failure',
       setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 \'echo wrong | sudo -S whoami\'', 'admin\n'); },
       on: l => l.pc2,
-      cmd: 'tail -5 /var/log/auth.log',
+      cmd: 'tail -12 /var/log/auth.log',
       contains: [/incorrect password|authentication failure/i],
     },
     {

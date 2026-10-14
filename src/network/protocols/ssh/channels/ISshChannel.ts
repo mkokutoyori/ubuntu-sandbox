@@ -119,6 +119,11 @@ export interface ISshShellChannel extends ISshChannel {
   sendSignal(signal: 'SIGINT'): void;
 }
 
+export interface ExecChannelOptions {
+  readonly environment?: ReadonlyMap<string, string>;
+  readonly pty?: { readonly term: string; readonly columns: number; readonly rows: number };
+}
+
 export interface ISshExecChannel extends ISshChannel {
   readonly type: 'exec';
   execute(): Promise<ExecResult>;

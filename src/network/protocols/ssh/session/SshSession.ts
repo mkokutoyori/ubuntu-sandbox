@@ -41,6 +41,7 @@ import {
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import type {
+  ExecChannelOptions,
   ISshExecChannel,
   ISshSftpChannel,
   ISshShellChannel,
@@ -160,6 +161,12 @@ export class SshSession implements ISshSession {
     return this._state.kind === 'connected';
   }
 
+  private authenticatedWith: string | null = null;
+
+  get authenticatedMethod(): string | null {
+    return this.authenticatedWith;
+  }
+
   get localEndpoint(): { readonly ip: string; readonly port: number } | null {
     return this.conn === null ? null : { ip: this.conn.localIp, port: this.conn.localPort };
   }
@@ -265,13 +272,14 @@ export class SshSession implements ISshSession {
     return ok(channel);
   }
 
-  openExecChannel(command: string): Result<ISshExecChannel> {
+  openExecChannel(command: string, options?: ExecChannelOptions): Result<ISshExecChannel> {
     if (!this.connection || !this.isConnected) {
       return err({ kind: 'NOT_AUTHENTICATED' });
     }
     const channel: ISshExecChannel = this.channelManager.openExec(
       this.connection,
       command,
+      options,
     );
     return ok(channel);
   }
@@ -487,7 +495,10 @@ export class SshSession implements ISshSession {
       retry: () => handler.showAuthFailure?.(user, opts.host),
       inform: (text) => handler.showInfo(text),
     }).finally(() => offClosed?.());
-    if (outcome.kind === 'success') return ok(undefined);
+    if (outcome.kind === 'success') {
+      this.authenticatedWith = outcome.method ?? 'none';
+      return ok(undefined);
+    }
     handler.showWarning(userauthFailureLines(outcome, user, opts.host, opts.port));
     return err({
       kind: 'AUTH_FAILED', user, attemptsLeft: 0,
