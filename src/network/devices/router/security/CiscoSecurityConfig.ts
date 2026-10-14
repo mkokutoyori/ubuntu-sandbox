@@ -1,3 +1,4 @@
+import { ServerLiveness } from '../../../radius/ServerLiveness';
 import { SshPubkeyChain } from './SshPubkeyChain';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -53,6 +54,9 @@ export interface RadiusGlobalDefaults {
   retransmit?: number;
   authPort?: number;
   acctPort?: number;
+  deadtimeMinutes?: number;
+  deadCriteriaTimeSec?: number;
+  deadCriteriaTries?: number;
 }
 
 export interface TacacsGlobalDefaults {
@@ -401,6 +405,7 @@ export class CiscoSecurityConfig {
   aaaGroups: Map<string, AaaServerGroup> = new Map();
   legacyHosts: AaaLegacyServerHost[] = [];
   radiusDefaults: RadiusGlobalDefaults = {};
+  readonly radiusLiveness = new ServerLiveness();
   tacacsDefaults: TacacsGlobalDefaults = {};
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
@@ -659,6 +664,14 @@ export class CiscoSecurityConfig {
     }
     if (this.radiusDefaults.authPort !== undefined) {
       lines.push(`radius-server auth-port ${this.radiusDefaults.authPort}`);
+    }
+    if (this.radiusDefaults.deadtimeMinutes) {
+      lines.push(`radius-server deadtime ${this.radiusDefaults.deadtimeMinutes}`);
+    }
+    if (this.radiusDefaults.deadCriteriaTimeSec !== undefined || this.radiusDefaults.deadCriteriaTries !== undefined) {
+      const time = this.radiusDefaults.deadCriteriaTimeSec;
+      const tries = this.radiusDefaults.deadCriteriaTries;
+      lines.push(`radius-server dead-criteria${time !== undefined ? ` time ${time}` : ''}${tries !== undefined ? ` tries ${tries}` : ''}`);
     }
     if (this.radiusDefaults.acctPort !== undefined) {
       lines.push(`radius-server acct-port ${this.radiusDefaults.acctPort}`);

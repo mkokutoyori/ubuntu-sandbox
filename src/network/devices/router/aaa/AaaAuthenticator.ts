@@ -9,6 +9,10 @@ import type { VtyLineConfig } from '../vty/VtyLineConfig';
 import type { VtyLineConfigStore } from '../vty/VtyLineConfigStore';
 import type { HuaweiAaaService } from './HuaweiAaaService';
 import { ciscoPasswordMatches } from '../../shells/cisco/ciscoPasswordVerify';
+import { DEFAULT_DEAD_CRITERIA } from '../../../radius/ServerLiveness';
+import { simulationNowMs } from '@/network/core/SystemClock';
+
+const RADIUS_CLIENT_DEFAULT_RETRANSMIT = 2;
 
 export interface AccountingCounters {
   starts: number;
@@ -370,11 +374,26 @@ export class AaaAuthenticator {
   private async tryRadiusGroup(sec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise<MethodVerdict> {
     const client = radiusClientOf(this.router);
     if (!client) return 'continue';
-    for (const memberName of group.members) {
-      const server = sec.radiusServers.get(memberName);
-      if (!server || !server.address) continue;
+    const defaults = sec.radiusDefaults;
+    const deadtime = defaults.deadtimeMinutes ?? 0;
+    const criteria = {
+      timeSec: defaults.deadCriteriaTimeSec ?? DEFAULT_DEAD_CRITERIA.timeSec,
+      tries: defaults.deadCriteriaTries ?? DEFAULT_DEAD_CRITERIA.tries,
+    };
+    const candidates = group.members
+      .map((memberName) => sec.radiusServers.get(memberName))
+      .filter((server): server is RadiusServer => server !== undefined && !!server.address);
+    const alive = candidates.filter((server) => !sec.radiusLiveness.isDead(server.address as string, simulationNowMs()));
+    for (const server of alive.length > 0 ? alive : candidates) {
+      const address = server.address as string;
       this.syncRadiusServer(client, server);
-      const outcome = await client.authenticateWithOutcome(username, password, server.address);
+      const outcome = await client.authenticateWithOutcome(username, password, address);
+      if (outcome === 'timeout') {
+        const transmissions = (server.retransmit ?? defaults.retransmit ?? RADIUS_CLIENT_DEFAULT_RETRANSMIT) + 1;
+        sec.radiusLiveness.recordTimeout(address, transmissions, simulationNowMs(), criteria, deadtime);
+      } else {
+        sec.radiusLiveness.recordValidReply(address, simulationNowMs());
+      }
       if (outcome === 'accept') return 'accept';
       if (outcome === 'reject') return 'reject';
     }

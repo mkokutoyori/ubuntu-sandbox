@@ -37,6 +37,12 @@ export const TACACS_RANGES: Readonly<Record<string, readonly [number, number]>> 
   timeout: [1, 1000],
 };
 
+export const RADIUS_DEADTIME_RANGE: readonly [number, number] = [0, 1440];
+export const RADIUS_DEAD_CRITERIA_RANGES: Readonly<Record<'time' | 'tries', readonly [number, number]>> = {
+  time: [1, 120],
+  tries: [1, 100],
+};
+
 export interface AaaServerHost {
   security(): CiscoSecurityConfig;
   selectRadiusServer(name: string): void;
@@ -282,6 +288,40 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
       'Number of retries to an active server', 'Number of retries',
       (n) => { ctx().security().radiusDefaults.retransmit = n; },
       () => { ctx().security().radiusDefaults.retransmit = undefined; }),
+    globalRadius('radius-server-deadtime', 'deadtime', RADIUS_DEADTIME_RANGE,
+      'Time to skip a RADIUS server marked dead', 'Minutes a dead server is skipped',
+      (n) => { ctx().security().radiusDefaults.deadtimeMinutes = n === 0 ? undefined : n; },
+      () => { ctx().security().radiusDefaults.deadtimeMinutes = undefined; }),
+    {
+      id: 'radius-server-dead-criteria',
+      path: ['radius-server', 'dead-criteria'],
+      description: 'Set the criteria used to decide that a RADIUS server is dead',
+      modes: MODES, minPrivilege: 15,
+      options: (['time', 'tries'] as const).map((mot): OptionSpec => ({
+        keyword: mot,
+        description: mot === 'time'
+          ? 'Seconds since the last valid reply before the server is marked dead'
+          : 'Consecutive timeouts before the server is marked dead',
+        argument: {
+          name: mot, type: 'INT', range: RADIUS_DEAD_CRITERIA_RANGES[mot],
+          description: mot === 'time' ? 'Seconds' : 'Number of tries',
+        } as ArgumentSpec,
+      })),
+      run: (_s, args) => {
+        if (args.time === undefined && args.tries === undefined) throw new CliIncomplete();
+        const defaults = ctx().security().radiusDefaults;
+        if (args.time !== undefined) defaults.deadCriteriaTimeSec = Number(args.time);
+        if (args.tries !== undefined) defaults.deadCriteriaTries = Number(args.tries);
+        return '';
+      },
+      undo: (_s, args) => {
+        const defaults = ctx().security().radiusDefaults;
+        const both = args.time === undefined && args.tries === undefined;
+        if (both || args.time !== undefined) defaults.deadCriteriaTimeSec = undefined;
+        if (both || args.tries !== undefined) defaults.deadCriteriaTries = undefined;
+        return '';
+      },
+    },
     globalRadius('radius-server-auth-port', 'auth-port', RADIUS_RANGES['auth-port'],
       'UDP port for RADIUS authentication server', 'Port number',
       (n) => { ctx().security().radiusDefaults.authPort = n; },
