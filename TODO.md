@@ -2360,15 +2360,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   partagé) mais rendue par le seul parcours du routeur, donc perdue au
   rechargement d'une topologie sur un Catalyst ; `service dhcp` n'était pas
   déclarée du tout sur le commutateur, donc absente de l'aide et sans effet.
-- `sntp broadcast client` est ACCEPTE, RENDU, et n'est evalue par
-  personne. `NtpAgent` n'a aucune notion de mode diffusion (mode 5) : pas
-  une occurrence de `broadcast` dans tout le module, donc rien ne peut
-  recevoir une annonce. Il est stocke plutot que refuse parce que le
-  refuser ferait disparaitre a l'import d'une topologie une ligne qu'une
-  vraie machine accepte — meme raisonnement que `ip ssh server algorithm`
-  et `snmp-agent mib-view`. Fermer demande un emetteur d'annonces cote
-  serveur et une reception cote client, c'est-a-dire un mode de plus dans
-  le moteur, pas une porte.
 - `sntp source-interface <nom>` est REFUSEE alors que la Basic System
   Management Command Reference la decrit. Le moteur, lui, sait le faire :
   `NtpAgent.setSourceInterface` existe et `ntp source` l'ecrit. Ce qui

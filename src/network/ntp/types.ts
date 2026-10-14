@@ -87,6 +87,17 @@ export const NTP_BURST_INTERVAL_MS = 2000;
 export const NTP_UNREACH_LIMIT = 12;
 export const NTP_SPIKE_GATE = 3;
 
+export const NTP_DEFAULT_BROADCAST_DELAY_US = 3000;
+export const NTP_MULTICAST_ADDRESS = '224.0.1.1';
+
+export interface NtpBroadcastServer {
+  readonly destination: string | null;
+  readonly version: NtpVersion;
+  readonly keyId?: number;
+  readonly ttl?: number;
+  readonly pollExponent: number;
+}
+
 export interface NtpAssociation {
   serverIp: string;
   mode: NtpMode;
@@ -291,16 +302,10 @@ export interface NtpConfig {
    * rendue est rejouee a l'import d'une topologie.
    */
   loggingSpelling: 'ntp' | 'sntp';
-  /**
-   * `sntp broadcast client` — accepte les annonces de mode 5.
-   *
-   * Range et RENDU, jamais evalue : ce moteur ne connait pas le mode
-   * diffusion (aucun `broadcast` dans `NtpAgent`), donc la commande ne
-   * fait rien d'observable. Elle est acceptee parce que la refuser
-   * ferait disparaitre a l'import d'une topologie une ligne qu'une vraie
-   * machine accepte ; le manquement est inscrit au `TODO.md`.
-   */
   sntpBroadcastClient: boolean;
+  broadcastServers: Map<string, NtpBroadcastServer>;
+  broadcastClientInterfaces: Map<string, string | null>;
+  broadcastDelayUs: number;
   /** Les compteurs de paquets (lot N8). */
   counters: NtpCounters;
 }
@@ -395,6 +400,9 @@ export function createDefaultNtpConfig(): NtpConfig {
     logging: false,
     loggingSpelling: 'ntp',
     sntpBroadcastClient: false,
+    broadcastServers: new Map(),
+    broadcastClientInterfaces: new Map(),
+    broadcastDelayUs: NTP_DEFAULT_BROADCAST_DELAY_US,
     counters: createNtpCounters(),
   };
 }
