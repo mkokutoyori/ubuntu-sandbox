@@ -224,6 +224,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       expiresAt: expiryOf(object),
       tcpMssSender: Number.parseInt(object.effective('tcp-mss-sender')[0] ?? '0', 10) || undefined,
       tcpMssReceiver: Number.parseInt(object.effective('tcp-mss-receiver')[0] ?? '0', 10) || undefined,
+      diffserv: diffservOf(object),
       scheduleTimeout: object.effective('schedule-timeout')[0] === 'enable',
       sendDenyPacket: action === 'deny' && object.effective('send-deny-packet')[0] === 'enable',
       destinationNegated: object.effective('dstaddr-negate')[0] === 'enable',
@@ -333,4 +334,15 @@ function expiryOf(object: FortiObjectView): number | undefined {
   if (Number.isFinite(written)) return written;
   const epoch = Number.parseInt(object.effective('policy-expiry-date-utc')[0] ?? '', 10);
   return Number.isFinite(epoch) && epoch > 0 ? epoch * 1000 : undefined;
+}
+
+function diffservOf(object: FortiObjectView): SecurityRule['diffserv'] {
+  const code = (name: string, flag: string): number | undefined => {
+    if (object.effective(flag)[0] !== 'enable') return undefined;
+    return Number.parseInt(object.effective(name)[0] || '0', 2);
+  };
+  const forward = code('diffservcode-forward', 'diffserv-forward');
+  const reverse = code('diffservcode-rev', 'diffserv-reverse');
+  const copy = object.effective('diffserv-copy')[0] === 'enable';
+  return forward === undefined && reverse === undefined && !copy ? undefined : { forward, reverse, copy };
 }

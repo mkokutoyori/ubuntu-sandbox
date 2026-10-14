@@ -1,3 +1,4 @@
+import { computeIPv4Checksum } from '../../../../core/types';
 import { computeTcpChecksum, type TcpSegment } from '../../../../tcp/types';
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
 import { decrementForForwarding } from '../../../../layers/internet/InternetLayer';
@@ -237,6 +238,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     utmInspectStage(services),
     natSourceStage(services),
     tcpMssStage(),
+    diffservStage(),
     sessionInstallStage(services),
   ];
 }
@@ -691,6 +693,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       if (expired) return expired;
 
       clampMss(context, carried);
+      rewriteDiffserv(context, carried, found.direction, found.session.originalTos);
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
       context.verdict = Object.freeze({
         action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
@@ -1102,6 +1105,34 @@ function clampMss(context: PacketContext, rule: SecurityRule | undefined): strin
   return `clamped-${ceiling}`;
 }
 
+function rewriteDiffserv(
+  context: PacketContext, rule: SecurityRule | undefined,
+  direction: 'c2s' | 's2c', originalTos: number | undefined,
+): string {
+  const packet = ipv4(context);
+  const marking = rule?.diffserv;
+  if (!packet || marking === undefined) return 'unset';
+  const code = direction === 'c2s'
+    ? marking.forward
+    : marking.reverse ?? (marking.copy && originalTos !== undefined ? originalTos >> 2 : undefined);
+  if (code === undefined) return 'unset';
+  const tos = (code << 2) | (packet.tos & 0x03);
+  if (tos === packet.tos) return 'within';
+  const rewritten: IPv4Packet = { ...packet, tos, headerChecksum: 0 };
+  rewritten.headerChecksum = computeIPv4Checksum(rewritten);
+  context.packet = rewritten;
+  return `dscp-${code}`;
+}
+
+function diffservStage(): PipelineStage {
+  return {
+    name: 'diffserv',
+    apply(context) {
+      return proceed(context, 'diffserv', rewriteDiffserv(context, context.matchedPolicy, 'c2s', undefined));
+    },
+  };
+}
+
 function tcpMssStage(): PipelineStage {
   return {
     name: 'tcp-mss',
@@ -1148,6 +1179,7 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         : sessions.installPinhole(key, installOptions, parentSessionId, 'ftp');
       if (parentSessionId !== undefined) sessions.consumePinhole(session);
       session.tcpMachine = tcpMachines.get(context);
+      session.originalTos = arrived.tos;
 
       const translation = pendingTranslations.get(context);
       if (translation) {

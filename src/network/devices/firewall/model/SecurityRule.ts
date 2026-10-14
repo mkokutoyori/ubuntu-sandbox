@@ -30,13 +30,16 @@ export interface SecurityRule {
   expiresAt?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  diffserv?: { forward?: number; reverse?: number; copy: boolean };
   scheduleTimeout?: boolean;
+  diffserv?: { forward?: number; reverse?: number; copy: boolean };
   tcpMssSender?: number;
   tcpMssReceiver?: number;
   tcpMssSender?: number;
   tcpMssReceiver?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  diffserv?: { forward?: number; reverse?: number; copy: boolean };
   tcpMssSender?: number;
   tcpMssReceiver?: number;
 
@@ -105,6 +108,7 @@ export interface SecurityRuleInit {
   expiresAt?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  diffserv?: { forward?: number; reverse?: number; copy: boolean };
   tcpMssSender?: number;
   tcpMssReceiver?: number;
   service?: string[];
@@ -173,6 +177,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     expiresAt: init.expiresAt,
     sendDenyPacket: init.sendDenyPacket,
     scheduleTimeout: init.scheduleTimeout,
+    diffserv: init.diffserv,
     tcpMssSender: init.tcpMssSender,
     tcpMssReceiver: init.tcpMssReceiver,
     service: [...(init.service ?? ['any'])],

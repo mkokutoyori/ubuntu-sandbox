@@ -53,6 +53,7 @@ export interface FirewallSession {
   timeoutSec: number;
   expiresAt: number;
   endsAt?: number;
+  originalTos?: number;
   parentSessionId?: number;
   algName?: string;
   isPinhole: boolean;

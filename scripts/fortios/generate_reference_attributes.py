@@ -146,6 +146,8 @@ def emit(e, schema_names):
         body = f"{'isoMoment' if name == 'policy-expiry-date' else 'moment'}({q(name)}, {q(help_text)})"
     else:
         body = f"{'text' if typ == 'var-string' else 'word'}({q(name)}, {q(help_text)})"
+    if name.startswith('diffservcode'):
+        body = "{ ...%s, acceptsValue: (value: string) => /^[01]{6}$/.test(value) }" % body
     return body
 
 def main():

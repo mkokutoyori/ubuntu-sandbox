@@ -11,7 +11,12 @@
   "send-deny-packet",
   "tcp-mss-sender",
   "tcp-mss-receiver",
-  "schedule-timeout"
+  "schedule-timeout",
+  "diffserv-forward",
+  "diffserv-reverse",
+  "diffservcode-forward",
+  "diffservcode-rev",
+  "diffserv-copy"
  ],
  "firewall vip": [],
  "firewall address": []
