@@ -289,6 +289,8 @@ export class NtpAgent {
 
   setSourceInterface(name: string): void { this.config.sourceInterface = name; }
 
+  associationId(serverIp: string): number { return this.idAssoc(serverIp); }
+
   portNames(): string[] { return this.host.getPorts().map((port) => port.getName()); }
 
   /**

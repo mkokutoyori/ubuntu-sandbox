@@ -54,6 +54,7 @@ import { GreAgent } from '../gre/GreAgent';
 import { SnmpAgent } from '../snmp/SnmpAgent';
 import { v, vb } from '../snmp/types';
 import { registerRttMonOperation } from '../snmp/mibs/RttMonMib';
+import { ntpV4MibRows } from '../snmp/mibs/NtpV4Mib';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
@@ -286,6 +287,9 @@ export class CiscoRouter extends Router {
       this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+    this.snmpAgent.registerSubtree(() => ntpV4MibRows(this.ntpAgent, {
+      softwareName: 'IOS NTP', softwareVersion: 'Cisco IOS Software', vendor: 'Cisco Systems, Inc.', systemType: 'Cisco IOS',
+    }));
     this.getIpSlaEngine().setMibRegistrar((operationId) => {
       registerRttMonOperation(
         (oid, read) => this.snmpAgent.registerMib(oid, read),
