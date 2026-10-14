@@ -55,6 +55,7 @@ export interface NetworkOsCredentialAuthority {
 }
 
 export interface RouterSshServerDeps {
+  limitScope?: object;
   /** Hostname surfaced in banners / motd. */
   hostname(): string;
   /** Cached or freshly-generated SSH host key. */
@@ -94,18 +95,24 @@ export interface RouterSshServerDeps {
 
 export class RouterSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
-  readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   readonly events?: ISshServerEventBus;
+  readonly connectionLimitScope?: object;
+  private readonly overrides: () => Partial<SshServerConfig>;
 
   constructor(
     private readonly deps: RouterSshServerDeps,
-    overrides: Partial<SshServerConfig> = {},
+    overrides: Partial<SshServerConfig> | (() => Partial<SshServerConfig>) = {},
   ) {
     this.hostKey = deps.hostKey();
-    this.config = Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, ...overrides });
+    this.connectionLimitScope = deps.limitScope;
+    this.overrides = typeof overrides === 'function' ? overrides : () => overrides;
     this.events = deps.events;
     this.auth = this.buildAuthContext();
+  }
+
+  get config(): Readonly<SshServerConfig> {
+    return Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, ...this.overrides() });
   }
 
   additionalHostKeys(): SshHostKey[] {

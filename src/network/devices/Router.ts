@@ -1256,6 +1256,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private buildRouterSshServerHandler(): SshServerHandler {
     const credentials = this.getCredentialStore();
     const ctx = new RouterSshServerContext({
+      limitScope: this,
       hostname: () => this.hostname,
       hostKey: () => this.sshHostKey(),
       additionalHostKeys: () => this.sshAdditionalHostKeys(),
@@ -1298,7 +1299,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         publicKeyAdmitted: (user: string, key: string) =>
           this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
       } : {}),
-    }, this.sshServerLimits());
+    }, () => this.sshServerLimits());
     return new SshServerHandler(ctx);
   }
 
@@ -2076,6 +2077,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * does it on the events that actually change routing: configuration,
    * interface up/down, and protocol packets arriving from the wire.
    */
+  egressInterfaceFor(address: string): string | null {
+    return this.lookupRoute(new IPAddress(address))?.iface ?? null;
+  }
+
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
     // ECMP: collect every route genuinely tied for best (same prefix
     // length, AD, and metric) instead of freezing on whichever happened

@@ -3165,6 +3165,7 @@ export abstract class Switch extends Equipment {
   private buildSshServerHandler(): SshServerHandler {
     const credentials = this.getCredentialStore();
     return new SshServerHandler(new RouterSshServerContext({
+      limitScope: this,
       hostname: () => this.getHostname(),
       hostKey: () => this.sshHostKey(),
       additionalHostKeys: () => this.sshAdditionalHostKeys(),
@@ -3196,7 +3197,7 @@ export abstract class Switch extends Equipment {
         publicKeyAdmitted: (user: string, key: string) =>
           this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
       } : {}),
-    }, this.sshServerLimits()));
+    }, () => this.sshServerLimits()));
   }
 
   private buildTelnetServerHandler(): TelnetServerHandler {

@@ -26,7 +26,7 @@ function modeOf(m: string | null): string {
   return 'other';
 }
 
-const RECOGNISED_FLOOR = 132;
+const RECOGNISED_FLOOR = 144;
 
 it('the documented security commands the shell recognises never go down', async () => {
   EquipmentRegistry.resetInstance();

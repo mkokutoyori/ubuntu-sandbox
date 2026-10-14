@@ -9,6 +9,13 @@ import type { VtyLineConfig } from '../vty/VtyLineConfig';
 import type { VtyLineConfigStore } from '../vty/VtyLineConfigStore';
 import type { HuaweiAaaService } from './HuaweiAaaService';
 import { ciscoPasswordMatches } from '../../shells/cisco/ciscoPasswordVerify';
+import { DEFAULT_DEAD_CRITERIA } from '../../../radius/ServerLiveness';
+import { splitDirected } from './UsernameRouting';
+import { DEFAULT_TRANSACTION_MAX_TRIES } from '../../../radius/ServerSelector';
+import { vrfStoreOf, type VrfHost } from '../../shells/cisco/ciscoVrfStore';
+import { simulationNowMs } from '@/network/core/SystemClock';
+
+const RADIUS_CLIENT_DEFAULT_RETRANSMIT = 2;
 
 export interface AccountingCounters {
   starts: number;
@@ -160,7 +167,7 @@ export class AaaAuthenticator {
       const server = sec.tacacsServers.get(memberName);
       if (!server || !server.address) continue;
       this.syncTacacsServer(client, server);
-      const reply = await client.authorizeShell(username, server.address);
+      const reply = await client.authorizeShell(this.tacacsWireUsername(sec, username, server), server.address);
       if (reply.status === 'pass-add' || reply.status === 'pass-repl') {
         return { status: 'accept', privLvl: reply.privLvl };
       }
@@ -231,7 +238,7 @@ export class AaaAuthenticator {
       const server = sec.tacacsServers.get(memberName);
       if (!server || !server.address) continue;
       this.syncTacacsServer(client, server);
-      const status = await client.authorize(username, command, server.address);
+      const status = await client.authorize(this.tacacsWireUsername(sec, username, server), command, server.address);
       if (status === 'pass-add' || status === 'pass-repl') return 'accept';
       if (status === 'fail') return 'reject';
     }
@@ -361,32 +368,119 @@ export class AaaAuthenticator {
 
   private async tryGroup(sec: CiscoSecurityConfig, groupName: string | undefined, username: string, password: string): Promise<{ verdict: MethodVerdict; privLvl?: number | null }> {
     if (!groupName) return { verdict: 'continue' };
-    const group = sec.aaaGroups.get(groupName);
+    const group = sec.aaaGroups.get(groupName) ?? this.builtinGroup(sec, groupName);
     if (!group) return { verdict: 'continue' };
     if (group.kind === 'radius') return { verdict: await this.tryRadiusGroup(sec, group, username, password) };
     return this.tryTacacsGroup(sec, group, username, password);
   }
 
+  private builtinGroup(sec: CiscoSecurityConfig, groupName: string): AaaServerGroup | undefined {
+    if (groupName === 'radius') return { name: 'radius', kind: 'radius', members: [...sec.radiusServers.keys()] };
+    if (groupName === 'tacacs+') return { name: 'tacacs+', kind: 'tacacs+', members: [...sec.tacacsServers.keys()] };
+    return undefined;
+  }
+
   private async tryRadiusGroup(sec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise<MethodVerdict> {
     const client = radiusClientOf(this.router);
     if (!client) return 'continue';
-    for (const memberName of group.members) {
-      const server = sec.radiusServers.get(memberName);
-      if (!server || !server.address) continue;
+    const defaults = sec.radiusDefaults;
+    const deadtime = defaults.deadtimeMinutes ?? 0;
+    const criteria = {
+      timeSec: defaults.deadCriteriaTimeSec ?? DEFAULT_DEAD_CRITERIA.timeSec,
+      tries: defaults.deadCriteriaTries ?? DEFAULT_DEAD_CRITERIA.tries,
+    };
+    const candidates = group.members
+      .map((memberName) => sec.radiusServers.get(memberName))
+      .filter((server): server is RadiusServer => server !== undefined && !!server.address);
+    const directed = this.radiusDirected(sec, username);
+    const asked = directed !== null ? directed.user : username;
+    const alive = candidates.filter((server) => !sec.radiusLiveness.isDead(server.address as string, simulationNowMs()));
+    const pool = alive.length > 0 ? alive : candidates;
+    const reorder = defaults.retryReorder === true;
+    const selector = sec.radiusSelector;
+    const isGlobal = group.name === 'radius' && !sec.aaaGroups.has('radius');
+    const orderedAddresses = selector.order({
+      group: group.name, user: asked, reorder,
+      candidates: pool.map((server) => server.address as string),
+      loadBalance: isGlobal ? defaults.loadBalance : undefined,
+    });
+    let order = orderedAddresses.map((address) => pool.find((server) => server.address === address) as RadiusServer);
+    if (directed !== null) {
+      const others = order.filter((server) => server !== directed.server);
+      order = defaults.directedRequest?.restricted ? [directed.server] : [directed.server, ...others];
+    }
+    const budget = reorder ? defaults.transactionMaxTries ?? DEFAULT_TRANSACTION_MAX_TRIES : Infinity;
+    const maxAttempts = reorder ? Infinity : order.length;
+    let used = 0;
+    for (let attempt = 0; attempt < maxAttempts && used < budget; attempt++) {
+      const server = order[attempt % order.length];
+      const address = server.address as string;
       this.syncRadiusServer(client, server);
-      const outcome = await client.authenticateWithOutcome(username, password, server.address);
+      const wireName = sec.radiusStripping.apply(asked, this.vrfOfServer(address));
+      selector.acquire(address);
+      let outcome: Awaited<ReturnType<typeof client.authenticateWithOutcome>>;
+      try {
+        outcome = await client.authenticateWithOutcome(wireName, password, address);
+      } finally {
+        selector.release(address);
+      }
+      if (outcome === 'timeout') {
+        const transmissions = (server.retransmit ?? defaults.retransmit ?? RADIUS_CLIENT_DEFAULT_RETRANSMIT) + 1;
+        used += transmissions;
+        sec.radiusLiveness.recordTimeout(address, transmissions, simulationNowMs(), criteria, deadtime);
+        if (reorder) selector.noteFailure(group.name, address, orderedAddresses);
+      } else {
+        sec.radiusLiveness.recordValidReply(address, simulationNowMs());
+        selector.noteAnswer(group.name, address);
+      }
       if (outcome === 'accept') return 'accept';
       if (outcome === 'reject') return 'reject';
     }
     return 'continue';
   }
 
+  private radiusDirected(sec: CiscoSecurityConfig, username: string): { user: string; server: RadiusServer } | null {
+    if (!sec.radiusDefaults.directedRequest) return null;
+    const split = splitDirected(username);
+    if (split === null) return null;
+    const server = [...sec.radiusServers.values()].find((candidate) =>
+      !!candidate.address && (candidate.address === split.host || candidate.name === split.host));
+    return server === undefined ? null : { user: split.user, server };
+  }
+
+  private vrfOfServer(address: string): string | null {
+    const egress = (this.router as unknown as { egressInterfaceFor?: (a: string) => string | null }).egressInterfaceFor?.(address);
+    if (!egress) return null;
+    for (const vrf of vrfStoreOf(this.router as unknown as VrfHost).values()) {
+      if (vrf.interfaces.has(egress)) return vrf.name;
+    }
+    return null;
+  }
+
+  private tacacsWireUsername(sec: CiscoSecurityConfig, username: string, server: TacacsServer): string {
+    return sec.tacacsStripping.apply(username, this.vrfOfServer(server.address as string));
+  }
+
   private async tryTacacsGroup(sec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise<{ verdict: MethodVerdict; privLvl?: number | null }> {
     const client = tacacsClientOf(this.router);
     if (!client) return { verdict: 'continue' };
-    for (const memberName of group.members) {
-      const server = sec.tacacsServers.get(memberName);
-      if (!server || !server.address) continue;
+    const members = group.members
+      .map((memberName) => sec.tacacsServers.get(memberName))
+      .filter((server): server is TacacsServer => server !== undefined && !!server.address);
+    const directedSetting = sec.tacacsDefaults.directedRequest;
+    const split = directedSetting ? splitDirected(username) : null;
+    let order = members;
+    let asked = username;
+    if (directedSetting && split !== null) {
+      const directedServer = [...sec.tacacsServers.values()].find((candidate) =>
+        !!candidate.address && (candidate.address === split.host || candidate.name === split.host));
+      if (directedServer === undefined) return { verdict: 'reject' };
+      order = directedSetting.restricted
+        ? [directedServer]
+        : [directedServer, ...members.filter((server) => server !== directedServer)];
+      if (!directedSetting.noTruncate) asked = split.user;
+    }
+    for (const server of order) {
       this.syncTacacsServer(client, server);
       // Les compteurs de `show tacacs` etaient uniquement LUS, jamais
       // incrementes : ils affichaient donc zero quoi qu'il arrive, et le
@@ -394,7 +488,7 @@ export class AaaAuthenticator {
       // distinguer. Ils sont mesures ici, au point ou l'echange a lieu.
       server.stats.socketOpens += 1;
       server.stats.authRequests += 1;
-      const result = await client.authenticate(username, password, server.address);
+      const result = await client.authenticate(this.tacacsWireUsername(sec, asked, server), password, server.address as string);
       server.stats.socketCloses += 1;
       if (result.status === 'pass') {
         server.stats.authAccepts += 1;
@@ -467,7 +561,7 @@ export class AaaAuthenticator {
           for (const flag of drapeaux) {
             if (phase === 'start' && flag === 'stop') continue;
             const statut = await client.accountCommand(
-              username, command, [flag], server.address);
+              this.tacacsWireUsername(sec, username, server), command, [flag], server.address);
             if (statut === 'success') {
               emis += 1;
               const c = this.compteurs(service);

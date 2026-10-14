@@ -51,27 +51,27 @@ export function parseKeyHash(words: readonly string[]): SshPubkeyEntry | null {
   return { type: SSH_RSA, hash: hash.toUpperCase(), ...(comment.length > 0 ? { comment: comment.join(' ') } : {}) };
 }
 
-export class SshPubkeyChain {
-  private readonly users = new Map<string, SshPubkeyEntry[]>();
+class KeyTable {
+  private readonly owners = new Map<string, SshPubkeyEntry[]>();
 
-  ensureUser(name: string): void {
-    if (!this.users.has(name)) this.users.set(name, []);
+  ensure(name: string): void {
+    if (!this.owners.has(name)) this.owners.set(name, []);
   }
 
-  removeUser(name: string): boolean {
-    return this.users.delete(name);
+  remove(name: string): boolean {
+    return this.owners.delete(name);
   }
 
   add(name: string, entry: SshPubkeyEntry): void {
-    this.ensureUser(name);
-    const entries = this.users.get(name)!;
+    this.ensure(name);
+    const entries = this.owners.get(name)!;
     const at = entries.findIndex((e) => e.hash === entry.hash);
     if (at >= 0) entries[at] = entry;
     else entries.push(entry);
   }
 
   removeHash(name: string, hash: string): boolean {
-    const entries = this.users.get(name);
+    const entries = this.owners.get(name);
     if (!entries) return false;
     const at = entries.findIndex((e) => e.hash === hash.toUpperCase());
     if (at < 0) return false;
@@ -82,26 +82,58 @@ export class SshPubkeyChain {
   admits(name: string, material: string): boolean {
     const hash = keyHashOfMaterial(material);
     if (hash === null) return false;
-    return (this.users.get(name) ?? []).some((entry) => entry.hash === hash);
+    return (this.owners.get(name) ?? []).some((entry) => entry.hash === hash);
   }
 
   clear(): void {
+    this.owners.clear();
+  }
+
+  get size(): number {
+    return this.owners.size;
+  }
+
+  entries(): IterableIterator<[string, SshPubkeyEntry[]]> {
+    return this.owners.entries();
+  }
+}
+
+export class SshPubkeyChain {
+  private readonly users = new KeyTable();
+  private readonly servers = new KeyTable();
+
+  ensureUser(name: string): void { this.users.ensure(name); }
+  removeUser(name: string): boolean { return this.users.remove(name); }
+  add(name: string, entry: SshPubkeyEntry): void { this.users.add(name, entry); }
+  removeHash(name: string, hash: string): boolean { return this.users.removeHash(name, hash); }
+  admits(name: string, material: string): boolean { return this.users.admits(name, material); }
+
+  ensureServer(name: string): void { this.servers.ensure(name); }
+  removeServer(name: string): boolean { return this.servers.remove(name); }
+  addServerKey(name: string, entry: SshPubkeyEntry): void { this.servers.add(name, entry); }
+  removeServerHash(name: string, hash: string): boolean { return this.servers.removeHash(name, hash); }
+  admitsServer(name: string, material: string): boolean { return this.servers.admits(name, material); }
+
+  clear(): void {
     this.users.clear();
+    this.servers.clear();
   }
 
   isEmpty(): boolean {
-    return this.users.size === 0;
+    return this.users.size === 0 && this.servers.size === 0;
   }
 
   configLines(): string[] {
-    if (this.users.size === 0) return [];
+    if (this.isEmpty()) return [];
     const lines = ['ip ssh pubkey-chain'];
-    for (const [name, entries] of this.users) {
-      lines.push(`  username ${name}`);
-      for (const entry of entries) {
-        lines.push(`   key-hash ${entry.type} ${entry.hash}${entry.comment ? ` ${entry.comment}` : ''}`);
+    for (const [heading, table] of [['username', this.users], ['server', this.servers]] as const) {
+      for (const [name, entries] of table.entries()) {
+        lines.push(`  ${heading} ${name}`);
+        for (const entry of entries) {
+          lines.push(`   key-hash ${entry.type} ${entry.hash}${entry.comment ? ` ${entry.comment}` : ''}`);
+        }
+        lines.push('  quit');
       }
-      lines.push('  quit');
     }
     return lines;
   }

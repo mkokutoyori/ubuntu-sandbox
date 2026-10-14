@@ -2092,14 +2092,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return { scope, tous, niveau, commande: mots.join(' ') };
   }
 
-  private pubkeyUser: string | null = null;
+  private pubkeyTarget: { kind: 'user' | 'server'; name: string } | null = null;
   private keyStringLines: string[] | null = null;
 
   protected pubkeyChainHost(): PubkeyChainHost {
     return {
       chain: () => getSecurityConfig(this.d()).sshPubkeys,
-      selectedUser: () => this.pubkeyUser,
-      selectUser: (name) => { this.pubkeyUser = name; },
+      target: () => this.pubkeyTarget,
+      select: (kind, name) => { this.pubkeyTarget = { kind, name }; },
       enter: (mode: PubkeyChainMode) => { this.mode = mode; },
       beginKeyString: () => { this.keyStringLines = []; this.mode = 'config-ssh-pubkey-data'; },
     };
@@ -2113,10 +2113,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const lines = this.keyStringLines!;
     this.keyStringLines = null;
-    this.mode = 'config-ssh-pubkey-user';
+    const target = this.pubkeyTarget;
+    this.mode = target?.kind === 'server' ? 'config-ssh-pubkey-server' : 'config-ssh-pubkey-user';
     const decoded = decodeKeyString(lines);
-    if (decoded === null || this.pubkeyUser === null) return '% Invalid public key: only ssh-rsa keys can be stored.';
-    getSecurityConfig(device).sshPubkeys.add(this.pubkeyUser, decoded.entry);
+    if (decoded === null || target === null) return '% Invalid public key: only ssh-rsa keys can be stored.';
+    const chain = getSecurityConfig(device).sshPubkeys;
+    if (target.kind === 'server') chain.addServerKey(target.name, decoded.entry);
+    else chain.add(target.name, decoded.entry);
     return '';
   }
 
