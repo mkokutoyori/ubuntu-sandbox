@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { PathClock } from '../core/time/PathClock';
@@ -1228,6 +1229,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected sshConfiguredTransport(): { chiffrement: string; hmac: string } | null { return null; }
 
+  private readonly sshRsaHostKey = new AdditionalRsaHostKey();
+
+  private sshAdditionalHostKeys(): SshHostKey[] {
+    return this.sshRsaHostKey.keysFor(
+      this.hostname, this.sshHostKeySpec().algorithm, this.sshTransportPolicy().algorithms?.hostKey);
+  }
+
   private sshHostKey(): SshHostKey {
     const spec = this.sshHostKeySpec();
     const tag = `${spec.algorithm}:${spec.bits ?? ''}:${this.hostname}`;
@@ -1242,6 +1250,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const ctx = new RouterSshServerContext({
       hostname: () => this.hostname,
       hostKey: () => this.sshHostKey(),
+      additionalHostKeys: () => this.sshAdditionalHostKeys(),
       credentials: () => ({
         authenticate: (n, p) => this.sshPasswordLoginAdmitted(n) && credentials.authenticate(n, p),
         has: (n) => credentials.get(n) !== undefined,
@@ -1261,7 +1270,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       transportEstablished: (ip, algorithms) => this.getSshSessionRegistry().noteTransport(ip, {
         chiffrement: algorithms.encryptionClientToServer, hmac: algorithms.macClientToServer ?? 'none',
       }),
-      motd: () => this.getBanner('motd') || null,
+      motd: () => [this.getBanner('motd'), this.getBanner('exec')].filter((text) => text !== '').join('\n') || null,
       aaaAuthenticate: (n, p) => (this.sshPasswordLoginAdmitted(n)
         ? this.authenticateViaAaa(n, p)
         : Promise.resolve(false)),

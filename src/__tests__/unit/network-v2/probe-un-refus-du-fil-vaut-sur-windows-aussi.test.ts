@@ -134,8 +134,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     await host.init?.();
     await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
-    expect(host.getPrompt()).toMatch(/^R1[>#]/);
-    expect(transcript(host)).toContain('R1#');
+    expect(host.getPrompt()).toBe('R1#');
   }, 60_000);
 
   it('a Windows client with a wrong password is refused', async () => {

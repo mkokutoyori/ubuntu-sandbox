@@ -1,9 +1,12 @@
 import {
   address, addressMask, choice, count, enable, reference, refList, text, word,
-  type FortiObjectView, type FortiTableSpec,
+  type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
   type LldpSetting,
   type LldpVdomSetting,
 } from './types';
+import {
+  IMPLEMENTED_CIPHERS, IMPLEMENTED_HOST_KEY_ALGORITHMS, IMPLEMENTED_KEX_METHODS, IMPLEMENTED_MACS,
+} from '../../../../../protocols/ssh/transport/SshAlgorithms';
 import { FORTIOS_SESSION_HELPER_NAMES } from '../sessionHelpers';
 import {
   MANAGEMENT_SERVICES, type ManagementService,
@@ -37,6 +40,20 @@ const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.
 const ACCESS_SERVICES = MANAGEMENT_SERVICES.map(service => ({
   keyword: service, description: ACCESS_SERVICE_HELP[service],
 }));
+
+function sshAlgorithmList(name: string, help: string, values: readonly string[]): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    multiValue: true,
+    parts: [{
+      name, type: 'ENUM', description: help,
+      values: values.map((keyword) => ({ keyword, description: keyword })),
+    }],
+    defaultValue: [],
+  };
+}
 
 export { parseIpv6Prefix };
 
@@ -84,6 +101,14 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       1, 480, 5),
     count('admin-sport', 'Administrative access port for HTTPS.', 1, 65535, 443),
     count('admin-ssh-port', 'Administrative access port for SSH.', 1, 65535, 22),
+    sshAlgorithmList('ssh-kex-algo', 'Select one or more SSH kex algorithms.',
+      IMPLEMENTED_KEX_METHODS),
+    sshAlgorithmList('ssh-enc-algo', 'Select one or more SSH ciphers.',
+      IMPLEMENTED_CIPHERS),
+    sshAlgorithmList('ssh-mac-algo', 'Select one or more SSH MAC algorithms.',
+      IMPLEMENTED_MACS),
+    sshAlgorithmList('ssh-hostkey-algo', 'Select one or more SSH hostkey algorithms.',
+      IMPLEMENTED_HOST_KEY_ALGORITHMS),
     count('admin-port', 'Administrative access port for HTTP.', 1, 65535, 80),
     count('admin-telnet-port', 'Administrative access port for TELNET.', 1, 65535, 23),
     count('admin-lockout-threshold', 'Number of failed login attempts before lockout.',
@@ -201,6 +226,12 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       fragmentMemoryMb: number('ip-fragment-mem-thresholds', DEFAULT_FRAGMENT_MEM_MB),
       ipConflictDetection: object.effective('ip-conflict-detection')[0] === 'enable',
       adminSshPort: number('admin-ssh-port', 22),
+      sshAlgorithms: {
+        ...(object.effective('ssh-kex-algo').length > 0 ? { kex: object.effective('ssh-kex-algo') } : {}),
+        ...(object.effective('ssh-enc-algo').length > 0 ? { ciphers: object.effective('ssh-enc-algo') } : {}),
+        ...(object.effective('ssh-mac-algo').length > 0 ? { macs: object.effective('ssh-mac-algo') } : {}),
+        ...(object.effective('ssh-hostkey-algo').length > 0 ? { hostKey: object.effective('ssh-hostkey-algo') } : {}),
+      },
       adminTelnetPort: number('admin-telnet-port', 23),
       adminHttpPort: number('admin-port', 80),
       adminHttpsPort: number('admin-sport', 443),

@@ -59,6 +59,7 @@ export interface RouterSshServerDeps {
   hostname(): string;
   /** Cached or freshly-generated SSH host key. */
   hostKey(): SshHostKey;
+  additionalHostKeys?(): SshHostKey[];
   /** Authority backing username / password validation. */
   credentials(): NetworkOsCredentialAuthority;
   /** Optional AAA method-list authentication chain (RADIUS/TACACS+/local/enable/none). */
@@ -105,6 +106,10 @@ export class RouterSshServerContext implements ISshServerContext {
     this.config = Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, ...overrides });
     this.events = deps.events;
     this.auth = this.buildAuthContext();
+  }
+
+  additionalHostKeys(): SshHostKey[] {
+    return this.deps.additionalHostKeys?.() ?? [];
   }
 
   getFilesystem(_userCtx: SshUserContext): ISftpFileSystem {
@@ -189,7 +194,7 @@ export class RouterSshServerContext implements ISshServerContext {
   }
 
   getMotd(): string {
-    return this.deps.motd?.() ?? `Welcome to ${this.deps.hostname()}\n`;
+    return this.deps.motd?.() ?? '';
   }
 
   getLastLogin(_user: string): string | null { return null; }

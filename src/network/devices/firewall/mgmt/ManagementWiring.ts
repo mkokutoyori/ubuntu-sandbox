@@ -1,4 +1,6 @@
 import type { EthernetFrame, IPv4Packet } from '../../../core/types';
+import type { SshKeyAlgorithm } from '../../../protocols/ssh/SshHostKey';
+import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import type { UdpSendRequest } from '../../../layers/transport/UdpEgress';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpStack } from '../../../tcp/TcpStack';
@@ -53,6 +55,8 @@ export interface ManagementHost {
   portalUsesHttps(): boolean;
   managementPorts(): ManagementPorts;
   sshIdentification(): string | undefined;
+  sshAlgorithms(): SshAlgorithmPreferences;
+  sshHostKeyAlgorithm(): SshKeyAlgorithm;
   createManagementCli(user: string, origin: string): ManagementCli | null;
   authenticateAdmin(user: string, password: string, source: string): boolean;
   adminAcceptsPublicKey(user: string, material: string, source: string): boolean;
@@ -179,6 +183,8 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     refuseSource: (source) => host.refuseManagementSource(source),
     idleTimeoutMs: () => host.managementIdleTimeoutMs(),
     sshIdentification: () => host.sshIdentification(),
+    sshAlgorithms: () => host.sshAlgorithms(),
+    sshHostKeyAlgorithm: () => host.sshHostKeyAlgorithm(),
     runningConfig: () => host.runningConfig(),
     onLogin: (session) => { host.onManagementLogin(session); },
     onLogout: (user) => { host.onAdminLogout(user); },

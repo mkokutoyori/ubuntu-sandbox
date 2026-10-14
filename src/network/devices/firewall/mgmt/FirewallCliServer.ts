@@ -1,4 +1,5 @@
 import type { TcpStack } from '../../../tcp/TcpStack';
+import { AdditionalRsaHostKey } from '../../../protocols/ssh/server/SshdRsaHostKey';
 import type { AdminEndpoint, AdminTransport } from './AdminSessionTable';
 
 export interface PeerEndpoints {
@@ -25,7 +26,7 @@ import type { TcpStream } from '../../../tcp/types';
 import type { AuthMethodType, ISshAuthContext } from '../../../protocols/ssh/auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../../../protocols/ssh/sftp/ISftpFileSystem';
 import { RouterSftpFileSystem } from '../../../protocols/ssh/sftp/RouterSftpFileSystem';
-import { SshHostKey } from '../../../protocols/ssh/SshHostKey';
+import { SshHostKey, type SshKeyAlgorithm } from '../../../protocols/ssh/SshHostKey';
 import { SSH_SERVER_IDENTIFICATION } from '../../../protocols/ssh/serverIdentification';
 import { SshUserContext } from '../../../protocols/ssh/SshUserContext';
 import {
@@ -33,7 +34,9 @@ import {
   type ILinuxShell,
   type ISshServerContext,
   type SshServerConfig,
+  type SshTransportPolicy,
 } from '../../../protocols/ssh/server/ISshServerContext';
+import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import { SshServerHandler } from '../../../protocols/ssh/server/SshServerHandler';
 import { TelnetServerHandler } from '../../../protocols/telnet/TelnetServerHandler';
 import type {
@@ -62,6 +65,8 @@ export interface FirewallCliServerDeps {
   refuseSource(source: string): boolean;
   idleTimeoutMs(): number | null;
   sshIdentification(): string | undefined;
+  sshAlgorithms(): SshAlgorithmPreferences;
+  sshHostKeyAlgorithm(): SshKeyAlgorithm;
   runningConfig(): string;
   onLogin(session: AdminLoginFacts): void;
   onLogout(user: string): void;
@@ -73,6 +78,7 @@ export class FirewallCliServer {
   private sshPort: number | null = null;
   private telnetPort: number | null = null;
   private hostKey: SshHostKey | null = null;
+  private readonly rsaHostKey = new AdditionalRsaHostKey();
   private sessions = 0;
 
   constructor(private readonly deps: FirewallCliServerDeps) {}
@@ -113,7 +119,7 @@ export class FirewallCliServer {
 
   private serveSsh(socket: TcpStream): void {
     const context = new FirewallSshServerContext(
-      this.deps, endpointsOf(socket), this.key());
+      this.deps, endpointsOf(socket), this.key(), this.rsaKey());
     new SshServerHandler(context).register(socket, socket.remoteIp);
   }
 
@@ -124,8 +130,15 @@ export class FirewallCliServer {
   }
 
   private key(): SshHostKey {
-    if (!this.hostKey) this.hostKey = SshHostKey.generate(this.deps.hostname());
+    const algorithm = this.deps.sshHostKeyAlgorithm();
+    if (this.hostKey === null || this.hostKey.algorithm !== algorithm) {
+      this.hostKey = SshHostKey.generate(this.deps.hostname(), algorithm, algorithm === 'ssh-rsa' ? 2048 : undefined);
+    }
     return this.hostKey;
+  }
+
+  private rsaKey(): SshHostKey[] {
+    return this.rsaHostKey.keysFor(this.deps.hostname(), this.deps.sshHostKeyAlgorithm(), this.deps.sshAlgorithms().hostKey);
   }
 }
 
@@ -138,6 +151,7 @@ class FirewallSshServerContext implements ISshServerContext {
     private readonly deps: FirewallCliServerDeps,
     private readonly peer: PeerEndpoints,
     hostKey: SshHostKey,
+    private readonly extraHostKeys: SshHostKey[],
   ) {
     this.hostKey = hostKey;
     this.config = Object.freeze({ ...DEFAULT_SSH_SERVER_CONFIG, permitRootLogin: false });
@@ -146,6 +160,13 @@ class FirewallSshServerContext implements ISshServerContext {
 
   serverIdentification(): string {
     return this.deps.sshIdentification() ?? SSH_SERVER_IDENTIFICATION;
+  }
+
+  additionalHostKeys(): SshHostKey[] { return this.extraHostKeys; }
+
+  transportPolicy(): SshTransportPolicy {
+    const algorithms = this.deps.sshAlgorithms();
+    return Object.keys(algorithms).length === 0 ? {} : { algorithms };
   }
 
   getFilesystem(): ISftpFileSystem {

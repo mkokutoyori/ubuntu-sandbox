@@ -1,4 +1,5 @@
 import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
+import type { SshAlgorithmPreferences } from '../../../../../protocols/ssh/transport/SshTransport';
 import type { SessionHelperEntry } from '../../../session/SessionHelperTable';
 import type { ConfigSaveMode } from '../../../config/ConfigSaveMode';
 import type { ConserveThresholds } from '../../../health/SystemLoad';
@@ -253,6 +254,7 @@ export interface FortiGlobalSettings {
   readonly authKeepAlive?: boolean;
   readonly fragmentMemoryMb?: number;
   readonly adminSshPort?: number;
+  readonly sshAlgorithms?: SshAlgorithmPreferences;
   readonly adminTelnetPort?: number;
   readonly adminHttpPort?: number;
   readonly adminHttpsPort?: number;

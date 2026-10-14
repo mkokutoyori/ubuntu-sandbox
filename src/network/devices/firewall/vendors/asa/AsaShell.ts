@@ -1,10 +1,11 @@
 import { parsePipeFilter, applyPipeFilter } from '../../../shells/cli-utils';
+import { IMPLEMENTED_CIPHERS, IMPLEMENTED_MACS } from '../../../../protocols/ssh/transport/SshAlgorithms';
 import {
   subnetAddress, hostAddress, rangeAddress, type AddressObject,
 } from '../../model/AddressObject';
 import type { RuleAction } from '../../model/SecurityRule';
 import {
-  ASA_SSH_DEFAULT_TIMEOUT_MINUTES,
+  ASA_KEY_EXCHANGE_GROUPS, ASA_SSH_DEFAULT_TIMEOUT_MINUTES,
   type AsaAclLine, type AsaManagementService, type AsaManagementSource, type AsaRunningState,
 } from './AsaRunningState';
 import type { AsaFirewall } from './AsaFirewall';
@@ -525,12 +526,41 @@ export class AsaShell implements AsaShowHost {
       this.state.sshVersion = value === '1' ? 1 : 2;
       return '';
     }
+    if (keyword === 'key-exchange') return this.sshKeyExchange(rest.slice(1), negated);
+    if (keyword === 'cipher') return this.sshCipher(rest.slice(1), negated);
     if (keyword === 'scopy') {
       if (value !== 'enable') return ASA_INVALID_INPUT;
       this.state.sshScopy = !negated;
       return '';
     }
     return null;
+  }
+
+  private sshKeyExchange(rest: string[], negated: boolean): string {
+    if (rest[0] !== 'group') return ASA_INVALID_INPUT;
+    if (negated) this.state.sshKeyExchangeGroup = null;
+    else if (rest[1] !== undefined && rest[1] in ASA_KEY_EXCHANGE_GROUPS) this.state.sshKeyExchangeGroup = rest[1];
+    else return ASA_INVALID_INPUT;
+    this.fw.applySshAlgorithms();
+    return '';
+  }
+
+  private sshCipher(rest: string[], negated: boolean): string {
+    const family = rest[0];
+    if (family !== 'encryption' && family !== 'integrity') return ASA_INVALID_INPUT;
+    if (negated) {
+      if (family === 'encryption') this.state.sshEncryptionCustom = [];
+      else this.state.sshIntegrityCustom = [];
+    } else {
+      if (rest[1] !== 'custom' || !rest[2]) return ASA_INVALID_INPUT;
+      const names = rest[2].split(':');
+      const known = family === 'encryption' ? IMPLEMENTED_CIPHERS : IMPLEMENTED_MACS;
+      if (names.some((name) => !known.includes(name))) return ASA_INVALID_INPUT;
+      if (family === 'encryption') this.state.sshEncryptionCustom = names;
+      else this.state.sshIntegrityCustom = names;
+    }
+    this.fw.applySshAlgorithms();
+    return '';
   }
 
   private managementConfigLines(): string[] {
@@ -541,6 +571,9 @@ export class AsaShell implements AsaShowHost {
     lines.push(`ssh timeout ${this.state.sshTimeoutMinutes}`);
     if (this.state.sshVersion !== null) lines.push(`ssh version ${this.state.sshVersion}`);
     if (this.state.sshScopy) lines.push('ssh scopy enable');
+    if (this.state.sshKeyExchangeGroup !== null) lines.push(`ssh key-exchange group ${this.state.sshKeyExchangeGroup}`);
+    if (this.state.sshEncryptionCustom.length > 0) lines.push(`ssh cipher encryption custom ${this.state.sshEncryptionCustom.join(':')}`);
+    if (this.state.sshIntegrityCustom.length > 0) lines.push(`ssh cipher integrity custom ${this.state.sshIntegrityCustom.join(':')}`);
     return lines;
   }
 

@@ -32,7 +32,7 @@ import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { SshAgent } from '@/network/protocols/ssh/SshAgent';
 import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor, defaultIdentityFilesFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { IPAddress } from '@/network/core/types';
-import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
+import { OPENSSH_SSH, sshWireFailureLine, type SshDialect } from '@/terminal/ssh/sshDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
 import type { TcpFlags, TcpWireOutcome } from '@/network/tcp/types';
 import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
@@ -192,19 +192,20 @@ export type SshTargetResolution =
   | { readonly kind: 'failed'; readonly line: string };
 
 export async function resolveSshTarget(
-  device: Equipment, typedHost: string, port: number,
+  device: Equipment, typedHost: string, port: number, dialect: SshDialect = OPENSSH_SSH,
 ): Promise<SshTargetResolution> {
   const resolver = device as unknown as { resolveHostname(name: string): Promise<IPAddress | null> };
   const resolved = IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
   if (!resolved) {
-    return { kind: 'failed', line: `ssh: Could not resolve hostname ${typedHost}: Name or service not known` };
+    return { kind: 'failed', line: dialect.unresolved(typedHost, port) };
   }
   const address = resolved.toString();
   if (!peerLiveness(device, address)()) {
-    return { kind: 'failed', line: `ssh: connect to host ${typedHost} port ${port}: ${sshUnreachableReason(device, address)}` };
+    const unrouted = sshUnreachableReason(device, address) === 'Network is unreachable';
+    return { kind: 'failed', line: unrouted ? dialect.unreachable(typedHost, port) : dialect.noRoute(typedHost, port) };
   }
   const reach = await wireReachOutcomeRetransmitting(device, address, port);
-  if (reach !== 'open') return { kind: 'failed', line: sshWireFailureLine(OPENSSH_SSH, reach, typedHost, port) };
+  if (reach !== 'open') return { kind: 'failed', line: sshWireFailureLine(dialect, reach, typedHost, port) };
   return { kind: 'ready', address };
 }
 
@@ -248,8 +249,8 @@ export async function openWireSshConnection(
     .port(req.port)
     .strictHostKeyChecking(req.strict ?? 'accept-new');
   if (req.password !== undefined) builder.password(req.password);
-  const algorithms = req.algorithms ?? profile?.algorithms;
-  if (algorithms) builder.algorithms(algorithms);
+  const algorithms = { ...profile?.algorithms, ...req.algorithms };
+  if (Object.keys(algorithms).length > 0) builder.algorithms(algorithms);
   if (req.authentication) builder.authentication(req.authentication);
   const identities = req.identityFiles && req.identityFiles.length > 0
     ? req.identityFiles

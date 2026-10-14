@@ -67,6 +67,12 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
     ...(ssh.port !== SSH_DEFAULT_PORT ? [`ssh server port ${ssh.port}`] : []),
     ...(ssh.timeout !== SSH_DEFAULT_TIMEOUT_SEC ? [`ssh server timeout ${ssh.timeout}`] : []),
     ...(ssh.retries !== SSH_DEFAULT_AUTH_RETRIES ? [`ssh server authentication-retries ${ssh.retries}`] : []),
+    ...Object.entries(mgmt.getSshAlgorithmLists())
+      .filter(([, tokens]) => tokens.length > 0)
+      .map(([family, tokens]) => `ssh server ${family} ${tokens.join(' ')}`),
+    ...Object.entries(mgmt.getSshClientAlgorithmLists())
+      .filter(([, tokens]) => tokens.length > 0)
+      .map(([family, tokens]) => `ssh client ${family} ${tokens.join(' ')}`),
     ...(mgmt.sshDefaultPasswordAuthenticationEnabled() ? [] : ['undo ssh authentication-type default password']),
     ...[...mgmt.getSshUsers()].flatMap(([name, user]) => [
       `ssh user ${name}`,
@@ -270,10 +276,13 @@ export function registerHuaweiCommonSecurity(
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
   registerUndoForms('ssh', 'Restore the SSH server defaults', [
     ['server', 'enable'], ['server', 'port'], ['server', 'timeout'], ['server', 'authentication-retries'],
+    ['server', 'key-exchange'], ['server', 'cipher'], ['server', 'hmac'], ['server', 'publickey'],
+    ['client', 'key-exchange'], ['client', 'cipher'], ['client', 'hmac'], ['client', 'publickey'],
     ['user', ANY_WORD], ['user', ANY_WORD, 'authentication-type'], ['user', ANY_WORD, 'service-type'],
     ['authentication-type', 'default', 'password'],
   ], [
     { keyword: 'server', description: 'SSH server' },
+    { keyword: 'client', description: 'SSH client' },
     { keyword: 'user', description: 'SSH user' },
     { keyword: 'authentication-type', description: 'Default authentication type of SSH users' },
   ],

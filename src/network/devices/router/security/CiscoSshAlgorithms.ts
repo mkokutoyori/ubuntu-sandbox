@@ -36,8 +36,8 @@ export const IOS_KEX_ALGORITHMS: readonly string[] = [
 export const IOS_ALGORITHM_VALUES: Readonly<Record<IosSshAlgorithmFamily, readonly string[]>> = {
   encryption: IOS_ENCRYPTION_ALGORITHMS,
   mac: [...IOS_MAC_ALGORITHMS, 'hmac-sha2-256', 'hmac-sha2-512'],
-  hostkey: IOS_HOSTKEY_ALGORITHMS,
-  kex: IOS_KEX_ALGORITHMS,
+  hostkey: [...IOS_HOSTKEY_ALGORITHMS, 'rsa-sha2-256', 'rsa-sha2-512'],
+  kex: [...IOS_KEX_ALGORITHMS, 'ecdh-sha2-nistp256'],
 };
 
 const X509_HOSTKEY = 'x509v3-ssh-rsa';

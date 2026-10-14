@@ -1,9 +1,12 @@
 import type { DeviceType } from '../../../../core/types';
+import type { SshKeyAlgorithm } from '../../../../protocols/ssh/SshHostKey';
 import { Firewall, type FirewallOptions } from '../../Firewall';
 import { ASA_PROFILE } from './AsaProfile';
 import { AsaShell } from './AsaShell';
-import { AsaRunningState } from './AsaRunningState';
+import { AsaRunningState, ASA_KEY_EXCHANGE_GROUPS } from './AsaRunningState';
 import { ciscoSshIdentification } from '../../../../protocols/ssh/serverIdentification';
+
+const ASA_HOST_KEY_ALGORITHMS = ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'];
 
 export class AsaFirewall extends Firewall {
   private readonly accessGroups = new Map<string, string>();
@@ -16,9 +19,22 @@ export class AsaFirewall extends Firewall {
   ) {
     super(deviceType, name, x, y, { ...options, profile: ASA_PROFILE });
     this.getLoggingConfig().enabled = false;
+    this.applySshAlgorithms();
   }
 
   runningState(): AsaRunningState { return this.state; }
+
+  applySshAlgorithms(): void {
+    const kex = this.state.sshKeyExchangeGroup === null ? null : ASA_KEY_EXCHANGE_GROUPS[this.state.sshKeyExchangeGroup];
+    this.setSshAlgorithms({
+      hostKey: ASA_HOST_KEY_ALGORITHMS,
+      ...(kex === null ? {} : { kex: [kex] }),
+      ...(this.state.sshEncryptionCustom.length > 0 ? { ciphers: this.state.sshEncryptionCustom } : {}),
+      ...(this.state.sshIntegrityCustom.length > 0 ? { macs: this.state.sshIntegrityCustom } : {}),
+    });
+  }
+
+  protected override managementSshHostKeyAlgorithm(): SshKeyAlgorithm { return 'ssh-rsa'; }
 
   protected override managementSshIdentification(): string {
     const version = this.state.sshVersion;

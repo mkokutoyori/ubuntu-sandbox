@@ -180,7 +180,7 @@ export class SshServerHandler {
     const transport = new SshTransport(rawConn, {
       role: 'server',
       identification: this.ctx.serverIdentification?.() ?? SSH_SERVER_IDENTIFICATION,
-      hostKeys: serverHostKeys(this.ctx.hostKey),
+      hostKeys: [this.ctx.hostKey, ...(this.ctx.additionalHostKeys?.() ?? [])].flatMap(serverHostKeys),
       ...transportPolicyConfig(this.ctx.transportPolicy?.()),
     });
     const conn = transportLink(transport, rawConn);

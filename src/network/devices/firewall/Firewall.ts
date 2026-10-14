@@ -1,4 +1,6 @@
 import { Equipment } from '../../equipment/Equipment';
+import type { SshKeyAlgorithm } from '../../protocols/ssh/SshHostKey';
+import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { LldpAgent } from '@/network/lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '@/network/lldp/types';
@@ -650,6 +652,8 @@ export class Firewall extends Equipment {
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       sshIdentification: () => this.managementSshIdentification(),
+      sshAlgorithms: () => this.management.sshAlgorithms(),
+      sshHostKeyAlgorithm: () => this.managementSshHostKeyAlgorithm(),
       runningConfig: () => this.managementRunningConfig(),
       onManagementLogin: (session) => {
         this.management.noteLogin(session.username);
@@ -1697,6 +1701,8 @@ export class Firewall extends Equipment {
 
   protected managementSshIdentification(): string | undefined { return undefined; }
 
+  protected managementSshHostKeyAlgorithm(): SshKeyAlgorithm { return 'ssh-ed25519'; }
+
   getLoggingConfig(): LoggingConfig { return this.logging; }
   getSyslogAgent(): SyslogAgent { return this.syslog; }
   getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }
@@ -1736,6 +1742,10 @@ export class Firewall extends Equipment {
 
   allowedAccessOn(iface: string): readonly string[] {
     return this.management.allowedAccessOn(iface);
+  }
+
+  setSshAlgorithms(algorithms: SshAlgorithmPreferences): void {
+    this.management.setSshAlgorithms(algorithms);
   }
 
   setManagementPorts(patch: Partial<ManagementPorts>): void {

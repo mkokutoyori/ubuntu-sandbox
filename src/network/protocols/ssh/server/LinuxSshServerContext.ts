@@ -47,6 +47,8 @@ import type {
   DirectTcpipOutcome, DirectTcpipRequest, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
 } from './ISshServerContext';
 import { parseRekeyLimit } from '../transport/RekeyLimit';
+import { sshdAlgorithmPreferences } from './SshdAlgorithmDirectives';
+import { rsaHostKeysFor } from './SshdRsaHostKey';
 import {
   findAdmittedKey, permitOpenAllows, sshWildcardMatches,
   type AuthorizedKey, type AuthorizedKeyOptions, type KeySource,
@@ -77,6 +79,7 @@ const DEFAULT_FAIL2BAN_JAIL_LOCAL =
   '[sshd]\nenabled = true\nmaxretry = 5\nbantime = 300\nfindtime = 60\n';
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
+const RSA_HOST_KEY_PATH = '/etc/ssh/ssh_host_rsa_key';
 const ETC_SSH_DIR = '/etc/ssh';
 const SSHD_CONFIG_DROP_IN_DIR = '/etc/ssh/sshd_config.d';
 
@@ -86,7 +89,6 @@ function joinLines(lines: readonly string[]): string {
   return lines.join('\n') + '\n';
 }
 
-const matchesUserPattern = sshWildcardMatches;
 
 export interface LinuxSshServerContextOptions {
   /** Pre-wired event bus. If omitted a fresh one is created. */
@@ -313,7 +315,11 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   transportPolicy(): SshTransportPolicy {
     const rekeyLimit = parseRekeyLimit(this.sshdConfig.rekeyLimit);
-    return rekeyLimit === null ? {} : { algorithms: { rekeyLimit } };
+    const algorithms = {
+      ...sshdAlgorithmPreferences(this.rawConfig),
+      ...(rekeyLimit === null ? {} : { rekeyLimit }),
+    };
+    return Object.keys(algorithms).length === 0 ? {} : { algorithms };
   }
 
   accountNames(): SftpAccountNames {
@@ -349,7 +355,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   admittedKey(user: string, publicKey: string, source: KeySource): AuthorizedKey | null {
-    if (!this.userAllowed(user, 'publickey')) return null;
+    if (!this.userAllowed(user, 'publickey', source.ip)) return null;
     if (!this.config.pubkeyAuthentication) return null;
     const userEntry = this.userManager.getUser(user);
     if (!userEntry) return null;
@@ -744,6 +750,16 @@ export class LinuxSshServerContext implements ISshServerContext {
     return { ...defaults, ...values };
   }
 
+  additionalHostKeys(): SshHostKey[] {
+    return rsaHostKeysFor(this.rawConfig, hostnameOf(this.hostnameSource), {
+      read: (path) => this.vfs.readFile(path),
+      write: (path, content, privateKey) => {
+        this.vfs.writeFile(path, content, 0, 0, 0o022);
+        this.vfs.chmod(path, privateKey ? 0o600 : 0o644);
+      },
+    }, RSA_HOST_KEY_PATH);
+  }
+
   private loadOrGenerateHostKey(): SshHostKey {
     const pub = this.vfs.readFile(HOST_KEY_PUB_PATH);
     const priv = this.vfs.readFile(HOST_KEY_PATH);
@@ -801,7 +817,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     let attemptsLeft = this.config.maxAuthTries;
     const passwordAttempt = (user: string, password: string, peer: SshPeer | undefined): boolean => {
       attemptsLeft = Math.max(0, attemptsLeft - 1);
-      if (!this.userAllowed(user, 'password')) return false;
+      if (!this.userAllowed(user, 'password', peer?.ip)) return false;
       if (!this.config.passwordAuthentication) return false;
       const pam = this.sshdPam();
       if (pam === null) return this.userManager.passwordMatches(user, password);
@@ -830,7 +846,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       keyboardInteractive: (peer) => {
         if (!this.config.kbdInteractiveAuthentication || !this.effectiveSshdServerConfig().usePam) return null;
         const pam = this.sshdPam();
-        if (pam !== null) return pam.challenge(peer, (user) => this.userAllowed(user, 'password'));
+        if (pam !== null) return pam.challenge(peer, (user) => this.userAllowed(user, 'password', peer.ip));
         return {
           device: 'pam',
           name: '',
@@ -852,30 +868,11 @@ export class LinuxSshServerContext implements ISshServerContext {
    *   4. AllowGroups — when set, at least one group must match.
    *   5. PermitRootLogin — root is gated last.
    */
-  private userAllowed(user: string, method: 'password' | 'publickey'): boolean {
+  private userAllowed(user: string, method: 'password' | 'publickey', address?: string): boolean {
     if (user === 'root' && !this.rootMayLogIn(method)) return false;
-
-    const { allowUsers, denyUsers, allowGroups, denyGroups } = this.sshdConfig;
-    if (denyUsers.some((p) => matchesUserPattern(p, user))) return false;
-    if (allowUsers.length > 0 && !allowUsers.some((p) => matchesUserPattern(p, user))) {
-      return false;
-    }
-
-    if (denyGroups.length > 0 || allowGroups.length > 0) {
-      const userGroups = this.userManager
-        .getUserGroups(user)
-        .map((g) => g.name);
-      if (denyGroups.some((p) => userGroups.some((g) => matchesUserPattern(p, g)))) {
-        return false;
-      }
-      if (
-        allowGroups.length > 0 &&
-        !allowGroups.some((p) => userGroups.some((g) => matchesUserPattern(p, g)))
-      ) {
-        return false;
-      }
-    }
-    return true;
+    const groups = this.userManager.getUserGroups(user).map((g) => g.name);
+    const ctx = address === undefined || address === '' ? undefined : { address };
+    return this.effectiveSshdServerConfig().isUserAllowed(user, groups, ctx);
   }
 
   /**

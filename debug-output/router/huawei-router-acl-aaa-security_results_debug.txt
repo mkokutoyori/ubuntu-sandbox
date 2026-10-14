@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-acl-aaa-security
-Generated: 2026-09-26T00:19:29.286Z
+Generated: 2026-10-14T12:28:59.543Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP ACL(basic/adv/named)/AAA/SSH-hardening/attack-defense
 Total steps: 274
@@ -525,9 +525,7 @@ Total steps: 274
 <empty>
 
 [134/274] r1 [R1] ssh server cipher aes256_ctr
-  Error: Wrong parameter found at '^' position.
-  cipher
-  ^
+<empty>
 
 [135/274] r1 [R1] ssh user admin
 <empty>
@@ -657,7 +655,7 @@ Total steps: 274
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [171/274] r1 <R1> display version
   Huawei Versatile Routing Platform Software
@@ -666,7 +664,7 @@ Total steps: 274
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [172/274] r1 <R1> display current-configuration
   #
@@ -800,6 +798,7 @@ Total steps: 274
   #
   stelnet server enable
   ssh server port 2222
+  ssh server cipher aes256_ctr
   ssh user admin
   ssh user admin authentication-type password
   ssh user admin service-type stelnet
@@ -1068,14 +1067,14 @@ Total steps: 274
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 00:19:29.411  Sep 26 2026(EE618E11.69374BC6)
+  Reference time: 12:28:59.741  Oct 14 2026(EE79F40B.BDB22D0E)
 
 [204/274] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [205/274] r1 <R1> display clock
-  2026-09-26 00:19:29
-  Saturday
+  2026-10-14 12:28:59
+  Wednesday
   Time Zone(UTC) : UTC
 
 [206/274] r1 <R1> display lldp neighbor
@@ -1096,13 +1095,13 @@ Total steps: 274
 [208/274] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-09-26 00:19:29
+  CPU Usage Stat. Time : 2026-10-14 12:28:59
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [209/274] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-09-26 00:19:29
+  Memory utilization statistics at 2026-10-14 12:28:59
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1143,10 +1142,10 @@ Total steps: 274
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-09-26 00:19:29 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-26 00:19:29 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-26 00:19:29 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-26 00:19:29 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-14 12:28:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-14 12:28:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-14 12:28:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-14 12:28:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [214/274] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1369,6 +1368,7 @@ Total steps: 274
   #
   stelnet server enable
   ssh server port 2222
+  ssh server cipher aes256_ctr
   ssh user admin
   ssh user admin authentication-type password
   ssh user admin service-type stelnet
@@ -1492,6 +1492,7 @@ Total steps: 274
   #
   stelnet server enable
   ssh server port 2222
+  ssh server cipher aes256_ctr
   ssh user admin
   ssh user admin authentication-type password
   ssh user admin service-type stelnet
@@ -1611,6 +1612,7 @@ Total steps: 274
    hwtacacs-server shared-key cipher TacKey123
   stelnet server enable
   ssh server port 2222
+  ssh server cipher aes256_ctr
   ssh user admin
   ssh user admin authentication-type password
   ssh user admin service-type stelnet
@@ -1750,39 +1752,45 @@ Total steps: 274
     routing-table  Routing table configuration
 
 [271/274] r1 [Huawei] undo ?
-    acl            Delete Access Control List
-    bfd            Disable BFD globally
-    bgp            Remove BGP
-    command-alias  Disable CLI alias
-    debugging      Disable system debugging functions
-    dns            Domain Name System
-    firewall       Firewall configuration
-    ike            Internet Key Exchange
-    ikev2          Internet Key Exchange version 2
-    info-center    Information center configuration
-    ip             Internet Protocol
-    ipsec          IP Security
-    ipv6           Disable IPv6
-    isis           Remove IS-IS
-    lldp           Link Layer Discovery Protocol
-    local-user     Remove a local user
-    multicast      Disable multicast routing
-    nat            Network Address Translation
-    nqa            Network Quality Analysis
-    nqa-server     Remove an NQA server binding
-    ntp-service    Remove NTP service configuration
-    ospf           Remove OSPF protocol configuration
-    ospfv3         Remove OSPFv3 protocol configuration
-    route-policy   Remove a route-policy
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
-    snmp-agent     Remove SNMP agent configuration
-    ssh            Restore the SSH server defaults
-    stelnet        Disable the STelnet server
-    telnet         Disable the Telnet server
-    terminal       Set the terminal line characteristics
-    time-range     Remove a time-range
-    traffic        Display traffic statistics
+    acl                  Delete Access Control List
+    bfd                  Disable BFD globally
+    bgp                  Remove BGP
+    command-alias        Disable CLI alias
+    debugging            Disable system debugging functions
+    dhcp                 Dynamic Host Configuration Protocol
+    dhcpv6               DHCPv6 configuration
+    dns                  Domain Name System
+    firewall             Firewall configuration
+    header               Remove the login/shell banner
+    ike                  Internet Key Exchange
+    ikev2                Internet Key Exchange version 2
+    info-center          Information center configuration
+    information-refresh  Restore the default information refresh interval
+    ip                   Internet Protocol
+    ipsec                IP Security
+    ipv6                 Disable IPv6
+    isis                 Remove IS-IS
+    lldp                 Link Layer Discovery Protocol
+    local-user           Remove a local user
+    multicast            Disable multicast routing
+    nat                  Network Address Translation
+    nqa                  Network Quality Analysis
+    nqa-server           Remove an NQA server binding
+    ntp-service          Remove NTP service configuration
+    ospf                 Remove OSPF protocol configuration
+    ospfv3               Remove OSPFv3 protocol configuration
+    route-policy         Remove a route-policy
+    rsa                  RSA key pair
+    screen-length        Restore default screen length
+    screen-width         Restore default screen width
+    sftp                 Disable the SFTP server
+    snmp-agent           Remove SNMP agent configuration
+    ssh                  Restore the SSH server defaults
+    stelnet              Disable the STelnet server
+    telnet               Disable the Telnet server
+    terminal             Set the terminal line characteristics
+    time-range           Remove a time-range
+    traffic              Display traffic statistics
 
 [272/274] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)

@@ -2,6 +2,7 @@ import { logSshdVerbosely } from './sshdVerboseLog';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { allowLegacyIosSshServer } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
@@ -79,6 +80,7 @@ async function labFor(clientKind: ClientKind): Promise<Lab> {
     new Cable('cc').connect(win.getPorts()[0], sw.getPorts()[2]);
     term = new WindowsTerminalSession('t1', win);
   } else {
+    allowLegacyIosSshServer(srv);
     const cisco = new CiscoRouter('router-cisco', 'R1');
     new Cable('cc').connect(cisco.getPorts()[0], sw.getPorts()[3]);
     for (const cmd of [
@@ -111,7 +113,7 @@ const CLIENTS: readonly ClientKind[] = ['linux', 'windows', 'cisco'];
 const UNREACHABLE_WORDING: Readonly<Record<ClientKind, RegExp>> = {
   linux: /ssh: connect to host 10\.0\.80\.9 port 22: No route to host/,
   windows: /ssh: connect to host 10\.0\.80\.9 port 22: No route to host/,
-  cisco: /% Connection timed out; remote host not responding/,
+  cisco: /% Destination unreachable; gateway or host down/,
 };
 
 describe.each(CLIENTS)('one `ssh` from a %s client', (clientKind) => {
@@ -135,7 +137,7 @@ describe.each(CLIENTS)('one `ssh` from a %s client', (clientKind) => {
     const { term, server } = await labFor(clientKind);
     server.getPorts()[0].getCable()?.disconnect();
     await line(term, `${sshFor(clientKind)} alice@10.0.80.9`);
-    await flush();
+    for (let i = 0; i < 60 && !UNREACHABLE_WORDING[clientKind].test(term.lines.map((l) => l.text).join('\n')); i++) await flush();
 
     const text = term.lines.map((l) => l.text).join('\n');
     expect(

@@ -206,6 +206,7 @@ export function buildCommitDevice(
         if (settings.ipConflictDetection !== undefined) {
           fw.getIpConflictDetection().setEnabled(settings.ipConflictDetection);
         }
+        if (settings.sshAlgorithms !== undefined) fw.setSshAlgorithms(settings.sshAlgorithms);
         fw.setManagementPorts({
           ssh: settings.adminSshPort,
           telnet: settings.adminTelnetPort,

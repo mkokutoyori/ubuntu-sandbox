@@ -131,6 +131,7 @@ export interface SshTransportPolicy {
 
 export interface ISshServerContext {
   readonly hostKey: SshHostKey;
+  additionalHostKeys?(): SshHostKey[];
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem;

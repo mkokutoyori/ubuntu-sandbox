@@ -1,4 +1,6 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPAddress, type MACAddress } from '../core/types';
+import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
+import type { SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import { SSH_HUAWEI_VRP_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { selectBundleMember, DEFAULT_LOAD_BALANCE, type LoadBalanceMethod } from '@/network/lacp/loadBalance';
 import { AgentRegistry } from './AgentRegistry';
@@ -330,6 +332,18 @@ export class HuaweiSwitch extends Switch {
 
   protected override sshForcedCommand(user: string): string | null {
     return this.getManagementService().sshForcedCommand(user);
+  }
+
+  sshClientProfile(): SshClientProfile | null {
+    const algorithms = this.getManagementService().sshClientAlgorithmPreferences();
+    return Object.keys(algorithms).length === 0
+      ? null
+      : { identification: SSH_HUAWEI_VRP_IDENTIFICATION, extInfo: true, algorithms };
+  }
+
+  protected override sshTransportPolicy(): SshTransportPolicy {
+    const algorithms = this.getManagementService().sshServerAlgorithmPreferences();
+    return Object.keys(algorithms).length === 0 ? {} : { algorithms };
   }
 
   protected override sshServerLimits(): Partial<SshServerConfig> {

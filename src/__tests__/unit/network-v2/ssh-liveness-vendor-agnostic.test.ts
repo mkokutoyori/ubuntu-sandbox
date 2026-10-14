@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
+import { allowLegacyIosSsh, allowLegacyIosSshServer, allowLegacyIosSshServerOnVrp } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -102,7 +102,7 @@ async function configureHuaweiPeer(dev: HuaweiRouter, ip: string, hostname: stri
   ]) await dev.executeCommand(cmd);
 }
 
-async function labFor(clientKind: Vendor, peerKind: Vendor): Promise<Lab> {
+async function labFor(clientKind: Vendor, peerKind: Vendor, legacyOnServer = true): Promise<Lab> {
   const sw = new GenericSwitch('switch-generic', 'SW');
   const srv = new LinuxServer('linux-server', 'SRV1');
   srv.getPorts()[0].configureIP(new IPAddress('10.0.70.9'), MASK);
@@ -110,11 +110,12 @@ async function labFor(clientKind: Vendor, peerKind: Vendor): Promise<Lab> {
 
   const peerIp = '10.0.70.20';
   if (peerKind === 'linux') {
-    // The Linux server on the segment already answers; reuse it.
+    if (clientKind === 'cisco' && legacyOnServer) allowLegacyIosSshServer(srv);
   } else if (peerKind === 'windows') {
     const peer = new WindowsPC('windows-pc', 'WINPEER');
     peer.getPorts()[0].configureIP(new IPAddress(peerIp), MASK);
     new Cable('cp').connect(peer.getPorts()[0], sw.getPorts()[4]);
+    if (clientKind === 'cisco' && legacyOnServer) allowLegacyIosSshServer(peer);
   } else if (peerKind === 'cisco') {
     const peer = new CiscoRouter('router-cisco', 'RPEER');
     new Cable('cp').connect(peer.getPorts()[0], sw.getPorts()[4]);
@@ -123,6 +124,7 @@ async function labFor(clientKind: Vendor, peerKind: Vendor): Promise<Lab> {
     const peer = new HuaweiRouter('router-huawei', 'RPEER');
     new Cable('cp').connect(peer.getPorts()[0], sw.getPorts()[4]);
     await configureHuaweiPeer(peer, peerIp, 'R9');
+    if (clientKind === 'cisco' && legacyOnServer) await allowLegacyIosSshServerOnVrp(peer);
   }
 
   const clientCable = new Cable('cc');
@@ -182,6 +184,15 @@ describe.each(CLIENTS)('an SSH session opened from a %s client', (clientKind) =>
 
 const PAIRS: readonly (readonly [Vendor, Vendor])[] =
   CLIENTS.flatMap((c) => PEER_KINDS.map((p) => [c, p] as const));
+
+describe('a cisco client onto a huawei peer that has not enabled the legacy algorithms', () => {
+  it('is refused at key exchange, as an IOS 15 client is by a server without its legacy algorithms', async () => {
+    const { term, peerIp } = await labFor('cisco', 'huawei', false);
+    await line(term, `ssh ${PEERS.huawei.login}@${peerIp}`);
+    expect(text(term)).toMatch(/no matching key exchange method found/);
+    expect(term.foreground.getPrompt()).toMatch(/R1>/);
+  }, 40000);
+});
 
 describe.each(PAIRS)('a %s client onto a %s peer', (clientKind, peerKind) => {
   const peer = PEERS[peerKind];
