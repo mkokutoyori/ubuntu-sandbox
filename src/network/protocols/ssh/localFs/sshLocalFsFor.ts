@@ -18,6 +18,7 @@ import type { Equipment } from '@/network/equipment/Equipment';
 import type { ISshLocalFs } from '../ISshLocalFs';
 import { WindowsSshLocalFs } from './WindowsSshLocalFs';
 import { MemorySshLocalFs } from './MemorySshLocalFs';
+import { OPENSSH_DEFAULT_IDENTITY_FILES } from '../SshConnectOptions';
 
 const fallbackStores = new WeakMap<object, ISshLocalFs>();
 
@@ -55,6 +56,14 @@ export function knownHostsPathFor(device: Equipment, user: string): string {
   const dev = device as unknown as { getFileSystem?: () => unknown; executor?: { vfs?: unknown } };
   if (!dev.executor?.vfs && dev.getFileSystem) return `/Users/${user}/.ssh/known_hosts`;
   return user === 'root' ? '/root/.ssh/known_hosts' : `/home/${user}/.ssh/known_hosts`;
+}
+
+export function defaultIdentityFilesFor(device: Equipment, user: string): string[] {
+  const directory = knownHostsPathFor(device, user).replace(/\/known_hosts$/, '');
+  const fs = sshLocalFsFor(device);
+  return OPENSSH_DEFAULT_IDENTITY_FILES
+    .map((name) => `${directory}/${name}`)
+    .filter((path) => fs.readFile(path) !== null);
 }
 
 export interface SshLocalIdentity {

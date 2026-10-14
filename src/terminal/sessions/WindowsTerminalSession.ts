@@ -33,17 +33,19 @@ import {
 } from '@/network/devices/windows/GetCounter';
 import { parseWinPathpingArgs, runPathping } from '@/network/devices/windows/WinPathping';
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
-import { IPAddress } from '@/network/core/types';
+import type { SshSession } from '@/network/protocols/ssh/session/SshSession';
+import { isOk } from '@/network/protocols/ssh/Result';
+import type { SshClientAuthentication } from '@/network/protocols/ssh/SshConnectOptions';
+import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSshLocalFs';
 import {
-  openWireSshShell, silentConnectIo, wireReachOutcomeRetransmitting, sshUnreachableReason,
+  openWireSshShell, openWireSshConnection, silentConnectIo, resolveSshTarget,
 } from '@/terminal/ssh/wireSshLogin';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
-import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { parseSshCommandLine, WINDOWS_SSH_COMMAND_WORD } from '@/terminal/sessions/sshArgs';
 import { parseBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import type { StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
-import { firstConfiguredIp, establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { firstConfiguredIp, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -832,9 +834,9 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private parseInteractiveSsh(
     line: string,
-  ): { user: string | null; host: string; port: number; quiet: boolean; algorithms: SshAlgorithmPreferences; strict: StrictHostKeyChecking | undefined } | null {
+  ): { user: string | null; host: string; port: number; command: string | null; quiet: boolean; algorithms: SshAlgorithmPreferences; strict: StrictHostKeyChecking | undefined; identityFiles: readonly string[]; authentication: SshClientAuthentication } | null {
     const parsed = parseSshCommandLine(line, WINDOWS_SSH_COMMAND_WORD);
-    if (parsed === null || parsed.host === '' || parsed.command !== null) return null;
+    if (parsed === null || parsed.host === '') return null;
     return parsed;
   }
 
@@ -864,40 +866,33 @@ export class WindowsTerminalSession extends TerminalSession {
       .userMgr?.currentUser ?? 'User';
     const user = parsed.user ?? localUser;
 
-    const resolver = this.device as unknown as {
-      resolveHostname(name: string): Promise<IPAddress | null>;
-    };
-    const resolved = IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
-    if (!resolved) {
-      this.addLine(`ssh: Could not resolve hostname ${typedHost}: Name or service not known`);
+    const target = await resolveSshTarget(this.device, typedHost, port);
+    if (target.kind === 'failed') {
+      this.addLine(target.line);
       return true;
     }
-    const host = resolved.toString();
-
-    if (!peerLiveness(this.device, host)()) {
-      this.addLine(`ssh: connect to host ${typedHost} port ${port}: ${sshUnreachableReason(this.device, host)}`);
-      return true;
-    }
-    const reach = await wireReachOutcomeRetransmitting(this.device, host, port);
-    if (reach !== 'open') {
-      this.addLine(sshWireFailureLine(OPENSSH_SSH, reach, typedHost, port));
-      return true;
-    }
+    const host = target.address;
 
     const io = this.createSshTerminalIO();
+    const request = {
+      device: this.device,
+      localUser,
+      user,
+      host,
+      port,
+      io,
+      strict: parsed.strict ?? 'accept-new',
+      quiet: parsed.quiet,
+      identityFiles: parsed.identityFiles.map(sshPathOfWindowsPath),
+      authentication: parsed.authentication,
+      agent: this.device instanceof WindowsPC ? this.device.sshAgentIfRunning() : undefined,
+      algorithms: parsed.algorithms,
+    };
     let outcome: Awaited<ReturnType<typeof openWireSshShell>>;
     try {
-      outcome = await openWireSshShell({
-        device: this.device,
-        localUser,
-        user,
-        host,
-        port,
-        io,
-        strict: parsed.strict ?? 'accept-new',
-        quiet: parsed.quiet,
-        algorithms: parsed.algorithms,
-      });
+      outcome = parsed.command === null
+        ? await openWireSshShell(request)
+        : await this.openExecConnection(request);
     } finally {
       this.pendingSshIO = null;
       if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
@@ -920,6 +915,11 @@ export class WindowsTerminalSession extends TerminalSession {
     }
     if (outcome.kind !== 'connected') return true;
 
+    if (parsed.command !== null) {
+      await this.runSshExec(outcome.session, parsed.command);
+      return true;
+    }
+
     const { session, channel } = outcome;
     if (!parsed.quiet) {
       const greeting = (channel as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
@@ -940,6 +940,30 @@ export class WindowsTerminalSession extends TerminalSession {
     this._inputBuf = '';
     this.notify();
     return true;
+  }
+
+  private async openExecConnection(
+    request: Parameters<typeof openWireSshConnection>[0],
+  ): Promise<Awaited<ReturnType<typeof openWireSshShell>>> {
+    const connection = await openWireSshConnection(request);
+    return connection.kind === 'connected'
+      ? { kind: 'connected', session: connection.session, channel: undefined as never }
+      : connection;
+  }
+
+  private async runSshExec(session: SshSession, command: string): Promise<void> {
+    try {
+      const channel = session.openExecChannel(command);
+      if (!isOk(channel)) return;
+      const result = await channel.value.execute();
+      channel.value.close();
+      for (const outputLine of (result?.stdout ?? '').replace(/\n+$/, '').split('\n')) {
+        if (outputLine.length > 0) this.addLine(outputLine);
+      }
+    } finally {
+      session.disconnect();
+      this.notify();
+    }
   }
 
   private pendingRunas: { userName: string; command: string; saveCred: boolean } | null = null;

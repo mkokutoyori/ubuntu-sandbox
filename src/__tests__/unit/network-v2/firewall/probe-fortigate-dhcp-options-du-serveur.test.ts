@@ -99,6 +99,8 @@ async function lease(pc: LinuxPC): Promise<string> {
 const ack = (replies: DHCPPacket[]): DHCPPacket | undefined => replies.find(r => r.getMessageType() === 'DHCPACK');
 const rawBody = (reply: DHCPPacket, code: number): number[] => Array.from(reply.getOption(code) as Uint8Array).slice(1);
 const rawAddresses = (reply: DHCPPacket, code: number): string[] => {
+  const typed = reply.getOption(code);
+  if (Array.isArray(typed)) return typed.map(String);
   const body = rawBody(reply, code);
   const found: string[] = [];
   for (let i = 0; i + 4 <= body.length; i += 4) found.push(body.slice(i, i + 4).join('.'));

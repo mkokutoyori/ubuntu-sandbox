@@ -28,6 +28,7 @@ import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
 import { toutesLesSuites } from './ciscoContinuations';
+import { parseNtpBroadcast } from './ciscoNtpBroadcast';
 
 /**
  * Un TYPE d'interface sans son numéro.
@@ -768,6 +769,26 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (iface && agent) agent.setInterfaceDisabled(iface, true);
     return '';
   });
+  for (const kind of ['broadcast', 'multicast'] as const) {
+    trie.registerGreedy(`ntp ${kind}`, kind === 'broadcast' ? 'Configure NTP broadcast service' : 'Configure NTP multicast service', (args) => {
+      const iface = ctx.getSelectedInterface();
+      const agent = getNtpAgent(ctx.r());
+      const parsed = parseNtpBroadcast(kind, args);
+      if (!parsed.ok) return `% Invalid input detected at '^' marker.`;
+      if (!iface || !agent) return '';
+      if (parsed.client !== undefined) agent.setBroadcastClient(iface, true, parsed.client.group);
+      else agent.setBroadcastServer(iface, parsed.server ?? null);
+      return '';
+    });
+    trie.registerGreedy(`no ntp ${kind}`, `Remove NTP ${kind} service`, (args) => {
+      const iface = ctx.getSelectedInterface();
+      const agent = getNtpAgent(ctx.r());
+      if (!iface || !agent) return '';
+      if (args[0]?.toLowerCase() === 'client') agent.setBroadcastClient(iface, false);
+      else agent.setBroadcastServer(iface, null);
+      return '';
+    });
+  }
   trie.register('no ntp disable', 'Re-enable NTP service on this interface', () => {
     const iface = ctx.getSelectedInterface();
     const agent = getNtpAgent(ctx.r());

@@ -57,7 +57,6 @@ import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode, withTimeout, DeviceOfflineError,
 } from './TerminalSession';
-import { createSessionForDevice } from './sessionFactory';
 import { followArguments, snapshotCommand } from '@/network/devices/linux/journal/JournalFollow';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
@@ -66,7 +65,7 @@ import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShell
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { CompletionController, ReadlinePolicy, LastWordSource, ghostRemainder, driveSubShellTab, SubShellCompletionControllers } from '@/terminal/completion';
 import {
-  bashPromptParts, collapseHome, formatBashPrompt, type BashPromptParts,
+  bashPromptParts, collapseHome, formatBashPrompt, parseBashPrompt, type BashPromptParts,
 } from '@/network/devices/linux/shell/BashPrompt';
 import type { SubShellTabHost } from '@/terminal/completion';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
@@ -2304,6 +2303,7 @@ export class LinuxTerminalSession extends TerminalSession {
       requestTty?: 'yes' | 'no' | 'force';
       authentication?: SshClientAuthentication;
       algorithms?: SshAlgorithmPreferences;
+      quiet?: boolean;
     },
     args: readonly string[],
   ): Promise<void> {
@@ -2503,53 +2503,31 @@ export class LinuxTerminalSession extends TerminalSession {
     // and completion (A1/B1), stack their own sub-shells (B2), host
     // their own editors (B3) and raise their own challenges (B4), so
     // one client driver is left (docs/PRD-SSH-Unification.md §4bis).
-    const wireRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
-    if (wireRemoteDevice) {
-      const channelResult = session.openShellChannel();
-      if (isOk(channelResult)) {
-        const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
-        const sourceHost = this.device.getHostname?.() ?? '';
-        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false, true);
-        for (const line of banner) this.addLine(line);
-        const promptHost = (wireRemoteDevice as unknown as { getSshHostname?: () => string })
-          .getSshHostname?.() ?? host;
-        this.activeSubShell = new SshInteractiveSubShell(
-          session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
-          promptHost, linuxRemoteDevice ?? undefined,
-          // Liveness of an OPEN session is read, never provoked with a
-          // fresh handshake — otherwise every command would make the
-          // remote log an accept/close pair. Two facts are read: this
-          // side's own socket, which knows when THIS link drops, and the
-          // path, which is the only thing that notices a cable pulled at
-          // the far end, a switch losing power in between, or the peer
-          // being switched off (docs/PRD-Pannes.md §F1, §F5).
-          establishedSessionLiveness(session, this.device, host),
-          (footer) => this.onRemoteHangup(footer),
-          (line) => this.addLine(line),
-        );
-        const size = this.windowSize;
-        if (size !== null) this.activeSubShell.resize?.(size.rows, size.cols);
-        this._inputBuf = '';
-        this.notify();
-        return;
+    const channelResult = session.openShellChannel();
+    if (isOk(channelResult)) {
+      const channel = channelResult.value;
+      if (!meta.quiet) {
+        const greeting = (channel as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
+        for (const greetingLine of greeting.replace(/\n+$/, '').split('\n')) {
+          if (greetingLine.length > 0) this.addLine(greetingLine);
+        }
       }
+      const opening = (channel as { initialPrompt?: () => string | null }).initialPrompt?.() ?? null;
+      const promptHost = (opening !== null ? parseBashPrompt(opening)?.hostname : undefined) ?? host;
+      this.activeSubShell = new SshInteractiveSubShell(
+        session, channel, user, host, `/home/${user}`, onSessionEnd,
+        promptHost, linuxRemoteDevice ?? undefined,
+        establishedSessionLiveness(session, this.device, host),
+        (footer) => this.onRemoteHangup(footer),
+        (line) => this.addLine(line),
+      );
+      const size = this.windowSize;
+      if (size !== null) this.activeSubShell.resize?.(size.rows, size.cols);
+      this._inputBuf = '';
+      this.notify();
+      return;
     }
 
-    const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
-    if (anyRemoteDevice) {
-      const child = createSessionForDevice(anyRemoteDevice, `${this.id}>ssh`);
-      if (child) {
-        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
-        const serverIp = host;
-        const clientPort = 50_000 + (user.length * 7 % 10_000);
-        this.adoptRemoteChild(child, user, host, {
-          SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} 22`,
-          SSH_CLIENT: `${clientIp} ${clientPort} 22`,
-        });
-        child.registerTearDown(onSessionEnd);
-        return;
-      }
-    }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
     this.notify();
@@ -2646,6 +2624,8 @@ export class LinuxTerminalSession extends TerminalSession {
       requestTty: parsed.requestTty,
       authentication: parsed.authentication,
       algorithms: parsed.algorithms,
+      loginName: parsed.loginName,
+      quiet: parsed.quiet,
     };
   }
 

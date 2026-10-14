@@ -2,11 +2,12 @@ import {
   categoryOfDomain, categoryName, UNCLASSIFIED_CATEGORY,
   type AntivirusProfile, type CategoryFilterEntry, type DnsFilterProfile,
   type ApplicationList, type FileFilterProfile, type ProtocolOptions,
-  type SslSshProfile,
+  type SslSshProfile, type IpsCustomSignature, type IpsSensor,
   type UrlFilterEntry, type UtmAction, type WebFilterProfile,
 } from './UtmProfiles';
 import { parseRequest, parseResponse } from '../../../http/http1/Http1Wire';
 import { identifyApplication } from './ApplicationSignatures';
+import { signatureMatches } from './IpsEngine';
 import { decodeDnsMessage } from '../../../dns/wire/DnsMessageCodec';
 import { unframeDnsMessage } from '../../../dns/transport/DnsStreamFraming';
 import { decodeRecords } from '../../../http/https/TlsRecordWire';
@@ -35,7 +36,8 @@ export type UtmVerdictKind =
   | 'category-blocked'
   | 'dns-blocked'
   | 'file-type-blocked'
-  | 'application-blocked';
+  | 'application-blocked'
+  | 'ips-blocked';
 
 export interface UtmVerdict {
   readonly kind: UtmVerdictKind;
@@ -239,6 +241,49 @@ export function scanFileFilter(
       profile: profile.name,
       fileType: detected,
     });
+  }
+  return CLEAN;
+}
+
+export interface IpsFlowContext {
+  readonly protocol: 'tcp' | 'udp';
+  readonly fromClient: boolean;
+}
+
+export function scanIps(
+  flow: InspectedFlow, context: IpsFlowContext, sensor: IpsSensor,
+  signatures: readonly IpsCustomSignature[],
+): UtmVerdict {
+  const facts = {
+    protocol: context.protocol, payload: flow.payload, sourcePort: flow.sourcePort,
+    destinationPort: flow.destinationPort, fromClient: context.fromClient,
+  };
+  const accepts = (list: readonly string[], value: string | undefined): boolean =>
+    list.length === 0 || list.includes('all') || (value !== undefined && list.includes(value));
+
+  for (const entry of sensor.entries) {
+    for (const signature of signatures) {
+      const selected = entry.rules.length > 0
+        ? entry.rules.includes(signature.ruleId)
+        : accepts(entry.severities, signature.severity)
+          && accepts(entry.locations, signature.location)
+          && accepts(entry.protocols, signature.protocol)
+          && accepts(entry.oses, signature.os)
+          && accepts(entry.applications, signature.application)
+          && accepts(entry.defaultActions, signature.action === 'block' ? 'block' : 'pass')
+          && accepts(entry.defaultStatuses, signature.enabled ? 'enable' : 'disable');
+      if (!selected) continue;
+      const active = entry.status === 'default' ? signature.enabled : entry.status === 'enable';
+      if (!active || !signatureMatches(signature.body, facts)) continue;
+
+      const action = entry.action === 'default' ? signature.action : entry.action;
+      return Object.freeze({
+        kind: 'ips-blocked' as const,
+        blocked: action !== 'pass',
+        detail: signature.tag,
+        profile: sensor.name,
+      });
+    }
   }
   return CLEAN;
 }

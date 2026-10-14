@@ -163,10 +163,13 @@ export class PolicyEvaluator {
       && this.matchesEndpoints(rule, probe)
       && this.matchesAddresses(rule, probe)
       && this.matchesService(rule, probe)
-      && this.matchesSchedule(rule);
+      && this.matchesTos(rule, probe)
+      && this.matchesSchedule(rule)
+      && this.notExpired(rule);
   }
 
   private matchesTranslatedDestination(rule: SecurityRule, probe: PolicyProbe): boolean {
+    if (rule.matchVipOnly === true && !(probe.destinationNatRuleId ?? '').startsWith(VIP_RULE_PREFIX)) return false;
     if (probe.destinationTranslated !== true) return true;
     if (rule.matchTranslatedDestination !== false) return true;
     return rule.destination.some(name => name !== ANY);
@@ -193,11 +196,11 @@ export class PolicyEvaluator {
     const sources = addressListFor(rule, probe.sourceIP, 'source');
     if (sources.length === 0) return false;
 
-    const sourceHit = this.objects.matchesAnyAddress(sources, probe.sourceIP);
-    if (sourceHit === rule.sourceNegated) return false;
+    const sourceHit = this.objects.matchesAnyAddress(sources, probe.sourceIP, probe.sourceMac);
+    if (sourceHit === negatedFor(rule, probe.sourceIP, 'source')) return false;
 
     const destHit = this.matchesDestination(rule, probe);
-    return destHit !== rule.destinationNegated;
+    return destHit !== negatedFor(rule, probe.destIP, 'destination');
   }
 
   private matchesDestination(rule: SecurityRule, probe: PolicyProbe): boolean {
@@ -221,6 +224,17 @@ export class PolicyEvaluator {
   ): ServiceObject | undefined {
     if (rule.serviceNegated) return undefined;
     return this.objects.serviceMatching(rule.service, serviceProbe(probe));
+  }
+
+  private matchesTos(rule: SecurityRule, probe: PolicyProbe): boolean {
+    if (rule.tos === undefined) return true;
+    if (probe.tos === undefined) return false;
+    const hit = (probe.tos & rule.tos.mask) === (rule.tos.value & rule.tos.mask);
+    return hit !== rule.tos.negated;
+  }
+
+  private notExpired(rule: SecurityRule): boolean {
+    return rule.expiresAt === undefined || this.now() < rule.expiresAt;
   }
 
   private matchesSchedule(rule: SecurityRule): boolean {
@@ -254,6 +268,15 @@ export class PolicyEvaluator {
 
 function listMatches(list: readonly string[], value: string): boolean {
   return list.includes(ANY) || list.includes(value);
+}
+
+function negatedFor(
+  rule: SecurityRule, candidate: string, side: 'source' | 'destination',
+): boolean {
+  if (familyOf(candidate) === 'ipv4') {
+    return side === 'source' ? rule.sourceNegated : rule.destinationNegated;
+  }
+  return (side === 'source' ? rule.source6Negated : rule.destination6Negated) === true;
 }
 
 function addressListFor(

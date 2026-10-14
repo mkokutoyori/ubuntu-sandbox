@@ -4,7 +4,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 7.
  */
 
-import type { ChannelType, ISshChannel } from './ISshChannel';
+import type { ChannelType, ExecChannelOptions, ISshChannel } from './ISshChannel';
 import type { SshConnection } from '../connection/SshConnection';
 import { SshExecChannel } from './SshExecChannel';
 import { SshSftpChannel } from './SshSftpChannel';
@@ -20,8 +20,8 @@ export class SshChannelManager {
     return channel;
   }
 
-  openExec(connection: SshConnection, command: string): SshExecChannel {
-    const channel = new SshExecChannel(connection, this.nextChannelId++, command);
+  openExec(connection: SshConnection, command: string, options?: ExecChannelOptions): SshExecChannel {
+    const channel = new SshExecChannel(connection, this.nextChannelId++, command, options);
     this.register(channel);
     return channel;
   }

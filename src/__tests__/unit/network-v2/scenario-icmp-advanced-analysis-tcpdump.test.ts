@@ -121,7 +121,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
         const ttlMatch = /^\S.*IP \(tos 0x0, ttl (\d+),.*proto UDP/.exec(lines[i]);
         if (!ttlMatch) continue;
         const next = lines[i + 1];
-        if (next.includes(`${ATTACKER_IP}.`) && /: UDP, cksum 0x[0-9a-f]+ \(correct\), length 32$/.test(next)) {
+        if (next.includes(`${ATTACKER_IP}.`) && /: \[udp sum ok\] UDP, length 32$/.test(next)) {
           outboundTtls.push(Number(ttlMatch[1]));
         }
       }

@@ -4,20 +4,40 @@ import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type NtpAssociation, type NtpConfig, type NtpPacket, type NtpMode,
-  type NtpCounters, type NtpVersion, createNtpCounters,
-  createDefaultNtpConfig, defaultAssociation, computeOffsetMs,
-  UDP_PORT_NTP, NTP_VERSION,
+  type NtpCounters, type NtpVersion, type NtpRateLimit, type NtpClientLogEntry, createNtpCounters,
+  createDefaultNtpConfig, defaultAssociation, emptyFilter,
+  UDP_PORT_NTP, NTP_RATE_POLL_CEILING, NTP_VERSION, NTP_DEFAULT_BROADCAST_DELAY_US, type NtpBroadcastServer, NTP_MAX_STRATUM, NTP_DEFAULT_MAX_POLL, NTP_MIN_POLL, NTP_MAX_POLL, NTP_PHI,
+  NTP_MAX_DISPERSION_MS, NTP_MIN_DISPERSION_MS, NTP_MAX_DISTANCE_MS
 } from './types';
+import { ReferenceTracking } from './ReferenceTracking';
+import { adjustPoll, pollAdjustment, startBurst, startInitialBurst, chronyTransmitTick, chronyValidResponse } from './chronyPoll';
+import { SourceStatistics, type MeasurementSample } from './SourceStatistics';
+import { evaluateSampleTests } from './chronySampleTests';
+import { TimeSmoothing } from './TimeSmoothing';
+import { TokenBucketLimiter } from './RateLimiter';
+import { DelayQuantile } from './DelayQuantile';
+import { SampleFilter } from './SampleFilter';
+import {
+  ChronySelector, DEFAULT_SELECTION_PARAMETERS, type CombinedReference, type SelectionInput,
+  type SelectionParameters, type SourceVerdict,
+} from './ChronySelection';
+import { timestampFromMs, timestampToMs, timestampDifferenceMs, NTP_TIMESTAMP_ZERO, type NtpTimestamp } from './timestamp';
+import {
+  clockFilter, isFit, pollTick, pollUpdate, resetPeer, rootDistanceMs, PRECISION_FLOOR_MS,
+} from './peerProcess';
+import { selectSources, combineOffsets, chooseSystemPeer } from './systemProcess';
 import {
   IPAddress,
   type EthernetFrame, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { isValidIPv4, tryIpToUint32 } from '../core/ip';
 import { calculerMacNtp, verifierMacNtp } from './auth';
+import { decodeNtpPacket, encodeNtpPacket, isCryptoNak, isKissOfDeath } from './wire';
 import { verdictAccesNtp, type ActionNtp } from './accessGroups';
 import {
   type NtpControlPacket, OPCODES_SERVIS, ERREURS_CONTROLE,
-  motEtatSysteme, motEtatPair, SELECT,
+  motEtatSysteme, motEtatPair, SELECT, MODE_CONTROLE, encodeControlPacket, decodeControlPacket,
   formaterVariables, formaterListeAssociations,
 } from './control';
 import {
@@ -25,6 +45,19 @@ import {
   type EtatHorloge, type DecisionDiscipline, type ReglagesDiscipline,
 } from './discipline';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
+import type { NtsClient } from '../nts/NtsClient';
+import type { NtsServerKeys } from '../nts/NtsServerKeys';
+import {
+  EF, NTS_KOD_NAK, buildNakResponse, buildServerResponse as buildNtsReply, checkNtsRequest, type NtsServerVerdict,
+} from '../nts/NtsNtp';
+
+export interface NtsSupport {
+  active(): boolean;
+  serverKeys(): NtsServerKeys | null;
+  client(association: NtpAssociation): NtsClient | null;
+  keyExchange(association: NtpAssociation, client: NtsClient, nowMs: number): void;
+  randomBytes(length: number): Uint8Array;
+}
 
 export interface NtpHost {
   readonly id: string;
@@ -34,11 +67,46 @@ export interface NtpHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
+  joinMulticastGroup?(iface: string, group: string): void;
+  leaveMulticastGroup?(iface: string, group: string): void;
 }
+
+const SMOOTH_REFERENCE_ID = '83.77.79.79';
+
+interface UdpPorts { readonly source: number; readonly destination: number }
+
+export interface LocalReference { readonly stratum: number; readonly distance: number; readonly orphan: boolean }
+
+export interface NtpPlatformProfile {
+  respondsWhenUnsynchronized: boolean;
+  unsynchronizedRootBoundMs: number;
+  silentOnBadAuthentication: boolean;
+  acceptsExtensionFields: boolean;
+  statelessSymmetricReply: boolean;
+  enforcesRootDistance: boolean;
+  localReferenceIsAddress: boolean;
+  pollModel: 'ntpd' | 'chrony';
+}
+
+export const NTP_DEFAULT_PROFILE: NtpPlatformProfile = {
+  respondsWhenUnsynchronized: false,
+  unsynchronizedRootBoundMs: 0,
+  silentOnBadAuthentication: false,
+  acceptsExtensionFields: true,
+  statelessSymmetricReply: false,
+  enforcesRootDistance: true,
+  localReferenceIsAddress: false,
+  pollModel: 'ntpd',
+};
 
 export interface NtpAssociationOptions {
   readonly version?: NtpVersion;
   readonly sourceInterface?: string;
+  readonly iburst?: boolean;
+  readonly burst?: boolean;
+  readonly minpoll?: number;
+  readonly maxpoll?: number;
+  readonly online?: boolean;
 }
 
 function applyAssociationOptions(
@@ -48,14 +116,21 @@ function applyAssociationOptions(
   if (options.sourceInterface !== undefined) {
     association.sourceInterface = options.sourceInterface;
   }
+  if (options.iburst !== undefined) association.iburst = options.iburst;
+  if (options.burst !== undefined) association.burstMode = options.burst;
+  if (options.minpoll !== undefined) association.minpoll = options.minpoll;
+  if (options.maxpoll !== undefined) association.maxpoll = Math.max(options.maxpoll, association.minpoll);
+  if (options.online !== undefined) association.online = options.online;
+  association.hpoll = Math.max(Math.min(association.hpoll, association.maxpoll), association.minpoll);
 }
 
 export class NtpAgent {
   private config: NtpConfig = createDefaultNtpConfig();
   private readonly emitting = new Set<string>();
-  private pollTimer: TimerHandle | null = null;
+  private readonly peerTimers = new Map<string, TimerHandle>();
   private scheduler: IScheduler | null = null;
   private running = false;
+  private profile: NtpPlatformProfile = { ...NTP_DEFAULT_PROFILE };
 
   constructor(
     private readonly host: NtpHost,
@@ -66,29 +141,47 @@ export class NtpAgent {
   start(): void {
     if (this.running) return;
     this.running = true;
-    if (this.config.enabled) this.startTimer();
+    if (this.config.enabled) {
+      this.armAll();
+      for (const iface of this.config.broadcastServers.keys()) this.armBroadcast(iface);
+    }
   }
 
   stop(): void {
     if (!this.running) return;
     this.running = false;
-    this.stopTimer();
+    this.disarmAll();
   }
 
   getConfig(): Readonly<NtpConfig> { return this.config; }
 
+  setRateLimit(limit: NtpRateLimit | null): void {
+    this.config.rateLimit = limit;
+    this.rateLimiter.configure(limit);
+  }
+
+  private readonly rateLimiter = new TokenBucketLimiter(null);
+
+  private allowedByRate(ip: string): 'serve' | 'kod' | 'drop' {
+    const decision = this.rateLimiter.check(ip, simulationNowMs());
+    if (decision.limited) this.config.counters.rateLimited++;
+    return decision.verdict;
+  }
+
+  setProfile(profile: Partial<NtpPlatformProfile>): void { this.profile = { ...this.profile, ...profile }; }
+  getProfile(): Readonly<NtpPlatformProfile> { return this.profile; }
+
   setEnabled(on: boolean): void {
     if (this.config.enabled === on) return;
     this.config.enabled = on;
-    if (on) this.startTimer();
-    else this.stopTimer();
+    if (on) this.armAll();
+    else this.disarmAll();
     if (!on) {
       this.getBus().publish({
         topic: 'ntp.unsynced',
         payload: { deviceId: this.host.id, hostname: this.host.getHostname(), reason: 'admin-disabled' },
       });
-      this.config.localStratum = 16;
-      this.config.lastSyncMs = 0;
+      this.becomeUnsynchronized();
     }
   }
 
@@ -97,57 +190,114 @@ export class NtpAgent {
     if (on && advertiseLocalClock && this.config.localStratum === 16) {
       this.config.localStratum = 8;
       this.config.refIdentifier = 'LOCL';
+      this.config.system.leap = 0;
+      this.config.system.refTimestamp = timestampFromMs(this.now());
     }
+  }
+
+  private becomeUnsynchronized(): void {
+    this.config.localStratum = NTP_MAX_STRATUM;
+    this.config.lastSyncMs = 0;
+    this.config.refIdentifier = '.INIT.';
+    this.config.system.leap = 3;
+    this.config.system.peerIp = null;
+    this.config.system.survivors = [];
+    for (const association of this.config.associations.values()) association.preferred = false;
   }
 
   addServer(
     serverIp: string, prefer = false, keyId?: number,
     configuredAs: 'ntp' | 'sntp' = 'ntp', options: NtpAssociationOptions = {},
   ): void {
-    if (!this.config.associations.has(serverIp)) {
-      const a = defaultAssociation(serverIp, prefer);
+    let a = this.config.associations.get(serverIp);
+    if (!a) {
+      a = defaultAssociation(serverIp, prefer);
       if (keyId !== undefined) a.keyId = keyId;
       a.configuredAs = configuredAs;
       applyAssociationOptions(a, options);
       this.config.associations.set(serverIp, a);
+      this.beginAssociation(a);
     } else {
-      const a = this.config.associations.get(serverIp)!;
       if (prefer) a.prefer = true;
       if (keyId !== undefined) a.keyId = keyId;
       a.configuredAs = configuredAs;
       applyAssociationOptions(a, options);
     }
-    if (this.config.enabled) {
-      try { this.poll(serverIp); } catch { /* invalid target — keep the configuration entry, polling will retry once reachable */ }
-    }
   }
 
   removeServer(serverIp: string): void {
+    this.disarm(serverIp);
     this.config.associations.delete(serverIp);
+    if (this.config.system.peerIp === serverIp) this.reselect();
   }
 
   addPeer(
     peerIp: string, prefer = false, keyId?: number,
     options: NtpAssociationOptions = {},
   ): void {
-    if (!this.config.associations.has(peerIp)) {
-      const a = defaultAssociation(peerIp, prefer, 'symmetric-active');
+    let a = this.config.associations.get(peerIp);
+    if (!a) {
+      a = defaultAssociation(peerIp, prefer, 'symmetric-active');
       if (keyId !== undefined) a.keyId = keyId;
       applyAssociationOptions(a, options);
       this.config.associations.set(peerIp, a);
+      this.beginAssociation(a);
     } else {
-      const a = this.config.associations.get(peerIp)!;
       a.mode = 'symmetric-active';
+      a.ephemeral = false;
       if (prefer) a.prefer = true;
       if (keyId !== undefined) a.keyId = keyId;
       applyAssociationOptions(a, options);
     }
-    if (this.config.enabled) {
-      try { this.poll(peerIp); } catch { /* invalid target — keep the configuration entry, polling will retry once reachable */ }
-    }
+  }
+
+  private beginAssociation(a: NtpAssociation): void {
+    if (!this.config.enabled) return;
+    const now = simulationNowMs();
+    resetPeer(a, this.config.system, now);
+    a.hpoll = Math.max(Math.min(a.maxpoll, a.minpoll), a.minpoll);
+    if (a.iburst && a.online && this.profile.pollModel === 'chrony') startInitialBurst(a);
+    this.pollDue(a.serverIp);
+  }
+
+  private armAll(): void {
+    for (const a of this.config.associations.values()) this.arm(a);
+  }
+
+  private disarmAll(): void {
+    for (const ip of [...this.peerTimers.keys()]) this.disarm(ip);
+  }
+
+  private disarm(ip: string): void {
+    const handle = this.peerTimers.get(ip);
+    if (handle === undefined) return;
+    (this.scheduler ?? this.getScheduler()).clear(handle);
+    this.peerTimers.delete(ip);
+  }
+
+  private arm(a: NtpAssociation): void {
+    this.disarm(a.serverIp);
+    if (!this.config.enabled || !a.online || a.kiss === 'DENY' || a.kiss === 'RSTR') return;
+    const scheduler = this.getScheduler();
+    this.scheduler = scheduler;
+    const delay = Math.max(0, a.nextdateMs - simulationNowMs());
+    this.peerTimers.set(a.serverIp, scheduler.setTimeout(() => {
+      this.peerTimers.delete(a.serverIp);
+      this.pollDue(a.serverIp);
+    }, delay));
   }
 
   setSourceInterface(name: string): void { this.config.sourceInterface = name; }
+
+  setSourceAddress(address: string): void { this.config.sourceAddress = address; }
+
+  setServingInterfaces(interfaces: ReadonlySet<string> | null): void {
+    this.config.servingInterfaces = interfaces === null ? null : new Set(interfaces);
+  }
+
+  setRequireRequestAuthentication(on: boolean): void { this.config.requireRequestAuthentication = on; }
+
+  portNames(): string[] { return this.host.getPorts().map((port) => port.getName()); }
 
   /**
    * Comment cette machine evalue une liste d'acces (lot N6).
@@ -175,6 +325,147 @@ export class NtpAgent {
     if (!fn) return true;
     return verdictAccesNtp(this.config.accessGroups, action, (acl) => fn(acl, srcIp));
   }
+  private clientAdmission: ((srcIp: string) => boolean) | null = null;
+  setClientAdmission(fn: ((srcIp: string) => boolean) | null): void { this.clientAdmission = fn; }
+  private admitted(srcIp: string): boolean { return this.clientAdmission === null || this.clientAdmission(srcIp); }
+
+  setSourceOnline(serverIp: string, online: boolean): boolean {
+    const a = this.config.associations.get(serverIp);
+    if (!a) return false;
+    if (a.online === online) return true;
+    a.online = online;
+    if (!online) {
+      this.disarm(serverIp);
+      if (this.profile.pollModel !== 'chrony') {
+        a.reach = 0;
+        this.reselect();
+      }
+      return true;
+    }
+    if (a.iburst && this.profile.pollModel === 'chrony') startInitialBurst(a);
+    if (this.config.enabled) this.pollDue(serverIp);
+    return true;
+  }
+
+  setSourceCriteria(
+    serverIp: string,
+    criteria: Partial<Pick<NtpAssociation, 'noselect' | 'trust' | 'require' | 'prefer' | 'maxDelayMs'
+    | 'maxDelayRatio' | 'maxDelayDevRatio' | 'minStratum' | 'pollTarget' | 'minpoll' | 'maxpoll' | 'fixedOffsetMs' | 'fixedPollSec' | 'fallbackOnly' | 'port' | 'presend' | 'autoOffline' | 'copy'>>
+    & {
+      statistics?: { minSamples?: number; maxSamples?: number; minDelay?: number; asymmetry?: number };
+      maxDelayQuant?: number;
+      filterLength?: number;
+    },
+  ): boolean {
+    const a = this.config.associations.get(serverIp);
+    if (!a) return false;
+    const { statistics, maxDelayQuant, filterLength, ...rest } = criteria;
+    Object.assign(a, rest);
+    const quantum = 2 ** this.config.system.precision;
+    if (statistics !== undefined && (statistics.minSamples !== undefined || statistics.maxSamples !== undefined
+      || statistics.minDelay !== undefined || statistics.asymmetry !== undefined)) {
+      a.statistics = new SourceStatistics(quantum, statistics.minSamples, statistics.maxSamples, statistics.minDelay, statistics.asymmetry);
+    }
+    if (maxDelayQuant !== undefined && maxDelayQuant > 0) {
+      a.maxDelayQuant = maxDelayQuant;
+      a.delayQuantile = DelayQuantile.fromFraction(maxDelayQuant, quantum / 2);
+    }
+    if (filterLength !== undefined && filterLength >= 1) {
+      a.filterLength = filterLength;
+      a.sampleFilter = new SampleFilter(1, filterLength, NTP_MAX_DISPERSION_MS / 1000, 0.0, quantum);
+      a.filterCount = 0;
+    }
+    if (a.maxpoll < a.minpoll) a.maxpoll = a.minpoll;
+    a.hpoll = Math.max(Math.min(a.maxpoll, a.hpoll), a.minpoll);
+    const selectionChanged = criteria.noselect !== undefined || criteria.prefer !== undefined
+      || criteria.trust !== undefined || criteria.require !== undefined;
+    if (selectionChanged && this.profile.pollModel !== 'chrony') this.reselect();
+    return true;
+  }
+
+  private smoothing: TimeSmoothing | null = null;
+
+  setSmoothing(smoothing: TimeSmoothing | null): void { this.smoothing = smoothing; }
+
+  getSmoothing(): TimeSmoothing | null { return this.smoothing; }
+
+  private smoothedOffsetMs(): number {
+    return this.smoothing === null ? 0 : this.smoothing.offsetAt(this.now() / 1000) * 1000;
+  }
+
+  private setClockOffset(offsetMs: number, kind: 'slew' | 'step' = 'slew'): void {
+    const delta = offsetMs - this.config.offsetMs;
+    if (this.smoothing !== null) {
+      const cooked = this.now() / 1000;
+      if (kind === 'step') this.smoothing.stepped(cooked, -delta / 1000);
+      else this.smoothing.adjust(cooked, -delta / 1000, 0, this.reference.skew());
+    }
+    if (delta !== 0) for (const a of this.config.associations.values()) a.statistics.correctOffset(delta / 1000);
+    this.config.offsetMs = offsetMs;
+  }
+
+  reselectSources(): void {
+    if (this.profile.pollModel === 'chrony') this.selector.unselect();
+    this.reselect();
+  }
+
+  bestMeasuredOffsetMs(): number | null {
+    const now = simulationNowMs();
+    const reachable = [...this.config.associations.values()].filter((a) => a.reach !== 0 && a.stratum < NTP_MAX_STRATUM);
+    if (reachable.length === 0) return null;
+    const best = reachable.find((a) => a.preferred)
+      ?? reachable.sort((x, y) => rootDistanceMs(x, now) - rootDistanceMs(y, now))[0];
+    return best.offsetMs;
+  }
+
+  resetSources(): void {
+    for (const a of this.config.associations.values()) {
+      a.statistics.reset();
+      a.delayQuantile?.reset();
+      a.sampleFilter?.drop();
+      a.filterCount = 0;
+      a.presendDone = 0;
+      a.filter = emptyFilter();
+      a.synced = false;
+      a.preferred = false;
+      a.selection = undefined;
+      a.txCount = 0;
+      a.pollScore = 0;
+      if (a.hpoll !== a.minpoll) {
+        a.hpoll = a.minpoll;
+        a.pollSec = 2 ** a.hpoll;
+        a.nextdateMs = Math.min(a.nextdateMs, a.outdateMs + a.pollSec * 1000);
+        this.arm(a);
+      }
+    }
+    this.reference.reset();
+    const wasSelected = this.selector.selected() !== null;
+    this.selector.clear();
+    if (wasSelected || this.profile.pollModel !== 'chrony') this.reselect();
+  }
+
+  stepClockBy(deltaMs: number): void {
+    this.horloge.etat = appliquerDecision(
+      this.horloge.etat, { quoi: 'step', nouvelOffset: this.config.offsetMs + deltaMs }, 0);
+    this.horloge.derniereDecision = 'step';
+    this.setClockOffset(this.horloge.etat.offsetApplique, 'step');
+    for (const a of this.config.associations.values()) {
+      a.offsetMs -= deltaMs;
+      a.filter = a.filter.map((stage) => ({ ...stage, offsetMs: stage.offsetMs - deltaMs }));
+    }
+  }
+
+  startBurst(serverIp: string, goodSamples: number, totalSamples: number): boolean {
+    const a = this.config.associations.get(serverIp);
+    if (!a) return false;
+    startBurst(a, goodSamples, totalSamples);
+    if (a.online && this.config.enabled) {
+      a.nextdateMs = simulationNowMs();
+      this.pollDue(serverIp);
+    }
+    return true;
+  }
+
   setAllowModeControl(on: boolean): void { this.config.allowModeControl = on; }
   /** La plateforme sait-elle repondre au mode 6 ? Voir `NtpConfig`. */
   setModeControlResponder(on: boolean): void { this.config.modeControlResponder = on; }
@@ -216,12 +507,12 @@ export class NtpAgent {
    * que s'il y a un ecart a rattraper.
    */
   forcerSaut(): boolean {
-    const best = [...this.config.associations.values()].find((a) => a.preferred);
+    const now = simulationNowMs();
+    const reachable = [...this.config.associations.values()].filter((a) => a.reach !== 0 && a.stratum < NTP_MAX_STRATUM);
+    const best = reachable.find((a) => a.preferred)
+      ?? reachable.sort((x, y) => rootDistanceMs(x, now) - rootDistanceMs(y, now))[0];
     if (!best) return false;
-    this.horloge.etat = appliquerDecision(
-      this.horloge.etat, { quoi: 'step', nouvelOffset: best.offsetMs }, 0);
-    this.horloge.derniereDecision = 'step';
-    this.config.offsetMs = this.horloge.etat.offsetApplique;
+    this.stepClockBy(best.offsetMs);
     return true;
   }
 
@@ -279,10 +570,15 @@ export class NtpAgent {
         a.sourceInterface ? ` source ${a.sourceInterface}` : '',
         a.keyId !== undefined ? ` key ${a.keyId}` : '',
         a.prefer ? ' prefer' : '',
+        a.maxpoll !== NTP_DEFAULT_MAX_POLL ? ` maxpoll ${a.maxpoll}` : '',
+        a.minpoll !== NTP_MIN_POLL ? ` minpoll ${a.minpoll}` : '',
+        a.burstMode ? ' burst' : '',
+        a.iburst ? ' iburst' : '',
       ].join('');
       lines.push(`${famille} ${kind} ${ip}${options}`);
     }
     if (this.config.sntpBroadcastClient) lines.push('sntp broadcast client');
+    if (this.config.broadcastDelayUs !== NTP_DEFAULT_BROADCAST_DELAY_US) lines.push(`ntp broadcastdelay ${this.config.broadcastDelayUs}`);
     if (this.config.logging) lines.push(`${this.config.loggingSpelling} logging`);
     if (this.config.sourceInterface) lines.push(`ntp source ${this.config.sourceInterface}`);
     if (this.config.updateCalendar) lines.push('ntp update-calendar');
@@ -298,6 +594,23 @@ export class NtpAgent {
     return lines;
   }
 
+  setLocalReference(reference: LocalReference | null): void {
+    this.localReference = reference;
+    this.selectionParameters = {
+      ...this.selectionParameters,
+      orphanStratum: reference?.orphan ? reference.stratum : NTP_MAX_STRATUM,
+    };
+  }
+
+  private localReference: LocalReference | null = null;
+
+  private localReferenceServing(): LocalReference | null {
+    const reference = this.localReference;
+    if (reference === null || this.config.system.peerIp === null || !this.isSynced()) return null;
+    const distanceMs = this.config.system.rootDelayMs / 2 + this.currentRootDispersionMs();
+    return distanceMs / 1000 > reference.distance ? reference : null;
+  }
+
   setLocalStratum(stratum: number): void {
     if (stratum < 0 || stratum > 16) return;
     this.config.localStratum = stratum;
@@ -305,41 +618,59 @@ export class NtpAgent {
 
   getOffsetMs(): number { return this.config.offsetMs; }
   getStratum(): number { return this.config.localStratum; }
-  isSynced(): boolean { return this.config.localStratum < 16; }
+  isSynced(): boolean { return this.config.localStratum < NTP_MAX_STRATUM && this.config.system.leap !== 3; }
 
   now(): number {
     return simulationNowMs() + this.config.offsetMs;
   }
 
-  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
-    if (!this.config.enabled) return;
-    if (udp.destinationPort !== UDP_PORT_NTP && udp.sourcePort !== UDP_PORT_NTP) return;
-    const brut = udp.payload as { type?: string } | undefined;
-    // Le mode 6 partage le port 123 avec le temps lui-meme (RFC 9327),
-    // donc l'aiguillage se fait sur la charge utile et non sur le port.
-    if (brut && brut.type === 'ntp-control') {
-      this.handleControl(inPort, srcIp, brut as NtpControlPacket);
-      return;
-    }
-    const payload = udp.payload as NtpPacket | undefined;
-    // Un datagramme sur le port 123 dont la charge utile n'est pas un
-    // paquet NTP est une erreur de protocole, et c'est bien ce que le
-    // compteur d'IOS nomme.
-    if (!payload || payload.type !== 'ntp') {
-      this.config.counters.protocolError++;
-      return;
-    }
-    const c = this.config.counters;
-    c.received++;
-    if (payload.mode in c.receivedByMode) c.receivedByMode[payload.mode]++;
-    // NTPv4 lit les versions 1 a 4 ; au-dela, le paquet est compte et
-    // ecarte plutot que devine.
-    if (payload.version < 1 || payload.version > 4) {
-      c.badVersion++;
-      c.dropped++;
-      return;
-    }
+  private nts: NtsSupport | null = null;
+  private rawPayload: Uint8Array = new Uint8Array(0);
 
+  setNtsSupport(support: NtsSupport | null): void { this.nts = support; }
+
+  private requestDestination = '';
+
+  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, destinationIp?: IPAddress): void {
+    this.requestDestination = destinationIp?.toString() ?? '';
+    if (!this.config.enabled) return;
+    if (this.config.disabledInterfaces.has(inPort)) { this.config.counters.dropped++; return; }
+    if (udp.destinationPort !== UDP_PORT_NTP && udp.sourcePort !== UDP_PORT_NTP && udp.destinationPort !== this.serverPort) return;
+    this.requestSourcePort = udp.sourcePort;
+    if (udp.payload instanceof Uint8Array) this.rawPayload = udp.payload;
+    const destination = timestampFromMs(this.now());
+    const c = this.config.counters;
+    if (!(udp.payload instanceof Uint8Array)) {
+      c.protocolError++;
+      return;
+    }
+    if ((udp.payload[0] & 0x7) === MODE_CONTROLE) {
+      const control = decodeControlPacket(udp.payload);
+      if (this.config.servingInterfaces !== null && !this.config.servingInterfaces.has(inPort)) { c.dropped++; return; }
+      if (control === null) c.protocolError++;
+      else this.handleControl(inPort, srcIp, control);
+      return;
+    }
+    const decoded = decodeNtpPacket(udp.payload);
+    if ('reason' in decoded) {
+      if (decoded.reason === 'version') {
+        c.received++;
+        c.badVersion++;
+        c.dropped++;
+      } else {
+        c.protocolError++;
+      }
+      return;
+    }
+    const payload = decoded.packet;
+    if (!this.profile.acceptsExtensionFields && payload.extensions !== undefined && !this.nts?.active()) {
+      c.protocolError++;
+      return;
+    }
+    if ((payload.mode === 'client' || payload.mode === 'symmetric-active') && udp.destinationPort !== this.serverPort) return;
+    c.received++;
+    if (this.refusesRequestOn(inPort, payload)) { c.dropped++; return; }
+    if (payload.mode in c.receivedByMode) c.receivedByMode[payload.mode]++;
     this.getBus().publish({
       topic: 'ntp.packet.received',
       payload: {
@@ -347,148 +678,528 @@ export class NtpAgent {
         fromIp: srcIp.toString(), mode: payload.mode, stratum: payload.stratum,
       },
     });
+    this.receive(inPort, srcIp, payload, destination);
+  }
 
-    // ── Ce qu'un serveur verifie, et ce qu'il ne verifie pas ─────────
-    //
-    // Cette porte lisait `config.authenticate` et s'appliquait a TOUS les
-    // paquets, donc une machine armee refusait de servir un client
-    // ordinaire. **C'est l'inverse de ce que fait la commande.** La
-    // documentation Cisco est explicite dans les deux sens : `ntp
-    // authenticate` fait que « the system will not synchronize to a
-    // device unless the device carries one of the specified
-    // authentication keys » — elle gouverne ce que la machine CROIT, pas
-    // ce qu'elle SERT ; et elle « does not ensure authentication of peer
-    // associations », d'ou le `key N` par association. Un routeur
-    // authentifiant continue donc de donner l'heure a qui la demande,
-    // et c'est `ntp access-group` — non l'authentification — qui
-    // restreint la clientele.
-    //
-    // Ce qui est verifie est donc ce qui PRESENTE une cle : une requete
-    // portant un identifiant de cle est controlee, une requete nue est
-    // servie. Le cote client, lui, est decide plus bas par
-    // `authRequise`/`replyIsAuthentic`, ou il l'etait deja.
-    if ((payload.mode === 'client' || payload.mode === 'symmetric-active')
-        && payload.keyId !== undefined && payload.keyId !== 0) {
-      const auth = this.checkAuthentication(payload);
+  private refusesRequestOn(inPort: string, packet: NtpPacket): boolean {
+    if (packet.mode !== 'client' && packet.mode !== 'symmetric-active') return false;
+    const serving = this.config.servingInterfaces;
+    if (serving !== null && !serving.has(inPort)) return true;
+    return this.config.requireRequestAuthentication && packet.keyId === undefined;
+  }
+
+  private discard(): void {
+    this.config.counters.dropped++;
+  }
+
+  private receive(inPort: string, srcIp: IPAddress, packet: NtpPacket, destination: NtpTimestamp): void {
+    const c = this.config.counters;
+    const ip = srcIp.toString();
+    if (packet.mode === 'broadcast') { this.receiveBroadcast(inPort, srcIp, packet, destination); return; }
+    const requestKind = packet.mode === 'client' || packet.mode === 'symmetric-active';
+    if (requestKind && packet.keyId !== undefined && packet.keyId !== 0) {
+      const auth = this.checkAuthentication(packet);
       if (!auth.ok) {
-        // Un serveur ne se TAIT pas devant une requete mal
-        // authentifiee : il repond par un crypto-NAK. La documentation
-        // de reference le dit mot pour mot — « If the client sends
-        // authenticated packets, the server responds with authenticated
-        // packets if correct, or a crypto-NAK packet if not ». C'est
-        // aussi le comportement le plus instructif : le client apprend
-        // que son authentification a echoue, au lieu d'un silence
-        // indiscernable d'un serveur en panne.
-        if (this.config.serverMode) this.envoyerCryptoNak(inPort, srcIp, payload);
+        if (this.config.serverMode && !this.profile.silentOnBadAuthentication) this.envoyerCryptoNak(inPort, srcIp, packet, destination);
         c.authFailures++;
-        c.dropped++;
+        this.discard();
         this.getBus().publish({
           topic: 'ntp.auth.rejected',
-          payload: {
-            deviceId: this.host.id, hostname: this.host.getHostname(),
-            fromIp: srcIp.toString(), reason: auth.reason,
-          },
+          payload: { deviceId: this.host.id, hostname: this.host.getHostname(), fromIp: ip, reason: auth.reason },
         });
         return;
       }
       c.authOk++;
     }
-
-    // `processed` compte les paquets qui atteignent leur traitement. Il
-    // est pose ICI, apres les portes de version et d'authentification,
-    // et REPRIS par les deux motifs de rejet qui ne peuvent se decider
-    // qu'apres l'aiguillage — un refus d'acces et un crypto-NAK. Le
-    // comptage vit donc a un endroit par motif plutot qu'a trois points
-    // de reussite, et `recus = traites + ecartes` reste une identite
-    // verifiable plutot qu'une coincidence.
     c.processed++;
-
-    if (payload.mode === 'client') {
-      // `serve`, `serve-only` et `peer` autorisent une requete de temps ;
-      // `query-only` ne l'autorise pas, et une source qu'aucun groupe ne
-      // reconnait est ecartee.
-      if (!this.accesAutorise('serve-time', srcIp.toString())) {
-        this.refuserAcces(srcIp, 'serve-time');
-        return;
-      }
-      if (this.config.serverMode) this.respondAsServer(inPort, srcIp, payload);
+    const association = this.config.associations.get(ip);
+    if ((packet.mode === 'client' || (packet.mode === 'symmetric-active' && !association)) && !this.admitted(ip)) {
+      c.processed--;
       return;
     }
-    if (payload.mode === 'symmetric-active') {
-      // Un pair symetrique demande a la fois a servir et a se
-      // synchroniser : seul `peer` le permet.
-      if (!this.accesAutorise('sync-from', srcIp.toString())) {
-        this.refuserAcces(srcIp, 'sync-from');
-        return;
-      }
-      this.handleSymmetricActive(inPort, srcIp, payload);
+    if (packet.mode === 'client') {
+      if (!this.accesAutorise('serve-time', ip)) { this.refuserAcces(srcIp, 'serve-time'); return; }
+      if (!this.mayServe()) return;
+      const rate = this.allowedByRate(ip);
+      this.logClient(ip, rate !== 'serve', packet.keyId !== undefined || this.ntsAuthenticated(packet));
+      if (rate === 'drop') { c.processed--; this.discard(); return; }
+      if (rate === 'kod') { this.kissOfDeath(inPort, srcIp, packet, destination, 'RATE'); return; }
+      const nts = this.ntsRequestVerdict(packet);
+      if (nts !== null && nts.kind === 'drop') { c.processed--; this.discard(); return; }
+      if (nts !== null && nts.kind === 'nak') { this.ntsNak(inPort, srcIp, packet, destination, nts); return; }
+      this.fastTransmit(inPort, srcIp, packet, 'server', destination, nts !== null && nts.kind === 'ok' ? nts : undefined);
       return;
     }
-    if (payload.mode === 'server' || payload.mode === 'symmetric-passive') {
-      this.acceptServerReply(srcIp.toString(), payload);
+    if (packet.mode === 'symmetric-active') {
+      if (!association) {
+        if (!this.accesAutorise('sync-from', ip)) { this.refuserAcces(srcIp, 'sync-from'); return; }
+        if (this.profile.statelessSymmetricReply) {
+          this.fastTransmit(inPort, srcIp, packet, 'symmetric-passive', destination);
+          return;
+        }
+        const passive = defaultAssociation(ip, false, 'symmetric-passive');
+        passive.ephemeral = true;
+        passive.version = packet.version;
+        resetPeer(passive, this.config.system, simulationNowMs());
+        this.config.associations.set(ip, passive);
+        this.processPacket(passive, packet, destination, inPort);
+        this.transmit(passive, inPort);
+        return;
+      }
+      if (association.mode === 'symmetric-passive' || association.mode === 'symmetric-active') {
+        if (!this.accesAutorise('sync-from', ip)) { this.refuserAcces(srcIp, 'sync-from'); return; }
+        this.processPacket(association, packet, destination, inPort);
+        if (association.mode === 'symmetric-passive') this.transmit(association, inPort);
+        return;
+      }
+      c.processed--;
+      this.discard();
+      return;
     }
+    if (packet.mode === 'server') {
+      if (!association || association.mode !== 'client') { c.processed--; this.discard(); return; }
+      const nts = this.nts?.client(association) ?? null;
+      if (nts !== null && !nts.checkResponse(this.rawPayload)) {
+        c.processed--;
+        c.authFailures++;
+        this.discard();
+        this.getBus().publish({
+          topic: 'ntp.auth.rejected',
+          payload: { deviceId: this.host.id, hostname: this.host.getHostname(), fromIp: ip, reason: 'nts' },
+        });
+        return;
+      }
+      if (nts !== null) c.authOk++;
+      this.processPacket(association, packet, destination, inPort);
+      return;
+    }
+    if (packet.mode === 'symmetric-passive') {
+      if (!association || association.mode !== 'symmetric-active') { c.processed--; this.discard(); return; }
+      this.processPacket(association, packet, destination, inPort);
+      return;
+    }
+    c.processed--;
+    this.discard();
   }
 
-  private handleSymmetricActive(inPort: string, peerIp: IPAddress, request: NtpPacket): void {
-    const ip = peerIp.toString();
+  setBroadcastServer(iface: string, server: NtpBroadcastServer | null): void {
+    this.disarm(`broadcast:${iface}`);
+    if (server === null) this.config.broadcastServers.delete(iface);
+    else this.config.broadcastServers.set(iface, server);
+    if (server !== null && this.config.enabled) this.armBroadcast(iface);
+  }
+
+  setBroadcastClient(iface: string, on: boolean, group: string | null = null): void {
+    const previous = this.config.broadcastClientInterfaces.get(iface);
+    if (previous) this.host.leaveMulticastGroup?.(iface, previous);
+    if (on) this.config.broadcastClientInterfaces.set(iface, group);
+    else this.config.broadcastClientInterfaces.delete(iface);
+    if (on && group) this.host.joinMulticastGroup?.(iface, group);
+  }
+
+  setBroadcastDelayUs(microseconds: number): void { this.config.broadcastDelayUs = microseconds; }
+
+  private armBroadcast(iface: string): void {
+    const server = this.config.broadcastServers.get(iface);
+    const key = `broadcast:${iface}`;
+    this.disarm(key);
+    if (server === undefined || !this.config.enabled) return;
+    const scheduler = this.getScheduler();
+    this.scheduler = scheduler;
+    this.peerTimers.set(key, scheduler.setTimeout(() => {
+      this.peerTimers.delete(key);
+      this.broadcastDue(iface);
+    }, 2 ** server.pollExponent * 1000));
+  }
+
+  private broadcastDue(iface: string): void {
+    const server = this.config.broadcastServers.get(iface);
+    const port = this.host.getPort(iface);
+    const source = port?.getIPAddress();
+    if (server !== undefined && port && source && this.mayServe() && !this.config.disabledInterfaces.has(iface)) {
+      const destination = server.destination ?? '255.255.255.255';
+      const packet: NtpPacket = {
+        type: 'ntp', ...this.systemHeader(), version: server.version, mode: 'broadcast', poll: server.pollExponent,
+        origTimestamp: NTP_TIMESTAMP_ZERO, rxTimestamp: NTP_TIMESTAMP_ZERO, txTimestamp: timestampFromMs(this.now()),
+        keyId: server.keyId,
+      };
+      this.sendNtp(source, new IPAddress(destination), packet, { source: UDP_PORT_NTP, destination: UDP_PORT_NTP }, undefined, iface, server.ttl);
+      this.config.counters.serverReplies++;
+    }
+    this.armBroadcast(iface);
+  }
+
+  private listensForBroadcast(inPort: string): boolean {
+    if (this.config.sntpBroadcastClient) return true;
+    const group = this.config.broadcastClientInterfaces.get(inPort);
+    return group !== undefined && (group === null || group === this.requestDestination);
+  }
+
+  private receiveBroadcast(inPort: string, srcIp: IPAddress, packet: NtpPacket, destination: NtpTimestamp): void {
+    const c = this.config.counters;
+    const ip = srcIp.toString();
+    if (!this.listensForBroadcast(inPort) || this.config.disabledInterfaces.has(inPort)) { this.discard(); return; }
+    if (!this.accesAutorise('sync-from', ip)) { this.refuserAcces(srcIp, 'sync-from'); return; }
+    if (packet.txTimestamp === NTP_TIMESTAMP_ZERO) { this.discard(); return; }
+    if (this.config.authenticate && !this.broadcastIsAuthentic(packet)) {
+      c.authFailures++;
+      this.discard();
+      this.getBus().publish({
+        topic: 'ntp.auth.rejected',
+        payload: { deviceId: this.host.id, hostname: this.host.getHostname(), fromIp: ip, reason: packet.keyId === undefined ? 'no-key' : 'bad-mac' },
+      });
+      return;
+    }
     let a = this.config.associations.get(ip);
-    let responseMode: NtpMode;
-    if (a && a.mode === 'symmetric-active') {
-      responseMode = 'symmetric-active';
-    } else {
-      if (!a) {
-        a = defaultAssociation(ip, false, 'symmetric-passive');
-        this.config.associations.set(ip, a);
-      }
-      responseMode = 'symmetric-passive';
+    if (a !== undefined && a.mode !== 'broadcast') { this.discard(); return; }
+    if (a === undefined) {
+      a = defaultAssociation(ip, false, 'broadcast');
+      a.ephemeral = true;
+      resetPeer(a, this.config.system, simulationNowMs());
+      this.config.associations.set(ip, a);
     }
-    if (request.origTimestampMs !== 0) this.acceptServerReply(ip, request);
-    this.respondSymmetric(inPort, peerIp, request, responseMode);
+    if (packet.txTimestamp === a.org) { this.discard(); return; }
+    a.org = packet.txTimestamp;
+    a.rec = destination;
+    a.authenticated = this.config.authenticate ? true : undefined;
+    a.localIp = this.host.getPort(inPort)?.getIPAddress()?.toString();
+    a.received++;
+    a.validReceived++;
+    a.hpoll = packet.poll;
+    c.processed++;
+    const roundTripMs = this.config.broadcastDelayUs / 1000;
+    const offsetMs = timestampDifferenceMs(packet.txTimestamp, destination) + roundTripMs / 2;
+    this.applyPacket(a, packet, destination, { roundTripMs, serverHoldMs: 0, offsetMs });
+    a.nextdateMs = simulationNowMs() + 2 ** packet.poll * 1000 * 2;
+    this.arm(a);
   }
 
-  private respondSymmetric(inPort: string, peerIp: IPAddress, request: NtpPacket, mode: NtpMode): void {
-    const port = this.host.getPort(inPort);
-    if (!port) return;
-    const srcIp = port.getIPAddress();
-    if (!srcIp) return;
-    const now = this.now();
-    const reply: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: NTP_VERSION, mode,
-      stratum: this.config.localStratum, poll: 6, precision: -20,
-      rootDelay: 0, rootDispersion: 0,
-      refIdentifier: this.config.refIdentifier,
-      refTimestampMs: this.config.lastSyncMs || now,
-      origTimestampMs: request.txTimestampMs,
-      rxTimestampMs: now, txTimestampMs: now,
-      keyId: request.keyId,
+  private broadcastIsAuthentic(packet: NtpPacket): boolean {
+    if (packet.keyId === undefined) return false;
+    const key = this.config.authKeys.get(packet.keyId);
+    if (!key || !this.config.trustedKeys.has(packet.keyId)) return false;
+    return verifierMacNtp(key.key, packet, packet.mac, key.algo);
+  }
+
+  private mayServe(): boolean {
+    return this.config.serverMode || this.isSynced() || this.profile.respondsWhenUnsynchronized;
+  }
+
+  private processPacket(a: NtpAssociation, packet: NtpPacket, destination: NtpTimestamp, inPort: string): void {
+    const c = this.config.counters;
+    const retract = (): void => { c.processed--; this.discard(); };
+    if (!this.accesAutorise('sync-from', a.serverIp)) {
+      this.refuserAcces(new IPAddress(a.serverIp), 'sync-from');
+      return;
+    }
+    if (packet.txTimestamp === NTP_TIMESTAMP_ZERO) { retract(); return; }
+    if (packet.txTimestamp === a.org) { retract(); return; }
+    const synchronized = packet.origTimestamp !== NTP_TIMESTAMP_ZERO && packet.origTimestamp === a.xmt;
+    a.org = packet.txTimestamp;
+    a.rec = destination;
+    if (!synchronized) { retract(); return; }
+    if (isCryptoNak(packet)) {
+      c.processed--;
+      c.dropped++;
+      c.authFailures++;
+      if (a.keyId !== undefined) a.authenticated = false;
+      this.getBus().publish({
+        topic: 'ntp.auth.rejected',
+        payload: { deviceId: this.host.id, hostname: this.host.getHostname(), fromIp: a.serverIp, reason: 'bad-mac' },
+      });
+      return;
+    }
+    if (!this.authRequise(a)) {
+      a.authenticated = undefined;
+    } else {
+      const authentic = this.replyIsAuthentic(a, packet);
+      a.authenticated = authentic;
+      if (authentic) c.authOk++;
+      else {
+        retract();
+        c.authFailures++;
+        this.getBus().publish({
+          topic: 'ntp.auth.rejected',
+          payload: { deviceId: this.host.id, hostname: this.host.getHostname(), fromIp: a.serverIp, reason: 'bad-mac' },
+        });
+        return;
+      }
+    }
+    a.localIp = this.host.getPort(inPort)?.getIPAddress()?.toString();
+    a.received++;
+    a.validReceived++;
+    if (isKissOfDeath(packet)) { this.handleKiss(a, packet.refIdentifier); return; }
+    this.applyPacket(a, packet, destination);
+  }
+
+  private handleKiss(a: NtpAssociation, code: string): void {
+    const c = this.config.counters;
+    c.processed--;
+    c.dropped++;
+    c.kissReceived++;
+    a.kiss = code;
+    a.synced = false;
+    a.stratum = NTP_MAX_STRATUM;
+    a.leap = 3;
+    if (code === 'DENY' || code === 'RSTR') {
+      a.reach = 0;
+      this.disarm(a.serverIp);
+      this.reselect();
+    } else if (code === 'RATE') {
+      a.minpoll = Math.min(a.minpoll + 1, NTP_RATE_POLL_CEILING);
+      a.maxpoll = Math.max(a.maxpoll, a.minpoll);
+      a.hpoll = Math.max(a.hpoll, a.minpoll);
+      pollUpdate(a, a.hpoll, simulationNowMs());
+    }
+  }
+
+  private applyPacket(
+    a: NtpAssociation, packet: NtpPacket, destination: NtpTimestamp,
+    fixed?: { roundTripMs: number; serverHoldMs: number; offsetMs: number },
+  ): void {
+    const system = this.config.system;
+    const now = simulationNowMs();
+    a.leap = packet.leapIndicator;
+    a.stratum = packet.stratum === 0 ? NTP_MAX_STRATUM : Math.max(packet.stratum, a.minStratum ?? 0);
+    a.ppoll = packet.poll;
+    a.rootDelayMs = packet.rootDelay;
+    a.rootDispersionMs = packet.rootDispersion;
+    a.refId = packet.refIdentifier;
+    a.refTimestamp = packet.refTimestamp;
+    a.lastReplyMs = now;
+    if (a.leap === 3 || a.stratum >= NTP_MAX_STRATUM) {
+      a.synced = false;
+      return;
+    }
+    if (packet.rootDelay / 2 + packet.rootDispersion >= NTP_MAX_DISPERSION_MS
+      || timestampDifferenceMs(packet.refTimestamp, packet.txTimestamp) > 0) return;
+    if (this.profile.pollModel === 'chrony') {
+      chronyValidResponse(a);
+    } else {
+      pollUpdate(a, a.hpoll, now);
+      a.reach |= 1;
+    }
+    const precision = PRECISION_FLOOR_MS(system.precision);
+    const peerPrecision = 1000 * 2 ** packet.precision;
+    const roundTrip = fixed?.roundTripMs ?? timestampDifferenceMs(destination, packet.origTimestamp);
+    const serverHold = fixed?.serverHoldMs ?? timestampDifferenceMs(packet.txTimestamp, packet.rxTimestamp);
+    const offset = (fixed?.offsetMs ?? (timestampDifferenceMs(packet.rxTimestamp, packet.origTimestamp)
+      + timestampDifferenceMs(packet.txTimestamp, destination)) / 2) + (a.fixedOffsetMs ?? 0);
+    if (this.profile.pollModel === 'chrony') {
+      this.processChronyResponse(a, packet, { offsetMs: offset, roundTripMs: roundTrip, serverHoldMs: serverHold, nowMs: now });
+      return;
+    }
+    const delay = Math.max(roundTrip - serverHold, precision);
+    const dispersion = peerPrecision + precision + NTP_PHI * roundTrip;
+    a.synced = true;
+    a.response = {
+      version: packet.version, mode: packet.mode, precision: packet.precision, poll: packet.poll,
+      responseTimeMs: serverHold, authenticated: a.authenticated === true,
+      offsetMs: offset, delayMs: delay, dispersionMs: dispersion,
     };
-    this.sendNtp(srcIp, peerIp, reply);
-    this.getBus().publish({
-      topic: 'ntp.peer.responded',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        peerIp: peerIp.toString(), mode, stratum: this.config.localStratum,
-      },
+    a.lastTests = '111 111 1111';
+    a.goodReceived++;
+    a.statistics.accumulate({
+      time: now / 1000, offset: offset / 1000, peerDelay: delay / 1000, peerDispersion: dispersion / 1000,
+      rootDelay: (packet.rootDelay + delay) / 1000, rootDispersion: (packet.rootDispersion + dispersion) / 1000,
     });
+    const outcome = clockFilter(a, offset, delay, dispersion, now, system);
+    if (outcome.accepted && a.burst === 0) this.reselect(a);
   }
 
-  private respondAsServer(inPort: string, clientIp: IPAddress, request: NtpPacket): void {
-    const port = this.host.getPort(inPort);
-    if (!port) return;
-    const srcIp = port.getIPAddress();
+  private processChronyResponse(
+    a: NtpAssociation,
+    packet: NtpPacket,
+    measured: { offsetMs: number; roundTripMs: number; serverHoldMs: number; nowMs: number },
+  ): void {
+    const system = this.config.system;
+    const precision = 2 ** system.precision + 2 ** packet.precision;
+    const roundTrip = measured.roundTripMs / 1000;
+    const hold = measured.serverHoldMs / 1000;
+    const peerDelay = Math.max(Math.abs(roundTrip - hold), precision);
+    const range = a.statistics.frequencyRange();
+    const peerDispersion = precision + ((range.high - range.low) / 2) * Math.abs(roundTrip);
+    const sample: MeasurementSample = {
+      time: measured.nowMs / 1000 - roundTrip / 2,
+      offset: measured.offsetMs / 1000,
+      peerDelay,
+      peerDispersion,
+      rootDelay: packet.rootDelay / 1000 + peerDelay,
+      rootDispersion: packet.rootDispersion / 1000 + peerDispersion,
+    };
+    a.synced = true;
+    a.response = {
+      version: packet.version, mode: packet.mode, precision: packet.precision, poll: packet.poll,
+      responseTimeMs: measured.serverHoldMs, authenticated: a.authenticated === true,
+      offsetMs: measured.offsetMs, delayMs: peerDelay * 1000, dispersionMs: peerDispersion * 1000,
+    };
+    const tests = evaluateSampleTests({
+      peerDelay, peerDispersion, offset: sample.offset, sampleTime: sample.time, precision,
+      responseTime: Math.abs(hold), presendDone: a.presendDone,
+      maxDelay: a.maxDelayMs === undefined ? undefined : a.maxDelayMs / 1000,
+      maxDelayRatio: a.maxDelayRatio, maxDelayDevRatio: a.maxDelayDevRatio,
+      statistics: a.statistics, quantile: a.delayQuantile,
+    });
+    const loopFree = this.sourceIsNotUs(a, packet);
+    const bit = (ok: boolean): string => (ok ? '1' : '0');
+    a.lastTests = `111 111 ${bit(tests.a)}${bit(tests.b)}${bit(tests.c)}${bit(loopFree)}`;
+    a.delayQuantile?.accumulate(peerDelay);
+    if (a.copy && a.stratum > 0) a.stratum--;
+    if (!(tests.a && tests.b && tests.c && loopFree)) {
+      adjustPoll(a, loopFree ? 0.1 : 0.02, a.reach !== 0, 0);
+      this.processChronySample(a, null);
+      return;
+    }
+    a.goodReceived++;
+    clockFilter(a, measured.offsetMs, peerDelay * 1000, peerDispersion * 1000, measured.nowMs, system);
+    this.processChronySample(a, sample);
+  }
+
+  private sourceIsNotUs(a: NtpAssociation, packet: NtpPacket): boolean {
+    if (this.serverPort === 0) return true;
+    const system = this.config.system;
+    const localRefId = this.chronyLocalRefId(a);
+    if (packet.stratum > 1 && isValidIPv4(packet.refIdentifier) && tryIpToUint32(packet.refIdentifier) === localRefId) return false;
+    return !(packet.stratum === this.config.localStratum
+      && packet.refIdentifier === this.referenceForWire()
+      && packet.rootDelay === system.rootDelayMs
+      && packet.refTimestamp !== NTP_TIMESTAMP_ZERO
+      && packet.refTimestamp === system.refTimestamp);
+  }
+
+  private processChronySample(a: NtpAssociation, measurement: MeasurementSample | null): void {
+    let sample = measurement;
+    if (a.sampleFilter !== undefined) {
+      if (sample !== null) a.sampleFilter.accumulate(sample);
+      a.filterCount++;
+      if (a.filterCount < a.sampleFilter.getMaxSamples()) return;
+      sample = a.sampleFilter.filtered();
+      if (sample === null) return;
+      a.filterCount = 0;
+    }
+    if (sample === null) return;
+    const predicted = a.statistics.predictOffset(sample.time);
+    const errorInEstimate = Math.abs(-sample.offset - predicted);
+    a.statistics.accumulate(sample);
+    this.reselect(a);
+    const delays = a.statistics.peerDelays();
+    adjustPoll(a, pollAdjustment(a, errorInEstimate, sample.peerDispersion + 0.5 * sample.peerDelay), a.reach !== 0, Math.min(...delays));
+  }
+
+  private referenceForWire(): string {
+    if (!this.isSynced()) return '';
+    if (this.config.refIdentifier === 'LOCL' && (this.config.localStratum >= 2 || this.profile.localReferenceIsAddress)) return '127.127.1.1';
+    return this.config.refIdentifier;
+  }
+
+  private currentRootDispersionMs(): number {
+    const system = this.config.system;
+    const elapsed = system.updateMs ? simulationNowMs() - system.updateMs : 0;
+    return system.rootDispersionMs + NTP_PHI * elapsed;
+  }
+
+  private systemHeader(): Pick<NtpPacket, 'leapIndicator' | 'stratum' | 'precision' | 'rootDelay' | 'rootDispersion' | 'refIdentifier' | 'refTimestamp'> {
+    const system = this.config.system;
+    const local = this.localReferenceServing();
+    if (local !== null) {
+      return {
+        leapIndicator: 0, stratum: local.stratum, precision: system.precision, rootDelay: 0, rootDispersion: 0,
+        refIdentifier: '127.127.1.1', refTimestamp: timestampFromMs(this.now()),
+      };
+    }
+    const synced = this.isSynced();
+    return {
+      leapIndicator: synced ? system.leap : 3,
+      stratum: synced ? this.config.localStratum : 0,
+      precision: system.precision,
+      rootDelay: synced ? system.rootDelayMs : this.profile.unsynchronizedRootBoundMs,
+      rootDispersion: synced ? this.currentRootDispersionMs() : this.profile.unsynchronizedRootBoundMs,
+      refIdentifier: this.referenceForWire(),
+      refTimestamp: synced ? system.refTimestamp : NTP_TIMESTAMP_ZERO,
+    };
+  }
+
+  private kissOfDeath(inPort: string, clientIp: IPAddress, request: NtpPacket, destination: NtpTimestamp, code: string): void {
+    const srcIp = this.host.getPort(inPort)?.getIPAddress();
     if (!srcIp) return;
-    const now = this.now();
-    const reply: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: NTP_VERSION, mode: 'server',
-      stratum: this.config.localStratum, poll: 6, precision: -20,
-      rootDelay: 0, rootDispersion: 0,
-      refIdentifier: this.config.refIdentifier,
-      refTimestampMs: this.config.lastSyncMs || now,
-      origTimestampMs: request.txTimestampMs,
-      rxTimestampMs: now, txTimestampMs: now,
+    const kiss: NtpPacket = {
+      type: 'ntp', ...this.systemHeader(), version: request.version, mode: 'server', poll: request.poll,
+      leapIndicator: 3, stratum: 0, refIdentifier: code,
+      origTimestamp: request.txTimestamp, rxTimestamp: destination, txTimestamp: timestampFromMs(this.now()),
       keyId: request.keyId,
     };
-    this.sendNtp(srcIp, clientIp, reply);
+    this.sendNtp(srcIp, clientIp, kiss, this.replyPorts());
+    this.config.counters.kissSent++;
+  }
+
+  private readonly clientLog = new Map<string, NtpClientLogEntry>();
+
+  getClientLog(): ReadonlyMap<string, NtpClientLogEntry> { return this.clientLog; }
+
+  clearClientLog(): void { this.clientLog.clear(); }
+
+  private logClient(ip: string, dropped: boolean, authenticated: boolean): void {
+    const now = simulationNowMs();
+    const c = this.config.counters;
+    c.serverRequests++;
+    if (dropped) c.serverDropped++;
+    if (authenticated) c.serverAuthenticated++;
+    const entry = this.clientLog.get(ip)
+      ?? { ntpHits: 0, ntpDrops: 0, firstNtpMs: now, lastNtpMs: 0, intervalExponent: 127, limitedIntervalExponent: 127 };
+    if (entry.ntpHits > 0 && now > entry.lastNtpMs) {
+      entry.intervalExponent = Math.round(Math.log2((now - entry.lastNtpMs) / 1000));
+    }
+    entry.ntpHits++;
+    if (dropped) entry.ntpDrops++;
+    entry.lastNtpMs = now;
+    this.clientLog.set(ip, entry);
+  }
+
+  private ntsAuthenticated(packet: NtpPacket): boolean {
+    return this.nts?.serverKeys() != null && packet.extensions?.some((field) => field.type === EF.AUTH_AND_EEF) === true;
+  }
+
+  private ntsRequestVerdict(request: NtpPacket): NtsServerVerdict | null {
+    const keys = this.nts?.serverKeys() ?? null;
+    if (keys === null || !request.extensions?.some((field) => field.type === EF.UNIQUE_IDENTIFIER)) return null;
+    return checkNtsRequest(this.rawPayload, keys, (length) => this.nts!.randomBytes(length));
+  }
+
+  private ntsNak(inPort: string, clientIp: IPAddress, request: NtpPacket, destination: NtpTimestamp, verdict: NtsServerVerdict): void {
+    const srcIp = this.host.getPort(inPort)?.getIPAddress();
+    if (!srcIp) return;
+    const nak: NtpPacket = {
+      type: 'ntp', ...this.systemHeader(), version: request.version, mode: 'server', poll: request.poll,
+      leapIndicator: 3, stratum: 0, refIdentifier: NTS_KOD_NAK,
+      origTimestamp: request.txTimestamp, rxTimestamp: destination, txTimestamp: timestampFromMs(this.now()),
+    };
+    this.sendNtp(srcIp, clientIp, nak, this.replyPorts(), (header) => buildNakResponse(header, verdict.request));
+    this.config.counters.kissSent++;
+  }
+
+  private fastTransmit(
+    inPort: string, clientIp: IPAddress, request: NtpPacket, mode: NtpMode, destination: NtpTimestamp, nts?: NtsServerVerdict,
+  ): void {
+    const srcIp = this.host.getPort(inPort)?.getIPAddress();
+    if (!srcIp) return;
+    const header = this.systemHeader();
+    const smoothMs = mode === 'server' ? this.smoothedOffsetMs() : 0;
+    const smoothed = Math.abs(smoothMs) > 1000 * 2 ** this.config.system.precision;
+    const reply: NtpPacket = {
+      type: 'ntp', ...header, version: request.version, mode, poll: request.poll,
+      origTimestamp: request.txTimestamp,
+      rxTimestamp: smoothed ? timestampFromMs(timestampToMs(destination, this.now()) + smoothMs) : destination,
+      txTimestamp: timestampFromMs(this.now() + (mode === 'server' ? smoothMs : 0)),
+      keyId: request.keyId,
+      ...(smoothed ? {
+        refIdentifier: SMOOTH_REFERENCE_ID,
+        refTimestamp: header.refTimestamp === NTP_TIMESTAMP_ZERO ? header.refTimestamp
+          : timestampFromMs(timestampToMs(header.refTimestamp, this.now()) + smoothMs),
+      } : {}),
+    };
+    this.sendNtp(srcIp, clientIp, reply, this.replyPorts(), nts === undefined ? undefined
+      : (headerBytes) => buildNtsReply(headerBytes, nts.request!, this.rawPayload.length, nts.s2c!, nts.nonce!, nts.cookies));
+    this.config.counters.serverReplies++;
     this.getBus().publish({
       topic: 'ntp.server.responded',
       payload: {
@@ -521,24 +1232,16 @@ export class NtpAgent {
    * l'exclusion de zero » — ce qui rend le message reconnaissable sans
    * ambiguite : aucune cle legitime ne peut porter ce numero.
    */
-  private envoyerCryptoNak(inPort: string, clientIp: IPAddress, request: NtpPacket): void {
+  private envoyerCryptoNak(inPort: string, clientIp: IPAddress, request: NtpPacket, destination: NtpTimestamp): void {
     const srcIp = this.host.getPort(inPort)?.getIPAddress();
     if (!srcIp) return;
-    const now = this.now();
     const nak: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: NTP_VERSION, mode: 'server',
-      stratum: this.config.localStratum, poll: 6, precision: -20,
-      rootDelay: 0, rootDispersion: 0,
-      refIdentifier: this.config.refIdentifier,
-      refTimestampMs: this.config.lastSyncMs || now,
-      origTimestampMs: request.txTimestampMs,
-      rxTimestampMs: now, txTimestampMs: now,
+      type: 'ntp', ...this.systemHeader(), version: request.version, mode: 'server', poll: request.poll,
+      origTimestamp: request.txTimestamp, rxTimestamp: destination,
+      txTimestamp: timestampFromMs(this.now()),
       keyId: 0,
     };
-    // Il part SANS passer par la signature : `signer` ne trouverait
-    // aucune cle numero zero, mais l'ecrire ici rend l'intention
-    // explicite — un crypto-NAK non signe est ce qui le definit.
-    this.sendNtp(srcIp, clientIp, nak);
+    this.sendNtp(srcIp, clientIp, nak, this.replyPorts());
   }
 
   /**
@@ -566,11 +1269,6 @@ export class NtpAgent {
         fromIp: srcIp.toString(), action,
       },
     });
-  }
-
-  /** Un paquet est-il un crypto-NAK ? */
-  private estCryptoNak(pkt: NtpPacket): boolean {
-    return pkt.keyId === 0 && !pkt.mac;
   }
 
   private checkAuthentication(
@@ -628,226 +1326,393 @@ export class NtpAgent {
     return this.config.authenticate && a.keyId !== undefined;
   }
 
-  private acceptServerReply(serverIp: string, reply: NtpPacket): void {
+  pollAll(): void {
+    if (!this.config.enabled) return;
+    for (const a of [...this.config.associations.values()]) {
+      if (a.kiss === 'DENY' || a.kiss === 'RSTR') continue;
+      this.transmit(a);
+    }
+  }
+
+  private pollDue(serverIp: string): void {
     const a = this.config.associations.get(serverIp);
-    if (!a) return;
-    // Se SYNCHRONISER sur une source demande `peer` — c'est le piege du
-    // §3.7 : poser un `serve-only` seul empeche le routeur lui-meme de
-    // se synchroniser, alors qu'il continue de servir l'heure.
-    if (!this.accesAutorise('sync-from', serverIp)) {
-      this.refuserAcces(new IPAddress(serverIp), 'sync-from');
+    if (!a || !this.config.enabled || !a.online) return;
+    const now = simulationNowMs();
+    const system = this.config.system;
+    if (a.mode === 'broadcast') { this.ageBroadcast(a, now); return; }
+    if (this.profile.pollModel === 'chrony') {
+      const tick = chronyTransmitTick(a, now, system.peerIp === a.serverIp);
+      if (tick.missedSample && a.preferred) this.reselect();
+      if (tick.missedSample) this.processChronySample(a, null);
+      const sent = this.transmit(a);
+      if (!sent && a.autoOffline) {
+        this.setSourceOnline(a.serverIp, false);
+        return;
+      }
+      this.arm(a);
+      this.refreshSynchronization();
       return;
     }
-    // Le verdict est ENREGISTRE meme quand il est negatif : c'est lui que
-    // `show ntp associations detail` rend par `authenticated`, et sans
-    // trace un operateur n'aurait aucun moyen de distinguer « cle
-    // refusee » de « serveur muet ».
-    // Un crypto-NAK n'est PAS une mesure : c'est un refus. Le prendre
-    // pour une source ferait regler l'horloge sur le paquet qui dit
-    // « je te refuse » — defaut introduit puis attrape par le cas
-    // « client sans aucune cle », qui se synchronisait sur le NAK.
-    if (this.estCryptoNak(reply)) {
-      // Un NAK a bien ete TRAITE — c'est ainsi qu'on sait que c'en est
-      // un — mais il n'est pas une mesure : il compte comme ecarte, et
-      // le traitement est repris pour que l'identite tienne.
-      this.config.counters.processed--;
-      this.config.counters.dropped++;
-      this.config.counters.authFailures++;
-      if (a.keyId !== undefined) a.authenticated = false;
+    const decision = pollTick(a, now, system, (peer) => this.fits(peer, now));
+    if (decision.agedSample) {
+      const outcome = clockFilter(a, 0, 0, NTP_MAX_DISPERSION_MS, now, system);
+      if (outcome.accepted && a.burst === 0) this.reselect();
+    }
+    if (a.ephemeral && a.reach === 0 && a.unreach >= 2) {
+      this.config.associations.delete(a.serverIp);
+      return;
+    }
+    this.transmit(a);
+    if (a.fixedPollSec !== undefined && a.burst === 0) {
+      a.nextdateMs = simulationNowMs() + a.fixedPollSec * 1000;
+      a.pollSec = a.fixedPollSec;
+    }
+    this.arm(a);
+    this.refreshSynchronization();
+  }
+
+  private ageBroadcast(a: NtpAssociation, now: number): void {
+    const system = this.config.system;
+    const decision = pollTick(a, now, system, (peer) => this.fits(peer, now));
+    if (decision.agedSample) {
+      clockFilter(a, 0, 0, NTP_MAX_DISPERSION_MS, now, system);
+      this.reselect();
+    }
+    if (a.reach === 0 && a.unreach >= 2) {
+      this.config.associations.delete(a.serverIp);
+      this.reselect();
+      return;
+    }
+    a.nextdateMs = now + 2 ** a.ppoll * 1000;
+    this.arm(a);
+    this.refreshSynchronization();
+  }
+
+  private fits(a: NtpAssociation, now: number): boolean {
+    return isFit(a, now, this.config.system, a.localIp ?? null, this.config.refIdentifier, this.profile.enforcesRootDistance);
+  }
+
+  private ntsReady(a: NtpAssociation, client: NtsClient, nowMs: number): boolean {
+    if (client.needsKeyExchange(nowMs)) {
+      this.nts!.keyExchange(a, client, nowMs);
+      if (client.needsKeyExchange(nowMs)) return false;
+    }
+    client.prepareForAuth();
+    client.markReady();
+    return true;
+  }
+
+  private transmit(a: NtpAssociation, inPort?: string): boolean {
+    const now = simulationNowMs();
+    const timestamp = timestampFromMs(this.now());
+    a.xmt = timestamp;
+    a.lastPollMs = now;
+    const mode: NtpMode = a.mode === 'symmetric-active' ? 'symmetric-active'
+      : a.mode === 'symmetric-passive' ? 'symmetric-passive' : 'client';
+    const nts = this.nts?.client(a) ?? null;
+    if (nts !== null && !this.ntsReady(a, nts, now)) return false;
+    const request: NtpPacket = {
+      type: 'ntp', ...this.systemHeader(), version: a.version ?? NTP_VERSION, mode, poll: a.hpoll,
+      origTimestamp: a.org, rxTimestamp: a.rec, txTimestamp: timestamp, keyId: nts === null ? a.keyId : undefined,
+    };
+    const source = inPort !== undefined
+      ? this.host.getPort(inPort)?.getIPAddress() ?? undefined
+      : this.namedSource(a);
+    if (!isValidIPv4(a.serverIp)) return false;
+    a.sent++;
+    const sent = this.sendNtp(source, new IPAddress(a.serverIp), request, { source: UDP_PORT_NTP, destination: a.port ?? UDP_PORT_NTP }, nts === null ? undefined : (header) => nts.appendRequestFields(header));
+    this.getBus().publish({
+      topic: 'ntp.packet.sent',
+      payload: { deviceId: this.host.id, hostname: this.host.getHostname(), serverIp: a.serverIp, mode },
+    });
+    if (mode === 'symmetric-passive') {
       this.getBus().publish({
-        topic: 'ntp.auth.rejected',
+        topic: 'ntp.peer.responded',
         payload: {
           deviceId: this.host.id, hostname: this.host.getHostname(),
-          fromIp: serverIp, reason: 'bad-mac',
+          peerIp: a.serverIp, mode, stratum: this.config.localStratum,
         },
+      });
+    }
+    return sent;
+  }
+
+  private readonly selector = new ChronySelector();
+  private selectionParameters: SelectionParameters = { ...DEFAULT_SELECTION_PARAMETERS };
+
+  setSelectionParameters(parameters: Partial<SelectionParameters>): void {
+    this.selectionParameters = { ...this.selectionParameters, ...parameters };
+  }
+
+  getSelectionParameters(): SelectionParameters { return { ...this.selectionParameters }; }
+
+  selectionVerdict(serverIp: string): SourceVerdict | null { return this.selector.verdict(serverIp); }
+
+  private chronyLocalRefId(a: NtpAssociation): number {
+    const declared = a.localIp ?? this.namedSource(a)?.toString();
+    if (declared !== undefined && isValidIPv4(declared)) return tryIpToUint32(declared) ?? 0;
+    for (const port of this.host.getPorts()) {
+      const address = port.getIPAddress()?.toString();
+      if (address !== undefined && isValidIPv4(address) && address !== '127.0.0.1') return tryIpToUint32(address) ?? 0;
+    }
+    return 0;
+  }
+
+  private chronyReselect(updated?: NtpAssociation): void {
+    const now = simulationNowMs();
+    const system = this.config.system;
+    const associations = [...this.config.associations.values()];
+    const inputs: SelectionInput[] = associations.map((a) => ({
+      key: a.serverIp, noselect: a.noselect, prefer: a.prefer, trust: a.trust, require: a.require,
+      unsynchronised: a.received === 0 || a.leap === 3 || a.stratum >= NTP_MAX_STRATUM,
+      stratum: a.stratum, reachability: a.reach & 0xff, reachabilitySize: Math.min(8, a.sent),
+      refId: tryIpToUint32(a.serverIp) ?? 0, statistics: a.statistics, isNtp: true,
+      localRefId: this.chronyLocalRefId(a),
+    }));
+    const outcome = this.selector.select(inputs, now / 1000, this.selectionParameters, updated?.serverIp ?? null);
+    system.survivors = [];
+    for (const a of associations) {
+      const status = this.selector.verdict(a.serverIp)?.status;
+      a.preferred = status === 'SELECTED' && outcome.selectedKey === a.serverIp;
+      a.selection = status === 'SELECTED' ? 'sys'
+        : status === 'UNSELECTED' ? 'candidate'
+          : status === 'FALSETICKER' ? 'falseticker'
+            : status === 'DISTANT' || status === 'WAITS_SOURCES' || status === 'NONPREFERRED' || status === 'WAITS_UPDATE'
+              ? 'outlier' : 'reject';
+      if (status === 'SELECTED' || status === 'UNSELECTED') system.survivors.push(a.serverIp);
+    }
+    if (outcome.noMajority && system.peerIp !== null) {
+      system.peerIp = null;
+      this.becomeUnsynchronized();
+      this.getBus().publish({
+        topic: 'ntp.unsynced',
+        payload: { deviceId: this.host.id, hostname: this.host.getHostname(), reason: 'unreachable' },
       });
       return;
     }
-    // `authenticated` ne se pose que si une authentification a ete
-    // TENTEE : une association sans clé n'est ni authentifiee ni non
-    // authentifiee, et l'annoncer dans un sens ou dans l'autre serait
-    // affirmer une verification qui n'a pas eu lieu.
-    if (!this.authRequise(a)) {
-      a.authenticated = undefined;
-    } else {
-      const authentique = this.replyIsAuthentic(a, reply);
-      a.authenticated = authentique;
-      if (authentique) this.config.counters.authOk++;
-      if (!authentique) {
-      // Aucun message n'est journalise ici, et c'est DELIBERE : aucune
-      // source consultee ne confirme qu'IOS emette un syslog sur echec
-      // d'authentification NTP — le comportement rapporte est un rejet
-      // SILENCIEUX, diagnostique par `show ntp associations detail` et
-      // par `debug ntp validity`. Inventer un `%NTP-4-...` apprendrait a
-      // chercher une ligne qu'un vrai routeur n'ecrit pas.
+    const reference = outcome.reference;
+    if (reference === null) return;
+    const best = this.config.associations.get(reference.key);
+    if (best === undefined) return;
+    const survivors = associations.filter((a) => system.survivors.includes(a.serverIp));
+    this.clockUpdate(best, survivors, system.peerIp !== best.serverIp, reference);
+  }
+
+  private reselect(updated?: NtpAssociation): void {
+    if (this.profile.pollModel === 'chrony') { this.chronyReselect(updated); return; }
+    const now = simulationNowMs();
+    const system = this.config.system;
+    const associations = [...this.config.associations.values()];
+    const usable = associations.filter((a) => !a.noselect && this.fits(a, now));
+    const primary = usable.filter((a) => !a.fallbackOnly);
+    const fitPeers = primary.length > 0 ? primary : usable;
+    const selection = selectSources(fitPeers, now);
+    for (const a of associations) {
+      a.preferred = false;
+      a.selection = !fitPeers.includes(a) ? 'reject'
+        : selection.falsetickers.includes(a) ? 'falseticker'
+          : selection.survivors.includes(a) ? 'candidate' : 'outlier';
+    }
+    system.survivors = selection.survivors.map((a) => a.serverIp);
+    if (selection.survivors.length === 0) {
+      if (system.peerIp !== null) {
+        system.peerIp = null;
+        this.becomeUnsynchronized();
         this.getBus().publish({
-          topic: 'ntp.auth.rejected',
-          payload: {
-            deviceId: this.host.id, hostname: this.host.getHostname(),
-            fromIp: serverIp, reason: 'bad-mac',
-          },
+          topic: 'ntp.unsynced',
+          payload: { deviceId: this.host.id, hostname: this.host.getHostname(), reason: 'unreachable' },
         });
+      }
+      return;
+    }
+    const previous = system.peerIp ? this.config.associations.get(system.peerIp) : undefined;
+    const best = chooseSystemPeer(selection.survivors, previous);
+    best.preferred = true;
+    best.selection = 'sys';
+    this.clockUpdate(best, selection.survivors, previous?.serverIp !== best.serverIp);
+  }
+
+  private clockUpdate(
+    best: NtpAssociation,
+    survivors: NtpAssociation[],
+    peerChanged: boolean,
+    reference?: CombinedReference,
+  ): void {
+    const system = this.config.system;
+    const now = simulationNowMs();
+    if (reference === undefined && system.updateMs >= best.updateMs && system.peerIp === best.serverIp) return;
+    const combined = reference !== undefined
+      ? { offsetMs: -reference.offset * 1000, jitterMs: reference.offsetDeviation * 1000 }
+      : best.prefer ? { offsetMs: best.offsetMs, jitterMs: best.jitterMs } : combineOffsets(survivors, now);
+    const elapsed = this.horloge.dernierReglageMs
+      ? now - this.horloge.dernierReglageMs
+      : best.hpoll > 0 ? 2 ** best.hpoll * 1000 : 64000;
+    if (reference !== undefined) {
+      const verdict = this.reference.checkOffset(combined.offsetMs / 1000);
+      if (verdict === 'exit') { this.fatalHandler?.(); return; }
+      if (verdict === 'ignored') return;
+    }
+    const target = this.config.offsetMs + combined.offsetMs;
+    const decision = disciplinerHorloge(this.horloge.etat, target, elapsed, this.reglagesDiscipline);
+    this.horloge.etat = appliquerDecision(this.horloge.etat, decision, elapsed);
+    this.horloge.dernierReglageMs = now;
+    this.horloge.derniereDecision = decision.quoi;
+    if (decision.quoi === 'spike' || decision.quoi === 'panic') return;
+    system.updateMs = best.updateMs;
+    system.offsetMs = combined.offsetMs;
+    system.jitterMs = combined.jitterMs;
+    this.setClockOffset(this.horloge.etat.offsetApplique, decision.quoi === 'step' ? 'step' : 'slew');
+    if (decision.quoi === 'step') {
+      system.stepCount++;
+      system.poll = NTP_MIN_POLL;
+      if (this.reglagesDiscipline.reinitialiserAssociationsAuSaut !== false) {
+        this.selector.clear();
+        for (const a of this.config.associations.values()) {
+          resetPeer(a, system, now);
+          this.arm(a);
+        }
+        system.peerIp = null;
+        this.config.localStratum = NTP_MAX_STRATUM;
+        system.leap = 3;
         return;
       }
     }
-    const t1 = reply.origTimestampMs;
-    const t2 = reply.rxTimestampMs;
-    const t3 = reply.txTimestampMs;
-    const t4 = simulationNowMs();
-    if (t1 === 0) return;
-    const { offset, delay } = computeOffsetMs(t1, t2, t3, t4);
-    a.lastReplyMs = t4;
-    a.reach = (a.reach >>> 1) | 0x80;
-    a.stratum = reply.stratum;
-    a.offsetMs = offset;
-    a.delayMs = delay;
-    a.dispersionMs = Math.abs(delay) * 0.5 + 1;
-    a.synced = reply.stratum < 16;
-    if (a.synced) this.selectAndSync();
-  }
-
-  private intersect(candidates: NtpAssociation[]): NtpAssociation[] {
-    if (candidates.length <= 2) return candidates;
-    type Edge = { time: number; lower: boolean };
-    const edges: Edge[] = [];
-    for (const c of candidates) {
-      edges.push({ time: c.offsetMs - c.dispersionMs, lower: true });
-      edges.push({ time: c.offsetMs + c.dispersionMs, lower: false });
-    }
-    edges.sort((x, y) => x.time - y.time || (x.lower === y.lower ? 0 : x.lower ? -1 : 1));
-    let count = 0;
-    let bestCount = 0;
-    let bestLow = -Infinity;
-    let bestHigh = Infinity;
-    for (const e of edges) {
-      if (e.lower) {
-        count++;
-        if (count > bestCount) { bestCount = count; bestLow = e.time; bestHigh = Infinity; }
-      } else {
-        if (count === bestCount && e.time < bestHigh) bestHigh = e.time;
-        count--;
-      }
-    }
-    const majority = Math.floor(candidates.length / 2) + 1;
-    if (bestCount < majority) return candidates;
-    return candidates.filter((c) => c.offsetMs >= bestLow && c.offsetMs <= bestHigh);
-  }
-
-  private selectAndSync(): void {
-    const synced = [...this.config.associations.values()].filter((a) => a.synced);
-    const truechimers = this.intersect(synced);
-    let best: NtpAssociation | null = null;
-    for (const a of truechimers) {
-      if (!best) { best = a; continue; }
-      if (a.prefer && !best.prefer) { best = a; continue; }
-      if (a.prefer === best.prefer) {
-        if (a.stratum < best.stratum) { best = a; continue; }
-        if (a.stratum === best.stratum && a.dispersionMs < best.dispersionMs) best = a;
-      }
-    }
-    if (!best) return;
-    for (const a of this.config.associations.values()) a.preferred = a === best;
-    // L'ecart n'est plus applique d'un coup : il traverse la discipline,
-    // qui decide de glisser, de sauter, d'ecarter une aberration ou de
-    // paniquer (lot N9). C'est le §2 du tutoriel, rendu observable.
-    const maintenant = simulationNowMs();
-    const ecoule = this.horloge.dernierReglageMs
-      ? maintenant - this.horloge.dernierReglageMs
-      : (best.pollSec || 64) * 1000;
-    const decision = disciplinerHorloge(
-      this.horloge.etat, best.offsetMs, ecoule, this.reglagesDiscipline);
-    this.horloge.etat = appliquerDecision(this.horloge.etat, decision, ecoule);
-    this.horloge.dernierReglageMs = maintenant;
-    this.horloge.derniereDecision = decision.quoi;
-    // Une aberration ou une panique ne synchronise PAS : l'horloge garde
-    // ce qu'elle avait, et la strate ne descend pas.
-    if (decision.quoi === 'spike' || decision.quoi === 'panic') return;
-    this.config.offsetMs = this.horloge.etat.offsetApplique;
+    const wasSynchronized = this.isSynced();
+    system.leap = best.leap;
     this.config.localStratum = best.stratum + 1;
-    this.config.refIdentifier = best.serverIp;
-    this.config.lastSyncMs = simulationNowMs();
-    this.getBus().publish({
-      topic: 'ntp.synced',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        serverIp: best.serverIp, offsetMs: best.offsetMs, delayMs: best.delayMs,
-        newStratum: this.config.localStratum,
-      },
+    this.config.refIdentifier = best.copy && best.refId !== '' ? best.refId : best.serverIp;
+    system.refTimestamp = timestampFromMs(this.now());
+    if (reference !== undefined) {
+      system.rootDelayMs = reference.rootDelay * 1000;
+      system.rootDispersionMs = reference.rootDispersion * 1000;
+    } else {
+      system.rootDelayMs = best.rootDelayMs + best.delayMs;
+      system.rootDispersionMs = best.rootDispersionMs
+        + Math.sqrt(best.jitterMs ** 2 + combined.jitterMs ** 2)
+        + Math.max(best.dispersionMs + NTP_PHI * (now - best.updateMs) + Math.abs(best.offsetMs), NTP_MIN_DISPERSION_MS);
+    }
+    system.peerIp = best.serverIp;
+    this.config.lastSyncMs = now;
+    this.recordReference(best, now, reference);
+    this.adjustSystemPoll(combined.offsetMs);
+    if (!wasSynchronized || peerChanged) {
+      this.getBus().publish({
+        topic: 'ntp.synced',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          serverIp: best.serverIp, offsetMs: best.offsetMs, delayMs: best.delayMs,
+          newStratum: this.config.localStratum,
+        },
+      });
+      Logger.info(this.host.id, 'ntp:synced',
+        `${this.host.name}: NTP synced with ${best.serverIp} stratum ${this.config.localStratum} offset ${best.offsetMs}ms`);
+    }
+  }
+
+  private readonly reference = new ReferenceTracking();
+
+  getReference(): ReferenceTracking { return this.reference; }
+
+  getRootDispersionMs(): number { return this.currentRootDispersionMs(); }
+
+  getPrecisionExponent(): number { return this.config.system.precision; }
+
+  private recordReference(best: NtpAssociation, nowMs: number, reference?: CombinedReference): void {
+    const track = best.statistics.tracking();
+    if (track === null) return;
+    const nowSeconds = nowMs / 1000;
+    const measuredFrequency = reference?.frequency ?? track.frequency;
+    const measuredSkew = reference?.skew ?? track.skew;
+    const estimate = this.reference.estimate(false, measuredFrequency, measuredSkew);
+    this.reference.record({
+      offset: (reference?.offset ?? track.averageOffset) + (nowSeconds - (reference?.referenceTime ?? track.referenceTime)) * measuredFrequency,
+      nowSeconds,
+      referenceTime: reference?.referenceTime ?? track.referenceTime,
+      residualFrequency: estimate.residualFrequency,
+      skew: estimate.skew,
+      frequency: estimate.frequency,
     });
-    Logger.info(this.host.id, 'ntp:synced',
-      `${this.host.name}: NTP synced with ${best.serverIp} stratum ${this.config.localStratum} offset ${best.offsetMs}ms`);
   }
 
-  pollAll(): void {
-    if (!this.config.enabled) return;
-    for (const serverIp of this.config.associations.keys()) this.poll(serverIp);
+  setFatalHandler(handler: (() => void) | null): void { this.fatalHandler = handler; }
+
+  private fatalHandler: (() => void) | null = null;
+
+  private adjustSystemPoll(offsetMs: number): void {
+    const system = this.config.system;
+    const previousJitter = this.clockJitterMs;
+    const deviation = Math.max(Math.abs(offsetMs - this.lastCombinedOffsetMs), PRECISION_FLOOR_MS(system.precision));
+    this.clockJitterMs = Math.sqrt(previousJitter ** 2 + (deviation ** 2 - previousJitter ** 2) / 4);
+    this.lastCombinedOffsetMs = offsetMs;
+    if (Math.abs(offsetMs) < 4 * this.clockJitterMs) {
+      system.pollCredit += system.poll;
+      if (system.pollCredit > 30) {
+        system.pollCredit = 30;
+        if (system.poll < NTP_MAX_POLL) { system.pollCredit = 0; system.poll++; }
+      }
+    } else {
+      system.pollCredit -= system.poll * 2;
+      if (system.pollCredit < -30) {
+        system.pollCredit = -30;
+        if (system.poll > NTP_MIN_POLL) { system.pollCredit = 0; system.poll--; }
+      }
+    }
   }
 
-  private poll(serverIp: string): void {
-    const a = this.config.associations.get(serverIp);
-    if (!a) return;
+  private clockJitterMs = 0;
+  private lastCombinedOffsetMs = 0;
+
+  private refreshSynchronization(): void {
+    if (this.config.serverMode && this.config.system.peerIp === null) return;
+    if (!this.isSynced() || this.config.system.peerIp === null) return;
     const now = simulationNowMs();
-    a.lastPollMs = now;
-    const mode: NtpMode = a.mode === 'symmetric-active' ? 'symmetric-active' : 'client';
-    const request: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: a.version ?? NTP_VERSION, mode,
-      stratum: this.config.localStratum, poll: 6, precision: -20,
-      rootDelay: 0, rootDispersion: 0, refIdentifier: this.config.refIdentifier,
-      refTimestampMs: this.config.lastSyncMs,
-      origTimestampMs: 0, rxTimestampMs: 0, txTimestampMs: now,
-      keyId: a.keyId,
-    };
-    this.sendNtp(this.namedSource(a), new IPAddress(serverIp), request);
-    this.getBus().publish({
-      topic: 'ntp.packet.sent',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        serverIp, mode,
-      },
-    });
+    const peer = this.config.associations.get(this.config.system.peerIp);
+    if (peer && this.fits(peer, now)) return;
+    this.reselect();
   }
 
   private namedSource(association?: NtpAssociation): IPAddress | undefined {
     const declared = association?.sourceInterface || this.config.sourceInterface;
-    return declared ? this.host.getPort(declared)?.getIPAddress() ?? undefined : undefined;
+    if (declared) return this.host.getPort(declared)?.getIPAddress() ?? undefined;
+    return isValidIPv4(this.config.sourceAddress) && this.config.sourceAddress !== '0.0.0.0' ? new IPAddress(this.config.sourceAddress) : undefined;
   }
 
-  private sendNtp(srcIp: IPAddress | undefined, dstIp: IPAddress, brut: NtpPacket): void {
-    // La signature vit ICI plutot qu'a chacun des trois appelants :
-    // requete, reponse de serveur et reponse symetrique doivent porter
-    // le meme condensé, et trois endroits finiraient par diverger.
-    const payload = this.signer(brut);
-    if (!this.emettreUdp(srcIp, dstIp, payload, 48, dstIp.toString())) return;
+  private serverPort = UDP_PORT_NTP;
+  private requestSourcePort = UDP_PORT_NTP;
+
+  setServerPort(port: number): void { this.serverPort = port; }
+
+  getServerPort(): number { return this.serverPort; }
+
+  private replyPorts(): UdpPorts { return { source: this.serverPort, destination: this.requestSourcePort }; }
+
+  private sendNtp(
+    srcIp: IPAddress | undefined, dstIp: IPAddress, brut: NtpPacket, ports?: UdpPorts,
+    trailer?: (header: Uint8Array) => Uint8Array | null, iface?: string, ttl?: number,
+  ): boolean {
+    const header = encodeNtpPacket(this.signer(brut));
+    const payload = trailer === undefined ? header : trailer(header);
+    if (payload === null) return false;
+    if (!this.emettreUdp(srcIp, dstIp, payload, payload.length, dstIp.toString(), ports, iface, ttl)) return false;
     this.config.counters.sent++;
     if (brut.mode in this.config.counters.sentByMode) {
       this.config.counters.sentByMode[brut.mode]++;
     }
+    return true;
   }
 
   private emettreUdp(
     srcIp: IPAddress | undefined, dstIp: IPAddress,
-    payload: unknown, payloadBytes: number, key: string,
+    payload: unknown, payloadBytes: number, key: string, ports?: UdpPorts, iface?: string, ttl?: number,
   ): boolean {
     if (this.emitting.has(key)) return false;
     this.emitting.add(key);
     try {
       return this.host.sendUdpDatagram({
-        destination: dstIp, destinationPort: UDP_PORT_NTP, sourcePort: UDP_PORT_NTP,
-        payload, payloadBytes, ...(srcIp ? { source: srcIp } : {}),
+        destination: dstIp, destinationPort: ports?.destination ?? UDP_PORT_NTP, sourcePort: ports?.source ?? UDP_PORT_NTP,
+        payload, payloadBytes, ...(srcIp ? { source: srcIp } : {}), ...(iface ? { iface } : {}), ...(ttl !== undefined ? { ttl } : {}),
       });
     } finally { this.emitting.delete(key); }
-  }
-
-  private startTimer(): void {
-    if (this.pollTimer !== null) return;
-    const s = this.getScheduler();
-    this.scheduler = s;
-    this.pollTimer = s.setInterval(() => this.pollAll(), 64_000);
-  }
-
-  private stopTimer(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.pollTimer !== null) { s.clear(this.pollTimer); this.pollTimer = null; }
   }
 
   // ── Mode 6 : les messages de controle (lot N11) ───────────────────
@@ -1058,7 +1923,8 @@ export class NtpAgent {
   private envoyerControle(
     srcIp: IPAddress | undefined, dstIp: IPAddress, pkt: NtpControlPacket,
   ): void {
-    if (!this.emettreUdp(srcIp, dstIp, pkt, 12 + pkt.data.length, `ctl|${dstIp.toString()}`)) return;
+    const payload = encodeControlPacket(pkt);
+    if (!this.emettreUdp(srcIp, dstIp, payload, payload.length, `ctl|${dstIp.toString()}`)) return;
     this.config.counters.sent++;
     this.config.counters.sentControl++;
   }

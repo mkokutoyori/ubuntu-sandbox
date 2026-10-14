@@ -22,7 +22,10 @@ import {
   type ILinuxShell,
   type ISshServerContext,
   type SshServerConfig,
+  type SshTransportPolicy,
 } from './ISshServerContext';
+import { sshdAlgorithmPreferences } from './SshdAlgorithmDirectives';
+import { rsaHostKeysFor } from './SshdRsaHostKey';
 import {
   DEFAULT_SSHD_CONFIG,
   parseSshdConfig,
@@ -39,6 +42,7 @@ const ADMIN_GID = 0;
 const SSH_DIR = 'C:\\ProgramData\\ssh';
 const SSHD_CONFIG_PATH = `${SSH_DIR}\\sshd_config`;
 const HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_ed25519_key`;
+const RSA_HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_rsa_key`;
 const HOST_KEY_PUB_PATH = `${SSH_DIR}\\ssh_host_ed25519_key.pub`;
 
 export interface WindowsShellExecutor {
@@ -52,6 +56,7 @@ export interface WindowsShellExecutor {
    * (docs/PRD-SSH-Unification.md §4bis B2).
    */
   createVtyShell?(user: string): SshVtyShell | null;
+  shellBanner?(): string;
 }
 
 /**
@@ -110,6 +115,11 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   serverIdentification(): string {
     return SSH_WINDOWS_IDENTIFICATION;
+  }
+
+  transportPolicy(): SshTransportPolicy {
+    const algorithms = sshdAlgorithmPreferences(this.wfs.readFile(SSHD_CONFIG_PATH).content ?? '');
+    return Object.keys(algorithms).length === 0 ? {} : { algorithms };
   }
 
   getBanner(): string | null {
@@ -187,7 +197,8 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   getMotd(): string {
-    return `Welcome to ${this.hostname}\n`;
+    const banner = this.shellExecutor?.shellBanner?.();
+    return banner !== undefined ? `${banner}\n` : `Welcome to ${this.hostname}\n`;
   }
 
   getLastLogin(user: string): string | null {
@@ -229,6 +240,17 @@ export class WindowsSshServerContext implements ISshServerContext {
     if (!this.wfs.exists(SSH_DIR)) {
       this.wfs.mkdirp(SSH_DIR);
     }
+  }
+
+  additionalHostKeys(): SshHostKey[] {
+    const rawConfig = this.wfs.readFile(SSHD_CONFIG_PATH).content ?? '';
+    return rsaHostKeysFor(rawConfig, this.hostname, {
+      read: (path) => {
+        const result = this.wfs.readFile(path);
+        return result.ok ? result.content ?? null : null;
+      },
+      write: (path, content) => { this.wfs.createFile(path, content); },
+    }, RSA_HOST_KEY_PATH);
   }
 
   private loadOrGenerateHostKey(): SshHostKey {

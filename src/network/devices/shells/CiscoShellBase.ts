@@ -4579,12 +4579,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         { keyword: 'prefer', description: 'Prefer this peer when possible' },
         { keyword: 'source', description: 'Interface for source address' },
         { keyword: 'version', description: 'Configure NTP version' },
+        { keyword: 'maxpoll', description: 'Maximum poll interval' },
+        { keyword: 'minpoll', description: 'Minimum poll interval' },
+        { keyword: 'burst', description: 'Send a burst when the peer is reachable' },
+        { keyword: 'iburst', description: 'Send a burst when the peer is unreachable' },
       ],
     };
 
     return sequenceFamily([
       { path: ['ntp', 'authenticate'], description: 'Authenticate time sources' },
       { path: ['ntp', 'logging'], description: 'Enable NTP message logging' },
+      {
+        path: ['ntp', 'broadcastdelay'], description: 'Estimated round-trip delay between broadcast client and server',
+        args: [{ name: 'microsecondes', type: 'INT', range: [1, 999999], description: 'Round-trip delay in microseconds' }],
+      },
       {
         path: ['ntp', 'update-calendar'],
         description: 'Periodically update calendar from NTP',
@@ -8877,6 +8885,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         agent.setAccessGroup(a[1], a[2]);
       } else if (a[0] === 'logging') {
         agent.setLogging(true, 'ntp');
+      } else if (a[0] === 'broadcastdelay' && a[1]) {
+        agent.setBroadcastDelayUs(parseInt(a[1], 10));
       } else if (a[0] === 'update-calendar') {
         agent.setUpdateCalendar(true);
       } else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
@@ -8899,6 +8909,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (a[0] === 'source') agent.setSourceInterface('');
       else if (a[0] === 'logging') agent.setLogging(false);
       else if (a[0] === 'update-calendar') agent.setUpdateCalendar(false);
+      else if (a[0] === 'broadcastdelay') agent.setBroadcastDelayUs(3000);
       // Le durcissement du §9 : fermer le mode 6, celui de `monlist`.
       else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
         agent.setAllowModeControl(false);
@@ -8921,7 +8932,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (let i = 2; i < minuscules.length; i++) {
       const mot = minuscules[i];
       if (mot === 'prefer') { queue.prefer = true; continue; }
+      if (mot === 'iburst' || mot === 'burst') {
+        queue.options = { ...queue.options, [mot]: true };
+        continue;
+      }
       const valeur = minuscules[i + 1];
+      if (mot === 'minpoll' || mot === 'maxpoll') {
+        if (valeur === undefined || !/^\d+$/.test(valeur) || Number(valeur) < 4 || Number(valeur) > 17) {
+          return { ...queue, refus: valeur ?? mot };
+        }
+        queue.options = { ...queue.options, [mot]: Number(valeur) };
+        i++;
+        continue;
+      }
       if (mot === 'key') {
         if (!estNumeroDeCleNtp(valeur)) return { ...queue, refus: valeur ?? mot };
         queue.keyId = Number(valeur);

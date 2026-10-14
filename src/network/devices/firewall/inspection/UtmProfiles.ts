@@ -1,5 +1,6 @@
 import { DEFAULT_OVERSIZE_LIMIT_MB } from './StreamAssembler';
 
+import type { IpsSignatureBody } from './IpsEngine';
 export type UtmAction = 'allow' | 'block' | 'monitor';
 export type SslInspectionMode = 'disable' | 'certificate-inspection' | 'deep-inspection';
 
@@ -60,6 +61,41 @@ export interface FileFilterProfile {
   readonly name: string;
   readonly entries: readonly FileFilterEntry[];
   readonly scanArchiveContents: boolean;
+  readonly comment?: string;
+}
+
+export interface IpsCustomSignature {
+  readonly tag: string;
+  readonly ruleId: number;
+  readonly body: IpsSignatureBody;
+  readonly action: 'pass' | 'block';
+  readonly enabled: boolean;
+  readonly severity?: string;
+  readonly location?: string;
+  readonly protocol?: string;
+  readonly os?: string;
+  readonly application?: string;
+  readonly log: boolean;
+}
+
+export interface IpsSensorEntry {
+  readonly id: string;
+  readonly rules: readonly number[];
+  readonly severities: readonly string[];
+  readonly locations: readonly string[];
+  readonly protocols: readonly string[];
+  readonly oses: readonly string[];
+  readonly applications: readonly string[];
+  readonly defaultActions: readonly string[];
+  readonly defaultStatuses: readonly string[];
+  readonly action: 'pass' | 'block' | 'reset' | 'default';
+  readonly status: 'enable' | 'disable' | 'default';
+  readonly log: boolean;
+}
+
+export interface IpsSensor {
+  readonly name: string;
+  readonly entries: readonly IpsSensorEntry[];
   readonly comment?: string;
 }
 
@@ -168,6 +204,8 @@ export class UtmProfileStore {
   private readonly dnsfilter = new Map<string, DnsFilterProfile>();
   private readonly filefilter = new Map<string, FileFilterProfile>();
   private readonly applications = new Map<string, ApplicationList>();
+  private readonly ipsSensors = new Map<string, IpsSensor>();
+  private readonly ipsCustom = new Map<string, IpsCustomSignature>();
   private readonly sslSsh = new Map<string, SslSshProfile>();
   private readonly protocolOptions = new Map<string, ProtocolOptions>();
   private readonly urlFilterTables = new Map<string, FilterTable>();
@@ -195,6 +233,15 @@ export class UtmProfileStore {
   setFileFilter(profile: FileFilterProfile): void { this.filefilter.set(profile.name, profile); }
   getFileFilter(name: string): FileFilterProfile | undefined { return this.filefilter.get(name); }
   removeFileFilter(name: string): boolean { return this.filefilter.delete(name); }
+
+  setIpsSensor(sensor: IpsSensor): void { this.ipsSensors.set(sensor.name, sensor); }
+  getIpsSensor(name: string): IpsSensor | undefined { return this.ipsSensors.get(name); }
+  removeIpsSensor(name: string): boolean { return this.ipsSensors.delete(name); }
+  ipsSensorNames(): readonly string[] { return Object.freeze([...this.ipsSensors.keys()]); }
+
+  setIpsCustom(signature: IpsCustomSignature): void { this.ipsCustom.set(signature.tag, signature); }
+  removeIpsCustom(tag: string): boolean { return this.ipsCustom.delete(tag); }
+  ipsCustomSignatures(): readonly IpsCustomSignature[] { return Object.freeze([...this.ipsCustom.values()]); }
 
   setApplicationList(list: ApplicationList): void {
     this.applications.set(list.name, list);

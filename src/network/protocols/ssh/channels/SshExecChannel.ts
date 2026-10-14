@@ -1,9 +1,11 @@
 import { bytesToUtf8 } from '@/crypto/encoding';
 import type { ConnectionChannel, SshConnection } from '../connection/SshConnection';
-import { decodeExitStatus, encodeStringPayload } from '../connection/ChannelPayloads';
+import {
+  decodeExitStatus, encodeEnvRequest, encodePtyRequest, encodeStringPayload,
+} from '../connection/ChannelPayloads';
 import { SSH_EXTENDED_DATA_STDERR } from '../transport/SshMessageNumbers';
 import { AbstractSshChannel } from './AbstractSshChannel';
-import type { ExecResult, ISshExecChannel } from './ISshChannel';
+import type { ExecChannelOptions, ExecResult, ISshExecChannel } from './ISshChannel';
 
 const EXIT_ON_SIGNAL = 255;
 
@@ -24,6 +26,7 @@ export class SshExecChannel
     private readonly connection: SshConnection,
     channelId: number,
     private readonly command: string,
+    private readonly options: ExecChannelOptions = {},
   ) {
     super(channelId, 'exec');
   }
@@ -48,7 +51,16 @@ export class SshExecChannel
         this.settle();
         return;
       }
-      void channel.request('exec', encodeStringPayload(this.command), true).then((accepted) => {
+      for (const [name, value] of this.options.environment ?? []) {
+        void channel.request('env', encodeEnvRequest(name, value), false);
+      }
+      const pty = this.options.pty;
+      const ptyGranted = pty === undefined
+        ? Promise.resolve(true)
+        : channel.request('pty-req', encodePtyRequest({
+          term: pty.term, columns: pty.columns, rows: pty.rows, pixelWidth: 0, pixelHeight: 0, modes: new Uint8Array([0]),
+        }), true);
+      void ptyGranted.then(() => channel.request('exec', encodeStringPayload(this.command), true)).then((accepted) => {
         if (accepted) return;
         this.stderrChunks.push(new TextEncoder().encode('exec request failed\n'));
         this.exitStatus = EXIT_ON_SIGNAL;

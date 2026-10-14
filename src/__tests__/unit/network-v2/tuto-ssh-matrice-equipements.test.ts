@@ -25,6 +25,14 @@
  * Les 51 couples restants passent avant et apres : ils sont les TEMOINS du laboratoire (cables,
  * adressage, comptes, cles d'hote, algorithmes herites d'IOS) et prouvent que les 39 tombaient
  * pour la raison designee et non pour un laboratoire defaillant.
+ *
+ * Les algorithmes sont ceux de chaque produit, regles par ses propres commandes : un IOS 15 n'offre
+ * que du SHA-1 (3560 : `diffie-hellman-group1-sha1` seul), si bien que chaque serveur est regle pour
+ * l'accepter (`ip ssh server algorithm`, `ssh server key-exchange` VRP, `set ssh-kex-algo` FortiOS,
+ * sshd_config) et que les clients VRP, Linux et Windows sont regles pour l'offrir. L'ASA n'accepte
+ * qu'UN groupe d'echange (`ssh key-exchange group dh-group14-sha1`) : le 3560 (group1) et le client
+ * FortiOS (aucune commande de reglage cote client) ne peuvent donc pas l'atteindre, et ces deux
+ * couples sont attendus REFUSES a la negociation.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -32,6 +40,8 @@ import {
 } from './_helpers/sshMatrixLab';
 
 const pairs = ALL_KINDS.flatMap((a) => ALL_KINDS.filter((b) => b !== a).map((b) => [a, b] as const));
+
+const REFUSED_AT_KEY_EXCHANGE = new Set(['firewall-fortinet -> firewall-cisco', 'switch-cisco -> firewall-cisco']);
 
 describe('matrix', () => {
   it.each(pairs)('%s -> %s', async (a, b) => {
@@ -42,6 +52,11 @@ describe('matrix', () => {
     if (a === 'router-cisco' || a === 'switch-cisco' || a === 'firewall-cisco') await c.type('enable');
     const localPrompt = new RegExp(`^${c.prompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
     await c.login(clientCommand(a, to), to.secret, to.user);
+    if (REFUSED_AT_KEY_EXCHANGE.has(`${a} -> ${b}`)) {
+      expect(c.transcript).toMatch(/no matching key exchange method found/);
+      expect(await c.expectPrompt(localPrompt)).toBe(true);
+      return;
+    }
     const ok = await c.expectPrompt(remotePrompt(to));
     expect(ok).toBe(true);
     const probe = identityProbe(to);

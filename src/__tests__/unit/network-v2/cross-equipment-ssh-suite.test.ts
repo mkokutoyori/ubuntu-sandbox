@@ -173,7 +173,7 @@ const SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
 ];
 
 /** `MYVAR=1 ssh …` reste un appel client : l'affectation precede le verbe. */
-const APPEL_CLIENT = /(^|[|;&]\s*)(\w+=\S*\s+)*(ssh|scp|sftp|stelnet)\s/;
+const APPEL_CLIENT = /(^|[|;&="(]\s*)(\w+=\S*\s+)*(ssh|scp|sftp|stelnet)\s/;
 
 function secretOf(destination: string): string | undefined {
   return SECRETS.find(([motif]) => motif.test(destination))?.[1];
@@ -1400,7 +1400,7 @@ describe('§19 — PTY allocation, signals and window size', () => {
     {
       name: 'remote exit 130 (SIGINT) is surfaced through the client',
       on: l => l.linux1,
-      cmd: 'ssh alice@10.0.0.2 "bash -c \'kill -INT $$\'"; echo rc=$?',
+      cmd: 'ssh alice@10.0.0.2 \'kill -INT $$\'; echo rc=$?',
       contains: [/rc=130/],
     },
     {

@@ -45,7 +45,7 @@ export interface NtpAuthRejectedPayload extends NtpDeviceRef {
    * USURPATION plutot qu'une faute de configuration : le numero de clé
    * est bon, elle est declaree fiable, et le condensé ne correspond pas.
    */
-  reason: 'no-key' | 'untrusted-key' | 'unconfigured' | 'bad-mac';
+  reason: 'no-key' | 'untrusted-key' | 'unconfigured' | 'bad-mac' | 'nts';
 }
 
 export type NtpDomainEvent =

@@ -1,4 +1,5 @@
 import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
+import type { SshAlgorithmPreferences } from '../../../../../protocols/ssh/transport/SshTransport';
 import type { SessionHelperEntry } from '../../../session/SessionHelperTable';
 import type { ConfigSaveMode } from '../../../config/ConfigSaveMode';
 import type { ConserveThresholds } from '../../../health/SystemLoad';
@@ -253,6 +254,7 @@ export interface FortiGlobalSettings {
   readonly authKeepAlive?: boolean;
   readonly fragmentMemoryMb?: number;
   readonly adminSshPort?: number;
+  readonly sshAlgorithms?: SshAlgorithmPreferences;
   readonly adminTelnetPort?: number;
   readonly adminHttpPort?: number;
   readonly adminHttpsPort?: number;
@@ -366,6 +368,14 @@ export interface FortiCommitDevice {
   removeStaticRoute(id: string): void;
   applySchedule(schedule: FortiSchedulePatch): void;
   removeSchedule(name: string): void;
+  applyTrafficShaper(shaper: import('../../../model/TrafficShaper').TrafficShaper): void;
+  removeTrafficShaper(name: string): void;
+  applyIpsCustom(signature: Omit<import('../../../inspection/UtmProfiles').IpsCustomSignature, 'ruleId'>): string | void;
+  removeIpsCustom(tag: string): void;
+  applyIpsSensor(sensor: import('../../../inspection/UtmProfiles').IpsSensor): void;
+  removeIpsSensor(name: string): void;
+  applyPerIpShaper(shaper: import('../../../model/TrafficShaper').PerIpShaper): void;
+  removePerIpShaper(name: string): void;
   applyVdomSettings(settings: FortiVdomSettings): void;
   setVdomLldp(transmission: LldpVdomSetting, reception: LldpVdomSetting): void;
   setSessionDirtyMode(mode: string): void;
@@ -940,6 +950,19 @@ export function addressMask(
       { name: `${name}-mask`, type: 'SUBNET_MASK', description: 'Subnet mask.' },
     ],
     defaultValue: byDefault === undefined ? undefined : [...byDefault],
+  };
+}
+
+export function isoMoment(name: string, help: string): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    parts: [
+      { name: `${name}-date`, type: 'WORD', description: 'Date, format yyyy-mm-dd.' },
+      { name, type: 'TIME', description: 'Time of day, format hh:mm:ss.' },
+    ],
+    defaultValue: undefined,
   };
 }
 

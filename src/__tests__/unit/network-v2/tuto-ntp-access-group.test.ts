@@ -33,11 +33,16 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
 import {
   ORDRE_ACCES, estGenreAcces, verdictAccesNtp,
 } from '@/network/ntp/accessGroups';
 
+let clock: VirtualTimeScheduler;
+
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -61,6 +66,7 @@ async function labo(acl: string[], groupes: string[]) {
   for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
     'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
     'ntp server 10.0.0.1', 'end']) await cli.executeCommand(c);
+  converge(clock);
   return { srv, cli };
 }
 
@@ -136,6 +142,7 @@ describe('§3.7 — le piege : `serve-only` empeche le routeur de se synchronise
       'ip address 10.2.0.2 255.255.255.0', 'no shutdown', 'exit',
       'ntp server 10.2.0.1', 'end']) await aval.executeCommand(c);
 
+    converge(clock);
     // Le milieu SERT toujours : l'aval l'atteint.
     expect(await aval.executeCommand('show ntp status')).toMatch(/stratum 6/);
     // Mais il ne se synchronise pas sur l'amont : il reste a son propre
@@ -158,6 +165,7 @@ describe('§3.7 — le piege : `serve-only` empeche le routeur de se synchronise
       'ntp access-group peer 20', 'ntp server 10.1.0.1', 'end']) {
       await milieu.executeCommand(c);
     }
+    converge(clock);
     expect(await milieu.executeCommand('show ntp status')).toMatch(/stratum 3/);
   });
 });

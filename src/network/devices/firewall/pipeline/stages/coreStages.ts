@@ -1,3 +1,5 @@
+import { computeIPv4Checksum } from '../../../../core/types';
+import { computeTcpChecksum } from '../../../../tcp/types';
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
 import { decrementForForwarding } from '../../../../layers/internet/InternetLayer';
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
@@ -11,6 +13,8 @@ import type { RouteTable } from '../../l3/RouteTable';
 import type { IntraSwitchPolicy } from '../../l3/SwitchGroupTable';
 import type { SdwanSteeringProbe } from '../../sdwan/SdwanTable';
 import type { ObjectStore } from '../../model/ObjectStore';
+import type { ScheduleStore } from '../../model/ScheduleObject';
+import type { ShaperStore } from '../../model/TrafficShaper';
 import type { PolicyStore } from '../../model/PolicyStore';
 import type { SessionTimeoutProfile } from '../../FirewallProfile';
 import type { SessionTtlTable } from '../../session/SessionTtlTable';
@@ -18,7 +22,7 @@ import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
 import type { ServiceObject } from '../../model/ServiceObject';
 import {
   inspectTls, protocolOfFlow, scanAntivirus, scanApplicationControl,
-  scanDnsFilter, scanFileFilter,
+  scanDnsFilter, scanFileFilter, scanIps,
   scanWebFilter, scanWebFilterHost,
   type InspectedFlow, type UtmVerdict, type UtmVerdictKind,
 } from '../../inspection/ContentInspector';
@@ -34,6 +38,7 @@ import { icmpErrorFlowKey, flowKeyFromPacket, reverseFlowKey, type FlowKey } fro
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { FirewallSession, SessionTable, SessionTranslation } from '../../session/SessionTable';
 import type { FlowDirection } from '../../session/TcpStateMachine';
+import { segmentPayloadSize } from '../../../../tcp/TcpStack';
 import { ftpExpectedDataFlow } from '../../session/FtpSessionHelper';
 import type { ExpectedFlowTable } from '../../session/ExpectedFlowTable';
 import {
@@ -69,6 +74,8 @@ export interface VdomServices {
   dos?: DosPolicyStore;
   dosSensor?: DosSensor;
   expectedFlows?: ExpectedFlowTable;
+  schedules?: ScheduleStore;
+  shapers?: ShaperStore;
 }
 
 export interface HaStandby {
@@ -233,6 +240,9 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     authCheckStage(services),
     utmInspectStage(services),
     natSourceStage(services),
+    tcpMssStage(),
+    diffservStage(),
+    shaperStage(services),
     sessionInstallStage(services),
   ];
 }
@@ -328,7 +338,8 @@ function inspectUtm(
   const sni = ssl ? inspectTls(flow, ssl) : undefined;
   if (sni !== undefined) context.inspectedSni = sni;
 
-  const verdict = firstBlocking(flow, rule, profiles, sni);
+  const transport = packet.protocol === IP_PROTO_TCP ? 'tcp' : packet.protocol === IP_PROTO_UDP ? 'udp' : undefined;
+  const verdict = firstBlocking(flow, rule, profiles, sni, transport, context.sessionDirection !== 's2c');
   if (!verdict) return proceed(context, stage, 'clean');
 
   context.utmVerdict = verdict;
@@ -345,11 +356,12 @@ const UTM_REASON: Readonly<Record<UtmVerdictKind, VerdictReason>> = Object.freez
   'dns-blocked': 'utm-dns',
   'file-type-blocked': 'utm-file-type',
   'application-blocked': 'utm-application',
+  'ips-blocked': 'utm-ips',
 });
 
 function firstBlocking(
   flow: InspectedFlow, rule: SecurityRule, profiles: UtmProfileStore,
-  sni: string | undefined,
+  sni: string | undefined, transport: 'tcp' | 'udp' | undefined, fromClient: boolean,
 ): UtmVerdict | undefined {
   const scans: Array<UtmVerdict | undefined> = [];
 
@@ -384,6 +396,11 @@ function firstBlocking(
     ? undefined
     : profiles.getApplicationList(rule.applicationList);
   if (applications) scans.push(scanApplicationControl(flow, applications));
+
+  const ips = rule.ipsSensor === undefined ? undefined : profiles.getIpsSensor(rule.ipsSensor);
+  if (ips && transport !== undefined) {
+    scans.push(scanIps(flow, { protocol: transport, fromClient }, ips, profiles.ipsCustomSignatures()));
+  }
 
   return scans.find(verdict => verdict !== undefined && verdict.kind !== 'clean');
 }
@@ -672,6 +689,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       }
 
       vdom(services, context).sessions.recordTraffic(found.session, found.direction, packet.totalLength);
+      trackTcpSequence(vdom(services, context).sessions, found.session, found.direction, packet);
 
       const carried = sessionPolicy(services, context, found.session);
       if (carried !== undefined) context.matchedPolicy = carried;
@@ -686,6 +704,12 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       const expired = transitTtl(services, context, 'session-lookup');
       if (expired) return expired;
 
+      clampMss(context, carried);
+      rewriteDiffserv(context, carried, found.direction, found.session.originalTos);
+      const shaped = shapeTraffic(services, context, carried, found.direction);
+      if (shaped) return shaped;
+      const perIp = shapePerIp(services, context, carried, found.direction, found.session.c2s.sourceIP, false);
+      if (perIp) return perIp;
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
       context.verdict = Object.freeze({
         action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
@@ -1043,8 +1067,10 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
           ingressInterface: context.ingressPort,
           egressInterface: context.egressPort ?? '',
           sourceIP: policySource(context, packet, services).sourceIP.toString(),
+          sourceMac: context.ingressFrameSource?.toString(),
           destIP: policyDestination(context, packet, services).destinationIP.toString(),
           protocol: packet.protocol,
+          tos: packet.tos,
           ...transportPorts(policyDestination(context, packet, services)),
           application: context.identifiedApplication,
           destinationTranslated: context.destinationTranslated === true,
@@ -1074,6 +1100,144 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
         stage: 'policy-lookup', verdict: 'match', matchedRuleId: decision.rule.id,
       });
       return Continue();
+    },
+  };
+}
+
+function trackTcpSequence(
+  sessions: SessionTable, session: FirewallSession, direction: FlowDirection, packet: IPv4Packet,
+): void {
+  const segment = packet.payload as TcpSegment | undefined;
+  if (packet.protocol !== IP_PROTO_TCP || segment?.type !== 'tcp') return;
+  const consumed = segmentPayloadSize(segment) + (segment.flags.syn ? 1 : 0) + (segment.flags.fin ? 1 : 0);
+  sessions.trackSequence(session, direction, segment.sequence + consumed);
+}
+
+function clampMss(context: PacketContext, rule: SecurityRule | undefined): string {
+  const packet = ipv4(context);
+  const segment = packet?.payload as TcpSegment | undefined;
+  if (!packet || packet.protocol !== IP_PROTO_TCP || segment?.type !== 'tcp' || !segment.flags.syn) {
+    return 'not-syn';
+  }
+  const ceiling = segment.flags.ack ? rule?.tcpMssReceiver : rule?.tcpMssSender;
+  if (ceiling === undefined || ceiling <= 0) return 'unset';
+  const clamped = segment.options.map(option =>
+    option.kind === 'mss' && option.value > ceiling ? { ...option, value: ceiling } : option);
+  if (clamped.every((option, index) => option === segment.options[index])) return 'within';
+  const rewritten: TcpSegment = { ...segment, options: clamped, checksum: 0 };
+  rewritten.checksum = computeTcpChecksum(
+    rewritten, packet.sourceIP.toString(), packet.destinationIP.toString());
+  context.packet = { ...packet, payload: rewritten };
+  return `clamped-${ceiling}`;
+}
+
+function markDscp(context: PacketContext, code: number): string {
+  const packet = ipv4(context);
+  if (!packet) return 'unset';
+  const tos = (code << 2) | (packet.tos & 0x03);
+  if (tos === packet.tos) return 'within';
+  const rewritten: IPv4Packet = { ...packet, tos, headerChecksum: 0 };
+  rewritten.headerChecksum = computeIPv4Checksum(rewritten);
+  context.packet = rewritten;
+  return `dscp-${code}`;
+}
+
+function shapeTraffic(
+  services: FirewallServices, context: PacketContext, rule: SecurityRule | undefined,
+  direction: 'c2s' | 's2c',
+): FilterVerdict<PacketContext> | undefined {
+  const name = direction === 'c2s' ? rule?.trafficShaper : rule?.trafficShaperReverse;
+  const packet = ipv4(context);
+  const store = vdom(services, context).shapers;
+  const shaper = name === undefined ? undefined : store?.get(name);
+  const meter = name === undefined ? undefined : store?.meterOf(name);
+  if (!rule || !packet || !shaper || !meter) return undefined;
+
+  const band = meter.measure(rule.id, packet.totalLength, services.now());
+  if (band === 'dropped') return deny(context, 'shaper', 'shaper-exceeded', rule.id);
+  const code = shaper.multiStageDscp === undefined
+    ? shaper.diffserv
+    : band === 'exceed' ? shaper.multiStageDscp.guaranteedExceed
+      : band === 'maximum' ? shaper.multiStageDscp.exceedMaximum : undefined;
+  if (code !== undefined) markDscp(context, code);
+  context.trace.push({ stage: 'shaper', verdict: 'continue', detail: band });
+  return undefined;
+}
+
+function shapePerIp(
+  services: FirewallServices, context: PacketContext, rule: SecurityRule | undefined,
+  direction: 'c2s' | 's2c', clientIp: string, opensSession: boolean,
+): FilterVerdict<PacketContext> | undefined {
+  const packet = ipv4(context);
+  const name = rule?.perIpShaper;
+  const entry = name === undefined ? undefined : vdom(services, context).shapers?.perIpShaper(name);
+  if (!rule || !packet || !entry || name === undefined) return undefined;
+
+  const { shaper, meter } = entry;
+  if (opensSession) {
+    const sessions = vdom(services, context).sessions;
+    const policies = vdom(services, context).policy.ordered();
+    const mine = sessions.view().find(session => session.c2s.sourceIP === clientIp
+      && policies.find(r => r.id === session.policyId)?.perIpShaper === name);
+    const overall = shaper.maxSessions > 0 && mine.length >= shaper.maxSessions;
+    const ofProtocol = (protocol: number, limit: number): boolean => limit > 0
+      && packet.protocol === protocol
+      && mine.filter(session => session.c2s.protocol === protocol).length >= limit;
+    if (overall || ofProtocol(IP_PROTO_TCP, shaper.maxTcpSessions)
+      || ofProtocol(IP_PROTO_UDP, shaper.maxUdpSessions)) {
+      return deny(context, 'shaper', 'shaper-exceeded', rule.id);
+    }
+  }
+  if (shaper.maximum > 0
+    && meter.measure(clientIp, packet.totalLength, services.now()) === 'dropped') {
+    return deny(context, 'shaper', 'shaper-exceeded', rule.id);
+  }
+  const code = direction === 'c2s' ? shaper.forwardDscp : shaper.reverseDscp;
+  if (code !== undefined) markDscp(context, code);
+  return undefined;
+}
+
+function rewriteDiffserv(
+  context: PacketContext, rule: SecurityRule | undefined,
+  direction: 'c2s' | 's2c', originalTos: number | undefined,
+): string {
+  const packet = ipv4(context);
+  const marking = rule?.diffserv;
+  if (!packet || marking === undefined) return 'unset';
+  const code = direction === 'c2s'
+    ? marking.forward
+    : marking.reverse ?? (marking.copy && originalTos !== undefined ? originalTos >> 2 : undefined);
+  if (code === undefined) return 'unset';
+  return markDscp(context, code);
+}
+
+function shaperStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'shaper',
+    apply(context) {
+      const packet = ipv4(context);
+      return shapeTraffic(services, context, context.matchedPolicy, 'c2s')
+        ?? (packet === undefined ? undefined : shapePerIp(services, context, context.matchedPolicy,
+          'c2s', packet.sourceIP.toString(), context.isFirstPacket))
+        ?? proceed(context, 'shaper', 'unset');
+    },
+  };
+}
+
+function diffservStage(): PipelineStage {
+  return {
+    name: 'diffserv',
+    apply(context) {
+      return proceed(context, 'diffserv', rewriteDiffserv(context, context.matchedPolicy, 'c2s', undefined));
+    },
+  };
+}
+
+function tcpMssStage(): PipelineStage {
+  return {
+    name: 'tcp-mss',
+    apply(context) {
+      return proceed(context, 'tcp-mss', clampMss(context, context.matchedPolicy));
     },
   };
 }
@@ -1115,6 +1279,7 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         : sessions.installPinhole(key, installOptions, parentSessionId, 'ftp');
       if (parentSessionId !== undefined) sessions.consumePinhole(session);
       session.tcpMachine = tcpMachines.get(context);
+      session.originalTos = arrived.tos;
 
       const translation = pendingTranslations.get(context);
       if (translation) {
@@ -1122,7 +1287,14 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         session.natRuleId = translation.natRuleId;
       }
 
+      const rule = context.matchedPolicy;
+      if (rule?.scheduleTimeout === true && rule.schedule !== undefined) {
+        const ends = vdom(services, context).schedules?.endOfActivity(rule.schedule, services.now());
+        if (ends !== undefined) sessions.endAt(session, ends);
+      }
+
       vdom(services, context).sessions.recordTraffic(session, 'c2s', packet.totalLength);
+      trackTcpSequence(vdom(services, context).sessions, session, 'c2s', arrived);
       context.session = session;
       context.sessionDirection = 'c2s';
       return proceed(context, 'session-install', String(session.id));

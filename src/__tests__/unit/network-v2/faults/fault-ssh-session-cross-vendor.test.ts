@@ -26,6 +26,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { allowLegacyIosSshServer } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
@@ -297,6 +298,7 @@ describe('a Cisco router as the CLIENT', () => {
     const sw = new GenericSwitch('switch-generic', 'SW', 8, 0, 0);
     const srv = new LinuxServer('linux-server', 'SRV');
     srv.getPorts()[0].configureIP(new IPAddress('10.0.0.3'), MASK);
+    allowLegacyIosSshServer(srv);
     new Cable('c1').connect(r.getPorts()[0], sw.getPorts()[0]);
     const cable = new Cable('c2');
     cable.connect(srv.getPorts()[0], sw.getPorts()[1]);

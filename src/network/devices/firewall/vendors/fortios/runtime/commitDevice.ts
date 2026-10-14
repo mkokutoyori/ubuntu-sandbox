@@ -110,6 +110,34 @@ export function buildCommitDevice(
       removeSchedule(name) {
         fw.getScheduleStore().remove(name);
       },
+      applyTrafficShaper(shaper) {
+        fw.getShaperStore().upsert(shaper);
+      },
+      applyPerIpShaper(shaper) {
+        fw.getShaperStore().upsertPerIp(shaper);
+      },
+      removePerIpShaper(name) {
+        fw.getShaperStore().removePerIp(name);
+      },
+      applyIpsCustom(signature) {
+        const profiles = fw.getUtmProfiles();
+        const known = profiles.ipsCustomSignatures().find(existing => existing.tag === signature.tag);
+        const ruleId = known?.ruleId ?? 1 + profiles.ipsCustomSignatures()
+          .reduce((highest, existing) => Math.max(highest, existing.ruleId), 0);
+        profiles.setIpsCustom({ ...signature, ruleId });
+      },
+      removeIpsCustom(tag) {
+        fw.getUtmProfiles().removeIpsCustom(tag);
+      },
+      applyIpsSensor(sensor) {
+        fw.getUtmProfiles().setIpsSensor(sensor);
+      },
+      removeIpsSensor(name) {
+        fw.getUtmProfiles().removeIpsSensor(name);
+      },
+      removeTrafficShaper(name) {
+        fw.getShaperStore().remove(name);
+      },
       applyOnetimeSchedule(schedule) {
         const built = makeOnetimeSchedule(schedule.name, schedule.start, schedule.end);
         if (!built) return 'start and end must read hh:mm yyyy/mm/dd, end after start.';
@@ -206,6 +234,7 @@ export function buildCommitDevice(
         if (settings.ipConflictDetection !== undefined) {
           fw.getIpConflictDetection().setEnabled(settings.ipConflictDetection);
         }
+        if (settings.sshAlgorithms !== undefined) fw.setSshAlgorithms(settings.sshAlgorithms);
         fw.setManagementPorts({
           ssh: settings.adminSshPort,
           telnet: settings.adminTelnetPort,

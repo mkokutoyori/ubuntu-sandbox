@@ -465,13 +465,13 @@ describe('§7 — Device-level exec mode regression guard', () => {
   beforeEach(async () => { lan = await buildXLan(); });
 
   test('device.executeCommand("ssh User@winB") still returns banner + closed', async () => {
-    const out = await lan.winA.executeCommand('ssh User@10.0.0.4');
+    const out = await lan.winA.executeCommand('ssh User@10.0.0.4', 'user');
     expect(out).toMatch(/Microsoft Windows/);
     expect(out).toMatch(/Connection to 10\.0\.0\.4 closed/);
   });
 
   test('exec mode (ssh user@host hostname) still returns the remote hostname', async () => {
-    const out = await lan.winA.executeCommand('ssh user@10.0.0.1 hostname');
+    const out = await lan.winA.executeCommand('ssh user@10.0.0.1 hostname', 'admin');
     expect(out).toMatch(/linuxA/);
   });
 });

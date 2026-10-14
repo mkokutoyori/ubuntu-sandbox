@@ -102,6 +102,11 @@ export function firstSviAddress(dev: Equipment): string | undefined {
   return sviAddresses(dev)[0];
 }
 
+function isOwnAddress(device: Equipment, address: string): boolean {
+  if (address === 'localhost' || address === '::1' || /^127\./.test(address)) return true;
+  return device.getPorts().some((port) => port.getIPAddress()?.toString() === address);
+}
+
 /**
  * Liveness of a peer reached from `sourceDevice`, for callers that hold
  * the two endpoints rather than a socket. Same topology question as
@@ -113,5 +118,6 @@ export function firstSviAddress(dev: Equipment): string | undefined {
 export function peerLiveness(sourceDevice: Equipment, peerHost: string): () => boolean {
   const sourceIp = firstConfiguredIp(sourceDevice);
   if (!sourceIp) return () => true;
+  if (isOwnAddress(sourceDevice, peerHost)) return () => true;
   return pathLiveness(sourceIp, peerHost, sourceDevice);
 }

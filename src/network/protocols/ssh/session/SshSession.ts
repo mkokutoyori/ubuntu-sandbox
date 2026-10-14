@@ -34,12 +34,14 @@ import {
   type UserauthTransport,
 } from '../auth/ClientUserauth';
 import { SshKeyPair } from '../SshKeyPair';
+import type { AgentKey } from '../SshAgent';
 import { signUserauth, userauthSignatureAlgorithm, userauthSignedData } from '../auth/UserauthSignature';
 import {
   keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob, sshKeyTypeLabel,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import type {
+  ExecChannelOptions,
   ISshExecChannel,
   ISshSftpChannel,
   ISshShellChannel,
@@ -90,6 +92,7 @@ export interface SshSessionDeps {
   readonly interactionHandler: ISshInteractionHandler;
   readonly clientIdentification?: string;
   readonly clientExtInfo?: boolean;
+  readonly agentKeys?: () => readonly AgentKey[];
 }
 
 
@@ -156,6 +159,12 @@ export class SshSession implements ISshSession {
 
   get isConnected(): boolean {
     return this._state.kind === 'connected';
+  }
+
+  private authenticatedWith: string | null = null;
+
+  get authenticatedMethod(): string | null {
+    return this.authenticatedWith;
   }
 
   get localEndpoint(): { readonly ip: string; readonly port: number } | null {
@@ -263,13 +272,14 @@ export class SshSession implements ISshSession {
     return ok(channel);
   }
 
-  openExecChannel(command: string): Result<ISshExecChannel> {
+  openExecChannel(command: string, options?: ExecChannelOptions): Result<ISshExecChannel> {
     if (!this.connection || !this.isConnected) {
       return err({ kind: 'NOT_AUTHENTICATED' });
     }
     const channel: ISshExecChannel = this.channelManager.openExec(
       this.connection,
       command,
+      options,
     );
     return ok(channel);
   }
@@ -485,7 +495,10 @@ export class SshSession implements ISshSession {
       retry: () => handler.showAuthFailure?.(user, opts.host),
       inform: (text) => handler.showInfo(text),
     }).finally(() => offClosed?.());
-    if (outcome.kind === 'success') return ok(undefined);
+    if (outcome.kind === 'success') {
+      this.authenticatedWith = outcome.method ?? 'none';
+      return ok(undefined);
+    }
     handler.showWarning(userauthFailureLines(outcome, user, opts.host, opts.port));
     return err({
       kind: 'AUTH_FAILED', user, attemptsLeft: 0,
@@ -495,6 +508,23 @@ export class SshSession implements ISshSession {
 
   private userauthIdentities(opts: SshConnectOptions, user: string): UserauthIdentity[] {
     const identities: UserauthIdentity[] = [];
+    const offered = new Set<string>();
+    for (const agentKey of this.deps.agentKeys?.() ?? []) {
+      const privateKey = keygenPrivateKey(agentKey.material);
+      let blob: Uint8Array;
+      try { blob = base64ToBytes(agentKey.blob); } catch { continue; }
+      const publicKey = sshPublicKeyFromBlob(blob);
+      if (privateKey === null || publicKey === null) continue;
+      const algorithm = userauthSignatureAlgorithm(publicKey);
+      offered.add(agentKey.blob);
+      identities.push({
+        algorithm,
+        publicKey: agentKey.blob,
+        sign: () => this.sessionId === null
+          ? null
+          : bytesToBase64(signUserauth(privateKey, userauthSignedData(this.sessionId, user, algorithm, blob))),
+      });
+    }
     for (const path of opts.identityFiles) {
       const pair = SshKeyPair.fromVfs(this.deps.vfs, path);
       if (!pair.ok) continue;
@@ -502,6 +532,7 @@ export class SshSession implements ISshSession {
       try { blob = base64ToBytes(pair.value.publicKeyContent); } catch { continue; }
       const publicKey = sshPublicKeyFromBlob(blob);
       if (publicKey === null) continue;
+      if (offered.has(pair.value.publicKeyContent)) continue;
       const algorithm = userauthSignatureAlgorithm(publicKey);
       identities.push({
         algorithm,

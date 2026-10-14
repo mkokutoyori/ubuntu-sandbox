@@ -180,7 +180,7 @@ export class SshServerHandler {
     const transport = new SshTransport(rawConn, {
       role: 'server',
       identification: this.ctx.serverIdentification?.() ?? SSH_SERVER_IDENTIFICATION,
-      hostKeys: serverHostKeys(this.ctx.hostKey),
+      hostKeys: [this.ctx.hostKey, ...(this.ctx.additionalHostKeys?.() ?? [])].flatMap(serverHostKeys),
       ...transportPolicyConfig(this.ctx.transportPolicy?.()),
     });
     const conn = transportLink(transport, rawConn);
@@ -388,7 +388,8 @@ export class SshServerHandler {
           switch (request.name) {
             case 'env': {
               const variable = decodeEnvRequest(request.payload);
-              const accepted = variable !== null && /^(LANG|LC_[A-Z_]+)$/.test(variable.name);
+              const accepted = variable !== null
+                && (this.ctx.acceptsEnvironment?.(variable.name) ?? /^(LANG|LC_[A-Z_]+)$/.test(variable.name));
               if (accepted) info.environment.set(variable.name, variable.value);
               request.reply(accepted);
               return;
@@ -421,10 +422,16 @@ export class SshServerHandler {
                 return;
               }
               const command = forced === null ? asked : withOriginalCommand(forced, asked);
-              const shell = this.ctx.getShell(user, user.homeDirectory);
+              const shell = this.ctx.getShell(user, user.homeDirectory, {
+                clientIp,
+                clientPort: this.ctx.clientPort?.(clientIp),
+                exec: { environment: info.environment, pty: info.pty, keyOptions },
+              });
               const sessionStart = simulationNowMs();
               this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'exec' });
               void shell.execute(command).then((result) => {
+                const held = shell.takeSessionHold?.() ?? 0;
+                if (held > 0) this.ctx.holdSession?.(user, clientIp, held);
                 channel.write(endedLine(result.stdout));
                 channel.writeExtended(SSH_EXTENDED_DATA_STDERR, endedLine(result.stderr));
                 void channel.request('exit-status', encodeExitStatus(result.exitCode));
@@ -640,6 +647,15 @@ export class SshServerHandler {
         method,
       });
       this.ctx.recordAuthFailure?.(user, clientIp, 'root login disabled');
+      return { ok: false };
+    }
+
+    if (this.ctx.accountLocked?.(user)) {
+      this.eventBus.emit({
+        kind: 'auth_policy_refused', user, ip: clientIp, reason: 'account locked',
+        port: this.ctx.clientPort?.(clientIp),
+      });
+      this.ctx.recordAuthFailure?.(user, clientIp, 'account locked');
       return { ok: false };
     }
 

@@ -27,6 +27,7 @@
  *   4. Egress: strip or add 802.1Q tag based on egress port mode
  */
 
+import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
@@ -2945,6 +2946,13 @@ export abstract class Switch extends Equipment {
 
   protected sshConfiguredTransport(): { chiffrement: string; hmac: string } | null { return null; }
 
+  private readonly sshRsaHostKey = new AdditionalRsaHostKey();
+
+  private sshAdditionalHostKeys(): SshHostKey[] {
+    return this.sshRsaHostKey.keysFor(
+      this.getHostname(), this.sshHostKeySpec().algorithm, this.sshTransportPolicy().algorithms?.hostKey);
+  }
+
   private sshHostKey(): SshHostKey {
     const spec = this.sshHostKeySpec();
     const tag = `${spec.algorithm}:${spec.bits ?? ''}:${this.getHostname()}`;
@@ -3048,6 +3056,7 @@ export abstract class Switch extends Equipment {
     return new SshServerHandler(new RouterSshServerContext({
       hostname: () => this.getHostname(),
       hostKey: () => this.sshHostKey(),
+      additionalHostKeys: () => this.sshAdditionalHostKeys(),
       credentials: () => ({
         authenticate: (n, p) => this.accountAdmits(n, 'ssh') && this.sshPasswordAllowed(n)
           && credentials.authenticate(n, p),

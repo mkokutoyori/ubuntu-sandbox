@@ -338,6 +338,7 @@ export type UdpListener = (delivery: UdpDelivery) => void;
 
 export interface UdpConnectOptions {
   localPort?: number;
+  onDatagram?: UdpListener;
   source?: IPAddress | IPv6Address;
   processName?: string;
   pid?: number;
@@ -358,6 +359,7 @@ export interface TcpExchangeSocketOptions {
 export interface ConnectedUdpSocket {
   readonly localPort: number;
   send(payload: Uint8Array): Errno | null;
+  peekError(): Errno | null;
   close(): void;
 }
 
@@ -3650,7 +3652,7 @@ export abstract class EndHost extends Equipment {
     }
     let localPort: number | false;
     try {
-      localPort = this.udpBind(options.localPort ?? PORT_ANY, () => undefined, options.processName,
+      localPort = this.udpBind(options.localPort ?? PORT_ANY, options.onDatagram ?? (() => undefined), options.processName,
         { pid: options.pid, uid: options.uid });
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('EACCES')) return 'EACCES';
@@ -3661,6 +3663,7 @@ export abstract class EndHost extends Equipment {
     this.connectedUdpPeers.set(localPort, peer);
     return {
       localPort,
+      peekError: () => peer.pendingError,
       send: (payload) => {
         const pending = peer.pendingError;
         if (pending !== null) {

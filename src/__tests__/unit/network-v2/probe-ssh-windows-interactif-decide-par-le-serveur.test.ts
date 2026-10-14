@@ -7,14 +7,15 @@
  * etait fabrique par le client. Le terminal passe desormais par `openWireSshShell` et le serveur
  * sshd ouvre lui-meme l'enregistrement de session (`who`, `last`, `ps`) et envoie l'accueil.
  *
- * Laboratoire : PC Windows et serveur Linux sur un commutateur, compte alice. Sur les sept cas,
- * deux tombent avant la correction : une seule ligne « Accepted password » dans auth.log pour une
- * connexion (l'ancien chemin la journalisait deux fois) et le « Last login » de la seconde
- * connexion, venu du serveur et non plus compose par le client. Cinq passent dans les deux etats :
- * le temoin « la session s'ouvre sur l'invite du serveur » prouve que le laboratoire est sain ;
- * « un mot de passe faux est refuse », « l'echec n'est journalise qu'apres l'envoi du mot de
- * passe », `-q` et `who` sont des non-regressions (l'ancien chemin les obtenait par le controle en
- * memoire, le nouveau par le serveur).
+ * Laboratoire : PC Windows et serveur Linux sur un commutateur, compte alice. Premier lot (sept
+ * cas) : deux tombaient avant la correction, une seule ligne « Accepted password » dans auth.log
+ * pour une connexion (l'ancien chemin la journalisait deux fois) et le « Last login » de la
+ * seconde connexion, venu du serveur et non plus compose par le client ; cinq passaient dans
+ * les deux etats (temoin « la session s'ouvre sur l'invite du serveur », refus d'un mot de passe
+ * faux, echec journalise seulement apres l'envoi du mot de passe, `-q`, `who`). Second lot (deux
+ * cas) : une commande distante saisie dans le terminal (`ssh alice@hote whoami`) passe par la meme
+ * connexion et demande le mot de passe ; elle retombait sur la commande de l'appareil, sans
+ * invite, et les deux cas tombaient avant.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -109,6 +110,22 @@ describe('Windows interactive ssh decided by the server alone', () => {
     expect(await server.executeCommand('cat /var/log/auth.log')).not.toMatch(/Failed password/);
     await submitPassword('wrong');
     expect(await server.executeCommand('cat /var/log/auth.log')).toMatch(/Failed password for alice from 10\.0\.0\.4/);
+  });
+
+  it('a remote command typed in the terminal asks for the password and prints only its output', async () => {
+    await typeLine('ssh alice@10.0.0.3 whoami');
+    expect(term.currentInputMode.type).toBe('password');
+    await submitPassword('alice');
+    expect(screen()).toMatch(/^alice$/m);
+    expect(screen()).not.toMatch(/Last login|Welcome to/);
+    expect(term.foreground.getPrompt()).not.toMatch(/^alice@srv/);
+  });
+
+  it('a remote command with a wrong password is refused', async () => {
+    await typeLine('ssh alice@10.0.0.3 whoami');
+    await submitPassword('wrong');
+    expect(screen()).toMatch(/Permission denied/);
+    expect(screen()).not.toMatch(/^alice$/m);
   });
 
   it('-q silences the known_hosts warning', async () => {

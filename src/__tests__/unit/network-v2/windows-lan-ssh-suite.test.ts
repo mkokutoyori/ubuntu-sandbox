@@ -64,13 +64,18 @@ interface Row {
   setup?: (lan: WinLan) => Promise<void> | void;
   on: (lan: WinLan) => WindowsPC;
   cmd: string;
+  stdin?: string;
   contains?: (string | RegExp)[];
   excludes?: (string | RegExp)[];
 }
 
 async function runRow(lan: WinLan, row: Row): Promise<string> {
   if (row.setup) await row.setup(lan);
-  return row.on(lan).executeCommand(row.cmd);
+  return row.on(lan).executeCommand(row.cmd, row.stdin ?? defaultPassword(row.cmd));
+}
+
+function defaultPassword(cmd: string): string {
+  return /\bAdministrator@/.test(cmd) ? 'admin\n' : 'user\n';
 }
 
 function assertRow(out: string, row: Row): void {
@@ -222,7 +227,7 @@ describe('§4 — Windows SSH connection failures', () => {
       name: 'IP off-topology cannot be resolved',
       on: l => l.win1,
       cmd: 'ssh User@192.0.2.99',
-      contains: [/Could not resolve hostname|No route to host/],
+      contains: [/Could not resolve hostname|No route to host|Network is unreachable/],
       excludes: ['Microsoft Windows'],
     },
     {

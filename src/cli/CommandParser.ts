@@ -21,6 +21,7 @@ export type ParseResult =
 
 export interface TokenizeOptions {
   readonly escapesAnyCharacter?: boolean;
+  readonly singleQuotes?: boolean;
 }
 
 /**
@@ -51,6 +52,8 @@ export function tokenizeWithPositions(
   const starts: number[] = [];
   let current = '';
   let quoted = false;
+  let singleQuoted = false;
+  const singleQuotes = options?.singleQuotes === true;
   let started = false;
   let escaped = false;
   let debut = 0;
@@ -74,13 +77,19 @@ export function tokenizeWithPositions(
       at++;
       continue;
     }
-    if (character === '"') {
+    if (singleQuotes && character === "'" && !quoted) {
+      singleQuoted = !singleQuoted;
+      current += character;
+      started = true;
+      continue;
+    }
+    if (character === '"' && !singleQuoted) {
       quoted = !quoted;
       current += character;
       started = true;
       continue;
     }
-    if (!quoted && /\s/.test(character)) {
+    if (!quoted && !singleQuoted && /\s/.test(character)) {
       if (started) flush();
       continue;
     }

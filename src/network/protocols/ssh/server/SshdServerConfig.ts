@@ -658,7 +658,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'denyusers':   return cfg.withDenyUsers(value.split(/\s+/));
     case 'allowgroups': return cfg.withAllowGroups(value.split(/\s+/));
     case 'denygroups':  return cfg.withDenyGroups(value.split(/\s+/));
-    case 'acceptenv':   return cfg.withAcceptEnv(value.split(/\s+/));
+    case 'acceptenv':   return cfg.withAcceptEnv([...cfg.acceptEnv, ...value.split(/\s+/)]);
     case 'ciphers':     return cfg.withCiphers(value.split(','));
     case 'macs':        return cfg.withMacs(value.split(','));
     case 'kexalgorithms': return cfg.withKexAlgorithms(value.split(','));

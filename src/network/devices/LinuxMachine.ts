@@ -1684,7 +1684,7 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le démon chrony — `null` avant l'amorçage. */
   chronyService: LinuxChronyService | null = null;
-  private ntpPortBound = false;
+  private ntpPortsBound = new Set<number>();
 
   /**
    * chrony (`docs/PRD-NTP-Tutoriel.md` §4) — le paquet était déclaré
@@ -1716,11 +1716,39 @@ export abstract class LinuxMachine extends EndHost
     this.chronyService = new LinuxChronyService({
       readFile: (p) => vfs.readFile(p),
       ntp: () => this.getNtpAgent(),
-      bindNtpPort: (port) => this.ntpPortBound
-        || (this.ntpPortBound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
+      bindNtpPort: (port) => {
+        if (this.ntpPortsBound.has(port)) return true;
+        const bound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
           this.getNtpAgent().handleUdp(inPort, sourceIP as IPAddress, udp);
-        }, 'chronyd') !== false),
-      releaseNtpPort: (port) => { this.udpClose(port); this.ntpPortBound = false; },
+        }, 'chronyd') !== false;
+        if (bound) this.ntpPortsBound.add(port);
+        return bound;
+      },
+      releaseNtpPort: (port) => {
+        if (!this.ntpPortsBound.delete(port)) return;
+        this.udpClose(port);
+      },
+      daemonExited: (reason) => this.executor.serviceMgr.markFailed('chrony', reason),
+      bindCommandAddress: (address, port, listener) => {
+        if (address === '0.0.0.0') return this.udpBind(port, listener, 'chronyd') !== false;
+        this.udpBindAddress(address, port, listener, 'chronyd');
+        return true;
+      },
+      releaseCommandAddress: (address, port) => {
+        if (address === '0.0.0.0') this.udpClose(port);
+        else this.udpCloseAddress(address, port);
+      },
+      sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+      listDirectory: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
+      writeFile: (path, content, mode) => this.executor.vfs.writeFile(path, content, 0, 0, 0o777 & ~mode),
+      tcpStack: () => this.getTcpStack(),
+      trustAnchors: () => this.trustedCAs,
+      identity: () => ({
+        processName: 'chronyd', service: 'chrony',
+        pid: this.executor.serviceMgr.getPortBinding('chrony')?.mainPid,
+      }),
+      log: (message) => this.executor.logMgr.logDaemon(
+        'chronyd', message, this.executor.serviceMgr.getPortBinding('chrony')?.mainPid, 'chrony'),
     });
     this.executor.chronyService = this.chronyService;
     this.executor.registerServiceSocketServer('chrony', this.chronyService);
@@ -2329,6 +2357,12 @@ export abstract class LinuxMachine extends EndHost
     return peerPort;
   }
 
+  takeSessionHold(): number {
+    const held = this.executor.sessionHoldSeconds;
+    this.executor.sessionHoldSeconds = 0;
+    return held;
+  }
+
   openSshSessionPort(user: string, fromIp: string): number | undefined {
     return this.sessionTable.list().filter((s) => s.user === user && s.fromIp === fromIp && !s.closed).at(-1)?.fromPort;
   }
@@ -2770,6 +2804,7 @@ export abstract class LinuxMachine extends EndHost
 
   protected override onDhcpLeaseConfigured(iface: string): void {
     const lease = this.dhcpClient.getState(iface)?.lease;
+    this.publishDhcpTimeSources(iface, lease?.ntpServers ?? []);
     const dns = lease?.dnsServers ?? [];
     if (dns.length === 0) return;
     const lines: string[] = [];
@@ -2803,8 +2838,19 @@ export abstract class LinuxMachine extends EndHost
     if (!this.dnsResolverIP && dnsServers[0]) this.dnsResolverIP = dnsServers[0];
   }
 
+  private publishDhcpTimeSources(iface: string, servers: readonly string[]): void {
+    const path = `/run/chrony-dhcp/${iface}.sources`;
+    const vfs = this.executor.vfs;
+    if (servers.length === 0) {
+      if (vfs.exists(path)) vfs.deleteFile?.(path);
+    } else {
+      vfs.writeFile(path, servers.map((ip) => `server ${ip} iburst`).join('\n') + '\n', 0, 0, 0o022);
+    }
+    if (this.chronyService?.isRunning()) this.chronyService.reload();
+  }
+
   protected override onDhcpLeaseReleased(iface: string): void {
-    void iface;
+    this.publishDhcpTimeSources(iface, []);
     this.executor.vfs.writeFile('/etc/resolv.conf', '', 0, 0, 0o022);
     this.dnsResolverIP = '';
   }

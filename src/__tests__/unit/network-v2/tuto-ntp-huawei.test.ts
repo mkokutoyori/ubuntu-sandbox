@@ -29,8 +29,13 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { analyserNtpVrp } from '@/network/devices/shells/huawei/huaweiNtpCommands';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -65,6 +70,7 @@ async function conf(r: HuaweiRouter, ...cmds: string[]) {
   await r.executeCommand('system-view');
   for (const c of cmds) sorties.push(await r.executeCommand(c));
   await r.executeCommand('quit');
+  if (cmds.some((c) => /unicast-server|ntp-service/.test(c))) converge(clock);
   return sorties;
 }
 

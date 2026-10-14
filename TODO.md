@@ -764,23 +764,6 @@ alors `hidden` et le filtre la rendra sans une ligne de plus.
 
 ## Gestion (SNMP, NTP, syslog)
 
-### [ntp] `minpoll`, `maxpoll`, `burst` et `iburst` sont desormais REFUSES
-La queue de `ntp server|peer` ne connait que les quatre formes qu'elle
-declare (`key`, `prefer`, `source`, `version`) ; depuis le lot qui les
-juge, un mot hors de cette liste est refuse au lieu d'etre avale en
-silence. Un vrai IOS accepte pourtant `minpoll`/`maxpoll` (intervalles de
-scrutation) et `burst`/`iburst`.
-**Mesure** : `ntp server 10.0.0.1 iburst` rend `% Invalid input detected`
-ici et est accepte sur une vraie machine.
-**Pourquoi c'est ce refus qui a ete choisi** : `CLAUDE.md` tranche —
-« soit le moteur applique le mot-cle, soit l'analyseur le refuse ». Les
-accepter demanderait de RANGER une valeur que rien ne lit, ce qui est
-l'inverse du defaut que ce lot refermait.
-**Report** : `minpoll`/`maxpoll` sont applicables — `NtpAssociation`
-porte deja `pollSec` et le minuteur de scrutation existe — mais c'est un
-travail de temporisation, pas de CLI. `burst`/`iburst` demandent une
-rafale de huit paquets a l'association, que ce moteur n'a pas.
-
 ### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute
 IOS ecrit `snmp-server host <hote> [vrf <nom>] [traps|informs] …`.
 `configHost` ne connait pas `vrf` : le mot est pris pour la communaute et
@@ -1467,23 +1450,6 @@ le point de couture dans `runSshClient` est UNIQUE : le bloc
 `execMod.executeWithEnv(effectiveCmd, forwarded)` / `execMod.execute(effectiveCmd)`
 qui suit le calcul de `forwarded` et de `effectiveCmd`. Tout ce qui est
 au-dessus (auth, politique, forwarding, `.bashrc` sous `-t`) reste client.
-
-### [ssh] `ssh` depuis Windows sans justificatif execute la commande EN MEMOIRE
-**Mesure** (WindowsPC -> LinuxServer, un cable, `framesTransmitted` avant/apres) : avec le mot de
-passe en entree standard, `ssh bob@host hostname` coute 61 trames et `ssh bob@host cat big.txt`
-(200001 octets) 274 : la commande traverse le cable. SANS mot de passe, les deux coutent 37 trames :
-l'authentification filaire echoue, `openWireSsh` rend `null` (le refus n'est remonte que si un mot de
-passe a ete offert), et `runWindowsSshClient` retombe sur la « convention du simulateur » : il trouve
-la machine par `findHostByAddress`, accepte la connexion et execute la commande sur son objet.
-**Ferme en chemin** : une cle nommee par `-i C:\cle` est maintenant offerte par la session filaire
-(le chemin Windows est converti en chemin SSH avant la session) ; la commande authentifiee par cette cle
-traverse le cable (sonde `probe-ssh-windows-offre-la-cle-nommee-sur-le-fil`).
-**Pourquoi le reste n'est pas ferme** : retirer la convention (remonter le refus aussi sans mot de
-passe) fait encore tomber 20 cas de 67 fichiers Windows/ssh, tous des connexions SANS aucun
-justificatif (`ssh User@winB`, `ssh -l User host`, banniere Windows, Cisco/Huawei depuis PowerShell,
-`scenario-20`...). Ordre de fermeture : (1) faire offrir par `openWireSshConnection` les identites par
-defaut (`~/.ssh/id_*`) et les cles de l'agent Windows, (2) mettre un mot de passe sur l'entree
-standard des tests qui reposent sur la convention, (3) remonter le refus.
 
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
@@ -2394,15 +2360,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   partagé) mais rendue par le seul parcours du routeur, donc perdue au
   rechargement d'une topologie sur un Catalyst ; `service dhcp` n'était pas
   déclarée du tout sur le commutateur, donc absente de l'aide et sans effet.
-- `sntp broadcast client` est ACCEPTE, RENDU, et n'est evalue par
-  personne. `NtpAgent` n'a aucune notion de mode diffusion (mode 5) : pas
-  une occurrence de `broadcast` dans tout le module, donc rien ne peut
-  recevoir une annonce. Il est stocke plutot que refuse parce que le
-  refuser ferait disparaitre a l'import d'une topologie une ligne qu'une
-  vraie machine accepte — meme raisonnement que `ip ssh server algorithm`
-  et `snmp-agent mib-view`. Fermer demande un emetteur d'annonces cote
-  serveur et une reception cote client, c'est-a-dire un mode de plus dans
-  le moteur, pas une porte.
 - `sntp source-interface <nom>` est REFUSEE alors que la Basic System
   Management Command Reference la decrit. Le moteur, lui, sait le faire :
   `NtpAgent.setSourceInterface` existe et `ntp source` l'ecrit. Ce qui
@@ -3373,76 +3330,3 @@ mesure. Le stabiliser demande de trouver le fichier avec lequel il se
 couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
 
-### [ssh] les commandes d'une session SSH ne traversent pas le fil depuis la CLI vendeur
-`LinuxTerminalSession` et `WindowsTerminalSession` ouvrent
-`session.openShellChannel()` et pilotent la session par
-`SshInteractiveSubShell` : chaque commande tapee traverse le cable.
-`CLITerminalSession` ouvre bien une connexion SSH REELLE — donc le login
-est authentifie sur le fil et la politique decide — puis greffe un enfant
-EN MEMOIRE sur l'objet `Equipment` du pair (`createSessionForDevice` +
-`adoptRemoteChild`). Le login traverse le fil, les commandes non.
-
-**Mesure** (methode du §4 : la DIFFERENCE entre le meme echange avec et
-sans la charge, puisqu'un vrai login met deja des trames sur le fil).
-Labo : poste ─ commutateur ─ cible Linux, `Cable.getStats()
-.framesTransmitted` releve juste apres le login, puis apres N `whoami` :
-
-    origine        enfant adopte   N=2    N=10   par commande
-    Linux (temoin)      non         10      48       ~4,75
-    Windows             non         10      48       ~4,75
-    CLI Cisco           oui          6       6        0
-
-La CLI Cisco est PLATE — 6 trames a deux commandes, 6 a dix : zero trame
-par commande. Les deux autres lignes montent, ce qui prouve que
-l'instrument mesure bien quelque chose et que le labo n'est pas muet.
-La ligne Windows a rejoint celle de Linux avec la bascule de B4 ; c'est
-le meme nombre qui dira quand la CLI l'aura rejointe.
-
-**Consequence** : sur cette origine, ce que le §4 annonce ne tient pas.
-Un privilege ou une politique qui se decide APRES le login — ce que le
-shell distant autorise a cet utilisateur — n'est pas traverse, et rien
-n'est comptable sur le fil.
-
-**Report** : `CLITerminalSession` n'a AUCUNE machinerie de sous-shell
-(seulement `telnetSubShell`), et son `ssh` passe par un flow
-(`{type:'password', validation}` puis `{type:'execute'}`) dont la
-validation est un verdict en memoire. Lui donner un `activeSubShell` est
-un prealable a la bascule, et c'est un lot en soi — la bascule Windows,
-elle, a demande quatre capacites manquantes et la reecriture de 40 cas.
-
-### [ssh] le chemin non interactif de Windows ne s'authentifie pas sur le fil
-`ssh hote "commande"` tape sur un poste Windows rend la sortie de la
-commande a un client que l'`access-class` de la vty REFUSE. Le meme appel
-depuis Linux rend `ssh: connect to host … port 22: Connection refused`.
-
-**Mesure.** Maquette : poste Windows `10.0.0.1`, poste Linux `10.0.0.2`,
-routeur `10.0.0.9` avec `ip access-list standard ONLY` / `permit host
-<un seul des deux>` et `access-class ONLY in` sur `line vty 0 4`.
-
-    depuis Linux,   bloque   ssh: connect to host 10.0.0.9 port 22: Connection refused
-    depuis Windows, bloque   *15:32:27.000 UTC Tue Sep 22 2026
-
-**Cause.** `WindowsSshClient` retombe sur `remote.runSshCommand(...)` —
-un appel direct sur l'objet `Equipment` du pair, zero octet sur le fil —
-quand le relais du fil manque. Instrumentation de `WindowsPC.cmdSsh` sur
-ce cas : `reach=open` (le SYN recoit sa reponse, l'`access-class` ne
-tranche pas au niveau TCP) mais `wire=non`, la session etant refusee a
-l'ADMISSION.
-
-**Ce qui a ete essaye et RETIRE.** Une garde « `reach` ouvert et pas de
-session sur le fil ⇒ refuser » a fait tomber 33 cas sur 9 fichiers
-(`windows-lan-ssh-suite` 14, `probe-windows-honore-passwordauthentication
--no` 5, `cross-equipment-ssh-suite` 3, …). La raison est instructive :
-sur ce chemin, `password` vient de `_scenarioStdin` et vaut le plus
-souvent `undefined`, donc « pas de session sur le fil » est l'etat
-ORDINAIRE et non le signe d'un refus. Les deux causes — « rien a offrir »
-et « refuse par la politique » — y sont indiscernables. La garde retiree,
-486/486 repassent sur ces neuf fichiers.
-
-**Report** : les rendre discernables demande que ce client porte son
-justificatif jusqu'au fil et traite l'echec comme un refus, c'est-a-dire
-le meme portage que l'entree voisine (`les commandes d'une session SSH ne
-traversent le fil QUE depuis Linux`) — le lot B de
-`docs/PRD-SSH-Unification.md` §4bis. Le cas de `probe-un-refus-du-fil-vaut
--sur-windows-aussi` qui l'epinglerait a ete RETIRE plutot que laisse
-rouge : un test qui encode le defaut le fige.

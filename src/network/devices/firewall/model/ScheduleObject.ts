@@ -167,6 +167,16 @@ export class ScheduleStore {
     return [...this.schedules.keys()];
   }
 
+  endOfActivity(name: string, from: number): number | undefined {
+    if (!this.activeAt(name, from)) return undefined;
+    const step = 60_000;
+    const horizon = from + 8 * 24 * 3_600_000;
+    for (let at = (Math.floor(from / step) + 1) * step; at <= horizon; at += step) {
+      if (!this.activeAt(name, at)) return at;
+    }
+    return undefined;
+  }
+
   activeAt(name: string, at: number, seen: ReadonlySet<string> = new Set()): boolean {
     const schedule = this.schedules.get(name);
     if (schedule === undefined || seen.has(name)) return false;

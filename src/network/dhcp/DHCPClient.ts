@@ -639,6 +639,7 @@ export class DHCPClient implements IProtocolEngine {
       bootfileName: pool.bootfile ?? null,
       netbiosServers: pool.netbiosServers ?? [],
       netbiosNodeType: pool.netbiosNodeType ? encodeNetbiosNodeType(pool.netbiosNodeType) ?? null : null,
+      ntpServers: pool.ntpServers ?? [],
       vendorOptions: offer.vendorOptions ?? {},
     };
 
@@ -844,6 +845,7 @@ export class DHCPClient implements IProtocolEngine {
       bootfileName: lastLease.bootfileName,
       netbiosServers: lastLease.netbiosServers,
       netbiosNodeType: lastLease.netbiosNodeType,
+      ntpServers: lastLease.ntpServers,
       vendorOptions: lastLease.vendorOptions,
     };
 
@@ -1017,6 +1019,7 @@ export class DHCPClient implements IProtocolEngine {
       bootfileName: null,
       netbiosServers: [],
       netbiosNodeType: null,
+      ntpServers: [],
       vendorOptions: {},
     };
 

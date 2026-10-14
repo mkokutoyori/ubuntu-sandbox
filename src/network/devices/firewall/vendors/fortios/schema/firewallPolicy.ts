@@ -1,8 +1,9 @@
+import { POLICY_REFERENCE_ATTRIBUTES } from './firewallPolicyReference';
 import {
   choice, count, enable, reference, refList, text, word,
   type FortiCommitContext, type FortiObjectView, type FortiTableSpec,
 } from './types';
-import type { TcpSessionWithoutSyn } from '../../../model/SecurityRule';
+import type { SecurityRule, TcpSessionWithoutSyn } from '../../../model/SecurityRule';
 
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp', 'firewall vip'];
 const ADDRESS6_TARGETS = ['firewall address6', 'firewall addrgrp6'];
@@ -129,6 +130,10 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       availableWhen: usesUtm,
     },
     {
+      ...reference('ips-sensor', 'Name of an existing IPS sensor.', ['ips sensor']),
+      availableWhen: usesUtm,
+    },
+    {
       ...reference('webfilter-profile', 'Name of an existing Web filter profile.',
         ['webfilter profile']),
       availableWhen: usesUtm,
@@ -189,6 +194,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
         + 'database; accepting this attribute would install a rule that could '
         + 'never match.',
     },
+    ...POLICY_REFERENCE_ATTRIBUTES,
   ],
   onCommit(object, context) {
     const absent = attributManquant(object);
@@ -216,6 +222,20 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       destination6: [...object.effective('dstaddr6')],
       service: normaliseAny(object.effective('service')),
       sourceNegated: object.effective('srcaddr-negate')[0] === 'enable',
+      source6Negated: object.effective('srcaddr6-negate')[0] === 'enable',
+      destination6Negated: object.effective('dstaddr6-negate')[0] === 'enable',
+      tos: tosMatch(object),
+      expiresAt: expiryOf(object),
+      tcpMssSender: Number.parseInt(object.effective('tcp-mss-sender')[0] ?? '0', 10) || undefined,
+      tcpMssReceiver: Number.parseInt(object.effective('tcp-mss-receiver')[0] ?? '0', 10) || undefined,
+      diffserv: diffservOf(object),
+      matchVipOnly: object.effective('match-vip-only')[0] === 'enable',
+      timeoutSendRst: object.effective('timeout-send-rst')[0] === 'enable',
+      trafficShaper: named(object, 'traffic-shaper'),
+      perIpShaper: named(object, 'per-ip-shaper'),
+      trafficShaperReverse: named(object, 'traffic-shaper-reverse'),
+      scheduleTimeout: object.effective('schedule-timeout')[0] === 'enable',
+      sendDenyPacket: action === 'deny' && object.effective('send-deny-packet')[0] === 'enable',
       destinationNegated: object.effective('dstaddr-negate')[0] === 'enable',
       serviceNegated: object.effective('service-negate')[0] === 'enable',
       schedule: timeRestriction(object.effective('schedule')[0]),
@@ -235,6 +255,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       authUsers: [...object.effective('users')],
       antivirusProfile: named(object, 'av-profile'),
       webFilterProfile: named(object, 'webfilter-profile'),
+      ipsSensor: named(object, 'ips-sensor'),
       dnsFilterProfile: named(object, 'dnsfilter-profile'),
       fileFilterProfile: named(object, 'file-filter-profile'),
       applicationList: named(object, 'application-list'),
@@ -299,4 +320,39 @@ function tcpSessionWithoutSyn(raw: string | undefined): TcpSessionWithoutSyn | u
 function sessionTtl(raw: string | undefined): number | undefined {
   const parsed = Number.parseInt(raw ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseByte(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return 0;
+  const parsed = Number.parseInt(raw, raw.toLowerCase().startsWith('0x') ? 16 : 10);
+  return Number.isFinite(parsed) ? parsed & 0xff : 0;
+}
+
+function tosMatch(object: FortiObjectView): SecurityRule['tos'] {
+  const value = object.effective('tos')[0];
+  if (value === undefined || value === '') return undefined;
+  return {
+    value: parseByte(value),
+    mask: parseByte(object.effective('tos-mask')[0]),
+    negated: object.effective('tos-negate')[0] === 'enable',
+  };
+}
+
+function expiryOf(object: FortiObjectView): number | undefined {
+  if (object.effective('policy-expiry')[0] !== 'enable') return undefined;
+  const written = Date.parse(`${object.effective('policy-expiry-date').join('T')}Z`);
+  if (Number.isFinite(written)) return written;
+  const epoch = Number.parseInt(object.effective('policy-expiry-date-utc')[0] ?? '', 10);
+  return Number.isFinite(epoch) && epoch > 0 ? epoch * 1000 : undefined;
+}
+
+function diffservOf(object: FortiObjectView): SecurityRule['diffserv'] {
+  const code = (name: string, flag: string): number | undefined => {
+    if (object.effective(flag)[0] !== 'enable') return undefined;
+    return Number.parseInt(object.effective(name)[0] || '0', 2);
+  };
+  const forward = code('diffservcode-forward', 'diffserv-forward');
+  const reverse = code('diffservcode-rev', 'diffserv-reverse');
+  const copy = object.effective('diffserv-copy')[0] === 'enable';
+  return forward === undefined && reverse === undefined && !copy ? undefined : { forward, reverse, copy };
 }

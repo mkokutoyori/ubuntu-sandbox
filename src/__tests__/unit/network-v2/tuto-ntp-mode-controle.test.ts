@@ -34,8 +34,13 @@ import {
   motEtatPair, motEtatSysteme, pointageDepuisSelect, SELECT,
   MODE_CONTROLE, OPCODES_CONTROLE, type NtpControlPacket,
 } from '@/network/ntp/control';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock, converge } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -68,6 +73,7 @@ async function labo(confRouteur: string[] = []) {
     'interface GigabitEthernet0/1', 'ip address 192.168.1.1 255.255.255.0', 'no shutdown', 'exit',
     'ntp server 10.0.0.1', ...confRouteur, 'end']) await rtr.executeCommand(c);
   await pc.executeCommand('ip addr add 192.168.1.2/24 dev eth0');
+  converge(clock);
   return { amont, rtr, pc };
 }
 

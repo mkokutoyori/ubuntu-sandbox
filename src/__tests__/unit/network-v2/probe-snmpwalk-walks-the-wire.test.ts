@@ -142,9 +142,9 @@ describe('snmpwalk on Linux speaks net-snmp over the wire', () => {
 
   it('past the end of the agent MIB: v2c prints the endOfMibView exception, v1 prints End of MIB', async () => {
     const { pc } = await linuxLab();
-    expect(await pc.executeCommand('snmpwalk -v2c -c public 10.0.0.1 1.3.6.1.2.1.99'))
-      .toBe('iso.3.6.1.2.1.99 = No more variables left in this MIB View (It is past the end of the MIB tree)');
-    expect(await pc.executeCommand('snmpwalk -v1 -c public 10.0.0.1 1.3.6.1.2.1.99')).toBe('End of MIB');
+    expect(await pc.executeCommand('snmpwalk -v2c -c public 10.0.0.1 1.3.6.1.7'))
+      .toBe('iso.3.6.1.7 = No more variables left in this MIB View (It is past the end of the MIB tree)');
+    expect(await pc.executeCommand('snmpwalk -v1 -c public 10.0.0.1 1.3.6.1.7')).toBe('End of MIB');
   });
 
   it('an empty walk falls back to a GET, which v2c answers with a noSuchObject exception', async () => {

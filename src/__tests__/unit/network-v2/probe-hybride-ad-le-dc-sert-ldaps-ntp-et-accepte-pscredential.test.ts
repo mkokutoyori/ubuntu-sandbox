@@ -98,7 +98,7 @@ describe('the domain controller keeps time for the domain, across a firewall', (
     await promote(controller);
     const chart = String(await workstation.executeCommand(STRIPCHART));
     expect(chart).not.toMatch(/error/i);
-    expect(chart).toMatch(/\d\d:\d\d:\d\d, [+-]\d+\.\d+s/);
+    expect(chart).toMatch(/\d\d:\d\d:\d\d, d:[+-]\d+\.\d+s o:[+-]\d+\.\d+s$/m);
   });
 
   it('before promotion, the same stripchart times out', async () => {

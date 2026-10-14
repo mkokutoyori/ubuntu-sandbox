@@ -41,6 +41,7 @@ function failure(error: ObjectError): ObjectMutation {
 export interface ObjectStoreDeps {
   maxGroupNesting?: number;
   resolveFqdn?: (fqdn: string) => readonly string[];
+  now?: () => number;
   countryOf?: (ip: string) => string | undefined;
   addressesWithTags?: (filter: string) => readonly string[];
   externalReferences?: (name: string) => readonly string[];
@@ -191,12 +192,12 @@ export class ObjectStore {
 
   // ─── Matching ───────────────────────────────────────────────────
 
-  matchesAddress(name: string, candidate: string): boolean {
-    return this.matchAddressWithDepth(name, candidate, 0, new Set());
+  matchesAddress(name: string, candidate: string, sourceMac?: string): boolean {
+    return this.matchAddressWithDepth(name, candidate, 0, new Set(), sourceMac);
   }
 
-  matchesAnyAddress(names: readonly string[], candidate: string): boolean {
-    return names.some(name => this.matchesAddress(name, candidate));
+  matchesAnyAddress(names: readonly string[], candidate: string, sourceMac?: string): boolean {
+    return names.some(name => this.matchesAddress(name, candidate, sourceMac));
   }
 
   namesVipRule(names: readonly string[], natRuleId: string): boolean {
@@ -255,30 +256,43 @@ export class ObjectStore {
 
   // ─── Internals ──────────────────────────────────────────────────
 
+  private readonly seenFqdn = new Map<string, Map<string, number>>();
+
+  private retainedFqdn(fqdn: string, ttlSec: number | undefined, current: readonly string[]): readonly string[] {
+    if (ttlSec === undefined || ttlSec <= 0) return current;
+    const now = (this.deps.now ?? Date.now)();
+    const seen = this.seenFqdn.get(fqdn) ?? new Map<string, number>();
+    this.seenFqdn.set(fqdn, seen);
+    for (const address of current) seen.set(address, now);
+    for (const [address, at] of seen) if (now - at > ttlSec * 1000) seen.delete(address);
+    return [...seen.keys()];
+  }
+
   private matchContext(): AddressMatchContext {
     return {
-      resolveFqdn: this.deps.resolveFqdn,
+      resolveFqdn: this.deps.resolveFqdn === undefined ? undefined
+        : (fqdn, ttl) => this.retainedFqdn(fqdn, ttl, this.deps.resolveFqdn!(fqdn)),
       countryOf: this.deps.countryOf,
       addressesWithTags: this.deps.addressesWithTags,
     };
   }
 
   private matchAddressWithDepth(
-    name: string, candidate: string, depth: number, seen: Set<string>,
+    name: string, candidate: string, depth: number, seen: Set<string>, sourceMac?: string,
   ): boolean {
     if (depth > this.maxNesting || seen.has(name)) return false;
 
     const object = this.addresses.get(name);
-    if (object) return addressObjectMatches(object, candidate, this.matchContext());
+    if (object) return addressObjectMatches(object, candidate, { ...this.matchContext(), sourceMac });
 
     const group = this.addressGroups.get(name);
     if (!group) return false;
 
     seen.add(name);
     const matched = group.members.some(
-      member => this.matchAddressWithDepth(member, candidate, depth + 1, seen))
+      member => this.matchAddressWithDepth(member, candidate, depth + 1, seen, sourceMac))
       && !group.exclusions.some(
-        member => this.matchAddressWithDepth(member, candidate, depth + 1, seen));
+        member => this.matchAddressWithDepth(member, candidate, depth + 1, seen, sourceMac));
     seen.delete(name);
     return matched;
   }

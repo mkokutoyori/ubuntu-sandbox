@@ -54,6 +54,7 @@ import { GreAgent } from '../gre/GreAgent';
 import { SnmpAgent } from '../snmp/SnmpAgent';
 import { v, vb } from '../snmp/types';
 import { registerRttMonOperation } from '../snmp/mibs/RttMonMib';
+import { ntpV4MibRows } from '../snmp/mibs/NtpV4Mib';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
@@ -225,6 +226,8 @@ export class CiscoRouter extends Router {
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
       sendIpv4Packet: (request: Ipv4SendRequest) => this.sendIpv4Packet(request),
       sendUdpDatagram: (request: UdpSendRequest) => this.sendUdpDatagram(request),
+      joinMulticastGroup: (iface: string, group: string) => { this.joinLocalMulticast(iface, group); },
+      leaveMulticastGroup: (iface: string, group: string) => { this.leaveLocalMulticast(iface, group); },
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
       sendArpRequestFor: (iface: string, target: IPAddress) =>
         this.sendArpRequestFor(iface, target),
@@ -284,6 +287,9 @@ export class CiscoRouter extends Router {
       this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+    this.snmpAgent.registerSubtree(() => ntpV4MibRows(this.ntpAgent, {
+      softwareName: 'IOS NTP', softwareVersion: 'Cisco IOS Software', vendor: 'Cisco Systems, Inc.', systemType: 'Cisco IOS',
+    }));
     this.getIpSlaEngine().setMibRegistrar((operationId) => {
       registerRttMonOperation(
         (oid, read) => this.snmpAgent.registerMib(oid, read),
@@ -377,7 +383,7 @@ export class CiscoRouter extends Router {
       return true;
     }
     if (udp.destinationPort === UDP_PORT_NTP || udp.sourcePort === UDP_PORT_NTP) {
-      this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+      this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp, ipPkt.destinationIP);
       return true;
     }
     if (udp.destinationPort === UDP_PORT_GLBP) {

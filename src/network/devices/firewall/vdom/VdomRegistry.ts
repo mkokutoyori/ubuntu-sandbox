@@ -1,3 +1,4 @@
+import { ShaperStore } from '../model/TrafficShaper';
 import type { AddressObject } from '../model/AddressObject';
 import type { IScheduler } from '@/events/Scheduler';
 import type { ServiceObject } from '../model/ServiceObject';
@@ -63,6 +64,7 @@ export interface VdomContext {
   readonly expectedFlows: ExpectedFlowTable;
   readonly evaluator: PolicyEvaluator;
   readonly schedules: ScheduleStore;
+  readonly shapers: ShaperStore;
   readonly logs: FirewallLogStore;
   readonly logSettings: LogSettings;
   readonly utm: UtmProfileStore;
@@ -197,6 +199,7 @@ export class VdomRegistry {
     const objects = new ObjectStore({
       maxGroupNesting: deps.maxGroupNesting,
       resolveFqdn: (fqdn) => deps.resolveFqdn?.(fqdn) ?? [],
+      now: deps.now,
       countryOf: (candidate) => deps.countryOf?.(candidate),
     });
     for (const object of deps.predefinedAddresses ?? []) objects.addAddress(object);
@@ -210,6 +213,7 @@ export class VdomRegistry {
     const natPolicy = new NatPolicyStore();
     const pools = new IpPoolAllocator(deps.now);
     const schedules = new ScheduleStore(deps.timezone);
+    const shapers = new ShaperStore();
 
     const routes = new RouteTable({
       now: () => deps.monotonicNow(),
@@ -281,6 +285,7 @@ export class VdomRegistry {
       expectedFlows,
       evaluator,
       schedules,
+      shapers,
       logs: new FirewallLogStore(name),
       logSettings: new LogSettings(),
       utm: new UtmProfileStore(),

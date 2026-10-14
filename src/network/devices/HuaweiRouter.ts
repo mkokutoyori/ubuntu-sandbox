@@ -7,6 +7,7 @@
  *   - Boot sequence: Huawei VRP bootstrap
  */
 
+import type { SshClientProfile } from '../protocols/ssh/SshClientProfile';
 import { SSH_HUAWEI_VRP_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
@@ -43,6 +44,7 @@ import { RadiusTcpClient, RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
 import { SnmpAgent } from '../snmp/SnmpAgent';
+import { ntpV4MibRows } from '../snmp/mibs/NtpV4Mib';
 import { projectSnmpServiceOntoAgent } from '../snmp/snmpProjection';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
@@ -51,7 +53,7 @@ import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
 import { VxlanAgent } from '../vxlan/VxlanAgent';
 import { UDP_PORT_VXLAN } from '../vxlan/types';
 import { TcpStack } from '../tcp/TcpStack';
-import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
+import type { SshServerConfig, SshTransportPolicy } from '../protocols/ssh/server/ISshServerContext';
 import type { AccountServiceType } from './router/aaa/NetworkOsAccount';
 import type { EthernetFrame, IPv4Packet, UDPPacket, IPAddress } from '../core/types';
 import { IP_PROTO_TCP } from '../core/types';
@@ -173,6 +175,9 @@ export class HuaweiRouter extends Router {
       this.tacacsClient, this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+    this.snmpAgent.registerSubtree(() => ntpV4MibRows(this.ntpAgent, {
+      softwareName: 'VRP NTP', softwareVersion: 'Huawei Versatile Routing Platform', vendor: 'Huawei Technologies Co., Ltd.', systemType: 'Huawei VRP',
+    }));
     projectSnmpServiceOntoAgent(this.getSnmpService(), this.snmpAgent);
   }
 
@@ -338,6 +343,18 @@ export class HuaweiRouter extends Router {
     return this.getManagementService().sshForcedCommand(user);
   }
   protected override factoryAccountServiceTypes(): AccountServiceType[] { return ['ssh']; }
+
+  sshClientProfile(): SshClientProfile | null {
+    const algorithms = this.getManagementService().sshClientAlgorithmPreferences();
+    return Object.keys(algorithms).length === 0
+      ? null
+      : { identification: SSH_HUAWEI_VRP_IDENTIFICATION, extInfo: true, algorithms };
+  }
+
+  protected override sshTransportPolicy(): SshTransportPolicy {
+    const algorithms = this.getManagementService().sshServerAlgorithmPreferences();
+    return Object.keys(algorithms).length === 0 ? {} : { algorithms };
+  }
 
   protected override sshServerLimits(): Partial<SshServerConfig> {
     return this.getManagementService().sshServerLimits();

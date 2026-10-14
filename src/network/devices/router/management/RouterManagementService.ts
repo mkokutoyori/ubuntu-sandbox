@@ -7,6 +7,11 @@ import { DeviceClockStore, type DeviceClockConfig } from '../../../core/time/Dev
 import { PortNumber, PORT_ANY } from '../../../core/ports/PortNumber';
 import { parseAuthorizedKeysLine } from '../../../protocols/ssh/SshPureUtils';
 import { parseAll, parseTLV, UNIVERSAL_TAG } from '../../windows/server/ad/ldap/Ber';
+import {
+  parseVrpSshAlgorithms, vrpSshAlgorithmFamily, vrpSshAlgorithmPreferences,
+  type VrpSshAlgorithmFamily, type VrpSshAlgorithmLists,
+} from './VrpSshAlgorithms';
+import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import { sshPublicKeyBlob } from '../../linux/network/SshKeygenMaterial';
 import { bytesToBase64, hexToBytes } from '@/crypto/encoding';
 
@@ -143,6 +148,12 @@ export class RouterManagementService {
     retries: SSH_DEFAULT_AUTH_RETRIES,
     sftpEnabled: false,
   };
+  private readonly sshAlgorithmLists: Record<VrpSshAlgorithmFamily, string[]> = {
+    'key-exchange': [], cipher: [], hmac: [], publickey: [],
+  };
+  private readonly sshClientAlgorithmLists: Record<VrpSshAlgorithmFamily, string[]> = {
+    'key-exchange': [], cipher: [], hmac: [], publickey: [],
+  };
   private readonly sshUsers = new Map<string, SshUser>();
   private readonly rsaPeerPublicKeys = new Map<string, RsaPeerPublicKey>();
   private sshDefaultPasswordAuthentication = true;
@@ -250,17 +261,41 @@ export class RouterManagementService {
       if (retries === null) return args[2] ?? '';
       this.sshServer.retries = retries;
     }
+    else if (head === 'server' && vrpSshAlgorithmFamily(args[1]) !== null) {
+      const family = vrpSshAlgorithmFamily(args[1])!;
+      if (negated) { this.sshAlgorithmLists[family] = []; return null; }
+      const tokens = parseVrpSshAlgorithms(family, args.slice(2));
+      if (typeof tokens === 'string') return tokens;
+      if (tokens.length === 0) return args[1];
+      this.sshAlgorithmLists[family] = tokens;
+    }
     else if (head === 'server') return args[1] ?? head;
     else if (head === 'user') return this.configureSshUser(args.slice(1), negated);
     else if (head === 'authentication-type') {
       if (args[1]?.toLowerCase() !== 'default' || args[2]?.toLowerCase() !== 'password') return args[1] ?? head;
       this.sshDefaultPasswordAuthentication = !negated;
     }
+    else if (head === 'client' && vrpSshAlgorithmFamily(args[1]) !== null) {
+      const family = vrpSshAlgorithmFamily(args[1])!;
+      if (negated) { this.sshClientAlgorithmLists[family] = []; return null; }
+      const tokens = parseVrpSshAlgorithms(family, args.slice(2));
+      if (typeof tokens === 'string') return tokens;
+      if (tokens.length === 0) return args[1];
+      this.sshClientAlgorithmLists[family] = tokens;
+    }
     else if (head === 'client' && args[1]?.toLowerCase() === 'first-time') { /* ignored */ }
     else this.recordRaw('ssh', args.join(' '));
     return null;
   }
   getSsh(): typeof this.sshServer { return this.sshServer; }
+  getSshAlgorithmLists(): VrpSshAlgorithmLists { return this.sshAlgorithmLists; }
+  getSshClientAlgorithmLists(): VrpSshAlgorithmLists { return this.sshClientAlgorithmLists; }
+  sshClientAlgorithmPreferences(): SshAlgorithmPreferences {
+    return vrpSshAlgorithmPreferences(this.sshClientAlgorithmLists);
+  }
+  sshServerAlgorithmPreferences(): SshAlgorithmPreferences {
+    return vrpSshAlgorithmPreferences(this.sshAlgorithmLists);
+  }
 
   private configureSshUser(args: string[], negated: boolean): string | null {
     const name = args[0];

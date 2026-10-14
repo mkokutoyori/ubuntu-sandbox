@@ -73,6 +73,8 @@ export interface DHCPPoolConfig {
   netbiosServers?: string[];
   /** Option 46 — NetBIOS node type (b/p/m/h) */
   netbiosNodeType?: string;
+  /** Option 42 — NTP servers (RFC 2132 §8.3) */
+  ntpServers?: string[];
   /** true ⇒ lease never expires (`lease infinite`) */
   leaseInfinite?: boolean;
   conflictTtlSec?: number;
@@ -406,6 +408,8 @@ export interface DHCPClientLease {
   netbiosServers: string[];
   /** Option 46 — NetBIOS node type, decoded to its RFC 2132 byte value */
   netbiosNodeType: number | null;
+  /** Option 42 — NTP servers offered by the server */
+  ntpServers: string[];
   /** Generic/vendor options (43, 150, …), keyed by code */
   vendorOptions: Record<number, string>;
 }
