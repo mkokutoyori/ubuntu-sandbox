@@ -62,6 +62,7 @@ import { CliInvalidInput } from './cli/CliDiagnostic';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
 import { inspectSpecs } from './cisco/inspectSpecs';
+import { tcpInterceptSpecs } from './cisco/tcpInterceptSpecs';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -470,6 +471,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...mapSpecs(() => this.mapHost()),
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
+      ...tcpInterceptSpecs(() => ({ security: () => getSecurityConfig(this.d()) })),
       ...inspectSpecs(() => ({
         security: () => getSecurityConfig(this.d()),
         selectedInterfaces: () => this.selectedPortsForConfigIf(),

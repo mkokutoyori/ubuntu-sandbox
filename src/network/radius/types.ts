@@ -183,6 +183,22 @@ export interface RadiusUser {
   challenge?: { prompt: string };
 }
 
+export interface RadiusAttributePolicy {
+  nasIpAddress: string | null;
+  serviceTypeInLoginRequest: boolean;
+  serviceTypeMandatory: boolean;
+  serviceTypeSupportMultiple: boolean;
+  nasIdentifier: ((nasIp: string) => string) | null;
+  eventTimestampInAccounting: boolean;
+}
+
+export function defaultAttributePolicy(): RadiusAttributePolicy {
+  return {
+    nasIpAddress: null, serviceTypeInLoginRequest: false, serviceTypeMandatory: false,
+    serviceTypeSupportMultiple: false, nasIdentifier: null, eventTimestampInAccounting: false,
+  };
+}
+
 export interface RadiusClientConfig {
   enabled: boolean;
   servers: RadiusServerConfig[];

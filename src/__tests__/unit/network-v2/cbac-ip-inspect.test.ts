@@ -14,11 +14,11 @@
  * everything, so the only way a reply gets back is the hole CBAC opens for a session. Taps on both PCs
  * count what arrives: "blocked" means "never arrived", not "the command failed".
  *
- * Measured with src stashed to HEAD: `ip inspect` was refused as an invalid command, so 17 of the 25
- * cases fall. Eight pass either way because their expected outcome is "the ACL blocks" or "nothing is
+ * Measured with src stashed to HEAD: `ip inspect` was refused as an invalid command, so 20 of the 29
+ * cases fall. Nine pass either way because their expected outcome is "the ACL blocks" or "nothing is
  * logged": the ACL-only witness, the outside-initiated flow, a protocol the rule does not name, an
  * undefined rule name, the removed binding, the per-protocol audit-trail off, the alert-off silence and
- * the refusal of malformed values.
+ * the refusal of malformed values and the ftp witness without inspection.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
@@ -26,6 +26,10 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { installVirtualClock } from '@/__tests__/support/ntpTime';
 import { zoneLab } from './_helpers/zoneFirewallLab';
+import { FtpServer } from '@/network/ftp/FtpServer';
+import { FtpClientSession } from '@/network/ftp/FtpClientSession';
+import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import { LinuxSftpFSAdapter } from '@/network/protocols/ssh/sftp/LinuxSftpFSAdapter';
 
 beforeEach(() => {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
@@ -295,5 +299,49 @@ describe('CBAC: configuration and views', () => {
     const cleared = await lab.fw.executeCommand('show ip inspect statistics');
     expect(cleared).toContain('Session creations since subsystem startup or last reset 0');
     expect(cleared).not.toContain('Last statistic reset never');
+  });
+});
+
+describe('CBAC: ftp data channel', () => {
+  const transfer = async (config: string[], mode: 'active' | 'passive') => {
+    const lab = await zoneLab([...OUTSIDE_ACL, ...config, ...INSIDE_IN()]);
+    const vfs = new VirtualFileSystem();
+    vfs.mkdirp('/srv/ftp', 0o755, 1000, 1000);
+    vfs.writeFile('/srv/ftp/hello.txt', 'bonjour ftp', 1000, 1000, 0o022);
+    new FtpServer(lab.outside.getTcpStack(), '10.0.2.10', {
+      users: new Map([['alice', 'wonderland']]),
+      fs: new LinuxSftpFSAdapter(vfs, 1000, 1000),
+      rootPath: '/srv/ftp',
+    }).start();
+    const client = new FtpClientSession(lab.inside.getTcpStack(), '10.0.2.10', '10.0.1.10');
+    if (client.connect()?.code !== 220) return { lab, control: false, data: null as string | null };
+    client.sendCommand({ verb: 'USER', argument: 'alice' });
+    if (client.sendCommand({ verb: 'PASS', argument: 'wonderland' })?.code !== 230) return { lab, control: false, data: null };
+    if (mode === 'passive') client.enterPassiveMode();
+    else client.enterActiveMode(40000);
+    return { lab, control: true, data: client.retrieveFile('hello.txt').content };
+  };
+
+  it('witness (passes either way): without inspection not even the control connection comes back', async () => {
+    expect((await transfer([], 'passive')).control).toBe(false);
+  });
+
+  it('passive mode: the ftp rule follows the 227 reply and opens the data connection', async () => {
+    const { control, data, lab } = await transfer(['ip inspect name R ftp'], 'passive');
+    expect(control).toBe(true);
+    expect(data).toBe('bonjour ftp');
+    expect(await lab.fw.executeCommand('show ip inspect sessions detail')).toContain('ftp-data');
+  });
+
+  it('active mode: the PORT command makes the router admit the server\'s connection back through the ACL', async () => {
+    const { control, data } = await transfer(['ip inspect name R ftp'], 'active');
+    expect(control).toBe(true);
+    expect(data).toBe('bonjour ftp');
+  });
+
+  it('active mode with a plain tcp rule: the control connection works, the data connection is refused by the ACL', async () => {
+    const { control, data } = await transfer(['ip inspect name R tcp'], 'active');
+    expect(control).toBe(true);
+    expect(data).toBeNull();
   });
 });

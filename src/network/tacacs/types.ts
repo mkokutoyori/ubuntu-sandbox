@@ -171,7 +171,7 @@ export interface TacacsServerAgentConfig {
   port: number;
   sharedSecret: string;
   users: Map<string, TacacsUser>;
-  acctLog: Array<{ user: string; cmd: string; flags: TacacsAcctFlag[]; ts: number }>;
+  acctLog: Array<{ user: string; cmd: string; flags: TacacsAcctFlag[]; ts: number; args: string[]; port: string; remoteAddress: string }>;
 }
 
 export function createDefaultClientConfig(): TacacsClientConfig {

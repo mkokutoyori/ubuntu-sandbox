@@ -9,6 +9,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
 import { ZoneFirewall } from './ZoneFirewall';
+import { TcpIntercept, DEFAULT_INTERCEPT_SETTINGS, type TcpInterceptSettings } from './TcpIntercept';
 import { CbacFirewall, DEFAULT_INSPECT_SETTINGS, type InspectRule, type InspectSettings } from './CbacFirewall';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
@@ -381,6 +382,28 @@ function renderViewSecret(v: ParserView): string {
   return renderSecretField(v.secret ?? '', v.secretAlgo ?? 'md5', `view:${v.name}`);
 }
 
+export interface AaaAccountingOptions {
+  updateEnabled: boolean;
+  updateNewinfo: boolean;
+  updatePeriodicMinutes: number | null;
+  jitterMaxSec: number;
+  suppressNullUsername: boolean;
+  sendStopAlways: boolean;
+  sendStopOnAuthFailure: boolean;
+  sendStopOnSuccessRemote: boolean;
+}
+
+export const DEFAULT_ACCOUNTING_JITTER_SEC = 300;
+
+export interface RadiusAttributeSettings {
+  nasIpAddress: string | null;
+  serviceTypeInLoginRequest: boolean;
+  serviceTypeMandatory: boolean;
+  serviceTypeSupportMultiple: boolean;
+  nasIdentifier: { format: string | null } | null;
+  eventTimestampInAccounting: boolean;
+}
+
 export class CiscoSecurityConfig {
   aaaNewModel = false;
   /**
@@ -396,6 +419,15 @@ export class CiscoSecurityConfig {
   aaaUsernamePrompt?: string;
   aaaPasswordPrompt?: string;
   aaaMethods: AaaMethodEntry[] = [];
+  radiusAttributes: RadiusAttributeSettings = {
+    nasIpAddress: null, serviceTypeInLoginRequest: false, serviceTypeMandatory: false,
+    serviceTypeSupportMultiple: false, nasIdentifier: null, eventTimestampInAccounting: false,
+  };
+  accounting: AaaAccountingOptions = {
+    updateEnabled: false, updateNewinfo: false, updatePeriodicMinutes: null,
+    jitterMaxSec: DEFAULT_ACCOUNTING_JITTER_SEC, suppressNullUsername: false,
+    sendStopAlways: false, sendStopOnAuthFailure: false, sendStopOnSuccessRemote: false,
+  };
   radiusServers: Map<string, RadiusServer> = new Map();
   tacacsServers: Map<string, TacacsServer> = new Map();
   aaaGroups: Map<string, AaaServerGroup> = new Map();
@@ -458,6 +490,9 @@ export class CiscoSecurityConfig {
   }));
 
   interfaceFlags: Map<string, InterfaceSecurityFlags> = new Map();
+
+  tcpInterceptSettings: TcpInterceptSettings = { ...DEFAULT_INTERCEPT_SETTINGS };
+  readonly tcpIntercept: TcpIntercept = new TcpIntercept(() => ({ settings: this.tcpInterceptSettings }));
 
   inspectRules: Map<string, InspectRule> = new Map();
   inspectSettings: InspectSettings = { ...DEFAULT_INSPECT_SETTINGS };
@@ -621,6 +656,7 @@ export class CiscoSecurityConfig {
       for (const m of this.aaaMethods) {
         lines.push(this.renderAaaMethod(m));
       }
+      lines.push(...this.accountingOptionLines());
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
     }
@@ -706,6 +742,7 @@ export class CiscoSecurityConfig {
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);
     }
     if (this.radiusDefaults.key) lines.push(`radius-server key ${this.radiusDefaults.key}`);
+    lines.push(...this.radiusAttributeLines());
     if (this.radiusDefaults.timeoutSec !== undefined) {
       lines.push(`radius-server timeout ${this.radiusDefaults.timeoutSec}`);
     }
@@ -855,7 +892,7 @@ export class CiscoSecurityConfig {
       if (this.controlPlane.servicePolicyInput) lines.push(` service-policy input ${this.controlPlane.servicePolicyInput}`);
       if (this.controlPlane.servicePolicyOutput) lines.push(` service-policy output ${this.controlPlane.servicePolicyOutput}`);
     }
-    lines.push(...this.inspectRunningConfigLines());
+    lines.push(...this.inspectRunningConfigLines(), ...this.tcpInterceptRunningConfigLines());
     for (const z of this.zones.values()) lines.push(`zone security ${z.name}`);
     for (const zp of this.zonePairs.values()) {
       lines.push(`zone-pair security ${zp.name} source ${zp.source} destination ${zp.destination}`);
@@ -881,6 +918,53 @@ export class CiscoSecurityConfig {
     if (f.inspectIn) lines.push(` ip inspect ${f.inspectIn} in`);
     if (f.inspectOut) lines.push(` ip inspect ${f.inspectOut} out`);
     if (f.ipv6TrafficFilter) lines.push(` ipv6 traffic-filter ${f.ipv6TrafficFilter.name} ${f.ipv6TrafficFilter.direction}`);
+    return lines;
+  }
+
+  private radiusAttributeLines(): string[] {
+    const a = this.radiusAttributes;
+    const lines: string[] = [];
+    if (a.nasIpAddress !== null) lines.push(`radius-server attribute 4 ${a.nasIpAddress}`);
+    if (a.serviceTypeInLoginRequest) lines.push('radius-server attribute 6 on-for-login-auth');
+    if (a.serviceTypeMandatory) lines.push('radius-server attribute 6 mandatory');
+    if (a.serviceTypeSupportMultiple) lines.push('radius-server attribute 6 support-multiple');
+    if (a.nasIdentifier !== null) {
+      lines.push(`radius-server attribute 32 include-in-access-req${a.nasIdentifier.format === null ? '' : ` format ${a.nasIdentifier.format}`}`);
+    }
+    if (a.eventTimestampInAccounting) lines.push('radius-server attribute 55 include-in-acct-req');
+    return lines;
+  }
+
+  private accountingOptionLines(): string[] {
+    const a = this.accounting;
+    const lines: string[] = [];
+    if (a.updateEnabled) {
+      lines.push(`aaa accounting update${a.updateNewinfo ? ' newinfo' : ''}${a.updatePeriodicMinutes !== null ? ` periodic ${a.updatePeriodicMinutes}` : ''}`);
+    }
+    if (a.jitterMaxSec !== DEFAULT_ACCOUNTING_JITTER_SEC) lines.push(`aaa accounting jitter maximum ${a.jitterMaxSec}`);
+    if (a.suppressNullUsername) lines.push('aaa accounting suppress null-username');
+    if (a.sendStopAlways) lines.push('aaa accounting send stop-record always');
+    if (a.sendStopOnAuthFailure) lines.push('aaa accounting send stop-record authentication failure');
+    if (a.sendStopOnSuccessRemote) lines.push('aaa accounting send stop-record authentication success remote-server');
+    return lines;
+  }
+
+  private tcpInterceptRunningConfigLines(): string[] {
+    const s = this.tcpInterceptSettings;
+    const d = DEFAULT_INTERCEPT_SETTINGS;
+    const lines: string[] = [];
+    if (s.list !== null) lines.push(`ip tcp intercept list ${s.list}`);
+    if (s.mode !== d.mode) lines.push(`ip tcp intercept mode ${s.mode}`);
+    if (s.dropMode !== d.dropMode) lines.push(`ip tcp intercept drop-mode ${s.dropMode}`);
+    if (s.connectionTimeoutSec !== d.connectionTimeoutSec) lines.push(`ip tcp intercept connection-timeout ${s.connectionTimeoutSec}`);
+    if (s.finrstTimeoutSec !== d.finrstTimeoutSec) lines.push(`ip tcp intercept finrst-timeout ${s.finrstTimeoutSec}`);
+    if (s.watchTimeoutSec !== d.watchTimeoutSec) lines.push(`ip tcp intercept watch-timeout ${s.watchTimeoutSec}`);
+    if (s.maxIncompleteLow !== d.maxIncompleteLow || s.maxIncompleteHigh !== d.maxIncompleteHigh) {
+      lines.push(`ip tcp intercept max-incomplete low ${s.maxIncompleteLow} high ${s.maxIncompleteHigh}`);
+    }
+    if (s.oneMinuteLow !== d.oneMinuteLow || s.oneMinuteHigh !== d.oneMinuteHigh) {
+      lines.push(`ip tcp intercept one-minute low ${s.oneMinuteLow} high ${s.oneMinuteHigh}`);
+    }
     return lines;
   }
 

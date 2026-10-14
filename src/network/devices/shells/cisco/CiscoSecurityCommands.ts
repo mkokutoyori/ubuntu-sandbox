@@ -382,7 +382,7 @@ export function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: 
     i++;
   }
   const methods = args.slice(i);
-  if (methods.length === 0) return CISCO_ERRORS.INCOMPLETE;
+  if (methods.length === 0 && recordType !== 'none') return CISCO_ERRORS.INCOMPLETE;
   const incomplet = verifierMethodesAaa(phase, methods);
   if (incomplet) return incomplet;
   sec.aaaMethods.push({ phase, service, listName, privilegeLevel, recordType, methods });
