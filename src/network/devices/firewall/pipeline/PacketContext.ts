@@ -28,6 +28,7 @@ export type VerdictReason =
   | 'utm-application'
   | 'utm-dns'
   | 'utm-file-type'
+  | 'utm-ips'
   | 'auth-required'
   | 'ha-subordinate'
   | 'zone-mismatch'

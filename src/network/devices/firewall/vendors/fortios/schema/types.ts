@@ -368,6 +368,10 @@ export interface FortiCommitDevice {
   removeSchedule(name: string): void;
   applyTrafficShaper(shaper: import('../../../model/TrafficShaper').TrafficShaper): void;
   removeTrafficShaper(name: string): void;
+  applyIpsCustom(signature: Omit<import('../../../inspection/UtmProfiles').IpsCustomSignature, 'ruleId'>): string | void;
+  removeIpsCustom(tag: string): void;
+  applyIpsSensor(sensor: import('../../../inspection/UtmProfiles').IpsSensor): void;
+  removeIpsSensor(name: string): void;
   applyPerIpShaper(shaper: import('../../../model/TrafficShaper').PerIpShaper): void;
   removePerIpShaper(name: string): void;
   applyVdomSettings(settings: FortiVdomSettings): void;

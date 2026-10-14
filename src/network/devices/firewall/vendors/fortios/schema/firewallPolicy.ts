@@ -130,6 +130,10 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       availableWhen: usesUtm,
     },
     {
+      ...reference('ips-sensor', 'Name of an existing IPS sensor.', ['ips sensor']),
+      availableWhen: usesUtm,
+    },
+    {
       ...reference('webfilter-profile', 'Name of an existing Web filter profile.',
         ['webfilter profile']),
       availableWhen: usesUtm,
@@ -251,6 +255,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       authUsers: [...object.effective('users')],
       antivirusProfile: named(object, 'av-profile'),
       webFilterProfile: named(object, 'webfilter-profile'),
+      ipsSensor: named(object, 'ips-sensor'),
       dnsFilterProfile: named(object, 'dnsfilter-profile'),
       fileFilterProfile: named(object, 'file-filter-profile'),
       applicationList: named(object, 'application-list'),

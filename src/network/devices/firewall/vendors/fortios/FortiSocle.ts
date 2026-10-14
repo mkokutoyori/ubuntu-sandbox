@@ -87,7 +87,7 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
 export const VALUE_LIST_VERBS = Object.freeze(
   ['set', 'append', 'select', 'unselect'] as const);
 
-export const FORTI_TOKENS = Object.freeze({ escapesAnyCharacter: true });
+export const FORTI_TOKENS = Object.freeze({ escapesAnyCharacter: true, singleQuotes: true });
 
 const FORTI_MODES = Object.freeze({ forti: { parent: null } });
 const FORTI_PROMPTS = Object.freeze({ forti: '{host} # ' });

@@ -36,23 +36,6 @@ export interface SecurityRule {
   timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
-  scheduleTimeout?: boolean;
-  trafficShaper?: string;
-  trafficShaperReverse?: string;
-  timeoutSendRst?: boolean;
-  matchVipOnly?: boolean;
-  diffserv?: { forward?: number; reverse?: number; copy: boolean };
-  tcpMssSender?: number;
-  tcpMssReceiver?: number;
-  tcpMssSender?: number;
-  tcpMssReceiver?: number;
-  sendDenyPacket?: boolean;
-  scheduleTimeout?: boolean;
-  trafficShaper?: string;
-  trafficShaperReverse?: string;
-  timeoutSendRst?: boolean;
-  matchVipOnly?: boolean;
-  diffserv?: { forward?: number; reverse?: number; copy: boolean };
   tcpMssSender?: number;
   tcpMssReceiver?: number;
 
@@ -86,6 +69,7 @@ export interface SecurityRule {
   antivirusProfile?: string;
   webFilterProfile?: string;
   applicationList?: string;
+  ipsSensor?: string;
   dnsFilterProfile?: string;
   fileFilterProfile?: string;
   sslSshProfile?: string;
@@ -153,6 +137,7 @@ export interface SecurityRuleInit {
   antivirusProfile?: string;
   webFilterProfile?: string;
   applicationList?: string;
+  ipsSensor?: string;
   dnsFilterProfile?: string;
   fileFilterProfile?: string;
   sslSshProfile?: string;
@@ -227,6 +212,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     antivirusProfile: init.antivirusProfile,
     webFilterProfile: init.webFilterProfile,
     applicationList: init.applicationList,
+    ipsSensor: init.ipsSensor,
     dnsFilterProfile: init.dnsFilterProfile,
     fileFilterProfile: init.fileFilterProfile,
     sslSshProfile: init.sslSshProfile,

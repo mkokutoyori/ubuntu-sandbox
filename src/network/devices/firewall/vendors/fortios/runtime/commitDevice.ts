@@ -119,6 +119,22 @@ export function buildCommitDevice(
       removePerIpShaper(name) {
         fw.getShaperStore().removePerIp(name);
       },
+      applyIpsCustom(signature) {
+        const profiles = fw.getUtmProfiles();
+        const known = profiles.ipsCustomSignatures().find(existing => existing.tag === signature.tag);
+        const ruleId = known?.ruleId ?? 1 + profiles.ipsCustomSignatures()
+          .reduce((highest, existing) => Math.max(highest, existing.ruleId), 0);
+        profiles.setIpsCustom({ ...signature, ruleId });
+      },
+      removeIpsCustom(tag) {
+        fw.getUtmProfiles().removeIpsCustom(tag);
+      },
+      applyIpsSensor(sensor) {
+        fw.getUtmProfiles().setIpsSensor(sensor);
+      },
+      removeIpsSensor(name) {
+        fw.getUtmProfiles().removeIpsSensor(name);
+      },
       removeTrafficShaper(name) {
         fw.getShaperStore().remove(name);
       },

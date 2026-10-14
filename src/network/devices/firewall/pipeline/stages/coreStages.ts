@@ -22,7 +22,7 @@ import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
 import type { ServiceObject } from '../../model/ServiceObject';
 import {
   inspectTls, protocolOfFlow, scanAntivirus, scanApplicationControl,
-  scanDnsFilter, scanFileFilter,
+  scanDnsFilter, scanFileFilter, scanIps,
   scanWebFilter, scanWebFilterHost,
   type InspectedFlow, type UtmVerdict, type UtmVerdictKind,
 } from '../../inspection/ContentInspector';
@@ -338,7 +338,8 @@ function inspectUtm(
   const sni = ssl ? inspectTls(flow, ssl) : undefined;
   if (sni !== undefined) context.inspectedSni = sni;
 
-  const verdict = firstBlocking(flow, rule, profiles, sni);
+  const transport = packet.protocol === IP_PROTO_TCP ? 'tcp' : packet.protocol === IP_PROTO_UDP ? 'udp' : undefined;
+  const verdict = firstBlocking(flow, rule, profiles, sni, transport, context.sessionDirection !== 's2c');
   if (!verdict) return proceed(context, stage, 'clean');
 
   context.utmVerdict = verdict;
@@ -355,11 +356,12 @@ const UTM_REASON: Readonly<Record<UtmVerdictKind, VerdictReason>> = Object.freez
   'dns-blocked': 'utm-dns',
   'file-type-blocked': 'utm-file-type',
   'application-blocked': 'utm-application',
+  'ips-blocked': 'utm-ips',
 });
 
 function firstBlocking(
   flow: InspectedFlow, rule: SecurityRule, profiles: UtmProfileStore,
-  sni: string | undefined,
+  sni: string | undefined, transport: 'tcp' | 'udp' | undefined, fromClient: boolean,
 ): UtmVerdict | undefined {
   const scans: Array<UtmVerdict | undefined> = [];
 
@@ -394,6 +396,11 @@ function firstBlocking(
     ? undefined
     : profiles.getApplicationList(rule.applicationList);
   if (applications) scans.push(scanApplicationControl(flow, applications));
+
+  const ips = rule.ipsSensor === undefined ? undefined : profiles.getIpsSensor(rule.ipsSensor);
+  if (ips && transport !== undefined) {
+    scans.push(scanIps(flow, { protocol: transport, fromClient }, ips, profiles.ipsCustomSignatures()));
+  }
 
   return scans.find(verdict => verdict !== undefined && verdict.kind !== 'clean');
 }

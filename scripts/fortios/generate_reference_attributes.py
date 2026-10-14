@@ -71,6 +71,7 @@ HELP_OVERRIDES = {
 }
 
 REF_TARGETS = {'per-ip-shaper': ['firewall shaper per-ip-shaper'], 'traffic-shaper': ['firewall shaper traffic-shaper'], 'traffic-shaper-reverse': ['firewall shaper traffic-shaper']}
+HANDWRITTEN = {'firewall policy': ('ips-sensor',)}
 LISTS = {'macaddr', 'src-filter', 'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
          'internet-service-group', 'internet-service-name', 'internet-service-src-custom', 'internet-service-src-custom-group',
          'internet-service-src-fortiguard', 'internet-service-src-group', 'internet-service-src-name',
@@ -168,7 +169,7 @@ def main():
                  f"export const {const}: readonly FortiAttributeSpec[] = Object.freeze(["]
         seen = set()
         for e in entries:
-            if e['path'] != '' or e['name'].lower() in have or e['name'] in seen: continue
+            if e['path'] != '' or e['name'].lower() in have or e['name'] in seen or e['name'] in HANDWRITTEN.get(title, ()): continue
             seen.add(e['name'])
             spec = emit(e, have)
             evaluated = e['name'] in EVALUATED.get(title, [])

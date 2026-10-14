@@ -66,7 +66,6 @@ export const POLICY_REFERENCE_ATTRIBUTES: readonly FortiAttributeSpec[] = Object
   { ...list('internet-service6-src-group', 'Internet Service6 source group name. Internet Service group name.'), unimplemented: 'it matches against the FortiGuard Internet Service database, which this simulator does not ship.' },
   { ...list('internet-service6-src-name', 'IPv6 Internet Service source name. Internet Service name.'), unimplemented: 'it matches against the FortiGuard Internet Service database, which this simulator does not ship.' },
   { ...enable('internet-service6-src-negate', 'When enabled internet-service6-src specifies what the service must NOT be.', false), unimplemented: 'it matches against the FortiGuard Internet Service database, which this simulator does not ship.' },
-  { ...word('ips-sensor', 'Name of an existing IPS sensor.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...word('ips-voip-filter', 'Name of an existing VoIP (ips) profile.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   { ...enable('log-http-transaction', 'Enable/disable HTTP transaction log.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
   enable('match-vip-only', 'Enable/disable matching of only those packets that have had their destination addresses changed by a VIP.', false),
