@@ -54,3 +54,26 @@ export async function ipsecLab(extraR1: string[] = []): Promise<IpsecLab> {
   });
   return { r1, r2, pc1, pc2, wire };
 }
+
+export function captureInbound(lab: IpsecLab, device: 'r1' | 'r2' = 'r1'): EthernetFrame[] {
+  const frames: EthernetFrame[] = [];
+  lab[device].getPort('GigabitEthernet0/1')!.attachTap(({ direction, frame }: { direction: string; frame: EthernetFrame }) => {
+    if (direction !== 'in') return;
+    const packet = frame.payload as IPv4Packet | undefined;
+    if (packet?.type === 'ipv4' && packet.protocol === 50) {
+      frames.push({ srcMAC: frame.srcMAC, dstMAC: frame.dstMAC, etherType: frame.etherType, payload: frame.payload });
+    }
+  });
+  return frames;
+}
+
+export function countIke(lab: IpsecLab): { count: number } {
+  const seen = { count: 0 };
+  lab.r1.getPort('GigabitEthernet0/1')!.attachTap(({ direction, frame }: { direction: string; frame: EthernetFrame }) => {
+    if (direction !== 'out') return;
+    const packet = frame.payload as IPv4Packet | undefined;
+    const udp = packet?.type === 'ipv4' ? packet.payload as { type?: string; destinationPort?: number } : undefined;
+    if (udp?.type === 'udp' && udp.destinationPort === 500) seen.count++;
+  });
+  return seen;
+}

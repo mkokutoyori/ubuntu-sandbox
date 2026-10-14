@@ -82,8 +82,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     name: 'secondes', type: 'REST', description: 'Lifetime of a security association' },
   'crypto ipsec security-association lifetime kilobytes': {
     name: 'kilooctets', type: 'REST', description: 'Volume a security association carries' },
-  'crypto ipsec security-association replay window-size': {
-    name: 'taille', type: 'REST', description: 'Size of the anti-replay window' },
   'crypto ipsec security-association esn': null,
   /*
    * La place est EXIGEE : le gestionnaire refuse en dessous de trois
@@ -268,22 +266,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  // ── crypto ipsec security-association replay window-size N ──────
-  trie.registerGreedy('crypto ipsec security-association replay window-size', 'Set anti-replay window size', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const n = parseInt(args[0], 10);
-    if (isNaN(n) || n < 0 || n > 1024) return '% Invalid value. Range: 0-1024';
-    eng(ctx).setReplayWindowSize(n);
-    return '';
-  });
-
-  // ── no crypto ipsec security-association replay ─────────────────
-  trie.register('no crypto ipsec security-association replay', 'Disable anti-replay', () => {
-    eng(ctx).setReplayWindowSize(0);
-    return '';
-  });
-
-  // ── crypto ipsec security-association esn ──────────────────────
   trie.register('crypto ipsec security-association esn', 'Enable Extended Sequence Numbers (64-bit)', () => {
     eng(ctx).setESN(true);
     return '';
@@ -589,14 +571,6 @@ export function buildTransformSetCommands(trie: CommandTrie, ctx: CiscoShellCont
     if (Number.isFinite(n)) eng(ctx).setGlobalSALifetimeKB(n);
     return '';
   });
-  trie.registerGreedy('crypto ipsec security-association replay window-size', 'Set anti-replay window', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).setReplayWindowSize(n);
-    return '';
-  });
-  trie.registerGreedy('crypto ipsec security-association idle-time', 'Set SA idle time', () => '');
-  trie.registerGreedy('crypto ipsec df-bit', 'Configure DF-bit handling', () => '');
-  trie.registerGreedy('crypto ipsec fragmentation', 'Configure IPSec fragmentation', () => '');
   trie.registerGreedy('crypto ipsec profile', 'Enter IPSec profile config', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     eng(ctx).getOrCreateIPSecProfile(args[0]);
@@ -946,10 +920,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'crypto ipsec security-association lifetime kilobytes': {
     name: 'kilooctets', type: 'INT',
     description: 'Security association duration in kilobytes of traffic',
-  },
-  'crypto ipsec security-association replay window-size': {
-    name: 'taille', type: 'INT', range: [64, 1024],
-    description: 'Size of the anti-replay window',
   },
 };
 

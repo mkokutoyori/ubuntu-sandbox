@@ -5,6 +5,10 @@ import type { DfBitPolicy, FragmentationPoint } from '../../../ipsec/IPSecTypes'
 export interface IpsecDataPlaneEngine {
   setDfBit(policy: DfBitPolicy | null, ifName?: string): void;
   setFragmentationPoint(point: FragmentationPoint | null, ifName?: string): void;
+  setReplayWindowSize(size: number): void;
+  setReplayCheckingDisabled(disabled: boolean): void;
+  setIdleTime(seconds: number | null): void;
+  getIdleTime(): number | null;
 }
 
 export interface IpsecDataPlaneHost {
@@ -12,7 +16,7 @@ export interface IpsecDataPlaneHost {
   selectedInterfaces(): string[];
 }
 
-const GLOBAL = ['config'] as const;
+const GLOBAL = ['config', 'config-tfset'] as const;
 const INTERFACE = ['config-if', 'config-subif'] as const;
 
 const DF_BIT: ArgumentSpec = {
@@ -22,6 +26,17 @@ const DF_BIT: ArgumentSpec = {
     { keyword: 'copy', description: 'Outer IP header DF bit is copied from the original packet' },
     { keyword: 'set', description: 'Outer IP header has the DF bit set' },
   ],
+};
+
+const REPLAY_WINDOW: ArgumentSpec = {
+  name: 'size', type: 'ENUM', optional: true,
+  description: 'Size of the anti-replay window',
+  values: [64, 128, 256, 512, 1024].map((size) => ({ keyword: String(size), description: `${size} packets` })),
+};
+
+const IDLE_TIME: ArgumentSpec = {
+  name: 'seconds', type: 'INT', range: [60, 86400],
+  description: 'Seconds an inactive peer keeps its security association',
 };
 
 const FRAGMENTATION: ArgumentSpec = {
@@ -61,5 +76,45 @@ export function ipsecDataPlaneSpecs(host: () => IpsecDataPlaneHost): CommandSpec
       engine.setFragmentationPoint(args.point as FragmentationPoint, ifName)),
     undo: () => forScope(scope, (engine, ifName) => engine.setFragmentationPoint(null, ifName)),
   });
-  return [dfBit('global'), dfBit('interface'), fragmentation('global'), fragmentation('interface')];
+  const saGlobal = (
+    id: string, tail: Array<string | ArgumentSpec>, description: string, undoDescription: string,
+    run: (engine: IpsecDataPlaneEngine, args: Record<string, string>) => void,
+    undo: (engine: IpsecDataPlaneEngine) => void,
+  ): CommandSpec => ({
+    id, path: ['crypto', 'ipsec', 'security-association', ...tail], description, undoDescription,
+    modes: GLOBAL, minPrivilege: 15,
+    run: (_session, args) => { run(host().engine(), args); return ''; },
+    undo: () => { undo(host().engine()); return ''; },
+  });
+  return [
+    dfBit('global'), dfBit('interface'), fragmentation('global'), fragmentation('interface'),
+    {
+      ...saGlobal('crypto-ipsec-sa-replay-window-size', ['replay', 'window-size', REPLAY_WINDOW],
+        'Set the size of the anti-replay window', 'Restore the default window of 64',
+        (engine, args) => engine.setReplayWindowSize(Number(args.size ?? 64)),
+        (engine) => engine.setReplayWindowSize(64)),
+      undoOmitsArguments: true,
+    },
+    saGlobal('crypto-ipsec-sa-replay-disable', ['replay', 'disable'],
+      'Disable anti-replay checking', 'Enable anti-replay checking',
+      (engine) => engine.setReplayCheckingDisabled(true),
+      (engine) => engine.setReplayCheckingDisabled(false)),
+    {
+      ...saGlobal('crypto-ipsec-sa-idle-time', ['idle-time', IDLE_TIME],
+        'Delete the security associations of a peer that stays idle', 'Disable the security association idle timer',
+        (engine, args) => engine.setIdleTime(Number(args.seconds)),
+        (engine) => engine.setIdleTime(null)),
+      undoOmitsArguments: true,
+    },
+    {
+      id: 'show-crypto-ipsec-sa-idle-time',
+      path: ['show', 'crypto', 'ipsec', 'security-association', 'idle-time'],
+      description: 'Show the security association idle time',
+      modes: ['privileged'], minPrivilege: 15,
+      run: () => {
+        const seconds = host().engine().getIdleTime();
+        return seconds === null ? '' : `Security association idletime: ${seconds} seconds`;
+      },
+    },
+  ];
 }

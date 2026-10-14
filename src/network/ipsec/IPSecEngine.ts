@@ -643,6 +643,8 @@ export class IPSecEngine implements IProtocolEngine {
   private dynamicCryptoMaps: Map<string, DynamicCryptoMap> = new Map();
   /** interface name → crypto map name */
   private ifaceCryptoMap: Map<string, string> = new Map();
+  private replayCheckingDisabled = false;
+  private idleTimeGlobalSec: number | null = null;
   private dfBitGlobal: DfBitPolicy = 'copy';
   private readonly dfBitByInterface = new Map<string, DfBitPolicy>();
   private fragmentationGlobal: FragmentationPoint = 'before-encryption';
@@ -957,6 +959,7 @@ export class IPSecEngine implements IProtocolEngine {
       if (!this.running) return;
       this.recheckIKESALifetimes();
       this.runDPDCheck();
+      this.expireIdleSAs();
     }, 1000);
   }
 
@@ -1420,6 +1423,32 @@ export class IPSecEngine implements IProtocolEngine {
   addDynamicRefToCryptoMap(staticMapName: string, seq: number, dynMapName: string): void {
     const map = this.getOrCreateCryptoMap(staticMapName);
     map.dynamicEntries.set(seq, dynMapName);
+  }
+
+  setReplayCheckingDisabled(disabled: boolean): void {
+    this.replayCheckingDisabled = disabled;
+  }
+
+  setIdleTime(seconds: number | null): void {
+    this.idleTimeGlobalSec = seconds;
+  }
+
+  getIdleTime(): number | null {
+    return this.idleTimeGlobalSec;
+  }
+
+  expireIdleSAs(): void {
+    const now = simulationNowMs();
+    for (const [peerIP, sas] of [...this.ipsecSADB.entries()]) {
+      const idle = sas.filter((sa) => sa.idleTimeSec !== undefined && now - sa.lastActivityMs >= sa.idleTimeSec * 1000);
+      if (idle.length === 0) continue;
+      if (idle.length === sas.length) {
+        this.clearSAsForPeer(peerIP, 'lifetime');
+        continue;
+      }
+      for (const sa of idle) this.spiToSA.delete(sa.spiIn);
+      this.ipsecSADB.set(peerIP, sas.filter((sa) => !idle.includes(sa)));
+    }
   }
 
   setDfBit(policy: DfBitPolicy | null, ifName?: string): void {
@@ -2864,6 +2893,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsEncaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.outboundSeqNum++;
     sa.bytesEncaps += innerPkt.totalLength;
 
@@ -3239,6 +3270,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsDecaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.bytesDecaps += (inner?.totalLength || 0);
 
     if (inner && !this.acceptsEcnOnDecap(outerPkt, inner, sa)) return null;
@@ -3267,6 +3300,8 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     sa.pktsDecaps++;
+
+    sa.lastActivityMs = simulationNowMs();
     sa.bytesDecaps += (ah.innerPacket?.totalLength || 0);
 
     // SA bundle (RFC 4301 §4.5): combined AH+ESP — unwrap both layers here
@@ -3277,6 +3312,7 @@ export class IPSecEngine implements IProtocolEngine {
         const espInner = openEsp(sa.cryptoKeys, esp);
         if (espInner === null) { sa.recvErrors++; return null; }
         sa.pktsDecaps++;
+        sa.lastActivityMs = simulationNowMs();
         sa.bytesDecaps += (espInner?.totalLength || 0);
         if (espInner && !this.acceptsEcnOnDecap(outerPkt, espInner, sa)) return null;
         return espInner;
@@ -3486,8 +3522,8 @@ export class IPSecEngine implements IProtocolEngine {
     return {
       peerIP: p.peerIP, localIP: p.localIP, spiIn: p.spiIn, spiOut: p.spiOut,
       outboundSeqNum: 0, seqOverflowFlag: true,
-      replayWindowSize: this.replayWindowSize,
-      replayBitmap: createReplayBitmap(this.replayWindowSize),
+      replayWindowSize: this.replayCheckingDisabled ? 0 : this.replayWindowSize,
+      replayBitmap: createReplayBitmap(this.replayCheckingDisabled ? 0 : this.replayWindowSize),
       replayWindowLastSeq: 0, esnEnabled: this.esnDefault,
       outboundSeqNumHigh: 0, replayWindowLastSeqHigh: 0,
       cryptoKeys: p.cryptoKeys, created: now,
@@ -3495,6 +3531,7 @@ export class IPSecEngine implements IProtocolEngine {
       mode: p.mode, trafficSelectors: p.trafficSelectors,
       statefulFragCheck: p.mode === 'Tunnel',
       dfBitPolicy: this.resolveDfBit(p.outIface), dscpEcnConfig: defaultDscpEcnConfig(),
+      idleTimeSec: this.idleTimeGlobalSec ?? undefined, lastActivityMs: now,
       pathMTU, ipMTU: pathMTU - overhead, pathMTULastUpdated: now,
       transforms: p.transforms, aclName: p.aclName,
       pktsEncaps: 0, pktsDecaps: 0, sendErrors: 0, recvErrors: 0,
@@ -4859,6 +4896,8 @@ export class IPSecEngine implements IProtocolEngine {
     if (this.replayWindowSize !== 64) {
       lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
     }
+    if (this.replayCheckingDisabled) lines.push('crypto ipsec security-association replay disable');
+    if (this.idleTimeGlobalSec !== null) lines.push(`crypto ipsec security-association idle-time ${this.idleTimeGlobalSec}`);
     if (this.aggressiveMode) lines.push('no crypto isakmp aggressive-mode disable');
     if (this.esnDefault) lines.push('crypto ipsec security-association esn');
     if (this.dfBitGlobal !== 'copy') lines.push(`crypto ipsec df-bit ${this.dfBitGlobal}`);

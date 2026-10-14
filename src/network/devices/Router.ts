@@ -6224,6 +6224,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!this.ipsecEngine) {
       this.ipsecEngine = new IPSecEngine(this);
       this.ipsecEngine.setEventBus(this.getBus());
+      this.ipsecEngine.start();
       const svc = this._debugService;
       if (svc) {
         this.ipsecEngine.setDebugEmitter((kind, line) => {
