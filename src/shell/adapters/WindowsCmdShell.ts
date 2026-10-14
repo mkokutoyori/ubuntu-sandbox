@@ -11,29 +11,7 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
-import {
-  tryInterpretSshLaunch,
-  finalisePendingAuth,
-  SSH_PASSWORD_PROMPTS,
-  type PendingSshAuth,
-} from '../sshLauncher';
-
-function parseSshExecCommandCmd(line: string): string | null {
-  const tokens = line.trim().split(/\s+/);
-  if (tokens[0]?.toLowerCase() !== 'ssh') return null;
-  let i = 1;
-  const valueFlags = new Set(['-p', '-i', '-l', '-o', '-b', '-c', '-D', '-E', '-F', '-I', '-J', '-L', '-R', '-S', '-W']);
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (t === '-V') return null;
-    if (valueFlags.has(t)) { i += 2; continue; }
-    if (t.startsWith('-')) { i++; continue; }
-    break;
-  }
-  if (i + 1 >= tokens.length) return null;
-  return tokens.slice(i + 1).join(' ');
-}
-
+import { NestedSshLogin } from '../NestedSshLogin';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 
@@ -57,8 +35,7 @@ export class WindowsCmdShell extends AbstractShell {
   readonly kind = 'cmd';
 
   private readonly windowsSession: WindowsShellSession | null;
-  private pendingSshAuth: PendingSshAuth | null = null;
-  private pendingExecCommand: string | null = null;
+  private readonly nestedSsh = new NestedSshLogin();
 
   /** Real cmd.exe only knows `cls`; typing `clear` produces a "not
    *  recognized as an internal or external command" error. */
@@ -124,26 +101,13 @@ export class WindowsCmdShell extends AbstractShell {
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
     // ssh launch intercept — lets the user chain SSH from a remote cmd.
-    const sshAttempt = await tryInterpretSshLaunch(line, {
+    const ssh = await this.nestedSsh.launch(line, {
       defaultUser: this.user,
       sourceIp: firstConfiguredIpCmd(this.device),
       sourceDevice: this.device,
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
-    });
-    if (sshAttempt) {
-      if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'
-          || sshAttempt.kind === 'exec') {
-        return sshAttempt.result;
-      }
-      const brokerResult = await this.runSshAuthViaBroker(
-        sshAttempt.pendingAuth,
-        parseSshExecCommandCmd(line),
-      );
-      if (brokerResult) return brokerResult;
-      this.pendingSshAuth = sshAttempt.pendingAuth;
-      this.pendingExecCommand = parseSshExecCommandCmd(line);
-      return sshAttempt.result;
-    }
+    }, this.input);
+    if (ssh) return ssh;
 
     const lower = line.trim().toLowerCase();
     // cmd.exe's `powershell` / `pwsh` launchers — hand off to the PS
@@ -182,57 +146,8 @@ export class WindowsCmdShell extends AbstractShell {
     return s.replace(/\n+$/, '').split('\n');
   }
 
-  private async runSshAuthViaBroker(
-    auth: PendingSshAuth,
-    execCmd: string | null,
-  ): Promise<ShellLineResult | null> {
-    if (!this.input.capabilities().interactive) return null;
-    const promptText = `${auth.user}@${auth.host}'s password: `;
-    for (;;) {
-      const pw = await this.input.password(promptText);
-      if (pw === null) return { output: [] };
-      const finalised = await finalisePendingAuth(auth, pw);
-      if (finalised.kind === 'refused') {
-        return { output: finalised.message.split('\n') };
-      }
-      if (finalised.kind === 'exec') {
-        return { output: [...finalised.banner, ...finalised.lines] };
-      }
-      if (finalised.kind === 'success') {
-        return { output: [...finalised.banner], childShell: finalised.shell };
-      }
-      if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
-        return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
-      }
-      this.input.emit('Permission denied, please try again.');
-    }
-  }
-
   async handleInput(value: string): Promise<ShellLineResult> {
-    const auth = this.pendingSshAuth;
-    if (!auth) return { output: [] };
-    const finalised = await finalisePendingAuth(auth, value);
-    if (finalised.kind === 'refused') {
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-      return { output: finalised.message.split('\n') };
-    }
-    if (finalised.kind === 'success') {
-      const execCmd = this.pendingExecCommand;
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-
-      return { output: [...finalised.banner], childShell: finalised.shell };
-    }
-    if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-      return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
-    }
-    return {
-      output: ['Permission denied, please try again.'],
-      pendingInput: { kind: 'password', promptText: `${auth.user}@${auth.host}'s password: ` },
-    };
+    return this.nestedSsh.answer(value);
   }
 }
 

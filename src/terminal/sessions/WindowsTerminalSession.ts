@@ -39,7 +39,7 @@ import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSsh
 import {
   openWireSshShell, openWireSshConnection, silentConnectIo, resolveSshTarget,
 } from '@/terminal/ssh/wireSshLogin';
-import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import { parseSshCommandLine, WINDOWS_SSH_COMMAND_WORD } from '@/terminal/sessions/sshArgs';
 import { parseBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
@@ -931,7 +931,7 @@ export class WindowsTerminalSession extends TerminalSession {
     this.activeSubShell = new SshInteractiveSubShell(
       session, channel, user, typedHost, `/home/${user}`,
       () => session.disconnect(),
-      promptHost, findLinuxMachineByIp(host) ?? undefined,
+      promptHost,
       establishedSessionLiveness(session, this.device, host),
       (footer) => this.onRemoteHangup(footer),
       (outputLine) => this.addLine(outputLine),

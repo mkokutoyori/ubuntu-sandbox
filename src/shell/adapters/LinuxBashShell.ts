@@ -15,33 +15,8 @@ import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
 import { parseReadInvocation, performInteractiveRead } from '../input';
-import {
-  tryInterpretSshLaunch,
-  finalisePendingAuth,
-  SSH_PASSWORD_PROMPTS,
-  type PendingSshAuth,
-} from '../sshLauncher';
+import { NestedSshLogin } from '../NestedSshLogin';
 
-/** Extract the trailing command from `ssh user@host cmd args` if any. */
-function parseSshExecCommand(line: string): string | null {
-  // Crude but sufficient: split on whitespace, skip the leading `ssh`
-  // and any flag-value pairs, drop the first non-flag token (the host),
-  // and return the rest. Returns null when there is no remainder.
-  const tokens = line.trim().split(/\s+/);
-  if (tokens[0] !== 'ssh') return null;
-  let i = 1;
-  const valueFlags = new Set(['-p', '-i', '-l', '-o', '-b', '-c', '-D', '-E', '-F', '-I', '-J', '-L', '-R', '-S', '-W']);
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (t === '-V') return null;
-    if (valueFlags.has(t)) { i += 2; continue; }
-    if (t.startsWith('-')) { i++; continue; }
-    break;
-  }
-  // tokens[i] is the user@host. Anything after is the exec command.
-  if (i + 1 >= tokens.length) return null;
-  return tokens.slice(i + 1).join(' ');
-}
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { nextLineId } from '@/terminal/sessions/TerminalSession';
@@ -81,9 +56,8 @@ export class LinuxBashShell extends AbstractShell {
   private session: LinuxShellSession | null = null;
   private readonly ownsSession: boolean;
   /** Pending nested-ssh auth waiting for the user's password. */
-  private pendingSshAuth: PendingSshAuth | null = null;
+  private readonly nestedSsh = new NestedSshLogin();
   /** Remote command to exec after auth (exec mode); null = push a shell. */
-  private pendingExecCommand: string | null = null;
   /** Per-shell known_hosts tracker — first connection prints the warning. */
 
   constructor(opts: LinuxBashShellOptions) {
@@ -185,29 +159,13 @@ export class LinuxBashShell extends AbstractShell {
       // device output (banner / error) like the simulator did before.
     }
 
-    // ssh launch intercept: shared helper resolves the target. Handles
-    // -V, exec mode, network errors, and pending auth — emits the rich
-    // OpenSSH banner (known_hosts, MOTD, Last login) on success.
-    const sshAttempt = await tryInterpretSshLaunch(line, {
+    const ssh = await this.nestedSsh.launch(line, {
       defaultUser: this.user,
       sourceIp: firstConfiguredIp(this.device),
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
       sourceDevice: this.device,
-    });
-    if (sshAttempt) {
-      if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'
-          || sshAttempt.kind === 'exec') {
-        return sshAttempt.result;
-      }
-      const brokerResult = await this.runSshAuthViaBroker(
-        sshAttempt.pendingAuth,
-        parseSshExecCommand(line),
-      );
-      if (brokerResult) return brokerResult;
-      this.pendingSshAuth = sshAttempt.pendingAuth;
-      this.pendingExecCommand = parseSshExecCommand(line);
-      return sshAttempt.result;
-    }
+    }, this.input);
+    if (ssh) return ssh;
 
     const dev = this.device as unknown as LinuxDevice;
     const raw = (this.session && this.device instanceof LinuxMachine
@@ -255,32 +213,6 @@ export class LinuxBashShell extends AbstractShell {
     return s.replace(/\n+$/, '').split('\n');
   }
 
-  private async runSshAuthViaBroker(
-    auth: PendingSshAuth,
-    execCmd: string | null,
-  ): Promise<ShellLineResult | null> {
-    if (!this.input.capabilities().interactive) return null;
-    const promptText = `${auth.user}@${auth.host}'s password: `;
-    for (;;) {
-      const pw = await this.input.password(promptText);
-      if (pw === null) return { output: [] };
-      const finalised = await finalisePendingAuth(auth, pw);
-      if (finalised.kind === 'refused') {
-        return { output: finalised.message.split('\n') };
-      }
-      if (finalised.kind === 'exec') {
-        return { output: [...finalised.banner, ...finalised.lines] };
-      }
-      if (finalised.kind === 'success') {
-        return { output: [...finalised.banner], childShell: finalised.shell };
-      }
-      if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
-        return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
-      }
-      this.input.emit('Permission denied, please try again.');
-    }
-  }
-
   private async tryInteractiveRead(line: string): Promise<ShellLineResult | null> {
     if (!this.input.capabilities().interactive) return null;
     const trimmed = line.trim();
@@ -298,48 +230,8 @@ export class LinuxBashShell extends AbstractShell {
     return { output: [] };
   }
 
-  /**
-   * Handle the password the OUTER terminal collected after our last
-   * pendingInput directive. Validates against the target device's
-   * credential store and either pushes the remote shell or asks for
-   * another attempt (up to OpenSSH's three strikes).
-   */
   async handleInput(value: string): Promise<ShellLineResult> {
-    const auth = this.pendingSshAuth;
-    if (!auth) return { output: [] };
-
-    const finalised = await finalisePendingAuth(auth, value);
-    if (finalised.kind === 'refused') {
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-      return { output: finalised.message.split('\n') };
-    }
-    if (finalised.kind === 'success') {
-      const execCmd = this.pendingExecCommand;
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-
-      // Interactive login: hand the shell back as a child plus the
-      // OpenSSH banner the host terminal will write before activating.
-      return {
-        output: [...finalised.banner],
-        childShell: finalised.shell,
-      };
-    }
-    if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-      return {
-        output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`],
-      };
-    }
-    return {
-      output: ['Permission denied, please try again.'],
-      pendingInput: {
-        kind: 'password',
-        promptText: `${auth.user}@${auth.host}'s password: `,
-      },
-    };
+    return this.nestedSsh.answer(value);
   }
 }
 

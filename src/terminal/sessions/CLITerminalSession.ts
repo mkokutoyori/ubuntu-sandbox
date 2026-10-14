@@ -697,7 +697,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     this.remoteSubShell = new SshInteractiveSubShell(
       session, channel, user, typedHost, `/home/${user}`,
       () => session.disconnect(),
-      promptHost, undefined,
+      promptHost,
       establishedSessionLiveness(session, this.device as Equipment, address),
       (footer) => { this.addLine(footer); this.remoteSubShell = null; this.updatePrompt(); },
       (line) => this.addLine(line),

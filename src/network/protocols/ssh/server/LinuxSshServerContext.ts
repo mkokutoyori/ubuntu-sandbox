@@ -59,7 +59,8 @@ import { PortNumber } from '@/network/core/ports/PortNumber';
 import { SshAuthThrottler } from '../security/SshAuthThrottler';
 import { Fail2banAgent } from '../security/Fail2banAgent';
 import { SshInteractiveShell } from './SshInteractiveShell';
-import { SubShellStack } from '@/shell/SubShellStack';
+import { SubShellStack, type SubShellStackStep } from '@/shell/SubShellStack';
+import { NestedSshLogin, type NestedSshLaunch } from '@/shell/NestedSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
@@ -528,22 +529,53 @@ export class LinuxSshServerContext implements ISshServerContext {
         user: userCtx.username,
         primaryKind: 'bash',
       });
+      const nestedSsh = new NestedSshLogin();
+      let challengeOwner: 'login' | 'stack' | null = null;
+      const stepResult = (
+        output: readonly string[], exitCode: number, pendingInput: SubShellStackStep['pendingInput'],
+        owner: 'login' | 'stack',
+      ) => {
+        challengeOwner = pendingInput === undefined ? null : owner;
+        return { stdout: joinLines(output), stderr: '', exitCode, ...(pendingInput ? { pendingInput } : {}) };
+      };
+      const loginResult = (launch: NestedSshLaunch) => {
+        const banner = launch.childShell ? subShells.push(launch.childShell) : [];
+        return stepResult([...launch.output, ...banner], 0, launch.pendingInput, 'login');
+      };
       const EXIT_WORDS = new Set(['exit', 'logout']);
       return {
         streamSession: session,
         loginShellKind: 'bash',
         takeSessionHold: () => device.takeSessionHold(),
-        execute: async (line: string) => {
-          if (subShells.active) {
-            const routed = await subShells.process(line);
-            return { stdout: joinLines(routed.output), stderr: '', exitCode: routed.exitCode };
+        provideInput: async (value: string) => {
+          if (challengeOwner === 'stack' && subShells.active) {
+            const routed = await subShells.answer(value);
+            return stepResult(routed.output, routed.exitCode, routed.pendingInput, 'stack');
           }
+          return loginResult(await nestedSsh.answer(value));
+        },
+        execute: async (line: string, onProgress?: (text: string) => void) => {
+          if (subShells.active) {
+            const routed = await subShells.process(line, onProgress);
+            return stepResult(routed.output, routed.exitCode, routed.pendingInput, 'stack');
+          }
+          nestedSsh.abandon();
+          challengeOwner = null;
           if (EXIT_WORDS.has(line.trim().toLowerCase())) {
             const left = device.handleExitInSession(session);
             return { stdout: 'logout\n', stderr: '', exitCode: 0, sessionEnded: !left.inSu };
           }
           const launched = subShells.launch(line);
           if (launched) return { stdout: joinLines(launched), stderr: '', exitCode: 0 };
+          if (interactive) {
+            const ssh = await nestedSsh.launch(line, {
+              defaultUser: session.user,
+              sourceIp: serverIp,
+              sourceHostname: device.getSshHostname(),
+              sourceDevice: device as unknown as Equipment,
+            });
+            if (ssh) return loginResult(ssh);
+          }
           const toRun = ptyRc.trim() ? `${ptyRc}\n${line}` : line;
           const stdout = await device.executeCommandInSession(toRun, session, { color: interactive });
           // The shell session's own `$?`, captured by the command pipeline.
@@ -556,11 +588,16 @@ export class LinuxSshServerContext implements ISshServerContext {
         // resolve against its cwd rather than the device-wide one.
         getCompletions: (line: string) =>
           [...(subShells.getCompletions(line) ?? device.getCompletionsForSession(line, session))],
+        getCompletionsAsync: (line: string) => subShells.getCompletionsAsync(line),
+        interrupt: () => subShells.interruptForeground(),
         isNested: () => subShells.active,
         // The engine runs here, on this channel's own session: the file
         // it opens, the permissions it obeys and the swap file it drops
         // are the remote's, not the client's.
-        setWindowSize: (rows: number, cols: number) => { session.windowSize = { rows, cols }; },
+        setWindowSize: (rows: number, cols: number) => {
+          session.windowSize = { rows, cols };
+          subShells.resize(rows, cols);
+        },
         openEditor: (commandLine: string) => {
           installDefaultEditors();
           const launch = parseEditorLaunch(commandLine);
@@ -594,6 +631,7 @@ export class LinuxSshServerContext implements ISshServerContext {
         // close); a one-shot exec ran its single command to completion,
         // so its shell exits normally instead.
         dispose: () => {
+          nestedSsh.abandon();
           subShells.dispose();
           agentSocket?.release();
           device.closeShellSession(session, { graceful: !interactive });

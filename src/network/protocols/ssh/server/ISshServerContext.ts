@@ -38,7 +38,7 @@ export interface SshServerConfig {
 export interface ILinuxShell {
   readonly streamSession?: unknown;
   takeSessionHold?(): number;
-  execute(line: string): Promise<{
+  execute(line: string, onProgress?: (text: string) => void): Promise<{
     stdout: string;
     stderr: string;
     exitCode: number;
@@ -72,6 +72,10 @@ export interface ILinuxShell {
    * remote offers no completion (docs/PRD-SSH-Unification.md §4bis B1).
    */
   getCompletions?(line: string): string[];
+  /** Completion that needs a round trip (a nested hop's own candidates). */
+  getCompletionsAsync?(line: string): Promise<string[] | null>;
+  /** Ctrl+C reaching a job that runs below this shell (a nested hop). */
+  interrupt?(): boolean;
   /**
    * True when `?` is a help key on this remote rather than an ordinary
    * character — a network CLI, not a POSIX shell where `?` is a glob.

@@ -99,7 +99,10 @@ export class SshShellSession {
   }
 
   signal(name: string): void {
-    if (name === 'INT') this.services.interactive?.interruptForeground();
+    if (name === 'INT') {
+      if (this.services.shell.interrupt?.() === true) return;
+      this.services.interactive?.interruptForeground();
+    }
   }
 
   handleRequest(request: ChannelRequest): void {
@@ -120,8 +123,11 @@ export class SshShellSession {
       }
       case COMPLETE_REQUEST: {
         const line = decodeStringPayload(payload) ?? '';
-        const candidates = this.services.shell.getCompletions?.(line) ?? [];
-        void this.channel.request(COMPLETE_RESULT_REQUEST, encodeStringPayload(JSON.stringify(candidates)), false);
+        const shell = this.services.shell;
+        void (async () => {
+          const candidates = (await shell.getCompletionsAsync?.(line)) ?? shell.getCompletions?.(line) ?? [];
+          void this.channel.request(COMPLETE_RESULT_REQUEST, encodeStringPayload(JSON.stringify(candidates)), false);
+        })();
         reply(true);
         return;
       }
@@ -221,13 +227,7 @@ export class SshShellSession {
     this.pendingInput = false;
     if (!wasPending) {
       const started = this.services.interactive?.tryStartStreaming(line, {
-        onChunk: (text) => {
-          if (!this.streamAnnounced) {
-            this.streamAnnounced = true;
-            void this.channel.request(STREAM_BEGIN_REQUEST, undefined, false);
-          }
-          this.writeText(`${text}\n`);
-        },
+        onChunk: (text) => this.streamChunk(text),
         onDone: () => this.complete({ stdout: '', stderr: '', exitCode: 0 }),
         session: this.services.shell.isNested?.() === true ? undefined : this.services.shell.streamSession,
       }) ?? false;
@@ -235,8 +235,16 @@ export class SshShellSession {
     }
     const run = wasPending && this.services.shell.provideInput
       ? this.services.shell.provideInput(line)
-      : this.services.shell.execute(line);
+      : this.services.shell.execute(line, (text) => this.streamChunk(text));
     void run.then((result) => this.complete(result));
+  }
+
+  private streamChunk(text: string): void {
+    if (!this.streamAnnounced) {
+      this.streamAnnounced = true;
+      void this.channel.request(STREAM_BEGIN_REQUEST, undefined, false);
+    }
+    this.writeText(`${text}\n`);
   }
 
   private complete(result: {

@@ -2488,7 +2488,6 @@ export class LinuxTerminalSession extends TerminalSession {
     // tab-completion, history). If the remote machine cannot be
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
-    const linuxRemoteDevice = findLinuxMachineByIp(host);
     const client = this.device instanceof LinuxMachine && this.shell
       ? this.device.openSshClientProcess(args, session, this.shell)
       : null;
@@ -2516,7 +2515,7 @@ export class LinuxTerminalSession extends TerminalSession {
       const promptHost = (opening !== null ? parseBashPrompt(opening)?.hostname : undefined) ?? host;
       this.activeSubShell = new SshInteractiveSubShell(
         session, channel, user, host, `/home/${user}`, onSessionEnd,
-        promptHost, linuxRemoteDevice ?? undefined,
+        promptHost,
         establishedSessionLiveness(session, this.device, host),
         (footer) => this.onRemoteHangup(footer),
         (line) => this.addLine(line),
