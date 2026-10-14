@@ -6,6 +6,7 @@ export interface PolicyProbe {
   readonly sourceIP: string;
   readonly destIP: string;
   readonly protocol: number;
+  readonly tos?: number;
   readonly sourcePort?: number;
   readonly destPort?: number;
   readonly icmpType?: number;

@@ -943,6 +943,19 @@ export function addressMask(
   };
 }
 
+export function isoMoment(name: string, help: string): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    parts: [
+      { name: `${name}-date`, type: 'WORD', description: 'Date, format yyyy-mm-dd.' },
+      { name, type: 'TIME', description: 'Time of day, format hh:mm:ss.' },
+    ],
+    defaultValue: undefined,
+  };
+}
+
 export function moment(name: string, help: string): FortiAttributeSpec {
   return {
     name,

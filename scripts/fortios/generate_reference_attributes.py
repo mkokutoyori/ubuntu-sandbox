@@ -143,7 +143,7 @@ def emit(e, schema_names):
     elif typ == 'ipv4-classnet':
         body = f"addressMask({q(name)}, {q(help_text)}, ['0.0.0.0', '0.0.0.0'])"
     elif typ == 'datetime':
-        body = f"moment({q(name)}, {q(help_text)})"
+        body = f"{'isoMoment' if name == 'policy-expiry-date' else 'moment'}({q(name)}, {q(help_text)})"
     else:
         body = f"{'text' if typ == 'var-string' else 'word'}({q(name)}, {q(help_text)})"
     return body
@@ -153,7 +153,7 @@ def main():
     for title, (module, const) in TABLES.items():
         entries = [{**detail(e), 'path': ''} for e in parse_toplevel(title)[0]]
         have = {a.lower() for a in dump[title]}
-        lines = ["import { addressMask, choice, count, enable, moment, text, word, type FortiAttributeSpec } from './types';", '',
+        lines = ["import { addressMask, choice, count, enable, isoMoment, moment, text, word, type FortiAttributeSpec } from './types';", '',
                  "const list = (name: string, help: string): FortiAttributeSpec => ({",
                  "  name, help, quoted: true, multiValue: true, parts: [{ name, type: 'WORD', description: help }],", "});", '',
                  f"export const {const}: readonly FortiAttributeSpec[] = Object.freeze(["]

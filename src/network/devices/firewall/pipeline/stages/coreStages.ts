@@ -1045,6 +1045,7 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
           sourceIP: policySource(context, packet, services).sourceIP.toString(),
           destIP: policyDestination(context, packet, services).destinationIP.toString(),
           protocol: packet.protocol,
+          tos: packet.tos,
           ...transportPorts(policyDestination(context, packet, services)),
           application: context.identifiedApplication,
           destinationTranslated: context.destinationTranslated === true,

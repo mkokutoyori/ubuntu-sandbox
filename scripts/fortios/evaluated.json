@@ -1,1 +1,14 @@
-{"firewall policy": [], "firewall vip": [], "firewall address": []}
+{
+ "firewall policy": [
+  "srcaddr6-negate",
+  "dstaddr6-negate",
+  "tos",
+  "tos-mask",
+  "tos-negate",
+  "policy-expiry",
+  "policy-expiry-date-utc",
+  "policy-expiry-date"
+ ],
+ "firewall vip": [],
+ "firewall address": []
+}

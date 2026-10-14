@@ -3,7 +3,7 @@ import {
   choice, count, enable, reference, refList, text, word,
   type FortiCommitContext, type FortiObjectView, type FortiTableSpec,
 } from './types';
-import type { TcpSessionWithoutSyn } from '../../../model/SecurityRule';
+import type { SecurityRule, TcpSessionWithoutSyn } from '../../../model/SecurityRule';
 
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp', 'firewall vip'];
 const ADDRESS6_TARGETS = ['firewall address6', 'firewall addrgrp6'];
@@ -218,6 +218,10 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       destination6: [...object.effective('dstaddr6')],
       service: normaliseAny(object.effective('service')),
       sourceNegated: object.effective('srcaddr-negate')[0] === 'enable',
+      source6Negated: object.effective('srcaddr6-negate')[0] === 'enable',
+      destination6Negated: object.effective('dstaddr6-negate')[0] === 'enable',
+      tos: tosMatch(object),
+      expiresAt: expiryOf(object),
       destinationNegated: object.effective('dstaddr-negate')[0] === 'enable',
       serviceNegated: object.effective('service-negate')[0] === 'enable',
       schedule: timeRestriction(object.effective('schedule')[0]),
@@ -301,4 +305,28 @@ function tcpSessionWithoutSyn(raw: string | undefined): TcpSessionWithoutSyn | u
 function sessionTtl(raw: string | undefined): number | undefined {
   const parsed = Number.parseInt(raw ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseByte(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return 0;
+  const parsed = Number.parseInt(raw, raw.toLowerCase().startsWith('0x') ? 16 : 10);
+  return Number.isFinite(parsed) ? parsed & 0xff : 0;
+}
+
+function tosMatch(object: FortiObjectView): SecurityRule['tos'] {
+  const value = object.effective('tos')[0];
+  if (value === undefined || value === '') return undefined;
+  return {
+    value: parseByte(value),
+    mask: parseByte(object.effective('tos-mask')[0]),
+    negated: object.effective('tos-negate')[0] === 'enable',
+  };
+}
+
+function expiryOf(object: FortiObjectView): number | undefined {
+  if (object.effective('policy-expiry')[0] !== 'enable') return undefined;
+  const written = Date.parse(`${object.effective('policy-expiry-date').join('T')}Z`);
+  if (Number.isFinite(written)) return written;
+  const epoch = Number.parseInt(object.effective('policy-expiry-date-utc')[0] ?? '', 10);
+  return Number.isFinite(epoch) && epoch > 0 ? epoch * 1000 : undefined;
 }
