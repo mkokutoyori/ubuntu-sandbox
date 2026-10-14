@@ -29,6 +29,7 @@ export interface SshServerConfig {
   readonly passwordAuthentication: boolean;
   readonly pubkeyAuthentication: boolean;
   readonly kbdInteractiveAuthentication?: boolean;
+  readonly authMethodOrder?: readonly ('publickey' | 'keyboard' | 'password')[];
   readonly clientAliveInterval?: number;
   readonly clientAliveCountMax?: number;
   readonly loginGraceTime?: number;

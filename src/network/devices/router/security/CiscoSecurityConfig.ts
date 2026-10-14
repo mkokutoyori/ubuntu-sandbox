@@ -145,11 +145,15 @@ export interface AaaLegacyServerHost {
   port?: number;
 }
 
+export const DEFAULT_SSH_AUTHENTICATION: readonly string[] = ['publickey', 'keyboard', 'password'];
+export const DEFAULT_SSH_PUBLICKEY_ALGORITHMS: readonly string[] = ['x509v3-ssh-rsa', 'ssh-rsa'];
+
 export const SSH_DEFAULTS = Object.freeze({
   version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false, maxStartups: 128, strictHostKeyCheck: false,
   macAlgorithms: [] as string[], encryptionAlgorithms: [] as string[],
   kexAlgorithms: [] as string[], hostKeyAlgorithms: [] as string[],
   clientEncryptionAlgorithms: [] as string[], clientMacAlgorithms: [] as string[], scpServerEnabled: false,
+  authenticationMethods: [] as string[], publickeyAlgorithms: [] as string[],
 });
 
 export interface SshConfig {
@@ -170,6 +174,8 @@ export interface SshConfig {
   clientEncryptionAlgorithms: string[];
   clientMacAlgorithms: string[];
   scpServerEnabled: boolean;
+  authenticationMethods: string[];
+  publickeyAlgorithms: string[];
 }
 
 export interface LoginControl {
@@ -452,8 +458,16 @@ export class CiscoSecurityConfig {
   sshServerLimits(): {
     maxAuthTries: number; loginGraceTime: number;
     maxStartups: { start: number; rate: number; full: number };
+    passwordAuthentication: boolean; pubkeyAuthentication: boolean; kbdInteractiveAuthentication: boolean;
+    authMethodOrder: ('publickey' | 'keyboard' | 'password')[];
   } {
+    const order = (this.ssh.authenticationMethods.length > 0 ? this.ssh.authenticationMethods : DEFAULT_SSH_AUTHENTICATION) as ('publickey' | 'keyboard' | 'password')[];
+    const keyAlgorithms = this.ssh.publickeyAlgorithms.length > 0 ? this.ssh.publickeyAlgorithms : DEFAULT_SSH_PUBLICKEY_ALGORITHMS;
     return {
+      passwordAuthentication: order.includes('password'),
+      pubkeyAuthentication: order.includes('publickey') && keyAlgorithms.includes('ssh-rsa'),
+      kbdInteractiveAuthentication: order.includes('keyboard'),
+      authMethodOrder: order,
       maxAuthTries: this.ssh.authRetries,
       loginGraceTime: this.ssh.timeoutSec,
       maxStartups: { start: this.ssh.maxStartups, rate: 100, full: this.ssh.maxStartups },
@@ -715,6 +729,12 @@ export class CiscoSecurityConfig {
     }
     if (this.ssh.hostKeyAlgorithms.length) {
       lines.push(`ip ssh server algorithm hostkey ${this.ssh.hostKeyAlgorithms.join(' ')}`);
+    }
+    if (this.ssh.authenticationMethods.length) {
+      lines.push(`ip ssh server algorithm authentication ${this.ssh.authenticationMethods.join(' ')}`);
+    }
+    if (this.ssh.publickeyAlgorithms.length) {
+      lines.push(`ip ssh server algorithm publickey ${this.ssh.publickeyAlgorithms.join(' ')}`);
     }
     if (this.ssh.clientMacAlgorithms.length) {
       lines.push(`ip ssh client algorithm mac ${this.ssh.clientMacAlgorithms.join(' ')}`);

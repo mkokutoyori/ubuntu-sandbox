@@ -749,7 +749,7 @@ export class SshServerHandler {
     if (credentialless) {
       success = this.ctx.auth.acceptsWithoutCredential?.(user) ?? false;
     } else if (challenge && responses) {
-      success = challenge.verify(user, responses);
+      success = challenge.verifyAsync ? await challenge.verifyAsync(user, responses) : challenge.verify(user, responses);
     } else if (method === 'password') {
       success = this.ctx.config.passwordAuthentication && (
         this.ctx.auth.checkPasswordAsync

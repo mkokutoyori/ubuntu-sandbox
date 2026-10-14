@@ -27,6 +27,7 @@ export interface KeyboardInteractiveChallenge {
   readonly instruction: string;
   readonly prompts: readonly { readonly prompt: string; readonly echo: boolean }[];
   verify(user: string, responses: readonly string[]): boolean;
+  verifyAsync?(user: string, responses: readonly string[]): Promise<boolean>;
 }
 
 /**

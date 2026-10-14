@@ -139,7 +139,7 @@ describe('the Windows terminal, at the cmd prompt', () => {
     const terminal = await windowsTerminal(win);
     await type(terminal, `ssh ${LEGACY} -l admin ${ROUTER}`);
 
-    expect(terminal.currentInputMode).toMatchObject({ type: 'password', promptText: `admin@${ROUTER}'s password: ` });
+    expect(terminal.currentInputMode).toMatchObject({ type: 'password', promptText: `(admin@${ROUTER}) Password: ` });
   });
 });
 
