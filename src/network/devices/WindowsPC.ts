@@ -75,7 +75,7 @@ import {
   runSshKeygenCommand, runSshKeygenInteractive, type SshKeygenHost, type SshKeygenTerminal,
 } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
-  runSshAddCommand, runSshAgentCommand, type SshAgentHost,
+  runSshAddCommandNow, runSshAgentCommand, type SshAgentHost,
 } from '@/network/protocols/ssh/SshAgentCommands';
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
@@ -2536,7 +2536,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
-  private agentHost(): SshAgentHost {
+  private agentHost(): SshAgentHost & { readonly agent: LocalAgentPort } {
     return {
       agent: new LocalAgentPort(this.sshAgent),
       reader: {
@@ -3600,7 +3600,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
       case 'ssh-add':
-        return runSshAddCommand(args, this.agentHost()).then((outcome) => outcome.output);
       case 'ssh-keygen':
       case 'ssh-agent':
       case 'ssh-keyscan':
@@ -4066,6 +4065,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     switch (name) {
       case 'ssh-keygen': return runSshKeygenCommand(args, this.keygenHost()).output;
       case 'ssh-agent':  return runSshAgentCommand(args, this.agentHost()).output;
+      case 'ssh-add':    return runSshAddCommandNow(args, this.agentHost()).output;
       default:
         return runSshKeyscanCommand(args, {
           resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
@@ -4082,7 +4082,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     this.commandExitStatus = null;
-    if (lower === 'ssh-keygen' || lower === 'ssh-agent' || lower === 'ssh-keyscan') {
+    if (lower === 'ssh-keygen' || lower === 'ssh-agent'
+      || lower === 'ssh-add' || lower === 'ssh-keyscan') {
       return this.runOpenSshTool(lower, args);
     }
     if (lower === 'systeminfo') return this.cmdSysteminfo();

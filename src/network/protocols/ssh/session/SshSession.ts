@@ -74,10 +74,12 @@ import {
 } from '../transport/SshTransport';
 import { SshConfig } from '../SshConfig';
 import { parseRekeyLimit } from '../transport/RekeyLimit';
-import { SshConnection, type SshOpenFailure } from '../connection/SshConnection';
+import { SshConnection, type ConnectionChannel, type SshOpenFailure } from '../connection/SshConnection';
 import { channelAsStream } from '../connection/ChannelStream';
 import { SSH_OPEN_ADMINISTRATIVELY_PROHIBITED } from '../transport/SshMessageNumbers';
-import { decodeBoundPort, decodeForwardedTcpip, encodeDirectTcpip, encodeTcpipForward } from '../connection/ChannelPayloads';
+import {
+  decodeBoundPort, decodeForwardedTcpip, encodeDirectTcpip, encodeStringPayload, encodeTcpipForward,
+} from '../connection/ChannelPayloads';
 import { resolveAlgorithmDirectives } from '../transport/SshAlgorithms';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 import { hostKeyChangedWarning } from '../hostkey/HostKeyChangedWarning';
@@ -299,6 +301,21 @@ export class SshSession implements ISshSession {
     }
     const channel: ISshSftpChannel = this.channelManager.openSftp(this.connection);
     return ok(channel);
+  }
+
+  openExecStream(command: string): Promise<ConnectionChannel | null> {
+    const connection = this.connection;
+    if (!connection || !this.isConnected) return Promise.resolve(null);
+    const channel = connection.beginOpen('session');
+    return new Promise((resolve) => {
+      channel.whenOpened((failure) => {
+        if (failure !== null) {
+          resolve(null);
+          return;
+        }
+        void channel.request('exec', encodeStringPayload(command), true).then((accepted) => resolve(accepted ? channel : null));
+      });
+    });
   }
 
   openDirectTcpip(host: string, port: number): Promise<Result<TcpConnection>> {

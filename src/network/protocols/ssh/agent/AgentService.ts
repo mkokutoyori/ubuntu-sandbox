@@ -14,6 +14,21 @@ export interface AgentPort {
   removeAll(): Promise<boolean>;
 }
 
+export type AgentCall =
+  | { readonly op: 'identities' }
+  | { readonly op: 'add'; readonly key: AgentKey }
+  | { readonly op: 'remove'; readonly blob: Uint8Array }
+  | { readonly op: 'removeAll' };
+
+export function callAgent(port: AgentPort, call: AgentCall): Promise<unknown> {
+  switch (call.op) {
+    case 'identities': return port.identities();
+    case 'add': return port.add(call.key);
+    case 'remove': return port.remove(call.blob);
+    case 'removeAll': return port.removeAll();
+  }
+}
+
 export async function answerAgentRequest(port: AgentPort, request: AgentRequest): Promise<AgentReply> {
   switch (request.kind) {
     case 'request-identities':
@@ -48,8 +63,23 @@ export function serveAgentChannel(channel: ConnectionChannel, port: AgentPort): 
 export class LocalAgentPort implements AgentPort {
   constructor(private readonly agent: SshAgent) {}
 
+  callNow(call: AgentCall): unknown {
+    switch (call.op) {
+      case 'identities':
+        return this.agent.list().map((key) => ({ blob: base64ToBytes(key.blob), comment: key.comment }));
+      case 'add':
+        this.agent.install(call.key);
+        return true;
+      case 'remove':
+        return this.agent.removeKey(bytesToBase64(call.blob));
+      case 'removeAll':
+        this.agent.removeAll();
+        return true;
+    }
+  }
+
   async identities(): Promise<readonly AgentIdentityEntry[]> {
-    return this.agent.list().map((key) => ({ blob: base64ToBytes(key.blob), comment: key.comment }));
+    return this.callNow({ op: 'identities' }) as AgentIdentityEntry[];
   }
 
   async sign(blob: Uint8Array, data: Uint8Array, flags: number): Promise<Uint8Array | null> {
@@ -57,17 +87,15 @@ export class LocalAgentPort implements AgentPort {
   }
 
   async add(key: AgentKey): Promise<boolean> {
-    this.agent.install(key);
-    return true;
+    return this.callNow({ op: 'add', key }) as boolean;
   }
 
   async remove(blob: Uint8Array): Promise<boolean> {
-    return this.agent.removeKey(bytesToBase64(blob));
+    return this.callNow({ op: 'remove', blob }) as boolean;
   }
 
   async removeAll(): Promise<boolean> {
-    this.agent.removeAll();
-    return true;
+    return this.callNow({ op: 'removeAll' }) as boolean;
   }
 }
 

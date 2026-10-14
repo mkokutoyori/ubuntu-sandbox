@@ -2533,9 +2533,9 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       contains: [/^600$/m],
     },
     {
-      name: 'scp without -p uses the default umask mode (664)',
+      name: 'scp without -p applies the umask to the source mode (666 -> 644)',
       setup: async (l) => {
-        await l.linux1.executeCommand('echo plain > /tmp/plain && chmod 600 /tmp/plain');
+        await l.linux1.executeCommand('echo plain > /tmp/plain && chmod 666 /tmp/plain');
         await l.linux1.executeCommand('sshpass -p admin scp /tmp/plain alice@10.0.0.2:/tmp/plain');
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/plain',

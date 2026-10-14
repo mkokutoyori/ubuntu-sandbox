@@ -1,5 +1,6 @@
 import { agentKeyOf, type SshAgentKeyReader } from './SshAgent';
-import type { AgentPort } from './agent/AgentService';
+import { callAgent, type AgentCall, type AgentPort, type LocalAgentPort } from './agent/AgentService';
+import type { AgentIdentityEntry } from './agent/AgentWire';
 import type { SshKeygenOutcome } from './SshKeygenCommand';
 import type { OpenSshRelease } from './OpenSshRelease';
 import { OPENSSH_DEFAULT_IDENTITY_FILES } from './SshConnectOptions';
@@ -90,7 +91,7 @@ function loadPublic(path: string, host: SshAgentHost): PublicKeyOnDisk | null {
   return fromPrivate === null ? null : { blob: fromPrivate.blob, label: fromPrivate.algorithm, comment: '(null)' };
 }
 
-async function addFile(path: string, host: SshAgentHost, quiet: boolean, lines: string[]): Promise<boolean> {
+function* addFile(path: string, host: SshAgentHost, quiet: boolean, lines: string[]): AgentProgram<boolean> {
   const material = host.reader.readFile(path);
   if (material === null) {
     lines.push(`${path}: No such file or directory`);
@@ -107,7 +108,7 @@ async function addFile(path: string, host: SshAgentHost, quiet: boolean, lines: 
     lines.push(`Error loading key "${path}": invalid format`);
     return false;
   }
-  if (!await host.agent.add(key)) {
+  if (!(yield { op: 'add', key })) {
     lines.push(`Could not add identity "${path}": agent refused operation`);
     return false;
   }
@@ -115,13 +116,13 @@ async function addFile(path: string, host: SshAgentHost, quiet: boolean, lines: 
   return true;
 }
 
-async function deleteFile(path: string, host: SshAgentHost, quiet: boolean, lines: string[]): Promise<boolean> {
+function* deleteFile(path: string, host: SshAgentHost, quiet: boolean, lines: string[]): AgentProgram<boolean> {
   const key = loadPublic(path, host);
   if (key === null) {
     lines.push(`Bad key file ${path}: No such file or directory`);
     return false;
   }
-  if (!await host.agent.remove(base64ToBytes(key.blob))) {
+  if (!(yield { op: 'remove', blob: base64ToBytes(key.blob) })) {
     lines.push(`Could not remove identity "${path}": agent refused operation`);
     return false;
   }
@@ -129,8 +130,8 @@ async function deleteFile(path: string, host: SshAgentHost, quiet: boolean, line
   return true;
 }
 
-async function listIdentities(host: SshAgentHost, listing: string, hash: string): Promise<SshKeygenOutcome> {
-  const entries = await host.agent.identities();
+function* listIdentities(listing: string, hash: string): AgentProgram<SshKeygenOutcome> {
+  const entries = (yield { op: 'identities' }) as readonly AgentIdentityEntry[];
   if (entries.length === 0) return { output: 'The agent has no identities.', exitCode: 1 };
   const lines = entries.map((entry) => {
     const blob = bytesToBase64(entry.blob);
@@ -143,10 +144,10 @@ async function listIdentities(host: SshAgentHost, listing: string, hash: string)
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
-export async function runSshAddCommand(
+function* sshAddProgram(
   args: readonly string[],
   host: SshAgentHost,
-): Promise<SshKeygenOutcome> {
+): AgentProgram<SshKeygenOutcome> {
   const unreachable = host.agentUnreachable();
   if (unreachable !== null) return { output: unreachable, exitCode: 2 };
   let deleting = false;
@@ -186,9 +187,9 @@ export async function runSshAddCommand(
     }
   }
   if (listing !== null && deleteAll) return { output: 'Invalid combination of actions', exitCode: 255 };
-  if (listing !== null) return listIdentities(host, listing, hash);
+  if (listing !== null) return yield* listIdentities(listing, hash);
   if (deleteAll) {
-    await host.agent.removeAll();
+    yield { op: 'removeAll' };
     return { output: quiet ? '' : 'All identities removed.', exitCode: 0 };
   }
   const defaults = files.length === 0;
@@ -200,8 +201,30 @@ export async function runSshAddCommand(
   const lines: string[] = [];
   let failed = defaults && targets.length === 0;
   for (const path of targets) {
-    const done = deleting ? await deleteFile(path, host, quiet, lines) : await addFile(path, host, quiet, lines);
+    const done = deleting ? yield* deleteFile(path, host, quiet, lines) : yield* addFile(path, host, quiet, lines);
     if (!done) failed = true;
   }
   return { output: lines.join('\n'), exitCode: failed ? 1 : 0 };
+}
+
+type AgentProgram<T> = Generator<AgentCall, T, unknown>;
+
+export async function runSshAddCommand(
+  args: readonly string[],
+  host: SshAgentHost,
+): Promise<SshKeygenOutcome> {
+  const program = sshAddProgram(args, host);
+  let step = program.next();
+  while (!step.done) step = program.next(await callAgent(host.agent, step.value as AgentCall));
+  return step.value as SshKeygenOutcome;
+}
+
+export function runSshAddCommandNow(
+  args: readonly string[],
+  host: SshAgentHost & { readonly agent: LocalAgentPort },
+): SshKeygenOutcome {
+  const program = sshAddProgram(args, host);
+  let step = program.next();
+  while (!step.done) step = program.next(host.agent.callNow(step.value as AgentCall));
+  return step.value as SshKeygenOutcome;
 }

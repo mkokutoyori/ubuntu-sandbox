@@ -674,6 +674,14 @@ export class SshServerHandler {
 
     const policyRefusal = this.ctx.userPolicyRefusal?.(user, clientIp) ?? null;
     if (policyRefusal !== null) {
+      this.eventBus.emit({
+        kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
+        user,
+        reason: 'user_not_allowed',
+        ip: clientIp,
+        method,
+      });
       this.ctx.recordAuthFailure?.(user, clientIp, policyRefusal);
       return { ok: false };
     }

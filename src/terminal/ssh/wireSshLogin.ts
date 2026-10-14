@@ -198,7 +198,8 @@ export async function resolveSshTarget(
   device: Equipment, typedHost: string, port: number, dialect: SshDialect = OPENSSH_SSH,
 ): Promise<SshTargetResolution> {
   const resolver = device as unknown as { resolveHostname(name: string): Promise<IPAddress | null> };
-  const resolved = IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
+  const literal = parseDialAddress(typedHost) !== null ? typedHost : null;
+  const resolved = literal ?? IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
   if (!resolved) {
     return { kind: 'failed', line: dialect.unresolved(typedHost, port) };
   }

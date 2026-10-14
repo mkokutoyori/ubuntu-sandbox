@@ -194,7 +194,8 @@ import { SshdServerConfig } from '../../protocols/ssh/server/SshdServerConfig';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
-import { parseScpEndpoint, parseSshAuthority, type SshAuthority } from '../../protocols/ssh/Scp';
+import { parseScpArgs, parseScpEndpoint, parseSshAuthority, type SshAuthority } from '../../protocols/ssh/Scp';
+import { scpDownload, scpUpload } from '../../protocols/ssh/scp/ScpWireClient';
 import { SftpInteractiveSession } from '../../protocols/ssh/sftp/SftpInteractiveSession';
 import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
@@ -1624,25 +1625,25 @@ export class LinuxCommandExecutor {
     const resolution = await resolveSshTarget(this.localDevice as never, hostPart, options.port, OPENSSH_SSH);
     if (resolution.kind === 'failed') return { output: `${cmd}: ${resolution.line}\n`, exitCode: 255 };
 
+    if (cmd === 'scp') {
+      const wire = await this.connectWireSsh(
+        hostPart, remoteUser, offeredPassword, options.port, options.identities, options.strict,
+        options.authentication, options.algorithms, resolution.address);
+      if (!wire.session) {
+        const denial = wire.denial ?? wire.keyExchangeFailure ?? wire.hostKeyRefusal ?? wire.connectionFailure;
+        return { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 255 };
+      }
+      try {
+        return await this.runScpOverWire(args, wire.session);
+      } finally {
+        wire.session.disconnect();
+      }
+    }
+
     const { fs: wireFs, denial, release } = await this.tryOpenWireSftpFs(
-      hostPart, remoteUser, offeredPassword, options, cmd === 'scp' ? 'scp' : 'sftp', resolution.address);
+      hostPart, remoteUser, offeredPassword, options, 'sftp', resolution.address);
     if (!wireFs) {
       return { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 };
-    }
-    if (cmd === 'scp') {
-      const localFs = new VfsSftpFileSystem(this.vfs, {
-        uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
-      });
-      const session = new ScpSession({
-        args,
-        local: { fs: localFs, cwd: this.cwd },
-        resolveRemote: () => wireFs,
-      });
-      try {
-        return await session.run();
-      } finally {
-        release?.();
-      }
     }
 
     const session = new SftpInteractiveSession({
@@ -1656,6 +1657,36 @@ export class LinuxCommandExecutor {
     session.run(SftpCommandScript.parse(batchVerbs ?? stdinArg ?? ''));
     release?.();
     return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
+  }
+
+  private async runScpOverWire(args: string[], session: SshSession): Promise<{ output: string; exitCode: number }> {
+    const parsed = parseScpArgs(args);
+    if (!parsed) return { output: 'usage: scp [-options] source ... target', exitCode: 1 };
+    const local = new VfsSftpFileSystem(this.vfs, {
+      uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
+    });
+    const flags = `${parsed.recursive ? ' -r' : ''}${parsed.preserve ? ' -p' : ''}`;
+    const lines: string[] = [];
+    for (const source of parsed.sources) {
+      if (source.remote === parsed.destination.remote) {
+        return { output: 'scp: remote-to-remote copy is not supported', exitCode: 1 };
+      }
+      const pushing = !source.remote;
+      const remotePath = (pushing ? parsed.destination.path : source.path) || '.';
+      const stream = await session.openExecStream(`scp${flags} ${pushing ? '-t' : '-f'} '${remotePath.replace(/'/g, "'\\''")}'`);
+      if (stream === null) return { output: [...lines, 'scp: Connection closed'].join('\n'), exitCode: 1 };
+      const transfer = {
+        local,
+        localPath: local.normalizePath(pushing ? source.path : parsed.destination.path, this.cwd),
+        recursive: parsed.recursive,
+        preserve: parsed.preserve,
+        quiet: parsed.quiet,
+      };
+      const result = pushing ? await scpUpload(stream, transfer) : await scpDownload(stream, transfer);
+      lines.push(...result.lines);
+      if (!result.ok) return { output: [...lines, result.error ?? 'scp: Connection closed'].join('\n'), exitCode: 1 };
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
   }
 
   /**
