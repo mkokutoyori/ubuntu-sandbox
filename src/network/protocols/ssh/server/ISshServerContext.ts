@@ -38,7 +38,7 @@ export interface SshServerConfig {
 export interface ILinuxShell {
   readonly streamSession?: unknown;
   takeSessionHold?(): number;
-  execute(line: string): Promise<{
+  execute(line: string, onProgress?: (text: string) => void): Promise<{
     stdout: string;
     stderr: string;
     exitCode: number;
@@ -72,6 +72,10 @@ export interface ILinuxShell {
    * remote offers no completion (docs/PRD-SSH-Unification.md §4bis B1).
    */
   getCompletions?(line: string): string[];
+  /** Completion that needs a round trip (a nested hop's own candidates). */
+  getCompletionsAsync?(line: string): Promise<string[] | null>;
+  /** Ctrl+C reaching a job that runs below this shell (a nested hop). */
+  interrupt?(): boolean;
   /**
    * True when `?` is a help key on this remote rather than an ordinary
    * character — a network CLI, not a POSIX shell where `?` is a glob.
@@ -122,6 +126,12 @@ export interface ILinuxShell {
    * `:!cmd` are the remote's own (docs/PRD-SSH-Unification.md §4bis B3).
    */
   openEditor?(commandLine: string): EditorSession | null;
+  /**
+   * The editor a nested hop would open, reached through that hop's own
+   * channel: this shell only relays keystrokes and screens, as the `ssh`
+   * client of an intermediate host relays its pty.
+   */
+  editorRelay?(): EditorRelay | null;
   /** The client's terminal changed size (window-change, RFC 4254 §6.7). */
   setWindowSize?(rows: number, cols: number): void;
   /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
@@ -247,6 +257,7 @@ export interface DirectTcpipRequest {
 }
 
 import type { SftpAccountNames } from '../sftp/SftpWireSession';
+import type { EditorRelay } from '@/shell/SubShellStack';
 
 export interface RemoteForwardRequest {
   readonly user: SshUserContext;

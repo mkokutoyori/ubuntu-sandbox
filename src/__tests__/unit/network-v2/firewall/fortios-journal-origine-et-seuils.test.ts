@@ -133,7 +133,7 @@ async function parSsh(poste: LinuxPC, ...lines: string[]): Promise<TerminalSessi
   for (let i = 0; i < 10; i++) await tick();
 
   for (const line of lines) {
-    const foreground = host.foreground;
+    const foreground = host;
     foreground.setInput(line);
     foreground.setInputBuf(line);
     host.handleKey(key('Enter'));
@@ -152,13 +152,13 @@ async function parTelnet(poste: LinuxPC, ...lines: string[]): Promise<TerminalSe
 
   for (const reponse of ['admin', ADMIN_PASSWORD]) {
     if (host.currentInputMode.type === 'password') host.setPasswordBuf(reponse);
-    else { host.foreground.setInput(reponse); host.foreground.setInputBuf(reponse); }
+    else { host.setInput(reponse); host.setInputBuf(reponse); }
     host.handleKey(key('Enter'));
     for (let i = 0; i < 10; i++) await tick();
   }
 
   for (const line of lines) {
-    const foreground = host.foreground;
+    const foreground = host;
     foreground.setInput(line);
     foreground.setInputBuf(line);
     host.handleKey(key('Enter'));

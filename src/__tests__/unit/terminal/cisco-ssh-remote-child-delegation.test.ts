@@ -2,7 +2,7 @@
  * SSH from one Cisco/Huawei device's interactive terminal session into
  * another must delegate EVERY key (not just the prompt/banner text) to the
  * remote child session — exactly like Windows/Linux already do via
- * `if (this.hasActiveChild) return this.foreground.handleKey(e);` at the
+ * `if (this.hasActiveChild) return this.handleKey(e);` at the
  * top of their `handleKey()` override.
  *
  * CLITerminalSession (the shared Cisco/Huawei base) had no such override,

@@ -190,7 +190,7 @@ export class Console {
 
   async type(line: string): Promise<void> {
     const s = this.session;
-    s.foreground.setInput(line); s.foreground.setInputBuf(line); s.handleKey(key('Enter'));
+    s.setInput(line); s.setInputBuf(line); s.handleKey(key('Enter'));
     await this.settle();
   }
 
@@ -211,7 +211,7 @@ export class Console {
     }
   }
 
-  get prompt(): string { return this.session.foreground.getPrompt(); }
+  get prompt(): string { return this.session.getPrompt(); }
   get transcript(): string { return this.session.lines.map((l) => l.text).join('\n'); }
   get mode(): string { return this.session.currentInputMode.type; }
 

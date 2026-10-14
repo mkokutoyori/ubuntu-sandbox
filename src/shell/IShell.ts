@@ -117,7 +117,7 @@ export interface IShell extends IShellBase {
   getDeactivationBanner(): readonly string[];
 
   /** Run one user-typed line; the result drives stack & display updates. */
-  processLine(line: string): Promise<ShellLineResult> | ShellLineResult;
+  processLine(line: string, onProgress?: (text: string) => void): Promise<ShellLineResult> | ShellLineResult;
 
   /**
    * Called by the host terminal after a `pendingInput` directive has been

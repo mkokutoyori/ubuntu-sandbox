@@ -5589,8 +5589,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    *
    * Le niveau vient du compte, la ligne vty pouvant l'imposer par
    * `privilege level N` — c'est la meme regle que la session
-   * interactive applique deja (`prepareAsRemoteUser`), lue ici au meme
-   * endroit pour que les deux portes ne puissent pas diverger.
+   * interactive applique deja, lue ici au meme endroit pour que les
+   * deux portes ne puissent pas diverger.
    */
   async runSshCommand(user: string, command: string): Promise<{ output: string; exitCode: number }> {
     const sync = this.runSshCommandSync(user, command);

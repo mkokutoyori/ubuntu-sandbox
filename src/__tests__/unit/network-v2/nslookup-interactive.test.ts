@@ -1,7 +1,7 @@
 /**
  * PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1/P1 — the interactive `nslookup` REPL
  * exposed in `LinuxTerminalSession` (bare `nslookup`, no arguments), driven
- * the same way a React view would (`session.foreground.setInput(...)` +
+ * the same way a React view would (`session.setInput(...)` +
  * Enter), mirroring `ftp-cli.test.ts`'s UI-level testing style. Shares the
  * exact same DNS transport and BIND9 lab setup as
  * `dig-nslookup-enriched.test.ts` — this is a REPL wrapper test, not a
@@ -91,7 +91,7 @@ async function flush(times = 8): Promise<void> {
 }
 
 async function type(session: TerminalSession, line: string): Promise<void> {
-  const fg = session.foreground;
+  const fg = session;
   fg.setInput(line);
   fg.setInputBuf(line);
   session.handleKey(key('Enter'));
@@ -117,7 +117,7 @@ describe('nslookup interactive REPL (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1)', (
     await term.init();
 
     await type(term, 'nslookup');
-    expect(term.foreground.getPrompt()).toBe('> ');
+    expect(term.getPrompt()).toBe('> ');
     expectContains(term, `Default Server:  ${NS1_IP}`);
     expectContains(term, `Address:  ${NS1_IP}#53`);
   });
@@ -176,10 +176,10 @@ describe('nslookup interactive REPL (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1)', (
     await term.init();
 
     await type(term, 'nslookup');
-    expect(term.foreground.getPrompt()).toBe('> ');
+    expect(term.getPrompt()).toBe('> ');
 
     await type(term, 'exit');
-    expect(term.foreground.getPrompt()).not.toBe('> ');
+    expect(term.getPrompt()).not.toBe('> ');
   });
 
   it('a missing name reports the real `nslookup` no-answer error without exiting', async () => {
@@ -191,7 +191,7 @@ describe('nslookup interactive REPL (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1)', (
     await type(term, 'missing.example.com');
 
     expectContains(term, `** server can't find missing.example.com: NXDOMAIN`);
-    expect(term.foreground.getPrompt()).toBe('> ');
+    expect(term.getPrompt()).toBe('> ');
   });
 
   it('`nslookup <domain> <server>` (non-interactive form) is unaffected — no subshell entry', async () => {
@@ -200,7 +200,7 @@ describe('nslookup interactive REPL (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1)', (
     await term.init();
 
     await type(term, `nslookup www.example.com ${NS1_IP}`);
-    expect(term.foreground.getPrompt()).not.toBe('> ');
+    expect(term.getPrompt()).not.toBe('> ');
     expectContains(term, 'Address: 10.0.1.80');
   });
 });

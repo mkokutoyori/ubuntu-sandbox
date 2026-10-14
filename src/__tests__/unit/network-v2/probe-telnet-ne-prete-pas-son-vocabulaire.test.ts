@@ -92,7 +92,7 @@ function key(k: string): KeyEvent {
 const tick = () => new Promise<void>((r) => setTimeout(r, 25));
 
 async function typeLine(host: TerminalSession, line: string): Promise<void> {
-  const fg = host.foreground;
+  const fg = host;
   fg.setInput(line);
   fg.setInputBuf(line);
   host.handleKey(key('Enter'));
@@ -100,11 +100,11 @@ async function typeLine(host: TerminalSession, line: string): Promise<void> {
 }
 
 async function tabOn(host: TerminalSession, line: string): Promise<string> {
-  host.foreground.setInput(line);
-  host.foreground.setInputBuf(line);
+  host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Tab'));
   for (let i = 0; i < 12; i++) await tick();
-  return host.foreground.input;
+  return host.input;
 }
 
 function transcript(host: TerminalSession): string {
@@ -186,8 +186,8 @@ describe('over telnet, the vendor CLI stops answering for the remote', () => {
     const { cisco } = await lab();
     const host = await ciscoOnTelnet(cisco);
 
-    host.foreground.setInput('show ');
-    host.foreground.setInputBuf('show ');
+    host.setInput('show ');
+    host.setInputBuf('show ');
     host.handleKey(key('?'));
     for (let i = 0; i < 12; i++) await tick();
 
@@ -205,10 +205,10 @@ describe('both origins now say the same thing', () => {
     await typeLine(host, 'admin');
     await typeLine(host, 'Secret123');
 
-    host.foreground.setInputBuf('conf');
+    host.setInputBuf('conf');
     host.handleKey(key('Tab'));
     for (let i = 0; i < 12; i++) await tick();
-    expect(host.foreground.getInputBuf()).toBe('conf');
+    expect(host.getInputBuf()).toBe('conf');
   }, 30000);
 });
 

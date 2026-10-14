@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-09-25T18:30:51.827Z
+Generated: 2026-10-14T19:59:18.430Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -386,7 +386,7 @@ Total steps: 370
     Mode: tunnel
 
 [105/370] r1 R1# show crypto ipsec security-association lifetime
-  Security association lifetime: 4608000 kilobytes / 3600 seconds
+  Security-association lifetime: 4608000 kilobytes/3600 seconds
 
 
 --- [106] § crypto map (static/dynamic) ---
@@ -596,7 +596,7 @@ Total steps: 370
   No IPSec SAs established.
 
 [147/370] r1 R1# show crypto engine connections active
-  No active crypto sessions.
+<empty>
 
 
 --- [148] § IKEv2 ---
@@ -826,10 +826,10 @@ Total steps: 370
   No IPSec SAs established.
 
 [213/370] r1 R1# show crypto session
-  No active crypto sessions.
+<empty>
 
 [214/370] r1 R1# show crypto session detail
-  No active crypto sessions.
+<empty>
 
 
 --- [215] § DMVPN / NHRP ---
@@ -965,7 +965,7 @@ Total steps: 370
     Certificate Serial Number: 0000000000001002
     Subject: CN=R1.lab.local
     Issuer: CN=http://10.0.0.5:80
-    Validity: 2026-09-25T18:30:54.075Z to 2027-09-25T18:30:54.075Z
+    Validity: 2026-10-14T19:59:20.000Z to 2027-10-14T19:59:20.000Z
   CA Certificate (Trustpoint CA1):
     Status: Available
     Certificate Serial Number: 0000000000001001
@@ -984,10 +984,10 @@ Total steps: 370
 
 --- [249] § crypto clear / debug ---
 [249/370] r1 R1# clear crypto isakmp
-  No matching ISAKMP SAs found
+<empty>
 
 [250/370] r1 R1# clear crypto sa
-  No matching IPSec SAs found
+<empty>
 
 [251/370] r1 R1# clear crypto session
 <empty>
@@ -1058,7 +1058,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3564EX3E
+  Processor board ID FTX6030ACF2
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1068,9 +1068,9 @@ Total steps: 370
 [263/370] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 4054 bytes
+  Current configuration : 4428 bytes
   !
-  ! Last configuration change at 18:30:54 UTC Fri Sep 25 2026 by console
+  ! Last configuration change at 19:59:20 UTC Wed Oct 14 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1087,6 +1087,10 @@ Total steps: 370
    subject-name CN=R1.lab.local
    revocation-check crl
    rsakeypair SSH-KEY
+  !
+  crypto ipsec security-association replay window-size 1024
+  crypto ipsec security-association idle-time 600
+  crypto ipsec df-bit clear
   !
   crypto isakmp policy 10
    encryption aes 192
@@ -1126,7 +1130,8 @@ Total steps: 370
   crypto isakmp key MyPreShared0 address 10.0.0.2
   crypto isakmp key MyPreShared1 address 10.0.0.0
   crypto isakmp key MyPreShared2 hostname peer.lab.local
-  crypto isakmp keepalive 20 3
+  crypto isakmp nat keepalive 20
+  crypto isakmp keepalive 10 3 periodic
   crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
   !
   crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
@@ -1199,6 +1204,7 @@ Total steps: 370
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   crypto map CMAP
   !
   interface GigabitEthernet0/2
    no ip address
@@ -1214,18 +1220,21 @@ Total steps: 370
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode ipsec ipv4
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
+   tunnel protection ipsec profile IPSEC-PROF shared
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Virtual-Template1
    no ip address
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode ipsec ipv4
   !
   interface Tunnel100
@@ -1238,6 +1247,7 @@ Total steps: 370
    ip nhrp map 172.20.0.2 10.0.0.2
    ip nhrp map multicast 224.0.0.0 10.0.0.2
    ip nhrp nhs 172.20.0.2
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode gre multipoint
    tunnel source GigabitEthernet0/1
    tunnel key 100
@@ -1411,8 +1421,8 @@ Total steps: 370
   
   Gateway of last resort is not set
   
-        1.0.0.0/8 is subnetted, 1 subnets
-  C        1.1.1.1/32 is directly connected, Loopback0
+        1.0.0.0/32 is subnetted, 1 subnets
+  C        1.1.1.1 is directly connected, Loopback0
         10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
   C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
@@ -1544,7 +1554,7 @@ Total steps: 370
   No IPSec SAs established.
 
 [289/370] r1 R1# show crypto session
-  No active crypto sessions.
+<empty>
 
 [290/370] r1 R1# show crypto map
   Crypto Map "CMAP" 10 ipsec-isakmp
@@ -1632,18 +1642,18 @@ Total steps: 370
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 18:30:51.820: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:30:51.821: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:30:51.823: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:30:51.823: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:30:52.054: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:52.502: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:52.792: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:53.106: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:53.383: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:53.637: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:53.900: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:54.088: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:18.425: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:59:18.425: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:59:18.427: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:59:18.427: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:59:18.597: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:18.943: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.146: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.350: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.571: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.737: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.898: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:20.122: %SYS-5-CONFIG_I: Configured from console by console
 
 [297/370] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1655,7 +1665,7 @@ Total steps: 370
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 200 (1/100 of seconds), resolution is 4001
-  reference time is EE613C5E.8C49BA5E (18:30:54.548 UTC Fri Sep 25 2026)
+  reference time is EE7A5D98.7AE147AE (19:59:20.480 UTC Wed Oct 14 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1666,7 +1676,7 @@ Total steps: 370
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [300/370] r1 R1# show clock
-  *18:30:54.000 UTC Fri Sep 25 2026
+  *19:59:20.000 UTC Wed Oct 14 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1852,7 +1862,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3564EX3E
+  Processor board ID FTX6030ACF2
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1862,9 +1872,9 @@ Total steps: 370
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 4054 bytes
+  Current configuration : 4428 bytes
   !
-  ! Last configuration change at 18:30:54 UTC Fri Sep 25 2026 by console
+  ! Last configuration change at 19:59:20 UTC Wed Oct 14 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1881,6 +1891,10 @@ Total steps: 370
    subject-name CN=R1.lab.local
    revocation-check crl
    rsakeypair SSH-KEY
+  !
+  crypto ipsec security-association replay window-size 1024
+  crypto ipsec security-association idle-time 600
+  crypto ipsec df-bit clear
   !
   crypto isakmp policy 10
    encryption aes 192
@@ -1920,7 +1934,8 @@ Total steps: 370
   crypto isakmp key MyPreShared0 address 10.0.0.2
   crypto isakmp key MyPreShared1 address 10.0.0.0
   crypto isakmp key MyPreShared2 hostname peer.lab.local
-  crypto isakmp keepalive 20 3
+  crypto isakmp nat keepalive 20
+  crypto isakmp keepalive 10 3 periodic
   crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
   !
   crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
@@ -1993,6 +2008,7 @@ Total steps: 370
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   crypto map CMAP
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2008,18 +2024,21 @@ Total steps: 370
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode ipsec ipv4
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
+   tunnel protection ipsec profile IPSEC-PROF shared
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Virtual-Template1
    no ip address
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode ipsec ipv4
   !
   interface Tunnel100
@@ -2032,6 +2051,7 @@ Total steps: 370
    ip nhrp map 172.20.0.2 10.0.0.2
    ip nhrp map multicast 224.0.0.0 10.0.0.2
    ip nhrp nhs 172.20.0.2
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode gre multipoint
    tunnel source GigabitEthernet0/1
    tunnel key 100
@@ -2066,8 +2086,8 @@ Total steps: 370
   
   Gateway of last resort is not set
   
-        1.0.0.0/8 is subnetted, 1 subnets
-  C        1.1.1.1/32 is directly connected, Loopback0
+        1.0.0.0/32 is subnetted, 1 subnets
+  C        1.1.1.1 is directly connected, Loopback0
         10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
   C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
@@ -2262,8 +2282,10 @@ Total steps: 370
   
   
   ------------------ show ip dhcp binding ------------------
-  IP address       Client-id/              Lease expiration        Type
-                   Hardware address
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2288,22 +2310,22 @@ Total steps: 370
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 18:30:51.820: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:30:51.821: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:30:51.823: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:30:51.823: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:30:52.054: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:52.502: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:52.792: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:53.106: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:53.383: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:53.637: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:53.900: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:30:54.088: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:18.425: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:59:18.425: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:59:18.427: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:59:18.427: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:59:18.597: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:18.943: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.146: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.350: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.571: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.737: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:19.898: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:20.122: %SYS-5-CONFIG_I: Configured from console by console
 
 [314/370] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3564EX3E
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX6030ACF2
 
 [315/370] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2335,6 +2357,10 @@ Total steps: 370
   SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
   Minimum expected Diffie Hellman key size : 1024 bits
+  Hostkey Algorithms:x509v3-ssh-rsa,ssh-rsa
+  Encryption Algorithms:aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc
+  MAC Algorithms:hmac-sha1,hmac-sha1-96
+  KEX Algorithms:diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1
 
 [321/370] r1 R1# show line
      Tty Typ     Tx/Rx A Modem Roty AccO AccI  Uses  Noise  Overruns  Int
@@ -2375,6 +2401,7 @@ Total steps: 370
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   crypto map CMAP
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2390,18 +2417,21 @@ Total steps: 370
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode ipsec ipv4
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
+   tunnel protection ipsec profile IPSEC-PROF shared
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Virtual-Template1
    no ip address
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode ipsec ipv4
   !
   interface Tunnel100
@@ -2414,6 +2444,7 @@ Total steps: 370
    ip nhrp map 172.20.0.2 10.0.0.2
    ip nhrp map multicast 224.0.0.0 10.0.0.2
    ip nhrp nhs 172.20.0.2
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode gre multipoint
    tunnel source GigabitEthernet0/1
    tunnel key 100
@@ -2425,7 +2456,7 @@ Total steps: 370
 [327/370] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 4054 bytes
+  Current configuration : 4428 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2438,6 +2469,9 @@ Total steps: 370
    subject-name CN=R1.lab.local
    revocation-check crl
    rsakeypair SSH-KEY
+  crypto ipsec security-association replay window-size 1024
+  crypto ipsec security-association idle-time 600
+  crypto ipsec df-bit clear
   crypto isakmp policy 10
    encryption aes 192
    hash sha256
@@ -2471,7 +2505,8 @@ Total steps: 370
   crypto isakmp key MyPreShared0 address 10.0.0.2
   crypto isakmp key MyPreShared1 address 10.0.0.0
   crypto isakmp key MyPreShared2 hostname peer.lab.local
-  crypto isakmp keepalive 20 3
+  crypto isakmp nat keepalive 20
+  crypto isakmp keepalive 10 3 periodic
   crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
   crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
    mode transport
@@ -2527,6 +2562,7 @@ Total steps: 370
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   crypto map CMAP
   interface GigabitEthernet0/2
    no ip address
   interface GigabitEthernet0/3
@@ -2538,16 +2574,19 @@ Total steps: 370
    delay 500
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode ipsec ipv4
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
+   tunnel protection ipsec profile IPSEC-PROF shared
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   interface Virtual-Template1
    no ip address
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode ipsec ipv4
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
@@ -2559,6 +2598,7 @@ Total steps: 370
    ip nhrp map 172.20.0.2 10.0.0.2
    ip nhrp map multicast 224.0.0.0 10.0.0.2
    ip nhrp nhs 172.20.0.2
+   tunnel protection ipsec profile IPSEC-PROF
    tunnel mode gre multipoint
    tunnel source GigabitEthernet0/1
    tunnel key 100
@@ -2730,6 +2770,7 @@ Total steps: 370
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Enable HTTP server
+    icmp               ICMP options
     local              Apply local PBR
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
@@ -2757,7 +2798,7 @@ Total steps: 370
     gdoi         Define a GDOI GET-VPN group
     ikev2        Define IKEv2 proposal
     ipsec        Configure IPSec policy
-    isakmp       Define an IKE policy
+    isakmp       Enable ISAKMP
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
@@ -2773,13 +2814,13 @@ Total steps: 370
     cdp            Enable CDP globally
     class-map      Remove a class map
     clock          Remove hardware calendar is a valid time source
-    crypto         Encryption module
+    crypto         Restore the default DF bit handling
     enable         Set enable secret
     event          Register an EEM applet
     hostname       Set system hostname
     interface      Remove a virtual interface
     ip             Disable IP routing
-    ipv6           IPv6 interface subcommands
+    ipv6           Remove the IPv6 prefix pool
     key            Define a key chain
     line           Enter line configuration
     lldp           Enable LLDP globally
@@ -2810,7 +2851,7 @@ Total steps: 370
 <empty>
 
 [369/370] r1 R1# show running-config | count !
-  41
+  42
 
 [370/370] r1 R1# write memory
   Building configuration...

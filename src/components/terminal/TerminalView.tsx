@@ -264,7 +264,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   // (docs/PRD-SSH-Unification.md §4bis B3).
   if (session.currentInputMode.type === 'remote-editor') {
     const remote = session.currentInputMode;
-    const done = () => session.foreground.editorExit(remote.controller.savedOnExit);
+    const done = () => session.editorExit(remote.controller.savedOnExit);
     return (
       <div className="h-full w-full flex flex-col">
         {remote.editorType === 'nano' ? (
@@ -291,13 +291,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   if (session.currentInputMode.type === 'editor') {
     const editorMode = session.currentInputMode;
-    // The editing device is whichever session is actually driving the
-    // overlay — for a plain terminal that's `session` itself, but over an
-    // SSH hop (or any nested child session) it's `session.foreground`,
-    // the same session `currentInputMode`/`editorSave`/`editorExit` above
-    // already delegate to (LinuxTerminalSession/WindowsTerminalSession
-    // `currentInputMode` overrides both forward to `foreground`).
-    const linuxSession = session.foreground as LinuxTerminalSession;
+    const linuxSession = session as LinuxTerminalSession;
     const linuxDevice = linuxSession.device as LinuxMachine;
     const fsContext = new LinuxEditorFsContext(linuxDevice, linuxSession.shell ?? undefined);
     const owner = linuxSession.shell?.user ?? linuxDevice.getCurrentUser();

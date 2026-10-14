@@ -21,7 +21,7 @@ import {
 } from '@/terminal/ssh/wireSshLogin';
 import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { OPENSSH_SSH } from '@/terminal/ssh/sshDialect';
-import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { IShell, ShellLineResult } from './IShell';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
 import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
@@ -145,6 +145,10 @@ export async function tryInterpretSshLaunch(
   };
   const run = pendingAuth.run = startLoginRun(pendingAuth);
   const first = await run.nextEvent();
+  if (first.kind === 'settled' && first.outcome.kind === 'connected') {
+    run.parked = first;
+    return { kind: 'pending', result: { output: drain(run) }, pendingAuth };
+  }
   if (first.kind === 'settled') {
     const refusal = await outcomeOf(pendingAuth, run, first.outcome);
     return {
@@ -240,6 +244,10 @@ function drain(run: LoginRun): string[] {
   return run.lines.splice(0).filter((line) => line !== RETRY_NOTICE);
 }
 
+export function abandonPendingAuth(auth: PendingSshAuth): void {
+  auth.run?.io.cancel();
+}
+
 export async function finalisePendingAuth(
   auth: PendingSshAuth,
   password: string,
@@ -304,7 +312,7 @@ async function outcomeOf(
     outcome.session, channel, auth.user, auth.host,
     `/home/${auth.user}`,
     () => outcome.session.disconnect(),
-    promptHost, findLinuxMachineByIp(auth.host) ?? undefined,
+    promptHost,
     establishedSessionLiveness(outcome.session, auth.sourceDevice!, auth.host),
   );
   const shell = new WireRemoteShell({

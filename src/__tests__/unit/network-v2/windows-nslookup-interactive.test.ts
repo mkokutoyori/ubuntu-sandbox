@@ -91,7 +91,7 @@ async function flush(times = 8): Promise<void> {
 }
 
 async function type(session: TerminalSession, line: string): Promise<void> {
-  const fg = session.foreground;
+  const fg = session;
   fg.setInput(line);
   fg.setInputBuf(line);
   session.handleKey(key('Enter'));
@@ -117,7 +117,7 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
     await term.init();
 
     await type(term, 'nslookup');
-    expect(term.foreground.getPrompt()).toBe('> ');
+    expect(term.getPrompt()).toBe('> ');
     expectContains(term, `Default Server:  ${NS1_IP}`);
     expectContains(term, `Address:  ${NS1_IP}#53`);
   });
@@ -164,10 +164,10 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
     await term.init();
 
     await type(term, 'nslookup');
-    expect(term.foreground.getPrompt()).toBe('> ');
+    expect(term.getPrompt()).toBe('> ');
 
     await type(term, 'exit');
-    expect(term.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 
   it('`nslookup <domain> <server>` (non-interactive form) is unaffected — no subshell entry', async () => {
@@ -176,7 +176,7 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
     await term.init();
 
     await type(term, `nslookup www.example.com ${NS1_IP}`);
-    expect(term.foreground.getPrompt()).not.toBe('> ');
+    expect(term.getPrompt()).not.toBe('> ');
     expectContains(term, 'Address: 10.0.1.80');
   });
 
@@ -188,7 +188,7 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
     await term.init();
 
     await type(term, 'nslookup');
-    expect(term.foreground.getPrompt()).not.toBe('> ');
+    expect(term.getPrompt()).not.toBe('> ');
     expectContains(term, /No DNS servers available/);
     expectContains(term, /DNS Client \(Dnscache\) service is not running/);
   });

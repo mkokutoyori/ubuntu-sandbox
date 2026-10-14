@@ -16,16 +16,16 @@ async function sshFromHost(host: TerminalSession, line: string, password: string
   host.setInput(line);
   host.setInputBuf(line);
   host.handleKey(key('Enter'));
-  for (let i = 0; i < 8 && host.foreground.currentInputMode.type !== 'password'; i++) await tick();
-  if (host.foreground.currentInputMode.type === 'password') {
+  for (let i = 0; i < 8 && host.currentInputMode.type !== 'password'; i++) await tick();
+  if (host.currentInputMode.type === 'password') {
     host.setPasswordBuf(password);
     host.handleKey(key('Enter'));
   }
   for (let i = 0; i < 8; i++) await tick();
 }
 function runOnForeground(host: TerminalSession, line: string): void {
-  host.foreground.setInput(line);
-  host.foreground.setInputBuf(line);
+  host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Enter'));
 }
 function texts(s: TerminalSession): string[] { return s.lines.map((l) => l.text); }
@@ -68,7 +68,6 @@ describe('SSH from inside a remote session works recursively', () => {
     // no child session is pushed and `foreground` stays the host; the
     // sub-shell and its prompt are the tell
     // (docs/PRD-SSH-Unification.md §4bis B4).
-    expect(host.foreground).toBe(host);
     const hop = subShellOf(host);
     expect(hop).toBeInstanceOf(SshInteractiveSubShell);
     expect(hop!.getPrompt()).toMatch(/user@linuxB/);
@@ -88,7 +87,6 @@ describe('SSH from inside a remote session works recursively', () => {
 
     runOnForeground(host, 'exit');
     await tick();
-    expect(host.foreground).toBe(host);
     expect(subShellOf(host)).toBeNull();
   });
 

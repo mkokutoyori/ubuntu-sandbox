@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-09-25T18:34:58.524Z
+Generated: 2026-10-14T19:59:17.636Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -15,10 +15,20 @@ Total steps: 340
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 0
+  Number of aggregators:           0
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
+  ------+-------------+-----------+-----------------------------------------------
 
 [3/340] sw1 SW1# show etherchannel detail
   No EtherChannel groups configured
@@ -215,15 +225,25 @@ Total steps: 340
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 5
+  Number of aggregators:           5
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
-  1      Po1(SD)       LACP        Fa0/4(I) Fa0/5(I)
-  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
-  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
-  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
-  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
+  ------+-------------+-----------+-----------------------------------------------
+  1      Po1(SD)         LACP      Fa0/4(I)       Fa0/5(I)
+  2      Po2(SD)         LACP      Fa0/6(I)       Fa0/7(I)
+  3      Po3(SD)         LACP      Fa0/8(I)       Fa0/9(I)
+  4      Po4(SD)         LACP      Fa0/10(I)      Fa0/11(I)
+  5      Po5(SD)         LACP      Fa0/12(I)      Fa0/13(I)
 
 
 --- [64] § PAgP bundles loop (channel-groups 6..8, mode desirable) ---
@@ -282,15 +302,25 @@ Total steps: 340
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 5
+  Number of aggregators:           5
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
-  1      Po1(SD)       LACP        Fa0/4(I) Fa0/5(I)
-  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
-  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
-  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
-  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
+  ------+-------------+-----------+-----------------------------------------------
+  1      Po1(SD)         LACP      Fa0/4(I)       Fa0/5(I)
+  2      Po2(SD)         LACP      Fa0/6(I)       Fa0/7(I)
+  3      Po3(SD)         LACP      Fa0/8(I)       Fa0/9(I)
+  4      Po4(SD)         LACP      Fa0/10(I)      Fa0/11(I)
+  5      Po5(SD)         LACP      Fa0/12(I)      Fa0/13(I)
 
 
 --- [82] § static (mode on) bundle ---
@@ -316,16 +346,26 @@ Total steps: 340
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 6
+  Number of aggregators:           6
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
-  1      Po1(SD)       LACP        Fa0/4(I) Fa0/5(I)
-  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
-  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
-  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
-  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
-  9      Po9(SD)       -           Fa0/20(I) Fa0/21(I)
+  ------+-------------+-----------+-----------------------------------------------
+  1      Po1(SD)         LACP      Fa0/4(I)       Fa0/5(I)
+  2      Po2(SD)         LACP      Fa0/6(I)       Fa0/7(I)
+  3      Po3(SD)         LACP      Fa0/8(I)       Fa0/9(I)
+  4      Po4(SD)         LACP      Fa0/10(I)      Fa0/11(I)
+  5      Po5(SD)         LACP      Fa0/12(I)      Fa0/13(I)
+  9      Po9(SD)         -         Fa0/20(I)      Fa0/21(I)
 
 
 --- [89] § LACP per-port tuning loop ---
@@ -498,11 +538,21 @@ Total steps: 340
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 1
+  Number of aggregators:           1
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
-  10     Po10(SD)      LACP        Gi0/1(I)
+  ------+-------------+-----------+-----------------------------------------------
+  10     Po10(SD)        LACP      Gi0/1(I)
 
 [143/340] core CORE# show etherchannel 10 detail
        ^
@@ -726,16 +776,26 @@ Total steps: 340
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 6
+  Number of aggregators:           6
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
-  1      Po1(SD)       LACP        Fa0/22(I)
-  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
-  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
-  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
-  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
-  9      Po9(SD)       -           Fa0/20(I) Fa0/21(I)
+  ------+-------------+-----------+-----------------------------------------------
+  1      Po1(SD)         LACP      Fa0/22(I)
+  2      Po2(SD)         LACP      Fa0/6(I)       Fa0/7(I)
+  3      Po3(SD)         LACP      Fa0/8(I)       Fa0/9(I)
+  4      Po4(SD)         LACP      Fa0/10(I)      Fa0/11(I)
+  5      Po5(SD)         LACP      Fa0/12(I)      Fa0/13(I)
+  9      Po9(SD)         -         Fa0/20(I)      Fa0/21(I)
 
 
 --- [180] § full inspection ---
@@ -743,16 +803,26 @@ Total steps: 340
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 6
+  Number of aggregators:           6
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
-  1      Po1(SD)       LACP        Fa0/22(I)
-  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
-  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
-  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
-  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
-  9      Po9(SD)       -           Fa0/20(I) Fa0/21(I)
+  ------+-------------+-----------+-----------------------------------------------
+  1      Po1(SD)         LACP      Fa0/22(I)
+  2      Po2(SD)         LACP      Fa0/6(I)       Fa0/7(I)
+  3      Po3(SD)         LACP      Fa0/8(I)       Fa0/9(I)
+  4      Po4(SD)         LACP      Fa0/10(I)      Fa0/11(I)
+  5      Po5(SD)         LACP      Fa0/12(I)      Fa0/13(I)
+  9      Po9(SD)         -         Fa0/20(I)      Fa0/21(I)
 
 [182/340] sw1 SW1# show etherchannel detail
   Group: 1
@@ -1388,15 +1458,25 @@ Total steps: 340
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 5
+  Number of aggregators:           5
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
-  1      Po1(SD)       LACP        Fa0/4(I) Fa0/5(I)
-  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
-  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
-  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
-  10     Po10(SD)      LACP        Gi0/1(I)
+  ------+-------------+-----------+-----------------------------------------------
+  1      Po1(SD)         LACP      Fa0/4(I)       Fa0/5(I)
+  2      Po2(SD)         LACP      Fa0/6(I)       Fa0/7(I)
+  3      Po3(SD)         LACP      Fa0/8(I)       Fa0/9(I)
+  4      Po4(SD)         LACP      Fa0/10(I)      Fa0/11(I)
+  10     Po10(SD)        LACP      Gi0/1(I)
 
 [254/340] sw2 SW2# show etherchannel detail
   Group: 1
@@ -1651,12 +1731,12 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.741 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.654 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.035 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.035 ms
   
   --- 192.168.1.13 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.654/2.197/3.741/1.543 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...
@@ -1823,11 +1903,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 580 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       8 packets input, 644 bytes, 0 no buffer
+       Received 2 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       37 packets output, 2898 bytes, 0 underruns
+       38 packets output, 2962 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1848,7 +1928,7 @@ Total steps: 340
        Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       30 packets output, 2268 bytes, 0 underruns
+       31 packets output, 2332 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1865,11 +1945,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 586 bytes, 0 no buffer
+       8 packets input, 650 bytes, 0 no buffer
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       33 packets output, 2616 bytes, 0 underruns
+       34 packets output, 2680 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2314,7 +2394,7 @@ Total steps: 340
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       36 packets output, 2758 bytes, 0 underruns
+       37 packets output, 2822 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2335,7 +2415,7 @@ Total steps: 340
        Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       31 packets output, 2332 bytes, 0 underruns
+       32 packets output, 2396 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2356,7 +2436,7 @@ Total steps: 340
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       32 packets output, 2476 bytes, 0 underruns
+       33 packets output, 2540 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

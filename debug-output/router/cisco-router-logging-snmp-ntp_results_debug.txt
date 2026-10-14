@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-10-07T12:17:51.335Z
+Generated: 2026-10-14T19:54:11.148Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -220,18 +220,18 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  *Oct  7 12:17:51.328: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct  7 12:17:51.329: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct  7 12:17:51.331: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct  7 12:17:51.331: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct  7 12:17:51.562: %SYS-5-CONFIG_I: Configured from console by console
-  000001: *Oct  7 12:17:52.104 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:notify syslog contenttype plaintext
-  000002: *Oct  7 12:17:52.128 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:hidekeys
-  000003: *Oct  7 12:17:52.148 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:path flash:archive-config
-  000004: *Oct  7 12:17:52.160 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:maximum 14
-  000005: *Oct  7 12:17:52.170 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:time-period 1440
-  000006: *Oct  7 12:17:52.181 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:write-memory
-  000007: *Oct  7 12:17:52.183 UTC: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:54:11.141: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:54:11.143: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:54:11.145: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:54:11.145: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:54:11.372: %SYS-5-CONFIG_I: Configured from console by console
+  000001: *Oct 14 19:54:11.645 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:notify syslog contenttype plaintext
+  000002: *Oct 14 19:54:11.656 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:hidekeys
+  000003: *Oct 14 19:54:11.661 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:path flash:archive-config
+  000004: *Oct 14 19:54:11.669 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:maximum 14
+  000005: *Oct 14 19:54:11.674 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:time-period 1440
+  000006: *Oct 14 19:54:11.679 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:write-memory
+  000007: *Oct 14 19:54:11.680 UTC: %SYS-5-CONFIG_I: Configured from console by console
 
 [53/322] r1 R1# show logging history
   Syslog History Table:1 maximum table entry,
@@ -241,7 +241,7 @@ Total steps: 322
     SNMP notifications enabled, severity emergencies or higher
    entry number 1 : LINK-3-UPDOWN
     Interface GigabitEthernet0/1, changed state to up
-   timestamp: 1791375471
+   timestamp: 1792007651
 
 [54/322] r1 R1# show archive
   The maximum archive configurations allowed is 14.
@@ -546,8 +546,8 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 200 (1/100 of seconds), resolution is 4001
-  reference time is EE70B6F1.32B020C4 (12:17:53.198 UTC Wed Oct 7 2026)
+  ntp uptime is 100 (1/100 of seconds), resolution is 4001
+  reference time is EE7A5C64.4F5C28F5 (19:54:12.310 UTC Wed Oct 14 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 0.00 msec, peer dispersion is 0.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -555,69 +555,69 @@ Total steps: 322
 
 [125/322] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
-   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 15937.5
+   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 15937.5
+   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 15937.5
+   ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 15937.5
+   ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 15937.5
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [126/322] r1 R1# show ntp associations detail
   10.0.0.21 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE70B6F1.374BC6A7 (12:17:53.216 UTC Wed Oct 7 2026)
+  ref ID .INIT., time EE7A5C64.51EB851E (19:54:12.320 UTC Wed Oct 14 2026)
   our mode client, peer mode server, our poll intvl 64, peer poll intvl 64
-  root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
-  delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
+  root delay 0.00 msec, root disp 15937.50, reach 000, sync dist 15937.50
+  delay 0.00 msec, offset 0.0000 msec, dispersion 15937.50
   precision 2**18, version 4
   filtdelay =  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
-  filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
+  filterror =  15937.50  15937.95  15938.40  15938.85  15939.30  15939.75  15940.20  15940.65
   10.0.0.22 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE70B6F1.374BC6A7 (12:17:53.216 UTC Wed Oct 7 2026)
+  ref ID .INIT., time EE7A5C64.51EB851E (19:54:12.320 UTC Wed Oct 14 2026)
   our mode client, peer mode server, our poll intvl 64, peer poll intvl 64
-  root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
-  delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
+  root delay 0.00 msec, root disp 15937.50, reach 000, sync dist 15937.50
+  delay 0.00 msec, offset 0.0000 msec, dispersion 15937.50
   precision 2**18, version 4
   filtdelay =  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
-  filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
+  filterror =  15937.50  15937.95  15938.40  15938.85  15939.30  15939.75  15940.20  15940.65
   10.0.0.23 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE70B6F1.374BC6A7 (12:17:53.216 UTC Wed Oct 7 2026)
+  ref ID .INIT., time EE7A5C64.51EB851E (19:54:12.320 UTC Wed Oct 14 2026)
   our mode client, peer mode server, our poll intvl 64, peer poll intvl 64
-  root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
-  delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
+  root delay 0.00 msec, root disp 15937.50, reach 000, sync dist 15937.50
+  delay 0.00 msec, offset 0.0000 msec, dispersion 15937.50
   precision 2**18, version 4
   filtdelay =  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
-  filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
+  filterror =  15937.50  15937.95  15938.40  15938.85  15939.30  15939.75  15940.20  15940.65
   10.0.0.30 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE70B6F1.374BC6A7 (12:17:53.216 UTC Wed Oct 7 2026)
+  ref ID .INIT., time EE7A5C64.51EB851E (19:54:12.320 UTC Wed Oct 14 2026)
   our mode active, peer mode passive, our poll intvl 64, peer poll intvl 64
-  root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
-  delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
+  root delay 0.00 msec, root disp 15937.50, reach 000, sync dist 15937.50
+  delay 0.00 msec, offset 0.0000 msec, dispersion 15937.50
   precision 2**18, version 4
   filtdelay =  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
-  filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
+  filterror =  15937.50  15937.95  15938.40  15938.85  15939.30  15939.75  15940.20  15940.65
   10.0.0.40 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE70B6F1.374BC6A7 (12:17:53.216 UTC Wed Oct 7 2026)
+  ref ID .INIT., time EE7A5C64.51EB851E (19:54:12.320 UTC Wed Oct 14 2026)
   our mode client, peer mode server, our poll intvl 64, peer poll intvl 64
-  root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
-  delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
+  root delay 0.00 msec, root disp 15937.50, reach 000, sync dist 15937.50
+  delay 0.00 msec, offset 0.0000 msec, dispersion 15937.50
   precision 2**18, version 4
   filtdelay =  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
-  filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
+  filterror =  15937.50  15937.95  15938.40  15938.85  15939.30  15939.75  15940.20  15940.65
 
 [127/322] r1 R1# show clock
-  14:17:53.000 CEST Wed Oct 7 2026
+  21:54:12.000 CEST Wed Oct 14 2026
 
 [128/322] r1 R1# show clock detail
-  14:17:53.000 CEST Wed Oct 7 2026
+  21:54:12.000 CEST Wed Oct 14 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  14:17:53 CEST Wed Oct 7 2026
+  21:54:12 CEST Wed Oct 14 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1058,7 +1058,7 @@ Total steps: 322
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX7624S7AH
+  Processor board ID FTX445507LR
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1068,9 +1068,9 @@ Total steps: 322
 [215/322] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 4015 bytes
+  Current configuration : 4016 bytes
   !
-  ! Last configuration change at 14:17:54 CEST Wed Oct 7 2026 by console
+  ! Last configuration change at 21:54:12 CEST Wed Oct 14 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec localtime show-timezone
@@ -1529,110 +1529,110 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  000008: *Oct  7 12:17:52.272 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000009: *Oct  7 12:17:52.294 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community public RO
-  000010: *Oct  7 12:17:52.309 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community private RW
-  000011: *Oct  7 12:17:52.324 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community ro-acl RO 10
-  000012: *Oct  7 12:17:52.337 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:access-list 10 permit 10.0.0.0 0.0.0.255
-  000013: *Oct  7 12:17:52.351 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server location DC1-Rack5
-  000014: *Oct  7 12:17:52.364 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server contact noc@lab.local
-  000015: *Oct  7 12:17:52.379 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server chassis-id R1-CHASSIS
-  000016: *Oct  7 12:17:52.470 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server trap-timeout 30
-  000017: *Oct  7 12:17:52.490 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
-  000018: *Oct  7 12:17:52.505 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps ospf
-  000019: *Oct  7 12:17:52.520 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps bgp
-  000020: *Oct  7 12:17:52.535 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps config
-  000021: *Oct  7 12:17:52.551 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps cpu threshold
-  000022: *Oct  7 12:17:52.565 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps envmon
-  000023: *Oct  7 12:17:52.578 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.5 version 2c public
-  000024: *Oct  7 12:17:52.592 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
-  000025: *Oct  7 12:17:52.606 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.7 informs version 2c public
-  000026: *Oct  7 12:17:52.655 UTC: %SYS-5-CONFIG_I: Configured from console by console
-  000027: *Oct  7 12:17:52.701 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000028: *Oct  7 12:17:52.719 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view ALL iso included
-  000029: *Oct  7 12:17:52.733 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view LIMITED system included
-  000030: *Oct  7 12:17:52.747 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RO v3 priv read ALL
-  000031: *Oct  7 12:17:52.759 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
-  000032: *Oct  7 12:17:52.777 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-AUTH v3 auth read LIMITED
-  000033: *Oct  7 12:17:52.790 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user adminv3 GRP-RW v3 auth sha <removed> priv aes 256 <removed>
-  000034: *Oct  7 12:17:52.811 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user rouser GRP-RO v3 auth sha <removed>
-  000035: *Oct  7 12:17:52.838 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user noauth GRP-AUTH v3
-  000036: *Oct  7 12:17:52.859 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
-  000037: *Oct  7 12:17:52.874 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID local 800000090300DEADBEEF0001
-  000038: *Oct  7 12:17:52.887 UTC: %SYS-5-CONFIG_I: Configured from console by console
-  000039: *Oct  7 12:17:52.918 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000040: *Oct  7 13:17:52.936 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock timezone CET 1 0
-  000041: *Oct  7 13:17:52.948 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
-  000042: *Oct  7 13:17:52.963 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authenticate
-  000043: *Oct  7 13:17:52.975 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 1 <removed> NtpKey123
-  000044: *Oct  7 13:17:53.003 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
-  000045: *Oct  7 13:17:53.016 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
-  000046: *Oct  7 13:17:53.031 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.21 key 1 <removed>
-  000047: *Oct  7 13:17:53.045 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.22 key 1 <removed>
-  000048: *Oct  7 13:17:53.057 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.23 key 1 <removed>
-  000049: *Oct  7 13:17:53.083 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp peer 10.0.0.30
-  000050:  Oct  7 13:17:53.095 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp master 3
-  000051:  Oct  7 13:17:53.109 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp source Loopback0
-  000052:  Oct  7 13:17:53.123 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp update-calendar
-  000053:  Oct  7 13:17:53.146 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group peer 10
-  000054:  Oct  7 13:17:53.160 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group serve-only 10
-  000055:  Oct  7 13:17:53.174 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp logging
-  000056:  Oct  7 13:17:53.188 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:sntp server 10.0.0.40
-  000057:  Oct  7 13:17:53.188 CET: %SYS-5-CONFIG_I: Configured from console by console
-  000058:  Oct  7 13:17:53.247 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000059:  Oct  7 13:17:53.269 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export version 9
-  000060:  Oct  7 13:17:53.289 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export destination 10.0.0.50 9996
-  000061:  Oct  7 13:17:53.309 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export source Loopback0
-  000062:  Oct  7 13:17:53.331 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout active 1
-  000063:  Oct  7 13:17:53.354 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout inactive 15
-  000064:  Oct  7 13:17:53.366 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000065:  Oct  7 13:17:53.388 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow ingress
-  000066:  Oct  7 13:17:53.408 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow egress
-  000067:  Oct  7 13:17:53.433 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip route-cache flow
-  000068:  Oct  7 13:17:53.452 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow record FR1
-  000069:  Oct  7 13:17:53.461 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 source address
-  000070:  Oct  7 13:17:53.472 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 destination address
-  000071:  Oct  7 13:17:53.480 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match transport source-port
-  000072:  Oct  7 13:17:53.491 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter bytes
-  000073:  Oct  7 13:17:53.501 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter packets
-  000074:  Oct  7 13:17:53.522 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow exporter FE1
-  000075:  Oct  7 13:17:53.535 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:destination 10.0.0.50
-  000076:  Oct  7 13:17:53.548 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:transport udp 2055
-  000077:  Oct  7 13:17:53.562 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:export-protocol netflow-v9
-  000078:  Oct  7 13:17:53.576 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow monitor FM1
-  000079:  Oct  7 13:17:53.585 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:record FR1
-  000080:  Oct  7 13:17:53.594 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:exporter FE1
-  000081:  Oct  7 13:17:53.605 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cache timeout active 60
-  000082:  Oct  7 13:17:53.616 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000083:  Oct  7 13:17:53.634 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow monitor FM1 input
-  000084:  Oct  7 13:17:53.635 CET: %SYS-5-CONFIG_I: Configured from console by console
-  000085:  Oct  7 13:17:53.699 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000086:  Oct  7 13:17:53.715 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet IF-DOWN
-  000087:  Oct  7 13:17:53.725 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
-  000088:  Oct  7 13:17:53.741 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 syslog msg "WAN interface changed state"
-  000089:  Oct  7 13:17:53.750 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "enable"
-  000090:  Oct  7 13:17:53.760 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 3.0 cli command "show ip interface brief"
-  000091:  Oct  7 13:17:53.778 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet CRON-BACKUP
-  000092:  Oct  7 13:17:53.791 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event timer cron cron-entry "0 2 * * *"
-  000093:  Oct  7 13:17:53.803 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 cli command "enable"
-  000094:  Oct  7 13:17:53.813 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "copy running-config flash:nightly.cfg"
-  000095:  Oct  7 13:17:53.827 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager environment _email noc@lab.local
-  000096:  Oct  7 13:17:53.828 CET: %SYS-5-CONFIG_I: Configured from console by console
-  000097:  Oct  7 13:17:53.849 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000098:  Oct  7 13:17:53.872 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp run
-  000099:  Oct  7 13:17:53.890 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp timer 30
-  000100:  Oct  7 13:17:53.905 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp holdtime 120
-  000101:  Oct  7 13:17:53.921 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp advertise-v2
-  000102:  Oct  7 13:17:53.945 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp run
-  000103:  Oct  7 13:17:53.966 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp timer 30
-  000104:  Oct  7 13:17:53.987 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp holdtime 120
-  000105:  Oct  7 13:17:54.005 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp reinit 2
-  000106:  Oct  7 13:17:54.026 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000107:  Oct  7 13:17:54.037 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp enable
-  000108:  Oct  7 13:17:54.047 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp transmit
-  000109:  Oct  7 13:17:54.059 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp receive
-  000110:  Oct  7 13:17:54.060 CET: %SYS-5-CONFIG_I: Configured from console by console
-  000111:  Oct  7 13:17:54.288 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000008: *Oct 14 19:54:11.728 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000009: *Oct 14 19:54:11.739 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community public RO
+  000010: *Oct 14 19:54:11.747 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community private RW
+  000011: *Oct 14 19:54:11.756 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community ro-acl RO 10
+  000012: *Oct 14 19:54:11.763 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:access-list 10 permit 10.0.0.0 0.0.0.255
+  000013: *Oct 14 19:54:11.773 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server location DC1-Rack5
+  000014: *Oct 14 19:54:11.786 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server contact noc@lab.local
+  000015: *Oct 14 19:54:11.807 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server chassis-id R1-CHASSIS
+  000016: *Oct 14 19:54:11.842 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server trap-timeout 30
+  000017: *Oct 14 19:54:11.852 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+  000018: *Oct 14 19:54:11.860 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps ospf
+  000019: *Oct 14 19:54:11.868 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps bgp
+  000020: *Oct 14 19:54:11.876 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps config
+  000021: *Oct 14 19:54:11.884 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps cpu threshold
+  000022: *Oct 14 19:54:11.891 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps envmon
+  000023: *Oct 14 19:54:11.900 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.5 version 2c public
+  000024: *Oct 14 19:54:11.908 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+  000025: *Oct 14 19:54:11.916 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.7 informs version 2c public
+  000026: *Oct 14 19:54:11.938 UTC: %SYS-5-CONFIG_I: Configured from console by console
+  000027: *Oct 14 19:54:11.963 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000028: *Oct 14 19:54:11.975 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view ALL iso included
+  000029: *Oct 14 19:54:11.983 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view LIMITED system included
+  000030: *Oct 14 19:54:11.991 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RO v3 priv read ALL
+  000031: *Oct 14 19:54:12.001 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+  000032: *Oct 14 19:54:12.014 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-AUTH v3 auth read LIMITED
+  000033: *Oct 14 19:54:12.023 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user adminv3 GRP-RW v3 auth sha <removed> priv aes 256 <removed>
+  000034: *Oct 14 19:54:12.040 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user rouser GRP-RO v3 auth sha <removed>
+  000035: *Oct 14 19:54:12.052 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user noauth GRP-AUTH v3
+  000036: *Oct 14 19:54:12.060 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+  000037: *Oct 14 19:54:12.076 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID local 800000090300DEADBEEF0001
+  000038: *Oct 14 19:54:12.087 UTC: %SYS-5-CONFIG_I: Configured from console by console
+  000039: *Oct 14 19:54:12.124 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000040: *Oct 14 20:54:12.133 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock timezone CET 1 0
+  000041: *Oct 14 20:54:12.141 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
+  000042: *Oct 14 20:54:12.163 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authenticate
+  000043: *Oct 14 20:54:12.171 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 1 <removed> NtpKey123
+  000044: *Oct 14 20:54:12.187 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
+  000045: *Oct 14 20:54:12.198 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
+  000046: *Oct 14 20:54:12.210 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.21 key 1 <removed>
+  000047: *Oct 14 20:54:12.220 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.22 key 1 <removed>
+  000048: *Oct 14 20:54:12.230 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.23 key 1 <removed>
+  000049: *Oct 14 20:54:12.245 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp peer 10.0.0.30
+  000050:  Oct 14 20:54:12.253 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp master 3
+  000051:  Oct 14 20:54:12.261 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp source Loopback0
+  000052:  Oct 14 20:54:12.268 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp update-calendar
+  000053:  Oct 14 20:54:12.283 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group peer 10
+  000054:  Oct 14 20:54:12.290 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group serve-only 10
+  000055:  Oct 14 20:54:12.297 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp logging
+  000056:  Oct 14 20:54:12.305 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:sntp server 10.0.0.40
+  000057:  Oct 14 20:54:12.305 CET: %SYS-5-CONFIG_I: Configured from console by console
+  000058:  Oct 14 20:54:12.335 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000059:  Oct 14 20:54:12.348 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export version 9
+  000060:  Oct 14 20:54:12.358 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export destination 10.0.0.50 9996
+  000061:  Oct 14 20:54:12.370 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export source Loopback0
+  000062:  Oct 14 20:54:12.381 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout active 1
+  000063:  Oct 14 20:54:12.392 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout inactive 15
+  000064:  Oct 14 20:54:12.399 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000065:  Oct 14 20:54:12.410 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow ingress
+  000066:  Oct 14 20:54:12.421 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow egress
+  000067:  Oct 14 20:54:12.431 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip route-cache flow
+  000068:  Oct 14 20:54:12.438 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow record FR1
+  000069:  Oct 14 20:54:12.444 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 source address
+  000070:  Oct 14 20:54:12.454 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 destination address
+  000071:  Oct 14 20:54:12.465 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match transport source-port
+  000072:  Oct 14 20:54:12.470 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter bytes
+  000073:  Oct 14 20:54:12.475 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter packets
+  000074:  Oct 14 20:54:12.481 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow exporter FE1
+  000075:  Oct 14 20:54:12.486 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:destination 10.0.0.50
+  000076:  Oct 14 20:54:12.491 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:transport udp 2055
+  000077:  Oct 14 20:54:12.496 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:export-protocol netflow-v9
+  000078:  Oct 14 20:54:12.504 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow monitor FM1
+  000079:  Oct 14 20:54:12.509 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:record FR1
+  000080:  Oct 14 20:54:12.515 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:exporter FE1
+  000081:  Oct 14 20:54:12.520 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cache timeout active 60
+  000082:  Oct 14 20:54:12.527 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000083:  Oct 14 20:54:12.537 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow monitor FM1 input
+  000084:  Oct 14 20:54:12.537 CET: %SYS-5-CONFIG_I: Configured from console by console
+  000085:  Oct 14 20:54:12.582 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000086:  Oct 14 20:54:12.591 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet IF-DOWN
+  000087:  Oct 14 20:54:12.596 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
+  000088:  Oct 14 20:54:12.602 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 syslog msg "WAN interface changed state"
+  000089:  Oct 14 20:54:12.607 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "enable"
+  000090:  Oct 14 20:54:12.613 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 3.0 cli command "show ip interface brief"
+  000091:  Oct 14 20:54:12.619 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet CRON-BACKUP
+  000092:  Oct 14 20:54:12.625 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event timer cron cron-entry "0 2 * * *"
+  000093:  Oct 14 20:54:12.631 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 cli command "enable"
+  000094:  Oct 14 20:54:12.636 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "copy running-config flash:nightly.cfg"
+  000095:  Oct 14 20:54:12.643 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager environment _email noc@lab.local
+  000096:  Oct 14 20:54:12.643 CET: %SYS-5-CONFIG_I: Configured from console by console
+  000097:  Oct 14 20:54:12.656 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000098:  Oct 14 20:54:12.665 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp run
+  000099:  Oct 14 20:54:12.673 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp timer 30
+  000100:  Oct 14 20:54:12.680 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp holdtime 120
+  000101:  Oct 14 20:54:12.687 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp advertise-v2
+  000102:  Oct 14 20:54:12.695 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp run
+  000103:  Oct 14 20:54:12.703 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp timer 30
+  000104:  Oct 14 20:54:12.710 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp holdtime 120
+  000105:  Oct 14 20:54:12.717 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp reinit 2
+  000106:  Oct 14 20:54:12.725 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000107:  Oct 14 20:54:12.733 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp enable
+  000108:  Oct 14 20:54:12.739 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp transmit
+  000109:  Oct 14 20:54:12.746 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp receive
+  000110:  Oct 14 20:54:12.746 CET: %SYS-5-CONFIG_I: Configured from console by console
+  000111:  Oct 14 20:54:12.849 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
 
 [249/322] r1 R1# show snmp
   Chassis: R1-CHASSIS
@@ -1659,8 +1659,8 @@ Total steps: 322
 [250/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 400 (1/100 of seconds), resolution is 4001
-  reference time is EE70B6F3.1374BC6A (12:17:55.076 UTC Wed Oct 7 2026)
+  ntp uptime is 200 (1/100 of seconds), resolution is 4001
+  reference time is EE7A5C65.326E978D (19:54:13.197 UTC Wed Oct 14 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 0.00 msec, peer dispersion is 0.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1668,22 +1668,22 @@ Total steps: 322
 
 [251/322] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
-   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 15937.5
+   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 15937.5
+   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 15937.5
+   ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 15937.5
+   ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 15937.5
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [252/322] r1 R1# show clock
-  14:17:55.000 CEST Wed Oct 7 2026
+  21:54:13.000 CEST Wed Oct 14 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           179        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1857,7 +1857,7 @@ Total steps: 322
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX7624S7AH
+  Processor board ID FTX445507LR
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1867,9 +1867,9 @@ Total steps: 322
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 4015 bytes
+  Current configuration : 4016 bytes
   !
-  ! Last configuration change at 14:17:54 CEST Wed Oct 7 2026 by console
+  ! Last configuration change at 21:54:12 CEST Wed Oct 14 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec localtime show-timezone
@@ -2248,114 +2248,114 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  000008: *Oct  7 12:17:52.272 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000009: *Oct  7 12:17:52.294 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community public RO
-  000010: *Oct  7 12:17:52.309 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community private RW
-  000011: *Oct  7 12:17:52.324 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community ro-acl RO 10
-  000012: *Oct  7 12:17:52.337 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:access-list 10 permit 10.0.0.0 0.0.0.255
-  000013: *Oct  7 12:17:52.351 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server location DC1-Rack5
-  000014: *Oct  7 12:17:52.364 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server contact noc@lab.local
-  000015: *Oct  7 12:17:52.379 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server chassis-id R1-CHASSIS
-  000016: *Oct  7 12:17:52.470 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server trap-timeout 30
-  000017: *Oct  7 12:17:52.490 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
-  000018: *Oct  7 12:17:52.505 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps ospf
-  000019: *Oct  7 12:17:52.520 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps bgp
-  000020: *Oct  7 12:17:52.535 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps config
-  000021: *Oct  7 12:17:52.551 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps cpu threshold
-  000022: *Oct  7 12:17:52.565 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps envmon
-  000023: *Oct  7 12:17:52.578 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.5 version 2c public
-  000024: *Oct  7 12:17:52.592 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
-  000025: *Oct  7 12:17:52.606 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.7 informs version 2c public
-  000026: *Oct  7 12:17:52.655 UTC: %SYS-5-CONFIG_I: Configured from console by console
-  000027: *Oct  7 12:17:52.701 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000028: *Oct  7 12:17:52.719 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view ALL iso included
-  000029: *Oct  7 12:17:52.733 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view LIMITED system included
-  000030: *Oct  7 12:17:52.747 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RO v3 priv read ALL
-  000031: *Oct  7 12:17:52.759 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
-  000032: *Oct  7 12:17:52.777 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-AUTH v3 auth read LIMITED
-  000033: *Oct  7 12:17:52.790 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user adminv3 GRP-RW v3 auth sha <removed> priv aes 256 <removed>
-  000034: *Oct  7 12:17:52.811 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user rouser GRP-RO v3 auth sha <removed>
-  000035: *Oct  7 12:17:52.838 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user noauth GRP-AUTH v3
-  000036: *Oct  7 12:17:52.859 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
-  000037: *Oct  7 12:17:52.874 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID local 800000090300DEADBEEF0001
-  000038: *Oct  7 12:17:52.887 UTC: %SYS-5-CONFIG_I: Configured from console by console
-  000039: *Oct  7 12:17:52.918 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000040: *Oct  7 13:17:52.936 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock timezone CET 1 0
-  000041: *Oct  7 13:17:52.948 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
-  000042: *Oct  7 13:17:52.963 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authenticate
-  000043: *Oct  7 13:17:52.975 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 1 <removed> NtpKey123
-  000044: *Oct  7 13:17:53.003 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
-  000045: *Oct  7 13:17:53.016 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
-  000046: *Oct  7 13:17:53.031 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.21 key 1 <removed>
-  000047: *Oct  7 13:17:53.045 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.22 key 1 <removed>
-  000048: *Oct  7 13:17:53.057 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.23 key 1 <removed>
-  000049: *Oct  7 13:17:53.083 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp peer 10.0.0.30
-  000050:  Oct  7 13:17:53.095 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp master 3
-  000051:  Oct  7 13:17:53.109 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp source Loopback0
-  000052:  Oct  7 13:17:53.123 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp update-calendar
-  000053:  Oct  7 13:17:53.146 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group peer 10
-  000054:  Oct  7 13:17:53.160 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group serve-only 10
-  000055:  Oct  7 13:17:53.174 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp logging
-  000056:  Oct  7 13:17:53.188 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:sntp server 10.0.0.40
-  000057:  Oct  7 13:17:53.188 CET: %SYS-5-CONFIG_I: Configured from console by console
-  000058:  Oct  7 13:17:53.247 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000059:  Oct  7 13:17:53.269 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export version 9
-  000060:  Oct  7 13:17:53.289 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export destination 10.0.0.50 9996
-  000061:  Oct  7 13:17:53.309 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export source Loopback0
-  000062:  Oct  7 13:17:53.331 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout active 1
-  000063:  Oct  7 13:17:53.354 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout inactive 15
-  000064:  Oct  7 13:17:53.366 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000065:  Oct  7 13:17:53.388 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow ingress
-  000066:  Oct  7 13:17:53.408 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow egress
-  000067:  Oct  7 13:17:53.433 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip route-cache flow
-  000068:  Oct  7 13:17:53.452 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow record FR1
-  000069:  Oct  7 13:17:53.461 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 source address
-  000070:  Oct  7 13:17:53.472 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 destination address
-  000071:  Oct  7 13:17:53.480 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match transport source-port
-  000072:  Oct  7 13:17:53.491 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter bytes
-  000073:  Oct  7 13:17:53.501 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter packets
-  000074:  Oct  7 13:17:53.522 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow exporter FE1
-  000075:  Oct  7 13:17:53.535 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:destination 10.0.0.50
-  000076:  Oct  7 13:17:53.548 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:transport udp 2055
-  000077:  Oct  7 13:17:53.562 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:export-protocol netflow-v9
-  000078:  Oct  7 13:17:53.576 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow monitor FM1
-  000079:  Oct  7 13:17:53.585 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:record FR1
-  000080:  Oct  7 13:17:53.594 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:exporter FE1
-  000081:  Oct  7 13:17:53.605 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cache timeout active 60
-  000082:  Oct  7 13:17:53.616 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000083:  Oct  7 13:17:53.634 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow monitor FM1 input
-  000084:  Oct  7 13:17:53.635 CET: %SYS-5-CONFIG_I: Configured from console by console
-  000085:  Oct  7 13:17:53.699 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000086:  Oct  7 13:17:53.715 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet IF-DOWN
-  000087:  Oct  7 13:17:53.725 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
-  000088:  Oct  7 13:17:53.741 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 syslog msg "WAN interface changed state"
-  000089:  Oct  7 13:17:53.750 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "enable"
-  000090:  Oct  7 13:17:53.760 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 3.0 cli command "show ip interface brief"
-  000091:  Oct  7 13:17:53.778 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet CRON-BACKUP
-  000092:  Oct  7 13:17:53.791 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event timer cron cron-entry "0 2 * * *"
-  000093:  Oct  7 13:17:53.803 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 cli command "enable"
-  000094:  Oct  7 13:17:53.813 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "copy running-config flash:nightly.cfg"
-  000095:  Oct  7 13:17:53.827 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager environment _email noc@lab.local
-  000096:  Oct  7 13:17:53.828 CET: %SYS-5-CONFIG_I: Configured from console by console
-  000097:  Oct  7 13:17:53.849 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
-  000098:  Oct  7 13:17:53.872 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp run
-  000099:  Oct  7 13:17:53.890 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp timer 30
-  000100:  Oct  7 13:17:53.905 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp holdtime 120
-  000101:  Oct  7 13:17:53.921 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp advertise-v2
-  000102:  Oct  7 13:17:53.945 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp run
-  000103:  Oct  7 13:17:53.966 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp timer 30
-  000104:  Oct  7 13:17:53.987 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp holdtime 120
-  000105:  Oct  7 13:17:54.005 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp reinit 2
-  000106:  Oct  7 13:17:54.026 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000107:  Oct  7 13:17:54.037 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp enable
-  000108:  Oct  7 13:17:54.047 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp transmit
-  000109:  Oct  7 13:17:54.059 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp receive
-  000110:  Oct  7 13:17:54.060 CET: %SYS-5-CONFIG_I: Configured from console by console
-  000111:  Oct  7 13:17:54.288 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000008: *Oct 14 19:54:11.728 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000009: *Oct 14 19:54:11.739 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community public RO
+  000010: *Oct 14 19:54:11.747 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community private RW
+  000011: *Oct 14 19:54:11.756 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community ro-acl RO 10
+  000012: *Oct 14 19:54:11.763 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:access-list 10 permit 10.0.0.0 0.0.0.255
+  000013: *Oct 14 19:54:11.773 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server location DC1-Rack5
+  000014: *Oct 14 19:54:11.786 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server contact noc@lab.local
+  000015: *Oct 14 19:54:11.807 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server chassis-id R1-CHASSIS
+  000016: *Oct 14 19:54:11.842 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server trap-timeout 30
+  000017: *Oct 14 19:54:11.852 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+  000018: *Oct 14 19:54:11.860 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps ospf
+  000019: *Oct 14 19:54:11.868 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps bgp
+  000020: *Oct 14 19:54:11.876 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps config
+  000021: *Oct 14 19:54:11.884 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps cpu threshold
+  000022: *Oct 14 19:54:11.891 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps envmon
+  000023: *Oct 14 19:54:11.900 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.5 version 2c public
+  000024: *Oct 14 19:54:11.908 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+  000025: *Oct 14 19:54:11.916 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.7 informs version 2c public
+  000026: *Oct 14 19:54:11.938 UTC: %SYS-5-CONFIG_I: Configured from console by console
+  000027: *Oct 14 19:54:11.963 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000028: *Oct 14 19:54:11.975 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view ALL iso included
+  000029: *Oct 14 19:54:11.983 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view LIMITED system included
+  000030: *Oct 14 19:54:11.991 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RO v3 priv read ALL
+  000031: *Oct 14 19:54:12.001 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+  000032: *Oct 14 19:54:12.014 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-AUTH v3 auth read LIMITED
+  000033: *Oct 14 19:54:12.023 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user adminv3 GRP-RW v3 auth sha <removed> priv aes 256 <removed>
+  000034: *Oct 14 19:54:12.040 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user rouser GRP-RO v3 auth sha <removed>
+  000035: *Oct 14 19:54:12.052 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user noauth GRP-AUTH v3
+  000036: *Oct 14 19:54:12.060 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+  000037: *Oct 14 19:54:12.076 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID local 800000090300DEADBEEF0001
+  000038: *Oct 14 19:54:12.087 UTC: %SYS-5-CONFIG_I: Configured from console by console
+  000039: *Oct 14 19:54:12.124 UTC: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000040: *Oct 14 20:54:12.133 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock timezone CET 1 0
+  000041: *Oct 14 20:54:12.141 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
+  000042: *Oct 14 20:54:12.163 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authenticate
+  000043: *Oct 14 20:54:12.171 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 1 <removed> NtpKey123
+  000044: *Oct 14 20:54:12.187 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
+  000045: *Oct 14 20:54:12.198 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
+  000046: *Oct 14 20:54:12.210 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.21 key 1 <removed>
+  000047: *Oct 14 20:54:12.220 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.22 key 1 <removed>
+  000048: *Oct 14 20:54:12.230 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.23 key 1 <removed>
+  000049: *Oct 14 20:54:12.245 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp peer 10.0.0.30
+  000050:  Oct 14 20:54:12.253 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp master 3
+  000051:  Oct 14 20:54:12.261 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp source Loopback0
+  000052:  Oct 14 20:54:12.268 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp update-calendar
+  000053:  Oct 14 20:54:12.283 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group peer 10
+  000054:  Oct 14 20:54:12.290 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group serve-only 10
+  000055:  Oct 14 20:54:12.297 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp logging
+  000056:  Oct 14 20:54:12.305 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:sntp server 10.0.0.40
+  000057:  Oct 14 20:54:12.305 CET: %SYS-5-CONFIG_I: Configured from console by console
+  000058:  Oct 14 20:54:12.335 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000059:  Oct 14 20:54:12.348 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export version 9
+  000060:  Oct 14 20:54:12.358 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export destination 10.0.0.50 9996
+  000061:  Oct 14 20:54:12.370 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export source Loopback0
+  000062:  Oct 14 20:54:12.381 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout active 1
+  000063:  Oct 14 20:54:12.392 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout inactive 15
+  000064:  Oct 14 20:54:12.399 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000065:  Oct 14 20:54:12.410 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow ingress
+  000066:  Oct 14 20:54:12.421 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow egress
+  000067:  Oct 14 20:54:12.431 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip route-cache flow
+  000068:  Oct 14 20:54:12.438 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow record FR1
+  000069:  Oct 14 20:54:12.444 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 source address
+  000070:  Oct 14 20:54:12.454 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 destination address
+  000071:  Oct 14 20:54:12.465 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match transport source-port
+  000072:  Oct 14 20:54:12.470 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter bytes
+  000073:  Oct 14 20:54:12.475 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter packets
+  000074:  Oct 14 20:54:12.481 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow exporter FE1
+  000075:  Oct 14 20:54:12.486 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:destination 10.0.0.50
+  000076:  Oct 14 20:54:12.491 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:transport udp 2055
+  000077:  Oct 14 20:54:12.496 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:export-protocol netflow-v9
+  000078:  Oct 14 20:54:12.504 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow monitor FM1
+  000079:  Oct 14 20:54:12.509 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:record FR1
+  000080:  Oct 14 20:54:12.515 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:exporter FE1
+  000081:  Oct 14 20:54:12.520 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cache timeout active 60
+  000082:  Oct 14 20:54:12.527 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000083:  Oct 14 20:54:12.537 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow monitor FM1 input
+  000084:  Oct 14 20:54:12.537 CET: %SYS-5-CONFIG_I: Configured from console by console
+  000085:  Oct 14 20:54:12.582 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000086:  Oct 14 20:54:12.591 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet IF-DOWN
+  000087:  Oct 14 20:54:12.596 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
+  000088:  Oct 14 20:54:12.602 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 syslog msg "WAN interface changed state"
+  000089:  Oct 14 20:54:12.607 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "enable"
+  000090:  Oct 14 20:54:12.613 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 3.0 cli command "show ip interface brief"
+  000091:  Oct 14 20:54:12.619 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet CRON-BACKUP
+  000092:  Oct 14 20:54:12.625 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event timer cron cron-entry "0 2 * * *"
+  000093:  Oct 14 20:54:12.631 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 cli command "enable"
+  000094:  Oct 14 20:54:12.636 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "copy running-config flash:nightly.cfg"
+  000095:  Oct 14 20:54:12.643 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager environment _email noc@lab.local
+  000096:  Oct 14 20:54:12.643 CET: %SYS-5-CONFIG_I: Configured from console by console
+  000097:  Oct 14 20:54:12.656 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
+  000098:  Oct 14 20:54:12.665 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp run
+  000099:  Oct 14 20:54:12.673 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp timer 30
+  000100:  Oct 14 20:54:12.680 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp holdtime 120
+  000101:  Oct 14 20:54:12.687 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp advertise-v2
+  000102:  Oct 14 20:54:12.695 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp run
+  000103:  Oct 14 20:54:12.703 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp timer 30
+  000104:  Oct 14 20:54:12.710 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp holdtime 120
+  000105:  Oct 14 20:54:12.717 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp reinit 2
+  000106:  Oct 14 20:54:12.725 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000107:  Oct 14 20:54:12.733 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp enable
+  000108:  Oct 14 20:54:12.739 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp transmit
+  000109:  Oct 14 20:54:12.746 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp receive
+  000110:  Oct 14 20:54:12.746 CET: %SYS-5-CONFIG_I: Configured from console by console
+  000111:  Oct 14 20:54:12.849 CET: %SYS-5-PRIV_AUTH_PASS: Privilege level set to 15 by unknown on console
 
 [266/322] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX7624S7AH
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX445507LR
 
 [267/322] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2455,7 +2455,7 @@ Total steps: 322
 [279/322] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 4015 bytes
+  Current configuration : 4016 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec localtime show-timezone
   service sequence-numbers
@@ -2767,7 +2767,7 @@ Total steps: 322
     gdoi         Define a GDOI GET-VPN group
     ikev2        Define IKEv2 proposal
     ipsec        Configure IPSec policy
-    isakmp       Define an IKE policy
+    isakmp       Enable ISAKMP
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
@@ -2783,7 +2783,7 @@ Total steps: 322
     cdp            Enable CDP globally
     class-map      Remove a class map
     clock          Remove hardware calendar is a valid time source
-    crypto         Encryption module
+    crypto         Restore the default DF bit handling
     enable         Set enable secret
     event          Register an EEM applet
     hostname       Set system hostname

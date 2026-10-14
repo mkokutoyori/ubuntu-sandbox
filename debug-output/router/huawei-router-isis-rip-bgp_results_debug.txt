@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-09-25T18:32:20.980Z
+Generated: 2026-10-14T20:07:57.293Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -621,7 +621,7 @@ Total steps: 260
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [157/260] r1 <R1> display version
   Huawei Versatile Routing Platform Software
@@ -630,7 +630,7 @@ Total steps: 260
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [158/260] r1 <R1> display current-configuration
   #
@@ -1014,14 +1014,14 @@ Total steps: 260
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 18:32:21.106  Sep 25 2026(EE613CB5.1B22D0E5)
+  Reference time: 20:07:57.407  Oct 14 2026(EE7A5F9D.683126E9)
 
 [190/260] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [191/260] r1 <R1> display clock
-  2026-09-25 18:32:21
-  Friday
+  2026-10-14 20:07:57
+  Wednesday
   Time Zone(UTC) : UTC
 
 [192/260] r1 <R1> display lldp neighbor
@@ -1042,13 +1042,13 @@ Total steps: 260
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-09-25 18:32:21
+  CPU Usage Stat. Time : 2026-10-14 20:07:57
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-09-25 18:32:21
+  Memory utilization statistics at 2026-10-14 20:07:57
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1089,11 +1089,11 @@ Total steps: 260
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 5
-  2026-09-25 18:32:20 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-25 18:32:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-25 18:32:20 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-25 18:32:20 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-09-25 18:32:21 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.1 Up
+  2026-10-14 20:07:57 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-14 20:07:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-14 20:07:57 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-14 20:07:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-14 20:07:57 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.1 Up
 
 [200/260] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1337,15 +1337,17 @@ Total steps: 260
   Info: No online-fail record.
 
 [213/260] r1 <R1> display ssh server status
-  SSH server: Disabled
-
-[214/260] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
   SSH authentication retries      : 3 times
   SFTP server                     : Disable
-  STELNET server                  : Enable
+  Stelnet server                  : Disable
+
+[214/260] r1 <R1> display ssh user-information
+  Error: Unrecognized command found at '^' position.
+  display ssh user-information
+          ^
 
 [215/260] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
@@ -1755,37 +1757,45 @@ Total steps: 260
     routing-table  Routing table configuration
 
 [257/260] r1 [Huawei] undo ?
-    acl            Delete Access Control List
-    bfd            Disable BFD globally
-    bgp            Remove BGP
-    command-alias  Disable CLI alias
-    debugging      Disable system debugging functions
-    dns            Domain Name System
-    firewall       Firewall configuration
-    ike            Internet Key Exchange
-    ikev2          Internet Key Exchange version 2
-    info-center    Information center configuration
-    ip             Internet Protocol
-    ipsec          IP Security
-    ipv6           Disable IPv6
-    isis           Remove IS-IS
-    lldp           Link Layer Discovery Protocol
-    local-user     Remove a local user
-    multicast      Disable multicast routing
-    nat            Network Address Translation
-    nqa            Network Quality Analysis
-    nqa-server     Remove an NQA server binding
-    ntp-service    Remove NTP service configuration
-    ospf           Remove OSPF protocol configuration
-    ospfv3         Remove OSPFv3 protocol configuration
-    route-policy   Remove a route-policy
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
-    snmp-agent     Remove SNMP agent configuration
-    stelnet        Disable the STelnet server
-    terminal       Set the terminal line characteristics
-    time-range     Remove a time-range
-    traffic        Display traffic statistics
+    acl                  Delete Access Control List
+    bfd                  Disable BFD globally
+    bgp                  Remove BGP
+    command-alias        Disable CLI alias
+    debugging            Disable system debugging functions
+    dhcp                 Dynamic Host Configuration Protocol
+    dhcpv6               DHCPv6 configuration
+    dns                  Domain Name System
+    firewall             Firewall configuration
+    header               Remove the login/shell banner
+    ike                  Internet Key Exchange
+    ikev2                Internet Key Exchange version 2
+    info-center          Information center configuration
+    information-refresh  Restore the default information refresh interval
+    ip                   Internet Protocol
+    ipsec                IP Security
+    ipv6                 Disable IPv6
+    isis                 Remove IS-IS
+    lldp                 Link Layer Discovery Protocol
+    local-user           Remove a local user
+    multicast            Disable multicast routing
+    nat                  Network Address Translation
+    nqa                  Network Quality Analysis
+    nqa-server           Remove an NQA server binding
+    ntp-service          Remove NTP service configuration
+    ospf                 Remove OSPF protocol configuration
+    ospfv3               Remove OSPFv3 protocol configuration
+    route-policy         Remove a route-policy
+    rsa                  RSA key pair
+    screen-length        Restore default screen length
+    screen-width         Restore default screen width
+    sftp                 Disable the SFTP server
+    snmp-agent           Remove SNMP agent configuration
+    ssh                  Restore the SSH server defaults
+    stelnet              Disable the STelnet server
+    telnet               Disable the Telnet server
+    terminal             Set the terminal line characteristics
+    time-range           Remove a time-range
+    traffic              Display traffic statistics
 
 [258/260] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
