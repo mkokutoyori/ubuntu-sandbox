@@ -60,6 +60,9 @@ OVERRIDES = {
 }
 
 HELP_OVERRIDES = {
+    'natip': 'Policy-based IPsec VPN: source NAT IP address for outgoing traffic.',
+    'policy-expiry-date': 'Policy expiry date (YYYY-MM-DD HH:MM:SS).',
+    'policy-expiry-date-utc': 'Policy expiry date and time, in epoch format.',
     'tos-mask': 'Non-zero bit positions are used for comparison while zero bit positions are ignored.',
     'tos': 'ToS (Type of Service) value used for comparison.',
     'diffservcode-rev': 'Change packet\'s reverse (reply) DiffServ to this value.',
@@ -100,6 +103,7 @@ def clean_help(text, name):
     pattern = re.compile(r'^' + re.escape(name).replace(r'\-', r'-\s*') + r'\*?\s*')
     text = pattern.sub('', text, count=1)
     text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r'\s+(datetime|user|integer|string|var-string|option|ipv4-classnet-any|ipv4-address-any) Not Specified.*$', '', text)
     text = re.sub(r'^(<[^>]*>\s*)+', '', text)
     text = re.sub(r'^\*\s*', '', text)
     text = re.sub(r'\s*\*$', '', text)
