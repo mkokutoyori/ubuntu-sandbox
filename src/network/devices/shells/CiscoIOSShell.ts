@@ -439,12 +439,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       } | undefined;
     })._getIPSecEngineInternal?.();
     if (!moteur) return 'IPSec not configured.';
-    const n = quoi === 'ipsec'
-      ? moteur.clearIPSecSAs(peer) : moteur.clearISAKMPSAs(peer);
-    const nom = quoi === 'ipsec' ? 'IPSec' : 'ISAKMP';
-    return n === 0
-      ? `No matching ${nom} SAs found`
-      : `Cleared ${n} ${nom} SA${n === 1 ? '' : 's'}`;
+    if (quoi === 'ipsec') moteur.clearIPSecSAs(peer);
+    else moteur.clearISAKMPSAs(peer);
+    return '';
   }
 
   /*
@@ -1249,10 +1246,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return pending as Record<string, unknown>;
   }
 
-  ipsecShow(method: string): string {
+  ipsecShow(method: string, ...args: string[]): string {
     const engine = this.d()._getIPSecEngineInternal() as unknown as
-      Record<string, (() => string) | undefined> | null;
-    return engine?.[method]?.() ?? 'IPSec not configured.';
+      Record<string, ((...a: string[]) => string) | undefined> | null;
+    return engine?.[method]?.(...args) ?? 'IPSec not configured.';
   }
 
   clearAllSecurityAssociations(): void {
@@ -1582,6 +1579,18 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       declareZonePair: (name, source, destination) => {
         sec().zonePairs.set(name, { name, source, destination });
         this.selectedZonePair = name;
+      },
+      removeZone: (name) => {
+        sec().zones.delete(name);
+        for (const flags of sec().interfaceFlags.values()) if (flags.zoneMember === name) delete flags.zoneMember;
+        for (const [pairName, pair] of sec().zonePairs) if (pair.source === name || pair.destination === name) sec().zonePairs.delete(pairName);
+      },
+      removeZonePair: (name) => { sec().zonePairs.delete(name); },
+      setZoneMember: (zone) => {
+        for (const iface of this.selectedPortsForConfigIf()) {
+          if (zone === null) delete sec().ifaceFlags(iface).zoneMember;
+          else sec().ifaceFlags(iface).zoneMember = zone;
+        }
       },
     };
   }

@@ -5,6 +5,7 @@
  * Used by CiscoIOSShell for "show" commands in user and privileged modes.
  */
 
+import type { EnableSecretAlgorithm } from '../../../equipment/Equipment';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
@@ -1214,6 +1215,7 @@ function interfaceConfigLines(
   if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
   const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
   if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
+  lines.push(...(router._getIPSecEngineInternal?.()?.showRunningConfigInterface(name) ?? []));
   const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
   if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
   lines.push(...legacyInterfaceLines(port, router));
@@ -2051,7 +2053,7 @@ export function enableLevelSecretConfigLines(
   const store = device as {
     listEnableSecretLevels?: () => ReadonlyArray<{
       level: number; value: string;
-      algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+      algo: EnableSecretAlgorithm;
     }>;
     listEnablePasswordLevels?: () => ReadonlyArray<{
       level: number; value: string; algo: 'plain' | 'type-7';

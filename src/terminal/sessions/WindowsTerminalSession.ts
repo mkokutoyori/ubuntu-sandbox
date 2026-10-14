@@ -23,7 +23,6 @@ import {
   withTimeout, DeviceOfflineError,
   type InputMode,
 } from './TerminalSession';
-import { createSessionForDevice } from './sessionFactory';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
 import { runTracert } from '@/network/devices/windows/WinTracert';
@@ -40,7 +39,7 @@ import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSsh
 import {
   openWireSshShell, openWireSshConnection, silentConnectIo, resolveSshTarget,
 } from '@/terminal/ssh/wireSshLogin';
-import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import { parseSshCommandLine, WINDOWS_SSH_COMMAND_WORD } from '@/terminal/sessions/sshArgs';
 import { parseBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
@@ -153,14 +152,6 @@ export class WindowsTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return WINDOWS_THEME; }
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
-  protected override prepareAsRemoteUser(user: string): void {
-    const dev = this.device;
-    if (!(dev instanceof WindowsPC)) return;
-    if (this.shell) dev.closeShellSession(this.shell);
-    this.shell = dev.openShellSession({ user, cwd: `C:\\Users\\${user}` });
-    this.shell.inputReader = (prompt, preceding) => this.askCommandInput(prompt, preceding);
-  }
-
   private async askCommandInput(prompt: string, preceding?: string): Promise<string | null> {
     if (!this.inputHostImpl.capabilities().interactive) return null;
     if (preceding !== undefined) {
@@ -212,7 +203,6 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   getPrompt(): string {
-    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) {
       return this.activeSubShell.getPrompt();
     }
@@ -233,7 +223,6 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   override get currentInputMode(): InputMode {
-    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
@@ -278,7 +267,6 @@ export class WindowsTerminalSession extends TerminalSession {
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
 
-    if (this.hasActiveChild) return this.foreground.handleKey(e);
 
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
@@ -719,7 +707,6 @@ export class WindowsTerminalSession extends TerminalSession {
     if (!trimmed) return;
 
     if (trimmed.toLowerCase() === 'exit') {
-      if (this.endRemoteSession()) return;
       this._onRequestClose?.();
       return;
     }
@@ -932,7 +919,7 @@ export class WindowsTerminalSession extends TerminalSession {
     this.activeSubShell = new SshInteractiveSubShell(
       session, channel, user, typedHost, `/home/${user}`,
       () => session.disconnect(),
-      promptHost, findLinuxMachineByIp(host) ?? undefined,
+      promptHost,
       establishedSessionLiveness(session, this.device, host),
       (footer) => this.onRemoteHangup(footer),
       (outputLine) => this.addLine(outputLine),

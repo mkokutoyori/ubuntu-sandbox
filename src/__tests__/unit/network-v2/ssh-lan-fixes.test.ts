@@ -49,30 +49,6 @@ describe('SSH analysis-doc remediations', () => {
   // ─── P1 — UI banner state ────────────────────────────────────
 
   // F1
-  it('F1 — getSshContextInfo() reflects nested ssh chains for the UI banner', () => {
-    const term = new LinuxTerminalSession('t-banner', lan.pc1);
-    expect(term.getSshContextInfo()).toEqual({
-      active: false,
-      chain: [],
-      current: null,
-    });
-    term.pushRemoteDevice(lan.pc2, 'user', `user@${PC2_IP}`, () => undefined);
-    term.pushRemoteDevice(lan.pc3, 'alice', `alice@${PC3_IP}`, () => undefined);
-    const info = term.getSshContextInfo();
-    expect(info.active).toBe(true);
-    expect(info.current).toBe(PC3_IP);
-    expect(info.chain).toEqual([
-      { host: PC2_IP, user: 'user' },
-      { host: PC3_IP, user: 'alice' },
-    ]);
-    term.popRemoteDevice();
-    term.popRemoteDevice();
-    expect(term.getSshContextInfo().active).toBe(false);
-  });
-
-  // ─── P2 — Windows public-key authentication ──────────────────
-
-  // F2
   it('F2 — Windows ssh server accepts a public key listed in the user authorized_keys', async () => {
     const wfs = new WindowsFileSystem('WPC');
     const userMgr = new WindowsUserManager();

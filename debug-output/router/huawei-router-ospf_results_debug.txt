@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-09-25T18:35:35.109Z
+Generated: 2026-10-14T20:08:07.025Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -130,31 +130,31 @@ Total steps: 247
 [40/247] r1 [R1-ospf-1] area 0
 <empty>
 
-[41/247] r1 [R1-ospf-1-area-0] network 10.10.1.0 0.0.0.255
+[41/247] r1 [R1-ospf-1-area-0.0.0.0] network 10.10.1.0 0.0.0.255
 <empty>
 
-[42/247] r1 [R1-ospf-1-area-0] network 10.10.2.0 0.0.0.255
+[42/247] r1 [R1-ospf-1-area-0.0.0.0] network 10.10.2.0 0.0.0.255
 <empty>
 
-[43/247] r1 [R1-ospf-1-area-0] network 10.10.3.0 0.0.0.255
+[43/247] r1 [R1-ospf-1-area-0.0.0.0] network 10.10.3.0 0.0.0.255
 <empty>
 
-[44/247] r1 [R1-ospf-1-area-0] network 10.10.4.0 0.0.0.255
+[44/247] r1 [R1-ospf-1-area-0.0.0.0] network 10.10.4.0 0.0.0.255
 <empty>
 
-[45/247] r1 [R1-ospf-1-area-0] network 10.10.5.0 0.0.0.255
+[45/247] r1 [R1-ospf-1-area-0.0.0.0] network 10.10.5.0 0.0.0.255
 <empty>
 
-[46/247] r1 [R1-ospf-1-area-0] network 10.10.6.0 0.0.0.255
+[46/247] r1 [R1-ospf-1-area-0.0.0.0] network 10.10.6.0 0.0.0.255
 <empty>
 
-[47/247] r1 [R1-ospf-1-area-0] network 192.168.1.0 0.0.0.255
+[47/247] r1 [R1-ospf-1-area-0.0.0.0] network 192.168.1.0 0.0.0.255
 <empty>
 
-[48/247] r1 [R1-ospf-1-area-0] network 10.0.0.0 0.0.0.3
+[48/247] r1 [R1-ospf-1-area-0.0.0.0] network 10.0.0.0 0.0.0.3
 <empty>
 
-[49/247] r1 [R1-ospf-1-area-0] quit
+[49/247] r1 [R1-ospf-1-area-0.0.0.0] quit
 <empty>
 
 [50/247] r1 [R1-ospf-1] quit
@@ -167,16 +167,16 @@ Total steps: 247
   OSPF Process 1 with Router ID 1.1.1.1
   
    Area    Type   Intf    Adj   LSA
-   0       normal 0       0     0
+   0.0.0.0 normal 6       0     1
 
 [53/247] r1 <R1> display ospf cumulative
   OSPF statistics:
     LSA: 1 total
-    SPF: 1 runs
+    SPF: 19 runs
     Neighbors: 0, Adjacent: 0
   
     Area statistics:
-      Area 0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 0.0.0.0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
 
 
 --- [54] § area types / auth ---
@@ -189,49 +189,49 @@ Total steps: 247
 [56/247] r1 [R1-ospf-1] area 1
 <empty>
 
-[57/247] r1 [R1-ospf-1-area-1] stub
+[57/247] r1 [R1-ospf-1-area-0.0.0.1] stub
 <empty>
 
-[58/247] r1 [R1-ospf-1-area-1] stub no-summary
+[58/247] r1 [R1-ospf-1-area-0.0.0.1] stub no-summary
 <empty>
 
-[59/247] r1 [R1-ospf-1-area-1] default-cost 10
+[59/247] r1 [R1-ospf-1-area-0.0.0.1] default-cost 10
 <empty>
 
-[60/247] r1 [R1-ospf-1-area-1] quit
+[60/247] r1 [R1-ospf-1-area-0.0.0.1] quit
 <empty>
 
 [61/247] r1 [R1-ospf-1] area 2
 <empty>
 
-[62/247] r1 [R1-ospf-1-area-2] nssa
+[62/247] r1 [R1-ospf-1-area-0.0.0.2] nssa
 <empty>
 
-[63/247] r1 [R1-ospf-1-area-2] nssa default-route-advertise no-summary
+[63/247] r1 [R1-ospf-1-area-0.0.0.2] nssa default-route-advertise no-summary
 <empty>
 
-[64/247] r1 [R1-ospf-1-area-2] quit
+[64/247] r1 [R1-ospf-1-area-0.0.0.2] quit
 <empty>
 
 [65/247] r1 [R1-ospf-1] area 3
 <empty>
 
-[66/247] r1 [R1-ospf-1-area-3] abr-summary 10.30.0.0 255.255.0.0
+[66/247] r1 [R1-ospf-1-area-0.0.0.3] abr-summary 10.30.0.0 255.255.0.0
 <empty>
 
-[67/247] r1 [R1-ospf-1-area-3] quit
+[67/247] r1 [R1-ospf-1-area-0.0.0.3] quit
 <empty>
 
 [68/247] r1 [R1-ospf-1] area 0
 <empty>
 
-[69/247] r1 [R1-ospf-1-area-0] authentication-mode md5 1 cipher Huawei@123
+[69/247] r1 [R1-ospf-1-area-0.0.0.0] authentication-mode md5 1 cipher Huawei@123
 <empty>
 
-[70/247] r1 [R1-ospf-1-area-0] authentication-mode simple plain Huawei
+[70/247] r1 [R1-ospf-1-area-0.0.0.0] authentication-mode simple plain Huawei
 <empty>
 
-[71/247] r1 [R1-ospf-1-area-0] quit
+[71/247] r1 [R1-ospf-1-area-0.0.0.0] quit
 <empty>
 
 [72/247] r1 [R1-ospf-1] vlink-peer 2.2.2.2
@@ -250,10 +250,10 @@ Total steps: 247
   OSPF Process 1 with Router ID 1.1.1.1
   
    Area    Type   Intf    Adj   LSA
-   0       normal 6       0     1
-   1       totally-stubby0       0     0
-   2       nssa   0       0     0
-   3       normal 0       0     0
+   0.0.0.0 normal 6       0     1
+   0.0.0.1 totally-stubby0       0     1
+   0.0.0.2 nssa   0       0     1
+   0.0.0.3 normal 0       0     1
 
 [77/247] r1 <R1> display ospf abr-asbr
   OSPF Process 1 with Router ID 1.1.1.1
@@ -324,93 +324,93 @@ Total steps: 247
 <empty>
 
 [98/247] r1 <R1> display ospf interface GigabitEthernet0/0/1
-   GE0/0/0 (192.168.1.1)
-     Area: 0  Cost: 10  State: DR
-     Type: broadcast  Priority: 1
-     DR: 192.168.1.1  BDR: 0.0.0.0
-     Hello: 10s  Dead: 40s
-     Neighbors: 0
-  
-   GE0/0/1 (10.0.0.1)
-     Area: 0  Cost: 100  State: DR
-     Type: p2mp  Priority: 200
-     DR: 10.0.0.1  BDR: 0.0.0.0
-     Hello: 5s  Dead: 20s
-     Neighbors: 0
-     (Passive interface)
-  
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
+  
+   GE0/0/0 (192.168.1.1)
+     Area: 0.0.0.0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 192.168.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (10.0.0.1)
+     Area: 0.0.0.0  Cost: 100  State: Waiting
+     Type: p2mp  Priority: 200
+     DR: 0.0.0.0  BDR: 0.0.0.0
+     Hello: 5s  Dead: 20s
+     Neighbors: 0
+     (Passive interface)
   
 
 [99/247] r1 <R1> display ospf interface all
-   GE0/0/0 (192.168.1.1)
-     Area: 0  Cost: 10  State: DR
-     Type: broadcast  Priority: 1
-     DR: 192.168.1.1  BDR: 0.0.0.0
-     Hello: 10s  Dead: 40s
-     Neighbors: 0
-  
-   GE0/0/1 (10.0.0.1)
-     Area: 0  Cost: 100  State: DR
-     Type: p2mp  Priority: 200
-     DR: 10.0.0.1  BDR: 0.0.0.0
-     Hello: 5s  Dead: 20s
-     Neighbors: 0
-     (Passive interface)
-  
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
+  
+   GE0/0/0 (192.168.1.1)
+     Area: 0.0.0.0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 192.168.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (10.0.0.1)
+     Area: 0.0.0.0  Cost: 100  State: Waiting
+     Type: p2mp  Priority: 200
+     DR: 0.0.0.0  BDR: 0.0.0.0
+     Hello: 5s  Dead: 20s
+     Neighbors: 0
+     (Passive interface)
   
 
 
@@ -495,69 +495,69 @@ Total steps: 247
    Area ID    Interface       Neighbor ID     State
 
 [121/247] r1 <R1> display ospf interface
-   GE0/0/0 (192.168.1.1)
-     Area: 0  Cost: 10  State: DR
-     Type: broadcast  Priority: 1
-     DR: 192.168.1.1  BDR: 0.0.0.0
-     Hello: 10s  Dead: 40s
-     Neighbors: 0
-  
-   GE0/0/1 (10.0.0.1)
-     Area: 0  Cost: 100  State: DR
-     Type: p2mp  Priority: 200
-     DR: 10.0.0.1  BDR: 0.0.0.0
-     Hello: 5s  Dead: 20s
-     Neighbors: 0
-     (Passive interface)
-  
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
+  
+   GE0/0/0 (192.168.1.1)
+     Area: 0.0.0.0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 192.168.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (10.0.0.1)
+     Area: 0.0.0.0  Cost: 100  State: Waiting
+     Type: p2mp  Priority: 200
+     DR: 0.0.0.0  BDR: 0.0.0.0
+     Hello: 5s  Dead: 20s
+     Neighbors: 0
+     (Passive interface)
   
 
 [122/247] r1 <R1> display ospf lsdb
            OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
-                       Area: 0
+                       Area: 0.0.0.0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     96    0x8000001c
+   Router    1.1.1.1         1.1.1.1         0     96    0x8000000a
   
-                       Area: 1
+                       Area: 0.0.0.1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     24    0x8000001d
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000007
   
-                       Area: 2
+                       Area: 0.0.0.2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     24    0x8000001e
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000008
   
-                       Area: 3
+                       Area: 0.0.0.3
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     24    0x8000001f
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000009
   
 
 [123/247] r1 <R1> display ospf lsdb router
@@ -566,10 +566,10 @@ Total steps: 247
   
                        Type: Router
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     96    0x80000020
-   Router    1.1.1.1         1.1.1.1         0     24    0x80000021
-   Router    1.1.1.1         1.1.1.1         0     24    0x80000022
-   Router    1.1.1.1         1.1.1.1         0     24    0x80000023
+   Router    1.1.1.1         1.1.1.1         0     96    0x8000000a
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000007
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000008
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000009
 
 [124/247] r1 <R1> display ospf lsdb network
            OSPF Process 1 with Router ID 1.1.1.1
@@ -631,23 +631,29 @@ Total steps: 247
 [133/247] r1 <R1> display ospf statistics
   OSPF statistics:
     LSA: 4 total
-    SPF: 16 runs
+    SPF: 42 runs
     Neighbors: 0, Adjacent: 0
   
     Area statistics:
-      Area 0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
-      Area 1: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
-      Area 2: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
-      Area 3: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 0.0.0.0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 0.0.0.1: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 0.0.0.2: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 0.0.0.3: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
 
 [134/247] r1 <R1> display ospf error
   OSPF errors: 0
 
 [135/247] r1 <R1> display ospf request-queue
-  OSPF request queue is empty.
+  
+           OSPF Process 1 with Router ID 1.1.1.1
+                   OSPF Request List
+  
 
 [136/247] r1 <R1> display ospf retrans-queue
-  OSPF retransmission queue is empty.
+  
+           OSPF Process 1 with Router ID 1.1.1.1
+                   OSPF Retransmit List
+  
 
 [137/247] r1 <R1> display ip routing-table protocol ospf
   OSPF Routing Table:
@@ -678,7 +684,7 @@ Total steps: 247
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [144/247] r1 <R1> display version
   Huawei Versatile Routing Platform Software
@@ -687,7 +693,7 @@ Total steps: 247
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  R1 uptime is 0 days, 0 hours, 0 minutes
+  Huawei AR2220 Router uptime is 0 week, 0 day, 0 hour, 0 minute
 
 [145/247] r1 <R1> display current-configuration
   #
@@ -738,7 +744,7 @@ Total steps: 247
   ospf 1
    router-id 1.1.1.1
    maximum load-balancing 4
-   area 0
+   area 0.0.0.0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
     network 10.10.3.0 0.0.0.255
@@ -797,8 +803,8 @@ Total steps: 247
     Unicast:                    0,  Multicast:                  0
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  53 packets, 5368 bytes
-    Unicast:                    0,  Multicast:                 52
+  Output:  77 packets, 7816 bytes
+    Unicast:                    0,  Multicast:                 76
     Broadcast:                  1,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
       Input bandwidth utilization  :    0%
@@ -813,8 +819,8 @@ Total steps: 247
     Unicast:                    0,  Multicast:                  2
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  48 packets, 5658 bytes
-    Unicast:                    0,  Multicast:                 47
+  Output:  79 packets, 8040 bytes
+    Unicast:                    0,  Multicast:                 78
     Broadcast:                  1,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
       Input bandwidth utilization  :    0%
@@ -952,48 +958,48 @@ Total steps: 247
    Area ID    Interface       Neighbor ID     State
 
 [154/247] r1 <R1> display ospf interface
-   GE0/0/0 (192.168.1.1)
-     Area: 0  Cost: 10  State: DR
-     Type: broadcast  Priority: 1
-     DR: 192.168.1.1  BDR: 0.0.0.0
-     Hello: 10s  Dead: 40s
-     Neighbors: 0
-  
-   GE0/0/1 (10.0.0.1)
-     Area: 0  Cost: 100  State: DR
-     Type: p2mp  Priority: 200
-     DR: 10.0.0.1  BDR: 0.0.0.0
-     Hello: 5s  Dead: 20s
-     Neighbors: 0
-     (Passive interface)
-  
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 1  State: Loopback
+     Area: 0.0.0.0  Cost: 1  State: Loopback
      Type: loopback  Priority: 1
      DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
+  
+   GE0/0/0 (192.168.1.1)
+     Area: 0.0.0.0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 192.168.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (10.0.0.1)
+     Area: 0.0.0.0  Cost: 100  State: Waiting
+     Type: p2mp  Priority: 200
+     DR: 0.0.0.0  BDR: 0.0.0.0
+     Hello: 5s  Dead: 20s
+     Neighbors: 0
+     (Passive interface)
   
 
 [155/247] r1 <R1> display ospf routing
@@ -1010,31 +1016,31 @@ Total steps: 247
            OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
-                       Area: 0
+                       Area: 0.0.0.0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     96    0x8000004c
+   Router    1.1.1.1         1.1.1.1         0     96    0x8000000a
   
-                       Area: 1
+                       Area: 0.0.0.1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     24    0x8000004d
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000007
   
-                       Area: 2
+                       Area: 0.0.0.2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     24    0x8000004e
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000008
   
-                       Area: 3
+                       Area: 0.0.0.3
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    1.1.1.1         1.1.1.1         0     24    0x8000004f
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000009
   
 
 [157/247] r1 <R1> display ospf brief
   OSPF Process 1 with Router ID 1.1.1.1
   
    Area    Type   Intf    Adj   LSA
-   0       normal 6       0     1
-   1       totally-stubby0       0     1
-   2       nssa   0       0     1
-   3       normal 0       0     1
+   0.0.0.0 normal 6       0     1
+   0.0.0.1 totally-stubby0       0     1
+   0.0.0.2 nssa   0       0     1
+   0.0.0.3 normal 0       0     1
 
 [158/247] r1 <R1> display rip
   Info: RIP is not enabled.
@@ -1114,14 +1120,14 @@ Total steps: 247
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 18:35:35.288  Sep 25 2026(EE613D77.49BA5E35)
+  Reference time: 20:08:07.210  Oct 14 2026(EE7A5FA7.35C28F5C)
 
 [177/247] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [178/247] r1 <R1> display clock
-  2026-09-25 18:35:35
-  Friday
+  2026-10-14 20:08:07
+  Wednesday
   Time Zone(UTC) : UTC
 
 [179/247] r1 <R1> display lldp neighbor
@@ -1150,13 +1156,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-09-25 18:35:35
+  CPU Usage Stat. Time : 2026-10-14 20:08:07
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-09-25 18:35:35
+  Memory utilization statistics at 2026-10-14 20:08:07
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1197,10 +1203,10 @@ Total steps: 247
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-09-25 18:35:35 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-25 18:35:35 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-25 18:35:35 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-25 18:35:35 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-10-14 20:08:07 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-10-14 20:08:07 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-10-14 20:08:07 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-10-14 20:08:07 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [187/247] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1270,8 +1276,8 @@ Total steps: 247
     Unicast:                    0,  Multicast:                  0
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  59 packets, 5980 bytes
-    Unicast:                    0,  Multicast:                 58
+  Output:  77 packets, 7816 bytes
+    Unicast:                    0,  Multicast:                 76
     Broadcast:                  1,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
       Input bandwidth utilization  :    0%
@@ -1288,8 +1294,8 @@ Total steps: 247
     Unicast:                    0,  Multicast:                  0
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  59 packets, 5980 bytes
-    Unicast:                    0,  Multicast:                 58
+  Output:  77 packets, 7816 bytes
+    Unicast:                    0,  Multicast:                 76
     Broadcast:                  1,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
       Input bandwidth utilization  :    0%
@@ -1344,7 +1350,7 @@ Total steps: 247
   ospf 1
    router-id 1.1.1.1
    maximum load-balancing 4
-   area 0
+   area 0.0.0.0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
     network 10.10.3.0 0.0.0.255
@@ -1388,15 +1394,17 @@ Total steps: 247
   Info: No online-fail record.
 
 [200/247] r1 <R1> display ssh server status
-  SSH server: Disabled
-
-[201/247] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
   SSH authentication retries      : 3 times
   SFTP server                     : Disable
-  STELNET server                  : Enable
+  Stelnet server                  : Disable
+
+[201/247] r1 <R1> display ssh user-information
+  Error: Unrecognized command found at '^' position.
+  display ssh user-information
+          ^
 
 [202/247] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
@@ -1467,7 +1475,7 @@ Total steps: 247
   ospf 1
    router-id 1.1.1.1
    maximum load-balancing 4
-   area 0
+   area 0.0.0.0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
     network 10.10.3.0 0.0.0.255
@@ -1530,7 +1538,7 @@ Total steps: 247
   ospf 1
    router-id 1.1.1.1
    maximum load-balancing 4
-   area 0
+   area 0.0.0.0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
     network 10.10.3.0 0.0.0.255
@@ -1660,7 +1668,7 @@ Total steps: 247
   ospf 1
    router-id 1.1.1.1
    maximum load-balancing 4
-   area 0
+   area 0.0.0.0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
     network 10.10.3.0 0.0.0.255
@@ -1707,37 +1715,45 @@ Total steps: 247
     routing-table  Routing table configuration
 
 [244/247] r1 [Huawei] undo ?
-    acl            Delete Access Control List
-    bfd            Disable BFD globally
-    bgp            Remove BGP
-    command-alias  Disable CLI alias
-    debugging      Disable system debugging functions
-    dns            Domain Name System
-    firewall       Firewall configuration
-    ike            Internet Key Exchange
-    ikev2          Internet Key Exchange version 2
-    info-center    Information center configuration
-    ip             Internet Protocol
-    ipsec          IP Security
-    ipv6           Disable IPv6
-    isis           Remove IS-IS
-    lldp           Link Layer Discovery Protocol
-    local-user     Remove a local user
-    multicast      Disable multicast routing
-    nat            Network Address Translation
-    nqa            Network Quality Analysis
-    nqa-server     Remove an NQA server binding
-    ntp-service    Remove NTP service configuration
-    ospf           Remove OSPF protocol configuration
-    ospfv3         Remove OSPFv3 protocol configuration
-    route-policy   Remove a route-policy
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
-    snmp-agent     Remove SNMP agent configuration
-    stelnet        Disable the STelnet server
-    terminal       Set the terminal line characteristics
-    time-range     Remove a time-range
-    traffic        Display traffic statistics
+    acl                  Delete Access Control List
+    bfd                  Disable BFD globally
+    bgp                  Remove BGP
+    command-alias        Disable CLI alias
+    debugging            Disable system debugging functions
+    dhcp                 Dynamic Host Configuration Protocol
+    dhcpv6               DHCPv6 configuration
+    dns                  Domain Name System
+    firewall             Firewall configuration
+    header               Remove the login/shell banner
+    ike                  Internet Key Exchange
+    ikev2                Internet Key Exchange version 2
+    info-center          Information center configuration
+    information-refresh  Restore the default information refresh interval
+    ip                   Internet Protocol
+    ipsec                IP Security
+    ipv6                 Disable IPv6
+    isis                 Remove IS-IS
+    lldp                 Link Layer Discovery Protocol
+    local-user           Remove a local user
+    multicast            Disable multicast routing
+    nat                  Network Address Translation
+    nqa                  Network Quality Analysis
+    nqa-server           Remove an NQA server binding
+    ntp-service          Remove NTP service configuration
+    ospf                 Remove OSPF protocol configuration
+    ospfv3               Remove OSPFv3 protocol configuration
+    route-policy         Remove a route-policy
+    rsa                  RSA key pair
+    screen-length        Restore default screen length
+    screen-width         Restore default screen width
+    sftp                 Disable the SFTP server
+    snmp-agent           Remove SNMP agent configuration
+    ssh                  Restore the SSH server defaults
+    stelnet              Disable the STelnet server
+    telnet               Disable the Telnet server
+    terminal             Set the terminal line characteristics
+    time-range           Remove a time-range
+    traffic              Display traffic statistics
 
 [245/247] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)

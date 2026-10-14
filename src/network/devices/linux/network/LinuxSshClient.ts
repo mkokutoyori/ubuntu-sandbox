@@ -19,7 +19,6 @@
 import { compareAndRecordHostKey, type KnownHostsVfs } from '../../../protocols/ssh/hostkey/HostKeyChangedWarning';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
-import { readSshdConfig } from '../../../protocols/ssh/server/SshdConfigText';
 import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
 import { findHostByAddress, isPathReachable } from './HostLookup';
 import type { ExecChannelOptions } from '../../../protocols/ssh/channels/ISshChannel';
@@ -56,7 +55,6 @@ import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/S
 import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
-import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
 import { authorizedKeyAdmits, parseAuthorizedKeysLine, sshWildcardMatches, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
 import { parseProxyJumpSpec, type ProxyHop } from '@/terminal/sessions/sshArgs';
 import { localListenerFailure, NO_LOCAL_FORWARDING, remoteForwardFailure } from '../../../protocols/ssh/ForwardOpening';
@@ -203,46 +201,6 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
   }
   return { positional, flags };
 }
-
-/** Exported for {@link file://../../../../shell/sshLauncher.ts} — the interactive `ssh` (no exec command) path enforces the same ForceCommand policy as this exec-mode client. */
-export function readForceCommand(
-  machine: { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } },
-  user: string,
-  sourceIp?: string,
-  sourceHost?: string,
-): string | null {
-  return effectiveSshdView(machine, user, sourceIp, sourceHost)?.forceCommand ?? null;
-}
-
-export function readMaxAuthTries(
-  machine: { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } },
-  user: string,
-  sourceIp?: string,
-  sourceHost?: string,
-): number | null {
-  const view = effectiveSshdView(machine, user, sourceIp, sourceHost);
-  if (!view || !Number.isFinite(view.maxAuthTries) || view.maxAuthTries < 1) return null;
-  return view.maxAuthTries;
-}
-
-function effectiveSshdView(
-  machineRef: unknown,
-  user: string,
-  sourceIp?: string,
-  sourceHost?: string,
-): import('../../../protocols/ssh/server/SshdServerConfig').SshdEffectiveView | null {
-  const machine = machineRef as { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } };
-  const raw = machine.executor?.vfs ? readSshdConfig(machine.executor.vfs) : '';
-  if (!raw) return null;
-  const cfg = SshdServerConfig.parse(raw);
-  const groups = (machine.executor?.userMgr?.getUserGroups?.(user) ?? []).map(g => g.name);
-  return cfg.effectiveFor({ user, groups, address: sourceIp, host: sourceHost });
-}
-
-
-
-
-
 
 function deniedLine(user: string, host: string, methods: readonly string[] | string | null): string {
   const list = methods === null ? 'publickey,password' : typeof methods === 'string' ? methods : methods.join(',');

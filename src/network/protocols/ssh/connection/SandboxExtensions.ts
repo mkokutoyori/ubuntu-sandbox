@@ -13,6 +13,7 @@ export interface ShellInfoPayload {
   readonly inlineHelp: boolean;
   readonly prompt: string | null;
   readonly posixShell: boolean;
+  readonly shellKind: string | null;
   readonly motd: string | null;
   readonly bannerBytes: number;
 }

@@ -135,7 +135,7 @@ describe('Linux -> Cisco SSH: real wire, not a local checkPassword() call', () =
     // `frames` proves. The landing prompt replaces the old assertion on a
     // child session's class: a wire-driven hop has none.
     expect(frames).toBeGreaterThan(0);
-    expect(host.foreground.getPrompt()).toMatch(/[>#]\s*$/);
+    expect(host.getPrompt()).toMatch(/[>#]\s*$/);
     void cisco;
   });
 
@@ -146,8 +146,7 @@ describe('Linux -> Cisco SSH: real wire, not a local checkPassword() call', () =
 
     await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'WRONG-PASSWORD');
 
-    expect(host.foreground).toBe(host);
-    expect(host.foreground).not.toBeInstanceOf(CiscoTerminalSession);
+    expect(host).not.toBeInstanceOf(CiscoTerminalSession);
     expect(host.lines.map((l) => l.text).join('\n')).toMatch(/Permission denied/);
   });
 });
@@ -161,7 +160,7 @@ describe('Linux -> Huawei SSH: real wire, not a local checkPassword() call', () 
     const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123'));
 
     expect(frames).toBeGreaterThan(0);
-    expect(host.foreground.getPrompt()).toMatch(/^</);
+    expect(host.getPrompt()).toMatch(/^</);
   });
 
   it('a wrong password is rejected and never lands on the router session', async () => {
@@ -171,8 +170,7 @@ describe('Linux -> Huawei SSH: real wire, not a local checkPassword() call', () 
 
     await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'WRONG-PASSWORD');
 
-    expect(host.foreground).toBe(host);
-    expect(host.foreground).not.toBeInstanceOf(HuaweiTerminalSession);
+    expect(host).not.toBeInstanceOf(HuaweiTerminalSession);
   });
 });
 
@@ -185,6 +183,6 @@ describe('Linux -> Windows SSH: real wire, not a local checkPassword() call', ()
     const frames = await countDispatchedFrames(() => sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.7', 'user'));
 
     expect(frames).toBeGreaterThan(0);
-    expect(host.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(host.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 });

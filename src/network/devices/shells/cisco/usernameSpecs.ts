@@ -1,6 +1,9 @@
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
+import {
+  TYPE4_DEPRECATION_WARNING, invalidEncryptedSecretMessage, isWellFormedSecret,
+} from './ciscoPasswordVerify';
 
 const MODES = ['config'] as const;
 
@@ -119,7 +122,6 @@ const ALGOS_CONDENSE: Readonly<Record<string, UsernameSecretAlgo>> = {
   0: 'plain', 4: 'type-4', 5: 'md5', 8: 'sha256', 9: 'scrypt',
 };
 
-const PREFIXE_CRYPT: Readonly<Record<string, string>> = { 5: '$1$', 8: '$8$', 9: '$9$' };
 
 interface SecretLu {
   readonly valeur: string;
@@ -133,8 +135,7 @@ function lireSecret(brut: string, demande?: UsernameSecretAlgo): SecretLu {
   const algo = ALGOS_CONDENSE[tete];
   if (algo !== undefined && coupe !== -1) {
     const valeur = brut.slice(coupe + 1);
-    const prefixe = PREFIXE_CRYPT[tete];
-    if (prefixe !== undefined && !valeur.startsWith(prefixe)) throw new CliSecretRefused(tete);
+    if (!isWellFormedSecret(tete, valeur)) throw new CliSecretRefused(tete);
     return algo === 'plain' ? { valeur, algo, clair: valeur } : { valeur, algo };
   }
   return { valeur: brut, algo: demande ?? 'md5', clair: brut };
@@ -155,10 +156,6 @@ export class CliSecretRefused extends Error {
     super('The secret you entered is not a valid encrypted secret.');
   }
 }
-
-const AVERTISSEMENT_TYPE_4 =
-  'WARNING: Command has been added to the configuration but Type 4 passwords have been deprecated.\n'
-  + 'Migrate to a supported password type';
 
 const AVERTISSEMENT_TYPE_0 =
   'WARNING: Command has been added to the configuration using a type 0\n'
@@ -183,9 +180,7 @@ export function usernameSpecs(ctx: () => UsernameHost): CommandSpec[] {
             : undefined;
       } catch (error) {
         if (error instanceof CliSecretRefused) {
-          return 'ERROR: The secret you entered is not a valid encrypted secret.\n'
-            + `To enter an UNENCRYPTED secret, do not specify type ${error.type} encryption.\n`
-            + 'When you properly enter an UNENCRYPTED secret, it will be encrypted.';
+          return invalidEncryptedSecretMessage(error.type);
         }
         throw error;
       }
@@ -215,7 +210,7 @@ export function usernameSpecs(ctx: () => UsernameHost): CommandSpec[] {
         maxLinks: args['user-maxlinks'] === undefined
           ? undefined : Number(args['user-maxlinks']),
       });
-      if (lu?.algo === 'type-4') return AVERTISSEMENT_TYPE_4;
+      if (lu?.algo === 'type-4') return TYPE4_DEPRECATION_WARNING;
       return lu?.algo === 'plain-password' && lu.clair !== undefined
         ? AVERTISSEMENT_TYPE_0 : '';
     },

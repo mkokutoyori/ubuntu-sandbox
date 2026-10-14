@@ -90,9 +90,9 @@ async function sshWith(
   for (let i = 0; i < 40 && term.currentInputMode.type !== 'password'; i++) await tick(25);
   term.setPasswordBuf('alice');
   term.handleKey(key('Enter'));
-  for (let i = 0; i < 40 && !/alice@/.test(term.foreground.getPrompt()); i++) await tick(25);
+  for (let i = 0; i < 40 && !/alice@/.test(term.getPrompt()); i++) await tick(25);
   expect(
-    term.foreground.getPrompt(),
+    term.getPrompt(),
     'la session doit être ouverte, sinon la mesure ne dit rien',
   ).toMatch(/alice@/);
   return term;

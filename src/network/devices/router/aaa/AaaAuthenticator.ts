@@ -412,9 +412,13 @@ export class AaaAuthenticator {
     const budget = reorder ? defaults.transactionMaxTries ?? DEFAULT_TRANSACTION_MAX_TRIES : Infinity;
     const maxAttempts = reorder ? Infinity : order.length;
     let used = 0;
+    let silentServer: string | null = null;
     for (let attempt = 0; attempt < maxAttempts && used < budget; attempt++) {
       const server = order[attempt % order.length];
       const address = server.address as string;
+      if (silentServer !== null && silentServer !== address) {
+        client.counters.phase(silentServer, 'authentication').failovers++;
+      }
       this.syncRadiusServer(client, server);
       const wireName = sec.radiusStripping.apply(asked, this.vrfOfServer(address));
       selector.acquire(address);
@@ -427,10 +431,13 @@ export class AaaAuthenticator {
       if (outcome === 'timeout') {
         const transmissions = (server.retransmit ?? defaults.retransmit ?? RADIUS_CLIENT_DEFAULT_RETRANSMIT) + 1;
         used += transmissions;
+        silentServer = address;
         sec.radiusLiveness.recordTimeout(address, transmissions, simulationNowMs(), criteria, deadtime);
         if (reorder) selector.noteFailure(group.name, address, orderedAddresses);
       } else {
+        silentServer = null;
         sec.radiusLiveness.recordValidReply(address, simulationNowMs());
+        selector.resetPeak(address);
         selector.noteAnswer(group.name, address);
       }
       if (outcome === 'accept') return 'accept';

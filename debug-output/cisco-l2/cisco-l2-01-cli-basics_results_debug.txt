@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-09-25T18:33:30.443Z
+Generated: 2026-10-14T19:59:32.029Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -57,6 +57,7 @@ Total steps: 366
     interfaces     Interface status and configuration
     inventory      Display hardware inventory
     ip             DHCP pool information
+    ipv6           DHCPv6 address and prefix bindings
     lacp           Display LACP state
     line           Display TTY lines
     lldp           Display LLDP information
@@ -70,7 +71,7 @@ Total steps: 366
     privilege      Display current privilege level
     processes      Display active processes
     queuing        Display the 802.1p trust state of an interface
-    radius         Display Radius stats
+    radius         Show RADIUS server group properties
     redundancy     Display redundancy state
     reload         Display reload schedule
     sessions       Display open outgoing connections
@@ -149,7 +150,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *18:33:30.000 UTC Fri Sep 25 2026
+  *19:59:32.000 UTC Wed Oct 14 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -232,6 +233,7 @@ Total steps: 366
     exit        Exit from the EXEC
     help        Description of the interactive help system
     mkdir       Create a directory
+    monitor     Configure a capture buffer
     more        Display a file
     ping        Send echo messages
     pwd         Display current working directory
@@ -287,6 +289,7 @@ Total steps: 366
     interfaces      Interface status and configuration
     inventory       Display hardware inventory
     ip              DHCP pool information
+    ipv6            DHCPv6 address and prefix bindings
     lacp            Display LACP state
     license         Display licenses
     line            Display TTY lines
@@ -304,7 +307,7 @@ Total steps: 366
     privilege       Display current privilege level
     processes       Display active processes
     queuing         Display the 802.1p trust state of an interface
-    radius          Display Radius stats
+    radius          Show RADIUS server group properties
     redundancy      Display redundancy state
     reload          Display reload schedule
     running-config  Current operating configuration
@@ -344,11 +347,13 @@ Total steps: 366
     history        Clear the command history buffer
     host           Delete entries from the host table
     ip             Clear DHCP address bindings
+    ipv6           Clear DHCPv6 bindings
     line           Auxiliary line
     logging        Clear the syslog buffer
     mac            Clear MAC address table entries
     ntp            Clear NTP packet statistics
     port-security  Clear all secure MAC addresses
+    radius         Clear RADIUS server information
     spanning-tree  Restart protocol migration
 
 [22/366] sw1 SW1# debug ?
@@ -496,7 +501,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC5732P2WS
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC61231HXU
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -1312,10 +1317,20 @@ Total steps: 366
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
           H - Hot-standby (LACP only)
-          s - suspended
+          R - Layer3      S - Layer2
+          U - in use      f - failed to allocate aggregator
+  
+          M - not in use, minimum links not met
+          u - unsuitable for bundling
+          w - waiting to be aggregated
+          d - default port
+  
+  
   Number of channel-groups in use: 0
+  Number of aggregators:           0
+  
   Group  Port-channel  Protocol    Ports
-  ------+-------------+-----------+-----------------------------------------
+  ------+-------------+-----------+-----------------------------------------------
 
 [51/366] sw1 SW1# show vtp status
   VTP Version capable             : 1 to 2
@@ -1351,7 +1366,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *18:33:30.000 UTC Fri Sep 25 2026
+  *19:59:32.000 UTC Wed Oct 14 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1503,15 +1518,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 18:33:30.146: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Sep 25 18:33:30.146: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Sep 25 18:33:30.152: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Sep 25 18:33:30.152: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Sep 25 18:33:30.155: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Sep 25 18:33:30.155: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Sep 25 18:33:30.161: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:33:30.161: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:33:30.262: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:59:31.806: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Oct 14 19:59:31.807: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Oct 14 19:59:31.811: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Oct 14 19:59:31.811: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Oct 14 19:59:31.814: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Oct 14 19:59:31.814: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Oct 14 19:59:31.821: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:59:31.821: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:59:31.897: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -1539,21 +1554,21 @@ Total steps: 366
 
 [63/366] sw1 SW1# show ip arp
   Protocol  Address              Age(min)       Hardware Addr     Type      Interface
-  Internet  192.168.1.11         0              0200.0000.004f    ARPA      FastEthernet0/1
-  Internet  192.168.1.13         0              0200.0000.0057    ARPA      FastEthernet0/3
-  Internet  192.168.1.21         0              0200.0000.005b    ARPA      GigabitEthernet0/1
-  Internet  192.168.1.23         0              0200.0000.0063    ARPA      GigabitEthernet0/1
-  Internet  192.168.1.12         0              0200.0000.0053    ARPA      FastEthernet0/2
-  Internet  192.168.1.22         0              0200.0000.005f    ARPA      GigabitEthernet0/1
+  Internet  192.168.1.11         0              0200.0000.004f    ARPA      Vlan1
+  Internet  192.168.1.13         0              0200.0000.0057    ARPA      Vlan1
+  Internet  192.168.1.21         0              0200.0000.005b    ARPA      Vlan1
+  Internet  192.168.1.23         0              0200.0000.0063    ARPA      Vlan1
+  Internet  192.168.1.12         0              0200.0000.0053    ARPA      Vlan1
+  Internet  192.168.1.22         0              0200.0000.005f    ARPA      Vlan1
 
 [64/366] sw1 SW1# show arp
   Protocol  Address              Age(min)       Hardware Addr     Type      Interface
-  Internet  192.168.1.11         0              0200.0000.004f    ARPA      FastEthernet0/1
-  Internet  192.168.1.13         0              0200.0000.0057    ARPA      FastEthernet0/3
-  Internet  192.168.1.21         0              0200.0000.005b    ARPA      GigabitEthernet0/1
-  Internet  192.168.1.23         0              0200.0000.0063    ARPA      GigabitEthernet0/1
-  Internet  192.168.1.12         0              0200.0000.0053    ARPA      FastEthernet0/2
-  Internet  192.168.1.22         0              0200.0000.005f    ARPA      GigabitEthernet0/1
+  Internet  192.168.1.11         0              0200.0000.004f    ARPA      Vlan1
+  Internet  192.168.1.13         0              0200.0000.0057    ARPA      Vlan1
+  Internet  192.168.1.21         0              0200.0000.005b    ARPA      Vlan1
+  Internet  192.168.1.23         0              0200.0000.0063    ARPA      Vlan1
+  Internet  192.168.1.12         0              0200.0000.0053    ARPA      Vlan1
+  Internet  192.168.1.22         0              0200.0000.005f    ARPA      Vlan1
 
 
 --- [65] § terminal session settings ---
@@ -1613,6 +1628,7 @@ Total steps: 366
     hostname       Set system hostname
     interface      FastEthernet IEEE 802.3
     ip             Enable IP routing
+    ipv6           Configure IPv6 prefix pool
     lacp           LACP system priority
     line           Enter line configuration
     lldp           Enable LLDP globally
@@ -1744,6 +1760,7 @@ Total steps: 366
 <empty>
 
 [84/366] sw1 SW1(config-if)# ?
+    arp                Set ARP cache timeout
     cdp                Enable CDP on this interface
     channel-group      EtherChannel membership
     channel-protocol   Select the channel protocol (PAgP, LACP)
@@ -3018,10 +3035,10 @@ Total steps: 366
 
 --- [180] § host inspection — L1 (Linux) ---
 [180/366] l1 l1$ uname -a
-  Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+  Linux L1 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [181/366] l1 l1$ hostname
-  linux-pc
+  L1
 
 [182/366] l1 l1$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -3042,17 +3059,13 @@ Total steps: 366
           TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 [184/366] l1 l1$ ip route
-  192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.11 metric 0
+  192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.11
 
 [185/366] l1 l1$ arp -a
-  ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
-  ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
-  ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
-  ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
-  ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
+<empty>
 
 [186/366] l1 l1$ cat /etc/hostname
-  linux-pc
+  L1
 
 
 --- [187] § host inspection — W1 (Windows) ---
@@ -3189,7 +3202,7 @@ Total steps: 366
 
 --- [193] § host inspection — SRV1 (Linux server) ---
 [193/366] srv1 srv1$ uname -a
-  Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+  Linux SRV1 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [194/366] srv1 srv1$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -3207,18 +3220,18 @@ Total steps: 366
   eth3             DOWN           02:00:00:00:00:5a <NO-CARRIER,BROADCAST,UP,MULTICAST> 
 
 [196/366] srv1 srv1$ ss -tlnp
-  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
-  LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=22,fd=3))
-  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=22,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
-  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
+  State     Recv-Q    Send-Q       Local Address:Port        Peer Address:Port    Process                                                                         
+  LISTEN    0         4096               0.0.0.0:1521             0.0.0.0:*                                                                                       
+  LISTEN    0         128                0.0.0.0:22               0.0.0.0:*        users:(("sshd",pid=22,fd=3))                                                   
+  LISTEN    0         4096         127.0.0.53%lo:53               0.0.0.0:*        users:(("systemd-resolve",pid=29,fd=4))                                        
+  LISTEN    0         4096               0.0.0.0:1812             0.0.0.0:*        users:(("freeradius",pid=40,fd=3))                                             
+  LISTEN    0         4096                  [::]:1521                [::]:*                                                                                       
+  LISTEN    0         128                   [::]:22                  [::]:*        users:(("sshd",pid=22,fd=4))                                                   
 
 [197/366] srv1 srv1$ systemctl status sshd
   [0;1;32m●[0m ssh.service - OpenBSD Secure Shell server
        Loaded: loaded (/usr/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)
-       Active: [0;1;32mactive (running)[0m since Fri, 25 Sep 2026 18:33:29 GMT
+       Active: [0;1;32mactive (running)[0m since Wed, 14 Oct 2026 19:59:31 GMT
      Main PID: 22 (sshd)
         Tasks: 1
        Memory: 4.2M
@@ -3228,11 +3241,6 @@ Total steps: 366
 
 [198/366] srv1 srv1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
-  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
-  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
-  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
-  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
-  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 
 --- [199] § host inspection — L2/W2/SRV2 ---
@@ -3583,7 +3591,7 @@ Total steps: 366
 
 --- [249] § broad host inspection across all six machines ---
 [250/366] l1 l1$ hostname
-  linux-pc
+  L1
 
 [251/366] l1 l1$ whoami
   user
@@ -3596,11 +3604,7 @@ Total steps: 366
   eth3             DOWN           
 
 [253/366] l1 l1$ ip neigh
-  192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
-  192.168.1.21 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
-  192.168.1.23 dev eth0 lladdr 02:00:00:00:00:63 REACHABLE
-  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
-  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+<empty>
 
 [254/366] l1 l1$ cat /etc/resolv.conf
 <empty>
@@ -3612,7 +3616,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   18:33:32 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   19:59:33 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [257/366] w1 w1$ hostname
   W1
@@ -3719,7 +3723,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/25/2026, 6:33:29 PM
+  System Boot Time:          10/14/2026, 7:59:31 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3746,7 +3750,7 @@ Total steps: 366
                                    Status:          Media disconnected
 
 [263/366] srv1 srv1$ hostname
-  linux-server
+  SRV1
 
 [264/366] srv1 srv1$ whoami
   root
@@ -3759,11 +3763,7 @@ Total steps: 366
   eth3             DOWN           
 
 [266/366] srv1 srv1$ ip neigh
-  192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
-  192.168.1.21 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
-  192.168.1.23 dev eth0 lladdr 02:00:00:00:00:63 REACHABLE
-  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
-  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+<empty>
 
 [267/366] srv1 srv1$ cat /etc/resolv.conf
 <empty>
@@ -3775,10 +3775,10 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   18:33:32 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   19:59:33 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [270/366] l2 l2$ hostname
-  linux-pc
+  L2
 
 [271/366] l2 l2$ whoami
   user
@@ -3791,11 +3791,7 @@ Total steps: 366
   eth3             DOWN           
 
 [273/366] l2 l2$ ip neigh
-  192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
-  192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
-  192.168.1.23 dev eth0 lladdr 02:00:00:00:00:63 REACHABLE
-  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
-  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+<empty>
 
 [274/366] l2 l2$ cat /etc/resolv.conf
 <empty>
@@ -3807,7 +3803,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   18:33:32 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   19:59:33 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [277/366] w2 w2$ hostname
   W2
@@ -3914,7 +3910,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/25/2026, 6:33:30 PM
+  System Boot Time:          10/14/2026, 7:59:31 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3941,7 +3937,7 @@ Total steps: 366
                                    Status:          Media disconnected
 
 [283/366] srv2 srv2$ hostname
-  linux-server
+  SRV2
 
 [284/366] srv2 srv2$ whoami
   root
@@ -3954,11 +3950,7 @@ Total steps: 366
   eth3             DOWN           
 
 [286/366] srv2 srv2$ ip neigh
-  192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
-  192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
-  192.168.1.21 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
-  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
-  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+<empty>
 
 [287/366] srv2 srv2$ cat /etc/resolv.conf
 <empty>
@@ -3970,34 +3962,31 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   18:33:32 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   19:59:33 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.966 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.827 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.035 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.035 ms
   
   --- 192.168.1.12 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.827/2.397/3.966/1.570 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.026 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.728 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.039 ms
   
   --- 192.168.1.21 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.728/0.877/1.026/0.149 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
 
 [292/366] l1 l1$ arp -a
-  ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
-  ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
-  ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
   ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
-  ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
+  ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
 
 [293/366] sw1 SW1# show mac address-table
   Mac Address Table
@@ -4034,11 +4023,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       9 packets input, 784 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       11 packets input, 912 bytes, 0 no buffer
+       Received 3 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       39 packets output, 3102 bytes, 0 underruns
+       41 packets output, 3230 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4055,11 +4044,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       10 packets input, 868 bytes, 0 no buffer
+       11 packets input, 932 bytes, 0 no buffer
        Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       32 packets output, 2472 bytes, 0 underruns
+       34 packets output, 2600 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4080,7 +4069,7 @@ Total steps: 366
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       31 packets output, 2412 bytes, 0 underruns
+       33 packets output, 2540 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4526,11 +4515,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 580 bytes, 0 no buffer
+       8 packets input, 644 bytes, 0 no buffer
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       38 packets output, 2962 bytes, 0 underruns
+       40 packets output, 3090 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4551,7 +4540,7 @@ Total steps: 366
        Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       31 packets output, 2332 bytes, 0 underruns
+       33 packets output, 2460 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4572,7 +4561,7 @@ Total steps: 366
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       32 packets output, 2476 bytes, 0 underruns
+       34 packets output, 2604 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

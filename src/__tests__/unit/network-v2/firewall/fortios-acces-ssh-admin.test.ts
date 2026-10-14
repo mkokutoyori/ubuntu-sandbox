@@ -94,7 +94,7 @@ async function sshLogin(
 }
 
 async function typeLine(host: TerminalSession, line: string): Promise<void> {
-  const foreground = host.foreground;
+  const foreground = host;
   foreground.setInput(line);
   foreground.setInputBuf(line);
   host.handleKey(key('Enter'));
@@ -102,7 +102,7 @@ async function typeLine(host: TerminalSession, line: string): Promise<void> {
 }
 
 function landedOnFirewall(host: TerminalSession): boolean {
-  return /FGT\b.*#/.test(host.foreground.getPrompt());
+  return /FGT\b.*#/.test(host.getPrompt());
 }
 
 function transcript(host: TerminalSession): string {
@@ -185,7 +185,7 @@ describe('le pare-feu heberge un vrai serveur SSH', () => {
 
     await typeLine(host, 'config system global');
 
-    expect(host.foreground.getPrompt()).toMatch(/\(global\)\s*#/);
+    expect(host.getPrompt()).toMatch(/\(global\)\s*#/);
     await typeLine(host, 'end');
   });
 

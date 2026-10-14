@@ -1,3 +1,4 @@
+import { simulationNowMs } from '@/network/core/SystemClock';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
@@ -8,7 +9,7 @@ import type {
   CiscoSecurityConfig, RadiusServer, TacacsServer,
 } from '../../router/security/CiscoSecurityConfig';
 import {
-  newRadiusServerStats, newTacacsServerStats,
+  newTacacsServerStats,
 } from '../../router/security/CiscoSecurityConfig';
 
 const MODES = ['config'] as const;
@@ -240,7 +241,7 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
         const nomServeur = args.nom;
         const existant = radius().get(nomServeur);
         radius().set(nomServeur, existant ?? {
-          name: nomServeur, stats: newRadiusServerStats(),
+          name: nomServeur, configuredAtMs: simulationNowMs(), serverId: ctx().security().allocateServerId(),
         });
         ctx().selectRadiusServer(nomServeur);
         return '';
@@ -289,7 +290,7 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
           name: hote, address: hote, key: args.cle,
           authPort: nombre('auth-port'), acctPort: nombre('acct-port'),
           timeoutSec: nombre('timeout'), retransmit: nombre('retransmit'),
-          legacySpelling: true, stats: newRadiusServerStats(),
+          legacySpelling: true, configuredAtMs: simulationNowMs(), serverId: ctx().security().allocateServerId(),
         });
         return '';
       },

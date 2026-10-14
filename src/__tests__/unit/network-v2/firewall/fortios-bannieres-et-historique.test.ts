@@ -133,7 +133,7 @@ async function ouvrirSsh(poste: LinuxPC): Promise<TerminalSession> {
 
 async function repondre(host: TerminalSession, texte: string): Promise<void> {
   if (host.currentInputMode.type === 'password') host.setPasswordBuf(texte);
-  else { host.foreground.setInput(texte); host.foreground.setInputBuf(texte); }
+  else { host.setInput(texte); host.setInputBuf(texte); }
   host.handleKey(key('Enter'));
   for (let i = 0; i < 12; i++) await tick();
 }
@@ -143,7 +143,7 @@ function transcription(host: TerminalSession): string {
 }
 
 function surLePareFeu(host: TerminalSession): boolean {
-  return /FGT\b.*#/.test(host.foreground.getPrompt());
+  return /FGT\b.*#/.test(host.getPrompt());
 }
 
 beforeEach(() => { Logger.reset(); });
@@ -175,7 +175,7 @@ describe('les bannieres d administration paraissent', () => {
 
     expect(transcription(host)).toContain(BANNIERE_APRES);
     expect(surLePareFeu(host)).toBe(false);
-    expect(host.foreground.getPrompt()).toContain("(Press 'a' to accept)");
+    expect(host.getPrompt()).toContain("(Press 'a' to accept)");
   });
 
   it('refuser la banniere ferme la session', async () => {
@@ -187,7 +187,7 @@ describe('les bannieres d administration paraissent', () => {
     await repondre(host, 'non');
 
     expect(surLePareFeu(host)).toBe(false);
-    expect(host.foreground.getPrompt()).not.toContain('accept');
+    expect(host.getPrompt()).not.toContain('accept');
     expect(transcription(host)).toMatch(/closed|logout|Connection to/i);
   });
 

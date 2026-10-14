@@ -1,3 +1,4 @@
+import type { EnableSecretAlgorithm } from '../../../equipment/Equipment';
 import { ServerLiveness } from '../../../radius/ServerLiveness';
 import { DomainStripping } from '../aaa/UsernameRouting';
 import { ServerSelector, type LoadBalanceSetting } from '../../../radius/ServerSelector';
@@ -5,6 +6,7 @@ import { SshPubkeyChain } from './SshPubkeyChain';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
+import { ZoneFirewall } from './ZoneFirewall';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
 import { type PolicyMapAction, policyMapActionLine } from './policyMapActions';
@@ -20,19 +22,6 @@ export interface AaaMethodEntry {
   privilegeLevel?: number;
   recordType?: 'start-stop' | 'stop-only' | 'wait-start' | 'none';
   methods: string[];
-}
-
-export interface RadiusServerStats {
-  upSinceMs: number;
-  authRequests: number;
-  authAccepts: number;
-  authRejects: number;
-  authTimeouts: number;
-  authRetransmits: number;
-  acctRequests: number;
-  acctResponses: number;
-  acctTimeouts: number;
-  acctRetransmits: number;
 }
 
 export interface TacacsServerStats {
@@ -82,7 +71,8 @@ export interface RadiusServer {
   timeoutSec?: number;
   /** Voir `TacacsServer.legacySpelling` : `radius-server host <ip>` alimente ce magasin-ci. */
   legacySpelling?: boolean;
-  stats: RadiusServerStats;
+  configuredAtMs: number;
+  serverId: number;
 }
 
 export interface TacacsServer {
@@ -126,16 +116,6 @@ export function tacacsServerPort(
   server: TacacsServer, defaults: TacacsGlobalDefaults,
 ): number {
   return server.port ?? defaults.port ?? TACACS_DEFAULT_PORT;
-}
-
-export function newRadiusServerStats(): RadiusServerStats {
-  return {
-    upSinceMs: simulationNowMs(),
-    authRequests: 0, authAccepts: 0, authRejects: 0,
-    authTimeouts: 0, authRetransmits: 0,
-    acctRequests: 0, acctResponses: 0,
-    acctTimeouts: 0, acctRetransmits: 0,
-  };
 }
 
 export function newTacacsServerStats(): TacacsServerStats {
@@ -365,7 +345,7 @@ export interface ParserView {
   readonly name: string;
   /** `secret …` sous la vue — ce que `enable view <nom>` demande. */
   secret?: string;
-  secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+  secretAlgo?: EnableSecretAlgorithm;
   /** Les commandes autorisees, par mode d'analyseur. */
   modes: Map<string, ParserViewMode>;
   /**
@@ -414,6 +394,12 @@ export class CiscoSecurityConfig {
   radiusServers: Map<string, RadiusServer> = new Map();
   tacacsServers: Map<string, TacacsServer> = new Map();
   aaaGroups: Map<string, AaaServerGroup> = new Map();
+  private lastServerId = 0;
+
+  allocateServerId(): number {
+    this.lastServerId += 1;
+    return this.lastServerId;
+  }
   legacyHosts: AaaLegacyServerHost[] = [];
   radiusDefaults: RadiusGlobalDefaults = {};
   readonly radiusLiveness = new ServerLiveness();
@@ -457,6 +443,14 @@ export class CiscoSecurityConfig {
 
   zones: Map<string, Zone> = new Map();
   zonePairs: Map<string, ZonePair> = new Map();
+  readonly zoneFirewall: ZoneFirewall = new ZoneFirewall(() => ({
+    zones: this.zones,
+    zonePairs: this.zonePairs,
+    classMaps: this.classMaps,
+    policyMaps: this.policyMaps,
+    zoneOfInterface: (iface) => this.interfaceFlags.get(iface)?.zoneMember,
+  }));
+
   interfaceFlags: Map<string, InterfaceSecurityFlags> = new Map();
 
   timeRanges: Map<string, TimeRange> = new Map();

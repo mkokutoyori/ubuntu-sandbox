@@ -36,15 +36,15 @@ const flush = async () => {
 
 /** Feed one line to whichever session currently has the keyboard. */
 async function line(term: TerminalSession, text: string): Promise<void> {
-  const fg = term.foreground as unknown as { setInputBuf: (v: string) => void; handleKey: (e: unknown) => void };
+  const fg = term as unknown as { setInputBuf: (v: string) => void; handleKey: (e: unknown) => void };
   fg.setInputBuf(text);
   fg.handleKey(key('Enter'));
   await flush();
 }
 
 async function answerPassword(term: TerminalSession, password: string): Promise<void> {
-  for (let i = 0; i < 60 && term.foreground.currentInputMode.type !== 'password'; i++) await flush();
-  const fg = term.foreground as unknown as { setPasswordBuf: (v: string) => void; handleKey: (e: unknown) => void };
+  for (let i = 0; i < 60 && term.currentInputMode.type !== 'password'; i++) await flush();
+  const fg = term as unknown as { setPasswordBuf: (v: string) => void; handleKey: (e: unknown) => void };
   fg.setPasswordBuf(password);
   fg.handleKey(key('Enter'));
   await flush();
@@ -170,7 +170,7 @@ describe.each(CLIENTS)('an SSH session opened from a %s client', (clientKind) =>
     const peer = PEERS.linux;
     await line(term, `${sshFor(clientKind)} ${peer.login}@10.0.70.9`);
     await answerPassword(term, peer.password);
-    expect(term.foreground.getPrompt()).toMatch(peer.promptPattern);
+    expect(term.getPrompt()).toMatch(peer.promptPattern);
 
     const afterLogin = acceptedConnections(server);
     for (const cmd of peer.commands) await line(term, cmd);
@@ -190,7 +190,7 @@ describe('a cisco client onto a huawei peer that has not enabled the legacy algo
     const { term, peerIp } = await labFor('cisco', 'huawei', false);
     await line(term, `ssh ${PEERS.huawei.login}@${peerIp}`);
     expect(text(term)).toMatch(/no matching key exchange method found/);
-    expect(term.foreground.getPrompt()).toMatch(/R1>/);
+    expect(term.getPrompt()).toMatch(/R1>/);
   }, 40000);
 });
 
@@ -201,7 +201,7 @@ describe.each(PAIRS)('a %s client onto a %s peer', (clientKind, peerKind) => {
     const { term, peerIp } = await labFor(clientKind, peerKind);
     await line(term, `${sshFor(clientKind)} ${peer.login}@${peerIp}`);
     await answerPassword(term, peer.password);
-    expect(term.foreground.getPrompt()).toMatch(peer.promptPattern);
+    expect(term.getPrompt()).toMatch(peer.promptPattern);
   }, 40000);
 
   it('reports a broken pipe once the link is pulled', async () => {

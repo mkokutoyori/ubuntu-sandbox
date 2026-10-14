@@ -105,7 +105,7 @@ describe('password userauth — OpenSSH-style retry feedback', () => {
       retry: () => handler.showAuthFailure('alice', 'host'),
       inform: () => undefined,
     });
-    expect(outcome).toEqual({ kind: 'success' });
+    expect(outcome).toEqual({ kind: 'success', method: 'password' });
     expect(lines.filter(l => l.text.includes('Permission denied'))).toHaveLength(0);
   });
 });

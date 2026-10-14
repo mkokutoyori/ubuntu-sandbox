@@ -59,9 +59,9 @@ function packetCount(args: readonly string[]): ActionProblem | null {
 
 export const POLICY_MAP_ACTIONS: readonly PolicyMapActionSpec[] = Object.freeze([
   { kind: 'police', words: 'police', description: 'Police traffic', greedy: true },
-  { kind: 'inspect', words: 'inspect', description: 'Inspect', greedy: false },
+  { kind: 'inspect', words: 'inspect', description: 'Inspect', greedy: true },
   { kind: 'drop', words: 'drop', description: 'Drop', greedy: true },
-  { kind: 'pass', words: 'pass', description: 'Pass', greedy: false },
+  { kind: 'pass', words: 'pass', description: 'Pass', greedy: true },
   { kind: 'set-dscp', words: 'set dscp', description: 'Set DSCP', greedy: true },
   { kind: 'set-precedence', words: 'set precedence', description: 'Set precedence', greedy: true },
   {

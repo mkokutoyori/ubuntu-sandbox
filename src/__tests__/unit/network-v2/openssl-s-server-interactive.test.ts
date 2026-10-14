@@ -33,7 +33,7 @@ async function flush(times = 10): Promise<void> {
 }
 
 async function type(session: TerminalSession, line: string): Promise<void> {
-  const fg = session.foreground;
+  const fg = session;
   fg.setInput(line);
   fg.setInputBuf(line);
   session.handleKey(key('Enter'));
@@ -65,7 +65,7 @@ describe('openssl s_server interactif', () => {
     const { server } = await lab();
     await type(server, START);
     expect(text(server)).toContain('ACCEPT');
-    expect(server.foreground.getPrompt()).toBe('');
+    expect(server.getPrompt()).toBe('');
   });
 
   it('la ligne envoyée par un client s\'affiche sur le terminal du serveur', async () => {
@@ -120,7 +120,7 @@ describe('openssl s_server interactif', () => {
     await type(server, START);
     await type(server, 'Q');
     expect(text(server)).toContain('DONE');
-    expect(server.foreground.getPrompt()).not.toBe('');
+    expect(server.getPrompt()).not.toBe('');
     expect(await sh(srv, 'ss -ltn')).not.toContain(':4433');
   });
 

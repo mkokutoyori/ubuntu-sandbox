@@ -32,8 +32,8 @@ async function flush(times = 8): Promise<void> {
 }
 
 async function type(session: TerminalSession, line: string): Promise<void> {
-  session.foreground.setInput(line);
-  session.foreground.setInputBuf(line);
+  session.setInput(line);
+  session.setInputBuf(line);
   session.handleKey(key('Enter'));
   await flush();
 }
@@ -78,6 +78,6 @@ describe('ssh typed at a Windows prompt: command word is case-insensitive and ma
     term.setPasswordBuf('admin');
     term.handleKey(key('Enter'));
     await flush();
-    expect(term.foreground.getPrompt()).toMatch(/alice@linuxA:~\$/);
+    expect(term.getPrompt()).toMatch(/alice@linuxA:~\$/);
   });
 });

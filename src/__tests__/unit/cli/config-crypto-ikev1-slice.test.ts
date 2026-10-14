@@ -120,7 +120,7 @@ describe('`?` nomme ce que la commande accepte, au lieu d\'un mot muet', () => {
     [KEYRING, 'pre-shared-key address ', 'A.B.C.D'],
     [KEYRING, 'pre-shared-key address 10.0.0.1 ', 'key'],
     [TFSET, 'mode ', 'Transport mode'],
-    [TFSET, 'crypto ipsec security-association replay window-size ', '<64-1024>'],
+    [TFSET, 'crypto ipsec security-association replay window-size ', '1024'],
     [CRYPTO_MAP, 'set peer ', 'A.B.C.D'],
     [CRYPTO_MAP, 'set pfs ', 'group14'],
     [CRYPTO_MAP, 'match address ', '<100-199>'],

@@ -75,7 +75,6 @@ function lab(): Lab {
     client, server, cable,
     opts: {
       defaultUser: 'root', sourceIp: CLIENT_IP, sourceDevice: client,
-      wireProbe: (h, p) => client.tcpConnectOutcome(new IPAddress(h), p),
     },
   };
 }

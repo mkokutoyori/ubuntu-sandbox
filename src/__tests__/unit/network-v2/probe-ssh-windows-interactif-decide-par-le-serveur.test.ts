@@ -40,8 +40,8 @@ let server: LinuxServer;
 let term: WindowsTerminalSession;
 
 async function typeLine(line: string): Promise<void> {
-  term.foreground.setInput(line);
-  term.foreground.setInputBuf(line);
+  term.setInput(line);
+  term.setInputBuf(line);
   term.handleKey(key('Enter'));
   await flush();
 }
@@ -73,13 +73,13 @@ describe('Windows interactive ssh decided by the server alone', () => {
   it('witness: the session opens on the server prompt', async () => {
     await typeLine('ssh alice@10.0.0.3');
     await submitPassword('alice');
-    expect(term.foreground.getPrompt()).toMatch(/^alice@srv:~\$/);
+    expect(term.getPrompt()).toMatch(/^alice@srv:~\$/);
   });
 
   it('a wrong password is refused', async () => {
     await typeLine('ssh alice@10.0.0.3');
     await submitPassword('wrong');
-    expect(term.foreground.getPrompt()).not.toMatch(/^alice@srv/);
+    expect(term.getPrompt()).not.toMatch(/^alice@srv/);
   });
 
   it('auth.log holds a single Accepted line for one login', async () => {
@@ -118,7 +118,7 @@ describe('Windows interactive ssh decided by the server alone', () => {
     await submitPassword('alice');
     expect(screen()).toMatch(/^alice$/m);
     expect(screen()).not.toMatch(/Last login|Welcome to/);
-    expect(term.foreground.getPrompt()).not.toMatch(/^alice@srv/);
+    expect(term.getPrompt()).not.toMatch(/^alice@srv/);
   });
 
   it('a remote command with a wrong password is refused', async () => {

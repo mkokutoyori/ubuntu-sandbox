@@ -35,6 +35,8 @@
  *   - SNMP-ready performance counters
  */
 
+import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
+import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
 import { simulationNowMs } from '@/network/core/SystemClock';
@@ -1268,6 +1270,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
         },
       }),
+      shellKind: () => primaryShellKindFor(this),
       execTarget: () => this as unknown as SshExecTarget,
       sftpSource: () => this.sshSftpFileSource(),
       forcedCommand: (user) => this.sshForcedCommand(user),
@@ -2673,6 +2676,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
+    if (!reinjected && this.ipsecEngine?.rejectsClearText(inPort, ipPkt)) {
+      Logger.info(this.id, 'ipsec:clear-text-dropped',
+        `${this.name}: clear text ${ipPkt.sourceIP} → ${ipPkt.destinationIP} dropped on ${inPort}`);
+      (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
+        .getLoggingConfig?.()?.append('warnings', 'crypto',
+          `Rec'd packet not an IPSEC packet. (ip) vrf/dest_addr= /${ipPkt.destinationIP}, src_addr= ${ipPkt.sourceIP}, prot= ${ipPkt.protocol}`,
+          true, 'RECVD_PKT_NOT_IPSEC');
+      return;
+    }
+
     // C.1b: SPD inbound check (RFC 4301 §4.4.1) — DISCARD/BYPASS before ACL
     if (this.ipsecEngine) {
       const spdResult = this.ipsecEngine.evaluateSPD(ipPkt, 'in');
@@ -2772,7 +2785,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
 
+  private zoneFirewallPermits(inIface: string | null, outIface: string | null, packet: IPv4Packet): boolean {
+    const security = (this as unknown as { [s: symbol]: { zoneFirewall?: ZoneFirewallPort } | undefined })[Symbol.for('CiscoSecurityConfig')];
+    if (!security?.zoneFirewall) return true;
+    const verdict = security.zoneFirewall.permits(inIface, outIface, packet,
+      (name, candidate) => this.aclEngine.evaluateACLByName(name, candidate) === 'permit');
+    if (verdict.logLine) {
+      (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
+        .getLoggingConfig?.()?.append('informational', 'FW', verdict.logLine, true, 'DROP_PKT');
+    }
+    return verdict.permit;
+  }
+
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
+    if (!this.zoneFirewallPermits(inPort, null, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} to the router (${inPort} → self)`);
+      return;
+    }
     // RFC 791 §3.2: hold non-first/more-fragments datagrams until the full
     // set arrives — buffered fragments return null here and are simply
     // dropped from this call; the reassembled datagram continues through
@@ -2882,6 +2912,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           ? this.arpTable.get(replyTarget.toString())
           : undefined;
         if (sameSubnetMac && !this.ipsecEngine) {
+          if (!this.zoneFirewallPermits(null, inPort, replyIP)) return;
           this.counters.ifOutOctets += replyIP.totalLength;
           this.sendFrame(inPort, {
             srcMAC: port.getMAC(), dstMAC: sameSubnetMac.mac,
@@ -3177,6 +3208,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
+    if (!this.zoneFirewallPermits(inPort, route.iface, fwdPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
+      return;
+    }
     const effectiveMtu = outPort.getMTU();
 
     if (fwdPkt.totalLength > effectiveMtu) {
@@ -3635,6 +3671,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.ports.get(outPortName);
     if (!port) return;
+    if (!this.zoneFirewallPermits(null, outPortName, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} from the router (self → ${outPortName})`);
+      return;
+    }
     const cached = this.arpTable.get(nextHopIP.toString());
     if (cached) {
       this.sendFrame(outPortName, {
@@ -5554,8 +5595,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    *
    * Le niveau vient du compte, la ligne vty pouvant l'imposer par
    * `privilege level N` — c'est la meme regle que la session
-   * interactive applique deja (`prepareAsRemoteUser`), lue ici au meme
-   * endroit pour que les deux portes ne puissent pas diverger.
+   * interactive applique deja, lue ici au meme endroit pour que les
+   * deux portes ne puissent pas diverger.
    */
   async runSshCommand(user: string, command: string): Promise<{ output: string; exitCode: number }> {
     const sync = this.runSshCommandSync(user, command);
@@ -5971,12 +6012,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         };
         const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
 
-        this.sendFrame(route.iface, {
-          srcMAC: outPort.getMAC(),
-          dstMAC: nextHopMAC!,
-          etherType: ETHERTYPE_IPV4,
-          payload: ipPkt,
-        });
+        if (this.zoneFirewallPermits(null, route.iface, ipPkt)) {
+          this.sendFrame(route.iface, {
+            srcMAC: outPort.getMAC(),
+            dstMAC: nextHopMAC!,
+            etherType: ETHERTYPE_IPV4,
+            payload: ipPkt,
+          });
+        }
 
         const replyOutcome = replyP.then((pl) => ({
           ip: pl.fromIp,
@@ -6147,7 +6190,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
 
     // IPSec outbound processing for locally-originated packets
-    if (this.ipsecEngine) {
+    if (!this.zoneFirewallPermits(null, iface, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} from the router (self → ${iface})`);
+    } else if (this.ipsecEngine) {
       const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
       if (entry) {
         const encPkts = this.ipsecEngine.processOutbound(ipPkt, iface, entry);
@@ -6224,6 +6270,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!this.ipsecEngine) {
       this.ipsecEngine = new IPSecEngine(this);
       this.ipsecEngine.setEventBus(this.getBus());
+      this.ipsecEngine.start();
       const svc = this._debugService;
       if (svc) {
         this.ipsecEngine.setDebugEmitter((kind, line) => {

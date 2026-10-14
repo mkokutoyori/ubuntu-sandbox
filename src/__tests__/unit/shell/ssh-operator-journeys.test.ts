@@ -105,7 +105,7 @@ async function typeRoot(t: TerminalSession, line: string): Promise<void> {
  */
 async function typeSub(t: TerminalSession, line: string): Promise<void> {
   t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
-  for (let garde = 0; garde < 50 && t.foreground.currentInputMode.type === 'pager'; garde++) {
+  for (let garde = 0; garde < 50 && t.currentInputMode.type === 'pager'; garde++) {
     t.handleKey(key(' '));
     await flush();
   }
@@ -113,7 +113,7 @@ async function typeSub(t: TerminalSession, line: string): Promise<void> {
 
 async function sudoSub(t: TerminalSession, line: string, pw: string): Promise<void> {
   t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
-  if (t.foreground.currentInputMode.type === 'password') {
+  if (t.currentInputMode.type === 'password') {
     t.setPasswordBuf(pw); t.handleKey(key('Enter')); await flush();
   }
 }

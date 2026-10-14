@@ -38,7 +38,7 @@ async function sshLogin(t: WindowsTerminalSession, line: string, pw: string): Pr
   t.setInput(line);
   t.handleKey(key('Enter'));
   await flush();
-  if (t.foreground.currentInputMode.type === 'password') {
+  if (t.currentInputMode.type === 'password') {
     t.setPasswordBuf(pw);
     t.handleKey(key('Enter'));
     await flush();

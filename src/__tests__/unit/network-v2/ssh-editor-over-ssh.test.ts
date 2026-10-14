@@ -16,16 +16,16 @@ const tick = () => new Promise<void>((r) => setTimeout(r, 30));
 async function sshLogin(host: TerminalSession, line: string, password: string): Promise<void> {
   host.setInput(line);
   host.handleKey(key('Enter'));
-  for (let i = 0; i < 6 && host.foreground.currentInputMode.type !== 'password'; i++) await tick();
-  if (host.foreground.currentInputMode.type === 'password') {
+  for (let i = 0; i < 6 && host.currentInputMode.type !== 'password'; i++) await tick();
+  if (host.currentInputMode.type === 'password') {
     host.setPasswordBuf(password);
     host.handleKey(key('Enter'));
   }
   for (let i = 0; i < 6; i++) await tick();
 }
 function runOnForeground(host: TerminalSession, line: string): void {
-  host.foreground.setInput(line);
-  host.foreground.setInputBuf(line);
+  host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Enter'));
 }
 

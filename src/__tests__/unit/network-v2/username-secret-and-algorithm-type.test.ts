@@ -71,12 +71,12 @@ describe('username secret', () => {
     expect(await runningUser(router, 'demo')).toBe(`username demo secret 4 ${hash}`);
   });
 
-  it('a type 4 secret never authenticates: neither the hash text nor any password opens it', async () => {
+  it('a type 4 secret is opened by the password behind it, never by the hash text', async () => {
     const hash = 'tnhtc92DXBhelxjYk8LWJrPV36S2i4ntXrpb4RFmfqY';
     const { router } = await configured([`username demo secret 4 ${hash}`]);
     const store = router.getCredentialStore();
     expect(store.authenticate('demo', hash)).toBe(false);
-    expect(store.authenticate('demo', 'cisco')).toBe(false);
+    expect(store.authenticate('demo', 'cisco')).toBe(true);
   });
 
   it('a hash that is no hash is refused and nothing is stored', async () => {
@@ -142,9 +142,10 @@ describe('the stored secret opens a real telnet session', () => {
     expect(await attempt(pc, 'abc', 'nope')).toContain('% Login invalid');
   });
 
-  it('a type 4 secret opens nothing, not even with the hash text', async () => {
+  it('a type 4 secret does not open with the hash text, and opens with the password behind it', async () => {
     const hash = 'tnhtc92DXBhelxjYk8LWJrPV36S2i4ntXrpb4RFmfqY';
     const { pc } = await wireLab([`username demo secret 4 ${hash}`]);
     expect(await attempt(pc, 'demo', hash)).toContain('% Login invalid');
+    expect(await attempt(pc, 'demo', 'cisco')).not.toContain('% Login invalid');
   });
 });

@@ -111,7 +111,7 @@ async function connectedTo(vendor: Vendor): Promise<Lab> {
   t.setInput(`ssh -o StrictHostKeyChecking=accept-new ${user}@10.0.0.2`);
   t.handleKey(key('Enter'));
   await flush();
-  if (t.foreground.currentInputMode.type === 'password') {
+  if (t.currentInputMode.type === 'password') {
     t.setPasswordBuf(password);
     t.handleKey(key('Enter'));
     await flush();
@@ -120,8 +120,8 @@ async function connectedTo(vendor: Vendor): Promise<Lab> {
 }
 
 async function type(t: TerminalSession, line: string): Promise<void> {
-  t.foreground.setInput(line);
-  t.foreground.setInputBuf(line);
+  t.setInput(line);
+  t.setInputBuf(line);
   t.handleKey(key('Enter'));
   await flush();
 }
@@ -311,7 +311,7 @@ describe('a Cisco router as the CLIENT', () => {
     t.setInput('ssh -l alice 10.0.0.3');
     t.handleKey(key('Enter'));
     await flush();
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('secret');
       t.handleKey(key('Enter'));
       await flush();

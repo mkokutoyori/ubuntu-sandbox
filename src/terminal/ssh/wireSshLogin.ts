@@ -112,7 +112,7 @@ export interface WireSshLoginRequest {
 }
 
 export type WireSshLoginOutcome =
-  | { kind: 'connected'; session: SshSession; channel: ReturnType<SshSession['openShellChannel']> extends { value: infer C } ? C : never }
+  | { kind: 'connected'; session: SshSession; channel: ISshShellChannel }
   | { kind: 'unreachable'; message: string }
   | { kind: 'rejected'; message: string }
   /** The host presented a key that differs from the stored one. */

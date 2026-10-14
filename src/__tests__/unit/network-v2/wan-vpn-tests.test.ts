@@ -602,7 +602,7 @@ describe('Section 8: IPSec SA & IKE SA status (pre-traffic)', () => {
   it('8.08 — HQ crypto session should be empty before traffic', async () => {
     const t = await buildWanVpnTopology();
     const out = await t.rHQ.executeCommand('show crypto session');
-    expect(out).toMatch(/[Nn]o active/);
+    expect(out.trim()).toBe('');
   });
 
   it('8.09 — HQ show crypto ipsec sa detail should also be empty', async () => {

@@ -27,14 +27,12 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { Equipment, type HostCapableDevice } from '@/network';
-import { IPAddress } from '@/network/core/types';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
 import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
-import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
-import { peerLiveness, firstSviAddress } from '@/network/protocols/ssh/sessionLiveness';
+import { firstSviAddress } from '@/network/protocols/ssh/sessionLiveness';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import type { RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
@@ -248,11 +246,6 @@ export class DeviceOfflineError extends Error {
 
 export abstract class TerminalSession {
   readonly id: string;
-  /**
-   * Active device. Mutable so an SSH session can temporarily swap the
-   * remote machine in (`LinuxTerminalSession.pushRemoteDevice`) and pop
-   * back to the local one when the session ends.
-   */
   device: HostCapableDevice;
 
   // ── Observable state ──
@@ -260,11 +253,8 @@ export abstract class TerminalSession {
   history: string[] = [];
   historyIndex: number = -1;
   private _input: string = '';
-  get input(): string { return this._children.length > 0 ? this.foreground.input : this._input; }
-  set input(v: string) {
-    if (this._children.length > 0) { this.foreground.input = v; return; }
-    this._input = v;
-  }
+  get input(): string { return this._input; }
+  set input(v: string) { this._input = v; }
   inputMode: InputMode = { type: 'normal' };
   disposed: boolean = false;
 
@@ -293,10 +283,6 @@ export abstract class TerminalSession {
   private _version = 0;
   private _listeners = new Set<() => void>();
 
-  // ── Nested-session (SSH transparent transport) ──
-  private _outputHost: TerminalSession | null = null;
-  private _parent: TerminalSession | null = null;
-  private _children: TerminalSession[] = [];
 
   constructor(id: string, device: Equipment) {
     this.id = id;
@@ -395,7 +381,6 @@ export abstract class TerminalSession {
   getInputHost(): import('@/shell/input').InputHost { return this.inputHostImpl; }
 
   listAttachedStreams(): readonly import('@/shell/input').StreamAttachment[] {
-    if (this._children.length > 0) return this.foreground.listAttachedStreams();
     return this.inputHostImpl.listStreams();
   }
 
@@ -492,38 +477,9 @@ export abstract class TerminalSession {
 
   /** Bump version and notify all subscribers. */
   protected notify(): void {
-    if (this._outputHost) { this._outputHost.notify(); return; }
     this._version++;
     for (const l of this._listeners) l();
   }
-
-  // ── Nested-session API (SSH = transparent transport) ─────────────
-
-  attachAsChildOf(parent: TerminalSession): void {
-    this._parent = parent;
-    this._outputHost = parent._outputHost ?? parent;
-    parent._children.push(this);
-    this._outputHost.notify();
-  }
-
-  detachFromHost(): void {
-    const parent = this._parent;
-    if (!parent) return;
-    const idx = parent._children.indexOf(this);
-    if (idx >= 0) parent._children.splice(idx, 1);
-    const root = this._outputHost;
-    this._parent = null;
-    this._outputHost = null;
-    root?.notify();
-  }
-
-  get foreground(): TerminalSession {
-    let s: TerminalSession = this;
-    while (s._children.length > 0) s = s._children[s._children.length - 1];
-    return s;
-  }
-
-  get hasActiveChild(): boolean { return this._children.length > 0; }
 
   private _windowSize: { readonly rows: number; readonly cols: number } | null = null;
 
@@ -535,20 +491,13 @@ export abstract class TerminalSession {
     if (last !== null && last.rows === rows && last.cols === cols) return;
     this._windowSize = { rows, cols };
     this.applyWindowSize(rows, cols);
-    for (const child of this._children) child.setWindowSize(rows, cols);
   }
 
   protected applyWindowSize(_rows: number, _cols: number): void {}
 
-  editorSave(content: string, filePath: string): void {
-    if (this._children.length > 0) { this.foreground.editorSave(content, filePath); return; }
-  }
+  editorSave(_content: string, _filePath: string): void {}
 
-  editorExit(saved: boolean = true): void {
-    if (this._children.length > 0) { this.foreground.editorExit(saved); return; }
-  }
-
-  protected get outputRoot(): TerminalSession { return this._outputHost ?? this; }
+  editorExit(_saved: boolean = true): void {}
 
   protected firstLocalIp(): string | null {
     const ports = (this.device as unknown as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null; getIsUp: () => boolean }> }).getPorts?.();
@@ -560,94 +509,7 @@ export abstract class TerminalSession {
     return firstSviAddress(this.device as unknown as Equipment) ?? null;
   }
 
-  private _remoteLabel: string | null = null;
-
-  get isRemoteChild(): boolean { return this._parent !== null; }
-
   attachToVtyLine(): void { /* vendor hook */ }
-
-  protected prepareAsRemoteUser(_user: string): void { /* vendor hook */ }
-
-  protected applyRemoteEnv(_env: Record<string, string>): void { /* vendor hook */ }
-
-  adoptRemoteChild(
-    child: TerminalSession,
-    user: string,
-    hostLabel: string,
-    env?: Record<string, string>,
-    opts?: { quiet?: boolean },
-  ): void {
-    // The remote's own spelling of the account, so the child's prompt and
-    // home match what the device actually holds — `ssh user@host` on a
-    // box whose account is `User` lands in `C:\Users\User`, the same as
-    // over the wire.
-    const account = (child.device as unknown as {
-      resolveAccountName?: (n: string) => string | undefined;
-    }).resolveAccountName?.(user) ?? user;
-    child.prepareAsRemoteUser(account);
-    if (env) child.applyRemoteEnv(env);
-    child._remoteLabel = hostLabel;
-    const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
-    const sourceHost = this.device.getHostname?.() ?? '';
-    const banner = opts?.quiet
-      ? this.composeLoginBanner(child.device, account, sourceIp, sourceHost, true)
-      : this.composeLoginBanner(child.device, account, sourceIp, sourceHost, false);
-    child.attachAsChildOf(this);
-    for (const line of banner) child.addLine(line);
-  }
-
-  /**
-   * Compose the post-auth banner (issue.net + motd + "Last login: …") and
-   * record the login for lastlog/auth-log purposes. `protected` so a
-   * subclass can call it directly for a remote session that isn't pushed
-   * as a full child (e.g. SshInteractiveSubShell — LinuxTerminalSession's
-   * real-wire interactive shell), not just from `adoptRemoteChild`.
-   * Delegates to the shared `composeSshLoginBanner()` (also used by
-   * SshInteractiveSubShell for a *nested* ssh's own banner).
-   */
-  protected composeLoginBanner(
-    device: unknown,
-    user: string,
-    sourceIp: string,
-    sourceHost: string,
-    quiet = false,
-    preAuthBannerShown = false,
-  ): string[] {
-    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet, preAuthBannerShown);
-  }
-
-  /**
-   * True when the remote this session is attached to is still reachable
-   * from the parent — the machine that opened the session. Read off the
-   * cabled topology, never by opening a connection: a real ssh client
-   * holds its channel and learns from the next write, so handshaking per
-   * command would make the server log an accept/close pair for every
-   * line the user types. A session that is not a remote child, or whose
-   * label is not an address we can place, is always reported alive
-   * (docs/PRD-Link-State.md §3.3).
-   */
-  protected isRemoteLinkAlive(): boolean {
-    const parent = this._parent;
-    const label = this._remoteLabel;
-    if (parent === null || label === null) return true;
-    const host = label.includes('@') ? label.slice(label.indexOf('@') + 1) : label;
-    if (!IPAddress.tryParse(host)) return true;
-    return peerLiveness(parent.device, host)();
-  }
-
-  /**
-   * OpenSSH's reaction when the transport dies under an open session.
-   * Returns true once the session has been torn down, so the caller
-   * abandons the command the user just typed.
-   */
-  protected breakRemoteSessionIfLinkLost(): boolean {
-    if (this._parent === null) return false;
-    if (this.isRemoteLinkAlive()) return false;
-    this.addLine('client_loop: send disconnect: Broken pipe');
-    this.detachFromHost();
-    this.dispose();
-    return true;
-  }
 
   /**
    * An editor typed inside a remote session opens where the file is —
@@ -771,40 +633,13 @@ export abstract class TerminalSession {
     return io;
   }
 
-  /**
-   * The single seam every Enter goes through, whatever vendor shell is
-   * driving. Link loss is a property of the transport, not of the shell
-   * behind it, so it is settled here once instead of in each vendor's
-   * `onEnter()` — a new interpreter inherits the behaviour by existing.
-   * The typed line is echoed first: the terminal is on the client side,
-   * so it shows what was typed before the write fails.
-   */
   private dispatchEnter(): void | Promise<void> {
-    if (this._parent !== null && !this.isRemoteLinkAlive()) {
-      const typed = this.input || this._inputBuf;
-      this.addEchoLine(this.getPrompt(), typed);
-      this.input = '';
-      this._inputBuf = '';
-      this.breakRemoteSessionIfLinkLost();
-      return;
-    }
     return this.onEnter();
-  }
-
-  endRemoteSession(): boolean {
-    if (this._parent === null) return false;
-    const label = this._remoteLabel ?? 'remote';
-    this.addLine('logout');
-    this.addLine(`Connection to ${label} closed.`);
-    this.detachFromHost();
-    this.dispose();
-    return true;
   }
 
   // ── Public API ──────────────────────────────────────────────────
 
   setInput(value: string): void {
-    if (this._children.length > 0) { this.foreground.setInput(value); return; }
     this.input = sanitiseInput(value);
     this.notify();
   }
@@ -947,14 +782,8 @@ export abstract class TerminalSession {
     return true;
   }
 
-  /** La session de la chaîne qui colle, la plus proche d'abord. */
   private pastingSession(): TerminalSession | null {
-    let s: TerminalSession | undefined = this;
-    while (s) {
-      if (s._pasteRunning) return s;
-      s = s._children[s._children.length - 1];
-    }
-    return null;
+    return this._pasteRunning ? this : null;
   }
 
   private reportPasteAborted(restantes: number): void {
@@ -963,32 +792,22 @@ export abstract class TerminalSession {
   }
 
   getPasswordBuf(): string {
-    return this._children.length > 0 ? this.foreground.getPasswordBuf() : this._passwordBuf;
+    return this._passwordBuf;
   }
   setPasswordBuf(value: string): void {
-    if (this._children.length > 0) { this.foreground.setPasswordBuf(value); return; }
     this._passwordBuf = value;
     this.notify();
   }
 
   getInputBuf(): string {
-    return this._children.length > 0 ? this.foreground.getInputBuf() : this._inputBuf;
+    return this._inputBuf;
   }
   setInputBuf(value: string): void {
-    if (this._children.length > 0) { this.foreground.setInputBuf(value); return; }
     this._inputBuf = value;
     this.notify();
   }
 
   private pushLine(line: OutputLine, record: RecordedEventType | null, silent = false): void {
-    const host = this._outputHost;
-    if (host) {
-      if (line.segments && host.getSessionType() !== this.getSessionType()) {
-        line = { id: line.id, text: line.text, type: line.type, promptText: line.promptText };
-      }
-      host.pushLine(line, record, silent);
-      return;
-    }
     this.lines.push(line);
     this.enforceScrollbackLimit();
     if (record) this.recordEvent(record, line.text);
@@ -1045,13 +864,12 @@ export abstract class TerminalSession {
     for (const text of texts) {
       this.pushLine({ id: nextLineId(), text, type }, record, true);
     }
-    this.outputRoot.notify();
+    this.notify();
   }
 
   clear(): void {
-    const root = this.outputRoot;
-    root.lines = [];
-    root.notify();
+    this.lines = [];
+    this.notify();
   }
 
   dispose(): void {

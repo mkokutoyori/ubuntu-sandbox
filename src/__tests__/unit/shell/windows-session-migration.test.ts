@@ -104,7 +104,6 @@ describe('Phase 1B — WindowsTerminalSession migrated onto IShell', () => {
     // The hop is driven over the real SSH channel, so no child session
     // is pushed: the sub-shell and the remote prompt are the tell
     // (docs/PRD-SSH-Unification.md §4bis B4).
-    expect(term.foreground).toBe(term);
     expect((term as unknown as { activeSubShell: { connection: string } | null })
       .activeSubShell?.connection).toBe('ssh');
   });

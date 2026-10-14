@@ -152,8 +152,8 @@ function key(k: string): KeyEvent {
 const tick = () => new Promise<void>((r) => setTimeout(r, 25));
 
 async function tapeLigne(host: TerminalSession, line: string): Promise<void> {
-  host.foreground.setInput(line);
-  host.foreground.setInputBuf(line);
+  host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Enter'));
   for (let i = 0; i < 10; i++) await tick();
 }
@@ -193,7 +193,7 @@ describe('les memes comportements a travers une vraie session SSH', () => {
     async () => {
       const { fw, host } = await laboratoireSsh();
 
-      expect(host.foreground.getPrompt()).toMatch(/FGT.*#/);
+      expect(host.getPrompt()).toMatch(/FGT.*#/);
 
       for (const ligne of [
         'config system \\', 'interface', 'edit "port1"',

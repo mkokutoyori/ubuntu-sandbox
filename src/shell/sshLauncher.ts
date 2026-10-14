@@ -13,26 +13,23 @@
  *    terminal masks keystrokes regardless of which shell intercepted.
  */
 
-import { compareAndRecordHostKey } from '@/network/protocols/ssh/hostkey/HostKeyChangedWarning';
 import { Equipment } from '@/network/equipment/Equipment';
-import { IPAddress } from '@/network/core/types';
-import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
-import { primaryShellKindFor } from './shellKind';
 import { WireRemoteShell } from './WireRemoteShell';
-import { openWireSshShell, openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
-import { sshLocalIdentityFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
-import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
+import {
+  openWireSshShell, openWireSshConnection, resolveSshTarget,
+  type WireSshConnectOutcome, type WireSshLoginOutcome,
+} from '@/terminal/ssh/wireSshLogin';
+import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
+import { OPENSSH_SSH } from '@/terminal/ssh/sshDialect';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { IShell, ShellLineResult } from './IShell';
-import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
-import { readForceCommand, readMaxAuthTries } from '@/network/devices/linux/network/LinuxSshClient';
-import { receivedDisconnectLines } from '@/network/protocols/ssh/session/SshSession';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
 import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { OPENSSH_UBUNTU_22_04, OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
-import { SSHD_MAX_AUTH_TRIES_REASON } from '@/network/protocols/ssh/server/ISshServerContext';
+import { parseBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 export { SSH_PASSWORD_PROMPTS } from '@/network/protocols/ssh/session/SshSession';
-import { transportLiveness, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import { establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 
 import type { TcpWireOutcome } from '@/network/tcp/types';
 export type { TcpWireOutcome };
@@ -40,39 +37,43 @@ export type { TcpWireOutcome };
 export interface SshLaunchOptions {
   /** Default user when the ssh line omits `user@`. */
   readonly defaultUser: string;
-  /**
-   * The device this shell runs on — needed to check the launching
-   * device's own `~/.ssh/known_hosts` against the target's real host key
-   * (see {@link checkKnownHosts}). Omit to skip that check (falls back
-   * to the pre-existing cosmetic "Warning: Permanently added" banner).
-   */
+  /** The device this shell runs on: the machine the connection leaves from. */
   readonly sourceDevice?: Equipment;
-  readonly wireProbe?: (host: string, port: number) => TcpWireOutcome;
-  /**
-   * Track which (user, host) pairs already wrote a known_hosts entry in
-   * this session. The first connection prints the "Warning: Permanently
-   * added" line; subsequent ones are silent. Optional — when omitted,
-   * every connection prints it (still correct for short sessions).
-   */
-  readonly knownHostsTracker?: Set<string>;
-  /** Source IP (the launching shell's device IP) — written to wtmp + auth.log. */
+  /** Source IP (the launching shell's device IP). */
   readonly sourceIp?: string;
-  /** Source hostname for the "from" field of last-login records. */
+  /** Source hostname of the launching device. */
   readonly sourceHostname?: string;
 }
 
+/**
+ * A login under way. It lives from the first password prompt to the
+ * session (or the refusal): one TCP connection, so the SERVER counts the
+ * failed attempts and the SERVER decides when to hang up.
+ */
+type LoginOutcome = WireSshConnectOutcome | WireSshLoginOutcome;
+
+interface LoginRun {
+  readonly io: QueuedTerminalIO;
+  readonly lines: string[];
+  readonly settled: Promise<LoginOutcome>;
+  parked: LoginEvent | null;
+  nextEvent(): Promise<LoginEvent>;
+}
+
+type LoginEvent =
+  | { readonly kind: 'prompt'; readonly text: string; readonly secret: boolean }
+  | { readonly kind: 'settled'; readonly outcome: LoginOutcome };
+
 /** Resolved SSH target a shell can finalise once it has the password. */
 export interface PendingSshAuth {
-  readonly target: Equipment;
   readonly user: string;
   readonly host: string;
   readonly port: number;
-  readonly primaryKind: string;
-  /** Number of failed attempts so far (capped at three). */
+  /** The address the host name resolved to — where the SYN went. */
+  readonly address: string;
+  /** Number of failed attempts so far. */
   attempts: number;
-  /** Tracker shared with the launcher options, mutated on success. */
-  knownHostsTracker?: Set<string>;
-  /** Source IP / hostname propagated for auth.log + last-login records. */
+  /** Source IP / hostname of the launching device. */
   sourceIp?: string;
   sourceHostname?: string;
   /** Local account the client runs as — picks which known_hosts store
@@ -80,13 +81,11 @@ export interface PendingSshAuth {
   sourceUser?: string;
   /** The launching device — see {@link SshLaunchOptions.sourceDevice}. */
   sourceDevice?: Equipment;
-  /** Carried across the password round-trip so the established session
-   *  can keep probing the very same wire it was opened on. */
-  wireProbe?: SshLaunchOptions['wireProbe'];
   /** Set for `ssh user@host cmd` — the command runs on the remote over
    *  its own exec channel instead of an interactive shell. */
   execCommand?: string;
   readonly algorithms?: SshAlgorithmPreferences;
+  run?: LoginRun;
 }
 
 export type SshLaunchInterpretation =
@@ -99,11 +98,11 @@ export type SshLaunchInterpretation =
  * Interpret `line` as an ssh invocation. Returns null when it is not an
  * ssh command at all. Otherwise emits:
  *  - `noop`  for informational forms (`ssh -V`).
- *  - `error` for unreachable / refused / unknown-host failures.
- *  - `exec`  for `ssh user@host cmd args…` — output produced inline,
- *            no shell push.
- *  - `pending` for interactive login — the caller must ask the user for
- *            a password via pendingInput, then call finalisePendingAuth.
+ *  - `error` for unreachable / refused / unknown-host failures — whatever
+ *            the wire answered to the first SYN, never what the target
+ *            machine's own state says.
+ *  - `pending` for a login — the caller must ask the user for a password
+ *            via pendingInput, then call finalisePendingAuth.
  */
 export async function tryInterpretSshLaunch(
   line: string,
@@ -123,118 +122,48 @@ export async function tryInterpretSshLaunch(
 
   const user = parsed.user ?? opts.defaultUser;
   const port = parsed.port;
-
-  const target = findEquipmentByIp(parsed.host) ?? findEquipmentByHostname(parsed.host);
-  if (!target) {
+  if (!opts.sourceDevice) {
     return {
       kind: 'error',
-      result: {
-        output: [`ssh: Could not resolve hostname ${parsed.host}: Name or service not known`],
-      },
+      result: { output: [OPENSSH_SSH.unreachable(parsed.host, port)] },
     };
   }
-
-  if (opts.wireProbe) {
-    const probeHost = IPAddress.isValid(parsed.host)
-      ? parsed.host
-      : firstConfiguredIp(target);
-    const outcome: TcpWireOutcome = probeHost
-      ? opts.wireProbe(probeHost, port)
-      : 'timeout';
-    if (outcome !== 'open') {
-      const reason = outcome === 'refused' ? 'Connection refused' : 'Connection timed out';
-      return {
-        kind: 'error',
-        result: {
-          output: [`ssh: connect to host ${parsed.host} port ${port}: ${reason}`],
-        },
-      };
-    }
-  } else {
-    const isOn = (target as unknown as { getIsPoweredOn?: () => boolean }).getIsPoweredOn?.() ?? true;
-    if (!isOn) {
-      return {
-        kind: 'error',
-        result: {
-          output: [`ssh: connect to host ${parsed.host} port ${port}: No route to host`],
-        },
-      };
-    }
+  const resolution = await resolveSshTarget(opts.sourceDevice, parsed.host, port, OPENSSH_SSH);
+  if (resolution.kind === 'failed') {
+    return { kind: 'error', result: { output: [resolution.line] } };
   }
 
-  // SSH server explicitly disabled on the target.
-  const sshOn = (target as unknown as { isSshActive?: () => boolean }).isSshActive?.();
-  if (sshOn === false) {
+  const pendingAuth: PendingSshAuth = {
+    user, host: parsed.host, port, address: resolution.address,
+    attempts: 0,
+    sourceIp: opts.sourceIp,
+    sourceHostname: opts.sourceHostname,
+    sourceUser: opts.defaultUser,
+    sourceDevice: opts.sourceDevice,
+    ...(parsed.command !== null ? { execCommand: parsed.command } : {}),
+    algorithms: parsed.algorithms,
+  };
+  const run = pendingAuth.run = startLoginRun(pendingAuth);
+  const first = await run.nextEvent();
+  if (first.kind === 'settled' && first.outcome.kind === 'connected') {
+    run.parked = first;
+    return { kind: 'pending', result: { output: drain(run) }, pendingAuth };
+  }
+  if (first.kind === 'settled') {
+    const refusal = await outcomeOf(pendingAuth, run, first.outcome);
     return {
       kind: 'error',
-      result: {
-        output: [`ssh: connect to host ${parsed.host} port ${port}: Connection refused`],
-      },
+      result: { output: refusal.kind === 'refused' && refusal.message !== '' ? refusal.message.split('\n') : [] },
     };
   }
-
-  const admission = (target as unknown as {
-    vtyAdmissionVerdict?: (transport: 'ssh', sourceIp: string) => { accept: boolean };
-  }).vtyAdmissionVerdict?.('ssh', opts.sourceIp ?? '');
-  if (admission && !admission.accept) {
-    return {
-      kind: 'error',
-      result: {
-        output: [`ssh: connect to host ${parsed.host} port ${port}: Connection refused`],
-      },
-    };
-  }
-
-  const primaryKind = pickPrimaryShellKind(target);
-
-  // Exec mode: `ssh user@host cmd args` — runs the command on the remote
-  // and returns to the caller's shell. No frame is pushed. Authentication
-  // is still validated through a password challenge.
-  if (parsed.command !== null) {
-    return {
-      kind: 'pending',
-      result: {
-        output: [],
-        pendingInput: {
-          kind: 'password',
-          promptText: `${user}@${parsed.host}'s password: `,
-        },
-      },
-      pendingAuth: {
-        target, user, host: parsed.host, port, primaryKind,
-        attempts: 0,
-        knownHostsTracker: opts.knownHostsTracker,
-        sourceIp: opts.sourceIp,
-        sourceHostname: opts.sourceHostname,
-        sourceUser: opts.defaultUser,
-        sourceDevice: opts.sourceDevice,
-        wireProbe: opts.wireProbe,
-        execCommand: parsed.command,
-        algorithms: parsed.algorithms,
-      },
-    };
-  }
-
+  run.parked = first;
   return {
     kind: 'pending',
     result: {
-      output: [],
-      pendingInput: {
-        kind: 'password',
-        promptText: `${user}@${parsed.host}'s password: `,
-      },
+      output: drain(run),
+      pendingInput: { kind: 'password', promptText: first.text },
     },
-    pendingAuth: {
-      target, user, host: parsed.host, port, primaryKind,
-      attempts: 0,
-      knownHostsTracker: opts.knownHostsTracker,
-      sourceIp: opts.sourceIp,
-      sourceHostname: opts.sourceHostname,
-      sourceUser: opts.defaultUser,
-      sourceDevice: opts.sourceDevice,
-      wireProbe: opts.wireProbe,
-      algorithms: parsed.algorithms,
-    },
+    pendingAuth,
   };
 }
 
@@ -242,8 +171,9 @@ export async function tryInterpretSshLaunch(
 export interface FinalisedAuth {
   readonly shell: IShell;
   /**
-   * Banner lines to print BEFORE the shell becomes active — known_hosts
-   * warning (first connection), MOTD, last-login, etc. The caller writes
+   * Lines to print BEFORE the shell becomes active — what the SSH layer
+   * said while connecting (the known_hosts notice, the server's pre-auth
+   * banner) and the server's own message of the day. The caller writes
    * them to the host terminal so the SSH push looks like a real login.
    */
   readonly banner: readonly string[];
@@ -255,308 +185,164 @@ export type FinaliseAuthOutcome =
    *  real exec channel. `lines` is what it wrote. */
   | { kind: 'exec'; banner: string[]; lines: string[]; exitCode: number }
   | { kind: 'bad-password' }
-  /** Password was right but the server refuses the session outright (host-key mismatch, ForceCommand=internal-sftp) — the caller must NOT re-prompt for a password. */
+  /** The server refuses the session outright (host-key mismatch, too many failures, ForceCommand=internal-sftp) — the caller must NOT re-prompt for a password. */
   | { kind: 'refused'; message: string };
 
-interface DeviceVfsLike {
-  readFile: (p: string) => string | null;
-  writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void;
-}
+const RETRY_NOTICE = 'Permission denied, please try again.';
 
-function vfsOf(device: unknown): DeviceVfsLike | null {
-  return (device as { executor?: { vfs?: DeviceVfsLike } } | undefined)?.executor?.vfs ?? null;
-}
-
-/**
- * Le foyer du compte qui LANCE la connexion.
- *
- * `sourceUser` etait declare « choisit quel known_hosts la connexion lit
- * et ecrit » et n'etait jamais lu : le chemin etait ecrit en dur sur
- * celui de root. Un compte ordinaire enregistrait donc la cle d'hote
- * dans le magasin de root, et n'y retrouvait rien a la connexion
- * suivante.
- */
-function foyerDe(device: unknown, user: string | undefined): string {
-  const compte = user ?? 'root';
-  const declare = (device as {
-    executor?: { userMgr?: { getUser?: (u: string) => { home?: string } | undefined } };
-  } | undefined)?.executor?.userMgr?.getUser?.(compte)?.home;
-  return declare ?? (compte === 'root' ? '/root' : `/home/${compte}`);
-}
-
-/**
- * Real known_hosts comparison for the interactive `ssh` path — mirrors
- * {@link file://../network/devices/linux/network/LinuxSshClient.ts}'s
- * `updateKnownHosts`. Returns `'unsupported'` (skip, no-op) when either
- * side lacks a VFS — e.g. a non-Linux source or target — so this never
- * regresses cross-vendor SSH that isn't in scope for host-key checking.
- */
-function checkKnownHosts(auth: PendingSshAuth): { changed: false } | { changed: true; message: string } | 'unsupported' {
-  const targetVfs = vfsOf(auth.target);
-  const sourceVfs = vfsOf(auth.sourceDevice);
-  if (!targetVfs || !sourceVfs) return 'unsupported';
-  const pubKeyRaw = targetVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '';
-  const tokens = pubKeyRaw.trim().split(/\s+/);
-  if (tokens.length < 2) return 'unsupported';
-
-  const owner = sshLocalIdentityFor(auth.sourceDevice, auth.sourceUser ?? auth.user);
-  const outcome = compareAndRecordHostKey({
-    vfs: sourceVfs,
-    knownHostsPath: `${foyerDe(auth.sourceDevice, auth.sourceUser)}/.ssh/known_hosts`,
-    host: auth.host,
-    keyType: tokens[0],
-    publicKey: tokens[1],
-    uid: owner.uid,
-    gid: owner.gid,
-    replaceChanged: false,
+function startLoginRun(auth: PendingSshAuth): LoginRun {
+  const lines: string[] = [];
+  let parked: LoginEvent | null = null;
+  let waiter: ((event: LoginEvent) => void) | null = null;
+  const io = new QueuedTerminalIO({
+    writeLine: (text) => { lines.push(text); },
+    beginPrompt: (text, secret) => {
+      const event: LoginEvent = { kind: 'prompt', text, secret };
+      if (waiter !== null) {
+        const deliver = waiter;
+        waiter = null;
+        deliver(event);
+      } else {
+        parked = event;
+      }
+    },
+    endPrompt: () => undefined,
   });
-  return outcome.changed
-    ? { changed: true, message: `${outcome.warning}\nHost key verification failed.` }
-    : { changed: false };
+  const request = {
+    device: auth.sourceDevice!,
+    localUser: auth.sourceUser ?? auth.user,
+    user: auth.user,
+    host: auth.host,
+    port: auth.port,
+    io,
+    strict: 'accept-new' as const,
+    algorithms: auth.algorithms,
+  };
+  const settled = auth.execCommand !== undefined
+    ? openWireSshConnection(request)
+    : openWireSshShell(request);
+  const run: LoginRun = {
+    io, lines, settled,
+    get parked() { return parked; },
+    set parked(event) { parked = event; },
+    nextEvent: () => {
+      if (parked !== null) {
+        const event = parked;
+        parked = null;
+        return Promise.resolve(event);
+      }
+      return Promise.race([
+        settled.then((outcome): LoginEvent => ({ kind: 'settled', outcome })),
+        new Promise<LoginEvent>((resolve) => { waiter = resolve; }),
+      ]);
+    },
+  };
+  return run;
+}
+
+function drain(run: LoginRun): string[] {
+  return run.lines.splice(0).filter((line) => line !== RETRY_NOTICE);
+}
+
+export function abandonPendingAuth(auth: PendingSshAuth): void {
+  auth.run?.io.cancel();
 }
 
 export async function finalisePendingAuth(
   auth: PendingSshAuth,
   password: string,
 ): Promise<FinaliseAuthOutcome> {
-  const serverAuthTryCap = readMaxAuthTries(
-    auth.target as unknown as Parameters<typeof readMaxAuthTries>[0],
-    auth.user, auth.sourceIp, auth.sourceHostname,
-  );
-  const tooManyAuthFailures = (): FinaliseAuthOutcome | null => (
-    serverAuthTryCap !== null && auth.attempts >= serverAuthTryCap
-      ? {
-        kind: 'refused',
-        message: receivedDisconnectLines(auth.host, auth.port, SSHD_MAX_AUTH_TRIES_REASON),
-      }
-      : null
-  );
-  const alreadyDisconnected = tooManyAuthFailures();
-  if (alreadyDisconnected) return alreadyDisconnected;
-  const refusedByServer = (): FinaliseAuthOutcome => {
-    auth.attempts++;
-    const blocker = (auth.target as unknown as {
-      getLoginBlocker?: () => { isBlocked: () => boolean; remainingBlockSeconds: () => number } | null;
-    }).getLoginBlocker?.();
-    if (blocker?.isBlocked()) {
-      return {
-        kind: 'refused',
-        message: `% Blocking new login for ${blocker.remainingBlockSeconds()} secs (quota exceeded)`,
-      };
-    }
-    return tooManyAuthFailures() ?? { kind: 'bad-password' };
-  };
-
-  // known_hosts is compared once, here: this check reads the target's
-  // real host key and records it on first connection, so the connection
-  // below is told not to repeat it rather than have two verdicts.
-  const knownHosts = checkKnownHosts(auth);
-  if (knownHosts !== 'unsupported' && knownHosts.changed) {
-    return { kind: 'refused', message: knownHosts.message };
-  }
-
-  // Build the banner BEFORE recording — the OpenSSH "Last login" line
-  // must reflect the PREVIOUS login, not this one.
-  const banner = buildLoginBanner(auth);
-  const serverIp = firstConfiguredIp(auth.target) ?? auth.host;
-  const clientIp = auth.sourceIp ?? '0.0.0.0';
-  // OpenSSH exposes synthetic ephemeral client port and the canonical
-  // server port. The simulator picks a stable-looking pair so values are
-  // reproducible across runs but still look real.
-  const clientPort = 50_000 + (auth.user.length * 7 % 10_000);
-  const sshConnection = `${clientIp} ${clientPort} ${serverIp} ${auth.port}`;
-  const sshClient = `${clientIp} ${clientPort} ${auth.port}`;
   if (!auth.sourceDevice) {
-    // Without the device that typed `ssh` there is nothing to connect
-    // FROM. Dialling the target from itself would look fine and prove
-    // nothing, so the launch fails instead.
     return {
       kind: 'refused',
       message: `ssh: connect to host ${auth.host} port ${auth.port}: Network is unreachable`,
     };
   }
-
-  if (auth.execCommand !== undefined) {
-    return runExecOverTheWire(auth, banner, password, refusedByServer);
-  }
-
-  const outcome = await openWireSshShell({
-    device: auth.sourceDevice,
-    localUser: auth.sourceUser ?? auth.user,
-    user: auth.user,
-    host: auth.host,
-    port: auth.port,
-    io: silentConnectIo(),
-    password,
-    strict: 'no',
-    algorithms: auth.algorithms,
-  });
-  if (outcome.kind !== 'connected') {
-    if (outcome.kind === 'host-key-changed') {
-      return { kind: 'refused', message: 'Host key verification failed.' };
+  const run = auth.run ??= startLoginRun(auth);
+  let event = await run.nextEvent();
+  if (event.kind === 'prompt') {
+    run.io.submitInput(password);
+    event = await run.nextEvent();
+    if (event.kind === 'prompt') {
+      run.parked = event;
+      auth.attempts++;
+      return { kind: 'bad-password' };
     }
-    if (outcome.kind === 'auth-failed') return refusedByServer();
+    if (event.outcome.kind === 'auth-failed' && !run.lines.some((line) => line.includes('Received disconnect'))) {
+      run.lines.length = 0;
+      auth.attempts++;
+      return { kind: 'bad-password' };
+    }
+  }
+  return outcomeOf(auth, run, event.outcome);
+}
+
+async function outcomeOf(
+  auth: PendingSshAuth, run: LoginRun, outcome: LoginOutcome,
+): Promise<FinaliseAuthOutcome> {
+  const said = drain(run);
+  if (outcome.kind !== 'connected') {
     if (outcome.kind === 'cancelled') return { kind: 'refused', message: '' };
+    if (outcome.kind === 'host-key-changed') {
+      return { kind: 'refused', message: [...said, 'Host key verification failed.'].join('\n') };
+    }
+    if (outcome.kind === 'auth-failed') {
+      auth.attempts++;
+      return { kind: 'refused', message: said.join('\n') };
+    }
     return { kind: 'refused', message: outcome.message };
   }
+  if (!('channel' in outcome)) return runExecOverTheWire(auth, outcome.session, said);
 
-  const forced = readForceCommand(
-    auth.target as unknown as Parameters<typeof readForceCommand>[0],
-    auth.user, auth.sourceIp, auth.sourceHostname,
-  );
-  if (forced === 'internal-sftp') {
+  const channel = outcome.channel;
+  await channel.untilQuiet?.();
+  if (!channel.isOpen) {
     outcome.session.disconnect();
-    return { kind: 'refused', message: 'This service allows sftp connections only.' };
+    const closing = (channel.takeUnclaimedOutput?.() ?? '').replace(/\n+$/, '');
+    return { kind: 'refused', message: closing };
   }
-
-  const promptHost = (auth.target as unknown as { getSshHostname?: () => string })
-    .getSshHostname?.() ?? auth.host;
+  const greeting = (channel.initialMotd?.() ?? '').replace(/\n+$/, '');
+  const motd = greeting === '' ? [] : greeting.split('\n').filter((line) => line.length > 0);
+  const opening = channel.initialPrompt?.() ?? null;
+  const promptHost = (opening !== null ? parseBashPrompt(opening)?.hostname : undefined) ?? auth.host;
+  const local = outcome.session.localEndpoint;
+  const clientIp = local?.ip ?? auth.sourceIp ?? '0.0.0.0';
+  const clientPort = local?.port ?? 0;
   const wire = new SshInteractiveSubShell(
-    outcome.session, outcome.channel, auth.user, auth.host,
+    outcome.session, channel, auth.user, auth.host,
     `/home/${auth.user}`,
     () => outcome.session.disconnect(),
-    promptHost, findLinuxMachineByIp(auth.host) ?? undefined,
-    // Socket AND path: this side's socket notices its own link dropping,
-    // the path notices everything that breaks at the other end or in
-    // between (docs/PRD-Pannes.md §F1, §F5).
-    auth.sourceDevice
-      ? establishedSessionLiveness(outcome.session, auth.sourceDevice, auth.host)
-      : transportLiveness(outcome.session),
+    promptHost,
+    establishedSessionLiveness(outcome.session, auth.sourceDevice!, auth.host),
   );
   const shell = new WireRemoteShell({
-    device: auth.target,
+    device: auth.sourceDevice!,
     user: auth.user,
     remoteHost: auth.host,
-    primaryKind: auth.primaryKind,
+    primaryKind: channel.loginShellKind?.() ?? 'bash',
     wire,
-    sshConnection,
-    sshClient,
+    sshConnection: `${clientIp} ${clientPort} ${auth.address} ${auth.port}`,
+    sshClient: `${clientIp} ${clientPort} ${auth.port}`,
   });
-  return { kind: 'success', shell, banner };
+  return { kind: 'success', shell, banner: [...said, ...motd] };
 }
 
 async function runExecOverTheWire(
   auth: PendingSshAuth,
-  banner: string[],
-  password: string,
-  refusedByServer: () => FinaliseAuthOutcome,
+  session: Extract<LoginOutcome, { kind: 'connected' }>['session'],
+  said: string[],
 ): Promise<FinaliseAuthOutcome> {
-  const outcome = await openWireSshConnection({
-    device: auth.sourceDevice!,
-    localUser: auth.sourceUser ?? auth.user,
-    user: auth.user,
-    host: auth.host,
-    port: auth.port,
-    io: silentConnectIo(),
-    password,
-    strict: 'no',
-    algorithms: auth.algorithms,
-  });
-  if (outcome.kind !== 'connected') {
-    if (outcome.kind === 'host-key-changed') return { kind: 'refused', message: 'Host key verification failed.' };
-    if (outcome.kind === 'auth-failed') return refusedByServer();
-    if (outcome.kind === 'cancelled') return { kind: 'refused', message: '' };
-    return { kind: 'refused', message: outcome.message };
-  }
-
-  const channel = outcome.session.openExecChannel(auth.execCommand ?? '');
+  const channel = session.openExecChannel(auth.execCommand ?? '');
   if (!channel.ok) {
-    outcome.session.disconnect();
+    session.disconnect();
     return { kind: 'refused', message: 'ssh: failed to open exec channel' };
   }
   try {
     const result = await channel.value.execute();
     const text = [result.stdout, result.stderr].filter((part) => part.length > 0).join('');
     const lines = text.length === 0 ? [] : text.replace(/\n+$/, '').split('\n');
-    return { kind: 'exec', banner, lines, exitCode: result.exitCode };
+    return { kind: 'exec', banner: said, lines, exitCode: result.exitCode };
   } finally {
-    outcome.session.disconnect();
+    session.disconnect();
   }
-}
-
-function firstConfiguredIp(dev: Equipment): string | undefined {
-  const ports = (dev as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
-  if (!ports) return undefined;
-  for (const port of ports.values()) {
-    const ip = port.getIPAddress?.();
-    if (ip) return ip.toString();
-  }
-  return undefined;
-}
-
-/** Build the banner lines OpenSSH prints once authentication succeeds. */
-function buildLoginBanner(auth: PendingSshAuth): string[] {
-  const banner: string[] = [];
-  // Known-hosts acceptance — only on first connection in this session.
-  const key = `${auth.user}@${auth.host}:${auth.port}`;
-  const firstTime = !auth.knownHostsTracker?.has(key);
-  if (firstTime) {
-    banner.push(`Warning: Permanently added '${auth.host}' (ED25519) to the list of known hosts.`);
-    auth.knownHostsTracker?.add(key);
-  }
-  const target = auth.target as unknown as {
-    getSshMotd?: () => string;
-    sshBanner?: () => string;
-    getLastSshLoginFor?: (u: string) => { at: Date; from: string } | null;
-    getBanner?: (kind: string) => string;
-  };
-  // Cisco/Huawei: the real `banner motd` (mirrored into sshBannerText by
-  // `banner motd` itself) — takes priority over the generic per-OS MOTD
-  // concept below, which those device types don't otherwise populate.
-  const ciscoMotd = target.sshBanner?.() ?? '';
-  if (ciscoMotd) {
-    for (const ln of ciscoMotd.replace(/\n+$/, '').split('\n')) {
-      if (ln.length > 0) banner.push(ln);
-    }
-  } else {
-    // Device-specific MOTD (Linux servers ship one; Windows / routers do not).
-    const motd = target.getSshMotd?.() ?? '';
-    for (const ln of motd.replace(/\n+$/, '').split('\n')) {
-      if (ln.length > 0) banner.push(ln);
-    }
-  }
-  // "Last login: " — best-effort, ISO date if the device exposes one.
-  // OpenSSH format: "Last login: Mon Nov 18 14:23:01 2024 from 10.0.0.1"
-  const last = target.getLastSshLoginFor?.(auth.user);
-  if (last) {
-    banner.push(`Last login: ${formatLoginDate(last.at)} from ${last.from}`);
-  }
-  // Real IOS/VRP: `banner exec` is shown on every successful EXEC session
-  // start, independent of the client tooling used to reach it.
-  const execBanner = target.getBanner?.('exec') ?? '';
-  if (execBanner) {
-    if (banner.length > 0) banner.push('');
-    for (const ln of execBanner.replace(/\n+$/, '').split('\n')) banner.push(ln);
-  }
-  return banner;
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-function formatLoginDate(d: Date): string {
-  const dow = DAYS[d.getDay()];
-  const mon = MONTHS[d.getMonth()];
-  const day = d.getDate().toString().padStart(2, ' ');
-  const hh = d.getHours().toString().padStart(2, '0');
-  const mm = d.getMinutes().toString().padStart(2, '0');
-  const ss = d.getSeconds().toString().padStart(2, '0');
-  return `${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${d.getFullYear()}`;
-}
-
-// ─── Equipment lookup helpers (shared with the Oracle Net client) ────
-
-function pickPrimaryShellKind(dev: Equipment): string {
-  return primaryShellKindFor(dev);
-}
-
-export function wireProbeFor(device: unknown): SshLaunchOptions['wireProbe'] {
-  const source = device as {
-    tcpConnectOutcome?: (ip: IPAddress, port: number) => TcpWireOutcome;
-  };
-  if (typeof source.tcpConnectOutcome !== 'function') return undefined;
-  return (host, port) => {
-    const ip = IPAddress.tryParse(host);
-    if (!ip) return 'timeout';
-    return source.tcpConnectOutcome!(ip, port);
-  };
 }

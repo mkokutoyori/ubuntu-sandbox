@@ -93,14 +93,6 @@ export class HuaweiTerminalSession extends CLITerminalSession {
     this.vty?.assignLine(kind, index, recordId);
   }
 
-  protected override prepareAsRemoteUser(_user: string): void {
-    if (this.vty) {
-      this.vty.state.privilegeLevel = 15;
-    }
-    this.isBooting = false;
-    this.updatePrompt();
-  }
-
   protected override async executeOnDevice(
     command: string,
     timeoutMs?: number,

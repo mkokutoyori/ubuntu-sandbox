@@ -6,10 +6,7 @@ import { CommandTrie } from '../CommandTrie';
 import { showIpTraffic } from './CiscoCommonShow';
 import {
   CiscoSecurityConfig,
-  newRadiusServerStats,
   newTacacsServerStats,
-  radiusAuthPort,
-  radiusAcctPort,
   tacacsServerPort,
   type AaaServiceKind,
   type AaaPhase,
@@ -874,7 +871,13 @@ export function policyMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSp
 const PMAP_CLASS_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   police: place('debit', 'REST', 'Committed information rate in bits per second'),
-  drop: null,
+  drop: place('option', 'ENUM', 'Log the dropped packets', {
+    optional: true, values: [{ keyword: 'log', description: 'Log dropped packets' }],
+  }),
+  pass: place('option', 'ENUM', 'Log the passed packets', {
+    optional: true, values: [{ keyword: 'log', description: 'Log passed packets' }],
+  }),
+  inspect: place('parametres', 'WORD', 'Parameter map applied to the inspection', { optional: true }),
   'set dscp': place('valeur', 'INT', 'Differentiated services codepoint value', {
     range: [0, 63],
     values: [
@@ -1133,9 +1136,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'source', description: 'Check the source, then `reachable-via`' },
     ],
   },
-  'zone-member security': {
-    name: 'zone', type: 'WORD', description: 'Name of the security zone',
-  },
 };
 
 export function securityInterfaceSpecs(
@@ -1167,11 +1167,6 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
     }
     return '';
   });
-  trie.registerGreedy('zone-member security', 'Assign zone', (args) => {
-    const i = ctx.getSelectedInterface(); if (!i || !args[0]) return '';
-    sec().ifaceFlags(i).zoneMember = args[0];
-    return '';
-  });
 }
 
 /**
@@ -1197,31 +1192,6 @@ export function buildIdentityShowCommands(
   const vue = (
     path: readonly string[], description: string, niveau: number, render: () => string,
   ): void => { vues.push({ path, description, niveau, render }); };
-
-  vue(['show', 'aaa', 'servers'], 'Display AAA servers', 1, () => {
-    const s = sec();
-    const lines: string[] = [];
-    let idx = 1;
-    for (const r of s.radiusServers.values()) {
-      const st = r.stats;
-      lines.push(`RADIUS: id ${idx++}, priority 1, host ${r.address ?? '<no address>'}`
-        + `, auth-port ${radiusAuthPort(r, s.radiusDefaults)}`
-        + `, acct-port ${radiusAcctPort(r, s.radiusDefaults)}`);
-      lines.push(`    State: current UP, duration ${secondsSince(st.upSinceMs)}s, previous duration 0s`);
-      lines.push(`    Authen: request ${st.authRequests}, timeouts ${st.authTimeouts}, retransmission ${st.authRetransmits}`);
-      lines.push(`            Response: accept ${st.authAccepts}, reject ${st.authRejects}, challenge 0`);
-      lines.push(`    Account: request ${st.acctRequests}, timeouts ${st.acctTimeouts}, retransmission ${st.acctRetransmits}`);
-      lines.push(`            Response: ${st.acctResponses}`);
-    }
-    for (const t of s.tacacsServers.values()) {
-      const st = t.stats;
-      lines.push(`TACACS+: id ${idx++}, host ${t.address ?? '<no address>'}`
-        + `, port ${tacacsServerPort(t, s.tacacsDefaults)}`);
-      lines.push(`    Socket opens: ${st.socketOpens}, closes: ${st.socketCloses}, aborts: ${st.socketAborts}, errors: ${st.socketErrors}`);
-      lines.push(`    Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
-    }
-    return lines.length ? lines.join('\n') : 'No AAA servers configured';
-  });
 
   vue(['show', 'aaa', 'local', 'user', 'lockout'],
     'Local users currently locked out', 1, () => {
@@ -1274,19 +1244,6 @@ export function buildIdentityShowCommands(
     if (active.length > 0) {
       lines.push('Session-Id Unique Id User       IP Address    Session Type');
       for (const s of active) lines.push(`${s.id.padEnd(11)}1          ${s.user.padEnd(11)}${s.fromIp.padEnd(14)}${s.line}`);
-    }
-    return lines.join('\n');
-  });
-
-  vue(['show', 'radius', 'statistics'], 'Display Radius stats', 1, () => {
-    const s = sec();
-    if (s.radiusServers.size === 0) return 'No RADIUS servers configured';
-    const lines = ['  Radius Statistics:'];
-    for (const r of s.radiusServers.values()) {
-      const st = r.stats;
-      lines.push(`  Server: ${r.name} (${r.address ?? 'unconfigured'})`);
-      lines.push(`    Auth requests: ${st.authRequests}, retransmits: ${st.authRetransmits}, accepts: ${st.authAccepts}, rejects: ${st.authRejects}`);
-      lines.push(`    Acct requests: ${st.acctRequests}, retransmits: ${st.acctRetransmits}, responses: ${st.acctResponses}`);
     }
     return lines.join('\n');
   });
@@ -1412,9 +1369,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'show crypto pki certificates': null,
   'show crypto key mypubkey rsa': null,
   'show policy-map control-plane': null,
-  'show zone security': null,
-  'show zone-pair security': null,
-  'show policy-map type inspect zone-pair': null,
   'show ip traffic': null,
   'show parameter-map type inspect': { name: 'nom', type: 'WORD', optional: true,
     description: 'Name of the inspect parameter-map' },
@@ -1510,35 +1464,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     ].join('\n')).join('\n');
   });
 
-  trie.register('show zone security', 'Display zones', () => {
-    const s = sec();
-    if (s.zones.size === 0) return 'No zones configured';
-    return [...s.zones.values()].map(z => {
-      const description = (z as unknown as { description?: string }).description ?? `${z.name} security zone`;
-      const members: string[] = [];
-      for (const [iface, f] of s.interfaceFlags) {
-        if (f.zoneMember === z.name) members.push(`    ${iface}`);
-      }
-      return [
-        `Zone: ${z.name}`,
-        `  Description: ${description}`,
-        '  Member Interfaces:',
-        ...(members.length === 0 ? ['    None'] : members),
-      ].join('\n');
-    }).join('\n');
-  });
-
-  trie.register('show zone-pair security', 'Display zone-pairs', () => {
-    const s = sec();
-    if (s.zonePairs.size === 0) return 'No zone-pairs configured';
-    return [...s.zonePairs.values()].map(zp => `Zone-pair name: ${zp.name}\n  Source-Zone: ${zp.source}  Destination-Zone: ${zp.destination}\n  service-policy ${zp.servicePolicy ?? 'not configured'}`).join('\n');
-  });
-
-  trie.register('show policy-map type inspect zone-pair', 'Show inspect policy', () => {
-    const s = sec();
-    return [...s.zonePairs.values()].map(zp => `policy exists on zp ${zp.name}`).join('\n');
-  });
-
   trie.register('show ip traffic', 'IP traffic statistics', () =>
     showIpTraffic(getRouter()._getPortsInternal().values()));
 
@@ -1604,10 +1529,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       return lines.join('\n');
     }).join('\n');
   });
-}
-
-function secondsSince(ms: number): number {
-  return Math.max(0, Math.floor((simulationNowMs() - ms) / 1000));
 }
 
 /** `10:04:36 UTC Aug 6 2026` — la date telle qu'IOS l'écrit ici. */

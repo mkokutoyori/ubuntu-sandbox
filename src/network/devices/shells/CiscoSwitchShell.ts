@@ -2160,6 +2160,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
   }
 
+  protected override ipsecDataPlaneSpecs(): readonly CommandSpec[] {
+    return [];
+  }
+
   protected override loadMtuHost(): LoadMtuHost {
     return {
       ...super.loadMtuHost(),

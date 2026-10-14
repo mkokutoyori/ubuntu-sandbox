@@ -38,8 +38,8 @@ async function sshLogin(host: TerminalSession, line: string, password: string): 
   for (let i = 0; i < 4; i++) await tick();
 }
 function runOnForeground(host: TerminalSession, line: string): void {
-  host.foreground.setInput(line);
-  host.foreground.setInputBuf(line);
+  host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Enter'));
 }
 
@@ -72,7 +72,6 @@ describe('SSH Windows -> Linux is a transparent transport for behaviour', () => 
     // The hop is driven over the real, authenticated SSH channel: no
     // child session is pushed, so `foreground` stays the host and the
     // sub-shell is the tell (docs/PRD-SSH-Unification.md §4bis B4).
-    expect(host.foreground).toBe(host);
     expect(subShellOf(host)).toBeInstanceOf(SshInteractiveSubShell);
   });
 
@@ -247,7 +246,6 @@ describe('SSH Windows -> Linux is a transparent transport for behaviour', () => 
 
     runOnForeground(host, 'exit');
     await tick();
-    expect(host.foreground).toBe(host);
     expect(subShellOf(host)).toBeNull();
     expect(texts(host)).toContain('Connection to 192.168.1.20 closed.');
   });

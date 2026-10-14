@@ -15,8 +15,10 @@
  */
 
 import type { Equipment } from '@/network';
-import type { IShell } from './IShell';
+import type { IShell, ShellLineResult, PendingInputDirective } from './IShell';
 import { ShellFactory } from './ShellFactory';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
 
 export interface SubShellStackOptions {
   readonly device: Equipment;
@@ -27,6 +29,24 @@ export interface SubShellStackOptions {
    * vendor CLI kind for a router.
    */
   readonly primaryKind?: string;
+}
+
+export interface EditorRelay {
+  open(commandLine: string): Promise<EditorView | null>;
+  readonly transport: RemoteEditorTransport;
+}
+interface RelayingShell {
+  openRemoteEditor(commandLine: string): Promise<EditorView | null>;
+  editorTransport(): RemoteEditorTransport;
+}
+interface InterruptibleShell { interruptForeground(): boolean }
+interface ResizableShell { resize(rows: number, cols: number): void }
+interface AsyncCompletingShell { getCompletionsAsync(line: string): Promise<string[]> }
+
+export interface SubShellStackStep {
+  readonly output: string[];
+  readonly exitCode: number;
+  readonly pendingInput?: PendingInputDirective;
 }
 
 export class SubShellStack {
@@ -79,6 +99,10 @@ export class SubShellStack {
       child.dispose();
       return null;
     }
+    return this.push(child);
+  }
+
+  push(child: IShell): string[] {
     if (this.active) this.top.pause();
     child.activate();
     this.stack.push(child);
@@ -86,18 +110,45 @@ export class SubShellStack {
   }
 
   /** Route one line to the top of the stack. Only valid while `active`. */
-  async process(line: string): Promise<{ output: string[]; exitCode: number }> {
-    const result = await this.top.processLine(line);
+  async process(line: string, onProgress?: (text: string) => void): Promise<SubShellStackStep> {
+    return this.settle(await this.top.processLine(line, onProgress));
+  }
+
+  interruptForeground(): boolean {
+    const top = this.active ? (this.top as Partial<InterruptibleShell>) : null;
+    return top?.interruptForeground?.() === true;
+  }
+
+  resize(rows: number, cols: number): void {
+    if (this.active) (this.top as Partial<ResizableShell>).resize?.(rows, cols);
+  }
+
+  editorRelay(): EditorRelay | null {
+    if (!this.active) return null;
+    const top = this.top as Partial<RelayingShell>;
+    if (!top.openRemoteEditor || !top.editorTransport) return null;
+    const open = top.openRemoteEditor.bind(top);
+    return { open: (commandLine) => open(commandLine), transport: top.editorTransport() };
+  }
+
+  async getCompletionsAsync(line: string): Promise<string[] | null> {
+    if (!this.active) return null;
+    const top = this.top as Partial<AsyncCompletingShell>;
+    return top.getCompletionsAsync ? top.getCompletionsAsync(line) : [...this.top.getCompletions(line)];
+  }
+
+  /** Hand the top of the stack the value it asked for with `pendingInput`. */
+  async answer(value: string): Promise<SubShellStackStep> {
+    const top = this.top;
+    return this.settle(await (top.handleInput?.(value) ?? top.processLine(value)));
+  }
+
+  private settle(result: ShellLineResult): SubShellStackStep {
     const output = [...result.output];
+    const pendingInput = result.pendingInput;
 
     if (result.childShell) {
-      this.top.pause();
-      result.childShell.activate();
-      this.stack.push(result.childShell);
-      return {
-        output: [...output, ...result.childShell.getActivationBanner()],
-        exitCode: 0,
-      };
+      return { output: [...output, ...this.push(result.childShell)], exitCode: 0, pendingInput };
     }
 
     if (result.exit) {
@@ -108,7 +159,7 @@ export class SubShellStack {
       return { output, exitCode: 0 };
     }
 
-    return { output, exitCode: 0 };
+    return { output, exitCode: 0, pendingInput };
   }
 
   dispose(): void {

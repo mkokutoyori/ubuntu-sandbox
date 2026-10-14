@@ -60,7 +60,7 @@ async function typeSub(t: TerminalSession, line: string): Promise<void> {
   t.setInputBuf(line);
   t.handleKey(key('Enter'));
   await flush();
-  for (let garde = 0; garde < 50 && t.foreground.currentInputMode.type === 'pager'; garde++) {
+  for (let garde = 0; garde < 50 && t.currentInputMode.type === 'pager'; garde++) {
     t.handleKey(key(' '));
     await flush();
   }
@@ -72,7 +72,7 @@ async function typeSub(t: TerminalSession, line: string): Promise<void> {
  */
 async function typeSshSub(t: TerminalSession, line: string, pw: string): Promise<void> {
   await typeSub(t, line);
-  if (t.foreground.currentInputMode.type === 'password') {
+  if (t.currentInputMode.type === 'password') {
     t.setPasswordBuf(pw);
     t.handleKey(key('Enter'));
     await flush();
@@ -81,9 +81,9 @@ async function typeSshSub(t: TerminalSession, line: string, pw: string): Promise
 
 async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
-  for (let i = 0; i < 4 && t.foreground.currentInputMode.type !== 'normal' && !t.activeShell; i++) {
-    if (t.foreground.currentInputMode.type === 'password') t.setPasswordBuf(pw);
-    else if (t.foreground.currentInputMode.type === 'interactive-text') t.setInputBuf('yes');
+  for (let i = 0; i < 4 && t.currentInputMode.type !== 'normal' && !t.activeShell; i++) {
+    if (t.currentInputMode.type === 'password') t.setPasswordBuf(pw);
+    else if (t.currentInputMode.type === 'interactive-text') t.setInputBuf('yes');
     else break;
     t.handleKey(key('Enter'));
     await flush();
@@ -92,9 +92,9 @@ async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string):
 
 async function linuxSshLogin(t: LinuxTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
-  for (let i = 0; i < 4 && t.foreground.currentInputMode.type !== 'normal'; i++) {
-    if (t.foreground.currentInputMode.type === 'password') t.setPasswordBuf(pw);
-    else if (t.foreground.currentInputMode.type === 'interactive-text') t.setInputBuf('yes');
+  for (let i = 0; i < 4 && t.currentInputMode.type !== 'normal'; i++) {
+    if (t.currentInputMode.type === 'password') t.setPasswordBuf(pw);
+    else if (t.currentInputMode.type === 'interactive-text') t.setInputBuf('yes');
     else break;
     t.handleKey(key('Enter'));
     await flush();
@@ -212,11 +212,11 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv:~\$/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv:~\$/);
     await typeSub(t, 'cd /tmp');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv:\/tmp\$/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv:\/tmp\$/);
     await typeSub(t, 'cd /');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv:\/\$/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv:\/\$/);
   });
 
   // ── #3 — Shell knows it is SSH-driven ──────────────────────────
@@ -227,7 +227,6 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     // The hop is driven over the real SSH channel: no child session is
     // pushed, so the sub-shell carries the connection it runs on.
-    expect(t.foreground).toBe(t);
     expect(sshSubShell(t)?.connection).toBe('ssh');
   });
 
@@ -242,7 +241,7 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     // Either we landed in password input mode, or the simulator gates by
     // running the command directly — accept either, but no raw '[sudo]'
     // string should be left dangling on the screen with no follow-up.
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       // Provide the password.
       t.setPasswordBuf('alice');
       t.handleKey(key('Enter'));
@@ -258,16 +257,16 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123');
-    expect(t.foreground.getPrompt()).toMatch(/^R1[#>]\s?$/);
-    if (/>\s?$/.test(t.foreground.getPrompt())) {
+    expect(t.getPrompt()).toMatch(/^R1[#>]\s?$/);
+    if (/>\s?$/.test(t.getPrompt())) {
       await typeSub(t, 'enable');
-      if (t.foreground.currentInputMode.type === 'password') {
+      if (t.currentInputMode.type === 'password') {
         t.setPasswordBuf('Admin@123');
         t.handleKey(key('Enter'));
         await flush();
       }
     }
-    expect(t.foreground.getPrompt()).toMatch(/^R1#\s?$/);
+    expect(t.getPrompt()).toMatch(/^R1#\s?$/);
   });
 
   // ── #6 — Huawei prompt over SSH ────────────────────────────────
@@ -277,9 +276,9 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.7', 'Admin@123');
-    expect(t.foreground.getPrompt()).toMatch(/^<HW>\s?$/);
+    expect(t.getPrompt()).toMatch(/^<HW>\s?$/);
     await typeSub(t, 'system-view');
-    expect(t.foreground.getPrompt()).toMatch(/^\[HW\]\s?$/);
+    expect(t.getPrompt()).toMatch(/^\[HW\]\s?$/);
   });
 
   // ── #7 — clear works through any vendor ────────────────────────
@@ -344,9 +343,9 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     // Test harness convention: WindowsPC accepts any password for the
     // default 'user' account.
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.5', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
   });
 
   // ── #12 — Nested cmd from PowerShell ───────────────────────────
@@ -357,10 +356,10 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.5', 'user');
     await typeSub(t, 'powershell');
     await typeSub(t, 'cmd');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'exit');
     // Back to PowerShell after one exit.
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
   });
 
   // ── #13 — Ctrl+L wipes screen on Cisco IOS (real IOS has no `clear`
@@ -400,10 +399,10 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
     // Now ssh from the remote bash into linuxA.
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice');
       t.handleKey(key('Enter'));
       await flush();
@@ -413,10 +412,10 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
       // through the next typed line if applicable.
     }
     // After the second hop, prompt should show linuxA.
-    expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
+    expect(t.getPrompt()).toMatch(/@linuxA/);
     await typeSub(t, 'exit');
     // After one exit, back to linuxSrv.
-    expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
   });
 });
 
@@ -428,7 +427,6 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
  * which shell is active without coupling to any concrete impl.
  */
 function topShellKind(t: WindowsTerminalSession | LinuxTerminalSession): string | undefined {
-  if (t.foreground !== t && t.foreground.isRemoteChild) return 'ssh-remote';
   const a = (t as unknown as { activeSubShell?: { kind?: string; inner?: { kind?: string } } }).activeSubShell;
   return a?.inner?.kind ?? a?.kind;
 }
@@ -451,26 +449,26 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     await t.init();
     // L1 → L2 (cmd → SSH bash on linuxSrv)
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     // L2 → L3 (bash → SSH bash on linuxA) — a REAL second hop: linuxSrv
     // opens its own genuine SshSession to linuxA (SshInteractiveSubShell's
     // recursive nested-hop support), real password challenge included.
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
     // sqlplus is a multi-turn REPL, so it can only be pushed where the
     // lines actually arrive — on the server side of the wire
     // (docs/PRD-SSH-Unification.md §4bis B2). The client just sees the
     // prompt it reports back.
     await typeSub(t, 'sqlplus / as sysdba');
-    expect(t.foreground.getPrompt()).toMatch(/^SQL>/);
+    expect(t.getPrompt()).toMatch(/^SQL>/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
     // Unwind: first exit pops the nested hop (linuxA -> linuxSrv), second
     // pops the first hop (linuxSrv -> Windows cmd).
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
   // ── #D2 — 5-level chain: Win cmd → PS → SSH Win → cmd → PS ──────────
@@ -479,31 +477,31 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     // L1 console cmd already running.
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
     // L1 → L2 powershell
     await typeRoot(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
     // L2 → L3 ssh to winB → remote cmd
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.5');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('user'); t.handleKey(key('Enter')); await flush();
     }
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     // L3 → L4 nested powershell on the remote
     await typeSub(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
     // L4 → L5 nested cmd from remote powershell
     await typeSub(t, 'cmd');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     // Unwind: cmd → PS → ssh-cmd → PS → cmd
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
   // ── #D3 — 5-level cross-vendor: Win cmd → SSH Linux → SSH Win → PS → SSH Linux ──
@@ -517,22 +515,22 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     expect(topShellKind(t)).toBe('ssh-interactive-shell');
     // L2→L3 ssh from remote bash into winB
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.5', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     // L3→L4 powershell on winB
     await typeSub(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
     // L4→L5 ssh from remote PS into linuxA
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
     // Each exit pops one frame.
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
   // ── #D4 — 4-level chain with Cisco at the leaf ─────────────────
@@ -545,34 +543,34 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     await typeRoot(t, 'powershell');
     // L2 → L3 ssh linuxSrv
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
     }
     // L3 → L4 ssh Cisco
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('Admin@123'); t.handleKey(key('Enter')); await flush();
     }
     // Cisco mode transitions are reflected by the live router prompt.
-    expect(t.foreground.getPrompt()).toMatch(/^R1[#>]/);
-    if (/>\s?$/.test(t.foreground.getPrompt())) {
+    expect(t.getPrompt()).toMatch(/^R1[#>]/);
+    if (/>\s?$/.test(t.getPrompt())) {
       await typeSub(t, 'enable');
-      if (t.foreground.currentInputMode.type === 'password') {
+      if (t.currentInputMode.type === 'password') {
         t.setPasswordBuf('Admin@123'); t.handleKey(key('Enter')); await flush();
       }
     }
-    expect(t.foreground.getPrompt()).toMatch(/^R1#/);
+    expect(t.getPrompt()).toMatch(/^R1#/);
     await typeSub(t, 'configure terminal');
-    expect(t.foreground.getPrompt()).toMatch(/^R1\(config\)#/);
+    expect(t.getPrompt()).toMatch(/^R1\(config\)#/);
     // Pop back out.
     await typeSub(t, 'end');
-    expect(t.foreground.getPrompt()).toMatch(/^R1#/);
+    expect(t.getPrompt()).toMatch(/^R1#/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
   // ── #D5 — 5-level chain with Huawei at the leaf ────────────────
@@ -585,22 +583,22 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     // L2→L3 ssh from remote bash into winB cmd
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.5', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     // L3→L4 ssh from remote cmd into Huawei
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.7', 'Admin@123');
-    expect(t.foreground.getPrompt()).toMatch(/^<HW>/);
+    expect(t.getPrompt()).toMatch(/^<HW>/);
     // Mode transition: system-view → [HW]
     await typeSub(t, 'system-view');
-    expect(t.foreground.getPrompt()).toMatch(/^\[HW\]/);
+    expect(t.getPrompt()).toMatch(/^\[HW\]/);
     await typeSub(t, 'quit');
-    expect(t.foreground.getPrompt()).toMatch(/^<HW>/);
+    expect(t.getPrompt()).toMatch(/^<HW>/);
     // Pop the whole stack.
     await typeSub(t, 'quit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 });
 
@@ -614,7 +612,6 @@ describe('Unified shell identity — every shell exposes kind+connection', () =>
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     // The remote is driven over the wire, so there is no child session
     // to interrogate: the sub-shell is the top shell.
-    expect(t.foreground).toBe(t);
     expect(sshSubShell(t)?.kind).toBe('ssh-interactive-shell');
     expect(sshSubShell(t)?.connection).toBe('ssh');
   });
@@ -624,10 +621,8 @@ describe('Unified shell identity — every shell exposes kind+connection', () =>
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     // Native cmd at the root: the foreground is the host itself.
-    expect(t.foreground).toBe(t);
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     // After the SSH hop the shell the user types into is the sub-shell.
-    expect(t.foreground).toBe(t);
     expect(t.activeShell).toBe(sshSubShell(t));
     expect(typeof t.getPrompt).toBe('function');
   });
@@ -645,21 +640,21 @@ describe('Nested-SSH password challenge — driven by the remote shell', () => {
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1');
     // Bash asked the host terminal for a password — view is now in
     // password input mode (keystrokes will be masked).
-    expect(t.foreground.currentInputMode.type).toBe('password');
-    expect((t.foreground.currentInputMode as { promptText: string }).promptText)
+    expect(t.currentInputMode.type).toBe('password');
+    expect((t.currentInputMode as { promptText: string }).promptText)
       .toMatch(/alice@10\.0\.0\.1's password:/);
     // Wrong password → retry.
     t.setPasswordBuf('wrong');
     t.handleKey(key('Enter'));
     await flush();
     expectAnyLine(t, /Permission denied, please try again\./);
-    expect(t.foreground.currentInputMode.type).toBe('password');
+    expect(t.currentInputMode.type).toBe('password');
     // Right password → lands on linuxA.
     t.setPasswordBuf('alice');
     t.handleKey(key('Enter'));
     await flush();
-    expect(t.foreground.currentInputMode.type).not.toBe('password');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
+    expect(t.currentInputMode.type).not.toBe('password');
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
   });
 
   test('§P3 — Linux session: nested ssh from local bash issues a real password challenge', async () => {
@@ -670,12 +665,12 @@ describe('Nested-SSH password challenge — driven by the remote shell', () => {
     t.setInput('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
     t.handleKey(key('Enter'));
     await flush();
-    expect(t.foreground.currentInputMode.type).toBe('password');
+    expect(t.currentInputMode.type).toBe('password');
     t.setPasswordBuf('alice');
     t.handleKey(key('Enter'));
     await flush();
-    expect(t.foreground.currentInputMode.type).not.toBe('password');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.currentInputMode.type).not.toBe('password');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   test('§P2 — Ctrl+C during the nested challenge cancels cleanly', async () => {
@@ -684,12 +679,12 @@ describe('Nested-SSH password challenge — driven by the remote shell', () => {
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1');
-    expect(t.foreground.currentInputMode.type).toBe('password');
+    expect(t.currentInputMode.type).toBe('password');
     t.handleKey(key('c', { ctrlKey: true }));
     await flush();
-    expect(t.foreground.currentInputMode.type).not.toBe('password');
+    expect(t.currentInputMode.type).not.toBe('password');
     // Still in the outer remote bash — no child was pushed.
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 });
 
@@ -729,13 +724,13 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     // remote shell — it runs the one-shot command and leaves us in the
     // outer bash. With the password challenge first.
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1 hostname');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
     }
     expectAnyLine(t, /^linuxA$/);
     // We must still be inside the OUTER ssh (linuxSrv), not pushed onto
     // linuxA.
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   test('§F4 — ssh to a powered-off device fails with a network-unreachable-style message', async () => {
@@ -745,7 +740,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await t.init();
     await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
     // No password challenge — connection itself failed.
-    expect(t.foreground.currentInputMode.type).not.toBe('password');
+    expect(t.currentInputMode.type).not.toBe('password');
     expectAnyLine(t, /ssh: connect to host 10\.0\.0\.3 port 22: (No route to host|Network is unreachable|Connection refused)/);
   });
 
@@ -754,7 +749,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new -V');
-    expect(t.foreground.currentInputMode.type).not.toBe('password');
+    expect(t.currentInputMode.type).not.toBe('password');
     expectAnyLine(t, /OpenSSH_/);
   });
 
@@ -842,12 +837,12 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     // Connect: ssh carl@<winA-IP>
     await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new carl@10.0.0.4', 'carl');
     // First prompt is cmd's, NOT linux-bash.
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
     // 'clear' must hit cmd as an unknown command, NOT wipe the screen.
     await typeSub(t, 'clear');
     expectAnyLine(t, /is not recognized as an internal or external command/);
     // User identity stays carl across commands (no drift to 'user').
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
     // 'cls' wipes the screen.
     await typeSub(t, 'echo seen-before-cls');
     const before = t.lines.length;
@@ -856,7 +851,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expect(t.lines.some((l) => /seen-before-cls/.test(l.text))).toBe(false);
     // 'powershell' pushes a real PS frame; the prompt changes.
     await typeSub(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\carl>/);
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\carl>/);
     // 'gcm' is recognised by PS (no cmd-style "not recognized" error).
     await typeSub(t, 'gcm');
     const tail = t.lines.slice(-15).map((l) => l.text).join('\n');
@@ -868,7 +863,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     // Simulate the remote going down.
     linuxSrv.powerOff();
     // Issue a command — the device-offline guard should produce a
@@ -878,7 +873,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     // longer be on the alice@linuxSrv prompt.
     const tail = t.lines.slice(-10).map((l) => l.text).join('\n');
     const hasDisconnect = /closed|broken pipe|device.*off|powered off|unreachable/i.test(tail);
-    expect(hasDisconnect || !/alice@linuxSrv/.test(t.foreground.getPrompt())).toBe(true);
+    expect(hasDisconnect || !/alice@linuxSrv/.test(t.getPrompt())).toBe(true);
   });
 
   test('§F21 — second SSH attempt to a host with a stale known_hosts entry still succeeds', async () => {
@@ -887,9 +882,9 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   test('§F23 — ssh -l <user> <host> uses -l as the login name (OpenSSH alt syntax)', async () => {
@@ -897,10 +892,10 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh -l alice 10.0.0.3');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
     }
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   test('§F24 — bare host without user defaults to the calling shell user', async () => {
@@ -913,10 +908,10 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new 10.0.0.3');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('User'); t.handleKey(key('Enter')); await flush();
     }
-    expect(t.foreground.getPrompt()).toMatch(/User@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/User@linuxSrv/);
   });
 
   test('§F25 — ssh user@invalid.host emits the OpenSSH "Could not resolve" error', async () => {
@@ -924,7 +919,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@nonexistent.example');
-    expect(t.foreground.currentInputMode.type).not.toBe('password');
+    expect(t.currentInputMode.type).not.toBe('password');
     expectAnyLine(t, /ssh: Could not resolve hostname nonexistent\.example/);
   });
 
@@ -957,11 +952,11 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     // password auth fails repeatedly (default 'prohibit-password' means
     // password auth for root is rejected silently — three strikes).
     // Drive three attempts so we hit the lockout path.
-    for (let i = 0; i < 3 && t.foreground.currentInputMode.type === 'password'; i++) {
+    for (let i = 0; i < 3 && t.currentInputMode.type === 'password'; i++) {
       t.setPasswordBuf('admin'); t.handleKey(key('Enter')); await flush();
     }
     // We must NOT end up on the root@linuxSrv# prompt.
-    expect(t.foreground.getPrompt()).not.toMatch(/^root@linuxSrv/);
+    expect(t.getPrompt()).not.toMatch(/^root@linuxSrv/);
   });
 
   test('§F42 — ssh -p 22 alice@host is identical to bare ssh alice@host', async () => {
@@ -969,10 +964,10 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new -p 22 alice@10.0.0.3');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
     }
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   test('§F43 — Cisco IOS `?` inline help is still available after SSH push', async () => {
@@ -992,11 +987,11 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await t.init();
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'cd /tmp');
-    expect(t.foreground.getPrompt()).toMatch(/:\/tmp\$/);
+    expect(t.getPrompt()).toMatch(/:\/tmp\$/);
     await typeSub(t, 'exit');
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     // Fresh session — back at $HOME (~).
-    expect(t.foreground.getPrompt()).toMatch(/:~\$/);
+    expect(t.getPrompt()).toMatch(/:~\$/);
   });
 
   test('§F45 — chmod, umask and stat round-trip works over SSH', async () => {
@@ -1020,10 +1015,10 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1', 'alice');               // L4 linuxA
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.4', 'user');                 // L5 back to winA cmd
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');               // L6 linuxSrv again
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     // Unwind back to base.
     for (let i = 0; i < 5; i++) { await typeSub(t, 'exit'); }
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
   test('§F35 — sudo over SSH works (alice in the sudo group)', async () => {
@@ -1033,7 +1028,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await typeSub(t, 'sudo whoami');
     // sudo may challenge for the password; satisfy it.
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
     }
     expectAnyLine(t, /^root$/);
@@ -1139,7 +1134,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expectAnyLine(t, /^logout$/);
     expectAnyLine(t, /Connection to 10\.0\.0\.3 closed\./);
     // Back to cmd.exe.
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
   test('§F30 — typing only whitespace re-prompts without dispatching anything', async () => {
@@ -1159,7 +1154,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
-    expect(t.foreground.currentInputMode.type).toBe('password');
+    expect(t.currentInputMode.type).toBe('password');
     // Press Enter with no buffer — empty password.
     t.handleKey(key('Enter'));
     await flush();
@@ -1181,10 +1176,10 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new -q alice@10.0.0.3');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
     }
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     const tail = t.lines.slice(-20).map((l) => l.text).join('\n');
     expect(/Permanently added/.test(tail)).toBe(false);
     expect(/Welcome to Ubuntu/.test(tail)).toBe(false);
@@ -1209,7 +1204,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3 whoami');
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
     }
     expectAnyLine(t, /^alice$/);
@@ -1228,13 +1223,13 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await t2.init();
     await winSshLogin(t1, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
     await winSshLogin(t2, 'ssh -o StrictHostKeyChecking=accept-new bob@10.0.0.3', 'bob');
-    expect(t1.foreground.getPrompt()).toMatch(/alice/);
-    expect(t2.foreground.getPrompt()).toMatch(/bob/);
+    expect(t1.getPrompt()).toMatch(/alice/);
+    expect(t2.getPrompt()).toMatch(/bob/);
     // The two sessions live in independent LinuxShellSession states —
     // a `cd` in t1 must not leak into t2.
     await typeSub(t1, 'cd /tmp');
-    expect(t1.foreground.getPrompt()).toMatch(/alice@linuxSrv:\/tmp\$/);
-    expect(t2.foreground.getPrompt()).toMatch(/bob@linuxSrv:~\$/);
+    expect(t1.getPrompt()).toMatch(/alice@linuxSrv:\/tmp\$/);
+    expect(t2.getPrompt()).toMatch(/bob@linuxSrv:~\$/);
   });
 
   test('§F9 — Ctrl+D in an SSH-pushed cmd does NOT log out (cmd ignores it)', async () => {
@@ -1246,15 +1241,15 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await flush();
     // The legacy enterSsh path does the heavy lifting here; harness's
     // helper just satisfies the password challenge.
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('carl'); t.handleKey(key('Enter')); await flush();
     }
     // We should now be at cmd's prompt.
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
     // Ctrl+D: real cmd ignores it. We must NOT pop the SSH frame.
     t.handleKey(key('d', { ctrlKey: true }));
     await flush();
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
   });
 
   test('§F6 — three bad passwords give the canonical OpenSSH lockout message', async () => {
@@ -1265,12 +1260,12 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     // Type nested ssh; feed three wrong passwords.
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1');
     for (let i = 0; i < 3; i++) {
-      expect(t.foreground.currentInputMode.type).toBe('password');
+      expect(t.currentInputMode.type).toBe('password');
       t.setPasswordBuf('NOPE');
       t.handleKey(key('Enter'));
       await flush();
     }
-    expect(t.foreground.currentInputMode.type).not.toBe('password');
+    expect(t.currentInputMode.type).not.toBe('password');
     expectAnyLine(t, /alice@10\.0\.0\.1: Permission denied \(publickey,password\)/);
   });
 });
@@ -1285,7 +1280,7 @@ describe('Linux→SSH→Windows: prompt format, clear, powershell, completion', 
     await t.init();
     await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new carl@10.0.0.4', 'carl');
     // The prompt the renderer will use must look like cmd, not Linux bash.
-    const p = t.foreground.getPrompt();
+    const p = t.getPrompt();
     expect(p).toMatch(/^C:\\Users\\carl>/);
     // The structured parts the Linux PromptRenderer reads must report
     // that the active shell is foreign so it can defer to getPrompt().
@@ -1324,7 +1319,7 @@ describe('Linux→SSH→Windows: prompt format, clear, powershell, completion', 
     await t.init();
     await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new carl@10.0.0.4', 'carl');
     await typeSub(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\carl>/);
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\carl>/);
     // 'gcm' (Get-Command) is a built-in PowerShell alias. Whatever it
     // outputs, the cmd-style "is not recognized" footer MUST NOT appear.
     await typeSub(t, 'gcm');
@@ -1340,7 +1335,7 @@ describe('Linux→SSH→Windows: prompt format, clear, powershell, completion', 
     await typeSub(t, 'echo a');
     await typeSub(t, 'echo b');
     await typeSub(t, 'echo c');
-    expect(t.foreground.getPrompt()).toMatch(/carl/);
+    expect(t.getPrompt()).toMatch(/carl/);
   });
 
   test('§R6 — Windows→SSH→Linux: Tab completion runs against the REMOTE bash', async () => {
@@ -1426,7 +1421,7 @@ describe('Root-cause shell/session integrity', () => {
     // L1 — LOCAL CMD
     // ─────────────────────────────────────────────
 
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
 
     await typeRoot(t, 'mkdir C:\\temp_rc1');
 
@@ -1444,10 +1439,10 @@ describe('Root-cause shell/session integrity', () => {
 
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
 
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv:~\$/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv:~\$/);
 
     // shell identity
-    expect(t.foreground.getPrompt()).not.toMatch(/^C:\\/);
+    expect(t.getPrompt()).not.toMatch(/^C:\\/);
 
     // mutate linux state
     await typeSub(t, 'mkdir -p /tmp/rc1_linuxsrv');
@@ -1470,9 +1465,9 @@ describe('Root-cause shell/session integrity', () => {
 
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.5', 'user');
 
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
 
-    expect(t.foreground.getPrompt()).not.toMatch(/@linuxSrv/);
+    expect(t.getPrompt()).not.toMatch(/@linuxSrv/);
 
     // mutate remote windows
     await typeSub(t, 'mkdir C:\\rc1_nested');
@@ -1491,7 +1486,7 @@ describe('Root-cause shell/session integrity', () => {
 
     await typeSub(t, 'powershell');
 
-    expect(t.foreground.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\User>/);
 
     // powershell-native alias
     await typeSub(t, 'gcm');
@@ -1511,9 +1506,9 @@ describe('Root-cause shell/session integrity', () => {
 
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1', 'alice');
 
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
 
-    expect(t.foreground.getPrompt()).not.toMatch(/^PS /);
+    expect(t.getPrompt()).not.toMatch(/^PS /);
 
     // mutate linuxA
     await typeSub(t, 'echo rc1 > /tmp/rc1.txt');
@@ -1535,50 +1530,50 @@ describe('Root-cause shell/session integrity', () => {
 
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123');
 
-    expect(t.foreground.getPrompt()).toMatch(/^R1[#>]/);
+    expect(t.getPrompt()).toMatch(/^R1[#>]/);
 
     // IOS native config
-    if (/>\s?$/.test(t.foreground.getPrompt())) {
+    if (/>\s?$/.test(t.getPrompt())) {
       await typeSub(t, 'enable');
 
-      if (t.foreground.currentInputMode.type === 'password') {
+      if (t.currentInputMode.type === 'password') {
         t.setPasswordBuf('Admin@123');
         t.handleKey(key('Enter'));
         await flush();
       }
     }
 
-    expect(t.foreground.getPrompt()).toMatch(/^R1#/);
+    expect(t.getPrompt()).toMatch(/^R1#/);
 
     await typeSub(t, 'configure terminal');
 
-    expect(t.foreground.getPrompt()).toMatch(/^R1\(config\)#/);
+    expect(t.getPrompt()).toMatch(/^R1\(config\)#/);
 
     await typeSub(t, 'hostname RC1');
 
-    expect(t.foreground.getPrompt()).toMatch(/^RC1\(config\)#/);
+    expect(t.getPrompt()).toMatch(/^RC1\(config\)#/);
 
     // IOS rejects linux command
     await typeSub(t, 'ls');
 
     // unwind
     await typeSub(t, 'end');
-    expect(t.foreground.getPrompt()).toMatch(/^RC1#/);
+    expect(t.getPrompt()).toMatch(/^RC1#/);
 
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
 
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
 
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
 
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
 
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
   test('§RC2 — Linux→Huawei→Linux : shell ownership never leaks, exec-mode nested ssh included', async () => {
@@ -1591,38 +1586,38 @@ describe('Root-cause shell/session integrity', () => {
     await t.init();
 
     // L1 bash
-    expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
+    expect(t.getPrompt()).toMatch(/@linuxA/);
 
     // L2 Huawei
     await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.7', 'Admin@123');
 
-    expect(t.foreground.getPrompt()).toMatch(/^<HW>/);
+    expect(t.getPrompt()).toMatch(/^<HW>/);
 
     await typeSub(t, 'system-view');
 
-    expect(t.foreground.getPrompt()).toMatch(/^\[HW\]/);
+    expect(t.getPrompt()).toMatch(/^\[HW\]/);
 
     // config mutation
     await typeSub(t, 'sysname CORE-HW');
 
-    expect(t.foreground.getPrompt()).toMatch(/^\[CORE-HW\]/);
+    expect(t.getPrompt()).toMatch(/^\[CORE-HW\]/);
 
     // VRP rejects bash command
     await typeSub(t, 'touch /tmp/x');
 
     // exit Huawei
     await typeSub(t, 'quit');
-    expect(t.foreground.getPrompt()).toMatch(/^<CORE-HW>/);
+    expect(t.getPrompt()).toMatch(/^<CORE-HW>/);
 
     await typeSub(t, 'quit');
 
     // back linux
-    expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
+    expect(t.getPrompt()).toMatch(/@linuxA/);
 
     // L3 nested linux
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
 
-    expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
 
     // sqlplus's REPL is pushed on the server side of the wire and the
     // client follows the prompt it reports back
@@ -1630,11 +1625,11 @@ describe('Root-cause shell/session integrity', () => {
     // touching the SSH frame underneath.
     await typeSub(t, 'sqlplus / as sysdba');
 
-    expect(t.foreground.getPrompt()).toMatch(/^SQL>/);
+    expect(t.getPrompt()).toMatch(/^SQL>/);
 
     await typeSub(t, 'exit');
 
-    expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
 
     // Exec-mode nested ssh ("ssh host cmd") now opens the same real
     // second hop as the bare interactive form, runs the command on its
@@ -1642,14 +1637,14 @@ describe('Root-cause shell/session integrity', () => {
     // in the current frame instead of pushing one
     // (docs/PRD-SSH-Unification.md §4bis B4).
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.5 mkdir C:\\RC2', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
 
-    expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
 
     // Unwind the one real SSH hop (linuxSrv) — ownership returns cleanly
     // to linuxA, with no leaked/orphaned frames along the way.
     await typeSub(t, 'exit');
-    expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
+    expect(t.getPrompt()).toMatch(/@linuxA/);
   });
 
   test('§RC3 — renderer NEVER hybridises prompts across 7 nested shells', async () => {
@@ -1660,32 +1655,32 @@ describe('Root-cause shell/session integrity', () => {
     await t.init();
 
     // L1 cmd
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
 
     // L2 linux
     await winSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
 
     // L3 win
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.5', 'user');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\User>/);
 
     // L4 PS
     await typeSub(t, 'powershell');
-    expect(t.foreground.getPrompt()).toMatch(/^PS /);
+    expect(t.getPrompt()).toMatch(/^PS /);
 
     // L5 linux
     await typeSshSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1', 'alice');
-    expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
+    expect(t.getPrompt()).toMatch(/@linuxA/);
 
     // L6 sqlplus
     await typeSub(t, 'sqlplus / as sysdba');
-    expect(t.foreground.getPrompt()).toMatch(/^SQL>/);
+    expect(t.getPrompt()).toMatch(/^SQL>/);
 
     // L7 back to linux from sqlplus-host
     await typeSub(t, 'exit');
 
-    expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
+    expect(t.getPrompt()).toMatch(/@linuxA/);
 
     // ABSOLUTE invariant:
     // NO prompt may ever become hybrid.
@@ -1735,7 +1730,7 @@ describe('Root-cause shell/session integrity', () => {
     // Linux
     await typeSub(t, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.3');
 
-    if (t.foreground.currentInputMode.type === 'password') {
+    if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf('alice');
       t.handleKey(key('Enter'));
       await flush();
@@ -1774,7 +1769,7 @@ describe('Root-cause shell/session integrity', () => {
     const prompts: string[] = [];
 
     function snap() {
-      prompts.push(t.foreground.getPrompt());
+      prompts.push(t.getPrompt());
     }
 
     snap();
@@ -1828,7 +1823,7 @@ describe('Home-directory coherency — prompts never lie about cwd', () => {
     const t = new LinuxTerminalSession('hc1', linuxA);
     await t.init();
     await linuxSshLogin(t, 'ssh -o StrictHostKeyChecking=accept-new carl@10.0.0.4', 'carl');
-    expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
     await typeSub(t, 'dir');
     // Listing must contain the user's standard Windows folders — that
     // proves the cwd ACTUALLY points at C:\\Users\\carl (not User).
