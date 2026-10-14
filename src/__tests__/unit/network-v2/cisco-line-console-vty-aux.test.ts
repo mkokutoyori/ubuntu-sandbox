@@ -184,7 +184,7 @@ function launchOpts(pc: LinuxPC, sourceIp = PC_IP): SshLaunchOptions {
   return {
     defaultUser: 'root',
     sourceIp,
-    wireProbe: (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port),
+    sourceDevice: pc,
   };
 }
 

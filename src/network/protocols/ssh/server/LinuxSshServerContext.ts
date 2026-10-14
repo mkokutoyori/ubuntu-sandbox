@@ -446,6 +446,11 @@ export class LinuxSshServerContext implements ISshServerContext {
       .allowAgentForwarding;
   }
 
+  maxAuthTriesFor(user: string, clientIp: string): number {
+    const groups = this.userManager.getUserGroups(user).map((g) => g.name);
+    return this.effectiveSshdServerConfig().effectiveFor({ user, groups, address: clientIp }).maxAuthTries;
+  }
+
   userPolicyRefusal(user: string, address: string): string | null {
     const groups = this.userManager.getUserGroups(user).map((g) => g.name);
     return this.effectiveSshdServerConfig().userRefusal(user, groups, address === '' ? undefined : { address });
@@ -526,6 +531,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       const EXIT_WORDS = new Set(['exit', 'logout']);
       return {
         streamSession: session,
+        loginShellKind: 'bash',
         takeSessionHold: () => device.takeSessionHold(),
         execute: async (line: string) => {
           if (subShells.active) {

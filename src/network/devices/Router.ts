@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
 import { simulationNowMs } from '@/network/core/SystemClock';
@@ -1268,6 +1269,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
         },
       }),
+      shellKind: () => primaryShellKindFor(this),
       execTarget: () => this as unknown as SshExecTarget,
       sftpSource: () => this.sshSftpFileSource(),
       forcedCommand: (user) => this.sshForcedCommand(user),

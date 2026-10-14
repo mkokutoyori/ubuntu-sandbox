@@ -88,6 +88,12 @@ export interface ILinuxShell {
    */
   readonly posixShell?: boolean;
   /**
+   * Which login shell the channel lands on (`bash`, `cmd`, `cisco-ios`,
+   * `huawei-vrp`): announced to the client, which would otherwise have to
+   * read it off the peer machine.
+   */
+  readonly loginShellKind?: string;
+  /**
    * The remote's own prompt as it stands right now. Read after each line,
    * since the command may have changed it (`cd`, `enable`,
    * `configure terminal`). Optional: a context that omits it leaves the
@@ -229,6 +235,7 @@ export interface ISshServerContext {
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
   subsystemAdmitted?(name: string, user: SshUserContext): boolean;
   readonly maxAuthTriesDisconnect?: string;
+  maxAuthTriesFor?(user: string, clientIp: string): number;
 }
 
 export interface DirectTcpipRequest {

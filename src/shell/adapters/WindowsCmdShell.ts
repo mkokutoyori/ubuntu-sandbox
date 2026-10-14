@@ -14,7 +14,6 @@ import { ShellFactory } from '../ShellFactory';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
-  wireProbeFor,
   SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
 } from '../sshLauncher';
@@ -60,7 +59,6 @@ export class WindowsCmdShell extends AbstractShell {
   private readonly windowsSession: WindowsShellSession | null;
   private pendingSshAuth: PendingSshAuth | null = null;
   private pendingExecCommand: string | null = null;
-  private readonly knownHostsTracker = new Set<string>();
 
   /** Real cmd.exe only knows `cls`; typing `clear` produces a "not
    *  recognized as an internal or external command" error. */
@@ -128,11 +126,9 @@ export class WindowsCmdShell extends AbstractShell {
     // ssh launch intercept — lets the user chain SSH from a remote cmd.
     const sshAttempt = await tryInterpretSshLaunch(line, {
       defaultUser: this.user,
-      knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIpCmd(this.device),
       sourceDevice: this.device,
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
-      wireProbe: wireProbeFor(this.device),
     });
     if (sshAttempt) {
       if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'

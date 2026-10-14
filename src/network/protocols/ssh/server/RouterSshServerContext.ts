@@ -73,6 +73,8 @@ export interface RouterSshServerDeps {
   sftpSource?(): RouterSftpSource | null;
   /** Optional reactive event bus from the SSH event subsystem. */
   events?: ISshServerEventBus;
+  /** Login shell kind announced on the channel (`cisco-ios`, `huawei-vrp`). */
+  shellKind?(): string;
   /** Optional banner text printed before authentication. */
   banner?(): string | null;
   identification?(): string;
@@ -162,6 +164,7 @@ export class RouterSshServerContext implements ISshServerContext {
         // `?` is a help key here, and `clear counters` is a real command
         // — neither behaves the POSIX way.
         posixShell: false,
+        ...(this.deps.shellKind === undefined ? {} : { loginShellKind: this.deps.shellKind() }),
       };
     }
 

@@ -32,7 +32,6 @@ import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
 import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
-import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { peerLiveness, firstSviAddress } from '@/network/protocols/ssh/sessionLiveness';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
@@ -569,52 +568,6 @@ export abstract class TerminalSession {
   protected prepareAsRemoteUser(_user: string): void { /* vendor hook */ }
 
   protected applyRemoteEnv(_env: Record<string, string>): void { /* vendor hook */ }
-
-  adoptRemoteChild(
-    child: TerminalSession,
-    user: string,
-    hostLabel: string,
-    env?: Record<string, string>,
-    opts?: { quiet?: boolean },
-  ): void {
-    // The remote's own spelling of the account, so the child's prompt and
-    // home match what the device actually holds — `ssh user@host` on a
-    // box whose account is `User` lands in `C:\Users\User`, the same as
-    // over the wire.
-    const account = (child.device as unknown as {
-      resolveAccountName?: (n: string) => string | undefined;
-    }).resolveAccountName?.(user) ?? user;
-    child.prepareAsRemoteUser(account);
-    if (env) child.applyRemoteEnv(env);
-    child._remoteLabel = hostLabel;
-    const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
-    const sourceHost = this.device.getHostname?.() ?? '';
-    const banner = opts?.quiet
-      ? this.composeLoginBanner(child.device, account, sourceIp, sourceHost, true)
-      : this.composeLoginBanner(child.device, account, sourceIp, sourceHost, false);
-    child.attachAsChildOf(this);
-    for (const line of banner) child.addLine(line);
-  }
-
-  /**
-   * Compose the post-auth banner (issue.net + motd + "Last login: …") and
-   * record the login for lastlog/auth-log purposes. `protected` so a
-   * subclass can call it directly for a remote session that isn't pushed
-   * as a full child (e.g. SshInteractiveSubShell — LinuxTerminalSession's
-   * real-wire interactive shell), not just from `adoptRemoteChild`.
-   * Delegates to the shared `composeSshLoginBanner()` (also used by
-   * SshInteractiveSubShell for a *nested* ssh's own banner).
-   */
-  protected composeLoginBanner(
-    device: unknown,
-    user: string,
-    sourceIp: string,
-    sourceHost: string,
-    quiet = false,
-    preAuthBannerShown = false,
-  ): string[] {
-    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet, preAuthBannerShown);
-  }
 
   /**
    * True when the remote this session is attached to is still reachable

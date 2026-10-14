@@ -182,7 +182,6 @@ describe('`show ssh` decrit les algorithmes NEGOCIES', () => {
       defaultUser: 'root',
       sourceIp: '10.0.0.1',
       sourceDevice: pc,
-      wireProbe: (host, port) => pc.tcpConnectOutcome(new IPAddress(host), port),
     });
     expect(attempt?.kind).toBe('pending');
     const finalised = await finalisePendingAuth(

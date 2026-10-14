@@ -72,7 +72,6 @@ import {
   hostKeyNo,
   hostKeyYes,
 } from '@/network/protocols/ssh/session/ISshInteractionHandler';
-import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
@@ -160,7 +159,7 @@ class HopInteractionHandler implements ISshInteractionHandler {
 
   showWarning(message: string): void { this.infoLines.push(message); }
   showInfo(message: string): void { this.infoLines.push(message); }
-  onConnected(_info: SshConnectionInfo): void { /* banner handled by composeSshLoginBanner instead */ }
+  onConnected(_info: SshConnectionInfo): void { /* the banner arrives on the shell channel */ }
 
   drainInfoLines(): string[] {
     const lines = this.infoLines.splice(0, this.infoLines.length);
@@ -814,18 +813,17 @@ export class SshInteractiveSubShell implements ISubShell {
       return done([...infoLines, 'ssh: failed to open shell channel'], this.getPrompt());
     }
 
-    const targetDevice = findLinuxMachineByIp(pending.targetHost);
-    const sourceIp = this.firstDeviceIp(this.remoteDevice) ?? '0.0.0.0';
-    const banner = targetDevice
-      ? composeSshLoginBanner(targetDevice, pending.targetUser, sourceIp, this.promptHost, false)
-      : [];
+    const greeting = (channelResult.value as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
+    const banner = greeting.replace(/\n+$/, '').split('\n').filter((line) => line.length > 0);
+    const opening = (channelResult.value as { initialPrompt?: () => string | null }).initialPrompt?.() ?? null;
+    const nestedPromptHost = (opening !== null ? parseBashPrompt(opening)?.hostname : undefined) ?? pending.targetHost;
 
     this.nestedHop = new SshInteractiveSubShell(
       pending.session, channelResult.value, pending.targetUser, pending.targetHost,
       `/home/${pending.targetUser}`,
       () => pending.session.disconnect(),
-      targetDevice?.getSshHostname() ?? pending.targetHost,
-      targetDevice ?? undefined,
+      nestedPromptHost,
+      findLinuxMachineByIp(pending.targetHost) ?? undefined,
     );
     if (this.windowSize !== null) this.nestedHop.resize(this.windowSize.rows, this.windowSize.cols);
     return done([...infoLines, ...banner], this.getPrompt());

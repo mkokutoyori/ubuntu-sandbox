@@ -2533,19 +2533,6 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  /** Best-effort `lastlog`-style line via a one-shot remote exec. */
-  private async tryReadLastLogin(session: SshSession, user: string): Promise<string | null> {
-    const channelResult = session.openExecChannel(
-      `last -i ${user} 2>/dev/null | head -n 1`,
-    );
-    if (!isOk(channelResult)) return null;
-    const channel = channelResult.value;
-    const result = await channel.execute();
-    channel.close();
-    const out = result.stdout.replace(/\n$/, '');
-    return out || null;
-  }
-
   /**
    * SSH-03-R9: when the user did not pass -i, auto-discover the standard
    * identity files in ~/.ssh/. Returns the original list when at least one
@@ -2911,67 +2898,6 @@ export class LinuxTerminalSession extends TerminalSession {
       return null;
     }
     return session;
-  }
-
-  /** Best-effort MOTD fetch via a one-shot remote `cat /etc/motd`. */
-  private async tryReadRemoteMotd(session: SshSession): Promise<string[]> {
-    const channelResult = session.openExecChannel('cat /etc/motd 2>/dev/null');
-    if (!isOk(channelResult)) return [];
-    const channel = channelResult.value;
-    const result = await channel.execute();
-    channel.close();
-    return result.stdout ? result.stdout.replace(/\n$/, '').split('\n') : [];
-  }
-
-  /**
-   * Banner composition for the fallback exec-channel path (synthetic SSH
-   * handlers in tests). Mirrors `composeLoginBanner` ordering: Welcome →
-   * motd → blank → Last login. Uses ssh exec commands because we do not
-   * have direct access to the remote VFS.
-   */
-  private async composeLoginBannerViaExec(
-    session: SshSession,
-    user: string,
-  ): Promise<string[]> {
-    const lines: string[] = [];
-    // Single source-of-truth for the Welcome line: motd if it has one,
-    // otherwise a synthesised line from /etc/os-release. Avoids the
-    // "Welcome to Ubuntu" duplicate (terminal_gap.md §9.2) that occurred
-    // when the remote already had a motd that began with that line.
-    const motd = await this.tryReadRemoteMotd(session);
-    if (motd.length > 0 && motd.some((l) => l.trim().length > 0)) {
-      for (const m of motd) lines.push(m);
-    } else {
-      const welcome = await this.tryReadWelcome(session);
-      if (welcome) lines.push(welcome);
-    }
-    const lastLogin = await this.tryReadLastLogin(session, user);
-    if (lastLogin) {
-      if (lines.length > 0) lines.push('');
-      lines.push(lastLogin);
-    }
-    return lines;
-  }
-
-  /**
-   * Compose the canonical Ubuntu "Welcome to …" banner from /etc/os-release
-   * + uname. Falls back to a generic string if the remote does not surface
-   * those files.
-   */
-  private async tryReadWelcome(session: SshSession): Promise<string | null> {
-    const ch = session.openExecChannel(
-      'sh -c "grep PRETTY_NAME /etc/os-release 2>/dev/null; uname -r 2>/dev/null"',
-    );
-    if (!isOk(ch)) return null;
-    const r = await ch.value.execute();
-    ch.value.close();
-    const out = r.stdout || '';
-    const pretty = /PRETTY_NAME="([^"]+)"/.exec(out)?.[1];
-    const release = out.split('\n').find((l) => /^\d+\./.test(l)) ?? '';
-    if (!pretty && !release) return null;
-    const machine = 'GNU/Linux';
-    const arch = 'x86_64';
-    return `Welcome to ${pretty ?? 'Ubuntu'} (${machine} ${release || '5.15.0'} ${arch})`;
   }
 
   /**
@@ -3434,75 +3360,6 @@ function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
   const eq = findEquipmentByIp(targetIp);
   if (eq && eq instanceof LinuxMachine) return eq;
   return null;
-}
-
-/**
- * Compose the post-authentication banner the way OpenSSH does (with PAM
- * configured the Ubuntu way):
- *   1. "Welcome to Ubuntu <pretty-name> (GNU/Linux <release> <arch>)"
- *   2. Contents of /etc/motd (if non-empty)
- *   3. Blank line separator
- *   4. "Last login: …" pulled from the in-memory lastlog registry
- *
- * Honours `~/.hushlogin`: if the user's home contains it, no banner is
- * emitted — matches PAM behaviour exactly.
- */
-function composeLoginBanner(remote: Equipment, user: string): string[] {
-  const exec = (remote as unknown as {
-    executor?: {
-      vfs?: { readFile: (p: string) => string | null };
-      lastlog?: {
-        getPrevious: (u: string) => { when: number; sourceHost: string; tty: string } | undefined;
-      };
-      userMgr?: { getUser: (u: string) => { home?: string } | undefined };
-    };
-  }).executor;
-  if (!exec?.vfs) return [];
-
-  const home = exec.userMgr?.getUser(user)?.home ?? `/home/${user}`;
-  // /etc/nologin: refuse non-root logins. Conventional Ubuntu honors it via PAM.
-  // /etc/motd:    static-motd. /etc/legal: not surfaced by default sshd.
-  // ~/.hushlogin: suppress all banner content (motd + lastlog).
-  const hushLogin = exec.vfs.readFile(`${home}/.hushlogin`);
-  if (hushLogin !== null) return [];
-
-  const lines: string[] = [];
-
-  // Single "Welcome to …" line — sourced ONCE.
-  //
-  // Ubuntu provisions /etc/motd at LinuxMachine setup time (LinuxMachine.ts:
-  // ~line 160) with the canonical line baked in. If the machine has a
-  // motd, use that as the authoritative source. If not, synthesise a
-  // fallback from /etc/os-release so unconfigured machines still get
-  // a banner. Either way the line appears exactly once
-  // (terminal_gap.md §9.2).
-  const motdRaw = (exec.vfs.readFile('/etc/motd') ?? '').replace(/\n+$/, '');
-  if (motdRaw.trim().length > 0) {
-    for (const m of motdRaw.split('\n')) lines.push(m);
-  } else {
-    const osRelease = exec.vfs.readFile('/etc/os-release') ?? '';
-    const pretty = /PRETTY_NAME="([^"]+)"/.exec(osRelease)?.[1] ?? 'Ubuntu 22.04 LTS';
-    lines.push(`Welcome to ${pretty} (GNU/Linux 5.15.0-91-generic x86_64)`);
-  }
-
-  const prev = exec.lastlog?.getPrevious(user);
-  if (prev) {
-    lines.push('');
-    // Ctime format identical to pam_lastlog.so.
-    const d = new Date(prev.when);
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const ctime =
-      `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ` +
-      `${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:` +
-      `${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} ` +
-      `${d.getUTCFullYear()}`;
-    lines.push(`Last login: ${ctime} from ${prev.sourceHost}`);
-  }
-
-  return lines;
 }
 
 // ── ssh CLI argument parser ─────────────────────────────────────
