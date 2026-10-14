@@ -18,6 +18,8 @@
  *   - huawei/HuaweiDhcpCommands.ts     — DHCP commands
  */
 
+import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
+import type { Equipment } from '@/network/equipment/Equipment';
 import type { Router } from '../Router';
 import { VRP_SSH } from '@/terminal/ssh/sshDialect';
 import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
@@ -40,7 +42,6 @@ import {
   type VrpTimeRange, type VrpNamedLines, type VrpInterfaceBucket,
 } from './huawei/vrpShellStores';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
-import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
 import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
@@ -487,7 +488,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
             const previous = this.routerRef;
             this.routerRef = device;
             try {
-              rt.output(this.runOutboundSshClient(args, rt.values.get('stelnet_password')));
+              rt.output(await this.runOutboundSshClient(args, rt.values.get('stelnet_password')));
             } finally {
               this.routerRef = previous;
             }
@@ -855,12 +856,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
   }
 
-  /**
-   * Parse `stelnet [user@]host [port]` / `ssh [-l user] [-p port] host
-   * [cmd]` and dispatch through the shared runSshClient. Source IP is
-   * picked from the first up interface that has one.
-   */
-  private runOutboundSshClient(args: string[], offeredPassword?: string): string {
+  private async runOutboundSshClient(args: string[], offeredPassword?: string): Promise<string> {
     let user = 'admin';
     let port: string | null = null;
     const rest: string[] = [];
@@ -877,39 +873,28 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     if (at !== -1) { user = host.slice(0, at); host = host.slice(at + 1); }
     if (!port && rest[1] && /^\d+$/.test(rest[1])) port = rest[1];
     const cmd = rest.slice(port ? 2 : 1).join(' ');
-    const router = this.routerRef as unknown as {
+    const device = this.routerRef;
+    if (!device) return 'Error: device not bound';
+    const router = device as unknown as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
-      _getHostnameInternal: () => string;
       _getHostsTable?: () => { resolve: (n: string) => string | null };
     };
-    if (!router) return 'Error: device not bound';
     const resolved = router._getHostsTable?.().resolve(host);
     if (resolved) host = resolved;
-    let sourceIp: string | null = null;
+    let hasSourceAddress = false;
     for (const [, p] of router._getPortsInternal()) {
-      const ip = p.getIPAddress();
-      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+      if (p.getIPAddress() && p.getIsUp()) { hasSourceAddress = true; break; }
     }
-    if (!sourceIp) return 'Error: no usable interface IP for outbound SSH';
-    const sshStack = (this.routerRef as unknown as {
-      getTcpStack?: () => { hasEgressTo(ip: string): boolean };
-    } | null)?.getTcpStack?.();
-    if (sshStack && IPAddress.tryParse(host) && !sshStack.hasEgressTo(host)) {
-      return VRP_SSH.unreachable(host, 22);
-    }
-    const clientArgs: string[] = [];
-    if (port) clientArgs.push('-p', port);
-    clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
-    clientArgs.push(`${user}@${host}`);
-    if (cmd) clientArgs.push(cmd);
-    const result = runSshClient({
-      args: clientArgs,
-      sourceHostname: router._getHostnameInternal(),
-      sourceIp, sourceUser: user,
-      offeredPassword,
-      localVfs: { readFile: () => null, writeFile: () => undefined },
+    if (!hasSourceAddress) return 'Error: no usable interface IP for outbound SSH';
+    return runRouterOutboundSsh({
+      device: device as unknown as Equipment,
+      dialect: VRP_SSH,
+      user,
+      host,
+      port: Number(port ?? 22),
+      command: cmd,
+      password: offeredPassword,
     });
-    return result.output;
   }
 
   /**
@@ -1561,10 +1546,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
 
     // `stelnet [user@]host [port]` and `ssh [-l user] host` — outbound
-    // SSH client, dispatched through the shared runSshClient so every
-    // gate (host key TOFU, sshd policy, VTY ACL) applies uniformly.
+    // SSH client, opened over the wire so every gate (host key TOFU,
+    // sshd policy, VTY ACL) applies uniformly.
     for (const verb of OUTBOUND_SSH_CLIENT_VERBS) {
-      t.registerGreedy(verb, `${verb} client`, (args) => this.runOutboundSshClient(args));
+      t.registerGreedy(verb, `${verb} client`, () => 'Error: The password is requested by the interaction prompt.');
     }
 
     // Display commands

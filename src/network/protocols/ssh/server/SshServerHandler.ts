@@ -7,6 +7,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { ChannelAgentPort, type AgentPort } from '../agent/AgentService';
+import { AGENT_CHANNEL_TYPE, AGENT_FORWARDING_REQUEST } from '../agent/AgentWire';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import {
@@ -56,13 +58,15 @@ interface SessionChannelInfo {
   shellSession: SshShellSession | null;
   pty: PtyRequestPayload | null;
   readonly environment: Map<string, string>;
+  agent: AgentPort | null;
 }
 
 const PREAUTH_COUNT = new WeakMap<object, { value: number }>();
 
-function preauthSlot(ctx: object): { value: number } {
-  let s = PREAUTH_COUNT.get(ctx);
-  if (!s) { s = { value: 0 }; PREAUTH_COUNT.set(ctx, s); }
+function preauthSlot(ctx: ISshServerContext): { value: number } {
+  const scope = ctx.connectionLimitScope ?? ctx;
+  let s = PREAUTH_COUNT.get(scope);
+  if (!s) { s = { value: 0 }; PREAUTH_COUNT.set(scope, s); }
   return s;
 }
 
@@ -381,7 +385,7 @@ export class SshServerHandler {
           return;
         }
         const channel = incoming.accept();
-        const info: SessionChannelInfo = { started: false, shellSession: null, pty: null, environment: new Map() };
+        const info: SessionChannelInfo = { started: false, shellSession: null, pty: null, environment: new Map(), agent: null };
         sessionChannels.set(channel.localId, info);
         channel.onClose(() => { sessionChannels.delete(channel.localId); });
         channel.onRequest((request) => {
@@ -392,6 +396,13 @@ export class SshServerHandler {
                 && (this.ctx.acceptsEnvironment?.(variable.name) ?? /^(LANG|LC_[A-Z_]+)$/.test(variable.name));
               if (accepted) info.environment.set(variable.name, variable.value);
               request.reply(accepted);
+              return;
+            }
+            case AGENT_FORWARDING_REQUEST: {
+              const permitted = info.started === false
+                && this.ctx.agentForwardingPermitted?.(user, clientIp, keyOptions) === true;
+              if (permitted) info.agent = new ChannelAgentPort(() => active.openChannel(AGENT_CHANNEL_TYPE));
+              request.reply(permitted);
               return;
             }
             case 'pty-req': {
@@ -426,6 +437,7 @@ export class SshServerHandler {
                 clientIp,
                 clientPort: this.ctx.clientPort?.(clientIp),
                 exec: { environment: info.environment, pty: info.pty, keyOptions },
+                ...(info.agent === null ? {} : { agent: info.agent }),
               });
               const sessionStart = simulationNowMs();
               this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'exec' });
@@ -484,6 +496,7 @@ export class SshServerHandler {
                 interactive: true,
                 clientIp,
                 clientPort: 50_000 + (user.username.length * 7 % 10_000),
+                ...(info.agent === null ? {} : { agent: info.agent }),
               });
               info.shellSession = new SshShellSession(channel, info.pty, {
                 shell,
@@ -591,6 +604,15 @@ export class SshServerHandler {
 
   }
 
+  private announcePolicyRefusal(user: string, clientIp: string): void {
+    const rootRefused = user === 'root' && !(this.ctx.rootMayLogIn?.('password') ?? this.ctx.config.permitRootLogin);
+    const reason = rootRefused ? 'PermitRootLogin' : this.ctx.userPolicyRefusal?.(user, clientIp) ?? null;
+    if (reason === null) return;
+    this.eventBus.emit({
+      kind: 'auth_policy_refused', user, ip: clientIp, reason, port: this.ctx.clientPort?.(clientIp),
+    });
+  }
+
   private async handleAuth(
     payload: Record<string, unknown>,
     clientIp: string,
@@ -605,6 +627,7 @@ export class SshServerHandler {
     const user = (payload.user as string | undefined) ?? '';
     const peer: SshPeer = { ip: clientIp, port: this.ctx.clientPort?.(clientIp) };
     const credentialless = payload.method === 'none';
+    if (firstRequest) this.announcePolicyRefusal(user, clientIp);
     if (credentialless && this.ctx.buildUserContext(user) !== null
       && !(this.ctx.auth.acceptsWithoutCredential?.(user) ?? false)) return { ok: false };
     let password = (payload.password as string | undefined) ?? '';
@@ -647,6 +670,20 @@ export class SshServerHandler {
         method,
       });
       this.ctx.recordAuthFailure?.(user, clientIp, 'root login disabled');
+      return { ok: false };
+    }
+
+    const policyRefusal = this.ctx.userPolicyRefusal?.(user, clientIp) ?? null;
+    if (policyRefusal !== null) {
+      this.eventBus.emit({
+        kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
+        user,
+        reason: 'user_not_allowed',
+        ip: clientIp,
+        method,
+      });
+      this.ctx.recordAuthFailure?.(user, clientIp, policyRefusal);
       return { ok: false };
     }
 

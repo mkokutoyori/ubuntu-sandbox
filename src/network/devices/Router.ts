@@ -58,7 +58,7 @@ import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } fr
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
 import {
-  hasHeadlessAnswers, runInteractionPlanHeadless, type HeadlessAnswers,
+  hasHeadlessAnswers, opensOutboundSession, runInteractionPlanHeadless, type HeadlessAnswers,
 } from '@/shell/interaction/HeadlessInteraction';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
@@ -1145,7 +1145,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   /** Header printed above the telnet credential prompts — IOS wording by default. */
-  protected getVtyAuthHeader(): string { return 'User Access Verification'; }
+  protected getVtyAuthHeader(): string {
+    return this.securityConfig()?.loginMessages().banner ?? 'User Access Verification';
+  }
 
   private buildRouterTelnetServerHandler(): TelnetServerHandler {
     const ctx = new RouterTelnetServerContext({
@@ -1156,6 +1158,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         return l?.linePassword ? { value: l.linePassword, algo: l.linePasswordAlgo } : null;
       },
       authHeader: () => this.getVtyAuthHeader(),
+      credentialPrompts: () => {
+        const messages = this.securityConfig()?.loginMessages();
+        return { username: messages?.usernamePrompt ?? 'Username: ', password: messages?.passwordPrompt ?? 'Password: ' };
+      },
+      authFailureMessage: () => this.securityConfig()?.loginMessages().failMessage ?? '% Login invalid',
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
       admit: (ip, localIp) => this.vtyAdmissionVerdict('telnet', ip, localIp),
@@ -1249,6 +1256,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private buildRouterSshServerHandler(): SshServerHandler {
     const credentials = this.getCredentialStore();
     const ctx = new RouterSshServerContext({
+      limitScope: this,
       hostname: () => this.hostname,
       hostKey: () => this.sshHostKey(),
       additionalHostKeys: () => this.sshAdditionalHostKeys(),
@@ -1291,7 +1299,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         publicKeyAdmitted: (user: string, key: string) =>
           this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
       } : {}),
-    }, this.sshServerLimits());
+    }, () => this.sshServerLimits());
     return new SshServerHandler(ctx);
   }
 
@@ -2069,6 +2077,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * does it on the events that actually change routing: configuration,
    * interface up/down, and protocol packets arriving from the wire.
    */
+  egressInterfaceFor(address: string): string | null {
+    return this.lookupRoute(new IPAddress(address))?.iface ?? null;
+  }
+
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
     // ECMP: collect every route genuinely tied for best (same prefix
     // length, AD, and metric) instead of freezing on whichever happened
@@ -3654,8 +3666,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   async executeCommand(command: string, answers?: HeadlessAnswers): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
-    if (hasHeadlessAnswers(answers)) {
-      const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
+    if (hasHeadlessAnswers(answers) || opensOutboundSession(command)) {
+      const dialogue = await this.jouerDialogueSansTerminal(command, answers ?? {});
       if (dialogue !== null) { this.syncRouteDebug(); return dialogue; }
     }
     const porteAaa = this.refusAutorisationAaa(command);
@@ -4543,7 +4555,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
   /** Outbound-SSH known-hosts store (Cisco `show ip ssh known-hosts`). */
-  readonly sshKnownHosts = new RouterSshKnownHosts();
+  readonly sshKnownHosts = new RouterSshKnownHosts(this);
   _getSshKnownHosts(): RouterSshKnownHosts { return this.sshKnownHosts; }
   /** Vendor-neutral CLI alias table (Huawei command-alias, Cisco alias). */
   readonly commandAliases = new CommandAliasTable();
@@ -4767,6 +4779,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       // both are read live, so a change applies to the very next line
       // rather than to the next `debug` command.
       svc.setOutputGate(() => this.shell.getLoggingConfig?.()?.enabled !== false);
+      svc.setLocalAddressResolver((address) => [...this.ports.values()].some((port) =>
+        port.getIPAddress()?.toString() === address
+        || port.getSecondaryIPs().some((entry) => entry.ip.toString() === address)));
       const configuredLimit = () => this.shell.getLoggingConfig?.()?.rateLimit ?? null;
       const followConfiguredLimit = () => {
         const n = configuredLimit();
@@ -5091,6 +5106,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this._loginBlocker = new LoginBlocker({
       deviceId: this.id, bus: this.getBus(),
       attempts, withinSeconds, blockSeconds,
+      onQuietMode: (change) => this.getSecurityAuditLog().recordQuietMode(change),
     });
   }
 

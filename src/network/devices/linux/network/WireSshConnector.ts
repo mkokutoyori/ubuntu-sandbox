@@ -10,6 +10,7 @@ import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/S
 import { isOk, type SshError } from '../../../protocols/ssh/Result';
 import type { ISshLocalFs } from '../../../protocols/ssh/ISshLocalFs';
 import type { TcpConnector } from '@/network/tcp/types';
+import type { AgentPort } from '../../../protocols/ssh/agent/AgentService';
 
 export type { StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
 import type { StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
@@ -20,6 +21,7 @@ export interface WireSshClient {
   readonly uid: number;
   readonly gid: number;
   readonly home: string;
+  readonly agent?: AgentPort;
 }
 
 export interface WireSshTarget {
@@ -55,6 +57,7 @@ export async function connectWireSsh(
     knownHostsPath: `${client.home}/.ssh/known_hosts`,
     credentialless: target.password === undefined && target.passwordPrompt === undefined,
     interactionHandler: interaction,
+    ...(client.agent === undefined ? {} : { agent: client.agent }),
   });
   const builder = SshConnectOptionsBuilder.create()
     .host(target.host).user(target.user).port(target.port).strictHostKeyChecking(target.strict)

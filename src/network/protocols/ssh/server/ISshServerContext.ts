@@ -8,6 +8,7 @@
  */
 
 import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
+import type { AgentPort } from '../agent/AgentService';
 import type { ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
@@ -131,6 +132,7 @@ export interface SshTransportPolicy {
 
 export interface ISshServerContext {
   readonly hostKey: SshHostKey;
+  readonly connectionLimitScope?: object;
   additionalHostKeys?(): SshHostKey[];
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
@@ -144,11 +146,13 @@ export interface ISshServerContext {
   getShell(
     userCtx: SshUserContext, cwd: string,
     opts?: {
-      interactive?: boolean; clientIp?: string; clientPort?: number;
+      interactive?: boolean; clientIp?: string; clientPort?: number; agent?: AgentPort;
       exec?: { readonly environment: ReadonlyMap<string, string>; readonly pty: { term: string; columns: number; rows: number } | null; readonly keyOptions: AuthorizedKeyOptions | null };
     },
   ): ILinuxShell;
   acceptsEnvironment?(name: string): boolean;
+  userPolicyRefusal?(user: string, address: string): string | null;
+  agentForwardingPermitted?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean;
   accountLocked?(user: string): boolean;
   holdSession?(user: SshUserContext, clientIp: string, seconds: number): void;
   /**

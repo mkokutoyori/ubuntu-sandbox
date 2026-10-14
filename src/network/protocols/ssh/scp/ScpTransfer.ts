@@ -96,15 +96,16 @@ export class ScpTransfer {
     if (this.opts.quiet) {
       return { ok: true, filesTransferred: files, bytesTransferred: bytes, summary: '' };
     }
-    const name = (src.split('/').pop() ?? src).padEnd(40);
-    const rate = scaleRate(bytes);
-    const summary = `${name}100% ${String(bytes).padStart(5)}     ${rate}   00:00`;
-    return { ok: true, filesTransferred: files, bytesTransferred: bytes, summary };
+    return { ok: true, filesTransferred: files, bytesTransferred: bytes, summary: scpProgressLine(src.split('/').pop() ?? src, bytes) };
   }
 
   private fail(error: string): ScpTransferResult {
     return { ok: false, filesTransferred: 0, bytesTransferred: 0, summary: '', error };
   }
+}
+
+export function scpProgressLine(name: string, bytes: number): string {
+  return `${name.padEnd(40)}100% ${String(bytes).padStart(5)}     ${scaleRate(bytes)}   00:00`;
 }
 
 function scaleRate(bytes: number): string {

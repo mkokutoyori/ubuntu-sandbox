@@ -54,7 +54,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortTap';
-import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import { DebugBroadcast, type DebugDestination, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
 import type { BgpUpdateTracedPayload } from '@/network/bgp/events';
@@ -309,8 +309,8 @@ export class RouterDebugService implements TerminalDebugSource {
     return 'All possible debugging has been turned off';
   }
 
-  subscribe(listener: DebugLineListener): () => void {
-    return this.broadcast.subscribe(listener);
+  subscribe(listener: DebugLineListener, destination?: DebugDestination): () => void {
+    return this.broadcast.subscribe(listener, destination);
   }
 
   subscriberCount(): number { return this.broadcast.subscriberCount(); }
@@ -396,7 +396,6 @@ export class RouterDebugService implements TerminalDebugSource {
     return true;
   }
 
-  /** Master switch: `no logging on` mutes every channel, flags intact. */
   setOutputGate(gate: (() => boolean) | null): void { this.broadcast.setOutputGate(gate); }
 
   /** `logging rate-limit N` — console budget for debug output. */
@@ -406,6 +405,22 @@ export class RouterDebugService implements TerminalDebugSource {
   getDroppedCount(): number { return this.broadcast.getDroppedCount(); }
   /** Report the current window's drops now, rather than on the next line. */
   flushDrops(): void { this.broadcast.flushDrops(); }
+
+  private localAddressResolver: ((address: string) => boolean) | null = null;
+
+  setLocalAddressResolver(resolver: ((address: string) => boolean) | null): void {
+    this.localAddressResolver = resolver;
+  }
+
+  private ownsAddress(address: string): boolean {
+    return this.localAddressResolver ? this.localAddressResolver(address) : true;
+  }
+
+  private concernsThisRouter(ip: { src: string; dst: string }, dir: 'rcvd' | 'sent'): boolean {
+    if (dir === 'sent') return this.ownsAddress(ip.src);
+    const firstOctet = Number(ip.dst.split('.')[0]);
+    return firstOctet >= 224 || this.ownsAddress(ip.dst);
+  }
 
   private aclMatchFn?: (aclName: string, line: string, faits?: DebugPacketFacts) => boolean;
   private readonly categoryRenderers = new Map<DebugCategory, () => string>();
@@ -673,11 +688,12 @@ export class RouterDebugService implements TerminalDebugSource {
             + `length=${u.length ?? 0}`, faits);
         }
       }
-      if (ip.proto === 1) {
+      if (ip.proto === 1 && this.concernsThisRouter(ip, dir)) {
         if (ip.icmpType === 'echo-request') {
-          this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`, faits);
+          if (dir === 'rcvd') this.emit('ip.icmp', `ICMP: echo received, src ${ip.src}, dst ${ip.dst}`, faits);
         } else if (ip.icmpType === 'echo-reply') {
-          this.emit('ip.icmp', `ICMP: echo reply sent, src ${ip.src}, dst ${ip.dst}`, faits);
+          this.emit('ip.icmp',
+            `ICMP: echo reply ${dir === 'sent' ? 'sent' : 'rcvd'}, src ${ip.src}, dst ${ip.dst}`, faits);
         } else {
           this.emit('ip.icmp', `ICMP: ${ip.icmpType ?? 'message'} ${dir}, src ${ip.src}, dst ${ip.dst}`, faits);
         }

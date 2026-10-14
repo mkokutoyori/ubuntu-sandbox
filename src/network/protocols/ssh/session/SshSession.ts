@@ -34,7 +34,9 @@ import {
   type UserauthTransport,
 } from '../auth/ClientUserauth';
 import { SshKeyPair } from '../SshKeyPair';
-import type { AgentKey } from '../SshAgent';
+import type { AgentPort } from '../agent/AgentService';
+import { serveAgentChannel } from '../agent/AgentService';
+import { AGENT_CHANNEL_TYPE, agentSignatureFlags } from '../agent/AgentWire';
 import { signUserauth, userauthSignatureAlgorithm, userauthSignedData } from '../auth/UserauthSignature';
 import {
   keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob, sshKeyTypeLabel,
@@ -72,10 +74,12 @@ import {
 } from '../transport/SshTransport';
 import { SshConfig } from '../SshConfig';
 import { parseRekeyLimit } from '../transport/RekeyLimit';
-import { SshConnection, type SshOpenFailure } from '../connection/SshConnection';
+import { SshConnection, type ConnectionChannel, type SshOpenFailure } from '../connection/SshConnection';
 import { channelAsStream } from '../connection/ChannelStream';
 import { SSH_OPEN_ADMINISTRATIVELY_PROHIBITED } from '../transport/SshMessageNumbers';
-import { decodeBoundPort, decodeForwardedTcpip, encodeDirectTcpip, encodeTcpipForward } from '../connection/ChannelPayloads';
+import {
+  decodeBoundPort, decodeForwardedTcpip, encodeDirectTcpip, encodeStringPayload, encodeTcpipForward,
+} from '../connection/ChannelPayloads';
 import { resolveAlgorithmDirectives } from '../transport/SshAlgorithms';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 import { hostKeyChangedWarning } from '../hostkey/HostKeyChangedWarning';
@@ -92,7 +96,8 @@ export interface SshSessionDeps {
   readonly interactionHandler: ISshInteractionHandler;
   readonly clientIdentification?: string;
   readonly clientExtInfo?: boolean;
-  readonly agentKeys?: () => readonly AgentKey[];
+  readonly agent?: AgentPort;
+  readonly hostKeyAuthority?: (host: string, key: SshHostKey) => boolean;
 }
 
 
@@ -157,6 +162,12 @@ export class SshSession implements ISshSession {
     return this.hostKeyBlob;
   }
 
+  private peerIdentificationLine: string | null = null;
+
+  get serverIdentification(): string | null {
+    return this.peerIdentificationLine;
+  }
+
   get isConnected(): boolean {
     return this._state.kind === 'connected';
   }
@@ -209,6 +220,7 @@ export class SshSession implements ISshSession {
     }
     this.sessionId = established.sessionId;
     this.hostKeyBlob = established.hostKeyBlob;
+    this.peerIdentificationLine = established.peerIdentification.line;
     const conn = transportLink(transport, dialed);
     this.conn = conn;
     this.connection = new SshConnection(transport);
@@ -264,11 +276,11 @@ export class SshSession implements ISshSession {
     return ok(info);
   }
 
-  openShellChannel(): Result<ISshShellChannel> {
+  openShellChannel(options?: { readonly forwardAgent?: boolean }): Result<ISshShellChannel> {
     if (!this.connection || !this.isConnected) {
       return err({ kind: 'NOT_AUTHENTICATED' });
     }
-    const channel: ISshShellChannel = this.channelManager.openShell(this.connection);
+    const channel: ISshShellChannel = this.channelManager.openShell(this.connection, options?.forwardAgent === true);
     return ok(channel);
   }
 
@@ -290,6 +302,21 @@ export class SshSession implements ISshSession {
     }
     const channel: ISshSftpChannel = this.channelManager.openSftp(this.connection);
     return ok(channel);
+  }
+
+  openExecStream(command: string): Promise<ConnectionChannel | null> {
+    const connection = this.connection;
+    if (!connection || !this.isConnected) return Promise.resolve(null);
+    const channel = connection.beginOpen('session');
+    return new Promise((resolve) => {
+      channel.whenOpened((failure) => {
+        if (failure !== null) {
+          resolve(null);
+          return;
+        }
+        void channel.request('exec', encodeStringPayload(command), true).then((accepted) => resolve(accepted ? channel : null));
+      });
+    });
   }
 
   openDirectTcpip(host: string, port: number): Promise<Result<TcpConnection>> {
@@ -338,6 +365,10 @@ export class SshSession implements ISshSession {
   async cancelRemoteForward(bindAddress: string, port: number): Promise<void> {
     this.remoteForwardAcceptors.delete(port);
     await this.connection?.globalRequest('cancel-tcpip-forward', encodeTcpipForward({ address: bindAddress, port }), true);
+  }
+
+  forwardAgent(agent: AgentPort): void {
+    this.connection?.onChannelOpen(AGENT_CHANNEL_TYPE, (incoming) => serveAgentChannel(incoming.accept(), agent));
   }
 
   disconnect(): void {
@@ -390,6 +421,11 @@ export class SshSession implements ISshSession {
     key: SshHostKey,
     opts: SshConnectOptions,
   ): Promise<Result<void>> {
+    if (this.deps.hostKeyAuthority !== undefined) {
+      if (this.deps.hostKeyAuthority(host, key)) return ok(undefined);
+      this.deps.interactionHandler.showWarning('Host key verification failed.');
+      return err({ kind: 'HOST_KEY_REJECTED', host, fingerprint: key.fingerprint.toString() });
+    }
     const strategy: IHostKeyVerificationStrategy = createVerificationStrategy(
       opts.strictHostKeyChecking,
     );
@@ -483,7 +519,7 @@ export class SshSession implements ISshSession {
     const offClosed = transport.onClose(() => { closed = true; });
     const outcome = await runUserauth(this.userauthTransport(transport, user, () => closed), {
       authentication: opts.authentication,
-      identities: this.userauthIdentities(opts, user),
+      identities: await this.userauthIdentities(opts, user),
       interactive: this.deps.credentialless !== true,
     }, {
       canAnswer: () => !suppliedOnce || answersGiven === 0,
@@ -506,23 +542,26 @@ export class SshSession implements ISshSession {
     });
   }
 
-  private userauthIdentities(opts: SshConnectOptions, user: string): UserauthIdentity[] {
+  private async userauthIdentities(opts: SshConnectOptions, user: string): Promise<UserauthIdentity[]> {
     const identities: UserauthIdentity[] = [];
     const offered = new Set<string>();
-    for (const agentKey of this.deps.agentKeys?.() ?? []) {
-      const privateKey = keygenPrivateKey(agentKey.material);
-      let blob: Uint8Array;
-      try { blob = base64ToBytes(agentKey.blob); } catch { continue; }
-      const publicKey = sshPublicKeyFromBlob(blob);
-      if (privateKey === null || publicKey === null) continue;
+    const agent = this.deps.agent;
+    for (const entry of agent === undefined ? [] : await agent.identities()) {
+      const publicKey = sshPublicKeyFromBlob(entry.blob);
+      if (publicKey === null) continue;
       const algorithm = userauthSignatureAlgorithm(publicKey);
-      offered.add(agentKey.blob);
+      const encoded = bytesToBase64(entry.blob);
+      offered.add(encoded);
       identities.push({
         algorithm,
-        publicKey: agentKey.blob,
-        sign: () => this.sessionId === null
-          ? null
-          : bytesToBase64(signUserauth(privateKey, userauthSignedData(this.sessionId, user, algorithm, blob))),
+        publicKey: encoded,
+        sign: async () => {
+          if (this.sessionId === null || agent === undefined) return null;
+          const signature = await agent.sign(
+            entry.blob, userauthSignedData(this.sessionId, user, algorithm, entry.blob), agentSignatureFlags(algorithm),
+          );
+          return signature === null ? null : bytesToBase64(signature);
+        },
       });
     }
     for (const path of opts.identityFiles) {

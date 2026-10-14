@@ -12,6 +12,7 @@ import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 export const sshCommand: LinuxCommand = {
   name: 'ssh',
   needsNetworkContext: true,
+  opensWireSession: true,
   manSection: 1,
   usage: OPENSSH_UBUNTU_22_04.sshUsage,
   help: 'OpenSSH remote login client.',

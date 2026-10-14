@@ -174,6 +174,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-keychain-key':       { parent: 'config-keychain', clearOnExit: ['selectedKeyChainKey'] },
   'config-ssh-pubkey':         { parent: 'config' },
   'config-ssh-pubkey-user':    { parent: 'config-ssh-pubkey' },
+  'config-ssh-pubkey-server':  { parent: 'config-ssh-pubkey' },
   'config-ssh-pubkey-data':    { parent: 'config-ssh-pubkey-user' },
 };
 
@@ -202,6 +203,7 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-archive-log': { parent: 'config-archive' },
   'config-ssh-pubkey':      { parent: 'config' },
   'config-ssh-pubkey-user': { parent: 'config-ssh-pubkey' },
+  'config-ssh-pubkey-server': { parent: 'config-ssh-pubkey' },
   'config-ssh-pubkey-data': { parent: 'config-ssh-pubkey-user' },
   // Les trois sous-modes de la famille identite. Sans eux, un `exit`
   // depuis `config-tacacs-server` ne remontait nulle part : le shell y

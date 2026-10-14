@@ -50,7 +50,7 @@ import {
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
-  ConvertToSecureStringCmdlet, ReadHostCmdlet, GetHelpCmdlet, GetCommandCmdlet,
+  ConvertToSecureStringCmdlet, ReadHostCmdlet, GetHostCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
@@ -364,6 +364,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new InvokeExpressionCmdlet());
   registry.register(new ConvertToSecureStringCmdlet());
   registry.register(new ReadHostCmdlet());
+  registry.register(new GetHostCmdlet());
   registry.register(new GetHelpCmdlet());
   registry.register(new GetCommandCmdlet());
   registry.register(new GetModuleCmdlet());

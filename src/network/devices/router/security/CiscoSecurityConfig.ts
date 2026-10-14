@@ -1,3 +1,6 @@
+import { ServerLiveness } from '../../../radius/ServerLiveness';
+import { DomainStripping } from '../aaa/UsernameRouting';
+import { ServerSelector, type LoadBalanceSetting } from '../../../radius/ServerSelector';
 import { SshPubkeyChain } from './SshPubkeyChain';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -53,12 +56,20 @@ export interface RadiusGlobalDefaults {
   retransmit?: number;
   authPort?: number;
   acctPort?: number;
+  deadtimeMinutes?: number;
+  deadCriteriaTimeSec?: number;
+  deadCriteriaTries?: number;
+  directedRequest?: { restricted: boolean };
+  retryReorder?: boolean;
+  transactionMaxTries?: number;
+  loadBalance?: LoadBalanceSetting;
 }
 
 export interface TacacsGlobalDefaults {
   key?: string;
   timeoutSec?: number;
   port?: number;
+  directedRequest?: { restricted: boolean; noTruncate: boolean };
 }
 
 export interface RadiusServer {
@@ -151,7 +162,7 @@ export interface AaaLegacyServerHost {
 }
 
 export const SSH_DEFAULTS = Object.freeze({
-  version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false,
+  version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false, maxStartups: 128, strictHostKeyCheck: false,
   macAlgorithms: [] as string[], encryptionAlgorithms: [] as string[],
   kexAlgorithms: [] as string[], hostKeyAlgorithms: [] as string[],
   clientEncryptionAlgorithms: [] as string[], clientMacAlgorithms: [] as string[], scpServerEnabled: false,
@@ -164,6 +175,10 @@ export interface SshConfig {
   sourceInterface?: string;
   dhMinBits: number;
   loggingEvents: boolean;
+  maxStartups: number;
+  strictHostKeyCheck: boolean;
+  rekeyTimeMinutes?: number;
+  rekeyVolumeKb?: number;
   macAlgorithms: string[];
   encryptionAlgorithms: string[];
   kexAlgorithms: string[];
@@ -391,19 +406,34 @@ export class CiscoSecurityConfig {
   aaaSessionId?: string;
   /** `aaa local authentication attempts max-fail <n>` — per-account lockout threshold. */
   localAuthMaxFailAttempts?: number;
+  aaaLoginBanner?: string;
+  aaaFailMessage?: string;
+  aaaUsernamePrompt?: string;
+  aaaPasswordPrompt?: string;
   aaaMethods: AaaMethodEntry[] = [];
   radiusServers: Map<string, RadiusServer> = new Map();
   tacacsServers: Map<string, TacacsServer> = new Map();
   aaaGroups: Map<string, AaaServerGroup> = new Map();
   legacyHosts: AaaLegacyServerHost[] = [];
   radiusDefaults: RadiusGlobalDefaults = {};
+  readonly radiusLiveness = new ServerLiveness();
+  readonly radiusStripping = new DomainStripping();
+  readonly radiusSelector = new ServerSelector();
+  readonly tacacsStripping = new DomainStripping();
   tacacsDefaults: TacacsGlobalDefaults = {};
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
   sshPubkeys = new SshPubkeyChain();
 
-  sshServerLimits(): { maxAuthTries: number; loginGraceTime: number } {
-    return { maxAuthTries: this.ssh.authRetries, loginGraceTime: this.ssh.timeoutSec };
+  sshServerLimits(): {
+    maxAuthTries: number; loginGraceTime: number;
+    maxStartups: { start: number; rate: number; full: number };
+  } {
+    return {
+      maxAuthTries: this.ssh.authRetries,
+      loginGraceTime: this.ssh.timeoutSec,
+      maxStartups: { start: this.ssh.maxStartups, rate: 100, full: this.ssh.maxStartups },
+    };
   }
   cryptoKeys: CryptoRsaKey[] = [];
   enableSecret?: string;
@@ -560,6 +590,18 @@ export class CiscoSecurityConfig {
     return lines;
   }
 
+  loginMessages(): { banner: string | null; failMessage: string | null; usernamePrompt: string; passwordPrompt: string } {
+    const list = this.aaaMethods.find((m) =>
+      m.phase === 'authentication' && (m.service as string) === 'login' && m.listName === 'default');
+    const tacacsFirst = list?.methods[0]?.toLowerCase() === 'group' && list.methods[1]?.toLowerCase() === 'tacacs+';
+    return {
+      banner: tacacsFirst ? null : this.aaaLoginBanner ?? null,
+      failMessage: this.aaaFailMessage ?? null,
+      usernamePrompt: this.aaaUsernamePrompt ?? 'Username: ',
+      passwordPrompt: this.aaaPasswordPrompt ?? 'Password: ',
+    };
+  }
+
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
     if (this.aaaNewModel) {
@@ -570,6 +612,10 @@ export class CiscoSecurityConfig {
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
     }
+    if (this.aaaLoginBanner !== undefined) lines.push(`aaa authentication banner ^C\n${this.aaaLoginBanner}\n^C`);
+    if (this.aaaFailMessage !== undefined) lines.push(`aaa authentication fail-message ^C\n${this.aaaFailMessage}\n^C`);
+    if (this.aaaUsernamePrompt !== undefined) lines.push(`aaa authentication username-prompt "${this.aaaUsernamePrompt}"`);
+    if (this.aaaPasswordPrompt !== undefined) lines.push(`aaa authentication password-prompt "${this.aaaPasswordPrompt}"`);
     // Les comptes locaux sont rendus par le magasin d'identifiants
     // (`_listLocalUsers`), qui est le seul a les porter. Un second
     // magasin a existe ici : ecrit par une ligne, lu par personne, et
@@ -606,6 +652,10 @@ export class CiscoSecurityConfig {
       lines.push(`ip ssh dh min size ${this.ssh.dhMinBits}`);
     }
     if (this.ssh.loggingEvents) lines.push('ip ssh logging events');
+    if (this.ssh.strictHostKeyCheck) lines.push('ip ssh stricthostkeycheck');
+    if (this.ssh.maxStartups !== SSH_DEFAULTS.maxStartups) lines.push(`ip ssh maxstartups ${this.ssh.maxStartups}`);
+    if (this.ssh.rekeyTimeMinutes !== undefined) lines.push(`ip ssh rekey time ${this.ssh.rekeyTimeMinutes}`);
+    if (this.ssh.rekeyVolumeKb !== undefined) lines.push(`ip ssh rekey volume ${this.ssh.rekeyVolumeKb}`);
     if (this.ssh.macAlgorithms.length) {
       lines.push(`ip ssh server algorithm mac ${this.ssh.macAlgorithms.join(' ')}`);
     }
@@ -640,6 +690,26 @@ export class CiscoSecurityConfig {
     if (this.radiusDefaults.authPort !== undefined) {
       lines.push(`radius-server auth-port ${this.radiusDefaults.authPort}`);
     }
+    if (this.radiusDefaults.deadtimeMinutes) {
+      lines.push(`radius-server deadtime ${this.radiusDefaults.deadtimeMinutes}`);
+    }
+    if (this.radiusDefaults.deadCriteriaTimeSec !== undefined || this.radiusDefaults.deadCriteriaTries !== undefined) {
+      const time = this.radiusDefaults.deadCriteriaTimeSec;
+      const tries = this.radiusDefaults.deadCriteriaTries;
+      lines.push(`radius-server dead-criteria${time !== undefined ? ` time ${time}` : ''}${tries !== undefined ? ` tries ${tries}` : ''}`);
+    }
+    if (this.radiusDefaults.directedRequest) {
+      lines.push(`radius-server directed-request${this.radiusDefaults.directedRequest.restricted ? ' restricted' : ''}`);
+    }
+    lines.push(...this.radiusStripping.render('radius-server domain-stripping'));
+    if (this.radiusDefaults.retryReorder) lines.push('radius-server retry method reorder');
+    if (this.radiusDefaults.transactionMaxTries !== undefined) {
+      lines.push(`radius-server transaction max-tries ${this.radiusDefaults.transactionMaxTries}`);
+    }
+    if (this.radiusDefaults.loadBalance) {
+      const balance = this.radiusDefaults.loadBalance;
+      lines.push(`radius-server load-balance method least-outstanding batch-size ${balance.batchSize}${balance.ignorePreferredServer ? ' ignore-preferred-server' : ''}`);
+    }
     if (this.radiusDefaults.acctPort !== undefined) {
       lines.push(`radius-server acct-port ${this.radiusDefaults.acctPort}`);
     }
@@ -647,6 +717,11 @@ export class CiscoSecurityConfig {
     if (this.tacacsDefaults.timeoutSec !== undefined) {
       lines.push(`tacacs-server timeout ${this.tacacsDefaults.timeoutSec}`);
     }
+    if (this.tacacsDefaults.directedRequest) {
+      const directed = this.tacacsDefaults.directedRequest;
+      lines.push(`tacacs-server directed-request${directed.restricted ? ' restricted' : ''}${directed.noTruncate ? ' no-truncate' : ''}`);
+    }
+    lines.push(...this.tacacsStripping.render('tacacs-server domain-stripping'));
     if (this.tacacsDefaults.port !== undefined) {
       lines.push(`tacacs-server port ${this.tacacsDefaults.port}`);
     }

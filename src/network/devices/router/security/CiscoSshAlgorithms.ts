@@ -63,6 +63,13 @@ export function effectiveIosSshAlgorithms(config: SshConfig, software: CiscoSoft
   };
 }
 
+function iosRekeyLimit(config: SshConfig): { bytes?: number; seconds?: number } {
+  return {
+    ...(config.rekeyVolumeKb !== undefined ? { bytes: config.rekeyVolumeKb * 1024 } : {}),
+    ...(config.rekeyTimeMinutes !== undefined ? { seconds: config.rekeyTimeMinutes * 60 } : {}),
+  };
+}
+
 export function iosSshTransportPolicy(config: SshConfig, software: CiscoSoftwareIdentity): SshTransportPolicy {
   const effective = effectiveIosSshAlgorithms(config, software);
   return {
@@ -71,6 +78,7 @@ export function iosSshTransportPolicy(config: SshConfig, software: CiscoSoftware
       hostKey: effective.hostkey.filter((name) => name !== X509_HOSTKEY),
       ciphers: effective.encryption,
       macs: effective.mac,
+      rekeyLimit: iosRekeyLimit(config),
     },
     groupExchangeMinBits: config.dhMinBits,
     extInfo: false,
@@ -89,6 +97,7 @@ export function iosSshClientProfile(config: SshConfig, software: CiscoSoftwareId
       hostKey: IOS_CLIENT_HOSTKEY_ALGORITHMS,
       ciphers: config.clientEncryptionAlgorithms.length > 0 ? config.clientEncryptionAlgorithms : defaults.encryption,
       macs: config.clientMacAlgorithms.length > 0 ? config.clientMacAlgorithms : defaults.mac,
+      rekeyLimit: iosRekeyLimit(config),
     },
   };
 }

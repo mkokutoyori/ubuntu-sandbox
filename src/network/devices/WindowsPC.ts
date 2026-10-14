@@ -70,11 +70,12 @@ import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDi
 import { isOk } from '@/network/protocols/ssh/Result';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import { LocalAgentPort, type AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import {
   runSshKeygenCommand, runSshKeygenInteractive, type SshKeygenHost, type SshKeygenTerminal,
 } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
-  runSshAddCommand, runSshAgentCommand, type SshAgentHost,
+  runSshAddCommandNow, runSshAgentCommand, type SshAgentHost,
 } from '@/network/protocols/ssh/SshAgentCommands';
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
@@ -2502,8 +2503,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private readonly sshAgent: SshAgent = new SshAgent();
 
-  sshAgentIfRunning(): SshAgent | undefined {
-    return this.svcMgr.getService('ssh-agent')?.state === 'Running' ? this.sshAgent : undefined;
+  sshAgentIfRunning(): AgentPort | undefined {
+    return this.svcMgr.getService('ssh-agent')?.state === 'Running' ? new LocalAgentPort(this.sshAgent) : undefined;
   }
 
   private userProfileDir(): string {
@@ -2535,9 +2536,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
-  private agentHost(): SshAgentHost {
+  private agentHost(): SshAgentHost & { readonly agent: LocalAgentPort } {
     return {
-      agent: this.sshAgent,
+      agent: new LocalAgentPort(this.sshAgent),
       reader: {
         readFile: (path: string) => {
           const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
@@ -3598,9 +3599,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nmap':
       case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
+      case 'ssh-add':
       case 'ssh-keygen':
       case 'ssh-agent':
-      case 'ssh-add':
       case 'ssh-keyscan':
         return Promise.resolve(this.runOpenSshTool(cmd, args));
       case 'pathping': return this.runPathpingCommand(args);
@@ -4064,7 +4065,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     switch (name) {
       case 'ssh-keygen': return runSshKeygenCommand(args, this.keygenHost()).output;
       case 'ssh-agent':  return runSshAgentCommand(args, this.agentHost()).output;
-      case 'ssh-add':    return runSshAddCommand(args, this.agentHost()).output;
+      case 'ssh-add':    return runSshAddCommandNow(args, this.agentHost()).output;
       default:
         return runSshKeyscanCommand(args, {
           resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,

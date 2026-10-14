@@ -1,3 +1,4 @@
+import type { SshHostKey } from '@/network/protocols/ssh/SshHostKey';
 /**
  * wireSshLogin — opening an SSH session over the real wire, for any
  * terminal that can type `ssh`.
@@ -29,7 +30,7 @@ import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols
 import { isOk } from '@/network/protocols/ssh/Result';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
-import type { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor, defaultIdentityFilesFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { IPAddress } from '@/network/core/types';
 import { OPENSSH_SSH, sshWireFailureLine, type SshDialect } from '@/terminal/ssh/sshDialect';
@@ -106,7 +107,7 @@ export interface WireSshLoginRequest {
   readonly credentialless?: boolean;
   readonly quiet?: boolean;
   readonly authentication?: SshClientAuthentication;
-  readonly agent?: SshAgent;
+  readonly agent?: AgentPort;
   readonly algorithms?: SshAlgorithmPreferences;
 }
 
@@ -189,13 +190,17 @@ export function sshUnreachableReason(device: unknown, host: string): string {
 
 export type SshTargetResolution =
   | { readonly kind: 'ready'; readonly address: string }
-  | { readonly kind: 'failed'; readonly line: string };
+  | {
+    readonly kind: 'failed'; readonly line: string;
+    readonly address?: string; readonly outcome?: Exclude<TcpWireOutcome, 'open'>;
+  };
 
 export async function resolveSshTarget(
   device: Equipment, typedHost: string, port: number, dialect: SshDialect = OPENSSH_SSH,
 ): Promise<SshTargetResolution> {
   const resolver = device as unknown as { resolveHostname(name: string): Promise<IPAddress | null> };
-  const resolved = IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
+  const literal = parseDialAddress(typedHost) !== null ? typedHost : null;
+  const resolved = literal ?? IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
   if (!resolved) {
     return { kind: 'failed', line: dialect.unresolved(typedHost, port) };
   }
@@ -205,7 +210,9 @@ export async function resolveSshTarget(
     return { kind: 'failed', line: unrouted ? dialect.unreachable(typedHost, port) : dialect.noRoute(typedHost, port) };
   }
   const reach = await wireReachOutcomeRetransmitting(device, address, port);
-  if (reach !== 'open') return { kind: 'failed', line: sshWireFailureLine(dialect, reach, typedHost, port) };
+  if (reach !== 'open') {
+    return { kind: 'failed', line: sshWireFailureLine(dialect, reach, typedHost, port), address, outcome: reach };
+  }
   return { kind: 'ready', address };
 }
 
@@ -227,6 +234,9 @@ export async function openWireSshConnection(
   }
 
   const profile = sshClientProfileOf(req.device);
+  const hostKeyAuthority = (req.device as unknown as {
+    sshHostKeyAuthority?: () => ((host: string, key: SshHostKey) => boolean) | undefined;
+  }).sshHostKeyAuthority?.();
   const session = new SshSession({
     tcpConnector,
     vfs: sshLocalFsFor(req.device) as never,
@@ -235,7 +245,8 @@ export async function openWireSshConnection(
     localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     credentialless: req.credentialless,
-    ...(req.agent ? { agentKeys: () => req.agent!.list() } : {}),
+    ...(req.agent ? { agent: req.agent } : {}),
+    ...(hostKeyAuthority ? { hostKeyAuthority } : {}),
     clientIdentification: profile?.identification ?? opensshIdentificationFor(req.device.getOSType()),
     ...(profile ? { clientExtInfo: profile.extInfo } : {}),
     interactionHandler: req.credentialless
@@ -298,6 +309,10 @@ export async function relayScriptedShell(
     const motd = (shell as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
     if (motd.trim().length > 0) lines.push(motd.replace(/\n+$/, ''));
   }
+  await shell.untilQuiet?.();
+  const unsolicited = shell.takeUnclaimedOutput?.() ?? '';
+  if (unsolicited !== '') lines.push(unsolicited.replace(/\n+$/, ''));
+  if (!shell.isOpen) return { output: lines.join('\n'), exitCode: shell.remoteExitStatus?.() ?? 0 };
   let prompt = shell.initialPrompt() ?? '';
   let awaitingChallenge = false;
   let remaining = skipLines;

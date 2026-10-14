@@ -78,7 +78,7 @@ import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
 import {
-  hasHeadlessAnswers, runInteractionPlanHeadless, type HeadlessAnswers,
+  hasHeadlessAnswers, opensOutboundSession, runInteractionPlanHeadless, type HeadlessAnswers,
 } from '@/shell/interaction/HeadlessInteraction';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
@@ -3165,6 +3165,7 @@ export abstract class Switch extends Equipment {
   private buildSshServerHandler(): SshServerHandler {
     const credentials = this.getCredentialStore();
     return new SshServerHandler(new RouterSshServerContext({
+      limitScope: this,
       hostname: () => this.getHostname(),
       hostKey: () => this.sshHostKey(),
       additionalHostKeys: () => this.sshAdditionalHostKeys(),
@@ -3196,7 +3197,7 @@ export abstract class Switch extends Equipment {
         publicKeyAdmitted: (user: string, key: string) =>
           this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
       } : {}),
-    }, this.sshServerLimits()));
+    }, () => this.sshServerLimits()));
   }
 
   private buildTelnetServerHandler(): TelnetServerHandler {
@@ -3967,7 +3968,7 @@ export abstract class Switch extends Equipment {
   }
   private _sshSessionRegistry: SshSessionRegistry | null = null;
 
-  readonly sshKnownHosts = new RouterSshKnownHosts();
+  readonly sshKnownHosts = new RouterSshKnownHosts(this);
   _getSshKnownHosts(): RouterSshKnownHosts { return this.sshKnownHosts; }
 
   consoleLineCount(): number { return 1; }
@@ -4432,8 +4433,8 @@ export abstract class Switch extends Equipment {
   }
 
   private async runCliCommand(command: string, answers?: HeadlessAnswers): Promise<string> {
-    if (hasHeadlessAnswers(answers)) {
-      const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
+    if (hasHeadlessAnswers(answers) || opensOutboundSession(command)) {
+      const dialogue = await this.jouerDialogueSansTerminal(command, answers ?? {});
       if (dialogue !== null) return dialogue;
     }
     const porteAaa = this.refusAutorisationAaa(command);

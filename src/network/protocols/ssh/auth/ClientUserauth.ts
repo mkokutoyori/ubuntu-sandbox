@@ -44,7 +44,7 @@ export interface UserauthPrompter {
 export interface UserauthIdentity {
   readonly algorithm: string;
   readonly publicKey: string;
-  sign(): string | null;
+  sign(): string | null | Promise<string | null>;
 }
 
 export interface UserauthPlan {
@@ -109,7 +109,7 @@ export async function runUserauth(
       const offered = { algorithm: identity.algorithm, publicKey: identity.publicKey };
       const query = await transport.request('publickey', offered);
       if (query.kind !== 'pk_ok') return query;
-      const signature = identity.sign();
+      const signature = await identity.sign();
       if (signature === null) continue;
       const signed = await transport.request('publickey', { ...offered, signature });
       if (signed.kind !== 'pk_ok') return signed;

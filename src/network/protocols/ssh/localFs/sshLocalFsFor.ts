@@ -79,3 +79,5 @@ export function sshLocalIdentityFor(device: Equipment, user: string): SshLocalId
   if (entry?.uid !== undefined) return { uid: entry.uid, gid: entry.gid ?? entry.uid };
   return user === 'root' ? { uid: 0, gid: 0 } : { uid: 1000, gid: 1000 };
 }
+
+export const ROUTER_SSH_LOCAL_USER = 'root';

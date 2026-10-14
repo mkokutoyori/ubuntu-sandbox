@@ -28,6 +28,7 @@ import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast'
 import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
 import { IOS_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
 import { ciscoPasswordMatches } from '@/network/devices/shells/cisco/ciscoPasswordVerify';
+import { getSecurityConfig } from '@/network/devices/shells/cisco/CiscoSecurityCommands';
 
 const CISCO_THEME: TerminalTheme = {
   sessionType: 'cisco',
@@ -201,9 +202,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
   private buildLinePasswordLoginSteps(attendu: string, algo: 'plain' | 'type-7' = 'plain'): InteractiveStep[] {
     const loginBanner = this.deviceBanner('login');
     const preLines = loginBanner.length > 0 ? [...loginBanner.split('\n'), ''] : [];
+    const messages = this.loginMessages();
     return [
-      /* 0 */ { type: 'output', outputLines: [...preLines, 'User Access Verification', ''] },
-      /* 1 */ { type: 'password', prompt: 'Password: ', mask: 'hidden', storeAs: 'line_login_password' },
+      /* 0 */ { type: 'output', outputLines: [...preLines, ...(messages.banner ?? 'User Access Verification').split('\n'), ''] },
+      /* 1 */ { type: 'password', prompt: messages.passwordPrompt, mask: 'hidden', storeAs: 'line_login_password' },
       /* 2 */ {
         type: 'execute',
         action: async (ctx) => {
@@ -249,7 +251,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
         },
       },
       /* 5 */ { type: 'branch', predicate: () => 10 },
-      /* 6 */ { type: 'output', outputLines: ['% Login invalid'] },
+      /* 6 */ { type: 'output', outputLines: [messages.failMessage ?? '% Login invalid'] },
       /* 7 */ {
         type: 'branch',
         predicate: (ctx) => (parseInt(ctx.values.get('line_login_attempts') ?? '0', 10) >= 3 ? 8 : 1),
@@ -268,6 +270,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * La substitution est faite ICI et non au rangement, parce que le nom
    * de la machine peut changer apres qu'on a ecrit la banniere.
    */
+  private loginMessages(): ReturnType<ReturnType<typeof getSecurityConfig>['loginMessages']> {
+    return getSecurityConfig(this.device as object).loginMessages();
+  }
+
   private deviceBanner(kind: 'motd' | 'login' | 'exec' | 'incoming'): string {
     const dev = this.device as unknown as {
       getBanner?: (k: string) => string;
@@ -364,10 +370,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
     // before this flow even starts).
     const loginBanner = this.deviceBanner('login');
     const preLines = loginBanner.length > 0 ? [...loginBanner.split('\n'), ''] : [];
+    const messages = this.loginMessages();
     return [
-      /* 0 */ { type: 'output', outputLines: [...preLines, 'User Access Verification', ''] },
-      /* 1 */ { type: 'text', prompt: 'Username: ', allowEmpty: true, storeAs: 'console_login_username' },
-      /* 2 */ { type: 'password', prompt: 'Password: ', mask: 'hidden', storeAs: 'console_login_password' },
+      /* 0 */ { type: 'output', outputLines: [...preLines, ...(messages.banner ?? 'User Access Verification').split('\n'), ''] },
+      /* 1 */ { type: 'text', prompt: messages.usernamePrompt, allowEmpty: true, storeAs: 'console_login_username' },
+      /* 2 */ { type: 'password', prompt: messages.passwordPrompt, mask: 'hidden', storeAs: 'console_login_password' },
       /* 3 */ {
         // `InteractiveStep.validation` is synchronous only, but AAA
         // authentication (TACACS+ over the real TCP stack) is genuinely
@@ -439,7 +446,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
         },
       },
       /* 6 */ { type: 'branch', predicate: () => 15 },
-      /* 7 */ { type: 'output', outputLines: ['% Login invalid'] },
+      /* 7 */ { type: 'output', outputLines: [messages.failMessage ?? '% Login invalid'] },
       /* 8 */ {
         type: 'branch',
         predicate: (ctx) => {
@@ -450,7 +457,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
       /* 9 */ { type: 'output', outputLines: ['% Bad passwords'] },
       /* 10 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
       /* 11 */ { type: 'branch', predicate: () => 15 },
-      /* 12 */ { type: 'output', outputLines: ['% Authentication failed'] },
+      /* 12 */ { type: 'output', outputLines: [messages.failMessage ?? '% Authentication failed'] },
       /* 13 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
       /* 14 */ { type: 'branch', predicate: () => 15 },
       // Steps 6, 11 and 14 branch to index 15 == steps.length, ending the
@@ -1099,7 +1106,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
       label: 'IOS debug output',
       run: (ctx) => new Promise<void>((resolve) => {
         if (ctx.cancelled()) { resolve(); return; }
-        this.debugUnsubscribe = svc.subscribe((line) => ctx.sink.line(line));
+        this.debugUnsubscribe = svc.subscribe(
+          (line) => ctx.sink.line(line),
+          this.vty?.lineKind === 'vty' ? 'monitor' : 'console',
+        );
         ctx.onCancel(() => {
           this.debugUnsubscribe?.();
           this.debugUnsubscribe = null;

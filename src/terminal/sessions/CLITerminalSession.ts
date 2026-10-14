@@ -13,6 +13,7 @@
  *   - Dynamic prompt from device.getPrompt()
  */
 
+import { ROUTER_SSH_LOCAL_USER } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import type { Equipment, ICLIDevice } from '@/network';
 import { openWireSshShell, resolveSshTarget } from '@/terminal/ssh/wireSshLogin';
 import { QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
@@ -649,7 +650,7 @@ export abstract class CLITerminalSession extends TerminalSession {
       }
       outcome = await openWireSshShell({
         device: this.device as Equipment,
-        localUser: user,
+        localUser: ROUTER_SSH_LOCAL_USER,
         user,
         host: target.address,
         port,

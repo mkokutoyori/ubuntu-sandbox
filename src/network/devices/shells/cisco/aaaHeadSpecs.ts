@@ -48,6 +48,7 @@ export interface AaaHeadHost {
   security(): CiscoSecurityConfig;
   selectAaaGroup(name: string): void;
   setLocalAuthMaxFail(n: number): void;
+  placeAaaMessage(kind: 'banner' | 'fail-message', rest: string): string;
   parseMethodList(phase: AaaPhase, args: readonly string[]): string;
 }
 
@@ -276,6 +277,49 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       },
       undo: () => { sec().localAuthMaxFailAttempts = undefined; return ''; },
     },
+    ...(['banner', 'fail-message'] as const).map((kind): CommandSpec => ({
+      id: `aaa-authentication-${kind}`,
+      path: ['aaa', 'authentication', kind, {
+        name: 'texte', type: 'REST', literal: 'LINE',
+        description: 'Message text, delimited by any character',
+      }],
+      description: kind === 'banner'
+        ? 'Message to display at user login'
+        : 'Message to display when a user fails login',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => ctx().placeAaaMessage(kind, args.texte ?? ''),
+      undo: () => {
+        if (kind === 'banner') sec().aaaLoginBanner = undefined;
+        else sec().aaaFailMessage = undefined;
+        return '';
+      },
+    })),
+    ...([
+      ['username-prompt', 'Text displayed when prompting for a username'],
+      ['password-prompt', 'Text displayed when prompting for a password'],
+    ] as const).map(([kind, description]): CommandSpec => ({
+      id: `aaa-authentication-${kind}`,
+      path: ['aaa', 'authentication', kind, {
+        name: 'texte', type: 'REST', literal: 'LINE',
+        description: 'Prompt text; double quotes keep spaces',
+      }],
+      description,
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => {
+        const brut = (args.texte ?? '').trim();
+        const texte = /^(["\u201c]).*(["\u201d])$/.test(brut) ? brut.slice(1, -1) : brut;
+        if (kind === 'username-prompt') sec().aaaUsernamePrompt = texte;
+        else sec().aaaPasswordPrompt = texte;
+        return '';
+      },
+      undo: () => {
+        if (kind === 'username-prompt') sec().aaaUsernamePrompt = undefined;
+        else sec().aaaPasswordPrompt = undefined;
+        return '';
+      },
+    })),
     phase('authentication'),
     phase('authorization'),
     phase('accounting'),

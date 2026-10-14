@@ -17,7 +17,7 @@ import type { SshSessionState } from './SshSessionState';
 
 export interface ISshSession {
   connect(opts: SshConnectOptions): Promise<Result<SshConnectionInfo>>;
-  openShellChannel(): Result<ISshShellChannel>;
+  openShellChannel(options?: { readonly forwardAgent?: boolean }): Result<ISshShellChannel>;
   openExecChannel(command: string, options?: ExecChannelOptions): Result<ISshExecChannel>;
   openSftpChannel(): Result<ISshSftpChannel>;
   disconnect(): void;

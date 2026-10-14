@@ -33,6 +33,10 @@ export interface HeadlessAnswers {
   confirmInput?: string;
 }
 
+export function opensOutboundSession(command: string): boolean {
+  return /^\s*(ssh|stelnet)\s+\S/i.test(command);
+}
+
 export function hasHeadlessAnswers(answers?: HeadlessAnswers): boolean {
   if (!answers) return false;
   return answers.passwordInput !== undefined

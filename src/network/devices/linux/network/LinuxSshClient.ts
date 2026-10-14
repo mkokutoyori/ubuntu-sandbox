@@ -42,7 +42,8 @@ import {
   type SshClientAuthentication,
 } from '@/network/protocols/ssh/SshConnectOptions';
 import { sshOptionValues } from '@/network/protocols/ssh/SshClientCommandLine';
-import { everySshOption, firstSshOption, sshOptionAssignment } from '@/network/protocols/ssh/SshClientOptions';
+import { PortNumber } from '@/network/core/ports/PortNumber';
+import { everySshOption, firstSshOption, sshFlag, sshOptionAssignment } from '@/network/protocols/ssh/SshClientOptions';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import type { SshSession } from '../../../protocols/ssh/session/SshSession';
@@ -238,279 +239,31 @@ function effectiveSshdView(
   return cfg.effectiveFor({ user, groups, address: sourceIp, host: sourceHost });
 }
 
-function remoteSshdConfig(machine: LinuxMachine): SshdServerConfig {
-  const raw = readSshdConfig((machine as LinuxMachine & {
-    executor: { vfs: { readFile: (p: string) => string | null } };
-  }).executor.vfs);
-  return SshdServerConfig.parse(raw);
-}
 
-function sshdConfiguredPorts(machine: LinuxMachine): readonly number[] {
-  return remoteSshdConfig(machine).ports;
-}
 
-/** Narrow view of a remote machine's executor needed for auth negotiation. */
-interface RemoteExecLike {
-  vfs: {
-    readFile: (p: string) => string | null;
-    resolveInode?: (p: string, followSymlinks?: boolean) => { uid: number; gid: number; permissions: number } | null;
-  };
-  userMgr: { getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined };
-  identity?: { timezone?: string };
-}
 
-/** Outcome of SSH authentication-method negotiation. */
-interface SshAuthResolution {
-  /** The method that will be used, or null when authentication fails. */
-  method: 'publickey' | 'password' | null;
-  serverMethods: string;
-  /** When method='publickey', the authorized_keys entry that matched. */
-  matchedKey?: AuthorizedKey | null;
-}
 
-function advertisedSshMethods(machine: unknown): readonly AuthMethodType[] | null {
-  const context = (machine as {
-    getSshServerContext?: () => { auth?: { getAvailableMethods?: () => readonly AuthMethodType[] } } | undefined;
-  } | undefined)?.getSshServerContext?.();
-  return context?.auth?.getAvailableMethods?.() ?? null;
-}
 
 function deniedLine(user: string, host: string, methods: readonly string[] | string | null): string {
   const list = methods === null ? 'publickey,password' : typeof methods === 'string' ? methods : methods.join(',');
   return `${user}@${host}: Permission denied (${list}).`;
 }
 
-/** Read a single sshd_config directive's first value (lower-cased). */
-function readRemoteSshdDirective(exec: RemoteExecLike, name: string): string | null {
-  const raw = readSshdConfig(exec.vfs);
-  const m = new RegExp(`^\\s*${name}\\s+(\\S+)`, 'im').exec(raw);
-  return m ? m[1].toLowerCase() : null;
-}
 
-/** Case-preserving variant — for directives whose value is a path. */
-function readRemoteSshdDirectiveRaw(exec: RemoteExecLike, name: string): string | null {
-  const raw = readSshdConfig(exec.vfs);
-  const m = new RegExp(`^\\s*${name}\\s+(\\S+)`, 'im').exec(raw);
-  return m ? m[1] : null;
-}
 
 function clientOption(args: string[], name: string): string | null {
   const value = firstSshOption(sshOptionValues(args), name.toLowerCase());
   return value === undefined ? null : (value.split(/\s+/)[0] ?? '').toLowerCase();
 }
 
-/**
- * Local identity public keys the client would offer, in the order it
- * offers them (every `-i`, else the default identity files). The current
- * user's ~/.ssh is searched first; /root/.ssh is also probed since key
- * material is conventionally generated as root.
- */
-function localIdentityPublicKeys(opts: SshClientOpts, flags: string[]): string[] {
-  const found: string[] = [];
-  if (opts.localVfs) {
-    const home = opts.sourceHome ?? '/root';
-    const explicit = flags.flatMap((flag, index) => (flag === '-i' && flags[index + 1] ? [flags[index + 1]] : []));
-    const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
-    const candidates = explicit.length > 0
-      ? explicit.map((path) => (path.endsWith('.pub') ? path : `${path}.pub`))
-      : keyHomes.flatMap((h) => OPENSSH_DEFAULT_IDENTITY_FILES.map((name) => `${h}/.ssh/${name}.pub`));
-    for (const candidate of candidates) {
-      const data = opts.localVfs.readFile(candidate);
-      if (data && data.trim()) found.push(data.trim());
-    }
-    if (found.length > 0) return found;
-  }
-  for (const key of opts.localAgent?.list() ?? []) {
-    if (key.publicKey) found.push(key.publicKey);
-  }
-  return found;
-}
 
-/** Whether the remote user's authorized_keys lists the offered identity. */
-function remoteAcceptsKey(exec: RemoteExecLike, remoteUser: string, identity: string): boolean {
-  return findMatchedAuthorizedKey(exec, remoteUser, identity) !== null;
-}
 
-/**
- * Match the client's source IP / hostname against an authorized_keys
- * `from="patternList"` option. Comma-separated; entries prefixed with `!`
- * are negations; `*` and `?` glob; literal IPs match exactly.
- */
-/**
- * Return the parsed authorized_keys entry that matches the offered
- * identity, so callers can apply per-key options (`command="..."`,
- * `no-pty`, …). Null when no entry matches or strict-modes fails.
- */
-function findMatchedAuthorizedKey(
-  exec: RemoteExecLike, remoteUser: string, identity: string,
-  onStrictModesRefusal?: (offendingPath: string) => void,
-): import('../../../protocols/ssh/SshPureUtils').AuthorizedKey | null {
-  const entry = exec.userMgr.getUser(remoteUser);
-  if (!entry) return null;
-  const home = entry.home ?? `/home/${remoteUser}`;
-  const strictModesOn = readRemoteSshdDirective(exec, 'StrictModes') !== 'no';
-  if (strictModesOn) {
-    const offending = firstStrictModesViolation(exec, entry.uid, home);
-    if (offending) {
-      onStrictModesRefusal?.(offending);
-      return null;
-    }
-  }
-  const ak = exec.vfs.readFile(`${home}/.ssh/authorized_keys`) ?? '';
-  const [idAlgo, idMaterial] = identity.split(/\s+/);
-  for (const line of ak.split('\n')) {
-    const parsed = parseAuthorizedKeysLine(line);
-    if (parsed && parsed.algorithm === idAlgo && parsed.material === idMaterial) return parsed;
-  }
-  return null;
-}
 
-/**
- * StrictModes check, hardened-distro flavour. Two layers:
- *
- *  - ~/.ssh must be owned by the user (or root) and not group/world
- *    writable — that's the stock OpenSSH check (0o022 mask).
- *  - ~/.ssh/authorized_keys must be owned by the user (or root) AND
- *    have *no* group/other access bits at all (0o077 mask). This is
- *    stricter than the OpenSSH default of "no group/world write" — it
- *    matches the universally-taught contract that authorized_keys
- *    "must be 0600" and what hardened sshd setups enforce in
- *    production. A file at 0o644 is rejected here, exactly like a
- *    learner expects when reading SSH best-practice guides.
- *
- * Caller decides whether to run the check at all (StrictModes
- * directive — default yes per OpenSSH).
- */
-function passesStrictModes(exec: RemoteExecLike, userUid: number, home: string): boolean {
-  return firstStrictModesViolation(exec, userUid, home) === null;
-}
 
-/**
- * Run StrictModes against $HOME, ~/.ssh and ~/.ssh/authorized_keys and
- * return the first offending path so the caller can name it in the
- * "Authentication refused: bad ownership or modes for file …" log line.
- * Returns null when nothing fails.
- *
- * - $HOME and ~/.ssh share the OpenSSH stock check (no group/world write).
- * - authorized_keys uses the stricter 0o077 mask (no group/other access at
- *   all) — the "must be 0600" rule taught by every SSH guide.
- */
-function firstStrictModesViolation(
-  exec: RemoteExecLike, userUid: number, home: string,
-): string | null {
-  if (!exec.vfs.resolveInode) return null;
-  for (const path of [home, `${home}/.ssh`]) {
-    const inode = exec.vfs.resolveInode(path, true);
-    if (!inode) continue;
-    if (inode.uid !== userUid && inode.uid !== 0) return path;
-    if ((inode.permissions & 0o022) !== 0) return path;
-  }
-  const akPath = `${home}/.ssh/authorized_keys`;
-  const ak = exec.vfs.resolveInode(akPath, true);
-  if (ak) {
-    if (ak.uid !== userUid && ak.uid !== 0) return akPath;
-    if ((ak.permissions & 0o077) !== 0) return akPath;
-  }
-  return null;
-}
 
-/**
- * Negotiate the authentication method, mirroring OpenSSH's order: public
- * key first, then password. Honours the server's PubkeyAuthentication /
- * PasswordAuthentication directives and the client's `-o` overrides.
- */
-function clientTriesMethod(client: SshClientAuthentication, method: AuthMethodType): boolean {
-  if (method === 'publickey') return client.publickey;
-  if (client.batchMode) return false;
-  return method === 'password' ? client.password : client.keyboardInteractive;
-}
 
-function resolveSshAuthMethod(
-  opts: SshClientOpts,
-  flags: string[],
-  exec: RemoteExecLike | undefined,
-  remoteUser: string,
-  advertised: readonly AuthMethodType[] | null,
-  onStrictModesRefusal?: (offendingPath: string) => void,
-): SshAuthResolution {
-  const client = sshClientAuthentication(sshOptionValues(flags));
-  const offered = advertised ?? (exec
-    ? [
-      ...(readRemoteSshdDirective(exec, 'PubkeyAuthentication') !== 'no' ? ['publickey' as const] : []),
-      ...(readRemoteSshdDirective(exec, 'PasswordAuthentication') !== 'no' ? ['password' as const] : []),
-    ]
-    : ['password' as const]);
-  const serverMethods = offered.join(',');
-  const preferred = client.preferred ?? OPENSSH_USERAUTH_METHODS.filter((m) => clientTriesMethod(client, m));
-  for (const name of preferred) {
-    const method = OPENSSH_USERAUTH_METHODS.find((m) => m === name);
-    if (!method || !offered.includes(method) || !clientTriesMethod(client, method)) continue;
-    if (method !== 'publickey') return { method: 'password', serverMethods };
-    let refusalReported = false;
-    const reportRefusalOnce = (offendingPath: string): void => {
-      if (refusalReported) return;
-      refusalReported = true;
-      onStrictModesRefusal?.(offendingPath);
-    };
-    for (const identity of exec ? localIdentityPublicKeys(opts, flags) : []) {
-      const matchedKey = exec ? findMatchedAuthorizedKey(exec, remoteUser, identity, reportRefusalOnce) : null;
-      if (matchedKey && authorizedKeyAdmits(matchedKey, { ip: opts.sourceIp, host: opts.sourceHostname })) {
-        return { method: 'publickey', serverMethods, matchedKey };
-      }
-    }
-  }
-  return { method: null, serverMethods };
-}
 
-/**
- * When the client supplied a password (via `sshpass -p <pw>`), validate
- * it against the remote userMgr.checkPassword. Returns 'wrong-password'
- * when the password is set but does not match. Returns 'ok' otherwise
- * (no password supplied, or password matches, or the user has no
- * password at all — keep the simulator's existing "trust"  default
- * intact for callers that don't drive sshpass).
- *
- * A faillock-locked account is always denied here regardless of whether
- * a password was offered — an account tripped into lockout must reject
- * every password-method login attempt (ssh, and the scp/sftp commands
- * that probe through this same function), not just ones that happen to
- * pass a password explicitly.
- */
-function grantsWithoutCredential(machine: unknown, remoteUser: string): boolean {
-  const context = (machine as {
-    getSshServerContext?: () => {
-      auth?: { acceptsWithoutCredential?: (u: string) => boolean };
-    } | undefined;
-  } | undefined)?.getSshServerContext?.();
-  return context?.auth?.acceptsWithoutCredential?.(remoteUser) ?? false;
-}
 
-function verifyOfferedPassword(
-  exec: RemoteExecLike | undefined,
-  remoteUser: string,
-  offeredPassword: string | undefined,
-  machine?: unknown,
-): 'ok' | 'wrong-password' | 'not-offered' {
-  const mgr = exec?.userMgr as unknown as {
-    passwordMatches?: (u: string, p: string) => boolean;
-  } | undefined;
-  if (offeredPassword === undefined) return 'not-offered';
-  if (typeof mgr?.passwordMatches === 'function') {
-    return mgr.passwordMatches(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
-  }
-  // La machine distante n'a pas de gestionnaire d'utilisateurs à la
-  // Linux — c'est le cas d'un routeur Cisco, dont les comptes vivent
-  // dans `username … secret …`. Elle porte pourtant `checkPassword`,
-  // et sans ce repli le mot de passe n'était JAMAIS vérifié : le
-  // serveur contrôlait que le compte existe et acceptait n'importe quel
-  // secret, ou aucun. Une porte qui ne vérifie que le nom n'est pas une
-  // porte.
-  const dev = machine as { checkPassword?: (u: string, p: string) => boolean } | undefined;
-  if (typeof dev?.checkPassword === 'function') {
-    return dev.checkPassword(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
-  }
-  return 'ok';
-}
 
 // ─── SendEnv / AcceptEnv environment forwarding ─────────────────────
 
@@ -552,34 +305,7 @@ function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
   return patterns;
 }
 
-function serverAcceptEnvPatterns(exec: RemoteExecLike): string[] {
-  const raw = readSshdConfig(exec.vfs);
-  const cfg = SshdServerConfig.parse(raw);
-  return [...DEFAULT_ENV_PATTERNS, ...cfg.acceptEnv];
-}
 
-/**
- * Resolve the set of environment variables to forward to the remote
- * command: those the client offers (SendEnv) and the server accepts
- * (AcceptEnv), intersected with the caller's actual environment.
- */
-function computeForwardedEnv(
-  opts: SshClientOpts,
-  flags: string[],
-  exec: RemoteExecLike,
-): Record<string, string> {
-  const callerEnv = opts.callerEnv;
-  if (!callerEnv) return {};
-  const send = clientSendEnvPatterns(opts, flags);
-  const accept = serverAcceptEnvPatterns(exec);
-  const forwarded: Record<string, string> = {};
-  for (const [name, value] of Object.entries(callerEnv)) {
-    if (envNameMatches(name, send) && envNameMatches(name, accept)) {
-      forwarded[name] = value;
-    }
-  }
-  return forwarded;
-}
 
 export function execChannelOptionsFor(opts: SshClientOpts, args: string[]): ExecChannelOptions {
   const { flags } = splitSshArgs(args);
@@ -592,6 +318,7 @@ export function execChannelOptionsFor(opts: SshClientOpts, args: string[]): Exec
   const wantsTty = (flags.includes('-t') || flags.includes('-tt')) && !flags.includes('-T');
   return {
     environment,
+    ...(wantsAgentForwarding(flags) ? { forwardAgent: true } : {}),
     ...(wantsTty
       ? {
         pty: {
@@ -611,11 +338,39 @@ export interface WireExecTarget {
   port: number;
   identities: string[];
   command: string;
+  commandWords: string[];
   holdOnly: boolean;
   forksToBackground: boolean;
+  forwardAgent: boolean;
+  stdioForward: StdioForwardSpec | null;
+  proxyCommand: string | null;
   strict: StrictHostKeyChecking;
   authentication: SshClientAuthentication;
   algorithms: SshAlgorithmPreferences;
+}
+
+export type StdioForwardSpec =
+  | { readonly kind: 'target'; readonly host: string; readonly port: number }
+  | { readonly kind: 'invalid'; readonly spec: string };
+
+function stdioForwardOf(flags: string[]): StdioForwardSpec | null {
+  const at = flags.indexOf('-W');
+  if (at < 0) return null;
+  const spec = flags[at + 1] ?? '';
+  const match = /^(?:\[([^\]]+)\]|([^:\[\]]+)):(\d+)$/.exec(spec);
+  const port = match === null ? NaN : Number(match[3]);
+  if (match === null || !PortNumber.isValid(port)) return { kind: 'invalid', spec };
+  return { kind: 'target', host: match[1] ?? match[2], port };
+}
+
+function proxyCommandOf(flags: string[]): string | null {
+  const value = firstSshOption(sshOptionValues(flags), 'proxycommand');
+  return value === undefined || value.toLowerCase() === 'none' ? null : value;
+}
+
+export function wantsAgentForwarding(flags: string[]): boolean {
+  if (flags.includes('-a')) return false;
+  return flags.includes('-A') || sshFlag(clientOption(flags, 'ForwardAgent') ?? '') === true;
 }
 
 export function wireExecTarget(
@@ -628,7 +383,7 @@ export function wireExecTarget(
   const { positional, flags } = splitSshArgs(args);
   const target = positional[0];
   if (target === undefined) return null;
-  for (const blocking of ['-W', '-J', '-A']) {
+  for (const blocking of ['-J']) {
     if (flags.includes(blocking)) return null;
   }
   const at = target.indexOf('@');
@@ -652,8 +407,12 @@ export function wireExecTarget(
     port: flags.includes('-p') ? clientPort(flags) : entry?.port ?? 22,
     identities,
     command: joinRemoteCommand(positional.slice(1)),
+    commandWords: positional.slice(1),
     holdOnly: flags.includes('-N'),
     forksToBackground: flags.includes('-f'),
+    forwardAgent: wantsAgentForwarding(flags),
+    stdioForward: stdioForwardOf(flags),
+    proxyCommand: proxyCommandOf(flags),
     strict: parseStrictHostKeyChecking(asked) ?? entry?.strictHostKeyChecking ?? 'accept-new',
     authentication: sshClientAuthentication(sshOptionValues(flags)),
     algorithms: sshClientAlgorithms(sshOptionValues(flags)),
@@ -707,7 +466,6 @@ function clientPort(args: string[]): number {
   return 22;
 }
 
-const SSH_CLIENT_FORWARD_PID = 2200;
 
 export interface ForwardingSession {
   readonly session: SshSession;
@@ -755,28 +513,17 @@ function wireFailure(
   };
 }
 
-function verdictFromWireAlone(
-  opts: SshClientOpts, remoteUser: string, host: string, destIp: string, port: number,
-): SshClientResult {
-  const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
-  if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
-  return {
-    output: `${opts.wireDenial ?? deniedLine(remoteUser, host, null)}\n`,
-    exitCode: 255,
-  };
+
+export function splitSshFlags(args: string[]): string[] {
+  return splitSshArgs(args).flags;
 }
 
-export function runSshClient(opts: SshClientOpts): SshClientResult {
+export function sshClientRefusal(opts: SshClientOpts): SshClientResult | null {
   const withoutSession = sshReplyWithoutSession(opts.args, OPENSSH_UBUNTU_22_04);
   if (withoutSession) return withoutSession;
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
-  let port = clientPort(flags);
-
-  // OpenSSH UNPROTECTED PRIVATE KEY check: when `-i path` is given, refuse
-  // to load the key if its mode is group/world-readable. Real ssh prints
-  // the warning and ignores the key; with no other auth available, this
-  // bubbles up as Permission denied.
+  const port = clientPort(flags);
   const iIdx = flags.indexOf('-i');
   const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
   if (iVal && opts.localVfs?.resolveInode) {
@@ -793,637 +540,98 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       };
     }
   }
-
-  // Local network plumbing must be up to even attempt a TCP handshake.
   if (opts.sourceIp === '127.0.0.1' || !opts.sourceIp) {
     return {
       output: `ssh: connect to host ${target ?? ''} port ${port}: Network is unreachable\n`,
       exitCode: 255,
     };
   }
-  if (!target) {
-    return { output: OPENSSH_UBUNTU_22_04.sshUsage, exitCode: 255 };
-  }
-
-  const parsed = RE_USERHOST.exec(target);
-  if (!parsed) {
+  if (!target) return { output: OPENSSH_UBUNTU_22_04.sshUsage, exitCode: 255 };
+  if (!RE_USERHOST.test(target)) {
     return {
       output: `ssh: Could not resolve hostname ${target}: Name or service not known\n`,
       exitCode: 255,
     };
   }
-  const cfgRaw = opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`);
-  const cfgEntry = cfgRaw ? SshConfig.parse(cfgRaw).resolve(parsed[2]) : null;
-  const remoteUser = parsed[1] ?? cfgEntry?.user ?? opts.sourceUser ?? 'root';
-  let host = cfgEntry?.hostName ?? parsed[2];
-  if (cfgEntry?.port && !flags.includes('-p')) {
-    flags.push('-p', String(cfgEntry.port));
-    port = cfgEntry.port;
-  }
-  if (cfgEntry?.identityFile && !flags.includes('-i')) {
-    /*
-     * `IdentityFile ~/.ssh/id_two` designe la cle de CELUI qui se
-     * connecte, et un vrai `ssh` developpe le tilde. Il etait passe tel
-     * quel a l'ouverture du fichier, donc la seule forme qui marchait
-     * etait le chemin absolu — et la ligne la plus courante d'un
-     * `~/.ssh/config` refusait la cle sans un mot.
-     */
-    const foyer = opts.sourceHome ?? '/root';
-    const chemin = cfgEntry.identityFile.startsWith('~/')
-      ? `${foyer}/${cfgEntry.identityFile.slice(2)}`
-      : cfgEntry.identityFile;
-    flags.push('-i', chemin);
-  }
+  return null;
+}
 
-  // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
-  // look it up via the local source IP, which the registry knows.
-  const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-  const behindTunnel = isLoopback && opts.wirePeerIp !== undefined;
-  if (behindTunnel) host = opts.wirePeerIp!;
-  const stillLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-  let lookupHost = stillLoopback ? opts.sourceIp : host;
-  if (!stillLoopback && opts.resolveName && !IPAddress.isValid(host)) {
-    const resolved = opts.resolveName(host);
-    if (resolved) lookupHost = resolved;
-  }
-  const found = findHostByAddress(lookupHost, opts.localVfs, opts.sourceDevice as never);
-  if (!found) {
-    // A *valid* numeric IPv4 that nothing on the LAN owns is a routing
-    // failure (OpenSSH prints "No route to host"). Strings that merely
-    // look like IPs but have out-of-range octets ("10.0.0.999") are
-    // treated as hostnames by the resolver, so they keep the original
-    // name-resolution error.
-    const isLiteral = parseDialAddress(lookupHost) !== null;
-    return {
-      output: isLiteral
-        ? `ssh: connect to host ${host} port ${port}: ${sshUnreachableReason(opts.sourceDevice, lookupHost)}\n`
-        : `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
-      exitCode: 255,
-    };
-  }
-  if (found.poweredOff) {
-    return {
-      output: `ssh: connect to host ${host} port 22: No route to host\n`,
-      exitCode: 255,
-    };
-  }
-  const destIp = found.ip;
-  if (opts.sourceIp && destIp && !isPathReachable(opts.sourceIp, destIp, opts.sourceDevice as never)) {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
-      exitCode: 255,
-    };
-  }
-  if (found.interfaceDown) {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
-      exitCode: 255,
-    };
-  }
+export interface WireSshFailure {
+  readonly host: string;
+  readonly user: string;
+  readonly address: string | null;
+  readonly port: number;
+  readonly unreachableLine?: string;
+  readonly reach?: Exclude<TcpWireOutcome, 'open'>;
+  readonly keyExchange?: string;
+  readonly hostKey?: string;
+  readonly denial?: string;
+  readonly authRefused?: boolean;
+  readonly connectionLine?: string;
+}
 
-  // Les avis d'avant authentification — la banniere que le serveur
-  // envoie avant de demander le mot de passe, l'avis de `known_hosts` —
-  // precedent tout le reste du transcrit, et les DEUX sorties de cette
-  // fonction doivent les ecrire : celle des pairs non-Linux s'arrete
-  // avant l'en-tete commun.
-  const noticeBanner = (opts.wireNotices ?? [])
-    .map((n) => (n.endsWith('\n') ? n : `${n}\n`))
-    .join('');
-  const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
-  if (!linuxLike && opts.wireAuthenticated) {
-    const wireCmd = joinRemoteCommand(positional.slice(1), remoteQuoting(found.device));
-    const relayed = wireCmd
-      ? opts.execRelay?.(wireCmd, {}) ?? null
-      : opts.shellRelay?.() ?? null;
-    if (relayed) {
-      const transcript = wireCmd
-        ? [relayed.output]
-        : [relayed.output, connectionClosed(host)].filter(part => part.length > 0);
-      return {
-        output: noticeBanner + transcript.join('\n'),
-        exitCode: relayed.exitCode,
-        connection: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
-      };
-    }
+export function sshWireFailureResult(opts: SshClientOpts, failure: WireSshFailure): SshClientResult {
+  if (failure.unreachableLine !== undefined) return { output: `${failure.unreachableLine}\n`, exitCode: 255 };
+  if (failure.reach !== undefined && failure.address !== null) {
+    return wireFailure(opts, failure.host, failure.address, failure.port, failure.reach);
   }
-  // Cross-platform dispatch (Windows / Cisco / Huawei). A target that
-  // implements SshExecTarget but is *not* a LinuxMachine (no in-process
-  // `executor` shortcut) handles its own auth + exec synchronously.
-  //
-  // La SONDE DU FIL decide d'abord. Sans elle, ce raccourci repondait
-  // quel que soit l'etat de l'ecoute : un serveur SSH deplace par
-  // `ssh server port` continuait de repondre sur l'ancien port, et la
-  // commande qui l'avait deplace devenait invisible depuis un client.
-  if (!linuxLike && isSshExecTarget(found.device)) {
-    const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
-    if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
-    if (opts.wireAuthRefused) {
-      return {
-        output: `${opts.wireDenial ?? deniedLine(remoteUser, host, advertisedSshMethods(found.device))}\n`,
-        exitCode: 255,
-      };
-    }
-    return runCrossPlatformExec(found.device, remoteUser, positional, port, host, opts);
+  if (failure.keyExchange !== undefined) return { output: failure.keyExchange, exitCode: 255 };
+  if (failure.hostKey !== undefined) return { output: failure.hostKey, exitCode: 255 };
+  if (failure.authRefused === true) {
+    return { output: `${failure.denial ?? deniedLine(failure.user, failure.host, null)}\n`, exitCode: 255 };
   }
-
-  const machine = found.device as LinuxMachine & {
-    isServiceActive?: (n: string) => boolean;
-    scheduleSshLogout?: (
-      user: string, fromIp: string, holdSeconds: number, wireOwned?: boolean, fromPort?: number,
-    ) => void;
-    sshdAcceptsLogin?: (
-      u: string, ctx?: {
-        address?: string; host?: string; method?: 'publickey' | 'password' | 'pending'; keyForcesCommand?: boolean;
-      },
-    ) => { ok: boolean; reason?: string };
-    recordSshLogin?: (
-      u: string,
-      fromIp: string,
-      fromHost: string,
-      accepted: boolean,
-      authMethod?: 'password' | 'publickey',
-      failureReason?: string,
-    ) => void;
-    executor?: { execute: (cmd: string) => string; userMgr?: unknown; vfs?: unknown };
+  return {
+    output: `${failure.connectionLine ?? `ssh: connect to host ${failure.host} port ${failure.port}: Network is unreachable`}\n`,
+    exitCode: 255,
   };
-  if (typeof machine.isServiceActive !== 'function') {
-    return verdictFromWireAlone(opts, remoteUser, host, destIp, port);
-  }
+}
 
-  const sshCtx = (machine as unknown as { getSshServerContext?: () => { isClientBlocked?: (ip: string) => boolean } }).getSshServerContext?.();
-  if (sshCtx?.isClientBlocked?.(opts.sourceIp)) {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
-      exitCode: 255,
-    };
-  }
+export interface WireSshSuccess {
+  readonly host: string;
+  readonly address: string;
+  readonly port: number;
+  readonly method: string | undefined;
+  readonly serverHostKey: { readonly algorithm: string; readonly fingerprint: string } | null;
+  readonly command: string;
+  readonly settled: { readonly output: string; readonly exitCode: number } | null;
+  readonly shell: { readonly output: string; readonly exitCode: number } | null;
+  readonly notices: readonly string[];
+}
 
-  // Reactive gate: only an active sshd accepts the TCP handshake AND
-  // the requested port must match a Port directive in sshd_config.
-  if (!machine.isServiceActive('ssh')) {
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
-      exitCode: 255,
-    };
-  }
-  // MaxStartups gate — drop connections from a source that has crossed
-  // the configured 'full' threshold of recent failed attempts. Mirrors
-  // OpenSSH's accept-loop throttle exactly.
-  const throttler = (machine as unknown as { sshThrottler?: {
-    shouldDrop: (ip: string, cfg: { start: number; rate: number; full: number }, now: number) => boolean;
-    recordFailure: (ip: string, now: number) => void;
-  } }).sshThrottler;
-  const cfg = remoteSshdConfig(machine);
-  if (throttler && throttler.shouldDrop(opts.sourceIp, cfg.maxStartups, simulationNowMs())) {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection refused (MaxStartups drop)\n`,
-      exitCode: 255,
-    };
-  }
-  const cfgPorts = sshdConfiguredPorts(machine);
-  if (behindTunnel) port = cfgPorts[0] ?? port;
-  if (!cfgPorts.includes(port)) {
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
-      exitCode: 255,
-    };
-  }
-
-  const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
-  if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
-
-  // From here on, the TCP handshake has genuinely reached a live sshd —
-  // everything past this point is an SSH/PAM-layer outcome, not a
-  // connectivity one, so a failure here is still a real, wire-visible
-  // connection for `tcpdump` / socket accounting to record.
-  const connectedTuple: SshConnectionTuple = { localIp: opts.sourceIp, peerIp: destIp, peerPort: port };
-
-  const noteRefusal = (
-    method?: 'password' | 'publickey', reason?: string,
-  ): void => {
-    if (opts.wireAuthRefused) return;
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, method, reason);
-    throttler?.recordFailure(opts.sourceIp, simulationNowMs());
-  };
-
-  // Login policy gate (root login, allowed users, etc.).
-  const wireDecided = opts.wireAuthenticated === true;
-  const login = wireDecided ? { ok: true, reason: undefined } : machine.sshdAcceptsLogin?.(
-    remoteUser, { address: opts.sourceIp, host: opts.sourceHostname, method: 'pending' }) ?? { ok: true };
-  if (!login.ok) {
-    noteRefusal();
-    // Surface the specific policy in /var/log/auth.log via the bus —
-    // real sshd writes `User <u> not allowed because not listed in
-    // AllowUsers` or `User <u> not allowed because listed in DenyUsers`
-    // or `ROOT LOGIN REFUSED FROM <ip>` before the generic
-    // "Failed password" line.
-    const policyEvents = (machine as unknown as {
-      getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; ip: string; reason?: string; port?: number }) => void } };
-    }).getSshServerContext?.()?.events;
-    policyEvents?.emit({
-      kind: 'auth_policy_refused',
-      user: remoteUser,
-      ip: opts.sourceIp,
-      reason: login.reason ?? 'policy refused',
-      port: 22,
-    });
-    return {
-      output: opts.wireDenial ?? deniedLine(remoteUser, host, advertisedSshMethods(machine)),
-      exitCode: 255,
-      connection: connectedTuple,
-    };
-  }
-
-  // Authentication-method negotiation: public key first, then password —
-  // honouring both the server's Pubkey/PasswordAuthentication directives
-  // and the client's `-o` overrides. A StrictModes refusal of the user's
-  // ~/.ssh / authorized_keys triggers the OpenSSH-compatible auth.log
-  // line "Authentication refused: bad ownership or modes for file …"
-  // before the negotiation silently falls back to password.
-  const remoteExec = machine.executor as unknown as RemoteExecLike | undefined;
-  const remoteEvents = (machine as unknown as {
-    getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; ip: string; path?: string; port?: number; reason?: string; method?: string }) => void } };
-  }).getSshServerContext?.()?.events;
-  const auth = wireDecided
-    ? { method: (opts.wireMethod ?? 'password') as 'password' | 'publickey', serverMethods: '', matchedKey: undefined }
-    : resolveSshAuthMethod(opts, flags, remoteExec, remoteUser, advertisedSshMethods(machine), (offendingPath) => {
-    remoteEvents?.emit({
-      kind: 'auth_strict_modes_refused',
-      user: remoteUser,
-      ip: opts.sourceIp,
-      path: offendingPath,
-      port: 22,
-    });
-  });
-  const methodGate = wireDecided || auth.method === null ? { ok: true } : machine.sshdAcceptsLogin?.(remoteUser, {
-    address: opts.sourceIp, host: opts.sourceHostname, method: auth.method,
-    keyForcesCommand: auth.matchedKey?.options?.command !== undefined,
-  }) ?? { ok: true };
-  if (!methodGate.ok) {
-    noteRefusal(auth.method ?? undefined);
-    return {
-      output: opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods),
-      exitCode: 255,
-      connection: connectedTuple,
-    };
-  }
-  // When the client supplied a password (via sshpass), validate it now.
-  // Wrong passwords drive the brute-force detection chain: the
-  // auth_failure event lands on the throttler which trips fail2ban.
-  const offered = auth.method === 'password' && !wireDecided
-    ? verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword, machine)
-    : 'ok';
-  if (offered === 'wrong-password') {
-    noteRefusal('password');
-    return {
-      output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
-      exitCode: 255,
-      connection: connectedTuple,
-    };
-  }
-  if (offered === 'not-offered' && !grantsWithoutCredential(machine, remoteUser)) {
-    noteRefusal('password');
-    return {
-      output: opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods),
-      exitCode: 255,
-      connection: connectedTuple,
-    };
-  }
-  if (!auth.method) {
-    noteRefusal();
-    const events = (machine as unknown as { getSshServerContext?: () => { events?: { emit: (e: { kind: 'client_disconnected'; user: string; ip: string; reason: string }) => void } } }).getSshServerContext?.()?.events;
-    events?.emit({ kind: 'client_disconnected', user: remoteUser, ip: opts.sourceIp, reason: 'too_many_failures' });
-    return {
-      output: opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods),
-      exitCode: 255,
-      connection: connectedTuple,
-    };
-  }
-  // PAM account phase: credentials are correct, but chage-tracked account
-  // or password expiry can still refuse the session — independently of
-  // whether the password/key offered was right.
-  const lifecycleGate = wireDecided ? undefined : (remoteExec?.userMgr as unknown as {
-    accountLifecycleGate?: (u: string) => AccountLifecycleVerdict;
-  } | undefined)?.accountLifecycleGate?.(remoteUser);
-  if (lifecycleGate && !lifecycleGate.ok) {
-    const reason = lifecycleGate.kind === 'account-expired' ? 'account_expired' : 'password_expired';
-    noteRefusal(auth.method, reason);
-    if (lifecycleGate.kind === 'password-expired') {
-      remoteEvents?.emit({ kind: 'auth_account_phase', user: remoteUser, ip: opts.sourceIp });
-    }
-    return {
-      output: `Your account has expired; please contact your system administrator\n${opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods)}`,
-      exitCode: 255,
-      connection: connectedTuple,
-    };
-  }
-
-  if (opts.wireAuthRefused) {
-    noteRefusal(auth.method ?? undefined);
-    return {
-      output: opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods),
-      exitCode: 255,
-      connection: connectedTuple,
-    };
-  }
-
-  // Successful authentication clears the failure history for this IP.
-  if (throttler) (throttler as unknown as { reset: (ip: string) => void }).reset(opts.sourceIp);
-
-  // PAM login banner: inside chage -W's warning window, a successful
-  // login still shows "Warning: your password will expire in N day(s)."
-  // without blocking the session.
-  const warningDays = wireDecided ? null : (remoteExec?.userMgr as unknown as {
-    passwordExpiryWarningDays?: (u: string) => number | null;
-  } | undefined)?.passwordExpiryWarningDays?.(remoteUser) ?? null;
-  const warningBanner = warningDays !== null
-    ? `Warning: your password will expire in ${warningDays} day${warningDays === 1 ? '' : 's'}.\n`
-    : '';
-
-  let sessionPort: number | undefined;
-  if (opts.wireAuthenticated) {
-    sessionPort = (machine as unknown as {
-      openSshSessionPort?: (u: string, ip: string) => number | undefined;
-    }).openSshSessionPort?.(remoteUser, opts.sourceIp);
-  } else {
-    machine.recordSshLogin?.(
-      remoteUser,
-      opts.sourceIp,
-      opts.sourceHostname,
-      true,
-      auth.method,
-    );
-  }
-
-  const strictMode = parseStrictHostKeyChecking(clientOption(flags, 'StrictHostKeyChecking'));
-  if ((strictMode === 'yes' || strictMode === 'ask') && opts.localVfs) {
-    const home = opts.sourceHome ?? '/root';
-    const existing = opts.localVfs.readFile(`${home}/.ssh/known_hosts`) ?? '';
-    if (!SshKnownHostsFile.parse(existing).find(host)) {
-      return {
-        output: strictMode === 'yes'
-          ? `No ED25519 host key is known for ${host} and you have requested strict checking.\nHost key verification failed.`
-          : 'Host key verification failed.',
-        exitCode: 255,
-      };
-    }
-  }
-
-  const keyChanged = updateKnownHosts(opts, machine, host, strictMode === 'no');
-  if (keyChanged !== null) {
-    return { output: `${keyChanged}\nHost key verification failed.\n`, exitCode: 255 };
-  }
-
-  // ── SSH port forwarding (-L / -R / -D) ──────────────────────────────
-  // Each requested forward opens a listening socket on whichever host
-  // owns it (the client for -L/-D, the SSH server for -R). The server's
-  // `AllowTcpForwarding` directive decides whether the request stands.
+export function sshWireSuccessResult(opts: SshClientOpts, flags: string[], success: WireSshSuccess): SshClientResult {
+  const notices = success.notices.map((n) => (n.endsWith('\n') ? n : `${n}\n`)).join('');
   const forwardingError = setupPortForwards(opts, flags);
-
-  // `-N` (no remote command) — paired with `-f` to hold a tunnel open.
-  // The session carries no shell, so there is no banner: only forwarding
-  // diagnostics, if any, are surfaced.
-  if (flags.includes('-N')) {
-    return { output: forwardingError, exitCode: 0 };
-  }
-
-  // The TCP handshake reached a live sshd — record the four-tuple so the
-  // caller can feed `tcpdump` / socket accounting.
-  const connection: SshConnectionTuple = {
-    localIp: opts.sourceIp,
-    peerIp: found.ip,
-    peerPort: port,
-  };
-
-  // `-v` / `-vv` / `-vvv` — verbose: prepend an OpenSSH-style debug trace
-  // including the host-key algorithm so test harnesses can verify the
-  // server's HostKey directive is honoured end-to-end.
-  const verbose = flags.some(a => /^-v+$/.test(a));
+  if (flags.includes('-N')) return { output: forwardingError, exitCode: 0 };
+  const verbose = flags.some((a) => /^-v+$/.test(a));
   const verboseHeader = verbose
-    ? `debug1: Connecting to ${host} [${found.ip}] port ${port}.\n` +
-      `debug1: Server host key: ssh-ed25519 SHA256:abc123\n` +
-      `debug1: Authentication succeeded (${auth.method}).\n`
+    ? `debug1: Connecting to ${success.host} [${success.address}] port ${success.port}.\n`
+      + (success.serverHostKey === null
+        ? ''
+        : `debug1: Server host key: ${success.serverHostKey.algorithm} ${success.serverHostKey.fingerprint}\n`)
+      + `debug1: Authentication succeeded (${success.method ?? 'password'}).\n`
     : '';
-
-  const clientHeader = noticeBanner + warningBanner + verboseHeader + forwardingError;
-  // If the user provided a remote command, execute it on the remote
-  // through the user's login shell and return its output / exit code.
-  // This is OpenSSH's "exec mode" — no banner, no Last login. A bare
-  // `exit` / `logout` is treated as if no command was given (the user
-  // wants a banner-only interactive session that closes immediately).
-  let remoteCmd = joinRemoteCommand(positional.slice(1));
-  if (/^(exit|logout)\s*$/i.test(remoteCmd)) remoteCmd = '';
-  const sIdx = flags.indexOf('-s');
-  const isSftpSubsystem = sIdx >= 0 && flags[sIdx + 1] === 'sftp';
-  if (remoteCmd && !isSftpSubsystem) {
-    const globalForced = wireDecided ? null : readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
-    const keyForced = wireDecided ? null : auth.matchedKey?.options?.command ?? null;
-    const forced = globalForced ?? keyForced;
-    if (forced === 'internal-sftp') {
-      return {
-        output: 'This service allows sftp connections only.\n',
-        exitCode: 1,
-      };
-    }
-    const originalCmd = remoteCmd;
-    if (forced) remoteCmd = forced;
-    const remoteUidBeforeAfter = wireDecided ? null : swapRemoteUser(machine, remoteUser);
-    const keyBansAgent = auth.matchedKey?.options?.noAgentForwarding === true;
-    const effView = effectiveSshdView(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
-    const serverBansAgent = effView
-      ? effView.allowAgentForwarding === false
-      : (remoteExec ? readRemoteSshdDirective(remoteExec, 'AllowAgentForwarding') === 'no' : false);
-    const agentForbidden = keyBansAgent || serverBansAgent;
-    // `-A` agent forwarding: expose the local agent's identities to the
-    // remote command, restoring the remote agent afterwards. The server's
-    // `AllowAgentForwarding no` and any matching authorized_keys
-    // `no-agent-forwarding` option both veto the request.
-    const restoreAgent = flags.includes('-A') && !agentForbidden
-      ? forwardSshAgent(opts, machine)
-      : null;
-    let execOut = '';
-    let execRc = 0;
-    try {
-      const execMod = machine.executor as undefined | {
-        execute: (c: string) => string;
-        executeWithEnv?: (c: string, env: Record<string, string>) => string;
-        lastExitCode?: number;
-      };
-      // SendEnv/AcceptEnv forwarding: variables the client offers and the
-      // server accepts are overlaid on the remote shell for this command.
-      const forwarded = remoteExec
-        ? computeForwardedEnv(opts, flags, remoteExec)
-        : {};
-      if (originalCmd && remoteCmd !== originalCmd) {
-        forwarded['SSH_ORIGINAL_COMMAND'] = originalCmd;
-      }
-      // exec-mode without -t carries no PTY; mark it so the remote
-      // `tty` builtin reports "not a tty" and SIGINT-relay logic can
-      // decide whether to wire a controlling terminal. An
-      // authorized_keys `no-pty` option suppresses the PTY even
-      // when -t is given.
-      const hasTty = (flags.includes('-t') || flags.includes('-tt'))
-        && auth.matchedKey?.options?.noPty !== true;
-      if (!hasTty) forwarded['SSH_NO_TTY'] = '1';
-      // -t / -tt: propagate the client TTY's geometry (COLUMNS / LINES)
-      // and TERM to the remote shell — matches SIGWINCH + ENV-passing
-      // for an OpenSSH session with a PTY.
-      if (hasTty) {
-        forwarded['COLUMNS'] = opts.callerEnv?.['COLUMNS'] ?? '80';
-        forwarded['LINES']   = opts.callerEnv?.['LINES']   ?? '24';
-        if (opts.callerEnv?.['TERM']) forwarded['TERM'] = opts.callerEnv['TERM'];
-      }
-      // -A: expose the local agent through SSH_AUTH_SOCK on the remote
-      // shell so any `ssh` invocation inside the remote command finds
-      // the forwarded identities — matches OpenSSH agent forwarding.
-      // Skipped when the server or the authorized_keys entry forbids it.
-      if (flags.includes('-A') && !agentForbidden) {
-        forwarded['SSH_AUTH_SOCK'] = `/tmp/ssh-${remoteUser}/agent.${SSH_CLIENT_FORWARD_PID}`;
-      }
-      // authorized_keys `environment="K=V"` — overlay onto the remote env
-      // exactly the way OpenSSH does, regardless of PermitUserEnvironment.
-      for (const [k, v] of auth.matchedKey?.options?.environment ?? []) {
-        forwarded[k] = v;
-      }
-      // PermitUserEnvironment yes — overlay ~/.ssh/environment lines
-      // (KEY=VAL) into the exec-mode env, matching OpenSSH behaviour.
-      if (remoteExec && readRemoteSshdDirective(remoteExec, 'PermitUserEnvironment') === 'yes') {
-        const entry = remoteExec.userMgr.getUser(remoteUser);
-        const home = entry?.home ?? `/home/${remoteUser}`;
-        const envFile = remoteExec.vfs.readFile(`${home}/.ssh/environment`) ?? '';
-        for (const rawLine of envFile.split('\n')) {
-          const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*?)\s*$/.exec(rawLine);
-          if (m) forwarded[m[1]] = m[2];
-        }
-      }
-      // SSH exec mode runs in a one-shot sub-shell whose env never leaks
-      // back to the long-lived shell — snapshot/restore around the call.
-      const envSnapshot = (machine as unknown as { executor: { env?: Map<string, string> } }).executor?.env;
-      const savedEntries = envSnapshot ? Array.from(envSnapshot.entries()) : null;
-      sessionHold(machine);
-      // With -t (PTY), bash sources ~/.bashrc before running the
-      // command — that's where aliases and shell functions live.
-      // Prepend the rc body and `shopt -s expand_aliases` so alias
-      // expansion stays on for non-interactive expansion too.
-      let effectiveCmd = remoteCmd;
-      if (hasTty && !wireDecided) {
-        const entry = remoteExec?.userMgr.getUser(remoteUser);
-        const home = entry?.home ?? `/home/${remoteUser}`;
-        const rc = remoteExec?.vfs.readFile(`${home}/.bashrc`) ?? '';
-        if (rc.trim()) effectiveCmd = `${rc}\n${remoteCmd}`;
-      }
-      const relayed = opts.execRelay?.(effectiveCmd, forwarded) ?? null;
-      try {
-        execOut = relayed
-          ? relayed.output
-          : Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
-            ? execMod.executeWithEnv(effectiveCmd, forwarded)
-            : execMod?.execute?.(effectiveCmd) ?? '';
-      } finally {
-        if (envSnapshot && savedEntries) {
-          envSnapshot.clear();
-          for (const [k, v] of savedEntries) envSnapshot.set(k, v);
-        }
-      }
-      execRc = relayed ? relayed.exitCode : execMod?.lastExitCode ?? 0;
-    } finally {
-      restoreAgent?.();
-      remoteUidBeforeAfter?.();
-    }
-    // Terminate the remote command's output with a newline (as a real TTY
-    // does) so a following local command starts on its own line.
-    const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine), opts.wireAuthenticated === true, sessionPort);
-    return { output: clientHeader + normalised, exitCode: execRc, connection };
+  const header = notices + verboseHeader + forwardingError;
+  if (success.settled !== null) {
+    const output = success.settled.output;
+    return {
+      output: header + (output && !output.endsWith('\n') ? `${output}\n` : output),
+      exitCode: success.settled.exitCode,
+    };
   }
-
-  // ForceCommand also overrides the interactive shell: the user lands
-  // directly into the forced command instead of getting a login shell.
-  if (!remoteCmd) {
-    const forcedInteractive =
-      readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname)
-      ?? auth.matchedKey?.options?.command
-      ?? null;
-    // Real sshd refuses a bare interactive session just as it refuses one
-    // with an explicit remote command — internal-sftp never hands out a
-    // shell either way.
-    if (forcedInteractive === 'internal-sftp') {
-      return { output: 'This service allows sftp connections only.\n', exitCode: 1, connection };
-    }
-    if (forcedInteractive) {
-      const restore = swapRemoteUser(machine, remoteUser);
-      const execMod = machine.executor as undefined | { execute: (c: string) => string; lastExitCode?: number };
-      let out = '';
-      try { out = execMod?.execute?.(forcedInteractive) ?? ''; } finally { restore?.(); }
-      return {
-        output: clientHeader + (out.endsWith('\n') ? out : out + '\n'),
-        exitCode: execMod?.lastExitCode ?? 0,
-        connection,
-      };
-    }
-  }
-
-  // Interactive form (no command): the simulator returns the typical
-  // login banner composition so downstream scripts see a coherent
-  // transcript.
-  const remoteVfs = (machine as LinuxMachine & { executor: { vfs: { readFile: (p: string) => string | null } } }).executor.vfs;
-  // OpenSSH's `Banner` directive selects an arbitrary pre-auth file; OpenSSH
-  // ships it unset (no banner). When set to a real path, the file is shown
-  // *before* the welcome line. The legacy /etc/issue.net stays as a
-  // historical fallback when no banner is configured.
-  const bannerPath = remoteExec ? readRemoteSshdDirectiveRaw(remoteExec, 'Banner') : null;
-  const banner = bannerPath === null
-    ? (remoteVfs.readFile('/etc/issue.net') ?? '')
-    : bannerPath.toLowerCase() === 'none'
-      ? ''
-      : remoteVfs.readFile(bannerPath) ?? '';
-  const motd = opts.wireAuthenticated ? '' : remoteVfs.readFile('/etc/motd') ?? '';
-
-  // -q / -Q (quiet) suppresses banner output (still connects). Match
-  // OpenSSH: stay silent on success.
-  const quiet = flags.some(a => a === '-q' || a === '-Q');
-  if (quiet) {
-    return { output: clientHeader, exitCode: 0, connection };
-  }
-
-  const printMotd     = remoteExec ? SshdServerConfig.parse(readSshdConfig(remoteExec.vfs)).showsMotd : true;
-  const printLastLog  = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintLastLog') !== 'no' : true;
+  if (flags.some((a) => a === '-q' || a === '-Q')) return { output: header, exitCode: 0 };
   const lines: string[] = [];
-  if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
-  // La ligne « Welcome to Ubuntu … » vient du MOTD, comme sur une vraie
-  // Ubuntu (`/etc/update-motd.d/00-header`). Elle etait AUSSI ecrite ici
-  // en dur, avec une autre version et un autre noyau : une seule
-  // connexion en affichait donc deux, contradictoires.
-  if (printLastLog) {
-    lines.push(`Last login: ${fmtHumanDate(simulationDate(), remoteExec?.identity.timezone)} from ${opts.sourceIp}`);
-  }
-  if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
-  const relayedShell = opts.shellRelay?.() ?? null;
-  if (relayedShell && relayedShell.output.length > 0) lines.push(relayedShell.output);
-  lines.push(connectionClosed(host));
-  machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0, opts.wireAuthenticated === true, sessionPort);
-  return { output: clientHeader + lines.join('\n'), exitCode: 0, connection };
+  if (success.shell !== null && success.shell.output.length > 0) lines.push(success.shell.output);
+  lines.push(connectionClosed(success.host));
+  return { output: header + lines.join('\n'), exitCode: 0 };
 }
 
 function connectionClosed(host: string): string {
   return `Connection to ${host} closed.`;
 }
 
-function sessionHold(machine: unknown): number {
-  const exec = (machine as { executor?: { sessionHoldSeconds?: number } }).executor;
-  const held = exec?.sessionHoldSeconds ?? 0;
-  if (exec) exec.sessionHoldSeconds = 0;
-  return held;
-}
 
-type RemoteQuoting = 'posix' | 'cmd';
+export type RemoteQuoting = 'posix' | 'cmd';
 
-function remoteQuoting(device: unknown): RemoteQuoting {
-  const os = (device as { getOSType?: () => string } | undefined)?.getOSType?.();
-  return os === 'windows' ? 'cmd' : 'posix';
-}
 
 /**
  * Reconstruct the remote command from the positional argv that followed
@@ -1432,7 +640,7 @@ function remoteQuoting(device: unknown): RemoteQuoting {
  * any containing whitespace are re-quoted to survive the remote shell's
  * re-parse intact (`ssh host bash -lc 'echo $0'`).
  */
-function joinRemoteCommand(tokens: string[], quoting: RemoteQuoting = 'posix'): string {
+export function joinRemoteCommand(tokens: string[], quoting: RemoteQuoting = 'posix'): string {
   if (tokens.length === 0) return '';
   if (tokens.length === 1) return tokens[0].trim();
   const quote = quoting === 'cmd'
@@ -1444,220 +652,10 @@ function joinRemoteCommand(tokens: string[], quoting: RemoteQuoting = 'posix'): 
     .trim();
 }
 
-/**
- * `-A` agent forwarding: overlay the local ssh-agent's identities onto
- * the remote machine's agent for the duration of the remote command.
- * Returns a restorer that puts the remote agent back, or null when there
- * is nothing to forward.
- */
-function forwardSshAgent(opts: SshClientOpts, machine: LinuxMachine): (() => void) | null {
-  const remoteAgent = (machine as unknown as {
-    executor?: { sshAgent?: SshAgent };
-  }).executor?.sshAgent;
-  if (!opts.localAgent || !remoteAgent) return null;
-  const saved = remoteAgent.list();
-  remoteAgent.adopt(opts.localAgent.list());
-  return () => remoteAgent.adopt(saved);
-}
 
-/**
- * Switch the remote machine's "current user" context for the duration of
- * an exec-mode command, then restore it. Returns the restorer.
- */
-/**
- * Read the remote's host public key, find/append the matching entry in
- * the local ~/.ssh/known_hosts. Returns true when an existing entry's
- * key differs from the remote's current key (host-key changed).
- */
-function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string, force = false): string | null {
-  if (!opts.localVfs) return null;
-  const remoteVfs = (machine as LinuxMachine & { executor: { vfs: { readFile: (p: string) => string | null } } }).executor.vfs;
-  const pubKeyRaw = remoteVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '';
-  const tokens = pubKeyRaw.trim().split(/\s+/);
-  if (tokens.length < 2) return null;
 
-  const home = opts.sourceHome ?? '/root';
-  const outcome = compareAndRecordHostKey({
-    vfs: opts.localVfs as KnownHostsVfs,
-    knownHostsPath: `${home}/.ssh/known_hosts`,
-    host: ip,
-    keyType: tokens[0],
-    publicKey: tokens[1],
-    uid: opts.sourceUid ?? 0,
-    gid: opts.sourceGid ?? 0,
-    replaceChanged: force,
-  });
-  return outcome.changed ? outcome.warning : null;
-}
 
-function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | null {
-  const exec = (machine as unknown as {
-    executor: {
-      userMgr: { currentUser: string; currentUid: number; currentGid: number; getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined; useradd: (u: string, o?: object) => void };
-      cwd: string;
-    };
-  }).executor;
-  if (!exec?.userMgr) return null;
-  // Auto-provision the user if it's not in the remote's /etc/passwd yet.
-  if (!exec.userMgr.getUser(user)) exec.userMgr.useradd(user, { m: true, s: '/bin/bash' });
-  const target = exec.userMgr.getUser(user);
-  const before = {
-    user: exec.userMgr.currentUser, uid: exec.userMgr.currentUid, gid: exec.userMgr.currentGid, cwd: exec.cwd,
-  };
-  if (target) {
-    exec.userMgr.currentUser = user;
-    exec.userMgr.currentUid = target.uid;
-    exec.userMgr.currentGid = target.gid;
-    exec.cwd = target.home ?? `/home/${user}`;
-  }
-  return () => {
-    exec.userMgr.currentUser = before.user;
-    exec.userMgr.currentUid = before.uid;
-    exec.userMgr.currentGid = before.gid;
-    exec.cwd = before.cwd;
-  };
-}
 
-/**
- * Cross-platform SSH exec dispatch for non-Linux targets (Windows,
- * Cisco IOS, Huawei VRP). The target's polymorphic `SshExecTarget`
- * surface handles auth, audit and the synchronous command whitelist.
- *
- * The dispatch returns the same `SshClientResult` shape as the Linux
- * path so callers (LinuxCommandExecutor) don't need to know which
- * platform answered.
- */
-function runCrossPlatformExec(
-  target: SshExecTarget,
-  remoteUser: string,
-  positional: string[],
-  port: number,
-  host: string,
-  opts: SshClientOpts,
-): SshClientResult {
-  const router = target as unknown as {
-    getLoginBlocker?: () => { isBlocked: (ip: string) => boolean } | null;
-    getSshHost?: () => CrossVendorSshHost;
-    getSshSessionRegistry?: () => {
-      list: () => ReadonlyArray<{ id: string; user: string; fromIp: string }>;
-      close: (id: string, reason?: string) => void;
-    };
-  };
-  const sshHost = router.getSshHost?.();
-  const blocker = router.getLoginBlocker?.();
-  if (blocker && blocker.isBlocked(opts.sourceIp)) {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection refused (Quiet-Mode)\n`,
-      exitCode: 255,
-    };
-  }
-
-  // Windows Filtering Platform — when the target is a WindowsPC and any
-  // Inbound Block rule matches our (srcIp, dstPort) TCP SYN, the host
-  // silently drops the packet (no RST, no ICMP), so the client times
-  // out. The matching Security event (5152) is emitted via the
-  // simulator's event bus → WindowsEventLogProjection.
-  const windowsTarget = target as unknown as {
-    inboundSshFirewallVerdict?: (srcIp: string, dstPort: number) => 'accept' | 'drop';
-  };
-  if (typeof windowsTarget.inboundSshFirewallVerdict === 'function') {
-    const verdict = windowsTarget.inboundSshFirewallVerdict(opts.sourceIp, port);
-    if (verdict === 'drop') {
-      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-      return {
-        output: `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
-        exitCode: 255,
-        droppedSyn: { localIp: opts.sourceIp, peerIp: host, peerPort: port },
-      };
-    }
-  }
-
-  const remoteCmd = joinRemoteCommand(positional.slice(1), remoteQuoting(target));
-
-  if (sshHost) {
-    const admission = (router as unknown as {
-      vtyAdmissionVerdict?: (transport: 'ssh', sourceIp: string) => { accept: boolean };
-    }).vtyAdmissionVerdict?.('ssh', opts.sourceIp);
-    if (admission && !admission.accept) {
-      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
-    }
-    // Le mot de passe OFFERT par le client (`sshpass -p <pw>`). Il
-    // n'etait pas transmis : la demande partait sans identifiant, et
-    // l'autorite, ne voyant rien a verifier, se contentait de constater
-    // que le COMPTE existe. Un secret faux — ou aucun — ouvrait donc la
-    // session vers un equipement Cisco, alors que le mecanisme de
-    // verification etait ecrit et correct de l'autre cote. Ne rien
-    // offrir garde le comportement de confiance existant, dont depend
-    // tout appelant qui ne pilote pas `sshpass`.
-    const request = SshConnectionRequest.create({
-      requestedUser: remoteUser,
-      requestedHost: host,
-      requestedPort: port,
-      sourceIp: opts.sourceIp,
-      sourceHostname: opts.sourceHostname,
-      command: remoteCmd || null,
-      offeredAuthMethods: ['publickey', 'password'],
-      credentials: opts.offeredPassword !== undefined
-        ? { password: opts.offeredPassword }
-        : undefined,
-    });
-    const decision = sshHost.evaluate(request);
-    if (decision.outcome === 'dropped') {
-      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
-    }
-    if (decision.outcome === 'rejected') {
-      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-      return { output: `${deniedLine(remoteUser, host, advertisedSshMethods(target))}\n`, exitCode: 255 };
-    }
-    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, decision.method ?? 'password');
-  } else {
-    if (!target.isSshActive()) {
-      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
-    }
-    const policy = target.getSshPolicy();
-    if (!policy.ports.includes(port)) {
-      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
-    }
-    const login = target.sshdAcceptsLogin(remoteUser);
-    if (!login.ok) {
-      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-      return { output: `${deniedLine(remoteUser, host, advertisedSshMethods(target))}\n`, exitCode: 255 };
-    }
-    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
-  }
-
-  const sessionRegistry = router.getSshSessionRegistry?.();
-  const closeSession = () => {
-    target.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
-    if (!sessionRegistry) return;
-    const open = sessionRegistry.list().find(s => s.user === remoteUser && s.fromIp === opts.sourceIp);
-    if (open) sessionRegistry.close(open.id, 'logout');
-  };
-
-  if (remoteCmd) {
-    const relayed = opts.execRelay?.(remoteCmd, {}) ?? null;
-    if (relayed) {
-      closeSession();
-      return { output: relayed.output, exitCode: relayed.exitCode };
-    }
-    const result = target.runSshCommandSync(remoteUser, remoteCmd);
-    closeSession();
-    if (result) return { output: result.output, exitCode: result.exitCode };
-    return {
-      output: `ssh: remote shell rejected '${remoteCmd}' (command not yet supported over the sync bridge)\n`,
-      exitCode: 1,
-    };
-  }
-
-  const lines: string[] = [];
-  const banner = target.getSshBanner();
-  const motd = target.getSshMotd();
-  if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
-  if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
-  lines.push(connectionClosed(host));
-  closeSession();
-  return { output: lines.join('\n'), exitCode: 0 };
+export function remoteQuotingOf(serverIdentification: string | null): RemoteQuoting {
+  return serverIdentification !== null && /windows/i.test(serverIdentification) ? 'cmd' : 'posix';
 }

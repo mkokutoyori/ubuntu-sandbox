@@ -12,6 +12,8 @@
  *                     Subclasses use this for typed access to device-specific APIs.
  */
 
+import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
+import type { Equipment } from '@/network/equipment/Equipment';
 import { monitorCaptureSpecs, type MonitorCaptureHost } from './cisco/monitorCaptureSpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { FrameSource } from '../../hardware/PortTap';
@@ -94,7 +96,6 @@ import {
 import type { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
 import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
@@ -455,7 +456,7 @@ interface DhcpConfigServer {
   disable(): void;
 }
 
-type BannerKind = 'motd' | 'login' | 'exec' | 'incoming';
+type BannerKind = 'motd' | 'login' | 'exec' | 'incoming' | 'aaa-banner' | 'aaa-fail-message';
 
 const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
   ['exec', 'Set EXEC process creation banner'],
@@ -1641,6 +1642,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           bm[1].toLowerCase() as 'motd' | 'login' | 'exec' | 'incoming', bm[2], ctx?.device,
         );
       }
+      const am = /^aaa\s+authentication\s+(banner|fail-message)\s+(\S)\s*$/i.exec(line);
+      if (am) {
+        return this.bannerCaptureInteractionPlan(
+          am[1].toLowerCase() === 'banner' ? 'aaa-banner' : 'aaa-fail-message', am[2], ctx?.device,
+        );
+      }
       return null;
     }
 
@@ -1837,7 +1844,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           // `enable` a chaque fois, ce qu'aucune machine reelle ne
           // demande, et `% Bad secrets` n'existait nulle part.
           kind: 'password',
-          prompt: 'Password: ',
+          prompt: getSecurityConfig((deviceCtx ?? this.d()) as object).loginMessages().passwordPrompt,
           validate: (value) => {
             if (correspond(value)) return { valid: true };
             essais += 1;
@@ -2085,14 +2092,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return { scope, tous, niveau, commande: mots.join(' ') };
   }
 
-  private pubkeyUser: string | null = null;
+  private pubkeyTarget: { kind: 'user' | 'server'; name: string } | null = null;
   private keyStringLines: string[] | null = null;
 
   protected pubkeyChainHost(): PubkeyChainHost {
     return {
       chain: () => getSecurityConfig(this.d()).sshPubkeys,
-      selectedUser: () => this.pubkeyUser,
-      selectUser: (name) => { this.pubkeyUser = name; },
+      target: () => this.pubkeyTarget,
+      select: (kind, name) => { this.pubkeyTarget = { kind, name }; },
       enter: (mode: PubkeyChainMode) => { this.mode = mode; },
       beginKeyString: () => { this.keyStringLines = []; this.mode = 'config-ssh-pubkey-data'; },
     };
@@ -2106,10 +2113,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const lines = this.keyStringLines!;
     this.keyStringLines = null;
-    this.mode = 'config-ssh-pubkey-user';
+    const target = this.pubkeyTarget;
+    this.mode = target?.kind === 'server' ? 'config-ssh-pubkey-server' : 'config-ssh-pubkey-user';
     const decoded = decodeKeyString(lines);
-    if (decoded === null || this.pubkeyUser === null) return '% Invalid public key: only ssh-rsa keys can be stored.';
-    getSecurityConfig(device).sshPubkeys.add(this.pubkeyUser, decoded.entry);
+    if (decoded === null || target === null) return '% Invalid public key: only ssh-rsa keys can be stored.';
+    const chain = getSecurityConfig(device).sshPubkeys;
+    if (target.kind === 'server') chain.addServerKey(target.name, decoded.entry);
+    else chain.add(target.name, decoded.entry);
     return '';
   }
 
@@ -2227,14 +2237,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       _setIncomingBanner?: (b: string) => void;
     } | null;
     if (!dev) return;
-    if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
+    if (kind === 'aaa-banner' || kind === 'aaa-fail-message') {
+      const security = getSecurityConfig(dev ?? this.d());
+      if (kind === 'aaa-banner') security.aaaLoginBanner = text;
+      else security.aaaFailMessage = text;
+    }
+    else if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
     else if (kind === 'login') dev._setLoginBanner?.(text);
     else if (kind === 'exec') dev._setExecBanner?.(text);
     else if (kind === 'incoming') dev._setIncomingBanner?.(text);
   }
 
   private bannerCaptureInteractionPlan(
-    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    kind: BannerKind,
     delim: string,
     device?: unknown,
   ): CommandInteractionPlan {
@@ -5949,6 +5964,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       parseMethodList: (phase, args) =>
         parseAaaMethod(getSecurityConfig(this.d()), phase, [...args]),
+      placeAaaMessage: (kind, rest) =>
+        this.placeBanner(kind === 'banner' ? 'aaa-banner' : 'aaa-fail-message', rest),
     };
   }
 
@@ -6310,25 +6327,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * plus specifique gagnait, donc la branche `motd` de l'autre etait
    * morte. Il n'en reste qu'une.
    */
+  protected placeBanner(sorte: BannerKind, reste: string): string {
+    const texte = reste.replace(/^\s+/, '');
+    if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const delim = texte.startsWith('^C') ? '^C' : texte[0];
+    const corps = texte.slice(delim.length);
+    const fin = corps.indexOf(delim);
+    if (fin !== -1) {
+      this.setBanner(sorte, corps.slice(0, fin));
+      return '';
+    }
+    this.bannerCollector = {
+      type: sorte, delimiter: delim,
+      lines: corps.length > 0 ? [corps] : [],
+    };
+    return `Enter TEXT message.  End with the character '${delim}'.`;
+  }
+
   protected bannerSpecs(): CommandSpec[] {
     const sortes = BANNER_SORTES.map(([keyword, description]) =>
       ({ keyword, description }));
-    const poser = (sorte: string, reste: string): string => {
-      const texte = reste.replace(/^\s+/, '');
-      if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      const delim = texte.startsWith('^C') ? '^C' : texte[0];
-      const corps = texte.slice(delim.length);
-      const fin = corps.indexOf(delim);
-      if (fin !== -1) {
-        this.setBanner(sorte as BannerKind, corps.slice(0, fin));
-        return '';
-      }
-      this.bannerCollector = {
-        type: sorte as BannerKind, delimiter: delim,
-        lines: corps.length > 0 ? [corps] : [],
-      };
-      return `Enter TEXT message.  End with the character '${delim}'.`;
-    };
+    const poser = (sorte: string, reste: string): string => this.placeBanner(sorte as BannerKind, reste);
     const retirer = (sorte: string): string => {
       const dev = this.d() as unknown as {
         _setMotdBanner?: (b: string) => void;
@@ -8695,7 +8714,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return 'Connection closed.';
   }
 
-  protected avecReferenceAppareil(device: TDevice, action: () => string): string {
+  protected avecReferenceAppareil<T = string>(device: TDevice, action: () => T): T {
     const precedente = this.deviceRef;
     this.deviceRef = device;
     try {
@@ -9387,7 +9406,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return `[Resuming connection ${n} to ${s.host} ... ]`;
     });
     trie.registerGreedy('ssh', 'Open an SSH connection to a remote host',
-      (args) => this.runOutboundSshClient(args));
+      () => '% Password: required. Outbound SSH asks for it through its interaction prompt.');
     trie.registerGreedy('telnet', 'Open a Telnet session',
       (args) => this.runOutboundTelnet(args));
   }
@@ -9935,9 +9954,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /**
    * Parse `ssh [-l user] [-p port] <host> [command ...]` (the IOS form)
-   * and dispatch through the shared runSshClient. Source IP is the
-   * router's first configured interface — runSshClient probes for it
-   * automatically when sourceIp resolves to a known device.
+   * and open it over the wire (routerOutboundSsh).
    */
   private outboundSshClientPlan(
     commandLine: string, device: TDevice | undefined,
@@ -9951,7 +9968,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         {
           kind: 'run',
           run: async (rt) => {
-            rt.output(this.avecReferenceAppareil(device, () =>
+            rt.output(await this.avecReferenceAppareil(device, () =>
               this.runOutboundSshClient(args, rt.values.get('ssh_password'))));
           },
         },
@@ -9959,7 +9976,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
-  private runOutboundSshClient(args: string[], offeredPassword?: string): string {
+  private async runOutboundSshClient(args: string[], offeredPassword?: string): Promise<string> {
     let user = 'admin';
     let port: string | null = null;
     const rest: string[] = [];
@@ -9974,66 +9991,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (rest.length === 0) return '% Incomplete command.';
     let host = rest[0];
     const cmd = rest.slice(1).join(' ');
-    const router = this.d() as unknown as {
+    const device = this.d();
+    const router = device as unknown as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
-      _getHostnameInternal: () => string;
       _getHostsTable?: () => { resolve: (n: string) => string | null };
     };
-    // Resolve through the static `ip host` table before any DNS fallback.
     const resolved = router._getHostsTable?.().resolve(host);
     if (resolved) host = resolved;
-    let sourceIp: string | null = null;
+    let hasSourceAddress = false;
     for (const [, p] of router._getPortsInternal()) {
-      const ip = p.getIPAddress();
-      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+      if (p.getIPAddress() && p.getIsUp()) { hasSourceAddress = true; break; }
     }
-    if (!sourceIp) return '% No usable interface IP for outbound SSH';
-    const sshStack = (this.d() as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } })
-      .getTcpStack?.();
-    if (sshStack && IPAddress.tryParse(host) && !sshStack.hasEgressTo(host)) {
-      return IOS_SSH.unreachable(host, Number(port ?? 22));
-    }
-    const clientArgs: string[] = [];
-    if (port) clientArgs.push('-p', port);
-    clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
-    // Cisco IOS' built-in ssh client always allocates a line-mode PTY on
-    // the VTY — opposite of OpenSSH's exec-mode default.
-    clientArgs.push('-t');
-    clientArgs.push(`${user}@${host}`);
-    if (cmd) clientArgs.push(cmd);
-    const result = runSshClient({
-      args: clientArgs,
-      sourceHostname: router._getHostnameInternal(),
-      sourceIp,
-      sourceUser: user,
-      offeredPassword,
-      localVfs: {
-        readFile: () => null,
-        writeFile: () => undefined,
-      },
+    if (!hasSourceAddress) return '% No usable interface IP for outbound SSH';
+    return runRouterOutboundSsh({
+      device: device as unknown as Equipment,
+      dialect: IOS_SSH,
+      allocatePty: true,
+      user,
+      host,
+      port: Number(port ?? 22),
+      command: cmd,
+      password: offeredPassword,
     });
-    // TOFU: record the remote host key in this router's local
-    // known-hosts table so `show ip ssh known-hosts` reflects it.
-    if (result.exitCode === 0) {
-      const dev = this.d() as unknown as {
-        _getSshKnownHosts?: () => { add: (e: { host: string; keyType: string; publicKey: string }) => void };
-      };
-      const remoteHk = this.lookupRemoteSshHostKey(host);
-      if (remoteHk) {
-        dev._getSshKnownHosts?.().add({ host, ...remoteHk });
-      }
-      if (!cmd) {
-        this.outgoingSessions.open({ host: rest[0], address: host, protocol: 'ssh', user });
-      }
-    }
-    return result.output;
-  }
-
-  /** Read the remote machine's host key via the topology registry. */
-  private lookupRemoteSshHostKey(host: string): { keyType: string; publicKey: string } | null {
-    const found = findHostByAddress(host, undefined, this.d() as never) as { device?: { getSshHostKey?: () => { type: string; publicKey: string } } } | null;
-    const hk = found?.device?.getSshHostKey?.();
-    return hk ? { keyType: hk.type, publicKey: hk.publicKey } : null;
   }
 
   private registerCommonConfigCommands(trie: CommandTrie = this.configTrie): void {

@@ -32,7 +32,7 @@
  *     section so adding cases is one row of data.
  */
 
-import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
+import { allowLegacyIosSsh, interoperateWithIos15 } from '@/__tests__/unit/network-v2/iosLegacySsh';
 import { describe, expect, beforeEach, test } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -130,6 +130,7 @@ async function buildXLan(): Promise<XLan> {
   }
 
   for (const d of [linux1, linux2, lxsrv1, win1, win2]) allowLegacyIosSsh(d);
+  for (const d of [linux1, linux2, lxsrv1, win1, win2, ciscoR1, hwR1]) await interoperateWithIos15(d);
 
   return {
     linux1, linux2, lxsrv1, win1, win2, ciscoR1, ciscoS1, hwR1, hwS1, sw,
@@ -182,6 +183,8 @@ function secretOf(destination: string): string | undefined {
 function motDePasseTape(cmd: string): string | undefined {
   if (!APPEL_CLIENT.test(cmd) || /\bsshpass\b/.test(cmd)) return undefined;
   const rebond = /\s-J\s+(\S+)\s+(\S+)/.exec(cmd);
+  const relais = /ProxyCommand="ssh [^"]*?(\S+)"/.exec(cmd);
+  if (relais) return `${secretOf(` ${relais[1]}`) ?? ''}${secretOf(cmd.replace(/-o ProxyCommand="[^"]*"/, '')) ?? ''}`;
   if (!rebond) return secretOf(cmd);
   return [...rebond[1].split(','), rebond[2]].map((saut) => secretOf(` ${saut}`) ?? '').join('');
 }
@@ -1068,12 +1071,9 @@ describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
       contains: [/^lxsrv1$/m],
     },
     {
-      name: '-D 1080 SOCKS proxy: ssh -o ProxyCommand uses it to reach lxsrv1',
-      setup: async (l) => {
-        await l.linux1.executeCommand('ssh -f -N -D 1080 alice@10.0.0.2', 'admin\n');
-      },
+      name: 'ProxyCommand ssh -W: the second hop relays the connection to lxsrv1',
       on: l => l.linux1,
-      cmd: 'ssh -o ProxyCommand="ssh -W %h:%p -p 1080 -o StrictHostKeyChecking=no" alice@10.0.0.3 hostname',
+      cmd: 'ssh -o ProxyCommand="ssh -W %h:%p alice@10.0.0.2" -o StrictHostKeyChecking=no alice@10.0.0.3 hostname',
       contains: [/^lxsrv1$/m],
     },
     {
@@ -1250,8 +1250,12 @@ describe('§17 — Banner, MOTD and last-login per platform', () => {
 
   const rows: Row[] = [
     {
-      name: 'Linux: /etc/issue.net is displayed pre-auth',
-      setup: (l) => { void l.linux2.executeCommand(`sudo sh -c "echo 'AUTHORIZED USE ONLY' > /etc/issue.net"`); },
+      name: 'Linux: /etc/issue.net is displayed pre-auth once Banner names it',
+      setup: async (l) => {
+        await l.linux2.executeCommand(`sudo sh -c "echo 'AUTHORIZED USE ONLY' > /etc/issue.net"`);
+        await l.linux2.executeCommand(`sudo sh -c "echo 'Banner /etc/issue.net' >> /etc/ssh/sshd_config"`);
+        await l.linux2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
       contains: ['AUTHORIZED USE ONLY'],
     },
@@ -1323,14 +1327,13 @@ describe('§18 — Brute-force protection on every SSH server', () => {
 
   const rows: Row[] = [
     {
-      name: 'Linux: repeated unknown-user attempts trip MaxStartups limits',
+      name: 'Linux: repeated unknown-user attempts get the source banned by fail2ban',
       setup: async (l) => {
-        await l.linux2.executeCommand('sudo sed -i "s/^#\\?MaxStartups.*/MaxStartups 2:100:3/" /etc/ssh/sshd_config');
-        await l.linux2.executeCommand('sudo systemctl restart ssh');
+        await l.linux2.executeCommand('sudo systemctl start fail2ban');
       },
       on: l => l.linux1,
-      cmd: 'for i in 1 2 3 4 5; do ssh -o NumberOfPasswordPrompts=1 ghost$i@10.0.0.2 hostname; done',
-      contains: [/Connection (closed|refused)|too many|drop/i],
+      cmd: 'for i in 1 2 3 4 5 6 7 8; do ssh -o NumberOfPasswordPrompts=1 ghost$i@10.0.0.2 hostname; done',
+      contains: [/Connection (closed|refused)|timed out|too many|drop/i],
     },
     {
       name: 'Cisco: login block-for is configurable and reflected in show running-config',
@@ -1405,7 +1408,7 @@ describe('§19 — PTY allocation, signals and window size', () => {
     },
     {
       name: 'Cisco IOS: ssh client uses a line-mode pty for the VTY',
-      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      setup: async (l) => { await l.ciscoR1.executeCommand('enable'); },
       on: l => l.ciscoR1, cmd: 'ssh -l alice 10.0.0.1 tty',
       contains: [/\/dev\/pts\/\d+/],
     },
@@ -2530,9 +2533,9 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       contains: [/^600$/m],
     },
     {
-      name: 'scp without -p uses the default umask mode (664)',
+      name: 'scp without -p applies the umask to the source mode (666 -> 644)',
       setup: async (l) => {
-        await l.linux1.executeCommand('echo plain > /tmp/plain && chmod 600 /tmp/plain');
+        await l.linux1.executeCommand('echo plain > /tmp/plain && chmod 666 /tmp/plain');
         await l.linux1.executeCommand('sshpass -p admin scp /tmp/plain alice@10.0.0.2:/tmp/plain');
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/plain',

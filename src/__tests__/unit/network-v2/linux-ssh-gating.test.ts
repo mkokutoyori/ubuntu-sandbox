@@ -79,8 +79,7 @@ describe('ssh client — remote sshd gating', () => {
   });
 
   it('records a Failed line on refusal', async () => {
-    server.executeCommand('systemctl stop ssh');
-    await client.executeCommand('ssh alice@10.0.0.10', 'admin\n');
+    await client.executeCommand('ssh alice@10.0.0.10', 'not-the-password\n');
     const log = await server.executeCommand('cat /var/log/auth.log');
     expect(log).toContain('Failed password for alice');
   });

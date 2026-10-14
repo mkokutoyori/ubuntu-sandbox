@@ -2,6 +2,12 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { NetworkOsAccountEventEnvelope } from './NetworkOsAccount';
+import type { QuietModeChange } from './LoginBlocker';
+
+function iosQuietStamp(at: number): string {
+  const [weekday, day, month, year, time] = new Date(at).toUTCString().replace(',', '').split(' ');
+  return `${time} UTC ${weekday} ${month} ${day} ${year}`;
+}
 
 export type AuditFacility =
   | 'SEC_LOGIN' | 'SYS' | 'SSH' | 'PARSER' | 'AAA' | 'SECURITY';
@@ -84,6 +90,17 @@ export class SecurityAuditLog {
     const entry: AuditLogEntry = { facility, severity, mnemonic, message, at: at ?? this.now() };
     this.buffer.push(entry);
     while (this.buffer.length > this.capacity) this.buffer.shift();
+  }
+
+  recordQuietMode(change: QuietModeChange): void {
+    const stamp = iosQuietStamp(change.at);
+    if (change.state === 'on') {
+      this.record('SEC_LOGIN', 1, 'QUIET_MODE_ON',
+        `Still timeleft for watching failures is ${change.watchSecondsLeft} seconds, [user:${change.user}] [Source:${change.source}] [localport:22] [Reason:${change.reason}], [ACL:sl_def_acl] at ${stamp}`,
+        change.at);
+      return;
+    }
+    this.record('SEC_LOGIN', 5, 'QUIET_MODE_OFF', `Quiet Mode is OFF, because block period timed out at ${stamp}`, change.at);
   }
 
   entries(): readonly AuditLogEntry[] { return [...this.buffer]; }
