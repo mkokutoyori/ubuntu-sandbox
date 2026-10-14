@@ -188,7 +188,7 @@ describe('Scénario 7 — filtrage précis, du plus large au plus fin', () => {
     await run(r, 'debug ip packet N4 detail');
     await run(r, 'debug ip icmp');
 
-    await run(pc, `ping -c 1 ${ORACLE}`);
+    await run(pc, 'ping -c 1 192.168.10.254');
     await pause();
 
     expect(proto(vues, 1)).toEqual([]);

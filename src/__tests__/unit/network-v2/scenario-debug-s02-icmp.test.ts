@@ -66,11 +66,18 @@ describe('Scénario 2 — debug ip icmp voit les pings en temps réel', () => {
     await filtreIcmp(r);
     await run(r, 'debug ip icmp');
 
-    expect(await run(pc, 'ping -c 2 192.168.20.20')).toMatch(/, 0% packet loss/);
+    expect(await run(pc, 'ping -c 2 192.168.10.254')).toMatch(/, 0% packet loss/);
 
     const icmp = vues.filter(l => l.startsWith('ICMP:'));
-    expect(icmp.some(l => /echo received, src 192\.168\.10\.101, dst 192\.168\.20\.20/.test(l))).toBe(true);
-    expect(icmp.some(l => /echo reply sent, src 192\.168\.20\.20, dst 192\.168\.10\.101/.test(l))).toBe(true);
+    expect(icmp.some(l => /echo received, src 192\.168\.10\.101, dst 192\.168\.10\.254/.test(l))).toBe(true);
+    expect(icmp.some(l => /echo reply sent, src 192\.168\.10\.254, dst 192\.168\.10\.101/.test(l))).toBe(true);
+  });
+
+  it('un ping qui traverse le routeur ne produit aucune ligne ICMP', async () => {
+    const { r, pc, vues } = await lab();
+    await run(r, 'debug ip icmp');
+    expect(await run(pc, 'ping -c 2 192.168.20.20')).toMatch(/, 0% packet loss/);
+    expect(vues.filter(l => l.startsWith('ICMP:'))).toEqual([]);
   });
 
   it('une destination muette donne un host unreachable', { timeout: 20_000 }, async () => {
@@ -82,7 +89,6 @@ describe('Scénario 2 — debug ip icmp voit les pings en temps réel', () => {
     await new Promise((r) => setTimeout(r, 2_400));
 
     const icmp = vues.filter(l => l.startsWith('ICMP:'));
-    expect(icmp.some(l => /echo received, src 192\.168\.10\.101, dst 192\.168\.20\.200/.test(l))).toBe(true);
     expect(icmp.some(l => /dst \(192\.168\.20\.200\) host unreachable/.test(l))).toBe(true);
   });
 
@@ -107,12 +113,12 @@ describe('Scénario 2 — debug ip icmp voit les pings en temps réel', () => {
   it('undebug all arrête le flux', async () => {
     const { r, pc, vues } = await lab();
     await run(r, 'debug ip icmp');
-    await run(pc, 'ping -c 1 192.168.20.20');
+    await run(pc, 'ping -c 1 192.168.10.254');
     const avant = vues.filter(l => l.startsWith('ICMP:')).length;
     expect(avant).toBeGreaterThan(0);
 
     await run(r, 'undebug all');
-    await run(pc, 'ping -c 1 192.168.20.20');
+    await run(pc, 'ping -c 1 192.168.10.254');
     expect(vues.filter(l => l.startsWith('ICMP:')).length).toBe(avant);
   });
 });

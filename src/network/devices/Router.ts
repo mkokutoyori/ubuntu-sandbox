@@ -4767,6 +4767,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       // both are read live, so a change applies to the very next line
       // rather than to the next `debug` command.
       svc.setOutputGate(() => this.shell.getLoggingConfig?.()?.enabled !== false);
+      svc.setLocalAddressResolver((address) => [...this.ports.values()].some((port) =>
+        port.getIPAddress()?.toString() === address
+        || port.getSecondaryIPs().some((entry) => entry.ip.toString() === address)));
       const configuredLimit = () => this.shell.getLoggingConfig?.()?.rateLimit ?? null;
       const followConfiguredLimit = () => {
         const n = configuredLimit();

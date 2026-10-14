@@ -10,35 +10,7 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ---
 
-### [debug] `debug ip icmp` : `no logging on` fait taire la console, les lignes sont doublees et mal nommees en transit
-Mesure sur `SSH_TP_LAN.topology (7).json` (PC11 -> PC6, quatre routeurs
-traverses) : MAIN_RT_AKWA et MAIN_RT01 impriment, MAIN_RT02 et MAIN_RT_HO
-n imprime rien alors que leur tap voit bien les trames ; leur
-configuration porte `no logging on`, que `RouterDebugService.setOutputGate`
-traduit en silence TOTAL (PRD-Debug-Fidelite-Cisco §1.13). La
-documentation Cisco de `logging on`, telle que je la connais et sans avoir pu
-la relire ici (regle 8), dit que `no logging on` coupe les destinations
-SAUF la console : a verifier sur la reference, puis la console doit
-rester audible.
-Deux autres ecarts sur le meme essai : chaque paquet en transit est
-imprime deux fois par routeur (trame `in` puis trame `out` lues comme
-« echo received »), et la reponse transitee s'affiche « echo reply sent,
-src <PC6> » comme si le routeur l'avait emise. Sur IOS, `debug ip icmp`
-ne montre que l'ICMP dont le routeur est source ou destination.
-**Report** : la reference Cisco n'est pas atteignable depuis cet
-environnement.
-
 ## Commutateur Huawei (VRP)
-
-### [mvrp] Aucune commande MVRP sur Huawei VRP ni sur Cisco IOS
-Le moteur MVRP (IEEE 802.1Q-2022 clause 11.2, `src/network/mvrp/`) est
-branche sur `Switch` : `setMvrpEnabled` et `configureMvrpPort` creent et
-suppriment des VLAN dynamiques sur le fil. Aucune commande de la CLI ne
-l'active : le depot ne contient ni la reference VRP (`mvrp enable`,
-`mvrp registration`, `display mvrp`) ni une transcription IOS, et la
-regle 8 interdit de deviner la grammaire et les colonnes d'un `display`.
-Cote Linux, `ip link add ... type vlan id N mvrp on` est cable.
-**Report** : a fermer des qu'une source VRP est atteignable.
 
 ### [acl] VRP n'a pas d'ACL IPv6, et `acl ipv6` est refusee
 `acl ipv6 name <nom>` rangeait la liste dans le magasin **IPv4** avec le
