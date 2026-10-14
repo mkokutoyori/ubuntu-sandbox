@@ -17,7 +17,8 @@
   "diffservcode-forward",
   "diffservcode-rev",
   "diffserv-copy",
-  "match-vip-only"
+  "match-vip-only",
+  "timeout-send-rst"
  ],
  "firewall vip": [
   "src-filter",

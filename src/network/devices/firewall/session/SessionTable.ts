@@ -54,6 +54,7 @@ export interface FirewallSession {
   expiresAt: number;
   endsAt?: number;
   originalTos?: number;
+  nextSequence?: { c2s?: number; s2c?: number };
   parentSessionId?: number;
   algName?: string;
   isPinhole: boolean;
@@ -218,6 +219,10 @@ export class SessionTable {
     session.timeoutSec = timeoutSec;
     session.expiresAt = this.deadlineOf(session, timeoutSec);
     this.armExpiry(session.expiresAt);
+  }
+
+  trackSequence(session: FirewallSession, direction: FlowDirection, next: number): void {
+    session.nextSequence = { ...session.nextSequence, [direction]: next >>> 0 };
   }
 
   endAt(session: FirewallSession, at: number): void {

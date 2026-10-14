@@ -226,6 +226,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       tcpMssReceiver: Number.parseInt(object.effective('tcp-mss-receiver')[0] ?? '0', 10) || undefined,
       diffserv: diffservOf(object),
       matchVipOnly: object.effective('match-vip-only')[0] === 'enable',
+      timeoutSendRst: object.effective('timeout-send-rst')[0] === 'enable',
       scheduleTimeout: object.effective('schedule-timeout')[0] === 'enable',
       sendDenyPacket: action === 'deny' && object.effective('send-deny-packet')[0] === 'enable',
       destinationNegated: object.effective('dstaddr-negate')[0] === 'enable',

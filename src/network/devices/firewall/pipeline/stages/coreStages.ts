@@ -37,6 +37,7 @@ import { icmpErrorFlowKey, flowKeyFromPacket, reverseFlowKey, type FlowKey } fro
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { FirewallSession, SessionTable, SessionTranslation } from '../../session/SessionTable';
 import type { FlowDirection } from '../../session/TcpStateMachine';
+import { segmentPayloadSize } from '../../../../tcp/TcpStack';
 import { ftpExpectedDataFlow } from '../../session/FtpSessionHelper';
 import type { ExpectedFlowTable } from '../../session/ExpectedFlowTable';
 import {
@@ -678,6 +679,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       }
 
       vdom(services, context).sessions.recordTraffic(found.session, found.direction, packet.totalLength);
+      trackTcpSequence(vdom(services, context).sessions, found.session, found.direction, packet);
 
       const carried = sessionPolicy(services, context, found.session);
       if (carried !== undefined) context.matchedPolicy = carried;
@@ -1088,6 +1090,15 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
   };
 }
 
+function trackTcpSequence(
+  sessions: SessionTable, session: FirewallSession, direction: FlowDirection, packet: IPv4Packet,
+): void {
+  const segment = packet.payload as TcpSegment | undefined;
+  if (packet.protocol !== IP_PROTO_TCP || segment?.type !== 'tcp') return;
+  const consumed = segmentPayloadSize(segment) + (segment.flags.syn ? 1 : 0) + (segment.flags.fin ? 1 : 0);
+  sessions.trackSequence(session, direction, segment.sequence + consumed);
+}
+
 function clampMss(context: PacketContext, rule: SecurityRule | undefined): string {
   const packet = ipv4(context);
   const segment = packet?.payload as TcpSegment | undefined;
@@ -1195,6 +1206,7 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       }
 
       vdom(services, context).sessions.recordTraffic(session, 'c2s', packet.totalLength);
+      trackTcpSequence(vdom(services, context).sessions, session, 'c2s', arrived);
       context.session = session;
       context.sessionDirection = 'c2s';
       return proceed(context, 'session-install', String(session.id));

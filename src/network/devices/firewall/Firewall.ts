@@ -53,7 +53,7 @@ import { LdbMonitorTable } from './health/LdbMonitor';
 import { LinkMonitorTable, type LinkMonitorStatus } from './health/LinkMonitor';
 import { dialTcp, parseDialAddress } from '../../tcp/dial';
 import { isDialFailure, type TcpSegment } from '../../tcp/types';
-import { resetSegmentFor } from '../../tcp/TcpStack';
+import { resetSegmentAt, resetSegmentFor } from '../../tcp/TcpStack';
 import { PortNumber } from '../../core/ports/PortNumber';
 import {
   RealServerPool, type LdbMethod, type RealServer,
@@ -502,8 +502,9 @@ export class Firewall extends Equipment {
       interfaceHasBoundPolicy: (iface) => this.boundPolicyInterfaces.has(iface),
       securityLevelOf: (vdom, zone) => this.vdoms.require(vdom).zones.getZone(zone)?.securityLevel,
       sameSecurityInterAllowed: () => this.sameSecurityInter,
-      onSessionClosed: (_vdom, session, reason) => {
+      onSessionClosed: (vdom, session, reason) => {
         this.streams.forget(session.c2s);
+        if (reason === 'timeout') this.resetExpiredSession(vdom, session);
         this.trafficLogger?.onSessionClosed(session, reason);
         this.sessionObserver?.(session, reason);
       },
@@ -2671,6 +2672,33 @@ export class Firewall extends Equipment {
     if (!address) return packet;
     const outcome = recordRoute(packet, new IPAddress(address));
     return outcome.kind === 'error' ? null : outcome.packet;
+  }
+
+  private resetExpiredSession(vdomName: string, session: FirewallSession): void {
+    if (session.c2s.protocol !== IP_PROTO_TCP || session.nextSequence === undefined) return;
+    const rule = this.vdoms.require(vdomName).policy.ordered().find(r => r.id === session.policyId);
+    if (rule?.timeoutSendRst !== true) return;
+
+    const towardServer = session.nextSequence.c2s;
+    const towardClient = session.nextSequence.s2c;
+    if (towardServer !== undefined) {
+      this.sendSessionReset(vdomName, session.s2c.destIP, session.s2c.destPort,
+        session.s2c.sourceIP, session.s2c.sourcePort, towardServer);
+    }
+    if (towardClient !== undefined) {
+      this.sendSessionReset(vdomName, session.c2s.destIP, session.c2s.destPort,
+        session.c2s.sourceIP, session.c2s.sourcePort, towardClient);
+    }
+  }
+
+  private sendSessionReset(
+    vdomName: string, fromIp: string, fromPort: number, toIp: string, toPort: number, sequence: number,
+  ): void {
+    const route = this.vdoms.require(vdomName).routes.resolveNextHop(toIp);
+    if (route === undefined) return;
+    const reset = resetSegmentAt(fromPort, toPort, sequence, fromIp, toIp);
+    this.forward(route.iface, createIPv4Packet(
+      new IPAddress(fromIp), new IPAddress(toIp), IP_PROTO_TCP, ICMP_ERROR_TTL, reset, 20), route.nextHop);
   }
 
   private sendDenyReply(ingressPort: string, packet: IPv4Packet): void {

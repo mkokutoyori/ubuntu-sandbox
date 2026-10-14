@@ -119,7 +119,7 @@ export const POLICY_REFERENCE_ATTRIBUTES: readonly FortiAttributeSpec[] = Object
   count('tcp-mss-receiver', 'Receiver TCP maximum segment size (MSS).', 0, 65535, 0),
   count('tcp-mss-sender', 'Sender TCP maximum segment size (MSS).', 0, 65535, 0),
   { ...word('telemetry-profile', 'Name of an existing telemetry profile.'), unimplemented: 'there is no inspection engine behind this profile type in this simulator.' },
-  { ...enable('timeout-send-rst', 'Enable/disable sending RST packets when TCP sessions expire.', false), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  enable('timeout-send-rst', 'Enable/disable sending RST packets when TCP sessions expire.', false),
   word('tos', 'ToS (Type of Service) value used for comparison.'),
   word('tos-mask', 'Non-zero bit positions are used for comparison while zero bit positions are ignored.'),
   enable('tos-negate', 'Enable negated TOS match.', false),

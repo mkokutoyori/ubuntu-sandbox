@@ -235,6 +235,20 @@ export function resetSegmentFor(
   return seg;
 }
 
+export function resetSegmentAt(
+  sourcePort: number, destinationPort: number, sequence: number, localIp: string, remoteIp: string,
+): TcpSegment {
+  const flags = noFlags();
+  flags.rst = true;
+  const seg: TcpSegment = {
+    type: 'tcp', sourcePort, destinationPort, sequence: sequence >>> 0, acknowledgement: 0,
+    dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
+    options: [], payload: undefined,
+  };
+  seg.checksum = computeTcpChecksum(seg, localIp, remoteIp);
+  return seg;
+}
+
 export function segmentPayloadSize(seg: TcpSegment): number {
   if (seg.payload === undefined) return 0;
   return isStreamPayload(seg.payload) ? seg.payload.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;

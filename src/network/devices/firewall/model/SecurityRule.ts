@@ -30,9 +30,11 @@ export interface SecurityRule {
   expiresAt?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
   scheduleTimeout?: boolean;
+  timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
   tcpMssSender?: number;
@@ -41,6 +43,7 @@ export interface SecurityRule {
   tcpMssReceiver?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
   tcpMssSender?: number;
@@ -111,6 +114,7 @@ export interface SecurityRuleInit {
   expiresAt?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
   tcpMssSender?: number;
@@ -181,6 +185,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     expiresAt: init.expiresAt,
     sendDenyPacket: init.sendDenyPacket,
     scheduleTimeout: init.scheduleTimeout,
+    timeoutSendRst: init.timeoutSendRst,
     matchVipOnly: init.matchVipOnly,
     diffserv: init.diffserv,
     tcpMssSender: init.tcpMssSender,
