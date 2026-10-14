@@ -439,12 +439,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       } | undefined;
     })._getIPSecEngineInternal?.();
     if (!moteur) return 'IPSec not configured.';
-    const n = quoi === 'ipsec'
-      ? moteur.clearIPSecSAs(peer) : moteur.clearISAKMPSAs(peer);
-    const nom = quoi === 'ipsec' ? 'IPSec' : 'ISAKMP';
-    return n === 0
-      ? `No matching ${nom} SAs found`
-      : `Cleared ${n} ${nom} SA${n === 1 ? '' : 's'}`;
+    if (quoi === 'ipsec') moteur.clearIPSecSAs(peer);
+    else moteur.clearISAKMPSAs(peer);
+    return '';
   }
 
   /*
@@ -1249,10 +1246,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return pending as Record<string, unknown>;
   }
 
-  ipsecShow(method: string): string {
+  ipsecShow(method: string, ...args: string[]): string {
     const engine = this.d()._getIPSecEngineInternal() as unknown as
-      Record<string, (() => string) | undefined> | null;
-    return engine?.[method]?.() ?? 'IPSec not configured.';
+      Record<string, ((...a: string[]) => string) | undefined> | null;
+    return engine?.[method]?.(...args) ?? 'IPSec not configured.';
   }
 
   clearAllSecurityAssociations(): void {

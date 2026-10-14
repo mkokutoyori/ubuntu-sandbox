@@ -63,6 +63,7 @@ import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/de
 import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
 import type { IkeKeyPair } from './IkeKeyExchange';
 import type { IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint } from './IPSecTypes';
+import { renderCryptoSessions, type CryptoSession, type CryptoSessionMode } from './CryptoSessionView';
 import {
   IPSecSignalStore,
   makeReadonlyIPSecObservables,
@@ -4203,7 +4204,7 @@ export class IPSecEngine implements IProtocolEngine {
     const lines = ['IPv4 Crypto ISAKMP SA', 'dst             src             state          conn-id status'];
     for (const [, sa] of this.ikeSADB) {
       lines.push(
-        `${sa.peerIP.padEnd(16)}${sa.localIP.padEnd(16)}${sa.status.padEnd(15)}${String(1).padEnd(8)}ACTIVE`,
+        `${sa.peerIP.padEnd(16)}${sa.localIP.padEnd(16)}${sa.status.padEnd(15)}${String(this.connIdOf(sa)).padEnd(8)}ACTIVE`,
       );
     }
     return lines.join('\n');
@@ -4519,7 +4520,7 @@ export class IPSecEngine implements IProtocolEngine {
         lines.push(`Crypto Map "${cmap.name}" ${entry.seq} ipsec-isakmp`);
         lines.push(`\tPeer = ${entry.peers.join(', ')}`);
         lines.push(`\tExtended IP access list ${entry.aclName}`);
-        lines.push(`\tSecurity association lifetime: 4608000 kilobytes/${entry.saLifetimeSeconds || this.globalSALifetimeSeconds} seconds`);
+        lines.push(`\tSecurity association lifetime: ${this.globalSALifetimeKB} kilobytes/${entry.saLifetimeSeconds || this.globalSALifetimeSeconds} seconds`);
         if (entry.pfsGroup) {
           lines.push(`\tPFS (Y/N): Y`);
           lines.push(`\tDH group: ${entry.pfsGroup}`);
@@ -4588,22 +4589,84 @@ export class IPSecEngine implements IProtocolEngine {
     return algo.toUpperCase();
   }
 
-  showCryptoSession(): string {
-    const lines: string[] = [];
-    for (const [peerIP, sas] of this.ipsecSADB) {
-      if (sas.length === 0) continue;
-      const sa = sas[0];
-      lines.push(`Crypto session current status`);
-      lines.push('');
-      lines.push(`Interface: ${sa.outIface || 'GigabitEthernet0/1'}`);
-      lines.push(`Session status: UP-ACTIVE`);
-      lines.push(`Peer: ${peerIP} port ${sa.natT ? '4500' : '500'}`);
-      lines.push(`  Session ID: 1`);
-      lines.push(`  IKEv1 SA: local ${sa.localIP}/500 remote ${peerIP}/500 Active`);
-      lines.push(`  IPSEC FLOW: permit ip ${this.getACLSrcNet(sa.aclName)} ${this.getACLDstNet(sa.aclName)}`);
-      lines.push(`        Active SAs: ${sas.length * 2}, origin: crypto map`);
+  private connIds = new WeakMap<object, number>();
+  private lastConnId = 0;
+
+  private connIdOf(sa: object): number {
+    let id = this.connIds.get(sa);
+    if (id === undefined) {
+      this.lastConnId += 1;
+      id = this.lastConnId;
+      this.connIds.set(sa, id);
     }
-    return lines.length ? lines.join('\n') : 'No active crypto sessions.';
+    return id;
+  }
+
+  private flowText(sa: IPSec_SA): string {
+    const selector = sa.trafficSelectors;
+    if (!selector) return `permit ip ${this.getACLSrcNet(sa.aclName)} ${this.getACLDstNet(sa.aclName)}`;
+    const protocol = ({ 0: 'ip', 1: 'icmp', 6: 'tcp', 17: 'udp' } as Record<number, string>)[selector.protocol] ?? String(selector.protocol);
+    const side = (address: string, wildcard: string): string => {
+      if (!address || address === 'any') return '0.0.0.0/0.0.0.0';
+      if (!wildcard || wildcard === '0.0.0.0') return `host ${address}`;
+      const mask = wildcard.split('.').map((octet) => 255 - Number(octet)).join('.');
+      return `${address}/${mask}`;
+    };
+    return `permit ${protocol} ${side(selector.srcAddress, selector.srcWildcard)} ${side(selector.dstAddress, selector.dstWildcard)}`;
+  }
+
+  cryptoSessions(): CryptoSession[] {
+    const now = simulationNowMs();
+    const peers = new Set<string>([...this.ikeSADB.keys(), ...this.ikev2SADB.keys(), ...this.ipsecSADB.keys()]);
+    const sessions: CryptoSession[] = [];
+    for (const peer of peers) {
+      const ipsec = this.ipsecSADB.get(peer) ?? [];
+      const ike: CryptoSession['ike'] = [];
+      let created = now;
+      let natT = false;
+      const v1 = this.ikeSADB.get(peer);
+      if (v1) {
+        created = Math.min(created, v1.created);
+        natT = natT || v1.natT;
+        const capabilities = `${v1.dpdEnabled ? 'D' : ''}${v1.natT ? 'N' : ''}` || '(none)';
+        ike.push({
+          local: v1.localIP, remote: peer, active: v1.status === 'QM_IDLE', connId: this.connIdOf(v1),
+          remainingSeconds: Math.max(0, v1.lifetime - Math.floor((now - v1.created) / 1000)), capabilities,
+        });
+      }
+      const v2 = this.ikev2SADB.get(peer);
+      if (v2) {
+        created = Math.min(created, v2.created);
+        natT = natT || v2.natT;
+        const capabilities = `${v2.dpdEnabled ? 'D' : ''}${v2.natT ? 'N' : ''}` || '(none)';
+        ike.push({
+          local: v2.localIP, remote: peer, active: v2.status === 'READY', connId: this.connIdOf(v2),
+          remainingSeconds: Math.max(0, v2.lifetime - Math.floor((now - v2.created) / 1000)), capabilities,
+        });
+      }
+      for (const sa of ipsec) created = Math.min(created, sa.created);
+      const interfaceName = ipsec[0]?.outIface || this.router._ipsecEgressInterfaceFor(peer) || '';
+      sessions.push({
+        peer, port: natT ? 4500 : 500, interfaceName, phase1Id: peer,
+        uptimeSeconds: Math.floor((now - created) / 1000), ike,
+        flows: ipsec.map((sa) => ({
+          permit: this.flowText(sa), activeSas: 2, origin: 'crypto map',
+          decapsulated: sa.pktsDecaps, decapsulationDrops: sa.recvErrors,
+          encapsulated: sa.pktsEncaps, encapsulationDrops: sa.sendErrors,
+          remainingKilobytes: Math.max(0, sa.lifetimeKB - Math.floor((sa.bytesEncaps + sa.bytesDecaps) / 1024)),
+          remainingSeconds: Math.max(0, sa.lifetime - Math.floor((now - sa.created) / 1000)),
+        })),
+      });
+    }
+    return sessions;
+  }
+
+  showCryptoIPSecSALifetime(): string {
+    return `Security-association lifetime: ${this.globalSALifetimeKB} kilobytes/${this.globalSALifetimeSeconds} seconds`;
+  }
+
+  showCryptoSession(mode: CryptoSessionMode = 'plain'): string {
+    return renderCryptoSessions(this.cryptoSessions(), mode);
   }
 
   private getACLSrcNet(aclName: string): string {

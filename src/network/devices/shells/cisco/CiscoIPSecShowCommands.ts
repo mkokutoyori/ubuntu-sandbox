@@ -53,9 +53,6 @@ export function registerIPSecShowCommands(
   trie.register('show crypto ikev2 sa detail', 'Display detailed IKEv2 SAs', () =>
     eng()?.showCryptoIKEv2SADetail() ?? 'IPSec not configured.');
 
-  trie.register('show crypto session', 'Display crypto session status', () =>
-    eng()?.showCryptoSession() ?? 'IPSec not configured.');
-
   trie.register('show crypto ipsec security-policy', 'Display IPSec security policies (SPD)', () =>
     eng()?.showSecurityPolicy() ?? 'IPSec not configured.');
 
@@ -144,14 +141,8 @@ export function registerIPSecShowCommands(
     if (!e) return 'No crypto engine connections active.';
     return e.showCryptoSession();
   });
-  trie.registerGreedy('show crypto session detail', 'Detailed crypto sessions', () =>
-    eng()?.showCryptoSession?.() ?? 'IPSec not configured.');
   trie.registerGreedy('show crypto ipsec sa interface', 'IPSec SAs for an interface', () =>
     eng()?.showCryptoIPSecSADetail?.() ?? eng()?.showCryptoIPSecSA?.() ?? 'IPSec not configured.');
-  trie.register('show crypto ipsec security-association lifetime', 'IPSec SA lifetime', () => {
-    const e = eng() as unknown as { globalSALifetimeSeconds?: number; globalSALifetimeKB?: number } | undefined;
-    return `Security association lifetime: ${e?.globalSALifetimeKB ?? 4608000} kilobytes / ${e?.globalSALifetimeSeconds ?? 3600} seconds`;
-  });
   trie.registerGreedy('show crypto map interface', 'Crypto maps on an interface', () =>
     eng()?.showCryptoMap?.() ?? 'No crypto maps configured');
 
