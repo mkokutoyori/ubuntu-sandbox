@@ -222,6 +222,8 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       destination6Negated: object.effective('dstaddr6-negate')[0] === 'enable',
       tos: tosMatch(object),
       expiresAt: expiryOf(object),
+      tcpMssSender: Number.parseInt(object.effective('tcp-mss-sender')[0] ?? '0', 10) || undefined,
+      tcpMssReceiver: Number.parseInt(object.effective('tcp-mss-receiver')[0] ?? '0', 10) || undefined,
       sendDenyPacket: action === 'deny' && object.effective('send-deny-packet')[0] === 'enable',
       destinationNegated: object.effective('dstaddr-negate')[0] === 'enable',
       serviceNegated: object.effective('service-negate')[0] === 'enable',

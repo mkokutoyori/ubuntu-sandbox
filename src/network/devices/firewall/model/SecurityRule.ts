@@ -29,7 +29,13 @@ export interface SecurityRule {
   tos?: { value: number; mask: number; negated: boolean };
   expiresAt?: number;
   sendDenyPacket?: boolean;
+  tcpMssSender?: number;
+  tcpMssReceiver?: number;
+  tcpMssSender?: number;
+  tcpMssReceiver?: number;
   sendDenyPacket?: boolean;
+  tcpMssSender?: number;
+  tcpMssReceiver?: number;
 
   service: string[];
   serviceNegated: boolean;
@@ -95,6 +101,8 @@ export interface SecurityRuleInit {
   tos?: { value: number; mask: number; negated: boolean };
   expiresAt?: number;
   sendDenyPacket?: boolean;
+  tcpMssSender?: number;
+  tcpMssReceiver?: number;
   service?: string[];
   serviceNegated?: boolean;
   application?: string[];
@@ -160,6 +168,8 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     tos: init.tos,
     expiresAt: init.expiresAt,
     sendDenyPacket: init.sendDenyPacket,
+    tcpMssSender: init.tcpMssSender,
+    tcpMssReceiver: init.tcpMssReceiver,
     service: [...(init.service ?? ['any'])],
     serviceNegated: init.serviceNegated ?? false,
     application: [...(init.application ?? [])],

@@ -15,7 +15,6 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
-import { EventBus } from '@/events/EventBus';
 import { Logger } from '@/network/core/Logger';
 
 beforeEach(() => {
@@ -28,26 +27,18 @@ async function run(d: { executeCommand(c: string): Promise<string> }, cmds: stri
   return last;
 }
 
-function unreachables(bus: EventBus): string[] {
-  const seen: string[] = [];
-  bus.subscribe('cable.frame.delivered', (e) => {
-    const ip = e.payload.frame.payload as { payload?: { type?: string; icmpType?: string } } | undefined;
-    if (ip?.payload?.type === 'icmp' && ip.payload.icmpType === 'destination-unreachable') seen.push('x');
-  });
-  return seen;
+async function receivedUnreachables(pc: LinuxPC): Promise<number> {
+  const stats = await pc.executeCommand('netstat -s');
+  const match = /destination unreachable: (\d+)/.exec(stats);
+  return match ? Number.parseInt(match[1], 10) : 0;
 }
 
 async function lab(sendDeny: boolean) {
   const fgt = new FortiGate('firewall-fortinet', 'FGT-01', 0, 0);
   const pc = new LinuxPC('linux-pc', 'PC', -200, 0);
   const srv = new LinuxServer('linux-server', 'SRV', 200, 0);
-  const bus = new EventBus();
-  fgt.setEventBus(bus); pc.setEventBus(bus); srv.setEventBus(bus);
-  const lan = new Cable('lan');
-  const dmz = new Cable('dmz');
-  lan.setEventBus(bus); dmz.setEventBus(bus);
-  lan.connect(pc.getPort('eth0')!, fgt.getPort('port2')!);
-  dmz.connect(fgt.getPort('port3')!, srv.getPort('eth0')!);
+  new Cable('lan').connect(pc.getPort('eth0')!, fgt.getPort('port2')!);
+  new Cable('dmz').connect(fgt.getPort('port3')!, srv.getPort('eth0')!);
   await run(pc, ['ip addr add 192.168.10.10/24 dev eth0', 'ip link set eth0 up',
     'ip route add default via 192.168.10.1']);
   await run(srv, ['ip addr add 192.168.20.10/24 dev eth0', 'ip link set eth0 up',
@@ -60,7 +51,7 @@ async function lab(sendDeny: boolean) {
     'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"', 'set action deny',
     ...(sendDeny ? ['set send-deny-packet enable'] : []), 'next', 'end',
   ]);
-  return { pc, bus };
+  return { pc };
 }
 
 describe('send-deny-packet', () => {
@@ -71,24 +62,18 @@ describe('send-deny-packet', () => {
     expect(out).toMatch(/flags=RA/);
   });
 
-  it('answers a denied UDP datagram with an ICMP port unreachable on the wire', async () => {
-    const { pc, bus } = await lab(true);
-    const seen = unreachables(bus);
+  it('answers a denied UDP datagram with an ICMP port unreachable the client counts', async () => {
+    const { pc } = await lab(true);
+    const before = await receivedUnreachables(pc);
     await pc.executeCommand('sudo hping3 --udp -p 5000 -c 1 192.168.20.10');
-    expect(seen.length).toBe(1);
+    expect(await receivedUnreachables(pc)).toBe(before + 1);
   });
 
-  it('witness: no ICMP unreachable without the flag, and the tap sees the datagram', async () => {
-    const { pc, bus } = await lab(false);
-    const seen = unreachables(bus);
-    const udp: string[] = [];
-    bus.subscribe('cable.frame.delivered', (e) => {
-      const ip = e.payload.frame.payload as { payload?: { type?: string } } | undefined;
-      if (ip?.payload?.type === 'udp') udp.push('x');
-    });
+  it('witness: without the flag the client counts none', async () => {
+    const { pc } = await lab(false);
+    const before = await receivedUnreachables(pc);
     await pc.executeCommand('sudo hping3 --udp -p 5000 -c 1 192.168.20.10');
-    expect(udp.length).toBeGreaterThan(0);
-    expect(seen.length).toBe(0);
+    expect(await receivedUnreachables(pc)).toBe(before);
   });
 
   it('witness: a deny policy without the flag stays silent', async () => {

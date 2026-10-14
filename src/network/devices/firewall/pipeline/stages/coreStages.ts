@@ -1,3 +1,4 @@
+import { computeTcpChecksum, type TcpSegment } from '../../../../tcp/types';
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
 import { decrementForForwarding } from '../../../../layers/internet/InternetLayer';
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
@@ -233,6 +234,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     authCheckStage(services),
     utmInspectStage(services),
     natSourceStage(services),
+    tcpMssStage(),
     sessionInstallStage(services),
   ];
 }
@@ -686,6 +688,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       const expired = transitTtl(services, context, 'session-lookup');
       if (expired) return expired;
 
+      clampMss(context, carried);
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
       context.verdict = Object.freeze({
         action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
@@ -1075,6 +1078,33 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
         stage: 'policy-lookup', verdict: 'match', matchedRuleId: decision.rule.id,
       });
       return Continue();
+    },
+  };
+}
+
+function clampMss(context: PacketContext, rule: SecurityRule | undefined): string {
+  const packet = ipv4(context);
+  const segment = packet?.payload as TcpSegment | undefined;
+  if (!packet || packet.protocol !== IP_PROTO_TCP || segment?.type !== 'tcp' || !segment.flags.syn) {
+    return 'not-syn';
+  }
+  const ceiling = segment.flags.ack ? rule?.tcpMssReceiver : rule?.tcpMssSender;
+  if (ceiling === undefined || ceiling <= 0) return 'unset';
+  const clamped = segment.options.map(option =>
+    option.kind === 'mss' && option.value > ceiling ? { ...option, value: ceiling } : option);
+  if (clamped.every((option, index) => option === segment.options[index])) return 'within';
+  const rewritten: TcpSegment = { ...segment, options: clamped, checksum: 0 };
+  rewritten.checksum = computeTcpChecksum(
+    rewritten, packet.sourceIP.toString(), packet.destinationIP.toString());
+  context.packet = { ...packet, payload: rewritten };
+  return `clamped-${ceiling}`;
+}
+
+function tcpMssStage(): PipelineStage {
+  return {
+    name: 'tcp-mss',
+    apply(context) {
+      return proceed(context, 'tcp-mss', clampMss(context, context.matchedPolicy));
     },
   };
 }

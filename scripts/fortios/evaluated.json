@@ -8,7 +8,9 @@
   "policy-expiry",
   "policy-expiry-date-utc",
   "policy-expiry-date",
-  "send-deny-packet"
+  "send-deny-packet",
+  "tcp-mss-sender",
+  "tcp-mss-receiver"
  ],
  "firewall vip": [],
  "firewall address": []
