@@ -449,6 +449,13 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
+  configurePoolNtpServers(name: string, servers: string[]): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.ntpServers = servers;
+    return true;
+  }
+
   configurePoolNetbiosNodeType(name: string, nodeType: string): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;

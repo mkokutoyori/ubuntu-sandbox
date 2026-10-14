@@ -870,6 +870,7 @@ export class WindowsDhcpServerRole {
       case 3: this.engine.configurePoolRouter(scope, values?.[0] ?? null); break;
       case 6: this.engine.configurePoolDNS(scope, values ?? []); break;
       case 15: this.engine.configurePoolDomain(scope, values?.[0] ?? null); break;
+      case 42: this.engine.configurePoolNtpServers(scope, values ?? []); break;
       case 51: if (values?.[0]) this.engine.configurePoolLease(scope, Number(values[0])); break;
     }
   }
@@ -884,7 +885,7 @@ const STANDALONE_ENVIRONMENT: DhcpRoleEnvironment = {
 };
 
 const OPTION_NAMES: Record<number, string> = {
-  3: 'Router', 6: 'DNS Servers', 15: 'DNS Domain Name', 51: 'Lease',
+  3: 'Router', 6: 'DNS Servers', 15: 'DNS Domain Name', 42: 'NTP Servers', 51: 'Lease',
 };
 
-const ALL_OPTION_IDS = [3, 6, 15, 51];
+const ALL_OPTION_IDS = [3, 6, 15, 42, 51];

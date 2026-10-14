@@ -23,6 +23,7 @@ export const DHCP_OPTION = {
   DNS: 6,
   HOST_NAME: 12,
   DOMAIN_NAME: 15,
+  NTP_SERVERS: 42,
   NETBIOS_NAME_SERVER: 44,
   NETBIOS_NODE_TYPE: 46,
   REQUESTED_IP: 50,
@@ -145,6 +146,10 @@ interface OfferOptions {
   netbiosServers?: string[];
   /** Option 46 — NetBIOS node type (`b-node`/`p-node`/`m-node`/`h-node`) */
   netbiosNodeType?: string;
+  /** RFC 2132 §8.3 — NTP servers, sent only when the client's parameter request list asks for option 42 */
+  ntpServers?: string[];
+  /** Option codes of the client's parameter request list; undefined ⇒ the client sent none */
+  requestedOptions?: readonly number[];
   /** Raw `option <code> {ip|ascii|hex} <value>` entries (43, 150, …) */
   rawOptions?: Array<{ code: number; kind: 'ip' | 'ascii' | 'hex'; value: string }>;
 }
@@ -268,7 +273,7 @@ export class DHCPPacket implements NetworkPdu {
 
   private static applyExtendedOptions(
     pkt: DHCPPacket,
-    opts: Pick<OfferOptions, 'nextServer' | 'bootfile' | 'netbiosServers' | 'netbiosNodeType' | 'rawOptions'>,
+    opts: Pick<OfferOptions, 'nextServer' | 'bootfile' | 'netbiosServers' | 'netbiosNodeType' | 'rawOptions' | 'ntpServers' | 'requestedOptions'>,
   ): void {
     if (opts.netbiosServers && opts.netbiosServers.length > 0) {
       pkt.setOption(DHCP_OPTION.NETBIOS_NAME_SERVER, opts.netbiosServers);
@@ -277,7 +282,12 @@ export class DHCPPacket implements NetworkPdu {
       const encoded = encodeNetbiosNodeType(opts.netbiosNodeType);
       if (encoded !== undefined) pkt.setOption(DHCP_OPTION.NETBIOS_NODE_TYPE, encoded);
     }
+    const wanted = (code: number): boolean => !opts.requestedOptions || opts.requestedOptions.length === 0 || opts.requestedOptions.includes(code);
+    const rawNtp = (opts.rawOptions ?? []).find((raw) => raw.code === DHCP_OPTION.NTP_SERVERS && raw.kind === 'ip');
+    const ntpServers = opts.ntpServers?.length ? opts.ntpServers : rawNtp?.value.trim().split(/\s+/);
+    if (ntpServers && ntpServers.length > 0 && wanted(DHCP_OPTION.NTP_SERVERS)) pkt.setOption(DHCP_OPTION.NTP_SERVERS, ntpServers);
     for (const raw of opts.rawOptions ?? []) {
+      if (raw.code === DHCP_OPTION.NTP_SERVERS && raw.kind === 'ip') continue;
       pkt.setOption(raw.code, encodeRawOption(raw.kind, raw.value));
     }
   }
@@ -579,6 +589,7 @@ export class DHCPPacket implements NetworkPdu {
         break;
       }
       case DHCP_OPTION.DNS:
+      case DHCP_OPTION.NTP_SERVERS:
       case DHCP_OPTION.NETBIOS_NAME_SERVER: {
         const servers = value as string[];
         buf[offset++] = servers.length * 4;
@@ -722,6 +733,7 @@ export class DHCPPacket implements NetworkPdu {
         return DHCPPacket.readIP(data, 0);
 
       case DHCP_OPTION.DNS:
+      case DHCP_OPTION.NTP_SERVERS:
       case DHCP_OPTION.NETBIOS_NAME_SERVER: {
         const servers: string[] = [];
         for (let i = 0; i < data.length; i += 4) {
