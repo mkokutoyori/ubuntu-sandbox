@@ -2912,6 +2912,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           ? this.arpTable.get(replyTarget.toString())
           : undefined;
         if (sameSubnetMac && !this.ipsecEngine) {
+          if (!this.zoneFirewallPermits(null, inPort, replyIP)) return;
           this.counters.ifOutOctets += replyIP.totalLength;
           this.sendFrame(inPort, {
             srcMAC: port.getMAC(), dstMAC: sameSubnetMac.mac,
@@ -3670,6 +3671,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.ports.get(outPortName);
     if (!port) return;
+    if (!this.zoneFirewallPermits(null, outPortName, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} from the router (self → ${outPortName})`);
+      return;
+    }
     const cached = this.arpTable.get(nextHopIP.toString());
     if (cached) {
       this.sendFrame(outPortName, {
@@ -6006,12 +6012,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         };
         const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
 
-        this.sendFrame(route.iface, {
-          srcMAC: outPort.getMAC(),
-          dstMAC: nextHopMAC!,
-          etherType: ETHERTYPE_IPV4,
-          payload: ipPkt,
-        });
+        if (this.zoneFirewallPermits(null, route.iface, ipPkt)) {
+          this.sendFrame(route.iface, {
+            srcMAC: outPort.getMAC(),
+            dstMAC: nextHopMAC!,
+            etherType: ETHERTYPE_IPV4,
+            payload: ipPkt,
+          });
+        }
 
         const replyOutcome = replyP.then((pl) => ({
           ip: pl.fromIp,
@@ -6182,7 +6190,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
 
     // IPSec outbound processing for locally-originated packets
-    if (this.ipsecEngine) {
+    if (!this.zoneFirewallPermits(null, iface, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} from the router (self → ${iface})`);
+    } else if (this.ipsecEngine) {
       const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
       if (entry) {
         const encPkts = this.ipsecEngine.processOutbound(ipPkt, iface, entry);

@@ -12,15 +12,17 @@
  * reach it, so "dropped by the firewall" means "never arrived", not "the ping failed".
  *
  * Measured with src stashed to HEAD: zones, zone-pairs and zone-member were stored and rendered and
- * nothing was evaluated, the show commands printed placeholders and `drop log` was refused, so 13 of
- * the 18 cases fall. Five pass either way because their expected outcome is "traffic crosses":
+ * nothing was evaluated, the show commands printed placeholders and `drop log` was refused, so 15 of
+ * the 22 cases fall. Seven pass either way because their expected outcome is "traffic crosses":
  * the witness without zones, inspect (the packet crosses with or without a firewall), the
- * access-group class, two interfaces of one zone, and removal of the zone-member.
+ * access-group class, two interfaces of one zone, removal of the zone-member, and the two
+ * router-originated cases that expect traffic to reach a zone no pair restricts.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { installVirtualClock } from '@/__tests__/support/ntpTime';
 import { zoneLab, ZONES, inspectPolicy, PAIR_IN_OUT } from './_helpers/zoneFirewallLab';
 
 beforeEach(() => {
@@ -179,5 +181,37 @@ describe('zone based firewall views', () => {
     const lab = await zoneLab([...ZONES, ...inspectPolicy('tcp', 'inspect'), ...PAIR_IN_OUT]);
     await lab.inside.executeCommand('ping -c 1 10.0.2.10');
     expect(await lab.fw.executeCommand('show logging')).toMatch(/%FW-6-DROP_PKT: Dropping icmp session 10\.0\.1\.10:\d+ 10\.0\.2\.10:\d+/);
+  });
+});
+
+describe('zone based firewall, traffic sent by the router', () => {
+  const SELF_TO_OUT_DROP = [
+    'class-map type inspect match-any C-TCP', 'match protocol tcp', 'exit',
+    'policy-map type inspect P-FROM-SELF', 'class type inspect C-TCP', 'inspect', 'exit', 'class class-default', 'drop', 'exit', 'exit',
+    'zone-pair security SELF-OUT source self destination OUTSIDE', 'service-policy type inspect P-FROM-SELF', 'exit',
+  ];
+
+  it('witness (passes either way): without a pair the router reaches a host of a zone it is attached to', async () => {
+    const lab = await zoneLab(ZONES);
+    expect(await lab.fw.executeCommand('ping 10.0.2.10')).toContain('!');
+    expect(lab.seenByOutside.count).toBeGreaterThan(0);
+  });
+
+  it('a self-to-zone pair that drops stops what the router sends: its own ping never leaves', async () => {
+    const clock = installVirtualClock();
+    const lab = await zoneLab([...ZONES, ...SELF_TO_OUT_DROP]);
+    await clock.advanceUntilSettled(lab.fw.executeCommand('ping 10.0.2.10'));
+    expect(lab.seenByOutside.count).toBe(0);
+  });
+
+  it('it also stops the router answering: the echo request arrives, the reply is never sent', async () => {
+    const lab = await zoneLab([...ZONES, ...SELF_TO_OUT_DROP]);
+    expect(await lab.outside.executeCommand('ping -c 1 10.0.2.1')).not.toContain('1 received');
+  });
+
+  it('the pair does not touch the other zone', async () => {
+    const lab = await zoneLab([...ZONES, ...SELF_TO_OUT_DROP]);
+    await lab.fw.executeCommand('ping 10.0.1.10');
+    expect(lab.seenByInside.count).toBeGreaterThan(0);
   });
 });
