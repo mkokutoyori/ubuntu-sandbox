@@ -89,6 +89,7 @@ import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
 import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
 import { zoneShowSpecs } from './cisco/zoneShowSpecs';
+import { inspectShowSpecs } from './cisco/inspectShowSpecs';
 import { ikePubkeySpecs, storeKeyString, type IkePubkeyHost, type IkePubkeyMode } from './cisco/ikePubkeySpecs';
 import type { IkePeerKey } from '../router/security/IkePubkeyChain';
 import { ipsecDataPlaneSpecs, type IpsecDataPlaneEngine } from './cisco/ipsecDataPlaneSpecs';
@@ -6124,6 +6125,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...testAaaSpecs(() => this.testAaaHost()),
       ...aaaShowSpecs(() => this.aaaShowHost()),
       ...zoneShowSpecs(() => ({ security: () => getSecurityConfig(this.d() as object) })),
+      ...inspectShowSpecs(() => ({
+        security: () => getSecurityConfig(this.d() as object),
+        interfaceAcl: (iface, direction) => {
+          const reference = (this.d() as unknown as { getInterfaceACL?: (i: string, d: 'in' | 'out') => number | string | null })
+            .getInterfaceACL?.(iface, direction);
+          return reference === undefined || reference === null ? null : String(reference);
+        },
+        interfaceNames: () => (this.d() as unknown as { getPortNames?: () => string[] }).getPortNames?.() ?? [],
+      })),
       ...this.ipsecDataPlaneSpecs(),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
       ...monitorCaptureSpecs(() => this.monitorCaptureHost()),

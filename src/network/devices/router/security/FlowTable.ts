@@ -93,6 +93,14 @@ export interface FlowSession {
   responderBytes: number;
   state: FlowState;
   readonly idleOverrideSec?: number;
+  readonly audit: boolean;
+  readonly context: string;
+}
+
+export interface FlowCreateOptions {
+  readonly idleOverrideSec?: number;
+  readonly audit?: boolean;
+  readonly context?: string;
 }
 
 export interface FlowTimeouts {
@@ -180,13 +188,14 @@ export class FlowTable {
     return session;
   }
 
-  create(flow: FlowView, owner: string, label: string, now: number, idleOverrideSec?: number): FlowSession {
+  create(flow: FlowView, owner: string, label: string, now: number, options: FlowCreateOptions = {}): FlowSession {
     const session: FlowSession = {
       id: ++this.lastId, owner, label, protocol: flow.protocol,
       initiator: flow.source, initiatorPort: flow.sourcePort,
       responder: flow.destination, responderPort: flow.destinationPort,
       createdMs: now, lastHeardMs: now, initiatorBytes: flow.bytes, responderBytes: 0,
-      state: 'SIS_OPENING', idleOverrideSec,
+      state: 'SIS_OPENING', idleOverrideSec: options.idleOverrideSec,
+      audit: options.audit ?? false, context: options.context ?? '',
     };
     this.sessions.set(this.keyOfSession(session), session);
     return session;
@@ -194,6 +203,12 @@ export class FlowTable {
 
   list(owner?: string): FlowSession[] {
     return [...this.sessions.values()].filter((s) => owner === undefined || s.owner === owner);
+  }
+
+  count(predicate: (session: FlowSession) => boolean): number {
+    let total = 0;
+    for (const session of this.sessions.values()) if (predicate(session)) total += 1;
+    return total;
   }
 
   remove(session: FlowSession, reason: FlowEndReason): void {

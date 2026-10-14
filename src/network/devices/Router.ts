@@ -37,6 +37,7 @@
 
 import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
 import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
+import type { CbacPort } from './router/security/CbacFirewall';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
@@ -543,6 +544,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ── Reactive (Phase 5.8) — scheduler + TimerSet + event helpers ──
   private routerScheduler: IScheduler | null = null;
+  private cbacSweep: symbol | null = null;
   protected readonly routerTimers = new TimerSet(() => this.getRouterScheduler());
   readonly icmpUnreachableRateLimit = new IcmpUnreachableRateLimit(
     this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now());
@@ -1554,6 +1556,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.shell.getLoggingConfig?.().detachFromBus();
     this.ospfIntegration?.dispose();
     this.routerTimers.clearAll();
+    this.cbacSweep = null;
     super.dispose();
   }
 
@@ -2744,6 +2747,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
     if (inboundACL === null) return false;
     if (this.aclEngine.evaluateForDataPlane(inboundACL, ipPkt) !== 'deny') return false;
+    if (this.cbac()?.admitsReturn(ipPkt)) return false;
 
     Logger.info(this.id, 'router:acl-deny-in',
       `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
@@ -2784,6 +2788,36 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       etherType: ETHERTYPE_IPV4,
       payload: decision.packet,
     });
+  }
+
+  private cbac(): CbacPort | undefined {
+    return (this as unknown as { [s: symbol]: { cbac?: CbacPort } | undefined })[Symbol.for('CiscoSecurityConfig')]?.cbac;
+  }
+
+  private flushCbacLogs(): void {
+    const cbac = this.cbac();
+    if (!cbac) return;
+    const logging = (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r: boolean, mn: string) => void } | null })
+      .getLoggingConfig?.();
+    for (const line of cbac.drainLogs()) logging?.append(line.severity, 'FW', line.text, true, line.mnemonic);
+  }
+
+  private cbacPermits(inIface: string, outIface: string, packet: IPv4Packet): boolean {
+    const cbac = this.cbac();
+    if (!cbac) return true;
+    const verdict = cbac.inspect(inIface, outIface, packet);
+    this.flushCbacLogs();
+    if (cbac.hasWork() && this.cbacSweep === null) {
+      this.cbacSweep = this.routerTimers.setInterval(() => {
+        cbac.sweep();
+        this.flushCbacLogs();
+        if (!cbac.hasWork() && this.cbacSweep !== null) {
+          this.routerTimers.clear(this.cbacSweep);
+          this.cbacSweep = null;
+        }
+      }, 1000);
+    }
+    return verdict.permit;
   }
 
   private zoneFirewallPermits(inIface: string | null, outIface: string | null, packet: IPv4Packet): boolean {
@@ -3212,6 +3246,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!this.zoneFirewallPermits(inPort, route.iface, fwdPkt)) {
       Logger.info(this.id, 'router:zone-firewall-drop',
         `${this.name}: zone firewall dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
+      return;
+    }
+    if (!this.cbacPermits(inPort, route.iface, fwdPkt)) {
+      Logger.info(this.id, 'router:cbac-drop',
+        `${this.name}: inspection dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
       return;
     }
     const effectiveMtu = outPort.getMTU();
