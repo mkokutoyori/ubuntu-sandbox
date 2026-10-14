@@ -43,6 +43,115 @@ const GROUP_NAME: ArgumentSpec = {
   alternatives: [{ keyword: 'all', description: 'All server groups' }],
 };
 
+const METHOD_SCOPE: ArgumentSpec = {
+  name: 'scope', type: 'ENUM',
+  values: [
+    { keyword: 'accounting', description: 'Method lists defined for accounting services' },
+    { keyword: 'all', description: 'Method lists defined for all services' },
+    { keyword: 'authentication', description: 'Method lists defined for authentication services' },
+    { keyword: 'authorization', description: 'Method lists defined for authorization services' },
+  ],
+};
+
+type MethodPhase = 'authentication' | 'authorization' | 'accounting';
+
+const METHOD_QUEUES: Readonly<Record<MethodPhase, { label: string; queues: ReadonlyArray<readonly [string, string | null]> }>> = {
+  authentication: {
+    label: 'authen',
+    queues: [
+      ['AAA_ML_AUTHEN_LOGIN', 'login'], ['AAA_ML_AUTHEN_ENABLE', 'enable'], ['AAA_ML_AUTHEN_PPP', 'ppp'],
+      ['AAA_ML_AUTHEN_SGBP', null], ['AAA_ML_AUTHEN_ARAP', null], ['AAA_ML_AUTHEN_DOT1X', null],
+      ['AAA_ML_AUTHEN_EAPOUDP', null], ['AAA_ML_AUTHEN_8021X', null],
+    ],
+  },
+  authorization: {
+    label: 'author',
+    queues: [
+      ['AAA_ML_AUTHOR_SHELL', 'exec'], ['AAA_ML_AUTHOR_NET', 'network'], ['AAA_ML_AUTHOR_COMMAND', 'commands'],
+    ],
+  },
+  accounting: {
+    label: 'acct',
+    queues: [
+      ['AAA_ML_ACCT_SHELL', 'exec'], ['AAA_ML_ACCT_NET', 'network'], ['AAA_ML_ACCT_COMMAND', 'commands'],
+      ['AAA_ML_ACCT_CONN', 'connection'], ['AAA_ML_ACCT_SYSTEM', 'system'],
+    ],
+  },
+};
+
+const PERMANENT_LISTS: Readonly<Record<MethodPhase, readonly string[]>> = {
+  authentication: [
+    'name=Permanent Enable None valid=TRUE id=0 :state=ALIVE : ENABLE NONE',
+    'name=Permanent Enable valid=TRUE id=0 :state=ALIVE : ENABLE',
+    'name=Permanent None valid=TRUE id=0 :state=ALIVE : NONE',
+    'name=Permanent Local valid=TRUE id=0 :state=ALIVE : LOCAL',
+  ],
+  authorization: [],
+  accounting: [],
+};
+
+const METHOD_WORDS: Readonly<Record<string, string>> = {
+  local: 'LOCAL', 'local-case': 'LOCAL_CASE', enable: 'ENABLE', none: 'NONE', line: 'LINE', krb5: 'KRB5',
+};
+
+function groupIsDead(sec: CiscoSecurityConfig, group: string, now: number): boolean {
+  const members = group === 'radius' && !sec.aaaGroups.has('radius')
+    ? [...sec.radiusServers.values()]
+    : (sec.aaaGroups.get(group)?.members ?? [])
+      .map((name) => sec.radiusServers.get(name))
+      .filter((server): server is RadiusServer => server !== undefined);
+  const addressed = members.filter((server) => !!server.address);
+  return addressed.length > 0 && addressed.every((server) => sec.radiusLiveness.isDead(server.address as string, now));
+}
+
+function methodWords(methods: readonly string[]): string[] {
+  const words: string[] = [];
+  for (let index = 0; index < methods.length; index++) {
+    if (methods[index] === 'group') {
+      words.push(`SERVER_GROUP ${methods[index + 1]}`);
+      index++;
+    } else {
+      words.push(METHOD_WORDS[methods[index]] ?? methods[index].toUpperCase());
+    }
+  }
+  return words;
+}
+
+function recordAction(recordType: string | undefined): string {
+  if (recordType === 'start-stop') return 'START STOP';
+  if (recordType === 'stop-only') return 'STOP';
+  if (recordType === 'wait-start') return 'WAIT START';
+  return 'NONE';
+}
+
+export function renderMethodLists(host: AaaShowHost, scope: string): string {
+  const sec = host.security();
+  const now = simulationNowMs();
+  const phases: MethodPhase[] = scope === 'all' ? ['authentication', 'authorization', 'accounting'] : [scope as MethodPhase];
+  const lines: string[] = [];
+  let ordinal = 0;
+  for (const phase of phases) {
+    const { label, queues } = METHOD_QUEUES[phase];
+    for (const [queue, service] of queues) {
+      lines.push(`${label} queue=${queue}`);
+      if (service === null) continue;
+      for (const entry of sec.aaaMethods.filter((candidate) => candidate.phase === phase && candidate.service === service)) {
+        ordinal += 1;
+        const id = entry.listName === 'default' ? '0' : ordinal.toString(16).toUpperCase().padStart(8, '0');
+        const dead = entry.methods.some((token, index) => entry.methods[index - 1] === 'group' && groupIsDead(sec, token, now));
+        const action = phase === 'accounting' ? ` Action=${recordAction(entry.recordType)}` : '';
+        const level = entry.privilegeLevel !== undefined && entry.service === 'commands' ? ` level=${entry.privilegeLevel}` : '';
+        lines.push(`name=${entry.listName}${level} valid=TRUE id=${id}${action} :state=${dead ? 'DEAD' : 'ALIVE'} : ${methodWords(entry.methods).join(' ')}`.trimEnd());
+      }
+    }
+    if (PERMANENT_LISTS[phase].length > 0) {
+      lines.push('permanent lists');
+      lines.push(...PERMANENT_LISTS[phase]);
+    }
+  }
+  return lines.join('\n');
+}
+
 function elapsed(ms: number): string {
   const total = Math.floor(ms / 60000);
   const days = Math.floor(total / 1440);
@@ -306,6 +415,13 @@ export function aaaShowSpecs(host: () => AaaShowHost): CommandSpec[] {
       description: 'Shows AAA server status and packet counters',
       modes: EXEC, minPrivilege: 1,
       run: (_session, args) => renderAaaServers(host(), args.scope),
+    },
+    {
+      id: 'show-aaa-method-lists',
+      path: ['show', 'aaa', 'method-lists', METHOD_SCOPE],
+      description: 'Show AAA method lists',
+      modes: EXEC, minPrivilege: 1,
+      run: (_session, args) => renderMethodLists(host(), args.scope),
     },
     deadCriteriaSpec('show-aaa-dead-criteria', [], host),
     deadCriteriaSpec('show-aaa-dead-criteria-auth', ['auth-port', authPort], host),

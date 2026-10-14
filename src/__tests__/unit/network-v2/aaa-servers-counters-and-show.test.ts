@@ -8,7 +8,7 @@
  *
  * Lab: radiusLab (NAS + a silent RADIUS server 10.0.0.2 + a live one 10.0.0.3 on one switch).
  *
- * Measured with src stashed to HEAD: all 15 cases fall. The RADIUS rows of `show aaa servers` were
+ * Measured with src stashed to HEAD: the first 15 cases fall; the 2 method-list cases were added after (before, `show aaa method-lists` fell through showAaa to the sessions line). The RADIUS rows of `show aaa servers` were
  * fixed zeros that never moved and always said UP (a dead server printed UP, a server that had
  * answered printed `request 0`), `show aaa dead-criteria` and `show radius server-group` answered
  * the sessions line of `show aaa`, and the `clear` forms were refused. Every case reads a counter
@@ -203,5 +203,25 @@ describe('show radius statistics', () => {
     expect(out).toMatch(/Total responses seen:\s+1\s+0\s+1/);
     expect(out).toMatch(/Number of Radius timeouts:\s+1\s+0\s+1/);
     expect(out).toMatch(/Packets without responses:\s+1\s+0\s+1/);
+  });
+});
+
+describe('show aaa method-lists', () => {
+  it('lists the lists under their queue, with the group they use', async () => {
+    const { nas } = await radiusLab(['aaa accounting exec default start-stop group G', 'aaa authentication enable default enable']);
+    const out = await nas.executeCommand('show aaa method-lists authentication');
+    expect(out).toMatch(/authen queue=AAA_ML_AUTHEN_LOGIN\nname=default valid=TRUE id=0 :state=ALIVE : SERVER_GROUP G/);
+    expect(out).toMatch(/authen queue=AAA_ML_AUTHEN_ENABLE\nname=default valid=TRUE id=0 :state=ALIVE : ENABLE/);
+    const acct = await nas.executeCommand('show aaa method-lists accounting');
+    expect(acct).toMatch(/acct queue=AAA_ML_ACCT_SHELL\nname=default valid=TRUE id=0 Action=START STOP :state=ALIVE : SERVER_GROUP G/);
+    expect(await nas.executeCommand('show aaa method-lists all')).toContain('acct queue=AAA_ML_ACCT_SHELL');
+  });
+
+  it('a list whose group has every server dead is DEAD, and ALIVE again after the deadtime', async () => {
+    const { nas } = await radiusLab(['radius-server deadtime 5', 'radius-server dead-criteria time 1 tries 1'], { liveUp: false });
+    expect(await login(nas)).toBe(false);
+    expect(await nas.executeCommand('show aaa method-lists authentication')).toContain(':state=DEAD : SERVER_GROUP G');
+    await clock.advance(6 * 60_000);
+    expect(await nas.executeCommand('show aaa method-lists authentication')).toContain(':state=ALIVE : SERVER_GROUP G');
   });
 });
