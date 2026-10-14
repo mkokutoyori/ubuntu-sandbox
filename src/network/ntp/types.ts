@@ -81,6 +81,7 @@ export const NTP_PHI = 15e-6;
 export const NTP_MIN_POLL = 6;
 export const NTP_MAX_POLL = 17;
 export const NTP_DEFAULT_MAX_POLL = 10;
+export const NTP_RATE_POLL_CEILING = 13;
 export const NTP_MAX_STRATUM = 16;
 export const NTP_BURST_COUNT = 8;
 export const NTP_BURST_INTERVAL_MS = 2000;

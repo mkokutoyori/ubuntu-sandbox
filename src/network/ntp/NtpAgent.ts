@@ -6,7 +6,7 @@ import {
   type NtpAssociation, type NtpConfig, type NtpPacket, type NtpMode,
   type NtpCounters, type NtpVersion, type NtpRateLimit, type NtpClientLogEntry, createNtpCounters,
   createDefaultNtpConfig, defaultAssociation, emptyFilter,
-  UDP_PORT_NTP, NTP_VERSION, NTP_DEFAULT_BROADCAST_DELAY_US, type NtpBroadcastServer, NTP_MAX_STRATUM, NTP_DEFAULT_MAX_POLL, NTP_MIN_POLL, NTP_MAX_POLL, NTP_PHI,
+  UDP_PORT_NTP, NTP_RATE_POLL_CEILING, NTP_VERSION, NTP_DEFAULT_BROADCAST_DELAY_US, type NtpBroadcastServer, NTP_MAX_STRATUM, NTP_DEFAULT_MAX_POLL, NTP_MIN_POLL, NTP_MAX_POLL, NTP_PHI,
   NTP_MAX_DISPERSION_MS, NTP_MIN_DISPERSION_MS, NTP_MAX_DISTANCE_MS
 } from './types';
 import { ReferenceTracking } from './ReferenceTracking';
@@ -930,7 +930,7 @@ export class NtpAgent {
       this.disarm(a.serverIp);
       this.reselect();
     } else if (code === 'RATE') {
-      a.minpoll = Math.min(a.minpoll + 1, NTP_MAX_POLL);
+      a.minpoll = Math.min(a.minpoll + 1, NTP_RATE_POLL_CEILING);
       a.maxpoll = Math.max(a.maxpoll, a.minpoll);
       a.hpoll = Math.max(a.hpoll, a.minpoll);
       pollUpdate(a, a.hpoll, simulationNowMs());
