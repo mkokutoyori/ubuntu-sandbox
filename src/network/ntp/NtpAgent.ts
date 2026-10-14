@@ -45,6 +45,19 @@ import {
   type EtatHorloge, type DecisionDiscipline, type ReglagesDiscipline,
 } from './discipline';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
+import type { NtsClient } from '../nts/NtsClient';
+import type { NtsServerKeys } from '../nts/NtsServerKeys';
+import {
+  EF, NTS_KOD_NAK, buildNakResponse, buildServerResponse as buildNtsReply, checkNtsRequest, type NtsServerVerdict,
+} from '../nts/NtsNtp';
+
+export interface NtsSupport {
+  active(): boolean;
+  serverKeys(): NtsServerKeys | null;
+  client(association: NtpAssociation): NtsClient | null;
+  keyExchange(association: NtpAssociation, client: NtsClient, nowMs: number): void;
+  randomBytes(length: number): Uint8Array;
+}
 
 export interface NtpHost {
   readonly id: string;
@@ -595,10 +608,16 @@ export class NtpAgent {
     return simulationNowMs() + this.config.offsetMs;
   }
 
+  private nts: NtsSupport | null = null;
+  private rawPayload: Uint8Array = new Uint8Array(0);
+
+  setNtsSupport(support: NtsSupport | null): void { this.nts = support; }
+
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.config.enabled) return;
     if (udp.destinationPort !== UDP_PORT_NTP && udp.sourcePort !== UDP_PORT_NTP && udp.destinationPort !== this.serverPort) return;
     this.requestSourcePort = udp.sourcePort;
+    if (udp.payload instanceof Uint8Array) this.rawPayload = udp.payload;
     const destination = timestampFromMs(this.now());
     const c = this.config.counters;
     if (!(udp.payload instanceof Uint8Array)) {
@@ -623,7 +642,7 @@ export class NtpAgent {
       return;
     }
     const payload = decoded.packet;
-    if (!this.profile.acceptsExtensionFields && payload.extensions !== undefined) {
+    if (!this.profile.acceptsExtensionFields && payload.extensions !== undefined && !this.nts?.active()) {
       c.protocolError++;
       return;
     }
@@ -672,10 +691,13 @@ export class NtpAgent {
       if (!this.accesAutorise('serve-time', ip)) { this.refuserAcces(srcIp, 'serve-time'); return; }
       if (!this.mayServe()) return;
       const rate = this.allowedByRate(ip);
-      this.logClient(ip, rate !== 'serve', packet.keyId !== undefined);
+      this.logClient(ip, rate !== 'serve', packet.keyId !== undefined || this.ntsAuthenticated(packet));
       if (rate === 'drop') { c.processed--; this.discard(); return; }
       if (rate === 'kod') { this.kissOfDeath(inPort, srcIp, packet, destination, 'RATE'); return; }
-      this.fastTransmit(inPort, srcIp, packet, 'server', destination);
+      const nts = this.ntsRequestVerdict(packet);
+      if (nts !== null && nts.kind === 'drop') { c.processed--; this.discard(); return; }
+      if (nts !== null && nts.kind === 'nak') { this.ntsNak(inPort, srcIp, packet, destination, nts); return; }
+      this.fastTransmit(inPort, srcIp, packet, 'server', destination, nts !== null && nts.kind === 'ok' ? nts : undefined);
       return;
     }
     if (packet.mode === 'symmetric-active') {
@@ -706,6 +728,18 @@ export class NtpAgent {
     }
     if (packet.mode === 'server') {
       if (!association || association.mode !== 'client') { c.processed--; this.discard(); return; }
+      const nts = this.nts?.client(association) ?? null;
+      if (nts !== null && !nts.checkResponse(this.rawPayload)) {
+        c.processed--;
+        c.authFailures++;
+        this.discard();
+        this.getBus().publish({
+          topic: 'ntp.auth.rejected',
+          payload: { deviceId: this.host.id, hostname: this.host.getHostname(), fromIp: ip, reason: 'nts' },
+        });
+        return;
+      }
+      if (nts !== null) c.authOk++;
       this.processPacket(association, packet, destination, inPort);
       return;
     }
@@ -989,7 +1023,31 @@ export class NtpAgent {
     this.clientLog.set(ip, entry);
   }
 
-  private fastTransmit(inPort: string, clientIp: IPAddress, request: NtpPacket, mode: NtpMode, destination: NtpTimestamp): void {
+  private ntsAuthenticated(packet: NtpPacket): boolean {
+    return this.nts?.serverKeys() != null && packet.extensions?.some((field) => field.type === EF.AUTH_AND_EEF) === true;
+  }
+
+  private ntsRequestVerdict(request: NtpPacket): NtsServerVerdict | null {
+    const keys = this.nts?.serverKeys() ?? null;
+    if (keys === null || !request.extensions?.some((field) => field.type === EF.UNIQUE_IDENTIFIER)) return null;
+    return checkNtsRequest(this.rawPayload, keys, (length) => this.nts!.randomBytes(length));
+  }
+
+  private ntsNak(inPort: string, clientIp: IPAddress, request: NtpPacket, destination: NtpTimestamp, verdict: NtsServerVerdict): void {
+    const srcIp = this.host.getPort(inPort)?.getIPAddress();
+    if (!srcIp) return;
+    const nak: NtpPacket = {
+      type: 'ntp', ...this.systemHeader(), version: request.version, mode: 'server', poll: request.poll,
+      leapIndicator: 3, stratum: 0, refIdentifier: NTS_KOD_NAK,
+      origTimestamp: request.txTimestamp, rxTimestamp: destination, txTimestamp: timestampFromMs(this.now()),
+    };
+    this.sendNtp(srcIp, clientIp, nak, this.replyPorts(), (header) => buildNakResponse(header, verdict.request));
+    this.config.counters.kissSent++;
+  }
+
+  private fastTransmit(
+    inPort: string, clientIp: IPAddress, request: NtpPacket, mode: NtpMode, destination: NtpTimestamp, nts?: NtsServerVerdict,
+  ): void {
     const srcIp = this.host.getPort(inPort)?.getIPAddress();
     if (!srcIp) return;
     const header = this.systemHeader();
@@ -1007,7 +1065,8 @@ export class NtpAgent {
           : timestampFromMs(timestampToMs(header.refTimestamp, this.now()) + smoothMs),
       } : {}),
     };
-    this.sendNtp(srcIp, clientIp, reply, this.replyPorts());
+    this.sendNtp(srcIp, clientIp, reply, this.replyPorts(), nts === undefined ? undefined
+      : (headerBytes) => buildNtsReply(headerBytes, nts.request!, this.rawPayload.length, nts.s2c!, nts.nonce!, nts.cookies));
     this.config.counters.serverReplies++;
     this.getBus().publish({
       topic: 'ntp.server.responded',
@@ -1183,6 +1242,16 @@ export class NtpAgent {
     return isFit(a, now, this.config.system, a.localIp ?? null, this.config.refIdentifier, this.profile.enforcesRootDistance);
   }
 
+  private ntsReady(a: NtpAssociation, client: NtsClient, nowMs: number): boolean {
+    if (client.needsKeyExchange(nowMs)) {
+      this.nts!.keyExchange(a, client, nowMs);
+      if (client.needsKeyExchange(nowMs)) return false;
+    }
+    client.prepareForAuth();
+    client.markReady();
+    return true;
+  }
+
   private transmit(a: NtpAssociation, inPort?: string): boolean {
     const now = simulationNowMs();
     const timestamp = timestampFromMs(this.now());
@@ -1190,16 +1259,18 @@ export class NtpAgent {
     a.lastPollMs = now;
     const mode: NtpMode = a.mode === 'symmetric-active' ? 'symmetric-active'
       : a.mode === 'symmetric-passive' ? 'symmetric-passive' : 'client';
+    const nts = this.nts?.client(a) ?? null;
+    if (nts !== null && !this.ntsReady(a, nts, now)) return false;
     const request: NtpPacket = {
       type: 'ntp', ...this.systemHeader(), version: a.version ?? NTP_VERSION, mode, poll: a.hpoll,
-      origTimestamp: a.org, rxTimestamp: a.rec, txTimestamp: timestamp, keyId: a.keyId,
+      origTimestamp: a.org, rxTimestamp: a.rec, txTimestamp: timestamp, keyId: nts === null ? a.keyId : undefined,
     };
     const source = inPort !== undefined
       ? this.host.getPort(inPort)?.getIPAddress() ?? undefined
       : this.namedSource(a);
     if (!isValidIPv4(a.serverIp)) return false;
     a.sent++;
-    const sent = this.sendNtp(source, new IPAddress(a.serverIp), request, { source: UDP_PORT_NTP, destination: a.port ?? UDP_PORT_NTP });
+    const sent = this.sendNtp(source, new IPAddress(a.serverIp), request, { source: UDP_PORT_NTP, destination: a.port ?? UDP_PORT_NTP }, nts === null ? undefined : (header) => nts.appendRequestFields(header));
     this.getBus().publish({
       topic: 'ntp.packet.sent',
       payload: { deviceId: this.host.id, hostname: this.host.getHostname(), serverIp: a.serverIp, mode },
@@ -1464,8 +1535,13 @@ export class NtpAgent {
 
   private replyPorts(): UdpPorts { return { source: this.serverPort, destination: this.requestSourcePort }; }
 
-  private sendNtp(srcIp: IPAddress | undefined, dstIp: IPAddress, brut: NtpPacket, ports?: UdpPorts): boolean {
-    const payload = encodeNtpPacket(this.signer(brut));
+  private sendNtp(
+    srcIp: IPAddress | undefined, dstIp: IPAddress, brut: NtpPacket, ports?: UdpPorts,
+    trailer?: (header: Uint8Array) => Uint8Array | null,
+  ): boolean {
+    const header = encodeNtpPacket(this.signer(brut));
+    const payload = trailer === undefined ? header : trailer(header);
+    if (payload === null) return false;
     if (!this.emettreUdp(srcIp, dstIp, payload, payload.length, dstIp.toString(), ports)) return false;
     this.config.counters.sent++;
     if (brut.mode in this.config.counters.sentByMode) {

@@ -402,8 +402,8 @@ export class ChronycSession {
       case 'authdata': return this.authData(line, view);
       case 'burst': return this.burst(line, view);
       case 'clients': return this.clients(line, view);
+      case 'dump': return this.dump(service);
       case 'cyclelogs':
-      case 'dump':
       case 'refresh': return this.privilegedOk();
       case 'delete': return this.deleteSource(line, service);
       case 'dns': return this.dns(line);
@@ -732,6 +732,12 @@ export class ChronycSession {
     return true;
   }
 
+  private dump(service: LinuxChronyService): boolean {
+    if (!this.authorised(false)) return false;
+    service.dumpAuthData();
+    return this.status('success', true);
+  }
+
   private rekey(service: LinuxChronyService): boolean {
     if (!this.authorised(false)) return false;
     service.reloadKeys();
@@ -940,7 +946,8 @@ export class ChronycSession {
     if (rows.length > 0 && !this.authorised(false)) return false;
     for (const row of rows) {
       this.report('%-27s %4s %5U %4d %4d %I %4d %4d %4d %4d\n', [
-        this.formatName(row.ip, 25, true), row.mode, row.keyId, row.keyType, row.keyLength, NO_ELAPSED, 0, 0, 0, 0,
+        this.formatName(row.ip, 25, true), row.mode, row.keyId, row.keyType, row.keyLength, row.lastKeAgo, row.keAttempts,
+        row.nak, row.cookies, row.cookieLength,
       ]);
     }
     return true;
@@ -1036,7 +1043,9 @@ export class ChronycSession {
     for (const client of view.clients(minimumHits)) {
       this.report('%-25s  %6U  %5U  %C  %C  %I  %6U  %5U  %C  %I\n', [
         this.formatName(client.ip, 25, false), client.ntpHits, client.ntpDrops, client.ntpInterval,
-        client.ntpLimitedInterval, client.lastNtpAgo, 0, 0, 127, NO_ELAPSED,
+        client.ntpLimitedInterval, client.lastNtpAgo, keyEstablishment ? client.keHits : 0,
+        keyEstablishment ? client.keDrops : 0, keyEstablishment ? client.keInterval : 127,
+        keyEstablishment ? client.keLastAgo : NO_ELAPSED,
       ]);
     }
     if (reset) view.clearClients();

@@ -30,6 +30,8 @@ import {
   buildClientRequest, decodeRecords, parseServerResponse, exporterContext, NKE_EXPORTER_LABEL,
 } from '@/network/nts/NtsKeRecords';
 import { NtsClient } from '@/network/nts/NtsClient';
+import { NtsServerKeys } from '@/network/nts/NtsServerKeys';
+import { systemRandom } from '@/crypto/random';
 import {
   EF, buildNakResponse, buildServerResponse, countEncryptedPlaceholders, decryptAuthField, parseServerRequest,
 } from '@/network/nts/NtsNtp';
@@ -37,7 +39,7 @@ import {
 interface Reply { uid: string; nonce: string; request: string; reply: string; cookie?: string; decoded: { cookies: string[]; nonce: string; uidMatches?: boolean } }
 const fixture = JSON.parse(readFileSync(new URL('../../support/oracle/chrony-nts-4.5.json', import.meta.url), 'utf8')) as {
   ke: { request: string; response: string; records: { critical: boolean; type: number; body: string }[] };
-  exporterSecret: string; hash: 'sha256' | 'sha384'; c2s: string; s2c: string;
+  ntskeys: string; exporterSecret: string; hash: 'sha256' | 'sha384'; c2s: string; s2c: string;
   first: Reply; second: Reply; nak: Omit<Reply, 'decoded'> & { decoded: { stratum: number; refid: string; kinds: number[]; length: number } };
 };
 const bytes = (hex: string): Uint8Array => Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16));
@@ -139,5 +141,44 @@ describe('NTS-NTP server', () => {
     const nak = bytes(fixture.nak.reply);
     expect(hex(buildNakResponse(nak.slice(0, 48), parsed))).toBe(fixture.nak.reply);
     expect(parsed.fields.some((f) => f.type === EF.COOKIE)).toBe(true);
+  });
+});
+
+describe('server key file (ntsdumpdir/ntskeys) against the file the real chronyd 4.5 wrote', () => {
+  const real = fixture.ntskeys as string;
+  const keys = (text: string): string[] => text.trim().split('\n').slice(2);
+
+  it('the real file has the header, the key age and one line per slot: ID, key, algorithm', () => {
+    expect(real.split('\n')[0]).toBe('NKS1');
+    expect(real.split('\n')[1]).toMatch(/^\d+\.\d$/);
+    expect(keys(real)).toHaveLength(4);
+    for (const line of keys(real)) expect(line).toMatch(/^[0-9A-F]{8} [0-9A-F]+ \d+$/);
+  });
+
+  it('our dump has the same line shapes, with the algorithm of AES-SIV-CMAC-256 (15)', () => {
+    const ours = new NtsServerKeys(systemRandom, 0).dumpText(1500);
+    expect(ours.split('\n')[1]).toBe('1.5');
+    expect(keys(ours)).toHaveLength(4);
+    for (const line of keys(ours)) expect(line).toMatch(/^[0-9A-F]{8} [0-9A-F]{64} 15$/);
+  });
+
+  it('a dump restores into a ring that decodes the cookies it issued before, and the ids are unsigned', () => {
+    const first = new NtsServerKeys(systemRandom, 0);
+    const cookie = first.generateCookie({ aead: 15, c2s: new Uint8Array(32).fill(1), s2c: new Uint8Array(32).fill(2) });
+    const second = new NtsServerKeys(systemRandom, 5000);
+    expect(second.restoreText(first.dumpText(0), 10_000)).toBe(true);
+    expect(second.decodeCookie(cookie)?.c2s).toEqual(new Uint8Array(32).fill(1));
+    expect(second.currentKeyId()).toBe(first.currentKeyId());
+    for (let i = 0; i < 200; i++) {
+      const keys = new NtsServerKeys(systemRandom, 0);
+      expect(keys.currentKeyId()).toBeGreaterThanOrEqual(0);
+      expect(keys.decodeCookie(keys.generateCookie({ aead: 15, c2s: new Uint8Array(32), s2c: new Uint8Array(32) }))).not.toBeNull();
+    }
+  });
+
+  it('a file with a gap in the ids is refused, as chronyd refuses it', () => {
+    const ours = new NtsServerKeys(systemRandom, 0).dumpText(0).split('\n');
+    const swapped = [ours[0], ours[1], ours[3], ours[2], ours[4], ours[5]].join('\n');
+    expect(new NtsServerKeys(systemRandom, 0).restoreText(swapped, 0)).toBe(false);
   });
 });

@@ -1739,6 +1739,16 @@ export abstract class LinuxMachine extends EndHost
         else this.udpCloseAddress(address, port);
       },
       sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+      listDirectory: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
+      writeFile: (path, content, mode) => this.executor.vfs.writeFile(path, content, 0, 0, 0o777 & ~mode),
+      tcpStack: () => this.getTcpStack(),
+      trustAnchors: () => this.trustedCAs,
+      identity: () => ({
+        processName: 'chronyd', service: 'chrony',
+        pid: this.executor.serviceMgr.getPortBinding('chrony')?.mainPid,
+      }),
+      log: (message) => this.executor.logMgr.logDaemon(
+        'chronyd', message, this.executor.serviceMgr.getPortBinding('chrony')?.mainPid, 'chrony'),
     });
     this.executor.chronyService = this.chronyService;
     this.executor.registerServiceSocketServer('chrony', this.chronyService);

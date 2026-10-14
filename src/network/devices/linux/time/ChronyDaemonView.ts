@@ -74,6 +74,11 @@ export interface AuthReport {
   readonly keyId: number;
   readonly keyType: number;
   readonly keyLength: number;
+  readonly keAttempts: number;
+  readonly lastKeAgo: number;
+  readonly nak: number;
+  readonly cookies: number;
+  readonly cookieLength: number;
 }
 
 export interface NtpDataReport {
@@ -114,6 +119,10 @@ export interface ClientReport {
   readonly ntpInterval: number;
   readonly ntpLimitedInterval: number;
   readonly lastNtpAgo: number;
+  readonly keHits: number;
+  readonly keDrops: number;
+  readonly keInterval: number;
+  readonly keLastAgo: number;
 }
 
 export interface ServerStatsReport {
@@ -194,7 +203,10 @@ export class ChronyDaemonView {
 
   resetSources(): void { this.agent.resetSources(); }
 
-  clearClients(): void { this.agent.clearClientLog(); }
+  clearClients(): void {
+    this.agent.clearClientLog();
+    this.service.getNts().clearKeLog();
+  }
 
   findSource(ip: string): NtpAssociation | undefined {
     return this.associations().find((a) => a.serverIp === ip);
@@ -350,6 +362,14 @@ export class ChronyDaemonView {
     const authKeys = this.agent.getConfig().authKeys;
     return this.associations().map((a) => {
       const key = a.keyId !== undefined ? authKeys.get(a.keyId) : undefined;
+      const nts = this.service.getNts().sourceClient(a.serverIp)?.report(simulationNowMs()) ?? null;
+      if (nts !== null) {
+        return {
+          ip: a.serverIp, mode: 'NTS', keyId: nts.keyId, keyType: nts.keyType, keyLength: nts.keyLength,
+          keAttempts: nts.keAttempts, lastKeAgo: nts.lastKeAgo < 0 ? NO_ELAPSED : nts.lastKeAgo, nak: nts.nak ? 1 : 0,
+          cookies: nts.cookies, cookieLength: nts.cookieLength,
+        };
+      }
       return {
         ip: a.serverIp,
         mode: key !== undefined ? 'SK' : '-',
@@ -357,6 +377,7 @@ export class ChronyDaemonView {
         keyType: key !== undefined ? KEY_TYPES[key.algo.toUpperCase()] ?? 0 : 0,
         keyLength: key !== undefined
           ? (/^HEX:/i.test(key.key) ? ((key.key.length - 4) / 2) * 8 : key.key.length * 8) : 0,
+        keAttempts: 0, lastKeAgo: NO_ELAPSED, nak: 0, cookies: 0, cookieLength: 0,
       };
     });
   }
@@ -404,7 +425,8 @@ export class ChronyDaemonView {
     const c = this.agent.getCounters();
     return {
       values: [
-        c.serverRequests, c.serverDropped, this.service.getCommandPackets(), 0, 0, 0, 0,
+        c.serverRequests, c.serverDropped, this.service.getCommandPackets(), 0, 0,
+        this.service.getNts().statistics.accepted, this.service.getNts().statistics.dropped,
         c.serverAuthenticated, 0, 0, 0, 0, c.serverReplies, c.serverRequests, 0, 0, 0,
       ],
     };
@@ -419,7 +441,18 @@ export class ChronyDaemonView {
         ip, ntpHits: entry.ntpHits, ntpDrops: entry.ntpDrops,
         ntpInterval: entry.intervalExponent, ntpLimitedInterval: entry.limitedIntervalExponent,
         lastNtpAgo: Math.max(0, Math.floor((now - entry.lastNtpMs) / 1000)),
+        keHits: 0, keDrops: 0, keInterval: 127, keLastAgo: NO_ELAPSED,
       });
+    }
+    for (const [ip, entry] of this.service.getNts().getKeLog()) {
+      if (entry.hits < minimumHits) continue;
+      const row = rows.find((r) => r.ip === ip);
+      const ke = {
+        keHits: entry.hits, keDrops: entry.drops, keInterval: entry.intervalExponent,
+        keLastAgo: Math.max(0, Math.floor((now - entry.lastMs) / 1000)),
+      };
+      if (row !== undefined) Object.assign(row, ke);
+      else rows.push({ ip, ntpHits: 0, ntpDrops: 0, ntpInterval: 127, ntpLimitedInterval: 127, lastNtpAgo: NO_ELAPSED, ...ke });
     }
     return rows;
   }

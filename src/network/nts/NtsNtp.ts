@@ -177,3 +177,35 @@ export function nakUniqueIdentifier(packet: Uint8Array): Uint8Array | null {
   const fields = parseFields(packet, NTP_HEADER_LENGTH);
   return fields === null ? null : fields.find((f) => f.type === EF.UNIQUE_IDENTIFIER)?.body ?? null;
 }
+
+export interface NtsServerVerdict {
+  readonly kind: 'not-nts' | 'drop' | 'nak' | 'ok';
+  readonly request: NtsServerRequest | null;
+  readonly s2c: Uint8Array | null;
+  readonly cookies: Uint8Array[];
+  readonly nonce: Uint8Array | null;
+}
+
+export interface NtsCookieKeys {
+  decodeCookie(cookie: Uint8Array): { aead: number; c2s: Uint8Array; s2c: Uint8Array } | null;
+  generateCookie(context: { aead: number; c2s: Uint8Array; s2c: Uint8Array }): Uint8Array;
+}
+
+const verdictOf = (kind: NtsServerVerdict['kind'], request: NtsServerRequest | null = null): NtsServerVerdict => (
+  { kind, request, s2c: null, cookies: [], nonce: null }
+);
+
+export function checkNtsRequest(packet: Uint8Array, keys: NtsCookieKeys, random: (length: number) => Uint8Array): NtsServerVerdict {
+  if (packet.length <= NTP_HEADER_LENGTH) return verdictOf('not-nts');
+  const request = parseServerRequest(packet);
+  if (request === null) return verdictOf('drop');
+  const context = keys.decodeCookie(request.cookie);
+  if (context === null) return verdictOf('nak', request);
+  const plaintext = decryptAuthField(packet, request.authField, context.c2s);
+  if (plaintext === null) return verdictOf('nak', request);
+  const placeholders = countEncryptedPlaceholders(plaintext, request.cookieLength);
+  if (placeholders === null) return verdictOf('drop', request);
+  const wanted = Math.min(NTS_MAX_COOKIES, request.requestedCookies + placeholders);
+  const cookies = Array.from({ length: wanted }, () => keys.generateCookie(context));
+  return { kind: 'ok', request, s2c: context.s2c, cookies, nonce: random(NTS_MIN_UNPADDED_NONCE_LENGTH) };
+}

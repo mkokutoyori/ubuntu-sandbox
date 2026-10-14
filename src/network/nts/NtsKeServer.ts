@@ -14,8 +14,8 @@ export interface NtsKeServerSettings {
   readonly ntpPort: () => number;
   readonly ntpServer: () => string | null;
   readonly maxConnections: () => number;
-  readonly onAccepted: () => void;
-  readonly onDropped: () => void;
+  readonly onAccepted: (clientIp: string) => void;
+  readonly onDropped: (clientIp: string) => void;
 }
 
 export class NtsKeServer {
@@ -38,12 +38,12 @@ export class NtsKeServer {
 
   private accept(socket: TcpSocket): void {
     if (this.active >= this.settings.maxConnections()) {
-      this.settings.onDropped();
+      this.settings.onDropped(socket.remoteIp);
       socket.close();
       return;
     }
     this.active++;
-    this.settings.onAccepted();
+    this.settings.onAccepted(socket.remoteIp);
     const config = this.settings.tlsConfig();
     const tls = new TlsServerSession({ ...config, protocols: ['1.3'], alpnProtocols: [NKE_ALPN] });
     let buffer = new Uint8Array(0);
@@ -61,7 +61,7 @@ export class NtsKeServer {
         joined.set(buffer);
         joined.set(plaintext, buffer.length);
         buffer = joined;
-        if (buffer.length > NKE_MAX_MESSAGE_LENGTH) { done(); this.settings.onDropped(); channel.close(); return; }
+        if (buffer.length > NKE_MAX_MESSAGE_LENGTH) { done(); this.settings.onDropped(socket.remoteIp); channel.close(); return; }
         const records = decodeRecords(buffer);
         if (records === null || !endOfMessage(records)) return;
         const keys = this.settings.keys();

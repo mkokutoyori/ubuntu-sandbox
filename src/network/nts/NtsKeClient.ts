@@ -16,7 +16,12 @@ export interface NtsKeResult {
   readonly ntpPort: number | null;
 }
 
-export type NtsKeOutcome = { ok: true; result: NtsKeResult } | { ok: false; reason: string; stage: 'connect' | 'tls' | 'response' };
+export interface NtsKeOutcome {
+  readonly ok: boolean;
+  readonly result?: NtsKeResult;
+  readonly reason?: string;
+  readonly stage?: 'connect' | 'tls' | 'response';
+}
 
 export function runNtsKe(
   tcp: TcpStack, address: string, port: number, serverName: string, verifier: CertificateVerifier,

@@ -161,12 +161,13 @@ def main():
             nak_request = authenticated_request(c2s, bytes(bad), uid3, nonce3, 0)
             nak_reply = exchange(nak_request)
             nak = {"stratum": nak_reply[1], "refid": nak_reply[12:16].hex(), "kinds": [k for k, _, _ in parse_efs(nak_reply, 48)], "length": len(nak_reply)}
+            keys_file = open(run + "/ntskeys").read()
         finally:
             daemon.terminate(); daemon.wait()
     json.dump({
         "tool": "chrony 4.5 NTS server", "tls": {"version": version, "alpn": alpn, "cipher": cipher},
         "ke": {"request": request.hex(), "response": response.hex(), "records": records},
-        "exporterSecret": secret, "hash": "sha384" if algo is hashlib.sha384 else "sha256", "c2s": c2s.hex(), "s2c": s2c.hex(),
+        "ntskeys": keys_file, "exporterSecret": secret, "hash": "sha384" if algo is hashlib.sha384 else "sha256", "c2s": c2s.hex(), "s2c": s2c.hex(),
         "first": {"uid": uid.hex(), "nonce": nonce.hex(), "cookie": cookies[0].hex(), "placeholders": 7, "request": first_request.hex(), "reply": first_reply.hex(), "decoded": first},
         "second": {"uid": uid2.hex(), "nonce": nonce2.hex(), "cookie": first["cookies"][0], "request": second_request.hex(), "reply": second_reply.hex(), "decoded": second},
         "nak": {"uid": uid3.hex(), "nonce": nonce3.hex(), "request": nak_request.hex(), "reply": nak_reply.hex(), "decoded": nak},

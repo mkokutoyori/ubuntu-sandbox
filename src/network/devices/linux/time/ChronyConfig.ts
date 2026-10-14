@@ -61,6 +61,9 @@ export interface ChronySource {
   readonly maxdelayquant?: number;
   readonly filter?: number;
   readonly asymmetry?: number;
+  readonly nts: boolean;
+  readonly ntsPort: number;
+  readonly certSet: number;
   readonly unevaluated: readonly string[];
 }
 
@@ -77,7 +80,7 @@ const FLAG_OPTIONS = new Set([
   'prefer', 'noselect', 'trust', 'require',
 ]);
 
-const UNEVALUATED_OPTIONS = new Set(['certset', 'extfield', 'nts', 'ntsport', 'xleave']);
+const UNEVALUATED_OPTIONS = new Set(['extfield', 'xleave']);
 
 export function parseChronySource(genre: ChronySource['genre'], args: readonly string[]): ChronySource | null {
   if (!args[0]) return null;
@@ -133,6 +136,9 @@ export function parseChronySource(genre: ChronySource['genre'], args: readonly s
     maxdelayquant: values.get('maxdelayquant'),
     filter: values.get('filter'),
     asymmetry: values.get('asymmetry'),
+    nts: flags.has('nts'),
+    ntsPort: values.get('ntsport') ?? 4460,
+    certSet: values.get('certset') ?? 0,
     unevaluated,
   };
 }
@@ -154,6 +160,20 @@ export interface ChronyMakestep {
   readonly seuilSec: number;
   /** Le nombre de mises a jour concernees ; -1 signifie « toujours ». */
   readonly limite: number;
+}
+
+export interface ChronyNtsConf {
+  readonly serverCerts: readonly string[];
+  readonly serverKeys: readonly string[];
+  readonly port: number;
+  readonly processes: number;
+  readonly maxConnections: number;
+  readonly dumpDir: string;
+  readonly ntpServer: string | null;
+  readonly rotateSeconds: number;
+  readonly refreshSeconds: number;
+  readonly trustedCerts: readonly { readonly set: number; readonly path: string }[];
+  readonly systemCerts: boolean;
 }
 
 export interface ChronyConf {
@@ -180,6 +200,7 @@ export interface ChronyConf {
   readonly selection: Partial<SelectionParameters>;
   readonly maxUpdateSkewPpm: number | null;
   readonly maxChange: { offset: number; delay: number; ignore: number } | null;
+  readonly nts: ChronyNtsConf;
   /** Les lignes que chronyd connait mais que ce simulateur n'applique pas. */
   readonly acceptesSansEffet: readonly string[];
   /** Les lignes qu'aucun chronyd ne connait : elles sont signalees. */
@@ -189,7 +210,7 @@ export interface ChronyConf {
 /** Ce que chronyd connait et que ce simulateur n'applique pas. */
 const CONNUES_SANS_EFFET = new Set([
   'refclock', 'hwtimestamp', 'leapsectz', 'initstepslew',
-  'ntsdumpdir', 'ntstrustedcerts', 'lock_all',
+  'lock_all',
   'sched_priority', 'user', 'pidfile',
   'noclientlog', 'clientloglimit', 'dumpdir', 'corrtimeratio',
   'maxdrift', 'rtcfile', 'hwclockfile', 'leapsecmode',
@@ -200,6 +221,7 @@ const CONF_VIDE: ChronyConf = {
   driftfile: '', logdir: '', logs: [], keyfile: '',
   rtcsync: false, manual: false, localStratum: null, maxdistanceSec: null,
   ntpPort: 123, commandPort: 323, bindCommandAddresses: [], commandRateLimit: null, smooth: null, localDistance: 1.0, localOrphan: false, selection: {}, maxUpdateSkewPpm: null, maxChange: null,
+  nts: { serverCerts: [], serverKeys: [], port: 4460, processes: 1, maxConnections: 100, dumpDir: '', ntpServer: null, rotateSeconds: 604800, refreshSeconds: 2419200, trustedCerts: [], systemCerts: true },
   acceptesSansEffet: [], inconnues: [],
 };
 
@@ -233,6 +255,10 @@ export function parseChronyConf(texte: string): ChronyConf {
   const selection: Partial<SelectionParameters> = {};
   let maxUpdateSkewPpm: number | null = null;
   let maxChange: { offset: number; delay: number; ignore: number } | null = null;
+  const serverCerts: string[] = [];
+  const serverKeys: string[] = [];
+  const trustedCerts: { set: number; path: string }[] = [];
+  const ntsSettings = { ...CONF_VIDE.nts };
 
   const lignes = texte.split('\n');
   for (let i = 0; i < lignes.length; i++) {
@@ -369,6 +395,32 @@ export function parseChronyConf(texte: string): ChronyConf {
         else maxChange = { offset, delay, ignore };
         break;
       }
+      case 'ntsservercert': case 'ntsserverkey': case 'ntsdumpdir': case 'ntsntpserver': {
+        if (args.length !== 1) { inconnues.push({ ligne: i + 1, texte: nue }); break; }
+        if (cle === 'ntsservercert') serverCerts.push(args[0]);
+        else if (cle === 'ntsserverkey') serverKeys.push(args[0]);
+        else if (cle === 'ntsdumpdir') ntsSettings.dumpDir = args[0];
+        else ntsSettings.ntpServer = args[0];
+        break;
+      }
+      case 'ntsport': case 'ntsprocesses': case 'maxntsconnections': case 'ntsrotate': case 'ntsrefresh': {
+        const v = entier(args[0]);
+        const maximum = cle === 'ntsport' ? 65535 : 2147483647;
+        if (v === null || args.length !== 1 || v < 0 || v > maximum) { inconnues.push({ ligne: i + 1, texte: nue }); break; }
+        if (cle === 'ntsport') ntsSettings.port = v;
+        else if (cle === 'ntsprocesses') ntsSettings.processes = v;
+        else if (cle === 'maxntsconnections') ntsSettings.maxConnections = v;
+        else if (cle === 'ntsrotate') ntsSettings.rotateSeconds = v;
+        else ntsSettings.refreshSeconds = v;
+        break;
+      }
+      case 'ntstrustedcerts': {
+        const set = args.length === 2 ? entier(args[0]) : 0;
+        if (args.length < 1 || args.length > 2 || set === null || set < 0) { inconnues.push({ ligne: i + 1, texte: nue }); break; }
+        trustedCerts.push({ set, path: args[args.length - 1] });
+        break;
+      }
+      case 'nosystemcert': ntsSettings.systemCerts = false; break;
       default:
         if (CONNUES_SANS_EFFET.has(cle)) acceptesSansEffet.push(nue);
         else inconnues.push({ ligne: i + 1, texte: nue });
@@ -378,6 +430,7 @@ export function parseChronyConf(texte: string): ChronyConf {
     ...CONF_VIDE, sources, makestep, access, ratelimit,
     driftfile, logdir, logs, keyfile, rtcsync, manual, localStratum, maxdistanceSec,
     ntpPort, commandPort, bindCommandAddresses, commandRateLimit, smooth, localDistance, localOrphan, selection, maxUpdateSkewPpm, maxChange,
+    nts: { ...ntsSettings, serverCerts, serverKeys, trustedCerts },
     acceptesSansEffet, inconnues,
   };
 }

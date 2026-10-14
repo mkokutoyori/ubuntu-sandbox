@@ -20,6 +20,10 @@ export interface NtsAuthReport {
   readonly nak: boolean;
 }
 
+export const KE_RETRY_FACTOR_CONNECT = 4;
+export const KE_RETRY_FACTOR_TLS = 10;
+export const KE_MAX_RETRY_EXPONENT = 19;
+
 export type RandomBytes = (length: number) => Uint8Array;
 
 export class NtsClient {
@@ -35,7 +39,7 @@ export class NtsClient {
   nextKeAttemptMs = 0;
   lastKeSuccessMs = 0;
 
-  constructor(private readonly random: RandomBytes, private readonly refreshMs: number) {}
+  constructor(private readonly random: RandomBytes, public refreshMs: number) {}
 
   reset(): void {
     this.context = null;
@@ -47,6 +51,29 @@ export class NtsClient {
     this.keAttempts = 0;
     this.nextKeAttemptMs = 0;
     this.lastKeSuccessMs = 0;
+  }
+
+  beginKeyExchange(nowMs: number): boolean {
+    if (nowMs < this.nextKeAttemptMs) return false;
+    this.keAttempts++;
+    return true;
+  }
+
+  failKeyExchange(retryFactor: number, nowMs: number): void {
+    const exponent = Math.min(retryFactor + this.keAttempts - 1, KE_MAX_RETRY_EXPONENT);
+    this.nextKeAttemptMs = nowMs + 2 ** exponent * 1000;
+  }
+
+  snapshot(): { context: NtsContext; contextId: number; cookies: readonly Uint8Array[]; lastKeSuccessMs: number } | null {
+    return this.context === null || this.cookies.length === 0 ? null
+      : { context: this.context, contextId: this.contextId, cookies: this.cookies, lastKeSuccessMs: this.lastKeSuccessMs };
+  }
+
+  restore(context: NtsContext, contextId: number, cookies: readonly Uint8Array[], lastKeSuccessMs: number): void {
+    this.context = context;
+    this.contextId = contextId;
+    this.cookies = cookies.slice(0, NTS_MAX_COOKIES);
+    this.lastKeSuccessMs = lastKeSuccessMs;
   }
 
   hasCookies(): boolean { return this.cookies.length > 0; }

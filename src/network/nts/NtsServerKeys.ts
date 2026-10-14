@@ -6,7 +6,9 @@ export const KEY_ID_INDEX_BITS = 2;
 export const MAX_SERVER_KEYS = 1 << KEY_ID_INDEX_BITS;
 export const FUTURE_KEYS = 1;
 export const COOKIE_NONCE_LENGTH = 12;
-export const DEFAULT_ROTATION_SECONDS = 86400;
+export const DEFAULT_ROTATION_SECONDS = 604800;
+export const DUMP_IDENTIFIER = 'NKS1\n';
+export const KEYS_DUMP_FILENAME = 'ntskeys';
 
 interface ServerKey {
   readonly id: number;
@@ -19,12 +21,7 @@ export interface CookieContext {
   readonly s2c: Uint8Array;
 }
 
-export interface DumpedKeys {
-  readonly current: number;
-  readonly keys: ({ id: number; key: string } | null)[];
-}
-
-const toHex = (bytes: Uint8Array): string => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+const toHex = (bytes: Uint8Array): string => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 const fromHex = (text: string): Uint8Array => Uint8Array.from(text.match(/../g) ?? [], (h) => parseInt(h, 16));
 
 export class NtsServerKeys {
@@ -33,8 +30,7 @@ export class NtsServerKeys {
   lastRotationMs = 0;
 
   constructor(private readonly random: RandomBytes, nowMs: number, private readonly rotationSeconds = DEFAULT_ROTATION_SECONDS) {
-    this.generate(this.current, nowMs);
-    this.generate((this.current + FUTURE_KEYS) % MAX_SERVER_KEYS, nowMs);
+    for (let index = 0; index < MAX_SERVER_KEYS; index++) this.generate(index, nowMs);
   }
 
   rotationIntervalMs(): number { return this.rotationSeconds * 1000; }
@@ -42,7 +38,7 @@ export class NtsServerKeys {
   private generate(index: number, nowMs: number): void {
     const idBytes = this.random(4);
     let id = ((idBytes[0] << 24) | (idBytes[1] << 16) | (idBytes[2] << 8) | idBytes[3]) >>> 0;
-    id = ((id & (0xffffffff << KEY_ID_INDEX_BITS)) >>> 0) | index;
+    id = (((id & (0xffffffff << KEY_ID_INDEX_BITS)) >>> 0) | index) >>> 0;
     this.slots[index] = { id, key: this.random(aeadKeyLength(AEAD_AES_SIV_CMAC_256)) };
     this.lastRotationMs = nowMs;
   }
@@ -54,6 +50,7 @@ export class NtsServerKeys {
 
   rotateIfDue(nowMs: number): boolean {
     let rotated = false;
+    if (this.rotationSeconds <= 0) return false;
     while (nowMs - this.lastRotationMs >= this.rotationIntervalMs()) {
       this.rotate(this.lastRotationMs + this.rotationIntervalMs());
       rotated = true;
@@ -93,15 +90,32 @@ export class NtsServerKeys {
     return { aead: AEAD_AES_SIV_CMAC_256, c2s: plaintext.slice(0, half), s2c: plaintext.slice(half) };
   }
 
-  dump(): DumpedKeys {
-    return { current: this.current, keys: this.slots.map((slot) => (slot === null ? null : { id: slot.id, key: toHex(slot.key) })) };
+  dumpText(nowMs: number): string {
+    const age = (nowMs - this.lastRotationMs) / 1000;
+    const lines = [`${DUMP_IDENTIFIER}${age.toFixed(1)}`];
+    for (let i = 0; i < MAX_SERVER_KEYS; i++) {
+      const slot = this.slots[(this.current + i + 1 + FUTURE_KEYS) % MAX_SERVER_KEYS]!;
+      lines.push(`${slot.id.toString(16).toUpperCase().padStart(8, '0')} ${toHex(slot.key)} ${AEAD_AES_SIV_CMAC_256}`);
+    }
+    return `${lines.join('\n')}\n`;
   }
 
-  restore(dumped: DumpedKeys): void {
-    if (dumped.keys.length !== MAX_SERVER_KEYS) return;
-    dumped.keys.forEach((slot, index) => {
-      this.slots[index] = slot === null ? null : { id: slot.id, key: fromHex(slot.key) };
-    });
-    this.current = dumped.current % MAX_SERVER_KEYS;
+  restoreText(text: string, nowMs: number): boolean {
+    const lines = text.split('\n');
+    if (lines[0] !== DUMP_IDENTIFIER.trim() || !/^-?\d+(\.\d+)?$/.test(lines[1] ?? '')) return false;
+    const loaded: ServerKey[] = [];
+    for (let i = 0; i < MAX_SERVER_KEYS; i++) {
+      const words = (lines[2 + i] ?? '').trim().split(/\s+/);
+      if (words.length !== 3 || !/^[0-9A-Fa-f]{1,8}$/.test(words[0]) || Number(words[2]) !== AEAD_AES_SIV_CMAC_256) return false;
+      const id = parseInt(words[0], 16) >>> 0;
+      const key = fromHex(words[1]);
+      if (key.length !== aeadKeyLength(AEAD_AES_SIV_CMAC_256) || !/^[0-9A-Fa-f]+$/.test(words[1])) return false;
+      if (i > 0 && ((id - loaded[i - 1].id) >>> 0) % MAX_SERVER_KEYS !== 1) return false;
+      loaded.push({ id, key });
+    }
+    for (const key of loaded) this.slots[key.id % MAX_SERVER_KEYS] = key;
+    this.current = (loaded[MAX_SERVER_KEYS - 1].id % MAX_SERVER_KEYS + MAX_SERVER_KEYS - FUTURE_KEYS) % MAX_SERVER_KEYS;
+    this.lastRotationMs = nowMs - Math.max(Number(lines[1]), 0) * 1000;
+    return true;
   }
 }

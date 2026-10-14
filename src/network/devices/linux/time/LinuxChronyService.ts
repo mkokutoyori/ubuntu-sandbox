@@ -58,6 +58,7 @@ import type { UdpListener } from '../../EndHost';
 import type { UdpSendRequest } from '../../../layers/transport/UdpEgress';
 import { IPAddress as WireAddress } from '../../../core/types';
 import { ChronyCommandServer } from './ChronyCommandServer';
+import { ChronyNts, type ChronyNtsHost } from './ChronyNts';
 import { ChronyDaemonView } from './ChronyDaemonView';
 import { UDP_PORT_NTP, type NtpVersion } from '../../../ntp/types';
 import { parseChronyConf, parseChronySource, type ChronyConf, type ChronySource, CHRONY_CONF_DEBIAN } from './ChronyConfig';
@@ -73,7 +74,7 @@ export const CHRONY_CONF_PATH = '/etc/chrony/chrony.conf';
 /** Le chemin RHEL, que le tutoriel cite aussi. */
 export const CHRONY_CONF_PATH_RHEL = '/etc/chrony.conf';
 
-export interface ChronyHost {
+export interface ChronyHost extends ChronyNtsHost {
   /** Lire un fichier du VFS ; `null` quand il n'existe pas. */
   readFile(chemin: string): string | null;
   /** L'agent NTP de la machine — le seul moteur. */
@@ -103,7 +104,15 @@ export class LinuxChronyService implements ServiceSocketServer {
   /** Le nombre de sauts d'horloge deja consommes sur le quota `makestep`. */
   private sautsFaits = 0;
 
-  constructor(private readonly host: ChronyHost) {}
+  private readonly nts: ChronyNts;
+
+  constructor(private readonly host: ChronyHost) {
+    this.nts = new ChronyNts(host, () => this.conf.ntpPort);
+  }
+
+  getNts(): ChronyNts { return this.nts; }
+
+  dumpAuthData(): void { this.nts.dump((ip) => this.host.ntp().getAssociation(ip)?.port ?? UDP_PORT_NTP); }
 
   /** Ce que le fichier de cles a donne au dernier demarrage/relecture. */
   private cles: ChronyKeysLecture = { cles: [], refusees: [] };
@@ -154,6 +163,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     this.conf = parseChronyConf(this.host.readFile(chemin) ?? '');
     this.host.bindNtpPort?.(UDP_PORT_NTP);
     this.host.ntp().setProfile(CHRONY_PROFILE);
+    this.host.ntp().setNtsSupport(this.nts);
     this.appliquer();
     this.actif = true;
     this.demarreALe = simulationNowMs();
@@ -211,6 +221,8 @@ export class LinuxChronyService implements ServiceSocketServer {
   stop(): void {
     if (!this.actif) return;
     this.closeCommandChannel();
+    this.nts.shutdown((ip) => this.host.ntp().getAssociation(ip)?.port ?? UDP_PORT_NTP);
+    this.host.ntp().setNtsSupport(null);
     this.actif = false;
     this.host.releaseNtpPort?.(UDP_PORT_NTP);
     if (this.conf.ntpPort !== UDP_PORT_NTP && this.conf.ntpPort > 0) this.host.releaseNtpPort?.(this.conf.ntpPort);
@@ -288,6 +300,7 @@ export class LinuxChronyService implements ServiceSocketServer {
   removeSource(ip: string): boolean {
     const agent = this.host.ntp();
     if (agent.getAssociation(ip) === undefined) return false;
+    this.nts.untrack(ip);
     agent.removeServer(ip);
     return true;
   }
@@ -343,6 +356,7 @@ export class LinuxChronyService implements ServiceSocketServer {
   private installSource(source: ChronySource): void {
     const agent = this.host.ntp();
     const existed = agent.getAssociation(source.hote) !== undefined;
+    const restored = this.nts.track(source, simulationNowMs());
     const options = {
       iburst: source.iburst, burst: source.burst, minpoll: source.minpoll, maxpoll: source.maxpoll,
       online: existed ? !source.offline : false, version: source.version as NtpVersion | undefined,
@@ -353,7 +367,7 @@ export class LinuxChronyService implements ServiceSocketServer {
       noselect: source.noselect, trust: source.trust, require: source.require,
       maxDelayMs: source.maxdelay === undefined ? undefined : source.maxdelay * 1000,
       maxDelayRatio: source.maxdelayratio, maxDelayDevRatio: source.maxdelaydevratio,
-      minStratum: source.minstratum, pollTarget: source.polltarget, port: source.port,
+      minStratum: source.minstratum, pollTarget: source.polltarget, port: source.port ?? restored?.ntpPort,
       presend: source.presend, autoOffline: source.autoOffline, copy: source.copy,
       maxDelayQuant: source.maxdelayquant, filterLength: source.filter, fixedOffsetMs: source.offsetCorrection === undefined ? undefined : source.offsetCorrection * 1000,
       statistics: { minSamples: source.minsamples, maxSamples: source.maxsamples, minDelay: source.mindelay, asymmetry: source.asymmetry },
@@ -385,7 +399,10 @@ export class LinuxChronyService implements ServiceSocketServer {
    * n'exige une reponse authentifiee que d'une association qui NOMME une
    * cle — sans `key N`, le drapeau ne change rien.
    */
-  reloadKeys(): void { this.chargerCles(); }
+  reloadKeys(): void {
+    this.chargerCles();
+    this.nts.reloadKeys();
+  }
 
   private chargerCles(): void {
     const agent = this.host.ntp();
@@ -412,6 +429,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     // chargee — donc un premier paquet sans condensé, refuse par le
     // serveur pour une raison qui n'existe plus a la seconde suivante.
     this.chargerCles();
+    this.nts.apply(this.conf.nts);
     const voulues = new Set<string>();
     for (const s of this.conf.sources) {
       if (!isValidIPv4(s.hote)) continue;
@@ -422,7 +440,7 @@ export class LinuxChronyService implements ServiceSocketServer {
     // `reload` ne serait qu'un ajout, et retirer une ligne du fichier
     // n'aurait aucun effet.
     for (const ip of [...agent.getConfig().associations.keys()]) {
-      if (!voulues.has(ip)) agent.removeServer(ip);
+      if (!voulues.has(ip)) { this.nts.untrack(ip); agent.removeServer(ip); }
     }
     // `makestep <seuil> <limite>` est un reglage de la DISCIPLINE, pas
     // une commande : il decide a quel ecart chronyd saute au lieu de
