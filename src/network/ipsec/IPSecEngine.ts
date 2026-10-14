@@ -643,6 +643,8 @@ export class IPSecEngine implements IProtocolEngine {
   private dynamicCryptoMaps: Map<string, DynamicCryptoMap> = new Map();
   /** interface name → crypto map name */
   private ifaceCryptoMap: Map<string, string> = new Map();
+  private ikeEnabled = true;
+  private passiveMode = false;
   private replayCheckingDisabled = false;
   private idleTimeGlobalSec: number | null = null;
   private dfBitGlobal: DfBitPolicy = 'copy';
@@ -1425,6 +1427,38 @@ export class IPSecEngine implements IProtocolEngine {
     map.dynamicEntries.set(seq, dynMapName);
   }
 
+  setIkeEnabled(enabled: boolean): void {
+    this.ikeEnabled = enabled;
+  }
+
+  setPassiveMode(enabled: boolean): void {
+    this.passiveMode = enabled;
+  }
+
+  rejectsClearText(inPort: string, pkt: IPv4Packet): boolean {
+    if (this.passiveMode) return false;
+    if (pkt.protocol === IP_PROTO_ESP || pkt.protocol === IP_PROTO_AH) return false;
+    const mapName = this.ifaceCryptoMap.get(inPort);
+    if (!mapName) return false;
+    const cmap = this.cryptoMaps.get(mapName);
+    if (!cmap) return false;
+    const transport = pkt.payload as { type?: string; sourcePort?: number; destinationPort?: number } | undefined;
+    if (transport?.type === 'udp' && (transport.sourcePort === 500 || transport.destinationPort === 500
+        || transport.sourcePort === 4500 || transport.destinationPort === 4500)) return false;
+    const mirrored: IPv4Packet = {
+      ...pkt,
+      sourceIP: pkt.destinationIP,
+      destinationIP: pkt.sourceIP,
+      payload: transport && (transport.type === 'udp' || transport.type === 'tcp')
+        ? { ...transport, sourcePort: transport.destinationPort, destinationPort: transport.sourcePort } as unknown as IPv4Packet['payload']
+        : pkt.payload,
+    };
+    for (const entry of cmap.staticEntries.values()) {
+      if (entry.aclName && this.matchACL(entry.aclName, mirrored)) return true;
+    }
+    return false;
+  }
+
   setReplayCheckingDisabled(disabled: boolean): void {
     this.replayCheckingDisabled = disabled;
   }
@@ -1737,6 +1771,7 @@ export class IPSecEngine implements IProtocolEngine {
 
   /** ISAKMP on UDP 500 — DPD R-U-THERE/ACK notifies (RFC 3706). */
   handleIkeUdp(_inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
+    if (!this.ikeEnabled) return;
     const payload = udp.payload;
     const srcIp = ipPkt.sourceIP.toString();
     if (isIkeMessage(payload)) {
@@ -4025,6 +4060,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   private negotiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
+    if (!this.ikeEnabled) return false;
     if (this.router._ipsecInterfaceDown(egressIface)) {
       Logger.info(this.router.id, 'ipsec:port-down',
         `${this.router.name}: IKE negotiation failed — interface ${egressIface} is down`);
@@ -4896,6 +4932,8 @@ export class IPSecEngine implements IProtocolEngine {
     if (this.replayWindowSize !== 64) {
       lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
     }
+    if (!this.ikeEnabled) lines.push('no crypto isakmp enable');
+    if (this.passiveMode) lines.push('crypto ipsec optional');
     if (this.replayCheckingDisabled) lines.push('crypto ipsec security-association replay disable');
     if (this.idleTimeGlobalSec !== null) lines.push(`crypto ipsec security-association idle-time ${this.idleTimeGlobalSec}`);
     if (this.aggressiveMode) lines.push('no crypto isakmp aggressive-mode disable');

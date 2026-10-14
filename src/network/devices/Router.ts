@@ -2675,6 +2675,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
+    if (!reinjected && this.ipsecEngine?.rejectsClearText(inPort, ipPkt)) {
+      Logger.info(this.id, 'ipsec:clear-text-dropped',
+        `${this.name}: clear text ${ipPkt.sourceIP} → ${ipPkt.destinationIP} dropped on ${inPort}`);
+      (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
+        .getLoggingConfig?.()?.append('warnings', 'crypto',
+          `Rec'd packet not an IPSEC packet. (ip) vrf/dest_addr= /${ipPkt.destinationIP}, src_addr= ${ipPkt.sourceIP}, prot= ${ipPkt.protocol}`,
+          true, 'RECVD_PKT_NOT_IPSEC');
+      return;
+    }
+
     // C.1b: SPD inbound check (RFC 4301 §4.4.1) — DISCARD/BYPASS before ACL
     if (this.ipsecEngine) {
       const spdResult = this.ipsecEngine.evaluateSPD(ipPkt, 'in');

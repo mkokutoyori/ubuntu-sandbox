@@ -7,6 +7,8 @@ export interface IpsecDataPlaneEngine {
   setFragmentationPoint(point: FragmentationPoint | null, ifName?: string): void;
   setReplayWindowSize(size: number): void;
   setReplayCheckingDisabled(disabled: boolean): void;
+  setIkeEnabled(enabled: boolean): void;
+  setPassiveMode(enabled: boolean): void;
   setIdleTime(seconds: number | null): void;
   getIdleTime(): number | null;
 }
@@ -105,6 +107,24 @@ export function ipsecDataPlaneSpecs(host: () => IpsecDataPlaneHost): CommandSpec
         (engine, args) => engine.setIdleTime(Number(args.seconds)),
         (engine) => engine.setIdleTime(null)),
       undoOmitsArguments: true,
+    },
+    {
+      id: 'crypto-isakmp-enable',
+      path: ['crypto', 'isakmp', 'enable'],
+      description: 'Enable ISAKMP',
+      undoDescription: 'Disable ISAKMP',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().engine().setIkeEnabled(true); return ''; },
+      undo: () => { host().engine().setIkeEnabled(false); return ''; },
+    },
+    {
+      id: 'crypto-ipsec-optional',
+      path: ['crypto', 'ipsec', 'optional'],
+      description: 'Accept clear text as well as IPsec traffic (passive mode)',
+      undoDescription: 'Disable IPsec passive mode',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().engine().setPassiveMode(true); return ''; },
+      undo: () => { host().engine().setPassiveMode(false); return ''; },
     },
     {
       id: 'show-crypto-ipsec-sa-idle-time',
