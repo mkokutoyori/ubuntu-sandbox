@@ -80,10 +80,16 @@ function emptyStats(): MvrpPortStats {
   };
 }
 
+interface MrpTimers {
+  joinTime: number;
+  leaveTime: number;
+  leaveAllTime: number;
+}
+
 export class MvrpAgent extends ReactiveAgentBase {
   private globallyEnabled = false;
   private component: MvrpComponent = 'c-vlan';
-  private timers = { ...MRP_TIMERS_CENTISECONDS };
+  private timers: MrpTimers = { ...MRP_TIMERS_CENTISECONDS };
   private readonly ports = new Map<string, PortRuntime>();
   private readonly local = new Set<number>();
   private readonly ownTimers = new TimerSet(() => this.getScheduler());
@@ -114,7 +120,7 @@ export class MvrpAgent extends ReactiveAgentBase {
 
   setComponent(component: MvrpComponent): void { this.component = component; }
 
-  setTimers(timers: Partial<typeof MRP_TIMERS_CENTISECONDS>): void {
+  setTimers(timers: Partial<MrpTimers>): void {
     this.timers = { ...this.timers, ...timers };
   }
 
