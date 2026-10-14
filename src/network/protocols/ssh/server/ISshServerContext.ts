@@ -36,6 +36,7 @@ export interface SshServerConfig {
 
 export interface ILinuxShell {
   readonly streamSession?: unknown;
+  takeSessionHold?(): number;
   execute(line: string): Promise<{
     stdout: string;
     stderr: string;
@@ -141,8 +142,14 @@ export interface ISshServerContext {
    */
   getShell(
     userCtx: SshUserContext, cwd: string,
-    opts?: { interactive?: boolean; clientIp?: string; clientPort?: number },
+    opts?: {
+      interactive?: boolean; clientIp?: string; clientPort?: number;
+      exec?: { readonly environment: ReadonlyMap<string, string>; readonly pty: { term: string; columns: number; rows: number } | null; readonly keyOptions: AuthorizedKeyOptions | null };
+    },
   ): ILinuxShell;
+  acceptsEnvironment?(name: string): boolean;
+  accountLocked?(user: string): boolean;
+  holdSession?(user: SshUserContext, clientIp: string, seconds: number): void;
   /**
    * Optional per-channel real-time job runtime (streaming `ping`, Ctrl+C
    * interrupt). SshServerHandler constructs one per `shell_open` and tries

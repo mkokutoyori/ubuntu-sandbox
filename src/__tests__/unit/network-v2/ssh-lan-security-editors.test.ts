@@ -280,7 +280,7 @@ describe('SSH LAN — security, firewalls, editors, Oracle CLIs', () => {
     expect(ssh.toLowerCase()).not.toContain('command not found');
     const nonSshd = (s: string) =>
       s.split('\n')
-        .filter(l => !/\bsshd\[/.test(l))
+        .filter(l => !/\bsshd\[|systemd-logind\[|Started Session/.test(l))
         .filter(l => !/Logs begin at /.test(l))
         .filter(l => l.trim().length > 0);
     const localLines = new Set(nonSshd(local));
@@ -297,7 +297,7 @@ describe('SSH LAN — security, firewalls, editors, Oracle CLIs', () => {
   // SE29
   it('SE29 — `logger "test"` then `journalctl -n 1` shows it via SSH', async () => {
     await sshExec(lan.pc1, PC2_IP, 'logger "ssh-test-msg"');
-    const out = await lan.pc2.executeCommand('journalctl -n 5');
+    const out = await lan.pc2.executeCommand('journalctl -n 20');
     expect(out.toLowerCase()).toContain('ssh-test-msg');
   });
 
