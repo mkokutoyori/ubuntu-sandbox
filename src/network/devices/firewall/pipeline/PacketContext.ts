@@ -67,6 +67,7 @@ export interface PacketContext {
   vdom?: string;
   bridged?: boolean;
   readonly ingressFrameDestination?: MACAddress;
+  readonly ingressFrameSource?: MACAddress;
 
   packet: FirewallPacket;
   readonly originalPacket: FirewallPacket;
@@ -102,6 +103,7 @@ export interface PacketContextInit {
   isFirstPacket?: boolean;
   simulated?: boolean;
   ingressFrameDestination?: MACAddress;
+  ingressFrameSource?: MACAddress;
 }
 
 let nextContextId = 1;
@@ -117,6 +119,7 @@ export function makePacketContext(init: PacketContextInit): PacketContext {
     isFirstPacket: init.isFirstPacket ?? true,
     simulated: init.simulated ?? false,
     ingressFrameDestination: init.ingressFrameDestination,
+    ingressFrameSource: init.ingressFrameSource,
     trace: [],
   };
 }

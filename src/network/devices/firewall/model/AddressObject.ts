@@ -9,6 +9,7 @@ export type AddressObjectKind =
   | 'geography'
   | 'dynamic'
   | 'vip'
+  | 'mac'
   | 'any';
 
 export type AddressFamily = 'ipv4' | 'ipv6';
@@ -20,6 +21,7 @@ export interface AddressObject {
   readonly value?: string;
   readonly endValue?: string;
   readonly careMask?: string;
+  readonly macRanges?: readonly string[];
   readonly fqdn?: string;
   readonly countryCode?: string;
   readonly tagFilter?: string;
@@ -33,6 +35,7 @@ export interface AddressMatchContext {
   resolveFqdn?: (fqdn: string) => readonly string[];
   countryOf?: (ip: string) => string | undefined;
   addressesWithTags?: (filter: string) => readonly string[];
+  sourceMac?: string;
 }
 
 export interface AddressObjectOptions {
@@ -138,6 +141,32 @@ export function familyOf(candidate: string): AddressFamily {
   return candidate.includes(':') ? 'ipv6' : 'ipv4';
 }
 
+export function macAddress(name: string, ranges: readonly string[], options: AddressObjectOptions = {}): AddressObject {
+  return build({ name, kind: 'mac', macRanges: Object.freeze([...ranges]) }, options);
+}
+
+function macToNumber(text: string): number | undefined {
+  const digits = text.toLowerCase().replace(/[:\-.]/g, '');
+  return /^[0-9a-f]{12}$/.test(digits) ? Number.parseInt(digits, 16) : undefined;
+}
+
+export function isMacRange(text: string): boolean {
+  const [first, second, ...rest] = text.split(/-(?=[0-9a-fA-F]{2}:)/);
+  return rest.length === 0 && macToNumber(first) !== undefined
+    && (second === undefined || macToNumber(second) !== undefined);
+}
+
+function matchesMacRanges(ranges: readonly string[], mac: string | undefined): boolean {
+  const value = mac === undefined ? undefined : macToNumber(mac);
+  if (value === undefined) return false;
+  return ranges.some(range => {
+    const [first, second] = range.split(/-(?=[0-9a-fA-F]{2}:)/);
+    const low = macToNumber(first);
+    const high = macToNumber(second ?? first);
+    return low !== undefined && high !== undefined && value >= low && value <= high;
+  });
+}
+
 export function literalAddress(text: string): AddressObject | undefined {
   const [first, second, ...rest] = text.split('-');
   if (rest.length === 0 && second !== undefined && tryIpToUint32(first) !== null
@@ -160,6 +189,8 @@ export function addressObjectMatches(
   if (object.family === 'ipv6') return matchesIpv6(object, candidate);
 
   switch (object.kind) {
+    case 'mac':
+      return matchesMacRanges(object.macRanges ?? [], context.sourceMac);
     case 'host':
       return sameAddress(candidate, object.value);
     case 'vip':

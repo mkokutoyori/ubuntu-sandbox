@@ -2632,6 +2632,7 @@ export class Firewall extends Equipment {
     const context = makePacketContext({
       ingressPort: portName, packet, arrivedAt: this.services.now(),
       ingressFrameDestination: frame?.dstMAC,
+      ingressFrameSource: frame?.srcMAC,
     });
     const outcome = this.processPipeline(context);
     this.traces.remember(context);

@@ -195,7 +195,7 @@ export class PolicyEvaluator {
     const sources = addressListFor(rule, probe.sourceIP, 'source');
     if (sources.length === 0) return false;
 
-    const sourceHit = this.objects.matchesAnyAddress(sources, probe.sourceIP);
+    const sourceHit = this.objects.matchesAnyAddress(sources, probe.sourceIP, probe.sourceMac);
     if (sourceHit === negatedFor(rule, probe.sourceIP, 'source')) return false;
 
     const destHit = this.matchesDestination(rule, probe);

@@ -4,6 +4,7 @@ export interface PolicyProbe {
   readonly ingressInterface: string;
   readonly egressInterface: string;
   readonly sourceIP: string;
+  readonly sourceMac?: string;
   readonly destIP: string;
   readonly protocol: number;
   readonly tos?: number;

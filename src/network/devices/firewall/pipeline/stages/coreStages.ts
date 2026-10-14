@@ -1051,6 +1051,7 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
           ingressInterface: context.ingressPort,
           egressInterface: context.egressPort ?? '',
           sourceIP: policySource(context, packet, services).sourceIP.toString(),
+          sourceMac: context.ingressFrameSource?.toString(),
           destIP: policyDestination(context, packet, services).destinationIP.toString(),
           protocol: packet.protocol,
           tos: packet.tos,

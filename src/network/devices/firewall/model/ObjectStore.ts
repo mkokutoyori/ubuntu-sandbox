@@ -191,12 +191,12 @@ export class ObjectStore {
 
   // ─── Matching ───────────────────────────────────────────────────
 
-  matchesAddress(name: string, candidate: string): boolean {
-    return this.matchAddressWithDepth(name, candidate, 0, new Set());
+  matchesAddress(name: string, candidate: string, sourceMac?: string): boolean {
+    return this.matchAddressWithDepth(name, candidate, 0, new Set(), sourceMac);
   }
 
-  matchesAnyAddress(names: readonly string[], candidate: string): boolean {
-    return names.some(name => this.matchesAddress(name, candidate));
+  matchesAnyAddress(names: readonly string[], candidate: string, sourceMac?: string): boolean {
+    return names.some(name => this.matchesAddress(name, candidate, sourceMac));
   }
 
   namesVipRule(names: readonly string[], natRuleId: string): boolean {
@@ -264,21 +264,21 @@ export class ObjectStore {
   }
 
   private matchAddressWithDepth(
-    name: string, candidate: string, depth: number, seen: Set<string>,
+    name: string, candidate: string, depth: number, seen: Set<string>, sourceMac?: string,
   ): boolean {
     if (depth > this.maxNesting || seen.has(name)) return false;
 
     const object = this.addresses.get(name);
-    if (object) return addressObjectMatches(object, candidate, this.matchContext());
+    if (object) return addressObjectMatches(object, candidate, { ...this.matchContext(), sourceMac });
 
     const group = this.addressGroups.get(name);
     if (!group) return false;
 
     seen.add(name);
     const matched = group.members.some(
-      member => this.matchAddressWithDepth(member, candidate, depth + 1, seen))
+      member => this.matchAddressWithDepth(member, candidate, depth + 1, seen, sourceMac))
       && !group.exclusions.some(
-        member => this.matchAddressWithDepth(member, candidate, depth + 1, seen));
+        member => this.matchAddressWithDepth(member, candidate, depth + 1, seen, sourceMac));
     seen.delete(name);
     return matched;
   }

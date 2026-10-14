@@ -16,7 +16,7 @@ export const ADDRESS_REFERENCE_ATTRIBUTES: readonly FortiAttributeSpec[] = Objec
   { ...word('hw-model', 'Dynamic address matching hardware model.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
   { ...word('hw-vendor', 'Dynamic address matching hardware vendor.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
   { ...word('interface', 'Name of interface whose IP address is to be used.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
-  { ...word('macaddr', 'Multiple MAC address ranges. MAC address ranges <start>[-<end>] separated by space.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  { ...list('macaddr', 'Multiple MAC address ranges. MAC address ranges <start>[-<end>] separated by space.'), availableWhen: (object) => object.effective('type')[0] === 'mac', acceptsValue: (value: string) => /^([0-9a-f]{2}:){5}[0-9a-f]{2}(-([0-9a-f]{2}:){5}[0-9a-f]{2})?$/i.test(value) },
   { ...enable('node-ip-only', 'Enable/disable collection of node addresses only in Kubernetes.', false), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
   { ...text('obj-id', 'Object ID for NSX.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },
   { ...word('obj-tag', 'Tag of dynamic address object.'), unimplemented: 'it belongs to dynamic address objects fed by an external connector, which this simulator does not run.' },

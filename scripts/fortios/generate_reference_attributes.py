@@ -70,7 +70,7 @@ HELP_OVERRIDES = {
     'vlan-filter': 'VLAN ranges to allow.',
 }
 
-LISTS = {'src-filter', 'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
+LISTS = {'macaddr', 'src-filter', 'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
          'internet-service-group', 'internet-service-name', 'internet-service-src-custom', 'internet-service-src-custom-group',
          'internet-service-src-fortiguard', 'internet-service-src-group', 'internet-service-src-name',
          'internet-service6-custom', 'internet-service6-custom-group', 'internet-service6-fortiguard',
@@ -146,6 +146,8 @@ def emit(e, schema_names):
         body = f"{'isoMoment' if name == 'policy-expiry-date' else 'moment'}({q(name)}, {q(help_text)})"
     else:
         body = f"{'text' if typ == 'var-string' else 'word'}({q(name)}, {q(help_text)})"
+    if name == 'macaddr':
+        body = "{ ...%s, availableWhen: (object) => object.effective('type')[0] === 'mac', acceptsValue: (value: string) => /^([0-9a-f]{2}:){5}[0-9a-f]{2}(-([0-9a-f]{2}:){5}[0-9a-f]{2})?$/i.test(value) }" % body
     if name == 'src-filter':
         body = "{ ...%s, acceptsValue: (value: string) => /^\\d+(\\.\\d+){3}(\\/\\d+|-\\d+(\\.\\d+){3})?$/.test(value) }" % body
     if name.startswith('diffservcode'):
