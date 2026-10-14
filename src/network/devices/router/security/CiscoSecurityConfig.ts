@@ -382,6 +382,19 @@ function renderViewSecret(v: ParserView): string {
   return renderSecretField(v.secret ?? '', v.secretAlgo ?? 'md5', `view:${v.name}`);
 }
 
+export interface AaaAccountingOptions {
+  updateEnabled: boolean;
+  updateNewinfo: boolean;
+  updatePeriodicMinutes: number | null;
+  jitterMaxSec: number;
+  suppressNullUsername: boolean;
+  sendStopAlways: boolean;
+  sendStopOnAuthFailure: boolean;
+  sendStopOnSuccessRemote: boolean;
+}
+
+export const DEFAULT_ACCOUNTING_JITTER_SEC = 300;
+
 export class CiscoSecurityConfig {
   aaaNewModel = false;
   /**
@@ -397,6 +410,11 @@ export class CiscoSecurityConfig {
   aaaUsernamePrompt?: string;
   aaaPasswordPrompt?: string;
   aaaMethods: AaaMethodEntry[] = [];
+  accounting: AaaAccountingOptions = {
+    updateEnabled: false, updateNewinfo: false, updatePeriodicMinutes: null,
+    jitterMaxSec: DEFAULT_ACCOUNTING_JITTER_SEC, suppressNullUsername: false,
+    sendStopAlways: false, sendStopOnAuthFailure: false, sendStopOnSuccessRemote: false,
+  };
   radiusServers: Map<string, RadiusServer> = new Map();
   tacacsServers: Map<string, TacacsServer> = new Map();
   aaaGroups: Map<string, AaaServerGroup> = new Map();
@@ -625,6 +643,7 @@ export class CiscoSecurityConfig {
       for (const m of this.aaaMethods) {
         lines.push(this.renderAaaMethod(m));
       }
+      lines.push(...this.accountingOptionLines());
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
     }
@@ -885,6 +904,20 @@ export class CiscoSecurityConfig {
     if (f.inspectIn) lines.push(` ip inspect ${f.inspectIn} in`);
     if (f.inspectOut) lines.push(` ip inspect ${f.inspectOut} out`);
     if (f.ipv6TrafficFilter) lines.push(` ipv6 traffic-filter ${f.ipv6TrafficFilter.name} ${f.ipv6TrafficFilter.direction}`);
+    return lines;
+  }
+
+  private accountingOptionLines(): string[] {
+    const a = this.accounting;
+    const lines: string[] = [];
+    if (a.updateEnabled) {
+      lines.push(`aaa accounting update${a.updateNewinfo ? ' newinfo' : ''}${a.updatePeriodicMinutes !== null ? ` periodic ${a.updatePeriodicMinutes}` : ''}`);
+    }
+    if (a.jitterMaxSec !== DEFAULT_ACCOUNTING_JITTER_SEC) lines.push(`aaa accounting jitter maximum ${a.jitterMaxSec}`);
+    if (a.suppressNullUsername) lines.push('aaa accounting suppress null-username');
+    if (a.sendStopAlways) lines.push('aaa accounting send stop-record always');
+    if (a.sendStopOnAuthFailure) lines.push('aaa accounting send stop-record authentication failure');
+    if (a.sendStopOnSuccessRemote) lines.push('aaa accounting send stop-record authentication success remote-server');
     return lines;
   }
 

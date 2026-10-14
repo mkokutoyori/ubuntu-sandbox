@@ -1,6 +1,6 @@
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
-import type { CiscoSecurityConfig } from '../../router/security/CiscoSecurityConfig';
+import { DEFAULT_ACCOUNTING_JITTER_SEC, type CiscoSecurityConfig } from '../../router/security/CiscoSecurityConfig';
 
 const MODES = ['config'] as const;
 
@@ -193,7 +193,7 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       name: 'service', type: 'ENUM',
       description: PHASE_DESCRIPTIONS.accounting[1],
       values: AAA_SERVICE_VALUES.accounting.filter((v) => v.keyword !== 'commands'),
-    }, NOM_DE_LISTE, mot, METHODES],
+    }, NOM_DE_LISTE, mot, mot === 'none' ? { ...METHODES, optional: true } : METHODES],
     description,
     modes: MODES, minPrivilege: 15,
     run: (_s, args) => ctx().parseMethodList(
@@ -202,7 +202,7 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
   }, {
     id: `aaa-accounting-commands-${mot}`,
     path: ['aaa', 'accounting', 'commands', NIVEAU_DE_COMMANDE, NOM_DE_LISTE,
-      mot, METHODES],
+      mot, mot === 'none' ? { ...METHODES, optional: true } : METHODES],
     description,
     modes: MODES, minPrivilege: 15,
     run: (_s, args) => ctx().parseMethodList(
@@ -211,7 +211,83 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
     undo: (_s, args) => oublier('accounting', 'commands', [args.liste]),
   }];
 
+  const accounting = () => sec().accounting;
+  const accountingFlag = (
+    id: string, path: string[], field: 'suppressNullUsername' | 'sendStopAlways' | 'sendStopOnAuthFailure' | 'sendStopOnSuccessRemote',
+    description: string, undoDescription: string,
+  ): CommandSpec => ({
+    id, path: ['aaa', 'accounting', ...path], description, undoDescription,
+    modes: MODES, minPrivilege: 15,
+    run: () => { accounting()[field] = true; return ''; },
+    undo: () => { accounting()[field] = false; return ''; },
+  });
+  const accountingOptionSpecs: CommandSpec[] = [
+    {
+      id: 'aaa-accounting-update',
+      path: ['aaa', 'accounting', 'update'],
+      description: 'Enable accounting update records',
+      undoDescription: 'Disable accounting update records',
+      modes: MODES, minPrivilege: 15,
+      options: [
+        { keyword: 'newinfo', description: 'Send an update record when there is new accounting information' },
+        {
+          keyword: 'periodic', description: 'Send update records periodically',
+          argument: { name: 'minutes', type: 'INT', range: [1, 71582788], description: 'Interval in minutes' },
+        },
+        {
+          keyword: 'jitter', description: 'Jitter of the periodic records',
+          choices: [{
+            keyword: 'maximum', description: 'Maximum jitter',
+            argument: { name: 'jitter-seconds', type: 'INT', range: [0, 2147483], description: 'Maximum jitter in seconds (0 turns jitter off)' },
+          }],
+        },
+      ],
+      run: (_s, args) => {
+        const a = accounting();
+        a.updateEnabled = true;
+        a.updateNewinfo = args.newinfo !== undefined;
+        a.updatePeriodicMinutes = args.minutes === undefined ? null : Number(args.minutes);
+        if (args['jitter-seconds'] !== undefined) a.jitterMaxSec = Number(args['jitter-seconds']);
+        return '';
+      },
+      undo: () => {
+        const a = accounting();
+        a.updateEnabled = false; a.updateNewinfo = false; a.updatePeriodicMinutes = null;
+        return '';
+      },
+    },
+    {
+      id: 'aaa-accounting-jitter',
+      path: ['aaa', 'accounting', 'jitter', 'maximum', {
+        name: 'seconds', type: 'INT', range: [0, 2147483], description: 'Maximum jitter in seconds (0 turns jitter off)',
+      }],
+      description: 'Set the maximum jitter of periodic accounting records',
+      undoDescription: 'Restore the default jitter of 300 seconds',
+      modes: MODES, minPrivilege: 15,
+      run: (_s, args) => { accounting().jitterMaxSec = Number(args.seconds); return ''; },
+      undo: () => { accounting().jitterMaxSec = DEFAULT_ACCOUNTING_JITTER_SEC; return ''; },
+      undoOmitsArguments: true,
+    },
+    {
+      id: 'no-aaa-accounting-jitter',
+      path: ['aaa', 'accounting', 'jitter'],
+      description: 'Restore the default jitter of 300 seconds',
+      modes: MODES, minPrivilege: 15,
+      existsOnlyNegated: true,
+      run: () => '% Incomplete command.',
+      undo: () => { accounting().jitterMaxSec = DEFAULT_ACCOUNTING_JITTER_SEC; return ''; },
+    },
+    accountingFlag('aaa-accounting-suppress-null-username', ['suppress', 'null-username'], 'suppressNullUsername',
+      'Do not send accounting records for users with a null username', 'Send accounting records for users with a null username'),
+    accountingFlag('aaa-accounting-send-stop-always', ['send', 'stop-record', 'always'], 'sendStopAlways',
+      'Send a stop record even if no start record was sent', 'Send a stop record only after a start record'),
+    accountingFlag('aaa-accounting-send-stop-auth-failure', ['send', 'stop-record', 'authentication', 'failure'], 'sendStopOnAuthFailure',
+      'Send a stop record for calls that fail to authenticate', 'Stop sending stop records for failed authentications'),
+    accountingFlag('aaa-accounting-send-stop-auth-success', ['send', 'stop-record', 'authentication', 'success', 'remote-server'], 'sendStopOnSuccessRemote',
+      'Send a stop record for calls authenticated by the remote server', 'Stop sending stop records for remotely authenticated calls'),
+  ];
   return [
+    ...accountingOptionSpecs,
     {
       id: 'aaa-new-model',
       path: ['aaa', 'new-model'],

@@ -5250,6 +5250,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         capacity: () => this.vtyLineConfig.lineCapacity(),
         configuredTransport: () => this.sshConfiguredTransport(),
       });
+      this.wireExecAccounting();
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._credentialStore.liveSessionCount = (user) =>
         this._sshSessionRegistry!.list().filter(s => s.user === user && s.state !== 'closed').length;
@@ -5271,6 +5272,25 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
     return this._credentialStore;
+  }
+
+  private wireExecAccounting(): void {
+    const bus = this.getBus();
+    const driver = () => this.getAaaAuthenticator().execAccounting;
+    bus.subscribe('router.ssh.session.opened', (event) => {
+      if (event.payload.deviceId !== this.id) return;
+      if (event.payload.session.user === '' && event.payload.session.lineKind !== 'vty') return;
+      void driver().opened(event.payload.session);
+    });
+    bus.subscribe('router.ssh.session.authenticated', (event) => {
+      if (event.payload.deviceId === this.id) void driver().opened(event.payload.session);
+    });
+    bus.subscribe('router.ssh.session.closed', (event) => {
+      if (event.payload.deviceId === this.id) void driver().closed(event.payload.session);
+    });
+    bus.subscribe('router.aaa.account.login.failure', (event) => {
+      if (event.payload.deviceId === this.id) void driver().authenticationFailed(event.payload.account.name, event.payload.from ?? '');
+    });
   }
 
   getSecurityAuditLog(): SecurityAuditLog {

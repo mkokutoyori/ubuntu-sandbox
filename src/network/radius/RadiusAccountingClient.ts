@@ -119,17 +119,27 @@ export class RadiusAccountingClient {
 
   /** Begin a session and send Acct-Start. Returns the generated session id, or null if no server is configured. */
   startSession(username: string, serverIp?: string): string | null {
+    return this.beginSession(username, serverIp, true);
+  }
+
+  beginSession(username: string, serverIp: string | undefined, announce: boolean): string | null {
     const server = serverIp ? this.servers.find((s) => s.ip === serverIp) : this.servers[0];
     if (!server) return null;
     const sessionId = generateAcctSessionId();
     this.sessions.set(sessionId, {
       sessionId, username, server, startedAt: simulationNowMs(), inputOctets: 0, outputOctets: 0,
     });
-    this.send(server, {
-      sessionId, username, nasIp: '0.0.0.0', status: 'start',
-      delaySec: 0, sessionTimeSec: 0, inputOctets: 0, outputOctets: 0,
-    });
+    if (announce) {
+      this.send(server, {
+        sessionId, username, nasIp: '0.0.0.0', status: 'start',
+        delaySec: 0, sessionTimeSec: 0, inputOctets: 0, outputOctets: 0,
+      });
+    }
     return sessionId;
+  }
+
+  acknowledgedCount(serverIp: string): number {
+    return this.counters.phase(serverIp, 'accounting').transactionSuccess;
   }
 
   /** Send an Acct-Interim-Update reflecting cumulative counters for an active session. */

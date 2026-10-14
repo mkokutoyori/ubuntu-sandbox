@@ -398,6 +398,7 @@ export type DomainEvent =
   | SftpDomainEvent
   | DistributeTopics<NetworkOsAccountEventEnvelope['topic'], NetworkOsAccountEventEnvelope['payload']>
   | { topic: 'router.ssh.session.opened'; payload: { deviceId: string; session: SshSessionRecord } }
+  | { topic: 'router.ssh.session.authenticated'; payload: { deviceId: string; session: SshSessionRecord } }
   | { topic: 'router.ssh.session.closed'; payload: { deviceId: string; session: SshSessionRecord; reason: string } }
   | EigrpDomainEvent
   | NtpDomainEvent

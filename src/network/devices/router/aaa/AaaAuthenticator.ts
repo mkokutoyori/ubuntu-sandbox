@@ -3,6 +3,9 @@ import { getSecurityConfig } from '../../shells/cisco/CiscoSecurityCommands';
 import type { AaaMethodEntry, AaaServerGroup, CiscoSecurityConfig, RadiusServer, TacacsServer } from '../security/CiscoSecurityConfig';
 import { radiusAuthPort, tacacsServerPort } from '../security/CiscoSecurityConfig';
 import type { RadiusClientAgent } from '../../../radius/RadiusClientAgent';
+import type { RadiusAccountingClient } from '../../../radius/RadiusAccountingClient';
+import { getDefaultScheduler } from '@/events/Scheduler';
+import { ExecAccounting } from './ExecAccounting';
 import type { TacacsClientAgent } from '../../../tacacs/TacacsClientAgent';
 import type { TacacsAcctFlag } from '../../../tacacs/types';
 import type { VtyLineConfig } from '../vty/VtyLineConfig';
@@ -530,9 +533,32 @@ export class AaaAuthenticator {
     return this.emitAccounting('commands', command, username, privilegeLevel);
   }
 
-  /** L'accounting de session exec (`aaa accounting exec`). */
-  async accountExec(username: string, event: 'start' | 'stop'): Promise<number> {
-    return this.emitAccounting('exec', `exec-${event}`, username, undefined, event);
+  private execAccountingInstance: ExecAccounting | null = null;
+
+  get execAccounting(): ExecAccounting {
+    if (!this.execAccountingInstance) {
+      const sec = () => getSecurityConfig(this.router);
+      this.execAccountingInstance = new ExecAccounting({
+        security: sec,
+        tacacs: () => tacacsClientOf(this.router),
+        radius: () => (this.router as unknown as { getRadiusAccountingClient?: () => RadiusAccountingClient }).getRadiusAccountingClient?.(),
+        prepareTacacs: (client, server) => this.syncTacacsServer(client, server),
+        tacacsUser: (username, server) => this.tacacsWireUsername(sec(), username, server),
+        groupOf: (name) => sec().aaaGroups.get(name) ?? this.builtinGroup(sec(), name),
+        listName: (session) => {
+          if (session.lineKind !== 'vty') return 'default';
+          const line = vtyStoreOf(this.router)?.all().find((config) => config.first <= session.lineIndex && session.lineIndex <= config.last);
+          return line?.methodListFor('accounting', 'exec') ?? 'default';
+        },
+        ledger: {
+          start: () => { this.compteurs('exec').starts += 1; },
+          stop: () => { this.compteurs('exec').stops += 1; },
+          failed: () => { this.compteurs('exec').failed += 1; },
+        },
+        scheduler: () => getDefaultScheduler(),
+      });
+    }
+    return this.execAccountingInstance;
   }
 
   private async emitAccounting(
