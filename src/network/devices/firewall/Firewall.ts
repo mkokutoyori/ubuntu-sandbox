@@ -2740,6 +2740,7 @@ export class Firewall extends Equipment {
         const udp = p.payload as UDPPacket | undefined;
         return udp?.type === 'udp' && this.dnsServer.handleUdp(iface, p, udp);
       },
+      answeredByNtp: (iface, p) => this.ntp.observe(iface, p),
       snmpListens: (p) => this.snmpService?.listensOn(p) ?? false,
       allowsSnmp: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'snmp'),
       handleSnmp: (iface, p) => { this.snmpService?.handleUdp(iface, p); },

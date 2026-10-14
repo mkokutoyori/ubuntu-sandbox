@@ -16,6 +16,7 @@ export interface LocalDeliveryDeps {
   reply(iface: string, packet: IPv4Packet): void;
   localInVerdict?(iface: string, packet: IPv4Packet): LocalInVerdict;
   logLocalIn?(iface: string, packet: IPv4Packet, accepted: boolean): void;
+  answeredByNtp?(iface: string, packet: IPv4Packet): boolean;
 }
 
 export function deliverLocally(
@@ -34,6 +35,11 @@ export function deliverLocally(
   }
   if (deps.observedBySdwan(packet)) return;
   if (deps.answeredByDnsServer(iface, packet)) {
+    deps.logLocalIn?.(iface, packet, true);
+    return;
+  }
+
+  if (deps.answeredByNtp?.(iface, packet)) {
     deps.logLocalIn?.(iface, packet, true);
     return;
   }

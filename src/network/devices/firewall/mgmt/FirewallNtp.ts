@@ -1,7 +1,8 @@
 import { NtpAgent, type NtpHost } from '../../../ntp/NtpAgent';
 import type { UdpSendRequest } from '../../../layers/transport/UdpEgress';
 import type { IEventBus } from '../../../../events/EventBus';
-import type { EthernetFrame } from '../../../core/types';
+import { IP_PROTO_UDP, type EthernetFrame, type IPv4Packet, type UDPPacket } from '../../../core/types';
+import { UDP_PORT_NTP } from '../../../ntp/types';
 import type { Port } from '../../../hardware/Port';
 
 export interface NtpSettings {
@@ -27,6 +28,14 @@ export class FirewallNtp {
   }
 
   getAgent(): NtpAgent { return this.agent; }
+
+  observe(iface: string, packet: IPv4Packet): boolean {
+    const udp = packet.payload as UDPPacket | undefined;
+    if (packet.protocol !== IP_PROTO_UDP || udp?.type !== 'udp' || udp.sourcePort !== UDP_PORT_NTP) return false;
+    if (!this.settings.enabled || !this.agent.getAssociation(packet.sourceIP.toString())) return false;
+    this.agent.handleUdp(iface, packet.sourceIP, udp);
+    return true;
+  }
 
   getSettings(): NtpSettings { return this.settings; }
 
