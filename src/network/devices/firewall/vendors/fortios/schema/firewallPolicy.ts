@@ -228,6 +228,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       matchVipOnly: object.effective('match-vip-only')[0] === 'enable',
       timeoutSendRst: object.effective('timeout-send-rst')[0] === 'enable',
       trafficShaper: named(object, 'traffic-shaper'),
+      perIpShaper: named(object, 'per-ip-shaper'),
       trafficShaperReverse: named(object, 'traffic-shaper-reverse'),
       scheduleTimeout: object.effective('schedule-timeout')[0] === 'enable',
       sendDenyPacket: action === 'deny' && object.effective('send-deny-packet')[0] === 'enable',

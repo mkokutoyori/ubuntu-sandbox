@@ -32,6 +32,7 @@ export interface SecurityRule {
   scheduleTimeout?: boolean;
   trafficShaper?: string;
   trafficShaperReverse?: string;
+  perIpShaper?: string;
   timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
@@ -195,6 +196,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     scheduleTimeout: init.scheduleTimeout,
     trafficShaper: init.trafficShaper,
     trafficShaperReverse: init.trafficShaperReverse,
+    perIpShaper: init.perIpShaper,
     timeoutSendRst: init.timeoutSendRst,
     matchVipOnly: init.matchVipOnly,
     diffserv: init.diffserv,

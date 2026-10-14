@@ -86,7 +86,7 @@ export const POLICY_REFERENCE_ATTRIBUTES: readonly FortiAttributeSpec[] = Object
   { ...enable('pcp-inbound', 'Enable/disable PCP inbound DNAT.', false), unimplemented: 'there is no VoIP or PCP engine behind it.' },
   { ...enable('pcp-outbound', 'Enable/disable PCP outbound SNAT.', false), unimplemented: 'there is no VoIP or PCP engine behind it.' },
   { ...word('pcp-poolname', 'PCP pool names. PCP pool name.'), unimplemented: 'there is no VoIP or PCP engine behind it.' },
-  { ...word('per-ip-shaper', 'Per-IP traffic shaper.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  reference('per-ip-shaper', 'Per-IP traffic shaper.', ['firewall shaper per-ip-shaper']),
   { ...enable('permit-any-host', 'Enable/disable fullcone NAT. Accept UDP packets from any host.', false), unimplemented: 'there is no VoIP or PCP engine behind it.' },
   { ...enable('permit-stun-host', 'Accept UDP packets from any Session Traversal Utilities for NAT (STUN) host.', false), unimplemented: 'there is no VoIP or PCP engine behind it.' },
   enable('policy-expiry', 'Enable/disable policy expiry.', false),

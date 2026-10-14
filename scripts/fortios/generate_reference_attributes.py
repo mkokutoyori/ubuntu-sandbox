@@ -70,7 +70,7 @@ HELP_OVERRIDES = {
     'vlan-filter': 'VLAN ranges to allow.',
 }
 
-REF_TARGETS = {'traffic-shaper': ['firewall shaper traffic-shaper'], 'traffic-shaper-reverse': ['firewall shaper traffic-shaper']}
+REF_TARGETS = {'per-ip-shaper': ['firewall shaper per-ip-shaper'], 'traffic-shaper': ['firewall shaper traffic-shaper'], 'traffic-shaper-reverse': ['firewall shaper traffic-shaper']}
 LISTS = {'macaddr', 'src-filter', 'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
          'internet-service-group', 'internet-service-name', 'internet-service-src-custom', 'internet-service-src-custom-group',
          'internet-service-src-fortiguard', 'internet-service-src-group', 'internet-service-src-name',

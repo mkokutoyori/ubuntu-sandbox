@@ -20,7 +20,8 @@
   "match-vip-only",
   "timeout-send-rst",
   "traffic-shaper",
-  "traffic-shaper-reverse"
+  "traffic-shaper-reverse",
+  "per-ip-shaper"
  ],
  "firewall vip": [
   "src-filter",

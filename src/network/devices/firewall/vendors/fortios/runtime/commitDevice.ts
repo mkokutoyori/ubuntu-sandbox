@@ -113,6 +113,12 @@ export function buildCommitDevice(
       applyTrafficShaper(shaper) {
         fw.getShaperStore().upsert(shaper);
       },
+      applyPerIpShaper(shaper) {
+        fw.getShaperStore().upsertPerIp(shaper);
+      },
+      removePerIpShaper(name) {
+        fw.getShaperStore().removePerIp(name);
+      },
       removeTrafficShaper(name) {
         fw.getShaperStore().remove(name);
       },

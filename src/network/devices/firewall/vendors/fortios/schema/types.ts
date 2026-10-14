@@ -368,6 +368,8 @@ export interface FortiCommitDevice {
   removeSchedule(name: string): void;
   applyTrafficShaper(shaper: import('../../../model/TrafficShaper').TrafficShaper): void;
   removeTrafficShaper(name: string): void;
+  applyPerIpShaper(shaper: import('../../../model/TrafficShaper').PerIpShaper): void;
+  removePerIpShaper(name: string): void;
   applyVdomSettings(settings: FortiVdomSettings): void;
   setVdomLldp(transmission: LldpVdomSetting, reception: LldpVdomSetting): void;
   setSessionDirtyMode(mode: string): void;

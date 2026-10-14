@@ -701,6 +701,8 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       rewriteDiffserv(context, carried, found.direction, found.session.originalTos);
       const shaped = shapeTraffic(services, context, carried, found.direction);
       if (shaped) return shaped;
+      const perIp = shapePerIp(services, context, carried, found.direction, found.session.c2s.sourceIP, false);
+      if (perIp) return perIp;
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
       context.verdict = Object.freeze({
         action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
@@ -1155,6 +1157,39 @@ function shapeTraffic(
   return undefined;
 }
 
+function shapePerIp(
+  services: FirewallServices, context: PacketContext, rule: SecurityRule | undefined,
+  direction: 'c2s' | 's2c', clientIp: string, opensSession: boolean,
+): FilterVerdict<PacketContext> | undefined {
+  const packet = ipv4(context);
+  const name = rule?.perIpShaper;
+  const entry = name === undefined ? undefined : vdom(services, context).shapers?.perIpShaper(name);
+  if (!rule || !packet || !entry || name === undefined) return undefined;
+
+  const { shaper, meter } = entry;
+  if (opensSession) {
+    const sessions = vdom(services, context).sessions;
+    const policies = vdom(services, context).policy.ordered();
+    const mine = sessions.view().find(session => session.c2s.sourceIP === clientIp
+      && policies.find(r => r.id === session.policyId)?.perIpShaper === name);
+    const overall = shaper.maxSessions > 0 && mine.length >= shaper.maxSessions;
+    const ofProtocol = (protocol: number, limit: number): boolean => limit > 0
+      && packet.protocol === protocol
+      && mine.filter(session => session.c2s.protocol === protocol).length >= limit;
+    if (overall || ofProtocol(IP_PROTO_TCP, shaper.maxTcpSessions)
+      || ofProtocol(IP_PROTO_UDP, shaper.maxUdpSessions)) {
+      return deny(context, 'shaper', 'shaper-exceeded', rule.id);
+    }
+  }
+  if (shaper.maximum > 0
+    && meter.measure(clientIp, packet.totalLength, services.now()) === 'dropped') {
+    return deny(context, 'shaper', 'shaper-exceeded', rule.id);
+  }
+  const code = direction === 'c2s' ? shaper.forwardDscp : shaper.reverseDscp;
+  if (code !== undefined) markDscp(context, code);
+  return undefined;
+}
+
 function rewriteDiffserv(
   context: PacketContext, rule: SecurityRule | undefined,
   direction: 'c2s' | 's2c', originalTos: number | undefined,
@@ -1173,7 +1208,10 @@ function shaperStage(services: FirewallServices): PipelineStage {
   return {
     name: 'shaper',
     apply(context) {
+      const packet = ipv4(context);
       return shapeTraffic(services, context, context.matchedPolicy, 'c2s')
+        ?? (packet === undefined ? undefined : shapePerIp(services, context, context.matchedPolicy,
+          'c2s', packet.sourceIP.toString(), context.isFirstPacket))
         ?? proceed(context, 'shaper', 'unset');
     },
   };

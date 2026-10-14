@@ -690,6 +690,47 @@ export const TRAFFIC_SHAPER: FortiTableSpec = {
   },
 };
 
+export const PER_IP_SHAPER: FortiTableSpec = {
+  path: ['firewall', 'shaper', 'per-ip-shaper'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 464,
+  help: 'Configure per-IP traffic shaper.',
+  attributes: [
+    { ...word('name', 'Traffic shaper name.'), readOnly: true },
+    choice('bandwidth-unit', 'Unit of measurement for maximum bandwidth for this shaper (Kbps, Mbps or Gbps).', SHAPER_UNITS, 'kbps'),
+    enable('diffserv-forward', 'Enable/disable changing the Forward (original) DiffServ setting applied to traffic accepted by this shaper.', false),
+    enable('diffserv-reverse', 'Enable/disable changing the Reverse (reply) DiffServ setting applied to traffic accepted by this shaper.', false),
+    { ...word('diffservcode-forward', 'Forward (original) DiffServ setting to be applied to traffic accepted by this shaper.'), acceptsValue: SHAPER_CODE },
+    { ...word('diffservcode-rev', 'Reverse (reply) DiffServ setting to be applied to traffic accepted by this shaper.'), acceptsValue: SHAPER_CODE },
+    count('max-bandwidth', 'Upper bandwidth limit enforced by this shaper (0 - 80000000). 0 means no limit. Units depend on the bandwidth-unit setting.', 0, 80000000, 0),
+    count('max-concurrent-session', 'Maximum number of concurrent sessions allowed by this shaper (0 - 2097000). 0 means no limit.', 0, 2097000, 0),
+    count('max-concurrent-tcp-session', 'Maximum number of concurrent TCP sessions allowed by this shaper (0 - 2097000). 0 means no limit.', 0, 2097000, 0),
+    count('max-concurrent-udp-session', 'Maximum number of concurrent UDP sessions allowed by this shaper (0 - 2097000). 0 means no limit.', 0, 2097000, 0),
+  ],
+  onCommit(object, context) {
+    const amount = (name: string): number => Number.parseInt(object.effective(name)[0] ?? '0', 10) || 0;
+    context.device.applyPerIpShaper({
+      name: object.key,
+      unit: (object.effective('bandwidth-unit')[0] ?? 'kbps') as 'kbps' | 'mbps' | 'gbps',
+      maximum: amount('max-bandwidth'),
+      forwardDscp: object.effective('diffserv-forward')[0] === 'enable'
+        ? shaperCode(object, 'diffservcode-forward') : undefined,
+      reverseDscp: object.effective('diffserv-reverse')[0] === 'enable'
+        ? shaperCode(object, 'diffservcode-rev') : undefined,
+      maxSessions: amount('max-concurrent-session'),
+      maxTcpSessions: amount('max-concurrent-tcp-session'),
+      maxUdpSessions: amount('max-concurrent-udp-session'),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removePerIpShaper(key);
+  },
+};
+
 function listOf(object: FortiObjectView, name: string): readonly FortiObjectView[] {
   return object.childEntries(name);
 }
@@ -851,6 +892,7 @@ export const UTM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   IPS_GLOBAL,
   DLP_SENSOR,
   TRAFFIC_SHAPER,
+  PER_IP_SHAPER,
 ]);
 
 export { NO_SIGNATURES, NO_WIRE_CLOCK };

@@ -76,9 +76,35 @@ export class ShaperMeter {
   }
 }
 
+export interface PerIpShaper {
+  readonly name: string;
+  readonly unit: BandwidthUnit;
+  readonly maximum: number;
+  readonly forwardDscp?: number;
+  readonly reverseDscp?: number;
+  readonly maxSessions: number;
+  readonly maxTcpSessions: number;
+  readonly maxUdpSessions: number;
+}
+
 export class ShaperStore {
   private readonly shapers = new Map<string, TrafficShaper>();
   private readonly meters = new Map<string, ShaperMeter>();
+  private readonly perIp = new Map<string, { shaper: PerIpShaper; meter: ShaperMeter }>();
+
+  upsertPerIp(shaper: PerIpShaper): void {
+    const meter = new ShaperMeter({
+      name: shaper.name, unit: shaper.unit, guaranteed: 0, exceed: 0, maximum: shaper.maximum,
+      overheadBytes: 0, perPolicy: true,
+    });
+    this.perIp.set(shaper.name, { shaper, meter });
+  }
+
+  removePerIp(name: string): void { this.perIp.delete(name); }
+
+  perIpShaper(name: string): { shaper: PerIpShaper; meter: ShaperMeter } | undefined {
+    return this.perIp.get(name);
+  }
 
   upsert(shaper: TrafficShaper): void {
     this.shapers.set(shaper.name, shaper);
