@@ -1,5 +1,5 @@
 import { computeIPv4Checksum } from '../../../../core/types';
-import { computeTcpChecksum, type TcpSegment } from '../../../../tcp/types';
+import { computeTcpChecksum } from '../../../../tcp/types';
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
 import { decrementForForwarding } from '../../../../layers/internet/InternetLayer';
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';

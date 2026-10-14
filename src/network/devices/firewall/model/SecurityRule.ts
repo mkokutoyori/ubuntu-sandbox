@@ -107,6 +107,7 @@ export interface SecurityRuleInit {
   scheduleTimeout?: boolean;
   trafficShaper?: string;
   trafficShaperReverse?: string;
+  perIpShaper?: string;
   timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };

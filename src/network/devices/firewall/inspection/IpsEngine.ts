@@ -20,9 +20,11 @@ export interface IpsSignatureBody {
   readonly defaultAction?: 'pass' | 'drop';
 }
 
-export type IpsParseResult =
-  | { readonly ok: true; readonly signature: IpsSignatureBody }
-  | { readonly ok: false; readonly error: string };
+export interface IpsParseResult {
+  readonly ok: boolean;
+  readonly signature?: IpsSignatureBody;
+  readonly error?: string;
+}
 
 const SEVERITIES: readonly IpsSeverity[] = ['info', 'low', 'medium', 'high', 'critical'];
 const CONTEXTS: readonly IpsContext[] = ['uri', 'header', 'body', 'host', 'packet'];
