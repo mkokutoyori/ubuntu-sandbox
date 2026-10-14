@@ -352,6 +352,10 @@ export const FIREWALL_VIP: FortiTableSpec = {
     const kind = object.effective('type')[0] ?? 'static-nat';
     const external = splitRange(object.effective('extip')[0] ?? '');
     if (external.from === '') return;
+    if (object.effective('status')[0] === 'disable') {
+      context.device.removeVip(object.key);
+      return;
+    }
 
     if (kind === 'server-load-balance') {
       const servers = object.childEntries('realservers').map(entry => ({

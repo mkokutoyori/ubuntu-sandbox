@@ -20,7 +20,8 @@
   "match-vip-only"
  ],
  "firewall vip": [
-  "src-filter"
+  "src-filter",
+  "status"
  ],
  "firewall address": [
   "macaddr",
