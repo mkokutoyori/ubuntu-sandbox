@@ -138,6 +138,7 @@ import { lineIdleTimeoutMs, vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { KeypairService } from './router/security/KeypairService';
 import { classifyIpv4Destination } from '../layers/internet/InternetLayer';
 import type { LldpHost } from '../lldp/LldpAgent';
+import { MvrpAgent, type MvrpPortConfig } from '../mvrp/MvrpAgent';
 import { DhcpBulkLeasequeryService } from '../dhcp/DhcpBulkLeasequery';
 
 // Re-export shell classes for backward compatibility
@@ -471,6 +472,9 @@ export abstract class Switch extends Equipment {
 
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
+  private mvrpAgent: MvrpAgent | null = null;
+  private readonly mvrpDynamicVlans = new Set<number>();
+  private readonly mvrpMembers = new Map<number, Set<string>>();
   private stpVlanStates: Map<string, STPPortState> = new Map();
 
   // ─── MAC Move Detection ───────────────────────────────────────
@@ -1113,6 +1117,7 @@ export abstract class Switch extends Equipment {
     }
 
     Logger.info(this.id, 'switch:vlan-create', `${this.name}: created VLAN ${id}`);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -1324,6 +1329,7 @@ export abstract class Switch extends Equipment {
 
     this.flushDynamicMacsOnPort(portName, 'access-vlan-change');
 
+    this.mvrpTopologyChanged();
     Logger.info(this.id, 'switch:access-vlan', `${this.name}: ${portName} access VLAN ${vlanId}`);
     return true;
   }
@@ -2018,6 +2024,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = VlanSet.from(vlans);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2025,6 +2032,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans.add(vlanId);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2032,6 +2040,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     for (const v of vlans) cfg.trunkAllowedVlans.add(v);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2039,6 +2048,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans.delete(vlanId);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2046,6 +2056,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     for (const v of vlans) cfg.trunkAllowedVlans.delete(v);
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2053,6 +2064,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = VlanSet.all();
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2060,6 +2072,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = VlanSet.none();
+    this.mvrpTopologyChanged();
     return true;
   }
 
@@ -2067,10 +2080,88 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
     cfg.trunkAllowedVlans = VlanSet.allExcept(vlans);
+    this.mvrpTopologyChanged();
     return true;
   }
 
   // ─── STP API ──────────────────────────────────────────────────────
+
+  getMvrpAgent(): MvrpAgent {
+    if (!this.mvrpAgent) {
+      this.mvrpAgent = new MvrpAgent({
+        id: this.id,
+        name: this.name,
+        getHostname: () => this.getHostname(),
+        getPort: (n: string) => this.getPort(n),
+        sendOnLink: (request) => this.getLinkLayer().send(request),
+        portForwarding: (n: string) => this.getSTPState(n) === 'forwarding',
+        portNames: () => this.switchportConfigs.keys(),
+        pvidOf: (n: string) => this.mvrpPvid(n),
+        fixedRegistrations: (n: string) => this.mvrpStaticVlans(n),
+        onVlanRegistered: (n, vid) => this.mvrpRegister(n, vid),
+        onVlanDeregistered: (n, vid) => this.mvrpDeregister(n, vid),
+      }, () => this.getBus(), () => this.getScheduler());
+    }
+    return this.mvrpAgent;
+  }
+
+  setMvrpEnabled(enabled: boolean): void {
+    this.getMvrpAgent().setEnabled(enabled);
+  }
+
+  configureMvrpPort(portName: string, patch: Partial<MvrpPortConfig>): void {
+    if (!this.switchportConfigs.has(portName)) return;
+    this.getMvrpAgent().configurePort(portName, patch);
+  }
+
+  isMvrpDynamicVlan(vlan: number): boolean {
+    return this.mvrpDynamicVlans.has(vlan);
+  }
+
+  private mvrpPvid(portName: string): number {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return 1;
+    if (cfg.mode === 'access') return cfg.accessVlan;
+    if (cfg.mode === 'hybrid') return cfg.hybridPvid ?? 1;
+    return cfg.trunkNativeVlan;
+  }
+
+  private mvrpStaticVlans(portName: string): ReadonlySet<number> {
+    const cfg = this.switchportConfigs.get(portName);
+    const carried = new Set<number>();
+    if (!cfg) return carried;
+    for (const id of this.vlans.keys()) {
+      if (this.mvrpDynamicVlans.has(id)) continue;
+      if (cfg.mode === 'access' ? cfg.accessVlan === id
+        : cfg.mode === 'hybrid' ? (cfg.hybridUntaggedVlans?.has(id) || cfg.hybridTaggedVlans?.has(id))
+          : cfg.mode === 'trunk' && cfg.trunkAllowedVlans.has(id)) carried.add(id);
+    }
+    return carried;
+  }
+
+  private mvrpRegister(portName: string, vlan: number): void {
+    let members = this.mvrpMembers.get(vlan);
+    if (!members) this.mvrpMembers.set(vlan, members = new Set());
+    members.add(portName);
+    if (!this.vlans.has(vlan) && this.createVLAN(vlan)) this.mvrpDynamicVlans.add(vlan);
+  }
+
+  private mvrpDeregister(portName: string, vlan: number): void {
+    const members = this.mvrpMembers.get(vlan);
+    members?.delete(portName);
+    if (members && members.size > 0) return;
+    this.mvrpMembers.delete(vlan);
+    if (this.mvrpDynamicVlans.delete(vlan)) this.deleteVLAN(vlan);
+  }
+
+  private mvrpEgressPermitted(portName: string, vlan: number): boolean {
+    if (!this.mvrpDynamicVlans.has(vlan)) return true;
+    return this.mvrpMembers.get(vlan)?.has(portName) ?? false;
+  }
+
+  private mvrpTopologyChanged(): void {
+    this.mvrpAgent?.refreshFixedRegistrations();
+  }
 
   getSTPState(portName: string): STPPortState {
     return this.stpStates.get(portName) || 'disabled';
@@ -2105,6 +2196,7 @@ export abstract class Switch extends Equipment {
 
   setSTPState(portName: string, state: STPPortState): void {
     this.stpStates.set(portName, state);
+    this.mvrpAgent?.onPortForwardingChanged(portName);
   }
 
   /** Advance STP timer for a port: listening→learning→forwarding */
@@ -2307,6 +2399,8 @@ export abstract class Switch extends Equipment {
 
     // SPAN ingress copy must happen before any DAI/STP/VLAN drop.
     this.mirrorIngress(portName, frame);
+
+    if (this.mvrpAgent?.handleFrame(portName, frame)) return;
 
     if (!this.macAclPermits(portName, frame)) {
       Logger.debug(this.id, 'switch:mac-acl-drop',
@@ -2797,7 +2891,7 @@ export abstract class Switch extends Equipment {
         }
       } else {
         // Trunk: send if VLAN is allowed
-        if (cfg.trunkAllowedVlans.has(vlan) && !this.getVtpAgentOrNull()?.isVlanPruned(portName, vlan)) {
+        if (cfg.trunkAllowedVlans.has(vlan) && this.mvrpEgressPermitted(portName, vlan) && !this.getVtpAgentOrNull()?.isVlanPruned(portName, vlan)) {
           const pv = this.pvlanPorts.get(portName);
           if (pv && this.resolvePvlanPrimary(vlan) !== undefined) {
             if (!this.pvlanEgressAllowed(exceptPort, portName, vlan)) continue;
@@ -2855,7 +2949,7 @@ export abstract class Switch extends Equipment {
       }
     } else {
       // Trunk port: check if VLAN is allowed before sending
-      if (!cfg.trunkAllowedVlans.has(vlan)) {
+      if (!cfg.trunkAllowedVlans.has(vlan) || !this.mvrpEgressPermitted(portName, vlan)) {
         Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${vlan} not allowed on trunk ${portName} (egress)`);
         return;
       }

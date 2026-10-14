@@ -27,6 +27,7 @@ export interface MvrpHost {
   sendOnLink(request: LinkSendRequest): boolean;
   portForwarding?(portName: string): boolean;
   pvidOf?(portName: string): number;
+  portNames?(): Iterable<string>;
   fixedRegistrations?(portName: string): ReadonlySet<number>;
   onVlanRegistered(portName: string, vid: number, isNew: boolean): void;
   onVlanDeregistered(portName: string, vid: number): void;
@@ -173,8 +174,10 @@ export class MvrpAgent extends ReactiveAgentBase {
 
   refreshFixedRegistrations(): void {
     const vids = new Set<number>(this.local);
-    for (const [name, runtime] of this.ports) {
+    for (const runtime of this.ports.values()) {
       for (const vid of runtime.registrars.keys()) vids.add(vid);
+    }
+    for (const name of this.allPortNames()) {
       for (const vid of this.host.fixedRegistrations?.(name) ?? []) vids.add(vid);
     }
     for (const vid of vids) this.reconcile(vid, false);
@@ -432,13 +435,18 @@ export class MvrpAgent extends ReactiveAgentBase {
 
   private sourcesOf(vid: number, excluded: string): boolean {
     if (this.local.has(vid)) return true;
-    for (const [name, runtime] of this.ports) {
-      if (name === excluded || !this.active(runtime)) continue;
+    for (const name of this.allPortNames()) {
+      if (name === excluded) continue;
       if (!(this.host.portForwarding?.(name) ?? true)) continue;
-      if (runtime.registrars.get(vid)?.isRegistered === true) return true;
+      const runtime = this.ports.get(name);
+      if (runtime !== undefined && this.active(runtime) && runtime.registrars.get(vid)?.isRegistered === true) return true;
       if (this.host.fixedRegistrations?.(name)?.has(vid) === true) return true;
     }
     return false;
+  }
+
+  private allPortNames(): Set<string> {
+    return new Set<string>([...this.ports.keys(), ...(this.host.portNames?.() ?? [])]);
   }
 
   private reconcile(vid: number, isNew: boolean): void {
