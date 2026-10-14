@@ -408,7 +408,7 @@ describe('Scénario 9 — le terminal interactif, pas seulement le canal brut', 
     term.handleKey(touche('Enter'));
     for (let i = 0; i < 40; i++) await pause(25);
     expect(
-      term.foreground.getPrompt(),
+      term.getPrompt(),
       'la session doit être établie, sinon la suite ne mesure rien',
     ).toMatch(/R1/);
     return term;

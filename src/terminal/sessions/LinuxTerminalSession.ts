@@ -10,11 +10,10 @@
  */
 
 import { SCREEN_REPAINT_MARK } from '@/network/protocols/ssh/server/SshScreenRepaint';
-import { findEquipmentByIp } from '@/shell/hostResolution';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
-import { Equipment, type HostCapableDevice } from '@/network';
+import { Equipment } from '@/network';
 import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '@/network/core/types';
 import { PortNumber } from '@/network/core/ports/PortNumber';
@@ -129,7 +128,6 @@ import {
   parseSshArgs,
   parseProxyJumpSpec,
   type ParsedSshArgs,
-  type ProxyHop,
 } from './sshArgs';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import type { TcpConnector, TcpDialFailure } from '@/network/tcp/types';
@@ -202,25 +200,7 @@ export class LinuxTerminalSession extends TerminalSession {
   /** Saved input before history navigation started. */
   private subShellSavedInput: string = '';
 
-  /**
-   * Stack of SSH "frames" — each entry remembers the local device and
-   * the saved cwd/user pair that were active before connecting to a
-   * remote machine. The terminal becomes the remote machine's terminal
-   * (BRD SSH-04: every command runs on the remote, editors open on the
-   * remote, tab completion uses the remote VFS) until the user types
-   * `exit` / `logout` or presses Ctrl+D.
-   */
-  private sshStack: Array<{
-    device: Equipment;
-    user: string;
-    path: string;
-    /** Local shell session paused while this remote frame is active. */
-    pausedShell: LinuxShellSession | null;
-    /** Closing callback (e.g. ssh session disconnect). */
-    onPop: () => void;
-    /** Display string used in "Connection to <X> closed." line. */
-    label: string;
-  }> = [];
+  private sshTrail: ReadonlyArray<{ host: string; user: string }> = [];
 
   /**
    * Reactive SSH IO: holds the QueuedTerminalIO that bridges the async SSH
@@ -265,10 +245,9 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private ensureRootBash(): LinuxBashShell | null {
     if (!(this.device instanceof LinuxMachine) || !this.shell) return null;
-    // Re-create when the bound session no longer matches the active one —
-    // this is what happens after `pushRemoteDevice` swaps `this.shell` to
-    // a remote session. The previous instance is disposed (no-op on the
-    // session itself: it doesn't own it) so its internal state is freed.
+    // Re-create when the bound session no longer matches the active one.
+    // The previous instance is disposed (no-op on the session itself: it
+    // doesn't own it) so its internal state is freed.
     const sessionDrifted = this.rootBash !== null
       && (this.rootBash as unknown as { session: LinuxShellSession | null }).session !== this.shell;
     if (this.rootBash && !sessionDrifted) return this.rootBash;
@@ -413,30 +392,6 @@ export class LinuxTerminalSession extends TerminalSession {
     return this.shell?.user ?? this.currentUser;
   }
 
-  protected override applyRemoteEnv(env: Record<string, string>): void {
-    const shellEnv = (this.shell as unknown as { env?: { set(k: string, v: string): void } } | null)?.env;
-    if (!shellEnv) return;
-    for (const [k, v] of Object.entries(env)) shellEnv.set(k, v);
-  }
-
-  protected override prepareAsRemoteUser(user: string): void {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) {
-      this.currentUser = user;
-      this.currentPath = `/home/${user}`;
-      return;
-    }
-    if (this.shell) dev.closeShellSession(this.shell);
-    this.shell = this.adoptWindowSize(dev.openShellSession({ user }));
-    this.currentUser = user;
-    this.currentPath = this.shell.cwd;
-    if (this.rootBash) {
-      this.rootBash.deactivate();
-      this.rootBash.dispose();
-      this.rootBash = null;
-    }
-  }
-
   /**
    * Route every command through the per-terminal shell session so that
    * cwd / env / su stack mutations stay local to this terminal. Falls back
@@ -462,7 +417,6 @@ export class LinuxTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return LINUX_THEME; }
 
   getPrompt(): string {
-    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) return this.activeSubShell.getPrompt();
     // PS2 continuation prompt while accumulating an incomplete command
     // (open quote, trailing `\`, dangling connector, open block, heredoc).
@@ -497,7 +451,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // what makes the renderer print `getPrompt()` verbatim — without this
     // the canvas terminal kept showing PS1 through a whole here-document,
     // even though the session was collecting a body.
-    if (this._continuationBuffer !== null && !this.hasActiveChild && !this.activeSubShell) {
+    if (this._continuationBuffer !== null && !this.activeSubShell) {
       return {
         user: this.currentUser,
         hostname: this.device.getHostname() || 'localhost',
@@ -505,23 +459,6 @@ export class LinuxTerminalSession extends TerminalSession {
         promptChar: '$',
         foreign: true,
       };
-    }
-    if (this.hasActiveChild) {
-      if (this.foreground.getSessionType() !== 'linux') {
-        return {
-          user: this.currentUser,
-          hostname: this.device.getHostname() || 'localhost',
-          path: this.currentPath,
-          promptChar: '$',
-          foreign: true,
-        };
-      }
-      // The foreground child is itself a Linux session (SSH'd into
-      // another Linux box) — its own currentUser/device/currentPath are
-      // the ones that must render, not this (parent) session's. Delegate
-      // recursively so multi-hop Linux→Linux→Linux chains each show
-      // their own remote hostname in turn.
-      return (this.foreground as LinuxTerminalSession).getPromptParts();
     }
     if (this.activeSubShell) {
       const remoteBash = this.activeSubShell.getPromptParts?.();
@@ -560,34 +497,12 @@ export class LinuxTerminalSession extends TerminalSession {
     // `getPromptParts`), which is the right place to surface that.
     const local = this.getLocalDevice();
     const hostname = local.getHostname() || 'localhost';
-    const path = collapseHome(this.localPath, homeDirectoryOn(local, this.localUser));
-    return { left: `${this.localUser}@${hostname}: ${path}` };
+    const path = collapseHome(this.currentPath, homeDirectoryOn(local, this.currentUser));
+    return { left: `${this.currentUser}@${hostname}: ${path}` };
   }
 
-  /**
-   * Device the terminal modal is rooted on, i.e. the local host the user
-   * opened the terminal from. Distinct from `this.device`, which points
-   * at the *currently active* device — that may be a remote when SSH
-   * frames are pushed on the stack.
-   */
   getLocalDevice(): Equipment {
-    return this.sshStack.length === 0
-      ? this.device
-      : this.sshStack[0].device;
-  }
-
-  /** User on the local device (bottom of the SSH stack). */
-  private get localUser(): string {
-    return this.sshStack.length === 0
-      ? this.currentUser
-      : this.sshStack[0].user;
-  }
-
-  /** Path on the local device (bottom of the SSH stack). */
-  private get localPath(): string {
-    return this.sshStack.length === 0
-      ? this.currentPath
-      : this.sshStack[0].path;
+    return this.device;
   }
 
   async init(): Promise<void> {
@@ -600,7 +515,6 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Input mode ──────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
-    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
@@ -646,8 +560,6 @@ export class LinuxTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
-
-    if (this.hasActiveChild) return this.foreground.handleKey(e);
 
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
@@ -739,8 +651,6 @@ export class LinuxTerminalSession extends TerminalSession {
       // end the shell: bash warns and runs the command with the body it
       // has. Nothing here may close the session or the SSH connection.
       if (this._pendingHeredocDelimiter !== null) { void this.endHeredocAtEof(); return true; }
-      if (this.endRemoteSession()) return true;
-      if (this.sshStack.length > 0) { this.popRemoteDevice(); return true; }
       this._onRequestClose?.();
       return true;
     }
@@ -972,11 +882,6 @@ export class LinuxTerminalSession extends TerminalSession {
         this.syncDeviceState();
         return;
       }
-      if (this.sshStack.length > 0) {
-        this.popRemoteDevice();
-        return;
-      }
-      if (this.endRemoteSession()) return;
       // Signal close — the view/manager will handle it
       this._onRequestClose?.();
       return;
@@ -1600,7 +1505,6 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   override editorSave(content: string, filePath: string): void {
-    if (this.hasActiveChild) { super.editorSave(content, filePath); return; }
     const dev = this.device;
     if (this.shell && dev instanceof LinuxMachine) {
       dev.writeFileFromEditorInSession(filePath, content, this.shell);
@@ -1618,7 +1522,6 @@ export class LinuxTerminalSession extends TerminalSession {
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
   override editorExit(saved: boolean = true): void {
-    if (this.hasActiveChild) { super.editorExit(saved); return; }
     if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
     if (this._pendingVisudoEdit) { this.finishVisudoEdit(saved); return; }
     this.inputMode = { type: 'normal' };
@@ -1649,12 +1552,6 @@ export class LinuxTerminalSession extends TerminalSession {
     // identity for the duration of the push; reading the device's
     // local-console user would drift back to e.g. 'user' on a Windows
     // host and break the prompt mid-session.
-    if (this.sshStack.length > 0) {
-      const cwd = this.device.getCwd?.();
-      if (cwd) this.currentPath = cwd;
-      this.notify();
-      return;
-    }
     const cwd = this.device.getCwd?.();
     if (cwd) this.currentPath = cwd;
     this.currentUser = this.device.getCurrentUser?.() ?? 'user';
@@ -2445,7 +2342,14 @@ export class LinuxTerminalSession extends TerminalSession {
       if (client !== null) client.retire();
       else session.disconnect();
       releaseJumps();
+      this.sshTrail = [];
     };
+    if (hops.length > 0) {
+      this.sshTrail = [
+        ...hops.map((hop) => ({ host: hop.host, user: hop.user ?? this.currentUser })),
+        { host: typedHost, user },
+      ];
+    }
 
     // Every vendor is driven over the real, authenticated SSH channel.
     // The server shells became stateful (A2/A3), publish their prompt
@@ -3142,8 +3046,6 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private exitSubShell(): void {
-    const wasSshAdapter = this.activeSubShell instanceof ShellSubShellAdapter
-      && this.activeSubShell.inner.kind === 'ssh-remote';
     if (this.activeSubShell) {
       this.activeSubShell.dispose();
       this.activeSubShell = null;
@@ -3153,10 +3055,7 @@ export class LinuxTerminalSession extends TerminalSession {
     this.subShellHistoryIndex = -1;
     this.subShellSavedInput = '';
     this.inputMode = { type: 'normal' };
-    if (wasSshAdapter && this.sshStack.length > 0) {
-      this.popRemoteDevice();
-      return;
-    }
+    this.sshTrail = [];
     this.notify();
   }
 
@@ -3221,61 +3120,8 @@ export class LinuxTerminalSession extends TerminalSession {
     return found?.ip ?? null;
   }
 
-  pushRemoteDevice(
-    remote: HostCapableDevice,
-    user: string,
-    label: string,
-    onPop: () => void = () => undefined,
-  ): void {
-    // Stash the previous device + the local shell session, then allocate a
-    // fresh shell session on the remote so commands executed during the SSH
-    // chain run with the remote user's home / env / suStack — not the local
-    // one. On pop we close that remote session and restore the local pair.
-    const pausedShell = this.shell;
-    let remoteShell: LinuxShellSession | null = null;
-    if (remote instanceof LinuxMachine) {
-      remoteShell = this.adoptWindowSize(remote.openShellSession({ user }));
-    }
-    this.sshStack.push({
-      device: this.device,
-      user: this.currentUser,
-      path: this.currentPath,
-      pausedShell,
-      onPop: () => {
-        if (remoteShell && remote instanceof LinuxMachine) {
-          remote.closeShellSession(remoteShell);
-        }
-        try { onPop(); } catch { /* swallow */ }
-      },
-      label,
-    });
-    this.device = remote;
-    this.shell = remoteShell;
-    this.currentUser = user;
-    this.currentPath = remoteShell?.cwd ?? remote.getCwd?.() ?? `/home/${user}`;
-    this.notify();
-  }
-
-  popRemoteDevice(): void {
-    const frame = this.sshStack.pop();
-    if (!frame) return;
-    try {
-      frame.onPop();
-    } catch {
-      /* ignore teardown errors */
-    }
-    this.addLine('logout');
-    this.addLine(`Connection to ${frame.label} closed.`);
-    this.device = frame.device;
-    this.shell = frame.pausedShell;
-    this.currentUser = frame.user;
-    this.currentPath = frame.path;
-    this.notify();
-  }
-
   get isInsideSshSession(): boolean {
-    return this.sshStack.length > 0 || this.hasActiveChild
-      || this.activeSubShell?.connection === 'ssh';
+    return this.activeSubShell?.connection === 'ssh';
   }
 
   private openSshForwards(
@@ -3321,12 +3167,7 @@ export class LinuxTerminalSession extends TerminalSession {
     chain: readonly { host: string; user: string }[];
     current: string | null;
   } {
-    const chain = this.sshStack.map((f) => {
-      const at = f.label.indexOf('@');
-      return at >= 0
-        ? { host: f.label.slice(at + 1), user: f.label.slice(0, at) }
-        : { host: f.label, user: f.user };
-    });
+    const chain = this.sshTrail;
     const current = chain.length > 0 ? chain[chain.length - 1].host : null;
     return {
       active: chain.length > 0,
@@ -3338,22 +3179,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
 // ── IP → device resolver (BRD SSH-04) ───────────────────────────
 
-/**
- * Look up the LinuxMachine whose any port is bound to the given IPv4.
- * Used by `connectAndEnterSsh` to switch the terminal's `device` to the
- * remote machine without touching the simulated SSH transport. Returns
- * null when the target is not a Linux device managed by the sandbox.
- */
 function homeDirectoryOn(device: Equipment, user: string): string {
   return device instanceof LinuxMachine
     ? device.homeDirectoryOf(user)
     : user === 'root' ? '/root' : `/home/${user}`;
-}
-
-function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
-  const eq = findEquipmentByIp(targetIp);
-  if (eq && eq instanceof LinuxMachine) return eq;
-  return null;
 }
 
 // ── ssh CLI argument parser ─────────────────────────────────────

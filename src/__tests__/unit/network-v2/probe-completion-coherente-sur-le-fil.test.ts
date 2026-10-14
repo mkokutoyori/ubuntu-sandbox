@@ -131,11 +131,11 @@ async function sshLogin(host: TerminalSession, line: string, password: string): 
 }
 
 async function tabOn(host: TerminalSession, line: string): Promise<{ input: string; buffer: string }> {
-  host.foreground.setInput(line);
-  host.foreground.setInputBuf(line);
+  host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Tab'));
   for (let i = 0; i < 12; i++) await tick();
-  return { input: host.foreground.input, buffer: host.foreground.getInputBuf() };
+  return { input: host.input, buffer: host.getInputBuf() };
 }
 
 async function lab() {

@@ -135,7 +135,7 @@ async function ouvrirSsh(
 
 const transcript = (h: TerminalSession): string => h.lines.map((l) => l.text).join('\n');
 
-const surLePareFeu = (h: TerminalSession): boolean => /FGT\b.*#/.test(h.foreground.getPrompt());
+const surLePareFeu = (h: TerminalSession): boolean => /FGT\b.*#/.test(h.getPrompt());
 
 async function laboratoire(allowaccess = 'ping https ssh') {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();

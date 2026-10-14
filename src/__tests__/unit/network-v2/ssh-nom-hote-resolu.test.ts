@@ -34,7 +34,7 @@ async function flush(times = 10): Promise<void> {
 }
 
 async function type(session: TerminalSession, line: string): Promise<void> {
-  const fg = session.foreground;
+  const fg = session;
   fg.setInput(line);
   fg.setInputBuf(line);
   session.handleKey(key('Enter'));

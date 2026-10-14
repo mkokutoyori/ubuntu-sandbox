@@ -1,7 +1,7 @@
 /**
  * PRD-Nslookup-Dig-Rndc-Runas.md §2.1.6/P11 — `runas`'s real interactive
  * password prompt, driven the same way a React view would
- * (`session.foreground.setInput(...)` + Enter), mirroring
+ * (`session.setInput(...)` + Enter), mirroring
  * `cross-vendor-ssh-interactive.test.ts`'s UI-level testing style. The
  * pre-existing non-interactive `pc.executeCommand('runas ...')` path
  * (windows-access-cmd.test.ts) is untouched — this only covers the new,
@@ -33,7 +33,7 @@ async function flush(times = 8): Promise<void> {
 }
 
 async function type(session: TerminalSession, line: string): Promise<void> {
-  const fg = session.foreground;
+  const fg = session;
   fg.setInput(line);
   fg.setInputBuf(line);
   session.handleKey(key('Enter'));

@@ -146,7 +146,6 @@ describe('SSH interactive shell — real-wire streaming + Ctrl+C', () => {
     });
     // The real-wire subshell replaces the old in-memory bypass — no child
     // session is pushed, so `foreground` stays the host itself.
-    expect(host.foreground).toBe(host);
 
     host.setInput(`ping ${PC3_IP}`);
     host.setInputBuf(`ping ${PC3_IP}`);

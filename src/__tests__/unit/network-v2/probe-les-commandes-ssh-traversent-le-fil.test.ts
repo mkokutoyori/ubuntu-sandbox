@@ -53,8 +53,8 @@ async function sshLogin(host: TerminalSession, line: string, password: string): 
 }
 
 function runOnForeground(host: TerminalSession, line: string): void {
-  host.foreground.setInput(line);
-  host.foreground.setInputBuf(line);
+  host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Enter'));
 }
 
@@ -80,7 +80,7 @@ async function framesForCommands(lab: Lab, commands: number): Promise<{
   const host = new LinuxTerminalSession('h', lab.origin);
   await host.init?.();
   await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.3', 'admin');
-  const adoptedChild = host.foreground !== host;
+  const adoptedChild = host !== host;
   const afterLogin = lab.link.getStats().framesTransmitted;
   for (let i = 0; i < commands; i++) {
     runOnForeground(host, 'whoami');

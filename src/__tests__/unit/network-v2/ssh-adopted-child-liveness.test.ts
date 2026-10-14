@@ -43,16 +43,16 @@ async function sshedIn(): Promise<Lab> {
   await term.init?.();
   term.setInput('ssh alice@10.0.31.2');
   term.handleKey(key('Enter'));
-  for (let i = 0; i < 60 && term.foreground.currentInputMode.type !== 'password'; i++) await flush();
-  (term.foreground as unknown as { setPasswordBuf: (v: string) => void }).setPasswordBuf('alice');
-  term.foreground.handleKey(key('Enter'));
+  for (let i = 0; i < 60 && term.currentInputMode.type !== 'password'; i++) await flush();
+  (term as unknown as { setPasswordBuf: (v: string) => void }).setPasswordBuf('alice');
+  term.handleKey(key('Enter'));
   await flush();
   return { term, server: srv, cable };
 }
 
 async function type(term: WindowsTerminalSession, line: string): Promise<void> {
-  (term.foreground as unknown as { setInputBuf: (v: string) => void }).setInputBuf(line);
-  term.foreground.handleKey(key('Enter'));
+  (term as unknown as { setInputBuf: (v: string) => void }).setInputBuf(line);
+  term.handleKey(key('Enter'));
   await flush();
 }
 
@@ -65,7 +65,7 @@ function acceptedConnections(server: LinuxServer): number {
 describe('a hop adopted as a child session does not reconnect to stay alive', () => {
   it('lands on the remote prompt', async () => {
     const { term } = await sshedIn();
-    expect(term.foreground.getPrompt()).toMatch(/alice@/);
+    expect(term.getPrompt()).toMatch(/alice@/);
   }, 30000);
 
   it('running commands opens no further connections', async () => {

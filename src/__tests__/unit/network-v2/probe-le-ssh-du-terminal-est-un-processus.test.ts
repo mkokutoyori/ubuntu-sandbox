@@ -106,7 +106,7 @@ async function connect(terminal: LinuxTerminalSession, options = ''): Promise<vo
   terminal.setInput(`ssh -o StrictHostKeyChecking=accept-new ${options} alice@${SERVER_IP}`.replace(/\s+/g, ' '));
   terminal.handleKey(key('Enter'));
   await flush();
-  if (terminal.foreground.currentInputMode.type === 'password') {
+  if (terminal.currentInputMode.type === 'password') {
     terminal.setPasswordBuf('secret');
     terminal.handleKey(key('Enter'));
     await flush();
@@ -114,8 +114,8 @@ async function connect(terminal: LinuxTerminalSession, options = ''): Promise<vo
 }
 
 async function typeLine(terminal: LinuxTerminalSession, text: string): Promise<void> {
-  terminal.foreground.setInput(text);
-  terminal.foreground.setInputBuf(text);
+  terminal.setInput(text);
+  terminal.setInputBuf(text);
   terminal.handleKey(key('Enter'));
   await flush();
 }

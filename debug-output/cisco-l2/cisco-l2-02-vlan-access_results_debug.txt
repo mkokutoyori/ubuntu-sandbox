@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-09-25T18:35:03.087Z
+Generated: 2026-10-14T19:58:09.227Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 360
@@ -793,30 +793,26 @@ Total steps: 360
 --- [213] § connectivity: same VLAN across switches ---
 [213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=4.340 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.438 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.722 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.039 ms
   
   --- 192.168.1.21 ping statistics ---
-  3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.722/2.167/4.340/1.564 ms
+  3 packets transmitted, 3 received, 0% packet loss, time 2000ms
+  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
 
 [214/360] l1 l1$ arp -a
-  ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
   ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
-  ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
-  ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
-  ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
 [215/360] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.818 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.896 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.673 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.039 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.039 ms
   
   --- 192.168.1.11 ping statistics ---
-  3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.673/0.796/0.896/0.092 ms
+  3 packets transmitted, 3 received, 0% packet loss, time 2000ms
+  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
 
 [216/360] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
@@ -864,9 +860,11 @@ Total steps: 360
 --- [219] § connectivity: different VLAN, same switch (must fail) ---
 [219/360] l1 l1$ ping -c 1 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  From 192.168.1.11 icmp_seq=1 Destination Host Unreachable
   
   --- 192.168.1.12 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
+  
 
 [220/360] w1 w1$ ping -n 1 192.168.1.11
   
@@ -880,9 +878,11 @@ Total steps: 360
 --- [221] § connectivity: different VLAN across switches (must fail) ---
 [221/360] l1 l1$ ping -c 1 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  From 192.168.1.11 icmp_seq=1 Destination Host Unreachable
   
   --- 192.168.1.22 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
+  
 
 [222/360] w2 w2$ ping -n 1 192.168.1.11
   
@@ -909,21 +909,21 @@ Total steps: 360
 [227/360] w2 w2$ ping -n 1 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
-  Reply from 192.168.1.11: bytes=32 time=1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [228/360] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.649 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.638 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.039 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.039 ms
   
   --- 192.168.1.22 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.638/0.644/0.649/0.006 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.039/0.039/0.039/0.000 ms
 
 
 --- [229] § voice VLAN ---
@@ -1289,10 +1289,7 @@ Total steps: 360
   eth3             DOWN           
 
 [276/360] l1 l1$ arp -a
-  ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
   ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
-  ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
-  ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
 [277/360] l2 l2$ ip -br addr
@@ -1304,10 +1301,6 @@ Total steps: 360
 
 [278/360] l2 l2$ arp -a
   ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
-  ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
-  ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
-  ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
-  ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
 [279/360] srv1 srv1$ ip -br addr
   lo               UNKNOWN        127.0.0.1/8 ::1/128 
@@ -1317,11 +1310,7 @@ Total steps: 360
   eth3             DOWN           
 
 [280/360] srv1 srv1$ arp -a
-  ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
-  ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
-  ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
-  ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
-  ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
+<empty>
 
 [281/360] srv2 srv2$ ip -br addr
   lo               UNKNOWN        127.0.0.1/8 ::1/128 
@@ -1331,11 +1320,7 @@ Total steps: 360
   eth3             DOWN           
 
 [282/360] srv2 srv2$ arp -a
-  ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
-  ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
-  ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
-  ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
-  ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
+<empty>
 
 [283/360] w1 w1$ ipconfig
   Windows IP Configuration
@@ -1616,11 +1601,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       16 packets input, 1474 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       18 packets input, 1526 bytes, 0 no buffer
+       Received 6 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       32 packets output, 2580 bytes, 0 underruns
+       34 packets output, 2708 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2103,11 +2088,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       11 packets input, 988 bytes, 0 no buffer
+       12 packets input, 1052 bytes, 0 no buffer
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       34 packets output, 2694 bytes, 0 underruns
+       37 packets output, 2824 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2124,11 +2109,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       12 packets input, 1024 bytes, 0 no buffer
+       13 packets input, 1088 bytes, 0 no buffer
        Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       29 packets output, 2204 bytes, 0 underruns
+       30 packets output, 2268 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

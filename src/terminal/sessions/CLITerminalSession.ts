@@ -96,7 +96,6 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   getPrompt(): string {
-    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.remoteSubShell) return this.remoteSubShell.getPrompt();
     if (this.promptHiddenUntilFirstKey) return '';
     return this.prompt;
@@ -154,7 +153,6 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Input mode ─────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
-    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.pendingSshIO?.isWaitingForInput) return this.inputMode;
     if (this.isFlowActive) {
       return this.inputMode; // set by advanceFlow()
@@ -173,7 +171,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   private occupyLine(): void {
-    if (this.lineRecordId !== null || this.isRemoteChild) return;
+    if (this.lineRecordId !== null) return;
     const registry = this.lineRegistry();
     if (!registry) return;
     const record = registry.open({
@@ -321,7 +319,6 @@ export abstract class CLITerminalSession extends TerminalSession {
         closeWhere(p: (s: { lineKind?: string; transport?: string }) => boolean, r?: string): number;
       };
     };
-    if (this.isRemoteChild) return;
     dev.getSshSessionRegistry?.().closeWhere((s) => s.lineKind === 'con', 'logout');
   }
 
@@ -380,21 +377,8 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   // ── Key handling ────────────────────────────────────────────────
 
-  /**
-   * An interactive SSH/Telnet hop (`ssh -l admin 10.0.0.2`, then typing
-   * commands on the remote device) attaches a child session via
-   * `adoptRemoteChild`, exactly like Linux/Windows do. Those two already
-   * route every key to `this.foreground` once a child exists — CLI
-   * (Cisco/Huawei) lacked the same override, so keys kept being handled by
-   * `this` (the LOCAL session): the visible prompt/banner came from the
-   * remote child (`getPrompt()`/`currentInputMode` already delegate), but
-   * `onEnter()`/`showInlineHelp()` ran locally, silently applying typed
-   * commands — including config changes — to the wrong device. One override
-   * here fixes it for both vendors without duplicating per-device logic.
-   */
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
-    if (this.hasActiveChild) return this.foreground.handleKey(e);
     if (this.pendingSshIO?.isWaitingForInput) return this.handleSshIOKey(e);
     return super.handleKey(e);
   }
@@ -537,14 +521,13 @@ export abstract class CLITerminalSession extends TerminalSession {
 
     if (this.tryInterceptAsyncCommand(trimmed)) return;
 
-    const exitBeforeExec = (this.isRemoteChild || this.exitClosesLocalSession())
+    const exitBeforeExec = this.exitClosesLocalSession()
       && this.isTopLevelExit(trimmed);
 
     try {
       const result = await this.executeOnDevice(trimmed);
 
       if (result === CONNECTION_CLOSED || exitBeforeExec) {
-        if (this.endRemoteSession()) return;
         this.endExecSession();
         return;
       }

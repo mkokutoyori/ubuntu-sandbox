@@ -35,7 +35,7 @@ const flush = async () => {
 };
 
 async function line(term: TerminalSession, text: string): Promise<void> {
-  const fg = term.foreground as unknown as {
+  const fg = term as unknown as {
     setInput: (v: string) => void; setInputBuf: (v: string) => void; handleKey: (e: unknown) => void;
   };
   // At a root prompt the view writes the console buffer; the sub-shell
@@ -47,8 +47,8 @@ async function line(term: TerminalSession, text: string): Promise<void> {
 }
 
 async function answerPassword(term: TerminalSession, password: string): Promise<void> {
-  for (let i = 0; i < 60 && term.foreground.currentInputMode.type !== 'password'; i++) await flush();
-  const fg = term.foreground as unknown as { setPasswordBuf: (v: string) => void; handleKey: (e: unknown) => void };
+  for (let i = 0; i < 60 && term.currentInputMode.type !== 'password'; i++) await flush();
+  const fg = term as unknown as { setPasswordBuf: (v: string) => void; handleKey: (e: unknown) => void };
   fg.setPasswordBuf(password);
   fg.handleKey(key('Enter'));
   await flush();
@@ -121,7 +121,7 @@ describe.each(CLIENTS)('one `ssh` from a %s client', (clientKind) => {
     const { term, server } = await labFor(clientKind);
     await line(term, `${sshFor(clientKind)} alice@10.0.80.9`);
     await answerPassword(term, 'alice');
-    expect(term.foreground.getPrompt()).toMatch(/alice@/);
+    expect(term.getPrompt()).toMatch(/alice@/);
 
     expect(
       openedConnections(server),
@@ -144,6 +144,6 @@ describe.each(CLIENTS)('one `ssh` from a %s client', (clientKind) => {
       text,
       'dropping the pre-flight probe must not turn an unreachable host into a hang or a login',
     ).toMatch(UNREACHABLE_WORDING[clientKind]);
-    expect(term.foreground.getPrompt()).not.toMatch(/alice@/);
+    expect(term.getPrompt()).not.toMatch(/alice@/);
   }, 40000);
 });

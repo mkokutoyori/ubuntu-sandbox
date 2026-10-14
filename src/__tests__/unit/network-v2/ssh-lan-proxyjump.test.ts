@@ -152,7 +152,7 @@ const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 2
 
 async function runLine(term: LinuxTerminalSession, line: string, passwords: string[]): Promise<void> {
   const host = term as unknown as TerminalSession;
-  const target = (host.foreground ?? host) as TerminalSession;
+  const target = (host ?? host) as TerminalSession;
   target.setInput(line);
   target.setInputBuf(line);
   target.handleKey(key('Enter'));

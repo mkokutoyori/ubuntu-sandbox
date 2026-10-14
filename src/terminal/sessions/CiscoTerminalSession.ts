@@ -472,11 +472,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
   // here, and the SSH adapters render the SAME plan. Nothing banner-
   // specific remains in the terminal layer.
 
-  // Set by `prepareAsRemoteUser` -- `this.isRemoteChild` (`_parent !==
-  // null`) is NOT yet true at that point (`adoptRemoteChild` calls
-  // `prepareAsRemoteUser` BEFORE `attachAsChildOf`), so exec-timeout
-  // resolution needs its own explicit "this is a VTY line, not the
-  // console" flag rather than relying on parent-attachment timing.
   private isVtyRemoteSession = false;
 
   override attachToVtyLine(): void {
@@ -487,26 +482,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected override onLineAssigned(kind: CliLineKind, index: number, recordId: string): void {
     this.vty?.assignLine(kind, index, recordId);
-  }
-
-  protected override prepareAsRemoteUser(user: string): void {
-    this.isVtyRemoteSession = true;
-    this.authenticatedUsername = user || null;
-    this.authGatePassed = true;
-    if (this.vty) {
-      // Real IOS: a `privilege level N` configured on the VTY line
-      // OVERRIDES the authenticated user's own account privilege (same
-      // rule as the console line above) -- confirmed via Cisco's own
-      // documentation, not just a default-when-unset fallback.
-      const linePrivilege = this.vtyLinePrivilegeOverride();
-      const privilege = linePrivilege ?? this.lookupAccountPrivilege(user);
-      this.vty.state.mode = privilege === 15 ? 'privileged' : 'user';
-      this.vty.state.privilegeLevel = privilege;
-      this.vty.state.sessionUser = user || null;
-    }
-    this.isBooting = false;
-    this.updatePrompt();
-    this.rearmExecTimeout();
   }
 
   /**
@@ -609,7 +584,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   private onAbsoluteTimeout(): void {
     if (this.disposed) return;
-    if (this.isRemoteChild) { this.endRemoteSession(); return; }
     if (this.vty) {
       this.vty.state.mode = 'user';
       this.vty.state.privilegeLevel = 1;
@@ -620,12 +594,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   private onExecTimeout(): void {
     if (this.disposed) return;
-    if (this.isRemoteChild) {
-      // VTY: the line drops -- the local (client) session sees the same
-      // "Connection to X closed." footer any other SSH teardown produces.
-      this.endRemoteSession();
-      return;
-    }
     // Console: the EXEC session times out and resets to an unauthenticated
     // line -- if `login local` is configured, the login banner reappears;
     // otherwise this is a silent no-op (matches real IOS: exec-timeout on
@@ -751,7 +719,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * nothing is deferred — async lines interrupt immediately.
    */
   protected override shouldDeferAsyncOutput(): boolean {
-    if (this.isRemoteChild) return false; // scoped to the console line for now
     if (this.input.length === 0) return false;
     const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
     const cfg = (shell as {
@@ -1126,7 +1093,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * la ligne, elle ne debranche pas le cable.
    */
   protected override consoleReleasedBanner(): string[] | null {
-    if (this.isRemoteChild) return null;
     const nom = this.device.getHostname?.() ?? 'Router';
     return ['', `${nom} con0 is now available`, '', 'Press RETURN to get started.', ''];
   }

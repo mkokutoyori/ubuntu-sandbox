@@ -1,7 +1,7 @@
 /**
  * PRD-FTP-SFTP.md §2.1.11/P9 — the interactive `ftp` command exposed in
  * `LinuxTerminalSession`, driven the same way a React view would
- * (`session.foreground.setInput(...)` + Enter), mirroring
+ * (`session.setInput(...)` + Enter), mirroring
  * `cross-vendor-ssh-interactive.test.ts`'s UI-level testing style.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -35,7 +35,7 @@ async function flush(times = 8): Promise<void> {
 }
 
 async function type(session: TerminalSession, line: string): Promise<void> {
-  const fg = session.foreground;
+  const fg = session;
   fg.setInput(line);
   fg.setInputBuf(line);
   session.handleKey(key('Enter'));
@@ -93,7 +93,7 @@ describe('ftp CLI (PRD-FTP-SFTP.md §2.1.11)', () => {
     await term.init();
 
     await ftpLogin(term, 'ftp alice@10.0.9.10', 'wonderland');
-    expect(term.foreground.getPrompt()).toBe('ftp> ');
+    expect(term.getPrompt()).toBe('ftp> ');
     expectContains(term, 'User alice logged in.');
 
     await type(term, 'pwd');
@@ -106,7 +106,7 @@ describe('ftp CLI (PRD-FTP-SFTP.md §2.1.11)', () => {
     await term.init();
 
     await ftpLogin(term, 'ftp alice@10.0.9.10', 'not-the-password');
-    expect(term.foreground.getPrompt()).not.toBe('ftp> ');
+    expect(term.getPrompt()).not.toBe('ftp> ');
     expectContains(term, /Login incorrect/);
   });
 
@@ -175,10 +175,10 @@ describe('ftp CLI (PRD-FTP-SFTP.md §2.1.11)', () => {
     const term = new LinuxTerminalSession('t1', pc);
     await term.init();
     await ftpLogin(term, 'ftp alice@10.0.9.10', 'wonderland');
-    expect(term.foreground.getPrompt()).toBe('ftp> ');
+    expect(term.getPrompt()).toBe('ftp> ');
 
     await type(term, 'bye');
-    expect(term.foreground.getPrompt()).not.toBe('ftp> ');
+    expect(term.getPrompt()).not.toBe('ftp> ');
     expect(lastN(term, 2).some((l) => l.includes('Goodbye'))).toBe(true);
   });
 
@@ -190,6 +190,6 @@ describe('ftp CLI (PRD-FTP-SFTP.md §2.1.11)', () => {
 
     await type(term, 'bogus');
     expectContains(term, '?Invalid command');
-    expect(term.foreground.getPrompt()).toBe('ftp> ');
+    expect(term.getPrompt()).toBe('ftp> ');
   });
 });

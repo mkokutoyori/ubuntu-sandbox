@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-09-25T18:35:07.412Z
+Generated: 2026-10-14T19:58:50.944Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -1067,14 +1067,14 @@ Total steps: 363
   Fa0/3            Desg  FWD  19        128.3     P2p
   Gi0/1            Desg  FWD  4         128.25    P2p
   
-  ##### MST1    vlans mapped:   10,20,30
+  ##### MST1    vlans mapped:   [object Set]
   Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
   Gi0/1            Desg  FWD  4         128.25    P2p
   
-  ##### MST2    vlans mapped:   40,50,60
+  ##### MST2    vlans mapped:   [object Set]
   Bridge        address 0200.0000.0001  priority  8194 (8192 sysid 2)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
@@ -1092,7 +1092,7 @@ Total steps: 363
   2         40,50,60
 
 [220/363] sw1 SW1(config)# do show spanning-tree mst 1
-  ##### MST1    vlans mapped:   10,20,30
+  ##### MST1    vlans mapped:   [object Set]
   Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
@@ -1219,14 +1219,14 @@ Total steps: 363
   Fa0/3            Desg  FWD  19        128.3     P2p
   Gi0/1            Desg  FWD  4         128.25    P2p
   
-  ##### MST1    vlans mapped:   10,20,30
+  ##### MST1    vlans mapped:   [object Set]
   Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
   Gi0/1            Desg  FWD  4         128.25    P2p
   
-  ##### MST2    vlans mapped:   40,50,60
+  ##### MST2    vlans mapped:   [object Set]
   Bridge        address 0200.0000.0001  priority  8194 (8192 sysid 2)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
@@ -1595,10 +1595,10 @@ Total steps: 363
 <empty>
 
 [272/363] sw1 SW1(config-if)# shutdown
-  *18:35:09: STP: VLAN0001 Fa0/3 -> disabled
+  *19:58:53: STP: VLAN0001 Fa0/3 -> disabled
 
 [273/363] sw1 SW1(config-if)# no shutdown
-  *18:35:09: STP: VLAN0001 Fa0/3 -> forwarding
+  *19:58:53: STP: VLAN0001 Fa0/3 -> forwarding
 
 [274/363] sw1 SW1(config-if)# end
 <empty>
@@ -1713,12 +1713,12 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.559 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.795 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.035 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.035 ms
   
   --- 192.168.1.13 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.795/2.177/3.559/1.382 ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+  rtt min/avg/max/mdev = 0.035/0.035/0.035/0.000 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...
@@ -1951,11 +1951,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 580 bytes, 0 no buffer
-       Received 1 broadcasts (4 multicasts)
+       8 packets input, 644 bytes, 0 no buffer
+       Received 2 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       53 packets output, 3932 bytes, 0 underruns
+       54 packets output, 3996 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1976,7 +1976,7 @@ Total steps: 363
        Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       48 packets output, 3430 bytes, 0 underruns
+       49 packets output, 3494 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1993,11 +1993,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       8 packets input, 660 bytes, 0 no buffer
+       9 packets input, 724 bytes, 0 no buffer
        Received 1 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       54 packets output, 3960 bytes, 0 underruns
+       55 packets output, 4024 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2442,7 +2442,7 @@ Total steps: 363
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       48 packets output, 3536 bytes, 0 underruns
+       49 packets output, 3600 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2463,7 +2463,7 @@ Total steps: 363
        Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       43 packets output, 3110 bytes, 0 underruns
+       44 packets output, 3174 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2484,7 +2484,7 @@ Total steps: 363
        Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       44 packets output, 3254 bytes, 0 underruns
+       45 packets output, 3318 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

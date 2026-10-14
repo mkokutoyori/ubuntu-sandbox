@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-09-25T18:31:00.022Z
+Generated: 2026-10-14T19:57:27.708Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -184,13 +184,13 @@ Total steps: 311
           Number of interfaces in this area is 2
           Area type: NORMAL
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 5
   
       Area 2
           Number of interfaces in this area is 1
           Area type: NORMAL
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 3
   
       Area 0
           Number of interfaces in this area is 3
@@ -213,13 +213,13 @@ Total steps: 311
           Number of interfaces in this area is 2
           Area type: NORMAL
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 5
   
       Area 2
           Number of interfaces in this area is 1
           Area type: NORMAL
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 3
   
       Area 0
           Number of interfaces in this area is 3
@@ -301,13 +301,13 @@ Total steps: 311
           Number of interfaces in this area is 2
           Area type: TOTALLY-STUBBY
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 5
   
       Area 2
           Number of interfaces in this area is 1
           Area type: NSSA
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 5
   
       Area 0
           Number of interfaces in this area is 3
@@ -319,7 +319,7 @@ Total steps: 311
           Number of interfaces in this area is 0
           Area type: NORMAL
           SPF algorithm last executed: recently
-          Number of LSA 0
+          Number of LSA 1
   
 
 [75/311] r1 R1# show ip ospf border-routers
@@ -426,7 +426,7 @@ Total steps: 311
 
 [105/311] r1 R1# show ip ospf interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Internet address is 10.0.0.1/30, Area 0.0.0.0
+    Internet address is 10.0.0.1/30, Area 0
     Process ID 1, Router ID 1.1.1.1, Network Type POINT-TO-MULTIPOINT, Cost: 100
     Transmit Delay is 2 sec, State Waiting, Priority 200
     DR: 0.0.0.0
@@ -445,7 +445,7 @@ Total steps: 311
   Lo3          1     0               10.10.3.1/24       1     LOOP  0/0
   Lo4          1     1               10.10.4.1/24       1     LOOP  0/0
   Gi0/0        1     0               192.168.1.1/24     10    DR    0/0
-  Gi0/1        1     0.0.0.0         10.0.0.1/30        100   WAIT  0/0
+  Gi0/1        1     0               10.0.0.1/30        100   WAIT  0/0
 
 
 --- [107] § redistribution ---
@@ -517,13 +517,13 @@ Total steps: 311
           Number of interfaces in this area is 2
           Area type: TOTALLY-STUBBY
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 5
   
       Area 2
           Number of interfaces in this area is 1
           Area type: NSSA
           SPF algorithm last executed: recently
-          Number of LSA 2
+          Number of LSA 5
   
       Area 0
           Number of interfaces in this area is 3
@@ -602,7 +602,7 @@ Total steps: 311
 [144/311] r1 R1# show ipv6 ospf interface
   GigabitEthernet0/1 is up, line protocol is up
     Network Type Point-to-point, Cost: 50, Priority: 100
-    DR: 0.0.0.0
+    DR: 2001:db8:1::1
     BDR: 0.0.0.0
   
 
@@ -639,13 +639,13 @@ Total steps: 311
           Number of interfaces in this area is 2
           Area type: TOTALLY-STUBBY
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 5
   
       Area 2
           Number of interfaces in this area is 1
           Area type: NSSA
           SPF algorithm last executed: recently
-          Number of LSA 2
+          Number of LSA 5
   
       Area 0
           Number of interfaces in this area is 3
@@ -674,27 +674,22 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000081        0x75ad      2
+  1.1.1.1         1.1.1.1         0           0x80000005        0xf8a1      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000082        0x4e9e      1
+  1.1.1.1         1.1.1.1         0           0x80000003        0xce29      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000083        0x5047      3
+  1.1.1.1         1.1.1.1         0           0x80000009        0xd5bf      3
   
                   Router Link States (Area 3)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000084        0x29f0      0
-  
-                  Router Link States (Area 0.0.0.0)
-  
-  Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003e        0xb1a       3
+  1.1.1.1         1.1.1.1         0           0x80000008        0xac90      0
   
 
 [151/311] r1 R1# show ip ospf database router
@@ -703,27 +698,22 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000087        0x7b74      2
+  1.1.1.1         1.1.1.1         0           0x80000005        0xf8a1      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000088        0x541d      1
+  1.1.1.1         1.1.1.1         0           0x80000003        0xce29      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000089        0x5656      3
+  1.1.1.1         1.1.1.1         0           0x80000009        0xd5bf      3
   
                   Router Link States (Area 3)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000008a        0x2f27      0
-  
-                  Router Link States (Area 0.0.0.0)
-  
-  Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003e        0xb1a       3
+  1.1.1.1         1.1.1.1         0           0x80000008        0xac90      0
   
 
 [152/311] r1 R1# show ip ospf database network
@@ -733,7 +723,21 @@ Total steps: 311
 [153/311] r1 R1# show ip ospf database summary
               OSPF Router with ID (1.1.1.1) (Process ID 1)
   
-    (No Summary LSAs in database)
+                  Summary Net Link States (Area 1)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  10.10.2.1       1.1.1.1         0           0x80000001        0xbdf4
+  10.10.3.1       1.1.1.1         0           0x80000001        0xbe0b
+  192.168.1.0     1.1.1.1         0           0x80000001        0x1b35
+  10.0.0.0        1.1.1.1         0           0x80000001        0xb7c7
+  
+                  Summary Net Link States (Area 2)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  10.10.1.1       1.1.1.1         0           0x80000001        0xbcde
+  10.10.4.1       1.1.1.1         0           0x80000001        0xbf21
+  192.168.0.0     1.1.1.1         0           0x80000001        0x1a1f
+  
 
 [154/311] r1 R1# show ip ospf database external
               OSPF Router with ID (1.1.1.1) (Process ID 1)
@@ -741,7 +745,7 @@ Total steps: 311
                   Type-5 AS External Link States
   
   Link ID         ADV Router      Age         Seq#            Checksum  Tag  Forward Address
-  0.0.0.0         1.1.1.1         0           0x8000009d        0x4ebd      0    Forward Address: 0.0.0.0
+  0.0.0.0         1.1.1.1         0           0x80000001        0xb1e4      0    Forward Address: 0.0.0.0
 
 [155/311] r1 R1# show ip ospf database nssa-external
   OSPF Router with ID (1.1.1.1) (Process ID 1)
@@ -749,7 +753,7 @@ Total steps: 311
     Type-7 AS External Link States (Area 2)
   
   Link ID         ADV Router      Age       Seq#
-  0.0.0.0         1.1.1.1         0         0x8000009e
+  0.0.0.0         1.1.1.1         0         0x80000001
 
 [156/311] r1 R1# show ip ospf database asbr-summary
   OSPF Router with ID (1.1.1.1) (Process ID 1)
@@ -761,16 +765,21 @@ Total steps: 311
   OSPF Router with ID (1.1.1.1) (Process ID 1)
   
     Area 1 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000099
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000005
+      Type-3 LS-ID 10.10.2.1 Age 0 Seq 0x80000001
+      Type-3 LS-ID 10.10.3.1 Age 0 Seq 0x80000001
+      Type-3 LS-ID 192.168.1.0 Age 0 Seq 0x80000001
+      Type-3 LS-ID 10.0.0.0 Age 0 Seq 0x80000001
     Area 2 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000009a
-      Type-7 LS-ID 0.0.0.0 Age 0 Seq 0x8000009e
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000003
+      Type-3 LS-ID 10.10.1.1 Age 0 Seq 0x80000001
+      Type-3 LS-ID 10.10.4.1 Age 0 Seq 0x80000001
+      Type-7 LS-ID 0.0.0.0 Age 0 Seq 0x80000001
+      Type-3 LS-ID 192.168.0.0 Age 0 Seq 0x80000001
     Area 0 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000009b
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000009
     Area 3 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000009c
-    Area 0.0.0.0 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000003e
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000008
 
 [158/311] r1 R1# show ip ospf interface
   Loopback1 is up, line protocol is up
@@ -805,7 +814,7 @@ Total steps: 311
     No Hellos (Passive interface)
   
   GigabitEthernet0/1 is up, line protocol is up
-    Internet address is 10.0.0.1/30, Area 0.0.0.0
+    Internet address is 10.0.0.1/30, Area 0
     Process ID 1, Router ID 1.1.1.1, Network Type POINT-TO-MULTIPOINT, Cost: 100
     Transmit Delay is 2 sec, State Waiting, Priority 200
     DR: 0.0.0.0
@@ -824,7 +833,7 @@ Total steps: 311
   Lo3          1     0               10.10.3.1/24       1     LOOP  0/0
   Lo4          1     1               10.10.4.1/24       1     LOOP  0/0
   Gi0/0        1     0               192.168.1.1/24     10    DR    0/0
-  Gi0/1        1     0.0.0.0         10.0.0.1/30        100   WAIT  0/0
+  Gi0/1        1     0               10.0.0.1/30        100   WAIT  0/0
 
 [160/311] r1 R1# show ip ospf border-routers
               OSPF Router with ID (1.1.1.1) (Process ID 1)
@@ -844,17 +853,16 @@ Total steps: 311
 [162/311] r1 R1# show ip ospf statistics
   OSPF statistics:
     Rcvd: 0 total, 0 errors
-    LSA: 6 total
-    SPF: 36 runs, last run recently
+    LSA: 12 total
+    SPF: 62 runs, last run recently
     Neighbors: 0, Adjacent: 0
     Neighbor state changes: 0
   
     Area statistics:
-      Area 1: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
-      Area 2: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 1: 1 router LSA(s), 0 network LSA(s), 4 summary LSA(s)
+      Area 2: 1 router LSA(s), 0 network LSA(s), 3 summary LSA(s)
       Area 0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
       Area 3: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
-      Area 0.0.0.0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
 
 [163/311] r1 R1# show ip ospf summary-address
   OSPF Router with ID (1.1.1.1) (Process ID 1), Summary-address
@@ -883,7 +891,18 @@ Total steps: 311
     Pacing flood 33ms, retransmission 66ms
 
 [167/311] r1 R1# show ip route ospf
-<empty>
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
 
 [168/311] r1 R1# show ip protocols
   Routing Protocol is "ospf 1"
@@ -1001,12 +1020,14 @@ Total steps: 311
   Neighbor ID     Pri   State           Dead Time   Address         Interface
 
 [194/311] r1 R1# show ip ospf request-list
-  Neighbor                Interface  Area
-  (no LS Request list entries)
+  
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
 
 [195/311] r1 R1# show ip ospf retransmission-list
-  Neighbor                Interface  Area  Queue length
-  (no LS Retransmission list entries)
+  
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
 
 [196/311] r1 R1# show ip ospf flood-list
   Interface              Area
@@ -1015,7 +1036,7 @@ Total steps: 311
   Loopback3              0
   Loopback4              1
   GigabitEthernet0/0     0
-  GigabitEthernet0/1     0.0.0.0
+  GigabitEthernet0/1     0
   (no LSAs in flood list — flooding is synchronous in this implementation)
 
 [197/311] r1 R1# show ip ospf max-metric
@@ -1037,7 +1058,10 @@ Total steps: 311
     SRGB: 16000 - 23999
 
 [200/311] r1 R1# show ip route ospf | include O
-<empty>
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
 
 [201/311] r1 R1# clear ip ospf force-spf
 <empty>
@@ -1068,7 +1092,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX59896JG8
+  Processor board ID FTX6217SJ6K
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1078,9 +1102,9 @@ Total steps: 311
 [204/311] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 2328 bytes
+  Current configuration : 2346 bytes
   !
-  ! Last configuration change at 18:31:02 UTC Fri Sep 25 2026 by console
+  ! Last configuration change at 19:57:29 UTC Wed Oct 14 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1111,6 +1135,7 @@ Total steps: 311
    ip ospf bfd
    ip ospf flood-reduction
    ip ospf database-filter all out
+   ip ospf 1 area 0
   !
   interface GigabitEthernet0/2
    no ip address
@@ -1230,7 +1255,7 @@ Total steps: 311
        Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       175 packets output, 19036 bytes, 0 underruns
+       205 packets output, 21496 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1466,13 +1491,13 @@ Total steps: 311
           Number of interfaces in this area is 2
           Area type: TOTALLY-STUBBY
           SPF algorithm last executed: recently
-          Number of LSA 1
+          Number of LSA 5
   
       Area 2
           Number of interfaces in this area is 1
           Area type: NSSA
           SPF algorithm last executed: recently
-          Number of LSA 2
+          Number of LSA 5
   
       Area 0
           Number of interfaces in this area is 3
@@ -1496,27 +1521,22 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000f9        0xed35      2
+  1.1.1.1         1.1.1.1         0           0x80000005        0xf8a1      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000fa        0xc680      1
+  1.1.1.1         1.1.1.1         0           0x80000003        0xce29      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000fb        0xc874      3
+  1.1.1.1         1.1.1.1         0           0x80000009        0xd5bf      3
   
                   Router Link States (Area 3)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000fc        0xa12d      0
-  
-                  Router Link States (Area 0.0.0.0)
-  
-  Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003e        0xb1a       3
+  1.1.1.1         1.1.1.1         0           0x80000008        0xac90      0
   
 
 [216/311] r1 R1# show ip ospf interface brief
@@ -1526,7 +1546,7 @@ Total steps: 311
   Lo3          1     0               10.10.3.1/24       1     LOOP  0/0
   Lo4          1     1               10.10.4.1/24       1     LOOP  0/0
   Gi0/0        1     0               192.168.1.1/24     10    DR    0/0
-  Gi0/1        1     0.0.0.0         10.0.0.1/30        100   WAIT  0/0
+  Gi0/1        1     0               10.0.0.1/30        100   WAIT  0/0
 
 [217/311] r1 R1# show ip eigrp neighbors
 <empty>
@@ -1638,17 +1658,17 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 18:31:00.014: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:31:00.016: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:31:00.018: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:31:00.018: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:31:00.385: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:00.725: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:00.914: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:01.356: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:01.594: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:01.779: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:02.323: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:27.703: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:57:27.703: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:57:27.705: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:57:27.705: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:57:27.983: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:28.257: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:28.425: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:28.755: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:28.910: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:29.041: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:29.493: %SYS-5-CONFIG_I: Configured from console by console
 
 [238/311] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1659,8 +1679,8 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 300 (1/100 of seconds), resolution is 4001
-  reference time is EE613C66.DE76C8B4 (18:31:02.869 UTC Fri Sep 25 2026)
+  ntp uptime is 200 (1/100 of seconds), resolution is 4001
+  reference time is EE7A5D29.EDD2F1A9 (19:57:29.929 UTC Wed Oct 14 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1671,7 +1691,7 @@ Total steps: 311
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [241/311] r1 R1# show clock
-  *18:31:02.000 UTC Fri Sep 25 2026
+  *19:57:29.000 UTC Wed Oct 14 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1793,7 +1813,7 @@ Total steps: 311
        Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       205 packets output, 22396 bytes, 0 underruns
+       205 packets output, 21496 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1857,7 +1877,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX59896JG8
+  Processor board ID FTX6217SJ6K
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1867,9 +1887,9 @@ Total steps: 311
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 2328 bytes
+  Current configuration : 2346 bytes
   !
-  ! Last configuration change at 18:31:02 UTC Fri Sep 25 2026 by console
+  ! Last configuration change at 19:57:29 UTC Wed Oct 14 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1900,6 +1920,7 @@ Total steps: 311
    ip ospf bfd
    ip ospf flood-reduction
    ip ospf database-filter all out
+   ip ospf 1 area 0
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2044,7 +2065,7 @@ Total steps: 311
        Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       205 packets output, 22396 bytes, 0 underruns
+       205 packets output, 21496 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2245,8 +2266,10 @@ Total steps: 311
   Neighbor ID     Pri   State           Dead Time   Address         Interface
   
   ------------------ show ip dhcp binding ------------------
-  IP address       Client-id/              Lease expiration        Type
-                   Hardware address
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2271,21 +2294,21 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Sep 25 18:31:00.014: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:31:00.016: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 25 18:31:00.018: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:31:00.018: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 25 18:31:00.385: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:00.725: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:00.914: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:01.356: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:01.594: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:01.779: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 25 18:31:02.323: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:27.703: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:57:27.703: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 14 19:57:27.705: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:57:27.705: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 14 19:57:27.983: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:28.257: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:28.425: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:28.755: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:28.910: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:29.041: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 14 19:57:29.493: %SYS-5-CONFIG_I: Configured from console by console
 
 [255/311] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX59896JG8
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX6217SJ6K
 
 [256/311] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2317,6 +2340,10 @@ Total steps: 311
   SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
   Minimum expected Diffie Hellman key size : 1024 bits
+  Hostkey Algorithms:x509v3-ssh-rsa,ssh-rsa
+  Encryption Algorithms:aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc
+  MAC Algorithms:hmac-sha1,hmac-sha1-96
+  KEX Algorithms:diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1
 
 [262/311] r1 R1# show line
      Tty Typ     Tx/Rx A Modem Roty AccO AccI  Uses  Noise  Overruns  Int
@@ -2372,6 +2399,7 @@ Total steps: 311
    ip ospf bfd
    ip ospf flood-reduction
    ip ospf database-filter all out
+   ip ospf 1 area 0
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2410,7 +2438,7 @@ Total steps: 311
 [268/311] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 2328 bytes
+  Current configuration : 2346 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2436,6 +2464,7 @@ Total steps: 311
    ip ospf bfd
    ip ospf flood-reduction
    ip ospf database-filter all out
+   ip ospf 1 area 0
   interface GigabitEthernet0/2
    no ip address
   interface GigabitEthernet0/3
@@ -2673,6 +2702,7 @@ Total steps: 311
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Enable HTTP server
+    icmp               ICMP options
     local              Apply local PBR
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
@@ -2700,7 +2730,7 @@ Total steps: 311
     gdoi         Define a GDOI GET-VPN group
     ikev2        Define IKEv2 proposal
     ipsec        Configure IPSec policy
-    isakmp       Define an IKE policy
+    isakmp       Enable ISAKMP
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
@@ -2716,13 +2746,13 @@ Total steps: 311
     cdp            Enable CDP globally
     class-map      Remove a class map
     clock          Remove hardware calendar is a valid time source
-    crypto         Encryption module
+    crypto         Restore the default DF bit handling
     enable         Set enable secret
     event          Register an EEM applet
     hostname       Set system hostname
     interface      Remove a virtual interface
     ip             Disable IP routing
-    ipv6           IPv6 interface subcommands
+    ipv6           Remove the IPv6 prefix pool
     key            Define a key chain
     line           Enter line configuration
     lldp           Enable LLDP globally

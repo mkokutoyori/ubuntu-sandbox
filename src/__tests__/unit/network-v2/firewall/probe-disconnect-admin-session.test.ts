@@ -108,7 +108,7 @@ describe('FortiGate : execute disconnect-admin-session', () => {
     const host = new LinuxTerminalSession('h', poste);
     await host.init?.();
     await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@192.168.1.1', 'Secret123');
-    expect(/FGT\b.*#/.test(host.foreground.getPrompt())).toBe(true);
+    expect(/FGT\b.*#/.test(host.getPrompt())).toBe(true);
   });
 
   it('une VRAIE connexion SSH entre dans la table, avec sa provenance', async () => {
