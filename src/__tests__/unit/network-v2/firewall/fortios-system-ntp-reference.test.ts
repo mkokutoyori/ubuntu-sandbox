@@ -11,7 +11,12 @@
  * `source-ip-interface` attribute that the reference does not have and had
  * none of the others.
  *
- * Measured against HEAD (git worktree): see the count in the commit message.
+ * Measured against the commit before this change (git worktree): 10 of the 16
+ * cases fall, 6 pass. The 6 that pass either way: the two witnesses (a custom
+ * server synchronises; the default request is version 4), the range refusals
+ * (the old schema refused the unknown attributes too, so they prove nothing
+ * alone), the two negative server-mode cases (nothing answers before either)
+ * and the syncinterval comparison (both runs polled alike before).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -97,7 +102,7 @@ describe('global attributes of the reference', () => {
     expect(await fortigate.executeCommand('config system ntp\nset source-ip-interface "port2"')).toMatch(/Command fail|invalid|Unknown|Invalid/i);
   });
 
-  it('[fails before] the key type and the sync interval keep the reference ranges', async () => {
+  it('witness (holds before too): the key type and the sync interval keep the reference ranges', async () => {
     const { fortigate } = await lab([]);
     await run(fortigate, ['config system ntp']);
     expect(await fortigate.executeCommand('set key-type SHA512')).toMatch(/Command fail|invalid|Invalid|Unknown/i);
@@ -114,14 +119,14 @@ describe('server-mode and interface', () => {
     expect(await client.executeCommand('show ntp status')).toContain('reference is 10.0.0.3');
   });
 
-  it('[fails before] without server-mode the FortiGate answers nobody', async () => {
+  it('witness (holds before too): without server-mode the FortiGate answers nobody', async () => {
     const { client } = await lab([...server('set interface "port2"')]);
     await run(client, ['configure terminal', 'ntp server 10.0.0.3', 'end']);
     converge(clock, 400_000);
     expect(await client.executeCommand('show ntp status')).toContain('Clock is unsynchronized');
   });
 
-  it('[fails before] server-mode on another interface does not answer on this one', async () => {
+  it('witness (holds before too): server-mode on another interface does not answer on this one', async () => {
     const { client } = await lab([...server('set server-mode enable', 'set interface "port3"')]);
     await run(client, ['configure terminal', 'ntp server 10.0.0.3', 'end']);
     converge(clock, 400_000);
@@ -180,7 +185,7 @@ describe('what an ntpserver entry decides on the wire', () => {
     expect(seen.every((s) => s.source === '10.0.9.3')).toBe(true);
   });
 
-  it('[fails before] syncinterval sets the polling interval in minutes', async () => {
+  it('witness (holds before too): syncinterval sets the polling interval in minutes', async () => {
     const fast = await lab(['config system ntp', 'set ntpsync enable', 'set type custom', 'set syncinterval 2',
       'config ntpserver', 'edit 1', 'set server "10.0.0.1"', 'next', 'end', 'end']);
     const slow = await lab(['config system ntp', 'set ntpsync enable', 'set type custom', 'set syncinterval 30',
