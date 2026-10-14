@@ -45,6 +45,8 @@ import { PimAgent } from '../pim/PimAgent';
 import { SyslogAgent } from '../syslog/SyslogAgent';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
+import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
+import { routerRsaKey } from '../ipsec/RouterRsaKey';
 import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
 import { CoaListener, type CoaSessionHandler } from '../radius/CoaListener';
 import { CoaClient } from '../radius/CoaClient';
@@ -512,6 +514,17 @@ export class CiscoRouter extends Router {
     if (ssh.encryptionAlgorithms.length === 0 && ssh.macAlgorithms.length === 0) return null;
     const effective = effectiveIosSshAlgorithms(ssh, C2900_SOFTWARE);
     return { chiffrement: effective.encryption[0], hmac: effective.mac[0] };
+  }
+
+  override _ikeRsaProvider(): IkeRsaProvider | null {
+    const security = getSecurityConfig(this);
+    return {
+      privateKey: () => {
+        const generated = security.cryptoKeys[0];
+        return generated ? routerRsaKey(this.getHostname(), generated.modulus)?.privateKey ?? null : null;
+      },
+      peerPublicKey: (address, hostnames) => security.ikePubkeys.publicKeyFor(address, hostnames, 'encryption'),
+    };
   }
 
   sshHostKeyAuthority(): ((host: string, key: SshHostKey) => boolean) | undefined {

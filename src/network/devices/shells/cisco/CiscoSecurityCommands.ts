@@ -1,3 +1,5 @@
+import { routerRsaKey } from '../../../ipsec/RouterRsaKey';
+import { encodeRsaPublicKey, groupedHex } from '../../../ipsec/RsaPublicKeyDer';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { Router } from '../../Router';
@@ -1345,7 +1347,7 @@ export function buildIdentityShowCommands(
       ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
       ' Key is not exportable.',
       ' Key Data:',
-      ` ${rsaPublicKeyMaterial(k.label, k.modulus, k.generatedAtMs)}`,
+      ...pubkeyDataLines(getDevice() as { getHostname(): string }, k.modulus),
     ].join('\n')).join('\n\n');
   });
 
@@ -1541,27 +1543,8 @@ function formatIosKeyDate(ms: number): string {
     + `${mois} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
 }
 
-function rsaPublicKeyMaterial(label: string, modulus: number, generatedAtMs: number): string {
-  let h1 = 2166136261 >>> 0;
-  let h2 = 0x811C9DC5 >>> 0;
-  const seed = `${label}|${modulus}|${generatedAtMs}`;
-  for (let i = 0; i < seed.length; i++) {
-    h1 ^= seed.charCodeAt(i);
-    h1 = Math.imul(h1, 16777619) >>> 0;
-    h2 = Math.imul(h2 ^ seed.charCodeAt(i), 0x01000193) >>> 0;
-  }
-  const blocks = Math.max(4, Math.floor(modulus / 64));
-  const out: string[] = [];
-  for (let i = 0; i < blocks; i++) {
-    h1 = Math.imul(h1 ^ (i + 1), 0x9E3779B1) >>> 0;
-    h2 = Math.imul(h2 ^ (i + 1), 0xBB67AE85) >>> 0;
-    out.push(h1.toString(16).padStart(8, '0').toUpperCase());
-    out.push(h2.toString(16).padStart(8, '0').toUpperCase());
-  }
-  const hex = out.join('');
-  const lines: string[] = [];
-  for (let i = 0; i < hex.length; i += 64) {
-    lines.push(hex.slice(i, i + 64));
-  }
-  return lines.join('\n  ');
+function pubkeyDataLines(device: { getHostname(): string }, modulus: number): string[] {
+  const key = routerRsaKey(device.getHostname(), modulus);
+  if (key === null) return [];
+  return groupedHex(encodeRsaPublicKey(key.publicKey)).map((row) => `  ${row}`);
 }

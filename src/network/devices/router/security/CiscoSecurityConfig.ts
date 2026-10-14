@@ -3,6 +3,8 @@ import { ServerLiveness } from '../../../radius/ServerLiveness';
 import { DomainStripping } from '../aaa/UsernameRouting';
 import { ServerSelector, type LoadBalanceSetting } from '../../../radius/ServerSelector';
 import { SshPubkeyChain } from './SshPubkeyChain';
+import { IkePubkeyChain } from './IkePubkeyChain';
+import { groupedHex } from '../../../ipsec/RsaPublicKeyDer';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
@@ -410,6 +412,7 @@ export class CiscoSecurityConfig {
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
   sshPubkeys = new SshPubkeyChain();
+  readonly ikePubkeys = new IkePubkeyChain();
 
   sshServerLimits(): {
     maxAuthTries: number; loginGraceTime: number;
@@ -670,6 +673,19 @@ export class CiscoSecurityConfig {
     }
     if (this.ssh.scpServerEnabled) lines.push('ip scp server enable');
     lines.push(...this.sshPubkeys.configLines());
+    if (this.ikePubkeys.list().length > 0) {
+      lines.push('crypto key pubkey-chain rsa');
+      for (const key of this.ikePubkeys.list()) {
+        const usage = key.usage === 'general' ? '' : ` ${key.usage}`;
+        lines.push(` ${key.kind === 'named' ? 'named-key' : 'addressed-key'} ${key.name}${usage}`);
+        if (key.kind === 'named' && key.address) lines.push(`  address ${key.address}`);
+        if (key.spki !== null) {
+          lines.push('  key-string');
+          for (const row of groupedHex(key.spki)) lines.push(`   ${row}`);
+          lines.push('  quit');
+        }
+      }
+    }
     for (const k of this.cryptoKeys) {
       if (k.general) lines.push(`crypto key generate rsa general-keys modulus ${k.modulus} label ${k.label}`);
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);

@@ -89,6 +89,8 @@ import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
 import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
 import { zoneShowSpecs } from './cisco/zoneShowSpecs';
+import { ikePubkeySpecs, storeKeyString, type IkePubkeyHost, type IkePubkeyMode } from './cisco/ikePubkeySpecs';
+import type { IkePeerKey } from '../router/security/IkePubkeyChain';
 import { ipsecDataPlaneSpecs, type IpsecDataPlaneEngine } from './cisco/ipsecDataPlaneSpecs';
 import { ServerCounters } from '../../radius/ServerCounters';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
@@ -2112,6 +2114,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
+  private ikePeerKey: IkePeerKey | null = null;
+  private ikeKeyStringLines: string[] | null = null;
+
+  protected ikePubkeyHost(): IkePubkeyHost {
+    return {
+      chain: () => getSecurityConfig(this.d()).ikePubkeys,
+      selected: () => this.ikePeerKey,
+      select: (key) => { this.ikePeerKey = key; },
+      enter: (mode: IkePubkeyMode) => { this.mode = mode; },
+      beginKeyString: () => { this.ikeKeyStringLines = []; this.mode = 'config-pubkey-data'; },
+    };
+  }
+
+  private collectIkeKeyStringLine(rawLine: string): string {
+    const word = rawLine.trim().toLowerCase();
+    if (word !== 'exit' && word !== 'quit') {
+      this.ikeKeyStringLines!.push(rawLine.trim());
+      return '';
+    }
+    const lines = this.ikeKeyStringLines!;
+    this.ikeKeyStringLines = null;
+    this.mode = 'config-pubkey-key';
+    const key = this.ikePeerKey;
+    if (key === null || !storeKeyString(key, lines)) return '% Invalid public key: only RSA keys in X.509 SubjectPublicKeyInfo form can be stored.';
+    return '';
+  }
+
   private collectKeyStringLine(device: TDevice, rawLine: string): string {
     const word = rawLine.trim().toLowerCase();
     if (word !== 'exit' && word !== 'quit') {
@@ -2874,6 +2903,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Multi-line banner entry: every line is verbatim content (leading
     // spaces, empty lines, would-be commands) until the delimiter shows up.
     if (this.keyStringLines !== null) return this.collectKeyStringLine(device, rawInput);
+    if (this.ikeKeyStringLines !== null) return this.collectIkeKeyStringLine(rawInput);
     if (this.bannerCollector) {
       this.deviceRef = device;
       const out = this.collectBannerLine(rawInput);
@@ -6076,6 +6106,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...privilegeRuleSpecs(() => this.privilegeRuleHost()),
       ...ipSshSpecs(() => this.ipSshHost()),
       ...ipSshPubkeySpecs(() => this.pubkeyChainHost()),
+      ...ikePubkeySpecs(() => this.ikePubkeyHost()),
       ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),

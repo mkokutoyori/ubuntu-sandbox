@@ -62,7 +62,9 @@ import {
 import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/des';
 import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
 import type { IkeKeyPair } from './IkeKeyExchange';
-import type { IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint } from './IPSecTypes';
+import type { IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint, IkeRsaProvider } from './IPSecTypes';
+import { rsaEncryptPkcs1, rsaDecryptPkcs1 } from '@/crypto/rsa';
+import { systemRandom } from '../../crypto/random';
 import { renderCryptoSessions, type CryptoSession, type CryptoSessionMode } from './CryptoSessionView';
 import {
   IPSecSignalStore,
@@ -655,7 +657,7 @@ export class IPSecEngine implements IProtocolEngine {
   private pendingIke = new Map<string, {
     entry: CryptoMapEntry; egressIface: string; localIP: string;
     apparentSrcIP: string; spiInitIn: number; offer: IkeOfferMessage;
-    keyPair?: IkeKeyPair;
+    keyPair?: IkeKeyPair; rsaNonce?: string;
   }>();
   private natKeepaliveInterval: number = 0;
   private readonly natKeepaliveTimers: Map<string, symbol> = new Map();
@@ -2745,7 +2747,7 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     const overhead = computeIPSecOverhead(sa.hasESP, sa.hasAH);
-    const interfaceMtu = this.router.getPort(egressIface)?.getMTU() ?? sa.pathMTU;
+    const interfaceMtu = this.router._ipsecInterfaceMtu(egressIface) ?? sa.pathMTU;
     const limit = Math.min(sa.pathMTU, interfaceMtu);
     const innerMayBeFragmented = (pkt.flags & 0b010) === 0 && (pkt.flags & 0b100) === 0 && pkt.fragmentOffset === 0;
     const exceeds = pkt.totalLength + overhead > limit;
@@ -3521,6 +3523,14 @@ export class IPSecEngine implements IProtocolEngine {
    * Initiate IKEv1/IKEv2 tunnel establishment with a peer.
    * Synchronous — completes immediately by directly calling the peer's engine.
    */
+  private rsaNonceSeed(initiatorNonce: string, responderNonce: string): string {
+    return `rsa-encr:${bytesToHex(sha256(utf8ToBytes(`${initiatorNonce}|${responderNonce}`)))}`;
+  }
+
+  private rsaProvider(): IkeRsaProvider | null {
+    return this.router._ikeRsaProvider();
+  }
+
   private ikePskProof(psk: string): string {
     if (!psk) return '';
     let h = 0;
@@ -3672,9 +3682,26 @@ export class IPSecEngine implements IProtocolEngine {
         authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${apparentSrcIP}|${peerIP}|${spiInitIn}`),
       };
     }
+    let rsaNonce: string | undefined;
+    if (version === 1 && policies[0]?.auth === 'rsa-encr') {
+      const provider = this.rsaProvider();
+      if (!provider?.privateKey()) {
+        this.createFailedIKESA(peerIP, egressIface, 'RSA key pair not found');
+        return false;
+      }
+      const peerKey = provider.peerPublicKey(peerIP, this.hostnamesFor(peerIP));
+      if (!peerKey) {
+        this.createFailedIKESA(peerIP, egressIface, 'RSA public key of the peer not found');
+        return false;
+      }
+      rsaNonce = bytesToHex(systemRandom(16));
+      offer.authMode = 'rsa-encr';
+      offer.policies = offer.policies.filter((p) => p.auth === 'rsa-encr');
+      offer.rsaNonce = bytesToHex(rsaEncryptPkcs1(peerKey, hexToBytes(rsaNonce)));
+    }
     this.pendingIke.set(peerIP, {
       entry, egressIface, localIP, apparentSrcIP, spiInitIn, offer,
-      keyPair: exchange?.pair,
+      keyPair: exchange?.pair, rsaNonce,
     });
     this.dbgIsakmp(`ISAKMP:(0): SA request profile is (NULL)`);
     this.dbgIsakmp(`ISAKMP: Created a peer struct for ${peerIP}, peer port 500`);
@@ -3801,7 +3828,7 @@ export class IPSecEngine implements IProtocolEngine {
       this.dbgIsakmp(`ISAKMP:(1001): Old State = IKE_R_MM_KEY_EXCH  New State = IKE_P1_COMPLETE, QM_IDLE`);
     }
 
-    const usingCert = offer.authMode === 'x509' || !!this.ikeCertAuth;
+    const usingCert = offer.authMode !== 'rsa-encr' && (offer.authMode === 'x509' || !!this.ikeCertAuth);
     if (usingCert) {
       
       
@@ -3838,12 +3865,40 @@ export class IPSecEngine implements IProtocolEngine {
       if (!isV2) this.createFailedIKESA(srcIp, '', 'Peer ID mismatch');
       return;
     }
-    const myPSK = usingCert
+    let rsaReplyNonce: string | undefined;
+    let rsaSeed: string | undefined;
+    if (offer.authMode === 'rsa-encr') {
+      const provider = this.rsaProvider();
+      const own = provider?.privateKey();
+      if (!own || !offer.rsaNonce) {
+        this.rejectIke(srcIp, 'RSA key pair not found');
+        this.createFailedIKESA(srcIp, '', 'RSA key pair not found');
+        return;
+      }
+      const clear = rsaDecryptPkcs1(own, hexToBytes(offer.rsaNonce));
+      if (clear === null) {
+        this.rejectIke(srcIp, 'RSA nonce decryption failed');
+        this.createFailedIKESA(srcIp, '', 'RSA nonce decryption failed');
+        return;
+      }
+      const peerKey = provider!.peerPublicKey(srcIp, [...this.hostnamesFor(srcIp), offer.identity]);
+      if (!peerKey) {
+        this.rejectIke(srcIp, 'RSA public key of the peer not found');
+        this.createFailedIKESA(srcIp, '', 'RSA public key of the peer not found');
+        return;
+      }
+      const responderNonce = bytesToHex(systemRandom(16));
+      rsaReplyNonce = bytesToHex(rsaEncryptPkcs1(peerKey, hexToBytes(responderNonce)));
+      rsaSeed = this.rsaNonceSeed(bytesToHex(clear), responderNonce);
+    }
+    const myPSK = rsaSeed !== undefined
+      ? rsaSeed
+      : usingCert
       ? 'cert-auth-key'
       : (isV2
         ? (this.findIKEv2PSK(offer.identity) ?? this.findIKEv2PSK(srcIp) ?? '')
         : this.findISAKMPPSK(peerEntry, offer.identity, srcIp));
-    if (!usingCert && (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof)) {
+    if (rsaSeed === undefined && !usingCert && (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof)) {
       this.rejectIke(srcIp, 'PSK mismatch');
       if (!isV2) this.createFailedIKESA(srcIp, '', 'PSK mismatch');
       return;
@@ -3951,7 +4006,7 @@ export class IPSecEngine implements IProtocolEngine {
 
     const accept: IkeAcceptMessage = {
       type: 'ike', step: 'accept', responderSpi,
-      pskProof: this.ikePskProof(myPSK), chosenPolicy, chosenIkev2, chosenTransform,
+      pskProof: this.ikePskProof(myPSK), rsaNonce: rsaReplyNonce, chosenPolicy, chosenIkev2, chosenTransform,
       ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
       lifetimeSec, lifetimeKB, natT,
       keyExchange: responderExchange?.payload,
@@ -3959,7 +4014,7 @@ export class IPSecEngine implements IProtocolEngine {
       narrowedSelectors: trafficSelectors ? mirrorSelectors(trafficSelectors) : undefined,
       configReply: typeof configVerdict === 'string' ? undefined : configVerdict,
     };
-    if (this.ikeCertAuth) {
+    if (this.ikeCertAuth && rsaSeed === undefined) {
       
       accept.certPayload = {
         cert: this.ikeCertAuth.localCert,
@@ -3973,7 +4028,23 @@ export class IPSecEngine implements IProtocolEngine {
     const pending = this.pendingIke.get(srcIp);
     if (!pending) return;
     const isV2 = pending.offer.version === 2;
-    if (this.ikeCertAuth) {
+    let rsaSeed: string | undefined;
+    if (pending.rsaNonce !== undefined) {
+      const own = this.rsaProvider()?.privateKey();
+      const clear = own && accept.rsaNonce ? rsaDecryptPkcs1(own, hexToBytes(accept.rsaNonce)) : null;
+      if (clear === null) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'RSA nonce decryption failed');
+        return;
+      }
+      rsaSeed = this.rsaNonceSeed(pending.rsaNonce, bytesToHex(clear));
+      if (this.ikePskProof(rsaSeed) !== accept.pskProof) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'RSA nonce decryption failed');
+        return;
+      }
+    }
+    if (rsaSeed !== undefined) {
+      /* authenticated by the nonce exchange */
+    } else if (this.ikeCertAuth) {
       
       if (!accept.certPayload) {
         this.createFailedIKESA(srcIp, pending.egressIface, 'Certificate unknown');
@@ -3998,7 +4069,9 @@ export class IPSecEngine implements IProtocolEngine {
         this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
       }
     }
-    const myPSK = isV2
+    const myPSK = rsaSeed !== undefined
+      ? rsaSeed
+      : isV2
       ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? 'cert-auth-key')
       : (this.findISAKMPPSK(pending.entry, srcIp, pending.apparentSrcIP, ...this.hostnamesFor(srcIp)) || 'cert-auth-key');
     const spiInitIn = pending.spiInitIn;
@@ -4144,7 +4217,7 @@ export class IPSecEngine implements IProtocolEngine {
 
   private createFailedIKESA(peerIP: string, _iface: string, reason: string): void {
     const phase: 1 | 2 = /No matching (transform|IPSec)|Child SA|Phase 2/i.test(reason) ? 2 : 1;
-    const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy|Certificate|CRL/i.test(r);
+    const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy|Certificate|CRL|RSA/i.test(r);
     if (/Certificate revoked/i.test(reason)) {
       Logger.warn(this.router.id, 'ipsec:cert-revoked',
         `${this.router.name}: %CRYPTO-4-IKE_QUICK_MODE_BAD_CERT peer=${peerIP} reason="Certificate revoked"`);
@@ -4258,7 +4331,7 @@ export class IPSecEngine implements IProtocolEngine {
       lines.push(`Protection suite of priority ${p.priority}`);
       lines.push(`\tencryption algorithm:   ${this.formatEncForPolicy(p.encryption)}`);
       lines.push(`\thash algorithm:         ${this.formatHashForPolicy(p.hash)}`);
-      lines.push(`\tauthentication method:  ${p.auth === 'pre-share' ? 'Pre-Shared Key' : p.auth}`);
+      lines.push(`\tauthentication method:  ${p.auth === 'pre-share' ? 'Pre-Shared Key' : p.auth === 'rsa-sig' ? 'Rivest-Shamir-Adleman Signature' : p.auth === 'rsa-encr' ? 'Rivest-Shamir-Adleman Encryption' : p.auth}`);
       lines.push(`\tDiffie-Hellman group:   #${p.group} (${this.dhGroupBits(p.group)} bit)`);
       lines.push(`\tlifetime:               ${p.lifetime} seconds, no volume limit`);
     }

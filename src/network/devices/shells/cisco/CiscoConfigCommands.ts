@@ -71,6 +71,7 @@ export type CiscoShellMode =
   | 'config-applet' | 'config-flow-exporter' | 'config-flow-record' | 'config-flow-monitor'
   | 'config-archive' | 'config-archive-log'
   | 'config-ssh-pubkey' | 'config-ssh-pubkey-user' | 'config-ssh-pubkey-server' | 'config-ssh-pubkey-data'
+  | 'config-pubkey-chain' | 'config-pubkey-key' | 'config-pubkey-data'
   | 'config-gdoi-group';
 
 export interface CiscoShellContext {

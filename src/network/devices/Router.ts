@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
 import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
@@ -6266,6 +6267,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getNATEngine(): NATEngine { return this.natEngine; }
 
   /** @internal Lazily create + return the IPSec engine for this router */
+  _ikeRsaProvider(): IkeRsaProvider | null {
+    return null;
+  }
+
+  _ipsecInterfaceMtu(iface: string): number | undefined {
+    return this.ports.get(iface)?.getMTU();
+  }
+
   _getOrCreateIPSecEngine(): IPSecEngine {
     if (!this.ipsecEngine) {
       this.ipsecEngine = new IPSecEngine(this);

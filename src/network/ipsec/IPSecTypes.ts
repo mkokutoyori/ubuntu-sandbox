@@ -14,6 +14,11 @@
  *   BYPASS  — allow in cleartext (e.g. IKE, OSPF, ICMP)
  *   DISCARD — silently drop
  */
+export interface IkeRsaProvider {
+  privateKey(): import('@/crypto/rsa').RsaPrivateKey | null;
+  peerPublicKey(address: string, hostnames: readonly string[]): import('@/crypto/rsa').RsaPublicKey | null;
+}
+
 export type DfBitPolicy = 'copy' | 'set' | 'clear';
 export type FragmentationPoint = 'before-encryption' | 'after-encryption';
 export type SPDAction = 'PROTECT' | 'BYPASS' | 'DISCARD';
@@ -277,7 +282,8 @@ export interface IkeOfferMessage {
   lifetimeKB: number;
   ipsecSpiIn: number;
   natTHint: boolean;
-  authMode?: 'psk' | 'x509';
+  authMode?: 'psk' | 'x509' | 'rsa-encr';
+  rsaNonce?: string;
   certPayload?: X509CertPayload;
   keyExchange?: IkeKeyExchangePayload;
   trafficSelectors?: SATrafficSelector;
@@ -317,6 +323,7 @@ export interface IkeAcceptMessage {
   configRefused?: string;
   responderSpi: string;
   pskProof: string;
+  rsaNonce?: string;
   certPayload?: X509CertPayload;
   chosenPolicy?: IkePolicyProposal;
   chosenIkev2?: IkeV2Chosen;
