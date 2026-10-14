@@ -34,6 +34,7 @@ export interface TelnetAdmission {
 export interface TelnetSessionHandle {
   readonly id: string;
   readonly line: string;
+  readonly greeting?: readonly string[];
 }
 
 export interface ITelnetServerContext {

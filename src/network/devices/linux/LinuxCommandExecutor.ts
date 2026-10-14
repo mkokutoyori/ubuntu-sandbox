@@ -751,6 +751,13 @@ export class LinuxCommandExecutor {
       timezone: () => (this.vfs.readFile('/etc/timezone') ?? 'UTC').trim(),
       resolveHost: (name) => this.resolveHostAddresses(name),
       keyrings: this.keyrings,
+      lastlog: {
+        read: (user) => {
+          const entry = this.lastlog.getCurrent(user);
+          return entry === undefined ? null : { time: Math.floor(entry.when / 1000), line: entry.tty, host: entry.sourceHost };
+        },
+        write: (user, record) => { this.lastlog.record(user, record.host, record.line, record.time * 1000); },
+      },
       processLimits: (uid) => new Map([
         ['nofile', { soft: this.processMgr.nofileLimit(uid), hard: this.processMgr.nofileHardLimit(uid) }],
         ['nproc', { soft: this.processMgr.nprocLimit(uid), hard: this.processMgr.nprocHardLimit(uid) }],
@@ -7026,6 +7033,25 @@ export class LinuxCommandExecutor {
     const messages = session.takeLoginMessages();
     session.end();
     return { ok: code === PamReturn.SUCCESS, messages };
+  }
+
+  openServiceSession(
+    service: string,
+    user: string,
+    subject: { rhost?: string; tty?: string; pid?: number },
+    loginName: string,
+  ): { greeting: string[]; close(): void } {
+    const caller = { uid: 0, euid: 0, loginName };
+    const pid = subject.pid ?? this.logMgr.allocatePid();
+    const session = new PamServiceSession(
+      this.pam, service, { caller, identity: { tag: service, pid } },
+      { user, rhost: subject.rhost, tty: subject.tty },
+    );
+    session.openSession();
+    return {
+      greeting: session.sessionMessages,
+      close: () => { session.closeSession(); session.end(); },
+    };
   }
 
   checkPassword(username: string, password: string): boolean {
