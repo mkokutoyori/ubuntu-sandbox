@@ -70,7 +70,7 @@ HELP_OVERRIDES = {
     'vlan-filter': 'VLAN ranges to allow.',
 }
 
-LISTS = {'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
+LISTS = {'src-filter', 'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
          'internet-service-group', 'internet-service-name', 'internet-service-src-custom', 'internet-service-src-custom-group',
          'internet-service-src-fortiguard', 'internet-service-src-group', 'internet-service-src-name',
          'internet-service6-custom', 'internet-service6-custom-group', 'internet-service6-fortiguard',
@@ -146,6 +146,8 @@ def emit(e, schema_names):
         body = f"{'isoMoment' if name == 'policy-expiry-date' else 'moment'}({q(name)}, {q(help_text)})"
     else:
         body = f"{'text' if typ == 'var-string' else 'word'}({q(name)}, {q(help_text)})"
+    if name == 'src-filter':
+        body = "{ ...%s, acceptsValue: (value: string) => /^\\d+(\\.\\d+){3}(\\/\\d+|-\\d+(\\.\\d+){3})?$/.test(value) }" % body
     if name.startswith('diffservcode'):
         body = "{ ...%s, acceptsValue: (value: string) => /^[01]{6}$/.test(value) }" % body
     return body

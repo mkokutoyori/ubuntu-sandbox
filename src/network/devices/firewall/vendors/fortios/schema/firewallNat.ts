@@ -308,7 +308,6 @@ export const FIREWALL_VIP: FortiTableSpec = {
     refList('extintf', 'Interface connected to the source network that receives the '
       + 'packets that will be forwarded to the destination network.', INTERFACE_TARGETS),
     refList('srcintf-filter', 'Interfaces to which the VIP applies.', INTERFACE_TARGETS),
-    refList('srcfilter', 'Source address filter.', ADDRESS_TARGETS),
     enable('arp-reply', 'Enable to respond to ARP requests for this virtual IP address.',
       true),
     { ...enable('portforward', 'Enable/disable port forwarding.'), availableWhen: isStaticNat },
@@ -371,7 +370,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
         externalAddress: external.from,
         externalEndAddress: external.to,
         externalInterfaces: vipIngressInterfaces(object),
-        sourceFilters: [...object.effective('srcfilter')],
+        sourceFilters: [...object.effective('src-filter')],
         arpReply: object.effective('arp-reply')[0] !== 'disable',
         protocol: protocolNumber(object.effective('server-type')[0] === 'udp'
           ? 'udp' : 'tcp'),
@@ -393,7 +392,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
         externalEndAddress: external.to,
         mappedAddressObject: mappedAddress,
         externalInterfaces: vipIngressInterfaces(object),
-        sourceFilters: [...object.effective('srcfilter')],
+        sourceFilters: [...object.effective('src-filter')],
         arpReply: object.effective('arp-reply')[0] !== 'disable',
         comment: object.effective('comment')[0] || undefined,
       });
@@ -414,7 +413,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
       mappedAddress: mapped.from,
       mappedEndAddress: mapped.to,
       externalInterfaces: vipIngressInterfaces(object),
-      sourceFilters: [...object.effective('srcfilter')],
+      sourceFilters: [...object.effective('src-filter')],
       arpReply: object.effective('arp-reply')[0] !== 'disable',
       portForward: forwarding,
       protocol: forwarding ? protocol : 0,

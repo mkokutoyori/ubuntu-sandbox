@@ -138,6 +138,20 @@ export function familyOf(candidate: string): AddressFamily {
   return candidate.includes(':') ? 'ipv6' : 'ipv4';
 }
 
+export function literalAddress(text: string): AddressObject | undefined {
+  const [first, second, ...rest] = text.split('-');
+  if (rest.length === 0 && second !== undefined && tryIpToUint32(first) !== null
+    && tryIpToUint32(second) !== null) {
+    return rangeAddress(text, first, second);
+  }
+  const [network, length, ...extra] = text.split('/');
+  if (extra.length > 0 || tryIpToUint32(network) === null) return undefined;
+  if (length === undefined) return hostAddress(text, network);
+  const prefix = Number(length);
+  return Number.isInteger(prefix) && prefix >= 0 && prefix <= 32
+    ? subnetAddress(text, network, prefix) : undefined;
+}
+
 export function addressObjectMatches(
   object: AddressObject, candidate: string, context: AddressMatchContext,
 ): boolean {

@@ -18,6 +18,8 @@
   "diffservcode-rev",
   "diffserv-copy"
  ],
- "firewall vip": [],
+ "firewall vip": [
+  "src-filter"
+ ],
  "firewall address": []
 }
