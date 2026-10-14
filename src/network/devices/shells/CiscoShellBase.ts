@@ -96,7 +96,6 @@ import {
 import type { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
 import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
@@ -9955,9 +9954,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /**
    * Parse `ssh [-l user] [-p port] <host> [command ...]` (the IOS form)
-   * and dispatch through the shared runSshClient. Source IP is the
-   * router's first configured interface — runSshClient probes for it
-   * automatically when sourceIp resolves to a known device.
+   * and open it over the wire (routerOutboundSsh).
    */
   private outboundSshClientPlan(
     commandLine: string, device: TDevice | undefined,

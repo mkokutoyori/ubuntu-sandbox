@@ -435,6 +435,12 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   }
 
   isUserAllowed(user: string, groups: readonly string[], ctx?: { address?: string; host?: string }): boolean {
+    return this.userRefusal(user, groups, ctx) === null;
+  }
+
+  userRefusal(
+    user: string, groups: readonly string[], ctx?: { address?: string; host?: string },
+  ): 'DenyUsers' | 'DenyGroups' | 'AllowUsers' | 'AllowGroups' | null {
     let denyUsers = this.denyUsers;
     let denyGroups = this.denyGroups;
     let allowUsers = this.allowUsers;
@@ -446,14 +452,16 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       if (block.overrides.allowUsers)  allowUsers  = block.overrides.allowUsers;
       if (block.overrides.allowGroups) allowGroups = block.overrides.allowGroups;
     }
-    if (denyUsers.some(p => globMatch(p, user))) return false;
-    if (denyGroups.some(p => groups.some(g => globMatch(p, g)))) return false;
+    if (denyUsers.some(p => globMatch(p, user))) return 'DenyUsers';
+    if (denyGroups.some(p => groups.some(g => globMatch(p, g)))) return 'DenyGroups';
     if (allowUsers.length > 0 && !allowUsers.some(p => globMatch(p, user))) {
-      if (allowGroups.length === 0 || !allowGroups.some(p => groups.some(g => globMatch(p, g)))) return false;
+      if (allowGroups.length === 0 || !allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
+        return allowGroups.length === 0 ? 'AllowUsers' : 'AllowGroups';
+      }
     } else if (allowGroups.length > 0 && !allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
-      if (allowUsers.length === 0) return false;
+      if (allowUsers.length === 0) return 'AllowGroups';
     }
-    return true;
+    return null;
   }
 
   effectiveFor(ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): SshdEffectiveView {

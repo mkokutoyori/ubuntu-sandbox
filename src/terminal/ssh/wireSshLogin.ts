@@ -199,7 +199,8 @@ export async function resolveSshTarget(
   device: Equipment, typedHost: string, port: number, dialect: SshDialect = OPENSSH_SSH,
 ): Promise<SshTargetResolution> {
   const resolver = device as unknown as { resolveHostname(name: string): Promise<IPAddress | null> };
-  const resolved = IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
+  const literal = parseDialAddress(typedHost) !== null ? typedHost : null;
+  const resolved = literal ?? IPAddress.tryParse(typedHost) ?? await resolver.resolveHostname(typedHost);
   if (!resolved) {
     return { kind: 'failed', line: dialect.unresolved(typedHost, port) };
   }
@@ -308,6 +309,10 @@ export async function relayScriptedShell(
     const motd = (shell as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
     if (motd.trim().length > 0) lines.push(motd.replace(/\n+$/, ''));
   }
+  await shell.untilQuiet?.();
+  const unsolicited = shell.takeUnclaimedOutput?.() ?? '';
+  if (unsolicited !== '') lines.push(unsolicited.replace(/\n+$/, ''));
+  if (!shell.isOpen) return { output: lines.join('\n'), exitCode: shell.remoteExitStatus?.() ?? 0 };
   let prompt = shell.initialPrompt() ?? '';
   let awaitingChallenge = false;
   let remaining = skipLines;

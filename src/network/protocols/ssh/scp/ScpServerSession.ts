@@ -1,6 +1,7 @@
 import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 import type { ConnectionChannel } from '../connection/SshConnection';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
+import { ScpByteQueue } from './ScpByteQueue';
 import { decodeScpControlLine, encodeScpControlLine, scpModeString, SCP_ACK, type ScpControlLine } from './ScpWireCodec';
 
 export interface ScpServerCommand {
@@ -10,6 +11,8 @@ export interface ScpServerCommand {
   readonly targetMustBeDirectory: boolean;
   readonly path: string;
 }
+
+const SINK_UMASK = 0o022;
 
 const SERVER_FLAGS = new Set(['-t', '-f', '-r', '-p', '-d', '-v']);
 
@@ -43,65 +46,6 @@ export function parseScpServerCommand(command: string): ScpServerCommand | null 
   };
 }
 
-class ByteQueue {
-  private queued = new Uint8Array(0);
-  private waiting: { count: number | 'line'; resolve: (bytes: Uint8Array | null) => void } | null = null;
-  private ended = false;
-
-  push(bytes: Uint8Array): void {
-    const merged = new Uint8Array(this.queued.length + bytes.length);
-    merged.set(this.queued);
-    merged.set(bytes, this.queued.length);
-    this.queued = merged;
-    this.settle();
-  }
-
-  end(): void {
-    this.ended = true;
-    this.settle();
-  }
-
-  take(count: number): Promise<Uint8Array | null> {
-    return this.wait(count);
-  }
-
-  line(): Promise<Uint8Array | null> {
-    return this.wait('line');
-  }
-
-  private wait(count: number | 'line'): Promise<Uint8Array | null> {
-    return new Promise((resolve) => {
-      this.waiting = { count, resolve };
-      this.settle();
-    });
-  }
-
-  private settle(): void {
-    const pending = this.waiting;
-    if (pending === null) return;
-    if (pending.count === 'line') {
-      const newline = this.queued.indexOf(0x0a);
-      if (newline >= 0) {
-        this.waiting = null;
-        const line = this.queued.slice(0, newline + 1);
-        this.queued = this.queued.slice(newline + 1);
-        pending.resolve(line);
-        return;
-      }
-    } else if (this.queued.length >= pending.count) {
-      this.waiting = null;
-      const taken = this.queued.slice(0, pending.count);
-      this.queued = this.queued.slice(pending.count);
-      pending.resolve(taken);
-      return;
-    }
-    if (this.ended) {
-      this.waiting = null;
-      pending.resolve(null);
-    }
-  }
-}
-
 function baseName(path: string): string {
   const trimmed = path.replace(/\/+$/, '');
   return trimmed.slice(trimmed.lastIndexOf('/') + 1);
@@ -112,7 +56,7 @@ function joinPath(directory: string, name: string): string {
 }
 
 export class ScpServerSession {
-  private readonly inbound = new ByteQueue();
+  private readonly inbound = new ScpByteQueue();
 
   constructor(
     private readonly channel: ConnectionChannel,
@@ -129,6 +73,11 @@ export class ScpServerSession {
     const target = this.fs.normalizePath(this.command.path, this.cwd);
     const run = this.command.role === 'sink' ? this.sink(target) : this.source(target);
     void run.then((exitCode) => this.finished(exitCode));
+  }
+
+  private sinkMode(mode: string): number {
+    const requested = parseInt(mode, 8);
+    return this.command.preserveTimes ? requested : requested & ~SINK_UMASK;
   }
 
   private send(text: string): void {
@@ -193,7 +142,7 @@ export class ScpServerSession {
           this.acknowledge();
           continue;
         }
-        this.fs.setPermissions(destination, parseInt(control.mode, 8));
+        this.fs.setPermissions(destination, this.sinkMode(control.mode));
         directories.push(destination);
         this.acknowledge();
         continue;
@@ -208,7 +157,7 @@ export class ScpServerSession {
         exitCode = 1;
         continue;
       }
-      this.fs.setPermissions(destination, parseInt(control.mode, 8));
+      this.fs.setPermissions(destination, this.sinkMode(control.mode));
       this.acknowledge();
     }
   }

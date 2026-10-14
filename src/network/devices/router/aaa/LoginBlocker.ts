@@ -10,7 +10,15 @@ export interface LoginBlockerOptions {
   withinSeconds: number;
   blockSeconds: number;
   now?: () => number;
+  onQuietMode?: (change: QuietModeChange) => void;
 }
+
+export type QuietModeChange =
+  | {
+    readonly state: 'on'; readonly at: number; readonly watchSecondsLeft: number;
+    readonly user: string; readonly source: string; readonly reason: string;
+  }
+  | { readonly state: 'off'; readonly at: number };
 
 /**
  * `login block-for` real IOS semantics: quiet-mode is a single DEVICE-WIDE
@@ -33,6 +41,7 @@ export class LoginBlocker {
   private blockedUntil: number = 0;
   private readonly subs: Unsubscribe[] = [];
   private readonly now: () => number;
+  private readonly onQuietMode: ((change: QuietModeChange) => void) | undefined;
 
   constructor(opts: LoginBlockerOptions) {
     this.deviceId = opts.deviceId;
@@ -40,6 +49,7 @@ export class LoginBlocker {
     this.withinMs = opts.withinSeconds * 1000;
     this.blockMs = opts.blockSeconds * 1000;
     this.now = opts.now ?? simulationNowMs;
+    this.onQuietMode = opts.onQuietMode;
     this.subs.push(opts.bus.subscribe('router.aaa.account.login.failure', this.onFailure));
   }
 
@@ -52,15 +62,27 @@ export class LoginBlocker {
     this.failureTimes = this.failureTimes.filter(t => at - t <= this.withinMs);
     this.failureTimes.push(at);
     if (this.failureTimes.length >= this.attempts) {
+      const entering = this.blockedUntil === 0 || at >= this.blockedUntil;
       this.blockedUntil = at + this.blockMs;
+      if (entering) {
+        const oldest = Math.min(...this.failureTimes);
+        this.onQuietMode?.({
+          state: 'on', at,
+          watchSecondsLeft: Math.max(0, Math.ceil((this.withinMs - (at - oldest)) / 1000)),
+          user: env.payload.account.name, source: env.payload.from ?? 'unknown',
+          reason: env.payload.reason ?? 'Invalid login',
+        });
+      }
     }
   };
 
   /** Device-wide quiet-mode state — auto-expires once `blockedUntil` passes. */
   private refresh(at: number): void {
     if (this.blockedUntil && at >= this.blockedUntil) {
+      const ended = this.blockedUntil;
       this.blockedUntil = 0;
       this.failureTimes = [];
+      this.onQuietMode?.({ state: 'off', at: ended });
     }
   }
 

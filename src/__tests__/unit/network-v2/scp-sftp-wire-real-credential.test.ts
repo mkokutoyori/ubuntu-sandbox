@@ -23,6 +23,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
 import { SshSftpChannel } from '@/network/protocols/ssh/channels/SshSftpChannel';
+import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { buildLan, assignIps, type SshLan, PC2_IP } from './ssh-lan-fixtures';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -41,19 +42,16 @@ describe('scp/sftp go over the real wire when sshpass offers a real password', (
     await assignIps(lan);
   });
 
-  it('sshpass -p <pw> scp: the transfer calls SshSftpChannel.sendRequest (real SSH_FXP_* wire ops), not a direct VFS copy', async () => {
-    const spy = vi.spyOn(SshSftpChannel.prototype, 'sendRequest');
+  it('sshpass -p <pw> scp: the transfer is the scp sink protocol on an exec channel, not a direct VFS copy', async () => {
+    const spy = vi.spyOn(SshSession.prototype, 'openExecStream');
     await lan.pc1.executeCommand("echo 'hello real wire' > /home/user/payload.txt");
 
     const out = await lan.pc1.executeCommand(
       `sshpass -p admin scp /home/user/payload.txt user@${PC2_IP}:/home/user/payload.txt`,
     );
 
-    // Real wire ops: OPEN (via 'put'), WRITE, CLOSE all funnel through
-    // sendRequest() on the client-side SshSftpChannel.
-    const putCalls = spy.mock.calls.filter(([req]) => (req as { op: string }).op === 'put');
-    expect(putCalls.length).toBeGreaterThanOrEqual(1);
-    expect((putCalls[0][0] as { content: string }).content).toContain('hello real wire');
+    const sinks = spy.mock.calls.filter(([command]) => /^scp .*-t /.test(command));
+    expect(sinks.length).toBeGreaterThanOrEqual(1);
     expect(out).not.toMatch(/no route to host/);
 
     const remoteContent = await lan.pc2.executeCommand('cat /home/user/payload.txt');
