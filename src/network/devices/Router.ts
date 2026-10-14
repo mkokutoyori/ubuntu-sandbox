@@ -5101,6 +5101,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this._loginBlocker = new LoginBlocker({
       deviceId: this.id, bus: this.getBus(),
       attempts, withinSeconds, blockSeconds,
+      onQuietMode: (change) => this.getSecurityAuditLog().recordQuietMode(change),
     });
   }
 
