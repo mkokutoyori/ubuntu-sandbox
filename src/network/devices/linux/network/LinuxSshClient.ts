@@ -766,6 +766,117 @@ function verdictFromWireAlone(
   };
 }
 
+export function splitSshFlags(args: string[]): string[] {
+  return splitSshArgs(args).flags;
+}
+
+export function sshClientRefusal(opts: SshClientOpts): SshClientResult | null {
+  const withoutSession = sshReplyWithoutSession(opts.args, OPENSSH_UBUNTU_22_04);
+  if (withoutSession) return withoutSession;
+  const { positional, flags } = splitSshArgs(opts.args);
+  const target = positional[0];
+  const port = clientPort(flags);
+  const iIdx = flags.indexOf('-i');
+  const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
+  if (iVal && opts.localVfs?.resolveInode) {
+    const inode = opts.localVfs.resolveInode(iVal, true);
+    const warning = inode ? unprotectedPrivateKeyWarning(iVal, inode.permissions) : null;
+    if (warning) {
+      return {
+        output: [
+          ...warning,
+          `Load key "${iVal}": bad permissions`,
+          `${opts.sourceUser}@${target ?? ''}: Permission denied (publickey,password).`,
+        ].join('\n'),
+        exitCode: 255,
+      };
+    }
+  }
+  if (opts.sourceIp === '127.0.0.1' || !opts.sourceIp) {
+    return {
+      output: `ssh: connect to host ${target ?? ''} port ${port}: Network is unreachable\n`,
+      exitCode: 255,
+    };
+  }
+  if (!target) return { output: OPENSSH_UBUNTU_22_04.sshUsage, exitCode: 255 };
+  if (!RE_USERHOST.test(target)) {
+    return {
+      output: `ssh: Could not resolve hostname ${target}: Name or service not known\n`,
+      exitCode: 255,
+    };
+  }
+  return null;
+}
+
+export interface WireSshFailure {
+  readonly host: string;
+  readonly user: string;
+  readonly address: string | null;
+  readonly port: number;
+  readonly unreachableLine?: string;
+  readonly reach?: Exclude<TcpWireOutcome, 'open'>;
+  readonly keyExchange?: string;
+  readonly hostKey?: string;
+  readonly denial?: string;
+  readonly authRefused?: boolean;
+  readonly connectionLine?: string;
+}
+
+export function sshWireFailureResult(opts: SshClientOpts, failure: WireSshFailure): SshClientResult {
+  if (failure.unreachableLine !== undefined) return { output: `${failure.unreachableLine}\n`, exitCode: 255 };
+  if (failure.reach !== undefined && failure.address !== null) {
+    return wireFailure(opts, failure.host, failure.address, failure.port, failure.reach);
+  }
+  if (failure.keyExchange !== undefined) return { output: failure.keyExchange, exitCode: 255 };
+  if (failure.hostKey !== undefined) return { output: failure.hostKey, exitCode: 255 };
+  if (failure.authRefused === true) {
+    return { output: `${failure.denial ?? deniedLine(failure.user, failure.host, null)}\n`, exitCode: 255 };
+  }
+  return {
+    output: `${failure.connectionLine ?? `ssh: connect to host ${failure.host} port ${failure.port}: Network is unreachable`}\n`,
+    exitCode: 255,
+  };
+}
+
+export interface WireSshSuccess {
+  readonly host: string;
+  readonly address: string;
+  readonly port: number;
+  readonly method: string | undefined;
+  readonly serverHostKey: { readonly algorithm: string; readonly fingerprint: string } | null;
+  readonly command: string;
+  readonly settled: { readonly output: string; readonly exitCode: number } | null;
+  readonly shell: { readonly output: string; readonly exitCode: number } | null;
+  readonly notices: readonly string[];
+}
+
+export function sshWireSuccessResult(opts: SshClientOpts, flags: string[], success: WireSshSuccess): SshClientResult {
+  const notices = success.notices.map((n) => (n.endsWith('\n') ? n : `${n}\n`)).join('');
+  const forwardingError = setupPortForwards(opts, flags);
+  if (flags.includes('-N')) return { output: forwardingError, exitCode: 0 };
+  const verbose = flags.some((a) => /^-v+$/.test(a));
+  const verboseHeader = verbose
+    ? `debug1: Connecting to ${success.host} [${success.address}] port ${success.port}.\n`
+      + (success.serverHostKey === null
+        ? ''
+        : `debug1: Server host key: ${success.serverHostKey.algorithm} ${success.serverHostKey.fingerprint}\n`)
+      + `debug1: Authentication succeeded (${success.method ?? 'password'}).\n`
+    : '';
+  const header = notices + verboseHeader + forwardingError;
+  if (success.settled !== null) {
+    const output = success.settled.output;
+    return {
+      output: header + (output && !output.endsWith('\n') ? `${output}\n` : output),
+      exitCode: success.settled.exitCode,
+    };
+  }
+  if (flags.some((a) => a === '-q' || a === '-Q')) return { output: header, exitCode: 0 };
+  const lines: string[] = [];
+  if (success.shell !== null && success.shell.output.length > 0) lines.push(success.shell.output);
+  lines.push(connectionClosed(success.host));
+  return { output: header + lines.join('\n'), exitCode: 0 };
+}
+
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const withoutSession = sshReplyWithoutSession(opts.args, OPENSSH_UBUNTU_22_04);
   if (withoutSession) return withoutSession;

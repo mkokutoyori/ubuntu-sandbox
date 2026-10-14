@@ -214,8 +214,12 @@ describe('§2 — SSH banner, MOTD and issue.net', () => {
       contains: ['Property of ACME Corp'],
     },
     {
-      name: '/etc/issue.net is shown pre-auth',
-      setup: (l) => { void l.pc2.executeCommand("echo 'AUTHORIZED USE ONLY'| sudo tee /etc/issue.net > /dev/null"); },
+      name: '/etc/issue.net is shown pre-auth once Banner names it',
+      setup: async (l) => {
+        await l.pc2.executeCommand("echo 'AUTHORIZED USE ONLY'| sudo tee /etc/issue.net > /dev/null");
+        await l.pc2.executeCommand("echo 'Banner /etc/issue.net' | sudo tee -a /etc/ssh/sshd_config > /dev/null");
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['AUTHORIZED USE ONLY'],
@@ -233,7 +237,8 @@ describe('§2 — SSH banner, MOTD and issue.net', () => {
       contains: [/GNU\/Linux 5\.\d+\.\d+/],
     },
     {
-      name: 'last login marker is appended',
+      name: 'last login marker is appended from the second login on',
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n'); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: [/Last login:/],
@@ -259,27 +264,30 @@ describe('§3 — SSH by hostname rather than IP', () => {
 
   const rows: Row[] = [
     {
-      name: 'short device name resolves: ssh alice@pc2',
+      name: 'a bare device name is not magically resolved: ssh alice@pc2',
+      on: l => l.pc1,
+      cmd: 'ssh alice@pc2',
+      contains: [/Could not resolve hostname pc2/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'a short name listed in /etc/hosts resolves: ssh alice@pc2',
+      setup: async (l) => { await l.pc1.executeCommand('echo "10.0.0.2 pc2"| sudo tee -a /etc/hosts > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh alice@pc2',
       contains: ['Welcome to Ubuntu'],
       excludes: [/Could not resolve hostname/],
     },
     {
-      name: 'short server name resolves: ssh alice@srv1',
-      on: l => l.pc1,
-      cmd: 'ssh alice@srv1',
-      contains: ['Welcome to Ubuntu'],
-    },
-    {
-      name: 'fully-qualified resolution falls back to short name',
+      name: 'a fully-qualified name listed in /etc/hosts resolves: ssh alice@srv1.lan',
+      setup: async (l) => { await l.pc1.executeCommand('echo "10.0.0.10 srv1.lan srv1"| sudo tee -a /etc/hosts > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh alice@srv1.lan',
       contains: ['Welcome to Ubuntu'],
     },
     {
       name: '/etc/hosts entry on the client makes nickname resolvable',
-      setup: (l) => { void l.pc1.executeCommand('echo "10.0.0.10 oracledb oracledb.local"| sudo tee -a /etc/hosts > /dev/null'); },
+      setup: async (l) => { await l.pc1.executeCommand('echo "10.0.0.10 oracledb oracledb.local"| sudo tee -a /etc/hosts > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh alice@oracledb',
       contains: ['Welcome to Ubuntu'],
@@ -766,7 +774,7 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
       contains: [/Accepted password for alice from 10\.0\.0\.1/],
     },
     {
-      name: 'refused login (sshd stopped) appends a "Failed password" line',
+      name: 'refused login (sshd stopped) leaves no "Failed password" line: nothing was listening',
       setup: async (l) => {
         await l.pc2.executeCommand('systemctl stop ssh');
         await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
@@ -774,7 +782,7 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
       },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
-      contains: [/Failed password for alice/, /from 10\.0\.0\.1/],
+      excludes: [/Failed password for alice/],
     },
     {
       name: 'each login is a separate line (auth log grows monotonically)',

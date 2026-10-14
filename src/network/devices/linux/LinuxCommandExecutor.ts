@@ -161,8 +161,13 @@ import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Geto
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
-import { execChannelOptionsFor, runSshClient, wireExecTarget } from './network/LinuxSshClient';
-import { wireReachOutcomeRetransmitting } from '@/terminal/ssh/wireSshLogin';
+import {
+  execChannelOptionsFor, runSshClient, splitSshFlags, sshClientRefusal, sshWireFailureResult, sshWireSuccessResult,
+  wireExecTarget,
+} from './network/LinuxSshClient';
+import { resolveSshTarget } from '@/terminal/ssh/wireSshLogin';
+import { OPENSSH_SSH } from '@/terminal/ssh/sshDialect';
+import { SshFingerprint } from '@/network/protocols/ssh/SshFingerprint';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
 import {
@@ -1741,25 +1746,32 @@ export class LinuxCommandExecutor {
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
-    authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences,
+    authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences, dialAddress?: string,
   ): Promise<{
     session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
-    hostKeyRefusal?: string;
+    hostKeyRefusal?: string; connectionFailure?: string;
   }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
     const outcome = await connectWireSsh(
       this.wireSshClient(), { host, user, port, password, identities, strict, authentication, algorithms },
-      ((h, p) => connector(h, p)) as unknown as TcpConnector);
+      ((h, p) => connector(dialAddress !== undefined && h === host ? dialAddress : h, p)) as unknown as TcpConnector);
     const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
     const denial = authRefused ? outcome.warnings.at(-1) : undefined;
     const keyExchangeFailure = outcome.failure?.kind === 'KEX_FAILED' ? outcome.failure.message : undefined;
-    const hostKeyRefusal = outcome.failure?.kind === 'HOST_KEY_REJECTED'
+    const hostKeyRefusal = outcome.failure?.kind === 'HOST_KEY_REJECTED' || outcome.failure?.kind === 'HOST_KEY_CHANGED'
       ? [...outcome.warnings, 'Host key verification failed.'].join('\n')
+      : undefined;
+    const refusedKinds: Readonly<Record<string, string>> = {
+      CONNECTION_REFUSED: 'Connection refused', CONNECTION_TIMEOUT: 'Connection timed out',
+    };
+    const connectionFailure = outcome.failure !== null && outcome.failure.kind in refusedKinds
+      ? `ssh: connect to host ${host} port ${port}: ${refusedKinds[outcome.failure.kind]}`
       : undefined;
     return {
       session: outcome.session,
       authRefused,
+      ...(connectionFailure !== undefined ? { connectionFailure } : {}),
       ...(keyExchangeFailure !== undefined ? { keyExchangeFailure } : {}),
       ...(hostKeyRefusal !== undefined ? { hostKeyRefusal } : {}),
       ...(denial !== undefined ? { denial } : {}),
@@ -1821,74 +1833,69 @@ export class LinuxCommandExecutor {
     rawArgs: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
     const args = rawArgs.map(word => this.expandTilde(word));
-    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_22_04);
-    if (withoutSession) return withoutSession;
     const stdinPwd = (offeredPassword
       ?? this._scenarioStdin ?? '')
       .split('\n')[0] || undefined;
     const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
+    const refusal = sshClientRefusal(opts);
+    if (refusal) return this.finishSshClientResult(refusal);
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir());
-    const reach = target === null
-      ? undefined
-      : await wireReachOutcomeRetransmitting(this.localDevice, target.host, target.port);
-    const wire = reach === 'open' && target !== null
-      ? await this.connectWireSsh(
-        target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication,
-        target.algorithms)
-      : { session: null, authRefused: false, notices: [] as string[] };
+    if (target === null) return this.finishSshClientResult(runSshClient(opts));
+    const resolution = await resolveSshTarget(this.localDevice as never, target.host, target.port, OPENSSH_SSH);
+    if (resolution.kind === 'failed') {
+      return this.finishSshClientResult(sshWireFailureResult(opts, {
+        host: target.host, user: target.user, address: resolution.address ?? null, port: target.port,
+        ...(resolution.outcome !== undefined ? { reach: resolution.outcome } : { unreachableLine: resolution.line }),
+      }));
+    }
+    const wire = await this.connectWireSsh(
+      target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication,
+      target.algorithms, resolution.address);
     const session = wire.session;
-    if (!session && 'keyExchangeFailure' in wire && wire.keyExchangeFailure !== undefined) {
-      return { output: wire.keyExchangeFailure, exitCode: 255 };
-    }
-    if (!session && 'hostKeyRefusal' in wire && wire.hostKeyRefusal !== undefined) {
-      return { output: wire.hostKeyRefusal, exitCode: 255 };
-    }
     if (!session) {
-      return this.finishSshClientResult(
-        runSshClient({
-          ...opts, wireAuthRefused: wire.authRefused, wireOutcome: reach,
-          ...('denial' in wire && wire.denial !== undefined ? { wireDenial: wire.denial } : {}),
-        }),
-        wire.authRefused);
+      return this.finishSshClientResult(sshWireFailureResult(opts, {
+        host: target.host, user: target.user, address: resolution.address, port: target.port,
+        ...(wire.keyExchangeFailure !== undefined ? { keyExchange: wire.keyExchangeFailure } : {}),
+        ...(wire.hostKeyRefusal !== undefined ? { hostKey: wire.hostKeyRefusal } : {}),
+        ...(wire.denial !== undefined ? { denial: wire.denial } : {}),
+        ...(wire.connectionFailure !== undefined ? { connectionLine: wire.connectionFailure } : {}),
+        authRefused: wire.authRefused,
+      }), wire.authRefused);
     }
+    const command = /^(exit|logout)\s*$/i.test(target.command) ? '' : target.command;
     const execOptions = execChannelOptionsFor(opts, args);
-    const settled = target !== null && target.command && !target.holdOnly
-      ? await this.relayOverWire(session, target.command, execOptions)
+    const settled = command && !target.holdOnly
+      ? await this.relayOverWire(session, command, execOptions)
       : null;
-    const interactif = target !== null && !target.command && !target.holdOnly;
+    const interactif = !command && !target.holdOnly;
     const relayedShell = interactif
       ? await this.relayShellOverWire(
         session, offeredPassword === undefined && stdinPwd ? 1 : 0, true)
       : null;
-    const client = this.sshClientProcess(args, target?.forksToBackground === true);
+    const client = this.sshClientProcess(args, target.forksToBackground);
     try {
-      return this.finishSshClientResult(runSshClient({
+      const flags = splitSshFlags(args);
+      return this.finishSshClientResult(sshWireSuccessResult({
         ...opts,
-        wireAuthenticated: true,
-        wireMethod: session.authenticatedMethod ?? undefined,
-        wireOutcome: reach,
-        wirePeerIp: this.machineAnswering(session) ?? undefined,
-        wireNotices: interactif ? wire.notices : undefined,
-        shellRelay: () => relayedShell,
         clientProcess: client.pid,
         forwardingSession: {
           session,
           clientHost: this.localDevice as unknown as { getTcpStack(): TcpStack },
           resolveHost: (name) => this.resolveHostIpv4(name),
         },
-        execRelay: (command) => {
-          if (settled && target !== null && command === target.command) return settled;
-          const channel = session.openExecChannel(command, execOptions);
-          if (!isOk(channel)) return null;
-          const result = channel.value.run();
-          channel.value.close();
-          return result === null
-            ? null
-            : { output: result.stdout, exitCode: result.exitCode };
-        },
+      }, flags, {
+        host: target.host,
+        address: resolution.address,
+        port: target.port,
+        method: session.authenticatedMethod ?? undefined,
+        serverHostKey: serverHostKeyOf(session),
+        command,
+        settled,
+        shell: relayedShell,
+        notices: interactif ? wire.notices : [],
       }), true);
     } finally {
-      if (target?.holdOnly === true) this.forwarding?.holdOpen(session);
+      if (target.holdOnly) this.forwarding?.holdOpen(session);
       if (this.forwarding?.holds(session)) {
         this.handSshSessionTo(session, client.pid(), this.userMgr.currentUid);
       } else {
@@ -8333,4 +8340,12 @@ function parseRunPartsUmask(raw: string): number | null {
   const n = parseInt(v, 8);
   if (Number.isNaN(n) || n > 0o777) return null;
   return n;
+}
+
+function serverHostKeyOf(session: SshSession): { algorithm: string; fingerprint: string } | null {
+  const blob = session.serverHostKeyBlob;
+  if (blob === null || blob.length < 4) return null;
+  const length = (blob[0] << 24) | (blob[1] << 16) | (blob[2] << 8) | blob[3];
+  const algorithm = String.fromCharCode(...blob.slice(4, 4 + length));
+  return { algorithm, fingerprint: SshFingerprint.fromPublicKey(bytesToBase64(blob)).toString() };
 }

@@ -189,7 +189,10 @@ export function sshUnreachableReason(device: unknown, host: string): string {
 
 export type SshTargetResolution =
   | { readonly kind: 'ready'; readonly address: string }
-  | { readonly kind: 'failed'; readonly line: string };
+  | {
+    readonly kind: 'failed'; readonly line: string;
+    readonly address?: string; readonly outcome?: Exclude<TcpWireOutcome, 'open'>;
+  };
 
 export async function resolveSshTarget(
   device: Equipment, typedHost: string, port: number, dialect: SshDialect = OPENSSH_SSH,
@@ -205,7 +208,9 @@ export async function resolveSshTarget(
     return { kind: 'failed', line: unrouted ? dialect.unreachable(typedHost, port) : dialect.noRoute(typedHost, port) };
   }
   const reach = await wireReachOutcomeRetransmitting(device, address, port);
-  if (reach !== 'open') return { kind: 'failed', line: sshWireFailureLine(dialect, reach, typedHost, port) };
+  if (reach !== 'open') {
+    return { kind: 'failed', line: sshWireFailureLine(dialect, reach, typedHost, port), address, outcome: reach };
+  }
   return { kind: 'ready', address };
 }
 

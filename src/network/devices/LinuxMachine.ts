@@ -3955,6 +3955,10 @@ export abstract class LinuxMachine extends EndHost
     return null;
   }
 
+  resolveHostname(name: string): Promise<IPAddress | null> {
+    return this.resolveHostnameOverWire(name);
+  }
+
   private async resolveHostnameOverWire(name: string): Promise<IPAddress | null> {
     try { return new IPAddress(name); } catch { void 0; }
 
