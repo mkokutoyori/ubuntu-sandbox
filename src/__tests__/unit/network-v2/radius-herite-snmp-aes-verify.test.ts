@@ -4,7 +4,7 @@
  * — **RADIUS, le jumeau exact du défaut TACACS+.**
  *   `radius-server host <ip> key <clé>` était rangé dans `legacyHosts`,
  *   un tableau que SEUL le rendu de la configuration lisait :
- *   `show radius statistics` répondait « No RADIUS servers configured »
+ *   `show aaa servers` ne listait aucun serveur
  *   pendant que la configuration décrivait le serveur, et le groupe
  *   n'avait aucun membre résolvable.
  *
@@ -57,19 +57,18 @@ const RADIUS_HERITE = [
 
 describe('RADIUS : la forme héritée déclare un vrai serveur', () => {
   /** Le témoin : sans lui, l'échec de la forme héritée ne prouverait rien. */
-  it('témoin — la forme moderne est vue par `show radius statistics`', async () => {
+  it('témoin — la forme moderne est vue par `show aaa servers`', async () => {
     const r = new CiscoRouter('R1');
     await cfg(r, RADIUS_MODERNE);
-    expect(String(await r.executeCommand('show radius statistics')))
-      .toContain('Server: RAD1 (10.0.0.2)');
+    expect(String(await r.executeCommand('show aaa servers')))
+      .toContain('host 10.0.0.2,');
   });
 
   it('la forme héritée aussi', async () => {
     const r = new CiscoRouter('R1');
     await cfg(r, RADIUS_HERITE);
-    const out = String(await r.executeCommand('show radius statistics'));
-    expect(out).not.toContain('No RADIUS servers configured');
-    expect(out).toContain('10.0.0.2');
+    const out = String(await r.executeCommand('show aaa servers'));
+    expect(out).toContain('host 10.0.0.2,');
   });
 
   /**
@@ -104,8 +103,7 @@ describe('RADIUS : la forme héritée déclare un vrai serveur', () => {
     const r = new CiscoRouter('R1');
     await cfg(r, ['radius-server host 10.0.0.2 key K']);
     await cfg(r, ['no radius-server host 10.0.0.2']);
-    expect(String(await r.executeCommand('show radius statistics')))
-      .toBe('No RADIUS servers configured');
+    expect(String(await r.executeCommand('show aaa servers'))).toBe('');
   });
 });
 
@@ -190,8 +188,7 @@ describe('non-régression', () => {
   it('un routeur neuf ne déclare aucun serveur', async () => {
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');
-    expect(String(await r.executeCommand('show radius statistics')))
-      .toBe('No RADIUS servers configured');
+    expect(String(await r.executeCommand('show aaa servers'))).toBe('');
     expect(String(await r.executeCommand('show snmp user')))
       .toBe('No SNMP users configured');
   });

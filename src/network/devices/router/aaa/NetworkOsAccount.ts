@@ -10,7 +10,7 @@ import { ciscoPasswordMatches } from '../../shells/cisco/ciscoPasswordVerify';
 import type { AuthMethodType as SshAuthMethod } from '@/network/protocols/ssh/auth/ISshAuthMethod';
 export type { SshAuthMethod };
 export type PasswordHashAlgorithm =
-  | 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
+  | 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7' | 'type-4';
 export type AccountServiceType =
   | 'ssh' | 'stelnet' | 'telnet' | 'ftp' | 'http' | 'terminal' | 'web' | 'snmp' | 'ppp' | 'mail';
 

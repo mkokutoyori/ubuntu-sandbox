@@ -12,7 +12,7 @@ import { md5Crypt, ciscoType8, ciscoType9, encryptType7, md5Hex } from '@/crypto
 
 export type SecretAlgo =
   | 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7'
-  | 'sha512' | 'cipher' | 'irreversible-cipher';
+  | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-4';
 
 /** Map a modular-crypt prefix to the Cisco "type" number IOS prints for it. */
 function cryptPrefixType(value: string): number | null {
@@ -49,6 +49,8 @@ export function renderSecretField(value: string, algo: SecretAlgo, scope = ''): 
       return `9 ${ciscoType9(value, deriveType9Salt(value, scope))}`;
     case 'type-7':
       return `7 ${value}`;
+    case 'type-4':
+      return `4 ${value}`;
     default:
       return `0 ${value}`;
   }

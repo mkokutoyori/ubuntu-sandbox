@@ -13,7 +13,7 @@
  */
 
 import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
-import type { Equipment } from '@/network/equipment/Equipment';
+import type { Equipment, EnableSecretAlgorithm } from '@/network/equipment/Equipment';
 import { monitorCaptureSpecs, type MonitorCaptureHost } from './cisco/monitorCaptureSpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { FrameSource } from '../../hardware/PortTap';
@@ -87,6 +87,10 @@ import { effectiveIosSshAlgorithms } from '../router/security/CiscoSshAlgorithms
 import { terminalSpecs } from './cisco/terminalSpecs';
 import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
+import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
+import { ipsecDataPlaneSpecs, type IpsecDataPlaneEngine } from './cisco/ipsecDataPlaneSpecs';
+import { ServerCounters } from '../../radius/ServerCounters';
+import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import { showDebuggingSpecs, type ShowDebuggingHost } from './cisco/showDebuggingSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
@@ -228,7 +232,9 @@ import {
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
-import { ciscoPasswordMatches } from './cisco/ciscoPasswordVerify';
+import {
+  ciscoPasswordMatches, invalidEncryptedSecretMessage, isWellFormedSecret, TYPE4_DEPRECATION_WARNING,
+} from './cisco/ciscoPasswordVerify';
 import {
   getManagementService, getSnmpService, getSnmpAgent, getNtpAgent, getHttpService,
   getSessionRegistry,
@@ -6084,6 +6090,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       })),
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
       ...testAaaSpecs(() => this.testAaaHost()),
+      ...aaaShowSpecs(() => this.aaaShowHost()),
+      ...this.ipsecDataPlaneSpecs(),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
       ...monitorCaptureSpecs(() => this.monitorCaptureHost()),
     ];
@@ -10092,8 +10100,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // pour une seule commande finiraient par se contredire sur la même
     // date.
     trie.registerGreedy('enable secret', 'Set enable secret', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
-      let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
+      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: EnableSecretAlgorithm) => void };
+      let algo: EnableSecretAlgorithm = 'md5';
       let secret = '';
       let level = 15;
       // Cleartext forms (0, level N, or bare) are what `security passwords
@@ -10110,8 +10118,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const lu = this.lireNiveauEnable(args);
       level = lu.level;
       const reste = lu.reste;
-      const chiffres: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
-        '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
+      const chiffres: Record<string, EnableSecretAlgorithm> = {
+        '0': 'plain', '4': 'type-4', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
       };
       const nomme = chiffres[reste[0] ?? ''];
       // `enable secret 5` sans rien apres : le chiffre EST le type, donc
@@ -10121,6 +10129,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (nomme !== undefined && reste.length > 1) {
         algo = nomme;
         secret = reste.slice(1).join(' ');
+        if (!isWellFormedSecret(reste[0], secret)) return invalidEncryptedSecretMessage(reste[0]);
         // Seul le clair est soumis a `security passwords min-length` : un
         // condense colle est exempt, comme pour `username … secret`.
         if (nomme === 'plain') plaintextEntered = secret;
@@ -10134,13 +10143,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
       }
       dev._setEnableSecretForLevel?.(level, secret, algo);
-      return '';
+      return algo === 'type-4' ? TYPE4_DEPRECATION_WARNING : '';
     });
     // `enable algorithm-type {md5|scrypt|sha256} secret [level N] <pwd>` —
     // explicit-algorithm form of `enable secret` (IOS 15.3+), always takes
     // a cleartext password and hashes it with the named algorithm.
     trie.registerGreedy('enable algorithm-type', 'Set enable secret with an explicit hash algorithm', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
+      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: EnableSecretAlgorithm) => void };
       const algoName = args[0]?.toLowerCase();
       const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
       const algo = algoMap[algoName ?? ''];
@@ -10313,7 +10322,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const vue = this.vueEnCours();
       if (!vue) return '';
       const mots = brut.split(/\s+/);
-      const map: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
+      const map: Record<string, EnableSecretAlgorithm> = {
         '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
       };
       const chiffre = map[mots[0]];
@@ -10397,6 +10406,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
         return '';
       },
+    };
+  }
+
+  protected ipsecDataPlaneSpecs(): readonly CommandSpec[] {
+    return ipsecDataPlaneSpecs(() => {
+      const device = this.d() as unknown as { _getOrCreateIPSecEngine: () => IpsecDataPlaneEngine };
+      return {
+        engine: () => device._getOrCreateIPSecEngine(),
+        selectedInterfaces: () => this.selectedPortsForConfigIf(),
+      };
+    });
+  }
+
+  private aaaShowHost(): AaaShowHost {
+    const device = this.d();
+    return {
+      security: () => getSecurityConfig(device as object),
+      counters: () => (device as unknown as { getRadiusClient?: () => RadiusClientAgent })
+        .getRadiusClient?.().counters ?? new ServerCounters(simulationNowMs),
     };
   }
 

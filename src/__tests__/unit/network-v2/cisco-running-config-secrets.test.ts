@@ -41,7 +41,7 @@ describe('enable secret in show running-config', () => {
 
 describe('enable secret type-8 / type-9 (algorithm-type) in show running-config', () => {
   it('renders a plaintext scrypt secret as a real $9$ type-9 hash', async () => {
-    const r = await configured(['enable secret 9 cisco']);
+    const r = await configured(['enable algorithm-type scrypt secret cisco']);
     const config = await r.executeCommand('show running-config');
     expect(config).toMatch(/enable secret 9 \$9\$[./0-9A-Za-z]{14}\$[./0-9A-Za-z]{43}/);
     expect(config).not.toContain('enable secret 9 cisco');

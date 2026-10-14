@@ -14,11 +14,10 @@ beforeEach(() => {
 type Cli = { cliHelp(input: string): string; executeCommand(line: string): Promise<string> };
 
 const VUES: ReadonlyArray<readonly [string, string]> = [
-  ['show aaa servers', 'No AAA servers configured'],
   ['show aaa sessions', 'Total sessions since last reload'],
   ['show aaa local user lockout', 'Local-user'],
   ['show accounting', 'Overall Accounting Traffic'],
-  ['show radius statistics', 'No RADIUS servers configured'],
+  ['show radius statistics', 'Total responses seen'],
   ['show tacacs', 'No TACACS+ servers configured'],
   ['show login', 'Router NOT enabled to watch for login Attacks'],
   ['show login failures', 'No failures recorded'],

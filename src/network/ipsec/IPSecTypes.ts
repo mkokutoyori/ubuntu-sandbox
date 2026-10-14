@@ -14,6 +14,8 @@
  *   BYPASS  — allow in cleartext (e.g. IKE, OSPF, ICMP)
  *   DISCARD — silently drop
  */
+export type DfBitPolicy = 'copy' | 'set' | 'clear';
+export type FragmentationPoint = 'before-encryption' | 'after-encryption';
 export type SPDAction = 'PROTECT' | 'BYPASS' | 'DISCARD';
 
 /** Traffic direction to which a security policy applies. */
@@ -585,7 +587,7 @@ export interface IPSec_SA {
    *   - 'set'   : always set DF in outer header
    *   - 'clear' : always clear DF in outer header
    */
-  dfBitPolicy: 'copy' | 'set' | 'clear';
+  dfBitPolicy: DfBitPolicy;
 
   // ── Field #15: DSCP / ECN (RFC 4301 §5.1.2 / RFC 6040) ──
   dscpEcnConfig: SADscpEcnConfig;
