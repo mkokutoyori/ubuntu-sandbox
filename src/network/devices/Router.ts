@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -1626,7 +1627,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const subif = this.ports.get(portName);
       const vlan = (subif as unknown as { encapsulation?: { vlan?: number } } | undefined)?.encapsulation?.vlan;
       if (vlan !== undefined && this.ports.has(parent)) {
-        const tagged: TaggedEthernetFrame = { ...frame, dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlan } };
+        const tagged: TaggedEthernetFrame = { ...frame, dot1q: makeVlanTag({ vid: vlan }) };
         return super.sendFrame(parent, tagged);
       }
     }

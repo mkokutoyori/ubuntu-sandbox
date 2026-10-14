@@ -28,6 +28,7 @@ import type { DhcpDomainEvent } from '@/network/dhcp/events';
 import type { ArpDomainEvent } from '@/network/arp/events';
 import type { CdpDomainEvent } from '@/network/cdp/events';
 import type { LldpDomainEvent } from '@/network/lldp/events';
+import type { MvrpDomainEvent } from '@/network/mvrp/events';
 import type { DtpDomainEvent } from '@/network/dtp/events';
 import type { StpDomainEvent } from '@/network/stp/events';
 import type { LacpDomainEvent } from '@/network/lacp/events';
@@ -359,6 +360,7 @@ export type DomainEvent =
   // CDP (sub-union, see src/network/cdp/events.ts)
   | CdpDomainEvent
   | LldpDomainEvent
+  | MvrpDomainEvent
   | DtpDomainEvent
   | StpDomainEvent
   | LacpDomainEvent

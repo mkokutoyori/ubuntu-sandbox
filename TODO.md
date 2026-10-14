@@ -12,6 +12,16 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
+### [mvrp] Aucune commande MVRP sur Huawei VRP ni sur Cisco IOS
+Le moteur MVRP (IEEE 802.1Q-2022 clause 11.2, `src/network/mvrp/`) est
+branche sur `Switch` : `setMvrpEnabled` et `configureMvrpPort` creent et
+suppriment des VLAN dynamiques sur le fil. Aucune commande de la CLI ne
+l'active : le depot ne contient ni la reference VRP (`mvrp enable`,
+`mvrp registration`, `display mvrp`) ni une transcription IOS, et la
+regle 8 interdit de deviner la grammaire et les colonnes d'un `display`.
+Cote Linux, `ip link add ... type vlan id N mvrp on` est cable.
+**Report** : a fermer des qu'une source VRP est atteignable.
+
 ### [acl] VRP n'a pas d'ACL IPv6, et `acl ipv6` est refusee
 `acl ipv6 name <nom>` rangeait la liste dans le magasin **IPv4** avec le
 type `extended`, sous une invite annoncant `acl-adv-<nom>` — donc une
