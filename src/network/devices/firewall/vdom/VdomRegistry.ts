@@ -197,6 +197,7 @@ export class VdomRegistry {
     const objects = new ObjectStore({
       maxGroupNesting: deps.maxGroupNesting,
       resolveFqdn: (fqdn) => deps.resolveFqdn?.(fqdn) ?? [],
+      now: deps.now,
       countryOf: (candidate) => deps.countryOf?.(candidate),
     });
     for (const object of deps.predefinedAddresses ?? []) objects.addAddress(object);

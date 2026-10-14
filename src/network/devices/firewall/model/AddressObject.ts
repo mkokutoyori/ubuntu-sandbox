@@ -22,6 +22,7 @@ export interface AddressObject {
   readonly endValue?: string;
   readonly careMask?: string;
   readonly macRanges?: readonly string[];
+  readonly cacheTtlSec?: number;
   readonly fqdn?: string;
   readonly countryCode?: string;
   readonly tagFilter?: string;
@@ -32,7 +33,7 @@ export interface AddressObject {
 }
 
 export interface AddressMatchContext {
-  resolveFqdn?: (fqdn: string) => readonly string[];
+  resolveFqdn?: (fqdn: string, cacheTtlSec?: number) => readonly string[];
   countryOf?: (ip: string) => string | undefined;
   addressesWithTags?: (filter: string) => readonly string[];
   sourceMac?: string;
@@ -203,7 +204,7 @@ export function addressObjectMatches(
     case 'range':
       return matchesRange(candidate, object.value, object.endValue);
     case 'fqdn':
-      return matchesResolved(candidate, object.fqdn, context.resolveFqdn);
+      return matchesResolved(candidate, object.fqdn, context.resolveFqdn, object.cacheTtlSec);
     case 'geography':
       return object.countryCode !== undefined
         && context.countryOf?.(candidate) === object.countryCode;
@@ -315,9 +316,10 @@ export function matchesRange(candidate: string, from: string | undefined, to: st
 
 function matchesResolved(
   candidate: string, fqdn: string | undefined, resolve: AddressMatchContext['resolveFqdn'],
+  cacheTtlSec: number | undefined,
 ): boolean {
   if (fqdn === undefined || resolve === undefined) return false;
-  return resolve(fqdn).some(address => sameAddress(candidate, address));
+  return resolve(fqdn, cacheTtlSec).some(address => sameAddress(candidate, address));
 }
 
 function normaliseMask(mask: string | number): string {

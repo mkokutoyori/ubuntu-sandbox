@@ -134,7 +134,8 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
     if (!fqdn) return;
     context.objects.addAddress({
       name: object.key, kind: 'fqdn', family: 'ipv4',
-      fqdn, predefined: false, tags: [],
+      fqdn, cacheTtlSec: Number.parseInt(object.effective('cache-ttl')[0] ?? '0', 10) || undefined,
+      predefined: false, tags: [],
     });
     context.device.resolveFqdnNow(fqdn);
   },

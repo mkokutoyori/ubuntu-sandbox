@@ -41,6 +41,7 @@ function failure(error: ObjectError): ObjectMutation {
 export interface ObjectStoreDeps {
   maxGroupNesting?: number;
   resolveFqdn?: (fqdn: string) => readonly string[];
+  now?: () => number;
   countryOf?: (ip: string) => string | undefined;
   addressesWithTags?: (filter: string) => readonly string[];
   externalReferences?: (name: string) => readonly string[];
@@ -255,9 +256,22 @@ export class ObjectStore {
 
   // ─── Internals ──────────────────────────────────────────────────
 
+  private readonly seenFqdn = new Map<string, Map<string, number>>();
+
+  private retainedFqdn(fqdn: string, ttlSec: number | undefined, current: readonly string[]): readonly string[] {
+    if (ttlSec === undefined || ttlSec <= 0) return current;
+    const now = (this.deps.now ?? Date.now)();
+    const seen = this.seenFqdn.get(fqdn) ?? new Map<string, number>();
+    this.seenFqdn.set(fqdn, seen);
+    for (const address of current) seen.set(address, now);
+    for (const [address, at] of seen) if (now - at > ttlSec * 1000) seen.delete(address);
+    return [...seen.keys()];
+  }
+
   private matchContext(): AddressMatchContext {
     return {
-      resolveFqdn: this.deps.resolveFqdn,
+      resolveFqdn: this.deps.resolveFqdn === undefined ? undefined
+        : (fqdn, ttl) => this.retainedFqdn(fqdn, ttl, this.deps.resolveFqdn!(fqdn)),
       countryOf: this.deps.countryOf,
       addressesWithTags: this.deps.addressesWithTags,
     };
