@@ -297,8 +297,6 @@ export class NtpAgent {
 
   setRequireRequestAuthentication(on: boolean): void { this.config.requireRequestAuthentication = on; }
 
-  associationId(serverIp: string): number { return this.idAssoc(serverIp); }
-
   portNames(): string[] { return this.host.getPorts().map((port) => port.getName()); }
 
   /**

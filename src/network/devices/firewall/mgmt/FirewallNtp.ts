@@ -90,6 +90,8 @@ export class FirewallNtp {
       agent.removeTrustedKey(id);
     }
     agent.setAuthenticate(false);
+    agent.setSourceInterface(settings.sourceInterface);
+    agent.setSourceAddress(settings.sourceIp);
     const vrfs = this.host.vrfs?.() ?? [0];
     for (const entry of settings.serverEntries) {
       if (!this.reachable(entry, vrfs)) continue;
@@ -102,12 +104,11 @@ export class FirewallNtp {
       const specify = entry.interfaceSelectMethod === 'specify' && entry.interface.length > 0;
       agent.addServer(entry.server, false, keyed ? entry.keyId : undefined, 'ntp', {
         version: entry.ntpv3 ? 3 : 4,
+        iburst: true,
         ...(specify ? { sourceInterface: entry.interface } : {}),
       });
       agent.setSourceCriteria(entry.server, { fixedPollSec: settings.syncIntervalMin * 60 });
     }
-    agent.setSourceInterface(settings.sourceInterface);
-    agent.setSourceAddress(settings.sourceIp);
     agent.setServingInterfaces(settings.serverMode ? new Set(settings.serverInterfaces) : new Set());
     const requireKey = settings.serverMode && settings.authentication && settings.key.length > 0;
     if (requireKey) {
