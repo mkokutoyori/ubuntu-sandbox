@@ -27,6 +27,7 @@ import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/ht
 import { clientCertificateVerdict } from './NginxSsl';
 import { findServerByName, serverNameMatches, type ServerNameEntry } from './NginxServerNames';
 import { NGINX_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
+import { binaryStringToBytes as bytes } from '@/crypto/encoding';
 
 export interface NginxHostFs extends NginxFileSource {
   exists(path: string): boolean;
@@ -51,11 +52,6 @@ export interface NginxHost {
   now(): Date;
 }
 
-function bytes(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
 
 function joinPath(root: string, rel: string): string {
   const base = root.endsWith('/') ? root.slice(0, -1) : root;

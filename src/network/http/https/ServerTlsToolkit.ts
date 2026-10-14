@@ -12,6 +12,7 @@ import { SessionTicketStore } from '@/network/tls/sessionTickets';
 import { sha256 } from '@/crypto/hash';
 import type { TlsServerCredential } from '@/network/tls/TlsServerSession';
 import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
+import { binaryStringToBytes as bytesOfText } from '@/crypto/encoding';
 
 export interface ServerIdentity {
   readonly cert: X509Certificate;
@@ -29,11 +30,6 @@ export function loadLocationsFailure(path: string): string {
     + 'error:05880002:x509 certificate routines::system lib)';
 }
 
-export function bytesOfText(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
 
 export function ticketKeyFromFile(content: string): Uint8Array {
   return sha256(bytesOfText(content));

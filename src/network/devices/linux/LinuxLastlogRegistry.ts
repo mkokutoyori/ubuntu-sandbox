@@ -1,7 +1,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
-import { binaryStringToBytes, bytesToBinaryString } from './login/UtmpxRecord';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 import { LASTLOG_RECORD_SIZE } from './login/LastlogTool';
 
 export const LASTLOG_PATH = '/var/log/lastlog';

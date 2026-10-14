@@ -4,6 +4,7 @@ import type { FileType } from '@/network/devices/linux/VirtualFileSystem';
 import { Ftype3, NfsStatus } from './wire/NfsConstants';
 import type { NfsClient } from './NfsClient';
 import type { Fattr3, NfsFileHandle } from './wire/NfsTypes';
+import { binaryStringToBytes as fromLatin1, bytesToBinaryString as toLatin1 } from '@/crypto/encoding';
 
 const FILE_TYPE_OF: Readonly<Partial<Record<Ftype3, FileType>>> = {
   [Ftype3.NF3REG]: 'file',
@@ -21,17 +22,7 @@ export interface NfsMountBinding {
   readonly readOnly: boolean;
 }
 
-function toLatin1(data: Uint8Array): string {
-  let out = '';
-  for (const byte of data) out += String.fromCharCode(byte);
-  return out;
-}
 
-function fromLatin1(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
 
 function splitTail(path: string): { parent: string; name: string } {
   const trimmed = path.replace(/\/+$/, '');

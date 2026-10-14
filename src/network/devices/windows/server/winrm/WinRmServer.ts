@@ -18,6 +18,7 @@
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { WindowsUserManager } from '../../WindowsUserManager';
 import { verifyApReq, type KerberosServiceIdentity } from '@/network/kerberos/ApReqVerifier';
+import { base64ToBytes } from '@/crypto/encoding';
 
 export interface WinRmIdentity {
   readonly sam: string;
@@ -137,9 +138,3 @@ export class WinRmServerHandler {
   }
 }
 
-function base64ToBytes(text: string): Uint8Array {
-  const binary = atob(text);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}

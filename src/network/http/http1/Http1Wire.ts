@@ -1,28 +1,10 @@
 import { OrderedMultimap, type HttpMessage, type HttpMethod } from '../semantics/types';
 import { reasonPhraseFor } from '../semantics/statusCodes';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 const CRLF = '\r\n';
 
-// A body is arbitrary bytes (RFC 9112 doesn't require it to be text at
-// all — e.g. `application/dns-message`, images, or any other binary media
-// type), so it's carried through this module one byte per JS string
-// character rather than through a real UTF-8 `TextEncoder`/`TextDecoder`
-// round-trip: the latter is lossy for any byte sequence that isn't valid
-// UTF-8 (silently replaced with U+FFFD), which would corrupt binary
-// bodies. For pure-ASCII bodies (the common case in this project's own
-// tests) the two conventions are byte-for-byte identical, so this is a
-// strict superset fix, not a behavior change for existing callers.
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
 
-function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 export interface Http1EncodeOptions {
   chunked?: boolean;

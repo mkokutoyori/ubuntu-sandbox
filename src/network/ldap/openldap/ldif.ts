@@ -1,3 +1,4 @@
+import { binaryStringToBytes, bytesToUtf8 } from '@/crypto/encoding';
 export const LdifPut = {
   NOVALUE: 0x00,
   VALUE: 0x01,
@@ -48,9 +49,7 @@ export function ldifIsNotPrintable(value: Uint8Array | null): number {
 }
 
 function utf8Of(binary: string): string {
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i) & 0xff;
-  return new TextDecoder().decode(bytes);
+  return bytesToUtf8(binaryStringToBytes(binary));
 }
 
 export function ldifPut(

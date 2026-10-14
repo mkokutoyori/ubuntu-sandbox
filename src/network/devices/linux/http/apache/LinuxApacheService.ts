@@ -24,6 +24,7 @@ import {
   apacheNotFoundPage, apacheForbiddenPage, apacheBadRequestPage, apacheMisdirectedPage,
 } from './ApacheFiles';
 import { APACHE_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
+import { binaryStringToBytes as bytes } from '@/crypto/encoding';
 
 /**
  * apache2 (docs/PRD-Manquements.md §M4a) — the server that was missing.
@@ -53,11 +54,6 @@ export interface ApacheControl {
   configWarnings(): string[];
 }
 
-function bytes(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
 
 function joinPath(root: string, rel: string): string {
   const base = root.endsWith('/') ? root.slice(0, -1) : root;

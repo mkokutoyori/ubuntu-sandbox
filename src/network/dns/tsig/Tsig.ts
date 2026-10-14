@@ -7,7 +7,7 @@ import {
 } from '@/network/dns/wire/DnsMessageCodec';
 import { makeTsigRecord, type TsigRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import { base64ToBytes } from '@/crypto/encoding';
+import { base64ToBytes, binaryStringToBytes as secretBytes } from '@/crypto/encoding';
 
 export const TsigAlgorithm = {
   HMAC_MD5: 'hmac-md5.sig-alg.reg.int.',
@@ -79,11 +79,6 @@ function hashFor(algorithm: string): HashAlgorithm | null {
   }
 }
 
-function secretBytes(secret: string): Uint8Array {
-  const bytes = new Uint8Array(secret.length);
-  for (let i = 0; i < secret.length; i++) bytes[i] = secret.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 function tsigVariables(keyName: string, data: Omit<TsigRecordData, 'type' | 'mac' | 'originalId'>): number[] {
   const out: number[] = [];

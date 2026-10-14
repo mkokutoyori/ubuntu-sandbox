@@ -12,7 +12,8 @@
  *            and exits at EOF.
  */
 
-import { UT, Utmpx, binaryStringToBytes } from '@/network/devices/linux/login/UtmpxRecord';
+import { UT, Utmpx } from '@/network/devices/linux/login/UtmpxRecord';
+import { binaryStringToBytes } from '@/crypto/encoding';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';

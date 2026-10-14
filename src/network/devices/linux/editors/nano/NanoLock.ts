@@ -1,3 +1,4 @@
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 export const LOCK_SIZE = 1024;
 
 export interface NanoLockData {
@@ -23,10 +24,6 @@ function textAt(bytes: Uint8Array, from: number, to: number): string {
   return new TextDecoder().decode(bytes.subarray(from, end < 0 ? to : from + end));
 }
 
-function toBytes(content: string): Uint8Array {
-  return Uint8Array.from(content, (ch) => ch.charCodeAt(0) & 0xff);
-}
-
 export function buildNanoLock(data: NanoLockData): string {
   const bytes = new Uint8Array(LOCK_SIZE);
   bytes[0] = 0x62;
@@ -40,11 +37,11 @@ export function buildNanoLock(data: NanoLockData): string {
   putText(bytes, 68, data.host, 32);
   putText(bytes, 108, data.name, 768);
   bytes[MODIFIED_AT] = data.modified ? MODIFIED_BYTE : 0;
-  return String.fromCharCode(...bytes);
+  return bytesToBinaryString(bytes);
 }
 
 export function parseNanoLock(content: string): NanoLockData | null {
-  const bytes = toBytes(content);
+  const bytes = binaryStringToBytes(content);
   if (bytes.length < MINIMUM_READ || bytes[0] !== 0x62 || bytes[1] !== 0x30) return null;
   return {
     program: textAt(bytes, 2, 12),

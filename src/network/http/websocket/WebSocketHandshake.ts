@@ -1,16 +1,13 @@
 import { sha1Hex } from '@/crypto/hash';
 import type { HttpMessage } from '../semantics/types';
 import { createRequest, createResponse } from '../semantics/types';
+import { bytesToBase64, hexToBytes } from '@/crypto/encoding';
 
 // RFC 6455 §1.3 — the magic GUID appended to the client key before hashing.
 const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 function hexToBase64(hex: string): string {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary);
+  return bytesToBase64(hexToBytes(hex));
 }
 
 export function computeAcceptKey(clientKey: string): string {
@@ -20,9 +17,7 @@ export function computeAcceptKey(clientKey: string): string {
 export function generateWebSocketKey(): string {
   const bytes = new Uint8Array(16);
   for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary);
+  return bytesToBase64(bytes);
 }
 
 export function buildUpgradeRequest(target: string, key: string): HttpMessage {

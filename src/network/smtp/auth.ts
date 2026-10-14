@@ -2,6 +2,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { MD5 } from '@/crypto/hash/md5';
 import { hmacHex } from '@/crypto/mac/hmac';
+import { base64ToBytes, bytesToBase64, bytesToUtf8, utf8ToBytes } from '@/crypto/encoding';
 
 export type AuthMechanism = 'PLAIN' | 'LOGIN' | 'CRAM-MD5';
 
@@ -12,18 +13,12 @@ export interface AuthState {
 }
 
 export function toBase64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary);
+  return bytesToBase64(utf8ToBytes(text));
 }
 
 export function fromBase64(b64: string): string | null {
   try {
-    const binary = atob(b64.trim());
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new TextDecoder().decode(bytes);
+    return bytesToUtf8(base64ToBytes(b64.trim()));
   } catch {
     return null;
   }
