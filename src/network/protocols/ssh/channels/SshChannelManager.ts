@@ -14,8 +14,8 @@ export class SshChannelManager {
   private channels = new Map<number, ISshChannel>();
   private nextChannelId = 0;
 
-  openShell(connection: SshConnection): SshShellChannel {
-    const channel = new SshShellChannel(connection, this.nextChannelId++);
+  openShell(connection: SshConnection, forwardAgent = false): SshShellChannel {
+    const channel = new SshShellChannel(connection, this.nextChannelId++, forwardAgent);
     this.register(channel);
     return channel;
   }

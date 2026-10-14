@@ -38,6 +38,7 @@ export interface SudoAuthorization {
 }
 import type { UserEntry } from './iam/LinuxUserAccount';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
+import { LocalAgentPort, type AgentPort } from '../../protocols/ssh/agent/AgentService';
 import { LinuxCronManager } from './LinuxCronManager';
 import { parseCrontab, validateCrontabContent } from './cron/CrontabParser';
 import { cronAllowed, cronDenialMessage } from './cron/CronPermissions';
@@ -1719,6 +1720,7 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
       home: this.sshHomeDir(),
+      agent: this.agentPort(),
     };
   }
 
@@ -1745,9 +1747,9 @@ export class LinuxCommandExecutor {
   }
 
   private async relayShellOverWire(
-    session: SshSession, skipLines: number, withMotd = false,
+    session: SshSession, skipLines: number, withMotd = false, forwardAgent = false,
   ): Promise<{ output: string; exitCode: number } | null> {
-    const channel = session.openShellChannel();
+    const channel = session.openShellChannel({ forwardAgent });
     if (!isOk(channel)) return null;
     const shell = channel.value;
     const relayed = await relayScriptedShell(
@@ -1800,6 +1802,7 @@ export class LinuxCommandExecutor {
         authRefused: wire.authRefused,
       }), wire.authRefused);
     }
+    if (target.forwardAgent) session.forwardAgent(this.agentPort());
     const joined = joinRemoteCommand(target.commandWords, remoteQuotingOf(session.serverIdentification));
     const command = /^(exit|logout)\s*$/i.test(joined) ? '' : joined;
     const execOptions = execChannelOptionsFor(opts, args);
@@ -1809,7 +1812,7 @@ export class LinuxCommandExecutor {
     const interactif = !command && !target.holdOnly;
     const relayedShell = interactif
       ? await this.relayShellOverWire(
-        session, offeredPassword === undefined && stdinPwd ? 1 : 0, true)
+        session, offeredPassword === undefined && stdinPwd ? 1 : 0, true, target.forwardAgent)
       : null;
     const client = this.sshClientProcess(args, target.forksToBackground);
     try {
@@ -5817,10 +5820,8 @@ export class LinuxCommandExecutor {
       // lieu d'en servir une version infidèle.
       case 'telnet':
         return this.runTelnetClient(args);
-      case 'ssh-add':
-        return this.handleSshAdd(args);
       case 'ssh-agent':
-        return runSshAgentCommand(args, this.agentHost());
+        return runSshAgentCommand(args, { ...this.agentHost(), agent: new LocalAgentPort(this.sshAgent) });
       case 'ssh-keyscan': return this.runSshKeyscan(args, stdin);
       case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
       case 'ssh-copy-id': return this.runSshCopyId(args);
@@ -6639,7 +6640,7 @@ export class LinuxCommandExecutor {
   private agentHost(): SshAgentHost {
     const absolute = (path: string) => this.vfs.normalizePath(path, this.cwd);
     return {
-      agent: this.sshAgent,
+      agent: this.agentPort(),
       reader: { readFile: (path: string) => this.vfs.readFile(absolute(path)) },
       homeDir: this.sshHomeDir(),
       authSocket: `/tmp/ssh-${this.userMgr.currentUser}/agent.1`,
@@ -6653,8 +6654,22 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private handleSshAdd(args: string[]): { output: string; exitCode: number } {
-    return runSshAddCommand(args, this.agentHost());
+  runSshAddAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
+    return runSshAddCommand(args.map(word => this.expandTilde(word)), this.agentHost());
+  }
+
+  private readonly forwardedAgents = new Map<string, AgentPort>();
+  private nextForwardedAgentPid = 1000;
+
+  bindForwardedAgent(user: string, agent: AgentPort): { readonly path: string; release(): void } {
+    const path = `/tmp/ssh-${user}/agent.${this.nextForwardedAgentPid++}`;
+    this.forwardedAgents.set(path, agent);
+    return { path, release: () => { this.forwardedAgents.delete(path); } };
+  }
+
+  agentPort(): AgentPort {
+    const socket = this.env.get('SSH_AUTH_SOCK');
+    return (socket === undefined ? undefined : this.forwardedAgents.get(socket)) ?? new LocalAgentPort(this.sshAgent);
   }
 
   private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null } {

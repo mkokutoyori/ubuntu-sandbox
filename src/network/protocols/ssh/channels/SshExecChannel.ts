@@ -4,6 +4,7 @@ import {
   decodeExitStatus, encodeEnvRequest, encodePtyRequest, encodeStringPayload,
 } from '../connection/ChannelPayloads';
 import { SSH_EXTENDED_DATA_STDERR } from '../transport/SshMessageNumbers';
+import { AGENT_FORWARDING_REQUEST } from '../agent/AgentWire';
 import { AbstractSshChannel } from './AbstractSshChannel';
 import type { ExecChannelOptions, ExecResult, ISshExecChannel } from './ISshChannel';
 
@@ -60,7 +61,10 @@ export class SshExecChannel
         : channel.request('pty-req', encodePtyRequest({
           term: pty.term, columns: pty.columns, rows: pty.rows, pixelWidth: 0, pixelHeight: 0, modes: new Uint8Array([0]),
         }), true);
-      void ptyGranted.then(() => channel.request('exec', encodeStringPayload(this.command), true)).then((accepted) => {
+      const agentRequested = this.options.forwardAgent === true
+        ? ptyGranted.then(() => channel.request(AGENT_FORWARDING_REQUEST, undefined, true))
+        : ptyGranted;
+      void agentRequested.then(() => channel.request('exec', encodeStringPayload(this.command), true)).then((accepted) => {
         if (accepted) return;
         this.stderrChunks.push(new TextEncoder().encode('exec request failed\n'));
         this.exitStatus = EXIT_ON_SIGNAL;

@@ -1,4 +1,5 @@
 import { bytesToUtf8 } from '@/crypto/encoding';
+import { AGENT_FORWARDING_REQUEST } from '../agent/AgentWire';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import type { ConnectionChannel, SshConnection } from '../connection/SshConnection';
@@ -55,7 +56,9 @@ export class SshShellChannel
   private posix = true;
   private bannerBytesLeft = 0;
 
-  constructor(private readonly connection: SshConnection, channelId: number) {
+  constructor(
+    private readonly connection: SshConnection, channelId: number, private readonly forwardAgent = false,
+  ) {
     super(channelId, 'shell');
   }
 
@@ -86,6 +89,7 @@ export class SshShellChannel
         term: TERMINAL_TYPE, columns: this.cols, rows: this.rows, pixelWidth: 0, pixelHeight: 0,
         modes: encodeTerminalModes(new Map([[TTY_OP_ECHO, 0]])),
       }), true);
+      if (this.forwardAgent) void channel.request(AGENT_FORWARDING_REQUEST, undefined, true);
       void channel.request('shell', undefined, true);
     });
   }

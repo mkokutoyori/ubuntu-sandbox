@@ -70,6 +70,7 @@ import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDi
 import { isOk } from '@/network/protocols/ssh/Result';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import { LocalAgentPort, type AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import {
   runSshKeygenCommand, runSshKeygenInteractive, type SshKeygenHost, type SshKeygenTerminal,
 } from '@/network/protocols/ssh/SshKeygenCommand';
@@ -2502,8 +2503,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private readonly sshAgent: SshAgent = new SshAgent();
 
-  sshAgentIfRunning(): SshAgent | undefined {
-    return this.svcMgr.getService('ssh-agent')?.state === 'Running' ? this.sshAgent : undefined;
+  sshAgentIfRunning(): AgentPort | undefined {
+    return this.svcMgr.getService('ssh-agent')?.state === 'Running' ? new LocalAgentPort(this.sshAgent) : undefined;
   }
 
   private userProfileDir(): string {
@@ -2537,7 +2538,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private agentHost(): SshAgentHost {
     return {
-      agent: this.sshAgent,
+      agent: new LocalAgentPort(this.sshAgent),
       reader: {
         readFile: (path: string) => {
           const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
@@ -3601,6 +3602,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'ssh-keygen':
       case 'ssh-agent':
       case 'ssh-add':
+        return runSshAddCommand(args, this.agentHost()).then((outcome) => outcome.output);
       case 'ssh-keyscan':
         return Promise.resolve(this.runOpenSshTool(cmd, args));
       case 'pathping': return this.runPathpingCommand(args);
@@ -4064,7 +4066,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     switch (name) {
       case 'ssh-keygen': return runSshKeygenCommand(args, this.keygenHost()).output;
       case 'ssh-agent':  return runSshAgentCommand(args, this.agentHost()).output;
-      case 'ssh-add':    return runSshAddCommand(args, this.agentHost()).output;
       default:
         return runSshKeyscanCommand(args, {
           resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
@@ -4081,8 +4082,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     this.commandExitStatus = null;
-    if (lower === 'ssh-keygen' || lower === 'ssh-agent'
-      || lower === 'ssh-add' || lower === 'ssh-keyscan') {
+    if (lower === 'ssh-keygen' || lower === 'ssh-agent' || lower === 'ssh-keyscan') {
       return this.runOpenSshTool(lower, args);
     }
     if (lower === 'systeminfo') return this.cmdSysteminfo();

@@ -439,6 +439,13 @@ export class LinuxSshServerContext implements ISshServerContext {
     }
   }
 
+  agentForwardingPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noAgentForwarding === true) return false;
+    const groups = this.userManager.getUserGroups(user.username).map((g) => g.name);
+    return this.effectiveSshdServerConfig().effectiveFor({ user: user.username, groups, address: clientIp })
+      .allowAgentForwarding;
+  }
+
   acceptsEnvironment(name: string): boolean {
     return this.effectiveSshdServerConfig().acceptEnv.some((pattern) => sshWildcardMatches(pattern, name));
   }
@@ -493,6 +500,8 @@ export class LinuxSshServerContext implements ISshServerContext {
         device.takeSessionHold();
         this.applyExecEnvironment(session, userCtx, opts.exec);
       }
+      const agentSocket = opts?.agent === undefined ? null : device.bindForwardedAgent(userCtx.username, opts.agent);
+      if (agentSocket !== null) session.env.set('SSH_AUTH_SOCK', agentSocket.path);
       const ptyRc = opts?.exec && opts.exec.pty !== null && opts.exec.keyOptions?.noPty !== true
         ? this.vfs.readFile(`${userCtx.homeDirectory}/.bashrc`) ?? ''
         : '';
@@ -575,6 +584,7 @@ export class LinuxSshServerContext implements ISshServerContext {
         // so its shell exits normally instead.
         dispose: () => {
           subShells.dispose();
+          agentSocket?.release();
           device.closeShellSession(session, { graceful: !interactive });
         },
       };

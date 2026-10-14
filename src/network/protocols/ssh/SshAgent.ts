@@ -10,8 +10,11 @@
  */
 
 import {
-  keygenKeyFacts, keygenPrivateKey, keygenPublicOf,
+  keygenKeyFacts, keygenPrivateKey, keygenPublicOf, sshPublicKeyFromBlob,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
+import { bytesToBase64 } from '@/crypto/encoding';
+import { signWithAlgorithm } from './auth/UserauthSignature';
+import { SSH_AGENT_RSA_SHA2_256, SSH_AGENT_RSA_SHA2_512 } from './agent/AgentWire';
 
 export interface SshAgentKeyReader {
   readFile(path: string): string | null;
@@ -75,6 +78,17 @@ export class SshAgent {
 
   install(key: AgentKey): void {
     this.keys.set(key.blob, key);
+  }
+
+  sign(blob: Uint8Array, data: Uint8Array, flags: number): Uint8Array | null {
+    const held = this.keys.get(bytesToBase64(blob));
+    const privateKey = held === undefined ? null : keygenPrivateKey(held.material);
+    const publicKey = sshPublicKeyFromBlob(blob);
+    if (privateKey === null || publicKey === null) return null;
+    if (publicKey.algorithm !== 'ssh-rsa') return signWithAlgorithm(privateKey, publicKey.algorithm, data);
+    const algorithm = (flags & SSH_AGENT_RSA_SHA2_512) !== 0 ? 'rsa-sha2-512'
+      : (flags & SSH_AGENT_RSA_SHA2_256) !== 0 ? 'rsa-sha2-256' : 'ssh-rsa';
+    return signWithAlgorithm(privateKey, algorithm, data);
   }
 
   removeKey(blob: string): boolean {

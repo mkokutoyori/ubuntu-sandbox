@@ -29,7 +29,7 @@ import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols
 import { isOk } from '@/network/protocols/ssh/Result';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
-import type { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor, defaultIdentityFilesFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { IPAddress } from '@/network/core/types';
 import { OPENSSH_SSH, sshWireFailureLine, type SshDialect } from '@/terminal/ssh/sshDialect';
@@ -106,7 +106,7 @@ export interface WireSshLoginRequest {
   readonly credentialless?: boolean;
   readonly quiet?: boolean;
   readonly authentication?: SshClientAuthentication;
-  readonly agent?: SshAgent;
+  readonly agent?: AgentPort;
   readonly algorithms?: SshAlgorithmPreferences;
 }
 
@@ -240,7 +240,7 @@ export async function openWireSshConnection(
     localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     credentialless: req.credentialless,
-    ...(req.agent ? { agentKeys: () => req.agent!.list() } : {}),
+    ...(req.agent ? { agent: req.agent } : {}),
     clientIdentification: profile?.identification ?? opensshIdentificationFor(req.device.getOSType()),
     ...(profile ? { clientExtInfo: profile.extInfo } : {}),
     interactionHandler: req.credentialless

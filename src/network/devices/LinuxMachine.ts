@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { LinuxPam } from './linux/pam/LinuxPam';
@@ -3954,6 +3955,14 @@ export abstract class LinuxMachine extends EndHost
       }
     }
     return null;
+  }
+
+  sshAgentPort(): AgentPort {
+    return this.executor.agentPort();
+  }
+
+  bindForwardedAgent(user: string, agent: AgentPort): { readonly path: string; release(): void } {
+    return this.executor.bindForwardedAgent(user, agent);
   }
 
   resolveHostname(name: string): Promise<IPAddress | null> {

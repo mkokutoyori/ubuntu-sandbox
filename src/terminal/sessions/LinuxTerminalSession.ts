@@ -125,7 +125,6 @@ import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import type { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
 import type { SshClientHandle } from '@/network/devices/linux/network/SshClientProcess';
-import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
 import {
   parseSshArgs,
   parseProxyJumpSpec,
@@ -2350,8 +2349,11 @@ export class LinuxTerminalSession extends TerminalSession {
     // TerminalSshInteractionHandler → QueuedTerminalIO → handleSshIOKey().
     // Public-key auth that succeeds silently will never trigger a password prompt.
     const io = this.createSshTerminalIO();
+    const localDevice = this.getLocalDevice();
+    const localAgent = localDevice instanceof LinuxMachine ? localDevice.sshAgentPort() : undefined;
     const session = new SshSession({
       tcpConnector,
+      ...(localAgent === undefined ? {} : { agent: localAgent }),
       vfs: localVfs as never,
       localUser: this.currentUser,
       localUid: userEntry?.uid ?? 1000,
@@ -2446,6 +2448,8 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
+    if (meta.forwardAgent && localAgent !== undefined) session.forwardAgent(localAgent);
+
     if (meta.command) {
       // OpenSSH parity: announce PTY allocation BEFORE running the command
       // when the user explicitly asked for one (`-t` / `-tt`).
@@ -2455,7 +2459,7 @@ export class LinuxTerminalSession extends TerminalSession {
         );
       }
       // BRD SSH-05: non-interactive — run the command, print output, close.
-      const channelResult = session.openExecChannel(meta.command);
+      const channelResult = session.openExecChannel(meta.command, { forwardAgent: meta.forwardAgent === true });
       if (!isOk(channelResult)) {
         this.addLine('ssh: failed to open exec channel', 'error');
         session.disconnect();
@@ -2489,11 +2493,7 @@ export class LinuxTerminalSession extends TerminalSession {
       ? this.device.openSshClientProcess(args, session, this.shell)
       : null;
     this.openSshForwards(session, client, meta);
-    const agentForwarding = linuxRemoteDevice
-      ? this.installAgentForwarding(linuxRemoteDevice, meta)
-      : null;
     const onSessionEnd = () => {
-      agentForwarding?.detach();
       if (client !== null) client.retire();
       else session.disconnect();
     };
@@ -2503,7 +2503,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // and completion (A1/B1), stack their own sub-shells (B2), host
     // their own editors (B3) and raise their own challenges (B4), so
     // one client driver is left (docs/PRD-SSH-Unification.md §4bis).
-    const channelResult = session.openShellChannel();
+    const channelResult = session.openShellChannel({ forwardAgent: meta.forwardAgent === true });
     if (isOk(channelResult)) {
       const channel = channelResult.value;
       if (!meta.quiet) {
@@ -3368,30 +3368,6 @@ export class LinuxTerminalSession extends TerminalSession {
         this.addLine(remoteForwardFailure(forward.listenPort));
       }
     }
-  }
-
-  /**
-   * Wire OpenSSH `-A` agent forwarding: copy the local device's
-   * SshAgent into the remote device's SshAgent. Both ends look up
-   * their agent via the executor (LinuxCommandExecutor exposes
-   * `sshAgent`). Returns null when forwarding is disabled or either
-   * end is not a fully-fledged LinuxPC.
-   */
-  private installAgentForwarding(
-    remoteDeviceRaw: Equipment,
-    meta: { forwardAgent?: boolean },
-  ): SshAgentForwarding | null {
-    if (!meta.forwardAgent) return null;
-    const localExec = (this.getLocalDevice() as unknown as {
-      executor?: { sshAgent?: import('@/network/protocols/ssh/SshAgent').SshAgent };
-    }).executor;
-    const remoteExec = (remoteDeviceRaw as unknown as {
-      executor?: { sshAgent?: import('@/network/protocols/ssh/SshAgent').SshAgent };
-    }).executor;
-    if (!localExec?.sshAgent || !remoteExec?.sshAgent) return null;
-    const fwd = new SshAgentForwarding(localExec.sshAgent, remoteExec.sshAgent);
-    fwd.attach();
-    return fwd;
   }
 
   pushSshChain(hops: readonly ProxyHop[]): boolean {

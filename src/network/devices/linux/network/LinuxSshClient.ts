@@ -42,7 +42,7 @@ import {
   type SshClientAuthentication,
 } from '@/network/protocols/ssh/SshConnectOptions';
 import { sshOptionValues } from '@/network/protocols/ssh/SshClientCommandLine';
-import { everySshOption, firstSshOption, sshOptionAssignment } from '@/network/protocols/ssh/SshClientOptions';
+import { everySshOption, firstSshOption, sshFlag, sshOptionAssignment } from '@/network/protocols/ssh/SshClientOptions';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import type { SshSession } from '../../../protocols/ssh/session/SshSession';
@@ -592,6 +592,7 @@ export function execChannelOptionsFor(opts: SshClientOpts, args: string[]): Exec
   const wantsTty = (flags.includes('-t') || flags.includes('-tt')) && !flags.includes('-T');
   return {
     environment,
+    ...(wantsAgentForwarding(flags) ? { forwardAgent: true } : {}),
     ...(wantsTty
       ? {
         pty: {
@@ -614,9 +615,15 @@ export interface WireExecTarget {
   commandWords: string[];
   holdOnly: boolean;
   forksToBackground: boolean;
+  forwardAgent: boolean;
   strict: StrictHostKeyChecking;
   authentication: SshClientAuthentication;
   algorithms: SshAlgorithmPreferences;
+}
+
+export function wantsAgentForwarding(flags: string[]): boolean {
+  if (flags.includes('-a')) return false;
+  return flags.includes('-A') || sshFlag(clientOption(flags, 'ForwardAgent') ?? '') === true;
 }
 
 export function wireExecTarget(
@@ -629,7 +636,7 @@ export function wireExecTarget(
   const { positional, flags } = splitSshArgs(args);
   const target = positional[0];
   if (target === undefined) return null;
-  for (const blocking of ['-W', '-J', '-A']) {
+  for (const blocking of ['-W', '-J']) {
     if (flags.includes(blocking)) return null;
   }
   const at = target.indexOf('@');
@@ -656,6 +663,7 @@ export function wireExecTarget(
     commandWords: positional.slice(1),
     holdOnly: flags.includes('-N'),
     forksToBackground: flags.includes('-f'),
+    forwardAgent: wantsAgentForwarding(flags),
     strict: parseStrictHostKeyChecking(asked) ?? entry?.strictHostKeyChecking ?? 'accept-new',
     authentication: sshClientAuthentication(sshOptionValues(flags)),
     algorithms: sshClientAlgorithms(sshOptionValues(flags)),
