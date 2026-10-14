@@ -5,6 +5,7 @@
  * Used by CiscoIOSShell for "show" commands in user and privileged modes.
  */
 
+import type { EnableSecretAlgorithm } from '../../../equipment/Equipment';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
@@ -2051,7 +2052,7 @@ export function enableLevelSecretConfigLines(
   const store = device as {
     listEnableSecretLevels?: () => ReadonlyArray<{
       level: number; value: string;
-      algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+      algo: EnableSecretAlgorithm;
     }>;
     listEnablePasswordLevels?: () => ReadonlyArray<{
       level: number; value: string; algo: 'plain' | 'type-7';

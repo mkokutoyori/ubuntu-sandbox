@@ -1,3 +1,4 @@
+import type { EnableSecretAlgorithm } from '../../../equipment/Equipment';
 import { ServerLiveness } from '../../../radius/ServerLiveness';
 import { DomainStripping } from '../aaa/UsernameRouting';
 import { ServerSelector, type LoadBalanceSetting } from '../../../radius/ServerSelector';
@@ -365,7 +366,7 @@ export interface ParserView {
   readonly name: string;
   /** `secret …` sous la vue — ce que `enable view <nom>` demande. */
   secret?: string;
-  secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+  secretAlgo?: EnableSecretAlgorithm;
   /** Les commandes autorisees, par mode d'analyseur. */
   modes: Map<string, ParserViewMode>;
   /**
