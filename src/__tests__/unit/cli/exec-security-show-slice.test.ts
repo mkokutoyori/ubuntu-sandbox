@@ -71,15 +71,22 @@ describe('les quatorze vues repondent', () => {
     expect(/Invalid input|Incomplete command|Unrecognized/.test(out), out).toBe(false);
   });
 
-  it.each(TOUTES)('`%s` repond AUSSI en EXEC utilisateur', async (commande) => {
+  const PRIVILEGIEES = ['show zone-pair security', 'show policy-map type inspect zone-pair'];
+
+  it.each(TOUTES.filter((c) => !PRIVILEGIEES.includes(c)))('`%s` repond AUSSI en EXEC utilisateur', async (commande) => {
     const d = new CiscoRouter('R2', 0, 0) as unknown as Machine;
     const out = await d.executeCommand(commande);
     expect(/Invalid input|Unrecognized/.test(out), out).toBe(false);
   });
 
-  it('`show zone security` sans zone le dit', async () => {
+  it.each(PRIVILEGIEES)('`%s` est reservee a l EXEC privilegie, comme le livre', async (commande) => {
+    const d = new CiscoRouter('R2', 0, 0) as unknown as Machine;
+    expect(await d.executeCommand(commande)).toMatch(/Invalid input|Unrecognized/);
+  });
+
+  it('`show zone security` sans zone ne decrit que la zone systeme', async () => {
     expect(await (await privilegie()).executeCommand('show zone security'))
-      .toBe('No zones configured');
+      .toBe('zone self\n  Description: System defined zone');
   });
 
   it('`show ip cef` rend son en-tete — CEF est actif par defaut', async () => {
@@ -153,9 +160,9 @@ describe('ce que `?` annonce des vues de securite', () => {
       .toContain('WORD');
   });
 
-  it('`show zone security ?` ne prend rien', async () => {
+  it('`show zone security ?` prend un nom de zone facultatif', async () => {
     expect(motsAides((await privilegie()).cliHelp('show zone security ')))
-      .toEqual(['<cr>']);
+      .toEqual(['WORD', '<cr>']);
   });
 
   it('`show crypto pki ?` annonce ses deux branches', async () => {

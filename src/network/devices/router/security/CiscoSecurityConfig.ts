@@ -6,6 +6,7 @@ import { SshPubkeyChain } from './SshPubkeyChain';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
+import { ZoneFirewall } from './ZoneFirewall';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
 import { type PolicyMapAction, policyMapActionLine } from './policyMapActions';
@@ -442,6 +443,14 @@ export class CiscoSecurityConfig {
 
   zones: Map<string, Zone> = new Map();
   zonePairs: Map<string, ZonePair> = new Map();
+  readonly zoneFirewall: ZoneFirewall = new ZoneFirewall(() => ({
+    zones: this.zones,
+    zonePairs: this.zonePairs,
+    classMaps: this.classMaps,
+    policyMaps: this.policyMaps,
+    zoneOfInterface: (iface) => this.interfaceFlags.get(iface)?.zoneMember,
+  }));
+
   interfaceFlags: Map<string, InterfaceSecurityFlags> = new Map();
 
   timeRanges: Map<string, TimeRange> = new Map();

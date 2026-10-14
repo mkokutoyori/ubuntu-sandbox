@@ -871,7 +871,13 @@ export function policyMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSp
 const PMAP_CLASS_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   police: place('debit', 'REST', 'Committed information rate in bits per second'),
-  drop: null,
+  drop: place('option', 'ENUM', 'Log the dropped packets', {
+    optional: true, values: [{ keyword: 'log', description: 'Log dropped packets' }],
+  }),
+  pass: place('option', 'ENUM', 'Log the passed packets', {
+    optional: true, values: [{ keyword: 'log', description: 'Log passed packets' }],
+  }),
+  inspect: place('parametres', 'WORD', 'Parameter map applied to the inspection', { optional: true }),
   'set dscp': place('valeur', 'INT', 'Differentiated services codepoint value', {
     range: [0, 63],
     values: [
@@ -1130,9 +1136,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'source', description: 'Check the source, then `reachable-via`' },
     ],
   },
-  'zone-member security': {
-    name: 'zone', type: 'WORD', description: 'Name of the security zone',
-  },
 };
 
 export function securityInterfaceSpecs(
@@ -1162,11 +1165,6 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
         mode: args[2] === 'any' ? 'loose' : 'strict', allowDefault,
       };
     }
-    return '';
-  });
-  trie.registerGreedy('zone-member security', 'Assign zone', (args) => {
-    const i = ctx.getSelectedInterface(); if (!i || !args[0]) return '';
-    sec().ifaceFlags(i).zoneMember = args[0];
     return '';
   });
 }
@@ -1371,9 +1369,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'show crypto pki certificates': null,
   'show crypto key mypubkey rsa': null,
   'show policy-map control-plane': null,
-  'show zone security': null,
-  'show zone-pair security': null,
-  'show policy-map type inspect zone-pair': null,
   'show ip traffic': null,
   'show parameter-map type inspect': { name: 'nom', type: 'WORD', optional: true,
     description: 'Name of the inspect parameter-map' },
@@ -1467,35 +1462,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       `  udp idle-time ${pm.udpIdleTimeSec ?? 30}`,
       `  dns-timeout ${pm.dnsTimeoutSec ?? 5}`,
     ].join('\n')).join('\n');
-  });
-
-  trie.register('show zone security', 'Display zones', () => {
-    const s = sec();
-    if (s.zones.size === 0) return 'No zones configured';
-    return [...s.zones.values()].map(z => {
-      const description = (z as unknown as { description?: string }).description ?? `${z.name} security zone`;
-      const members: string[] = [];
-      for (const [iface, f] of s.interfaceFlags) {
-        if (f.zoneMember === z.name) members.push(`    ${iface}`);
-      }
-      return [
-        `Zone: ${z.name}`,
-        `  Description: ${description}`,
-        '  Member Interfaces:',
-        ...(members.length === 0 ? ['    None'] : members),
-      ].join('\n');
-    }).join('\n');
-  });
-
-  trie.register('show zone-pair security', 'Display zone-pairs', () => {
-    const s = sec();
-    if (s.zonePairs.size === 0) return 'No zone-pairs configured';
-    return [...s.zonePairs.values()].map(zp => `Zone-pair name: ${zp.name}\n  Source-Zone: ${zp.source}  Destination-Zone: ${zp.destination}\n  service-policy ${zp.servicePolicy ?? 'not configured'}`).join('\n');
-  });
-
-  trie.register('show policy-map type inspect zone-pair', 'Show inspect policy', () => {
-    const s = sec();
-    return [...s.zonePairs.values()].map(zp => `policy exists on zp ${zp.name}`).join('\n');
   });
 
   trie.register('show ip traffic', 'IP traffic statistics', () =>

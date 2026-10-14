@@ -88,6 +88,7 @@ import { terminalSpecs } from './cisco/terminalSpecs';
 import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
 import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
+import { zoneShowSpecs } from './cisco/zoneShowSpecs';
 import { ipsecDataPlaneSpecs, type IpsecDataPlaneEngine } from './cisco/ipsecDataPlaneSpecs';
 import { ServerCounters } from '../../radius/ServerCounters';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
@@ -6091,6 +6092,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
       ...testAaaSpecs(() => this.testAaaHost()),
       ...aaaShowSpecs(() => this.aaaShowHost()),
+      ...zoneShowSpecs(() => ({ security: () => getSecurityConfig(this.d() as object) })),
       ...this.ipsecDataPlaneSpecs(),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
       ...monitorCaptureSpecs(() => this.monitorCaptureHost()),

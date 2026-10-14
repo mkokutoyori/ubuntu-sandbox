@@ -1580,6 +1580,18 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         sec().zonePairs.set(name, { name, source, destination });
         this.selectedZonePair = name;
       },
+      removeZone: (name) => {
+        sec().zones.delete(name);
+        for (const flags of sec().interfaceFlags.values()) if (flags.zoneMember === name) delete flags.zoneMember;
+        for (const [pairName, pair] of sec().zonePairs) if (pair.source === name || pair.destination === name) sec().zonePairs.delete(pairName);
+      },
+      removeZonePair: (name) => { sec().zonePairs.delete(name); },
+      setZoneMember: (zone) => {
+        for (const iface of this.selectedPortsForConfigIf()) {
+          if (zone === null) delete sec().ifaceFlags(iface).zoneMember;
+          else sec().ifaceFlags(iface).zoneMember = zone;
+        }
+      },
     };
   }
 

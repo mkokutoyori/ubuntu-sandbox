@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
@@ -2784,7 +2785,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
 
+  private zoneFirewallPermits(inIface: string | null, outIface: string | null, packet: IPv4Packet): boolean {
+    const security = (this as unknown as { [s: symbol]: { zoneFirewall?: ZoneFirewallPort } | undefined })[Symbol.for('CiscoSecurityConfig')];
+    if (!security?.zoneFirewall) return true;
+    const verdict = security.zoneFirewall.permits(inIface, outIface, packet,
+      (name, candidate) => this.aclEngine.evaluateACLByName(name, candidate) === 'permit');
+    if (verdict.logLine) {
+      (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
+        .getLoggingConfig?.()?.append('informational', 'FW', verdict.logLine, true, 'DROP_PKT');
+    }
+    return verdict.permit;
+  }
+
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
+    if (!this.zoneFirewallPermits(inPort, null, ipPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} to the router (${inPort} → self)`);
+      return;
+    }
     // RFC 791 §3.2: hold non-first/more-fragments datagrams until the full
     // set arrives — buffered fragments return null here and are simply
     // dropped from this call; the reassembled datagram continues through
@@ -3189,6 +3207,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
+    if (!this.zoneFirewallPermits(inPort, route.iface, fwdPkt)) {
+      Logger.info(this.id, 'router:zone-firewall-drop',
+        `${this.name}: zone firewall dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
+      return;
+    }
     const effectiveMtu = outPort.getMTU();
 
     if (fwdPkt.totalLength > effectiveMtu) {
