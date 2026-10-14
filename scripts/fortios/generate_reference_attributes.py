@@ -70,6 +70,7 @@ HELP_OVERRIDES = {
     'vlan-filter': 'VLAN ranges to allow.',
 }
 
+REF_TARGETS = {'traffic-shaper': ['firewall shaper traffic-shaper'], 'traffic-shaper-reverse': ['firewall shaper traffic-shaper']}
 LISTS = {'macaddr', 'src-filter', 'custom-log-fields', 'internet-service-custom', 'internet-service-custom-group', 'internet-service-fortiguard',
          'internet-service-group', 'internet-service-name', 'internet-service-src-custom', 'internet-service-src-custom-group',
          'internet-service-src-fortiguard', 'internet-service-src-group', 'internet-service-src-name',
@@ -146,6 +147,8 @@ def emit(e, schema_names):
         body = f"{'isoMoment' if name == 'policy-expiry-date' else 'moment'}({q(name)}, {q(help_text)})"
     else:
         body = f"{'text' if typ == 'var-string' else 'word'}({q(name)}, {q(help_text)})"
+    if name in REF_TARGETS:
+        body = f"reference({q(name)}, {q(help_text)}, {REF_TARGETS[name]!r})".replace('"', "'")
     if name == 'macaddr':
         body = "{ ...%s, availableWhen: (object) => object.effective('type')[0] === 'mac', acceptsValue: (value: string) => /^([0-9a-f]{2}:){5}[0-9a-f]{2}(-([0-9a-f]{2}:){5}[0-9a-f]{2})?$/i.test(value) }" % body
     if name == 'src-filter':
@@ -159,7 +162,7 @@ def main():
     for title, (module, const) in TABLES.items():
         entries = [{**detail(e), 'path': ''} for e in parse_toplevel(title)[0]]
         have = {a.lower() for a in dump[title]}
-        lines = ["import { addressMask, choice, count, enable, isoMoment, moment, text, word, type FortiAttributeSpec } from './types';", '',
+        lines = ["import { addressMask, choice, count, enable, isoMoment, moment, reference, text, word, type FortiAttributeSpec } from './types';", '',
                  "const list = (name: string, help: string): FortiAttributeSpec => ({",
                  "  name, help, quoted: true, multiValue: true, parts: [{ name, type: 'WORD', description: help }],", "});", '',
                  f"export const {const}: readonly FortiAttributeSpec[] = Object.freeze(["]

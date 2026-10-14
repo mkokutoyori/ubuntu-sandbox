@@ -14,6 +14,7 @@ import type { IntraSwitchPolicy } from '../../l3/SwitchGroupTable';
 import type { SdwanSteeringProbe } from '../../sdwan/SdwanTable';
 import type { ObjectStore } from '../../model/ObjectStore';
 import type { ScheduleStore } from '../../model/ScheduleObject';
+import type { ShaperStore } from '../../model/TrafficShaper';
 import type { PolicyStore } from '../../model/PolicyStore';
 import type { SessionTimeoutProfile } from '../../FirewallProfile';
 import type { SessionTtlTable } from '../../session/SessionTtlTable';
@@ -74,6 +75,7 @@ export interface VdomServices {
   dosSensor?: DosSensor;
   expectedFlows?: ExpectedFlowTable;
   schedules?: ScheduleStore;
+  shapers?: ShaperStore;
 }
 
 export interface HaStandby {
@@ -240,6 +242,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     natSourceStage(services),
     tcpMssStage(),
     diffservStage(),
+    shaperStage(services),
     sessionInstallStage(services),
   ];
 }
@@ -696,6 +699,8 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
 
       clampMss(context, carried);
       rewriteDiffserv(context, carried, found.direction, found.session.originalTos);
+      const shaped = shapeTraffic(services, context, carried, found.direction);
+      if (shaped) return shaped;
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
       context.verdict = Object.freeze({
         action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
@@ -1117,6 +1122,39 @@ function clampMss(context: PacketContext, rule: SecurityRule | undefined): strin
   return `clamped-${ceiling}`;
 }
 
+function markDscp(context: PacketContext, code: number): string {
+  const packet = ipv4(context);
+  if (!packet) return 'unset';
+  const tos = (code << 2) | (packet.tos & 0x03);
+  if (tos === packet.tos) return 'within';
+  const rewritten: IPv4Packet = { ...packet, tos, headerChecksum: 0 };
+  rewritten.headerChecksum = computeIPv4Checksum(rewritten);
+  context.packet = rewritten;
+  return `dscp-${code}`;
+}
+
+function shapeTraffic(
+  services: FirewallServices, context: PacketContext, rule: SecurityRule | undefined,
+  direction: 'c2s' | 's2c',
+): FilterVerdict<PacketContext> | undefined {
+  const name = direction === 'c2s' ? rule?.trafficShaper : rule?.trafficShaperReverse;
+  const packet = ipv4(context);
+  const store = vdom(services, context).shapers;
+  const shaper = name === undefined ? undefined : store?.get(name);
+  const meter = name === undefined ? undefined : store?.meterOf(name);
+  if (!rule || !packet || !shaper || !meter) return undefined;
+
+  const band = meter.measure(rule.id, packet.totalLength, services.now());
+  if (band === 'dropped') return deny(context, 'shaper', 'shaper-exceeded', rule.id);
+  const code = shaper.multiStageDscp === undefined
+    ? shaper.diffserv
+    : band === 'exceed' ? shaper.multiStageDscp.guaranteedExceed
+      : band === 'maximum' ? shaper.multiStageDscp.exceedMaximum : undefined;
+  if (code !== undefined) markDscp(context, code);
+  context.trace.push({ stage: 'shaper', verdict: 'continue', detail: band });
+  return undefined;
+}
+
 function rewriteDiffserv(
   context: PacketContext, rule: SecurityRule | undefined,
   direction: 'c2s' | 's2c', originalTos: number | undefined,
@@ -1128,12 +1166,17 @@ function rewriteDiffserv(
     ? marking.forward
     : marking.reverse ?? (marking.copy && originalTos !== undefined ? originalTos >> 2 : undefined);
   if (code === undefined) return 'unset';
-  const tos = (code << 2) | (packet.tos & 0x03);
-  if (tos === packet.tos) return 'within';
-  const rewritten: IPv4Packet = { ...packet, tos, headerChecksum: 0 };
-  rewritten.headerChecksum = computeIPv4Checksum(rewritten);
-  context.packet = rewritten;
-  return `dscp-${code}`;
+  return markDscp(context, code);
+}
+
+function shaperStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'shaper',
+    apply(context) {
+      return shapeTraffic(services, context, context.matchedPolicy, 'c2s')
+        ?? proceed(context, 'shaper', 'unset');
+    },
+  };
 }
 
 function diffservStage(): PipelineStage {

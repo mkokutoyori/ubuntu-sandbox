@@ -18,7 +18,9 @@
   "diffservcode-rev",
   "diffserv-copy",
   "match-vip-only",
-  "timeout-send-rst"
+  "timeout-send-rst",
+  "traffic-shaper",
+  "traffic-shaper-reverse"
  ],
  "firewall vip": [
   "src-filter",

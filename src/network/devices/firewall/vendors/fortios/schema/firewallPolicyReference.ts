@@ -1,4 +1,4 @@
-import { addressMask, choice, count, enable, isoMoment, moment, text, word, type FortiAttributeSpec } from './types';
+import { addressMask, choice, count, enable, isoMoment, moment, reference, text, word, type FortiAttributeSpec } from './types';
 
 const list = (name: string, help: string): FortiAttributeSpec => ({
   name, help, quoted: true, multiValue: true, parts: [{ name, type: 'WORD', description: help }],
@@ -123,8 +123,8 @@ export const POLICY_REFERENCE_ATTRIBUTES: readonly FortiAttributeSpec[] = Object
   word('tos', 'ToS (Type of Service) value used for comparison.'),
   word('tos-mask', 'Non-zero bit positions are used for comparison while zero bit positions are ignored.'),
   enable('tos-negate', 'Enable negated TOS match.', false),
-  { ...word('traffic-shaper', 'Traffic shaper.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
-  { ...word('traffic-shaper-reverse', 'Reverse traffic shaper.'), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },
+  reference('traffic-shaper', 'Traffic shaper.', ['firewall shaper traffic-shaper']),
+  reference('traffic-shaper-reverse', 'Reverse traffic shaper.', ['firewall shaper traffic-shaper']),
   { ...word('videofilter-profile', 'Name of an existing VideoFilter profile.'), unimplemented: 'there is no inspection engine behind this profile type in this simulator.' },
   { ...word('virtual-patch-profile', 'Name of an existing virtual-patch profile.'), unimplemented: 'there is no inspection engine behind this profile type in this simulator.' },
   { ...count('vlan-cos-fwd', 'VLAN forward direction user priority: 255 passthrough, 0 lowest, 7 highest.', 0, 7, 255), unimplemented: 'this simulator does not evaluate it, so accepting it would store a setting with no effect.' },

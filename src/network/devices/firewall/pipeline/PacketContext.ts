@@ -35,7 +35,8 @@ export type VerdictReason =
   | 'ttl-expired'
   | 'mtu-exceeded-df'
   | 'dos-anomaly'
-  | 'reverse-path-failed';
+  | 'reverse-path-failed'
+  | 'shaper-exceeded';
 
 export type VerdictAction = 'accept' | 'deny' | 'drop' | 'reset' | 'reject';
 

@@ -110,6 +110,12 @@ export function buildCommitDevice(
       removeSchedule(name) {
         fw.getScheduleStore().remove(name);
       },
+      applyTrafficShaper(shaper) {
+        fw.getShaperStore().upsert(shaper);
+      },
+      removeTrafficShaper(name) {
+        fw.getShaperStore().remove(name);
+      },
       applyOnetimeSchedule(schedule) {
         const built = makeOnetimeSchedule(schedule.name, schedule.start, schedule.end);
         if (!built) return 'start and end must read hh:mm yyyy/mm/dd, end after start.';

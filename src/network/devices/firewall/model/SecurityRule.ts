@@ -30,10 +30,14 @@ export interface SecurityRule {
   expiresAt?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  trafficShaper?: string;
+  trafficShaperReverse?: string;
   timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
   scheduleTimeout?: boolean;
+  trafficShaper?: string;
+  trafficShaperReverse?: string;
   timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
@@ -43,6 +47,8 @@ export interface SecurityRule {
   tcpMssReceiver?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  trafficShaper?: string;
+  trafficShaperReverse?: string;
   timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
@@ -114,6 +120,8 @@ export interface SecurityRuleInit {
   expiresAt?: number;
   sendDenyPacket?: boolean;
   scheduleTimeout?: boolean;
+  trafficShaper?: string;
+  trafficShaperReverse?: string;
   timeoutSendRst?: boolean;
   matchVipOnly?: boolean;
   diffserv?: { forward?: number; reverse?: number; copy: boolean };
@@ -185,6 +193,8 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     expiresAt: init.expiresAt,
     sendDenyPacket: init.sendDenyPacket,
     scheduleTimeout: init.scheduleTimeout,
+    trafficShaper: init.trafficShaper,
+    trafficShaperReverse: init.trafficShaperReverse,
     timeoutSendRst: init.timeoutSendRst,
     matchVipOnly: init.matchVipOnly,
     diffserv: init.diffserv,

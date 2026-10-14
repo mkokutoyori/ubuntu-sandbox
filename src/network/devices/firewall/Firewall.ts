@@ -1,3 +1,4 @@
+import type { ShaperStore } from './model/TrafficShaper';
 import { Equipment } from '../../equipment/Equipment';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { LldpAgent } from '@/network/lldp/LldpAgent';
@@ -1915,6 +1916,7 @@ export class Firewall extends Equipment {
 
   getSessionTtl(vdom?: string): SessionTtlTable { return this.getVdom(vdom).sessionTtl; }
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
+  getShaperStore(vdom?: string): ShaperStore { return this.getVdom(vdom).shapers; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
 
   getLogSettings(vdom?: string): LogSettings { return this.getVdom(vdom).logSettings; }

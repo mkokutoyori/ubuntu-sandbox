@@ -1,4 +1,4 @@
-import { addressMask, choice, count, enable, isoMoment, moment, text, word, type FortiAttributeSpec } from './types';
+import { addressMask, choice, count, enable, isoMoment, moment, reference, text, word, type FortiAttributeSpec } from './types';
 
 const list = (name: string, help: string): FortiAttributeSpec => ({
   name, help, quoted: true, multiValue: true, parts: [{ name, type: 'WORD', description: help }],

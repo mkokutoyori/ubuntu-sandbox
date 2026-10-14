@@ -609,6 +609,30 @@ export const DLP_SENSOR: FortiTableSpec = {
   onCommit() {},
 };
 
+const SHAPER_UNITS = [
+  { keyword: 'kbps', description: 'Kilobits per second.' },
+  { keyword: 'mbps', description: 'Megabits per second.' },
+  { keyword: 'gbps', description: 'Gigabits per second.' },
+];
+
+const SHAPER_MARKING = [
+  { keyword: 'static', description: 'Static marking.' },
+  { keyword: 'multi-stage', description: 'Multistage marking.' },
+];
+
+const SHAPER_QUEUE = 'needs a scheduler that arbitrates a congested egress queue between '
+  + 'shapers; this firewall meters each shaper on its own bucket and has no shared egress queue.';
+
+const SHAPER_VLAN = 'needs a 802.1p field on the frames; the frames this firewall forwards '
+  + 'carry no CoS.';
+
+function shaperCode(object: FortiObjectView, name: string): number | undefined {
+  const raw = object.effective(name)[0];
+  return raw === undefined || raw === '' ? undefined : Number.parseInt(raw, 2);
+}
+
+const SHAPER_CODE = (value: string): boolean => /^[01]{6}$/.test(value);
+
 export const TRAFFIC_SHAPER: FortiTableSpec = {
   path: ['firewall', 'shaper', 'traffic-shaper'],
   kind: 'table',
@@ -619,9 +643,51 @@ export const TRAFFIC_SHAPER: FortiTableSpec = {
   renderOrder: 463,
   help: 'Configure shared traffic shaper.',
   attributes: [
-    { ...word('name', 'Traffic shaper name.'), unimplemented: NO_WIRE_CLOCK },
+    { ...word('name', 'Traffic shaper name.'), readOnly: true },
+    choice('bandwidth-unit', 'Unit of measurement for guaranteed and maximum bandwidth for this shaper (Kbps, Mbps or Gbps).', SHAPER_UNITS, 'kbps'),
+    count('guaranteed-bandwidth', 'Amount of bandwidth guaranteed for this shaper (0 - 80000000). Units depend on the bandwidth-unit setting.', 0, 80000000, 0),
+    count('maximum-bandwidth', 'Upper bandwidth limit enforced by this shaper (0 - 80000000). 0 means no limit. Units depend on the bandwidth-unit setting.', 0, 80000000, 0),
+    count('exceed-bandwidth', 'Exceed bandwidth used for DSCP/VLAN CoS multi-stage marking. Units depend on the bandwidth-unit setting.', 0, 80000000, 0),
+    count('overhead', 'Per-packet size overhead used in rate computations.', 0, 100, 0),
+    enable('per-policy', 'Enable/disable applying a separate shaper for each policy. For example, if enabled the guaranteed bandwidth is applied separately for each policy.', false),
+    enable('diffserv', 'Enable/disable changing the DiffServ setting applied to traffic accepted by this shaper.', false),
+    { ...word('diffservcode', 'DiffServ setting to be applied to traffic accepted by this shaper.'), acceptsValue: SHAPER_CODE },
+    choice('dscp-marking-method', 'Select DSCP marking method.', SHAPER_MARKING, 'static'),
+    { ...word('exceed-dscp', 'DSCP mark for traffic in guaranteed-bandwidth and exceed-bandwidth.'), acceptsValue: SHAPER_CODE },
+    { ...word('maximum-dscp', 'DSCP mark for traffic in exceed-bandwidth and maximum-bandwidth.'), acceptsValue: SHAPER_CODE },
+    { ...choice('priority', 'Higher priority traffic is more likely to be forwarded without delays and without compromising the guaranteed bandwidth.', [
+      { keyword: 'low', description: 'Low priority.' },
+      { keyword: 'medium', description: 'Medium priority.' },
+      { keyword: 'high', description: 'High priority.' },
+    ], 'high'), unimplemented: SHAPER_QUEUE },
+    { ...enable('cos-marking', 'Enable/disable VLAN CoS marking.', false), unimplemented: SHAPER_VLAN },
+    { ...choice('cos-marking-method', 'Select VLAN CoS marking method.', SHAPER_MARKING, 'static'), unimplemented: SHAPER_VLAN },
+    { ...word('cos', 'VLAN CoS mark.'), unimplemented: SHAPER_VLAN },
+    { ...word('exceed-cos', 'VLAN CoS mark for traffic in [guaranteed-bandwidth, exceed-bandwidth].'), unimplemented: SHAPER_VLAN },
+    { ...word('maximum-cos', 'VLAN CoS mark for traffic in [exceed-bandwidth, maximum-bandwidth].'), unimplemented: SHAPER_VLAN },
+    { ...count('exceed-class-id', 'Class ID for traffic in guaranteed-bandwidth and maximum-bandwidth.', 0, 4294967295, 0), unimplemented: SHAPER_QUEUE },
   ],
-  onCommit() {},
+  onCommit(object, context) {
+    const amount = (name: string): number => Number.parseInt(object.effective(name)[0] ?? '0', 10) || 0;
+    const multi = object.effective('dscp-marking-method')[0] === 'multi-stage';
+    context.device.applyTrafficShaper({
+      name: object.key,
+      unit: (object.effective('bandwidth-unit')[0] ?? 'kbps') as 'kbps' | 'mbps' | 'gbps',
+      guaranteed: amount('guaranteed-bandwidth'),
+      exceed: amount('exceed-bandwidth'),
+      maximum: amount('maximum-bandwidth'),
+      overheadBytes: amount('overhead'),
+      perPolicy: object.effective('per-policy')[0] === 'enable',
+      diffserv: object.effective('diffserv')[0] === 'enable' && !multi
+        ? shaperCode(object, 'diffservcode') : undefined,
+      multiStageDscp: multi
+        ? { guaranteedExceed: shaperCode(object, 'exceed-dscp'), exceedMaximum: shaperCode(object, 'maximum-dscp') }
+        : undefined,
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeTrafficShaper(key);
+  },
 };
 
 function listOf(object: FortiObjectView, name: string): readonly FortiObjectView[] {
