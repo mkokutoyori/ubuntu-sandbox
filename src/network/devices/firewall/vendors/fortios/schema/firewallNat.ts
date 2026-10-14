@@ -1,3 +1,4 @@
+import { VIP_REFERENCE_ATTRIBUTES } from './firewallVipReference';
 import {
   address, choice, count, enable, reference, refList, text, word,
   type FortiObjectView, type FortiTableSpec,
@@ -345,6 +346,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
     enable('nat-source-vip', 'Enable to prevent unintended servers from using a virtual '
       + 'IP, forcing the source address of traffic to the external IP of the VIP.'),
     count('color', 'Color of icon on the GUI.', 0, 32, 0),
+    ...VIP_REFERENCE_ATTRIBUTES,
   ],
   children: [REALSERVERS],
   onCommit(object, context) {
