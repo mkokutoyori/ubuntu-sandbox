@@ -590,6 +590,7 @@ export class LinuxSshServerContext implements ISshServerContext {
           [...(subShells.getCompletions(line) ?? device.getCompletionsForSession(line, session))],
         getCompletionsAsync: (line: string) => subShells.getCompletionsAsync(line),
         interrupt: () => subShells.interruptForeground(),
+        editorRelay: () => subShells.editorRelay(),
         isNested: () => subShells.active,
         // The engine runs here, on this channel's own session: the file
         // it opens, the permissions it obeys and the swap file it drops

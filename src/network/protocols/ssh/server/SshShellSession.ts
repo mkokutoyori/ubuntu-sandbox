@@ -2,7 +2,8 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { bytesToUtf8, utf8ToBytes } from '@/crypto/encoding';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
-import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
+import type { EditorSession, EditorView } from '@/network/devices/linux/editors/EditorView';
+import type { EditorRelay } from '@/shell/SubShellStack';
 import type { ChannelRequest, ConnectionChannel } from '../connection/SshConnection';
 import {
   COMPLETE_REQUEST, COMPLETE_RESULT_REQUEST, EDITOR_REQUEST, EDITOR_VIEW_REQUEST, LINE_RESULT_REQUEST,
@@ -44,6 +45,9 @@ export class SshShellSession {
   private readonly queue: string[] = [];
   private pendingInput = false;
   private editor: EditorSession | null = null;
+  private relay: EditorRelay | null = null;
+  private relayTurn: Promise<void> = Promise.resolve();
+  private stopRelayViews: (() => void) | null = null;
   private streamAnnounced = false;
   private readonly heldAsync: string[] = [];
   private offAsync: (() => void) | null = null;
@@ -154,6 +158,11 @@ export class SshShellSession {
   }
 
   private editorAction(action: EditorAction): void {
+    const relay = action.action === 'open' ? this.services.shell.editorRelay?.() ?? null : this.relay;
+    if (relay !== null) {
+      this.relayTurn = this.relayTurn.then(() => this.relayEditorAction(relay, action));
+      return;
+    }
     let view: unknown = null;
     if (action.action === 'open') {
       this.editor = this.services.shell.openEditor?.(action.commandLine) ?? null;
@@ -176,6 +185,47 @@ export class SshShellSession {
       return;
     }
     void this.channel.request(EDITOR_VIEW_REQUEST, encodeStringPayload(JSON.stringify({ view })), false);
+  }
+
+  private async relayEditorAction(relay: EditorRelay, action: EditorAction): Promise<void> {
+    if (this.disposed) return;
+    let view: EditorView | null = null;
+    switch (action.action) {
+      case 'open':
+        view = await relay.open(action.commandLine);
+        if (view !== null) {
+          this.relay = relay;
+          this.stopRelayViews = relay.transport.onEditorView((pushed) => {
+            void this.channel.request(
+              EDITOR_VIEW_REQUEST, encodeStringPayload(JSON.stringify({ view: pushed, unsolicited: true })), false);
+          });
+        }
+        break;
+      case 'key':
+        view = await relay.transport.sendEditorKey(action.key as EditorKeyInput);
+        break;
+      case 'paste':
+        view = await relay.transport.pasteIntoEditor(action.text);
+        break;
+      case 'click':
+        view = await relay.transport.clickEditor(action.row, action.col);
+        break;
+      case 'scroll':
+        view = await relay.transport.scrollEditor(action.up, action.count);
+        break;
+      default:
+        this.releaseRelay();
+        return;
+    }
+    if (view?.exited === true) this.releaseRelay(false);
+    void this.channel.request(EDITOR_VIEW_REQUEST, encodeStringPayload(JSON.stringify({ view })), false);
+  }
+
+  private releaseRelay(closeRemote = true): void {
+    if (closeRemote) this.relay?.transport.closeEditor();
+    this.stopRelayViews?.();
+    this.stopRelayViews = null;
+    this.relay = null;
   }
 
   private receive(text: string): void {
@@ -308,6 +358,7 @@ export class SshShellSession {
     this.disposed = true;
     this.offAsync?.();
     this.editor?.close();
+    this.releaseRelay();
     this.services.interactive?.dispose();
     this.services.shell.dispose?.();
     this.services.closed(simulationNowMs() - this.startedAt);

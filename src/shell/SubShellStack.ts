@@ -17,6 +17,8 @@
 import type { Equipment } from '@/network';
 import type { IShell, ShellLineResult, PendingInputDirective } from './IShell';
 import { ShellFactory } from './ShellFactory';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
 
 export interface SubShellStackOptions {
   readonly device: Equipment;
@@ -29,6 +31,14 @@ export interface SubShellStackOptions {
   readonly primaryKind?: string;
 }
 
+export interface EditorRelay {
+  open(commandLine: string): Promise<EditorView | null>;
+  readonly transport: RemoteEditorTransport;
+}
+interface RelayingShell {
+  openRemoteEditor(commandLine: string): Promise<EditorView | null>;
+  editorTransport(): RemoteEditorTransport;
+}
 interface InterruptibleShell { interruptForeground(): boolean }
 interface ResizableShell { resize(rows: number, cols: number): void }
 interface AsyncCompletingShell { getCompletionsAsync(line: string): Promise<string[]> }
@@ -111,6 +121,14 @@ export class SubShellStack {
 
   resize(rows: number, cols: number): void {
     if (this.active) (this.top as Partial<ResizableShell>).resize?.(rows, cols);
+  }
+
+  editorRelay(): EditorRelay | null {
+    if (!this.active) return null;
+    const top = this.top as Partial<RelayingShell>;
+    if (!top.openRemoteEditor || !top.editorTransport) return null;
+    const open = top.openRemoteEditor.bind(top);
+    return { open: (commandLine) => open(commandLine), transport: top.editorTransport() };
   }
 
   async getCompletionsAsync(line: string): Promise<string[] | null> {
