@@ -7,6 +7,7 @@ import {
   type AaaMethodEntry, type AaaServerGroup, type CiscoSecurityConfig, type RadiusServer, type TacacsServer,
 } from '../security/CiscoSecurityConfig';
 import type { SshSessionRecord } from './SshSessionRegistry';
+import type { RadiusAttributePolicy } from '../../../radius/types';
 
 export interface ExecAccountingLedger {
   start(): void;
@@ -24,6 +25,7 @@ export interface ExecAccountingDeps {
   listName(session: SshSessionRecord): string;
   ledger: ExecAccountingLedger;
   scheduler(): IScheduler;
+  radiusPolicy(): RadiusAttributePolicy;
 }
 
 type RecordKind = 'start' | 'stop' | 'interim';
@@ -111,6 +113,7 @@ export class ExecAccounting {
       const address = target.server.address as string;
       if (!client) continue;
       client.start();
+      client.setAttributePolicy(this.deps.radiusPolicy());
       client.addServer(address, target.server.key ?? sec.radiusDefaults.key ?? '', {
         port: radiusAcctPort(target.server, sec.radiusDefaults),
         timeoutMs: (target.server.timeoutSec ?? sec.radiusDefaults.timeoutSec ?? 5) * 1000,

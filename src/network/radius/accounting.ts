@@ -5,7 +5,7 @@
  */
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import { attr, type RadiusAttribute } from './types';
+import { attr, type RadiusAttribute, type RadiusAttributePolicy } from './types';
 
 export type AcctStatusType = 'start' | 'interim-update' | 'stop' | 'accounting-on' | 'accounting-off';
 
@@ -51,15 +51,18 @@ export interface AcctRecord {
 }
 
 /** Build the RFC 2866 attribute set for an Accounting-Request from a record snapshot. */
-export function acctAttributesFor(record: AcctRecord): RadiusAttribute[] {
+export function acctAttributesFor(record: AcctRecord, policy?: RadiusAttributePolicy): RadiusAttribute[] {
   const attrs: RadiusAttribute[] = [
     attr('user-name', record.username),
     attr('acct-session-id', record.sessionId),
     attr('acct-status-type', ACCT_STATUS_TYPE[record.status]),
     attr('acct-authentic', ACCT_AUTHENTIC.radius),
     attr('acct-delay-time', record.delaySec),
-    attr('nas-ip-address', record.nasIp),
+    attr('nas-ip-address', policy?.nasIpAddress ?? record.nasIp),
   ];
+  const identifier = policy?.nasIdentifier?.(record.nasIp);
+  if (identifier !== undefined) attrs.push(attr('nas-identifier', identifier));
+  if (policy?.eventTimestampInAccounting) attrs.push(attr('event-timestamp', Math.floor(simulationNowMs() / 1000)));
   if (record.status !== 'start') {
     attrs.push(attr('acct-session-time', record.sessionTimeSec));
     attrs.push(attr('acct-input-octets', record.inputOctets));

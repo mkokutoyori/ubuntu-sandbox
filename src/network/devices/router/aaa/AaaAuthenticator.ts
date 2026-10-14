@@ -6,6 +6,7 @@ import type { RadiusClientAgent } from '../../../radius/RadiusClientAgent';
 import type { RadiusAccountingClient } from '../../../radius/RadiusAccountingClient';
 import { getDefaultScheduler } from '@/events/Scheduler';
 import { ExecAccounting } from './ExecAccounting';
+import type { RadiusAttributePolicy } from '../../../radius/types';
 import type { TacacsClientAgent } from '../../../tacacs/TacacsClientAgent';
 import type { TacacsAcctFlag } from '../../../tacacs/types';
 import type { VtyLineConfig } from '../vty/VtyLineConfig';
@@ -556,6 +557,7 @@ export class AaaAuthenticator {
           failed: () => { this.compteurs('exec').failed += 1; },
         },
         scheduler: () => getDefaultScheduler(),
+        radiusPolicy: () => this.radiusAttributePolicy(),
       });
     }
     return this.execAccountingInstance;
@@ -636,7 +638,27 @@ export class AaaAuthenticator {
     return n;
   }
 
+  radiusAttributePolicy(): RadiusAttributePolicy {
+    const settings = getSecurityConfig(this.router).radiusAttributes;
+    const device = this.router as unknown as { getHostname(): string; _getDnsConfig?: () => { domainName?: string | null } };
+    const identifier = settings.nasIdentifier;
+    return {
+      nasIpAddress: settings.nasIpAddress,
+      serviceTypeInLoginRequest: settings.serviceTypeInLoginRequest,
+      serviceTypeMandatory: settings.serviceTypeMandatory,
+      serviceTypeSupportMultiple: settings.serviceTypeSupportMultiple,
+      eventTimestampInAccounting: settings.eventTimestampInAccounting,
+      nasIdentifier: identifier === null ? null : (nasIp: string) => {
+        const hostname = device.getHostname();
+        const domain = device._getDnsConfig?.().domainName ?? '';
+        if (identifier.format === null) return domain ? `${hostname}.${domain}` : hostname;
+        return identifier.format.replace(/%h/g, hostname).replace(/%d/g, domain).replace(/%i/g, nasIp);
+      },
+    };
+  }
+
   private syncRadiusServer(client: RadiusClientAgent, server: RadiusServer): void {
+    client.setAttributePolicy(this.radiusAttributePolicy());
     const defauts = getSecurityConfig(this.router).radiusDefaults;
     client.addServer(server.address as string, server.key ?? defauts.key ?? '', {
       port: radiusAuthPort(server, defauts),

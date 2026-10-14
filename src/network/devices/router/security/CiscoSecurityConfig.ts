@@ -395,6 +395,15 @@ export interface AaaAccountingOptions {
 
 export const DEFAULT_ACCOUNTING_JITTER_SEC = 300;
 
+export interface RadiusAttributeSettings {
+  nasIpAddress: string | null;
+  serviceTypeInLoginRequest: boolean;
+  serviceTypeMandatory: boolean;
+  serviceTypeSupportMultiple: boolean;
+  nasIdentifier: { format: string | null } | null;
+  eventTimestampInAccounting: boolean;
+}
+
 export class CiscoSecurityConfig {
   aaaNewModel = false;
   /**
@@ -410,6 +419,10 @@ export class CiscoSecurityConfig {
   aaaUsernamePrompt?: string;
   aaaPasswordPrompt?: string;
   aaaMethods: AaaMethodEntry[] = [];
+  radiusAttributes: RadiusAttributeSettings = {
+    nasIpAddress: null, serviceTypeInLoginRequest: false, serviceTypeMandatory: false,
+    serviceTypeSupportMultiple: false, nasIdentifier: null, eventTimestampInAccounting: false,
+  };
   accounting: AaaAccountingOptions = {
     updateEnabled: false, updateNewinfo: false, updatePeriodicMinutes: null,
     jitterMaxSec: DEFAULT_ACCOUNTING_JITTER_SEC, suppressNullUsername: false,
@@ -729,6 +742,7 @@ export class CiscoSecurityConfig {
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);
     }
     if (this.radiusDefaults.key) lines.push(`radius-server key ${this.radiusDefaults.key}`);
+    lines.push(...this.radiusAttributeLines());
     if (this.radiusDefaults.timeoutSec !== undefined) {
       lines.push(`radius-server timeout ${this.radiusDefaults.timeoutSec}`);
     }
@@ -904,6 +918,20 @@ export class CiscoSecurityConfig {
     if (f.inspectIn) lines.push(` ip inspect ${f.inspectIn} in`);
     if (f.inspectOut) lines.push(` ip inspect ${f.inspectOut} out`);
     if (f.ipv6TrafficFilter) lines.push(` ipv6 traffic-filter ${f.ipv6TrafficFilter.name} ${f.ipv6TrafficFilter.direction}`);
+    return lines;
+  }
+
+  private radiusAttributeLines(): string[] {
+    const a = this.radiusAttributes;
+    const lines: string[] = [];
+    if (a.nasIpAddress !== null) lines.push(`radius-server attribute 4 ${a.nasIpAddress}`);
+    if (a.serviceTypeInLoginRequest) lines.push('radius-server attribute 6 on-for-login-auth');
+    if (a.serviceTypeMandatory) lines.push('radius-server attribute 6 mandatory');
+    if (a.serviceTypeSupportMultiple) lines.push('radius-server attribute 6 support-multiple');
+    if (a.nasIdentifier !== null) {
+      lines.push(`radius-server attribute 32 include-in-access-req${a.nasIdentifier.format === null ? '' : ` format ${a.nasIdentifier.format}`}`);
+    }
+    if (a.eventTimestampInAccounting) lines.push('radius-server attribute 55 include-in-acct-req');
     return lines;
   }
 

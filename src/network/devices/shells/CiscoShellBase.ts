@@ -90,6 +90,7 @@ import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
 import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
 import { zoneShowSpecs } from './cisco/zoneShowSpecs';
 import { inspectShowSpecs } from './cisco/inspectShowSpecs';
+import { radiusAttributeSpecs } from './cisco/radiusAttributeSpecs';
 import { ikePubkeySpecs, storeKeyString, type IkePubkeyHost, type IkePubkeyMode } from './cisco/ikePubkeySpecs';
 import type { IkePeerKey } from '../router/security/IkePubkeyChain';
 import { ipsecDataPlaneSpecs, type IpsecDataPlaneEngine } from './cisco/ipsecDataPlaneSpecs';
@@ -6125,6 +6126,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...testAaaSpecs(() => this.testAaaHost()),
       ...aaaShowSpecs(() => this.aaaShowHost()),
       ...zoneShowSpecs(() => ({ security: () => getSecurityConfig(this.d() as object) })),
+      ...radiusAttributeSpecs(() => ({ security: () => getSecurityConfig(this.d() as object) })),
       ...inspectShowSpecs(() => ({
         security: () => getSecurityConfig(this.d() as object),
         interfaceAcl: (iface, direction) => {

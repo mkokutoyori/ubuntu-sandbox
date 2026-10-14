@@ -2,7 +2,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { type RadiusPacket, UDP_PORT_RADIUS_ACCT } from './types';
+import { type RadiusPacket, type RadiusAttributePolicy, defaultAttributePolicy, UDP_PORT_RADIUS_ACCT } from './types';
 import { withAccountingRequestAuthenticator, verifyResponseAuthenticator } from './authenticators';
 import { acctAttributesFor, generateAcctSessionId, type AcctRecord, type AcctTerminateCause } from './accounting';
 import {
@@ -74,6 +74,10 @@ export class RadiusAccountingClient {
   private counters = new ServerCounters(simulationNowMs);
 
   useCounters(shared: ServerCounters): void { this.counters = shared; }
+
+  private attributePolicy: RadiusAttributePolicy = defaultAttributePolicy();
+
+  setAttributePolicy(policy: RadiusAttributePolicy): void { this.attributePolicy = policy; }
 
   constructor(
     private readonly host: RadiusAccountingHost,
@@ -242,7 +246,7 @@ export class RadiusAccountingClient {
     let payload: RadiusPacket = {
       type: 'radius', code: 'accounting-request', identifier: pending.identifier,
       authenticator: '00'.repeat(16),
-      attributes: acctAttributesFor(record),
+      attributes: acctAttributesFor(record, this.attributePolicy),
     };
     payload = withAccountingRequestAuthenticator(payload, pending.server.sharedSecret);
     pending.authenticator = payload.authenticator;
