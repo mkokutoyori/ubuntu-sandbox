@@ -6,6 +6,10 @@
  * broadcastdelay`, honours `ntp authenticate` and its trusted keys, and
  * ages the association out when the announcements stop. `sntp broadcast
  * client` was stored and rendered, never evaluated.
+ *
+ * Measured against HEAD (git worktree): 7 of the 11 cases fall. The 4 that
+ * pass either way are the witness and the three negative cases (rejected
+ * key, other group, ageing), which hold because nothing was ever learned.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -75,7 +79,7 @@ describe('ntp broadcast', () => {
     expect(await client.executeCommand('show ntp status')).toContain('Clock is synchronized');
   });
 
-  it('[fails before] with `ntp authenticate` a client rejects unauthenticated announcements', async () => {
+  it('witness (holds before too): with `ntp authenticate` a client rejects unauthenticated announcements', async () => {
     const { client } = await lab(['ntp broadcast'], ['ntp broadcast client'], ['ntp authentication-key 1 md5 SECRET', 'ntp trusted-key 1', 'ntp authenticate']);
     expect(await client.executeCommand('show ntp status')).toContain('Clock is unsynchronized');
   });
@@ -86,7 +90,7 @@ describe('ntp broadcast', () => {
     expect(await client.executeCommand('show ntp status')).toContain('Clock is synchronized');
   });
 
-  it('[fails before] when the announcements stop the learned association ages out', async () => {
+  it('witness (holds before too): when the announcements stop the learned association ages out', async () => {
     const { server, client } = await lab(['ntp broadcast'], ['ntp broadcast client']);
     await run(server, ['configure terminal', 'interface GigabitEthernet0/0', 'no ntp broadcast', 'end']);
     converge(clock, 3_000_000);
@@ -100,7 +104,7 @@ describe('ntp multicast', () => {
     expect(await client.executeCommand('show ntp status')).toContain('Clock is synchronized, stratum 3');
   });
 
-  it('[fails before] a client of another group ignores the announcements', async () => {
+  it('witness (holds before too): a client of another group ignores the announcements', async () => {
     const { client } = await lab(['ntp multicast'], ['ntp multicast client 224.0.1.50']);
     expect(await client.executeCommand('show ntp status')).toContain('Clock is unsynchronized');
   });
