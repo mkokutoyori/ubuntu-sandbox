@@ -146,24 +146,6 @@ export function registerIPSecShowCommands(
   trie.registerGreedy('show crypto map interface', 'Crypto maps on an interface', () =>
     eng()?.showCryptoMap?.() ?? 'No crypto maps configured');
 
-  trie.register('show crypto pki certificates verbose', 'Detailed PKI certificates', () => {
-    const sec = (getRouter() as unknown as { [s: symbol]: { pkiTrustpoints?: Map<string, { name: string; subjectName?: string; enrollmentUrl?: string; revocationCheck?: string; rsaKeypair?: string; importedCertificate?: { format: string; importedAtMs: number } }> } | undefined })[Symbol.for('CiscoSecurityConfig')];
-    const tps = sec?.pkiTrustpoints;
-    if (!tps || tps.size === 0) return 'No PKI certificates installed';
-    return [...tps.values()].map(tp => [
-      `Trustpoint ${tp.name} (verbose):`,
-      `  Subject Name: ${tp.subjectName ?? '<not configured>'}`,
-      `  Enrollment URL: ${tp.enrollmentUrl ?? 'terminal'}`,
-      `  Revocation Check: ${tp.revocationCheck ?? 'crl'}`,
-      `  RSA Keypair: ${tp.rsaKeypair ?? '<auto>'}`,
-      tp.importedCertificate
-        ? `  Imported Certificate (${tp.importedCertificate.format}): ${new Date(tp.importedCertificate.importedAtMs).toISOString()}`
-        : '  Certificate: pending enrollment',
-      '  Validity: 365 days',
-      `  Certificate fingerprint (SHA1): ${'AA:BB:CC:DD:EE:FF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB'}`,
-    ].join('\n')).join('\n\n');
-  });
-
   const PKI_REFUS = '% Crypto PKI has no trace point on this platform:'
     + ' the certificate engine publishes no enrolment or validation event';
   trie.registerGreedy('debug crypto pki', 'Enable PKI debug', () => PKI_REFUS);

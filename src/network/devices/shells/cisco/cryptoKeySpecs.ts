@@ -9,6 +9,7 @@ export interface CryptoRsaKeyRecord {
   modulus: number;
   general: boolean;
   generatedAtMs: number;
+  exportable?: boolean;
 }
 
 export interface CryptoKeyHost {
@@ -76,7 +77,8 @@ export function cryptoKeySpecs(ctx: () => CryptoKeyHost): CommandSpec[] {
         // signature.
         const general = args['usage-keys'] === undefined;
 
-        host.keys().push({ label, modulus, general, generatedAtMs: simulationNowMs() });
+        const exportable = args.exportable !== undefined;
+        host.keys().push({ label, modulus, general, generatedAtMs: simulationNowMs(), exportable });
         // Generer les cles est ce qui monte le serveur SSH sur IOS, donc
         // l'ecouteur doit suivre : la configuration et le service ne
         // peuvent pas se contredire.
@@ -85,7 +87,7 @@ export function cryptoKeySpecs(ctx: () => CryptoKeyHost): CommandSpec[] {
         return [
           `The name for the keys will be: ${label}`,
           `% The key modulus size is ${modulus} bits`,
-          `% Generating ${modulus} bit RSA keys, keys will be non-exportable...`,
+          `% Generating ${modulus} bit RSA keys, keys will be ${exportable ? '' : 'non-'}exportable...`,
           `[OK] (elapsed time was ${elapsedSec} seconds)`,
         ].join('\n');
       },

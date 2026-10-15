@@ -219,8 +219,10 @@ class TelnetSession {
     this.shell = this.ctx.createShell(this.username);
     this.phase = 'exec';
 
-    const motd = this.ctx.motd?.();
-    if (motd) this.write(`\n${motd}\n`);
+    const greeting = handle.greeting !== undefined
+      ? handle.greeting.join('').replace(/\n+$/, '')
+      : this.ctx.motd?.();
+    if (greeting) this.write(`\n${greeting}\n`);
     this.offAsyncOutput = this.shell?.subscribeAsyncOutput?.((out) => this.write(`\n${out}\n`)) ?? null;
     this.write('\n');
     this.writePrompt();

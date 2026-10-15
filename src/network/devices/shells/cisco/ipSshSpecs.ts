@@ -51,17 +51,27 @@ const TAILLE_DH: ArgumentSpec = {
   ],
 };
 
+const AUTH_METHOD: ArgumentSpec = {
+  name: 'method', type: 'ENUM', description: 'User authentication method',
+  values: [
+    { keyword: 'publickey', description: 'Public-key based authentication' },
+    { keyword: 'keyboard', description: 'Keyboard-interactive authentication' },
+    { keyword: 'password', description: 'Password based authentication' },
+  ],
+};
+
 type CoteSsh = 'server' | 'client';
 
 const LISTES_PAR_COTE: Readonly<Record<CoteSsh, Partial<Record<IosSshAlgorithmFamily, keyof SshConfig>>>> = {
   server: {
     mac: 'macAlgorithms', encryption: 'encryptionAlgorithms', kex: 'kexAlgorithms', hostkey: 'hostKeyAlgorithms',
+    authentication: 'authenticationMethods', publickey: 'publickeyAlgorithms',
   },
   client: { mac: 'clientMacAlgorithms', encryption: 'clientEncryptionAlgorithms' },
 };
 
 const FAMILLES_PAR_COTE: Readonly<Record<CoteSsh, readonly IosSshAlgorithmFamily[]>> = {
-  server: ['encryption', 'hostkey', 'kex', 'mac'],
+  server: ['authentication', 'encryption', 'hostkey', 'kex', 'mac', 'publickey'],
   client: ['encryption', 'mac'],
 };
 
@@ -70,6 +80,8 @@ const DESCRIPTION_FAMILLE: Readonly<Record<IosSshAlgorithmFamily, string>> = {
   hostkey: 'Host key algorithms',
   kex: 'Key exchange algorithms',
   mac: 'Message authentication code algorithms',
+  authentication: 'User authentication methods',
+  publickey: 'Public key algorithms of the user authentication',
 };
 
 const LISTE_FAMILLE = (famille: IosSshAlgorithmFamily): ArgumentSpec => ({
@@ -230,6 +242,18 @@ export function ipSshSpecs(ctx: () => IpSshHost): CommandSpec[] {
         if (retires.length === 0) { reglerListe(ctx().sshConfig(), cote, famille, []); return ''; }
         return retirerDeLaListe(ctx(), cote, famille, retires);
       }))),
+
+    spec('server-authenticate-user', ['ip', 'ssh', 'server', 'authenticate', 'user', AUTH_METHOD],
+      'User authentication methods of the SSH server',
+      (_session, args) => {
+        const current = listeEffective(ctx(), 'server', 'authentication');
+        if (current.includes(args.method)) return '';
+        const wanted = [...current, args.method];
+        const order = IOS_ALGORITHM_VALUES.authentication;
+        reglerListe(ctx().sshConfig(), 'server', 'authentication', order.filter((name) => wanted.includes(name)));
+        return '';
+      },
+      (_session, args) => retirerDeLaListe(ctx(), 'server', 'authentication', [args.method])),
 
     spec('scp-server', ['ip', 'scp', 'server', 'enable'], 'Enable the SCP server',
       () => { ctx().sshConfig().scpServerEnabled = true; return ''; },

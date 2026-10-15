@@ -427,6 +427,14 @@ export class SshServerHandler {
                 channel.close();
                 return;
               }
+              const refusedShell = this.ctx.loginShellRefusal?.(user) ?? null;
+              if (refusedShell !== null) {
+                channel.write(refusedShell.output);
+                void channel.request('exit-status', encodeExitStatus(refusedShell.exitCode));
+                channel.eof();
+                channel.close();
+                return;
+              }
               const scpCommand = forced === null ? parseScpServerCommand(asked) : null;
               if (scpCommand !== null) {
                 this.serveScp(channel, user, scpCommand);
@@ -479,6 +487,14 @@ export class SshServerHandler {
               info.started = true;
               request.reply(true);
               const forcedShell = this.ctx.forcedCommand?.(user, clientIp, keyOptions) ?? null;
+              const refusedLogin = forcedShell === 'internal-sftp' ? null : this.ctx.loginShellRefusal?.(user) ?? null;
+              if (refusedLogin !== null) {
+                channel.write(refusedLogin.output);
+                void channel.request('exit-status', encodeExitStatus(refusedLogin.exitCode));
+                channel.eof();
+                channel.close();
+                return;
+              }
               if (forcedShell !== null) {
                 const runner = this.ctx.getShell(user, user.homeDirectory);
                 const forcedLine = forcedShell === 'internal-sftp'
@@ -749,7 +765,7 @@ export class SshServerHandler {
     if (credentialless) {
       success = this.ctx.auth.acceptsWithoutCredential?.(user) ?? false;
     } else if (challenge && responses) {
-      success = challenge.verify(user, responses);
+      success = challenge.verifyAsync ? await challenge.verifyAsync(user, responses) : challenge.verify(user, responses);
     } else if (method === 'password') {
       success = this.ctx.config.passwordAuthentication && (
         this.ctx.auth.checkPasswordAsync
@@ -873,8 +889,16 @@ function endedLine(text: string): string {
   return text === '' || text.endsWith('\n') ? text : `${text}\n`;
 }
 
+const HOST_KEY_SIGNATURES: Readonly<Record<string, readonly string[]>> = {
+  'ssh-rsa': ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
+};
+
 function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {
-  const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
-  if (privateKey === null) return [];
-  return [{ publicKeyBlob: base64ToBytes(hostKey.publicKey), privateKey }];
+  return [{
+    algorithms: HOST_KEY_SIGNATURES[hostKey.algorithm] ?? [hostKey.algorithm],
+    load: () => {
+      const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
+      return privateKey === null ? null : { publicKeyBlob: base64ToBytes(hostKey.publicKey), privateKey };
+    },
+  }];
 }

@@ -84,7 +84,7 @@ describe('un editeur tape dans un saut imbrique s\'ouvre sur le saut', () => {
     await channel.runLine('ssh -o StrictHostKeyChecking=no user@10.0.0.3');
     await channel.provideInput('admin');
     await hostB.executeCommand("sh -c 'echo contenu-de-B > /tmp/saut.txt'");
-    const view = await channel.openEditor('vim /tmp/saut.txt') as { lines?: string[] } | null;
+    const view = await channel.openEditor('vim /tmp/saut.txt') as unknown as { lines?: string[] } | null;
     expect(view?.lines?.join('\n')).toContain('contenu-de-B');
     expect(await hostA.executeCommand('cat /tmp/saut.txt')).not.toContain('contenu-de-B');
     channel.closeEditor();
@@ -93,7 +93,7 @@ describe('un editeur tape dans un saut imbrique s\'ouvre sur le saut', () => {
   it('TEMOIN : sans saut, l\'editeur est celui de A', async () => {
     const { channel, hostA } = await lab();
     await hostA.executeCommand("sh -c 'echo contenu-de-A > /tmp/local.txt'");
-    const view = await channel.openEditor('vim /tmp/local.txt') as { lines?: string[] } | null;
+    const view = await channel.openEditor('vim /tmp/local.txt') as unknown as { lines?: string[] } | null;
     expect(view?.lines?.join('\n')).toContain('contenu-de-A');
     channel.closeEditor();
   });

@@ -1,7 +1,7 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
+import { routerRsaKey } from '../../../ipsec/RouterRsaKey';
+import { encodeRsaPublicKey, groupedHex } from '../../../ipsec/RsaPublicKeyDer';
 
 import type { Router } from '../../Router';
-import type { CiscoRouter } from '../../CiscoRouter';
 import { CommandTrie } from '../CommandTrie';
 import { showIpTraffic } from './CiscoCommonShow';
 import {
@@ -26,7 +26,6 @@ import { isValidIPv4 } from '@/network/core/ip';
 import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
-import { getOrCreateCA } from '../../../pki/PkiCaRegistry';
 import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 
@@ -267,78 +266,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
-  trie.registerGreedy('crypto pki trustpoint', 'Declare a PKI trustpoint', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    sec().ensurePkiTrustpoint(args[0]);
-    ctx.setPkiTrustpoint?.(args[0]);
-    ctx.setMode('config-ca-trustpoint' as CiscoShellMode);
-    return '';
-  });
-
-  trie.registerGreedy('no crypto pki trustpoint', 'Remove a PKI trustpoint', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    sec().pkiTrustpoints.delete(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('crypto pki authenticate', 'Authenticate trustpoint CA', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
-    tp.caCert = ca.rootCertificate;
-    return `% Trustpoint ${name} CA certificate accepted`;
-  });
-  trie.registerGreedy('crypto pki enroll', 'Enroll trustpoint', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    if (!tp.caCert) return `% Trustpoint ${name} is not authenticated — run 'crypto pki authenticate ${name}' first`;
-    const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
-    const now = simulationNowMs();
-    const subject = tp.subjectName || `CN=${ctx.r()._getHostnameInternal()}`;
-    const issued = ca.issueCertificate({
-      subject, notBefore: now, notAfter: now + 365 * 24 * 3600 * 1000,
-      subjectAltNames: tp.fqdn ? [tp.fqdn] : undefined,
-    });
-    tp.localCert = issued.cert;
-    tp.localKey = issued.privateKey;
-    (ctx.r() as CiscoRouter).installIkeCertAuth({
-      localCert: issued.cert,
-      localKey: issued.privateKey,
-      trustAnchors: [tp.caCert],
-      revocationCheck: mapRevocationCheck(tp.revocationCheck),
-    });
-    return `% Start certificate enrollment for trustpoint ${name}\n`
-      + '% Certificate request sent to Certificate Authority\n'
-      + '% Certificate successfully received and installed';
-  });
-  trie.registerGreedy('crypto pki import', 'Import certificate', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    const what = args[1]?.toLowerCase();
-    if (what === 'certificate' || what === 'pem') {
-      (tp as unknown as { importedCertificate?: { format: string; importedAtMs: number } }).importedCertificate = {
-        format: what,
-        importedAtMs: simulationNowMs(),
-      };
-      if (tp.localCert && tp.localKey && tp.caCert) {
-        (ctx.r() as CiscoRouter).installIkeCertAuth({
-          localCert: tp.localCert,
-          localKey: tp.localKey,
-          trustAnchors: [tp.caCert],
-          revocationCheck: mapRevocationCheck(tp.revocationCheck),
-        });
-      }
-      return `% Certificate imported into trustpoint ${name}`;
-    }
-    return `% Unknown import type "${what}"`;
-  });
-
   trie.registerGreedy('parameter-map type inspect', 'Define parameter-map', (args) => {
     if (!args[0]) return '% Incomplete command.';
     sec().ensureParameterMapInspect(args[0]);
@@ -347,9 +274,9 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
 }
 
-function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
+export function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
   if (mode === 'ocsp') return 'ocsp';
-  if (mode === 'crl' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') return 'crl';
+  if (mode === 'crl' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') return 'crl-strict';
   return 'none';
 }
 
@@ -380,7 +307,7 @@ export function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: 
     i++;
   }
   const methods = args.slice(i);
-  if (methods.length === 0) return CISCO_ERRORS.INCOMPLETE;
+  if (methods.length === 0 && recordType !== 'none') return CISCO_ERRORS.INCOMPLETE;
   const incomplet = verifierMethodesAaa(phase, methods);
   if (incomplet) return incomplet;
   sec.aaaMethods.push({ phase, service, listName, privilegeLevel, recordType, methods });
@@ -1091,7 +1018,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     'Percentage of the certificate lifetime after which to re-enrol', {
       optional: true,
     }),
-  fingerprint: place('empreinte', 'WORD', 'Fingerprint the certificate must carry'),
+  fingerprint: place('empreinte', 'REST', 'Fingerprint the certificate must carry', { literal: 'LINE' }),
 };
 
 export function trustpointSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
@@ -1157,14 +1084,41 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
 
   trie.registerGreedy('ip verify unicast', 'Configure uRPF', (args) => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
-    const allowDefault = args.includes('allow-default');
+    const aclOf = (word: string | undefined): string | undefined => {
+      if (word === undefined) return undefined;
+      const n = Number(word);
+      const valid = /^\d+$/.test(word) && ((n >= 1 && n <= 199) || (n >= 1300 && n <= 2699));
+      if (!valid) throw new CliInvalidInput({ token: word });
+      return word;
+    };
     if (args[0] === 'reverse-path') {
-      sec().ifaceFlags(i).urpf = { mode: 'strict', allowDefault };
-    } else if (args[0] === 'source' && args[1] === 'reachable-via' && args[2]) {
-      sec().ifaceFlags(i).urpf = {
-        mode: args[2] === 'any' ? 'loose' : 'strict', allowDefault,
-      };
+      if (args.length > 2) throw new CliInvalidInput({ token: args[2] });
+      sec().ifaceFlags(i).urpf = { mode: 'strict', acl: aclOf(args[1]) };
+      return '';
     }
+    if (args[0] !== 'source') throw new CliInvalidInput({ token: args[0] ?? '' });
+    if (args[1] !== 'reachable-via') {
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      throw new CliInvalidInput({ token: args[1] });
+    }
+    if (args[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (args[2] !== 'any' && args[2] !== 'rx') throw new CliInvalidInput({ token: args[2] });
+    const urpf: { mode: 'strict' | 'loose'; allowDefault?: boolean; allowSelfPing?: boolean; acl?: string } = {
+      mode: args[2] === 'any' ? 'loose' : 'strict',
+    };
+    for (let k = 3; k < args.length; k++) {
+      if (args[k] === 'allow-default' && urpf.allowDefault === undefined) urpf.allowDefault = true;
+      else if (args[k] === 'allow-self-ping' && urpf.allowSelfPing === undefined) urpf.allowSelfPing = true;
+      else if (k === args.length - 1 && urpf.acl === undefined) urpf.acl = aclOf(args[k]);
+      else throw new CliInvalidInput({ token: args[k] });
+    }
+    sec().ifaceFlags(i).urpf = urpf;
+    return '';
+  });
+
+  trie.registerGreedy('no ip verify unicast', 'Disable uRPF', () => {
+    const i = ctx.getSelectedInterface(); if (!i) return '';
+    delete sec().ifaceFlags(i).urpf;
     return '';
   });
 }
@@ -1343,9 +1297,9 @@ export function buildIdentityShowCommands(
       `Key name: ${k.label}`,
       ' Storage Device: not specified',
       ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
-      ' Key is not exportable.',
+      k.exportable ? ' Key is exportable.' : ' Key is not exportable.',
       ' Key Data:',
-      ` ${rsaPublicKeyMaterial(k.label, k.modulus, k.generatedAtMs)}`,
+      ...pubkeyDataLines(getDevice() as { getHostname(): string }, k.modulus),
     ].join('\n')).join('\n\n');
   });
 
@@ -1366,7 +1320,6 @@ export function buildIdentityShowCommands(
 const SECURITY_SHOW_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'show crypto pki trustpoints': null,
-  'show crypto pki certificates': null,
   'show crypto key mypubkey rsa': null,
   'show policy-map control-plane': null,
   'show ip traffic': null,
@@ -1409,32 +1362,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       tp.serialNumber ? `    Serial Number: ${tp.serialNumber}` : '',
     ].filter(Boolean).join('\n')).join('\n');
   });
-  trie.register('show crypto pki certificates', 'PKI certificates', () => {
-    const tps = [...sec().pkiTrustpoints.values()];
-    if (tps.length === 0) return 'No PKI certificates installed';
-    return tps.map(tp => {
-      if (!tp.localCert) return `Certificate (Trustpoint ${tp.name}):\n  Status: Pending enrollment`;
-      const lines = [
-        `Certificate (Trustpoint ${tp.name}):`,
-        '  Status: Available',
-        `  Certificate Serial Number: ${tp.localCert.serialNumber}`,
-        `  Subject: ${tp.localCert.subject}`,
-        `  Issuer: ${tp.localCert.issuer}`,
-        `  Validity: ${new Date(tp.localCert.notBefore).toISOString()} to ${new Date(tp.localCert.notAfter).toISOString()}`,
-      ];
-      if (tp.caCert) {
-        lines.push(
-          `CA Certificate (Trustpoint ${tp.name}):`,
-          '  Status: Available',
-          `  Certificate Serial Number: ${tp.caCert.serialNumber}`,
-          `  Subject: ${tp.caCert.subject}`,
-        );
-      }
-      return lines.join('\n');
-    }).join('\n\n');
-  });
-
-
   trie.register('show policy-map control-plane', 'Show CoPP policy', () => {
     const s = sec();
     const pm = s.controlPlane.servicePolicyInput;
@@ -1541,27 +1468,8 @@ function formatIosKeyDate(ms: number): string {
     + `${mois} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
 }
 
-function rsaPublicKeyMaterial(label: string, modulus: number, generatedAtMs: number): string {
-  let h1 = 2166136261 >>> 0;
-  let h2 = 0x811C9DC5 >>> 0;
-  const seed = `${label}|${modulus}|${generatedAtMs}`;
-  for (let i = 0; i < seed.length; i++) {
-    h1 ^= seed.charCodeAt(i);
-    h1 = Math.imul(h1, 16777619) >>> 0;
-    h2 = Math.imul(h2 ^ seed.charCodeAt(i), 0x01000193) >>> 0;
-  }
-  const blocks = Math.max(4, Math.floor(modulus / 64));
-  const out: string[] = [];
-  for (let i = 0; i < blocks; i++) {
-    h1 = Math.imul(h1 ^ (i + 1), 0x9E3779B1) >>> 0;
-    h2 = Math.imul(h2 ^ (i + 1), 0xBB67AE85) >>> 0;
-    out.push(h1.toString(16).padStart(8, '0').toUpperCase());
-    out.push(h2.toString(16).padStart(8, '0').toUpperCase());
-  }
-  const hex = out.join('');
-  const lines: string[] = [];
-  for (let i = 0; i < hex.length; i += 64) {
-    lines.push(hex.slice(i, i + 64));
-  }
-  return lines.join('\n  ');
+function pubkeyDataLines(device: { getHostname(): string }, modulus: number): string[] {
+  const key = routerRsaKey(device.getHostname(), modulus);
+  if (key === null) return [];
+  return groupedHex(encodeRsaPublicKey(key.publicKey)).map((row) => `  ${row}`);
 }

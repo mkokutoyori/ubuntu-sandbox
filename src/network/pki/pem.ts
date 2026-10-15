@@ -20,7 +20,7 @@
 import {
   bytesToBase64, base64ToBytes, utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
-import { aesCbcEncrypt, aesCbcDecrypt, tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '@/crypto/cipher';
+import { aesCbcEncrypt, aesCbcDecrypt, tripleDesCbcEncrypt, tripleDesCbcDecrypt, desCbcEncrypt, desCbcDecrypt } from '@/crypto/cipher';
 import { pbkdf2, evpBytesToKey } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate, X509CertificateFields } from './X509Certificate';
@@ -232,22 +232,33 @@ const TRADITIONAL_CIPHERS: Readonly<Record<string, { readonly keyLength: number;
   'AES-192-CBC': { keyLength: 24, ivLength: 16 },
   'AES-256-CBC': { keyLength: 32, ivLength: 16 },
   'DES-EDE3-CBC': { keyLength: 24, ivLength: 8 },
+  'DES-CBC': { keyLength: 8, ivLength: 8 },
+};
+
+const EIGHT_BYTE_BLOCK_CIPHERS: Readonly<Record<string, {
+  readonly seal: (key: Uint8Array, iv: Uint8Array, data: Uint8Array) => Uint8Array;
+  readonly open: (key: Uint8Array, iv: Uint8Array, data: Uint8Array) => Uint8Array;
+}>> = {
+  'DES-EDE3-CBC': { seal: tripleDesCbcEncrypt, open: tripleDesCbcDecrypt },
+  'DES-CBC': { seal: desCbcEncrypt, open: desCbcDecrypt },
 };
 
 function traditionalSeal(name: string, key: Uint8Array, iv: Uint8Array, data: Uint8Array): Uint8Array {
-  if (name === 'DES-EDE3-CBC') {
+  const eightByte = EIGHT_BYTE_BLOCK_CIPHERS[name];
+  if (eightByte) {
     const pad = 8 - (data.length % 8);
     const padded = new Uint8Array(data.length + pad);
     padded.set(data, 0);
     padded.fill(pad, data.length);
-    return tripleDesCbcEncrypt(key, iv, padded);
+    return eightByte.seal(key, iv, padded);
   }
   return aesCbcEncrypt(key, iv, data);
 }
 
 function traditionalOpen(name: string, key: Uint8Array, iv: Uint8Array, data: Uint8Array): Uint8Array {
-  if (name !== 'DES-EDE3-CBC') return aesCbcDecrypt(key, iv, data);
-  const padded = tripleDesCbcDecrypt(key, iv, data);
+  const eightByte = EIGHT_BYTE_BLOCK_CIPHERS[name];
+  if (!eightByte) return aesCbcDecrypt(key, iv, data);
+  const padded = eightByte.open(key, iv, data);
   const pad = padded[padded.length - 1];
   if (pad === 0 || pad > 8) throw new Error('bad padding');
   for (let i = padded.length - pad; i < padded.length; i++) if (padded[i] !== pad) throw new Error('bad padding');
@@ -255,7 +266,7 @@ function traditionalOpen(name: string, key: Uint8Array, iv: Uint8Array, data: Ui
 }
 
 export function traditionalEncryptedKeyToPem(
-  key: PkiPrivateKey, passphrase: string, cipher: KeyEncryptionCipher, random: (n: number) => Uint8Array,
+  key: PkiPrivateKey, passphrase: string, cipher: KeyEncryptionCipher | 'des-cbc', random: (n: number) => Uint8Array,
 ): string {
   const name = cipher.toUpperCase();
   const spec = TRADITIONAL_CIPHERS[name];

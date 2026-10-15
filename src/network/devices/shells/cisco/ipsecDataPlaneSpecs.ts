@@ -1,6 +1,7 @@
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { DfBitPolicy, FragmentationPoint } from '../../../ipsec/IPSecTypes';
+import { DEFAULT_OPTIONAL_RETRY_SECONDS } from '../../../ipsec/IPSecEngine';
 
 export interface IpsecDataPlaneEngine {
   setDfBit(policy: DfBitPolicy | null, ifName?: string): void;
@@ -9,7 +10,11 @@ export interface IpsecDataPlaneEngine {
   setReplayCheckingDisabled(disabled: boolean): void;
   setIkeEnabled(enabled: boolean): void;
   setPassiveMode(enabled: boolean): void;
+  isPassiveMode(): boolean;
+  setOptionalRetry(seconds: number): void;
   setIdleTime(seconds: number | null): void;
+  setDefaultIkePolicyEnabled(enabled: boolean): void;
+  setDefaultTransformSetEnabled(enabled: boolean): void;
   getIdleTime(): number | null;
 }
 
@@ -109,6 +114,24 @@ export function ipsecDataPlaneSpecs(host: () => IpsecDataPlaneHost): CommandSpec
       undoOmitsArguments: true,
     },
     {
+      id: 'crypto-isakmp-default-policy',
+      path: ['crypto', 'isakmp', 'default', 'policy'],
+      description: 'Enable the default IKE policies',
+      undoDescription: 'Disable the default IKE policies',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().engine().setDefaultIkePolicyEnabled(true); return ''; },
+      undo: () => { host().engine().setDefaultIkePolicyEnabled(false); return ''; },
+    },
+    {
+      id: 'crypto-ipsec-transform-set-default',
+      path: ['crypto', 'ipsec', 'transform-set', 'default'],
+      description: 'Enable the default IPsec transform sets',
+      undoDescription: 'Disable the default IPsec transform sets',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().engine().setDefaultTransformSetEnabled(true); return ''; },
+      undo: () => { host().engine().setDefaultTransformSetEnabled(false); return ''; },
+    },
+    {
       id: 'crypto-isakmp-enable',
       path: ['crypto', 'isakmp', 'enable'],
       description: 'Enable ISAKMP',
@@ -125,6 +148,22 @@ export function ipsecDataPlaneSpecs(host: () => IpsecDataPlaneHost): CommandSpec
       modes: GLOBAL, minPrivilege: 15,
       run: () => { host().engine().setPassiveMode(true); return ''; },
       undo: () => { host().engine().setPassiveMode(false); return ''; },
+    },
+    {
+      id: 'crypto-ipsec-optional-retry',
+      path: ['crypto', 'ipsec', 'optional', 'retry', {
+        name: 'seconds', type: 'INT', range: [1, 2147483], description: 'Seconds a connection may stay in the clear before IPsec is attempted again',
+      }],
+      description: 'Time a packet can be routed in the clear before another IPsec attempt',
+      undoDescription: 'Restore the default of 5 minutes',
+      modes: GLOBAL, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => {
+        if (!host().engine().isPassiveMode()) return '% IPsec passive mode is not enabled: configure "crypto ipsec optional" first';
+        host().engine().setOptionalRetry(Number(args.seconds));
+        return '';
+      },
+      undo: () => { host().engine().setOptionalRetry(DEFAULT_OPTIONAL_RETRY_SECONDS); return ''; },
     },
     {
       id: 'show-crypto-ipsec-sa-idle-time',

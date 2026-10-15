@@ -266,9 +266,25 @@ export class RouterSshServerContext implements ISshServerContext {
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {
         const methods: AuthMethodType[] = [];
-        if (this.config.pubkeyAuthentication && this.deps.publicKeyAdmitted) methods.push('publickey');
-        if (this.config.passwordAuthentication) methods.push('password');
+        for (const name of this.config.authMethodOrder ?? ['publickey', 'password']) {
+          if (name === 'publickey' && this.config.pubkeyAuthentication && this.deps.publicKeyAdmitted) methods.push('publickey');
+          if (name === 'keyboard' && this.config.kbdInteractiveAuthentication === true) methods.push('keyboard-interactive');
+          if (name === 'password' && this.config.passwordAuthentication) methods.push('password');
+        }
         return methods;
+      },
+      keyboardInteractive: () => {
+        if (this.config.kbdInteractiveAuthentication !== true) return null;
+        return {
+          device: '',
+          name: '',
+          instruction: '',
+          prompts: [{ prompt: 'Password: ', echo: false }],
+          verify: (user, responses) => this.deps.credentials().authenticate(user, responses[0] ?? ''),
+          ...(this.deps.aaaAuthenticate ? {
+            verifyAsync: (user: string, responses: readonly string[]) => this.deps.aaaAuthenticate!(user, responses[0] ?? ''),
+          } : {}),
+        };
       },
     };
   }

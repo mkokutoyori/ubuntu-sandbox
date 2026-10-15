@@ -66,8 +66,8 @@ export class TacacsServerAgent {
 
   listUsers(): TacacsUser[] { return Array.from(this.config.users.values()); }
 
-  getAccountingLog(): ReadonlyArray<{ user: string; cmd: string; flags: string[]; ts: number }> {
-    return this.config.acctLog.map((r) => ({ ...r, flags: r.flags.slice() }));
+  getAccountingLog(): ReadonlyArray<{ user: string; cmd: string; flags: string[]; ts: number; args: string[]; port: string; remoteAddress: string }> {
+    return this.config.acctLog.map((r) => ({ ...r, flags: r.flags.slice(), args: r.args.slice() }));
   }
 
   private installListener(): void {
@@ -183,6 +183,7 @@ export class TacacsServerAgent {
       this.config.acctLog.push({
         user: request.body.user, cmd: cmd ?? '',
         flags: request.body.flags.slice(), ts: simulationNowMs(),
+        args: request.body.args.slice(), port: request.body.port, remoteAddress: request.body.remoteAddress,
       });
       const body: TacacsBody = {
         type: 'tacacs-acct-reply',

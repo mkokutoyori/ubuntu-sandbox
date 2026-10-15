@@ -102,6 +102,12 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-tacacs-server':      '{host}(config-tacacs-server)#',
   'config-aaa-group':          '{host}(config-sg-radius)#',
   'config-ca-trustpoint':      '{host}(ca-trustpoint)#',
+  'config-ca-server':          '{host}(cs-server)#',
+  'config-ca-trustpool':       '{host}(ca-trustpool)#',
+  'config-isakmp-group':       '{host}(config-isakmp-group)#',
+  'config-crypto-ezvpn':       '{host}(config-crypto-ezvpn)#',
+  'config-browser-proxy':      '{host}(config-browser-proxy)#',
+  'config-crypto-identity':    '{host}(config-crypto-identity)#',
   'config-applet':             '{host}(config-applet)#',
   'config-flow-exporter':      '{host}(config-flow-exporter)#',
   'config-flow-record':        '{host}(config-flow-record)#',
@@ -117,6 +123,9 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-ssh-pubkey-user':    '{host}(conf-ssh-pubkey-user)#',
   'config-ssh-pubkey-server':  '{host}(conf-ssh-pubkey-server)#',
   'config-ssh-pubkey-data':   '{host}(conf-ssh-pubkey-data)#',
+  'config-pubkey-chain':      '{host}(config-pubkey-chain)#',
+  'config-pubkey-key':        '{host}(config-pubkey-key)#',
+  'config-pubkey-data':       '{host}(config-pubkey)#',
   'config-network-group':      '{host}(config-network-group)#',
 };
 

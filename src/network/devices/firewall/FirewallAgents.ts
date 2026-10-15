@@ -55,6 +55,8 @@ export function buildFirewallAgents(deps: FirewallAgentDeps): FirewallAgents {
     _ipsecLocalIps: deps.localIps,
     _ipsecInterfaceDown: deps.interfaceDown,
     _ipsecEgressInterfaceFor: deps.egressFor,
+    _ipsecInterfaceMtu: (iface: string) => deps.port(iface)?.getMTU(),
+    _ikeRsaProvider: () => null,
     getPort: deps.port,
     getPorts: deps.ports,
     sendFrame: deps.send,

@@ -2040,6 +2040,8 @@ export abstract class LinuxMachine extends EndHost
     return this._telnetContext;
   }
 
+  private readonly telnetPamSessions = new Map<string, { close(): void }>();
+
   private telnetHost(): LinuxTelnetHost {
     return {
       hostname: () => this.hostname,
@@ -2066,9 +2068,15 @@ export abstract class LinuxMachine extends EndHost
           user, uid: entry?.uid ?? 1000, sshdPid: this.telnetdPid(),
           fromIp, fromHost: fromIp,
         });
-        return { id: session.tty, line: session.tty };
+        const pam = this.executor.openServiceSession('login', user, {
+          rhost: fromIp, tty: `/dev/${session.tty}`, pid: this.telnetdPid(),
+        }, 'LOGIN');
+        this.telnetPamSessions.set(session.tty, pam);
+        return { id: session.tty, line: session.tty, greeting: pam.greeting };
       },
       closeSession: (id, reason) => {
+        this.telnetPamSessions.get(id)?.close();
+        this.telnetPamSessions.delete(id);
         this.sessionTable.close(id, reason);
       },
       recordLogin: (user, fromIp, tty, uid) => {
@@ -3601,9 +3609,7 @@ export abstract class LinuxMachine extends EndHost
   async executeCommand(command: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
     settleOrderedDeliveries();
-    if (stdin !== undefined) {
-      this.executor._scenarioStdin = stdin;
-    }
+    this.executor._scenarioStdin = stdin;
 
     const trimmed = command.trim();
     if (!trimmed) return '';

@@ -22,7 +22,7 @@
 
 import { simulationDate } from '@/network/core/SystemClock';
 
-import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
+import { base64ToBytes, bytesToBase64, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 
@@ -605,15 +605,12 @@ export const base64Command = coreutil(
 
     try {
       if (decode) {
-        const binary = atob(input.replace(/\s+/g, ''));
-        const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+        const bytes = base64ToBytes(input.replace(/\s+/g, ''));
         const decoded = bytesToFileText(bytes);
         return /[\udc80-\udcff]/.test(decoded) ? decoded : decoded.replace(/\n$/, '');
       }
       const bytes = fileTextToBytes(input.endsWith('\n') ? input : input + '\n');
-      let binary = '';
-      for (const b of bytes) binary += String.fromCharCode(b);
-      return btoa(binary);
+      return bytesToBase64(bytes);
     } catch {
       return 'base64: invalid input';
     }

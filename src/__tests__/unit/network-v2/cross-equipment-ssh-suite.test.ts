@@ -872,8 +872,8 @@ describe('§11 — known_hosts coherence across platforms', () => {
         await l.linux1.executeCommand('rm -f ~/.ssh/known_hosts');
         await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname', 'admin\n');
       },
-      on: l => l.linux1, cmd: 'cat ~/.ssh/known_hosts',
-      contains: [/10\.0\.0\.2/, /ssh-(rsa|ed25519|ecdsa)/i],
+      on: l => l.linux1, cmd: 'ssh-keygen -F 10.0.0.2',
+      contains: [/Host 10\.0\.0\.2 found: line 1/, /\|1\|\S+ ssh-(rsa|ed25519|ecdsa)/i],
     },
     {
       name: 'Linux: second connect uses stored host key (no prompt)',

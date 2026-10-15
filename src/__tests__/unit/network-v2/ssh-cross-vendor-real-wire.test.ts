@@ -147,7 +147,8 @@ describe('Linux -> Cisco SSH: real wire, not a local checkPassword() call', () =
     await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'WRONG-PASSWORD');
 
     expect(host).not.toBeInstanceOf(CiscoTerminalSession);
-    expect(host.lines.map((l) => l.text).join('\n')).toMatch(/Permission denied/);
+    expect(host.lines.map((l) => l.text).join('\n')).toMatch(/\(admin@10\.0\.0\.5\) Password:/);
+    expect(host.getPrompt()).not.toMatch(/[>#]\s*$/);
   });
 });
 

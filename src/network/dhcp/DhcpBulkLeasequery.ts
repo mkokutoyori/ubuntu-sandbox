@@ -3,6 +3,7 @@ import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import type { DHCPServer } from './DHCPServer';
 import { DHCPPacket, DHCP_OPTION } from './DHCPPacket';
 import type { DhcpBulkRecord } from './types';
+import { bytesToBinaryString as toBinaryString } from '@/crypto/encoding';
 
 export const BULK_LEASEQUERY_PORT = 67;
 export const BULK_LQ_MAX_CONNS = 10;
@@ -40,11 +41,6 @@ export function unframeMessages(bytes: Uint8Array): DHCPPacket[] {
   return messages;
 }
 
-export function toBinaryString(bytes: Uint8Array): string {
-  let text = '';
-  for (const byte of bytes) text += String.fromCharCode(byte);
-  return text;
-}
 
 export function fromBinaryChunk(chunk: unknown): Uint8Array {
   if (chunk instanceof Uint8Array) return chunk;

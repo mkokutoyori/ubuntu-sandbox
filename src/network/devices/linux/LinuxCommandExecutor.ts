@@ -202,7 +202,7 @@ import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
 import { SshSession } from '../../protocols/ssh/session/SshSession';
 import type { ExecChannelOptions } from '../../protocols/ssh/channels/ISshChannel';
-import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
+import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient, type WireSshTarget } from './network/WireSshConnector';
 import {
   parseStrictHostKeyChecking, sshClientAlgorithms, sshClientAuthentication, type SshClientAuthentication,
 } from '../../protocols/ssh/SshConnectOptions';
@@ -751,6 +751,13 @@ export class LinuxCommandExecutor {
       timezone: () => (this.vfs.readFile('/etc/timezone') ?? 'UTC').trim(),
       resolveHost: (name) => this.resolveHostAddresses(name),
       keyrings: this.keyrings,
+      lastlog: {
+        read: (user) => {
+          const entry = this.lastlog.getCurrent(user);
+          return entry === undefined ? null : { time: Math.floor(entry.when / 1000), line: entry.tty, host: entry.sourceHost };
+        },
+        write: (user, record) => { this.lastlog.record(user, record.host, record.line, record.time * 1000); },
+      },
       processLimits: (uid) => new Map([
         ['nofile', { soft: this.processMgr.nofileLimit(uid), hard: this.processMgr.nofileHardLimit(uid) }],
         ['nproc', { soft: this.processMgr.nprocLimit(uid), hard: this.processMgr.nprocHardLimit(uid) }],
@@ -1714,7 +1721,7 @@ export class LinuxCommandExecutor {
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
     authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences, dialAddress?: string,
-    proxy?: TcpConnector,
+    proxy?: TcpConnector, trust?: Pick<WireSshTarget, 'knownHosts' | 'hashKnownHosts' | 'identitiesOnly'>,
   ): Promise<{
     session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
     hostKeyRefusal?: string; connectionFailure?: string;
@@ -1722,7 +1729,7 @@ export class LinuxCommandExecutor {
     if (!this.tcpConnector && proxy === undefined) return { session: null, authRefused: false, notices: [] };
     const connector = proxy ?? this.tcpConnector!;
     const outcome = await connectWireSsh(
-      this.wireSshClient(), { host, user, port, password, identities, strict, authentication, algorithms },
+      this.wireSshClient(), { host, user, port, password, identities, strict, authentication, algorithms, ...trust },
       ((h, p) => connector(dialAddress !== undefined && h === host ? dialAddress : h, p)) as unknown as TcpConnector);
     const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
     const denial = authRefused ? outcome.warnings.at(-1) : undefined;
@@ -1863,7 +1870,8 @@ export class LinuxCommandExecutor {
     }
     const wire = await this.connectWireSsh(
       target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication,
-      target.algorithms, resolution.address, proxy);
+      target.algorithms, resolution.address, proxy,
+      { knownHosts: target.knownHosts, hashKnownHosts: target.hashKnownHosts, identitiesOnly: target.identitiesOnly });
     if (wire.session === null) {
       return {
         kind: 'failed',
@@ -1983,6 +1991,8 @@ export class LinuxCommandExecutor {
         port: target.port,
         method: session.authenticatedMethod ?? undefined,
         serverHostKey: serverHostKeyOf(session),
+        negotiated: session.negotiated,
+        peerIdentification: session.serverIdentification,
         command,
         settled,
         shell: relayedShell,
@@ -2449,7 +2459,7 @@ export class LinuxCommandExecutor {
   }
 
   private runSshKeygen(args: string[], stdin?: string): { output: string; exitCode: number } {
-    return runSshKeygenCommand(args, this.keygenHost(), stdin);
+    return runSshKeygenCommand(args, this.keygenHost(), stdin ?? this._scenarioStdin);
   }
 
   runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {
@@ -5120,7 +5130,8 @@ export class LinuxCommandExecutor {
           this.publishSyscall('open', abs);
         }
         if (roErrors.length > 0) return { output: roErrors.join('\n'), exitCode: 1 };
-        return { output: cmdTouch(c, args), exitCode: 0 };
+        const touched = cmdTouch(c, args);
+        return { output: touched, exitCode: touched.startsWith('touch:') ? 1 : 0 };
       }
       case 'ls': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -7026,6 +7037,25 @@ export class LinuxCommandExecutor {
     const messages = session.takeLoginMessages();
     session.end();
     return { ok: code === PamReturn.SUCCESS, messages };
+  }
+
+  openServiceSession(
+    service: string,
+    user: string,
+    subject: { rhost?: string; tty?: string; pid?: number },
+    loginName: string,
+  ): { greeting: string[]; close(): void } {
+    const caller = { uid: 0, euid: 0, loginName };
+    const pid = subject.pid ?? this.logMgr.allocatePid();
+    const session = new PamServiceSession(
+      this.pam, service, { caller, identity: { tag: service, pid } },
+      { user, rhost: subject.rhost, tty: subject.tty },
+    );
+    session.openSession();
+    return {
+      greeting: session.sessionMessages,
+      close: () => { session.closeSession(); session.end(); },
+    };
   }
 
   checkPassword(username: string, password: string): boolean {

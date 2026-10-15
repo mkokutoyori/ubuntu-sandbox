@@ -3,10 +3,15 @@ import { ServerLiveness } from '../../../radius/ServerLiveness';
 import { DomainStripping } from '../aaa/UsernameRouting';
 import { ServerSelector, type LoadBalanceSetting } from '../../../radius/ServerSelector';
 import { SshPubkeyChain } from './SshPubkeyChain';
+import { IkePubkeyChain } from './IkePubkeyChain';
+import { groupedHex } from '../../../ipsec/RsaPublicKeyDer';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
 import { ZoneFirewall } from './ZoneFirewall';
+import { IosCertificateServer } from '../pki/IosCertificateServer';
+import { TcpIntercept, DEFAULT_INTERCEPT_SETTINGS, type TcpInterceptSettings } from './TcpIntercept';
+import { CbacFirewall, DEFAULT_INSPECT_SETTINGS, type InspectRule, type InspectSettings } from './CbacFirewall';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
 import { type PolicyMapAction, policyMapActionLine } from './policyMapActions';
@@ -141,11 +146,15 @@ export interface AaaLegacyServerHost {
   port?: number;
 }
 
+export const DEFAULT_SSH_AUTHENTICATION: readonly string[] = ['publickey', 'keyboard', 'password'];
+export const DEFAULT_SSH_PUBLICKEY_ALGORITHMS: readonly string[] = ['x509v3-ssh-rsa', 'ssh-rsa'];
+
 export const SSH_DEFAULTS = Object.freeze({
   version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false, maxStartups: 128, strictHostKeyCheck: false,
   macAlgorithms: [] as string[], encryptionAlgorithms: [] as string[],
   kexAlgorithms: [] as string[], hostKeyAlgorithms: [] as string[],
   clientEncryptionAlgorithms: [] as string[], clientMacAlgorithms: [] as string[], scpServerEnabled: false,
+  authenticationMethods: [] as string[], publickeyAlgorithms: [] as string[],
 });
 
 export interface SshConfig {
@@ -166,6 +175,8 @@ export interface SshConfig {
   clientEncryptionAlgorithms: string[];
   clientMacAlgorithms: string[];
   scpServerEnabled: boolean;
+  authenticationMethods: string[];
+  publickeyAlgorithms: string[];
 }
 
 export interface LoginControl {
@@ -181,6 +192,7 @@ export interface CryptoRsaKey {
   modulus: number;
   general: boolean;
   generatedAtMs: number;
+  exportable?: boolean;
 }
 
 export interface PasswordPolicy {
@@ -233,6 +245,8 @@ export interface ZonePair {
 export interface InterfaceUrpf {
   mode: 'strict' | 'loose' | null;
   allowDefault?: boolean;
+  allowSelfPing?: boolean;
+  acl?: string;
 }
 
 export interface InterfaceSecurityFlags {
@@ -241,14 +255,23 @@ export interface InterfaceSecurityFlags {
   noProxyArp: boolean;
   maskReply: boolean;
   zoneMember?: string;
+  inspectIn?: string;
+  inspectOut?: string;
   ipv6TrafficFilter?: { name: string; direction: 'in' | 'out' };
   urpf?: InterfaceUrpf;
+  urpfStats?: { drops: number; suppressed: number };
 }
 
 export type {
   TimeRange, TimeRangeAbsolute, TimeRangePeriodic, TimeRangeStamp,
 } from './timeRange';
 export { isTimeRangeActive } from './timeRange';
+
+export interface PkiTrustpool {
+  certificates: import('../../../pki/X509Certificate').X509Certificate[];
+  cabundleUrl?: string;
+  chainValidation: boolean;
+}
 
 export interface PkiTrustpoint {
   name: string;
@@ -280,6 +303,9 @@ export interface PkiTrustpoint {
   /** Set by 'crypto pki enroll': this router's own CA-issued cert + private key. */
   localCert?: import('../../../pki/X509Certificate').X509Certificate;
   localKey?: import('../../../pki/PkiKeyPair').PkiPrivateKey;
+  keyExportable?: boolean;
+  /** The revocation list fetched from the CA by `crypto pki crl request` or at enrollment. */
+  crl?: import('../../../pki/CertificateRevocationList').CertificateRevocationList;
 }
 
 export interface ParameterMapInspect {
@@ -376,6 +402,28 @@ function renderViewSecret(v: ParserView): string {
   return renderSecretField(v.secret ?? '', v.secretAlgo ?? 'md5', `view:${v.name}`);
 }
 
+export interface AaaAccountingOptions {
+  updateEnabled: boolean;
+  updateNewinfo: boolean;
+  updatePeriodicMinutes: number | null;
+  jitterMaxSec: number;
+  suppressNullUsername: boolean;
+  sendStopAlways: boolean;
+  sendStopOnAuthFailure: boolean;
+  sendStopOnSuccessRemote: boolean;
+}
+
+export const DEFAULT_ACCOUNTING_JITTER_SEC = 300;
+
+export interface RadiusAttributeSettings {
+  nasIpAddress: string | null;
+  serviceTypeInLoginRequest: boolean;
+  serviceTypeMandatory: boolean;
+  serviceTypeSupportMultiple: boolean;
+  nasIdentifier: { format: string | null } | null;
+  eventTimestampInAccounting: boolean;
+}
+
 export class CiscoSecurityConfig {
   aaaNewModel = false;
   /**
@@ -391,6 +439,15 @@ export class CiscoSecurityConfig {
   aaaUsernamePrompt?: string;
   aaaPasswordPrompt?: string;
   aaaMethods: AaaMethodEntry[] = [];
+  radiusAttributes: RadiusAttributeSettings = {
+    nasIpAddress: null, serviceTypeInLoginRequest: false, serviceTypeMandatory: false,
+    serviceTypeSupportMultiple: false, nasIdentifier: null, eventTimestampInAccounting: false,
+  };
+  accounting: AaaAccountingOptions = {
+    updateEnabled: false, updateNewinfo: false, updatePeriodicMinutes: null,
+    jitterMaxSec: DEFAULT_ACCOUNTING_JITTER_SEC, suppressNullUsername: false,
+    sendStopAlways: false, sendStopOnAuthFailure: false, sendStopOnSuccessRemote: false,
+  };
   radiusServers: Map<string, RadiusServer> = new Map();
   tacacsServers: Map<string, TacacsServer> = new Map();
   aaaGroups: Map<string, AaaServerGroup> = new Map();
@@ -410,12 +467,21 @@ export class CiscoSecurityConfig {
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
   sshPubkeys = new SshPubkeyChain();
+  readonly ikePubkeys = new IkePubkeyChain();
 
   sshServerLimits(): {
     maxAuthTries: number; loginGraceTime: number;
     maxStartups: { start: number; rate: number; full: number };
+    passwordAuthentication: boolean; pubkeyAuthentication: boolean; kbdInteractiveAuthentication: boolean;
+    authMethodOrder: ('publickey' | 'keyboard' | 'password')[];
   } {
+    const order = (this.ssh.authenticationMethods.length > 0 ? this.ssh.authenticationMethods : DEFAULT_SSH_AUTHENTICATION) as ('publickey' | 'keyboard' | 'password')[];
+    const keyAlgorithms = this.ssh.publickeyAlgorithms.length > 0 ? this.ssh.publickeyAlgorithms : DEFAULT_SSH_PUBLICKEY_ALGORITHMS;
     return {
+      passwordAuthentication: order.includes('password'),
+      pubkeyAuthentication: order.includes('publickey') && keyAlgorithms.includes('ssh-rsa'),
+      kbdInteractiveAuthentication: order.includes('keyboard'),
+      authMethodOrder: order,
       maxAuthTries: this.ssh.authRetries,
       loginGraceTime: this.ssh.timeoutSec,
       maxStartups: { start: this.ssh.maxStartups, rate: 100, full: this.ssh.maxStartups },
@@ -453,9 +519,42 @@ export class CiscoSecurityConfig {
 
   interfaceFlags: Map<string, InterfaceSecurityFlags> = new Map();
 
+  tcpInterceptSettings: TcpInterceptSettings = { ...DEFAULT_INTERCEPT_SETTINGS };
+  readonly tcpIntercept: TcpIntercept = new TcpIntercept(() => ({ settings: this.tcpInterceptSettings }));
+
+  inspectRules: Map<string, InspectRule> = new Map();
+  inspectSettings: InspectSettings = { ...DEFAULT_INSPECT_SETTINGS };
+  readonly cbac: CbacFirewall = new CbacFirewall(() => ({
+    rules: this.inspectRules,
+    settings: this.inspectSettings,
+    inspectRuleOf: (iface, direction) => {
+      const flags = this.interfaceFlags.get(iface);
+      return direction === 'in' ? flags?.inspectIn : flags?.inspectOut;
+    },
+    inspectedInterfaces: () => [...this.interfaceFlags.values()].filter((f) => f.inspectIn || f.inspectOut).length,
+  }));
+
   timeRanges: Map<string, TimeRange> = new Map();
   parameterMapsInspect: Map<string, ParameterMapInspect> = new Map();
   pkiTrustpoints: Map<string, PkiTrustpoint> = new Map();
+  pkiServers: Map<string, IosCertificateServer> = new Map();
+  trustpool: PkiTrustpool = { certificates: [], chainValidation: false };
+
+  trustAnchorsFor(trustpoint: PkiTrustpoint): import('../../../pki/X509Certificate').X509Certificate[] {
+    const pool = this.trustpool.chainValidation
+      ? this.trustpool.certificates.filter((certificate) => certificate.subject === certificate.issuer)
+      : this.trustpool.certificates;
+    return [...(trustpoint.caCert ? [trustpoint.caCert] : []), ...pool];
+  }
+
+  ensurePkiServer(name: string): IosCertificateServer {
+    let server = this.pkiServers.get(name);
+    if (!server) {
+      server = new IosCertificateServer(name, { now: simulationNowMs });
+      this.pkiServers.set(name, server);
+    }
+    return server;
+  }
 
   ensurePkiTrustpoint(name: string): PkiTrustpoint {
     let tp = this.pkiTrustpoints.get(name);
@@ -603,6 +702,7 @@ export class CiscoSecurityConfig {
       for (const m of this.aaaMethods) {
         lines.push(this.renderAaaMethod(m));
       }
+      lines.push(...this.accountingOptionLines());
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
     }
@@ -662,6 +762,12 @@ export class CiscoSecurityConfig {
     if (this.ssh.hostKeyAlgorithms.length) {
       lines.push(`ip ssh server algorithm hostkey ${this.ssh.hostKeyAlgorithms.join(' ')}`);
     }
+    if (this.ssh.authenticationMethods.length) {
+      lines.push(`ip ssh server algorithm authentication ${this.ssh.authenticationMethods.join(' ')}`);
+    }
+    if (this.ssh.publickeyAlgorithms.length) {
+      lines.push(`ip ssh server algorithm publickey ${this.ssh.publickeyAlgorithms.join(' ')}`);
+    }
     if (this.ssh.clientMacAlgorithms.length) {
       lines.push(`ip ssh client algorithm mac ${this.ssh.clientMacAlgorithms.join(' ')}`);
     }
@@ -670,11 +776,25 @@ export class CiscoSecurityConfig {
     }
     if (this.ssh.scpServerEnabled) lines.push('ip scp server enable');
     lines.push(...this.sshPubkeys.configLines());
+    if (this.ikePubkeys.list().length > 0) {
+      lines.push('crypto key pubkey-chain rsa');
+      for (const key of this.ikePubkeys.list()) {
+        const usage = key.usage === 'general' ? '' : ` ${key.usage}`;
+        lines.push(` ${key.kind === 'named' ? 'named-key' : 'addressed-key'} ${key.name}${usage}`);
+        if (key.kind === 'named' && key.address) lines.push(`  address ${key.address}`);
+        if (key.spki !== null) {
+          lines.push('  key-string');
+          for (const row of groupedHex(key.spki)) lines.push(`   ${row}`);
+          lines.push('  quit');
+        }
+      }
+    }
     for (const k of this.cryptoKeys) {
       if (k.general) lines.push(`crypto key generate rsa general-keys modulus ${k.modulus} label ${k.label}`);
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);
     }
     if (this.radiusDefaults.key) lines.push(`radius-server key ${this.radiusDefaults.key}`);
+    lines.push(...this.radiusAttributeLines());
     if (this.radiusDefaults.timeoutSec !== undefined) {
       lines.push(`radius-server timeout ${this.radiusDefaults.timeoutSec}`);
     }
@@ -819,11 +939,18 @@ export class CiscoSecurityConfig {
       if (tp.autoEnroll) lines.push(` auto-enroll${tp.autoEnroll.percent ? ` ${tp.autoEnroll.percent}` : ''}${tp.autoEnroll.regenerate ? ' regenerate' : ''}`);
       if (tp.fingerprint) lines.push(` fingerprint ${tp.fingerprint}`);
     }
+    for (const server of this.pkiServers.values()) lines.push(...server.runningConfigLines());
+    if (this.trustpool.cabundleUrl || this.trustpool.chainValidation) {
+      lines.push('crypto pki trustpool policy');
+      if (this.trustpool.cabundleUrl) lines.push(` cabundle url ${this.trustpool.cabundleUrl}`);
+      if (this.trustpool.chainValidation) lines.push(' chain-validation');
+    }
     if (this.controlPlane.servicePolicyInput || this.controlPlane.servicePolicyOutput) {
       lines.push('control-plane');
       if (this.controlPlane.servicePolicyInput) lines.push(` service-policy input ${this.controlPlane.servicePolicyInput}`);
       if (this.controlPlane.servicePolicyOutput) lines.push(` service-policy output ${this.controlPlane.servicePolicyOutput}`);
     }
+    lines.push(...this.inspectRunningConfigLines(), ...this.tcpInterceptRunningConfigLines());
     for (const z of this.zones.values()) lines.push(`zone security ${z.name}`);
     for (const zp of this.zonePairs.values()) {
       lines.push(`zone-pair security ${zp.name} source ${zp.source} destination ${zp.destination}`);
@@ -843,10 +970,94 @@ export class CiscoSecurityConfig {
     if (f.urpf?.mode) {
       const via = f.urpf.mode === 'loose' ? 'any' : 'rx';
       lines.push(` ip verify unicast source reachable-via ${via}`
-        + (f.urpf.allowDefault ? ' allow-default' : ''));
+        + (f.urpf.allowDefault ? ' allow-default' : '')
+        + (f.urpf.allowSelfPing ? ' allow-self-ping' : '')
+        + (f.urpf.acl !== undefined ? ` ${f.urpf.acl}` : ''));
     }
     if (f.zoneMember) lines.push(` zone-member security ${f.zoneMember}`);
+    if (f.inspectIn) lines.push(` ip inspect ${f.inspectIn} in`);
+    if (f.inspectOut) lines.push(` ip inspect ${f.inspectOut} out`);
     if (f.ipv6TrafficFilter) lines.push(` ipv6 traffic-filter ${f.ipv6TrafficFilter.name} ${f.ipv6TrafficFilter.direction}`);
+    return lines;
+  }
+
+  private radiusAttributeLines(): string[] {
+    const a = this.radiusAttributes;
+    const lines: string[] = [];
+    if (a.nasIpAddress !== null) lines.push(`radius-server attribute 4 ${a.nasIpAddress}`);
+    if (a.serviceTypeInLoginRequest) lines.push('radius-server attribute 6 on-for-login-auth');
+    if (a.serviceTypeMandatory) lines.push('radius-server attribute 6 mandatory');
+    if (a.serviceTypeSupportMultiple) lines.push('radius-server attribute 6 support-multiple');
+    if (a.nasIdentifier !== null) {
+      lines.push(`radius-server attribute 32 include-in-access-req${a.nasIdentifier.format === null ? '' : ` format ${a.nasIdentifier.format}`}`);
+    }
+    if (a.eventTimestampInAccounting) lines.push('radius-server attribute 55 include-in-acct-req');
+    return lines;
+  }
+
+  private accountingOptionLines(): string[] {
+    const a = this.accounting;
+    const lines: string[] = [];
+    if (a.updateEnabled) {
+      lines.push(`aaa accounting update${a.updateNewinfo ? ' newinfo' : ''}${a.updatePeriodicMinutes !== null ? ` periodic ${a.updatePeriodicMinutes}` : ''}`);
+    }
+    if (a.jitterMaxSec !== DEFAULT_ACCOUNTING_JITTER_SEC) lines.push(`aaa accounting jitter maximum ${a.jitterMaxSec}`);
+    if (a.suppressNullUsername) lines.push('aaa accounting suppress null-username');
+    if (a.sendStopAlways) lines.push('aaa accounting send stop-record always');
+    if (a.sendStopOnAuthFailure) lines.push('aaa accounting send stop-record authentication failure');
+    if (a.sendStopOnSuccessRemote) lines.push('aaa accounting send stop-record authentication success remote-server');
+    return lines;
+  }
+
+  private tcpInterceptRunningConfigLines(): string[] {
+    const s = this.tcpInterceptSettings;
+    const d = DEFAULT_INTERCEPT_SETTINGS;
+    const lines: string[] = [];
+    if (s.list !== null) lines.push(`ip tcp intercept list ${s.list}`);
+    if (s.mode !== d.mode) lines.push(`ip tcp intercept mode ${s.mode}`);
+    if (s.dropMode !== d.dropMode) lines.push(`ip tcp intercept drop-mode ${s.dropMode}`);
+    if (s.connectionTimeoutSec !== d.connectionTimeoutSec) lines.push(`ip tcp intercept connection-timeout ${s.connectionTimeoutSec}`);
+    if (s.finrstTimeoutSec !== d.finrstTimeoutSec) lines.push(`ip tcp intercept finrst-timeout ${s.finrstTimeoutSec}`);
+    if (s.watchTimeoutSec !== d.watchTimeoutSec) lines.push(`ip tcp intercept watch-timeout ${s.watchTimeoutSec}`);
+    if (s.maxIncompleteLow !== d.maxIncompleteLow || s.maxIncompleteHigh !== d.maxIncompleteHigh) {
+      lines.push(`ip tcp intercept max-incomplete low ${s.maxIncompleteLow} high ${s.maxIncompleteHigh}`);
+    }
+    if (s.oneMinuteLow !== d.oneMinuteLow || s.oneMinuteHigh !== d.oneMinuteHigh) {
+      lines.push(`ip tcp intercept one-minute low ${s.oneMinuteLow} high ${s.oneMinuteHigh}`);
+    }
+    return lines;
+  }
+
+  private inspectRunningConfigLines(): string[] {
+    const lines: string[] = [];
+    const s = this.inspectSettings;
+    const d = DEFAULT_INSPECT_SETTINGS;
+    if (s.alertOff) lines.push('ip inspect alert-off');
+    if (s.auditTrail) lines.push('ip inspect audit-trail');
+    if (s.logDropPkt) lines.push('ip inspect log drop-pkt');
+    if (s.dnsTimeoutSec !== d.dnsTimeoutSec) lines.push(`ip inspect dns-timeout ${s.dnsTimeoutSec}`);
+    if (s.tcpIdleSec !== d.tcpIdleSec) lines.push(`ip inspect tcp idle-time ${s.tcpIdleSec}`);
+    if (s.tcpSynwaitSec !== d.tcpSynwaitSec) lines.push(`ip inspect tcp synwait-time ${s.tcpSynwaitSec}`);
+    if (s.tcpFinwaitSec !== d.tcpFinwaitSec) lines.push(`ip inspect tcp finwait-time ${s.tcpFinwaitSec}`);
+    if (s.udpIdleSec !== d.udpIdleSec) lines.push(`ip inspect udp idle-time ${s.udpIdleSec}`);
+    if (s.maxIncompleteHigh !== d.maxIncompleteHigh) lines.push(`ip inspect max-incomplete high ${s.maxIncompleteHigh}`);
+    if (s.maxIncompleteLow !== d.maxIncompleteLow) lines.push(`ip inspect max-incomplete low ${s.maxIncompleteLow}`);
+    if (s.oneMinuteHigh !== d.oneMinuteHigh) lines.push(`ip inspect one-minute high ${s.oneMinuteHigh}`);
+    if (s.oneMinuteLow !== d.oneMinuteLow) lines.push(`ip inspect one-minute low ${s.oneMinuteLow}`);
+    if (s.hostMaxIncomplete !== d.hostMaxIncomplete || s.hostBlockMinutes !== d.hostBlockMinutes) {
+      lines.push(`ip inspect tcp max-incomplete host ${s.hostMaxIncomplete} block-time ${s.hostBlockMinutes}`);
+    }
+    for (const rule of this.inspectRules.values()) {
+      for (const [keyword, options] of rule.protocols) {
+        let line = `ip inspect name ${rule.name}`;
+        if (rule.maxSessions !== undefined) line += ` parameter max-sessions ${rule.maxSessions}`;
+        line += ` ${keyword}`;
+        if (options.alert !== undefined) line += ` alert ${options.alert ? 'on' : 'off'}`;
+        if (options.auditTrail !== undefined) line += ` audit-trail ${options.auditTrail ? 'on' : 'off'}`;
+        if (options.timeoutSec !== undefined) line += ` timeout ${options.timeoutSec}`;
+        lines.push(line);
+      }
+    }
     return lines;
   }
 

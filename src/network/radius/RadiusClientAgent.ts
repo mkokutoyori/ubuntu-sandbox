@@ -5,7 +5,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { hexToBytes, bytesToHex, bytesToUtf8 } from '@/crypto/encoding';
 import {
   type RadiusClientConfig, type RadiusServerConfig, type RadiusPacket,
-  type RadiusAttribute,
+  type RadiusAttribute, type RadiusAttributePolicy, defaultAttributePolicy,
   createDefaultClientConfig, defaultServerEntry, attr, getAttr, getVsa,
   encryptUserPassword,
   UDP_PORT_RADIUS_AUTH,
@@ -26,6 +26,8 @@ import { Logger } from '../core/Logger';
 import { PathClock } from '../core/time/PathClock';
 import { ServerCounters } from './ServerCounters';
 import { type UdpSendRequest } from '../layers/transport/UdpEgress';
+
+const SERVICE_TYPE_LOGIN = 1;
 
 export interface RadiusClientHost {
   readonly id: string;
@@ -212,6 +214,10 @@ export class RadiusClientAgent {
   }
 
   setNasIdentifier(id: string | null): void { this.config.nasIdentifier = id; }
+
+  private attributePolicy: RadiusAttributePolicy = defaultAttributePolicy();
+
+  setAttributePolicy(policy: RadiusAttributePolicy): void { this.attributePolicy = policy; }
   setSourceInterface(iface: string | null): void { this.config.sourceInterface = iface; }
 
   /** `radius-server deadtime <minutes>` equivalent, taking milliseconds. 0 (default) disables it. */
@@ -667,13 +673,17 @@ export class RadiusClientAgent {
       this.continueChallenge(payload, pending);
       return;
     }
-    if (payload.code === 'access-accept') answered.accepts++;
+    const serviceTypes = payload.attributes.filter((attribute) => attribute.type === 'service-type').length;
+    const policy = this.attributePolicy;
+    const unacceptable = payload.code === 'access-accept'
+      && ((policy.serviceTypeMandatory && serviceTypes === 0) || (serviceTypes > 1 && !policy.serviceTypeSupportMultiple));
+    if (payload.code === 'access-accept' && !unacceptable) answered.accepts++;
     else answered.rejects++;
     answered.transactionSuccess++;
 
     if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
     this.pending.delete(payload.identifier);
-    const accepted = payload.code === 'access-accept';
+    const accepted = payload.code === 'access-accept' && !unacceptable;
     const reasonAttr = getAttr(payload, 'reply-message');
     const reason = reasonAttr ? String(reasonAttr.value) : null;
     pending.resolve(accepted ? 'accept' : 'reject');
@@ -758,9 +768,11 @@ export class RadiusClientAgent {
     } else {
       attrs.push(attr('user-password', encryptUserPassword(pending.password, server.sharedSecret, pending.authenticator)));
     }
-    attrs.push(attr('nas-ip-address', srcIp.toString()));
+    attrs.push(attr('nas-ip-address', this.attributePolicy.nasIpAddress ?? srcIp.toString()));
+    if (this.attributePolicy.serviceTypeInLoginRequest) attrs.push(attr('service-type', SERVICE_TYPE_LOGIN));
     if (pending.state) attrs.push(attr('state', pending.state));
-    if (this.config.nasIdentifier) attrs.push(attr('nas-identifier', this.config.nasIdentifier));
+    const identifier = this.attributePolicy.nasIdentifier?.(srcIp.toString()) ?? this.config.nasIdentifier;
+    if (identifier) attrs.push(attr('nas-identifier', identifier));
     let payload: RadiusPacket = {
       type: 'radius', code: 'access-request', identifier: pending.identifier,
       authenticator: pending.authenticator,

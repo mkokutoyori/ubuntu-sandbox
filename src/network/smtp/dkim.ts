@@ -2,6 +2,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { PkiKeyPair, type PkiPrivateKey, type PkiPublicKey } from '@/network/pki/PkiKeyPair';
 import { sha256Hex } from '@/crypto/hash/sha256';
+import { bytesToBase64, hexToBytes } from '@/crypto/encoding';
 
 export interface DkimSignature {
   readonly domain: string;
@@ -28,11 +29,7 @@ export interface DkimSignOptions {
 }
 
 function hexToBase64(hex: string): string {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary);
+  return bytesToBase64(hexToBytes(hex));
 }
 
 function canonicalizeHeaderSimple(name: string, value: string): string {

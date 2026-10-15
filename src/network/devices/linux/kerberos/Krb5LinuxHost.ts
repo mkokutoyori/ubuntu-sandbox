@@ -4,18 +4,9 @@ import type { LinuxCommandContext } from '../commands/LinuxCommandContext';
 import { readResolverIP } from '../commands/dns/resolverIP';
 import { forwardHostOfAsync, reverseNameOfAsync } from '../network/ReverseName';
 import type { Krb5Host, SrvRecord } from './Krb5Host';
+import { binaryStringToBytes as bytesOfLatin1, bytesToBinaryString as latin1Of } from '@/crypto/encoding';
 
-function bytesOfLatin1(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let index = 0; index < text.length; index++) out[index] = text.charCodeAt(index) & 0xff;
-  return out;
-}
 
-function latin1Of(bytes: Uint8Array): string {
-  let out = '';
-  for (const byte of bytes) out += String.fromCharCode(byte);
-  return out;
-}
 
 const SRV_TIMEOUT_MS = 2000;
 const CREDENTIAL_CACHE_UMASK = 0o077;

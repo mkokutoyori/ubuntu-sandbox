@@ -8,7 +8,11 @@ import { formatPamLogLine, type PamLogEntry } from './PamHandle';
 import type { KeyringTable } from '../kernel/KeyringTable';
 import { localTimeIn } from './PamLocalTime';
 import { defaultCapabilities, defaultRlimits } from './PamRlimitDefaults';
-import type { LinuxPamHost, PamCaller, PamLoginEntry, PamRlimit, PamRlimitResource } from './PamLinuxHost';
+import type {
+  LinuxPamHost, PamCaller, PamFailedLogins, PamLastlogRecord, PamLoginEntry, PamRlimit, PamRlimitResource,
+} from './PamLinuxHost';
+import { UT, UTMPX_SIZE, Utmpx } from '../login/UtmpxRecord';
+import { binaryStringToBytes } from '@/crypto/encoding';
 import { PamTransaction } from './PamTransaction';
 import type { FaillockToolHost } from './FaillockTool';
 
@@ -24,6 +28,10 @@ export interface LinuxPamDeps {
   readonly resolveHost: (name: string) => readonly string[];
   readonly keyrings: KeyringTable;
   readonly updateMotd?: () => string | null;
+  readonly lastlog: {
+    read(user: string): PamLastlogRecord | null;
+    write(user: string, record: PamLastlogRecord): void;
+  };
   readonly processLimits?: (uid: number) => ReadonlyMap<PamRlimitResource, PamRlimit>;
 }
 
@@ -38,6 +46,8 @@ export interface PamTransactionOptions {
   readonly identity?: PamSyslogIdentity;
 }
 
+const BTMP_PATH = '/var/log/btmp';
+
 export class LinuxPam {
   private readonly files: LinuxPamFiles;
   private readonly accounts: LinuxPamAccounts;
@@ -50,6 +60,19 @@ export class LinuxPam {
   private supplementaryGroupsOf(uid: number): number[] {
     const entry = this.deps.users.getUserByUid(uid);
     return entry === undefined ? [] : this.deps.users.getUserGroups(entry.username).map((group) => group.gid);
+  }
+
+  private failedLoginsSince(user: string, sinceSeconds: number): PamFailedLogins | null {
+    const bytes = binaryStringToBytes(this.deps.vfs.readFile(BTMP_PATH) ?? '');
+    let count = 0;
+    let last: PamLastlogRecord | null = null;
+    for (let offset = 0; offset + UTMPX_SIZE <= bytes.length; offset += UTMPX_SIZE) {
+      const entry = new Utmpx(bytes.subarray(offset, offset + UTMPX_SIZE));
+      if (entry.type === UT.EMPTY || entry.seconds < sinceSeconds || entry.text('user') !== user) continue;
+      count += 1;
+      last = { time: entry.seconds, line: entry.text('line'), host: entry.text('host') };
+    }
+    return last === null ? null : { count, last };
   }
 
   faillockToolHost(): FaillockToolHost {
@@ -76,6 +99,11 @@ export class LinuxPam {
       localTime: (epochMs) => localTimeIn(this.deps.timezone(), epochMs),
       resolveHost: this.deps.resolveHost,
       updateMotd: this.deps.updateMotd ?? null,
+      lastlog: {
+        read: (user) => this.deps.lastlog.read(user),
+        write: (user, record) => this.deps.lastlog.write(user, record),
+        failedSince: (user, since) => this.failedLoginsSince(user, since),
+      },
       keyrings: {
         userSessionKeyring: (uid) => this.deps.keyrings.userSessionKeyring(uid).id,
         joinAnonymousSession: (uid, gid) => this.deps.keyrings.joinAnonymousSession(uid, gid).id,

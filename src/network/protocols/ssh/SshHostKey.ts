@@ -5,16 +5,39 @@
  */
 
 import { SshFingerprint } from './SshFingerprint';
-import { keygenDeterministicPair } from '@/network/devices/linux/network/SshKeygenMaterial';
+import { keygenDeterministicPair, type EcdsaAlgorithm } from '@/network/devices/linux/network/SshKeygenMaterial';
 
-export type SshKeyAlgorithm = 'ssh-ed25519' | 'ssh-rsa' | 'ecdsa-sha2-nistp256';
+export type SshKeyAlgorithm = 'ssh-ed25519' | 'ssh-rsa' | EcdsaAlgorithm;
+
+export interface SshHostKeyMaterial {
+  readonly publicKey: string;
+  readonly privateKey: string;
+}
 
 export class SshHostKey {
+  private material: SshHostKeyMaterial | null;
+
   private constructor(
     public readonly algorithm: SshKeyAlgorithm,
-    public readonly publicKey: string,
-    private readonly _privateKey: string,
-  ) {}
+    publicKey: string | null,
+    privateKey: string | null,
+    private readonly load: (() => SshHostKeyMaterial) | null = null,
+  ) {
+    this.material = publicKey !== null && privateKey !== null ? { publicKey, privateKey } : null;
+  }
+
+  static deferred(algorithm: SshKeyAlgorithm, load: () => SshHostKeyMaterial): SshHostKey {
+    return new SshHostKey(algorithm, null, null, load);
+  }
+
+  private resolved(): SshHostKeyMaterial {
+    this.material ??= this.load!();
+    return this.material;
+  }
+
+  get publicKey(): string {
+    return this.resolved().publicKey;
+  }
 
   /**
    * Generate a deterministic host key from a hostname.
@@ -39,7 +62,7 @@ export class SshHostKey {
   }
 
   get privateKeyBlob(): string {
-    return this._privateKey;
+    return this.resolved().privateKey;
   }
 
   get fingerprint(): SshFingerprint {

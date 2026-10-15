@@ -263,6 +263,10 @@ export class SshSessionRegistry {
     s.user = user;
     if (privilege !== undefined) s.privilege = privilege;
     s.lastActivityAt = this.now();
+    this.bus.publish({
+      topic: 'router.ssh.session.authenticated',
+      payload: { deviceId: this.deviceId, session: this.snapshot(s, s.lastActivityAt) },
+    });
   }
 
   /** La session ouverte sur une ligne d'un genre donne, s'il y en a une. */

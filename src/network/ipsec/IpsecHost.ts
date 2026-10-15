@@ -1,3 +1,4 @@
+import type { IkeRsaProvider } from './IPSecTypes';
 import type { RouterHostsTable } from '../devices/router/dns/RouterHostsTable';
 
 export interface IpsecHost {
@@ -12,4 +13,6 @@ export interface IpsecHost {
   _ipsecLocalIps(): string[];
   _ipsecInterfaceDown(iface: string): boolean;
   _ipsecEgressInterfaceFor(peerIp: string): string | undefined;
+  _ipsecInterfaceMtu(iface: string): number | undefined;
+  _ikeRsaProvider(): IkeRsaProvider | null;
 }

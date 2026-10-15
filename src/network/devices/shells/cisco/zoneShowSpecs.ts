@@ -91,7 +91,7 @@ function pairBlock(host: ZoneShowHost, pair: ZonePair, withSessions: boolean): s
     const counter = firewall.counterOf(pair.name, cls.className);
     const action = cls.actions.find((a) => a.kind === 'inspect' || a.kind === 'pass' || a.kind === 'drop');
     if (action?.kind === 'inspect') {
-      const mine = sessions.filter((s) => s.className === cls.className);
+      const mine = sessions.filter((s) => s.label === cls.className);
       const estab = mine.filter((s) => s.state === 'SIS_OPEN').length;
       const half = mine.filter((s) => s.state === 'SIS_OPENING').length;
       const ending = mine.filter((s) => s.state === 'SIS_CLOSING').length;

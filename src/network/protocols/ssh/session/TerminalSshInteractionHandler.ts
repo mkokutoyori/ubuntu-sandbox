@@ -42,11 +42,11 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
     keyType: string,
   ): Promise<HostKeyResponse> {
     this.io.writeLine(
-      `The authenticity of host '${host}' can't be established.`,
+      `The authenticity of host '${host} (${host})' can't be established.`,
     );
     this.io.writeLine(`${keyType} key fingerprint is ${fingerprint}.`);
     this.io.writeLine(
-      `This key is not known by any other names.`,
+      `This key is not known by any other names`,
     );
     const answer = (
       await this.io.readInput(

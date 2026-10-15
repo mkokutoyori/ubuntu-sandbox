@@ -1953,8 +1953,8 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
       name: 'first ssh appends a known_hosts entry for the remote',
       setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n'); },
       on: l => l.pc1,
-      cmd: 'cat ~/.ssh/known_hosts',
-      contains: [/^10\.0\.0\.2 ssh-(ed25519|rsa) /m],
+      cmd: 'ssh-keygen -F 10.0.0.2',
+      contains: [/Host 10\.0\.0\.2 found: line 1/, /^\|1\|\S+ ssh-(ed25519|rsa) /m],
     },
     {
       name: 'second ssh to the same host reuses the entry (no prompt)',

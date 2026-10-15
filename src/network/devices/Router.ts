@@ -35,7 +35,11 @@
  *   - SNMP-ready performance counters
  */
 
+import type { IkeRsaProvider } from '../ipsec/IPSecTypes';
 import type { ZoneFirewallPort } from './router/security/ZoneFirewall';
+import type { CbacPort } from './router/security/CbacFirewall';
+import type { TcpInterceptPort } from './router/security/TcpIntercept';
+import type { TcpSegment } from '../tcp/types';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
@@ -218,6 +222,7 @@ import { RouterManagementService, TELNET_DEFAULT_PORT } from './router/managemen
 import { RemoteAccessListeners } from './router/management/RemoteAccessListeners';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { CiscoHttpUi } from './router/management/CiscoHttpUi';
+import { ENROLLMENT_PATH, type IosCertificateServer } from './router/pki/IosCertificateServer';
 import { Http1ServerSession } from '../http/http1/Http1ServerSession';
 import { HttpsServerSession } from '../http/https/HttpsServerSession';
 import type { HttpMessage } from '../http/semantics/types';
@@ -460,7 +465,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     ];
   }
 
-  private interfaceUrpf(ifName: string): { mode: 'strict' | 'loose' | null; allowDefault?: boolean } | undefined {
+  private interfaceUrpf(ifName: string): { mode: 'strict' | 'loose' | null; allowDefault?: boolean; allowSelfPing?: boolean; acl?: string } | undefined {
     const sec = this.securityConfig();
     return sec?.ifaceFlags(ifName).urpf;
   }
@@ -470,6 +475,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!urpf || !urpf.mode) return false;
     if (pkt.sourceIP.isUnspecified()
       && classifyIpv4Destination(pkt.destinationIP) === 'limited-broadcast') return false;
+    if (!this.urpfSourceFails(inPort, pkt, urpf)) return false;
+    const stats = this.securityConfig()!.ifaceFlags(inPort);
+    stats.urpfStats ??= { drops: 0, suppressed: 0 };
+    if (urpf.acl !== undefined && this.aclEngine.evaluateACLByName(urpf.acl, pkt) === 'permit') {
+      stats.urpfStats.suppressed += 1;
+      return false;
+    }
+    stats.urpfStats.drops += 1;
+    return true;
+  }
+
+  private urpfSourceFails(
+    inPort: string, pkt: IPv4Packet,
+    urpf: { mode: 'strict' | 'loose' | null; allowDefault?: boolean; allowSelfPing?: boolean },
+  ): boolean {
+    if (urpf.allowSelfPing === true && this.ownsIPv4Address(pkt.sourceIP)) return false;
     const route = this.lookupRoute(pkt.sourceIP);
     if (!route) return true;
     if (route.mask.toCIDR() === 0 && !urpf.allowDefault) return true;
@@ -542,6 +563,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ── Reactive (Phase 5.8) — scheduler + TimerSet + event helpers ──
   private routerScheduler: IScheduler | null = null;
+  private cbacSweep: symbol | null = null;
   protected readonly routerTimers = new TimerSet(() => this.getRouterScheduler());
   readonly icmpUnreachableRateLimit = new IcmpUnreachableRateLimit(
     this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now());
@@ -672,6 +694,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.dhcpServer.setUtilizationSink((crossing) => this.emitDhcpUtilizationTrap(crossing));
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
+      if (String(aclId).startsWith('ezvpn:')) {
+        return this.ipsecEngine?.ezvpnClient.natMatches(String(aclId), srcIP, realPkt?.destinationIP.toString(), realPkt) ?? false;
+      }
       // Undefined ACL = no interesting traffic, so require an explicit permit.
       return this.aclEngine.evaluateACLByName(String(aclId), pkt) === 'permit';
     });
@@ -786,7 +811,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getHostname: () => this.getHostname(),
       isInterfaceLineUp: (name) => {
         const port = this.ports.get(name);
-        return !!port && port.getIsUp() && port.isConnected();
+        const virtual = /^(Loopback|Tunnel|Vlan|Port-channel|Nve|Virtual-Template|Dialer)/i.test(name);
+        return !!port && port.getIsUp() && (virtual || port.isConnected());
       },
       isInterfaceRoutingUp: (name) => {
         const port = this.ports.get(name);
@@ -1553,6 +1579,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.shell.getLoggingConfig?.().detachFromBus();
     this.ospfIntegration?.dispose();
     this.routerTimers.clearAll();
+    this.cbacSweep = null;
     super.dispose();
   }
 
@@ -2743,6 +2770,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
     if (inboundACL === null) return false;
     if (this.aclEngine.evaluateForDataPlane(inboundACL, ipPkt) !== 'deny') return false;
+    if (this.cbac()?.admitsReturn(ipPkt)) return false;
 
     Logger.info(this.id, 'router:acl-deny-in',
       `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
@@ -2783,6 +2811,66 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       etherType: ETHERTYPE_IPV4,
       payload: decision.packet,
     });
+  }
+
+  private cbac(): CbacPort | undefined {
+    return (this as unknown as { [s: symbol]: { cbac?: CbacPort } | undefined })[Symbol.for('CiscoSecurityConfig')]?.cbac;
+  }
+
+  private flushCbacLogs(): void {
+    const cbac = this.cbac();
+    if (!cbac) return;
+    const logging = (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r: boolean, mn: string) => void } | null })
+      .getLoggingConfig?.();
+    for (const line of cbac.drainLogs()) logging?.append(line.severity, 'FW', line.text, true, line.mnemonic);
+  }
+
+  private cbacPermits(inIface: string, outIface: string, packet: IPv4Packet): boolean {
+    const cbac = this.cbac();
+    if (!cbac) return true;
+    const verdict = cbac.inspect(inIface, outIface, packet);
+    this.flushCbacLogs();
+    this.armSecuritySweep();
+    return verdict.permit;
+  }
+
+  private tcpIntercept(): TcpInterceptPort | undefined {
+    return (this as unknown as { [s: symbol]: { tcpIntercept?: TcpInterceptPort } | undefined })[Symbol.for('CiscoSecurityConfig')]?.tcpIntercept;
+  }
+
+  private interceptSender() {
+    return (source: string, destination: string, segment: TcpSegment): void => {
+      this.sendIpv4Packet({
+        destination: new IPAddress(destination), source: new IPAddress(source), protocol: 6,
+        payload: segment, payloadBytes: segment.dataOffset * 4,
+      });
+    };
+  }
+
+  private tcpInterceptProcess(packet: IPv4Packet): IPv4Packet | null {
+    const intercept = this.tcpIntercept();
+    if (!intercept) return packet;
+    const result = intercept.process(packet,
+      (list, candidate) => this.aclEngine.evaluateACLByName(String(list), candidate) === 'permit',
+      this.interceptSender());
+    this.armSecuritySweep();
+    return result;
+  }
+
+  private armSecuritySweep(): void {
+    const cbac = this.cbac();
+    const intercept = this.tcpIntercept();
+    const busy = (): boolean => (cbac?.hasWork() ?? false) || (intercept?.hasWork() ?? false);
+    if (!busy() || this.cbacSweep !== null) return;
+    this.cbacSweep = this.routerTimers.setInterval(() => {
+      cbac?.sweep();
+      this.flushCbacLogs();
+      intercept?.sweep(this.interceptSender());
+      if (!busy() && this.cbacSweep !== null) {
+        this.routerTimers.clear(this.cbacSweep);
+        this.cbacSweep = null;
+      }
+    }, 500);
   }
 
   private zoneFirewallPermits(inIface: string | null, outIface: string | null, packet: IPv4Packet): boolean {
@@ -3213,6 +3301,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         `${this.name}: zone firewall dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
       return;
     }
+    const intercepted = this.tcpInterceptProcess(fwdPkt);
+    if (intercepted === null) return;
+    fwdPkt = intercepted;
+    if (!this.cbacPermits(inPort, route.iface, fwdPkt)) {
+      Logger.info(this.id, 'router:cbac-drop',
+        `${this.name}: inspection dropped ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} (${inPort} → ${route.iface})`);
+      return;
+    }
     const effectiveMtu = outPort.getMTU();
 
     if (fwdPkt.totalLength > effectiveMtu) {
@@ -3260,6 +3356,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (inPortIP && inPortMask && ipPkt.sourceIP.isInSameSubnet(inPortIP, inPortMask)) {
         this.sendICMPRedirect(inPort, ipPkt, route.nextHop);
       }
+    }
+
+    if (this.ipsecEngine?.ezvpnClient.ingressGate(inPort, route.iface, fwdPkt) === 'drop') {
+      Logger.info(this.id, 'ezvpn:flow-restrict',
+        `${this.name}: Easy VPN flow restrict dropped ${fwdPkt.sourceIP} -> ${fwdPkt.destinationIP} while the tunnel is down`);
+      return;
     }
 
     const isHairpin = !this.natEngine.isOutsideInterface(route.iface)
@@ -3310,16 +3412,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           if (entry) {
             const encPkts = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
             if (!encPkts) {
-              // Check if ICMP Fragmentation Needed should be sent back to source
-              if (this.ipsecEngine.lastEncapICMP) {
-                const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
-                this.ipsecEngine.lastEncapICMP = null;
-                this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+              if (!this.ipsecEngine.consumeClearTextFallback()) {
+                // Check if ICMP Fragmentation Needed should be sent back to source
+                if (this.ipsecEngine.lastEncapICMP) {
+                  const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
+                  this.ipsecEngine.lastEncapICMP = null;
+                  this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+                }
+                return;
               }
+            } else {
+              for (const p of encPkts) this.processIPv4(route.iface, p, true);
               return;
             }
-            for (const p of encPkts) this.processIPv4(route.iface, p, true);
-            return;
           }
         }
       } else {
@@ -3328,15 +3433,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         if (entry) {
           const encPkts = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
           if (!encPkts) {
-            if (this.ipsecEngine.lastEncapICMP) {
-              const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
-              this.ipsecEngine.lastEncapICMP = null;
-              this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+            if (!this.ipsecEngine.consumeClearTextFallback()) {
+              if (this.ipsecEngine.lastEncapICMP) {
+                const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
+                this.ipsecEngine.lastEncapICMP = null;
+                this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+              }
+              return;
             }
+          } else {
+            for (const p of encPkts) this.processIPv4(route.iface, p, true);
             return;
           }
-          for (const p of encPkts) this.processIPv4(route.iface, p, true);
-          return;
         }
       }
     }
@@ -4965,8 +5073,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   private bindHttpListener(port: number, secure: boolean): void {
     const ui = this.buildHttpUi();
-    const handler = (request: HttpMessage, peer?: { ip: string; port: number }) =>
-      ui.handle(request, peer?.ip ?? '0.0.0.0');
+    const handler = (request: HttpMessage, peer?: { ip: string; port: number }) => {
+      const enrollment = this.certificateServerFor(request);
+      if (enrollment && this.httpAccessPermitted(peer?.ip ?? '0.0.0.0')) return enrollment.handle(request);
+      return ui.handle(request, peer?.ip ?? '0.0.0.0');
+    };
     const identity = { processName: secure ? 'HTTPS CORE' : 'HTTP CORE', pid: 1 };
 
     const session = secure
@@ -4993,6 +5104,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       serverCert: this._httpTlsMaterial.cert,
       serverPrivateKey: this._httpTlsMaterial.privateKey,
     };
+  }
+
+  private certificateServerFor(request: HttpMessage): IosCertificateServer | null {
+    const path = (request.target ?? '').split('?')[0];
+    if (path !== ENROLLMENT_PATH) return null;
+    const servers = this.securityConfig()?.pkiServers;
+    if (!servers) return null;
+    return [...servers.values()].find((server) => server.isRunning) ?? null;
   }
 
   private httpAccessPermitted(sourceIp: string): boolean {
@@ -5175,6 +5294,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         capacity: () => this.vtyLineConfig.lineCapacity(),
         configuredTransport: () => this.sshConfiguredTransport(),
       });
+      this.wireExecAccounting();
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._credentialStore.liveSessionCount = (user) =>
         this._sshSessionRegistry!.list().filter(s => s.user === user && s.state !== 'closed').length;
@@ -5196,6 +5316,25 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
     return this._credentialStore;
+  }
+
+  private wireExecAccounting(): void {
+    const bus = this.getBus();
+    const driver = () => this.getAaaAuthenticator().execAccounting;
+    bus.subscribe('router.ssh.session.opened', (event) => {
+      if (event.payload.deviceId !== this.id) return;
+      if (event.payload.session.user === '' && event.payload.session.lineKind !== 'vty') return;
+      void driver().opened(event.payload.session);
+    });
+    bus.subscribe('router.ssh.session.authenticated', (event) => {
+      if (event.payload.deviceId === this.id) void driver().opened(event.payload.session);
+    });
+    bus.subscribe('router.ssh.session.closed', (event) => {
+      if (event.payload.deviceId === this.id) void driver().closed(event.payload.session);
+    });
+    bus.subscribe('router.aaa.account.login.failure', (event) => {
+      if (event.payload.deviceId === this.id) void driver().authenticationFailed(event.payload.account.name, event.payload.from ?? '');
+    });
   }
 
   getSecurityAuditLog(): SecurityAuditLog {
@@ -6197,8 +6336,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
       if (entry) {
         const encPkts = this.ipsecEngine.processOutbound(ipPkt, iface, entry);
-        if (encPkts) {
-          for (const p of encPkts) {
+        const outgoing = encPkts ?? (this.ipsecEngine.consumeClearTextFallback() ? [ipPkt] : null);
+        if (outgoing) {
+          for (const p of outgoing) {
             this.sendFrame(iface, {
               srcMAC: port.getMAC(), dstMAC,
               etherType: ETHERTYPE_IPV4, payload: p,
@@ -6266,11 +6406,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getNATEngine(): NATEngine { return this.natEngine; }
 
   /** @internal Lazily create + return the IPSec engine for this router */
+  _ikeRsaProvider(): IkeRsaProvider | null {
+    return null;
+  }
+
+  _ipsecInterfaceMtu(iface: string): number | undefined {
+    return this.ports.get(iface)?.getMTU();
+  }
+
   _getOrCreateIPSecEngine(): IPSecEngine {
     if (!this.ipsecEngine) {
       this.ipsecEngine = new IPSecEngine(this);
       this.ipsecEngine.setEventBus(this.getBus());
       this.ipsecEngine.start();
+      this.attachEzvpn(this.ipsecEngine);
       const svc = this._debugService;
       if (svc) {
         this.ipsecEngine.setDebugEmitter((kind, line) => {
@@ -6280,6 +6429,89 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
     return this.ipsecEngine;
   }
+
+  private aclSourceNetworks(acl: string): string[] {
+    const found = this.getAccessLists().find((a) => a.name === acl || String(a.id) === acl);
+    const networks: string[] = [];
+    for (const entry of found?.entries ?? []) {
+      const wildcard = entry.srcWildcard.toString();
+      if (entry.action !== 'permit' || wildcard === '255.255.255.255') continue;
+      networks.push(`${entry.srcIP.toString()}/${wildcard.split('.').map((o) => 255 - Number(o)).join('.')}`);
+    }
+    return networks;
+  }
+
+  private attachEzvpn(engine: IPSecEngine): void {
+    this.getBus().subscribe('track.state.changed', (event) => {
+      const payload = (event as { payload?: { deviceId?: string; objectId?: number; newState?: string } }).payload;
+      if (payload?.deviceId === this.id && typeof payload.objectId === 'number') {
+        engine.ezvpnClient.trackChanged(payload.objectId, payload.newState === 'up');
+      }
+    });
+    engine.ezvpnClient.attach({
+      engine: () => engine,
+      interfaceAddress: (iface) => {
+        const port = this.ports.get(iface);
+        const ip = port?.getIPAddress();
+        const mask = port?.getSubnetMask();
+        return ip && mask ? { address: ip.toString(), mask: mask.toString() } : null;
+      },
+      aclSources: (acl) => this.aclSourceNetworks(acl),
+      aclPermits: (acl, packet) => this.aclEngine.evaluateACLByName(acl, packet) === 'permit',
+      trackIsUp: (id) => this.trackService.get(id) === undefined || this.trackService.isUp(id),
+      nowMs: () => this.getRouterScheduler().now(),
+      after: (ms, fn) => this.getRouterScheduler().setTimeout(fn, ms),
+      cancel: (handle) => this.getRouterScheduler().clear(handle as never),
+      resolve: (host) => IPAddress.tryParse(host)?.toString() ?? this.hostsTable.resolve(host),
+      createLoopback: (address, mask) => {
+        const name = 'Loopback10000';
+        this._createVirtualInterface(name);
+        this.ports.get(name)?.configureIP(new IPAddress(address), new SubnetMask(mask), 'manual');
+        return name;
+      },
+      removeLoopback: (name) => { this._removeVirtualInterface(name); },
+      nat: {
+        setInside: (iface) => this.natEngine.setInsideInterface(iface),
+        setOutside: (iface) => this.natEngine.setOutsideInterface(iface),
+        removeInside: (iface) => this.natEngine.removeInsideInterface(iface),
+        removeOutside: (iface) => this.natEngine.removeOutsideInterface(iface),
+        addRule: (aclId, iface) => this.natEngine.addDynamicRule({ aclId, type: 'overload', interfaceName: iface, overload: true }),
+        removeRule: (aclId) => this.natEngine.removeDynamicRule(aclId),
+      },
+      log: (line) => {
+        Logger.info(this.id, 'ezvpn', `${this.name}: ${line}`);
+        (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
+          .getLoggingConfig?.()?.append('notifications', 'crypto', line, true, 'EZVPN');
+      },
+    });
+
+    const methodsOf = (phase: 'authentication' | 'authorization', service: string, list: string): string[] | null => {
+      const sec = this.securityConfig();
+      if (!sec || !sec.aaaNewModel) return null;
+      const entry = sec.aaaMethods.find((m) => m.phase === phase && m.service === service && m.listName === list);
+      return entry ? entry.methods : null;
+    };
+    engine.ezvpn.attach({
+      isLive: (peer) => engine.hasIkeSA(peer),
+      clientPolicyFor: (peer) => engine.clientPolicyForPeer(peer),
+      ingressInterface: (peer) => this._ipsecEgressInterfaceFor(peer) ?? null,
+      authenticate: (list, user, password) => {
+        if (methodsOf('authentication', 'login', list) === null) return 'denied';
+        return this.getAaaAuthenticator().authenticate(user, password, list)
+          .then((outcome) => (outcome.accepted ? 'accepted' as const : 'denied' as const), () => 'denied' as const);
+      },
+      authorize: (list, group) => {
+        const methods = methodsOf('authorization', 'network', list);
+        if (methods === null) return 'denied';
+        return methods.includes('local') && engine.ezvpn.groups.has(group) ? 'accepted' : 'denied';
+      },
+      splitNetworks: (acl) => this.aclSourceNetworks(acl),
+    });
+  }
+
+  scheduleAfter(ms: number, fn: () => void): unknown { return this.getRouterScheduler().setTimeout(fn, ms); }
+
+  cancelScheduled(handle: unknown): void { this.getRouterScheduler().clear(handle as never); }
 
   /** @internal Return IPSec engine (null if not yet configured) */
   _getIPSecEngineInternal(): IPSecEngine | null { return this.ipsecEngine; }

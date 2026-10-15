@@ -5,6 +5,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { guardedFileSystem, principalOf } from '@/network/devices/windows/WindowsFsAccess';
+import { WINDOWS_OPENSSH_SSHD_CONFIG } from './WindowsSshdConfigFile';
 import { simulationDate } from '@/network/core/SystemClock';
 
 import { SSH_WINDOWS_IDENTIFICATION } from '../serverIdentification';
@@ -25,11 +27,10 @@ import {
   type SshTransportPolicy,
 } from './ISshServerContext';
 import { sshdAlgorithmPreferences } from './SshdAlgorithmDirectives';
-import { rsaHostKeysFor } from './SshdRsaHostKey';
+import { configuredHostKeyPaths, hostKeyFromFile, provisionHostKeyFiles, type HostKeyFileAccess } from './SshdHostKeyFiles';
 import {
   DEFAULT_SSHD_CONFIG,
   parseSshdConfig,
-  serializeSshdConfig,
   type SshdConfig,
 } from './SshSshdConfig';
 
@@ -42,7 +43,7 @@ const ADMIN_GID = 0;
 const SSH_DIR = 'C:\\ProgramData\\ssh';
 const SSHD_CONFIG_PATH = `${SSH_DIR}\\sshd_config`;
 const HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_ed25519_key`;
-const RSA_HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_rsa_key`;
+const DEFAULT_HOST_KEY_PATHS = ['rsa', 'ecdsa', 'ed25519'].map((type) => `${SSH_DIR}\\ssh_host_${type}_key`);
 const HOST_KEY_PUB_PATH = `${SSH_DIR}\\ssh_host_ed25519_key.pub`;
 
 export interface WindowsShellExecutor {
@@ -129,7 +130,8 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
-    return new WindowsSftpFSAdapter(this.wfs, userCtx.uid, userCtx.gid);
+    return new WindowsSftpFSAdapter(
+      guardedFileSystem(this.wfs, principalOf(this.userManager, userCtx.username)), userCtx.uid, userCtx.gid);
   }
 
   getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
@@ -143,7 +145,7 @@ export class WindowsSshServerContext implements ISshServerContext {
           return {
             stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
             stderr: '',
-            exitCode: 0,
+            exitCode: vty.lastExitCode?.() ?? 0,
             clearScreen: vty.lastClearedScreen?.() ?? false,
             pendingInput: vty.lastPendingInput?.() ?? undefined,
             sessionEnded: vty.lastEndedSession?.() ?? false,
@@ -155,7 +157,7 @@ export class WindowsSshServerContext implements ISshServerContext {
               return {
                 stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
                 stderr: '',
-                exitCode: 0,
+                exitCode: vty.lastExitCode?.() ?? 0,
                 clearScreen: vty.lastClearedScreen?.() ?? false,
                 pendingInput: vty.lastPendingInput?.() ?? undefined,
                 sessionEnded: vty.lastEndedSession?.() ?? false,
@@ -217,9 +219,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   buildUserContext(username: string): SshUserContext | null {
     const user = this.userManager.getUser(username);
     if (!user) return null;
-    const isAdmin = this.userManager.setCurrentUser(username)
-      ? this.userManager.isCurrentUserAdmin()
-      : false;
+    const isAdmin = this.userManager.isAdmin(user.name);
     const uid = isAdmin ? ADMIN_UID : DEFAULT_USER_UID;
     const gid = isAdmin ? ADMIN_GID : DEFAULT_USER_GID;
     const home = `C:\\Users\\${user.name}`;
@@ -231,6 +231,7 @@ export class WindowsSshServerContext implements ISshServerContext {
       for (const sub of ['', '\\Desktop', '\\Documents', '\\Downloads']) {
         this.wfs.mkdirp(home + sub);
       }
+      this.wfs.seedProfileAcl(user.name);
     }
     return new SshUserContext(user.name, uid, gid, [], home);
   }
@@ -243,35 +244,38 @@ export class WindowsSshServerContext implements ISshServerContext {
     }
   }
 
-  additionalHostKeys(): SshHostKey[] {
-    const rawConfig = this.wfs.readFile(SSHD_CONFIG_PATH).content ?? '';
-    return rsaHostKeysFor(rawConfig, this.hostname, {
+  private hostKeyFiles(): HostKeyFileAccess {
+    return {
+      exists: (path) => this.wfs.exists(path),
       read: (path) => {
         const result = this.wfs.readFile(path);
         return result.ok ? result.content ?? null : null;
       },
       write: (path, content) => { this.wfs.createFile(path, content); },
-    }, RSA_HOST_KEY_PATH);
+      writeDeferred: (path, produce, _secret, declaredSize) => { this.wfs.createDeferredFile(path, produce, declaredSize); },
+    };
+  }
+
+  additionalHostKeys(): SshHostKey[] {
+    const rawConfig = this.wfs.readFile(SSHD_CONFIG_PATH).content ?? '';
+    const paths = configuredHostKeyPaths(rawConfig, DEFAULT_HOST_KEY_PATHS).map((path) => path.replace(/\//g, '\\'));
+    return paths
+      .filter((path) => path.toLowerCase() !== HOST_KEY_PATH.toLowerCase())
+      .flatMap((path) => hostKeyFromFile(this.hostKeyFiles(), path) ?? []);
   }
 
   private loadOrGenerateHostKey(): SshHostKey {
-    const pubResult = this.wfs.readFile(HOST_KEY_PUB_PATH);
-    const privResult = this.wfs.readFile(HOST_KEY_PATH);
-    if (pubResult.ok && privResult.ok && pubResult.content && privResult.content) {
-      const material = pubResult.content.trim().split(/\s+/)[1] ?? pubResult.content.trim();
-      return SshHostKey.fromFiles(material, privResult.content.trim(), 'ssh-ed25519');
-    }
-    const generated = SshHostKey.generate(this.hostname);
-    this.wfs.createFile(HOST_KEY_PUB_PATH, generated.publicKeyLine + '\n');
-    this.wfs.createFile(HOST_KEY_PATH, generated.privateKeyBlob);
-    return generated;
+    provisionHostKeyFiles(this.hostKeyFiles(), SSH_DIR, '\\', this.hostname);
+    const pub = this.wfs.readFile(HOST_KEY_PUB_PATH).content ?? '';
+    const priv = this.wfs.readFile(HOST_KEY_PATH).content ?? '';
+    return SshHostKey.fromFiles(pub.trim().split(/\s+/)[1] ?? pub.trim(), priv.trim(), 'ssh-ed25519');
   }
 
   private loadOrGenerateSshdConfig(): SshdConfig {
     const result = this.wfs.readFile(SSHD_CONFIG_PATH);
     if (result.ok && result.content) return parseSshdConfig(result.content);
-    this.wfs.createFile(SSHD_CONFIG_PATH, serializeSshdConfig(DEFAULT_SSHD_CONFIG));
-    return DEFAULT_SSHD_CONFIG;
+    this.wfs.createFile(SSHD_CONFIG_PATH, WINDOWS_OPENSSH_SSHD_CONFIG);
+    return parseSshdConfig(WINDOWS_OPENSSH_SSHD_CONFIG);
   }
 
   private userAllowed(user: string): boolean {

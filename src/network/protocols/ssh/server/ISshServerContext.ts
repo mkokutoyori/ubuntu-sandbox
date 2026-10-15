@@ -29,6 +29,7 @@ export interface SshServerConfig {
   readonly passwordAuthentication: boolean;
   readonly pubkeyAuthentication: boolean;
   readonly kbdInteractiveAuthentication?: boolean;
+  readonly authMethodOrder?: readonly ('publickey' | 'keyboard' | 'password')[];
   readonly clientAliveInterval?: number;
   readonly clientAliveCountMax?: number;
   readonly loginGraceTime?: number;
@@ -243,6 +244,7 @@ export interface ISshServerContext {
   rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
+  loginShellRefusal?(user: SshUserContext): { readonly output: string; readonly exitCode: number } | null;
   subsystemAdmitted?(name: string, user: SshUserContext): boolean;
   readonly maxAuthTriesDisconnect?: string;
   maxAuthTriesFor?(user: string, clientIp: string): number;

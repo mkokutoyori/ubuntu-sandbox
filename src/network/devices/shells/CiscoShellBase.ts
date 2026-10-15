@@ -89,6 +89,10 @@ import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
 import { aaaShowSpecs, type AaaShowHost } from './cisco/aaaShowSpecs';
 import { zoneShowSpecs } from './cisco/zoneShowSpecs';
+import { inspectShowSpecs } from './cisco/inspectShowSpecs';
+import { radiusAttributeSpecs } from './cisco/radiusAttributeSpecs';
+import { ikePubkeySpecs, storeKeyString, type IkePubkeyHost, type IkePubkeyMode } from './cisco/ikePubkeySpecs';
+import type { IkePeerKey } from '../router/security/IkePubkeyChain';
 import { ipsecDataPlaneSpecs, type IpsecDataPlaneEngine } from './cisco/ipsecDataPlaneSpecs';
 import { ServerCounters } from '../../radius/ServerCounters';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
@@ -1635,6 +1639,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return this.enableInteractionPlan(em.args, ctx?.device, ctx?.onVtyLine === true);
       }
     }
+    const xauth = /^crypto\s+ipsec\s+client\s+ezvpn\s+xauth(?:\s+(\S+))?$/i.exec(line);
+    if (xauth && mode === 'privileged') return this.ezvpnXauthPlan(xauth[1] ?? null, ctx?.device as TDevice | undefined);
+
     if (mode === 'user') return null;
 
     // Config-mode dialogue: `banner <kind> <delim>` with nothing after the
@@ -1642,6 +1649,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // until one contains the delimiter). The single-line
     // `banner <kind> <delim>TEXT<delim>` form stays synchronous in the
     // config-trie handler.
+    if (mode === 'config') {
+      const paste = /^crypto\s+(?:pki|ca)\s+authenticate\s+(\S+)$/i.exec(line);
+      if (paste) return this.pkiPastePlan('ca', paste[1], ctx?.device as TDevice | undefined);
+      const pool = /^crypto\s+pki\s+trustpool\s+import\s+(clean\s+)?terminal$/i.exec(line);
+      if (pool) return this.pkiPastePlan(pool[1] ? 'trustpool-clean' : 'trustpool', '', ctx?.device as TDevice | undefined);
+      const certificate = /^crypto\s+pki\s+import\s+(\S+)\s+certificate$/i.exec(line);
+      if (certificate) return this.pkiPastePlan('certificate', certificate[1], ctx?.device as TDevice | undefined);
+    }
+    if (mode === 'config') {
+      const pem = /^crypto\s+pki\s+import\s+(\S+)\s+pem\s+terminal((?:\s+(?:exportable|password\s+\S+))*)$/i.exec(line);
+      if (pem) {
+        const phrase = /password\s+(\S+)/i.exec(pem[2])?.[1] ?? null;
+        return this.pemImportPlan(pem[1], phrase, /\bexportable\b/i.test(pem[2]), ctx?.device as TDevice | undefined);
+      }
+    }
     if (mode === 'config') {
       const bm = /^banner\s+(motd|login|exec|incoming)\s+(\S)\s*$/i.exec(line);
       if (bm) {
@@ -2110,6 +2132,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       enter: (mode: PubkeyChainMode) => { this.mode = mode; },
       beginKeyString: () => { this.keyStringLines = []; this.mode = 'config-ssh-pubkey-data'; },
     };
+  }
+
+  private ikePeerKey: IkePeerKey | null = null;
+  private ikeKeyStringLines: string[] | null = null;
+
+  protected ikePubkeyHost(): IkePubkeyHost {
+    return {
+      chain: () => getSecurityConfig(this.d()).ikePubkeys,
+      selected: () => this.ikePeerKey,
+      select: (key) => { this.ikePeerKey = key; },
+      enter: (mode: IkePubkeyMode) => { this.mode = mode; },
+      beginKeyString: () => { this.ikeKeyStringLines = []; this.mode = 'config-pubkey-data'; },
+    };
+  }
+
+  private collectIkeKeyStringLine(rawLine: string): string {
+    const word = rawLine.trim().toLowerCase();
+    if (word !== 'exit' && word !== 'quit') {
+      this.ikeKeyStringLines!.push(rawLine.trim());
+      return '';
+    }
+    const lines = this.ikeKeyStringLines!;
+    this.ikeKeyStringLines = null;
+    this.mode = 'config-pubkey-key';
+    const key = this.ikePeerKey;
+    if (key === null || !storeKeyString(key, lines)) return '% Invalid public key: only RSA keys in X.509 SubjectPublicKeyInfo form can be stored.';
+    return '';
   }
 
   private collectKeyStringLine(device: TDevice, rawLine: string): string {
@@ -2874,6 +2923,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Multi-line banner entry: every line is verbatim content (leading
     // spaces, empty lines, would-be commands) until the delimiter shows up.
     if (this.keyStringLines !== null) return this.collectKeyStringLine(device, rawInput);
+    if (this.ikeKeyStringLines !== null) return this.collectIkeKeyStringLine(rawInput);
     if (this.bannerCollector) {
       this.deviceRef = device;
       const out = this.collectBannerLine(rawInput);
@@ -6076,6 +6126,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...privilegeRuleSpecs(() => this.privilegeRuleHost()),
       ...ipSshSpecs(() => this.ipSshHost()),
       ...ipSshPubkeySpecs(() => this.pubkeyChainHost()),
+      ...ikePubkeySpecs(() => this.ikePubkeyHost()),
       ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
@@ -6093,6 +6144,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...testAaaSpecs(() => this.testAaaHost()),
       ...aaaShowSpecs(() => this.aaaShowHost()),
       ...zoneShowSpecs(() => ({ security: () => getSecurityConfig(this.d() as object) })),
+      ...radiusAttributeSpecs(() => ({ security: () => getSecurityConfig(this.d() as object) })),
+      ...inspectShowSpecs(() => ({
+        security: () => getSecurityConfig(this.d() as object),
+        interfaceAcl: (iface, direction) => {
+          const reference = (this.d() as unknown as { getInterfaceACL?: (i: string, d: 'in' | 'out') => number | string | null })
+            .getInterfaceACL?.(iface, direction);
+          return reference === undefined || reference === null ? null : String(reference);
+        },
+        interfaceNames: () => (this.d() as unknown as { getPortNames?: () => string[] }).getPortNames?.() ?? [],
+      })),
       ...this.ipsecDataPlaneSpecs(),
       ...showDebuggingSpecs(() => this.showDebuggingHost()),
       ...monitorCaptureSpecs(() => this.monitorCaptureHost()),
@@ -9966,6 +10027,42 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Parse `ssh [-l user] [-p port] <host> [command ...]` (the IOS form)
    * and open it over the wire (routerOutboundSsh).
    */
+  protected pkiPastePlan(
+    _kind: 'ca' | 'certificate' | 'trustpool' | 'trustpool-clean', _trustpoint: string, _device: TDevice | undefined,
+  ): CommandInteractionPlan | null {
+    return null;
+  }
+
+  protected pemImportPlan(
+    _trustpoint: string, _phrase: string | null, _exportable: boolean, _device: TDevice | undefined,
+  ): CommandInteractionPlan | null {
+    return null;
+  }
+
+  private ezvpnXauthPlan(tunnel: string | null, device: TDevice | undefined): CommandInteractionPlan | null {
+    const client = (device as unknown as {
+      _getOrCreateIPSecEngine?: () => { ezvpnClient: import('../../ipsec/ezvpn/EzvpnClient').EzvpnClient };
+    } | undefined)?._getOrCreateIPSecEngine?.().ezvpnClient;
+    if (!client) return null;
+    const pending = client.pendingTunnel(tunnel);
+    if ('error' in pending) return { steps: [{ kind: 'output', lines: [pending.error] }] };
+    return {
+      steps: [
+        { kind: 'text', prompt: 'Enter Username and Password: ', storeAs: 'ezvpn_user' },
+        { kind: 'password', prompt: 'Password: ', storeAs: 'ezvpn_password' },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            const failure = await client.connect(pending.name, {
+              user: rt.values.get('ezvpn_user') ?? '', password: rt.values.get('ezvpn_password') ?? '',
+            });
+            if (failure) rt.output(failure);
+          },
+        },
+      ],
+    };
+  }
+
   private outboundSshClientPlan(
     commandLine: string, device: TDevice | undefined,
   ): CommandInteractionPlan | null {

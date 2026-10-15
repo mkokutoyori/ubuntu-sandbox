@@ -48,7 +48,7 @@ import type {
 } from './ISshServerContext';
 import { parseRekeyLimit } from '../transport/RekeyLimit';
 import { sshdAlgorithmPreferences } from './SshdAlgorithmDirectives';
-import { rsaHostKeysFor } from './SshdRsaHostKey';
+import { configuredHostKeyPaths, hostKeyFromFile, provisionHostKeyFiles, type HostKeyFileAccess } from './SshdHostKeyFiles';
 import {
   findAdmittedKey, permitOpenAllows, sshWildcardMatches,
   type AuthorizedKey, type AuthorizedKeyOptions, type KeySource,
@@ -80,7 +80,9 @@ const DEFAULT_FAIL2BAN_JAIL_LOCAL =
   '[sshd]\nenabled = true\nmaxretry = 5\nbantime = 300\nfindtime = 60\n';
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
-const RSA_HOST_KEY_PATH = '/etc/ssh/ssh_host_rsa_key';
+const DEFAULT_HOST_KEY_PATHS = [
+  '/etc/ssh/ssh_host_rsa_key', '/etc/ssh/ssh_host_ecdsa_key', '/etc/ssh/ssh_host_ed25519_key',
+];
 const ETC_SSH_DIR = '/etc/ssh';
 const SSHD_CONFIG_DROP_IN_DIR = '/etc/ssh/sshd_config.d';
 
@@ -379,6 +381,14 @@ export class LinuxSshServerContext implements ISshServerContext {
     const groups = this.userManager.getUserGroups(user.username).map((g) => g.name);
     const view = this.effectiveSshdServerConfig().effectiveFor({ user: user.username, groups, address: clientIp });
     return view.forceCommand ?? keyOptions?.command ?? null;
+  }
+
+  loginShellRefusal(user: SshUserContext): { readonly output: string; readonly exitCode: number } | null {
+    const shell = this.userManager.getUser(user.username)?.shell ?? '/bin/bash';
+    const program = shell.slice(shell.lastIndexOf('/') + 1);
+    if (program === 'nologin') return { output: 'This account is currently not available.\n', exitCode: 1 };
+    if (program === 'false') return { output: '', exitCode: 1 };
+    return null;
   }
 
   rootMayLogIn(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean {
@@ -811,36 +821,32 @@ export class LinuxSshServerContext implements ISshServerContext {
     return { ...defaults, ...values };
   }
 
-  additionalHostKeys(): SshHostKey[] {
-    return rsaHostKeysFor(this.rawConfig, hostnameOf(this.hostnameSource), {
+  private hostKeyFiles(): HostKeyFileAccess {
+    return {
+      exists: (path) => this.vfs.exists(path),
       read: (path) => this.vfs.readFile(path),
-      write: (path, content, privateKey) => {
+      write: (path, content, secret) => {
         this.vfs.writeFile(path, content, 0, 0, 0o022);
-        this.vfs.chmod(path, privateKey ? 0o600 : 0o644);
+        this.vfs.chmod(path, secret ? 0o600 : 0o644);
       },
-    }, RSA_HOST_KEY_PATH);
+      writeDeferred: (path, produce, secret, declaredSize) => {
+        this.vfs.createDeferredFileAt(path, produce, secret ? 0o600 : 0o644, 0, 0, declaredSize);
+      },
+    };
+  }
+
+  additionalHostKeys(): SshHostKey[] {
+    const paths = configuredHostKeyPaths(this.rawConfig, DEFAULT_HOST_KEY_PATHS);
+    return paths
+      .filter((path) => path !== HOST_KEY_PATH)
+      .flatMap((path) => hostKeyFromFile(this.hostKeyFiles(), path) ?? []);
   }
 
   private loadOrGenerateHostKey(): SshHostKey {
-    const pub = this.vfs.readFile(HOST_KEY_PUB_PATH);
-    const priv = this.vfs.readFile(HOST_KEY_PATH);
-    if (pub && priv) {
-      const material = pub.trim().split(/\s+/)[1] ?? pub.trim();
-      return SshHostKey.fromFiles(material, priv.trim(), 'ssh-ed25519');
-    }
-    const generated = SshHostKey.generate(hostnameOf(this.hostnameSource));
-    this.vfs.writeFile(
-      HOST_KEY_PUB_PATH,
-      generated.publicKeyLine + '\n',
-      0,
-      0,
-      0o022,
-    );
-    this.vfs.chmod(HOST_KEY_PUB_PATH, 0o644);
-    // Persist a stable opaque private key blob (no real crypto — see C-02).
-    this.vfs.writeFile(HOST_KEY_PATH, generated.privateKeyBlob, 0, 0, 0o022);
-    this.vfs.chmod(HOST_KEY_PATH, 0o600);
-    return generated;
+    provisionHostKeyFiles(this.hostKeyFiles(), ETC_SSH_DIR, '/', hostnameOf(this.hostnameSource));
+    const pub = this.vfs.readFile(HOST_KEY_PUB_PATH) ?? '';
+    const priv = this.vfs.readFile(HOST_KEY_PATH) ?? '';
+    return SshHostKey.fromFiles(pub.trim().split(/\s+/)[1] ?? pub.trim(), priv.trim(), 'ssh-ed25519');
   }
 
   private loadOrGenerateSshdConfig(): SshdConfig {

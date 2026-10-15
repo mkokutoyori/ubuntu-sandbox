@@ -2,7 +2,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import { hostClock } from '../audit/tools/AuditHostClock';
 import type { LastFile, LastHost } from './LastTool';
-import { binaryStringToBytes } from './UtmpxRecord';
+import { binaryStringToBytes } from '@/crypto/encoding';
 
 export function lastHost(executor: LinuxCommandExecutor): LastHost {
   const { vfs, userMgr } = executor;

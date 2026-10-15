@@ -1,3 +1,4 @@
+import { binaryStringToBytes as encodeAscii, bytesToBinaryString as decodeAscii } from '@/crypto/encoding';
 export const NS_HEADER_SIZE = 8;
 
 export enum NsPacketType {
@@ -97,17 +98,7 @@ export type NsPacket =
   | { readonly type: NsPacketType.Resend }
   | { readonly type: NsPacketType.Marker; readonly body: Uint8Array };
 
-export function encodeAscii(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
 
-export function decodeAscii(bytes: Uint8Array): string {
-  let out = '';
-  for (const byte of bytes) out += String.fromCharCode(byte);
-  return out;
-}
 
 function frame(type: NsPacketType, body: Uint8Array, flags = 0): Uint8Array {
   const total = NS_HEADER_SIZE + body.length;

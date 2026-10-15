@@ -5,6 +5,7 @@
  * crypto maps, dynamic maps, and SA databases.
  */
 
+import type { IPv4Packet } from '../core/types';
 // ─── SPD (Security Policy Database) — RFC 4301 §4.4.1 ───────────────
 
 /**
@@ -14,6 +15,11 @@
  *   BYPASS  — allow in cleartext (e.g. IKE, OSPF, ICMP)
  *   DISCARD — silently drop
  */
+export interface IkeRsaProvider {
+  privateKey(): import('@/crypto/rsa').RsaPrivateKey | null;
+  peerPublicKey(address: string, hostnames: readonly string[]): import('@/crypto/rsa').RsaPublicKey | null;
+}
+
 export type DfBitPolicy = 'copy' | 'set' | 'clear';
 export type FragmentationPoint = 'before-encryption' | 'after-encryption';
 export type SPDAction = 'PROTECT' | 'BYPASS' | 'DISCARD';
@@ -92,6 +98,17 @@ export interface CryptoMapEntry {
   acceptedPeerIdentities?: readonly string[];
   requirePeerIdentity?: boolean;
   trafficSelectors?: SATrafficSelector;
+  identityName?: string;
+  managedBy?: 'ezvpn';
+  presharedKey?: string;
+  matcher?: (packet: IPv4Packet) => boolean;
+}
+
+export interface CryptoIdentityList {
+  readonly name: string;
+  description?: string;
+  fqdn?: string;
+  dn: string[];
 }
 
 // ─── IKEv1 keyring + ISAKMP profile (crypto keyring / crypto isakmp profile) ──
@@ -115,6 +132,7 @@ export interface ISAKMPProfile {
 
 export interface DynamicCryptoMapEntry {
   seq: number;
+  identityName?: string;
   transformSets: string[];
   aclName?: string;
   pfsGroup?: string;
@@ -277,7 +295,8 @@ export interface IkeOfferMessage {
   lifetimeKB: number;
   ipsecSpiIn: number;
   natTHint: boolean;
-  authMode?: 'psk' | 'x509';
+  authMode?: 'psk' | 'x509' | 'rsa-encr';
+  rsaNonce?: string;
   certPayload?: X509CertPayload;
   keyExchange?: IkeKeyExchangePayload;
   trafficSelectors?: SATrafficSelector;
@@ -295,6 +314,22 @@ export interface IkeConfigReply {
   readonly netmask: string;
   readonly splitInclude?: readonly string[];
   readonly dnsServers?: readonly string[];
+  readonly winsServers?: readonly string[];
+  readonly domain?: string;
+  readonly banner?: string;
+  readonly configurationUrl?: string;
+  readonly configurationVersion?: number;
+  readonly backupGateways?: readonly string[];
+  readonly includeLocalLan?: boolean;
+  readonly savePassword?: boolean;
+  readonly browserProxy?: BrowserProxySettings;
+}
+
+export interface BrowserProxySettings {
+  mode: 'auto-detect' | 'none' | 'server';
+  server?: string;
+  exceptionList?: string;
+  bypassLocal?: boolean;
 }
 
 /**
@@ -317,6 +352,7 @@ export interface IkeAcceptMessage {
   configRefused?: string;
   responderSpi: string;
   pskProof: string;
+  rsaNonce?: string;
   certPayload?: X509CertPayload;
   chosenPolicy?: IkePolicyProposal;
   chosenIkev2?: IkeV2Chosen;
@@ -343,8 +379,13 @@ export interface IkeRekeyMessage {
   step: 'rekey';
 }
 
+export interface IkeProcessingMessage {
+  type: 'ike';
+  step: 'processing';
+}
+
 export type IkeMessage =
-  | IkeOfferMessage | IkeAcceptMessage | IkeRejectMessage | IkeRekeyMessage;
+  | IkeOfferMessage | IkeAcceptMessage | IkeRejectMessage | IkeRekeyMessage | IkeProcessingMessage;
 
 export interface GdoiGroupSaInstall {
   type: 'gdoi';
@@ -398,7 +439,7 @@ export function isIkeMessage(p: unknown): p is IkeMessage {
   if (!p || typeof p !== 'object') return false;
   const c = p as { type?: unknown; step?: unknown };
   return c.type === 'ike'
-    && (c.step === 'offer' || c.step === 'accept' || c.step === 'reject' || c.step === 'rekey');
+    && (c.step === 'offer' || c.step === 'accept' || c.step === 'reject' || c.step === 'rekey' || c.step === 'processing');
 }
 
 export interface IKEv2_SA {

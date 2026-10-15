@@ -12,6 +12,7 @@ import { decodeDnsMessage } from '../../../dns/wire/DnsMessageCodec';
 import { unframeDnsMessage } from '../../../dns/transport/DnsStreamFraming';
 import { decodeRecords } from '../../../http/https/TlsRecordWire';
 import { decodeMessages } from '../../../tls/messages';
+import { binaryStringToBytes } from '@/crypto/encoding';
 
 export const EICAR_SIGNATURE =
   'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
@@ -345,11 +346,6 @@ export function inspectTls(
   return readSni(flow);
 }
 
-function binaryStringToBytes(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let index = 0; index < text.length; index++) out[index] = text.charCodeAt(index) & 0xff;
-  return out;
-}
 
 function actionForProtocol(
   protocol: InspectedProtocol, profile: AntivirusProfile,

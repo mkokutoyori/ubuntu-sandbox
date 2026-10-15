@@ -27,6 +27,7 @@ import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
+import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { isOk } from '@/network/protocols/ssh/Result';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
@@ -95,7 +96,7 @@ export interface WireSshLoginRequest {
    * Reactive IO the auth exchange prompts through, for terminals that
    * let the SSH layer raise its own challenge.
    */
-  readonly io: QueuedTerminalIO;
+  readonly io: ITerminalIO;
   /**
    * Password already collected by the caller's own challenge. Supplied
    * instead of letting the SSH layer prompt — the exchange on the wire
@@ -109,6 +110,9 @@ export interface WireSshLoginRequest {
   readonly authentication?: SshClientAuthentication;
   readonly agent?: AgentPort;
   readonly algorithms?: SshAlgorithmPreferences;
+  readonly knownHosts?: { readonly user: readonly string[]; readonly global: readonly string[] };
+  readonly hashKnownHosts?: boolean;
+  readonly identitiesOnly?: boolean;
 }
 
 export type WireSshLoginOutcome =
@@ -245,7 +249,7 @@ export async function openWireSshConnection(
     localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     credentialless: req.credentialless,
-    ...(req.agent ? { agent: req.agent } : {}),
+    ...(req.agent && req.identitiesOnly !== true ? { agent: req.agent } : {}),
     ...(hostKeyAuthority ? { hostKeyAuthority } : {}),
     clientIdentification: profile?.identification ?? opensshIdentificationFor(req.device.getOSType()),
     ...(profile ? { clientExtInfo: profile.extInfo } : {}),
@@ -263,9 +267,11 @@ export async function openWireSshConnection(
   const algorithms = { ...profile?.algorithms, ...req.algorithms };
   if (Object.keys(algorithms).length > 0) builder.algorithms(algorithms);
   if (req.authentication) builder.authentication(req.authentication);
+  if (req.knownHosts) builder.knownHosts(req.knownHosts);
+  if (req.hashKnownHosts !== undefined) builder.hashKnownHosts(req.hashKnownHosts);
   const identities = req.identityFiles && req.identityFiles.length > 0
     ? req.identityFiles
-    : defaultIdentityFilesFor(req.device, req.localUser);
+    : req.identitiesOnly === true ? [] : defaultIdentityFilesFor(req.device, req.localUser);
   for (const id of identities) builder.addIdentityFile(id);
 
   let result: Awaited<ReturnType<typeof session.connect>> | null = null;

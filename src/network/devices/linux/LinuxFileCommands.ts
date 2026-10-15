@@ -122,6 +122,11 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
     const existed = ctx.vfs.exists(path);
     if (!existed && noCreate) continue;
+    const target = ctx.vfs.path(path, '/', actorOf(ctx));
+    if (ctx.uid !== 0 && (existed ? !target.canWrite() && !target.ownedByActor() : target.parent().exists() && !target.parent().isWritableDir())) {
+      errors.push(`touch: cannot touch '${arg}': Permission denied`);
+      continue;
+    }
     if (!existed) {
       ctx.vfs.touch(path, ctx.uid, ctx.gid, ctx.umask);
       if (!ctx.vfs.exists(path)) {

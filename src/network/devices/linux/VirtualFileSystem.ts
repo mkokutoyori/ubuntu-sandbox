@@ -1,3 +1,5 @@
+import { deferContent } from '@/network/core/DeferredContent';
+import { UBUNTU_2204_SSH_CONFIG } from '@/network/protocols/ssh/client/UbuntuSshClientConfigFile';
 import { bytesToFileText } from '@/crypto/encoding';
 /**
  * Inode-based Virtual File System for Linux device simulation.
@@ -289,6 +291,8 @@ export class VirtualFileSystem {
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
+    this.mkdirp('/etc/ssh/ssh_config.d', 0o755, 0, 0);
+    this.createFileAt('/etc/ssh/ssh_config', UBUNTU_2204_SSH_CONFIG, 0o644, 0, 0);
     this.createFileAt('/etc/crontab',
       'SHELL=/bin/sh\n' +
       'PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n' +
@@ -615,6 +619,14 @@ export class VirtualFileSystem {
   getType(path: string, followSymlinks = true): FileType | null {
     const inode = followSymlinks ? this.resolveInode(path) : this.resolveInode(path, false);
     return inode?.type ?? null;
+  }
+
+  createDeferredFileAt(
+    path: string, produce: () => string, permissions: number, uid: number, gid: number, declaredSize: number,
+  ): INode | null {
+    const inode = this.createFileAt(path, '', permissions, uid, gid);
+    if (inode !== null) deferContent(inode, produce, declaredSize);
+    return inode;
   }
 
   createFileAt(path: string, content: string, permissions: number, uid: number, gid: number): INode | null {

@@ -126,7 +126,25 @@ export interface PamLocalTime {
   readonly abbreviation: string;
 }
 
+export interface PamLastlogRecord {
+  readonly time: number;
+  readonly line: string;
+  readonly host: string;
+}
+
+export interface PamFailedLogins {
+  readonly count: number;
+  readonly last: PamLastlogRecord;
+}
+
+export interface PamLastlogPort {
+  read(user: string): PamLastlogRecord | null;
+  write(user: string, record: PamLastlogRecord): void;
+  failedSince(user: string, sinceSeconds: number): PamFailedLogins | null;
+}
+
 export interface LinuxPamHost extends PamHost {
+  readonly lastlog: PamLastlogPort;
   readonly process: PamProcessState;
   readonly logins: () => readonly PamLoginEntry[];
   readonly auditdRunning: () => boolean;

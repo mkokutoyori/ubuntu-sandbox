@@ -16,6 +16,7 @@ import type { LocalCertificate } from '../vpn/CertificateStore';
 import type { UntrustedCertAction } from './UtmProfiles';
 import { decodeHandshakeMessage } from '../../../tls/messages';
 import { categoryOfDomain } from './UtmProfiles';
+import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 export interface SslExemption {
   readonly type: string;
@@ -103,17 +104,7 @@ export interface DeepInspectionDeps {
 
 const LEAF_VALIDITY_MS = 365 * 24 * 3600 * 1000;
 
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
 
-function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 function flowKey(packet: IPv4Packet): string | null {
   const segment = packet.payload as {

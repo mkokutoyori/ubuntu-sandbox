@@ -33,6 +33,7 @@ import {
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
 import type { Router, TracerouteHop } from '../Router';
+import type { CiscoRouter } from '../CiscoRouter';
 import { IOS_TRACEROUTE_BASE_PORT, iosUnreachableMark } from './cisco/iosTraceroute';
 import { IOS_IPV6_ERROR_INTERVAL } from '../router/IcmpErrorTokenBucket';
 import { displayIosAddress, displayIpv6Address } from './cisco/iosIpv6Text';
@@ -61,6 +62,26 @@ import {
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
+import { inspectSpecs } from './cisco/inspectSpecs';
+import { tcpInterceptSpecs } from './cisco/tcpInterceptSpecs';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
+import { ezvpnSpecs, type EzvpnEngine } from './cisco/ezvpnSpecs';
+import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
+import { cryptoIdentitySpecs, type CryptoIdentityEngine } from './cisco/cryptoIdentitySpecs';
+import { resolveCiscoInterfaceName } from './cli-utils';
+import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
+import { authenticateTrustpoint, authenticateFromTerminal, importRouterCertificate, requestFromTerminal, enrollTrustpoint, requestCrl, clearCrls, renderCrls, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
+import { PkiEnrollmentClient, parseDocumentUrl } from '../router/pki/PkiEnrollmentClient';
+import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
+import { parseBundle, mergeIntoTrustpool } from '../router/pki/TrustpoolBundle';
+import { renderCertificates, renderCertificatesPem, renderTrustpool } from '../router/pki/CertificateDisplay';
+import type { PkiTrustpoint } from '../router/security/CiscoSecurityConfig';
+import { exportTrustpointPem, exportTrustpointPkcs12, parseTrustpointPem, parseTrustpointPkcs12, installTrustpointPem, passphraseProblem, type PemImport } from '../router/pki/TrustpointPem';
+import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
+import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
+import type { TftpEndpoint } from '@/network/tftp/types';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -287,6 +308,13 @@ const ROUTER_SHOW_ARGUMENTS: Readonly<Record<string, string>> = {
   'show ip rip database': 'Network prefix',
 };
 
+function pemIsComplete(lines: readonly string[]): boolean {
+  const certificates = lines.filter((entry) => entry.includes('-----END CERTIFICATE-----')).length;
+  const keyStarted = lines.some((entry) => entry.includes('PRIVATE KEY-----') && entry.includes('BEGIN'));
+  const keyEnded = lines.some((entry) => entry.includes('PRIVATE KEY-----') && entry.includes('END'));
+  return keyStarted ? keyEnded && certificates >= 2 : certificates >= 1;
+}
+
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   versionText(): string {
     return Show.showVersion(this.d(), this.getChassisProfile(),
@@ -469,6 +497,38 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...mapSpecs(() => this.mapHost()),
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
+      ...tcpInterceptSpecs(() => ({ security: () => getSecurityConfig(this.d()) })),
+      ...pkiSpecs(() => this.pkiHost()),
+      ...cryptoIdentitySpecs(() => ({
+        engine: () => (this.d() as unknown as { _getOrCreateIPSecEngine: () => CryptoIdentityEngine })._getOrCreateIPSecEngine(),
+        selectIdentity: (name) => { this.selectedCryptoIdentity = name; },
+        selectedIdentity: () => this.selectedCryptoIdentity,
+        selectedCryptoMapEntry: () => {
+          const map = this.getSelectedCryptoMap();
+          const seq = this.getSelectedCryptoMapSeq();
+          return map === null || seq === null ? null : { map, seq, dynamic: this.getSelectedCryptoMapIsDynamic() };
+        },
+      })),
+      ...ezvpnClientSpecs(() => ({
+        client: () => (this.d() as unknown as { _getOrCreateIPSecEngine: () => { ezvpnClient: EzvpnClient } })._getOrCreateIPSecEngine().ezvpnClient,
+        selectedInterfaces: () => this.selectedPortsForConfigIf(),
+        selectTunnel: (name) => { this.selectedEzvpnTunnel = name; },
+        selectedTunnel: () => this.selectedEzvpnTunnel,
+        defer: (work) => { this._pendingAsync = work; },
+      })),
+      ...ezvpnSpecs(() => ({
+        engine: () => (this.d() as unknown as { _getOrCreateIPSecEngine: () => EzvpnEngine })._getOrCreateIPSecEngine(),
+        selectCryptoMap: (tag, seq) => { this.setSelectedCryptoMap(tag); this.setSelectedCryptoMapSeq(seq); this.setSelectedCryptoMapIsDynamic(false); },
+        selectGroup: (name) => { this.selectedIsakmpGroup = name; },
+        selectedGroup: () => this.selectedIsakmpGroup,
+        selectBrowserProxy: (name) => { this.selectedBrowserProxy = name; },
+        selectedBrowserProxy: () => this.selectedBrowserProxy,
+        resolveInterface: (text) => resolveCiscoInterfaceName(this.d().getPortNames(), text),
+      })),
+      ...inspectSpecs(() => ({
+        security: () => getSecurityConfig(this.d()),
+        selectedInterfaces: () => this.selectedPortsForConfigIf(),
+      })),
       ...dhcpClientFamily(),
       ...arpTimeoutFamily(),
       ...icmpRateLimitFamily(() => ({
@@ -636,41 +696,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
-      ...this.pkiSpecs(),
     ];
-  }
-
-  /**
-   * `crypto pki {trustpoint|authenticate|enroll|import} <nom>`.
-   *
-   * Les quatre prennent le NOM d'un point de confiance, que la place
-   * libre de l'adaptateur laissait deviner ; `import` en prend un de
-   * plus, le format du certificat.
-   */
-  private pkiSpecs(): CommandSpec[] {
-    const point: ArgumentSpec = {
-      name: 'nom', type: 'WORD', description: 'Trustpoint name',
-    };
-    const places: Readonly<Record<string, readonly ArgumentSpec[]>> = {
-      'crypto pki trustpoint': [point],
-      'crypto pki authenticate': [point],
-      'crypto pki enroll': [point],
-      'crypto pki import': [point, {
-        name: 'forme', type: 'REST', literal: 'LINE',
-        description: 'Certificate format and source',
-      }],
-    };
-
-    return specsFromTrieRegistrations(
-      (collector) =>
-        buildSecurityConfigCommands(collector as unknown as CommandTrie, this),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        skip: (path) => places[path.replace(/^no /, '')] === undefined,
-        argumentFor: (path) => places[path.replace(/^no /, '')],
-      },
-    );
   }
 
   /*
@@ -1470,6 +1496,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configTacacsServerTrie = new CommandTrie();
   private configAaaGroupTrie = new CommandTrie();
   private configCaTrustpointTrie = new CommandTrie();
+  private configCaTrustpoolTrie = new CommandTrie();
   private configAppletTrie = new CommandTrie();
   private configFlowExporterTrie = new CommandTrie();
   private configFlowRecordTrie = new CommandTrie();
@@ -1498,6 +1525,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedTacacsServer: string | null = null;
   private selectedAaaGroup: string | null = null;
   private selectedPkiTrustpoint: string | null = null;
+  private selectedPkiServer: string | null = null;
+  private selectedIsakmpGroup: string | null = null;
+  private selectedEzvpnTunnel: string | null = null;
+  private selectedBrowserProxy: string | null = null;
+  private selectedCryptoIdentity: string | null = null;
+  private configCryptoIdentityTrie = new CommandTrie();
+  private configBrowserProxyTrie = new CommandTrie();
+  private configCryptoEzvpnTrie = new CommandTrie();
+  private configIsakmpGroupTrie = new CommandTrie();
+  private configCaServerTrie = new CommandTrie();
   private selectedApplet: string | null = null;
   private selectedFlowExporter: string | null = null;
   private selectedFlowRecord: string | null = null;
@@ -1605,6 +1642,283 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setTacacsServer(n: string | null): void { this.selectedTacacsServer = n; }
   getAaaGroup(): string | null { return this.selectedAaaGroup; }
   setAaaGroup(n: string | null): void { this.selectedAaaGroup = n; }
+  private enrollmentHostFor(device: CiscoRouter): TrustpointEnrollmentHost {
+    const router = () => device;
+    return {
+      security: () => getSecurityConfig(router()),
+      client: () => new PkiEnrollmentClient({
+        tcp: () => router().getTcpStack(),
+        resolve: (name) => router().hostsTable.resolve(name),
+      }),
+      hostname: () => router()._getHostnameInternal(),
+      install: (tp) => {
+        if (!tp.caCert || !tp.localCert || !tp.localKey) return;
+        router().installIkeCertAuth({
+          localCert: tp.localCert, localKey: tp.localKey, trustAnchors: getSecurityConfig(router()).trustAnchorsFor(tp),
+          crls: tp.crl ? [tp.crl] : [],
+          revocationCheck: mapRevocationCheck(tp.revocationCheck),
+        });
+      },
+      now: () => simulationNowMs(),
+      after: (ms, fn) => router().scheduleAfter(ms, fn),
+      cancel: (handle) => router().cancelScheduled(handle),
+    };
+  }
+
+  private pkiHost(): PkiHost {
+    const device = this.d() as CiscoRouter;
+    const router = () => device;
+    const enrollment = this.enrollmentHostFor(device);
+    return {
+      security: () => getSecurityConfig(router()),
+      authenticate: (name) => { this._pendingAsync = authenticateTrustpoint(enrollment, name); return ''; },
+      enroll: (name) => {
+        if (getSecurityConfig(router()).pkiTrustpoints.get(name)?.source === 'terminal') return requestFromTerminal(enrollment, name);
+        this._pendingAsync = enrollTrustpoint(enrollment, name);
+        return '';
+      },
+      requestCrl: (name) => { this._pendingAsync = requestCrl(enrollment, name); return ''; },
+      clearCrls: () => clearCrls(enrollment),
+      renderCertificates: (name, verbose) => {
+        const found = this.trustpointsNamed(router(), name);
+        return typeof found === 'string' ? found : renderCertificates(found, verbose) || 'No PKI certificates installed';
+      },
+      renderCertificatesPem: (name) => {
+        const found = this.trustpointsNamed(router(), name);
+        return typeof found === 'string' ? found : renderCertificatesPem(found);
+      },
+      renderCrls: () => renderCrls(enrollment),
+      selectTrustpoint: (name) => { this.selectedPkiTrustpoint = name; },
+      removeTrustpoint: (name) => {
+        const security = getSecurityConfig(router());
+        if (security.pkiTrustpoints.get(name)?.localCert) router().clearIkeCertAuth();
+        security.pkiTrustpoints.delete(name);
+      },
+      exportPem: (name, cipher, phrase, destination) => {
+        const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!trustpoint) return `% Trustpoint ${name} not configured`;
+        const exported = exportTrustpointPem(trustpoint, cipher, phrase);
+        if ('error' in exported) return exported.error;
+        if (destination === null) return exported.text;
+        this._pendingAsync = this.writeUrl(destination, exported.text);
+        return '';
+      },
+      exportPkcs12: (name, destination, phrase) => {
+        const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!trustpoint) return `% Trustpoint ${name} not configured`;
+        const exported = exportTrustpointPkcs12(trustpoint, phrase);
+        if ('error' in exported) return exported.error;
+        this._pendingAsync = this.writeUrl(destination, bytesToBinaryString(exported.bytes));
+        return '';
+      },
+      importPkcs12: (name, source, phrase) => {
+        const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!trustpoint) return `% Trustpoint ${name} not configured`;
+        const problem = passphraseProblem(phrase);
+        if (problem) return problem;
+        this._pendingAsync = this.readUrl(source).then((read) => {
+          if ('error' in read) return read.error;
+          const imported = parseTrustpointPkcs12(binaryStringToBytes(read.text), phrase);
+          return this.installImported(router(), name, imported, false, '% PKCS12 import succeeded.');
+        });
+        return '';
+      },
+      importPem: (name, source, phrase, exportable) => {
+        const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!trustpoint) return `% Trustpoint ${name} not configured`;
+        const problem = phrase === null ? null : passphraseProblem(phrase);
+        if (problem) return problem;
+        this._pendingAsync = this.readUrl(source).then((read) =>
+          'error' in read ? read.error : this.importPemText(router(), name, read.text, phrase, exportable));
+        return '';
+      },
+      importTrustpool: (source, clean) => {
+        const target = router();
+        if (source === null) {
+          getSecurityConfig(target).trustpool.certificates = [];
+          this.reinstallIdentities(target);
+          return '';
+        }
+        this._pendingAsync = this.readUrl(source).then((read) =>
+          'error' in read ? read.error : this.importBundleText(target, read.text, clean));
+        return '';
+      },
+      setCabundleUrl: (url) => {
+        const target = router();
+        getSecurityConfig(target).trustpool.cabundleUrl = url ?? undefined;
+        if (url === null) return '';
+        this._pendingAsync = this.readUrl(url).then((read) =>
+          'error' in read ? read.error : this.importBundleText(target, read.text, false));
+        return '';
+      },
+      setChainValidation: (enabled) => {
+        getSecurityConfig(router()).trustpool.chainValidation = enabled;
+        this.reinstallIdentities(router());
+      },
+      resetTrustpoolPolicy: () => {
+        const pool = getSecurityConfig(router()).trustpool;
+        pool.cabundleUrl = undefined;
+        pool.chainValidation = false;
+        this.reinstallIdentities(router());
+      },
+      renderTrustpool: (policy) => renderTrustpool(getSecurityConfig(router()).trustpool, policy),
+      selectServer: (name) => { this.selectedPkiServer = name; },
+      selectedServer: () => this.selectedPkiServer,
+    };
+  }
+
+  protected override pkiPastePlan(
+    kind: 'ca' | 'certificate' | 'trustpool' | 'trustpool-clean', trustpoint: string, device: CiscoRouter | undefined,
+  ): CommandInteractionPlan | null {
+    if (!device) return null;
+    if (kind === 'trustpool' || kind === 'trustpool-clean') {
+      return {
+        steps: [
+          { kind: 'output', lines: ['Enter PEM-formatted CA certificates.', 'End with a blank line or the word "quit" on a line by itself'] },
+          {
+            kind: 'collect', prompt: '', storeAs: 'pasted_certificate',
+            accept: (line, accumulated) => {
+              const done = line.trim() === 'quit' || (line.trim() === '' && accumulated.some((entry) => entry.includes('-----END')));
+              return done ? { done: true, body: accumulated.join('\n') } : { done: false };
+            },
+          },
+          {
+            kind: 'run',
+            run: async (rt) => { rt.output(this.importBundleText(device, rt.values.get('pasted_certificate') ?? '', kind === 'trustpool-clean')); },
+          },
+        ],
+      };
+    }
+    const known = getSecurityConfig(device).pkiTrustpoints.get(trustpoint);
+    if (!known) return null;
+    if (kind === 'ca' && known.source !== 'terminal') return null;
+    const enrollment = this.enrollmentHostFor(device);
+    return {
+      steps: [
+        { kind: 'output', lines: [`Enter the base 64 encoded ${kind === 'ca' ? 'CA' : ''} certificate.`.replace('  ', ' '), 'End with a blank line or the word "quit" on a line by itself'] },
+        {
+          kind: 'collect', prompt: '', storeAs: 'pasted_certificate',
+          accept: (line, accumulated) => {
+            const done = line.trim() === 'quit' || (line.trim() === '' && accumulated.some((entry) => entry.includes('-----END')));
+            return done ? { done: true, body: accumulated.join('\n') } : { done: false };
+          },
+        },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            const text = rt.values.get('pasted_certificate') ?? '';
+            rt.output(kind === 'ca' ? authenticateFromTerminal(enrollment, trustpoint, text) : importRouterCertificate(enrollment, trustpoint, text));
+          },
+        },
+      ],
+    };
+  }
+
+  protected override pemImportPlan(
+    trustpoint: string, phrase: string | null, exportable: boolean, device: CiscoRouter | undefined,
+  ): CommandInteractionPlan | null {
+    if (!device) return null;
+    if (!getSecurityConfig(device).pkiTrustpoints.has(trustpoint)) return { steps: [{ kind: 'output', lines: [`% Trustpoint ${trustpoint} not configured`] }] };
+    const problem = phrase === null ? null : passphraseProblem(phrase);
+    if (problem) return { steps: [{ kind: 'output', lines: [problem] }] };
+    return {
+      steps: [
+        { kind: 'output', lines: ['% Enter PEM-formatted CA certificate, encrypted private key and router certificate.', '% End with a blank line or the word "quit" on a line by itself.'] },
+        {
+          kind: 'collect', prompt: '', storeAs: 'pem_text',
+          accept: (line, accumulated) => {
+            const done = line.trim() === 'quit' || (line.trim() === '' && pemIsComplete(accumulated));
+            return done ? { done: true, body: accumulated.join('\n') } : { done: false };
+          },
+        },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            rt.output(this.importPemText(device, trustpoint, rt.values.get('pem_text') ?? '', phrase, exportable));
+          },
+        },
+      ],
+    };
+  }
+
+  importBundleText(device: CiscoRouter, text: string, clean: boolean): string {
+    const parsed = parseBundle(text);
+    if ('error' in parsed) return parsed.error;
+    mergeIntoTrustpool(getSecurityConfig(device).trustpool, parsed.certificates, clean);
+    this.reinstallIdentities(device);
+    return '% PKI Trustpool import succeeded.';
+  }
+
+  private reinstallIdentities(device: CiscoRouter): void {
+    const enrollment = this.enrollmentHostFor(device);
+    for (const trustpoint of getSecurityConfig(device).pkiTrustpoints.values()) {
+      if (trustpoint.localCert && trustpoint.localKey && trustpoint.caCert) enrollment.install(trustpoint);
+    }
+  }
+
+  private trustpointsNamed(device: CiscoRouter, name: string | null): PkiTrustpoint[] | string {
+    const all = getSecurityConfig(device).pkiTrustpoints;
+    if (name === null) return [...all.values()];
+    const one = all.get(name);
+    return one ? [one] : `% Trustpoint ${name} not configured`;
+  }
+
+  importPemText(device: CiscoRouter, name: string, text: string, phrase: string | null, exportable: boolean): string {
+    return this.installImported(device, name, parseTrustpointPem(text, phrase), exportable, '% PEM files import succeeded.');
+  }
+
+  private installImported(device: CiscoRouter, name: string, imported: PemImport, exportable: boolean, success: string): string {
+    const trustpoint = getSecurityConfig(device).pkiTrustpoints.get(name);
+    if (!trustpoint) return `% Trustpoint ${name} not configured`;
+    if (imported.error) return imported.error;
+    installTrustpointPem(trustpoint, imported, exportable);
+    if (trustpoint.caCert && trustpoint.localCert && trustpoint.localKey) {
+      device.installIkeCertAuth({
+        localCert: trustpoint.localCert, localKey: trustpoint.localKey, trustAnchors: getSecurityConfig(device).trustAnchorsFor(trustpoint),
+        crls: trustpoint.crl ? [trustpoint.crl] : [],
+        revocationCheck: mapRevocationCheck(trustpoint.revocationCheck),
+      });
+      return success;
+    }
+    return '% CA certificate imported.';
+  }
+
+  private async writeUrl(url: string, text: string): Promise<string> {
+    if (/^tftp:/i.test(url)) {
+      const target = parseTftpUrl(url);
+      const endpoint = (this.d() as unknown as { getUdpEndpoint?: () => TftpEndpoint }).getUdpEndpoint?.() ?? null;
+      if (!target) return TFTP_NO_HOST;
+      if (!endpoint) return this.copieReseauIndisponible(url);
+      return tftpPut(endpoint, target, text);
+    }
+    if (/^[a-z]+:\/\//i.test(url) && !/^(flash|nvram|bootflash):/i.test(url)) return this.copieReseauIndisponible(url);
+    if (this.fs().freeBytes() < text.length) return `%Error writing ${url} (No space left on device)`;
+    this.fs().write(url, text);
+    return `% PEM files export succeeded.`;
+  }
+
+  private async readUrl(url: string): Promise<{ text: string } | { error: string }> {
+    if (/^tftp:/i.test(url)) {
+      const target = parseTftpUrl(url);
+      const endpoint = (this.d() as unknown as { getUdpEndpoint?: () => TftpEndpoint }).getUdpEndpoint?.() ?? null;
+      if (!target) return { error: TFTP_NO_HOST };
+      if (!endpoint) return { error: this.copieReseauIndisponible(url) };
+      const got = await tftpGet(endpoint, target);
+      return 'erreur' in got ? { error: got.erreur } : { text: got.texte };
+    }
+    if (/^http:/i.test(url)) {
+      const endpoint = parseDocumentUrl(url);
+      if (!endpoint) return { error: `%Error opening ${url} (invalid URL)` };
+      const device = this.d() as CiscoRouter;
+      const client = new PkiEnrollmentClient({ tcp: () => device.getTcpStack(), resolve: (name) => device.hostsTable.resolve(name) });
+      const reply = await client.getDocument(endpoint);
+      return reply.ok ? { text: reply.body } : { error: `%Error opening ${url} (${reply.error ?? 'no answer'})` };
+    }
+    if (/^[a-z]+:\/\//i.test(url) && !/^(flash|nvram|bootflash):/i.test(url)) return { error: this.copieReseauIndisponible(url) };
+    const text = this.fs().read(url);
+    return text === null ? { error: `%Error opening ${url} (No such file or directory)` } : { text };
+  }
+
   getPkiTrustpoint(): string | null { return this.selectedPkiTrustpoint; }
   setPkiTrustpoint(n: string | null): void { this.selectedPkiTrustpoint = n; }
   getApplet(): string | null { return this.selectedApplet; }
@@ -1993,6 +2307,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-tacacs-server': return this.configTacacsServerTrie;
       case 'config-aaa-group': return this.configAaaGroupTrie;
       case 'config-ca-trustpoint': return this.configCaTrustpointTrie;
+      case 'config-ca-server': return this.configCaServerTrie;
+      case 'config-ca-trustpool': return this.configCaTrustpoolTrie;
+      case 'config-isakmp-group': return this.configIsakmpGroupTrie;
+      case 'config-crypto-ezvpn': return this.configCryptoEzvpnTrie;
+      case 'config-browser-proxy': return this.configBrowserProxyTrie;
+      case 'config-crypto-identity': return this.configCryptoIdentityTrie;
       case 'config-applet': return this.configAppletTrie;
       case 'config-flow-exporter': return this.configFlowExporterTrie;
       case 'config-flow-record': return this.configFlowRecordTrie;
@@ -2061,6 +2381,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedTacacsServer') this.selectedTacacsServer = null;
       if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
       if (f === 'selectedPkiTrustpoint') this.selectedPkiTrustpoint = null;
+      if (f === 'selectedPkiServer') this.selectedPkiServer = null;
+      if (f === 'selectedIsakmpGroup') this.selectedIsakmpGroup = null;
+      if (f === 'selectedEzvpnTunnel') this.selectedEzvpnTunnel = null;
+      if (f === 'selectedBrowserProxy') this.selectedBrowserProxy = null;
+      if (f === 'selectedCryptoIdentity') this.selectedCryptoIdentity = null;
       if (f === 'selectedApplet') this.selectedApplet = null;
       if (f === 'selectedFlowExporter') this.selectedFlowExporter = null;
       if (f === 'selectedFlowRecord') this.selectedFlowRecord = null;

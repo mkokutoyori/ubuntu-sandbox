@@ -1787,6 +1787,7 @@ function ipInterfaceBlock(router: Router, name: string, port: Port): string {
     [k: symbol]: {
       interfaceFlags?: Map<string, {
         noRedirects?: boolean; noUnreachables?: boolean; maskReply?: boolean;
+        urpf?: { mode: 'strict' | 'loose' | null }; urpfStats?: { drops: number; suppressed: number };
       }>;
     } | undefined;
   })[Symbol.for('CiscoSecurityConfig')]?.interfaceFlags?.get(name) ?? {};
@@ -1826,6 +1827,8 @@ export function helperAddressLines(cibles: readonly string[]): string[] {
 }
 
 export interface IpInterfaceControls {
+  urpf?: { mode: 'strict' | 'loose' | null };
+  urpfStats?: { drops: number; suppressed: number };
   directedBroadcast?: boolean;
   proxyArp?: boolean;
   splitHorizon?: boolean;
@@ -1849,6 +1852,11 @@ export function ipInterfaceControlLines(
     `  ICMP mask replies are ${controls.maskReply ? 'always sent' : 'never sent'}`,
     '  IP fast switching is enabled',
     '  IP CEF switching is enabled',
+    ...(controls.urpf?.mode ? [
+      `  IP verify source reachable-via ${controls.urpf.mode === 'loose' ? 'ANY' : 'RX'}`,
+      `   ${controls.urpfStats?.drops ?? 0} verification drops`,
+      `   ${controls.urpfStats?.suppressed ?? 0} suppressed verification drops`,
+    ] : []),
   ];
 }
 
@@ -1858,7 +1866,8 @@ export function ipInterfaceBlockFor(
   ports: ReadonlyMap<string, Port>,
   natTag = '',
   splitHorizon = true,
-  icmp: { noRedirects?: boolean; noUnreachables?: boolean; maskReply?: boolean } = {},
+  icmp: { noRedirects?: boolean; noUnreachables?: boolean; maskReply?: boolean;
+    urpf?: { mode: 'strict' | 'loose' | null }; urpfStats?: { drops: number; suppressed: number } } = {},
   acl: InterfaceAclRefs = {},
   helpers: readonly string[] = [],
 ): string {
@@ -1883,6 +1892,8 @@ export function ipInterfaceBlockFor(
     noRedirects: icmp.noRedirects,
     noUnreachables: icmp.noUnreachables,
     maskReply: icmp.maskReply,
+    urpf: icmp.urpf,
+    urpfStats: icmp.urpfStats,
   }, acl));
   return lines.join('\n');
 }

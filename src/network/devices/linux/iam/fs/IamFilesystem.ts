@@ -23,7 +23,7 @@ import type { LoginDefs } from './LoginDefs';
 import type { UseraddDefaults } from './UseraddDefaults';
 import type { PasswordPolicy } from '../policy/PasswordPolicy';
 import type { PasswordQualityPolicy } from '../policy/PasswordQualityPolicy';
-import { UBUNTU_PAM_FILES } from '../../pam/UbuntuPamFiles';
+import { UBUNTU_PAM_FILES, renderUbuntuCommonPassword } from '../../pam/UbuntuPamFiles';
 import { IAM_PATHS, ACCOUNT_DB_BACKUPS } from './IamPaths';
 
 // ─── Skeleton templates (seeded into /etc/skel) ─────────────────────────
@@ -124,11 +124,11 @@ export class IamFilesystem {
     this.writeIfAbsent(IAM_PATHS.pwqualityConf, policy.quality.render(), 0o644);
     this.writeIfAbsent(
       IAM_PATHS.pamCommonPassword,
-      renderCommonPassword(policy.quality),
+      renderUbuntuCommonPassword(policy.quality.retry),
       0o644,
     );
     this.vfs.mkdirp('/etc/security/limits.d', 0o755, 0, 0);
-    this.vfs.mkdirp('/etc/security/access.d', 0o755, 0, 0);
+    this.vfs.mkdirp('/etc/security/namespace.d', 0o755, 0, 0);
     for (const file of UBUNTU_PAM_FILES) this.writeIfAbsent(file.path, file.content, file.mode);
   }
 
@@ -139,7 +139,7 @@ export class IamFilesystem {
   writeQualityConfig(quality: PasswordQualityPolicy): void {
     this.vfs.mkdirp(IAM_PATHS.securityDir, 0o755, 0, 0);
     this.vfs.writeFile(IAM_PATHS.pwqualityConf, quality.render(), 0, 0, 0o022);
-    this.vfs.writeFile(IAM_PATHS.pamCommonPassword, renderCommonPassword(quality), 0, 0, 0o022);
+    this.vfs.writeFile(IAM_PATHS.pamCommonPassword, renderUbuntuCommonPassword(quality.retry), 0, 0, 0o022);
   }
 
   /** Rewrite `/etc/login.defs` after the aging policy changed. */
@@ -226,21 +226,3 @@ function joinLines(lines: string[]): string {
   return lines.length > 0 ? lines.join('\n') + '\n' : '';
 }
 
-/**
- * Render `/etc/pam.d/common-password` — the PAM stack `passwd` walks. The
- * `pam_pwquality` line carries the policy's `retry` count so the file stays
- * coherent with `/etc/security/pwquality.conf`.
- */
-function renderCommonPassword(quality: PasswordQualityPolicy): string {
-  return [
-    '#',
-    '# /etc/pam.d/common-password - password-related modules common to all services',
-    '# Kept coherent with /etc/security/pwquality.conf by the simulator IAM layer.',
-    '#',
-    `password\trequisite\t\t\tpam_pwquality.so retry=${quality.retry}`,
-    'password\t[success=1 default=ignore]\tpam_unix.so obscure use_authtok try_first_pass yescrypt',
-    'password\trequisite\t\t\tpam_deny.so',
-    'password\trequired\t\t\tpam_permit.so',
-    '',
-  ].join('\n');
-}
