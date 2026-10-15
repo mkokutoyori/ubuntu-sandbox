@@ -71,7 +71,7 @@ import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
 import { cryptoIdentitySpecs, type CryptoIdentityEngine } from './cisco/cryptoIdentitySpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
-import { authenticateTrustpoint, enrollTrustpoint, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
+import { authenticateTrustpoint, enrollTrustpoint, requestCrl, clearCrls, renderCrls, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
 import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
 import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
@@ -1640,14 +1640,21 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         if (!tp.caCert || !tp.localCert || !tp.localKey) return;
         router().installIkeCertAuth({
           localCert: tp.localCert, localKey: tp.localKey, trustAnchors: [tp.caCert],
+          crls: tp.crl ? [tp.crl] : [],
           revocationCheck: mapRevocationCheck(tp.revocationCheck),
         });
       },
+      now: () => simulationNowMs(),
+      after: (ms, fn) => router().scheduleAfter(ms, fn),
+      cancel: (handle) => router().cancelScheduled(handle),
     };
     return {
       security: () => getSecurityConfig(router()),
       authenticate: (name) => { this._pendingAsync = authenticateTrustpoint(enrollment, name); return ''; },
       enroll: (name) => { this._pendingAsync = enrollTrustpoint(enrollment, name); return ''; },
+      requestCrl: (name) => { this._pendingAsync = requestCrl(enrollment, name); return ''; },
+      clearCrls: () => clearCrls(enrollment),
+      renderCrls: () => renderCrls(enrollment),
       selectTrustpoint: (name) => { this.selectedPkiTrustpoint = name; },
       importCertificate: (name, form) => {
         const tp = getSecurityConfig(router()).pkiTrustpoints.get(name);

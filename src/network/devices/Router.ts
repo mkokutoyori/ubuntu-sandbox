@@ -6509,6 +6509,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
 
+  scheduleAfter(ms: number, fn: () => void): unknown { return this.getRouterScheduler().setTimeout(fn, ms); }
+
+  cancelScheduled(handle: unknown): void { this.getRouterScheduler().clear(handle as never); }
+
   /** @internal Return IPSec engine (null if not yet configured) */
   _getIPSecEngineInternal(): IPSecEngine | null { return this.ipsecEngine; }
 

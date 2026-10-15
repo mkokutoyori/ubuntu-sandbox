@@ -10,6 +10,9 @@ export interface PkiHost {
   security(): CiscoSecurityConfig;
   authenticate(name: string): string;
   enroll(name: string): string;
+  requestCrl(name: string): string;
+  clearCrls(): void;
+  renderCrls(): string;
   selectTrustpoint(name: string): void;
   importCertificate(name: string, form: string): string;
   selectServer(name: string | null): void;
@@ -86,11 +89,32 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
         run: (_s, args) => host().authenticate(args.trustpoint),
       },
       {
+        id: named('crypto-crl-request'),
+        path: ['crypto', where, 'crl', 'request', TRUSTPOINT],
+        description: 'Request a new certificate revocation list from the certificate authority',
+        modes: CONFIG, minPrivilege: 15,
+        run: (_s, args) => host().requestCrl(args.trustpoint),
+      },
+      {
+        id: named('show-crls'),
+        path: ['show', 'crypto', where, 'crls'],
+        description: 'Display the certificate revocation lists',
+        modes: SHOW, minPrivilege: 1,
+        run: () => host().renderCrls(),
+      },
+      {
         id: named('crypto-enroll'),
         path: ['crypto', where, 'enroll', TRUSTPOINT],
         description: 'Obtain a certificate from the certificate authority',
         modes: CONFIG, minPrivilege: 15,
         run: (_s, args) => host().enroll(args.trustpoint),
+      },
+      {
+        id: named('clear-crls'),
+        path: ['clear', 'crypto', where, 'crls'],
+        description: 'Remove the certificate revocation list database',
+        modes: EXEC, minPrivilege: 15,
+        run: () => { host().clearCrls(); return ''; },
       },
       {
         id: named('crypto-server'),

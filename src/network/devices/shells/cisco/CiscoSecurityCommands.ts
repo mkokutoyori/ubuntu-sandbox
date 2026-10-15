@@ -276,7 +276,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
 export function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
   if (mode === 'ocsp') return 'ocsp';
-  if (mode === 'crl' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') return 'crl';
+  if (mode === 'crl' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') return 'crl-strict';
   return 'none';
 }
 

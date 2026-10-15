@@ -1,6 +1,6 @@
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
-import { csrToPem, pemToCert } from '@/network/pki/pem';
+import { csrToPem, pemToCert, pemToCrl } from '@/network/pki/pem';
 import { encodeCertificate } from '@/network/pki/der/X509Der';
 import { bytesToHex } from '@/crypto/encoding';
 import { md5, sha1 } from '@/crypto/hash';
@@ -12,6 +12,9 @@ export interface TrustpointEnrollmentHost {
   client(): PkiEnrollmentClient;
   hostname(): string;
   install(trustpoint: PkiTrustpoint): void;
+  now(): number;
+  after(ms: number, fn: () => void): unknown;
+  cancel(handle: unknown): void;
 }
 
 interface PendingEnrollment {
@@ -20,6 +23,9 @@ interface PendingEnrollment {
 }
 
 const pending = new WeakMap<PkiTrustpoint, PendingEnrollment>();
+const crlTimers = new WeakMap<PkiTrustpoint, unknown>();
+const usesCrl = (trustpoint: PkiTrustpoint): boolean =>
+  trustpoint.revocationCheck === 'crl' || trustpoint.revocationCheck === 'crl-or-ocsp' || trustpoint.revocationCheck === 'crl-then-ocsp';
 
 export function pendingTransactionOf(trustpoint: PkiTrustpoint): number | null {
   return pending.get(trustpoint)?.transaction ?? null;
@@ -97,5 +103,53 @@ export async function enrollTrustpoint(host: TrustpointEnrollmentHost, name: str
   trustpoint.localCert = certificate;
   trustpoint.localKey = key;
   host.install(trustpoint);
+  if (usesCrl(trustpoint)) await requestCrl(host, name);
   return `${header}% Certificate request sent to Certificate Authority\n% The certificate has been granted by CA!\n% Router Certificate successfully imported`;
+}
+
+export async function requestCrl(host: TrustpointEnrollmentHost, name: string): Promise<string> {
+  const trustpoint = host.security().pkiTrustpoints.get(name);
+  if (!trustpoint) return `% Trustpoint ${name} not configured`;
+  if (!trustpoint.caCert) return `% Trustpoint ${name} is not authenticated — run 'crypto pki authenticate ${name}' first`;
+  const endpoint = endpointOf(trustpoint);
+  if (!endpoint) return `% Trustpoint ${name} has no usable "enrollment url http://..."`;
+  const reply = await host.client().getCrl(endpoint);
+  if (!reply.ok || reply.status !== 'SUCCESS') return `% Error in receiving the CRL from the Certificate Authority${reply.error ? ` (${reply.error})` : ''}`;
+  const crl = pemToCrl(reply.body);
+  if (!crl || !crl.isValidSignature(trustpoint.caCert.publicKey)) return '% The CRL received is not signed by the Certificate Authority';
+  trustpoint.crl = crl;
+  host.install(trustpoint);
+  const previous = crlTimers.get(trustpoint);
+  if (previous !== undefined) host.cancel(previous);
+  crlTimers.set(trustpoint, host.after(Math.max(1000, crl.nextUpdate - host.now()), () => { void requestCrl(host, name); }));
+  return '';
+}
+
+export function clearCrls(host: TrustpointEnrollmentHost): void {
+  for (const trustpoint of host.security().pkiTrustpoints.values()) {
+    trustpoint.crl = undefined;
+    const timer = crlTimers.get(trustpoint);
+    if (timer !== undefined) host.cancel(timer);
+    crlTimers.delete(trustpoint);
+    host.install(trustpoint);
+  }
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function crlDate(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} GMT ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
+}
+
+export function renderCrls(host: TrustpointEnrollmentHost): string {
+  const out: string[] = [];
+  for (const trustpoint of host.security().pkiTrustpoints.values()) {
+    const crl = trustpoint.crl;
+    if (!crl) continue;
+    out.push('CRL Issuer Name:', `    ${crl.issuer}`, `LastUpdate: ${crlDate(crl.thisUpdate)}`, `NextUpdate: ${crlDate(crl.nextUpdate)}`,
+      'Retrieved from CRL Distribution Point:', '** CDP Not Published - Retrieved via SCEP');
+  }
+  return out.join('\n');
 }

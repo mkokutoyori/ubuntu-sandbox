@@ -296,6 +296,8 @@ export interface PkiTrustpoint {
   /** Set by 'crypto pki enroll': this router's own CA-issued cert + private key. */
   localCert?: import('../../../pki/X509Certificate').X509Certificate;
   localKey?: import('../../../pki/PkiKeyPair').PkiPrivateKey;
+  /** The revocation list fetched from the CA by `crypto pki crl request` or at enrollment. */
+  crl?: import('../../../pki/CertificateRevocationList').CertificateRevocationList;
 }
 
 export interface ParameterMapInspect {
