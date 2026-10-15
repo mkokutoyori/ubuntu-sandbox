@@ -128,6 +128,7 @@ export interface ExecChannelOptions {
   readonly environment?: ReadonlyMap<string, string>;
   readonly pty?: { readonly term: string; readonly columns: number; readonly rows: number };
   readonly forwardAgent?: boolean;
+  readonly stdin?: string;
 }
 
 export interface ISshExecChannel extends ISshChannel {

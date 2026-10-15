@@ -60,7 +60,7 @@ function srvVfs(srv: LinuxServer) {
 
 async function deployKey(pc: LinuxPC) {
   await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
-  await pc.executeCommand('ssh-copy-id alice@10.0.0.2');
+  await pc.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
 }
 
 describe('Scénario 2 — bascule clé → mot de passe sur perms incorrectes', () => {
@@ -123,10 +123,11 @@ describe('Scénario 2 — bascule clé → mot de passe sur perms incorrectes', 
     const { pc, srv } = await buildLan();
     await deployKey(pc);
 
+    const beforeLogin = (srvVfs(srv).readFile('/var/log/auth.log') ?? '').length;
     const out = await pc.executeCommand('ssh alice@10.0.0.2 whoami', 'admin\n');
     expect(out).toMatch(/^alice\s*$/m);
 
-    const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
+    const log = (srvVfs(srv).readFile('/var/log/auth.log') ?? '').slice(beforeLogin);
     expect(log).toMatch(/Accepted publickey for alice/);
     expect(log).not.toMatch(/Authentication refused: bad ownership or modes/);
     expect(log).not.toMatch(/Accepted password for alice/);

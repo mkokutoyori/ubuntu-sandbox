@@ -9,7 +9,7 @@
 
 import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
 import type { AgentPort } from '../agent/AgentService';
-import type { ISshAuthContext } from '../auth/ISshAuthMethod';
+import type { ISshAuthContext, AuthMethodType } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
 import type { SshUserContext } from '../SshUserContext';
@@ -39,7 +39,7 @@ export interface SshServerConfig {
 export interface ILinuxShell {
   readonly streamSession?: unknown;
   takeSessionHold?(): number;
-  execute(line: string, onProgress?: (text: string) => void): Promise<{
+  execute(line: string, onProgress?: (text: string) => void, stdin?: string): Promise<{
     stdout: string;
     stderr: string;
     exitCode: number;
@@ -235,6 +235,7 @@ export interface ISshServerContext {
    * SSH_MSG_USERAUTH_BANNER).
    */
   getBanner?(): string | null;
+  bannerFor?(user: string, clientIp: string): string | null;
   serverIdentification?(): string;
   transportPolicy?(): SshTransportPolicy;
   transportEstablished?(clientIp: string, algorithms: NegotiatedAlgorithms): void;
@@ -243,11 +244,14 @@ export interface ISshServerContext {
   accountNames?(): SftpAccountNames;
   rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
+  originalCommandLine?(forced: string, asked: string): string;
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
   loginShellRefusal?(user: SshUserContext): { readonly output: string; readonly exitCode: number } | null;
   subsystemAdmitted?(name: string, user: SshUserContext): boolean;
   readonly maxAuthTriesDisconnect?: string;
   maxAuthTriesFor?(user: string, clientIp: string): number;
+  authMethodEnabled?(user: string, clientIp: string, method: 'password' | 'publickey' | 'keyboard-interactive'): boolean;
+  availableMethodsFor?(user: string, clientIp: string): readonly AuthMethodType[];
 }
 
 export interface DirectTcpipRequest {

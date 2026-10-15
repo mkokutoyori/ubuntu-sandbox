@@ -42,6 +42,7 @@ import { ldapsearchCommand } from './net/Ldapsearch';
 import { kdestroyCommand, kinitCommand, klistCommand } from './net/Kinit';
 import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
+import { sshCopyIdCommand } from './net/SshCopyId';
 import { rsyncCommand } from './net/Rsync';
 import { sshCommand } from './net/Ssh';
 import { telnetCommand } from './net/Telnet';
@@ -191,6 +192,7 @@ export {
   kdestroyCommand,
   curlCommand,
   scpCommand,
+  sshCopyIdCommand,
   rsyncCommand,
   sshCommand,
   telnetCommand,
@@ -360,6 +362,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   kdestroyCommand,
   curlCommand,
   scpCommand,
+  sshCopyIdCommand,
   rsyncCommand,
   sshCommand,
   telnetCommand,

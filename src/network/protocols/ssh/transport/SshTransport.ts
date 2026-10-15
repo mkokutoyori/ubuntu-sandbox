@@ -106,6 +106,14 @@ export type SshTransportOutcome = SshTransportEstablished | SshTransportFailure;
 
 type Phase = 'kexinit' | 'kex' | 'newkeys' | 'service' | 'open' | 'closed';
 
+export function eagerServerHostKey(publicKeyBlob: Uint8Array, privateKey: SshPrivateKey): SshServerHostKey {
+  const parsed = sshPublicKeyFromBlob(publicKeyBlob);
+  return {
+    algorithms: parsed === null ? [] : hostKeySignatureAlgorithmsFor(parsed),
+    load: () => ({ publicKeyBlob, privateKey }),
+  };
+}
+
 function hostKeyAlgorithmsOf(key: SshServerHostKey): readonly string[] {
   return key.algorithms;
 }

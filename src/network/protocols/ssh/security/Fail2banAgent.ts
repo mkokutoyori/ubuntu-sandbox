@@ -1,31 +1,21 @@
 /**
- * Fail2banAgent — reactive bridge between SshAuthThrottler-emitted
- * `auth_throttled` events and the host's iptables / fail2ban log.
+ * Fail2banAgent — the sshd jail of fail2ban, fed by the `auth_failure`
+ * events the SSH server puts on its bus (the same lines the filter would
+ * read in /var/log/auth.log).
  *
- * Mirrors the classic Fail2ban+sshd jail (`/etc/fail2ban/jail.d/sshd.conf`
- * with `action = iptables[name=SSH, port=ssh, protocol=tcp]`) :
- *
- *   1. On first use, the jail creates its own dedicated chain
- *      (`f2b-sshd`) and jumps INPUT traffic for the jailed port into
- *      it — exactly like real fail2ban's `actionstart`, so
- *      `iptables -L f2b-sshd -n -v` shows the jail's own rule set
- *      separately from the rest of INPUT.
- *   2. Each `auth_throttled` event inserts a REJECT rule for the
- *      offending IP at the top of that chain (`actionban`).
- *   3. The agent writes `/var/log/fail2ban.log` in Fail2ban's wire
- *      format: `… fail2ban.actions [PID]: NOTICE  [sshd] Ban <ip>`.
- *   4. When `sweepExpired(now)` is called and a ban's `until`
- *      timestamp has passed, or `forceUnban(ip)` is called directly
- *      (`fail2ban-client set sshd unbanip`), the corresponding rule is
- *      removed from the chain and a matching `Unban <ip>` line is
- *      appended.
- *
- * Time is injected via `clock` so tests can fast-forward
- * deterministically — production code wires it to the real
- * SshAuthThrottler clock (Date.now by default).
+ *   1. Each failure is one `Found <ip>` line in /var/log/fail2ban.log.
+ *   2. `maxretry` failures from one address inside `findtime` ban it:
+ *      the jail creates its chain (`f2b-sshd`) on first use, jumps INPUT
+ *      traffic for the jailed port into it, and inserts a REJECT rule for
+ *      the address, so the refusal is the firewall's — nothing in sshd.
+ *   3. `bantime` seconds later the rule is removed and an `Unban` line
+ *      written; `forceUnban(ip)` is `fail2ban-client set sshd unbanip`.
+ *   4. A jail whose service is not running sees nothing: no `Found`, no ban.
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+
+import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 
 import type { ISshServerEventBus, SshServerEvent } from '../server/SshServerEvent';
 
@@ -52,7 +42,16 @@ export interface Fail2banJournalSink {
   log(action: string): void;
 }
 
+export interface Fail2banJail {
+  readonly maxretry: number;
+  readonly findtimeSeconds: number;
+  readonly bantimeSeconds: number;
+}
+
 export interface Fail2banAgentOptions {
+  readonly jail?: Fail2banJail;
+  readonly isActive?: () => boolean;
+  readonly scheduler?: IScheduler;
   /** Jail name shown in fail2ban.log (default 'sshd'). */
   readonly jailName?: string;
   /** Process id shown in fail2ban.log (default 1717, like a real fail2ban-server pid). */
@@ -85,8 +84,14 @@ export class Fail2banAgent {
   private readonly port: number;
   private readonly chainName: string;
   private readonly active = new Map<string, Fail2banBan>();
-  private readonly unsubscribe: () => void;
+  private readonly failures = new Map<string, number[]>();
+  private readonly expiryTimers = new Map<string, TimerHandle>();
+  private readonly unsubscribers: Array<() => void> = [];
   private readonly journal: Fail2banJournalSink | null;
+  private jail: Fail2banJail;
+  private readonly isActive: () => boolean;
+  private readonly scheduler: IScheduler;
+  private totalFailedCount = 0;
 
   constructor(
     bus: ISshServerEventBus,
@@ -100,22 +105,34 @@ export class Fail2banAgent {
     this.port = opts.port ?? 22;
     this.chainName = `${CHAIN_PREFIX}${this.jailName}`;
     this.journal = opts.journal ?? null;
-    const offFailure = bus.on('auth_failure', (e) => this.handleFailure(e));
-    const offThrottled = bus.on('auth_throttled', (e) => this.handleThrottled(e));
-    this.unsubscribe = () => { offFailure(); offThrottled(); };
+    this.jail = opts.jail ?? { maxretry: 5, findtimeSeconds: 600, bantimeSeconds: 600 };
+    this.isActive = opts.isActive ?? (() => true);
+    this.scheduler = opts.scheduler ?? getDefaultScheduler();
+    this.attach(bus);
   }
 
-  /** Detach from the event bus. */
-  dispose(): void { this.unsubscribe(); }
+  attach(bus: ISshServerEventBus): void {
+    this.unsubscribers.push(bus.on('auth_failure', (e) => this.handleFailure(e)));
+  }
 
-  /** Currently-banned IPs as far as fail2ban is concerned. */
+  dispose(): void {
+    for (const off of this.unsubscribers.splice(0)) off();
+    for (const handle of this.expiryTimers.values()) this.scheduler.clear(handle);
+    this.expiryTimers.clear();
+  }
+
   bannedIps(): readonly string[] {
+    this.sweepExpired(this.clock());
     return Array.from(this.active.keys());
   }
 
-  /** Snapshot of the ban entries (for `fail2ban-client status sshd`). */
   bans(): readonly Fail2banBan[] {
+    this.sweepExpired(this.clock());
     return Array.from(this.active.values());
+  }
+
+  totalFailed(): number {
+    return this.totalFailedCount;
   }
 
   /**
@@ -146,11 +163,13 @@ export class Fail2banAgent {
 
   /** `fail2ban-client get <jail> bantime` — configured ban duration, in seconds. */
   bantimeSeconds(): number {
-    const ban = this.bans()[0];
-    return ban ? Math.round((ban.until - ban.bannedAt) / 1000) : 0;
+    return this.jail.bantimeSeconds;
   }
 
-  // ─── private ─────────────────────────────────────────────────────
+  reconfigure(jail: Fail2banJail): void {
+    this.jail = jail;
+    this.failures.clear();
+  }
 
   private ensureChain(): void {
     if (this.iptables.hasChain(this.chainName)) return;
@@ -162,32 +181,37 @@ export class Fail2banAgent {
   private unban(ip: string, now: number): void {
     this.iptables.execute(['-D', this.chainName, '-s', ip, '-j', 'REJECT']);
     this.active.delete(ip);
+    const timer = this.expiryTimers.get(ip);
+    if (timer !== undefined) this.scheduler.clear(timer);
+    this.expiryTimers.delete(ip);
     this.log.appendLog(this.formatLogLine(now, `Unban ${ip}`));
     this.journal?.log(`[${this.jailName}] Unban ${ip}`);
   }
 
-  /**
-   * Every matched auth-failure line is one `Found <ip>` entry in real
-   * fail2ban.log — logged before the eventual `Ban` line, regardless of
-   * how many attempts it takes to cross the jail's threshold.
-   */
   private handleFailure(event: SshServerEvent): void {
-    if (event.kind !== 'auth_failure') return;
-    if (this.active.has(event.ip)) return; // already banned — no more Found lines
+    if (event.kind !== 'auth_failure' || event.reason === 'publickey_query') return;
+    if (!this.isActive()) return;
     const now = this.clock();
+    this.sweepExpired(now);
+    if (this.active.has(event.ip)) return;
+    this.totalFailedCount += 1;
     this.log.appendLog(this.formatLogLine(now, `Found ${event.ip}`, 'WARNING'));
+    const windowMs = this.jail.findtimeSeconds * 1000;
+    const recent = (this.failures.get(event.ip) ?? []).filter((at) => now - at < windowMs);
+    recent.push(now);
+    this.failures.set(event.ip, recent);
+    if (recent.length >= this.jail.maxretry) this.ban(event.ip, now);
   }
 
-  private handleThrottled(event: SshServerEvent): void {
-    if (event.kind !== 'auth_throttled') return;
-    if (this.active.has(event.ip)) return; // already banned — be idempotent
-    const now = this.clock();
-    const ban: Fail2banBan = { ip: event.ip, bannedAt: now, until: event.blockUntil };
-    this.active.set(event.ip, ban);
+  private ban(ip: string, now: number): void {
+    const bantimeMs = this.jail.bantimeSeconds * 1000;
+    this.active.set(ip, { ip, bannedAt: now, until: now + bantimeMs });
+    this.failures.delete(ip);
     this.ensureChain();
-    this.iptables.execute(['-I', this.chainName, '1', '-s', event.ip, '-j', 'REJECT']);
-    this.log.appendLog(this.formatLogLine(now, `Ban ${event.ip}`));
-    this.journal?.log(`[${this.jailName}] Ban ${event.ip}`);
+    this.iptables.execute(['-I', this.chainName, '1', '-s', ip, '-j', 'REJECT']);
+    this.log.appendLog(this.formatLogLine(now, `Ban ${ip}`));
+    this.journal?.log(`[${this.jailName}] Ban ${ip}`);
+    this.expiryTimers.set(ip, this.scheduler.setTimeout(() => this.sweepExpired(this.clock()), bantimeMs));
   }
 
   private formatLogLine(at: number, action: string, level: 'NOTICE' | 'WARNING' = 'NOTICE'): string {

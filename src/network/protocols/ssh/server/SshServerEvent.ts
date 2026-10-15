@@ -5,7 +5,7 @@
  *
  * The bus is the single integration point between the SSH transport layer
  * (SshServerHandler) and reactive subscribers: SshSyslogger writes auth.log
- * lines, SshAuthThrottler implements fail2ban-style rate limiting,
+ * lines, Fail2banAgent counts failures and bans through iptables,
  * SshSessionTracker can count concurrent sessions, etc. Adding a new
  * reactor never requires touching the handler — just subscribe.
  */
@@ -38,6 +38,7 @@ export type DisconnectReason =
 export type AuthFailureReason =
   | 'wrong_password'
   | 'wrong_key'
+  | 'publickey_query'
   | 'method_disabled'
   | 'root_login_disabled'
   | 'user_not_allowed'
@@ -102,14 +103,6 @@ export type SshServerEvent =
       ip: string;
       reason: string;
       port?: number;
-      timestamp?: number;
-    }
-  | {
-      kind: 'auth_throttled';
-      ip: string;
-      failuresInWindow: number;
-      windowSeconds: number;
-      blockUntil: number;
       timestamp?: number;
     }
   | {
