@@ -165,7 +165,7 @@ describe('SftpWireSession — RENAME with v5+ flags', () => {
     const reply = session.handle({
       type: 'RENAME', requestId: 1, oldPath: 'a.txt', newPath: 'b.txt', flags: SFTP_RENAME_FLAG.OVERWRITE,
     });
-    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'Success' });
     expect(vfs.readFile('/home/alice/b.txt')).toBe('AAA');
     expect(vfs.exists('/home/alice/a.txt')).toBe(false);
   });
@@ -176,7 +176,7 @@ describe('SftpWireSession — RENAME with v5+ flags', () => {
       type: 'RENAME', requestId: 1, oldPath: 'a.txt', newPath: 'b.txt',
       flags: SFTP_RENAME_FLAG.OVERWRITE | SFTP_RENAME_FLAG.ATOMIC,
     });
-    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'Success' });
     expect(vfs.readFile('/home/alice/b.txt')).toBe('AAA');
   });
 });
@@ -195,7 +195,7 @@ describe('SftpWireSession — v6 LINK (hard link)', () => {
   it('LINK creates a real hard link sharing the same content', () => {
     const { session, vfs } = buildSession();
     const reply = session.handle({ type: 'LINK', requestId: 1, newLinkPath: 'linked.txt', existingPath: 'original.txt' });
-    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    expect(reply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'Success' });
     expect(vfs.readFile('/home/alice/linked.txt')).toBe('shared content');
   });
 

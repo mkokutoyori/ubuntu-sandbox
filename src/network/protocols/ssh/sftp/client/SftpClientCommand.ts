@@ -44,8 +44,7 @@ function clean(text: string): string {
 
 function destinationText(line: SftpCommandLine): string {
   const destination = line.destination!;
-  const host = destination.host.includes(':') ? `[${destination.host}]` : destination.host;
-  return destination.user === null ? host : `${destination.user}@${host}`;
+  return destination.user === null ? destination.host : `${destination.user}@${destination.host}`;
 }
 
 export class SftpClientSession {

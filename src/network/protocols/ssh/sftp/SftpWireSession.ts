@@ -173,11 +173,11 @@ export class SftpWireSession {
 
   private logClose(state: SftpHandleState, prefix: string | null): void {
     const lead = prefix === null ? '' : `${prefix} `;
-    if (state.kind === 'dir') this.logit(`${lead}closedir "${state.path}"`);
+    if (state.kind === 'dir') this.logit(`${lead}closedir "${state.name}"`);
     else {
       const read = state.kind === 'file-read' ? state.bytesRead : 0;
       const written = state.kind === 'file-write' ? state.bytesWritten : 0;
-      this.logit(`${lead}close "${state.path}" bytes read ${read} written ${written}`);
+      this.logit(`${lead}close "${state.name}" bytes read ${read} written ${written}`);
     }
   }
 
@@ -339,13 +339,13 @@ export class SftpWireSession {
         }
         const listing = this.dispatcher.dispatch('ls', { path: pkt.path }, this.ctx());
         if (!isOk(listing)) return this.failure(pkt.requestId, listing.error as SshError);
-        const children = (listing.value as { entries: readonly SftpDirEntry[] }).entries;
+        const children = (listing.value as { entries: readonly SftpDirEntry[] }).entries.filter((entry) => entry.name !== '.' && entry.name !== '..');
         const dot = this.config.vfs.stat(path);
         const parent = this.config.vfs.stat(path.replace(/\/[^/]+\/?$/, '') || '/');
         const own: SftpDirEntry[] = [];
         if (dot.ok) own.push({ name: '.', ...dot.value });
         if (parent.ok) own.push({ name: '..', ...parent.value });
-        const handle = this.openHandle({ kind: 'dir', path: pkt.path, drained: false, pending: [...own, ...children] });
+        const handle = this.openHandle({ kind: 'dir', path, name: pkt.path, drained: false, pending: [...own, ...children] });
         if (handle === null) return this.status(pkt.requestId, SSH_FX.FAILURE);
         return { type: 'HANDLE', requestId: pkt.requestId, handle };
       }
@@ -353,7 +353,7 @@ export class SftpWireSession {
       case 'READDIR': {
         const state = this.handles.get(pkt.handle);
         if (!state || state.kind !== 'dir') return this.status(pkt.requestId, SSH_FX.FAILURE);
-        this.verbose(`readdir "${state.path}" (handle ${pkt.handle})`);
+        this.verbose(`readdir "${state.name}" (handle ${pkt.handle})`);
         if (state.pending.length === 0) return this.status(pkt.requestId, SSH_FX.EOF);
         const batch = state.pending.slice(0, MAX_ENTRIES_PER_REPLY);
         state.pending = state.pending.slice(batch.length);
@@ -473,7 +473,7 @@ export class SftpWireSession {
         }
       }
       const handle = this.openHandle({
-        kind: 'file-write', path: pkt.filename, buffer, append: (pkt.pflags & SSH_FXF.APPEND) !== 0, bytesWritten: 0,
+        kind: 'file-write', path, name: pkt.filename, buffer, append: (pkt.pflags & SSH_FXF.APPEND) !== 0, bytesWritten: 0,
       });
       if (handle === null) return this.status(pkt.requestId, SSH_FX.FAILURE);
       return { type: 'HANDLE', requestId: pkt.requestId, handle };
@@ -481,7 +481,7 @@ export class SftpWireSession {
     const result = this.dispatcher.dispatch('get', { path: pkt.filename }, this.ctx());
     if (!isOk(result)) return this.failure(pkt.requestId, result.error as SshError);
     const handle = this.openHandle({
-      kind: 'file-read', path: pkt.filename, content: (result.value as { content: string }).content, bytesRead: 0,
+      kind: 'file-read', path, name: pkt.filename, content: (result.value as { content: string }).content, bytesRead: 0,
     });
     if (handle === null) return this.status(pkt.requestId, SSH_FX.FAILURE);
     return { type: 'HANDLE', requestId: pkt.requestId, handle };

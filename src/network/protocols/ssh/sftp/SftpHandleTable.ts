@@ -14,6 +14,7 @@
 export interface SftpFileReadHandle {
   readonly kind: 'file-read';
   readonly path: string;
+  readonly name: string;
   readonly content: string;
   bytesRead: number;
 }
@@ -21,6 +22,7 @@ export interface SftpFileReadHandle {
 export interface SftpFileWriteHandle {
   readonly kind: 'file-write';
   readonly path: string;
+  readonly name: string;
   buffer: string;
   readonly append: boolean;
   bytesWritten: number;
@@ -29,6 +31,7 @@ export interface SftpFileWriteHandle {
 export interface SftpDirHandle {
   readonly kind: 'dir';
   readonly path: string;
+  readonly name: string;
   drained: boolean;
   pending: readonly import('./ISftpFileSystem').SftpDirEntry[];
 }

@@ -33,8 +33,8 @@ function stringToBytes(s: string): Uint8Array {
 describe('SftpHandleTable', () => {
   it('opens, retrieves, and closes a handle', () => {
     const table = new SftpHandleTable();
-    const handle = table.open({ kind: 'dir', path: '/tmp', drained: false, pending: [] });
-    expect(table.get(handle)).toEqual({ kind: 'dir', path: '/tmp', drained: false, pending: [] });
+    const handle = table.open({ kind: 'dir', path: '/tmp', name: '/tmp', drained: false, pending: [] });
+    expect(table.get(handle)).toEqual({ kind: 'dir', path: '/tmp', name: '/tmp', drained: false, pending: [] });
     expect(table.openCount).toBe(1);
     expect(table.close(handle)).toBe(true);
     expect(table.get(handle)).toBeUndefined();
@@ -43,8 +43,8 @@ describe('SftpHandleTable', () => {
 
   it('issues distinct handles for concurrent opens', () => {
     const table = new SftpHandleTable();
-    const h1 = table.open({ kind: 'file-read', path: '/a', content: '', bytesRead: 0 });
-    const h2 = table.open({ kind: 'file-read', path: '/b', content: '', bytesRead: 0 });
+    const h1 = table.open({ kind: 'file-read', path: '/a', name: '/a', content: '', bytesRead: 0 });
+    const h2 = table.open({ kind: 'file-read', path: '/b', name: '/b', content: '', bytesRead: 0 });
     expect(h1).not.toBe(h2);
     expect(table.openCount).toBe(2);
   });
@@ -82,9 +82,9 @@ describe('SftpWireSession — real OPEN/READ/WRITE/CLOSE handle model', () => {
     expect(bytesToString((readReply as { data: Uint8Array }).data)).toBe('hello sftp handles');
 
     const eofReply = session.handle({ type: 'READ', requestId: 3, handle, offset: 'hello sftp handles'.length, length: 512 });
-    expect(eofReply).toEqual({ type: 'STATUS', requestId: 3, code: 1, message: 'End of file.' });
+    expect(eofReply).toEqual({ type: 'STATUS', requestId: 3, code: 1, message: 'End of file' });
 
-    expect(session.handle({ type: 'CLOSE', requestId: 4, handle })).toEqual({ type: 'STATUS', requestId: 4, code: 0, message: 'OK' });
+    expect(session.handle({ type: 'CLOSE', requestId: 4, handle })).toEqual({ type: 'STATUS', requestId: 4, code: 0, message: 'Success' });
   });
 
   it('READ at an arbitrary offset returns only the requested slice', () => {
@@ -102,7 +102,7 @@ describe('SftpWireSession — real OPEN/READ/WRITE/CLOSE handle model', () => {
     const handle = (openReply as { handle: string }).handle;
 
     const writeReply = session.handle({ type: 'WRITE', requestId: 2, handle, offset: 0, data: stringToBytes('uploaded via real handles') });
-    expect(writeReply).toEqual({ type: 'STATUS', requestId: 2, code: 0, message: 'OK' });
+    expect(writeReply).toEqual({ type: 'STATUS', requestId: 2, code: 0, message: 'Success' });
 
     session.handle({ type: 'CLOSE', requestId: 3, handle });
     expect(vfs.readFile('/home/alice/uploaded.txt')).toBe('uploaded via real handles');
@@ -192,11 +192,11 @@ describe('SftpWireSession — real OPEN/READ/WRITE/CLOSE handle model', () => {
   it('READ/WRITE/CLOSE on an unknown handle reply SSH_FX_FAILURE', () => {
     const { session } = buildSession();
     expect(session.handle({ type: 'READ', requestId: 1, handle: 'ghost', offset: 0, length: 10 }))
-      .toEqual({ type: 'STATUS', requestId: 1, code: 4, message: 'Invalid handle.' });
+      .toEqual({ type: 'STATUS', requestId: 1, code: 4, message: 'Failure' });
     expect(session.handle({ type: 'WRITE', requestId: 2, handle: 'ghost', offset: 0, data: new Uint8Array() }))
-      .toEqual({ type: 'STATUS', requestId: 2, code: 4, message: 'Invalid handle.' });
+      .toEqual({ type: 'STATUS', requestId: 2, code: 4, message: 'Failure' });
     expect(session.handle({ type: 'CLOSE', requestId: 3, handle: 'ghost' }))
-      .toEqual({ type: 'STATUS', requestId: 3, code: 4, message: 'Invalid handle.' });
+      .toEqual({ type: 'STATUS', requestId: 3, code: 4, message: 'Failure' });
   });
 
   it('OPEN(read) on a nonexistent file fails without allocating a handle', () => {

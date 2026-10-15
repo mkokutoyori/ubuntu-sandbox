@@ -58,7 +58,7 @@ describe('§Q — SshdServerConfig immutable directive value object', () => {
     expect(cfg.syslogFacility).toBe('AUTH');
     expect(cfg.bannerPath).toBeNull();
     expect(cfg.motdPath).toBe('/etc/motd');
-    expect(cfg.subsystems.sftp).toMatch(/sftp-server/);
+    expect(cfg.subsystems.sftp).toBeNull();
     expect(cfg.allowUsers).toEqual([]);
     expect(cfg.denyUsers).toEqual([]);
     expect(cfg.allowGroups).toEqual([]);
