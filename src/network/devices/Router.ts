@@ -222,6 +222,7 @@ import { RouterManagementService, TELNET_DEFAULT_PORT } from './router/managemen
 import { RemoteAccessListeners } from './router/management/RemoteAccessListeners';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { CiscoHttpUi } from './router/management/CiscoHttpUi';
+import { ENROLLMENT_PATH, type IosCertificateServer } from './router/pki/IosCertificateServer';
 import { Http1ServerSession } from '../http/http1/Http1ServerSession';
 import { HttpsServerSession } from '../http/https/HttpsServerSession';
 import type { HttpMessage } from '../http/semantics/types';
@@ -5056,8 +5057,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   private bindHttpListener(port: number, secure: boolean): void {
     const ui = this.buildHttpUi();
-    const handler = (request: HttpMessage, peer?: { ip: string; port: number }) =>
-      ui.handle(request, peer?.ip ?? '0.0.0.0');
+    const handler = (request: HttpMessage, peer?: { ip: string; port: number }) => {
+      const enrollment = this.certificateServerFor(request);
+      if (enrollment && this.httpAccessPermitted(peer?.ip ?? '0.0.0.0')) return enrollment.handle(request);
+      return ui.handle(request, peer?.ip ?? '0.0.0.0');
+    };
     const identity = { processName: secure ? 'HTTPS CORE' : 'HTTP CORE', pid: 1 };
 
     const session = secure
@@ -5084,6 +5088,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       serverCert: this._httpTlsMaterial.cert,
       serverPrivateKey: this._httpTlsMaterial.privateKey,
     };
+  }
+
+  private certificateServerFor(request: HttpMessage): IosCertificateServer | null {
+    const path = (request.target ?? '').split('?')[0];
+    if (path !== ENROLLMENT_PATH) return null;
+    const servers = this.securityConfig()?.pkiServers;
+    if (!servers) return null;
+    return [...servers.values()].find((server) => server.isRunning) ?? null;
   }
 
   private httpAccessPermitted(sourceIp: string): boolean {

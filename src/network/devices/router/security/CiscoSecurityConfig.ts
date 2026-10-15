@@ -9,6 +9,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IPAddress } from '../../../core/types';
 import { ZoneFirewall } from './ZoneFirewall';
+import { IosCertificateServer } from '../pki/IosCertificateServer';
 import { TcpIntercept, DEFAULT_INTERCEPT_SETTINGS, type TcpInterceptSettings } from './TcpIntercept';
 import { CbacFirewall, DEFAULT_INSPECT_SETTINGS, type InspectRule, type InspectSettings } from './CbacFirewall';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
@@ -526,6 +527,16 @@ export class CiscoSecurityConfig {
   timeRanges: Map<string, TimeRange> = new Map();
   parameterMapsInspect: Map<string, ParameterMapInspect> = new Map();
   pkiTrustpoints: Map<string, PkiTrustpoint> = new Map();
+  pkiServers: Map<string, IosCertificateServer> = new Map();
+
+  ensurePkiServer(name: string): IosCertificateServer {
+    let server = this.pkiServers.get(name);
+    if (!server) {
+      server = new IosCertificateServer(name, { now: simulationNowMs });
+      this.pkiServers.set(name, server);
+    }
+    return server;
+  }
 
   ensurePkiTrustpoint(name: string): PkiTrustpoint {
     let tp = this.pkiTrustpoints.get(name);
@@ -910,6 +921,7 @@ export class CiscoSecurityConfig {
       if (tp.autoEnroll) lines.push(` auto-enroll${tp.autoEnroll.percent ? ` ${tp.autoEnroll.percent}` : ''}${tp.autoEnroll.regenerate ? ' regenerate' : ''}`);
       if (tp.fingerprint) lines.push(` fingerprint ${tp.fingerprint}`);
     }
+    for (const server of this.pkiServers.values()) lines.push(...server.runningConfigLines());
     if (this.controlPlane.servicePolicyInput || this.controlPlane.servicePolicyOutput) {
       lines.push('control-plane');
       if (this.controlPlane.servicePolicyInput) lines.push(` service-policy input ${this.controlPlane.servicePolicyInput}`);

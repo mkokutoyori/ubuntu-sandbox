@@ -1,0 +1,101 @@
+import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
+import { csrToPem, pemToCert } from '@/network/pki/pem';
+import { encodeCertificate } from '@/network/pki/der/X509Der';
+import { bytesToHex } from '@/crypto/encoding';
+import { md5, sha1 } from '@/crypto/hash';
+import type { CiscoSecurityConfig, PkiTrustpoint } from '../security/CiscoSecurityConfig';
+import { parseEnrollmentUrl, type PkiEnrollmentClient } from './PkiEnrollmentClient';
+
+export interface TrustpointEnrollmentHost {
+  security(): CiscoSecurityConfig;
+  client(): PkiEnrollmentClient;
+  hostname(): string;
+  install(trustpoint: PkiTrustpoint): void;
+}
+
+interface PendingEnrollment {
+  readonly transaction: number;
+  readonly key: PkiPrivateKey;
+}
+
+const pending = new WeakMap<PkiTrustpoint, PendingEnrollment>();
+
+export function pendingTransactionOf(trustpoint: PkiTrustpoint): number | null {
+  return pending.get(trustpoint)?.transaction ?? null;
+}
+
+function colonHex(bytes: Uint8Array): string {
+  return (bytesToHex(bytes).toUpperCase().match(/.{8}/g) ?? []).join(' ');
+}
+
+function endpointOf(trustpoint: PkiTrustpoint) {
+  if (!trustpoint.enrollmentUrl) return null;
+  return parseEnrollmentUrl(trustpoint.enrollmentUrl);
+}
+
+export async function authenticateTrustpoint(host: TrustpointEnrollmentHost, name: string): Promise<string> {
+  const trustpoint = host.security().pkiTrustpoints.get(name);
+  if (!trustpoint) return `% Trustpoint ${name} not configured`;
+  const endpoint = endpointOf(trustpoint);
+  if (!endpoint) return `% Trustpoint ${name} has no usable "enrollment url http://..." (selfsigned and terminal have no CA to ask)`;
+  const reply = await host.client().getCaCertificate(endpoint);
+  if (!reply.ok || reply.status !== 'SUCCESS') {
+    return `% Error in receiving Certificate Authority certificate: status = FAIL${reply.error ? ` (${reply.error})` : ''}`;
+  }
+  const certificate = pemToCert(reply.body);
+  if (!certificate) return '% Error in receiving Certificate Authority certificate: status = FAIL (unreadable certificate)';
+  const der = encodeCertificate(certificate);
+  const md5Digest = colonHex(md5(der));
+  const sha1Digest = colonHex(sha1(der));
+  const lines = ['Certificate has the following attributes:', `       Fingerprint MD5: ${md5Digest}`, `      Fingerprint SHA1: ${sha1Digest}`];
+  if (trustpoint.fingerprint) {
+    const wanted = trustpoint.fingerprint.replace(/[\s:]/g, '').toUpperCase();
+    const matches = [md5Digest, sha1Digest].some((d) => d.replace(/\s/g, '') === wanted);
+    if (!matches) return [...lines, '% Certificate validation failed - fingerprint mismatch', '% Certificate Authority certificate rejected'].join('\n');
+    lines.push('% Certificate validated - fingerprint matched.');
+  }
+  trustpoint.caCert = certificate;
+  lines.push('Trustpoint CA certificate accepted.');
+  host.install(trustpoint);
+  return lines.join('\n');
+}
+
+export async function enrollTrustpoint(host: TrustpointEnrollmentHost, name: string): Promise<string> {
+  const trustpoint = host.security().pkiTrustpoints.get(name);
+  if (!trustpoint) return `% Trustpoint ${name} not configured`;
+  if (!trustpoint.caCert) return `% Trustpoint ${name} is not authenticated — run 'crypto pki authenticate ${name}' first`;
+  const endpoint = endpointOf(trustpoint);
+  if (!endpoint) return `% Trustpoint ${name} has no usable "enrollment url http://..."`;
+  const client = host.client();
+  const waiting = pending.get(trustpoint);
+  const header = `% Start certificate enrollment ..\n`;
+  let reply;
+  let key: PkiPrivateKey;
+  if (waiting) {
+    key = waiting.key;
+    reply = await client.poll(endpoint, waiting.transaction);
+  } else {
+    const keys = PkiKeyPair.generate('rsa');
+    key = keys.privateKey;
+    const subject = trustpoint.subjectName || `CN=${host.hostname()}`;
+    const names = trustpoint.fqdn ? [trustpoint.fqdn] : undefined;
+    reply = await client.submit(endpoint, csrToPem(buildCertificateRequest(subject, keys, names)));
+  }
+  if (!reply.ok) return `${header}% Failed to reach the Certificate Authority: ${reply.error ?? 'no answer'}`;
+  if (reply.status === 'PENDING') {
+    if (reply.transaction !== null) pending.set(trustpoint, { transaction: reply.transaction, key });
+    return `${header}% Certificate request sent to Certificate Authority\n% The certificate request is pending, re-enter "crypto pki enroll ${name}" to collect it.`;
+  }
+  if (reply.status !== 'SUCCESS') {
+    pending.delete(trustpoint);
+    return `${header}% Certificate request rejected by the Certificate Authority`;
+  }
+  const certificate = pemToCert(reply.body);
+  if (!certificate) return `${header}% Certificate received from the Certificate Authority could not be read`;
+  pending.delete(trustpoint);
+  trustpoint.localCert = certificate;
+  trustpoint.localKey = key;
+  host.install(trustpoint);
+  return `${header}% Certificate request sent to Certificate Authority\n% The certificate has been granted by CA!\n% Router Certificate successfully imported`;
+}

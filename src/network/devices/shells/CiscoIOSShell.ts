@@ -63,6 +63,10 @@ import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
 import { inspectSpecs } from './cisco/inspectSpecs';
 import { tcpInterceptSpecs } from './cisco/tcpInterceptSpecs';
+import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
+import { authenticateTrustpoint, enrollTrustpoint, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
+import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
+import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -472,6 +476,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
       ...tcpInterceptSpecs(() => ({ security: () => getSecurityConfig(this.d()) })),
+      ...pkiSpecs(() => this.pkiHost()),
       ...inspectSpecs(() => ({
         security: () => getSecurityConfig(this.d()),
         selectedInterfaces: () => this.selectedPortsForConfigIf(),
@@ -1505,6 +1510,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedTacacsServer: string | null = null;
   private selectedAaaGroup: string | null = null;
   private selectedPkiTrustpoint: string | null = null;
+  private selectedPkiServer: string | null = null;
+  private configCaServerTrie = new CommandTrie();
   private selectedApplet: string | null = null;
   private selectedFlowExporter: string | null = null;
   private selectedFlowRecord: string | null = null;
@@ -1612,6 +1619,33 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setTacacsServer(n: string | null): void { this.selectedTacacsServer = n; }
   getAaaGroup(): string | null { return this.selectedAaaGroup; }
   setAaaGroup(n: string | null): void { this.selectedAaaGroup = n; }
+  private pkiHost(): PkiHost {
+    const device = this.d() as CiscoRouter;
+    const router = () => device;
+    const enrollment: TrustpointEnrollmentHost = {
+      security: () => getSecurityConfig(router()),
+      client: () => new PkiEnrollmentClient({
+        tcp: () => router().getTcpStack(),
+        resolve: (name) => router().hostsTable.resolve(name),
+      }),
+      hostname: () => router()._getHostnameInternal(),
+      install: (tp) => {
+        if (!tp.caCert || !tp.localCert || !tp.localKey) return;
+        router().installIkeCertAuth({
+          localCert: tp.localCert, localKey: tp.localKey, trustAnchors: [tp.caCert],
+          revocationCheck: mapRevocationCheck(tp.revocationCheck),
+        });
+      },
+    };
+    return {
+      security: () => getSecurityConfig(router()),
+      authenticate: (name) => { this._pendingAsync = authenticateTrustpoint(enrollment, name); return ''; },
+      enroll: (name) => { this._pendingAsync = enrollTrustpoint(enrollment, name); return ''; },
+      selectServer: (name) => { this.selectedPkiServer = name; },
+      selectedServer: () => this.selectedPkiServer,
+    };
+  }
+
   getPkiTrustpoint(): string | null { return this.selectedPkiTrustpoint; }
   setPkiTrustpoint(n: string | null): void { this.selectedPkiTrustpoint = n; }
   getApplet(): string | null { return this.selectedApplet; }
@@ -2000,6 +2034,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-tacacs-server': return this.configTacacsServerTrie;
       case 'config-aaa-group': return this.configAaaGroupTrie;
       case 'config-ca-trustpoint': return this.configCaTrustpointTrie;
+      case 'config-ca-server': return this.configCaServerTrie;
       case 'config-applet': return this.configAppletTrie;
       case 'config-flow-exporter': return this.configFlowExporterTrie;
       case 'config-flow-record': return this.configFlowRecordTrie;
@@ -2068,6 +2103,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedTacacsServer') this.selectedTacacsServer = null;
       if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
       if (f === 'selectedPkiTrustpoint') this.selectedPkiTrustpoint = null;
+      if (f === 'selectedPkiServer') this.selectedPkiServer = null;
       if (f === 'selectedApplet') this.selectedApplet = null;
       if (f === 'selectedFlowExporter') this.selectedFlowExporter = null;
       if (f === 'selectedFlowRecord') this.selectedFlowRecord = null;

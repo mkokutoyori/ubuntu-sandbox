@@ -28,7 +28,6 @@ import { isValidIPv4 } from '@/network/core/ip';
 import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
-import { getOrCreateCA } from '../../../pki/PkiCaRegistry';
 import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 
@@ -283,40 +282,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
-  trie.registerGreedy('crypto pki authenticate', 'Authenticate trustpoint CA', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
-    tp.caCert = ca.rootCertificate;
-    return `% Trustpoint ${name} CA certificate accepted`;
-  });
-  trie.registerGreedy('crypto pki enroll', 'Enroll trustpoint', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    if (!tp.caCert) return `% Trustpoint ${name} is not authenticated — run 'crypto pki authenticate ${name}' first`;
-    const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
-    const now = simulationNowMs();
-    const subject = tp.subjectName || `CN=${ctx.r()._getHostnameInternal()}`;
-    const issued = ca.issueCertificate({
-      subject, notBefore: now, notAfter: now + 365 * 24 * 3600 * 1000,
-      subjectAltNames: tp.fqdn ? [tp.fqdn] : undefined,
-    });
-    tp.localCert = issued.cert;
-    tp.localKey = issued.privateKey;
-    (ctx.r() as CiscoRouter).installIkeCertAuth({
-      localCert: issued.cert,
-      localKey: issued.privateKey,
-      trustAnchors: [tp.caCert],
-      revocationCheck: mapRevocationCheck(tp.revocationCheck),
-    });
-    return `% Start certificate enrollment for trustpoint ${name}\n`
-      + '% Certificate request sent to Certificate Authority\n'
-      + '% Certificate successfully received and installed';
-  });
   trie.registerGreedy('crypto pki import', 'Import certificate', (args) => {
     const name = args[0];
     if (!name) return '% Incomplete command.';
@@ -349,7 +314,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
 }
 
-function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
+export function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
   if (mode === 'ocsp') return 'ocsp';
   if (mode === 'crl' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') return 'crl';
   return 'none';
@@ -1093,7 +1058,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     'Percentage of the certificate lifetime after which to re-enrol', {
       optional: true,
     }),
-  fingerprint: place('empreinte', 'WORD', 'Fingerprint the certificate must carry'),
+  fingerprint: place('empreinte', 'REST', 'Fingerprint the certificate must carry', { literal: 'LINE' }),
 };
 
 export function trustpointSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {

@@ -17,14 +17,13 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { resetPkiCaRegistry } from '@/network/pki/PkiCaRegistry';
+import { getSecurityConfig } from '@/network/devices/shells/cisco/CiscoSecurityCommands';
 import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
   resetDeviceCounters();
   Logger.reset();
-  resetPkiCaRegistry();
 });
 
 async function buildLab() {
@@ -55,6 +54,25 @@ async function configureBase(
     `ip route ${remoteSubnet} 255.255.255.0 ${peerWan}`,
     'end',
   ]) await router.executeCommand(cmd);
+}
+
+async function buildCa(name: string, legs: ReadonlyArray<{ peer: CiscoRouter; caIp: string; peerIp: string; caPort: string }>): Promise<CiscoRouter> {
+  const ca = new CiscoRouter(name);
+  let index = 0;
+  for (const leg of legs) {
+    new Cable(`${name}-${index++}`).connect(ca.getPort(leg.caPort)!, leg.peer.getPort('GigabitEthernet0/2')!);
+    for (const cmd of ['enable', 'configure terminal', `interface ${leg.caPort}`, `ip address ${leg.caIp} 255.255.255.252`, 'no shutdown', 'exit', 'end']) {
+      await ca.executeCommand(cmd);
+    }
+    for (const cmd of ['enable', 'configure terminal', 'interface GigabitEthernet0/2', `ip address ${leg.peerIp} 255.255.255.252`, 'no shutdown', 'exit', 'end']) {
+      await leg.peer.executeCommand(cmd);
+    }
+  }
+  for (const cmd of [
+    'enable', 'configure terminal', 'ip http server',
+    'crypto pki server CS', `issuer-name CN=${name}-CA`, 'grant auto', 'no shutdown', 'end',
+  ]) await ca.executeCommand(cmd);
+  return ca;
 }
 
 async function enrollTrustpoint(router: CiscoRouter, caUrl: string, subject: string): Promise<string[]> {
@@ -106,19 +124,26 @@ describe('crypto pki trustpoint — real CA enrollment wired to IKE cert auth', 
 
   it('authenticate + enroll install a real CA-issued cert (not "Pending enrollment")', async () => {
     const r1 = new CiscoRouter('R1');
-    await enrollTrustpoint(r1, 'http://ca.example.com/pki', 'CN=r1.example.com');
+    await buildCa('CA', [{ peer: r1, caIp: '10.9.0.1', peerIp: '10.9.0.2', caPort: 'GigabitEthernet0/0' }]);
+    await enrollTrustpoint(r1, 'http://10.9.0.1', 'CN=r1.example.com');
     const certs = await r1.executeCommand('show crypto pki certificates');
     expect(certs).toContain('Status: Available');
     expect(certs).not.toContain('Pending enrollment');
     expect(certs).toContain('CN=r1.example.com');
+    const tp = getSecurityConfig(r1).pkiTrustpoints.get('TP')!;
+    expect(tp.localCert!.issuer).toContain('CA-CA');
   });
 
   it('two routers enrolling with the same CA URL establish a real IKEv2 tunnel over rsa-sig auth', async () => {
     const l = await buildLab();
     await configureBase(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0');
     await configureBase(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0');
-    await enrollTrustpoint(l.r1, 'http://ca.example.com/pki', 'CN=10.0.12.1');
-    await enrollTrustpoint(l.r2, 'http://ca.example.com/pki', 'CN=10.0.12.2');
+    await buildCa('CA', [
+      { peer: l.r1, caIp: '10.9.1.1', peerIp: '10.9.1.2', caPort: 'GigabitEthernet0/0' },
+      { peer: l.r2, caIp: '10.9.2.1', peerIp: '10.9.2.2', caPort: 'GigabitEthernet0/1' },
+    ]);
+    await enrollTrustpoint(l.r1, 'http://10.9.1.1', 'CN=10.0.12.1');
+    await enrollTrustpoint(l.r2, 'http://10.9.2.1', 'CN=10.0.12.2');
     await configureX509Profile(l.r1, '10.0.12.2');
     await configureX509Profile(l.r2, '10.0.12.1');
     await seedPcs(l.pc1, l.pc2);
@@ -133,8 +158,10 @@ describe('crypto pki trustpoint — real CA enrollment wired to IKE cert auth', 
     const l = await buildLab();
     await configureBase(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0');
     await configureBase(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0');
-    await enrollTrustpoint(l.r1, 'http://ca-a.example.com/pki', 'CN=10.0.12.1');
-    await enrollTrustpoint(l.r2, 'http://ca-b.example.com/pki', 'CN=10.0.12.2');
+    await buildCa('CA-A', [{ peer: l.r1, caIp: '10.9.1.1', peerIp: '10.9.1.2', caPort: 'GigabitEthernet0/0' }]);
+    await buildCa('CA-B', [{ peer: l.r2, caIp: '10.9.2.1', peerIp: '10.9.2.2', caPort: 'GigabitEthernet0/0' }]);
+    await enrollTrustpoint(l.r1, 'http://10.9.1.1', 'CN=10.0.12.1');
+    await enrollTrustpoint(l.r2, 'http://10.9.2.1', 'CN=10.0.12.2');
     await configureX509Profile(l.r1, '10.0.12.2');
     await configureX509Profile(l.r2, '10.0.12.1');
     await seedPcs(l.pc1, l.pc2);
