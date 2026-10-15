@@ -19,6 +19,14 @@ export function parseEnrollmentUrl(url: string): EnrollmentEndpoint | null {
   return { host: match[1], port, path: match[3] && match[3] !== '/' ? match[3] : ENROLLMENT_PATH };
 }
 
+export function parseDocumentUrl(url: string): EnrollmentEndpoint | null {
+  const match = /^http:\/\/([^/:]+)(?::(\d{1,5}))?(\/.*)?$/i.exec(url.trim());
+  if (!match) return null;
+  const port = match[2] ? Number(match[2]) : 80;
+  if (port < 1 || port > 65535) return null;
+  return { host: match[1], port, path: match[3] ?? '/' };
+}
+
 export interface PkiReply {
   readonly ok: boolean;
   readonly error?: string;
@@ -42,7 +50,7 @@ export class PkiEnrollmentClient {
     if (address === null) {
       return { ok: false, error: `% Unable to resolve ${endpoint.host}`, status: 'NONE', transaction: null, body: '' };
     }
-    const request = createRequest(method, `${endpoint.path}?${query}`);
+    const request = createRequest(method, query === '' ? endpoint.path : `${endpoint.path}?${query}`);
     request.headers.set('Host', endpoint.host);
     if (body !== undefined) {
       request.headers.set('Content-Type', 'application/x-pki-message');
@@ -64,6 +72,10 @@ export class PkiEnrollmentClient {
       transaction: txn === null ? null : Number(txn),
       body: response.body ? bytesToBinaryString(response.body) : '',
     };
+  }
+
+  getDocument(endpoint: EnrollmentEndpoint): Promise<PkiReply> {
+    return this.call(endpoint, 'GET', '');
   }
 
   getCaCertificate(endpoint: EnrollmentEndpoint): Promise<PkiReply> {

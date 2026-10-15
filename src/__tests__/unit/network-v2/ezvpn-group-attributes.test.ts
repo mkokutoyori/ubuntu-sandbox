@@ -64,7 +64,7 @@ describe('EzVPN group attributes', () => {
     const other = await lab(hub, ['key GROUPKEY', 'pool VPNPOOL', 'group-lock']);
     await run(other.client, [...configureClient([...NEM, 'username alice@ELSEWHERE password 0 alicepw']), ...assign]);
     expect(await status(other)).not.toContain('IPSEC_ACTIVE');
-  });
+  }, 30_000);
 
   it('the banner, configuration url and version, save-password and browser proxy reach the remote', async () => {
     const l = await lab(['crypto isakmp client configuration browser-proxy bproxy', 'proxy server 10.1.1.1:2000', 'proxy exception-list 10.2.2.*,www.*org', 'proxy by-pass-local', 'exit'], [
@@ -90,7 +90,7 @@ describe('EzVPN group attributes', () => {
     const l = await lab(['crypto map CMAP client authentication list XAUTH'], ['key GROUPKEY', 'pool VPNPOOL', 'save-password']);
     await run(l.client, [...configureClient(NEM), ...assign]);
     expect(await status(l)).toContain('XAUTH_REQ');
-    l.client._getOrCreateIPSecEngine().ezvpnClient.connect('EZ', { user: 'alice', password: 'alicepw' });
+    await l.client._getOrCreateIPSecEngine().ezvpnClient.connect('EZ', { user: 'alice', password: 'alicepw' });
     expect(await status(l)).toContain('IPSEC_ACTIVE');
     await l.client.executeCommand('enable');
     await l.client.executeCommand('clear crypto ipsec client ezvpn');
@@ -101,7 +101,7 @@ describe('EzVPN group attributes', () => {
   it('without save-password the interactive password is not kept', async () => {
     const l = await lab(['crypto map CMAP client authentication list XAUTH']);
     await run(l.client, [...configureClient(NEM), ...assign]);
-    l.client._getOrCreateIPSecEngine().ezvpnClient.connect('EZ', { user: 'alice', password: 'alicepw' });
+    await l.client._getOrCreateIPSecEngine().ezvpnClient.connect('EZ', { user: 'alice', password: 'alicepw' });
     await l.client.executeCommand('enable');
     await l.client.executeCommand('clear crypto ipsec client ezvpn');
     expect(await status(l)).toContain('XAUTH_REQ');

@@ -40,10 +40,10 @@ describe('crypto pki trustpoint — real CA enrollment wired to IKE cert auth', 
     const r1 = new CiscoRouter('R1');
     await buildCa('CA', [{ peer: r1, caIp: '10.9.0.1', peerIp: '10.9.0.2', caPort: 'GigabitEthernet0/0' }]);
     await enrollTrustpoint(r1, 'http://10.9.0.1', 'CN=r1.example.com');
-    const certs = await r1.executeCommand('show crypto pki certificates');
+    const certs = await r1.executeCommand('show crypto pki certificates TP verbose');
     expect(certs).toContain('Status: Available');
     expect(certs).not.toContain('Pending enrollment');
-    expect(certs).toContain('CN=r1.example.com');
+    expect(certs).toMatch(/cn=r1\.example\.com/i);
     const tp = getSecurityConfig(r1).pkiTrustpoints.get('TP')!;
     expect(tp.localCert!.issuer).toContain('CA-CA');
   });

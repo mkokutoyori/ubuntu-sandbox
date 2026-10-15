@@ -33,7 +33,7 @@ export interface EzvpnClientEngine {
   applyCryptoMapToInterface(iface: string, mapName: string): void;
   cryptoMapOn(iface: string): string | undefined;
   ensureEzvpnTransformSets(): string[];
-  bringUpClientTunnel(peer: string, entry: CryptoMapEntry, iface: string): boolean;
+  bringUpClientTunnel(peer: string, entry: CryptoMapEntry, iface: string): boolean | Promise<boolean>;
   clearSAsForPeer(peer: string): void;
   requestConfigFor(peer: string, request: IkeConfigRequest): void;
   configReplyFor(peer: string): IkeConfigReply | undefined;
@@ -201,7 +201,21 @@ export class EzvpnClient {
     return (config.xauthMode ?? 'interactive') === 'interactive' && config.username === undefined;
   }
 
-  connect(name: string, credentials?: { user: string; password: string }): string {
+  private readonly inflight = new Set<Promise<unknown>>();
+
+  private track<T>(value: T | Promise<T>): T | Promise<T> {
+    if (value instanceof Promise) {
+      const done = value.then(() => undefined, () => undefined).then(() => { this.inflight.delete(done); });
+      this.inflight.add(done);
+    }
+    return value;
+  }
+
+  async whenIdle(): Promise<void> {
+    while (this.inflight.size > 0) await Promise.all([...this.inflight]);
+  }
+
+  connect(name: string, credentials?: { user: string; password: string }): string | Promise<string> {
     const host = this.host;
     const config = this.configs.get(name);
     const runtime = this.runtimeOf(name);
@@ -216,18 +230,34 @@ export class EzvpnClient {
     for (const gateway of runtime.pushedBackups ?? []) {
       if (!attempts.some((p) => p.address === gateway)) attempts.push({ address: gateway, primary: false });
     }
-    for (const peer of attempts) {
-      const address = host.resolve(peer.address);
+    return this.track(this.attempt(name, config, runtime, attempts, 0, user, password));
+  }
+
+  private attempt(
+    name: string, config: EzvpnClientConfig, runtime: ClientRuntime, attempts: EzvpnPeer[], from: number,
+    user?: string, password?: string,
+  ): string | Promise<string> {
+    const host = this.host!;
+    for (let index = from; index < attempts.length; index++) {
+      const address = host.resolve(attempts[index].address);
       if (address === null) continue;
       const outcome = this.tryPeer(name, config, runtime, address, user, password);
-      if (outcome === 'ok') return '';
-      if (outcome === 'authentication' && user === undefined && (config.xauthMode ?? 'interactive') === 'interactive') {
-        runtime.state = 'XAUTH_REQ';
-        runtime.lastEvent = 'XAUTH_REQUIRED';
-        runtime.peer = undefined;
-        host.log('EZVPN: Pending XAuth Request, Please enter the following command:\nEZVPN: crypto ipsec client ezvpn xauth');
-        return '';
+      const next = (settled: 'ok' | 'authentication' | 'failed'): string | Promise<string> | undefined => {
+        if (settled === 'ok') return '';
+        if (settled === 'authentication' && user === undefined && (config.xauthMode ?? 'interactive') === 'interactive') {
+          runtime.state = 'XAUTH_REQ';
+          runtime.lastEvent = 'XAUTH_REQUIRED';
+          runtime.peer = undefined;
+          host.log('EZVPN: Pending XAuth Request, Please enter the following command:\nEZVPN: crypto ipsec client ezvpn xauth');
+          return '';
+        }
+        return undefined;
+      };
+      if (outcome instanceof Promise) {
+        return outcome.then((settled) => next(settled) ?? this.attempt(name, config, runtime, attempts, index + 1, user, password));
       }
+      const done = next(outcome);
+      if (done !== undefined) return done;
     }
     runtime.state = 'IDLE';
     runtime.lastEvent = 'SOCKET_DOWN';
@@ -236,7 +266,7 @@ export class EzvpnClient {
 
   private tryPeer(
     name: string, config: EzvpnClientConfig, runtime: ClientRuntime, peer: string, user?: string, password?: string,
-  ): 'ok' | 'authentication' | 'failed' {
+  ): 'ok' | 'authentication' | 'failed' | Promise<'ok' | 'authentication' | 'failed'> {
     const host = this.host!;
     const engine = host.engine();
     const outside = runtime.outside!;
@@ -282,7 +312,8 @@ export class EzvpnClient {
     engine.installManagedCryptoMap(mapName, entries);
     engine.applyCryptoMapToInterface(outside, mapName);
     engine.requestConfigFor(peer, { wantAddress: true, identity: user, credential: password });
-    const ok = entries.length > 0 && engine.bringUpClientTunnel(peer, entries[0], outside);
+    const brought = entries.length > 0 ? engine.bringUpClientTunnel(peer, entries[0], outside) : false;
+    const settle = (ok: boolean): 'ok' | 'authentication' | 'failed' => {
     const reply = engine.configReplyFor(peer);
     if (!ok || !engine.hasIkeSA(peer)) {
       const reason = engine.ikeFailureReason(peer);
@@ -304,6 +335,8 @@ export class EzvpnClient {
     runtime.lastEvent = 'SOCKET_UP';
     this.armTimers(name, config, runtime);
     return 'ok';
+    };
+    return brought instanceof Promise ? brought.then(settle) : settle(brought);
   }
 
   private applyReply(
@@ -408,17 +441,26 @@ export class EzvpnClient {
         const address = host.resolve(primary.address);
         if (address !== null && address !== runtime.peer) {
           const previous = runtime.peer!;
-          const before = { ...runtime };
-          void before;
           this.teardown(name);
-          if (this.tryPeer(name, config, runtime, address, config.username, config.password) === 'ok') return;
-          this.tryPeer(name, config, runtime, previous, config.username, config.password);
+          this.track(this.failBack(name, config, runtime, address, previous));
           return;
         }
         runtime.failbackTimer = host.after(FAILBACK_INTERVAL_MS, retry);
       };
       runtime.failbackTimer = host.after(FAILBACK_INTERVAL_MS, retry);
     }
+  }
+
+  private failBack(
+    name: string, config: EzvpnClientConfig, runtime: ClientRuntime, primary: string, previous: string,
+  ): void | Promise<void> {
+    const second = (outcome: 'ok' | 'authentication' | 'failed'): void | Promise<void> => {
+      if (outcome === 'ok') return;
+      const again = this.tryPeer(name, config, runtime, previous, config.username, config.password);
+      return again instanceof Promise ? again.then(() => undefined) : undefined;
+    };
+    const first = this.tryPeer(name, config, runtime, primary, config.username, config.password);
+    return first instanceof Promise ? first.then(second) : second(first);
   }
 
   private disarmTimers(runtime: ClientRuntime): void {

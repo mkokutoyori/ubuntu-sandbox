@@ -3,7 +3,7 @@ import { pbkdf2 } from '@/crypto/kdf';
 import { aesCbcEncrypt, aesCbcDecrypt, tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '@/crypto/cipher';
 import { utf8ToBytes } from '@/crypto/encoding';
 import type { PkiPrivateKey } from '../PkiKeyPair';
-import { der, children, parseDer, integerValue, oidValue, DerError } from './Asn1';
+import { der, children, parseDer, integerValue, oidValue, DerError, type DerNode } from './Asn1';
 import { encodePrivateKeyPkcs8, decodePrivateKeyPkcs8 } from './KeyDer';
 
 const OID_PBES2 = '1.2.840.113549.1.5.13';
@@ -50,45 +50,58 @@ const OID_HMAC_SHA256 = '1.2.840.113549.2.9';
 const DEFAULT_ITERATIONS = 2048;
 const SALT_LENGTH = 16;
 
-export function encryptPrivateKeyPkcs8(
-  key: PkiPrivateKey, passphrase: string, random: (length: number) => Uint8Array, iterations = DEFAULT_ITERATIONS,
+export interface Pbes2Sealed { readonly algorithm: Uint8Array; readonly ciphertext: Uint8Array }
+
+export function pbes2Seal(
+  plain: Uint8Array, passphrase: string, random: (length: number) => Uint8Array, iterations = DEFAULT_ITERATIONS,
   cipher: KeyEncryptionCipher = 'aes-256-cbc',
-): Uint8Array {
+): Pbes2Sealed {
   const spec = CIPHER_SPECS[cipher];
   const salt = random(SALT_LENGTH);
   const iv = random(spec.ivLength);
   const derived = pbkdf2(SHA256, utf8ToBytes(passphrase), salt, iterations, spec.keyLength);
-  const encrypted = cbcSeal(spec, derived, iv, encodePrivateKeyPkcs8(key));
-  return der.sequence(
-    der.sequence(
+  return {
+    ciphertext: cbcSeal(spec, derived, iv, plain),
+    algorithm: der.sequence(
       der.oid(OID_PBES2),
       der.sequence(
         der.sequence(der.oid(OID_PBKDF2), der.sequence(der.octetString(salt), der.integer(BigInt(iterations)), der.sequence(der.oid(OID_HMAC_SHA256), der.null()))),
         der.sequence(der.oid(spec.oid), der.octetString(iv)),
       ),
     ),
-    der.octetString(encrypted),
-  );
+  };
+}
+
+export function pbes2Open(algorithm: DerNode, ciphertext: Uint8Array, passphrase: string): Uint8Array {
+  const [scheme, parameters] = children(algorithm);
+  if (oidValue(scheme) !== OID_PBES2) throw new DerError('unsupported encryption scheme');
+  const [kdf, cipher] = children(parameters);
+  const [kdfOid, kdfParameters] = children(kdf);
+  if (oidValue(kdfOid) !== OID_PBKDF2) throw new DerError('unsupported key derivation');
+  const fields = children(kdfParameters);
+  const salt = fields[0].content;
+  const iterations = Number(integerValue(fields[1]));
+  const prfNode = fields.find((field) => field.tag === 0x30);
+  const prf = prfNode ? PRF_OIDS[oidValue(children(prfNode)[0])] : SHA1;
+  const [cipherOid, iv] = children(cipher);
+  const spec = specByOid(oidValue(cipherOid));
+  if (spec === undefined || prf === undefined) throw new DerError('unsupported cipher or PRF');
+  const derived = pbkdf2(prf, utf8ToBytes(passphrase), salt, iterations, spec.keyLength);
+  return cbcOpen(spec, derived, iv.content, ciphertext);
+}
+
+export function encryptPrivateKeyPkcs8(
+  key: PkiPrivateKey, passphrase: string, random: (length: number) => Uint8Array, iterations = DEFAULT_ITERATIONS,
+  cipher: KeyEncryptionCipher = 'aes-256-cbc',
+): Uint8Array {
+  const sealed = pbes2Seal(encodePrivateKeyPkcs8(key), passphrase, random, iterations, cipher);
+  return der.sequence(sealed.algorithm, der.octetString(sealed.ciphertext));
 }
 
 export function decryptPrivateKeyPkcs8(bytes: Uint8Array, passphrase: string): PkiPrivateKey | null {
   try {
     const [algorithm, data] = children(parseDer(bytes));
-    const [scheme, parameters] = children(algorithm);
-    if (oidValue(scheme) !== OID_PBES2) throw new DerError('unsupported encryption scheme');
-    const [kdf, cipher] = children(parameters);
-    const [kdfOid, kdfParameters] = children(kdf);
-    if (oidValue(kdfOid) !== OID_PBKDF2) throw new DerError('unsupported key derivation');
-    const fields = children(kdfParameters);
-    const salt = fields[0].content;
-    const iterations = Number(integerValue(fields[1]));
-    const prfNode = fields.find((field) => field.tag === 0x30);
-    const prf = prfNode ? PRF_OIDS[oidValue(children(prfNode)[0])] : SHA1;
-    const [cipherOid, iv] = children(cipher);
-    const spec = specByOid(oidValue(cipherOid));
-    if (spec === undefined || prf === undefined) throw new DerError('unsupported cipher or PRF');
-    const derived = pbkdf2(prf, utf8ToBytes(passphrase), salt, iterations, spec.keyLength);
-    return decodePrivateKeyPkcs8(cbcOpen(spec, derived, iv.content, data.content));
+    return decodePrivateKeyPkcs8(pbes2Open(algorithm, data.content, passphrase));
   } catch {
     return null;
   }

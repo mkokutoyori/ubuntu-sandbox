@@ -103,6 +103,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-aaa-group':          '{host}(config-sg-radius)#',
   'config-ca-trustpoint':      '{host}(ca-trustpoint)#',
   'config-ca-server':          '{host}(cs-server)#',
+  'config-ca-trustpool':       '{host}(ca-trustpool)#',
   'config-isakmp-group':       '{host}(config-isakmp-group)#',
   'config-crypto-ezvpn':       '{host}(config-crypto-ezvpn)#',
   'config-browser-proxy':      '{host}(config-browser-proxy)#',

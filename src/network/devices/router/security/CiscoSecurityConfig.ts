@@ -192,6 +192,7 @@ export interface CryptoRsaKey {
   modulus: number;
   general: boolean;
   generatedAtMs: number;
+  exportable?: boolean;
 }
 
 export interface PasswordPolicy {
@@ -266,6 +267,12 @@ export type {
 } from './timeRange';
 export { isTimeRangeActive } from './timeRange';
 
+export interface PkiTrustpool {
+  certificates: import('../../../pki/X509Certificate').X509Certificate[];
+  cabundleUrl?: string;
+  chainValidation: boolean;
+}
+
 export interface PkiTrustpoint {
   name: string;
   enrollmentUrl?: string;
@@ -296,6 +303,9 @@ export interface PkiTrustpoint {
   /** Set by 'crypto pki enroll': this router's own CA-issued cert + private key. */
   localCert?: import('../../../pki/X509Certificate').X509Certificate;
   localKey?: import('../../../pki/PkiKeyPair').PkiPrivateKey;
+  keyExportable?: boolean;
+  /** The revocation list fetched from the CA by `crypto pki crl request` or at enrollment. */
+  crl?: import('../../../pki/CertificateRevocationList').CertificateRevocationList;
 }
 
 export interface ParameterMapInspect {
@@ -528,6 +538,14 @@ export class CiscoSecurityConfig {
   parameterMapsInspect: Map<string, ParameterMapInspect> = new Map();
   pkiTrustpoints: Map<string, PkiTrustpoint> = new Map();
   pkiServers: Map<string, IosCertificateServer> = new Map();
+  trustpool: PkiTrustpool = { certificates: [], chainValidation: false };
+
+  trustAnchorsFor(trustpoint: PkiTrustpoint): import('../../../pki/X509Certificate').X509Certificate[] {
+    const pool = this.trustpool.chainValidation
+      ? this.trustpool.certificates.filter((certificate) => certificate.subject === certificate.issuer)
+      : this.trustpool.certificates;
+    return [...(trustpoint.caCert ? [trustpoint.caCert] : []), ...pool];
+  }
 
   ensurePkiServer(name: string): IosCertificateServer {
     let server = this.pkiServers.get(name);
@@ -922,6 +940,11 @@ export class CiscoSecurityConfig {
       if (tp.fingerprint) lines.push(` fingerprint ${tp.fingerprint}`);
     }
     for (const server of this.pkiServers.values()) lines.push(...server.runningConfigLines());
+    if (this.trustpool.cabundleUrl || this.trustpool.chainValidation) {
+      lines.push('crypto pki trustpool policy');
+      if (this.trustpool.cabundleUrl) lines.push(` cabundle url ${this.trustpool.cabundleUrl}`);
+      if (this.trustpool.chainValidation) lines.push(' chain-validation');
+    }
     if (this.controlPlane.servicePolicyInput || this.controlPlane.servicePolicyOutput) {
       lines.push('control-plane');
       if (this.controlPlane.servicePolicyInput) lines.push(` service-policy input ${this.controlPlane.servicePolicyInput}`);

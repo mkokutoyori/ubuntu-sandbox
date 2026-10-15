@@ -6496,13 +6496,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       clientPolicyFor: (peer) => engine.clientPolicyForPeer(peer),
       ingressInterface: (peer) => this._ipsecEgressInterfaceFor(peer) ?? null,
       authenticate: (list, user, password) => {
-        const methods = methodsOf('authentication', 'login', list);
-        if (methods === null) return 'denied';
-        for (const method of methods) {
-          if (method === 'none') return 'accepted';
-          if (method === 'local') return this.getCredentialStore().authenticate(user, password) ? 'accepted' : 'denied';
-        }
-        return 'denied';
+        if (methodsOf('authentication', 'login', list) === null) return 'denied';
+        return this.getAaaAuthenticator().authenticate(user, password, list)
+          .then((outcome) => (outcome.accepted ? 'accepted' as const : 'denied' as const), () => 'denied' as const);
       },
       authorize: (list, group) => {
         const methods = methodsOf('authorization', 'network', list);
@@ -6512,6 +6508,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       splitNetworks: (acl) => this.aclSourceNetworks(acl),
     });
   }
+
+  scheduleAfter(ms: number, fn: () => void): unknown { return this.getRouterScheduler().setTimeout(fn, ms); }
+
+  cancelScheduled(handle: unknown): void { this.getRouterScheduler().clear(handle as never); }
 
   /** @internal Return IPSec engine (null if not yet configured) */
   _getIPSecEngineInternal(): IPSecEngine | null { return this.ipsecEngine; }

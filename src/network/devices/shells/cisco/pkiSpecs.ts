@@ -5,13 +5,28 @@ import type { IosCertificateServer, EnrollmentRecord } from '../../router/pki/Io
 
 export const PKI_SERVER_MODE = 'config-ca-server';
 export const TRUSTPOINT_MODE = 'config-ca-trustpoint';
+export const TRUSTPOOL_MODE = 'config-ca-trustpool';
 
 export interface PkiHost {
   security(): CiscoSecurityConfig;
   authenticate(name: string): string;
   enroll(name: string): string;
+  requestCrl(name: string): string;
+  clearCrls(): void;
+  renderCrls(): string;
+  renderCertificates(name: string | null, verbose: boolean): string;
+  renderCertificatesPem(name: string | null): string;
   selectTrustpoint(name: string): void;
-  importCertificate(name: string, form: string): string;
+  removeTrustpoint(name: string): void;
+  exportPem(name: string, cipher: 'des' | '3des', phrase: string, destination: string | null): string;
+  importPem(name: string, source: string, phrase: string | null, exportable: boolean): string;
+  exportPkcs12(name: string, destination: string, phrase: string): string;
+  importPkcs12(name: string, source: string, phrase: string): string;
+  importTrustpool(source: string | null, clean: boolean): string;
+  setCabundleUrl(url: string | null): string;
+  setChainValidation(enabled: boolean): void;
+  resetTrustpoolPolicy(): void;
+  renderTrustpool(policy: boolean): string;
   selectServer(name: string | null): void;
   selectedServer(): string | null;
 }
@@ -25,6 +40,19 @@ const TRUSTPOINT: ArgumentSpec = { name: 'trustpoint', type: 'WORD', description
 const SERVER: ArgumentSpec = { name: 'server', type: 'WORD', description: 'Certificate server name' };
 const DAYS: ArgumentSpec = { name: 'days', type: 'INT', range: [1, 3650], description: 'Lifetime in days' };
 const HOURS: ArgumentSpec = { name: 'hours', type: 'INT', range: [1, 336], description: 'Lifetime in hours' };
+
+const PEM_CIPHER: ArgumentSpec = {
+  name: 'cipher', type: 'ENUM', description: 'Encryption of the exported private key',
+  values: [
+    { keyword: '3des', description: 'Encrypt the private key with Triple DES' },
+    { keyword: 'des', description: 'Encrypt the private key with DES' },
+  ],
+};
+const PHRASE: ArgumentSpec = { name: 'phrase', type: 'WORD', description: 'Password phrase protecting the private key' };
+const PEM_IMPORT_OPTIONS = [
+  { keyword: 'exportable', description: 'Allow the imported key to be exported again' },
+  { keyword: 'password', description: 'Password phrase protecting the private key', argument: PHRASE },
+] as const;
 
 const DATE = (ms: number): string => new Date(ms).toUTCString().replace(/^\w+, /, '').replace(' GMT', ' UTC');
 
@@ -86,11 +114,47 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
         run: (_s, args) => host().authenticate(args.trustpoint),
       },
       {
+        id: named('crypto-crl-request'),
+        path: ['crypto', where, 'crl', 'request', TRUSTPOINT],
+        description: 'Request a new certificate revocation list from the certificate authority',
+        modes: CONFIG, minPrivilege: 15,
+        run: (_s, args) => host().requestCrl(args.trustpoint),
+      },
+      {
+        id: named('show-crls'),
+        path: ['show', 'crypto', where, 'crls'],
+        description: 'Display the certificate revocation lists',
+        modes: SHOW, minPrivilege: 1,
+        run: () => host().renderCrls(),
+      },
+      {
         id: named('crypto-enroll'),
         path: ['crypto', where, 'enroll', TRUSTPOINT],
         description: 'Obtain a certificate from the certificate authority',
         modes: CONFIG, minPrivilege: 15,
         run: (_s, args) => host().enroll(args.trustpoint),
+      },
+      {
+        id: named('show-certificates'),
+        path: ['show', 'crypto', where, 'certificates', { ...TRUSTPOINT, optional: true }],
+        description: 'Display the certificates of the trustpoints',
+        modes: SHOW, minPrivilege: 1,
+        options: [{ keyword: 'verbose', description: 'Display the certificates in detail' }],
+        run: (_s, args) => host().renderCertificates(args.trustpoint ?? null, args.verbose !== undefined),
+      },
+      {
+        id: named('show-certificates-pem'),
+        path: ['show', 'crypto', where, 'certificates', 'pem', { ...TRUSTPOINT, optional: true }],
+        description: 'Display the certificates of the trustpoints in PEM format',
+        modes: SHOW, minPrivilege: 1,
+        run: (_s, args) => host().renderCertificatesPem(args.trustpoint ?? null),
+      },
+      {
+        id: named('clear-crls'),
+        path: ['clear', 'crypto', where, 'crls'],
+        description: 'Remove the certificate revocation list database',
+        modes: EXEC, minPrivilege: 15,
+        run: () => { host().clearCrls(); return ''; },
       },
       {
         id: named('crypto-server'),
@@ -224,14 +288,135 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
       modes: CONFIG, minPrivilege: 15,
       enters: TRUSTPOINT_MODE,
       run: (_s, args) => { sec().ensurePkiTrustpoint(args.trustpoint); host().selectTrustpoint(args.trustpoint); return ''; },
-      undo: (_s, args) => { sec().pkiTrustpoints.delete(args.trustpoint); return ''; },
+      undo: (_s, args) => { host().removeTrustpoint(args.trustpoint); return ''; },
     },
     {
-      id: 'crypto-pki-import',
-      path: ['crypto', 'pki', 'import', TRUSTPOINT, { name: 'form', type: 'REST', literal: 'LINE', description: 'Certificate format and source' }],
-      description: 'Import certificate',
+      id: 'crypto-pki-import-certificate',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, 'certificate'],
+      description: 'Paste the certificate issued for the pending request',
       modes: CONFIG, minPrivilege: 15,
-      run: (_s, args) => host().importCertificate(args.trustpoint, args.form),
+      run: () => '% Pasting a certificate needs an interactive terminal session',
+    },
+    {
+      id: 'crypto-pki-export-pem-terminal',
+      path: ['crypto', 'pki', 'export', TRUSTPOINT, 'pem', 'terminal', PEM_CIPHER, 'password', PHRASE],
+      description: 'Export the trustpoint certificates and key as PEM on the terminal',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().exportPem(args.trustpoint, args.cipher as 'des' | '3des', args.phrase, null),
+    },
+    {
+      id: 'crypto-pki-export-pem-url',
+      path: ['crypto', 'pki', 'export', TRUSTPOINT, 'pem', 'url', { name: 'destination', type: 'WORD', description: 'Destination URL' }, PEM_CIPHER, 'password', PHRASE],
+      description: 'Export the trustpoint certificates and key as PEM to a URL',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().exportPem(args.trustpoint, args.cipher as 'des' | '3des', args.phrase, args.destination),
+    },
+    {
+      id: 'crypto-pki-export-pkcs12',
+      path: ['crypto', 'pki', 'export', TRUSTPOINT, 'pkcs12', { name: 'destination', type: 'WORD', description: 'Destination URL' }, 'password', PHRASE],
+      description: 'Export the router certificate, the CA certificate and the key as a PKCS12 file',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().exportPkcs12(args.trustpoint, args.destination, args.phrase),
+    },
+    {
+      id: 'crypto-pki-import-pkcs12',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, 'pkcs12', { name: 'source', type: 'WORD', description: 'Source URL' }, 'password', PHRASE],
+      description: 'Import the certificates and the key of a PKCS12 file',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().importPkcs12(args.trustpoint, args.source, args.phrase),
+    },
+    {
+      id: 'crypto-pki-import-pem-url',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, 'pem', 'url', { name: 'source', type: 'WORD', description: 'Source URL' }],
+      description: 'Import PEM certificates and key from a URL',
+      modes: CONFIG, minPrivilege: 15,
+      options: PEM_IMPORT_OPTIONS,
+      run: (_s, args) => host().importPem(args.trustpoint, args.source, args.phrase ?? null, args.exportable !== undefined),
+    },
+    {
+      id: 'crypto-pki-import-pem-terminal',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, 'pem', 'terminal'],
+      description: 'Paste PEM certificates and key on the terminal',
+      modes: CONFIG, minPrivilege: 15,
+      options: PEM_IMPORT_OPTIONS,
+      run: () => '% Pasting PEM text needs an interactive terminal session',
+    },
+    {
+      id: 'crypto-pki-trustpool-policy',
+      path: ['crypto', 'pki', 'trustpool', 'policy'],
+      description: 'Configure the PKI trustpool policy',
+      undoDescription: 'Reset the PKI trustpool policy',
+      modes: CONFIG, minPrivilege: 15,
+      enters: TRUSTPOOL_MODE,
+      run: () => '',
+      undo: () => { host().resetTrustpoolPolicy(); return ''; },
+    },
+    {
+      id: 'crypto-pki-trustpool-import-url',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'url', { name: 'source', type: 'WORD', description: 'URL of the CA certificate bundle' }],
+      description: 'Add the CA certificates of a bundle to the trustpool',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().importTrustpool(args.source, false),
+    },
+    {
+      id: 'crypto-pki-trustpool-import-clean',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'clean'],
+      description: 'Remove all downloaded CA certificates from the trustpool',
+      modes: CONFIG, minPrivilege: 15,
+      run: () => host().importTrustpool(null, true),
+    },
+    {
+      id: 'crypto-pki-trustpool-import-clean-url',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'clean', 'url', { name: 'source', type: 'WORD', description: 'URL of the CA certificate bundle' }],
+      description: 'Replace the trustpool with the CA certificates of a bundle',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().importTrustpool(args.source, true),
+    },
+    {
+      id: 'crypto-pki-trustpool-import-terminal',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'terminal'],
+      description: 'Paste the CA certificates of a bundle on the terminal',
+      modes: CONFIG, minPrivilege: 15,
+      run: () => '% Pasting a CA bundle needs an interactive terminal session',
+    },
+    {
+      id: 'crypto-pki-trustpool-import-clean-terminal',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'clean', 'terminal'],
+      description: 'Replace the trustpool with CA certificates pasted on the terminal',
+      modes: CONFIG, minPrivilege: 15,
+      run: () => '% Pasting a CA bundle needs an interactive terminal session',
+    },
+    {
+      id: 'trustpool-cabundle-url',
+      path: ['cabundle', 'url', { name: 'url', type: 'WORD', description: 'URL of the CA certificate bundle, or none' }],
+      description: 'URL from which the CA certificate bundle is downloaded',
+      undoDescription: 'Remove the CA bundle URL',
+      modes: [TRUSTPOOL_MODE], minPrivilege: 15,
+      run: (_s, args) => host().setCabundleUrl(args.url === 'none' ? null : args.url),
+      undo: () => host().setCabundleUrl(null),
+    },
+    {
+      id: 'trustpool-chain-validation',
+      path: ['chain-validation'],
+      description: 'Validate the chain from the peer certificate up to a root certificate of the trustpool',
+      undoDescription: 'Stop the validation at the issuer of the peer certificate',
+      modes: [TRUSTPOOL_MODE], minPrivilege: 15,
+      run: () => { host().setChainValidation(true); return ''; },
+      undo: () => { host().setChainValidation(false); return ''; },
+    },
+    {
+      id: 'show-crypto-pki-trustpool',
+      path: ['show', 'crypto', 'pki', 'trustpool'],
+      description: 'Display the certificates of the PKI trustpool',
+      modes: SHOW, minPrivilege: 1,
+      run: () => host().renderTrustpool(false),
+    },
+    {
+      id: 'show-crypto-pki-trustpool-policy',
+      path: ['show', 'crypto', 'pki', 'trustpool', 'policy'],
+      description: 'Display the certificates and the policy of the PKI trustpool',
+      modes: SHOW, minPrivilege: 1,
+      run: () => host().renderTrustpool(true),
     },
     {
       id: 'ca-server-issuer-name',

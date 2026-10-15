@@ -51,14 +51,14 @@ export async function buildCa(name: string, legs: ReadonlyArray<{ peer: CiscoRou
   return ca;
 }
 
-export async function enrollTrustpoint(router: CiscoRouter, caUrl: string, subject: string): Promise<string[]> {
+export async function enrollTrustpoint(router: CiscoRouter, caUrl: string, subject: string, revocation = 'none'): Promise<string[]> {
   const out: string[] = [];
   for (const cmd of [
     'enable', 'configure terminal',
     'crypto pki trustpoint TP',
     `enrollment url ${caUrl}`,
     `subject-name ${subject}`,
-    'revocation-check none',
+    `revocation-check ${revocation}`,
     'exit',
     'crypto pki authenticate TP',
     'crypto pki enroll TP',
