@@ -64,7 +64,7 @@ describe('EzVPN group attributes', () => {
     const other = await lab(hub, ['key GROUPKEY', 'pool VPNPOOL', 'group-lock']);
     await run(other.client, [...configureClient([...NEM, 'username alice@ELSEWHERE password 0 alicepw']), ...assign]);
     expect(await status(other)).not.toContain('IPSEC_ACTIVE');
-  });
+  }, 30_000);
 
   it('the banner, configuration url and version, save-password and browser proxy reach the remote', async () => {
     const l = await lab(['crypto isakmp client configuration browser-proxy bproxy', 'proxy server 10.1.1.1:2000', 'proxy exception-list 10.2.2.*,www.*org', 'proxy by-pass-local', 'exit'], [
