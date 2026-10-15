@@ -337,6 +337,19 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       undo: (_s, args) => { sec().aaaGroups.delete(args.nom); return ''; },
     },
     {
+      id: 'aaa-authentication-attempts-login',
+      path: ['aaa', 'authentication', 'attempts', 'login', {
+        name: 'nombre', type: 'INT', range: [1, 25],
+        description: 'Number of login attempts before the line is closed',
+      }],
+      description: 'Set the maximum number of failed login attempts on a line',
+      undoDescription: 'Restore the default number of login attempts',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => { sec().loginAttempts = Number(args.nombre); return ''; },
+      undo: () => { sec().loginAttempts = undefined; return ''; },
+    },
+    {
       id: 'aaa-local-max-fail',
       path: ['aaa', 'local', 'authentication', 'attempts', 'max-fail', {
         name: 'nombre', type: 'INT',
