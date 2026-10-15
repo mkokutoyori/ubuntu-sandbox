@@ -74,6 +74,8 @@ import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
 import { authenticateTrustpoint, enrollTrustpoint, requestCrl, clearCrls, renderCrls, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
 import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
 import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
+import { renderCertificates, renderCertificatesPem } from '../router/pki/CertificateDisplay';
+import type { PkiTrustpoint } from '../router/security/CiscoSecurityConfig';
 import { exportTrustpointPem, parseTrustpointPem, installTrustpointPem, passphraseProblem } from '../router/pki/TrustpointPem';
 import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
@@ -1665,6 +1667,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       enroll: (name) => { this._pendingAsync = enrollTrustpoint(enrollment, name); return ''; },
       requestCrl: (name) => { this._pendingAsync = requestCrl(enrollment, name); return ''; },
       clearCrls: () => clearCrls(enrollment),
+      renderCertificates: (name, verbose) => {
+        const found = this.trustpointsNamed(router(), name);
+        return typeof found === 'string' ? found : renderCertificates(found, verbose) || 'No PKI certificates installed';
+      },
+      renderCertificatesPem: (name) => {
+        const found = this.trustpointsNamed(router(), name);
+        return typeof found === 'string' ? found : renderCertificatesPem(found);
+      },
       renderCrls: () => renderCrls(enrollment),
       selectTrustpoint: (name) => { this.selectedPkiTrustpoint = name; },
       removeTrustpoint: (name) => {
@@ -1725,6 +1735,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         },
       ],
     };
+  }
+
+  private trustpointsNamed(device: CiscoRouter, name: string | null): PkiTrustpoint[] | string {
+    const all = getSecurityConfig(device).pkiTrustpoints;
+    if (name === null) return [...all.values()];
+    const one = all.get(name);
+    return one ? [one] : `% Trustpoint ${name} not configured`;
   }
 
   importPemText(device: CiscoRouter, name: string, text: string, phrase: string | null, exportable: boolean): string {

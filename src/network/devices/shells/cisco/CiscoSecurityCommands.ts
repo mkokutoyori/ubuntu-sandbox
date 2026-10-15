@@ -1320,7 +1320,6 @@ export function buildIdentityShowCommands(
 const SECURITY_SHOW_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'show crypto pki trustpoints': null,
-  'show crypto pki certificates': null,
   'show crypto key mypubkey rsa': null,
   'show policy-map control-plane': null,
   'show ip traffic': null,
@@ -1363,32 +1362,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       tp.serialNumber ? `    Serial Number: ${tp.serialNumber}` : '',
     ].filter(Boolean).join('\n')).join('\n');
   });
-  trie.register('show crypto pki certificates', 'PKI certificates', () => {
-    const tps = [...sec().pkiTrustpoints.values()];
-    if (tps.length === 0) return 'No PKI certificates installed';
-    return tps.map(tp => {
-      if (!tp.localCert) return `Certificate (Trustpoint ${tp.name}):\n  Status: Pending enrollment`;
-      const lines = [
-        `Certificate (Trustpoint ${tp.name}):`,
-        '  Status: Available',
-        `  Certificate Serial Number: ${tp.localCert.serialNumber}`,
-        `  Subject: ${tp.localCert.subject}`,
-        `  Issuer: ${tp.localCert.issuer}`,
-        `  Validity: ${new Date(tp.localCert.notBefore).toISOString()} to ${new Date(tp.localCert.notAfter).toISOString()}`,
-      ];
-      if (tp.caCert) {
-        lines.push(
-          `CA Certificate (Trustpoint ${tp.name}):`,
-          '  Status: Available',
-          `  Certificate Serial Number: ${tp.caCert.serialNumber}`,
-          `  Subject: ${tp.caCert.subject}`,
-        );
-      }
-      return lines.join('\n');
-    }).join('\n\n');
-  });
-
-
   trie.register('show policy-map control-plane', 'Show CoPP policy', () => {
     const s = sec();
     const pm = s.controlPlane.servicePolicyInput;

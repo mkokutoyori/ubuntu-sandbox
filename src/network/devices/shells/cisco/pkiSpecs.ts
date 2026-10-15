@@ -13,6 +13,8 @@ export interface PkiHost {
   requestCrl(name: string): string;
   clearCrls(): void;
   renderCrls(): string;
+  renderCertificates(name: string | null, verbose: boolean): string;
+  renderCertificatesPem(name: string | null): string;
   selectTrustpoint(name: string): void;
   removeTrustpoint(name: string): void;
   importCertificate(name: string, form: string): string;
@@ -124,6 +126,21 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
         description: 'Obtain a certificate from the certificate authority',
         modes: CONFIG, minPrivilege: 15,
         run: (_s, args) => host().enroll(args.trustpoint),
+      },
+      {
+        id: named('show-certificates'),
+        path: ['show', 'crypto', where, 'certificates', { ...TRUSTPOINT, optional: true }],
+        description: 'Display the certificates of the trustpoints',
+        modes: SHOW, minPrivilege: 1,
+        options: [{ keyword: 'verbose', description: 'Display the certificates in detail' }],
+        run: (_s, args) => host().renderCertificates(args.trustpoint ?? null, args.verbose !== undefined),
+      },
+      {
+        id: named('show-certificates-pem'),
+        path: ['show', 'crypto', where, 'certificates', 'pem', { ...TRUSTPOINT, optional: true }],
+        description: 'Display the certificates of the trustpoints in PEM format',
+        modes: SHOW, minPrivilege: 1,
+        run: (_s, args) => host().renderCertificatesPem(args.trustpoint ?? null),
       },
       {
         id: named('clear-crls'),

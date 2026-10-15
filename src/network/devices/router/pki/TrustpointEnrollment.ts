@@ -1,9 +1,7 @@
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { csrToPem, pemToCert, pemToCrl } from '@/network/pki/pem';
-import { encodeCertificate } from '@/network/pki/der/X509Der';
-import { bytesToHex } from '@/crypto/encoding';
-import { md5, sha1 } from '@/crypto/hash';
+import { certificateFingerprints, iosDate } from './CertificateDisplay';
 import type { CiscoSecurityConfig, PkiTrustpoint } from '../security/CiscoSecurityConfig';
 import { parseEnrollmentUrl, type PkiEnrollmentClient } from './PkiEnrollmentClient';
 
@@ -31,10 +29,6 @@ export function pendingTransactionOf(trustpoint: PkiTrustpoint): number | null {
   return pending.get(trustpoint)?.transaction ?? null;
 }
 
-function colonHex(bytes: Uint8Array): string {
-  return (bytesToHex(bytes).toUpperCase().match(/.{8}/g) ?? []).join(' ');
-}
-
 function endpointOf(trustpoint: PkiTrustpoint) {
   if (!trustpoint.enrollmentUrl) return null;
   return parseEnrollmentUrl(trustpoint.enrollmentUrl);
@@ -51,9 +45,7 @@ export async function authenticateTrustpoint(host: TrustpointEnrollmentHost, nam
   }
   const certificate = pemToCert(reply.body);
   if (!certificate) return '% Error in receiving Certificate Authority certificate: status = FAIL (unreadable certificate)';
-  const der = encodeCertificate(certificate);
-  const md5Digest = colonHex(md5(der));
-  const sha1Digest = colonHex(sha1(der));
+  const { md5: md5Digest, sha1: sha1Digest } = certificateFingerprints(certificate);
   const lines = ['Certificate has the following attributes:', `       Fingerprint MD5: ${md5Digest}`, `      Fingerprint SHA1: ${sha1Digest}`];
   if (trustpoint.fingerprint) {
     const wanted = trustpoint.fingerprint.replace(/[\s:]/g, '').toUpperCase();
@@ -139,20 +131,12 @@ export function clearCrls(host: TrustpointEnrollmentHost): void {
   }
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function crlDate(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} GMT ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} ${d.getUTCFullYear()}`;
-}
-
 export function renderCrls(host: TrustpointEnrollmentHost): string {
   const out: string[] = [];
   for (const trustpoint of host.security().pkiTrustpoints.values()) {
     const crl = trustpoint.crl;
     if (!crl) continue;
-    out.push('CRL Issuer Name:', `    ${crl.issuer}`, `LastUpdate: ${crlDate(crl.thisUpdate)}`, `NextUpdate: ${crlDate(crl.nextUpdate)}`,
+    out.push('CRL Issuer Name:', `    ${crl.issuer}`, `LastUpdate: ${iosDate(crl.thisUpdate)}`, `NextUpdate: ${iosDate(crl.nextUpdate)}`,
       'Retrieved from CRL Distribution Point:', '** CDP Not Published - Retrieved via SCEP');
   }
   return out.join('\n');
