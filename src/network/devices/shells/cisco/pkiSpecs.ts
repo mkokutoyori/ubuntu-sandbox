@@ -14,7 +14,10 @@ export interface PkiHost {
   clearCrls(): void;
   renderCrls(): string;
   selectTrustpoint(name: string): void;
+  removeTrustpoint(name: string): void;
   importCertificate(name: string, form: string): string;
+  exportPem(name: string, cipher: 'des' | '3des', phrase: string, destination: string | null): string;
+  importPem(name: string, source: string, phrase: string | null, exportable: boolean): string;
   selectServer(name: string | null): void;
   selectedServer(): string | null;
 }
@@ -28,6 +31,19 @@ const TRUSTPOINT: ArgumentSpec = { name: 'trustpoint', type: 'WORD', description
 const SERVER: ArgumentSpec = { name: 'server', type: 'WORD', description: 'Certificate server name' };
 const DAYS: ArgumentSpec = { name: 'days', type: 'INT', range: [1, 3650], description: 'Lifetime in days' };
 const HOURS: ArgumentSpec = { name: 'hours', type: 'INT', range: [1, 336], description: 'Lifetime in hours' };
+
+const PEM_CIPHER: ArgumentSpec = {
+  name: 'cipher', type: 'ENUM', description: 'Encryption of the exported private key',
+  values: [
+    { keyword: '3des', description: 'Encrypt the private key with Triple DES' },
+    { keyword: 'des', description: 'Encrypt the private key with DES' },
+  ],
+};
+const PHRASE: ArgumentSpec = { name: 'phrase', type: 'WORD', description: 'Password phrase protecting the private key' };
+const PEM_IMPORT_OPTIONS = [
+  { keyword: 'exportable', description: 'Allow the imported key to be exported again' },
+  { keyword: 'password', description: 'Password phrase protecting the private key', argument: PHRASE },
+] as const;
 
 const DATE = (ms: number): string => new Date(ms).toUTCString().replace(/^\w+, /, '').replace(' GMT', ' UTC');
 
@@ -248,7 +264,7 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
       modes: CONFIG, minPrivilege: 15,
       enters: TRUSTPOINT_MODE,
       run: (_s, args) => { sec().ensurePkiTrustpoint(args.trustpoint); host().selectTrustpoint(args.trustpoint); return ''; },
-      undo: (_s, args) => { sec().pkiTrustpoints.delete(args.trustpoint); return ''; },
+      undo: (_s, args) => { host().removeTrustpoint(args.trustpoint); return ''; },
     },
     {
       id: 'crypto-pki-import',
@@ -256,6 +272,36 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
       description: 'Import certificate',
       modes: CONFIG, minPrivilege: 15,
       run: (_s, args) => host().importCertificate(args.trustpoint, args.form),
+    },
+    {
+      id: 'crypto-pki-export-pem-terminal',
+      path: ['crypto', 'pki', 'export', TRUSTPOINT, 'pem', 'terminal', PEM_CIPHER, 'password', PHRASE],
+      description: 'Export the trustpoint certificates and key as PEM on the terminal',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().exportPem(args.trustpoint, args.cipher as 'des' | '3des', args.phrase, null),
+    },
+    {
+      id: 'crypto-pki-export-pem-url',
+      path: ['crypto', 'pki', 'export', TRUSTPOINT, 'pem', 'url', { name: 'destination', type: 'WORD', description: 'Destination URL' }, PEM_CIPHER, 'password', PHRASE],
+      description: 'Export the trustpoint certificates and key as PEM to a URL',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().exportPem(args.trustpoint, args.cipher as 'des' | '3des', args.phrase, args.destination),
+    },
+    {
+      id: 'crypto-pki-import-pem-url',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, 'pem', 'url', { name: 'source', type: 'WORD', description: 'Source URL' }],
+      description: 'Import PEM certificates and key from a URL',
+      modes: CONFIG, minPrivilege: 15,
+      options: PEM_IMPORT_OPTIONS,
+      run: (_s, args) => host().importPem(args.trustpoint, args.source, args.phrase ?? null, args.exportable !== undefined),
+    },
+    {
+      id: 'crypto-pki-import-pem-terminal',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, 'pem', 'terminal'],
+      description: 'Paste PEM certificates and key on the terminal',
+      modes: CONFIG, minPrivilege: 15,
+      options: PEM_IMPORT_OPTIONS,
+      run: () => '% Pasting PEM text needs an interactive terminal session',
     },
     {
       id: 'ca-server-issuer-name',

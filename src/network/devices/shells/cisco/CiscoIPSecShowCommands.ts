@@ -147,7 +147,7 @@ export function registerIPSecShowCommands(
     eng()?.showCryptoMap?.() ?? 'No crypto maps configured');
 
   trie.register('show crypto pki certificates verbose', 'Detailed PKI certificates', () => {
-    const sec = (getRouter() as unknown as { [s: symbol]: { pkiTrustpoints?: Map<string, { name: string; subjectName?: string; enrollmentUrl?: string; revocationCheck?: string; rsaKeypair?: string; importedCertificate?: { format: string; importedAtMs: number } }> } | undefined })[Symbol.for('CiscoSecurityConfig')];
+    const sec = (getRouter() as unknown as { [s: symbol]: { pkiTrustpoints?: Map<string, { name: string; subjectName?: string; enrollmentUrl?: string; revocationCheck?: string; rsaKeypair?: string; localCert?: { notBefore: number } }> } | undefined })[Symbol.for('CiscoSecurityConfig')];
     const tps = sec?.pkiTrustpoints;
     if (!tps || tps.size === 0) return 'No PKI certificates installed';
     return [...tps.values()].map(tp => [
@@ -156,8 +156,8 @@ export function registerIPSecShowCommands(
       `  Enrollment URL: ${tp.enrollmentUrl ?? 'terminal'}`,
       `  Revocation Check: ${tp.revocationCheck ?? 'crl'}`,
       `  RSA Keypair: ${tp.rsaKeypair ?? '<auto>'}`,
-      tp.importedCertificate
-        ? `  Imported Certificate (${tp.importedCertificate.format}): ${new Date(tp.importedCertificate.importedAtMs).toISOString()}`
+      tp.localCert
+        ? `  Certificate: installed (valid from ${new Date(tp.localCert.notBefore).toISOString()})`
         : '  Certificate: pending enrollment',
       '  Validity: 365 days',
       `  Certificate fingerprint (SHA1): ${'AA:BB:CC:DD:EE:FF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB'}`,

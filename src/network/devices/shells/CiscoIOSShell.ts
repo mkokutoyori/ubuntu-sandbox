@@ -74,6 +74,10 @@ import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
 import { authenticateTrustpoint, enrollTrustpoint, requestCrl, clearCrls, renderCrls, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
 import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
 import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
+import { exportTrustpointPem, parseTrustpointPem, installTrustpointPem, passphraseProblem } from '../router/pki/TrustpointPem';
+import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
+import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
+import type { TftpEndpoint } from '@/network/tftp/types';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -299,6 +303,13 @@ const ROUTER_SHOW_ARGUMENTS: Readonly<Record<string, string>> = {
   'show traffic-shape': 'Interface name',
   'show ip rip database': 'Network prefix',
 };
+
+function pemIsComplete(lines: readonly string[]): boolean {
+  const certificates = lines.filter((entry) => entry.includes('-----END CERTIFICATE-----')).length;
+  const keyStarted = lines.some((entry) => entry.includes('PRIVATE KEY-----') && entry.includes('BEGIN'));
+  const keyEnded = lines.some((entry) => entry.includes('PRIVATE KEY-----') && entry.includes('END'));
+  return keyStarted ? keyEnded && certificates >= 2 : certificates >= 1;
+}
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   versionText(): string {
@@ -1656,20 +1667,109 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       clearCrls: () => clearCrls(enrollment),
       renderCrls: () => renderCrls(enrollment),
       selectTrustpoint: (name) => { this.selectedPkiTrustpoint = name; },
+      removeTrustpoint: (name) => {
+        const security = getSecurityConfig(router());
+        if (security.pkiTrustpoints.get(name)?.localCert) router().clearIkeCertAuth();
+        security.pkiTrustpoints.delete(name);
+      },
       importCertificate: (name, form) => {
-        const tp = getSecurityConfig(router()).pkiTrustpoints.get(name);
-        if (!tp) return `% Trustpoint ${name} not configured`;
+        if (!getSecurityConfig(router()).pkiTrustpoints.has(name)) return `% Trustpoint ${name} not configured`;
         const what = form.trim().split(/\s+/)[0]?.toLowerCase();
-        if (what !== 'certificate' && what !== 'pem') return `% Unknown import type "${what}"`;
-        (tp as unknown as { importedCertificate?: { format: string; importedAtMs: number } }).importedCertificate = {
-          format: what, importedAtMs: simulationNowMs(),
-        };
-        enrollment.install(tp);
-        return `% Certificate imported into trustpoint ${name}`;
+        return `% Unknown import type "${what}": use "pem"`;
+      },
+      exportPem: (name, cipher, phrase, destination) => {
+        const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!trustpoint) return `% Trustpoint ${name} not configured`;
+        const exported = exportTrustpointPem(trustpoint, cipher, phrase);
+        if ('error' in exported) return exported.error;
+        if (destination === null) return exported.text;
+        this._pendingAsync = this.writeUrl(destination, exported.text);
+        return '';
+      },
+      importPem: (name, source, phrase, exportable) => {
+        const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!trustpoint) return `% Trustpoint ${name} not configured`;
+        const problem = phrase === null ? null : passphraseProblem(phrase);
+        if (problem) return problem;
+        this._pendingAsync = this.readUrl(source).then((read) =>
+          'error' in read ? read.error : this.importPemText(router(), name, read.text, phrase, exportable));
+        return '';
       },
       selectServer: (name) => { this.selectedPkiServer = name; },
       selectedServer: () => this.selectedPkiServer,
     };
+  }
+
+  protected override pemImportPlan(
+    trustpoint: string, phrase: string | null, exportable: boolean, device: CiscoRouter | undefined,
+  ): CommandInteractionPlan | null {
+    if (!device) return null;
+    if (!getSecurityConfig(device).pkiTrustpoints.has(trustpoint)) return { steps: [{ kind: 'output', lines: [`% Trustpoint ${trustpoint} not configured`] }] };
+    const problem = phrase === null ? null : passphraseProblem(phrase);
+    if (problem) return { steps: [{ kind: 'output', lines: [problem] }] };
+    return {
+      steps: [
+        { kind: 'output', lines: ['% Enter PEM-formatted CA certificate, encrypted private key and router certificate.', '% End with a blank line or the word "quit" on a line by itself.'] },
+        {
+          kind: 'collect', prompt: '', storeAs: 'pem_text',
+          accept: (line, accumulated) => {
+            const done = line.trim() === 'quit' || (line.trim() === '' && pemIsComplete(accumulated));
+            return done ? { done: true, body: accumulated.join('\n') } : { done: false };
+          },
+        },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            rt.output(this.importPemText(device, trustpoint, rt.values.get('pem_text') ?? '', phrase, exportable));
+          },
+        },
+      ],
+    };
+  }
+
+  importPemText(device: CiscoRouter, name: string, text: string, phrase: string | null, exportable: boolean): string {
+    const trustpoint = getSecurityConfig(device).pkiTrustpoints.get(name);
+    if (!trustpoint) return `% Trustpoint ${name} not configured`;
+    const imported = parseTrustpointPem(text, phrase);
+    if (imported.error) return imported.error;
+    installTrustpointPem(trustpoint, imported, exportable);
+    if (trustpoint.caCert && trustpoint.localCert && trustpoint.localKey) {
+      device.installIkeCertAuth({
+        localCert: trustpoint.localCert, localKey: trustpoint.localKey, trustAnchors: [trustpoint.caCert],
+        crls: trustpoint.crl ? [trustpoint.crl] : [],
+        revocationCheck: mapRevocationCheck(trustpoint.revocationCheck),
+      });
+      return '% PEM files import succeeded.';
+    }
+    return '% CA certificate imported.';
+  }
+
+  private async writeUrl(url: string, text: string): Promise<string> {
+    if (/^tftp:/i.test(url)) {
+      const target = parseTftpUrl(url);
+      const endpoint = (this.d() as unknown as { getUdpEndpoint?: () => TftpEndpoint }).getUdpEndpoint?.() ?? null;
+      if (!target) return TFTP_NO_HOST;
+      if (!endpoint) return this.copieReseauIndisponible(url);
+      return tftpPut(endpoint, target, text);
+    }
+    if (/^[a-z]+:\/\//i.test(url) && !/^(flash|nvram|bootflash):/i.test(url)) return this.copieReseauIndisponible(url);
+    if (this.fs().freeBytes() < text.length) return `%Error writing ${url} (No space left on device)`;
+    this.fs().write(url, text);
+    return `% PEM files export succeeded.`;
+  }
+
+  private async readUrl(url: string): Promise<{ text: string } | { error: string }> {
+    if (/^tftp:/i.test(url)) {
+      const target = parseTftpUrl(url);
+      const endpoint = (this.d() as unknown as { getUdpEndpoint?: () => TftpEndpoint }).getUdpEndpoint?.() ?? null;
+      if (!target) return { error: TFTP_NO_HOST };
+      if (!endpoint) return { error: this.copieReseauIndisponible(url) };
+      const got = await tftpGet(endpoint, target);
+      return 'erreur' in got ? { error: got.erreur } : { text: got.texte };
+    }
+    if (/^[a-z]+:\/\//i.test(url) && !/^(flash|nvram|bootflash):/i.test(url)) return { error: this.copieReseauIndisponible(url) };
+    const text = this.fs().read(url);
+    return text === null ? { error: `%Error opening ${url} (No such file or directory)` } : { text };
   }
 
   getPkiTrustpoint(): string | null { return this.selectedPkiTrustpoint; }

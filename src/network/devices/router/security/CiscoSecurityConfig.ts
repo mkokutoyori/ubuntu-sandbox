@@ -192,6 +192,7 @@ export interface CryptoRsaKey {
   modulus: number;
   general: boolean;
   generatedAtMs: number;
+  exportable?: boolean;
 }
 
 export interface PasswordPolicy {
@@ -296,6 +297,7 @@ export interface PkiTrustpoint {
   /** Set by 'crypto pki enroll': this router's own CA-issued cert + private key. */
   localCert?: import('../../../pki/X509Certificate').X509Certificate;
   localKey?: import('../../../pki/PkiKeyPair').PkiPrivateKey;
+  keyExportable?: boolean;
   /** The revocation list fetched from the CA by `crypto pki crl request` or at enrollment. */
   crl?: import('../../../pki/CertificateRevocationList').CertificateRevocationList;
 }

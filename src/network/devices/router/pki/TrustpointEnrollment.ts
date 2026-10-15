@@ -82,8 +82,12 @@ export async function enrollTrustpoint(host: TrustpointEnrollmentHost, name: str
     key = waiting.key;
     reply = await client.poll(endpoint, waiting.transaction);
   } else {
-    const keys = PkiKeyPair.generate('rsa');
+    const labelled = trustpoint.rsaKeypair
+      ? host.security().cryptoKeys.find((candidate) => candidate.label === trustpoint.rsaKeypair)
+      : undefined;
+    const keys = PkiKeyPair.generate('rsa', labelled?.modulus);
     key = keys.privateKey;
+    trustpoint.keyExportable = labelled?.exportable === true;
     const subject = trustpoint.subjectName || `CN=${host.hostname()}`;
     const names = trustpoint.fqdn ? [trustpoint.fqdn] : undefined;
     reply = await client.submit(endpoint, csrToPem(buildCertificateRequest(subject, keys, names)));

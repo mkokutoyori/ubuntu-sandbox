@@ -1297,7 +1297,7 @@ export function buildIdentityShowCommands(
       `Key name: ${k.label}`,
       ' Storage Device: not specified',
       ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
-      ' Key is not exportable.',
+      k.exportable ? ' Key is exportable.' : ' Key is not exportable.',
       ' Key Data:',
       ...pubkeyDataLines(getDevice() as { getHostname(): string }, k.modulus),
     ].join('\n')).join('\n\n');
