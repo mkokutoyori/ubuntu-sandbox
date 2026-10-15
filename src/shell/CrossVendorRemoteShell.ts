@@ -193,6 +193,7 @@ export class CrossVendorRemoteShell implements IShell {
           output: [...result.output],
           styledOutput: result.styledOutput,
           exit: true,
+          exitCode: result.exitCode,
         };
       }
       this.top.resume();
@@ -200,6 +201,7 @@ export class CrossVendorRemoteShell implements IShell {
         output: result.output,
         styledOutput: result.styledOutput,
         clearScreen: result.clearScreen,
+        exitCode: result.exitCode,
       };
     }
 

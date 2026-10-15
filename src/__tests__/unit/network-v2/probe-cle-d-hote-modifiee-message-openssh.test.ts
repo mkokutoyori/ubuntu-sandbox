@@ -45,7 +45,7 @@ const regenerateServerKeys = async () => {
 describe('premier contact', () => {
   it('temoin : la premiere connexion enregistre la cle et reussit', async () => {
     expect(await pc.executeCommand(acceptNew)).toContain('lsrv');
-    expect(await pc.executeCommand('cat ~/.ssh/known_hosts')).toContain(SERVER_IP);
+    expect(await pc.executeCommand(`ssh-keygen -F ${SERVER_IP}`)).toContain(`Host ${SERVER_IP} found: line 1`);
   });
 });
 

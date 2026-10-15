@@ -34,6 +34,9 @@ export interface WireSshTarget {
   readonly strict: StrictHostKeyChecking;
   readonly authentication?: SshClientAuthentication;
   readonly algorithms?: SshAlgorithmPreferences;
+  readonly knownHosts?: { readonly user: readonly string[]; readonly global: readonly string[] };
+  readonly hashKnownHosts?: boolean;
+  readonly identitiesOnly?: boolean;
 }
 
 export interface WireSshOutcome {
@@ -57,14 +60,16 @@ export async function connectWireSsh(
     knownHostsPath: `${client.home}/.ssh/known_hosts`,
     credentialless: target.password === undefined && target.passwordPrompt === undefined,
     interactionHandler: interaction,
-    ...(client.agent === undefined ? {} : { agent: client.agent }),
+    ...(client.agent === undefined || target.identitiesOnly === true ? {} : { agent: client.agent }),
   });
   const builder = SshConnectOptionsBuilder.create()
     .host(target.host).user(target.user).port(target.port).strictHostKeyChecking(target.strict)
     .authentication(target.authentication ?? OPENSSH_CLIENT_AUTHENTICATION);
   if (target.algorithms) builder.algorithms(target.algorithms);
+  if (target.knownHosts) builder.knownHosts(target.knownHosts);
+  if (target.hashKnownHosts !== undefined) builder.hashKnownHosts(target.hashKnownHosts);
   for (const path of target.identities) builder.addIdentityFile(path);
-  if (target.identities.length === 0) {
+  if (target.identities.length === 0 && target.identitiesOnly !== true) {
     for (const candidate of OPENSSH_DEFAULT_IDENTITY_FILES) {
       const path = `${client.home}/.ssh/${candidate}`;
       if (client.vfs.readFile(path) !== null) builder.addIdentityFile(path);

@@ -19,15 +19,17 @@ export class SshKnownHosts {
     private readonly uid: number,
     private readonly gid: number,
     private readonly umask: number = 0o022,
+    private readonly readPaths: readonly string[] = [path],
   ) {}
 
   load(): KnownHostsStore {
-    const content = this.vfs.readFile(this.path);
-    if (content === null) return KnownHostsStore.empty;
-    return KnownHostsStore.parse(content);
+    const contents = this.readPaths.map((path) => this.vfs.readFile(path)).filter((text): text is string => text !== null);
+    if (contents.length === 0) return KnownHostsStore.empty;
+    return KnownHostsStore.parse(contents.join('\n'));
   }
 
   save(store: KnownHostsStore): void {
+    if (this.path === '') return;
     this.vfs.writeFile(
       this.path,
       store.serialize() + '\n',
@@ -39,6 +41,7 @@ export class SshKnownHosts {
   }
 
   addHost(host: string, key: SshHostKey, opts: { hashed?: boolean } = {}): void {
+    if (this.path === '') return;
     const token = opts.hashed ? hashKnownHostsToken(host) : host;
     const kept = withoutHost(this.vfs.readFile(this.path) ?? '', host);
     this.vfs.writeFile(

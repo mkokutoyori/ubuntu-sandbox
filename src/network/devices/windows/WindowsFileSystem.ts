@@ -261,6 +261,8 @@ export class WindowsFileSystem {
       this.mkdirp(dir);
     }
 
+    this.seedDefaultAcls();
+
     // The static name table — seeded with this machine's own name so it
     // resolves itself, mirroring the Linux 127.0.1.1 convention.
     const hostsContent = HostsFile.defaultWindows(hostname).serialize();
@@ -943,6 +945,25 @@ export class WindowsFileSystem {
   }
 
   // ─── ACL Operations ─────────────────────────────────────────────
+
+  seedProfileAcl(name: string): void {
+    const home = `C:\\Users\\${name}`;
+    this.addACE(home, { principal: 'NT AUTHORITY\\SYSTEM', type: 'allow', permissions: ['FullControl'] });
+    this.addACE(home, { principal: 'BUILTIN\\Administrators', type: 'allow', permissions: ['FullControl'] });
+    this.addACE(home, { principal: name, type: 'allow', permissions: ['FullControl'] });
+  }
+
+  private seedDefaultAcls(): void {
+    for (const name of ['User', 'alice', 'bob', 'carl', 'dave', 'Administrator']) this.seedProfileAcl(name);
+    this.addACE('C:\\Users\\Public', { principal: 'Everyone', type: 'allow', permissions: ['Modify'] });
+    const readable = ['C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)'];
+    for (const path of readable) {
+      this.addACE(path, { principal: 'NT AUTHORITY\\SYSTEM', type: 'allow', permissions: ['FullControl'] });
+      this.addACE(path, { principal: 'BUILTIN\\Administrators', type: 'allow', permissions: ['FullControl'] });
+      this.addACE(path, { principal: 'BUILTIN\\Users', type: 'allow', permissions: ['ReadAndExecute', 'Read'] });
+    }
+    this.addACE('C:\\Windows\\Temp', { principal: 'BUILTIN\\Users', type: 'allow', permissions: ['Modify'] });
+  }
 
   getACL(absPath: string): WinACE[] {
     const entry = this.resolve(absPath);

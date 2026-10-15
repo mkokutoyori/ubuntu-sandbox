@@ -107,6 +107,7 @@ export interface SshVtyShell {
    * (docs/PRD-SSH-Unification.md §4bis B4).
    */
   lastEndedSession?(): boolean;
+  lastExitCode?(): number;
   /** Hand back the value the client collected for that challenge. */
   handleInput?(value: string): Promise<string>;
   getPrompt(): string;

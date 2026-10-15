@@ -14,6 +14,11 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { ScriptedTerminalIO } from '@/network/protocols/ssh/session/ScriptedTerminalIO';
+import { guardedFileSystem, principalOf } from './windows/WindowsFsAccess';
+import { posixClientFlags, seedWindowsOpenSshFiles } from './windows/WindowsOpenSshFiles';
+import { resolveClientInvocation, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
+import { sshClientAlgorithms, sshClientAuthentication } from '@/network/protocols/ssh/SshConnectOptions';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { likeDate } from '@/powershell/runtime/dotnetDateTime';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
@@ -82,6 +87,7 @@ import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { runWindowsSftpClient, type WindowsSftpRemote } from './windows/network/WindowsSftpClient';
 import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSshLocalFs';
+import { sshLocalFsFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { WireSftpFileSystem } from '@/network/protocols/ssh/sftp/WireSftpFileSystem';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { runWindowsScpClient } from './windows/network/WindowsScpClient';
@@ -523,6 +529,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.fs = new WindowsFileSystem(name);
     this.fs.setClock(() => this.getSystemClockMs());
     this.seedVolumesFromHardware();
+    seedWindowsOpenSshFiles(this.fs);
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);
     this.userMgr = new WindowsUserManager();
@@ -2557,44 +2564,63 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private async cmdSsh(args: string[]): Promise<string> {
+    this.commandExitStatus = null;
     const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_8_6);
     if (withoutSession) return withoutSession.output;
     const parsed = parseSshArgs(args);
-    if (parsed === null) return OPENSSH_WINDOWS_8_6.sshUsage;
+    if (parsed === null) { this.commandExitStatus = 255; return OPENSSH_WINDOWS_8_6.sshUsage; }
+    const refused = (message: string): string => { this.commandExitStatus = 255; return message; };
     const localUser = this.userMgr.currentUser;
-    const at = parsed.userAtHost.indexOf('@');
-    const typedHost = at >= 0 ? parsed.userAtHost.slice(at + 1) : parsed.userAtHost;
-    const user = at >= 0 ? parsed.userAtHost.slice(0, at) : parsed.loginName ?? localUser;
+    const commandLine = splitSshCommandLine(args);
+    const settings = resolveClientInvocation({
+      flags: posixClientFlags(commandLine.flags),
+      target: parsed.userAtHost,
+      fs: sshLocalFsFor(this),
+      localUser,
+      localHostName: this.hostname,
+      uid: 1000,
+      layout: windowsClientLayout(`/Users/${localUser}`),
+    });
+    const typedHost = settings.hostName;
+    const user = settings.user;
+    const port = settings.port;
     if (this.firstConfiguredIp() === null) {
-      return `ssh: connect to host ${typedHost} port ${parsed.port}: Network is unreachable`;
+      return refused(`ssh: connect to host ${typedHost} port ${port}: Network is unreachable`);
     }
-    const target = await resolveSshTarget(this, typedHost, parsed.port);
-    if (target.kind === 'failed') return target.line;
+    const target = await resolveSshTarget(this, typedHost, port);
+    if (target.kind === 'failed') return refused(target.line);
 
     const stdin = this._scenarioStdin ?? '';
-    const password = stdin.split('\n')[0] || undefined;
+    const strict = settings.strictHostKeyChecking ?? 'accept-new';
+    const asks = strict === 'ask';
+    const scripted = asks ? new ScriptedTerminalIO(stdin.split('\n')) : null;
+    const password = asks ? undefined : stdin.split('\n')[0] || undefined;
     const outcome = await openWireSshConnection({
       device: this,
       localUser,
       user,
       host: target.address,
-      port: parsed.port,
-      io: silentConnectIo(),
+      port: port,
+      io: scripted ?? silentConnectIo(),
       password,
-      credentialless: password === undefined,
-      strict: parsed.strict ?? 'accept-new',
+      credentialless: !asks && password === undefined,
+      strict,
+      knownHosts: { user: settings.userKnownHostsFiles, global: settings.globalKnownHostsFiles },
+      hashKnownHosts: settings.hashKnownHosts,
+      identitiesOnly: settings.identitiesOnly,
       quiet: parsed.quiet,
-      identityFiles: parsed.identityFiles.map(sshPathOfWindowsPath),
-      authentication: parsed.authentication,
+      identityFiles: settings.identityFiles,
+      authentication: sshClientAuthentication(settings.optionValues),
       agent: this.sshAgentIfRunning(),
-      algorithms: parsed.algorithms,
+      algorithms: sshClientAlgorithms(settings.optionValues),
     });
+    const dialogue = scripted === null ? '' : scripted.transcript.map((line) => `${line}\n`).join('');
     if (outcome.kind === 'auth-failed') {
-      return `${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`;
+      return refused(`${dialogue}${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`);
     }
-    if (outcome.kind === 'host-key-changed') return 'Host key verification failed.';
-    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') return outcome.message;
-    if (outcome.kind !== 'connected') return '';
+    if (outcome.kind === 'host-key-changed') return refused(`${dialogue}Host key verification failed.`);
+    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') return refused(`${dialogue}${outcome.message}`);
+    if (outcome.kind !== 'connected') return refused('');
 
     const { session } = outcome;
     try {
@@ -2603,15 +2629,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         if (!isOk(channel)) return '';
         const result = await channel.value.execute();
         channel.value.close();
+        this.commandExitStatus = result?.exitCode ?? 0;
         const body = result?.stdout ?? '';
-        return body && !body.endsWith('\n') ? `${body}\n` : body;
+        return dialogue + (body && !body.endsWith('\n') ? `${body}\n` : body);
       }
       const channel = session.openShellChannel();
       if (!isOk(channel)) return '';
       const settled = await relayScriptedShell(
-        channel.value, stdin, password === undefined ? 0 : 1, !parsed.quiet);
+        channel.value, stdin, scripted !== null ? scripted.consumed : password === undefined ? 0 : 1, !parsed.quiet);
       channel.value.close();
-      return [settled.output, ...(parsed.quiet ? [] : [`Connection to ${typedHost} closed.`])]
+      return [dialogue.replace(/\n$/, ''), settled.output, ...(parsed.quiet ? [] : [`Connection to ${typedHost} closed.`])]
         .filter((part) => part.length > 0).join('\n');
     } finally {
       session.disconnect();
@@ -3679,7 +3706,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private buildFileContext(): WinFileCommandContext {
     return {
-      fs: this.fs,
+      fs: guardedFileSystem(this.fs, principalOf(this.userMgr, this.userMgr.currentUser)),
       cwd: this.cwd,
       hostname: this.hostname,
       env: this.getEnvVars(),
@@ -4362,16 +4389,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     lastClearedScreen(): boolean;
     lastPendingInput(): { kind: 'password' | 'text'; promptText: string } | null;
     lastEndedSession(): boolean;
+    lastExitCode(): number;
     handleInput(value: string): Promise<string>;
   } | null {
     let stack: CrossVendorRemoteShell;
     installDefaultShells();
+    const previousUser = this.userMgr.currentUser;
+    const sessionOwner = this.userMgr.getUser(user)?.name ?? user;
+    if (previousUser !== sessionOwner) this.setCurrentUser(sessionOwner);
     try {
       stack = new CrossVendorRemoteShell({
         device: this, user, primaryKind: 'cmd',
       });
     } catch {
       return null;
+    } finally {
+      if (previousUser !== sessionOwner) this.setCurrentUser(previousUser);
     }
     // `cls` is a screen wipe, and the screen belongs to the client — so
     // the intent is remembered here and reported over the wire rather
@@ -4382,22 +4415,36 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // remote's own, so the remote is what says the session is over — a
     // client cannot tell that from the text alone.
     let ended = false;
-    const absorb = (result: { output: readonly string[]; clearScreen?: boolean; exit?: boolean;
+    let exitCode = 0;
+    const absorb = (result: { output: readonly string[]; clearScreen?: boolean; exit?: boolean; exitCode?: number;
       pendingInput?: { kind: 'password' | 'text'; promptText: string } }) => {
       cleared = result.clearScreen === true;
       pending = result.pendingInput ?? null;
       ended = result.exit === true;
+      exitCode = result.exitCode ?? 0;
       return result.output.join('\n');
     };
+    const sessionUser = this.userMgr.getUser(user)?.name ?? user;
+    const asSessionUser = async <T>(action: () => Promise<T> | T): Promise<T> => {
+      const previous = this.userMgr.currentUser;
+      if (previous === sessionUser) return action();
+      this.setCurrentUser(sessionUser);
+      try {
+        return await action();
+      } finally {
+        this.setCurrentUser(previous);
+      }
+    };
     return {
-      execute: async (rawInput: string) => absorb(await stack.processLine(rawInput)),
-      handleInput: async (value: string) => absorb(await stack.handleInput(value)),
+      execute: (rawInput: string) => asSessionUser(async () => absorb(await stack.processLine(rawInput))),
+      handleInput: (value: string) => asSessionUser(async () => absorb(await stack.handleInput(value))),
       getPrompt: () => stack.getPrompt(),
       getCompletions: (line: string) => [...stack.getCompletions(line)],
       isNested: () => stack.depth > 1,
       lastClearedScreen: () => cleared,
       lastPendingInput: () => pending,
       lastEndedSession: () => ended,
+      lastExitCode: () => exitCode,
     };
   }
   setCwd(path: string): void { this.cwd = path; }

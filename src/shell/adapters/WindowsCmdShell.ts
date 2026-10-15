@@ -23,7 +23,10 @@ export interface WindowsCmdShellOptions extends AbstractShellOptions {
 interface WindowsDevice {
   executeCommand(cmd: string): Promise<string>;
   executeCommandInSession?(cmd: string, s: WindowsShellSession): Promise<string>;
+  lastNativeExitCode?(output: string): number;
 }
+
+const CMD_EXIT_WITH_CODE = /^exit(?:\s+\/b)?\s+(-?\d+)$/i;
 
 /** Canonical cmd.exe activation banner — matches the real CLI banner. */
 const CMD_BANNER: readonly string[] = [
@@ -110,6 +113,8 @@ export class WindowsCmdShell extends AbstractShell {
     if (ssh) return ssh;
 
     const lower = line.trim().toLowerCase();
+    const exitWithCode = CMD_EXIT_WITH_CODE.exec(line.trim());
+    if (exitWithCode) return { output: [], exit: true, exitCode: Number.parseInt(exitWithCode[1], 10) & 0xff };
     // cmd.exe's `powershell` / `pwsh` launchers — hand off to the PS
     // child shell pointed at THIS device (local OR remote). The current
     // `windowsSession` travels with the child so cwd stays in sync.
@@ -138,7 +143,7 @@ export class WindowsCmdShell extends AbstractShell {
       && dev.executeCommandInSession)
       ? await dev.executeCommandInSession(line, this.windowsSession)
       : await dev.executeCommand(line);
-    return { output: this.splitOutput(raw) };
+    return { output: this.splitOutput(raw), exitCode: dev.lastNativeExitCode?.(raw) };
   }
 
   private splitOutput(s: string): string[] {

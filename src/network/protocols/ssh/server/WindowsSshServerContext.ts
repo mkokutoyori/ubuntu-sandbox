@@ -5,6 +5,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { guardedFileSystem, principalOf } from '@/network/devices/windows/WindowsFsAccess';
+import { WINDOWS_OPENSSH_SSHD_CONFIG } from './WindowsSshdConfigFile';
 import { simulationDate } from '@/network/core/SystemClock';
 
 import { SSH_WINDOWS_IDENTIFICATION } from '../serverIdentification';
@@ -29,7 +31,6 @@ import { rsaHostKeysFor } from './SshdRsaHostKey';
 import {
   DEFAULT_SSHD_CONFIG,
   parseSshdConfig,
-  serializeSshdConfig,
   type SshdConfig,
 } from './SshSshdConfig';
 
@@ -129,7 +130,8 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
-    return new WindowsSftpFSAdapter(this.wfs, userCtx.uid, userCtx.gid);
+    return new WindowsSftpFSAdapter(
+      guardedFileSystem(this.wfs, principalOf(this.userManager, userCtx.username)), userCtx.uid, userCtx.gid);
   }
 
   getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
@@ -143,7 +145,7 @@ export class WindowsSshServerContext implements ISshServerContext {
           return {
             stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
             stderr: '',
-            exitCode: 0,
+            exitCode: vty.lastExitCode?.() ?? 0,
             clearScreen: vty.lastClearedScreen?.() ?? false,
             pendingInput: vty.lastPendingInput?.() ?? undefined,
             sessionEnded: vty.lastEndedSession?.() ?? false,
@@ -155,7 +157,7 @@ export class WindowsSshServerContext implements ISshServerContext {
               return {
                 stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
                 stderr: '',
-                exitCode: 0,
+                exitCode: vty.lastExitCode?.() ?? 0,
                 clearScreen: vty.lastClearedScreen?.() ?? false,
                 pendingInput: vty.lastPendingInput?.() ?? undefined,
                 sessionEnded: vty.lastEndedSession?.() ?? false,
@@ -217,9 +219,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   buildUserContext(username: string): SshUserContext | null {
     const user = this.userManager.getUser(username);
     if (!user) return null;
-    const isAdmin = this.userManager.setCurrentUser(username)
-      ? this.userManager.isCurrentUserAdmin()
-      : false;
+    const isAdmin = this.userManager.isAdmin(user.name);
     const uid = isAdmin ? ADMIN_UID : DEFAULT_USER_UID;
     const gid = isAdmin ? ADMIN_GID : DEFAULT_USER_GID;
     const home = `C:\\Users\\${user.name}`;
@@ -231,6 +231,7 @@ export class WindowsSshServerContext implements ISshServerContext {
       for (const sub of ['', '\\Desktop', '\\Documents', '\\Downloads']) {
         this.wfs.mkdirp(home + sub);
       }
+      this.wfs.seedProfileAcl(user.name);
     }
     return new SshUserContext(user.name, uid, gid, [], home);
   }
@@ -270,8 +271,8 @@ export class WindowsSshServerContext implements ISshServerContext {
   private loadOrGenerateSshdConfig(): SshdConfig {
     const result = this.wfs.readFile(SSHD_CONFIG_PATH);
     if (result.ok && result.content) return parseSshdConfig(result.content);
-    this.wfs.createFile(SSHD_CONFIG_PATH, serializeSshdConfig(DEFAULT_SSHD_CONFIG));
-    return DEFAULT_SSHD_CONFIG;
+    this.wfs.createFile(SSHD_CONFIG_PATH, WINDOWS_OPENSSH_SSHD_CONFIG);
+    return parseSshdConfig(WINDOWS_OPENSSH_SSHD_CONFIG);
   }
 
   private userAllowed(user: string): boolean {

@@ -53,8 +53,8 @@ describe('Scenario 9 — Détection d\'usurpation de clé d\'hôte (MITM)', () =
       'wonderland\n',
     );
     expect(out).not.toMatch(/Host key verification failed/i);
-    const kh = await client.executeCommand('cat ~/.ssh/known_hosts');
-    expect(kh).toContain('10.0.0.2');
+    const kh = await client.executeCommand('ssh-keygen -F 10.0.0.2');
+    expect(kh).toContain('Host 10.0.0.2 found: line 1');
     expect(kh).toContain('ssh-ed25519');
     expect(kh).toContain(readPubKey(server));
   });

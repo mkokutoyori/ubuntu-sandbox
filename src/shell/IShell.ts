@@ -68,6 +68,7 @@ export interface ShellLineResult {
    * having to know which terminal it lives in.
    */
   readonly pendingInput?: PendingInputDirective;
+  readonly exitCode?: number;
 }
 
 /** A directive that asks the host terminal to collect one input value. */
