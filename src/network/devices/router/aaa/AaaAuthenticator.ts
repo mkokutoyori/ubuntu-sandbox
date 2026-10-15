@@ -387,6 +387,7 @@ export class AaaAuthenticator {
   private async tryRadiusGroup(sec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise<MethodVerdict> {
     const client = radiusClientOf(this.router);
     if (!client) return 'continue';
+    if (sec.suppressNullUsername && username.trim() === '') return 'continue';
     const defaults = sec.radiusDefaults;
     const deadtime = defaults.deadtimeMinutes ?? 0;
     const criteria = {

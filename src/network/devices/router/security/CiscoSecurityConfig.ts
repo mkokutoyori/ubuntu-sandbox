@@ -435,6 +435,8 @@ export class CiscoSecurityConfig {
   /** `aaa local authentication attempts max-fail <n>` — per-account lockout threshold. */
   localAuthMaxFailAttempts?: number;
   loginAttempts?: number;
+  suppressNullUsername = false;
+  aaaMaxSessions?: number;
   effectiveLoginAttempts(): number | undefined { return this.aaaNewModel ? this.loginAttempts : undefined; }
   aaaLoginBanner?: string;
   aaaFailMessage?: string;
@@ -708,6 +710,8 @@ export class CiscoSecurityConfig {
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
       if (this.loginAttempts !== undefined) lines.push(`aaa authentication attempts login ${this.loginAttempts}`);
+      if (this.suppressNullUsername) lines.push('aaa authentication suppress null-username');
+      if (this.aaaMaxSessions !== undefined) lines.push(`aaa max-sessions ${this.aaaMaxSessions}`);
     }
     if (this.aaaLoginBanner !== undefined) lines.push(`aaa authentication banner ^C\n${this.aaaLoginBanner}\n^C`);
     if (this.aaaFailMessage !== undefined) lines.push(`aaa authentication fail-message ^C\n${this.aaaFailMessage}\n^C`);
