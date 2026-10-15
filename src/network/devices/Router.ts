@@ -695,7 +695,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
       if (String(aclId).startsWith('ezvpn:')) {
-        return this.ipsecEngine?.ezvpnClient.natMatches(String(aclId), srcIP, realPkt?.destinationIP.toString()) ?? false;
+        return this.ipsecEngine?.ezvpnClient.natMatches(String(aclId), srcIP, realPkt?.destinationIP.toString(), realPkt) ?? false;
       }
       // Undefined ACL = no interesting traffic, so require an explicit permit.
       return this.aclEngine.evaluateACLByName(String(aclId), pkt) === 'permit';
@@ -811,7 +811,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getHostname: () => this.getHostname(),
       isInterfaceLineUp: (name) => {
         const port = this.ports.get(name);
-        return !!port && port.getIsUp() && port.isConnected();
+        const virtual = /^(Loopback|Tunnel|Vlan|Port-channel|Nve|Virtual-Template|Dialer)/i.test(name);
+        return !!port && port.getIsUp() && (virtual || port.isConnected());
       },
       isInterfaceRoutingUp: (name) => {
         const port = this.ports.get(name);
@@ -3355,6 +3356,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (inPortIP && inPortMask && ipPkt.sourceIP.isInSameSubnet(inPortIP, inPortMask)) {
         this.sendICMPRedirect(inPort, ipPkt, route.nextHop);
       }
+    }
+
+    if (this.ipsecEngine?.ezvpnClient.ingressGate(inPort, route.iface, fwdPkt) === 'drop') {
+      Logger.info(this.id, 'ezvpn:flow-restrict',
+        `${this.name}: Easy VPN flow restrict dropped ${fwdPkt.sourceIP} -> ${fwdPkt.destinationIP} while the tunnel is down`);
+      return;
     }
 
     const isHairpin = !this.natEngine.isOutsideInterface(route.iface)
@@ -6435,6 +6442,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private attachEzvpn(engine: IPSecEngine): void {
+    this.getBus().subscribe('track.state.changed', (event) => {
+      const payload = (event as { payload?: { deviceId?: string; objectId?: number; newState?: string } }).payload;
+      if (payload?.deviceId === this.id && typeof payload.objectId === 'number') {
+        engine.ezvpnClient.trackChanged(payload.objectId, payload.newState === 'up');
+      }
+    });
     engine.ezvpnClient.attach({
       engine: () => engine,
       interfaceAddress: (iface) => {
@@ -6444,6 +6457,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         return ip && mask ? { address: ip.toString(), mask: mask.toString() } : null;
       },
       aclSources: (acl) => this.aclSourceNetworks(acl),
+      aclPermits: (acl, packet) => this.aclEngine.evaluateACLByName(acl, packet) === 'permit',
+      trackIsUp: (id) => this.trackService.get(id) === undefined || this.trackService.isUp(id),
+      nowMs: () => this.getRouterScheduler().now(),
+      after: (ms, fn) => this.getRouterScheduler().setTimeout(fn, ms),
+      cancel: (handle) => this.getRouterScheduler().clear(handle as never),
       resolve: (host) => IPAddress.tryParse(host)?.toString() ?? this.hostsTable.resolve(host),
       createLoopback: (address, mask) => {
         const name = 'Loopback10000';

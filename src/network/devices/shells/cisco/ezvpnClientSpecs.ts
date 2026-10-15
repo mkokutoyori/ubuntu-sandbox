@@ -115,6 +115,53 @@ export function ezvpnClientSpecs(host: () => EzvpnClientShellHost): CommandSpec[
       undo: () => { const c = config(); if (c) c.connect = 'auto'; return ''; },
     },
     {
+      id: 'ezvpn-connect-acl',
+      path: ['connect', 'acl', word('acl', 'Interesting traffic access list')],
+      description: 'Connect when traffic matching the access list arrives from an inside interface',
+      undoDescription: 'Restore automatic connection',
+      modes: SUBMODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => { const c = config(); if (c) { c.connect = 'acl'; c.connectAcl = args.acl; } return ''; },
+      undo: () => { const c = config(); if (c) { c.connect = 'auto'; c.connectAcl = undefined; } return ''; },
+    },
+    {
+      id: 'ezvpn-flow-restrict',
+      path: ['flow', 'restrict'],
+      description: 'Drop inside traffic that would leave in clear text while the tunnel is down',
+      undoDescription: 'Allow clear text while the tunnel is down',
+      modes: SUBMODE, minPrivilege: 15,
+      run: () => { const c = config(); if (c) c.flowRestrict = true; return ''; },
+      undo: () => { const c = config(); if (c) c.flowRestrict = undefined; return ''; },
+    },
+    {
+      id: 'ezvpn-idle-time',
+      path: ['idle-time', { name: 'seconds', type: 'INT', range: [60, 86400], description: 'Idle seconds after which the tunnel is brought down' }],
+      description: 'Idle time of the tunnel', undoDescription: 'Never bring the tunnel down for inactivity',
+      modes: SUBMODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => { const c = config(); if (c) c.idleTime = Number(args.seconds); return ''; },
+      undo: () => { const c = config(); if (c) c.idleTime = undefined; return ''; },
+    },
+    {
+      id: 'ezvpn-nat-acl',
+      path: ['nat', 'acl', word('acl', 'Split-tunnel access list')],
+      description: 'Split-tunnel the traffic the access list matches', undoDescription: 'Remove the local split-tunnel list',
+      modes: SUBMODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => { const c = config(); if (c) c.natAcl = args.acl; return ''; },
+      undo: () => { const c = config(); if (c) c.natAcl = undefined; return ''; },
+    },
+    {
+      id: 'ezvpn-backup',
+      path: ['backup', word('backup', 'Easy VPN configuration activated by the backup'), 'track', { name: 'object', type: 'INT', range: [1, 1000], description: 'Tracked object number' }],
+      description: 'Activate another configuration when the tracked object goes down', undoDescription: 'Remove the backup',
+      modes: SUBMODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => {
+        if (!client().configs.has(args.backup)) return `% Easy VPN configuration ${args.backup} is not defined`;
+        const c = config();
+        if (c) c.backup = { name: args.backup, track: Number(args.object) };
+        return '';
+      },
+      undo: () => { const c = config(); if (c) c.backup = undefined; return ''; },
+    },
+    {
       id: 'ezvpn-username',
       path: ['username', word('user', 'Extended authentication user name'), 'password', {
         name: 'encoding', type: 'ENUM', values: [

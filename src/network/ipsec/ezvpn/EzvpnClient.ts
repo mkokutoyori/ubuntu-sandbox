@@ -3,6 +3,7 @@ import type { CryptoMapEntry, IkeConfigReply, IkeConfigRequest, SATrafficSelecto
 
 export type ClientMode = 'client' | 'network-extension' | 'network-extension-plus';
 export type ConnectMode = 'auto' | 'manual' | 'acl';
+const FAILBACK_INTERVAL_MS = 60_000;
 export type XauthMode = 'interactive' | 'local' | 'http-intercept';
 export type ClientState = 'IDLE' | 'CONNECT_REQUIRED' | 'XAUTH_REQ' | 'IPSEC_ACTIVE';
 
@@ -19,6 +20,11 @@ export interface EzvpnClientConfig {
   password?: string;
   xauthMode?: XauthMode;
   acl?: string;
+  connectAcl?: string;
+  flowRestrict?: boolean;
+  idleTime?: number;
+  natAcl?: string;
+  backup?: { name: string; track: number };
 }
 
 export interface EzvpnClientEngine {
@@ -51,6 +57,11 @@ export interface EzvpnClientHost {
     removeRule(aclId: string): void;
   };
   log(line: string): void;
+  aclPermits(acl: string, packet: IPv4Packet): boolean;
+  trackIsUp(id: number): boolean;
+  nowMs(): number;
+  after(ms: number, fn: () => void): unknown;
+  cancel(handle: unknown): void;
 }
 
 export interface ClientRuntime {
@@ -63,6 +74,10 @@ export interface ClientRuntime {
   loopback?: string;
   pushedBackups?: string[];
   savePassword?: boolean;
+  lastActivityMs?: number;
+  idleTimer?: unknown;
+  failbackTimer?: unknown;
+  onBackup?: boolean;
 }
 
 const MAP_PREFIX = '_ezvpn_';
@@ -161,6 +176,12 @@ export class EzvpnClient {
     const config = this.configs.get(name);
     const runtime = this.runtimeOf(name);
     if (!config || !runtime.outside) return;
+    if (config.backup && !this.host?.trackIsUp(config.backup.track)) {
+      runtime.state = 'IDLE';
+      runtime.lastEvent = 'TRACKED OBJECT DOWN';
+      this.activateBackup(runtime, config.backup.name);
+      return;
+    }
     if (config.connect !== 'auto') {
       runtime.state = 'CONNECT_REQUIRED';
       runtime.lastEvent = 'MANUAL_CONNECT';
@@ -248,12 +269,14 @@ export class EzvpnClient {
           if (local && inNetwork(destination, local.address, local.mask)) return false;
         }
         const split = splitOf();
-        const toSplit = split.length === 0 || split.some((s) => inNetwork(destination, s.network, s.mask));
-        if (clientMode) {
-          const assigned = runtime.reply?.address;
-          return assigned !== undefined && source === assigned && toSplit;
-        }
-        return net !== null && inNetwork(source, net.network, net.mask) && toSplit;
+        const toSplit = config.natAcl !== undefined
+          ? clientMode || host.aclPermits(config.natAcl, packet)
+          : split.length === 0 || split.some((s) => inNetwork(destination, s.network, s.mask));
+        const hit = clientMode
+          ? runtime.reply?.address !== undefined && source === runtime.reply.address && toSplit
+          : net !== null && inNetwork(source, net.network, net.mask) && toSplit;
+        if (hit) runtime.lastActivityMs = host.nowMs();
+        return hit;
       },
     }));
     engine.installManagedCryptoMap(mapName, entries);
@@ -279,6 +302,7 @@ export class EzvpnClient {
     if (reply) this.applyReply(name, config, runtime, reply, insideNets, entries, mapName, outside);
     runtime.state = 'IPSEC_ACTIVE';
     runtime.lastEvent = 'SOCKET_UP';
+    this.armTimers(name, config, runtime);
     return 'ok';
   }
 
@@ -299,7 +323,7 @@ export class EzvpnClient {
     }
   }
 
-  natMatches(aclId: string, source: string, destination: string | undefined): boolean {
+  natMatches(aclId: string, source: string, destination: string | undefined, packet?: IPv4Packet): boolean {
     const name = aclId.replace(/^ezvpn:/, '');
     const runtime = this.runtimes.get(name);
     const host = this.host;
@@ -309,8 +333,99 @@ export class EzvpnClient {
       return info !== null && inNetwork(source, info.address, info.mask);
     });
     if (!fromInside) return false;
+    const natAcl = this.configs.get(name)?.natAcl;
+    if (natAcl !== undefined) return packet !== undefined && host.aclPermits(natAcl, packet);
     const split = (runtime.reply?.splitInclude ?? []).map(parseCidrMask);
     return split.length === 0 || (destination !== undefined && split.some((s) => inNetwork(destination, s.network, s.mask)));
+  }
+
+  ingressGate(inPort: string, egress: string, packet: IPv4Packet): 'pass' | 'drop' {
+    const host = this.host;
+    if (!host) return 'pass';
+    for (const [name, runtime] of this.runtimes) {
+      const config = this.configs.get(name);
+      if (!config || runtime.outside !== egress || !runtime.inside.has(inPort)) continue;
+      if (config.connect === 'acl' && config.connectAcl !== undefined && runtime.state === 'CONNECT_REQUIRED'
+        && host.aclPermits(config.connectAcl, packet)) {
+        this.connect(name);
+      }
+      if (config.flowRestrict && runtime.state !== 'IPSEC_ACTIVE') return 'drop';
+    }
+    return 'pass';
+  }
+
+  trackChanged(trackId: number, up: boolean): void {
+    for (const [name, config] of this.configs) {
+      if (!config.backup || config.backup.track !== trackId) continue;
+      const runtime = this.runtimeOf(name);
+      if (!runtime.outside) continue;
+      const backupRuntime = this.runtimeOf(config.backup.name);
+      if (up) {
+        this.teardown(config.backup.name);
+        backupRuntime.outside = undefined;
+        backupRuntime.inside = new Set();
+        backupRuntime.state = 'IDLE';
+        backupRuntime.lastEvent = 'RESET';
+        runtime.lastEvent = 'TRACKED OBJECT UP';
+        this.start(name);
+      } else {
+        this.teardown(name);
+        runtime.state = 'IDLE';
+        runtime.lastEvent = 'TRACKED OBJECT DOWN';
+        this.activateBackup(runtime, config.backup.name);
+      }
+    }
+  }
+
+  private activateBackup(primary: ClientRuntime, backupName: string): void {
+    const backup = this.runtimeOf(backupName);
+    backup.outside = primary.outside;
+    backup.inside = new Set(primary.inside);
+    this.start(backupName);
+  }
+
+  private armTimers(name: string, config: EzvpnClientConfig, runtime: ClientRuntime): void {
+    const host = this.host!;
+    if (config.idleTime !== undefined) {
+      runtime.lastActivityMs = host.nowMs();
+      const check = (): void => {
+        if (runtime.state !== 'IPSEC_ACTIVE') return;
+        const idle = host.nowMs() - (runtime.lastActivityMs ?? 0);
+        if (idle >= config.idleTime! * 1000) {
+          this.teardown(name);
+          runtime.state = 'CONNECT_REQUIRED';
+          runtime.lastEvent = 'IDLE_TIMEOUT';
+          return;
+        }
+        runtime.idleTimer = host.after(config.idleTime! * 1000 - idle, check);
+      };
+      runtime.idleTimer = host.after(config.idleTime * 1000, check);
+    }
+    const primary = [...config.peers].find((p) => p.primary);
+    if (primary && runtime.peer && host.resolve(primary.address) !== runtime.peer) {
+      const retry = (): void => {
+        if (runtime.state !== 'IPSEC_ACTIVE') return;
+        const address = host.resolve(primary.address);
+        if (address !== null && address !== runtime.peer) {
+          const previous = runtime.peer!;
+          const before = { ...runtime };
+          void before;
+          this.teardown(name);
+          if (this.tryPeer(name, config, runtime, address, config.username, config.password) === 'ok') return;
+          this.tryPeer(name, config, runtime, previous, config.username, config.password);
+          return;
+        }
+        runtime.failbackTimer = host.after(FAILBACK_INTERVAL_MS, retry);
+      };
+      runtime.failbackTimer = host.after(FAILBACK_INTERVAL_MS, retry);
+    }
+  }
+
+  private disarmTimers(runtime: ClientRuntime): void {
+    if (runtime.idleTimer !== undefined) this.host?.cancel(runtime.idleTimer);
+    if (runtime.failbackTimer !== undefined) this.host?.cancel(runtime.failbackTimer);
+    runtime.idleTimer = undefined;
+    runtime.failbackTimer = undefined;
   }
 
   teardown(name: string): void {
@@ -318,6 +433,7 @@ export class EzvpnClient {
     const runtime = this.runtimes.get(name);
     if (!host || !runtime) return;
     const engine = host.engine();
+    this.disarmTimers(runtime);
     if (runtime.peer) engine.clearSAsForPeer(runtime.peer);
     if (runtime.outside) {
       const mapName = `${MAP_PREFIX}${name}`;
@@ -403,13 +519,18 @@ export class EzvpnClient {
     const lines: string[] = [];
     for (const config of this.configs.values()) {
       lines.push(`crypto ipsec client ezvpn ${config.name}`);
-      if (config.connect !== 'auto') lines.push(` connect ${config.connect}`);
+      if (config.connect === 'manual') lines.push(' connect manual');
       if (config.group && config.key) lines.push(` group ${config.group} key ${config.key}`);
       if (config.mode !== 'client') lines.push(` mode ${config.mode === 'network-extension' ? 'network-extension' : 'network extension plus'}`);
       for (const peer of config.peers) lines.push(` peer ${peer.address}${peer.primary ? ' default' : ''}`);
       if (config.acl) lines.push(` acl ${config.acl}`);
       if (config.username !== undefined) lines.push(` username ${config.username} password 0 ${config.password ?? ''}`);
       if (config.xauthMode && config.xauthMode !== 'interactive') lines.push(` xauth userid mode ${config.xauthMode}`);
+      if (config.connectAcl) lines.push(` connect acl ${config.connectAcl}`);
+      if (config.flowRestrict) lines.push(' flow restrict');
+      if (config.idleTime !== undefined) lines.push(` idle-time ${config.idleTime}`);
+      if (config.natAcl) lines.push(` nat acl ${config.natAcl}`);
+      if (config.backup) lines.push(` backup ${config.backup.name} track ${config.backup.track}`);
     }
     return lines;
   }
