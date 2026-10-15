@@ -105,6 +105,7 @@ import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy'
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
 import { PSInterpreter, PSRuntimeError, createClientCmdletOverlay } from '@/powershell/interpreter/PSInterpreter';
+import { NativeCommandNeedsAsync, translateNativeAnswer, nativeNotRecognized } from '@/powershell/nativeAsync';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
@@ -435,6 +436,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly cmdletOverlay = createClientCmdletOverlay();
 
   getWindowsEdition(): 'client' | 'server' { return 'client'; }
+
+  private async runPowerShellCode(code: string): Promise<string> {
+    const interpreter = this.getPowerShellInterpreter();
+    interpreter.beginInteractive(code);
+    for (;;) {
+      try {
+        return interpreter.resumeInteractive();
+      } catch (e) {
+        if (!(e instanceof NativeCommandNeedsAsync)) {
+          if (e instanceof PSRuntimeError) return e.message;
+          throw e;
+        }
+        const answer = await this.runProgram(e.commandLine, e.stdin ?? undefined);
+        interpreter.provideNativeResult({
+          output: translateNativeAnswer(e.command, answer.output),
+          exitCode: answer.exitCode,
+          notRecognized: nativeNotRecognized(e.command, answer.output),
+        });
+      }
+    }
+  }
 
   getPowerShellInterpreter(): PSInterpreter {
     if (!this.psInterpreter) {
@@ -3584,14 +3606,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
-          runFullPs: (code) => {
-            try {
-              return this.getPowerShellInterpreter().execute(code);
-            } catch (e) {
-              if (e instanceof PSRuntimeError) return e.message;
-              throw e;
-            }
-          },
+          runFullPs: (code) => this.runPowerShellCode(code),
         }, args, splitCmdArgs(expanded, true).slice(1));
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
