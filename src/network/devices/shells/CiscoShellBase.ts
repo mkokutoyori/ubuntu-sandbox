@@ -1639,6 +1639,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return this.enableInteractionPlan(em.args, ctx?.device, ctx?.onVtyLine === true);
       }
     }
+    const xauth = /^crypto\s+ipsec\s+client\s+ezvpn\s+xauth(?:\s+(\S+))?$/i.exec(line);
+    if (xauth && mode === 'privileged') return this.ezvpnXauthPlan(xauth[1] ?? null, ctx?.device as TDevice | undefined);
+
     if (mode === 'user') return null;
 
     // Config-mode dialogue: `banner <kind> <delim>` with nothing after the
@@ -10009,6 +10012,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Parse `ssh [-l user] [-p port] <host> [command ...]` (the IOS form)
    * and open it over the wire (routerOutboundSsh).
    */
+  private ezvpnXauthPlan(tunnel: string | null, device: TDevice | undefined): CommandInteractionPlan | null {
+    const client = (device as unknown as {
+      _getOrCreateIPSecEngine?: () => { ezvpnClient: import('../../ipsec/ezvpn/EzvpnClient').EzvpnClient };
+    } | undefined)?._getOrCreateIPSecEngine?.().ezvpnClient;
+    if (!client) return null;
+    const pending = client.pendingTunnel(tunnel);
+    if ('error' in pending) return { steps: [{ kind: 'output', lines: [pending.error] }] };
+    return {
+      steps: [
+        { kind: 'text', prompt: 'Enter Username and Password: ', storeAs: 'ezvpn_user' },
+        { kind: 'password', prompt: 'Password: ', storeAs: 'ezvpn_password' },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            const failure = client.connect(pending.name, {
+              user: rt.values.get('ezvpn_user') ?? '', password: rt.values.get('ezvpn_password') ?? '',
+            });
+            if (failure) rt.output(failure);
+          },
+        },
+      ],
+    };
+  }
+
   private outboundSshClientPlan(
     commandLine: string, device: TDevice | undefined,
   ): CommandInteractionPlan | null {

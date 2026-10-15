@@ -694,6 +694,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.dhcpServer.setUtilizationSink((crossing) => this.emitDhcpUtilizationTrap(crossing));
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
+      if (String(aclId).startsWith('ezvpn:')) {
+        return this.ipsecEngine?.ezvpnClient.natMatches(String(aclId), srcIP, realPkt?.destinationIP.toString()) ?? false;
+      }
       // Undefined ACL = no interesting traffic, so require an explicit permit.
       return this.aclEngine.evaluateACLByName(String(aclId), pkt) === 'permit';
     });
@@ -6409,6 +6412,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.ipsecEngine = new IPSecEngine(this);
       this.ipsecEngine.setEventBus(this.getBus());
       this.ipsecEngine.start();
+      this.attachEzvpn(this.ipsecEngine);
       const svc = this._debugService;
       if (svc) {
         this.ipsecEngine.setDebugEmitter((kind, line) => {
@@ -6417,6 +6421,73 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
     return this.ipsecEngine;
+  }
+
+  private aclSourceNetworks(acl: string): string[] {
+    const found = this.getAccessLists().find((a) => a.name === acl || String(a.id) === acl);
+    const networks: string[] = [];
+    for (const entry of found?.entries ?? []) {
+      const wildcard = entry.srcWildcard.toString();
+      if (entry.action !== 'permit' || wildcard === '255.255.255.255') continue;
+      networks.push(`${entry.srcIP.toString()}/${wildcard.split('.').map((o) => 255 - Number(o)).join('.')}`);
+    }
+    return networks;
+  }
+
+  private attachEzvpn(engine: IPSecEngine): void {
+    engine.ezvpnClient.attach({
+      engine: () => engine,
+      interfaceAddress: (iface) => {
+        const port = this.ports.get(iface);
+        const ip = port?.getIPAddress();
+        const mask = port?.getSubnetMask();
+        return ip && mask ? { address: ip.toString(), mask: mask.toString() } : null;
+      },
+      aclSources: (acl) => this.aclSourceNetworks(acl),
+      resolve: (host) => IPAddress.tryParse(host)?.toString() ?? this.hostsTable.resolve(host),
+      createLoopback: (address, mask) => {
+        const name = 'Loopback10000';
+        this._createVirtualInterface(name);
+        this.ports.get(name)?.configureIP(new IPAddress(address), new SubnetMask(mask), 'manual');
+        return name;
+      },
+      removeLoopback: (name) => { this._removeVirtualInterface(name); },
+      nat: {
+        setInside: (iface) => this.natEngine.setInsideInterface(iface),
+        setOutside: (iface) => this.natEngine.setOutsideInterface(iface),
+        removeInside: (iface) => this.natEngine.removeInsideInterface(iface),
+        removeOutside: (iface) => this.natEngine.removeOutsideInterface(iface),
+        addRule: (aclId, iface) => this.natEngine.addDynamicRule({ aclId, type: 'overload', interfaceName: iface, overload: true }),
+        removeRule: (aclId) => this.natEngine.removeDynamicRule(aclId),
+      },
+      log: (line) => Logger.info(this.id, 'ezvpn', `${this.name}: ${line}`),
+    });
+
+    const methodsOf = (phase: 'authentication' | 'authorization', service: string, list: string): string[] | null => {
+      const sec = this.securityConfig();
+      if (!sec || !sec.aaaNewModel) return null;
+      const entry = sec.aaaMethods.find((m) => m.phase === phase && m.service === service && m.listName === list);
+      return entry ? entry.methods : null;
+    };
+    engine.ezvpn.attach({
+      isLive: (peer) => engine.hasIkeSA(peer),
+      clientPolicyFor: (peer) => engine.clientPolicyForPeer(peer),
+      authenticate: (list, user, password) => {
+        const methods = methodsOf('authentication', 'login', list);
+        if (methods === null) return 'denied';
+        for (const method of methods) {
+          if (method === 'none') return 'accepted';
+          if (method === 'local') return this.getCredentialStore().authenticate(user, password) ? 'accepted' : 'denied';
+        }
+        return 'denied';
+      },
+      authorize: (list, group) => {
+        const methods = methodsOf('authorization', 'network', list);
+        if (methods === null) return 'denied';
+        return methods.includes('local') && engine.ezvpn.groups.has(group) ? 'accepted' : 'denied';
+      },
+      splitNetworks: (acl) => this.aclSourceNetworks(acl),
+    });
   }
 
   /** @internal Return IPSec engine (null if not yet configured) */
