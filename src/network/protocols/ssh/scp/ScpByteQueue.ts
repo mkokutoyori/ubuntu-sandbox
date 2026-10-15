@@ -11,6 +11,12 @@ export class ScpByteQueue {
     this.settle();
   }
 
+  drain(): Uint8Array {
+    const taken = this.queued;
+    this.queued = new Uint8Array(0);
+    return taken;
+  }
+
   end(): void {
     this.ended = true;
     this.settle();

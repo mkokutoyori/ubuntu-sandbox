@@ -40,7 +40,7 @@ function describeFailure(
   return `ssh: connect to host ${endpoint.host} port ${endpoint.port}: ${failure?.kind ?? 'failed'}`;
 }
 
-function tunnelThrough(session: SshSession, refusals: string[]): TcpConnector {
+export function tunnelThrough(session: SshSession, refusals: string[]): TcpConnector {
   return async (host, port) => {
     const opened = await session.openDirectTcpip(host, port);
     if (isOk(opened)) return opened.value;
@@ -66,37 +66,51 @@ async function runOnSession(session: SshSession, command: string, stdin: string)
   return relayed;
 }
 
-export async function runThroughProxyJump(run: ProxyJumpRun): Promise<ProxyJumpResult> {
+export type ProxyJumpConnection =
+  | { readonly kind: 'connected'; readonly session: SshSession; readonly release: () => void }
+  | { readonly kind: 'failed'; readonly output: string };
+
+export async function connectThroughProxyJump(run: Omit<ProxyJumpRun, 'command' | 'stdin'>): Promise<ProxyJumpConnection> {
   const sessions: SshSession[] = [];
   const refusals: string[] = [];
+  const release = (): void => {
+    for (const session of [...sessions].reverse()) session.disconnect();
+  };
   let connector = run.dial;
-  try {
-    for (const hop of run.hops) {
-      const endpoint = { host: hop.host, port: hop.port ?? DEFAULT_SSH_PORT };
-      const reached = await connectWireSsh(run.client, {
-        host: endpoint.host, user: hop.user ?? run.client.user, port: endpoint.port,
-        passwordPrompt: run.nextPassword, identities: [], strict: run.target.strict,
-      }, connector);
-      if (!reached.session) {
-        const cause = refusals.length > 0
-          ? [...refusals, 'stdio forwarding failed']
-          : [describeFailure(endpoint, reached.failure, reached.warnings)];
-        return { output: [...cause, PROXY_CLOSED].join('\n'), exitCode: SSH_FAILURE };
-      }
-      sessions.push(reached.session);
-      connector = tunnelThrough(reached.session, refusals);
-    }
-    const final = await connectWireSsh(
-      run.client, { ...run.target, passwordPrompt: run.nextPassword }, connector);
-    if (!final.session) {
+  for (const hop of run.hops) {
+    const endpoint = { host: hop.host, port: hop.port ?? DEFAULT_SSH_PORT };
+    const reached = await connectWireSsh(run.client, {
+      host: endpoint.host, user: hop.user ?? run.client.user, port: endpoint.port,
+      passwordPrompt: run.nextPassword, identities: [], strict: run.target.strict,
+    }, connector);
+    if (!reached.session) {
+      release();
       const cause = refusals.length > 0
-        ? [...refusals, 'stdio forwarding failed', PROXY_CLOSED]
-        : [describeFailure(run.target, final.failure, final.warnings)];
-      return { output: cause.join('\n'), exitCode: SSH_FAILURE };
+        ? [...refusals, 'stdio forwarding failed']
+        : [describeFailure(endpoint, reached.failure, reached.warnings)];
+      return { kind: 'failed', output: [...cause, PROXY_CLOSED].join('\n') };
     }
-    sessions.push(final.session);
-    return await runOnSession(final.session, run.command, run.stdin);
+    sessions.push(reached.session);
+    connector = tunnelThrough(reached.session, refusals);
+  }
+  const final = await connectWireSsh(run.client, { ...run.target, passwordPrompt: run.nextPassword }, connector);
+  if (!final.session) {
+    release();
+    const cause = refusals.length > 0
+      ? [...refusals, 'stdio forwarding failed', PROXY_CLOSED]
+      : [describeFailure(run.target, final.failure, final.warnings)];
+    return { kind: 'failed', output: cause.join('\n') };
+  }
+  sessions.push(final.session);
+  return { kind: 'connected', session: final.session, release };
+}
+
+export async function runThroughProxyJump(run: ProxyJumpRun): Promise<ProxyJumpResult> {
+  const connection = await connectThroughProxyJump(run);
+  if (connection.kind === 'failed') return { output: connection.output, exitCode: SSH_FAILURE };
+  try {
+    return await runOnSession(connection.session, run.command, run.stdin);
   } finally {
-    for (const session of sessions.reverse()) session.disconnect();
+    connection.release();
   }
 }

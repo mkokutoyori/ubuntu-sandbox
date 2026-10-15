@@ -131,6 +131,12 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
       : err({ kind: 'IO_ERROR', message: `${path}: chmod failed` });
   }
 
+  setTimes(path: string, times: { readonly atime: number; readonly mtime: number }): Result<void> {
+    return this.vfs.setTimes(path, times)
+      ? ok(undefined)
+      : err({ kind: 'IO_ERROR', message: `${path}: utimes failed` });
+  }
+
   setOwner(path: string, uid: number, gid: number): Result<void> {
     return this.vfs.chown(path, uid, gid)
       ? ok(undefined)

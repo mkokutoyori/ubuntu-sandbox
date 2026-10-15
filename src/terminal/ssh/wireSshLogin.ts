@@ -113,6 +113,7 @@ export interface WireSshLoginRequest {
   readonly knownHosts?: { readonly user: readonly string[]; readonly global: readonly string[] };
   readonly hashKnownHosts?: boolean;
   readonly identitiesOnly?: boolean;
+  readonly connector?: TcpConnector;
 }
 
 export type WireSshLoginOutcome =
@@ -228,12 +229,12 @@ function unreachableMessage(req: WireSshLoginRequest): string {
 export async function openWireSshConnection(
   req: WireSshLoginRequest,
 ): Promise<WireSshConnectOutcome> {
-  const tcpConnector = tcpConnectorFor(req.device);
+  const tcpConnector = req.connector ?? tcpConnectorFor(req.device);
   if (!tcpConnector) {
     return { kind: 'unreachable', message: `ssh: connect to host ${req.host} port ${req.port}: Network is unreachable` };
   }
 
-  if (IPAddress.tryParse(req.host) && !peerLiveness(req.device, req.host)()) {
+  if (req.connector === undefined && IPAddress.tryParse(req.host) && !peerLiveness(req.device, req.host)()) {
     return { kind: 'unreachable', message: unreachableMessage(req) };
   }
 

@@ -73,7 +73,7 @@ describe('scp is the scp protocol on an exec channel', () => {
     const { client } = lab();
     await client.executeCommand("echo hello > /tmp/up.txt");
     await client.executeCommand('sshpass -p admin scp /tmp/up.txt alice@10.0.0.2:/home/alice/up.txt');
-    expect(commands.some((c) => /^scp .*-t '\/home\/alice\/up\.txt'$/.test(c))).toBe(true);
+    expect(commands.some((c) => /^scp -t \/home\/alice\/up\.txt$/.test(c))).toBe(true);
   });
 
   it('download runs scp -f on an exec channel', async () => {
@@ -81,7 +81,7 @@ describe('scp is the scp protocol on an exec channel', () => {
     const { client, server } = lab();
     await server.executeCommand('sudo sh -c "echo down > /home/alice/down.txt && chown alice /home/alice/down.txt"');
     await client.executeCommand('sshpass -p admin scp alice@10.0.0.2:/home/alice/down.txt /tmp/down.txt');
-    expect(commands.some((c) => /^scp .*-f '\/home\/alice\/down\.txt'$/.test(c))).toBe(true);
+    expect(commands.some((c) => /^scp -f \/home\/alice\/down\.txt$/.test(c))).toBe(true);
     expect((await client.executeCommand('cat /tmp/down.txt')).trim()).toBe('down');
   });
 

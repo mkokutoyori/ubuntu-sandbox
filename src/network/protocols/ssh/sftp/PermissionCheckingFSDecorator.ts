@@ -39,18 +39,24 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
   // ── ISftpReadable ──────────────────────────────────────────────────
 
   readFile(path: string): Result<string> {
+    const searched = this.checkTraverse(path);
+    if (!searched.ok) return propagateErr(searched);
     const guard = this.checkRead(path);
     if (!guard.ok) return propagateErr(guard);
     return this.base.readFile(path);
   }
 
   listDirectory(path: string): Result<readonly SftpDirEntry[]> {
+    const searched = this.checkTraverse(path);
+    if (!searched.ok) return propagateErr(searched);
     const guard = this.checkRead(path);
     if (!guard.ok) return propagateErr(guard);
     return this.base.listDirectory(path);
   }
 
   stat(path: string): Result<SftpFileAttrs> {
+    const searched = this.checkTraverse(path);
+    if (!searched.ok) return propagateErr(searched);
     return this.base.stat(path);
   }
 
@@ -58,6 +64,8 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
 
   writeFile(path: string, content: string): Result<void> {
     if (this.userCtx.isRoot()) return this.base.writeFile(path, content);
+    const searched = this.checkTraverse(path);
+    if (!searched.ok) return searched;
     if (this.base.exists(path)) {
       const s = this.base.stat(path);
       if (s.ok && !this.userCtx.canWrite(s.value.mode, s.value.uid, s.value.gid)) {
@@ -72,6 +80,8 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
 
   mkdir(path: string): Result<void> {
     if (this.userCtx.isRoot()) return this.base.mkdir(path);
+    const searched = this.checkTraverse(path);
+    if (!searched.ok) return searched;
     const g = this.checkParentWrite(path);
     if (!g.ok) return g;
     return this.base.mkdir(path);
@@ -106,6 +116,12 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
     return this.base.setPermissions(path, mode);
   }
 
+  setTimes(path: string, times: { readonly atime: number; readonly mtime: number }): Result<void> {
+    const guard = this.checkOwner(path);
+    if (!guard.ok) return guard;
+    return this.base.setTimes?.(path, times) ?? err({ kind: 'IO_ERROR', message: 'utimes not supported' });
+  }
+
   setOwner(path: string, uid: number, gid: number): Result<void> {
     if (!this.userCtx.isRoot()) {
       return err({
@@ -118,6 +134,21 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
   }
 
   // ── private guards ────────────────────────────────────────────────
+
+  private checkTraverse(path: string): Result<void> {
+    if (this.userCtx.isRoot()) return ok(undefined);
+    const segments = path.replace(/\/+$/, '').split('/');
+    for (let depth = 1; depth < segments.length; depth++) {
+      const ancestor = segments.slice(0, depth).join('/') || '/';
+      const stat = this.base.stat(ancestor);
+      if (!stat.ok) return ok(undefined);
+      const attrs = stat.value;
+      if (attrs.type === 'directory' && !this.userCtx.canExecute(attrs.mode, attrs.uid, attrs.gid)) {
+        return err({ kind: 'PERMISSION_DENIED', path: ancestor, operation: 'search' });
+      }
+    }
+    return ok(undefined);
+  }
 
   private checkRead(path: string): Result<void> {
     if (this.userCtx.isRoot()) return ok(undefined);

@@ -162,6 +162,13 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
     return ok(undefined);
   }
 
+  setTimes(path: string, times: { readonly atime: number; readonly mtime: number }): Result<void> {
+    const entry = this.resolveEntry(this.toNative(path));
+    if (!entry) return err({ kind: 'IO_ERROR', message: `${path}: not found` });
+    entry.mtime = new Date(times.mtime);
+    return ok(undefined);
+  }
+
   setOwner(_path: string, _uid: number, _gid: number): Result<void> {
     // Owner change on Windows uses takeown/icacls, not numeric uid/gid.
     return ok(undefined);

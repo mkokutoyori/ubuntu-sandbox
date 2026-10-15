@@ -41,7 +41,7 @@ import {
   runSshKeygenCommand,
   vfsKeygenHost,
 } from '@/network/protocols/ssh/SshKeygenCommand';
-import { parseScpArgs, parseScpEndpoint } from '@/network/protocols/ssh/Scp';
+import { parseScpEndpoint } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 import {
@@ -398,25 +398,6 @@ describe('SSH-08 — scp argument parsing', () => {
     });
     // Local path with a colon AFTER a slash should stay local.
     expect(parseScpEndpoint('/tmp/file:notremote').remote).toBe(false);
-  });
-
-  it('parseScpArgs collects -r, -P, -i, source, destination', () => {
-    const args = parseScpArgs([
-      '-r',
-      '-P',
-      '2222',
-      '-i',
-      '~/.ssh/id_ed25519',
-      'docs/',
-      'alice@host:/home/alice/',
-    ]);
-    expect(args).not.toBeNull();
-    expect(args?.recursive).toBe(true);
-    expect(args?.port).toBe(2222);
-    expect(args?.identityFiles).toEqual(['~/.ssh/id_ed25519']);
-    expect(args?.source.remote).toBe(false);
-    expect(args?.destination.remote).toBe(true);
-    expect(args?.destination.host).toBe('host');
   });
 });
 

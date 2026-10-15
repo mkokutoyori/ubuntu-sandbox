@@ -515,7 +515,7 @@ export interface WireSshSuccess {
   readonly notices: readonly string[];
 }
 
-function verboseTranscript(success: WireSshSuccess): string {
+export function verboseTranscript(success: WireSshSuccess): string {
   const lines = [
     OPENSSH_UBUNTU_CLIENT_VERSION,
     'debug1: Reading configuration data /etc/ssh/ssh_config',
@@ -540,6 +540,7 @@ function verboseTranscript(success: WireSshSuccess): string {
   if (success.serverHostKey !== null) {
     lines.push(`debug1: Server host key: ${success.serverHostKey.algorithm} ${success.serverHostKey.fingerprint}`);
   }
+  lines.push(`debug1: Authentication succeeded (${success.method ?? 'password'}).`);
   lines.push(`Authenticated to ${success.host} ([${success.address}]:${success.port}) using "${success.method ?? 'password'}".`);
   return `${lines.join('\n')}\n`;
 }
