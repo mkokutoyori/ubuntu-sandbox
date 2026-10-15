@@ -1,0 +1,1018 @@
+================================================================================
+FICHIER : src\argument-types.ts
+================================================================================
+
+import type {
+    ArgumentType, CompletionContext, ValidationContext, ValidationResult
+} from "./types.js";
+
+function valid(): ValidationResult {
+    return { valid: true };
+}
+
+function invalid(message: string): ValidationResult {
+    return { valid: false, message };
+}
+
+export class StringType implements ArgumentType<string> {
+    constructor(private readonly minLength = 1, private readonly maxLength = 255) {}
+
+    parse(token: string): string {
+        return token;
+    }
+
+    validate(value: string): ValidationResult {
+        if (value.length < this.minLength) return invalid(`Minimum length is ${this.minLength}.`);
+        if (value.length > this.maxLength) return invalid(`Maximum length is ${this.maxLength}.`);
+        return valid();
+    }
+
+    describe(): string {
+        return "string";
+    }
+}
+
+export class IntegerType implements ArgumentType<number> {
+    constructor(private readonly min = Number.MIN_SAFE_INTEGER, private readonly max = Number.MAX_SAFE_INTEGER) {}
+
+    parse(token: string): number {
+        if (!/^-?\d+$/.test(token)) throw new Error("Expected an integer.");
+        const value = Number(token);
+        if (!Number.isSafeInteger(value)) throw new Error("Integer is outside the safe range.");
+        return value;
+    }
+
+    validate(value: number): ValidationResult {
+        if (value < this.min || value > this.max) return invalid(`Value must be between ${this.min} and ${this.max}.`);
+        return valid();
+    }
+
+    describe(): string {
+        return `integer ${this.min}..${this.max}`;
+    }
+}
+
+export class EnumType implements ArgumentType<string> {
+    private readonly normalized: Map<string, string>;
+
+    constructor(private readonly choices: readonly string[]) {
+        this.normalized = new Map(choices.map(choice => [choice.toLowerCase(), choice]));
+    }
+
+    parse(token: string): string {
+        const match = this.normalized.get(token.toLowerCase());
+        if (!match) throw new Error(`Expected one of: ${this.choices.join(", ")}.`);
+        return match;
+    }
+
+    validate(value: string): ValidationResult {
+        return this.normalized.has(value.toLowerCase())
+            ? valid()
+            : invalid(`Expected one of: ${this.choices.join(", ")}.`);
+    }
+
+    complete(prefix: string): string[] {
+        return this.choices.filter(choice => choice.toLowerCase().startsWith(prefix.toLowerCase()));
+    }
+
+    describe(): string {
+        return this.choices.join("|");
+    }
+}
+
+export class IPv4Type implements ArgumentType<string> {
+    parse(token: string): string {
+        if (!this.isIPv4(token)) throw new Error("Expected a valid IPv4 address.");
+        return token;
+    }
+
+    validate(value: string): ValidationResult {
+        return this.isIPv4(value) ? valid() : invalid("Expected a valid IPv4 address.");
+    }
+
+    describe(): string {
+        return "A.B.C.D";
+    }
+
+    private isIPv4(value: string): boolean {
+        const parts = value.split(".");
+        return parts.length === 4 && parts.every(part =>
+            /^\d{1,3}$/.test(part) &&
+            Number(part) >= 0 &&
+            Number(part) <= 255 &&
+            (part === "0" || !part.startsWith("0"))
+        );
+    }
+}
+
+export class IPv4PrefixType implements ArgumentType<string> {
+    parse(token: string): string {
+        const [address, prefix, extra] = token.split("/");
+        if (extra !== undefined || !address || prefix === undefined) {
+            throw new Error("Expected an IPv4 prefix in address/length format.");
+        }
+        new IPv4Type().parse(address);
+        if (!/^\d+$/.test(prefix) || Number(prefix) < 0 || Number(prefix) > 32) {
+            throw new Error("Prefix length must be between 0 and 32.");
+        }
+        return `${address}/${Number(prefix)}`;
+    }
+
+    validate(value: string): ValidationResult {
+        try {
+            this.parse(value);
+            return valid();
+        } catch (error) {
+            return invalid(error instanceof Error ? error.message : "Invalid IPv4 prefix.");
+        }
+    }
+
+    describe(): string {
+        return "A.B.C.D/0-32";
+    }
+}
+
+export class PortNumberType extends IntegerType {
+    constructor() {
+        super(1, 65535);
+    }
+
+    override describe(): string {
+        return "port 1..65535";
+    }
+}
+
+export class MacAddressType implements ArgumentType<string> {
+    parse(token: string): string {
+        if (!/^(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$/.test(token)) {
+            throw new Error("Expected a valid MAC address.");
+        }
+        return token.replace(/-/g, ":").toLowerCase();
+    }
+
+    validate(value: string): ValidationResult {
+        try {
+            this.parse(value);
+            return valid();
+        } catch (error) {
+            return invalid(error instanceof Error ? error.message : "Invalid MAC address.");
+        }
+    }
+
+    describe(): string {
+        return "xx:xx:xx:xx:xx:xx";
+    }
+}
+
+export class InterfaceIdType implements ArgumentType<string> {
+    constructor(private readonly listInterfaces: (context: CompletionContext) => string[]) {}
+
+    parse(token: string): string {
+        if (!/^[a-zA-Z][a-zA-Z0-9./:_-]*$/.test(token)) {
+            throw new Error("Invalid interface identifier.");
+        }
+        return token;
+    }
+
+    validate(value: string, context: ValidationContext): ValidationResult {
+        const interfaces = this.listInterfaces(context);
+        return interfaces.length === 0 || interfaces.includes(value)
+            ? valid()
+            : invalid(`Interface '${value}' does not exist.`);
+    }
+
+    complete(prefix: string, context: CompletionContext): string[] {
+        return this.listInterfaces(context).filter(name => name.toLowerCase().startsWith(prefix.toLowerCase()));
+    }
+
+    describe(): string {
+        return "interface";
+    }
+}
+
+export class ArgumentTypeRegistry {
+    private readonly types = new Map<string, ArgumentType>();
+
+    register(name: string, type: ArgumentType): this {
+        if (this.types.has(name)) throw new Error(`Argument type '${name}' is already registered.`);
+        this.types.set(name, type);
+        return this;
+    }
+
+    replace(name: string, type: ArgumentType): this {
+        this.types.set(name, type);
+        return this;
+    }
+
+    get(name: string): ArgumentType {
+        const type = this.types.get(name);
+        if (!type) throw new Error(`Unknown argument type '${name}'.`);
+        return type;
+    }
+
+    has(name: string): boolean {
+        return this.types.has(name);
+    }
+
+    static withBuiltIns(): ArgumentTypeRegistry {
+        return new ArgumentTypeRegistry()
+            .register("string", new StringType())
+            .register("integer", new IntegerType())
+            .register("ipv4", new IPv4Type())
+            .register("ipv4-prefix", new IPv4PrefixType())
+            .register("port", new PortNumberType())
+            .register("mac", new MacAddressType())
+            .register("enum", new EnumType([]));
+    }
+}
+
+
+================================================================================
+FICHIER : src\engine.ts
+================================================================================
+
+import {
+    CliSession, PrivilegeLevel, UserIdentity,
+    type CommandDefinition, type ExecutionResult, type HelpEntry, type ValidationContext
+} from "./types.js";
+import { ArgumentTypeRegistry } from "./argument-types.js";
+import { CliLexer } from "./lexer.js";
+import { CliParser } from "./parser.js";
+import { CommandRegistry } from "./registry.js";
+
+export interface CliMode {
+    readonly id: string;
+    readonly parentId?: string;
+    readonly prompt: (session: CliSession) => string;
+}
+
+export interface CliEngineOptions<TDevice> {
+    readonly device: TDevice;
+    readonly hostname?: string;
+    readonly user?: UserIdentity;
+    readonly modes?: readonly CliMode[];
+    readonly commands?: readonly CommandDefinition<TDevice>[];
+    readonly argumentTypes?: ArgumentTypeRegistry;
+}
+
+export class CliEngine<TDevice = unknown> {
+    readonly session: CliSession;
+    readonly commands = new CommandRegistry();
+    readonly argumentTypes: ArgumentTypeRegistry;
+    private readonly modes = new Map<string, CliMode>();
+    private readonly lexer = new CliLexer();
+    private readonly parser: CliParser;
+    private readonly device: TDevice;
+
+    constructor(options: CliEngineOptions<TDevice>) {
+        this.device = options.device;
+        this.argumentTypes = options.argumentTypes ?? ArgumentTypeRegistry.withBuiltIns();
+        const defaultUser = options.user ?? new UserIdentity("admin", PrivilegeLevel.SUPERUSER);
+        const hostname = options.hostname ?? "DEVICE";
+        const modes = options.modes ?? [{
+            id: "operational",
+            prompt: (session: CliSession) => `${session.user.username}@${session.hostname}> `
+        }];
+        for (const mode of modes) this.registerMode(mode);
+        if (!this.modes.has("operational")) throw new Error("An 'operational' mode must be registered.");
+        this.session = new CliSession(defaultUser, hostname, "operational");
+        this.parser = new CliParser(this.commands, this.argumentTypes, this.lexer);
+        for (const command of options.commands ?? []) this.registerCommand(command);
+    }
+
+    registerMode(mode: CliMode): this {
+        if (this.modes.has(mode.id)) throw new Error(`Mode '${mode.id}' is already registered.`);
+        if (mode.parentId && !this.modes.has(mode.parentId)) {
+            throw new Error(`Parent mode '${mode.parentId}' must be registered before '${mode.id}'.`);
+        }
+        this.modes.set(mode.id, mode);
+        return this;
+    }
+
+    registerCommand(command: CommandDefinition<TDevice>): this {
+        if (!this.modes.has(command.mode)) throw new Error(`Unknown mode '${command.mode}' for command '${command.id}'.`);
+        for (const argument of command.arguments ?? []) this.argumentTypes.get(argument.type);
+        this.commands.register(command);
+        return this;
+    }
+
+    getPrompt(): string {
+        const mode = this.modes.get(this.session.currentModeId);
+        if (!mode) throw new Error(`Unknown active mode '${this.session.currentModeId}'.`);
+        return mode.prompt(this.session);
+    }
+
+    async execute(rawLine: string): Promise<ExecutionResult> {
+        if (!rawLine.trim()) return { status: "success", message: "" };
+        this.session.history.push(rawLine);
+
+        const mode = this.modes.get(this.session.currentModeId);
+        if (!mode) return { status: "error", code: "UNKNOWN_MODE", message: "The active CLI mode does not exist." };
+
+        const context: ValidationContext = { device: this.device, session: this.session };
+        const parsed = this.parser.parse(rawLine, mode.id, context);
+        if (!parsed.ok || !parsed.command) {
+            return {
+                status: "error",
+                code: parsed.error?.code ?? "PARSE_ERROR",
+                message: parsed.error?.message ?? "Unable to parse command."
+            };
+        }
+
+        const requiredPrivilege = parsed.command.privilege ?? PrivilegeLevel.VIEWER;
+        if (!this.session.user.hasPrivilege(requiredPrivilege)) {
+            return { status: "error", code: "PERMISSION_DENIED", message: "Insufficient privileges." };
+        }
+
+        const result = await parsed.command.handler({
+            session: this.session,
+            device: this.device,
+            args: parsed.args ?? {},
+            rawLine
+        });
+
+        if (result.status === "mode-change") {
+            if (!this.modes.has(result.modeId)) {
+                return { status: "error", code: "UNKNOWN_MODE", message: `Mode '${result.modeId}' is not registered.` };
+            }
+            this.session.pushMode(result.modeId);
+        }
+
+        if (result.status === "session-close") {
+            this.session.resetMode("operational");
+        }
+
+        return result;
+    }
+
+    getContextualHelp(rawLine: string): HelpEntry[] {
+        const lexed = this.lexer.tokenize(rawLine);
+        if (!lexed.ok) return [];
+        const tokens = [...lexed.tokens].map(token => token.value);
+        const hasTrailingSpace = /\s$/.test(rawLine);
+        const prefix = hasTrailingSpace ? "" : (tokens.pop() ?? "");
+        const mode = this.session.currentModeId;
+        const results: HelpEntry[] = [];
+
+        for (const command of this.commands.list(mode)) {
+            if (this.session.user.privilege < (command.privilege ?? PrivilegeLevel.VIEWER)) continue;
+            const parts = command.syntax.split(/\s+/);
+            if (tokens.length > parts.length) continue;
+            let compatible = true;
+            for (let i = 0; i < tokens.length; i++) {
+                const part = parts[i] ?? "";
+                if (part.startsWith("<") || part.startsWith("[")) continue;
+                if (!part.toLowerCase().startsWith((tokens[i] ?? "").toLowerCase())) {
+                    compatible = false;
+                    break;
+                }
+            }
+            if (!compatible) continue;
+
+            const next = parts[tokens.length];
+            if (!next) continue;
+            if (next.startsWith("<") || next.startsWith("[")) {
+                const name = next.replace(/[<>\[\]]/g, "");
+                const argument = command.arguments?.find(item => item.name === name);
+                if (argument) {
+                    const type = this.argumentTypes.get(argument.type);
+                    const candidates = type.complete?.(prefix, { device: this.device, session: this.session }) ?? [];
+                    if (candidates.length) {
+                        for (const candidate of candidates) results.push({ tokenDisplay: candidate, description: argument.description ?? type.describe() });
+                    } else {
+                        results.push({ tokenDisplay: `<${argument.name}: ${type.describe()}>`, description: argument.description ?? "Argument value" });
+                    }
+                }
+            } else if (next.toLowerCase().startsWith(prefix.toLowerCase())) {
+                results.push({ tokenDisplay: next, description: command.description });
+            }
+        }
+
+        return results.filter((entry, index, all) =>
+            all.findIndex(other => other.tokenDisplay === entry.tokenDisplay && other.description === entry.description) === index
+        );
+    }
+
+    autoComplete(rawLine: string): { completedLine: string; isAmbiguous: boolean; candidates: string[] } {
+        const help = this.getContextualHelp(rawLine);
+        const candidates = [...new Set(help.map(entry => entry.tokenDisplay).filter(token => !token.startsWith("<")))];
+        if (candidates.length === 1) {
+            const tokens = rawLine.trimEnd().split(/\s+/).filter(Boolean);
+            const hasTrailingSpace = /\s$/.test(rawLine);
+            if (!hasTrailingSpace && tokens.length > 0) tokens.pop();
+            tokens.push(candidates[0]!);
+            return { completedLine: `${tokens.join(" ")} `, isAmbiguous: false, candidates };
+        }
+        return { completedLine: rawLine, isAmbiguous: candidates.length > 1, candidates };
+    }
+
+    getCommandDocumentation(mode?: string): Array<{
+        id: string; mode: string; syntax: string; description: string; privilege: PrivilegeLevel
+    }> {
+        return this.commands.list(mode).map(command => ({
+            id: command.id,
+            mode: command.mode,
+            syntax: command.syntax,
+            description: command.description,
+            privilege: command.privilege ?? PrivilegeLevel.VIEWER
+        }));
+    }
+}
+
+
+================================================================================
+FICHIER : src\example.ts
+================================================================================
+
+import { ArgumentTypeRegistry, InterfaceIdType } from "./argument-types.js";
+import { CliEngine } from "./engine.js";
+import { PrivilegeLevel, UserIdentity, type CommandDefinition } from "./types.js";
+
+interface NetworkInterface {
+    name: string;
+    adminUp: boolean;
+    ipv4?: string;
+}
+
+interface ExampleDevice {
+    interfaces: NetworkInterface[];
+}
+
+const device: ExampleDevice = {
+    interfaces: [
+        { name: "GigabitEthernet0/0", adminUp: true, ipv4: "192.168.1.1/24" },
+        { name: "GigabitEthernet0/1", adminUp: false }
+    ]
+};
+
+const argumentTypes = ArgumentTypeRegistry.withBuiltIns().register(
+    "interface-id",
+    new InterfaceIdType(context => {
+        const target = context.device as ExampleDevice;
+        return target.interfaces.map(item => item.name);
+    })
+);
+
+const modes = [
+    {
+        id: "operational",
+        prompt: (session: import("./types.js").CliSession) => `${session.user.username}@${session.hostname}> `
+    },
+    {
+        id: "configure",
+        parentId: "operational",
+        prompt: (session: import("./types.js").CliSession) => `${session.user.username}@${session.hostname}# `
+    }
+] as const;
+
+const commands: CommandDefinition<ExampleDevice>[] = [
+    {
+        id: "system.show-clock",
+        mode: "operational",
+        syntax: "show clock",
+        description: "Display the simulated system clock",
+        privilege: PrivilegeLevel.VIEWER,
+        handler: () => ({ status: "success", message: new Date().toISOString() })
+    },
+    {
+        id: "interface.show",
+        mode: "operational",
+        syntax: "show interface <interfaceId>",
+        description: "Display interface information",
+        privilege: PrivilegeLevel.VIEWER,
+        arguments: [{ name: "interfaceId", type: "interface-id", description: "Interface to display" }],
+        handler: ({ device: target, args }) => {
+            const iface = target.interfaces.find(item => item.name === args.interfaceId);
+            if (!iface) return { status: "error", code: "INTERFACE_NOT_FOUND", message: "Interface not found." };
+            return { status: "success", data: iface, message: JSON.stringify(iface, null, 2) };
+        }
+    },
+    {
+        id: "configure.enter",
+        mode: "operational",
+        syntax: "configure",
+        description: "Enter configuration mode",
+        privilege: PrivilegeLevel.CONFIG_ADMIN,
+        handler: () => ({ status: "mode-change", modeId: "configure" })
+    },
+    {
+        id: "session.exit-operational",
+        mode: "operational",
+        syntax: "exit",
+        description: "Close the CLI session",
+        privilege: PrivilegeLevel.VIEWER,
+        handler: () => ({ status: "session-close", message: "CLI session closed." })
+    },
+    {
+        id: "mode.exit-configure",
+        mode: "configure",
+        syntax: "exit",
+        description: "Return to operational mode",
+        privilege: PrivilegeLevel.CONFIG_ADMIN,
+        handler: () => ({ status: "mode-change", modeId: "operational" })
+    },
+    {
+        id: "interface.set-ip",
+        mode: "configure",
+        syntax: "set interface <interfaceId> ip <address>",
+        description: "Set an interface IPv4 address",
+        privilege: PrivilegeLevel.CONFIG_ADMIN,
+        arguments: [
+            { name: "interfaceId", type: "interface-id" },
+            { name: "address", type: "ipv4" }
+        ],
+        handler: ({ device: target, args }) => {
+            const iface = target.interfaces.find(item => item.name === args.interfaceId);
+            if (!iface) return { status: "error", code: "INTERFACE_NOT_FOUND", message: "Interface not found." };
+            iface.ipv4 = String(args.address);
+            return { status: "success", message: `Address ${iface.ipv4} configured on ${iface.name}.` };
+        }
+    }
+];
+
+export const engine = new CliEngine({
+    device,
+    hostname: "R1",
+    user: new UserIdentity("admin", PrivilegeLevel.SUPERUSER),
+    modes,
+    commands,
+    argumentTypes
+});
+
+export async function runDemo(): Promise<void> {
+    console.log(engine.getPrompt());
+    console.log(await engine.execute("show clock"));
+    console.log(await engine.execute("show interface GigabitEthernet0/0"));
+    console.log(await engine.execute("configure"));
+    console.log(engine.getPrompt());
+    console.log(await engine.execute("set interface GigabitEthernet0/0 ip 10.0.0.1"));
+}
+
+
+================================================================================
+FICHIER : src\index.ts
+================================================================================
+
+export * from "./types.js";
+export * from "./argument-types.js";
+export * from "./lexer.js";
+export * from "./registry.js";
+export * from "./parser.js";
+export * from "./engine.js";
+
+
+================================================================================
+FICHIER : src\lexer.ts
+================================================================================
+
+export interface Token {
+    readonly value: string;
+    readonly start: number;
+    readonly end: number;
+    readonly quoted: boolean;
+}
+
+export interface LexResult {
+    readonly ok: boolean;
+    readonly tokens: readonly Token[];
+    readonly error?: { readonly code: string; readonly message: string; readonly position: number };
+}
+
+export class CliLexer {
+    tokenize(input: string): LexResult {
+        const tokens: Token[] = [];
+        let index = 0;
+
+        while (index < input.length) {
+            while (index < input.length && /\s/.test(input[index] ?? "")) index++;
+            if (index >= input.length) break;
+
+            const start = index;
+            const first = input[index] ?? "";
+            if (first === "'" || first === '"') {
+                const quote = first;
+                index++;
+                let value = "";
+                let closed = false;
+
+                while (index < input.length) {
+                    const char = input[index] ?? "";
+                    if (char === "\\" && index + 1 < input.length) {
+                        value += input[index + 1] ?? "";
+                        index += 2;
+                        continue;
+                    }
+                    if (char === quote) {
+                        index++;
+                        closed = true;
+                        break;
+                    }
+                    value += char;
+                    index++;
+                }
+
+                if (!closed) {
+                    return {
+                        ok: false,
+                        tokens,
+                        error: { code: "UNCLOSED_QUOTE", message: "Unclosed quoted string.", position: start }
+                    };
+                }
+                if (index < input.length && !/\s/.test(input[index] ?? "")) {
+                    return {
+                        ok: false,
+                        tokens,
+                        error: { code: "TOKEN_BOUNDARY", message: "Expected whitespace after quoted value.", position: index }
+                    };
+                }
+                tokens.push({ value, start, end: index, quoted: true });
+                continue;
+            }
+
+            while (index < input.length && !/\s/.test(input[index] ?? "")) index++;
+            tokens.push({ value: input.slice(start, index), start, end: index, quoted: false });
+        }
+
+        return { ok: true, tokens };
+    }
+}
+
+
+================================================================================
+FICHIER : src\parser.ts
+================================================================================
+
+import type {
+    ArgumentDefinition, ArgumentType, CliError, CommandDefinition, ParseResult, ValidationContext
+} from "./types.js";
+import { CommandRegistry } from "./registry.js";
+import { ArgumentTypeRegistry } from "./argument-types.js";
+import { CliLexer } from "./lexer.js";
+
+interface SyntaxToken {
+    readonly kind: "literal" | "argument";
+    readonly value: string;
+    readonly optional: boolean;
+}
+
+export class CliParser {
+    constructor(
+        private readonly commands: CommandRegistry,
+        private readonly argumentTypes: ArgumentTypeRegistry,
+        private readonly lexer = new CliLexer()
+    ) {}
+
+    parse(rawLine: string, mode: string, context: ValidationContext): ParseResult {
+        const lexed = this.lexer.tokenize(rawLine);
+        if (!lexed.ok) return { ok: false, error: lexed.error as CliError };
+
+        const tokens = lexed.tokens.map(token => token.value);
+        const candidates = this.commands.list(mode)
+            .map(command => ({ command, syntax: this.parseSyntax(command.syntax) }))
+            .filter(candidate => candidate.syntax !== null);
+
+        const matches: Array<{ command: CommandDefinition; args: Record<string, unknown>; score: number }> = [];
+        const failures: CliError[] = [];
+
+        for (const candidate of candidates) {
+            const syntax = candidate.syntax as SyntaxToken[];
+            const result = this.match(candidate.command, syntax, tokens, context);
+            if (result.ok) {
+                matches.push({ command: candidate.command, args: result.args, score: result.score });
+            } else if (result.error) {
+                failures.push(result.error);
+            }
+        }
+
+        if (matches.length === 1) {
+            const match = matches[0]!;
+            return { ok: true, command: match.command, args: match.args };
+        }
+
+        if (matches.length > 1) {
+            matches.sort((a, b) => b.score - a.score);
+            if (matches.length > 1 && matches[0]!.score === matches[1]!.score) {
+                return {
+                    ok: false,
+                    error: { code: "AMBIGUOUS_COMMAND", message: "Command is ambiguous.", position: 0 }
+                };
+            }
+            return { ok: true, command: matches[0]!.command, args: matches[0]!.args };
+        }
+
+        const bestFailure = failures.sort((a, b) => (b.position ?? 0) - (a.position ?? 0))[0];
+        return {
+            ok: false,
+            error: bestFailure ?? { code: "UNKNOWN_COMMAND", message: "Unknown command or invalid arguments.", position: 0 }
+        };
+    }
+
+    private parseSyntax(syntax: string): SyntaxToken[] | null {
+        const result: SyntaxToken[] = [];
+        const regex = /<([a-zA-Z][\w-]*)>|\[([a-zA-Z][\w-]*)\]|([^\s]+)/g;
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(syntax)) !== null) {
+            if (match[1]) result.push({ kind: "argument", value: match[1], optional: false });
+            else if (match[2]) result.push({ kind: "argument", value: match[2], optional: true });
+            else if (match[3]) result.push({ kind: "literal", value: match[3], optional: false });
+        }
+        return result.length ? result : null;
+    }
+
+    private match(
+        command: CommandDefinition,
+        syntax: SyntaxToken[],
+        tokens: string[],
+        context: ValidationContext
+    ): { ok: true; args: Record<string, unknown>; score: number } | { ok: false; error: CliError } {
+        const args: Record<string, unknown> = {};
+        const definitions = new Map((command.arguments ?? []).map(argument => [argument.name, argument]));
+        let tokenIndex = 0;
+        let score = 0;
+
+        for (const item of syntax) {
+            const definition = item.kind === "argument" ? definitions.get(item.value) : undefined;
+            if (item.kind === "literal") {
+                const token = tokens[tokenIndex];
+                if (token === undefined) {
+                    return { ok: false, error: { code: "INCOMPLETE_COMMAND", message: `Missing '${item.value}'.`, position: tokenIndex } };
+                }
+                if (token.toLowerCase() !== item.value.toLowerCase()) {
+                    return { ok: false, error: { code: "UNEXPECTED_TOKEN", message: `Expected '${item.value}', received '${token}'.`, position: tokenIndex } };
+                }
+                score += 2;
+                tokenIndex++;
+                continue;
+            }
+
+            if (!definition) {
+                return { ok: false, error: { code: "INVALID_DEFINITION", message: `Missing argument definition '${item.value}'.`, position: tokenIndex } };
+            }
+
+            if (definition.variadic) {
+                const remaining = tokens.slice(tokenIndex);
+                if (remaining.length === 0 && definition.required !== false) {
+                    return { ok: false, error: { code: "MISSING_ARGUMENT", message: `Missing argument '${definition.name}'.`, position: tokenIndex } };
+                }
+                const type = this.argumentTypes.get(definition.type);
+                const parsed: unknown[] = [];
+                for (const token of remaining) {
+                    const result = this.parseValue(type, token, context, definition);
+                    if (!result.ok) return { ok: false, error: { ...result.error, position: tokenIndex } };
+                    parsed.push(result.value);
+                    tokenIndex++;
+                }
+                args[definition.name] = parsed;
+                continue;
+            }
+
+            const token = tokens[tokenIndex];
+            if (token === undefined) {
+                if (item.optional || definition.required === false) {
+                    if (definition.defaultValue !== undefined) args[definition.name] = definition.defaultValue;
+                    continue;
+                }
+                return { ok: false, error: { code: "MISSING_ARGUMENT", message: `Missing argument '${definition.name}'.`, position: tokenIndex } };
+            }
+
+            const type = this.argumentTypes.get(definition.type);
+            const result = this.parseValue(type, token, context, definition);
+            if (!result.ok) return { ok: false, error: { ...result.error, position: tokenIndex } };
+            args[definition.name] = result.value;
+            tokenIndex++;
+            score += 1;
+        }
+
+        if (tokenIndex < tokens.length) {
+            return { ok: false, error: { code: "EXTRA_ARGUMENT", message: `Unexpected argument '${tokens[tokenIndex]}'.`, position: tokenIndex } };
+        }
+        return { ok: true, args, score };
+    }
+
+    private parseValue(
+        type: ArgumentType,
+        token: string,
+        context: ValidationContext,
+        definition: ArgumentDefinition
+    ): { ok: true; value: unknown } | { ok: false; error: CliError } {
+        try {
+            const value = type.parse(token);
+            const result = type.validate(value, context);
+            if (!result.valid) {
+                return {
+                    ok: false,
+                    error: { code: "INVALID_ARGUMENT", message: result.message ?? `Invalid '${definition.name}'.` }
+                };
+            }
+            return { ok: true, value };
+        } catch (error) {
+            return {
+                ok: false,
+                error: {
+                    code: "INVALID_ARGUMENT",
+                    message: error instanceof Error ? error.message : `Invalid '${definition.name}'.`
+                }
+            };
+        }
+    }
+}
+
+
+================================================================================
+FICHIER : src\registry.ts
+================================================================================
+
+import type { CommandDefinition } from "./types.js";
+
+export class CommandRegistry {
+    private readonly commands = new Map<string, CommandDefinition>();
+
+    register<TDevice>(definition: CommandDefinition<TDevice>): this {
+        if (this.commands.has(definition.id)) {
+            throw new Error(`Command id '${definition.id}' is already registered.`);
+        }
+        this.validateDefinition(definition);
+        this.commands.set(definition.id, definition as CommandDefinition);
+        return this;
+    }
+
+    replace<TDevice>(definition: CommandDefinition<TDevice>): this {
+        this.validateDefinition(definition);
+        this.commands.set(definition.id, definition as CommandDefinition);
+        return this;
+    }
+
+    get(id: string): CommandDefinition | undefined {
+        return this.commands.get(id);
+    }
+
+    list(mode?: string): CommandDefinition[] {
+        return [...this.commands.values()].filter(command => mode === undefined || command.mode === mode);
+    }
+
+    private validateDefinition(definition: CommandDefinition): void {
+        if (!definition.id.trim()) throw new Error("Command id cannot be empty.");
+        if (!definition.mode.trim()) throw new Error(`Command '${definition.id}' has no mode.`);
+        if (!definition.syntax.trim()) throw new Error(`Command '${definition.id}' has no syntax.`);
+        const names = new Set<string>();
+        for (const argument of definition.arguments ?? []) {
+            if (names.has(argument.name)) {
+                throw new Error(`Duplicate argument '${argument.name}' in '${definition.id}'.`);
+            }
+            names.add(argument.name);
+            if (argument.variadic && argument.required === false) {
+                throw new Error(`Variadic argument '${argument.name}' cannot be optional in '${definition.id}'.`);
+            }
+        }
+    }
+}
+
+
+================================================================================
+FICHIER : src\types.ts
+================================================================================
+
+export enum PrivilegeLevel {
+    VIEWER = 1,
+    OPERATOR = 5,
+    CONFIG_ADMIN = 10,
+    SUPERUSER = 15
+}
+
+export type ArgumentValue = string | number | boolean | undefined;
+
+export interface ValidationContext {
+    readonly device: unknown;
+    readonly session: CliSession;
+}
+
+export interface CompletionContext {
+    readonly device: unknown;
+    readonly session: CliSession;
+}
+
+export interface ValidationResult {
+    readonly valid: boolean;
+    readonly message?: string;
+}
+
+export interface ArgumentType<T = ArgumentValue> {
+    parse(token: string): T;
+    validate(value: T, context: ValidationContext): ValidationResult;
+    complete?(prefix: string, context: CompletionContext): string[];
+    describe(): string;
+}
+
+export interface CliUser {
+    readonly username: string;
+    privilege: PrivilegeLevel;
+}
+
+export class UserIdentity implements CliUser {
+    constructor(
+        public readonly username: string,
+        public privilege: PrivilegeLevel
+    ) {}
+
+    hasPrivilege(required: PrivilegeLevel): boolean {
+        return this.privilege >= required;
+    }
+}
+
+export interface CliModeDefinition {
+    readonly id: string;
+    readonly prompt: (session: CliSession) => string;
+    readonly parentId?: string;
+}
+
+export class CliSession {
+    readonly history: string[] = [];
+    readonly environment = new Map<string, string>();
+    private readonly modeStack: string[] = [];
+
+    constructor(
+        public readonly user: UserIdentity,
+        public readonly hostname: string,
+        initialModeId = "operational"
+    ) {
+        this.modeStack.push(initialModeId);
+    }
+
+    get currentModeId(): string {
+        return this.modeStack[this.modeStack.length - 1] ?? "operational";
+    }
+
+    getModeStack(): readonly string[] {
+        return [...this.modeStack];
+    }
+
+    pushMode(modeId: string): void {
+        this.modeStack.push(modeId);
+    }
+
+    popMode(): string | undefined {
+        if (this.modeStack.length <= 1) return undefined;
+        return this.modeStack.pop();
+    }
+
+    resetMode(modeId: string): void {
+        this.modeStack.length = 0;
+        this.modeStack.push(modeId);
+    }
+}
+
+export type ExecutionResult<T = unknown> =
+    | { readonly status: "success"; readonly message?: string; readonly data?: T }
+    | { readonly status: "error"; readonly code: string; readonly message: string }
+    | { readonly status: "mode-change"; readonly modeId: string; readonly message?: string }
+    | { readonly status: "session-close"; readonly message?: string };
+
+export interface CommandContext<TDevice = unknown> {
+    readonly session: CliSession;
+    readonly device: TDevice;
+    readonly args: Readonly<Record<string, unknown>>;
+    readonly rawLine: string;
+}
+
+export type CommandHandler<TDevice = unknown> =
+    (context: CommandContext<TDevice>) => ExecutionResult | Promise<ExecutionResult>;
+
+export interface ArgumentDefinition {
+    readonly name: string;
+    readonly type: string;
+    readonly required?: boolean;
+    readonly variadic?: boolean;
+    readonly defaultValue?: ArgumentValue;
+    readonly description?: string;
+}
+
+export interface CommandDefinition<TDevice = unknown> {
+    readonly id: string;
+    readonly mode: string;
+    readonly syntax: string;
+    readonly description: string;
+    readonly privilege?: PrivilegeLevel;
+    readonly arguments?: readonly ArgumentDefinition[];
+    readonly handler: CommandHandler<TDevice>;
+    readonly hidden?: boolean;
+}
+
+export interface CliError {
+    readonly code: string;
+    readonly message: string;
+    readonly position?: number;
+}
+
+export interface ParseResult {
+    readonly ok: boolean;
+    readonly command?: CommandDefinition;
+    readonly args?: Readonly<Record<string, unknown>>;
+    readonly error?: CliError;
+}
+
+export interface HelpEntry {
+    readonly tokenDisplay: string;
+    readonly description: string;
+}
+
+
