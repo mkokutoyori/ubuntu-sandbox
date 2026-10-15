@@ -301,6 +301,8 @@ export interface IkeConfigReply {
   readonly netmask: string;
   readonly splitInclude?: readonly string[];
   readonly dnsServers?: readonly string[];
+  readonly winsServers?: readonly string[];
+  readonly domain?: string;
 }
 
 /**

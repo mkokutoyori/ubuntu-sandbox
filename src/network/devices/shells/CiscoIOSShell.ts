@@ -33,6 +33,7 @@ import {
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
 import type { Router, TracerouteHop } from '../Router';
+import type { CiscoRouter } from '../CiscoRouter';
 import { IOS_TRACEROUTE_BASE_PORT, iosUnreachableMark } from './cisco/iosTraceroute';
 import { IOS_IPV6_ERROR_INTERVAL } from '../router/IcmpErrorTokenBucket';
 import { displayIosAddress, displayIpv6Address } from './cisco/iosIpv6Text';
@@ -65,6 +66,7 @@ import { inspectSpecs } from './cisco/inspectSpecs';
 import { tcpInterceptSpecs } from './cisco/tcpInterceptSpecs';
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
+import { ezvpnSpecs, type EzvpnEngine } from './cisco/ezvpnSpecs';
 import { authenticateTrustpoint, enrollTrustpoint, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
 import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
 import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
@@ -478,6 +480,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...zoneSpecs(() => this.zoneHost()),
       ...tcpInterceptSpecs(() => ({ security: () => getSecurityConfig(this.d()) })),
       ...pkiSpecs(() => this.pkiHost()),
+      ...ezvpnSpecs(() => ({
+        engine: () => (this.d() as unknown as { _getOrCreateIPSecEngine: () => EzvpnEngine })._getOrCreateIPSecEngine(),
+        selectCryptoMap: (tag, seq) => { this.setSelectedCryptoMap(tag); this.setSelectedCryptoMapSeq(seq); this.setSelectedCryptoMapIsDynamic(false); },
+        selectGroup: (name) => { this.selectedIsakmpGroup = name; },
+        selectedGroup: () => this.selectedIsakmpGroup,
+      })),
       ...inspectSpecs(() => ({
         security: () => getSecurityConfig(this.d()),
         selectedInterfaces: () => this.selectedPortsForConfigIf(),
@@ -1478,6 +1486,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedAaaGroup: string | null = null;
   private selectedPkiTrustpoint: string | null = null;
   private selectedPkiServer: string | null = null;
+  private selectedIsakmpGroup: string | null = null;
+  private configIsakmpGroupTrie = new CommandTrie();
   private configCaServerTrie = new CommandTrie();
   private selectedApplet: string | null = null;
   private selectedFlowExporter: string | null = null;
@@ -2014,6 +2024,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-aaa-group': return this.configAaaGroupTrie;
       case 'config-ca-trustpoint': return this.configCaTrustpointTrie;
       case 'config-ca-server': return this.configCaServerTrie;
+      case 'config-isakmp-group': return this.configIsakmpGroupTrie;
       case 'config-applet': return this.configAppletTrie;
       case 'config-flow-exporter': return this.configFlowExporterTrie;
       case 'config-flow-record': return this.configFlowRecordTrie;
@@ -2083,6 +2094,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
       if (f === 'selectedPkiTrustpoint') this.selectedPkiTrustpoint = null;
       if (f === 'selectedPkiServer') this.selectedPkiServer = null;
+      if (f === 'selectedIsakmpGroup') this.selectedIsakmpGroup = null;
       if (f === 'selectedApplet') this.selectedApplet = null;
       if (f === 'selectedFlowExporter') this.selectedFlowExporter = null;
       if (f === 'selectedFlowRecord') this.selectedFlowRecord = null;

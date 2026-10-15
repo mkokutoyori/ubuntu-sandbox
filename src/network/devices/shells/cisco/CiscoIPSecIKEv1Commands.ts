@@ -92,8 +92,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'crypto ipsec security-policy': { name: 'reste', type: 'REST',
     description:
       'Name, PROTECT|BYPASS|DISCARD, in|out, then src/dst/proto selectors' },
-  'crypto map': { name: 'reste', type: 'REST',
-    description: 'Name and sequence number, then the kind of entry' },
   'crypto dynamic-map': { name: 'reste', type: 'REST',
     description: 'Name and sequence number' },
 };
@@ -216,21 +214,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   trie.registerGreedy('no crypto ipsec transform-set', 'Remove IPSec transform set', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     eng(ctx).removeTransformSet(args[0]);
-    return '';
-  });
-
-  // ── no crypto map NAME [SEQ] ────────────────────────────────────
-  trie.registerGreedy('no crypto map', 'Remove crypto map or entry', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const mapName = args[0];
-    if (args.length >= 2) {
-      const seq = parseInt(args[1], 10);
-      if (!isNaN(seq)) {
-        eng(ctx).removeCryptoMapEntry(mapName, seq);
-        return '';
-      }
-    }
-    eng(ctx).removeCryptoMap(mapName);
     return '';
   });
 
@@ -390,33 +373,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   //    OR:  crypto ipsec transform-set MYTS esp-aes 256 esp-sha256-hmac
   trie.registerGreedy('crypto ipsec transform-set', 'Define an IPSec transform set',
     (args) => declareTransformSet(ctx, args, true));
-
-  // ── crypto map NAME SEQ ipsec-isakmp [dynamic DYNMAP] ────────────
-  trie.registerGreedy('crypto map', 'Define a crypto map entry', (args) => {
-    // args: NAME SEQ ipsec-isakmp [dynamic DYNMAP]
-    //    or: NAME SEQ ipsec-isakmp dynamic DYNMAP
-    if (args.length < 3) return '% Incomplete command.';
-    const mapName = args[0];
-    const seq     = parseInt(args[1], 10);
-    if (isNaN(seq)) return '% Invalid sequence number.';
-
-    const keyword = args[2]?.toLowerCase();
-
-    if (keyword === 'ipsec-isakmp') {
-      if (args[3]?.toLowerCase() === 'dynamic' && args[4]) {
-        // Reference to dynamic map: crypto map NAME SEQ ipsec-isakmp dynamic DYNMAP
-        eng(ctx).addDynamicRefToCryptoMap(mapName, seq, args[4]);
-        return '';
-      }
-      eng(ctx).getOrCreateCryptoMapEntry(mapName, seq);
-      ctx.setSelectedCryptoMap(mapName);
-      ctx.setSelectedCryptoMapSeq(seq);
-      ctx.setSelectedCryptoMapIsDynamic(false);
-      ctx.setMode('config-crypto-map');
-      return '';
-    }
-    return '% Invalid crypto map type. Use ipsec-isakmp.';
-  });
 
   // ── crypto dynamic-map NAME SEQ ───────────────────────────────────
   trie.registerGreedy('crypto dynamic-map', 'Define a dynamic crypto map', (args) => {

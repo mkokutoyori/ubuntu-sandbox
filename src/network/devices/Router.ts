@@ -6409,6 +6409,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.ipsecEngine = new IPSecEngine(this);
       this.ipsecEngine.setEventBus(this.getBus());
       this.ipsecEngine.start();
+      this.attachEzvpn(this.ipsecEngine);
       const svc = this._debugService;
       if (svc) {
         this.ipsecEngine.setDebugEmitter((kind, line) => {
@@ -6417,6 +6418,43 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
     return this.ipsecEngine;
+  }
+
+  private attachEzvpn(engine: IPSecEngine): void {
+    const methodsOf = (phase: 'authentication' | 'authorization', service: string, list: string): string[] | null => {
+      const sec = this.securityConfig();
+      if (!sec || !sec.aaaNewModel) return null;
+      const entry = sec.aaaMethods.find((m) => m.phase === phase && m.service === service && m.listName === list);
+      return entry ? entry.methods : null;
+    };
+    engine.ezvpn.attach({
+      isLive: (peer) => engine.hasIkeSA(peer),
+      clientPolicyFor: (peer) => engine.clientPolicyForPeer(peer),
+      authenticate: (list, user, password) => {
+        const methods = methodsOf('authentication', 'login', list);
+        if (methods === null) return 'denied';
+        for (const method of methods) {
+          if (method === 'none') return 'accepted';
+          if (method === 'local') return this.getCredentialStore().authenticate(user, password) ? 'accepted' : 'denied';
+        }
+        return 'denied';
+      },
+      authorize: (list, group) => {
+        const methods = methodsOf('authorization', 'network', list);
+        if (methods === null) return 'denied';
+        return methods.includes('local') && engine.ezvpn.groups.has(group) ? 'accepted' : 'denied';
+      },
+      splitNetworks: (acl) => {
+        const found = this.getAccessLists().find((a) => a.name === acl || String(a.id) === acl);
+        const networks: string[] = [];
+        for (const entry of found?.entries ?? []) {
+          const wildcard = entry.srcWildcard.toString();
+          if (entry.action !== 'permit' || wildcard === '255.255.255.255') continue;
+          networks.push(`${entry.srcIP.toString()}/${wildcard.split('.').map((o) => 255 - Number(o)).join('.')}`);
+        }
+        return networks;
+      },
+    });
   }
 
   /** @internal Return IPSec engine (null if not yet configured) */

@@ -10,6 +10,7 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { EzvpnServer, type MapClientPolicy } from './ezvpn/EzvpnServer';
 
 import { findIpsecTransform } from './transforms';
 import {
@@ -630,6 +631,8 @@ const DEFAULT_TRANSFORM_SETS: readonly TransformSet[] = Object.freeze([
 export const DEFAULT_OPTIONAL_RETRY_SECONDS = 300;
 
 export class IPSecEngine implements IProtocolEngine {
+  readonly ezvpn = new EzvpnServer();
+  private readonly mapClientPolicies = new Map<string, MapClientPolicy>();
   private configMethod: IkeConfigMethod | null = null;
   private readonly configRequests = new Map<string, IkeConfigRequest>();
   private readonly configReplies = new Map<string, IkeConfigReply>();
@@ -3738,7 +3741,8 @@ export class IPSecEngine implements IProtocolEngine {
       natTHint: this.natTraversalDecision(apparentSrcIP !== localIP),
       keyExchange: exchange?.payload,
       trafficSelectors: this.selectorsForEntry(entry),
-      configRequest: this.configRequests.get(peerIP),
+      configRequest: this.configRequests.get(peerIP)
+        ?? (this.mapClientPolicies.get(this.ifaceCryptoMap.get(egressIface) ?? '')?.initiate ? { wantAddress: true } : undefined),
     };
     if (this.ikeCertAuth) {
       
@@ -3963,7 +3967,7 @@ export class IPSecEngine implements IProtocolEngine {
       ? 'cert-auth-key'
       : (isV2
         ? (this.findIKEv2PSK(offer.identity) ?? this.findIKEv2PSK(srcIp) ?? '')
-        : this.findISAKMPPSK(peerEntry, offer.identity, srcIp));
+        : (this.ezvpn.groupKeyFor(offer.identity) ?? this.findISAKMPPSK(peerEntry, offer.identity, srcIp)));
     if (rsaSeed === undefined && !usingCert && (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof)) {
       this.rejectIke(srcIp, 'PSK mismatch');
       if (!isV2) this.createFailedIKESA(srcIp, '', 'PSK mismatch');
@@ -4023,9 +4027,11 @@ export class IPSecEngine implements IProtocolEngine {
     const localSelectors = this.selectorsForEntry(peerEntry);
     const trafficSelectors = narrowSelectors(offer.trafficSelectors, localSelectors);
     const childAccepted = trafficSelectors !== null;
-    const configVerdict = offer.configRequest === undefined || !this.configMethod
+    const configVerdict = offer.configRequest === undefined
       ? undefined
-      : this.configMethod(srcIp, offer.configRequest);
+      : this.configMethod
+        ? this.configMethod(srcIp, offer.configRequest)
+        : this.ezvpn.answer(srcIp, offer.identity, offer.configRequest);
     if (configVerdict !== undefined && typeof configVerdict === 'string') {
       this.rejectIke(srcIp, configVerdict);
       return;
@@ -5112,6 +5118,21 @@ export class IPSecEngine implements IProtocolEngine {
     return this.ipsecSADB.get(peerIP) ?? [];
   }
 
+  setClientPolicy(mapName: string, patch: Partial<MapClientPolicy> | null): void {
+    if (patch === null) { this.mapClientPolicies.delete(mapName); return; }
+    this.mapClientPolicies.set(mapName, { respond: false, ...this.mapClientPolicies.get(mapName), ...patch });
+  }
+
+  clientPolicyOf(mapName: string): MapClientPolicy | undefined {
+    return this.mapClientPolicies.get(mapName);
+  }
+
+  clientPolicyForPeer(peer: string): MapClientPolicy | null {
+    const iface = this.findInterfaceForPeer(peer);
+    const mapName = iface ? this.ifaceCryptoMap.get(iface) : undefined;
+    return mapName ? this.mapClientPolicies.get(mapName) ?? null : null;
+  }
+
   setConfigMethod(handler: IkeConfigMethod | null): void {
     this.configMethod = handler;
   }
@@ -5207,6 +5228,13 @@ export class IPSecEngine implements IProtocolEngine {
         lines.push(`crypto map ${cmap.name} ${seq} ipsec-isakmp dynamic ${dynName}`);
       }
     }
+    for (const [tag, policy] of this.mapClientPolicies) {
+      if (policy.authenticationList) lines.push(`crypto map ${tag} client authentication list ${policy.authenticationList}`);
+      if (policy.authorizationList) lines.push(`crypto map ${tag} isakmp authorization list ${policy.authorizationList}`);
+      if (policy.respond) lines.push(`crypto map ${tag} client configuration address respond`);
+      if (policy.initiate) lines.push(`crypto map ${tag} client configuration address initiate`);
+    }
+    lines.push(...this.ezvpn.renderGroupLines());
     for (const [, dyn] of this.dynamicCryptoMaps) {
       for (const [, entry] of [...dyn.entries].sort((a, b) => a[0] - b[0])) {
         lines.push(`crypto dynamic-map ${dyn.name} ${entry.seq}`);
