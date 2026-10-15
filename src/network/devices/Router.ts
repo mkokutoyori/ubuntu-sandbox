@@ -3402,16 +3402,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           if (entry) {
             const encPkts = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
             if (!encPkts) {
-              // Check if ICMP Fragmentation Needed should be sent back to source
-              if (this.ipsecEngine.lastEncapICMP) {
-                const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
-                this.ipsecEngine.lastEncapICMP = null;
-                this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+              if (!this.ipsecEngine.consumeClearTextFallback()) {
+                // Check if ICMP Fragmentation Needed should be sent back to source
+                if (this.ipsecEngine.lastEncapICMP) {
+                  const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
+                  this.ipsecEngine.lastEncapICMP = null;
+                  this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+                }
+                return;
               }
+            } else {
+              for (const p of encPkts) this.processIPv4(route.iface, p, true);
               return;
             }
-            for (const p of encPkts) this.processIPv4(route.iface, p, true);
-            return;
           }
         }
       } else {
@@ -3420,15 +3423,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         if (entry) {
           const encPkts = this.ipsecEngine.processOutbound(fwdPkt, route.iface, entry);
           if (!encPkts) {
-            if (this.ipsecEngine.lastEncapICMP) {
-              const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
-              this.ipsecEngine.lastEncapICMP = null;
-              this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+            if (!this.ipsecEngine.consumeClearTextFallback()) {
+              if (this.ipsecEngine.lastEncapICMP) {
+                const { mtu, originalPkt } = this.ipsecEngine.lastEncapICMP;
+                this.ipsecEngine.lastEncapICMP = null;
+                this.sendICMPError(inPort, originalPkt, 'destination-unreachable', 4, mtu);
+              }
+              return;
             }
+          } else {
+            for (const p of encPkts) this.processIPv4(route.iface, p, true);
             return;
           }
-          for (const p of encPkts) this.processIPv4(route.iface, p, true);
-          return;
         }
       }
     }
@@ -6320,8 +6326,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const entry = this.ipsecEngine.findMatchingCryptoEntry(ipPkt, iface);
       if (entry) {
         const encPkts = this.ipsecEngine.processOutbound(ipPkt, iface, entry);
-        if (encPkts) {
-          for (const p of encPkts) {
+        const outgoing = encPkts ?? (this.ipsecEngine.consumeClearTextFallback() ? [ipPkt] : null);
+        if (outgoing) {
+          for (const p of outgoing) {
             this.sendFrame(iface, {
               srcMAC: port.getMAC(), dstMAC,
               etherType: ETHERTYPE_IPV4, payload: p,

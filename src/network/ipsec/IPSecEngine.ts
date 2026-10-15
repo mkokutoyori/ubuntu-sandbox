@@ -627,6 +627,8 @@ const DEFAULT_TRANSFORM_SETS: readonly TransformSet[] = Object.freeze([
   { name: '#$!default_transform_set_0', transforms: ['esp-3des', 'esp-sha-hmac'], mode: 'transport' as const },
 ]);
 
+export const DEFAULT_OPTIONAL_RETRY_SECONDS = 300;
+
 export class IPSecEngine implements IProtocolEngine {
   private configMethod: IkeConfigMethod | null = null;
   private readonly configRequests = new Map<string, IkeConfigRequest>();
@@ -685,6 +687,9 @@ export class IPSecEngine implements IProtocolEngine {
   private ifaceCryptoMap: Map<string, string> = new Map();
   private ikeEnabled = true;
   private passiveMode = false;
+  private optionalRetrySeconds = DEFAULT_OPTIONAL_RETRY_SECONDS;
+  private readonly clearTextUntilMs = new Map<string, number>();
+  private clearTextFallback = false;
   private replayCheckingDisabled = false;
   private idleTimeGlobalSec: number | null = null;
   private dfBitGlobal: DfBitPolicy = 'copy';
@@ -1473,6 +1478,22 @@ export class IPSecEngine implements IProtocolEngine {
 
   setPassiveMode(enabled: boolean): void {
     this.passiveMode = enabled;
+    if (!enabled) {
+      this.optionalRetrySeconds = DEFAULT_OPTIONAL_RETRY_SECONDS;
+      this.clearTextUntilMs.clear();
+    }
+  }
+
+  isPassiveMode(): boolean { return this.passiveMode; }
+
+  setOptionalRetry(seconds: number): void { this.optionalRetrySeconds = seconds; }
+
+  getOptionalRetry(): number { return this.optionalRetrySeconds; }
+
+  consumeClearTextFallback(): boolean {
+    const taken = this.clearTextFallback;
+    this.clearTextFallback = false;
+    return taken;
   }
 
   rejectsClearText(inPort: string, pkt: IPv4Packet): boolean {
@@ -2769,10 +2790,21 @@ export class IPSecEngine implements IProtocolEngine {
       this.dbgIpsec(`    local_proxy= ${localProxy ?? pkt.sourceIP.toString() + '/255.255.255.255/0/0'} (type=4)`);
       this.dbgIpsec(`    remote_proxy= ${remoteProxy ?? pkt.destinationIP.toString() + '/255.255.255.255/0/0'} (type=4)`);
       this.dbgIpsec(`IPSEC(key_engine): got a queue event with 1 KMI message(s)`);
+      const holdUntil = this.passiveMode ? this.clearTextUntilMs.get(peerIP) ?? 0 : 0;
+      if (simulationNowMs() < holdUntil) {
+        this.clearTextFallback = true;
+        return null;
+      }
       const ok = this.negotiateTunnel(peerIP, entry, egressIface);
-      if (!ok) return null;
-      sa = this.getBestIPSecSA(peerIP);
-      if (!sa) return null;
+      sa = ok ? this.getBestIPSecSA(peerIP) : null;
+      if (!sa) {
+        if (this.passiveMode) {
+          this.clearTextUntilMs.set(peerIP, simulationNowMs() + this.optionalRetrySeconds * 1000);
+          this.clearTextFallback = true;
+        }
+        return null;
+      }
+      this.clearTextUntilMs.delete(peerIP);
       this.dbgIpsec(`IPSEC(initialize_sas): ,`);
       this.dbgIpsec(`IPSEC(create_sa): sa created,`);
       this.dbgIpsec(`  (sa) sa_dest= ${peerIP}, sa_proto= 50,`);
@@ -5128,6 +5160,7 @@ export class IPSecEngine implements IProtocolEngine {
     if (!this.defaultIkePolicyEnabled) lines.push('no crypto isakmp default policy');
     if (!this.defaultTransformSetEnabled) lines.push('no crypto ipsec transform-set default');
     if (this.passiveMode) lines.push('crypto ipsec optional');
+    if (this.passiveMode && this.optionalRetrySeconds !== DEFAULT_OPTIONAL_RETRY_SECONDS) lines.push(`crypto ipsec optional retry ${this.optionalRetrySeconds}`);
     if (this.replayCheckingDisabled) lines.push('crypto ipsec security-association replay disable');
     if (this.idleTimeGlobalSec !== null) lines.push(`crypto ipsec security-association idle-time ${this.idleTimeGlobalSec}`);
     if (this.aggressiveMode) lines.push('no crypto isakmp aggressive-mode disable');
