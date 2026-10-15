@@ -72,9 +72,10 @@ import { cryptoIdentitySpecs, type CryptoIdentityEngine } from './cisco/cryptoId
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
 import { authenticateTrustpoint, authenticateFromTerminal, importRouterCertificate, requestFromTerminal, enrollTrustpoint, requestCrl, clearCrls, renderCrls, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
-import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
+import { PkiEnrollmentClient, parseDocumentUrl } from '../router/pki/PkiEnrollmentClient';
 import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
-import { renderCertificates, renderCertificatesPem } from '../router/pki/CertificateDisplay';
+import { parseBundle, mergeIntoTrustpool } from '../router/pki/TrustpoolBundle';
+import { renderCertificates, renderCertificatesPem, renderTrustpool } from '../router/pki/CertificateDisplay';
 import type { PkiTrustpoint } from '../router/security/CiscoSecurityConfig';
 import { exportTrustpointPem, exportTrustpointPkcs12, parseTrustpointPem, parseTrustpointPkcs12, installTrustpointPem, passphraseProblem, type PemImport } from '../router/pki/TrustpointPem';
 import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
@@ -1495,6 +1496,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configTacacsServerTrie = new CommandTrie();
   private configAaaGroupTrie = new CommandTrie();
   private configCaTrustpointTrie = new CommandTrie();
+  private configCaTrustpoolTrie = new CommandTrie();
   private configAppletTrie = new CommandTrie();
   private configFlowExporterTrie = new CommandTrie();
   private configFlowRecordTrie = new CommandTrie();
@@ -1652,7 +1654,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       install: (tp) => {
         if (!tp.caCert || !tp.localCert || !tp.localKey) return;
         router().installIkeCertAuth({
-          localCert: tp.localCert, localKey: tp.localKey, trustAnchors: [tp.caCert],
+          localCert: tp.localCert, localKey: tp.localKey, trustAnchors: getSecurityConfig(router()).trustAnchorsFor(tp),
           crls: tp.crl ? [tp.crl] : [],
           revocationCheck: mapRevocationCheck(tp.revocationCheck),
         });
@@ -1730,15 +1732,63 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
           'error' in read ? read.error : this.importPemText(router(), name, read.text, phrase, exportable));
         return '';
       },
+      importTrustpool: (source, clean) => {
+        const target = router();
+        if (source === null) {
+          getSecurityConfig(target).trustpool.certificates = [];
+          this.reinstallIdentities(target);
+          return '';
+        }
+        this._pendingAsync = this.readUrl(source).then((read) =>
+          'error' in read ? read.error : this.importBundleText(target, read.text, clean));
+        return '';
+      },
+      setCabundleUrl: (url) => {
+        const target = router();
+        getSecurityConfig(target).trustpool.cabundleUrl = url ?? undefined;
+        if (url === null) return '';
+        this._pendingAsync = this.readUrl(url).then((read) =>
+          'error' in read ? read.error : this.importBundleText(target, read.text, false));
+        return '';
+      },
+      setChainValidation: (enabled) => {
+        getSecurityConfig(router()).trustpool.chainValidation = enabled;
+        this.reinstallIdentities(router());
+      },
+      resetTrustpoolPolicy: () => {
+        const pool = getSecurityConfig(router()).trustpool;
+        pool.cabundleUrl = undefined;
+        pool.chainValidation = false;
+        this.reinstallIdentities(router());
+      },
+      renderTrustpool: (policy) => renderTrustpool(getSecurityConfig(router()).trustpool, policy),
       selectServer: (name) => { this.selectedPkiServer = name; },
       selectedServer: () => this.selectedPkiServer,
     };
   }
 
   protected override pkiPastePlan(
-    kind: 'ca' | 'certificate', trustpoint: string, device: CiscoRouter | undefined,
+    kind: 'ca' | 'certificate' | 'trustpool' | 'trustpool-clean', trustpoint: string, device: CiscoRouter | undefined,
   ): CommandInteractionPlan | null {
     if (!device) return null;
+    if (kind === 'trustpool' || kind === 'trustpool-clean') {
+      return {
+        steps: [
+          { kind: 'output', lines: ['Enter PEM-formatted CA certificates.', 'End with a blank line or the word "quit" on a line by itself'] },
+          {
+            kind: 'collect', prompt: '', storeAs: 'pasted_certificate',
+            accept: (line, accumulated) => {
+              const done = line.trim() === 'quit' || (line.trim() === '' && accumulated.some((entry) => entry.includes('-----END')));
+              return done ? { done: true, body: accumulated.join('\n') } : { done: false };
+            },
+          },
+          {
+            kind: 'run',
+            run: async (rt) => { rt.output(this.importBundleText(device, rt.values.get('pasted_certificate') ?? '', kind === 'trustpool-clean')); },
+          },
+        ],
+      };
+    }
     const known = getSecurityConfig(device).pkiTrustpoints.get(trustpoint);
     if (!known) return null;
     if (kind === 'ca' && known.source !== 'terminal') return null;
@@ -1791,6 +1841,21 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     };
   }
 
+  importBundleText(device: CiscoRouter, text: string, clean: boolean): string {
+    const parsed = parseBundle(text);
+    if ('error' in parsed) return parsed.error;
+    mergeIntoTrustpool(getSecurityConfig(device).trustpool, parsed.certificates, clean);
+    this.reinstallIdentities(device);
+    return '% PKI Trustpool import succeeded.';
+  }
+
+  private reinstallIdentities(device: CiscoRouter): void {
+    const enrollment = this.enrollmentHostFor(device);
+    for (const trustpoint of getSecurityConfig(device).pkiTrustpoints.values()) {
+      if (trustpoint.localCert && trustpoint.localKey && trustpoint.caCert) enrollment.install(trustpoint);
+    }
+  }
+
   private trustpointsNamed(device: CiscoRouter, name: string | null): PkiTrustpoint[] | string {
     const all = getSecurityConfig(device).pkiTrustpoints;
     if (name === null) return [...all.values()];
@@ -1809,7 +1874,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     installTrustpointPem(trustpoint, imported, exportable);
     if (trustpoint.caCert && trustpoint.localCert && trustpoint.localKey) {
       device.installIkeCertAuth({
-        localCert: trustpoint.localCert, localKey: trustpoint.localKey, trustAnchors: [trustpoint.caCert],
+        localCert: trustpoint.localCert, localKey: trustpoint.localKey, trustAnchors: getSecurityConfig(device).trustAnchorsFor(trustpoint),
         crls: trustpoint.crl ? [trustpoint.crl] : [],
         revocationCheck: mapRevocationCheck(trustpoint.revocationCheck),
       });
@@ -1840,6 +1905,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (!endpoint) return { error: this.copieReseauIndisponible(url) };
       const got = await tftpGet(endpoint, target);
       return 'erreur' in got ? { error: got.erreur } : { text: got.texte };
+    }
+    if (/^http:/i.test(url)) {
+      const endpoint = parseDocumentUrl(url);
+      if (!endpoint) return { error: `%Error opening ${url} (invalid URL)` };
+      const device = this.d() as CiscoRouter;
+      const client = new PkiEnrollmentClient({ tcp: () => device.getTcpStack(), resolve: (name) => device.hostsTable.resolve(name) });
+      const reply = await client.getDocument(endpoint);
+      return reply.ok ? { text: reply.body } : { error: `%Error opening ${url} (${reply.error ?? 'no answer'})` };
     }
     if (/^[a-z]+:\/\//i.test(url) && !/^(flash|nvram|bootflash):/i.test(url)) return { error: this.copieReseauIndisponible(url) };
     const text = this.fs().read(url);
@@ -2235,6 +2308,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-aaa-group': return this.configAaaGroupTrie;
       case 'config-ca-trustpoint': return this.configCaTrustpointTrie;
       case 'config-ca-server': return this.configCaServerTrie;
+      case 'config-ca-trustpool': return this.configCaTrustpoolTrie;
       case 'config-isakmp-group': return this.configIsakmpGroupTrie;
       case 'config-crypto-ezvpn': return this.configCryptoEzvpnTrie;
       case 'config-browser-proxy': return this.configBrowserProxyTrie;

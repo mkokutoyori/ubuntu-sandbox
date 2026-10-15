@@ -1652,6 +1652,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mode === 'config') {
       const paste = /^crypto\s+(?:pki|ca)\s+authenticate\s+(\S+)$/i.exec(line);
       if (paste) return this.pkiPastePlan('ca', paste[1], ctx?.device as TDevice | undefined);
+      const pool = /^crypto\s+pki\s+trustpool\s+import\s+(clean\s+)?terminal$/i.exec(line);
+      if (pool) return this.pkiPastePlan(pool[1] ? 'trustpool-clean' : 'trustpool', '', ctx?.device as TDevice | undefined);
       const certificate = /^crypto\s+pki\s+import\s+(\S+)\s+certificate$/i.exec(line);
       if (certificate) return this.pkiPastePlan('certificate', certificate[1], ctx?.device as TDevice | undefined);
     }
@@ -10026,7 +10028,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * and open it over the wire (routerOutboundSsh).
    */
   protected pkiPastePlan(
-    _kind: 'ca' | 'certificate', _trustpoint: string, _device: TDevice | undefined,
+    _kind: 'ca' | 'certificate' | 'trustpool' | 'trustpool-clean', _trustpoint: string, _device: TDevice | undefined,
   ): CommandInteractionPlan | null {
     return null;
   }

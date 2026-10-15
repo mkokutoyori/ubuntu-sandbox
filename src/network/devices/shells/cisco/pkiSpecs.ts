@@ -5,6 +5,7 @@ import type { IosCertificateServer, EnrollmentRecord } from '../../router/pki/Io
 
 export const PKI_SERVER_MODE = 'config-ca-server';
 export const TRUSTPOINT_MODE = 'config-ca-trustpoint';
+export const TRUSTPOOL_MODE = 'config-ca-trustpool';
 
 export interface PkiHost {
   security(): CiscoSecurityConfig;
@@ -21,6 +22,11 @@ export interface PkiHost {
   importPem(name: string, source: string, phrase: string | null, exportable: boolean): string;
   exportPkcs12(name: string, destination: string, phrase: string): string;
   importPkcs12(name: string, source: string, phrase: string): string;
+  importTrustpool(source: string | null, clean: boolean): string;
+  setCabundleUrl(url: string | null): string;
+  setChainValidation(enabled: boolean): void;
+  resetTrustpoolPolicy(): void;
+  renderTrustpool(policy: boolean): string;
   selectServer(name: string | null): void;
   selectedServer(): string | null;
 }
@@ -334,6 +340,83 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
       modes: CONFIG, minPrivilege: 15,
       options: PEM_IMPORT_OPTIONS,
       run: () => '% Pasting PEM text needs an interactive terminal session',
+    },
+    {
+      id: 'crypto-pki-trustpool-policy',
+      path: ['crypto', 'pki', 'trustpool', 'policy'],
+      description: 'Configure the PKI trustpool policy',
+      undoDescription: 'Reset the PKI trustpool policy',
+      modes: CONFIG, minPrivilege: 15,
+      enters: TRUSTPOOL_MODE,
+      run: () => '',
+      undo: () => { host().resetTrustpoolPolicy(); return ''; },
+    },
+    {
+      id: 'crypto-pki-trustpool-import-url',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'url', { name: 'source', type: 'WORD', description: 'URL of the CA certificate bundle' }],
+      description: 'Add the CA certificates of a bundle to the trustpool',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().importTrustpool(args.source, false),
+    },
+    {
+      id: 'crypto-pki-trustpool-import-clean',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'clean'],
+      description: 'Remove all downloaded CA certificates from the trustpool',
+      modes: CONFIG, minPrivilege: 15,
+      run: () => host().importTrustpool(null, true),
+    },
+    {
+      id: 'crypto-pki-trustpool-import-clean-url',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'clean', 'url', { name: 'source', type: 'WORD', description: 'URL of the CA certificate bundle' }],
+      description: 'Replace the trustpool with the CA certificates of a bundle',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().importTrustpool(args.source, true),
+    },
+    {
+      id: 'crypto-pki-trustpool-import-terminal',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'terminal'],
+      description: 'Paste the CA certificates of a bundle on the terminal',
+      modes: CONFIG, minPrivilege: 15,
+      run: () => '% Pasting a CA bundle needs an interactive terminal session',
+    },
+    {
+      id: 'crypto-pki-trustpool-import-clean-terminal',
+      path: ['crypto', 'pki', 'trustpool', 'import', 'clean', 'terminal'],
+      description: 'Replace the trustpool with CA certificates pasted on the terminal',
+      modes: CONFIG, minPrivilege: 15,
+      run: () => '% Pasting a CA bundle needs an interactive terminal session',
+    },
+    {
+      id: 'trustpool-cabundle-url',
+      path: ['cabundle', 'url', { name: 'url', type: 'WORD', description: 'URL of the CA certificate bundle, or none' }],
+      description: 'URL from which the CA certificate bundle is downloaded',
+      undoDescription: 'Remove the CA bundle URL',
+      modes: [TRUSTPOOL_MODE], minPrivilege: 15,
+      run: (_s, args) => host().setCabundleUrl(args.url === 'none' ? null : args.url),
+      undo: () => host().setCabundleUrl(null),
+    },
+    {
+      id: 'trustpool-chain-validation',
+      path: ['chain-validation'],
+      description: 'Validate the chain from the peer certificate up to a root certificate of the trustpool',
+      undoDescription: 'Stop the validation at the issuer of the peer certificate',
+      modes: [TRUSTPOOL_MODE], minPrivilege: 15,
+      run: () => { host().setChainValidation(true); return ''; },
+      undo: () => { host().setChainValidation(false); return ''; },
+    },
+    {
+      id: 'show-crypto-pki-trustpool',
+      path: ['show', 'crypto', 'pki', 'trustpool'],
+      description: 'Display the certificates of the PKI trustpool',
+      modes: SHOW, minPrivilege: 1,
+      run: () => host().renderTrustpool(false),
+    },
+    {
+      id: 'show-crypto-pki-trustpool-policy',
+      path: ['show', 'crypto', 'pki', 'trustpool', 'policy'],
+      description: 'Display the certificates and the policy of the PKI trustpool',
+      modes: SHOW, minPrivilege: 1,
+      run: () => host().renderTrustpool(true),
     },
     {
       id: 'ca-server-issuer-name',
