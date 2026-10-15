@@ -671,6 +671,41 @@ export function buildCryptoMapEntryCommands(trie: CommandTrie, ctx: CiscoShellCo
     return '';
   });
 
+  const selectedEntry = (): { transformSets: string[]; aclName?: string; pfsGroup?: string; peers: string[]; peerHostname?: string } | null => {
+    const mapName = ctx.getSelectedCryptoMap();
+    const seq     = ctx.getSelectedCryptoMapSeq();
+    if (!mapName || seq === null) return null;
+    return ctx.getSelectedCryptoMapIsDynamic()
+      ? eng(ctx).getOrCreateDynamicMapEntry(mapName, seq) as never
+      : eng(ctx).getOrCreateCryptoMapEntry(mapName, seq) as never;
+  };
+
+  trie.registerGreedy('no set transform-set', 'Remove transform sets', (args) => {
+    const entry = selectedEntry(); if (!entry) return '% No crypto map selected';
+    entry.transformSets = args.length === 0 ? [] : entry.transformSets.filter((name) => !args.includes(name));
+    return '';
+  });
+
+  trie.registerGreedy('no match address', 'Remove the crypto ACL', () => {
+    const entry = selectedEntry(); if (!entry) return '% No crypto map selected';
+    entry.aclName = '';
+    return '';
+  });
+
+  trie.registerGreedy('no set pfs', 'Remove PFS', () => {
+    const entry = selectedEntry(); if (!entry) return '% No crypto map selected';
+    entry.pfsGroup = '';
+    return '';
+  });
+
+  trie.registerGreedy('no set peer', 'Remove peers', (args) => {
+    const entry = selectedEntry(); if (!entry) return '% No crypto map selected';
+    const named = args.filter((a) => a && a !== 'default' && a.toLowerCase() !== 'dynamic');
+    entry.peers = named.length === 0 ? [] : entry.peers.filter((peer) => !named.includes(peer));
+    if (named.length === 0) entry.peerHostname = undefined;
+    return '';
+  });
+
   trie.registerGreedy('set ikev2-profile', 'Associate IKEv2 profile', (args) => {
     const mapName = ctx.getSelectedCryptoMap();
     const seq     = ctx.getSelectedCryptoMapSeq();
@@ -1054,6 +1089,7 @@ export function cryptoMapEntrySpecs(ctx: CiscoShellContext): CommandSpec[] {
       buildCryptoMapEntryCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: ['config-crypto-map'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
       argumentFor: (path) => CRYPTO_MAP_ARGUMENTS[path],
     },
   );

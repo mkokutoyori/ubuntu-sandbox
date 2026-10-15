@@ -35,6 +35,32 @@ export const SHOW_CRYPTO_FAMILY: readonly CommandSpec[] = Object.freeze([
     run: (session) => ipsecText(session.device, 'showCryptoISAKMPPolicy'),
   },
   {
+    id: 'show-crypto-isakmp-default-policy',
+    path: ['show', 'crypto', 'isakmp', 'default', 'policy'],
+    description: 'Display the default IKE policies in use',
+    modes: ['privileged'],
+    minPrivilege: 15,
+    run: (session) => ipsecText(session.device, 'showCryptoISAKMPDefaultPolicy'),
+  },
+  {
+    id: 'show-crypto-isakmp-peers',
+    path: ['show', 'crypto', 'isakmp', 'peers', { name: 'address', type: 'IP_ADDR', optional: true, description: 'Peer address' }],
+    description: 'Display the ISAKMP peers',
+    modes: ['privileged'],
+    minPrivilege: 15,
+    run: (session, args) => args.address === undefined
+      ? ipsecText(session.device, 'showCryptoISAKMPPeers')
+      : ipsecText(session.device, 'showCryptoISAKMPPeers', args.address),
+  },
+  {
+    id: 'show-crypto-ipsec-transform-set-default',
+    path: ['show', 'crypto', 'ipsec', 'transform-set', 'default'],
+    description: 'Display the default IPsec transform sets in use',
+    modes: ['privileged'],
+    minPrivilege: 15,
+    run: (session) => ipsecText(session.device, 'showCryptoIPSecTransformSetDefault'),
+  },
+  {
     id: 'show-crypto-isakmp',
     path: ['show', 'crypto', 'isakmp'],
     description: 'Display IKE global config',

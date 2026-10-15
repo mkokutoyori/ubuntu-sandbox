@@ -611,6 +611,22 @@ export type IkeConfigMethod = (
   peerIP: string, request: IkeConfigRequest,
 ) => IkeConfigReply | string | undefined;
 
+const DEFAULT_ISAKMP_POLICIES: readonly ISAKMPPolicy[] = Object.freeze([
+  { priority: 65507, encryption: 'aes', hash: 'sha', auth: 'rsa-sig', group: 5, lifetime: 86400 },
+  { priority: 65508, encryption: 'aes', hash: 'sha', auth: 'pre-share', group: 5, lifetime: 86400 },
+  { priority: 65509, encryption: 'aes', hash: 'md5', auth: 'rsa-sig', group: 5, lifetime: 86400 },
+  { priority: 65510, encryption: 'aes', hash: 'md5', auth: 'pre-share', group: 5, lifetime: 86400 },
+  { priority: 65511, encryption: '3des', hash: 'sha', auth: 'rsa-sig', group: 2, lifetime: 86400 },
+  { priority: 65512, encryption: '3des', hash: 'sha', auth: 'pre-share', group: 2, lifetime: 86400 },
+  { priority: 65513, encryption: '3des', hash: 'md5', auth: 'rsa-sig', group: 2, lifetime: 86400 },
+  { priority: 65514, encryption: '3des', hash: 'md5', auth: 'pre-share', group: 2, lifetime: 86400 },
+]);
+
+const DEFAULT_TRANSFORM_SETS: readonly TransformSet[] = Object.freeze([
+  { name: '#$!default_transform_set_1', transforms: ['esp-aes', 'esp-sha-hmac'], mode: 'transport' as const },
+  { name: '#$!default_transform_set_0', transforms: ['esp-3des', 'esp-sha-hmac'], mode: 'transport' as const },
+]);
+
 export class IPSecEngine implements IProtocolEngine {
   private configMethod: IkeConfigMethod | null = null;
   private readonly configRequests = new Map<string, IkeConfigRequest>();
@@ -621,6 +637,27 @@ export class IPSecEngine implements IProtocolEngine {
 
   // ── IKEv1 Configuration ──────────────────────────────────────────
   private isakmpPolicies: Map<number, ISAKMPPolicy> = new Map();
+  private defaultIkePolicyEnabled = true;
+  private defaultTransformSetEnabled = true;
+
+  setDefaultIkePolicyEnabled(enabled: boolean): void { this.defaultIkePolicyEnabled = enabled; }
+  setDefaultTransformSetEnabled(enabled: boolean): void { this.defaultTransformSetEnabled = enabled; }
+
+  private usingDefaultIkePolicies(): boolean {
+    return this.isakmpPolicies.size === 0 && this.defaultIkePolicyEnabled;
+  }
+
+  private effectiveIsakmpPolicies(): ISAKMPPolicy[] {
+    const configured = [...this.isakmpPolicies.values()];
+    return (this.usingDefaultIkePolicies() ? [...DEFAULT_ISAKMP_POLICIES] : configured)
+      .sort((a, b) => a.priority - b.priority);
+  }
+
+  private transformSetsOf(entry: { transformSets: string[] }): TransformSet[] {
+    const named = entry.transformSets.map((n) => this.transformSets.get(n)).filter(Boolean) as TransformSet[];
+    if (named.length > 0 || entry.transformSets.length > 0) return named;
+    return this.defaultTransformSetEnabled ? [...DEFAULT_TRANSFORM_SETS] : [];
+  }
   /** peer IP → PSK (use '0.0.0.0' for wildcard) */
   /**
    * Les clés pré-partagées IKEv1, indexées par l'IDENTITÉ du pair —
@@ -3627,12 +3664,9 @@ export class IPSecEngine implements IProtocolEngine {
     localIP: string, apparentSrcIP: string, egressIface: string,
     version: 1 | 2,
   ): boolean {
-    const transforms: IkeTransformProposal[] = entry.transformSets
-      .map((n) => this.transformSets.get(n))
-      .filter(Boolean)
-      .map((t) => ({ name: t!.name, transforms: t!.transforms, mode: t!.mode }));
-    const policies: IkePolicyProposal[] = [...this.isakmpPolicies.values()]
-      .sort((a, b) => a.priority - b.priority)
+    const transforms: IkeTransformProposal[] = this.transformSetsOf(entry)
+      .map((t) => ({ name: t.name, transforms: t.transforms, mode: t.mode }));
+    const policies: IkePolicyProposal[] = this.effectiveIsakmpPolicies()
       .map((p) => ({ priority: p.priority, encryption: p.encryption, hash: p.hash, group: p.group, auth: p.auth, lifetime: p.lifetime }));
     const ikev2Proposals: IkeV2ProposalWire[] = [...this.ikev2Proposals.values()]
       .map((p) => ({ name: p.name, encryption: [...p.encryption], integrity: [...p.integrity], dhGroup: [...p.dhGroup] }));
@@ -3788,7 +3822,7 @@ export class IPSecEngine implements IProtocolEngine {
       }
       if (!chosenIkev2) { this.rejectIke(srcIp, 'No matching IKEv2 proposal'); return; }
     } else {
-      const myPolicies = [...this.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
+      const myPolicies = this.effectiveIsakmpPolicies();
       this.dbgIsakmp(`ISAKMP:(0): SA request profile is (NULL)`);
       this.dbgIsakmp(`ISAKMP: Created a peer struct for ${srcIp}, peer port 500`);
       this.dbgIsakmp(`ISAKMP:(0): Processing SA payload.  message ID = 0`);
@@ -3905,7 +3939,7 @@ export class IPSecEngine implements IProtocolEngine {
     }
 
     const myTSets = peerEntry
-      ? peerEntry.transformSets.map((n) => this.transformSets.get(n)).filter(Boolean) as TransformSet[]
+      ? this.transformSetsOf(peerEntry)
       : [...this.transformSets.values()];
     let chosenTransform: IkeTransformProposal | null = null;
     for (const off of offer.transforms) {
@@ -4325,23 +4359,45 @@ export class IPSecEngine implements IProtocolEngine {
     return lines.join('\n');
   }
 
+  private policyBlock(p: ISAKMPPolicy, title: string): string[] {
+    return [
+      `${title} ${p.priority}`,
+      `\tencryption algorithm:   ${this.formatEncForPolicy(p.encryption)}`,
+      `\thash algorithm:         ${this.formatHashForPolicy(p.hash)}`,
+      `\tauthentication method:  ${p.auth === 'pre-share' ? 'Pre-Shared Key' : p.auth === 'rsa-sig' ? 'Rivest-Shamir-Adleman Signature' : p.auth === 'rsa-encr' ? 'Rivest-Shamir-Adleman Encryption' : p.auth}`,
+      `\tDiffie-Hellman group:   #${p.group} (${this.dhGroupBits(p.group)} bit)`,
+      `\tlifetime:               ${p.lifetime} seconds, no volume limit`,
+    ];
+  }
+
   showCryptoISAKMPPolicy(): string {
     const lines: string[] = ['Global IKE policy'];
-    for (const [, p] of [...this.isakmpPolicies.entries()].sort((a, b) => a[0] - b[0])) {
-      lines.push(`Protection suite of priority ${p.priority}`);
-      lines.push(`\tencryption algorithm:   ${this.formatEncForPolicy(p.encryption)}`);
-      lines.push(`\thash algorithm:         ${this.formatHashForPolicy(p.hash)}`);
-      lines.push(`\tauthentication method:  ${p.auth === 'pre-share' ? 'Pre-Shared Key' : p.auth === 'rsa-sig' ? 'Rivest-Shamir-Adleman Signature' : p.auth === 'rsa-encr' ? 'Rivest-Shamir-Adleman Encryption' : p.auth}`);
-      lines.push(`\tDiffie-Hellman group:   #${p.group} (${this.dhGroupBits(p.group)} bit)`);
-      lines.push(`\tlifetime:               ${p.lifetime} seconds, no volume limit`);
-    }
-    lines.push(`Default protection suite`);
-    lines.push(`\tencryption algorithm:   DES - Data Encryption Standard (56 bit keys).`);
-    lines.push(`\thash algorithm:         Secure Hash Standard`);
-    lines.push(`\tauthentication method:  Rivest-Shamir-Adleman Signature`);
-    lines.push(`\tDiffie-Hellman group:   #1 (768 bit)`);
-    lines.push(`\tlifetime:               86400 seconds, no volume limit`);
+    const title = this.usingDefaultIkePolicies() ? 'Default protection suite of priority' : 'Protection suite of priority';
+    for (const p of this.effectiveIsakmpPolicies()) lines.push(...this.policyBlock(p, title));
     return lines.join('\n');
+  }
+
+  showCryptoISAKMPDefaultPolicy(): string {
+    if (!this.usingDefaultIkePolicies()) return '';
+    return DEFAULT_ISAKMP_POLICIES.flatMap((p) => this.policyBlock(p, 'Default protection suite of priority')).join('\n');
+  }
+
+  showCryptoIPSecTransformSetDefault(): string {
+    if (!this.defaultTransformSetEnabled) return '';
+    return DEFAULT_TRANSFORM_SETS.flatMap((t) => [
+      `Transform set ${t.name}: { ${t.transforms.join(' ')} }`,
+      `   will negotiate = { ${t.mode === 'transport' ? 'Transport' : 'Tunnel'}, },`,
+    ]).join('\n');
+  }
+
+  showCryptoISAKMPPeers(address?: string): string {
+    const peers = new Map<string, { port: number; identity: string }>();
+    for (const sa of this.ikeSADB.values()) {
+      if (sa.status !== 'QM_IDLE') continue;
+      if (address !== undefined && sa.peerIP !== address) continue;
+      peers.set(sa.peerIP, { port: sa.natT ? 4500 : 500, identity: sa.peerIP });
+    }
+    return [...peers].flatMap(([ip, peer]) => [`Peer: ${ip} Port: ${peer.port}`, `Phase1 id: ${peer.identity}`]).join('\n');
   }
 
   private dhGroupBits(group: number): number {
@@ -5069,6 +5125,8 @@ export class IPSecEngine implements IProtocolEngine {
       lines.push(`crypto ipsec security-association replay window-size ${this.replayWindowSize}`);
     }
     if (!this.ikeEnabled) lines.push('no crypto isakmp enable');
+    if (!this.defaultIkePolicyEnabled) lines.push('no crypto isakmp default policy');
+    if (!this.defaultTransformSetEnabled) lines.push('no crypto ipsec transform-set default');
     if (this.passiveMode) lines.push('crypto ipsec optional');
     if (this.replayCheckingDisabled) lines.push('crypto ipsec security-association replay disable');
     if (this.idleTimeGlobalSec !== null) lines.push(`crypto ipsec security-association idle-time ${this.idleTimeGlobalSec}`);

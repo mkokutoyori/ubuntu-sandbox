@@ -10,6 +10,8 @@ export interface IpsecDataPlaneEngine {
   setIkeEnabled(enabled: boolean): void;
   setPassiveMode(enabled: boolean): void;
   setIdleTime(seconds: number | null): void;
+  setDefaultIkePolicyEnabled(enabled: boolean): void;
+  setDefaultTransformSetEnabled(enabled: boolean): void;
   getIdleTime(): number | null;
 }
 
@@ -107,6 +109,24 @@ export function ipsecDataPlaneSpecs(host: () => IpsecDataPlaneHost): CommandSpec
         (engine, args) => engine.setIdleTime(Number(args.seconds)),
         (engine) => engine.setIdleTime(null)),
       undoOmitsArguments: true,
+    },
+    {
+      id: 'crypto-isakmp-default-policy',
+      path: ['crypto', 'isakmp', 'default', 'policy'],
+      description: 'Enable the default IKE policies',
+      undoDescription: 'Disable the default IKE policies',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().engine().setDefaultIkePolicyEnabled(true); return ''; },
+      undo: () => { host().engine().setDefaultIkePolicyEnabled(false); return ''; },
+    },
+    {
+      id: 'crypto-ipsec-transform-set-default',
+      path: ['crypto', 'ipsec', 'transform-set', 'default'],
+      description: 'Enable the default IPsec transform sets',
+      undoDescription: 'Disable the default IPsec transform sets',
+      modes: GLOBAL, minPrivilege: 15,
+      run: () => { host().engine().setDefaultTransformSetEnabled(true); return ''; },
+      undo: () => { host().engine().setDefaultTransformSetEnabled(false); return ''; },
     },
     {
       id: 'crypto-isakmp-enable',
