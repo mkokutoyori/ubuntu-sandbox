@@ -118,6 +118,8 @@ export type SshServerEvent =
       timestamp?: number;
     }
   | { kind: 'channel_opened'; user: string; channelType: ChannelType }
+  | { kind: 'session_fatal'; user: string; text: string }
+  | { kind: 'sftp_log'; user: string; program: 'sftp-server' | 'internal-sftp'; pid: number; text: string }
   | {
       kind: 'channel_closed';
       user: string;

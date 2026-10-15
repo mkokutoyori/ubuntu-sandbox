@@ -5,6 +5,7 @@ export interface OpenSshRelease {
   readonly clientVersion: string;
   readonly sshUsage: string;
   readonly scpUsage: string;
+  readonly sftpUsage: string;
   readonly keygenUsage: string;
   readonly addUsage: string;
   readonly addOptstring: string;
@@ -65,6 +66,23 @@ const SCP_USAGE = [
   '           [-S program] source ... target',
 ].join('\n');
 
+const SFTP_USAGE_TAIL = [
+  '          [-D sftp_server_path] [-F ssh_config] [-i identity_file]',
+  '          [-J destination] [-l limit] [-o ssh_option] [-P port]',
+  '          [-R num_requests] [-S program] [-s subsystem | sftp_server]',
+  '          destination',
+];
+
+const SFTP_USAGE_9 = [
+  'usage: sftp [-46AaCfNpqrv] [-B buffer_size] [-b batchfile] [-c cipher]',
+  ...SFTP_USAGE_TAIL,
+].join('\n');
+
+const SFTP_USAGE_8_6 = [
+  'usage: sftp [-46aCfpqrv] [-B buffer_size] [-b batchfile] [-c cipher]',
+  ...SFTP_USAGE_TAIL,
+].join('\n');
+
 export const OPENSSH_UBUNTU_22_04: OpenSshRelease = {
   clientVersion: OPENSSH_UBUNTU_CLIENT_VERSION,
   sshUsage: [
@@ -72,6 +90,7 @@ export const OPENSSH_UBUNTU_22_04: OpenSshRelease = {
     '           [-w local_tun[:remote_tun]] destination [command [argument ...]]',
   ].join('\n'),
   scpUsage: SCP_USAGE,
+  sftpUsage: SFTP_USAGE_9,
   keygenUsage: [
     ...KEYGEN_USAGE_HEAD,
     '       ssh-keygen -Y match-principals -I signer_identity -f allowed_signers_file',
@@ -96,6 +115,7 @@ export const OPENSSH_WINDOWS_8_6: OpenSshRelease = {
     '           [-w local_tun[:remote_tun]] destination [command]',
   ].join('\n'),
   scpUsage: SCP_USAGE,
+  sftpUsage: SFTP_USAGE_8_6,
   keygenUsage: [
     ...KEYGEN_USAGE_HEAD,
     '       ssh-keygen -Y check-novalidate -n namespace -s signature_file',

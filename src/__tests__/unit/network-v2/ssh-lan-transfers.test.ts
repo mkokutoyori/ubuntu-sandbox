@@ -76,16 +76,18 @@ describe('SSH LAN — file transfers', () => {
   it('S54 — sftp `mkdir` non-recursive: parent missing returns error', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
     const out = sftp.mkdir('/home/user/nope/inner');
-    expect(out).toMatch(/Couldn't create directory/);
+    expect(out).toBe('remote mkdir "/home/user/nope/inner": No such file or directory');
     sftp.disconnect();
   });
 
   // 55
-  it('S55 — sftp `rename` refuses if destination already exists', async () => {
+  it('S55 — sftp `rename` overwrites through posix-rename, `rename -l` refuses', async () => {
     await lan.pc2.executeCommand('echo a > /home/user/dst.txt');
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.rename('/home/user/docs/report.txt', '/home/user/dst.txt');
-    expect(out).toMatch(/Couldn't rename file/);
+    expect(sftp.run('rename -l /home/user/docs/report.txt /home/user/dst.txt'))
+      .toBe('remote rename "/home/user/docs/report.txt" to "/home/user/dst.txt": Failure');
+    expect(sftp.rename('/home/user/docs/report.txt', '/home/user/dst.txt')).toBe('');
+    expect((await lan.pc2.executeCommand('test -e /home/user/docs/report.txt && echo yes || echo no')).trim()).toBe('no');
     sftp.disconnect();
   });
 
@@ -103,12 +105,10 @@ describe('SSH LAN — file transfers', () => {
   });
 
   // 57
-  it('S57 — sftp `stat` returns a Mode/UID/GID block', async () => {
+  it('S57 — sftp `ls -l` of one name prints mode, numeric ids and size', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.stat('/home/user/docs/report.txt');
-    expect(out).toContain('Mode:');
-    expect(out).toContain('UID:');
-    expect(out).toContain('GID:');
+    const out = sftp.run('ls -l /home/user/docs/report.txt');
+    expect(out).toMatch(/^-rw[-rwx]{7}\s+\?\s+\d+\s+\d+\s+\d+ .*report\.txt$/);
     sftp.disconnect();
   });
 
@@ -209,7 +209,7 @@ describe('SSH LAN — file transfers', () => {
   it('S67 — sftp `rmdir` on a non-empty directory fails (Failure)', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
     const out = sftp.rmdir('/home/user/docs');
-    expect(out).toMatch(/Couldn't remove directory/);
+    expect(out).toBe('remote rmdir "/home/user/docs": Failure');
     sftp.disconnect();
   });
 

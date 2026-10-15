@@ -50,6 +50,7 @@ import { sshpassCommand } from './net/Sshpass';
 import { sshAddCommand } from './net/SshAdd';
 import { sshAgentCommand } from './net/SshAgent';
 import { sftpCommand } from './net/Sftp';
+import { sftpServerCommand } from './net/SftpServer';
 import { opensslCommand } from './crypto/OpenSsl';
 import { updateCaCertificatesCommand } from './crypto/UpdateCaCertificates';
 import { nginxCommand } from './net/Nginx';
@@ -201,6 +202,7 @@ export {
   sshAddCommand,
   sshAgentCommand,
   sftpCommand,
+  sftpServerCommand,
   opensslCommand,
   updateCaCertificatesCommand,
   nginxCommand,
@@ -372,6 +374,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   sshAddCommand,
   sshAgentCommand,
   sftpCommand,
+  sftpServerCommand,
   opensslCommand,
   updateCaCertificatesCommand,
   nginxCommand,

@@ -48,6 +48,7 @@ import type {
   ISshSftpChannel,
   ISshShellChannel,
 } from '../channels/ISshChannel';
+import type { SftpChannelLaunch } from '../channels/SshSftpChannel';
 import { SshChannelManager } from '../channels/SshChannelManager';
 import type { IHostKeyVerificationStrategy } from '../hostkey/IHostKeyVerificationStrategy';
 import { SshKnownHosts } from '../hostkey/SshKnownHosts';
@@ -316,11 +317,11 @@ export class SshSession implements ISshSession {
     return ok(channel);
   }
 
-  openSftpChannel(): Result<ISshSftpChannel> {
+  openSftpChannel(launch?: SftpChannelLaunch): Result<ISshSftpChannel> {
     if (!this.connection || !this.isConnected) {
       return err({ kind: 'NOT_AUTHENTICATED' });
     }
-    const channel: ISshSftpChannel = this.channelManager.openSftp(this.connection);
+    const channel: ISshSftpChannel = this.channelManager.openSftp(this.connection, launch);
     return ok(channel);
   }
 

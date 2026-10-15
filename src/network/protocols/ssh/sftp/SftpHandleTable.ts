@@ -15,18 +15,22 @@ export interface SftpFileReadHandle {
   readonly kind: 'file-read';
   readonly path: string;
   readonly content: string;
+  bytesRead: number;
 }
 
 export interface SftpFileWriteHandle {
   readonly kind: 'file-write';
   readonly path: string;
   buffer: string;
+  readonly append: boolean;
+  bytesWritten: number;
 }
 
 export interface SftpDirHandle {
   readonly kind: 'dir';
   readonly path: string;
   drained: boolean;
+  pending: readonly import('./ISftpFileSystem').SftpDirEntry[];
 }
 
 export type SftpHandleState = SftpFileReadHandle | SftpFileWriteHandle | SftpDirHandle;
@@ -48,6 +52,10 @@ export class SftpHandleTable {
 
   close(handle: string): boolean {
     return this.handles.delete(handle);
+  }
+
+  entries(): IterableIterator<[string, SftpHandleState]> {
+    return this.handles.entries();
   }
 
   get openCount(): number {

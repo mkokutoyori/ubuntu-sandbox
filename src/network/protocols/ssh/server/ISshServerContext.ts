@@ -249,6 +249,8 @@ export interface ISshServerContext {
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
   loginShellRefusal?(user: SshUserContext): { readonly output: string; readonly exitCode: number } | null;
   subsystemAdmitted?(name: string, user: SshUserContext): boolean;
+  sftpService?(user: SshUserContext, clientIp: string, launch: SftpLaunch, keyOptions: AuthorizedKeyOptions | null): SftpServicePlan;
+  sftpSessionRoot?(user: SshUserContext): string;
   readonly maxAuthTriesDisconnect?: string;
   maxAuthTriesFor?(user: string, clientIp: string): number;
   authMethodEnabled?(user: string, clientIp: string, method: 'password' | 'publickey' | 'keyboard-interactive'): boolean;
@@ -264,6 +266,7 @@ export interface DirectTcpipRequest {
 }
 
 import type { SftpAccountNames } from '../sftp/SftpWireSession';
+import type { SftpLaunch, SftpServicePlan } from './SftpServicePlan';
 import type { EditorRelay } from '@/shell/SubShellStack';
 
 export interface RemoteForwardRequest {

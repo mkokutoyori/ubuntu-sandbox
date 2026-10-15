@@ -122,6 +122,35 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
     return this.base.setTimes?.(path, times) ?? err({ kind: 'IO_ERROR', message: 'utimes not supported' });
   }
 
+  createSymlink(linkPath: string, targetPath: string): Result<void> {
+    if (this.base.createSymlink === undefined) return err({ kind: 'UNKNOWN_OP', op: 'symlink' });
+    if (!this.userCtx.isRoot()) {
+      const searched = this.checkTraverse(linkPath);
+      if (!searched.ok) return searched;
+      const guard = this.checkParentWrite(linkPath);
+      if (!guard.ok) return guard;
+    }
+    return this.base.createSymlink(linkPath, targetPath);
+  }
+
+  readSymlink(path: string): Result<string> {
+    if (this.base.readSymlink === undefined) return err({ kind: 'UNKNOWN_OP', op: 'readlink' });
+    const searched = this.checkTraverse(path);
+    if (!searched.ok) return propagateErr(searched);
+    return this.base.readSymlink(path);
+  }
+
+  createHardLink(newPath: string, existingPath: string): Result<void> {
+    if (this.base.createHardLink === undefined) return err({ kind: 'UNKNOWN_OP', op: 'hardlink' });
+    if (!this.userCtx.isRoot()) {
+      const searched = this.checkTraverse(newPath);
+      if (!searched.ok) return searched;
+      const guard = this.checkParentWrite(newPath);
+      if (!guard.ok) return guard;
+    }
+    return this.base.createHardLink(newPath, existingPath);
+  }
+
   setOwner(path: string, uid: number, gid: number): Result<void> {
     if (!this.userCtx.isRoot()) {
       return err({

@@ -20,6 +20,10 @@ import type { TcpConnector } from '@/network/tcp/types';
 import { proxyJumpRequest } from './linux/network/LinuxSshClient';
 import { tunnelThrough } from './linux/network/SshProxyJump';
 import { WindowsSftpFSAdapter } from '@/network/protocols/ssh/sftp/WindowsSftpFSAdapter';
+import { SftpWireSession } from '@/network/protocols/ssh/sftp/SftpWireSession';
+import { attachSftpServer } from '@/network/protocols/ssh/sftp/server/LocalSftpServer';
+import { sftpProgramOf } from '@/network/protocols/ssh/server/SftpServicePlan';
+import { SshUserContext } from '@/network/protocols/ssh/SshUserContext';
 import { guardedFileSystem, principalOf } from './windows/WindowsFsAccess';
 import { posixClientFlags, seedWindowsOpenSshFiles } from './windows/WindowsOpenSshFiles';
 import { missingIdentityWarnings, resolveClientInvocation, typedIdentityFiles, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
@@ -92,7 +96,9 @@ import {
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { findHostByAddress } from './linux/network/HostLookup';
-import { runWindowsSftpClient, type WindowsSftpRemote } from './windows/network/WindowsSftpClient';
+import { SftpLocalPort } from '@/network/protocols/ssh/sftp/client/SftpLocalPort';
+import { runSftpCommand, type SftpCommandHost } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
+import type { SftpPacketChannel } from '@/network/protocols/ssh/sftp/client/SftpWireClient';
 import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSshLocalFs';
 import { sshLocalFsFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { WireSftpFileSystem } from '@/network/protocols/ssh/sftp/WireSftpFileSystem';
@@ -2889,61 +2895,59 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return lines.join('\n');
   }
 
-  private cmdSftp(args: string[]): Promise<string> {
+  private async cmdSftp(args: string[]): Promise<string> {
+    this.commandExitStatus = null;
     const user = this.userMgr.currentUser;
-    let stdin: string | undefined;
-    if (args.length > 0 && args[args.length - 1].includes('\n')) {
-      stdin = args.pop();
-    }
-    return runWindowsSftpClient({
-      args,
-      stdin,
-      sourceUser: user,
-      sourceHome: `C:\\Users\\${user}`,
-      localFs: this.fs,
-      openRemote: (target) => this.openWireSftp(target, (this._scenarioStdin ?? '').split('\n')[0] || undefined),
-    }).then(r => r.output);
+    const home = `C:\\Users\\${user}`;
+    const standardInput = args.length > 0 && args[args.length - 1].includes('\n') ? args.pop()! : '';
+    const host: SftpCommandHost = {
+      local: new SftpLocalPort(
+        new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000), home, 0, true, home),
+      usage: OPENSSH_WINDOWS_8_6.sftpUsage,
+      sshPrograms: ['ssh', 'ssh.exe', 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'],
+      interactive: false,
+      stderrIsTerminal: false,
+      timeZoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
+      listCommand: (rest) => (rest === '' ? 'dir' : `dir ${rest}`),
+      runShell: async (command) => {
+        const output = await this.executeCmdCommand(command ?? '');
+        return { output, exitCode: this.batchInterpreter().getErrorLevel() };
+      },
+      attachServer: (program) => this.attachLocalSftpServer(program),
+      readBatch: (path) => {
+        const body = this.fs.readFile(path);
+        return body.ok && body.content !== undefined ? { content: body.content } : { failure: 'No such file or directory' };
+      },
+      connect: async (request) => {
+        const sshArguments = [...request.sshArguments, request.destination];
+        const parsed = parseSshArgs(sshArguments);
+        if (parsed === null) return { kind: 'refused', lines: [OPENSSH_WINDOWS_8_6.sftpUsage], exitCode: 1 };
+        const opened = await this.openOutgoingSsh(sshArguments, parsed);
+        if (opened.kind === 'refused') return { kind: 'refused', lines: [opened.output], exitCode: 255 };
+        const lines = opened.dialogue.replace(/\n$/, '').split('\n').filter((line) => line !== '');
+        const channel = opened.session.openSftpChannel(
+          request.serverCommand === null ? undefined : { kind: 'command', command: request.serverCommand });
+        if (!isOk(channel) || !(await channel.value.accepted())) {
+          opened.release();
+          return { kind: 'refused', lines: [...lines, 'subsystem request failed on channel 0'], exitCode: 255 };
+        }
+        return { kind: 'connected', channel: channel.value, release: opened.release, lines };
+      },
+    };
+    const result = await runSftpCommand(args, host, undefined, standardInput);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
   }
 
-  private async openWireSftp(target: WinWireTarget, password: string | undefined): Promise<WindowsSftpRemote> {
-    const reach = await wireReachOutcomeRetransmitting(this, target.host, target.port);
-    if (reach !== 'open') {
-      return {
-        kind: 'refused',
-        message: `sftp: ${sshWireFailureLine(OPENSSH_SSH, reach, target.host, target.port).replace(/^ssh:\s*/, '')}`,
-      };
-    }
-    const outcome = await openWireSshConnection({
-      device: this,
-      localUser: this.userMgr.currentUser,
-      user: target.user,
-      host: target.host,
-      port: target.port,
-      io: silentConnectIo(),
-      password,
-      credentialless: password === undefined,
-      identityFiles: target.identities.map(sshPathOfWindowsPath),
-      algorithms: target.algorithms,
-    });
-    if (outcome.kind === 'auth-failed') {
-      return {
-        kind: 'refused',
-        message: `sftp: ${target.user}@${target.host}: Permission denied (${outcome.methods ?? 'publickey,password'}).`,
-      };
-    }
-    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') {
-      return { kind: 'refused', message: outcome.message.replace(/^ssh:\s*/, 'sftp: ') };
-    }
-    if (outcome.kind !== 'connected') {
-      return { kind: 'refused', message: `sftp: ${target.host}: Connection closed` };
-    }
-    const { session } = outcome;
-    const channel = session.openSftpChannel();
-    if (!isOk(channel) || !(await channel.value.accepted())) {
-      session.disconnect();
-      return { kind: 'refused', message: 'subsystem request failed on channel 0\nConnection closed' };
-    }
-    return { kind: 'opened', fs: new WireSftpFileSystem(channel.value), release: () => session.disconnect() };
+  private attachLocalSftpServer(program: string): SftpPacketChannel | null {
+    const bare = !/[\\/]/.test(program);
+    const executable = /\.exe$/i.test(program) ? program : `${program}.exe`;
+    const candidate = bare ? `C:\\Windows\\System32\\OpenSSH\\${executable}` : this.fs.normalizePath(executable, this.cwd);
+    if (!this.fs.exists(candidate) || sftpProgramOf(program) !== 'sftp-server') return null;
+    const user = this.userMgr.currentUser;
+    const context = new SshUserContext(user, 1000, 1000, [1000], `/C:/Users/${user}`);
+    const files = new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000);
+    return attachSftpServer(new SftpWireSession({ vfs: files, userCtx: context, rootPath: `/C:/Users/${user}` }));
   }
 
   private async cmdScp(args: string[]): Promise<string> {

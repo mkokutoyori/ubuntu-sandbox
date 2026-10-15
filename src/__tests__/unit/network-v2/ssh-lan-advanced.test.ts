@@ -313,10 +313,10 @@ describe('SSH LAN — advanced scenarios', () => {
   });
 
   // 84
-  it('S84 — get on a non-existent remote file produces "No such file or directory"', async () => {
+  it('S84 — get on a non-existent remote file reports it as not found', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
     const out = sftp.get('/home/user/nope.txt');
-    expect(out).toContain('No such file or directory');
+    expect(out).toBe('File "/home/user/nope.txt" not found.');
     sftp.disconnect();
   });
 

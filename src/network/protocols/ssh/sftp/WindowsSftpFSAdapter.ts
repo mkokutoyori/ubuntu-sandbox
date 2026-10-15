@@ -16,7 +16,7 @@ import type {
   WinFSEntry,
   WindowsFileSystem,
 } from '@/network/devices/windows/WindowsFileSystem';
-import { type Result, err, ok } from '../Result';
+import { type Result, type SshError, err, ok } from '../Result';
 import type {
   EntryType,
   ISftpFileSystem,
@@ -57,6 +57,14 @@ export function winToSftp(winPath: string): string {
   return rest ? `/${drive}:/${rest}` : `/${drive}:/`;
 }
 
+function failureOf(message: string | undefined, fallback: string): SshError {
+  const text = message ?? fallback;
+  if (/access is denied|not authorized|privilege|permission denied/i.test(text)) {
+    return { kind: 'PERMISSION_DENIED', path: '', operation: 'access' };
+  }
+  return { kind: 'IO_ERROR', message: text };
+}
+
 export class WindowsSftpFSAdapter implements ISftpFileSystem {
   constructor(
     private readonly wfs: WindowsFileSystem,
@@ -90,7 +98,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   readFile(path: string): Result<string> {
     const result = this.wfs.readFile(this.toNative(path));
     if (!result.ok) {
-      return err({ kind: 'IO_ERROR', message: result.error ?? `${path}: read failed` });
+      return err(failureOf(result.error, `${path}: read failed`));
     }
     return ok(result.content ?? '');
   }
@@ -119,7 +127,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   writeFile(path: string, content: string): Result<void> {
     const created = this.wfs.createFile(this.toNative(path), content);
     if (!created.ok) {
-      return err({ kind: 'IO_ERROR', message: created.error ?? 'write failed' });
+      return err(failureOf(created.error, 'write failed'));
     }
     return ok(undefined);
   }
@@ -127,7 +135,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   mkdir(path: string): Result<void> {
     const result = this.wfs.mkdir(this.toNative(path));
     if (!result.ok) {
-      return err({ kind: 'IO_ERROR', message: result.error ?? 'mkdir failed' });
+      return err(failureOf(result.error, 'mkdir failed'));
     }
     return ok(undefined);
   }
@@ -135,7 +143,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   deleteFile(path: string): Result<void> {
     const result = this.wfs.deleteFile(this.toNative(path));
     if (!result.ok) {
-      return err({ kind: 'IO_ERROR', message: result.error ?? 'delete failed' });
+      return err(failureOf(result.error, 'delete failed'));
     }
     return ok(undefined);
   }
@@ -143,7 +151,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   rmdir(path: string): Result<void> {
     const result = this.wfs.rmdir(this.toNative(path));
     if (!result.ok) {
-      return err({ kind: 'IO_ERROR', message: result.error ?? 'rmdir failed' });
+      return err(failureOf(result.error, 'rmdir failed'));
     }
     return ok(undefined);
   }
@@ -151,7 +159,7 @@ export class WindowsSftpFSAdapter implements ISftpFileSystem {
   rename(src: string, dst: string): Result<void> {
     const result = this.wfs.moveFile(this.toNative(src), this.toNative(dst));
     if (!result.ok) {
-      return err({ kind: 'IO_ERROR', message: result.error ?? 'rename failed' });
+      return err(failureOf(result.error, 'rename failed'));
     }
     return ok(undefined);
   }

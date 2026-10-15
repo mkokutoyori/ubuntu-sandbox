@@ -22,7 +22,7 @@ import { HuaweiVRPShellAdapter } from './adapters/HuaweiVRPShellAdapter';
 import { SftpShell } from './adapters/SftpShell';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
-import type { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import type { SftpClientSession } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 
 let installed = false;
@@ -91,7 +91,7 @@ export function installDefaultShells(): void {
     });
   });
   ShellFactory.register('sftp', (a) => {
-    const session = (a as { extras?: { sftpSession?: SftpSession } }).extras?.sftpSession;
+    const session = (a as { extras?: { sftpSession?: SftpClientSession } }).extras?.sftpSession;
     if (!session) throw new Error('sftp shell requires extras.sftpSession');
     return new SftpShell({
       device: a.device, user: a.user, context: a.context,

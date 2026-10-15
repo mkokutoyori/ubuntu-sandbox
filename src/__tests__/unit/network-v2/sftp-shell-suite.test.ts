@@ -3,7 +3,7 @@
  *
  * Three sections:
  *   §A — Command behaviour: every interactive verb exercised through the
- *        SFTP shell (driven via SftpSession, which is what the
+ *        SFTP shell (driven via SftpTestClient, which is what the
  *        SftpSubShell wraps 1-to-1).
  *   §B — Filesystem coherence: changes made through SFTP are observable
  *        from the remote machine's terminal (and vice-versa), so the
@@ -11,7 +11,7 @@
  *   §C — Edge cases & error parity: missing paths, deep nesting, special
  *        characters, recursive transfers, idempotence.
  *
- * The fixture mirrors ssh-terminal-stack.test.ts: SftpSession over a real
+ * The fixture mirrors ssh-terminal-stack.test.ts: SftpTestClient over a real
  * SshSession over a real TCP connector, so writes really cross the
  * simulated network.
  */
@@ -21,7 +21,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
-import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SftpTestClient } from './sftpTestClient';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -61,11 +61,11 @@ async function openSftp(client: LinuxPC, opts: {
   password?: string;
   localCwd?: string;
   localVfs?: VirtualFileSystem;
-} = {}): Promise<{ sftp: SftpSession; local: VirtualFileSystem }> {
+} = {}): Promise<{ sftp: SftpTestClient; local: VirtualFileSystem }> {
   const user = opts.user ?? 'user';
   const password = opts.password ?? 'admin';
   const local = opts.localVfs ?? new VirtualFileSystem();
-  const sftp = new SftpSession({
+  const sftp = new SftpTestClient({
     tcpConnector: tcpConnectorOf(client),
     localVfs: local,
     localUser: 'root',
@@ -191,7 +191,7 @@ describe('§A — SFTP shell: every command behaves like OpenSSH sftp(1)', () =>
   it('rm removes a remote file', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/doomed.txt', 'x', 1000, 1000, 0o022);
-    expect(sftp.rm('doomed.txt')).toBe('');
+    expect(sftp.rm('doomed.txt')).toBe('Removing /home/user/doomed.txt');
     expect(vfsOf(lan.server).exists('/home/user/doomed.txt')).toBe(false);
   });
 
@@ -230,16 +230,15 @@ describe('§A — SFTP shell: every command behaves like OpenSSH sftp(1)', () =>
     expect(out).toBeDefined();
   });
 
-  it('stat returns a multi-line attribute block', async () => {
+  it('ls -l of a single name composes its line from the attributes', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/inspectme', 'data', 1000, 1000, 0o022);
-    const out = sftp.stat('inspectme');
-    expect(out).toMatch(/Size|Mode|UID|Permissions/i);
+    expect(sftp.run('ls -l inspectme')).toMatch(/^-rw-r--r--\s+\?\s+1000\s+1000\s+4 .*inspectme$/);
   });
 
-  it('stat on a missing path reports No such file', async () => {
+  it('ls -l of a missing path reports it as not found', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.stat('nope')).toMatch(/No such file|Failure/i);
+    expect(sftp.run('ls -l nope')).toBe('Can\'t ls: "/home/user/nope" not found');
   });
 
   it('df reports filesystem space totals', async () => {
@@ -399,7 +398,7 @@ describe('§C — SFTP edge cases & error parity', () => {
   it('get of a missing remote file reports No such file', async () => {
     const { sftp } = await openSftp(lan.client);
     const out = sftp.get('ghost.txt', '/root/x');
-    expect(out).toMatch(/No such|Failure|error/i);
+    expect(out).toBe('File "/home/user/ghost.txt" not found.');
   });
 
   it('put of a missing local file reports No such file', async () => {
@@ -429,12 +428,13 @@ describe('§C — SFTP edge cases & error parity', () => {
     expect(out).toMatch(/Failure|directory|error/i);
   });
 
-  it('rename onto an existing target name produces an error', async () => {
+  it('rename onto an existing target name overwrites through posix-rename, and rename -l refuses', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/a.txt', 'a', 1000, 1000, 0o022);
     vfsOf(lan.server).writeFile('/home/user/b.txt', 'b', 1000, 1000, 0o022);
-    const out = sftp.rename('a.txt', 'b.txt');
-    expect(out).toMatch(/Failure|exist|error/i);
+    expect(sftp.run('rename -l a.txt b.txt')).toBe('remote rename "/home/user/a.txt" to "/home/user/b.txt": Failure');
+    expect(sftp.rename('a.txt', 'b.txt')).toBe('');
+    expect(vfsOf(lan.server).readFile('/home/user/b.txt')).toBe('a');
   });
 
   it('cd to a regular file reports an error', async () => {
@@ -514,13 +514,13 @@ describe('§C — SFTP edge cases & error parity', () => {
 
   it('ls on a missing path surfaces the error from the server', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.ls(['/no/such/place'], new Set())).toMatch(/No such|Failure|error/i);
+    expect(sftp.ls(['/no/such/place'], new Set())).toBe('Can\'t ls: "/no/such/place" not found');
   });
 
   it('disconnect makes write operations fail', async () => {
     const { sftp } = await openSftp(lan.client);
     sftp.disconnect();
-    expect(sftp.mkdir('whatever')).toMatch(/Not connected|Failure|error/i);
+    expect(() => sftp.mkdir('whatever')).toThrow('Connection closed');
   });
 
   it('put preserves zero-byte content', async () => {

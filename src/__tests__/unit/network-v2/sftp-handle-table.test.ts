@@ -33,8 +33,8 @@ function stringToBytes(s: string): Uint8Array {
 describe('SftpHandleTable', () => {
   it('opens, retrieves, and closes a handle', () => {
     const table = new SftpHandleTable();
-    const handle = table.open({ kind: 'dir', path: '/tmp', drained: false });
-    expect(table.get(handle)).toEqual({ kind: 'dir', path: '/tmp', drained: false });
+    const handle = table.open({ kind: 'dir', path: '/tmp', drained: false, pending: [] });
+    expect(table.get(handle)).toEqual({ kind: 'dir', path: '/tmp', drained: false, pending: [] });
     expect(table.openCount).toBe(1);
     expect(table.close(handle)).toBe(true);
     expect(table.get(handle)).toBeUndefined();
@@ -43,8 +43,8 @@ describe('SftpHandleTable', () => {
 
   it('issues distinct handles for concurrent opens', () => {
     const table = new SftpHandleTable();
-    const h1 = table.open({ kind: 'file-read', path: '/a', content: '' });
-    const h2 = table.open({ kind: 'file-read', path: '/b', content: '' });
+    const h1 = table.open({ kind: 'file-read', path: '/a', content: '', bytesRead: 0 });
+    const h2 = table.open({ kind: 'file-read', path: '/b', content: '', bytesRead: 0 });
     expect(h1).not.toBe(h2);
     expect(table.openCount).toBe(2);
   });

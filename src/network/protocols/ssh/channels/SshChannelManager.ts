@@ -7,7 +7,7 @@
 import type { ChannelType, ExecChannelOptions, ISshChannel } from './ISshChannel';
 import type { SshConnection } from '../connection/SshConnection';
 import { SshExecChannel } from './SshExecChannel';
-import { SshSftpChannel } from './SshSftpChannel';
+import { SshSftpChannel, type SftpChannelLaunch } from './SshSftpChannel';
 import { SshShellChannel } from './SshShellChannel';
 
 export class SshChannelManager {
@@ -26,8 +26,8 @@ export class SshChannelManager {
     return channel;
   }
 
-  openSftp(connection: SshConnection): SshSftpChannel {
-    const channel = new SshSftpChannel(connection, this.nextChannelId++);
+  openSftp(connection: SshConnection, launch?: SftpChannelLaunch): SshSftpChannel {
+    const channel = new SshSftpChannel(connection, this.nextChannelId++, launch);
     this.register(channel);
     return channel;
   }

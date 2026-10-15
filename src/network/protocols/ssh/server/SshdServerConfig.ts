@@ -75,7 +75,7 @@ export interface SshdEffectiveView {
 }
 
 export interface SshdSubsystems {
-  readonly sftp: string;
+  readonly sftp: string | null;
   readonly extras: ReadonlyMap<string, string>;
 }
 
@@ -371,7 +371,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       syslogFacility: 'AUTH',
       bannerPath: null,
       motdPath: '/etc/motd',
-      subsystems: { sftp: '/usr/lib/openssh/sftp-server', extras: new Map() },
+      subsystems: { sftp: null, extras: new Map() },
       allowUsers: Object.freeze([]),
       denyUsers: Object.freeze([]),
       allowGroups: Object.freeze([]),
@@ -624,7 +624,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     if (this.allowGroups.length) lines.push(`AllowGroups ${this.allowGroups.join(' ')}`);
     if (this.denyGroups.length)  lines.push(`DenyGroups ${this.denyGroups.join(' ')}`);
     if (this.acceptEnv.length)   lines.push(`AcceptEnv ${this.acceptEnv.join(' ')}`);
-    lines.push(`Subsystem sftp ${this.subsystems.sftp}`);
+    if (this.subsystems.sftp !== null) lines.push(`Subsystem sftp ${this.subsystems.sftp}`);
     for (const [name, cmd] of this.subsystems.extras) lines.push(`Subsystem ${name} ${cmd}`);
     for (const block of this.matchBlocks) {
       lines.push(`Match ${block.criteria.map(c => `${c.keyword} ${c.value}`).join(' ')}`);

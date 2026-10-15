@@ -71,13 +71,6 @@ export class SftpMkdirCommand implements ISftpCommand<void> {
     const p = requirePath(req);
     if (!p.ok) return propagateErr(p);
     const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
-    const parent = path.replace(/\/[^/]+\/?$/, '') || '/';
-    if (!ctx.vfs.exists(parent)) {
-      return err({
-        kind: 'IO_ERROR',
-        message: `mkdir ${path}: parent ${parent} does not exist`,
-      });
-    }
     return ctx.vfs.mkdir(path);
   }
 }

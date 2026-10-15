@@ -6,6 +6,7 @@
 
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import type { SftpWirePacket } from '../sftp/SftpWireCodec';
 
 export type ChannelType = 'shell' | 'exec' | 'sftp';
 
@@ -140,19 +141,12 @@ export interface ISshExecChannel extends ISshChannel {
   readonly exitCode: number;
 }
 
-export interface SftpRequest {
-  readonly op: string;
-  readonly [key: string]: unknown;
-}
-
-export interface SftpResponse {
-  readonly ok: boolean;
-  readonly [key: string]: unknown;
-}
-
 export interface ISshSftpChannel extends ISshChannel {
   readonly type: 'sftp';
-  sendRequest(req: SftpRequest): SftpResponse;
-  readonly remoteCwd: string;
+  exchange(packet: SftpWirePacket): SftpWirePacket | null;
+  readonly protocolVersion: number;
+  readonly serverExtensions: ReadonlyMap<string, string>;
+  readonly remoteStderr: string;
+  readonly oversizedMessage: number | null;
   accepted(): Promise<boolean>;
 }
