@@ -15,3 +15,5 @@ export {
   P256_ORDER, P256_FIELD_BYTES,
   type P256Point, type P256Signature,
 } from './p256';
+export { NistCurve, type CurvePoint, type CurveSignature } from './nistCurve';
+export { NIST_CURVES, P256, P384, P521, type NistCurveName } from './nistCurves';

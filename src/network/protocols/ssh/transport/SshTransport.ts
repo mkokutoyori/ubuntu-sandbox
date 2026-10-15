@@ -46,9 +46,14 @@ const SUPPORTED_PROTOCOL_VERSIONS = ['2.0', '1.99'];
 const SERVER_SIG_ALGS = 'server-sig-algs';
 const PUBLICKEY_HOSTBOUND = 'publickey-hostbound@openssh.com';
 
-export interface SshServerHostKey {
+export interface SshServerHostKeyMaterial {
   readonly publicKeyBlob: Uint8Array;
   readonly privateKey: SshPrivateKey;
+}
+
+export interface SshServerHostKey {
+  readonly algorithms: readonly string[];
+  load(): SshServerHostKeyMaterial | null;
 }
 
 export interface SshAlgorithmPreferences {
@@ -102,8 +107,7 @@ export type SshTransportOutcome = SshTransportEstablished | SshTransportFailure;
 type Phase = 'kexinit' | 'kex' | 'newkeys' | 'service' | 'open' | 'closed';
 
 function hostKeyAlgorithmsOf(key: SshServerHostKey): readonly string[] {
-  const parsed = sshPublicKeyFromBlob(key.publicKeyBlob);
-  return parsed === null ? [] : hostKeySignatureAlgorithmsFor(parsed);
+  return key.algorithms;
 }
 
 export class SshTransport {
@@ -507,7 +511,7 @@ export class SshTransport {
       return;
     }
     const negotiated = this.negotiated;
-    const hostKey = (this.config.hostKeys ?? []).find((k) => hostKeyAlgorithmsOf(k).includes(negotiated.hostKey));
+    const hostKey = (this.config.hostKeys ?? []).find((k) => hostKeyAlgorithmsOf(k).includes(negotiated.hostKey))?.load() ?? null;
     const group = this.exchangeGroup;
     if (method.groupExchange && group === null) {
       this.unexpectedKexMessage(payload[0]);

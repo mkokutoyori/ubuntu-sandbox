@@ -2459,7 +2459,7 @@ export class LinuxCommandExecutor {
   }
 
   private runSshKeygen(args: string[], stdin?: string): { output: string; exitCode: number } {
-    return runSshKeygenCommand(args, this.keygenHost(), stdin);
+    return runSshKeygenCommand(args, this.keygenHost(), stdin ?? this._scenarioStdin);
   }
 
   runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {

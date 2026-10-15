@@ -889,8 +889,16 @@ function endedLine(text: string): string {
   return text === '' || text.endsWith('\n') ? text : `${text}\n`;
 }
 
+const HOST_KEY_SIGNATURES: Readonly<Record<string, readonly string[]>> = {
+  'ssh-rsa': ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
+};
+
 function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {
-  const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
-  if (privateKey === null) return [];
-  return [{ publicKeyBlob: base64ToBytes(hostKey.publicKey), privateKey }];
+  return [{
+    algorithms: HOST_KEY_SIGNATURES[hostKey.algorithm] ?? [hostKey.algorithm],
+    load: () => {
+      const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
+      return privateKey === null ? null : { publicKeyBlob: base64ToBytes(hostKey.publicKey), privateKey };
+    },
+  }];
 }

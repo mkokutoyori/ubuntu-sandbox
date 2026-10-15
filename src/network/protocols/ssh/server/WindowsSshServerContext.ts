@@ -27,7 +27,7 @@ import {
   type SshTransportPolicy,
 } from './ISshServerContext';
 import { sshdAlgorithmPreferences } from './SshdAlgorithmDirectives';
-import { rsaHostKeysFor } from './SshdRsaHostKey';
+import { configuredHostKeyPaths, hostKeyFromFile, provisionHostKeyFiles, type HostKeyFileAccess } from './SshdHostKeyFiles';
 import {
   DEFAULT_SSHD_CONFIG,
   parseSshdConfig,
@@ -43,7 +43,7 @@ const ADMIN_GID = 0;
 const SSH_DIR = 'C:\\ProgramData\\ssh';
 const SSHD_CONFIG_PATH = `${SSH_DIR}\\sshd_config`;
 const HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_ed25519_key`;
-const RSA_HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_rsa_key`;
+const DEFAULT_HOST_KEY_PATHS = ['rsa', 'ecdsa', 'ed25519'].map((type) => `${SSH_DIR}\\ssh_host_${type}_key`);
 const HOST_KEY_PUB_PATH = `${SSH_DIR}\\ssh_host_ed25519_key.pub`;
 
 export interface WindowsShellExecutor {
@@ -244,28 +244,31 @@ export class WindowsSshServerContext implements ISshServerContext {
     }
   }
 
-  additionalHostKeys(): SshHostKey[] {
-    const rawConfig = this.wfs.readFile(SSHD_CONFIG_PATH).content ?? '';
-    return rsaHostKeysFor(rawConfig, this.hostname, {
+  private hostKeyFiles(): HostKeyFileAccess {
+    return {
+      exists: (path) => this.wfs.exists(path),
       read: (path) => {
         const result = this.wfs.readFile(path);
         return result.ok ? result.content ?? null : null;
       },
       write: (path, content) => { this.wfs.createFile(path, content); },
-    }, RSA_HOST_KEY_PATH);
+      writeDeferred: (path, produce, _secret, declaredSize) => { this.wfs.createDeferredFile(path, produce, declaredSize); },
+    };
+  }
+
+  additionalHostKeys(): SshHostKey[] {
+    const rawConfig = this.wfs.readFile(SSHD_CONFIG_PATH).content ?? '';
+    const paths = configuredHostKeyPaths(rawConfig, DEFAULT_HOST_KEY_PATHS).map((path) => path.replace(/\//g, '\\'));
+    return paths
+      .filter((path) => path.toLowerCase() !== HOST_KEY_PATH.toLowerCase())
+      .flatMap((path) => hostKeyFromFile(this.hostKeyFiles(), path) ?? []);
   }
 
   private loadOrGenerateHostKey(): SshHostKey {
-    const pubResult = this.wfs.readFile(HOST_KEY_PUB_PATH);
-    const privResult = this.wfs.readFile(HOST_KEY_PATH);
-    if (pubResult.ok && privResult.ok && pubResult.content && privResult.content) {
-      const material = pubResult.content.trim().split(/\s+/)[1] ?? pubResult.content.trim();
-      return SshHostKey.fromFiles(material, privResult.content.trim(), 'ssh-ed25519');
-    }
-    const generated = SshHostKey.generate(this.hostname);
-    this.wfs.createFile(HOST_KEY_PUB_PATH, generated.publicKeyLine + '\n');
-    this.wfs.createFile(HOST_KEY_PATH, generated.privateKeyBlob);
-    return generated;
+    provisionHostKeyFiles(this.hostKeyFiles(), SSH_DIR, '\\', this.hostname);
+    const pub = this.wfs.readFile(HOST_KEY_PUB_PATH).content ?? '';
+    const priv = this.wfs.readFile(HOST_KEY_PATH).content ?? '';
+    return SshHostKey.fromFiles(pub.trim().split(/\s+/)[1] ?? pub.trim(), priv.trim(), 'ssh-ed25519');
   }
 
   private loadOrGenerateSshdConfig(): SshdConfig {
