@@ -39,7 +39,7 @@ import { serveAgentChannel } from '../agent/AgentService';
 import { AGENT_CHANNEL_TYPE, agentSignatureFlags } from '../agent/AgentWire';
 import { signUserauth, userauthSignatureAlgorithm, userauthSignedData } from '../auth/UserauthSignature';
 import {
-  keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob, sshKeyTypeLabel,
+  keygenBlobDigest, keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob, sshKeyTypeLabel,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import type {
@@ -545,6 +545,7 @@ export class SshSession implements ISshSession {
       authentication: opts.authentication,
       identities: await this.userauthIdentities(opts, user),
       interactive: this.deps.credentialless !== true,
+      trace: (line) => { this.authTraceLines.push(`debug1: ${line}`); },
     }, {
       canAnswer: () => !suppliedOnce || answersGiven === 0,
       password: () => answer(() => handler.promptPassword(user, opts.host)),
@@ -566,6 +567,16 @@ export class SshSession implements ISshSession {
     });
   }
 
+  private readonly authTraceLines: string[] = [];
+
+  get authTrace(): readonly string[] {
+    return this.authTraceLines;
+  }
+
+  private identityLabel(source: string, publicKeyText: string, algorithm: string): string {
+    return `${source} ${sshKeyTypeLabel(algorithm)} ${keygenBlobDigest(publicKeyText, 'sha256') ?? ''}`;
+  }
+
   private async userauthIdentities(opts: SshConnectOptions, user: string): Promise<UserauthIdentity[]> {
     const identities: UserauthIdentity[] = [];
     const offered = new Set<string>();
@@ -577,6 +588,7 @@ export class SshSession implements ISshSession {
       const encoded = bytesToBase64(entry.blob);
       offered.add(encoded);
       identities.push({
+        label: `${this.identityLabel(entry.comment, encoded, publicKey.algorithm)} agent`,
         algorithm,
         publicKey: encoded,
         sign: async () => {
@@ -598,6 +610,7 @@ export class SshSession implements ISshSession {
       if (offered.has(pair.value.publicKeyContent)) continue;
       const algorithm = userauthSignatureAlgorithm(publicKey);
       identities.push({
+        label: this.identityLabel(path, pair.value.publicKeyContent, publicKey.algorithm),
         algorithm,
         publicKey: pair.value.publicKeyContent,
         sign: () => this.signUserauthRequest(path, user, algorithm, blob),

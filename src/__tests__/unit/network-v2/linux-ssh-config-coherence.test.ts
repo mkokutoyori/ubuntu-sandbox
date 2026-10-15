@@ -87,7 +87,7 @@ describe('Scénario 4 — authorized_keys: permissions incorrectes ignorées sil
 
     await client.executeCommand('ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 "echo ok"');
     const authLog = await server.executeCommand('cat /var/log/auth.log');
-    expect(authLog).toMatch(/Authentication refused: bad ownership or modes for file \/home\/alice\/\.ssh/);
+    expect(authLog).toMatch(/Authentication refused: bad ownership or modes for directory \/home\/alice\/\.ssh/);
   });
 });
 

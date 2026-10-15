@@ -13,6 +13,7 @@ import { SSH_WINDOWS_IDENTIFICATION } from '../serverIdentification';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
+import type { AgentPort } from '../agent/AgentService';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { WindowsSftpFSAdapter } from '../sftp/WindowsSftpFSAdapter';
 import { SshHostKey } from '../SshHostKey';
@@ -69,6 +70,8 @@ export interface WindowsShellExecutor {
    */
   createVtyShell?(user: string): SshVtyShell | null;
   shellBanner?(): string;
+  runExecAs?(user: string, line: string, stdin?: string): Promise<{ output: string; exitCode: number }>;
+  bindForwardedAgent?(user: string, agent: AgentPort): { readonly path: string; release(): void };
 }
 
 /**
@@ -223,8 +226,26 @@ export class WindowsSshServerContext implements ISshServerContext {
       guardedFileSystem(this.wfs, principalOf(this.userManager, userCtx.username)), userCtx.uid, userCtx.gid);
   }
 
-  getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
+  getShell(_userCtx: SshUserContext, _cwd: string, opts?: Parameters<ISshServerContext['getShell']>[2]): ILinuxShell {
     const exec = this.shellExecutor;
+    const forwardedAgent = opts?.agent === undefined ? null : exec?.bindForwardedAgent?.(_userCtx.username, opts.agent) ?? null;
+
+    if (opts?.exec !== undefined && exec?.runExecAs !== undefined) {
+      const runExecAs = exec.runExecAs.bind(exec);
+      return {
+        async execute(line: string, _onProgress?: (text: string) => void, stdin?: string) {
+          const result = await runExecAs(_userCtx.username, line, stdin);
+          return {
+            stdout: result.output === '' || result.output.endsWith('\n') ? result.output : `${result.output}\n`,
+            stderr: '',
+            exitCode: result.exitCode,
+          };
+        },
+        posixShell: false,
+        loginShellKind: 'cmd',
+        ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
+      };
+    }
 
     const vty = exec?.createVtyShell?.(_userCtx.username);
     if (vty) {
@@ -259,6 +280,7 @@ export class WindowsSshServerContext implements ISshServerContext {
         // cmd.exe ignores Ctrl+D and has no `clear` — it has `cls`.
         posixShell: false,
         loginShellKind: 'cmd',
+        ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
       };
     }
 
@@ -285,7 +307,18 @@ export class WindowsSshServerContext implements ISshServerContext {
         };
       },
       getPrompt: exec.getCwd ? () => `${exec.getCwd!()}>` : undefined,
+      ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
     };
+  }
+
+  agentForwardingPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noAgentForwarding === true) return false;
+    return this.policy.agentForwarding(user.username, clientIp);
+  }
+
+  ptyPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noPty === true) return false;
+    return this.policy.permitsTty(user.username, clientIp);
   }
 
   getMotd(): string {

@@ -9,23 +9,29 @@ import {
 export interface AgentPort {
   identities(): Promise<readonly AgentIdentityEntry[]>;
   sign(blob: Uint8Array, data: Uint8Array, flags: number): Promise<Uint8Array | null>;
-  add(key: AgentKey): Promise<boolean>;
+  add(key: AgentKey, lifetime?: number): Promise<boolean>;
   remove(blob: Uint8Array): Promise<boolean>;
   removeAll(): Promise<boolean>;
+  lock(password: string): Promise<boolean>;
+  unlock(password: string): Promise<boolean>;
 }
 
 export type AgentCall =
   | { readonly op: 'identities' }
-  | { readonly op: 'add'; readonly key: AgentKey }
+  | { readonly op: 'add'; readonly key: AgentKey; readonly lifetime?: number }
   | { readonly op: 'remove'; readonly blob: Uint8Array }
-  | { readonly op: 'removeAll' };
+  | { readonly op: 'removeAll' }
+  | { readonly op: 'lock'; readonly password: string }
+  | { readonly op: 'unlock'; readonly password: string };
 
 export function callAgent(port: AgentPort, call: AgentCall): Promise<unknown> {
   switch (call.op) {
     case 'identities': return port.identities();
-    case 'add': return port.add(call.key);
+    case 'add': return port.add(call.key, call.lifetime);
     case 'remove': return port.remove(call.blob);
     case 'removeAll': return port.removeAll();
+    case 'lock': return port.lock(call.password);
+    case 'unlock': return port.unlock(call.password);
   }
 }
 
@@ -39,12 +45,16 @@ export async function answerAgentRequest(port: AgentPort, request: AgentRequest)
     }
     case 'add': {
       const key = agentKeyOf(request.comment, request.material);
-      return { kind: key !== null && await port.add(key) ? 'success' : 'failure' };
+      return { kind: key !== null && await port.add(key, request.lifetime) ? 'success' : 'failure' };
     }
     case 'remove':
       return { kind: await port.remove(request.blob) ? 'success' : 'failure' };
     case 'remove-all':
       return { kind: await port.removeAll() ? 'success' : 'failure' };
+    case 'lock':
+      return { kind: await port.lock(request.password) ? 'success' : 'failure' };
+    case 'unlock':
+      return { kind: await port.unlock(request.password) ? 'success' : 'failure' };
   }
 }
 
@@ -68,13 +78,17 @@ export class LocalAgentPort implements AgentPort {
       case 'identities':
         return this.agent.list().map((key) => ({ blob: base64ToBytes(key.blob), comment: key.comment }));
       case 'add':
-        this.agent.install(call.key);
-        return true;
+        return this.agent.install(call.key, call.lifetime);
       case 'remove':
         return this.agent.removeKey(bytesToBase64(call.blob));
       case 'removeAll':
+        if (this.agent.locked) return false;
         this.agent.removeAll();
         return true;
+      case 'lock':
+        return this.agent.lock(call.password);
+      case 'unlock':
+        return this.agent.unlock(call.password);
     }
   }
 
@@ -86,8 +100,8 @@ export class LocalAgentPort implements AgentPort {
     return this.agent.sign(blob, data, flags);
   }
 
-  async add(key: AgentKey): Promise<boolean> {
-    return this.callNow({ op: 'add', key }) as boolean;
+  async add(key: AgentKey, lifetime?: number): Promise<boolean> {
+    return this.callNow({ op: 'add', key, lifetime }) as boolean;
   }
 
   async remove(blob: Uint8Array): Promise<boolean> {
@@ -96,6 +110,14 @@ export class LocalAgentPort implements AgentPort {
 
   async removeAll(): Promise<boolean> {
     return this.callNow({ op: 'removeAll' }) as boolean;
+  }
+
+  async lock(password: string): Promise<boolean> {
+    return this.callNow({ op: 'lock', password }) as boolean;
+  }
+
+  async unlock(password: string): Promise<boolean> {
+    return this.callNow({ op: 'unlock', password }) as boolean;
   }
 }
 
@@ -136,9 +158,10 @@ export class ChannelAgentPort implements AgentPort {
     return reply.kind === 'signature' ? reply.signature : null;
   }
 
-  async add(key: AgentKey): Promise<boolean> {
+  async add(key: AgentKey, lifetime?: number): Promise<boolean> {
     const reply = await this.exchange({
       kind: 'add', keyType: key.algorithm, material: key.material, comment: key.comment,
+      ...(lifetime === undefined ? {} : { lifetime }),
     });
     return reply.kind === 'success';
   }
@@ -149,5 +172,13 @@ export class ChannelAgentPort implements AgentPort {
 
   async removeAll(): Promise<boolean> {
     return (await this.exchange({ kind: 'remove-all' })).kind === 'success';
+  }
+
+  async lock(password: string): Promise<boolean> {
+    return (await this.exchange({ kind: 'lock', password })).kind === 'success';
+  }
+
+  async unlock(password: string): Promise<boolean> {
+    return (await this.exchange({ kind: 'unlock', password })).kind === 'success';
   }
 }

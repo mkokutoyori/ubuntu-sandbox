@@ -34,6 +34,7 @@ export interface SshdMatchOverrides {
   chrootDirectory?: string;
   acceptEnv?: readonly string[];
   allowAgentForwarding?: boolean;
+  permitTty?: boolean;
   gatewayPorts?: SshdGatewayPorts;
   clientAliveIntervalSeconds?: number;
   clientAliveCountMax?: number;
@@ -65,6 +66,7 @@ export interface SshdEffectiveView {
   readonly forceCommand: string | null;
   readonly acceptEnv: readonly string[];
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly gatewayPorts: SshdGatewayPorts;
   readonly clientAliveIntervalSeconds: number;
   readonly clientAliveCountMax: number;
@@ -95,6 +97,7 @@ export interface SshdServerConfigSnapshot {
   readonly permitEmptyPasswords: boolean;
   readonly allowTcpForwarding: SshdAllowTcpForwarding;
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly allowStreamLocalForwarding: boolean;
   readonly x11Forwarding: boolean;
   readonly x11DisplayOffset: number;
@@ -238,6 +241,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly permitEmptyPasswords: boolean;
   readonly allowTcpForwarding: SshdAllowTcpForwarding;
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly allowStreamLocalForwarding: boolean;
   readonly x11Forwarding: boolean;
   readonly x11DisplayOffset: number;
@@ -291,6 +295,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.permitEmptyPasswords = s.permitEmptyPasswords;
     this.allowTcpForwarding = s.allowTcpForwarding;
     this.allowAgentForwarding = s.allowAgentForwarding;
+    this.permitTty = s.permitTty;
     this.allowStreamLocalForwarding = s.allowStreamLocalForwarding;
     this.x11Forwarding = s.x11Forwarding;
     this.x11DisplayOffset = s.x11DisplayOffset;
@@ -346,6 +351,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       permitEmptyPasswords: false,
       allowTcpForwarding: 'yes',
       allowAgentForwarding: true,
+      permitTty: true,
       allowStreamLocalForwarding: true,
       x11Forwarding: false,
       x11DisplayOffset: 10,
@@ -411,6 +417,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   withPermitEmptyPasswords(v: boolean): SshdServerConfig { return this.mutate({ permitEmptyPasswords: v }); }
   withAllowTcpForwarding(v: SshdAllowTcpForwarding): SshdServerConfig { return this.mutate({ allowTcpForwarding: v }); }
   withAllowAgentForwarding(v: boolean): SshdServerConfig { return this.mutate({ allowAgentForwarding: v }); }
+  withPermitTty(v: boolean): SshdServerConfig { return this.mutate({ permitTty: v }); }
   withX11Forwarding(v: boolean): SshdServerConfig { return this.mutate({ x11Forwarding: v }); }
   withGatewayPorts(v: SshdGatewayPorts): SshdServerConfig { return this.mutate({ gatewayPorts: v }); }
   withClientAlive(intervalSeconds: number, countMax: number): SshdServerConfig {
@@ -488,6 +495,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       forceCommand: this.forceCommand,
       acceptEnv: this.acceptEnv,
       allowAgentForwarding: this.allowAgentForwarding,
+      permitTty: this.permitTty,
       gatewayPorts: this.gatewayPorts,
       clientAliveIntervalSeconds: this.clientAliveIntervalSeconds,
       clientAliveCountMax: this.clientAliveCountMax,
@@ -598,6 +606,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     lines.push(`PermitEmptyPasswords ${this.permitEmptyPasswords ? 'yes' : 'no'}`);
     lines.push(`AllowTcpForwarding ${this.allowTcpForwarding}`);
     lines.push(`AllowAgentForwarding ${this.allowAgentForwarding ? 'yes' : 'no'}`);
+    lines.push(`PermitTTY ${this.permitTty ? 'yes' : 'no'}`);
     lines.push(`X11Forwarding ${this.x11Forwarding ? 'yes' : 'no'}`);
     lines.push(`GatewayPorts ${this.gatewayPorts}`);
     lines.push(`ClientAliveInterval ${this.clientAliveIntervalSeconds}`);
@@ -650,6 +659,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'permitemptypasswords': return cfg.withPermitEmptyPasswords(YES_NO(value, false));
     case 'allowtcpforwarding': return cfg.withAllowTcpForwarding(value as SshdAllowTcpForwarding);
     case 'allowagentforwarding': return cfg.withAllowAgentForwarding(YES_NO(value, true));
+    case 'permittty': return cfg.withPermitTty(YES_NO(value, true));
     case 'allowstreamlocalforwarding': return cfg.mutate({ allowStreamLocalForwarding: YES_NO(value, true) });
     case 'x11forwarding': return cfg.withX11Forwarding(YES_NO(value, false));
     case 'x11displayoffset': return cfg.mutate({ x11DisplayOffset: parseInt(value, 10) || 10 });
@@ -707,6 +717,7 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'chrootdirectory': o.chrootDirectory = value; break;
     case 'acceptenv': o.acceptEnv = Object.freeze(value.split(/\s+/)); break;
     case 'allowagentforwarding': o.allowAgentForwarding = YES_NO(value, true); break;
+    case 'permittty': o.permitTty = YES_NO(value, true); break;
     case 'gatewayports': o.gatewayPorts = value as SshdGatewayPorts; break;
     case 'clientaliveinterval': o.clientAliveIntervalSeconds = parseInt(value, 10) || 0; break;
     case 'clientalivecountmax': o.clientAliveCountMax = parseInt(value, 10) || 3; break;

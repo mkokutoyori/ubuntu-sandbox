@@ -20,6 +20,7 @@ export interface ISshChannel {
 }
 
 export interface ExecResult {
+  readonly clientNotices?: string;
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number;

@@ -82,6 +82,10 @@ export class SshdAccessPolicy {
     return this.view(user, address).forceCommand;
   }
 
+  permitsTty(user: string, address: string): boolean {
+    return this.view(user, address).permitTty;
+  }
+
   agentForwarding(user: string, address: string): boolean {
     return this.view(user, address).allowAgentForwarding;
   }

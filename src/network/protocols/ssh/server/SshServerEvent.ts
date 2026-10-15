@@ -90,6 +90,7 @@ export type SshServerEvent =
       user: string;
       ip: string;
       path: string;
+      subject: 'file' | 'directory';
       port?: number;
       timestamp?: number;
     }

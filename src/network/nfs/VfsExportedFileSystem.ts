@@ -16,6 +16,7 @@ const TYPE_OF: Readonly<Record<INode['type'], Ftype3>> = {
   symlink: Ftype3.NF3LNK,
   fifo: Ftype3.NF3FIFO,
   chardev: Ftype3.NF3CHR,
+  socket: Ftype3.NF3SOCK,
 };
 
 

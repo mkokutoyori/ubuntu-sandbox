@@ -148,7 +148,7 @@ export class SshSyslogger {
         return `Invalid user ${event.user} from ${event.ip} port ${event.port ?? this.port}`;
 
       case 'auth_strict_modes_refused':
-        return `Authentication refused: bad ownership or modes for file ${event.path}`;
+        return `Authentication refused: bad ownership or modes for ${event.subject} ${event.path}`;
 
       case 'auth_policy_refused': {
         const r = event.reason;

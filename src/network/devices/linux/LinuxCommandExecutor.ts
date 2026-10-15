@@ -36,7 +36,7 @@ export interface SudoAuthorization {
   logfile?: string;
 }
 import type { UserEntry } from './iam/LinuxUserAccount';
-import { SshAgent } from '../../protocols/ssh/SshAgent';
+import { AgentProcessTable } from '../../protocols/ssh/agent/AgentProcessTable';
 import { LocalAgentPort, type AgentPort } from '../../protocols/ssh/agent/AgentService';
 import { LinuxCronManager } from './LinuxCronManager';
 import { parseCrontab, validateCrontabContent } from './cron/CrontabParser';
@@ -474,11 +474,7 @@ export class LinuxCommandExecutor {
     this.execInput = undefined;
     return input;
   }
-  /**
-   * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
-   * and surfaced to outgoing SSH connections that honour `ssh -A`.
-   */
-  readonly sshAgent: SshAgent = new SshAgent();
+  readonly agentProcesses = new AgentProcessTable();
   /**
    * Last-login registry — populated by the SSH server on successful auth
    * (and by the console-login flow in the future). Read by ssh client code
@@ -1706,7 +1702,7 @@ export class LinuxCommandExecutor {
             host: target.host, address: resolution.address, port: target.port,
             method: session.authenticatedMethod ?? undefined, serverHostKey: serverHostKeyOf(session),
             negotiated: session.negotiated, peerIdentification: session.serverIdentification,
-            command: request.remoteCommand, settled: null, shell: null, notices: [],
+            authTrace: session.authTrace, command: request.remoteCommand, settled: null, shell: null, notices: [],
           }).replace(/\n$/, '').split('\n'));
         }
         return { kind: 'connected', session, release: () => session.disconnect(), lines };
@@ -1746,7 +1742,7 @@ export class LinuxCommandExecutor {
     proxy?: TcpConnector, trust?: Pick<WireSshTarget, 'knownHosts' | 'hashKnownHosts' | 'identitiesOnly'>,
   ): Promise<{
     session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
-    hostKeyRefusal?: string; connectionFailure?: string;
+    hostKeyRefusal?: string; connectionFailure?: string; refusedSession?: SshSession;
   }> {
     if (!this.tcpConnector && proxy === undefined) return { session: null, authRefused: false, notices: [] };
     const connector = proxy ?? this.tcpConnector!;
@@ -1773,6 +1769,7 @@ export class LinuxCommandExecutor {
       ...(hostKeyRefusal !== undefined ? { hostKeyRefusal } : {}),
       ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
+      ...(outcome.refusedSession === undefined ? {} : { refusedSession: outcome.refusedSession }),
     };
   }
 
@@ -1828,7 +1825,7 @@ export class LinuxCommandExecutor {
     if (!isOk(channel)) return null;
     const result = await channel.value.execute();
     channel.value.close();
-    return { output: result.stdout, exitCode: result.exitCode };
+    return { output: `${result.clientNotices ?? ''}${result.stdout}`, exitCode: result.exitCode };
   }
 
   async runSshExecAsync(
@@ -1904,10 +1901,26 @@ export class LinuxCommandExecutor {
           ...(wire.denial !== undefined ? { denial: wire.denial } : {}),
           ...(wire.connectionFailure !== undefined ? { connectionLine: wire.connectionFailure } : {}),
           authRefused: wire.authRefused,
+          notices: [
+            ...target.identityWarnings, ...wire.notices,
+            ...this.refusedTranscript(args, target, resolution.address, wire.refusedSession),
+          ],
         }), wire.authRefused),
       };
     }
+    wire.notices.unshift(...target.identityWarnings);
     return { kind: 'connected', session: wire.session, wire, resolution };
+  }
+
+  private refusedTranscript(
+    args: string[], target: WireExecTarget, address: string, session: SshSession | undefined,
+  ): string[] {
+    if (session === undefined || !splitSshFlags(args).some((flag) => /^-v+$/.test(flag))) return [];
+    return sshVerboseTranscript({
+      host: target.host, address, port: target.port, method: undefined, serverHostKey: serverHostKeyOf(session),
+      negotiated: session.negotiated, peerIdentification: session.serverIdentification,
+      authTrace: session.authTrace, command: '', settled: null, shell: null, notices: [],
+    }, false).replace(/\n$/, '').split('\n');
   }
 
   private async relayStdioForward(
@@ -1984,7 +1997,8 @@ export class LinuxCommandExecutor {
     skipLines: number,
     backgroundPid: number | null,
   ): Promise<{ output: string; exitCode: number }> {
-    if (target.forwardAgent) session.forwardAgent(this.agentPort());
+    const forwardedAgent = target.forwardAgent ? this.agentPort() : undefined;
+    if (forwardedAgent !== undefined) session.forwardAgent(forwardedAgent);
     const joined = joinRemoteCommand(target.commandWords, remoteQuotingOf(session.serverIdentification));
     const command = /^(exit|logout)\s*$/i.test(joined) ? '' : joined;
     const execOptions = { ...execChannelOptionsFor(opts, args), ...(this.execStdinForSsh === undefined ? {} : { stdin: this.execStdinForSsh }) };
@@ -2015,6 +2029,7 @@ export class LinuxCommandExecutor {
         serverHostKey: serverHostKeyOf(session),
         negotiated: session.negotiated,
         peerIdentification: session.serverIdentification,
+        authTrace: session.authTrace,
         command,
         settled,
         shell: relayedShell,
@@ -2208,7 +2223,6 @@ export class LinuxCommandExecutor {
       sourceGid: this.userMgr.currentGid,
       callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
-      localAgent: this.sshAgent,
       offeredPassword: password,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
@@ -5880,8 +5894,6 @@ export class LinuxCommandExecutor {
       // lieu d'en servir une version infidèle.
       case 'telnet':
         return this.runTelnetClient(args);
-      case 'ssh-agent':
-        return runSshAgentCommand(args, { ...this.agentHost(), agent: new LocalAgentPort(this.sshAgent) });
       case 'ssh-keyscan': return this.runSshKeyscan(args, stdin);
       case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
       case 'xargs': {
@@ -6696,25 +6708,79 @@ export class LinuxCommandExecutor {
 
   // ─── su handler ──────────────────────────────────────────────────
 
-  private agentHost(): SshAgentHost {
+  private agentHost(typedLines: string[]): SshAgentHost {
     const absolute = (path: string) => this.vfs.normalizePath(path, this.cwd);
+    const socket = this.commandEnvironment().SSH_AUTH_SOCK;
     return {
       agent: this.agentPort(),
+      agentUnavailable: socket === undefined || socket === ''
+        ? 'Could not open a connection to your authentication agent.'
+        : 'Error connecting to agent: No such file or directory',
       reader: { readFile: (path: string) => this.vfs.readFile(absolute(path)) },
       homeDir: this.sshHomeDir(),
-      authSocket: `/tmp/ssh-${this.userMgr.currentUser}/agent.1`,
       release: OPENSSH_UBUNTU_22_04,
-      agentUnreachable: () => null,
       privateKeyMode: (path: string) => {
         const inode = this.vfs.resolveInode(absolute(path));
         return inode && inode.uid === this.userMgr.currentUid ? inode.permissions : null;
       },
-      setEnvironment: (name: string, value: string) => { this.env.set(name, value); },
+      typedLine: () => typedLines.shift() ?? null,
     };
   }
 
   runSshAddAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
-    return runSshAddCommand(args.map(word => this.expandTilde(word)), this.agentHost());
+    return runSshAddCommand(args.map(word => this.expandTilde(word)), this.agentHost((this._scenarioStdin ?? '').split('\n')));
+  }
+
+  runSshAgentAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
+    return runSshAgentCommand(args, {
+      release: OPENSSH_UBUNTU_22_04,
+      environment: (name) => this.commandEnvironment()[name],
+      start: ({ lifetime, socket }) => this.startSshAgent(lifetime, socket),
+      kill: (pid) => this.stopSshAgent(pid),
+      runWith: async (argv, agent) => {
+        const environment = { ...(this._cmdEnv ?? {}), SSH_AUTH_SOCK: agent.socket, SSH_AGENT_PID: String(agent.pid) };
+        const previous = this._cmdEnv;
+        this._cmdEnv = environment;
+        try {
+          const result = await this.dispatchMaybeNetwork(argv, environment, false, this._scenarioStdin, false);
+          return { output: result.output, exitCode: result.exitCode };
+        } finally {
+          this._cmdEnv = previous;
+        }
+      },
+    });
+  }
+
+  private startSshAgent(
+    lifetime: number | null, requestedSocket: string | null,
+  ): { pid: number; socket: string } | null {
+    const process = this.processMgr.spawn({
+      command: 'ssh-agent -s', comm: 'ssh-agent', user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, ppid: 1, tty: '?', cwd: '/',
+    });
+    const directory = `/tmp/ssh-${agentDirectorySuffix()}`;
+    const socket = requestedSocket !== null ? this.vfs.normalizePath(requestedSocket, this.cwd) : `${directory}/agent.${process.pid - 1}`;
+    if (requestedSocket === null) this.vfs.mkdirp(directory, 0o700, this.userMgr.currentUid, this.userMgr.currentGid);
+    if (!this.vfs.createSocket(socket, 0o600, this.userMgr.currentUid, this.userMgr.currentGid)) {
+      this.processMgr.exit(process.pid, 1);
+      this.processMgr.reap(process.pid);
+      return null;
+    }
+    this.agentProcesses.start(process.pid, socket, this.userMgr.currentUid, lifetime);
+    return { pid: process.pid, socket };
+  }
+
+  private stopSshAgent(pid: number): boolean {
+    const agent = this.agentProcesses.withPid(pid);
+    if (agent === undefined) return false;
+    this.agentProcesses.stop(pid);
+    this.vfs.deleteFile(agent.socket);
+    if (/^\/tmp\/ssh-[A-Za-z0-9]{10}\/agent\.\d+$/.test(agent.socket)) this.vfs.rmdir(agent.socket.replace(/\/agent\.\d+$/, ''));
+    if (this.processMgr.get(pid)) {
+      this.processMgr.exit(pid, 0);
+      this.processMgr.reap(pid);
+    }
+    return true;
   }
 
   private readonly forwardedAgents = new Map<string, AgentPort>();
@@ -6726,9 +6792,13 @@ export class LinuxCommandExecutor {
     return { path, release: () => { this.forwardedAgents.delete(path); } };
   }
 
-  agentPort(): AgentPort {
-    const socket = this.env.get('SSH_AUTH_SOCK');
-    return (socket === undefined ? undefined : this.forwardedAgents.get(socket)) ?? new LocalAgentPort(this.sshAgent);
+  agentPort(): AgentPort | undefined {
+    const socket = this.commandEnvironment().SSH_AUTH_SOCK;
+    if (socket === undefined || socket === '') return undefined;
+    const forwarded = this.forwardedAgents.get(socket);
+    if (forwarded !== undefined) return forwarded;
+    const running = this.agentProcesses.atSocket(socket);
+    return running === undefined ? undefined : new LocalAgentPort(running.agent);
   }
 
   private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null } {
@@ -8100,6 +8170,7 @@ export class LinuxCommandExecutor {
     }
     if (lstat.type === 'directory') return `${target}: directory`;
     if (lstat.type === 'chardev') return `${target}: character special`;
+    if (lstat.type === 'socket') return `${target}: socket`;
     const content = this.vfs.readFile(abs) ?? lstat.content;
     if (content.length === 0) return `${target}: empty`;
     const archive = describeArchiveContent(content);
@@ -8365,4 +8436,9 @@ function serverHostKeyOf(session: SshSession): { algorithm: string; fingerprint:
   const length = (blob[0] << 24) | (blob[1] << 16) | (blob[2] << 8) | blob[3];
   const algorithm = String.fromCharCode(...blob.slice(4, 4 + length));
   return { algorithm, fingerprint: SshFingerprint.fromPublicKey(bytesToBase64(blob)).toString() };
+}
+
+function agentDirectorySuffix(): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from({ length: 10 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
 }

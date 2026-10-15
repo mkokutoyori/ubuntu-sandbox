@@ -169,6 +169,7 @@ export interface ISshServerContext {
   ): ILinuxShell;
   acceptsEnvironment?(name: string): boolean;
   userPolicyRefusal?(user: string, address: string): string | null;
+  ptyPermitted?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean;
   agentForwardingPermitted?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean;
   accountLocked?(user: string): boolean;
   holdSession?(user: SshUserContext, clientIp: string, seconds: number): void;

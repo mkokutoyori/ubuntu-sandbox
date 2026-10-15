@@ -347,7 +347,8 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (violation !== null) {
       if (source.ip !== '') {
         this.events.emit({
-          kind: 'auth_strict_modes_refused', user, ip: source.ip, path: violation, port: this.clientPort(source.ip),
+          kind: 'auth_strict_modes_refused', user, ip: source.ip, path: violation,
+          subject: violation === AUTHORIZED_KEYS_PATH(userEntry.home) ? 'file' : 'directory', port: this.clientPort(source.ip),
         });
       }
       return null;
@@ -430,6 +431,11 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (this.device instanceof LinuxMachine) {
       this.device.scheduleSshLogout(user.username, clientIp, seconds, true, this.clientPort(clientIp));
     }
+  }
+
+  ptyPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noPty === true) return false;
+    return this.accessPolicy().permitsTty(user.username, clientIp);
   }
 
   agentForwardingPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {

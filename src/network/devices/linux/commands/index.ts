@@ -48,6 +48,7 @@ import { sshCommand } from './net/Ssh';
 import { telnetCommand } from './net/Telnet';
 import { sshpassCommand } from './net/Sshpass';
 import { sshAddCommand } from './net/SshAdd';
+import { sshAgentCommand } from './net/SshAgent';
 import { sftpCommand } from './net/Sftp';
 import { opensslCommand } from './crypto/OpenSsl';
 import { updateCaCertificatesCommand } from './crypto/UpdateCaCertificates';
@@ -198,6 +199,7 @@ export {
   telnetCommand,
   sshpassCommand,
   sshAddCommand,
+  sshAgentCommand,
   sftpCommand,
   opensslCommand,
   updateCaCertificatesCommand,
@@ -368,6 +370,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   telnetCommand,
   sshpassCommand,
   sshAddCommand,
+  sshAgentCommand,
   sftpCommand,
   opensslCommand,
   updateCaCertificatesCommand,

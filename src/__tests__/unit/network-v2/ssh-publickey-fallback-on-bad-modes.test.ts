@@ -114,7 +114,7 @@ describe('Scénario 2 — bascule clé → mot de passe sur perms incorrectes', 
     expect(out).toMatch(/^alice\s*$/m);
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
-    expect(log).toMatch(/Authentication refused: bad ownership or modes for file \/home\/alice/);
+    expect(log).toMatch(/Authentication refused: bad ownership or modes for directory \/home\/alice/);
     expect(log).toMatch(/Accepted password for alice/);
     expect(log).not.toMatch(/Accepted publickey for alice/);
   });

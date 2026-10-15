@@ -55,9 +55,10 @@ beforeEach(() => {
   EquipmentRegistry.resetInstance();
 });
 
-function linux(): LinuxPC {
+async function linux(): Promise<LinuxPC> {
   const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
   pc.powerOn();
+  await pc.executeCommand('eval $(ssh-agent -s)');
   return pc;
 }
 
@@ -72,11 +73,11 @@ const keygen = (pc: LinuxPC, type: string, file: string, comment = 'probe@lab') 
 
 describe('the default identities', () => {
   it('no default identity on disk: nothing is written, exit 1', async () => {
-    expect(await linux().executeCommand('ssh-add; echo rc=$?')).toBe('rc=1');
+    expect(await (await linux()).executeCommand('ssh-add; echo rc=$?')).toBe('rc=1');
   });
 
   it('the defaults are loaded id_rsa first, then id_ed25519', async () => {
-    const pc = linux();
+    const pc = (await linux());
     await keygen(pc, 'ed25519', '~/.ssh/id_ed25519', 'ed@lab');
     await keygen(pc, 'rsa -b 1024', '~/.ssh/id_rsa', 'rsa@lab');
 
@@ -87,7 +88,7 @@ describe('the default identities', () => {
   }, 60_000);
 
   it('-d without a file removes the defaults, naming type and comment', async () => {
-    const pc = linux();
+    const pc = (await linux());
     await keygen(pc, 'ed25519', '~/.ssh/id_ed25519', 'ed@lab');
     await pc.executeCommand('ssh-add');
 
@@ -98,12 +99,12 @@ describe('the default identities', () => {
 
 describe('what ssh-add refuses to load', () => {
   it('a missing file is named the way perror does', async () => {
-    expect(await linux().executeCommand('ssh-add /nope; echo rc=$?'))
+    expect(await (await linux()).executeCommand('ssh-add /nope; echo rc=$?'))
       .toBe('/nope: No such file or directory\nrc=1');
   });
 
   it('a file that is not a key is refused', async () => {
-    const pc = linux();
+    const pc = (await linux());
     const out = await pc.executeCommand('ssh-add /etc/hostname; echo rc=$?');
 
     expect(out).toBe('Error loading key "/etc/hostname": invalid format\nrc=1');
@@ -111,7 +112,7 @@ describe('what ssh-add refuses to load', () => {
   });
 
   it('a private key readable by others is ignored', async () => {
-    const pc = linux();
+    const pc = (await linux());
     await keygen(pc, 'ed25519', '/tmp/k');
     await pc.executeCommand('chmod 644 /tmp/k');
     const out = await pc.executeCommand('ssh-add /tmp/k; echo rc=$?');
@@ -125,7 +126,7 @@ describe('what ssh-add refuses to load', () => {
 
 describe('the agent holds keys, not paths', () => {
   it('the same key from two paths is one identity', async () => {
-    const pc = linux();
+    const pc = (await linux());
     await keygen(pc, 'ed25519', '/tmp/k');
     await pc.executeCommand('cp /tmp/k /tmp/copy');
     await pc.executeCommand('chmod 600 /tmp/copy');
@@ -136,7 +137,7 @@ describe('the agent holds keys, not paths', () => {
   });
 
   it('removing a key the agent does not hold is refused', async () => {
-    const pc = linux();
+    const pc = (await linux());
     await keygen(pc, 'ed25519', '/tmp/k');
 
     expect(await pc.executeCommand('ssh-add -d /tmp/k; echo rc=$?'))
@@ -144,7 +145,7 @@ describe('the agent holds keys, not paths', () => {
   });
 
   it('a loaded key is listed with bits, fingerprint, comment and type — WITNESS', async () => {
-    const pc = linux();
+    const pc = (await linux());
     await keygen(pc, 'ed25519', '/tmp/k');
     await pc.executeCommand('ssh-add /tmp/k');
 
@@ -154,11 +155,11 @@ describe('the agent holds keys, not paths', () => {
 
 describe('the command line', () => {
   it('-D -q removes silently', async () => {
-    expect(await linux().executeCommand('ssh-add -D -q; echo rc=$?')).toBe('rc=0');
+    expect(await (await linux()).executeCommand('ssh-add -D -q; echo rc=$?')).toBe('rc=0');
   });
 
   it('an unknown option is named, then the usage', async () => {
-    const out = await linux().executeCommand('ssh-add -Z; echo rc=$?');
+    const out = await (await linux()).executeCommand('ssh-add -Z; echo rc=$?');
 
     expect(out.split('\n').slice(0, 2)).toEqual([
       'unknown option -- Z',
@@ -168,11 +169,11 @@ describe('the command line', () => {
   });
 
   it('-l and -L together are one listing too many', async () => {
-    expect((await linux().executeCommand('ssh-add -l -L')).trim()).toBe('-l flag already specified');
+    expect((await (await linux()).executeCommand('ssh-add -l -L')).trim()).toBe('-l flag already specified');
   });
 
   it('-E md5 lists the MD5 fingerprint', async () => {
-    const pc = linux();
+    const pc = (await linux());
     await keygen(pc, 'ed25519', '/tmp/k');
     await pc.executeCommand('ssh-add /tmp/k');
 
@@ -183,7 +184,7 @@ describe('the command line', () => {
 describe('Windows: the agent is a service, disabled out of the box', () => {
   it('ssh-add cannot reach the agent pipe', async () => {
     expect((await windows().executeCommand('ssh-add -l')).trim())
-      .toBe('Error connecting to agent: No such file or directory');
+      .toBe('unable to start ssh-agent service, error :1058');
   });
 
   it('the service exists, disabled', async () => {

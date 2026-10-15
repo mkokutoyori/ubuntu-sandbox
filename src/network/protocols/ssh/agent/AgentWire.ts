@@ -9,6 +9,10 @@ export const SSH_AGENT_SIGN_RESPONSE = 14;
 export const SSH_AGENTC_ADD_IDENTITY = 17;
 export const SSH_AGENTC_REMOVE_IDENTITY = 18;
 export const SSH_AGENTC_REMOVE_ALL_IDENTITIES = 19;
+export const SSH_AGENTC_LOCK = 22;
+export const SSH_AGENTC_UNLOCK = 23;
+export const SSH_AGENTC_ADD_ID_CONSTRAINED = 25;
+export const SSH_AGENT_CONSTRAIN_LIFETIME = 1;
 
 export const SSH_AGENT_RSA_SHA2_256 = 2;
 export const SSH_AGENT_RSA_SHA2_512 = 4;
@@ -29,7 +33,9 @@ export interface AgentIdentityEntry {
 export type AgentRequest =
   | { readonly kind: 'request-identities' }
   | { readonly kind: 'sign'; readonly blob: Uint8Array; readonly data: Uint8Array; readonly flags: number }
-  | { readonly kind: 'add'; readonly keyType: string; readonly material: string; readonly comment: string }
+  | { readonly kind: 'add'; readonly keyType: string; readonly material: string; readonly comment: string; readonly lifetime?: number }
+  | { readonly kind: 'lock'; readonly password: string }
+  | { readonly kind: 'unlock'; readonly password: string }
   | { readonly kind: 'remove'; readonly blob: Uint8Array }
   | { readonly kind: 'remove-all' };
 
@@ -52,8 +58,17 @@ export function encodeAgentRequest(request: AgentRequest): Uint8Array {
       return writer.writeByte(SSH_AGENTC_SIGN_REQUEST).writeBytes(request.blob)
         .writeBytes(request.data).writeUint32(request.flags).toBytes();
     case 'add':
+      if (request.lifetime !== undefined) {
+        return writer.writeByte(SSH_AGENTC_ADD_ID_CONSTRAINED).writeString(request.keyType)
+          .writeString(request.material).writeString(request.comment)
+          .writeByte(SSH_AGENT_CONSTRAIN_LIFETIME).writeUint32(request.lifetime).toBytes();
+      }
       return writer.writeByte(SSH_AGENTC_ADD_IDENTITY).writeString(request.keyType)
         .writeString(request.material).writeString(request.comment).toBytes();
+    case 'lock':
+      return writer.writeByte(SSH_AGENTC_LOCK).writeString(request.password).toBytes();
+    case 'unlock':
+      return writer.writeByte(SSH_AGENTC_UNLOCK).writeString(request.password).toBytes();
     case 'remove':
       return writer.writeByte(SSH_AGENTC_REMOVE_IDENTITY).writeBytes(request.blob).toBytes();
     case 'remove-all':
@@ -71,6 +86,17 @@ export function decodeAgentRequest(payload: Uint8Array): AgentRequest | null {
         return { kind: 'sign', blob: reader.readBytes(), data: reader.readBytes(), flags: reader.readUint32() };
       case SSH_AGENTC_ADD_IDENTITY:
         return { kind: 'add', keyType: reader.readString(), material: reader.readString(), comment: reader.readString() };
+      case SSH_AGENTC_ADD_ID_CONSTRAINED: {
+        const keyType = reader.readString();
+        const material = reader.readString();
+        const comment = reader.readString();
+        if (reader.readByte() !== SSH_AGENT_CONSTRAIN_LIFETIME) return null;
+        return { kind: 'add', keyType, material, comment, lifetime: reader.readUint32() };
+      }
+      case SSH_AGENTC_LOCK:
+        return { kind: 'lock', password: reader.readString() };
+      case SSH_AGENTC_UNLOCK:
+        return { kind: 'unlock', password: reader.readString() };
       case SSH_AGENTC_REMOVE_IDENTITY:
         return { kind: 'remove', blob: reader.readBytes() };
       case SSH_AGENTC_REMOVE_ALL_IDENTITIES:

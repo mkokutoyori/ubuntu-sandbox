@@ -420,8 +420,9 @@ export class SshServerHandler {
             }
             case 'pty-req': {
               const pty = decodePtyRequest(request.payload);
-              if (pty !== null) info.pty = pty;
-              request.reply(pty !== null);
+              const permitted = pty !== null && this.ctx.ptyPermitted?.(user, clientIp, keyOptions) !== false;
+              if (permitted) info.pty = pty;
+              request.reply(permitted);
               return;
             }
             case 'exec': {
