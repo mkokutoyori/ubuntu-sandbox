@@ -17,7 +17,6 @@ export interface PkiHost {
   renderCertificatesPem(name: string | null): string;
   selectTrustpoint(name: string): void;
   removeTrustpoint(name: string): void;
-  importCertificate(name: string, form: string): string;
   exportPem(name: string, cipher: 'des' | '3des', phrase: string, destination: string | null): string;
   importPem(name: string, source: string, phrase: string | null, exportable: boolean): string;
   selectServer(name: string | null): void;
@@ -284,11 +283,11 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
       undo: (_s, args) => { host().removeTrustpoint(args.trustpoint); return ''; },
     },
     {
-      id: 'crypto-pki-import',
-      path: ['crypto', 'pki', 'import', TRUSTPOINT, { name: 'form', type: 'REST', literal: 'LINE', description: 'Certificate format and source' }],
-      description: 'Import certificate',
+      id: 'crypto-pki-import-certificate',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, 'certificate'],
+      description: 'Paste the certificate issued for the pending request',
       modes: CONFIG, minPrivilege: 15,
-      run: (_s, args) => host().importCertificate(args.trustpoint, args.form),
+      run: () => '% Pasting a certificate needs an interactive terminal session',
     },
     {
       id: 'crypto-pki-export-pem-terminal',

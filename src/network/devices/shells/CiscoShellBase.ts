@@ -1650,6 +1650,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `banner <kind> <delim>TEXT<delim>` form stays synchronous in the
     // config-trie handler.
     if (mode === 'config') {
+      const paste = /^crypto\s+(?:pki|ca)\s+authenticate\s+(\S+)$/i.exec(line);
+      if (paste) return this.pkiPastePlan('ca', paste[1], ctx?.device as TDevice | undefined);
+      const certificate = /^crypto\s+pki\s+import\s+(\S+)\s+certificate$/i.exec(line);
+      if (certificate) return this.pkiPastePlan('certificate', certificate[1], ctx?.device as TDevice | undefined);
+    }
+    if (mode === 'config') {
       const pem = /^crypto\s+pki\s+import\s+(\S+)\s+pem\s+terminal((?:\s+(?:exportable|password\s+\S+))*)$/i.exec(line);
       if (pem) {
         const phrase = /password\s+(\S+)/i.exec(pem[2])?.[1] ?? null;
@@ -10019,6 +10025,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Parse `ssh [-l user] [-p port] <host> [command ...]` (the IOS form)
    * and open it over the wire (routerOutboundSsh).
    */
+  protected pkiPastePlan(
+    _kind: 'ca' | 'certificate', _trustpoint: string, _device: TDevice | undefined,
+  ): CommandInteractionPlan | null {
+    return null;
+  }
+
   protected pemImportPlan(
     _trustpoint: string, _phrase: string | null, _exportable: boolean, _device: TDevice | undefined,
   ): CommandInteractionPlan | null {

@@ -71,7 +71,7 @@ import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
 import { cryptoIdentitySpecs, type CryptoIdentityEngine } from './cisco/cryptoIdentitySpecs';
 import { resolveCiscoInterfaceName } from './cli-utils';
 import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
-import { authenticateTrustpoint, enrollTrustpoint, requestCrl, clearCrls, renderCrls, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
+import { authenticateTrustpoint, authenticateFromTerminal, importRouterCertificate, requestFromTerminal, enrollTrustpoint, requestCrl, clearCrls, renderCrls, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
 import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
 import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
 import { renderCertificates, renderCertificatesPem } from '../router/pki/CertificateDisplay';
@@ -1639,10 +1639,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setTacacsServer(n: string | null): void { this.selectedTacacsServer = n; }
   getAaaGroup(): string | null { return this.selectedAaaGroup; }
   setAaaGroup(n: string | null): void { this.selectedAaaGroup = n; }
-  private pkiHost(): PkiHost {
-    const device = this.d() as CiscoRouter;
+  private enrollmentHostFor(device: CiscoRouter): TrustpointEnrollmentHost {
     const router = () => device;
-    const enrollment: TrustpointEnrollmentHost = {
+    return {
       security: () => getSecurityConfig(router()),
       client: () => new PkiEnrollmentClient({
         tcp: () => router().getTcpStack(),
@@ -1661,10 +1660,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       after: (ms, fn) => router().scheduleAfter(ms, fn),
       cancel: (handle) => router().cancelScheduled(handle),
     };
+  }
+
+  private pkiHost(): PkiHost {
+    const device = this.d() as CiscoRouter;
+    const router = () => device;
+    const enrollment = this.enrollmentHostFor(device);
     return {
       security: () => getSecurityConfig(router()),
       authenticate: (name) => { this._pendingAsync = authenticateTrustpoint(enrollment, name); return ''; },
-      enroll: (name) => { this._pendingAsync = enrollTrustpoint(enrollment, name); return ''; },
+      enroll: (name) => {
+        if (getSecurityConfig(router()).pkiTrustpoints.get(name)?.source === 'terminal') return requestFromTerminal(enrollment, name);
+        this._pendingAsync = enrollTrustpoint(enrollment, name);
+        return '';
+      },
       requestCrl: (name) => { this._pendingAsync = requestCrl(enrollment, name); return ''; },
       clearCrls: () => clearCrls(enrollment),
       renderCertificates: (name, verbose) => {
@@ -1681,11 +1690,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         const security = getSecurityConfig(router());
         if (security.pkiTrustpoints.get(name)?.localCert) router().clearIkeCertAuth();
         security.pkiTrustpoints.delete(name);
-      },
-      importCertificate: (name, form) => {
-        if (!getSecurityConfig(router()).pkiTrustpoints.has(name)) return `% Trustpoint ${name} not configured`;
-        const what = form.trim().split(/\s+/)[0]?.toLowerCase();
-        return `% Unknown import type "${what}": use "pem"`;
       },
       exportPem: (name, cipher, phrase, destination) => {
         const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
@@ -1707,6 +1711,35 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       },
       selectServer: (name) => { this.selectedPkiServer = name; },
       selectedServer: () => this.selectedPkiServer,
+    };
+  }
+
+  protected override pkiPastePlan(
+    kind: 'ca' | 'certificate', trustpoint: string, device: CiscoRouter | undefined,
+  ): CommandInteractionPlan | null {
+    if (!device) return null;
+    const known = getSecurityConfig(device).pkiTrustpoints.get(trustpoint);
+    if (!known) return null;
+    if (kind === 'ca' && known.source !== 'terminal') return null;
+    const enrollment = this.enrollmentHostFor(device);
+    return {
+      steps: [
+        { kind: 'output', lines: [`Enter the base 64 encoded ${kind === 'ca' ? 'CA' : ''} certificate.`.replace('  ', ' '), 'End with a blank line or the word "quit" on a line by itself'] },
+        {
+          kind: 'collect', prompt: '', storeAs: 'pasted_certificate',
+          accept: (line, accumulated) => {
+            const done = line.trim() === 'quit' || (line.trim() === '' && accumulated.some((entry) => entry.includes('-----END')));
+            return done ? { done: true, body: accumulated.join('\n') } : { done: false };
+          },
+        },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            const text = rt.values.get('pasted_certificate') ?? '';
+            rt.output(kind === 'ca' ? authenticateFromTerminal(enrollment, trustpoint, text) : importRouterCertificate(enrollment, trustpoint, text));
+          },
+        },
+      ],
     };
   }
 
