@@ -1,17 +1,19 @@
 /**
- * Cisco IOS Security Command Reference: `aaa authentication attempts login number-of-attempts` (1-25) — "the
- * maximum number of unsuccessful login attempts that are permitted on a line before it is closed". Without it a
- * vty gives three attempts. The CIS benchmark audits this value on bank routers.
+ * Cisco IOS Security Command Reference, `aaa authentication attempts login number-of-attempts`: range 1 to 25,
+ * default 3, "the number of times a router will prompt for username and password before a session is dropped", and
+ * "can be used only if the aaa new-model command is configured". The CIS benchmark audits this value on bank routers.
  *
  * Lab: a Cisco router with a local user and vty lines open to telnet and SSH, reached by a LinuxPC over a real
  * cable. The probe counts what the client sees: how many wrong passwords the line tolerates, then whether the
  * right one is still accepted.
  *
- * Ours, not in the reference: SSH uses the lesser of this value and `ip ssh authentication-retries`.
+ * Ours, not in the reference: SSH uses the lesser of this value and `ip ssh authentication-retries`, and the
+ * refusal wording when `aaa new-model` is missing.
  *
- * Measured with src stashed to HEAD: the command was refused (Invalid input), so 4 of the 6 cases fall (limit 5,
- * limit 2, range/running-config/no form, help). Witnesses: the default of three tries, and the SSH case, whose
- * scripted client does not retry, so it cannot discriminate and only guards against a regression.
+ * Measured with src stashed to the commit that first carried the command (which accepted it without aaa new-model
+ * and ignored the default list): the new-model refusal case and the default-list case fall. Against the commit before
+ * it, the command itself was refused, so the limit-5, limit-2, range and help cases fall too. Witnesses: the default
+ * of three tries, and the SSH case, whose scripted client does not retry and so cannot discriminate.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -29,7 +31,7 @@ beforeEach(() => {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset(); EquipmentRegistry.resetInstance();
 });
 
-async function lab(extra: string[] = []): Promise<{ router: CiscoRouter; pc: LinuxPC }> {
+async function lab(extra: string[] = [], vtyList = true): Promise<{ router: CiscoRouter; pc: LinuxPC }> {
   const router = new CiscoRouter('R1', 0, 0);
   const pc = new LinuxPC('linux-pc', 'P1');
   pc.getPort('eth0')!.configureIP(new IPAddress('10.0.0.10'), new SubnetMask('255.255.255.0'));
@@ -38,7 +40,8 @@ async function lab(extra: string[] = []): Promise<{ router: CiscoRouter; pc: Lin
     'enable', 'configure terminal', 'hostname R1', 'ip domain-name lab',
     'interface GigabitEthernet0/0', 'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
     'username admin privilege 15 secret cisco',
-    'line vty 0 4', 'login local', 'transport input all', 'exit',
+    'aaa new-model', 'aaa authentication login default local',
+    'line vty 0 4', ...(vtyList ? ['login authentication default'] : []), 'transport input all', 'exit',
     'crypto key generate rsa modulus 2048', ...extra, 'end',
   ]) await router.executeCommand(line);
   for (let i = 0; i < 14; i++) { await Promise.resolve(); await new Promise<void>((r) => setTimeout(r, 0)); }
@@ -73,6 +76,28 @@ describe('aaa authentication attempts login', () => {
     const { pc } = await lab(['aaa authentication attempts login 1']);
     const out = await pc.executeCommand('ssh admin@10.0.0.2', 'nope\ncisco\nshow clock\nexit\n');
     expect(out).not.toMatch(/UTC/);
+  });
+
+  it('the default method list applies to a line with no list assigned (Usage Guidelines of aaa authentication login)', async () => {
+    const { pc } = await lab([], false);
+    const refused = await pc.executeCommand('telnet 10.0.0.2', 'admin\nnope\nshow clock\nexit\n');
+    expect(refused).toContain('% Login invalid');
+    const accepted = await pc.executeCommand('telnet 10.0.0.2', 'admin\ncisco\nshow clock\nexit\n');
+    expect(accepted).toMatch(/UTC/);
+  });
+
+  it('is refused until aaa new-model is configured, and has no effect once it is removed', async () => {
+    const { router, pc } = await lab();
+    await router.executeCommand('enable');
+    await router.executeCommand('configure terminal');
+    await router.executeCommand('aaa authentication attempts login 5');
+    await router.executeCommand('no aaa new-model');
+    const bare = new CiscoRouter('R9', 0, 0);
+    await bare.executeCommand('enable');
+    await bare.executeCommand('configure terminal');
+    expect(await bare.executeCommand('aaa authentication attempts login 5')).toContain('aaa new-model');
+    expect(await bare.executeCommand('do show running-config | include attempts')).not.toContain('attempts login');
+    expect(pc).toBeDefined();
   });
 
   it('the value is range-checked, shown in the running-config and removed by its no form', async () => {

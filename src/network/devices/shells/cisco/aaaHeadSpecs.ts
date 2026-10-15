@@ -346,7 +346,11 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       undoDescription: 'Restore the default number of login attempts',
       modes: MODES, minPrivilege: 15,
       undoOmitsArguments: true,
-      run: (_s, args) => { sec().loginAttempts = Number(args.nombre); return ''; },
+      run: (_s, args) => {
+        if (!sec().aaaNewModel) return '% AAA is not enabled: "aaa new-model" must be configured first';
+        sec().loginAttempts = Number(args.nombre);
+        return '';
+      },
       undo: () => { sec().loginAttempts = undefined; return ''; },
     },
     {
