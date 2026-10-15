@@ -64,7 +64,7 @@ import {
 import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/des';
 import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
 import type { IkeKeyPair } from './IkeKeyExchange';
-import type { IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint, IkeRsaProvider } from './IPSecTypes';
+import type { CryptoIdentityList, IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint, IkeRsaProvider } from './IPSecTypes';
 import { rsaEncryptPkcs1, rsaDecryptPkcs1 } from '@/crypto/rsa';
 import { systemRandom } from '../../crypto/random';
 import { renderCryptoSessions, type CryptoSession, type CryptoSessionMode } from './CryptoSessionView';
@@ -635,6 +635,7 @@ export const EZVPN_TRANSFORM_PREFIX = '#$!ezvpn-';
 export class IPSecEngine implements IProtocolEngine {
   readonly ezvpn = new EzvpnServer();
   readonly ezvpnClient = new EzvpnClient();
+  readonly identityLists = new Map<string, CryptoIdentityList>();
   private readonly mapClientPolicies = new Map<string, MapClientPolicy>();
   private configMethod: IkeConfigMethod | null = null;
   private readonly configRequests = new Map<string, IkeConfigRequest>();
@@ -1166,6 +1167,50 @@ export class IPSecEngine implements IProtocolEngine {
 
   removeISAKMPProfile(name: string): void {
     this.isakmpProfiles.delete(name);
+  }
+
+  private identityMatches(list: CryptoIdentityList | undefined, offer: IkeOfferMessage): boolean {
+    if (!list) return false;
+    const normalise = (text: string): string => text.replace(/\s*=\s*/g, '=').trim().toLowerCase();
+    if (list.fqdn !== undefined && offer.identity.toLowerCase() === list.fqdn.toLowerCase()) return true;
+    const subject = (offer.certPayload?.cert as X509Certificate | undefined)?.subject;
+    if (subject === undefined) return false;
+    const rdns = subject.split(',').map(normalise);
+    return list.dn.some((dn) => rdns.includes(normalise(dn)));
+  }
+
+  private identityListsPermit(peerEntry: CryptoMapEntry | null, srcIp: string, offer: IkeOfferMessage): boolean {
+    const names: Array<string | undefined> = [];
+    if (peerEntry) names.push(peerEntry.identityName);
+    else {
+      const mapName = this.ifaceCryptoMap.get(this.findInterfaceForPeer(srcIp) ?? '');
+      for (const dynName of this.cryptoMaps.get(mapName ?? '')?.dynamicEntries.values() ?? []) {
+        for (const entry of this.dynamicCryptoMaps.get(dynName)?.entries.values() ?? []) names.push(entry.identityName);
+      }
+    }
+    if (names.length === 0 || names.some((n) => n === undefined)) return true;
+    return names.some((n) => this.identityMatches(this.identityLists.get(n!), offer));
+  }
+
+  getOrCreateIdentityList(name: string): CryptoIdentityList {
+    let list = this.identityLists.get(name);
+    if (!list) {
+      list = { name, dn: [] };
+      this.identityLists.set(name, list);
+    }
+    return list;
+  }
+
+  showCryptoIdentity(name?: string): string {
+    const lists = [...this.identityLists.values()].filter((l) => name === undefined || l.name === name);
+    const out: string[] = [];
+    for (const list of lists) {
+      out.push(`crypto identity ${list.name}:`);
+      if (list.description) out.push(`Description: ${list.description}`);
+      if (list.fqdn) out.push(`fqdn ${list.fqdn}`);
+      for (const dn of list.dn) out.push(`dn ${dn}`);
+    }
+    return out.join('\n');
   }
 
   private peerIdentityAccepted(
@@ -2710,6 +2755,7 @@ export class IPSecEngine implements IProtocolEngine {
             transformSets: dynEntry.transformSets,
             aclName: dynEntry.aclName || '',
             pfsGroup: dynEntry.pfsGroup,
+            identityName: dynEntry.identityName,
           };
         }
       }
@@ -3937,6 +3983,11 @@ export class IPSecEngine implements IProtocolEngine {
     if (peerEntry && !this.peerIdentityAccepted(peerEntry, offer.identity, srcIp)) {
       this.rejectIke(srcIp, 'Peer ID mismatch');
       if (!isV2) this.createFailedIKESA(srcIp, '', 'Peer ID mismatch');
+      return;
+    }
+    if (!this.identityListsPermit(peerEntry, srcIp, offer)) {
+      this.rejectIke(srcIp, 'Peer identity not permitted by the crypto identity');
+      if (!isV2) this.createFailedIKESA(srcIp, '', 'Peer identity not permitted by the crypto identity');
       return;
     }
     let rsaReplyNonce: string | undefined;
@@ -5267,6 +5318,7 @@ export class IPSecEngine implements IProtocolEngine {
         if (entry.pfsGroup) lines.push(` set pfs ${entry.pfsGroup}`);
         if (entry.saLifetimeSeconds) lines.push(` set security-association lifetime seconds ${entry.saLifetimeSeconds}`);
         if (entry.ikev2ProfileName) lines.push(` set ikev2-profile ${entry.ikev2ProfileName}`);
+        if (entry.identityName) lines.push(` set identity ${entry.identityName}`);
       }
       for (const [seq, dynName] of [...cmap.dynamicEntries].sort((a, b) => a[0] - b[0])) {
         lines.push(`crypto map ${cmap.name} ${seq} ipsec-isakmp dynamic ${dynName}`);
@@ -5286,7 +5338,14 @@ export class IPSecEngine implements IProtocolEngine {
         for (const t of entry.transformSets) lines.push(` set transform-set ${t}`);
         if (entry.aclName) lines.push(` match address ${entry.aclName}`);
         if (entry.pfsGroup) lines.push(` set pfs ${entry.pfsGroup}`);
+        if (entry.identityName) lines.push(` set identity ${entry.identityName}`);
       }
+    }
+    for (const list of this.identityLists.values()) {
+      lines.push(`crypto identity ${list.name}`);
+      if (list.description) lines.push(` description ${list.description}`);
+      if (list.fqdn) lines.push(` fqdn ${list.fqdn}`);
+      for (const dn of list.dn) lines.push(` dn ${dn}`);
     }
     for (const [, prop] of this.ikev2Proposals) {
       lines.push(`crypto ikev2 proposal ${prop.name}`);
