@@ -243,6 +243,8 @@ export interface ZonePair {
 export interface InterfaceUrpf {
   mode: 'strict' | 'loose' | null;
   allowDefault?: boolean;
+  allowSelfPing?: boolean;
+  acl?: string;
 }
 
 export interface InterfaceSecurityFlags {
@@ -255,6 +257,7 @@ export interface InterfaceSecurityFlags {
   inspectOut?: string;
   ipv6TrafficFilter?: { name: string; direction: 'in' | 'out' };
   urpf?: InterfaceUrpf;
+  urpfStats?: { drops: number; suppressed: number };
 }
 
 export type {
@@ -932,7 +935,9 @@ export class CiscoSecurityConfig {
     if (f.urpf?.mode) {
       const via = f.urpf.mode === 'loose' ? 'any' : 'rx';
       lines.push(` ip verify unicast source reachable-via ${via}`
-        + (f.urpf.allowDefault ? ' allow-default' : ''));
+        + (f.urpf.allowDefault ? ' allow-default' : '')
+        + (f.urpf.allowSelfPing ? ' allow-self-ping' : '')
+        + (f.urpf.acl !== undefined ? ` ${f.urpf.acl}` : ''));
     }
     if (f.zoneMember) lines.push(` zone-member security ${f.zoneMember}`);
     if (f.inspectIn) lines.push(` ip inspect ${f.inspectIn} in`);

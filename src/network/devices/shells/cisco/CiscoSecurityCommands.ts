@@ -1159,14 +1159,41 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
 
   trie.registerGreedy('ip verify unicast', 'Configure uRPF', (args) => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
-    const allowDefault = args.includes('allow-default');
+    const aclOf = (word: string | undefined): string | undefined => {
+      if (word === undefined) return undefined;
+      const n = Number(word);
+      const valid = /^\d+$/.test(word) && ((n >= 1 && n <= 199) || (n >= 1300 && n <= 2699));
+      if (!valid) throw new CliInvalidInput({ token: word });
+      return word;
+    };
     if (args[0] === 'reverse-path') {
-      sec().ifaceFlags(i).urpf = { mode: 'strict', allowDefault };
-    } else if (args[0] === 'source' && args[1] === 'reachable-via' && args[2]) {
-      sec().ifaceFlags(i).urpf = {
-        mode: args[2] === 'any' ? 'loose' : 'strict', allowDefault,
-      };
+      if (args.length > 2) throw new CliInvalidInput({ token: args[2] });
+      sec().ifaceFlags(i).urpf = { mode: 'strict', acl: aclOf(args[1]) };
+      return '';
     }
+    if (args[0] !== 'source') throw new CliInvalidInput({ token: args[0] ?? '' });
+    if (args[1] !== 'reachable-via') {
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      throw new CliInvalidInput({ token: args[1] });
+    }
+    if (args[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (args[2] !== 'any' && args[2] !== 'rx') throw new CliInvalidInput({ token: args[2] });
+    const urpf: { mode: 'strict' | 'loose'; allowDefault?: boolean; allowSelfPing?: boolean; acl?: string } = {
+      mode: args[2] === 'any' ? 'loose' : 'strict',
+    };
+    for (let k = 3; k < args.length; k++) {
+      if (args[k] === 'allow-default' && urpf.allowDefault === undefined) urpf.allowDefault = true;
+      else if (args[k] === 'allow-self-ping' && urpf.allowSelfPing === undefined) urpf.allowSelfPing = true;
+      else if (k === args.length - 1 && urpf.acl === undefined) urpf.acl = aclOf(args[k]);
+      else throw new CliInvalidInput({ token: args[k] });
+    }
+    sec().ifaceFlags(i).urpf = urpf;
+    return '';
+  });
+
+  trie.registerGreedy('no ip verify unicast', 'Disable uRPF', () => {
+    const i = ctx.getSelectedInterface(); if (!i) return '';
+    delete sec().ifaceFlags(i).urpf;
     return '';
   });
 }

@@ -464,7 +464,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     ];
   }
 
-  private interfaceUrpf(ifName: string): { mode: 'strict' | 'loose' | null; allowDefault?: boolean } | undefined {
+  private interfaceUrpf(ifName: string): { mode: 'strict' | 'loose' | null; allowDefault?: boolean; allowSelfPing?: boolean; acl?: string } | undefined {
     const sec = this.securityConfig();
     return sec?.ifaceFlags(ifName).urpf;
   }
@@ -474,6 +474,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!urpf || !urpf.mode) return false;
     if (pkt.sourceIP.isUnspecified()
       && classifyIpv4Destination(pkt.destinationIP) === 'limited-broadcast') return false;
+    if (!this.urpfSourceFails(inPort, pkt, urpf)) return false;
+    const stats = this.securityConfig()!.ifaceFlags(inPort);
+    stats.urpfStats ??= { drops: 0, suppressed: 0 };
+    if (urpf.acl !== undefined && this.aclEngine.evaluateACLByName(urpf.acl, pkt) === 'permit') {
+      stats.urpfStats.suppressed += 1;
+      return false;
+    }
+    stats.urpfStats.drops += 1;
+    return true;
+  }
+
+  private urpfSourceFails(
+    inPort: string, pkt: IPv4Packet,
+    urpf: { mode: 'strict' | 'loose' | null; allowDefault?: boolean; allowSelfPing?: boolean },
+  ): boolean {
+    if (urpf.allowSelfPing === true && this.ownsIPv4Address(pkt.sourceIP)) return false;
     const route = this.lookupRoute(pkt.sourceIP);
     if (!route) return true;
     if (route.mask.toCIDR() === 0 && !urpf.allowDefault) return true;
