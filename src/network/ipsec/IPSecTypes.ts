@@ -5,6 +5,7 @@
  * crypto maps, dynamic maps, and SA databases.
  */
 
+import type { IPv4Packet } from '../core/types';
 // ─── SPD (Security Policy Database) — RFC 4301 §4.4.1 ───────────────
 
 /**
@@ -97,6 +98,9 @@ export interface CryptoMapEntry {
   acceptedPeerIdentities?: readonly string[];
   requirePeerIdentity?: boolean;
   trafficSelectors?: SATrafficSelector;
+  managedBy?: 'ezvpn';
+  presharedKey?: string;
+  matcher?: (packet: IPv4Packet) => boolean;
 }
 
 // ─── IKEv1 keyring + ISAKMP profile (crypto keyring / crypto isakmp profile) ──

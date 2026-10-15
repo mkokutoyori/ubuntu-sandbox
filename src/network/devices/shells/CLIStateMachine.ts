@@ -163,6 +163,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-ca-trustpoint':      { parent: 'config', clearOnExit: ['selectedPkiTrustpoint'] },
   'config-ca-server':          { parent: 'config', clearOnExit: ['selectedPkiServer'] },
   'config-isakmp-group':       { parent: 'config', clearOnExit: ['selectedIsakmpGroup'] },
+  'config-crypto-ezvpn':       { parent: 'config', clearOnExit: ['selectedEzvpnTunnel'] },
   'config-applet':             { parent: 'config', clearOnExit: ['selectedApplet'] },
   'config-flow-exporter':      { parent: 'config', clearOnExit: ['selectedFlowExporter'] },
   'config-flow-record':        { parent: 'config', clearOnExit: ['selectedFlowRecord'] },
