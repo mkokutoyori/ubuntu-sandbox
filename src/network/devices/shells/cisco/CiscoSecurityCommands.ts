@@ -1,9 +1,7 @@
 import { routerRsaKey } from '../../../ipsec/RouterRsaKey';
 import { encodeRsaPublicKey, groupedHex } from '../../../ipsec/RsaPublicKeyDer';
-import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { Router } from '../../Router';
-import type { CiscoRouter } from '../../CiscoRouter';
 import { CommandTrie } from '../CommandTrie';
 import { showIpTraffic } from './CiscoCommonShow';
 import {
@@ -266,44 +264,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     ctx.setControlPlane?.(true);
     ctx.setMode('config-cp' as CiscoShellMode);
     return '';
-  });
-
-  trie.registerGreedy('crypto pki trustpoint', 'Declare a PKI trustpoint', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    sec().ensurePkiTrustpoint(args[0]);
-    ctx.setPkiTrustpoint?.(args[0]);
-    ctx.setMode('config-ca-trustpoint' as CiscoShellMode);
-    return '';
-  });
-
-  trie.registerGreedy('no crypto pki trustpoint', 'Remove a PKI trustpoint', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    sec().pkiTrustpoints.delete(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('crypto pki import', 'Import certificate', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    const what = args[1]?.toLowerCase();
-    if (what === 'certificate' || what === 'pem') {
-      (tp as unknown as { importedCertificate?: { format: string; importedAtMs: number } }).importedCertificate = {
-        format: what,
-        importedAtMs: simulationNowMs(),
-      };
-      if (tp.localCert && tp.localKey && tp.caCert) {
-        (ctx.r() as CiscoRouter).installIkeCertAuth({
-          localCert: tp.localCert,
-          localKey: tp.localKey,
-          trustAnchors: [tp.caCert],
-          revocationCheck: mapRevocationCheck(tp.revocationCheck),
-        });
-      }
-      return `% Certificate imported into trustpoint ${name}`;
-    }
-    return `% Unknown import type "${what}"`;
   });
 
   trie.registerGreedy('parameter-map type inspect', 'Define parameter-map', (args) => {

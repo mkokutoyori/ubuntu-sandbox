@@ -4,11 +4,14 @@ import type { CiscoSecurityConfig } from '../../router/security/CiscoSecurityCon
 import type { IosCertificateServer, EnrollmentRecord } from '../../router/pki/IosCertificateServer';
 
 export const PKI_SERVER_MODE = 'config-ca-server';
+export const TRUSTPOINT_MODE = 'config-ca-trustpoint';
 
 export interface PkiHost {
   security(): CiscoSecurityConfig;
   authenticate(name: string): string;
   enroll(name: string): string;
+  selectTrustpoint(name: string): void;
+  importCertificate(name: string, form: string): string;
   selectServer(name: string | null): void;
   selectedServer(): string | null;
 }
@@ -213,6 +216,23 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
     );
   }
   specs.push(
+    {
+      id: 'crypto-pki-trustpoint',
+      path: ['crypto', 'pki', 'trustpoint', TRUSTPOINT],
+      description: 'Declare a PKI trustpoint',
+      undoDescription: 'Remove a PKI trustpoint',
+      modes: CONFIG, minPrivilege: 15,
+      enters: TRUSTPOINT_MODE,
+      run: (_s, args) => { sec().ensurePkiTrustpoint(args.trustpoint); host().selectTrustpoint(args.trustpoint); return ''; },
+      undo: (_s, args) => { sec().pkiTrustpoints.delete(args.trustpoint); return ''; },
+    },
+    {
+      id: 'crypto-pki-import',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, { name: 'form', type: 'REST', literal: 'LINE', description: 'Certificate format and source' }],
+      description: 'Import certificate',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().importCertificate(args.trustpoint, args.form),
+    },
     {
       id: 'ca-server-issuer-name',
       path: ['issuer-name', { name: 'dn', type: 'REST', description: 'Distinguished name of the CA' }],

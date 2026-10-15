@@ -63,6 +63,7 @@ import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
 import { inspectSpecs } from './cisco/inspectSpecs';
 import { tcpInterceptSpecs } from './cisco/tcpInterceptSpecs';
+import { simulationNowMs } from '@/network/core/SystemClock';
 import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
 import { authenticateTrustpoint, enrollTrustpoint, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
 import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
@@ -648,41 +649,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
-      ...this.pkiSpecs(),
     ];
-  }
-
-  /**
-   * `crypto pki {trustpoint|authenticate|enroll|import} <nom>`.
-   *
-   * Les quatre prennent le NOM d'un point de confiance, que la place
-   * libre de l'adaptateur laissait deviner ; `import` en prend un de
-   * plus, le format du certificat.
-   */
-  private pkiSpecs(): CommandSpec[] {
-    const point: ArgumentSpec = {
-      name: 'nom', type: 'WORD', description: 'Trustpoint name',
-    };
-    const places: Readonly<Record<string, readonly ArgumentSpec[]>> = {
-      'crypto pki trustpoint': [point],
-      'crypto pki authenticate': [point],
-      'crypto pki enroll': [point],
-      'crypto pki import': [point, {
-        name: 'forme', type: 'REST', literal: 'LINE',
-        description: 'Certificate format and source',
-      }],
-    };
-
-    return specsFromTrieRegistrations(
-      (collector) =>
-        buildSecurityConfigCommands(collector as unknown as CommandTrie, this),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        skip: (path) => places[path.replace(/^no /, '')] === undefined,
-        argumentFor: (path) => places[path.replace(/^no /, '')],
-      },
-    );
   }
 
   /*
@@ -1641,6 +1608,18 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       security: () => getSecurityConfig(router()),
       authenticate: (name) => { this._pendingAsync = authenticateTrustpoint(enrollment, name); return ''; },
       enroll: (name) => { this._pendingAsync = enrollTrustpoint(enrollment, name); return ''; },
+      selectTrustpoint: (name) => { this.selectedPkiTrustpoint = name; },
+      importCertificate: (name, form) => {
+        const tp = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!tp) return `% Trustpoint ${name} not configured`;
+        const what = form.trim().split(/\s+/)[0]?.toLowerCase();
+        if (what !== 'certificate' && what !== 'pem') return `% Unknown import type "${what}"`;
+        (tp as unknown as { importedCertificate?: { format: string; importedAtMs: number } }).importedCertificate = {
+          format: what, importedAtMs: simulationNowMs(),
+        };
+        enrollment.install(tp);
+        return `% Certificate imported into trustpoint ${name}`;
+      },
       selectServer: (name) => { this.selectedPkiServer = name; },
       selectedServer: () => this.selectedPkiServer,
     };
