@@ -3,6 +3,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import { parseLocalPool, type EzvpnServer, type MapClientPolicy } from '../../../ipsec/ezvpn/EzvpnServer';
 
 export const ISAKMP_GROUP_MODE = 'config-isakmp-group';
+export const BROWSER_PROXY_MODE = 'config-browser-proxy';
 
 export interface EzvpnEngine {
   readonly ezvpn: EzvpnServer;
@@ -19,10 +20,14 @@ export interface EzvpnHost {
   selectCryptoMap(tag: string, seq: number): void;
   selectGroup(name: string | null): void;
   selectedGroup(): string | null;
+  selectBrowserProxy(name: string | null): void;
+  selectedBrowserProxy(): string | null;
+  resolveInterface(text: string): string | null;
 }
 
 const CONFIG = Object.freeze(['config']);
 const GROUP_MODE = Object.freeze([ISAKMP_GROUP_MODE]);
+const PROXY_MODE = Object.freeze([BROWSER_PROXY_MODE]);
 const SHOW = Object.freeze(['user', 'privileged']);
 
 const address = (name: string, optional = false): ArgumentSpec => ({
@@ -38,6 +43,10 @@ export function ezvpnSpecs(host: () => EzvpnHost): CommandSpec[] {
   const group = () => {
     const name = host().selectedGroup();
     return name ? server().groups.get(name) ?? null : null;
+  };
+  const proxy = () => {
+    const name = host().selectedBrowserProxy();
+    return name ? (server().browserProxies.get(name) as { mode: string; server?: string; exceptionList?: string; bypassLocal?: boolean } | undefined) ?? null : null;
   };
   const mapPolicy = (id: string, tail: Array<string | ArgumentSpec>, description: string, patch: (a: Record<string, string>) => Partial<MapClientPolicy>,
     clear: Partial<MapClientPolicy>): CommandSpec => ({
@@ -182,6 +191,130 @@ export function ezvpnSpecs(host: () => EzvpnHost): CommandSpec[] {
       run: (_s, args) => { const g = group(); if (g) g[key] = Number(args.number); return ''; },
       undo: () => { const g = group(); if (g) g[key] = undefined; return ''; },
     })),
+    {
+      id: 'isakmp-group-banner',
+      path: ['banner', { name: 'text', type: 'REST', literal: 'LINE', description: 'Mode configuration banner text' }],
+      description: 'Mode configuration banner', undoDescription: 'Remove the banner',
+      modes: GROUP_MODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => { const g = group(); if (g) g.banner = args.text; return ''; },
+      undo: () => { const g = group(); if (g) g.banner = undefined; return ''; },
+    },
+    {
+      id: 'isakmp-group-configuration-url',
+      path: ['configuration', 'url', word('url', 'Configuration URL pushed to the client')],
+      description: 'URL the Easy VPN remote fetches its configuration from', undoDescription: 'Remove the URL',
+      modes: GROUP_MODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => { const g = group(); if (g) g.configurationUrl = args.url; return ''; },
+      undo: () => { const g = group(); if (g) g.configurationUrl = undefined; return ''; },
+    },
+    {
+      id: 'isakmp-group-configuration-version',
+      path: ['configuration', 'version', { name: 'version', type: 'INT', range: [1, 32767], description: 'Configuration version' }],
+      description: 'Configuration version the Easy VPN remote must use', undoDescription: 'Remove the version',
+      modes: GROUP_MODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => { const g = group(); if (g) g.configurationVersion = Number(args.version); return ''; },
+      undo: () => { const g = group(); if (g) g.configurationVersion = undefined; return ''; },
+    },
+    {
+      id: 'isakmp-group-backup-gateway',
+      path: ['backup-gateway', word('gateway', 'Backup gateway address or host name')],
+      description: 'Push a backup gateway to the client', undoDescription: 'Remove a backup gateway',
+      modes: GROUP_MODE, minPrivilege: 15,
+      run: (_s, args) => { const g = group(); if (g && !g.backupGateways.includes(args.gateway)) g.backupGateways.push(args.gateway); return ''; },
+      undo: (_s, args) => {
+        const g = group();
+        if (g) g.backupGateways = args.gateway ? g.backupGateways.filter((x) => x !== args.gateway) : [];
+        return '';
+      },
+    },
+    ...([['include-local-lan', 'includeLocalLan', 'Let a non-split-tunnel client reach its local subnet'],
+      ['save-password', 'savePassword', 'Let the client save its extended authentication password'],
+      ['group-lock', 'groupLock', 'Require the user name to carry the group it logs in to']] as const).map(([word_, key, text]): CommandSpec => ({
+      id: `isakmp-group-${word_}`,
+      path: [word_], description: text, undoDescription: `Disable ${word_}`,
+      modes: GROUP_MODE, minPrivilege: 15,
+      run: () => { const g = group(); if (g) g[key] = true; return ''; },
+      undo: () => { const g = group(); if (g) g[key] = undefined; return ''; },
+    })),
+    {
+      id: 'isakmp-group-access-restrict',
+      path: ['access-restrict', word('interface', 'Interface the group is restricted to')],
+      description: 'Tie the group to an interface', undoDescription: 'Remove the restriction',
+      modes: GROUP_MODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => {
+        const resolved = host().resolveInterface(args.interface);
+        if (resolved === null) return `% Interface ${args.interface} does not exist`;
+        const g = group(); if (g) g.accessRestrict = resolved;
+        return '';
+      },
+      undo: () => { const g = group(); if (g) g.accessRestrict = undefined; return ''; },
+    },
+    {
+      id: 'isakmp-group-browser-proxy',
+      path: ['browser-proxy', word('proxy', 'Browser proxy map name')],
+      description: 'Apply a browser-proxy map to the group', undoDescription: 'Remove the browser-proxy map',
+      modes: GROUP_MODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => {
+        if (!server().browserProxies.has(args.proxy)) return `% Browser proxy ${args.proxy} is not defined`;
+        const g = group(); if (g) g.browserProxy = args.proxy;
+        return '';
+      },
+      undo: () => { const g = group(); if (g) g.browserProxy = undefined; return ''; },
+    },
+    {
+      id: 'crypto-isakmp-client-browser-proxy',
+      path: ['crypto', 'isakmp', 'client', 'configuration', 'browser-proxy', word('proxy', 'Browser proxy map name')],
+      description: 'Browser-proxy parameters for Easy VPN remotes', undoDescription: 'Remove the browser-proxy map',
+      modes: CONFIG, minPrivilege: 15,
+      enters: BROWSER_PROXY_MODE,
+      run: (_s, args) => {
+        if (!server().browserProxies.has(args.proxy)) server().browserProxies.set(args.proxy, { mode: 'none' });
+        host().selectBrowserProxy(args.proxy);
+        return '';
+      },
+      undo: (_s, args) => { server().browserProxies.delete(args.proxy); return ''; },
+    },
+    {
+      id: 'browser-proxy-auto-detect',
+      path: ['proxy', 'auto-detect'], description: 'Let the browser detect the proxy', undoDescription: 'Remove the setting',
+      modes: PROXY_MODE, minPrivilege: 15,
+      run: () => { const p = proxy(); if (p) p.mode = 'auto-detect'; return ''; },
+      undo: () => { const p = proxy(); if (p) p.mode = 'none'; return ''; },
+    },
+    {
+      id: 'browser-proxy-none',
+      path: ['proxy', 'none'], description: 'No browser proxy', undoDescription: 'Remove the setting',
+      modes: PROXY_MODE, minPrivilege: 15,
+      run: () => { const p = proxy(); if (p) p.mode = 'none'; return ''; },
+      undo: () => { const p = proxy(); if (p) p.mode = 'none'; return ''; },
+    },
+    {
+      id: 'browser-proxy-server',
+      path: ['proxy', 'server', word('server', 'Proxy address:port')],
+      description: 'Proxy server of the browser', undoDescription: 'Remove the proxy server',
+      modes: PROXY_MODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => {
+        if (!/^[^:\s]+:\d{1,5}$/.test(args.server)) return '% The proxy server is written address:port';
+        const p = proxy(); if (p) { p.mode = 'server'; p.server = args.server; }
+        return '';
+      },
+      undo: () => { const p = proxy(); if (p) { p.mode = 'none'; p.server = undefined; } return ''; },
+    },
+    {
+      id: 'browser-proxy-exception-list',
+      path: ['proxy', 'exception-list', word('list', 'Semicolon or comma separated exceptions')],
+      description: 'Addresses the browser reaches without the proxy', undoDescription: 'Remove the exception list',
+      modes: PROXY_MODE, minPrivilege: 15, undoOmitsArguments: true,
+      run: (_s, args) => { const p = proxy(); if (p) p.exceptionList = args.list; return ''; },
+      undo: () => { const p = proxy(); if (p) p.exceptionList = undefined; return ''; },
+    },
+    {
+      id: 'browser-proxy-bypass-local',
+      path: ['proxy', 'by-pass-local'], description: 'Bypass the proxy for local addresses', undoDescription: 'Use the proxy for local addresses',
+      modes: PROXY_MODE, minPrivilege: 15,
+      run: () => { const p = proxy(); if (p) p.bypassLocal = true; return ''; },
+      undo: () => { const p = proxy(); if (p) p.bypassLocal = false; return ''; },
+    },
     mapPolicy('crypto-map-client-authentication',
       ['client', 'authentication', 'list', listName], 'Authenticate remote-access clients (XAUTH)',
       (a) => ({ authenticationList: a.list }), { authenticationList: undefined }),

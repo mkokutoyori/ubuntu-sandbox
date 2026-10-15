@@ -1,5 +1,5 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
-import type { IkeConfigReply, IkeConfigRequest } from '../IPSecTypes';
+import type { BrowserProxySettings, IkeConfigReply, IkeConfigRequest } from '../IPSecTypes';
 
 export interface EzvpnGroup {
   readonly name: string;
@@ -12,6 +12,15 @@ export interface EzvpnGroup {
   netmask?: string;
   maxUsers?: number;
   maxLogins?: number;
+  banner?: string;
+  configurationUrl?: string;
+  configurationVersion?: number;
+  backupGateways: string[];
+  includeLocalLan?: boolean;
+  savePassword?: boolean;
+  groupLock?: boolean;
+  accessRestrict?: string;
+  browserProxy?: string;
 }
 
 export interface LocalPool {
@@ -43,6 +52,7 @@ export interface EzvpnHost {
   authorize(list: string, group: string): AuthVerdict;
   splitNetworks(acl: string): readonly string[];
   clientPolicyFor(peer: string): MapClientPolicy | null;
+  ingressInterface(peer: string): string | null;
 }
 
 function toNumber(address: string): number {
@@ -66,6 +76,7 @@ export function parseLocalPool(name: string, first: string, last?: string): Loca
 export class EzvpnServer {
   readonly groups = new Map<string, EzvpnGroup>();
   readonly pools = new Map<string, LocalPool>();
+  readonly browserProxies = new Map<string, BrowserProxySettings>();
   private readonly sessions = new Map<string, EzvpnSession>();
   private host: EzvpnHost | null = null;
   defaultPool: string | undefined;
@@ -75,7 +86,7 @@ export class EzvpnServer {
   ensureGroup(name: string): EzvpnGroup {
     let group = this.groups.get(name);
     if (!group) {
-      group = { name, dns: [], wins: [] };
+      group = { name, dns: [], wins: [], backupGateways: [] };
       this.groups.set(name, group);
     }
     return group;
@@ -84,7 +95,11 @@ export class EzvpnServer {
   removeGroup(name: string): void { this.groups.delete(name); }
 
   groupKeyFor(identity: string): string | undefined {
-    return this.groups.get(identity)?.key;
+    return this.groupOf(identity)?.key;
+  }
+
+  private groupOf(identity: string): EzvpnGroup | undefined {
+    return this.groups.get(identity) ?? this.groups.get('default');
   }
 
   isConfigured(): boolean { return this.groups.size > 0; }
@@ -119,12 +134,18 @@ export class EzvpnServer {
     if (!request.wantAddress || !this.host) return undefined;
     const policy = this.host.clientPolicyFor(peer);
     if (policy === null || !policy.respond) return undefined;
-    const group = this.groups.get(identity);
+    const group = this.groupOf(identity);
     if (policy.authorizationList !== undefined) {
-      if (!group || this.host.authorize(policy.authorizationList, identity) === 'denied') return 'AUTHORIZATION_FAILED';
+      if (!group || this.host.authorize(policy.authorizationList, group.name) === 'denied') return 'AUTHORIZATION_FAILED';
     }
     if (!group) return 'NO_GROUP_CONFIGURED';
-    const user = request.identity ?? '';
+    if (group.accessRestrict !== undefined && this.host.ingressInterface(peer) !== group.accessRestrict) return 'ACCESS_RESTRICTED';
+    let user = request.identity ?? '';
+    if (group.groupLock) {
+      const at = user.lastIndexOf('@');
+      if (at < 0 || user.slice(at + 1) !== identity) return 'GROUP_LOCK_VIOLATION';
+      user = user.slice(0, at);
+    }
     if (policy.authenticationList !== undefined) {
       if (user.length === 0 || this.host.authenticate(policy.authenticationList, user, request.credential ?? '') === 'denied') {
         return 'AUTHENTICATION_FAILED';
@@ -146,6 +167,13 @@ export class EzvpnServer {
     this.sessions.set(peer, { peer, group: group.name, user, address, startedMs: simulationNowMs() });
     return {
       address,
+      banner: group.banner,
+      configurationUrl: group.configurationUrl,
+      configurationVersion: group.configurationVersion,
+      backupGateways: group.backupGateways.length > 0 ? [...group.backupGateways] : undefined,
+      includeLocalLan: group.includeLocalLan,
+      savePassword: group.savePassword,
+      browserProxy: group.browserProxy ? this.browserProxies.get(group.browserProxy) : undefined,
       netmask: group.netmask ?? '255.255.255.255',
       splitInclude: group.splitAcl ? this.host.splitNetworks(group.splitAcl) : undefined,
       dnsServers: group.dns.length > 0 ? [...group.dns] : undefined,
@@ -167,6 +195,23 @@ export class EzvpnServer {
       if (group.netmask) lines.push(` netmask ${group.netmask}`);
       if (group.maxUsers !== undefined) lines.push(` max-users ${group.maxUsers}`);
       if (group.maxLogins !== undefined) lines.push(` max-logins ${group.maxLogins}`);
+      if (group.banner) lines.push(` banner ${group.banner}`);
+      if (group.configurationUrl) lines.push(` configuration url ${group.configurationUrl}`);
+      if (group.configurationVersion !== undefined) lines.push(` configuration version ${group.configurationVersion}`);
+      for (const gateway of group.backupGateways) lines.push(` backup-gateway ${gateway}`);
+      if (group.includeLocalLan) lines.push(' include-local-lan');
+      if (group.savePassword) lines.push(' save-password');
+      if (group.groupLock) lines.push(' group-lock');
+      if (group.accessRestrict) lines.push(` access-restrict ${group.accessRestrict}`);
+      if (group.browserProxy) lines.push(` browser-proxy ${group.browserProxy}`);
+    }
+    for (const [name, proxy] of this.browserProxies) {
+      lines.push(`crypto isakmp client configuration browser-proxy ${name}`);
+      if (proxy.mode === 'auto-detect') lines.push(' proxy auto-detect');
+      if (proxy.mode === 'none') lines.push(' proxy none');
+      if (proxy.mode === 'server') lines.push(` proxy server ${proxy.server}`);
+      if (proxy.exceptionList) lines.push(` proxy exception-list ${proxy.exceptionList}`);
+      if (proxy.bypassLocal) lines.push(' proxy by-pass-local');
     }
     if (this.defaultPool) lines.push(`crypto isakmp client configuration address-pool local ${this.defaultPool}`);
     for (const pool of this.pools.values()) {

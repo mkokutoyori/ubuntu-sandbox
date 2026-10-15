@@ -6460,7 +6460,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         addRule: (aclId, iface) => this.natEngine.addDynamicRule({ aclId, type: 'overload', interfaceName: iface, overload: true }),
         removeRule: (aclId) => this.natEngine.removeDynamicRule(aclId),
       },
-      log: (line) => Logger.info(this.id, 'ezvpn', `${this.name}: ${line}`),
+      log: (line) => {
+        Logger.info(this.id, 'ezvpn', `${this.name}: ${line}`);
+        (this as unknown as { getLoggingConfig?: () => { append: (s: string, t: string, m: string, r?: boolean, mn?: string) => void } | null })
+          .getLoggingConfig?.()?.append('notifications', 'crypto', line, true, 'EZVPN');
+      },
     });
 
     const methodsOf = (phase: 'authentication' | 'authorization', service: string, list: string): string[] | null => {
@@ -6472,6 +6476,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     engine.ezvpn.attach({
       isLive: (peer) => engine.hasIkeSA(peer),
       clientPolicyFor: (peer) => engine.clientPolicyForPeer(peer),
+      ingressInterface: (peer) => this._ipsecEgressInterfaceFor(peer) ?? null,
       authenticate: (list, user, password) => {
         const methods = methodsOf('authentication', 'login', list);
         if (methods === null) return 'denied';

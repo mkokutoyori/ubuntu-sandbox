@@ -119,7 +119,6 @@ export function ezvpnClientSpecs(host: () => EzvpnClientShellHost): CommandSpec[
       path: ['username', word('user', 'Extended authentication user name'), 'password', {
         name: 'encoding', type: 'ENUM', values: [
           { keyword: '0', description: 'Unencrypted password follows' },
-          { keyword: '6', description: 'Encrypted password follows' },
         ],
       }, word('password', 'Password')],
       description: 'Save the extended authentication credentials', undoDescription: 'Forget the credentials',

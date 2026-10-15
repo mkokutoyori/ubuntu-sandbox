@@ -307,6 +307,20 @@ export interface IkeConfigReply {
   readonly dnsServers?: readonly string[];
   readonly winsServers?: readonly string[];
   readonly domain?: string;
+  readonly banner?: string;
+  readonly configurationUrl?: string;
+  readonly configurationVersion?: number;
+  readonly backupGateways?: readonly string[];
+  readonly includeLocalLan?: boolean;
+  readonly savePassword?: boolean;
+  readonly browserProxy?: BrowserProxySettings;
+}
+
+export interface BrowserProxySettings {
+  mode: 'auto-detect' | 'none' | 'server';
+  server?: string;
+  exceptionList?: string;
+  bypassLocal?: boolean;
 }
 
 /**

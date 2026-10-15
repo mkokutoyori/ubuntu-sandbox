@@ -68,6 +68,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
 import { ezvpnSpecs, type EzvpnEngine } from './cisco/ezvpnSpecs';
 import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
+import { resolveCiscoInterfaceName } from './cli-utils';
 import type { EzvpnClient } from '../../ipsec/ezvpn/EzvpnClient';
 import { authenticateTrustpoint, enrollTrustpoint, type TrustpointEnrollmentHost } from '../router/pki/TrustpointEnrollment';
 import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
@@ -493,6 +494,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         selectCryptoMap: (tag, seq) => { this.setSelectedCryptoMap(tag); this.setSelectedCryptoMapSeq(seq); this.setSelectedCryptoMapIsDynamic(false); },
         selectGroup: (name) => { this.selectedIsakmpGroup = name; },
         selectedGroup: () => this.selectedIsakmpGroup,
+        selectBrowserProxy: (name) => { this.selectedBrowserProxy = name; },
+        selectedBrowserProxy: () => this.selectedBrowserProxy,
+        resolveInterface: (text) => resolveCiscoInterfaceName(this.d().getPortNames(), text),
       })),
       ...inspectSpecs(() => ({
         security: () => getSecurityConfig(this.d()),
@@ -1496,6 +1500,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedPkiServer: string | null = null;
   private selectedIsakmpGroup: string | null = null;
   private selectedEzvpnTunnel: string | null = null;
+  private selectedBrowserProxy: string | null = null;
+  private configBrowserProxyTrie = new CommandTrie();
   private configCryptoEzvpnTrie = new CommandTrie();
   private configIsakmpGroupTrie = new CommandTrie();
   private configCaServerTrie = new CommandTrie();
@@ -2036,6 +2042,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-ca-server': return this.configCaServerTrie;
       case 'config-isakmp-group': return this.configIsakmpGroupTrie;
       case 'config-crypto-ezvpn': return this.configCryptoEzvpnTrie;
+      case 'config-browser-proxy': return this.configBrowserProxyTrie;
       case 'config-applet': return this.configAppletTrie;
       case 'config-flow-exporter': return this.configFlowExporterTrie;
       case 'config-flow-record': return this.configFlowRecordTrie;
@@ -2107,6 +2114,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedPkiServer') this.selectedPkiServer = null;
       if (f === 'selectedIsakmpGroup') this.selectedIsakmpGroup = null;
       if (f === 'selectedEzvpnTunnel') this.selectedEzvpnTunnel = null;
+      if (f === 'selectedBrowserProxy') this.selectedBrowserProxy = null;
       if (f === 'selectedApplet') this.selectedApplet = null;
       if (f === 'selectedFlowExporter') this.selectedFlowExporter = null;
       if (f === 'selectedFlowRecord') this.selectedFlowRecord = null;

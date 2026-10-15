@@ -61,6 +61,8 @@ export interface ClientRuntime {
   peer?: string;
   reply?: IkeConfigReply;
   loopback?: string;
+  pushedBackups?: string[];
+  savePassword?: boolean;
 }
 
 const MAP_PREFIX = '_ezvpn_';
@@ -190,6 +192,9 @@ export class EzvpnClient {
     const password = credentials?.password ?? config.password;
     this.teardown(name);
     const attempts = [...config.peers].sort((a, b) => Number(b.primary) - Number(a.primary));
+    for (const gateway of runtime.pushedBackups ?? []) {
+      if (!attempts.some((p) => p.address === gateway)) attempts.push({ address: gateway, primary: false });
+    }
     for (const peer of attempts) {
       const address = host.resolve(peer.address);
       if (address === null) continue;
@@ -238,6 +243,10 @@ export class EzvpnClient {
         const source = packet.sourceIP.toString();
         const destination = packet.destinationIP.toString();
         if (destination === peer) return false;
+        if (runtime.reply?.includeLocalLan) {
+          const local = host.interfaceAddress(outside);
+          if (local && inNetwork(destination, local.address, local.mask)) return false;
+        }
         const split = splitOf();
         const toSplit = split.length === 0 || split.some((s) => inNetwork(destination, s.network, s.mask));
         if (clientMode) {
@@ -260,6 +269,13 @@ export class EzvpnClient {
     }
     runtime.peer = peer;
     runtime.reply = reply;
+    runtime.pushedBackups = reply?.backupGateways ? [...reply.backupGateways] : runtime.pushedBackups;
+    runtime.savePassword = reply?.savePassword === true;
+    if (reply?.banner) host.log(reply.banner);
+    if (reply?.savePassword && user !== undefined && config.username === undefined) {
+      config.username = user;
+      config.password = password;
+    }
     if (reply) this.applyReply(name, config, runtime, reply, insideNets, entries, mapName, outside);
     runtime.state = 'IPSEC_ACTIVE';
     runtime.lastEvent = 'SOCKET_UP';
@@ -361,6 +377,15 @@ export class EzvpnClient {
         if (reply.winsServers?.[0]) out.push(`NBMS/WINS Primary: ${reply.winsServers[0]}`);
         if (reply.winsServers?.[1]) out.push(`NBMS/WINS Secondary: ${reply.winsServers[1]}`);
         if (reply.domain) out.push(`Default Domain: ${reply.domain}`);
+        if (reply.configurationUrl) out.push(`Configuration URL: ${reply.configurationUrl}`);
+        if (reply.configurationVersion !== undefined) out.push(`Configuration Version: ${reply.configurationVersion}`);
+        out.push(`Save Password: ${runtime.savePassword ? 'Allowed' : 'Disallowed'}`);
+        if (reply.browserProxy) {
+          const proxy = reply.browserProxy;
+          out.push(`Browser Proxy: ${proxy.mode === 'server' ? proxy.server : proxy.mode}`);
+          if (proxy.exceptionList) out.push(`Browser Proxy Exception List: ${proxy.exceptionList}`);
+          if (proxy.bypassLocal) out.push('Browser Proxy By-pass Local: yes');
+        }
         if (reply.splitInclude && reply.splitInclude.length > 0) {
           out.push(`Split Tunnel List: ${reply.splitInclude.length}`);
           for (const entry of reply.splitInclude) {
