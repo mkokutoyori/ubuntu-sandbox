@@ -98,9 +98,17 @@ export interface CryptoMapEntry {
   acceptedPeerIdentities?: readonly string[];
   requirePeerIdentity?: boolean;
   trafficSelectors?: SATrafficSelector;
+  identityName?: string;
   managedBy?: 'ezvpn';
   presharedKey?: string;
   matcher?: (packet: IPv4Packet) => boolean;
+}
+
+export interface CryptoIdentityList {
+  readonly name: string;
+  description?: string;
+  fqdn?: string;
+  dn: string[];
 }
 
 // ─── IKEv1 keyring + ISAKMP profile (crypto keyring / crypto isakmp profile) ──
@@ -124,6 +132,7 @@ export interface ISAKMPProfile {
 
 export interface DynamicCryptoMapEntry {
   seq: number;
+  identityName?: string;
   transformSets: string[];
   aclName?: string;
   pfsGroup?: string;
@@ -307,6 +316,20 @@ export interface IkeConfigReply {
   readonly dnsServers?: readonly string[];
   readonly winsServers?: readonly string[];
   readonly domain?: string;
+  readonly banner?: string;
+  readonly configurationUrl?: string;
+  readonly configurationVersion?: number;
+  readonly backupGateways?: readonly string[];
+  readonly includeLocalLan?: boolean;
+  readonly savePassword?: boolean;
+  readonly browserProxy?: BrowserProxySettings;
+}
+
+export interface BrowserProxySettings {
+  mode: 'auto-detect' | 'none' | 'server';
+  server?: string;
+  exceptionList?: string;
+  bypassLocal?: boolean;
 }
 
 /**
