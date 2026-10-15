@@ -73,3 +73,17 @@ export function decodeScpAck(bytes: Uint8Array): { ack: ScpAck; message?: string
   for (let i = 1; i < bytes.length; i++) message += String.fromCharCode(bytes[i]);
   return { ack, message: message.replace(/\n$/, '') };
 }
+
+export interface ScpTimes {
+  readonly mtimeMs: number;
+  readonly atimeMs: number;
+}
+
+export function encodeScpTimes(times: ScpTimes): string {
+  return `T${Math.floor(times.mtimeMs / 1000)} 0 ${Math.floor(times.atimeMs / 1000)} 0\n`;
+}
+
+export function decodeScpTimes(raw: string): ScpTimes | null {
+  const match = /^T(\d+) (\d+) (\d+) (\d+)\n?$/.exec(raw);
+  return match === null ? null : { mtimeMs: Number(match[1]) * 1000, atimeMs: Number(match[3]) * 1000 };
+}

@@ -448,7 +448,7 @@ export class SshServerHandler {
                 channel.close();
                 return;
               }
-              const scpCommand = forced === null ? parseScpServerCommand(asked) : null;
+              const scpCommand = forced === null ? parseScpServerCommand(asked, /windows/i.test(this.ctx.serverIdentification?.() ?? '')) : null;
               if (scpCommand !== null) {
                 this.serveScp(channel, user, scpCommand);
                 return;

@@ -7,24 +7,6 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { runWindowsScpClient } from '@/network/devices/windows/network/WindowsScpClient';
-import type { TcpConnector } from '@/network/tcp/types';
-
-function scpWithPassword(win: WindowsPC, args: string, password: string) {
-  const tcpConnector: TcpConnector = (h, p) =>
-    (win as unknown as { tcpConnect(h: string, p: number): Promise<unknown> })
-      .tcpConnect(h, p) as ReturnType<TcpConnector>;
-  return runWindowsScpClient({
-    args: args.split(' '),
-    sourceHostname: 'WIN1',
-    sourceIp: '10.0.0.10',
-    sourceUser: 'User',
-    sourceHome: 'C:\\Users\\User',
-    localFs: win.getFileSystem(),
-    tcpConnector,
-    password,
-  });
-}
 
 beforeEach(() => {
   resetCounters();
@@ -54,9 +36,8 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
   it('uploads a local Windows file to a remote Linux server (real TCP SFTP)', async () => {
     const { win, srv } = await buildLab();
     win.getFileSystem().createFile('C:\\Users\\User\\notes.txt', 'hello-from-windows');
-    const r = await scpWithPassword(win, 'C:\\Users\\User\\notes.txt alice@10.0.0.20:/tmp/notes.txt', 'admin');
-    expect(r.exitCode).toBe(0);
-    expect(r.output).toMatch(/100%/);
+    const output = await win.executeCommand('scp C:\\Users\\User\\notes.txt alice@10.0.0.20:/tmp/notes.txt', 'admin\n');
+    expect(output).toMatch(/100%/);
     const vfs = (srv as unknown as { executor: { vfs: { readFile(p: string): string | null } } }).executor.vfs;
     expect(vfs.readFile('/tmp/notes.txt')).toBe('hello-from-windows');
   });
@@ -65,24 +46,32 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
     const { win, srv } = await buildLab();
     const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;
     vfs.writeFile('/tmp/remote.txt', 'pulled-from-linux', 0, 0, 0o022);
-    const r = await scpWithPassword(win, 'alice@10.0.0.20:/tmp/remote.txt C:\\Users\\User\\fetched.txt', 'admin');
-    expect(r.exitCode).toBe(0);
-    expect(r.output).toMatch(/100%/);
+    const output = await win.executeCommand('scp alice@10.0.0.20:/tmp/remote.txt C:\\Users\\User\\fetched.txt', 'admin\n');
+    expect(output).toMatch(/100%/);
     const got = win.getFileSystem().readFile('C:\\Users\\User\\fetched.txt');
     expect(got.ok).toBe(true);
     expect(got.content).toBe('pulled-from-linux');
   });
 
-  it('rejects local-to-local copy with a clear error', async () => {
+  it('copies a local file to a local path without any ssh', async () => {
     const { win } = await buildLab();
+    win.getFileSystem().createFile('C:\\a.txt', 'local-copy');
     const out = await win.executeCommand('scp C:\\a.txt C:\\b.txt');
-    expect(out).toMatch(/^scp: exactly one of source\/destination must be remote/);
+    expect(out).not.toMatch(/ssh:|connect to host/);
+    expect(win.getFileSystem().readFile('C:\\b.txt').content).toBe('local-copy');
   });
 
-  it('rejects remote-to-remote copy as unsupported', async () => {
+  it('reports a missing local source the way scp does', async () => {
     const { win } = await buildLab();
-    const out = await win.executeCommand('scp alice@10.0.0.20:/a alice@10.0.0.20:/b');
-    expect(out).toMatch(/remote-to-remote/);
+    const out = await win.executeCommand('scp C:\\nothing.txt C:\\b.txt');
+    expect(out).toBe('scp: C:\\nothing.txt: No such file or directory');
+  });
+
+  it('a remote-to-remote copy runs scp on the source host, which has no password to offer', async () => {
+    const { win } = await buildLab();
+    const out = await win.executeCommand('scp alice@10.0.0.20:/a alice@10.0.0.20:/b', 'admin\n');
+    expect(out).not.toMatch(/not supported/);
+    expect(out).toMatch(/Permission denied|No such file or directory|Host key verification failed/);
   });
 
   it('prints OpenSSH-style usage when called with no arguments', async () => {
@@ -102,7 +91,7 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
       const pending = win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.99.99.99:/tmp/x.txt');
       await vi.advanceTimersByTimeAsync(worstCaseRetransmitWindowMs() + 1000);
       const out = await pending;
-      expect(out).toMatch(/ssh: connect to host 10\.99\.99\.99 port 22: (Connection refused|No route to host)/);
+      expect(out).toMatch(/ssh: connect to host 10\.99\.99\.99 port 22: (Connection refused|No route to host|Network is unreachable)/);
     } finally {
       vi.useRealTimers();
     }

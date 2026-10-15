@@ -119,7 +119,8 @@ import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols
 import { isOk } from '@/network/protocols/ssh/Result';
 import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
 import { splitShellWords } from '@/bash/runtime/ShellWords';
-import { parseScpArgs } from '@/network/protocols/ssh/Scp';
+import { parseScpEndpoint } from '@/network/protocols/ssh/Scp';
+import { parseScpCommandLine } from '@/network/protocols/ssh/scp/ScpCommandLine';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import type { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
 import type { SshClientHandle } from '@/network/devices/linux/network/SshClientProcess';
@@ -1733,17 +1734,9 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const scpMeta = ctx.metadata.get('enter_scp') as string | undefined;
     if (scpMeta) {
-      const meta = JSON.parse(scpMeta) as {
-        userAtHost: string;
-        port: number;
-        identityFiles: string[];
-        local: { path: string };
-        remote: { path: string };
-        direction: 'upload' | 'download';
-        recursive: boolean;
-      };
+      const meta = JSON.parse(scpMeta) as { args: string[] };
       const password = ctx.values.get('scp_password') ?? '';
-      this.runScp(meta, password);
+      void this.runScp(meta, password);
       return;
     }
     this.syncDeviceState();
@@ -2593,122 +2586,42 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── scp ─────────────────────────────────────────────────────────
 
-  /** BRD SSH-08: parse scp args, collect password, defer transfer. */
   private enterScp(args: string[]): void {
-    const parsed = parseScpArgs(args);
-    if (!parsed) {
-      this.addLine('usage: scp [-r] [-P port] [-i identity_file] src dst', 'error');
+    const parsed = parseScpCommandLine(args);
+    if (parsed.kind === 'rejected') {
+      const lines = parsed.diagnostic === null ? [] : [parsed.diagnostic];
+      for (const line of [...lines, ...OPENSSH_UBUNTU_22_04.scpUsage.split('\n')]) this.addLine(line, 'error');
       this.notify();
       return;
     }
-    const remoteEndpoint = parsed.source.remote ? parsed.source : parsed.destination;
-    const localEndpoint = parsed.source.remote ? parsed.destination : parsed.source;
-    if (parsed.source.remote === parsed.destination.remote) {
-      this.addLine(
-        'scp: exactly one of source/destination must be remote',
-        'error',
-      );
-      this.notify();
+    const remote = parsed.line.operands.map(parseScpEndpoint).find((endpoint) => endpoint.remote);
+    if (remote === undefined) {
+      void this.runScp({ args }, '');
       return;
     }
-    const direction: 'upload' | 'download' = parsed.source.remote
-      ? 'download'
-      : 'upload';
-    const user = remoteEndpoint.user ?? this.currentUser;
-    const host = remoteEndpoint.host ?? '';
-    const displayTarget = `${user}@${host}`;
-
     const steps: InteractiveStep[] = [
       {
         type: 'password',
-        prompt: `${displayTarget}'s password: `,
+        prompt: `${remote.user ?? this.currentUser}@${remote.host}'s password: `,
         mask: 'hidden',
         storeAs: 'scp_password',
       },
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_scp',
-            JSON.stringify({
-              userAtHost: displayTarget,
-              port: parsed.port,
-              identityFiles: parsed.identityFiles,
-              local: { path: localEndpoint.path },
-              remote: { path: remoteEndpoint.path },
-              direction,
-              recursive: parsed.recursive,
-            }),
-          );
+          ctx.metadata.set('enter_scp', JSON.stringify({ args }));
         },
       },
     ];
     this.startFlowFromSteps(steps, `scp ${args.join(' ')}`);
   }
 
-  private async runScp(
-    meta: {
-      userAtHost: string;
-      port: number;
-      identityFiles: string[];
-      local: { path: string };
-      remote: { path: string };
-      direction: 'upload' | 'download';
-      recursive: boolean;
-    },
-    password: string,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
-      };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+  private async runScp(meta: { args: string[] }, password: string): Promise<void> {
+    const machine = this.device as unknown as {
+      executor?: { runSshTransportAsync(command: 'scp', args: string[], password: string): Promise<{ output: string; exitCode: number }> };
     };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
-      this.addLine('scp: no local filesystem', 'error');
-      this.notify();
-      return;
-    }
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const tcpConnector: TcpConnector = dialConnector(this.device);
-
-    const sftp = new SftpSession({
-      tcpConnector,
-      localVfs,
-      localUser: this.currentUser,
-      localUid: userEntry?.uid ?? 1000,
-      localGid: userEntry?.gid ?? 1000,
-      localCwd: this.currentPath,
-      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
-      homeDirectory: homeDir,
-    });
-    const banner = await sftp.connect(meta.userAtHost, {
-      port: meta.port,
-      identityFiles: this.autoDiscoverIdentityFiles(meta.identityFiles),
-      password,
-    });
-    if (!sftp.isConnected()) {
-      this.addLine(banner, 'error');
-      this.notify();
-      return;
-    }
-
-    const transferOutput =
-      meta.direction === 'upload'
-        ? meta.recursive
-          ? sftp.putRecursive(meta.local.path, meta.remote.path)
-          : sftp.put(meta.local.path, meta.remote.path)
-        : meta.recursive
-        ? sftp.getRecursive(meta.remote.path, meta.local.path)
-        : sftp.get(meta.remote.path, meta.local.path);
-    for (const line of transferOutput.split('\n')) {
-      if (line) this.addLine(line);
-    }
-    sftp.disconnect();
+    const outcome = await machine.executor?.runSshTransportAsync('scp', meta.args, password);
+    for (const line of (outcome?.output ?? '').split('\n')) if (line) this.addLine(line, outcome?.exitCode === 0 ? undefined : 'error');
     this.notify();
   }
 

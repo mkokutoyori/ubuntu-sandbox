@@ -4,6 +4,7 @@ import { sshClientKeywords, type SshClientKeyword } from './SshClientKeywords';
 export interface OpenSshRelease {
   readonly clientVersion: string;
   readonly sshUsage: string;
+  readonly scpUsage: string;
   readonly keygenUsage: string;
   readonly addUsage: string;
   readonly addOptstring: string;
@@ -58,12 +59,19 @@ const KEYGEN_USAGE_HEAD = [
   '       ssh-keygen -Y find-principals -s signature_file -f allowed_signers_file',
 ];
 
+const SCP_USAGE = [
+  'usage: scp [-346BCpqrTv] [-c cipher] [-F ssh_config] [-i identity_file]',
+  '           [-J destination] [-l limit] [-o ssh_option] [-P port]',
+  '           [-S program] source ... target',
+].join('\n');
+
 export const OPENSSH_UBUNTU_22_04: OpenSshRelease = {
   clientVersion: OPENSSH_UBUNTU_CLIENT_VERSION,
   sshUsage: [
     ...SSH_USAGE_HEAD,
     '           [-w local_tun[:remote_tun]] destination [command [argument ...]]',
   ].join('\n'),
+  scpUsage: SCP_USAGE,
   keygenUsage: [
     ...KEYGEN_USAGE_HEAD,
     '       ssh-keygen -Y match-principals -I signer_identity -f allowed_signers_file',
@@ -87,6 +95,7 @@ export const OPENSSH_WINDOWS_8_6: OpenSshRelease = {
     ...SSH_USAGE_HEAD,
     '           [-w local_tun[:remote_tun]] destination [command]',
   ].join('\n'),
+  scpUsage: SCP_USAGE,
   keygenUsage: [
     ...KEYGEN_USAGE_HEAD,
     '       ssh-keygen -Y check-novalidate -n namespace -s signature_file',

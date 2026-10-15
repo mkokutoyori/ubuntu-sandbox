@@ -18,9 +18,7 @@ import { SftpCommandScript } from '@/network/protocols/ssh/sftp/SftpCommandScrip
 import { VfsSftpFileSystem } from '@/network/protocols/ssh/sftp/VfsSftpFileSystem';
 import { WindowsSftpFileSystem } from '@/network/protocols/ssh/sftp/WindowsSftpFileSystem';
 import { SftpInteractiveSession } from '@/network/protocols/ssh/sftp/SftpInteractiveSession';
-import { ScpTransfer } from '@/network/protocols/ssh/scp/ScpTransfer';
-import { ScpSession } from '@/network/protocols/ssh/scp/ScpSession';
-import { parseScpEndpoint, parseScpArgs } from '@/network/protocols/ssh/Scp';
+import { parseScpEndpoint } from '@/network/protocols/ssh/Scp';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 
@@ -207,151 +205,9 @@ describe('§A.5 — SftpInteractiveSession', () => {
   });
 });
 
-// ─── §A.6 — ScpTransfer ─────────────────────────────────────────────
-
-describe('§A.6 — ScpTransfer', () => {
-  let localVfs: VirtualFileSystem;
-  let remoteVfs: VirtualFileSystem;
-  let local: VfsSftpFileSystem;
-  let remote: VfsSftpFileSystem;
-  beforeEach(() => {
-    localVfs  = new VirtualFileSystem();
-    remoteVfs = new VirtualFileSystem();
-    local  = new VfsSftpFileSystem(localVfs,  { uid: 0, gid: 0, umask: 0o022 });
-    remote = new VfsSftpFileSystem(remoteVfs, { uid: 0, gid: 0, umask: 0o022 });
-  });
-
-  test('push copies a regular file', () => {
-    localVfs.writeFile('/src.txt', 'payload', 0, 0, 0o022);
-    const t = new ScpTransfer(
-      { local, remote },
-      { remote: false, path: '/src.txt' },
-      { remote: true, host: 'h', path: '/dst.txt' },
-      { recursive: false, preserve: false, localCwd: '/', remoteCwd: '/' },
-    );
-    const r = t.run();
-    expect(r.ok).toBe(true);
-    expect(remoteVfs.readFile('/dst.txt')).toBe('payload');
-  });
-
-  test('pull copies a remote file onto local', () => {
-    remoteVfs.writeFile('/remote.txt', 'fetched', 0, 0, 0o022);
-    const t = new ScpTransfer(
-      { local, remote },
-      { remote: true, host: 'h', path: '/remote.txt' },
-      { remote: false, path: '/local.txt' },
-      { recursive: false, preserve: false, localCwd: '/', remoteCwd: '/' },
-    );
-    const r = t.run();
-    expect(r.ok).toBe(true);
-    expect(localVfs.readFile('/local.txt')).toBe('fetched');
-  });
-
-  test('non-recursive directory source returns "not a regular file"', () => {
-    localVfs.mkdir('/dir', 0o755, 0, 0);
-    const t = new ScpTransfer(
-      { local, remote },
-      { remote: false, path: '/dir' },
-      { remote: true, host: 'h', path: '/dir' },
-      { recursive: false, preserve: false, localCwd: '/', remoteCwd: '/' },
-    );
-    expect(t.run().ok).toBe(false);
-  });
-
-  test('-r recurses into directories', () => {
-    localVfs.mkdir('/box', 0o755, 0, 0);
-    localVfs.writeFile('/box/a', 'A', 0, 0, 0o022);
-    localVfs.writeFile('/box/b', 'B', 0, 0, 0o022);
-    const t = new ScpTransfer(
-      { local, remote },
-      { remote: false, path: '/box' },
-      { remote: true, host: 'h', path: '/box' },
-      { recursive: true, preserve: false, localCwd: '/', remoteCwd: '/' },
-    );
-    const r = t.run();
-    expect(r.ok).toBe(true);
-    expect(remoteVfs.readFile('/box/a')).toBe('A');
-    expect(remoteVfs.readFile('/box/b')).toBe('B');
-  });
-
-  test('-p preserves mode across push', () => {
-    localVfs.writeFile('/secret', 'shh', 0, 0, 0o022);
-    localVfs.chmod('/secret', 0o600);
-    const t = new ScpTransfer(
-      { local, remote },
-      { remote: false, path: '/secret' },
-      { remote: true, host: 'h', path: '/secret' },
-      { recursive: false, preserve: true, localCwd: '/', remoteCwd: '/' },
-    );
-    t.run();
-    expect(remoteVfs.resolveInode('/secret')?.permissions).toBe(0o600);
-  });
-
-  test('local-to-local refuses (use cp)', () => {
-    const t = new ScpTransfer(
-      { local, remote },
-      { remote: false, path: '/a' },
-      { remote: false, path: '/b' },
-      { recursive: false, preserve: false, localCwd: '/', remoteCwd: '/' },
-    );
-    expect(t.run().ok).toBe(false);
-  });
-
-  test('missing source fails fast', () => {
-    const t = new ScpTransfer(
-      { local, remote },
-      { remote: false, path: '/missing' },
-      { remote: true, host: 'h', path: '/d' },
-      { recursive: false, preserve: false, localCwd: '/', remoteCwd: '/' },
-    );
-    expect(t.run().ok).toBe(false);
-  });
-});
-
-// ─── §A.7 — ScpSession orchestrator ─────────────────────────────────
-
-describe('§A.7 — ScpSession', () => {
-  test('argv parse → push transfer → exit 0 + summary', () => {
-    const localVfs  = new VirtualFileSystem();
-    const remoteVfs = new VirtualFileSystem();
-    localVfs.writeFile('/tmp/x.txt', 'orchestrated', 0, 0, 0o022);
-    const remote = new VfsSftpFileSystem(remoteVfs, { uid: 0, gid: 0, umask: 0o022 });
-    const s = new ScpSession({
-      args: ['/tmp/x.txt', 'alice@h2:/tmp/x.txt'],
-      local: { fs: new VfsSftpFileSystem(localVfs, { uid: 0, gid: 0, umask: 0o022 }), cwd: '/' },
-      resolveRemote: () => remote,
-    });
-    const r = s.run();
-    expect(r.exitCode).toBe(0);
-    expect(remoteVfs.readFile('/tmp/x.txt')).toBe('orchestrated');
-  });
-
-  test('unresolved remote host yields exit 1 + scp: error', () => {
-    const localVfs  = new VirtualFileSystem();
-    const s = new ScpSession({
-      args: ['/tmp/x.txt', 'alice@nope:/tmp/x'],
-      local: { fs: new VfsSftpFileSystem(localVfs, { uid: 0, gid: 0, umask: 0o022 }), cwd: '/' },
-      resolveRemote: () => null,
-    });
-    const r = s.run();
-    expect(r.exitCode).toBe(1);
-    expect(r.output).toMatch(/^scp:/);
-  });
-
-  test('missing argv prints usage with exit 1', () => {
-    const localVfs  = new VirtualFileSystem();
-    const s = new ScpSession({
-      args: ['/only-one'],
-      local: { fs: new VfsSftpFileSystem(localVfs, { uid: 0, gid: 0, umask: 0o022 }), cwd: '/' },
-      resolveRemote: () => null,
-    });
-    expect(s.run()).toMatchObject({ exitCode: 1, output: expect.stringContaining('usage') });
-  });
-});
-
 // ─── §A.8 — ScpEndpoint legacy parsers stay coherent ────────────────
 
-describe('§A.8 — parseScpEndpoint / parseScpArgs', () => {
+describe('§A.8 — parseScpEndpoint', () => {
   test('user@host:path is remote', () => {
     expect(parseScpEndpoint('alice@h:/tmp/x')).toEqual({
       remote: true, user: 'alice', host: 'h', path: '/tmp/x',
@@ -360,13 +216,5 @@ describe('§A.8 — parseScpEndpoint / parseScpArgs', () => {
 
   test('bare path is local', () => {
     expect(parseScpEndpoint('/tmp/x')).toEqual({ remote: false, path: '/tmp/x' });
-  });
-
-  test('argv extraction picks first source + last destination', () => {
-    const r = parseScpArgs(['-r', '-P', '2222', '/a', 'u@h:/b']);
-    expect(r?.recursive).toBe(true);
-    expect(r?.port).toBe(2222);
-    expect(r?.source.path).toBe('/a');
-    expect(r?.destination.remote).toBe(true);
   });
 });

@@ -60,13 +60,10 @@
  * UN CAS A CHANGE DE SENS EN COURS DE ROUTE, et il est dit ici plutot
  * que corrige en silence. Il affirmait d'abord qu'un `scp` d'un fichier
  * local vers un autre TRANSFERE. C'est une premisse fausse : le
- * simulateur REFUSE deliberement le local-a-local, dans ses propres
- * mots — « both endpoints local — use cp instead » — et c'est
- * `ScpTransfer` qui le decide. Le cas mesure donc ce qui relevait
- * vraiment de ce lot : un chemin local n'est plus pris pour un HOTE. Il
- * tombe quand meme, parce que l'ancienne extraction envoyait
- * `/tmp/f.txt` a la resolution de noms ; ce qu'il gagne, c'est de ne
- * plus exiger du moteur un comportement qu'il refuse expressement.
+ * simulateur refusait le local-a-local (« both endpoints local »). C'etait
+ * une limite du moteur, pas de scp : un vrai scp copie, par un tube entre
+ * un source et un puits locaux. Le moteur unique le fait maintenant, et
+ * le cas verifie la copie.
  */
 import { describe, it, expect } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -197,6 +194,6 @@ describe('ce que le correctif ne doit pas casser', () => {
     const sortie = await poste.executeCommand('scp /tmp/f.txt /tmp/local.txt');
 
     expect(sortie).not.toMatch(/Could not resolve/);
-    expect(sortie).toMatch(/both endpoints local/);
+    expect(await poste.executeCommand('cat /tmp/local.txt')).toBe(await poste.executeCommand('cat /tmp/f.txt'));
   });
 });

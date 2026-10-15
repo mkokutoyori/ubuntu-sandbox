@@ -15,6 +15,11 @@
  */
 
 import { ScriptedTerminalIO } from '@/network/protocols/ssh/session/ScriptedTerminalIO';
+import type { SshSession } from '@/network/protocols/ssh/session/SshSession';
+import type { TcpConnector } from '@/network/tcp/types';
+import { proxyJumpRequest } from './linux/network/LinuxSshClient';
+import { tunnelThrough } from './linux/network/SshProxyJump';
+import { WindowsSftpFSAdapter } from '@/network/protocols/ssh/sftp/WindowsSftpFSAdapter';
 import { guardedFileSystem, principalOf } from './windows/WindowsFsAccess';
 import { posixClientFlags, seedWindowsOpenSshFiles } from './windows/WindowsOpenSshFiles';
 import { resolveClientInvocation, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
@@ -92,7 +97,7 @@ import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSsh
 import { sshLocalFsFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { WireSftpFileSystem } from '@/network/protocols/ssh/sftp/WireSftpFileSystem';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
-import { runWindowsScpClient } from './windows/network/WindowsScpClient';
+import { runScpClient, type ScpClientHost } from '@/network/protocols/ssh/scp/ScpClientCommand';
 import { splitCmdArgs, separateCommandWord } from './windows/cmdline';
 import { BatchInterpreter } from '@/cmd/interpreter/BatchInterpreter';
 import { createWindowsBatchHost } from './windows/WindowsBatchHost';
@@ -2668,15 +2673,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.writeEventLog('OpenSSH/Operational', 'OpenSSH', 4, level, `sshd: ${message}`);
   }
 
-  private async cmdSsh(args: string[]): Promise<string> {
-    this.commandExitStatus = null;
-    const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_8_6);
-    if (withoutSession) return withoutSession.output;
-    const parsed = parseSshArgs(args);
-    if (parsed === null) { this.commandExitStatus = 255; return OPENSSH_WINDOWS_8_6.sshUsage; }
-    const refused = (message: string): string => { this.commandExitStatus = 255; return message; };
+  private async openOutgoingSsh(args: string[], parsed: NonNullable<ReturnType<typeof parseSshArgs>>): Promise<
+    | { readonly kind: 'refused'; readonly output: string }
+    | {
+      readonly kind: 'connected'; readonly session: SshSession; readonly dialogue: string; readonly typedHost: string;
+      readonly address: string; readonly user: string; readonly port: number;
+      readonly scripted: ScriptedTerminalIO; readonly password: string | undefined; readonly asks: boolean;
+      readonly release: () => void; readonly skippedLines: number;
+    }
+  > {
     const localUser = this.userMgr.currentUser;
-    const commandLine = splitSshCommandLine(args);
+    const jump = proxyJumpRequest(args);
+    const commandLine = splitSshCommandLine(jump === null ? args : jump.remaining);
     const settings = resolveClientInvocation({
       flags: posixClientFlags(commandLine.flags),
       target: parsed.userAtHost,
@@ -2690,22 +2698,52 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const user = settings.user;
     const port = settings.port;
     if (this.firstConfiguredIp() === null) {
-      return refused(`ssh: connect to host ${typedHost} port ${port}: Network is unreachable`);
+      return { kind: 'refused', output: `ssh: connect to host ${typedHost} port ${port}: Network is unreachable` };
     }
-    const target = await resolveSshTarget(this, typedHost, port);
-    if (target.kind === 'failed') return refused(target.line);
-
+    const hopSessions: SshSession[] = [];
+    const release = (): void => {
+      for (const session of [...hopSessions].reverse()) session.disconnect();
+    };
     const stdin = this._scenarioStdin ?? '';
     const strict = settings.strictHostKeyChecking ?? 'accept-new';
     const asks = strict === 'ask';
-    const typedLines = stdin.split('\n');
+    const allLines = stdin.split('\n');
+    const hopCount = jump?.hops.length ?? 0;
+    const typedLines = allLines.slice(hopCount);
+    let connector: TcpConnector | undefined;
+    let dialHost = typedHost;
+    if (jump === null) {
+      const target = await resolveSshTarget(this, typedHost, port);
+      if (target.kind === 'failed') return { kind: 'refused', output: target.line };
+      dialHost = target.address;
+    } else {
+      const first = jump.hops[0];
+      const firstTarget = await resolveSshTarget(this, first.host, first.port ?? 22);
+      if (firstTarget.kind === 'failed') return { kind: 'refused', output: firstTarget.line };
+      let dial: TcpConnector = ((host: string, hostPort: number) => this.tcpConnect(host === first.host ? firstTarget.address : host, hostPort)) as TcpConnector;
+      const refusals: string[] = [];
+      for (const [index, hop] of jump.hops.entries()) {
+        const reached = await openWireSshConnection({
+          device: this, localUser, user: hop.user ?? localUser, host: hop.host, port: hop.port ?? 22,
+          io: silentConnectIo(), password: allLines[index] || undefined, credentialless: !allLines[index],
+          strict, connector: dial,
+        });
+        if (reached.kind !== 'connected') {
+          release();
+          return { kind: 'refused', output: reached.kind === 'auth-failed' ? `${hop.user ?? localUser}@${hop.host}: Permission denied (publickey,password).\nConnection closed by UNKNOWN port 65535` : 'Connection closed by UNKNOWN port 65535' };
+        }
+        hopSessions.push(reached.session);
+        dial = tunnelThrough(reached.session, refusals);
+      }
+      connector = dial;
+    }
     const password = asks ? undefined : typedLines[0] || undefined;
     const scripted = new ScriptedTerminalIO(asks ? typedLines : typedLines.slice(1));
     const outcome = await openWireSshConnection({
       device: this,
       localUser,
       user,
-      host: target.address,
+      host: dialHost,
       port: port,
       io: scripted,
       password,
@@ -2719,18 +2757,35 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       authentication: sshClientAuthentication(settings.optionValues),
       agent: this.sshAgentIfRunning(),
       algorithms: sshClientAlgorithms(settings.optionValues),
+      ...(connector === undefined ? {} : { connector }),
     });
     const dialogue = scripted.transcript
       .filter((line) => asks || parsed.command === null || !line.startsWith('Warning: Permanently added'))
       .map((line) => `${line}\n`).join('');
+    if (outcome.kind !== 'connected') release();
     if (outcome.kind === 'auth-failed') {
-      return refused(`${dialogue}${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`);
+      return { kind: 'refused', output: `${dialogue}${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).` };
     }
-    if (outcome.kind === 'host-key-changed') return refused(`${dialogue}Host key verification failed.`);
-    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') return refused(`${dialogue}${outcome.message}`);
-    if (outcome.kind !== 'connected') return refused('');
+    if (outcome.kind === 'host-key-changed') return { kind: 'refused', output: `${dialogue}Host key verification failed.` };
+    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') return { kind: 'refused', output: `${dialogue}${outcome.message}` };
+    if (outcome.kind !== 'connected') return { kind: 'refused', output: '' };
+    hopSessions.push(outcome.session);
+    return {
+      kind: 'connected', session: outcome.session, release, dialogue, typedHost, address: dialHost, user, port,
+      scripted, password, asks, skippedLines: hopCount,
+    };
+  }
 
-    const { session } = outcome;
+  private async cmdSsh(args: string[]): Promise<string> {
+    this.commandExitStatus = null;
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_8_6);
+    if (withoutSession) return withoutSession.output;
+    const parsed = parseSshArgs(args);
+    if (parsed === null) { this.commandExitStatus = 255; return OPENSSH_WINDOWS_8_6.sshUsage; }
+    const opened = await this.openOutgoingSsh(args, parsed);
+    if (opened.kind === 'refused') { this.commandExitStatus = 255; return opened.output; }
+    const { session, release, dialogue, typedHost, scripted, password, asks, skippedLines } = opened;
+    const stdin = this._scenarioStdin ?? '';
     try {
       if (parsed.command !== null) {
         const channel = session.openExecChannel(parsed.command);
@@ -2744,12 +2799,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const channel = session.openShellChannel();
       if (!isOk(channel)) return '';
       const settled = await relayScriptedShell(
-        channel.value, stdin, asks ? scripted.consumed : password === undefined ? 0 : 1 + scripted.consumed, !parsed.quiet);
+        channel.value, stdin, skippedLines + (asks ? scripted.consumed : password === undefined ? 0 : 1 + scripted.consumed), !parsed.quiet);
       channel.value.close();
       return [dialogue.replace(/\n$/, ''), settled.output, ...(parsed.quiet ? [] : [`Connection to ${typedHost} closed.`])]
         .filter((part) => part.length > 0).join('\n');
     } finally {
-      session.disconnect();
+      release();
     }
   }
 
@@ -2824,17 +2879,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return { kind: 'opened', fs: new WireSftpFileSystem(channel.value), release: () => session.disconnect() };
   }
 
-  private cmdScp(args: string[]): Promise<string> {
+  private async cmdScp(args: string[]): Promise<string> {
+    this.commandExitStatus = null;
     const user = this.userMgr.currentUser;
-    return runWindowsScpClient({
-      args,
-      sourceHostname: this.hostname,
-      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
-      sourceUser: user,
-      sourceHome: `C:\\Users\\${user}`,
-      localFs: this.fs,
-      tcpConnector: (h, p) => this.tcpConnect(h, p) as ReturnType<import('../tcp/types').TcpConnector>,
-    }).then(r => r.output);
+    const host: ScpClientHost = {
+      local: new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000),
+      cwd: `C:\\Users\\${user}`,
+      usage: OPENSSH_WINDOWS_8_6.scpUsage,
+      umask: 0,
+      sshPrograms: ['ssh', 'ssh.exe', 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'],
+      connect: async (request) => {
+        const sshArguments = [...request.sshArguments];
+        const parsed = parseSshArgs(sshArguments);
+        if (parsed === null) return { kind: 'refused', lines: [OPENSSH_WINDOWS_8_6.scpUsage], exitCode: 1 };
+        const opened = await this.openOutgoingSsh(sshArguments, parsed);
+        if (opened.kind === 'refused') return { kind: 'refused', lines: [opened.output], exitCode: 255 };
+        const lines = opened.dialogue.replace(/\n$/, '').split('\n').filter((line) => line !== '');
+        if (request.verbose) {
+          lines.unshift(`Executing: program C:\\Windows\\System32\\OpenSSH\\ssh.exe host ${opened.address}, user ${opened.user}, command ${request.remoteCommand}`);
+        }
+        return { kind: 'connected', session: opened.session, release: opened.release, lines };
+      },
+    };
+    const result = await runScpClient(args, host, undefined);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
   }
 
   private async cmdTelnet(args: string[]): Promise<string> {

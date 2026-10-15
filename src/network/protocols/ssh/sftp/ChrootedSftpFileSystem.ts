@@ -40,6 +40,9 @@ export class ChrootedSftpFileSystem implements ISftpFileSystem {
   setPermissions(path: string, mode: number): Result<void> { return this.base.setPermissions(this.toReal(path), mode); }
   setOwner(path: string, uid: number, gid: number): Result<void> { return this.base.setOwner(this.toReal(path), uid, gid); }
   stat(path: string): Result<SftpFileAttrs> { return this.base.stat(this.toReal(path)); }
+  setTimes(path: string, times: { readonly atime: number; readonly mtime: number }): Result<void> {
+    return this.base.setTimes?.(this.toReal(path), times) ?? err({ kind: 'IO_ERROR', message: 'utimes not supported' });
+  }
 
   listDirectory(path: string): Result<readonly SftpDirEntry[]> {
     const r = this.base.listDirectory(this.toReal(path));
