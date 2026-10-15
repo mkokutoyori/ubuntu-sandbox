@@ -122,10 +122,26 @@ export class VfsPath {
     const node = this.inode();
     if (!node) return false;
     if (this.actor.uid === 0) return true;
+    if (!this.ancestorsAreSearchable()) return false;
+    return this.permits(this.value, node, mode);
+  }
+
+  private ancestorsAreSearchable(): boolean {
+    let directory = this.dirname;
+    for (;;) {
+      const node = this.vfs.resolveInode(directory, true);
+      if (node && node.type === 'directory' && !this.permits(directory, node, 'x')) return false;
+      if (directory === '/') return true;
+      const slash = directory.lastIndexOf('/');
+      directory = slash <= 0 ? '/' : directory.slice(0, slash);
+    }
+  }
+
+  private permits(path: string, node: INode, mode: 'r' | 'w' | 'x'): boolean {
     if (this.actor.user) {
       const bit = mode === 'r' ? 0o4 : mode === 'w' ? 0o2 : 0o1;
       const acl = this.vfs.checkAclAccess(
-        this.value, this.actor.user, this.actor.groupNames ?? [], bit,
+        path, this.actor.user, this.actor.groupNames ?? [], bit,
       );
       if (acl !== null) return acl;
     }

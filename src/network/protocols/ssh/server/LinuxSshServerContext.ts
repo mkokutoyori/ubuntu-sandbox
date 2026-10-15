@@ -381,6 +381,14 @@ export class LinuxSshServerContext implements ISshServerContext {
     return view.forceCommand ?? keyOptions?.command ?? null;
   }
 
+  loginShellRefusal(user: SshUserContext): { readonly output: string; readonly exitCode: number } | null {
+    const shell = this.userManager.getUser(user.username)?.shell ?? '/bin/bash';
+    const program = shell.slice(shell.lastIndexOf('/') + 1);
+    if (program === 'nologin') return { output: 'This account is currently not available.\n', exitCode: 1 };
+    if (program === 'false') return { output: '', exitCode: 1 };
+    return null;
+  }
+
   rootMayLogIn(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean {
     if (this.rootLoginOverride !== undefined) return this.rootLoginOverride;
     const policy = this.effectiveSshdServerConfig().effectiveFor({ user: 'root' }).permitRootLogin;

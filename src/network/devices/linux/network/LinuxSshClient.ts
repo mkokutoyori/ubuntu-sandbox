@@ -50,8 +50,11 @@ import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import { fmtHumanDate } from '../LinuxLogManager';
 import type { LinuxMachine } from '../../LinuxMachine';
 import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
-import { SshConfig } from '../../../protocols/ssh/SshConfig';
+import type { ISshLocalFs } from '../../../protocols/ssh/ISshLocalFs';
+import { linuxClientLayout, resolveClientInvocation, splitSshCommandLine, SSH_VALUE_FLAGS } from '../../../protocols/ssh/client/SshClientInvocation';
 import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
+import type { NegotiatedAlgorithms } from '../../../protocols/ssh/transport/SshKexInit';
+import { OPENSSH_UBUNTU_CLIENT_VERSION, SSH_SERVER_IDENTIFICATION } from '../../../protocols/ssh/serverIdentification';
 import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
@@ -155,53 +158,6 @@ export interface SshClientOpts {
 
 const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.:-]+)$/;
 
-/**
- * Short `ssh` options that consume a value — the character right after
- * the dash (`-p 22`, `-L spec`, `-o Name=val`, …). `-q` / `-Q` are
- * deliberately excluded: the simulator treats them as the quiet switch.
- */
-const SSH_VALUE_FLAGS = new Set(
-  ['b', 'c', 'D', 'E', 'e', 'F', 'I', 'i', 'J', 'L', 'l', 'm', 'O', 'o', 'p', 'R', 's', 'S', 'W', 'w'],
-);
-
-/**
- * Walk argv: separate option flags from positionals (host, then remote
- * command tokens). Combined short-flag bundles (`-fNL`) are expanded into
- * their constituents, and a value-taking flag captures its argument
- * whether it is glued on (`-p22`) or a separate token (`-p 22`).
- *
- * Once the host token (the first positional) is found, everything after
- * it is the remote command — even tokens that look like options — which
- * matches OpenSSH semantics where flags after the host belong to the
- * remote shell, e.g. `ssh host sudo -l`.
- */
-function splitSshArgs(args: string[]): { positional: string[]; flags: string[] } {
-  const positional: string[] = [];
-  const flags: string[] = [];
-  let hostFound = false;
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (hostFound || !a.startsWith('-') || a === '-') {
-      positional.push(a);
-      hostFound = true;
-      continue;
-    }
-    if (a.startsWith('--')) { flags.push(a); continue; }
-    // Expand a bundle of short flags: `-fNL` → -f -N -L, `-p22` → -p 22.
-    const chars = a.slice(1);
-    for (let c = 0; c < chars.length; c++) {
-      const ch = chars[c];
-      flags.push('-' + ch);
-      if (SSH_VALUE_FLAGS.has(ch)) {
-        const glued = chars.slice(c + 1);
-        flags.push(glued !== '' ? glued : (args[++i] ?? ''));
-        break;
-      }
-    }
-  }
-  return { positional, flags };
-}
-
 function deniedLine(user: string, host: string, methods: readonly string[] | string | null): string {
   const list = methods === null ? 'publickey,password' : typeof methods === 'string' ? methods : methods.join(',');
   return `${user}@${host}: Permission denied (${list}).`;
@@ -266,7 +222,7 @@ function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
 
 
 export function execChannelOptionsFor(opts: SshClientOpts, args: string[]): ExecChannelOptions {
-  const { flags } = splitSshArgs(args);
+  const { flags } = splitSshCommandLine(args);
   const callerEnv = opts.callerEnv ?? {};
   const send = clientSendEnvPatterns(opts, flags);
   const environment = new Map<string, string>();
@@ -305,6 +261,9 @@ export interface WireExecTarget {
   strict: StrictHostKeyChecking;
   authentication: SshClientAuthentication;
   algorithms: SshAlgorithmPreferences;
+  knownHosts: { readonly user: readonly string[]; readonly global: readonly string[] };
+  hashKnownHosts: boolean;
+  identitiesOnly: boolean;
 }
 
 export type StdioForwardSpec =
@@ -321,8 +280,8 @@ function stdioForwardOf(flags: string[]): StdioForwardSpec | null {
   return { kind: 'target', host: match[1] ?? match[2], port };
 }
 
-function proxyCommandOf(flags: string[]): string | null {
-  const value = firstSshOption(sshOptionValues(flags), 'proxycommand');
+function proxyCommandOf(optionValues: readonly string[]): string | null {
+  const value = firstSshOption(optionValues, 'proxycommand');
   return value === undefined || value.toLowerCase() === 'none' ? null : value;
 }
 
@@ -333,12 +292,13 @@ export function wantsAgentForwarding(flags: string[]): boolean {
 
 export function wireExecTarget(
   args: string[],
-  vfs: { normalizePath(path: string, cwd: string): string; readFile(path: string): string | null },
+  vfs: ISshLocalFs,
   cwd: string,
   defaultUser: string,
   home = '/root',
+  uid = 1000,
 ): WireExecTarget | null {
-  const { positional, flags } = splitSshArgs(args);
+  const { positional, flags } = splitSshCommandLine(args);
   const target = positional[0];
   if (target === undefined) return null;
   for (const blocking of ['-J']) {
@@ -347,33 +307,29 @@ export function wireExecTarget(
   const at = target.indexOf('@');
   const typedHost = at >= 0 ? target.slice(at + 1) : target;
   if (typedHost === '') return null;
-  const configText = vfs.readFile(`${home}/.ssh/config`);
-  const entry = configText ? SshConfig.parse(configText).resolve(typedHost) : null;
-  const host = entry?.hostName ?? typedHost;
-  const user = at >= 0 ? target.slice(0, at) : entry?.user ?? defaultUser;
-  const identities: string[] = [];
-  for (let i = 0; i < flags.length; i++) {
-    if (flags[i] === '-i' && flags[i + 1]) identities.push(vfs.normalizePath(flags[i + 1], cwd));
-  }
-  if (identities.length === 0 && entry?.identityFile) {
-    identities.push(vfs.normalizePath(
-      entry.identityFile.startsWith('~/') ? `${home}/${entry.identityFile.slice(2)}` : entry.identityFile, cwd));
-  }
-  const asked = clientOption(flags, 'StrictHostKeyChecking');
+  const settings = resolveClientInvocation({
+    flags, target, fs: vfs, localUser: defaultUser, localHostName: 'localhost', uid, layout: linuxClientLayout(home),
+  });
+  const identities = settings.identityFiles.map((file) => vfs.normalizePath(file, cwd));
+  const optionValues = settings.optionValues;
   return {
-    host, user,
-    port: flags.includes('-p') ? clientPort(flags) : entry?.port ?? 22,
+    host: settings.hostName,
+    user: settings.user,
+    port: settings.port,
     identities,
     command: joinRemoteCommand(positional.slice(1)),
     commandWords: positional.slice(1),
     holdOnly: flags.includes('-N'),
     forksToBackground: flags.includes('-f'),
-    forwardAgent: wantsAgentForwarding(flags),
+    forwardAgent: settings.forwardAgent,
     stdioForward: stdioForwardOf(flags),
-    proxyCommand: proxyCommandOf(flags),
-    strict: parseStrictHostKeyChecking(asked) ?? entry?.strictHostKeyChecking ?? 'accept-new',
-    authentication: sshClientAuthentication(sshOptionValues(flags)),
-    algorithms: sshClientAlgorithms(sshOptionValues(flags)),
+    proxyCommand: proxyCommandOf(optionValues),
+    strict: settings.strictHostKeyChecking ?? 'accept-new',
+    authentication: sshClientAuthentication(optionValues),
+    algorithms: sshClientAlgorithms(optionValues),
+    knownHosts: { user: settings.userKnownHostsFiles, global: settings.globalKnownHostsFiles },
+    hashKnownHosts: settings.hashKnownHosts,
+    identitiesOnly: settings.identitiesOnly,
   };
 }
 
@@ -473,13 +429,13 @@ function wireFailure(
 
 
 export function splitSshFlags(args: string[]): string[] {
-  return splitSshArgs(args).flags;
+  return splitSshCommandLine(args).flags;
 }
 
 export function sshClientRefusal(opts: SshClientOpts): SshClientResult | null {
   const withoutSession = sshReplyWithoutSession(opts.args, OPENSSH_UBUNTU_22_04);
   if (withoutSession) return withoutSession;
-  const { positional, flags } = splitSshArgs(opts.args);
+  const { positional, flags } = splitSshCommandLine(opts.args);
   const target = positional[0];
   const port = clientPort(flags);
   const iIdx = flags.indexOf('-i');
@@ -550,10 +506,42 @@ export interface WireSshSuccess {
   readonly port: number;
   readonly method: string | undefined;
   readonly serverHostKey: { readonly algorithm: string; readonly fingerprint: string } | null;
+  readonly negotiated?: NegotiatedAlgorithms | null;
+  readonly peerIdentification?: string | null;
+  readonly user?: string;
   readonly command: string;
   readonly settled: { readonly output: string; readonly exitCode: number } | null;
   readonly shell: { readonly output: string; readonly exitCode: number } | null;
   readonly notices: readonly string[];
+}
+
+function verboseTranscript(success: WireSshSuccess): string {
+  const lines = [
+    OPENSSH_UBUNTU_CLIENT_VERSION,
+    'debug1: Reading configuration data /etc/ssh/ssh_config',
+    'debug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files',
+    'debug1: /etc/ssh/ssh_config line 21: Applying options for *',
+    `debug1: Connecting to ${success.host} [${success.address}] port ${success.port}.`,
+    'debug1: Connection established.',
+    `debug1: Local version string ${SSH_SERVER_IDENTIFICATION}`,
+  ];
+  const remote = success.peerIdentification ?? null;
+  if (remote !== null) {
+    const match = /^SSH-([^-]+)-(.*)$/.exec(remote);
+    if (match !== null) lines.push(`debug1: Remote protocol version ${match[1]}, remote software version ${match[2]}`);
+  }
+  const negotiated = success.negotiated ?? null;
+  if (negotiated !== null) {
+    lines.push(`debug1: kex: algorithm: ${negotiated.kex}`);
+    lines.push(`debug1: kex: host key algorithm: ${negotiated.hostKey}`);
+    lines.push(`debug1: kex: server->client cipher: ${negotiated.encryptionServerToClient} MAC: ${negotiated.macServerToClient ?? '<implicit>'} compression: ${negotiated.compressionServerToClient}`);
+    lines.push(`debug1: kex: client->server cipher: ${negotiated.encryptionClientToServer} MAC: ${negotiated.macClientToServer ?? '<implicit>'} compression: ${negotiated.compressionClientToServer}`);
+  }
+  if (success.serverHostKey !== null) {
+    lines.push(`debug1: Server host key: ${success.serverHostKey.algorithm} ${success.serverHostKey.fingerprint}`);
+  }
+  lines.push(`Authenticated to ${success.host} ([${success.address}]:${success.port}) using "${success.method ?? 'password'}".`);
+  return `${lines.join('\n')}\n`;
 }
 
 export function sshWireSuccessResult(opts: SshClientOpts, flags: string[], success: WireSshSuccess): SshClientResult {
@@ -561,13 +549,7 @@ export function sshWireSuccessResult(opts: SshClientOpts, flags: string[], succe
   const forwardingError = setupPortForwards(opts, flags);
   if (flags.includes('-N')) return { output: forwardingError, exitCode: 0 };
   const verbose = flags.some((a) => /^-v+$/.test(a));
-  const verboseHeader = verbose
-    ? `debug1: Connecting to ${success.host} [${success.address}] port ${success.port}.\n`
-      + (success.serverHostKey === null
-        ? ''
-        : `debug1: Server host key: ${success.serverHostKey.algorithm} ${success.serverHostKey.fingerprint}\n`)
-      + `debug1: Authentication succeeded (${success.method ?? 'password'}).\n`
-    : '';
+  const verboseHeader = verbose ? verboseTranscript(success) : '';
   const header = notices + verboseHeader + forwardingError;
   if (success.settled !== null) {
     const output = success.settled.output;

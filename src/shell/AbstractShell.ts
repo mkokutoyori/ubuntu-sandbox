@@ -192,6 +192,7 @@ export abstract class AbstractShell implements IShell {
       clearScreen: result.clearScreen,
       suppressPrompt: result.suppressPrompt,
       pendingInput: result.pendingInput,
+      exitCode: result.exitCode,
     };
   }
 

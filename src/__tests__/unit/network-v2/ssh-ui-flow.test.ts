@@ -377,7 +377,7 @@ describe('SSH UI — strict host key checking interactive prompt', () => {
         ),
     );
 
-    expect(hasLine(session, /authenticity of host '10\.0\.0\.2'/)).toBe(true);
+    expect(hasLine(session, /authenticity of host '10\.0\.0\.2 \(10\.0\.0\.2\)'/)).toBe(true);
     expect(hasLine(session, /ED25519 key fingerprint is SHA256:/)).toBe(true);
 
     // Answer "yes" → proceed to password prompt.
@@ -389,7 +389,7 @@ describe('SSH UI — strict host key checking interactive prompt', () => {
   it('prompts by default, because OpenSSH\'s default is `ask`', async () => {
     await typeNormal(session, `ssh user@${PC2_IP}`);
     await waitFor(() => session.currentInputMode.type === 'interactive-text');
-    expect(hasLine(session, /authenticity of host '10\.0\.0\.2'/)).toBe(true);
+    expect(hasLine(session, /authenticity of host '10\.0\.0\.2 \(10\.0\.0\.2\)'/)).toBe(true);
   });
 
   it('refuses an unknown host without asking when StrictHostKeyChecking=yes', async () => {

@@ -801,9 +801,9 @@ function expandInlineVars(
       const next = text[i + 1];
       if (next === '$') { result += '$'; i += 2; continue; }
       if (next === '"') { result += '"'; i += 2; continue; }
-      if (next === 'n') { result += '\n'; i += 2; continue; }
-      if (next === 't') { result += '\t'; i += 2; continue; }
+      if (next === '`') { result += '`'; i += 2; continue; }
       if (next === '\\') { result += '\\'; i += 2; continue; }
+      if (next === '\n') { i += 2; continue; }
       result += text[i]; i++; continue;
     }
 

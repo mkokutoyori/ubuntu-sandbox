@@ -68,7 +68,7 @@ describe('le client `ssh` lit le foyer de l utilisateur courant', () => {
   it('`known_hosts` se pose dans le foyer de l utilisateur', async () => {
     const { client } = laboratoire();
     await texte(client, 'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 true');
-    expect(await texte(client, 'cat ~/.ssh/known_hosts')).toContain('10.0.0.2');
+    expect(await texte(client, 'ssh-keygen -F 10.0.0.2')).toContain('Host 10.0.0.2 found: line 1');
   });
 
   it('`~/.ssh/config` de l utilisateur est LU', async () => {

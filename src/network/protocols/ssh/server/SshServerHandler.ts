@@ -427,6 +427,14 @@ export class SshServerHandler {
                 channel.close();
                 return;
               }
+              const refusedShell = this.ctx.loginShellRefusal?.(user) ?? null;
+              if (refusedShell !== null) {
+                channel.write(refusedShell.output);
+                void channel.request('exit-status', encodeExitStatus(refusedShell.exitCode));
+                channel.eof();
+                channel.close();
+                return;
+              }
               const scpCommand = forced === null ? parseScpServerCommand(asked) : null;
               if (scpCommand !== null) {
                 this.serveScp(channel, user, scpCommand);
@@ -479,6 +487,14 @@ export class SshServerHandler {
               info.started = true;
               request.reply(true);
               const forcedShell = this.ctx.forcedCommand?.(user, clientIp, keyOptions) ?? null;
+              const refusedLogin = forcedShell === 'internal-sftp' ? null : this.ctx.loginShellRefusal?.(user) ?? null;
+              if (refusedLogin !== null) {
+                channel.write(refusedLogin.output);
+                void channel.request('exit-status', encodeExitStatus(refusedLogin.exitCode));
+                channel.eof();
+                channel.close();
+                return;
+              }
               if (forcedShell !== null) {
                 const runner = this.ctx.getShell(user, user.homeDirectory);
                 const forcedLine = forcedShell === 'internal-sftp'

@@ -7,7 +7,7 @@ import {
   keygenPublicOf,
   keygenRandomart,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
-import { SshKnownHostEntry } from '@/network/devices/linux/network/SshKnownHostEntry';
+import { hashedLineFor, lineMatchesName, parseKnownHostsLines } from './hostkey/KnownHostsLines';
 import { bsdGetoptDiagnostic, shortOptions } from '@/network/devices/linux/commands/Getopt';
 import type { OpenSshRelease } from './OpenSshRelease';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
@@ -60,7 +60,6 @@ const UNSIMULATED_OPTIONS: Readonly<Record<string, string>> = {
   D: 'PKCS#11 tokens',
   e: 'exporting keys',
   g: 'generic DNS resource records',
-  H: 'hashing known_hosts',
   h: 'host certificates',
   I: 'certificates',
   i: 'importing keys',
@@ -99,6 +98,7 @@ interface KeygenRequest {
   readonly file?: string;
   readonly findHost?: string;
   readonly deleteHost?: string;
+  readonly hashHosts: boolean;
   readonly fingerprint: boolean;
   readonly hash: string;
   readonly passphrase?: string;
@@ -132,7 +132,7 @@ function strtonum(text: string, max: number): { value: number } | { error: strin
 function parseRequest(args: readonly string[], release: OpenSshRelease): KeygenRequest | SshKeygenOutcome {
   const usage = (lead: string): SshKeygenOutcome => ({ output: `${lead}\n${release.keygenUsage}`, exitCode: 1 });
   const request: { -readonly [K in keyof KeygenRequest]: KeygenRequest[K] } = {
-    all: false, fingerprint: false, hash: 'sha256', printPublic: false, quiet: false, verbose: false,
+    all: false, hashHosts: false, fingerprint: false, hash: 'sha256', printPublic: false, quiet: false, verbose: false,
   };
   for (const option of shortOptions(args, KEYGEN_OPTSTRING)) {
     if (option.kind === 'operand') return usage('Too many arguments.');
@@ -162,6 +162,7 @@ function parseRequest(args: readonly string[], release: OpenSshRelease): KeygenR
         break;
       case 'C': request.comment = value; break;
       case 'F': request.findHost = value; break;
+      case 'H': request.hashHosts = true; break;
       case 'R': request.deleteHost = value; break;
       case 'f': request.file = value; break;
       case 'l': request.fingerprint = true; break;
@@ -209,31 +210,79 @@ function* askPassphrase(): Generator<KeygenStep, string, string | null | undefin
   }
 }
 
+const KEY_TYPE_NAMES: Readonly<Record<string, string>> = {
+  'ssh-ed25519': 'ED25519', 'ssh-rsa': 'RSA', 'ssh-dss': 'DSA', 'ecdsa-sha2-nistp256': 'ECDSA',
+  'ecdsa-sha2-nistp384': 'ECDSA', 'ecdsa-sha2-nistp521': 'ECDSA',
+};
+
 function* knownHostsDialogue(request: KeygenRequest, host: SshKeygenHost): KeygenDialogue {
-  const knownHosts = request.file ?? knownHostsPathOf(host);
+  const path = request.file ?? knownHostsPathOf(host);
+  const text = host.store.read(path);
+  if (text === null) {
+    yield print(`Cannot stat ${path}: No such file or directory`);
+    return 255;
+  }
+  const lines = parseKnownHostsLines(text);
   if (request.findHost !== undefined) {
     const wanted = request.findHost;
-    const entries = SshKnownHostEntry.parseFile(host.store.read(knownHosts) ?? '');
     let found = false;
-    for (const [index, entry] of entries.entries()) {
-      if (!entry.matches(wanted)) continue;
+    for (const line of lines) {
+      if (!lineMatchesName(line, wanted)) continue;
       found = true;
-      yield print(`# Host ${wanted} found: line ${index + 1}`);
-      yield print(entry.toLine());
+      const marker = line.marker === 'ca' ? 'CA' : line.marker === 'revoke' ? 'REVOKED' : '';
+      if (!request.quiet) yield print(`# Host ${wanted} found: line ${line.number} ${marker}`);
+      if (request.hashHosts) {
+        for (const hashed of hashedLineFor(line)) yield print(hashed);
+      } else if (request.fingerprint) {
+        const fingerprint = keygenDigest(`${line.keyType} ${line.keyBlob}`, request.hash);
+        yield print(`${wanted} ${KEY_TYPE_NAMES[line.keyType] ?? line.keyType} ${fingerprint}${line.comment === '' ? '' : ` ${line.comment}`}`);
+      } else {
+        yield print(line.raw);
+      }
     }
     return found ? 0 : 1;
   }
-  const wanted = request.deleteHost ?? '';
-  const before = SshKnownHostEntry.parseFile(host.store.read(knownHosts) ?? '');
-  const after = before.filter(e => !e.matches(wanted));
-  const failure = host.store.write(knownHosts, SshKnownHostEntry.serializeFile(after), false);
-  if (failure !== null) {
-    yield print(`Unable to write ${knownHosts}`);
+  const invalid = lines.some((line) => line.status === 'invalid');
+  if (invalid) {
+    yield print(`${path} is not a valid known_hosts file.`);
+    yield print('Not replacing existing known_hosts file because of errors');
     return 1;
   }
-  yield print(`# Host ${wanted} found: line 1`);
-  yield print(`${knownHosts} updated.`);
-  yield print(`Original contents retained as ${knownHosts}.old`);
+  const deleting = request.deleteHost !== undefined;
+  const wanted = request.deleteHost ?? '';
+  const kept: string[] = [];
+  let removed = false;
+  let unhashed = false;
+  for (const line of lines) {
+    if (deleting) {
+      if (lineMatchesName(line, wanted) && line.marker === null) {
+        removed = true;
+        yield print(`# Host ${wanted} found: line ${line.number}`);
+        continue;
+      }
+      kept.push(line.raw);
+      continue;
+    }
+    const rewritten = hashedLineFor(line);
+    if (rewritten.length !== 1 || rewritten[0] !== line.raw) unhashed = true;
+    kept.push(...rewritten);
+  }
+  if (deleting && !removed) {
+    yield print(`Host ${wanted} not found in ${path}`);
+    return 0;
+  }
+  const failure = host.store.write(path, kept.length === 0 ? '' : `${kept.join('\n')}\n`, false);
+  if (failure !== null) {
+    yield print(`Unable to write ${path}`);
+    return 1;
+  }
+  host.store.write(`${path}.old`, text, false);
+  yield print(`${path} updated.`);
+  yield print(`Original contents retained as ${path}.old`);
+  if (unhashed) {
+    yield print(`WARNING: ${path}.old contains unhashed entries`);
+    yield print('Delete this file to ensure privacy of hostnames');
+  }
   return 0;
 }
 
@@ -340,7 +389,7 @@ function* keygenDialogue(args: readonly string[], host: SshKeygenHost): KeygenDi
     for (const line of request.output.split('\n')) yield print(line);
     return request.exitCode;
   }
-  if (request.deleteHost !== undefined || request.findHost !== undefined) return yield* knownHostsDialogue(request, host);
+  if (request.deleteHost !== undefined || request.findHost !== undefined || request.hashHosts) return yield* knownHostsDialogue(request, host);
   if (request.fingerprint) return yield* fingerprintDialogue(request, host);
   if (request.printPublic) return yield* printPublicDialogue(request, host);
   if (request.all) return allHostKeys(request, host);

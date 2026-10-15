@@ -82,6 +82,7 @@ import {
 } from '../connection/ChannelPayloads';
 import { resolveAlgorithmDirectives } from '../transport/SshAlgorithms';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
+import type { NegotiatedAlgorithms } from '../transport/SshKexInit';
 import { hostKeyChangedWarning } from '../hostkey/HostKeyChangedWarning';
 import { knownHostsLineOf } from '../hostkey/KnownHostsText';
 
@@ -139,6 +140,19 @@ export class SshSession implements ISshSession {
     );
   }
 
+  private knownHostsFor(opts: SshConnectOptions): SshKnownHosts {
+    const files = opts.knownHosts;
+    if (files === undefined) return this.knownHosts;
+    return new SshKnownHosts(
+      this.deps.vfs,
+      files.user[0] ?? '',
+      this.deps.localUid,
+      this.deps.localGid,
+      0o022,
+      [...files.global, ...files.user],
+    );
+  }
+
   private clientAlgorithms(opts: SshConnectOptions): { algorithms?: SshAlgorithmPreferences } {
     const configPath = this.deps.knownHostsPath.replace(/known_hosts$/, 'config');
     const raw = this.deps.vfs.readFile(configPath);
@@ -163,6 +177,11 @@ export class SshSession implements ISshSession {
   }
 
   private peerIdentificationLine: string | null = null;
+  private negotiatedAlgorithms: NegotiatedAlgorithms | null = null;
+
+  get negotiated(): NegotiatedAlgorithms | null {
+    return this.negotiatedAlgorithms;
+  }
 
   get serverIdentification(): string | null {
     return this.peerIdentificationLine;
@@ -221,6 +240,7 @@ export class SshSession implements ISshSession {
     this.sessionId = established.sessionId;
     this.hostKeyBlob = established.hostKeyBlob;
     this.peerIdentificationLine = established.peerIdentification.line;
+    this.negotiatedAlgorithms = established.algorithms;
     const conn = transportLink(transport, dialed);
     this.conn = conn;
     this.connection = new SshConnection(transport);
@@ -429,7 +449,8 @@ export class SshSession implements ISshSession {
     const strategy: IHostKeyVerificationStrategy = createVerificationStrategy(
       opts.strictHostKeyChecking,
     );
-    const store = this.knownHosts.load();
+    const knownHosts = this.knownHostsFor(opts);
+    const store = knownHosts.load();
     const decision = strategy.verify(host, key, store);
 
     switch (decision.action) {
@@ -437,7 +458,7 @@ export class SshSession implements ISshSession {
         return ok(undefined);
 
       case 'accept_and_save':
-        this.knownHosts.addHost(host, key, { hashed: opts.hashKnownHosts });
+        knownHosts.addHost(host, key, { hashed: opts.hashKnownHosts });
         this.deps.interactionHandler.showInfo(
           `Warning: Permanently added '${host}' (${sshKeyTypeLabel(key.algorithm)}) to the list of known hosts.`,
         );
@@ -453,7 +474,10 @@ export class SshSession implements ISshSession {
           );
         switch (reply.kind) {
           case 'yes':
-            this.knownHosts.addHost(host, key, { hashed: opts.hashKnownHosts });
+            knownHosts.addHost(host, key, { hashed: opts.hashKnownHosts });
+            this.deps.interactionHandler.showInfo(
+              `Warning: Permanently added '${host}' (${sshKeyTypeLabel(key.algorithm)}) to the list of known hosts.`,
+            );
             return ok(undefined);
           case 'fingerprint':
             // SSH-01-R6: accept silently when the user types the exact
@@ -484,7 +508,7 @@ export class SshSession implements ISshSession {
         });
 
       case 'reject': {
-        const knownHostsPath = this.deps.knownHostsPath;
+        const knownHostsPath = opts.knownHosts?.user[0] ?? this.deps.knownHostsPath;
         this.deps.interactionHandler.showWarning(hostKeyChangedWarning({
           host,
           keyTypeLabel: sshKeyTypeLabel(key.algorithm),
