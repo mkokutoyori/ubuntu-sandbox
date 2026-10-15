@@ -9,6 +9,7 @@ export interface EzvpnClientShellHost {
   selectedInterfaces(): string[];
   selectTunnel(name: string | null): void;
   selectedTunnel(): string | null;
+  defer(work: Promise<string>): void;
 }
 
 const CONFIG = Object.freeze(['config']);
@@ -21,6 +22,7 @@ const tunnel = word('name', 'Easy VPN remote configuration name');
 
 export function ezvpnClientSpecs(host: () => EzvpnClientShellHost): CommandSpec[] {
   const client = () => host().client();
+  const settled = (): string => { host().defer(client().whenIdle().then(() => '')); return ''; };
   const config = () => {
     const name = host().selectedTunnel();
     return name ? client().configs.get(name) ?? null : null;
@@ -61,14 +63,14 @@ export function ezvpnClientSpecs(host: () => EzvpnClientShellHost): CommandSpec[
             if (refusal) return refusal;
           }
         }
-        return '';
+        return settled();
       },
       undo: (_s, args) => {
         for (const iface of host().selectedInterfaces()) {
           if (args.side === 'inside') client().unassignInside(args.name, iface);
           else client().unassignOutside(args.name);
         }
-        return '';
+        return settled();
       },
     },
     {
@@ -203,7 +205,9 @@ export function ezvpnClientSpecs(host: () => EzvpnClientShellHost): CommandSpec[
         const c = client().configs.get(args.name);
         if (!c) return `% Easy VPN configuration ${args.name} is not defined`;
         if (c.connect !== 'manual') return `% Easy VPN configuration ${args.name} is not set to connect manually`;
-        return client().connect(args.name);
+        const failure = client().connect(args.name);
+        if (failure instanceof Promise) { host().defer(failure); return ''; }
+        return failure;
       },
       undo: (_s, args) => { client().disconnect(args.name); return ''; },
     },
@@ -219,7 +223,7 @@ export function ezvpnClientSpecs(host: () => EzvpnClientShellHost): CommandSpec[
       path: ['clear', 'crypto', 'ipsec', 'client', 'ezvpn', { ...tunnel, optional: true }],
       description: 'Reset the Easy VPN remote state machine',
       modes: EXEC, minPrivilege: 15,
-      run: (_s, args) => { client().clear(args.name); return ''; },
+      run: (_s, args) => { client().clear(args.name); return settled(); },
     },
     {
       id: 'show-crypto-ipsec-client-ezvpn',

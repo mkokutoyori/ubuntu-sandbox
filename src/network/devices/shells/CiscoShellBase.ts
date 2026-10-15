@@ -10026,7 +10026,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         {
           kind: 'run',
           run: async (rt) => {
-            const failure = client.connect(pending.name, {
+            const failure = await client.connect(pending.name, {
               user: rt.values.get('ezvpn_user') ?? '', password: rt.values.get('ezvpn_password') ?? '',
             });
             if (failure) rt.output(failure);

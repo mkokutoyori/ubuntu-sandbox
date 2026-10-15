@@ -38,6 +38,7 @@ export interface EzvpnSession {
 }
 
 export type AuthVerdict = 'accepted' | 'denied';
+type ConfigVerdict = IkeConfigReply | string | undefined;
 
 export interface MapClientPolicy {
   authenticationList?: string;
@@ -48,7 +49,7 @@ export interface MapClientPolicy {
 
 export interface EzvpnHost {
   isLive(peer: string): boolean;
-  authenticate(list: string, user: string, password: string): AuthVerdict;
+  authenticate(list: string, user: string, password: string): AuthVerdict | Promise<AuthVerdict>;
   authorize(list: string, group: string): AuthVerdict;
   splitNetworks(acl: string): readonly string[];
   clientPolicyFor(peer: string): MapClientPolicy | null;
@@ -130,27 +131,33 @@ export class EzvpnServer {
     return null;
   }
 
-  answer(peer: string, identity: string, request: IkeConfigRequest): IkeConfigReply | string | undefined {
+  answer(peer: string, identity: string, request: IkeConfigRequest): ConfigVerdict | Promise<ConfigVerdict> {
     if (!request.wantAddress || !this.host) return undefined;
-    const policy = this.host.clientPolicyFor(peer);
+    const host = this.host;
+    const policy = host.clientPolicyFor(peer);
     if (policy === null || !policy.respond) return undefined;
     const group = this.groupOf(identity);
     if (policy.authorizationList !== undefined) {
-      if (!group || this.host.authorize(policy.authorizationList, group.name) === 'denied') return 'AUTHORIZATION_FAILED';
+      if (!group || host.authorize(policy.authorizationList, group.name) === 'denied') return 'AUTHORIZATION_FAILED';
     }
     if (!group) return 'NO_GROUP_CONFIGURED';
-    if (group.accessRestrict !== undefined && this.host.ingressInterface(peer) !== group.accessRestrict) return 'ACCESS_RESTRICTED';
+    if (group.accessRestrict !== undefined && host.ingressInterface(peer) !== group.accessRestrict) return 'ACCESS_RESTRICTED';
     let user = request.identity ?? '';
     if (group.groupLock) {
       const at = user.lastIndexOf('@');
       if (at < 0 || user.slice(at + 1) !== identity) return 'GROUP_LOCK_VIOLATION';
       user = user.slice(0, at);
     }
-    if (policy.authenticationList !== undefined) {
-      if (user.length === 0 || this.host.authenticate(policy.authenticationList, user, request.credential ?? '') === 'denied') {
-        return 'AUTHENTICATION_FAILED';
-      }
-    }
+    const assign = (): ConfigVerdict => this.assign(peer, group, user);
+    if (policy.authenticationList === undefined) return assign();
+    if (user.length === 0) return 'AUTHENTICATION_FAILED';
+    const verdict = host.authenticate(policy.authenticationList, user, request.credential ?? '');
+    if (verdict instanceof Promise) return verdict.then((v) => (v === 'denied' ? 'AUTHENTICATION_FAILED' : assign()));
+    return verdict === 'denied' ? 'AUTHENTICATION_FAILED' : assign();
+  }
+
+  private assign(peer: string, group: EzvpnGroup, user: string): ConfigVerdict {
+    const host = this.host!;
     const others = this.liveSessions().filter((s) => s.peer !== peer);
     if (group.maxUsers !== undefined && others.filter((s) => s.group === group.name).length >= group.maxUsers) {
       return 'MAX_USERS_REACHED';
@@ -175,7 +182,7 @@ export class EzvpnServer {
       savePassword: group.savePassword,
       browserProxy: group.browserProxy ? this.browserProxies.get(group.browserProxy) : undefined,
       netmask: group.netmask ?? '255.255.255.255',
-      splitInclude: group.splitAcl ? this.host.splitNetworks(group.splitAcl) : undefined,
+      splitInclude: group.splitAcl ? host.splitNetworks(group.splitAcl) : undefined,
       dnsServers: group.dns.length > 0 ? [...group.dns] : undefined,
       winsServers: group.wins.length > 0 ? [...group.wins] : undefined,
       domain: group.domain,

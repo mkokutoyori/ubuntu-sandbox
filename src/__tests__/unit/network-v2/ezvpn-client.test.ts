@@ -117,7 +117,7 @@ describe('EzVPN client', () => {
     expect(await status(l)).toContain('Current State: XAUTH_REQ');
     const client = l.client._getOrCreateIPSecEngine().ezvpnClient;
     expect(client.pendingTunnel(null)).toEqual({ name: 'EZ' });
-    client.connect('EZ', { user: 'alice', password: 'alicepw' });
+    await client.connect('EZ', { user: 'alice', password: 'alicepw' });
     expect(await status(l)).toContain('Current State: IPSEC_ACTIVE');
   });
 

@@ -499,6 +499,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         selectedInterfaces: () => this.selectedPortsForConfigIf(),
         selectTunnel: (name) => { this.selectedEzvpnTunnel = name; },
         selectedTunnel: () => this.selectedEzvpnTunnel,
+        defer: (work) => { this._pendingAsync = work; },
       })),
       ...ezvpnSpecs(() => ({
         engine: () => (this.d() as unknown as { _getOrCreateIPSecEngine: () => EzvpnEngine })._getOrCreateIPSecEngine(),

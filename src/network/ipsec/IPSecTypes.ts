@@ -379,8 +379,13 @@ export interface IkeRekeyMessage {
   step: 'rekey';
 }
 
+export interface IkeProcessingMessage {
+  type: 'ike';
+  step: 'processing';
+}
+
 export type IkeMessage =
-  | IkeOfferMessage | IkeAcceptMessage | IkeRejectMessage | IkeRekeyMessage;
+  | IkeOfferMessage | IkeAcceptMessage | IkeRejectMessage | IkeRekeyMessage | IkeProcessingMessage;
 
 export interface GdoiGroupSaInstall {
   type: 'gdoi';
@@ -434,7 +439,7 @@ export function isIkeMessage(p: unknown): p is IkeMessage {
   if (!p || typeof p !== 'object') return false;
   const c = p as { type?: unknown; step?: unknown };
   return c.type === 'ike'
-    && (c.step === 'offer' || c.step === 'accept' || c.step === 'reject' || c.step === 'rekey');
+    && (c.step === 'offer' || c.step === 'accept' || c.step === 'reject' || c.step === 'rekey' || c.step === 'processing');
 }
 
 export interface IKEv2_SA {
