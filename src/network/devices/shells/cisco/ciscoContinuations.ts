@@ -31,8 +31,6 @@ export const SOCLE: ContinuationTable = {
   },
   config: {
     'clock summer-time': ['recurring'],
-    'enable password': ['level'],
-    'enable secret': ['level'],
     'ip community-list': ['expanded', 'standard'],
     'ip host': ['ns'],
     'ip http access-class': ['ipv4'],
