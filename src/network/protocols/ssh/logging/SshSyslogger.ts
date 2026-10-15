@@ -54,6 +54,7 @@ export interface SshSysloggerOptions {
    */
   readonly logMgr?: LinuxLogManager;
   readonly logLevel?: () => SshdLogLevel;
+  readonly sink?: (message: string) => void;
 }
 
 /**
@@ -68,10 +69,11 @@ export class SshSyslogger {
   private readonly clock: () => Date;
   private readonly logMgr: LinuxLogManager | null;
   private readonly logLevel: () => SshdLogLevel;
+  private readonly sink: ((message: string) => void) | null;
   private readonly unsubscribe: () => void;
 
   constructor(
-    private readonly vfs: VirtualFileSystem,
+    private readonly vfs: VirtualFileSystem | null,
     bus: ISshServerEventBus,
     opts: SshSysloggerOptions,
   ) {
@@ -81,6 +83,7 @@ export class SshSyslogger {
     this.clock = opts.clock ?? (() => simulationDate());
     this.logMgr = opts.logMgr ?? null;
     this.logLevel = opts.logLevel ?? (() => 'INFO');
+    this.sink = opts.sink ?? null;
     this.unsubscribe = bus.on('*', (e) => this.handle(e));
   }
 
@@ -99,6 +102,9 @@ export class SshSyslogger {
     const message = this.format(event);
     if (!message) return;
     this.append(message);
+    if (event.kind === 'auth_failure' && event.reason === 'max_auth_tries') {
+      this.append(`Disconnecting authenticating user ${event.user} ${event.ip} port ${event.port ?? this.port}: Too many authentication failures [preauth]`);
+    }
     if (event.kind === 'auth_failure' && (event.reason === 'account_expired' || event.reason === 'pam_account_denied')) {
       this.append(`fatal: Access denied for user ${event.user} by PAM account configuration [preauth]`);
     }
@@ -126,6 +132,10 @@ export class SshSyslogger {
           return `error: PAM: ${event.detail ?? 'Authentication failure'} for ${event.user} from ${event.ip}`;
         }
         if (event.reason === 'password_expired') return null;
+        if (event.reason === 'publickey_query' && !VERBOSE_LEVELS.has(this.logLevel())) return null;
+        if (event.reason === 'max_auth_tries') {
+          return `error: maximum authentication attempts exceeded for ${event.validUser === false ? 'invalid user ' : ''}${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2 [preauth]`;
+        }
         const method = event.method ?? 'unknown';
         const qualite = event.validUser === false ? 'invalid user ' : '';
         return `Failed ${method} for ${qualite}${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
@@ -159,9 +169,6 @@ export class SshSyslogger {
         }
         return null;
       }
-
-      case 'auth_throttled':
-        return `Refusing connection from ${event.ip}: ${event.failuresInWindow} authentication failures in ${event.windowSeconds}s window`;
 
       case 'client_disconnected':
         return null;
@@ -208,6 +215,11 @@ export class SshSyslogger {
   }
 
   private append(message: string): void {
+    if (this.sink !== null) {
+      this.sink(message);
+      return;
+    }
+    if (this.vfs === null) return;
     // When wired to a LinuxLogManager the journal owns BOTH the on-disk
     // `/var/log/auth.log` (via addEntry → appendToLogFile) and the live
     // `journalctl` feed — writing the file again here would duplicate

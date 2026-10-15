@@ -23,7 +23,6 @@ import {
   PC2_IP,
   PC3_IP,
 } from './ssh-lan-fixtures';
-import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import {
   runSshKeygenCommand,
   vfsKeygenHost,
@@ -170,32 +169,23 @@ describe('SSH LAN — file transfers', () => {
   });
 
   // 63
-  it('S63 — ssh-copy-id appends a key to remote authorized_keys', async () => {
-    const session = await openSshSession(lan.pc1, PC2_IP);
-    const result = await sshCopyId(
-      session,
-      'ssh-ed25519 AAAACOPYID alice@local',
-      '/home/user',
-    );
-    session.disconnect();
-    expect('added' in result && result.added).toBe(1);
-    const stored = await lan.pc2.executeCommand(
-      'cat /home/user/.ssh/authorized_keys',
-    );
-    expect(stored).toContain('AAAACOPYID');
+  it('S63 — ssh-copy-id appends the key to the remote authorized_keys', async () => {
+    await lan.pc1.executeCommand('ssh-keygen -q -t ed25519 -N "" -f /home/user/.ssh/id_ed25519');
+    const body = (await lan.pc1.executeCommand('cat /home/user/.ssh/id_ed25519.pub')).split(' ')[1];
+    const out = await lan.pc1.executeCommand(`sshpass -p admin ssh-copy-id -o StrictHostKeyChecking=no user@${PC2_IP}`);
+    expect(out).toContain('Number of key(s) added: 1');
+    const stored = await lan.pc2.executeCommand('cat /home/user/.ssh/authorized_keys');
+    expect(stored).toContain(body);
   });
 
   // 64
-  it('S64 — ssh-copy-id is idempotent (second call adds 0 keys)', async () => {
-    const session = await openSshSession(lan.pc1, PC2_IP);
-    await sshCopyId(session, 'ssh-ed25519 ABDUP alice@local', '/home/user');
-    const second = await sshCopyId(
-      session,
-      'ssh-ed25519 ABDUP alice@local',
-      '/home/user',
-    );
-    session.disconnect();
-    expect('added' in second && second.added).toBe(0);
+  it('S64 — ssh-copy-id is idempotent: the second call installs nothing', async () => {
+    await lan.pc1.executeCommand('ssh-keygen -q -t ed25519 -N "" -f /home/user/.ssh/id_ed25519');
+    await lan.pc1.executeCommand(`sshpass -p admin ssh-copy-id -o StrictHostKeyChecking=no user@${PC2_IP}`);
+    const second = await lan.pc1.executeCommand(`sshpass -p admin ssh-copy-id -o StrictHostKeyChecking=no user@${PC2_IP}`);
+    expect(second).toContain('All keys were skipped because they already exist on the remote system.');
+    const stored = await lan.pc2.executeCommand('cat /home/user/.ssh/authorized_keys');
+    expect(stored.trim().split('\n')).toHaveLength(1);
   });
 
   // 65

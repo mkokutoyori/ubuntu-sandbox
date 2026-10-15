@@ -31,6 +31,8 @@ export const WINDOWS_PROGRAMS: readonly WinProgram[] = [
   ...programsIn('C:\\Windows\\System32\\OpenSSH', [
     ['scp.exe', 405504], ['sftp.exe', 442368], ['ssh-add.exe', 316416], ['ssh-agent.exe', 285184],
     ['ssh-keygen.exe', 502272], ['ssh-keyscan.exe', 332800], ['ssh.exe', 1002496],
+    ['sshd.exe', 1262592], ['sftp-server.exe', 273920], ['ssh-keysign.exe', 241664],
+    ['ssh-pkcs11-helper.exe', 313344], ['ssh-shellhost.exe', 106496],
   ]),
   ...programsIn('C:\\Windows\\System32\\wbem', [['wmic.exe', 47104]]),
   ...programsIn('C:\\Windows\\System32\\WindowsPowerShell\\v1.0', [['powershell.exe', 452608]]),

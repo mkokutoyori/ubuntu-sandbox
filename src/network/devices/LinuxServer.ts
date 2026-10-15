@@ -211,8 +211,8 @@ export class LinuxServer extends LinuxMachine {
     }
   }
 
-  protected override buildCommandContext(): LinuxCommandContext {
-    return { ...super.buildCommandContext(), radtestClient: this.radtestClient };
+  protected override buildCommandContext(outputPiped = false, invokedAs?: string): LinuxCommandContext {
+    return { ...super.buildCommandContext(outputPiped, invokedAs), radtestClient: this.radtestClient };
   }
 
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }

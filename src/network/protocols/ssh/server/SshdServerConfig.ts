@@ -42,6 +42,7 @@ export interface SshdMatchOverrides {
   denyUsers?: readonly string[];
   allowGroups?: readonly string[];
   denyGroups?: readonly string[];
+  authorizedKeysFile?: readonly string[];
 }
 
 export interface SshdMatchBlock {
@@ -68,6 +69,7 @@ export interface SshdEffectiveView {
   readonly clientAliveIntervalSeconds: number;
   readonly clientAliveCountMax: number;
   readonly printMotd: boolean;
+  readonly authorizedKeysFile: readonly string[];
 }
 
 export interface SshdSubsystems {
@@ -125,6 +127,7 @@ export interface SshdServerConfigSnapshot {
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
+  readonly authorizedKeysFile: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 }
 
@@ -211,6 +214,12 @@ function addressListMatches(patternList: string, ip: string): boolean {
   return anyPositive ? matchedPositive : true;
 }
 
+function userPatternMatches(pattern: string, user: string, address: string): boolean {
+  const at = pattern.indexOf('@');
+  if (at < 0) return globMatch(pattern, user);
+  return globMatch(pattern.slice(0, at), user) && address !== '' && addressListMatches(pattern.slice(at + 1), address);
+}
+
 export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly ports: readonly number[];
   readonly listenAddresses: readonly string[];
@@ -261,6 +270,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
+  readonly authorizedKeysFile: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 
   private constructor(s: SshdServerConfigSnapshot) {
@@ -313,6 +323,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.forceCommand = s.forceCommand;
     this.chrootDirectory = s.chrootDirectory;
     this.permitOpen = s.permitOpen;
+    this.authorizedKeysFile = s.authorizedKeysFile;
     this.matchBlocks = s.matchBlocks;
   }
 
@@ -367,6 +378,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       forceCommand: null,
       chrootDirectory: null,
       permitOpen: Object.freeze(['any']),
+      authorizedKeysFile: Object.freeze(['.ssh/authorized_keys', '.ssh/authorized_keys2']),
       matchBlocks: Object.freeze([]),
     });
   }
@@ -452,15 +464,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       if (block.overrides.allowUsers)  allowUsers  = block.overrides.allowUsers;
       if (block.overrides.allowGroups) allowGroups = block.overrides.allowGroups;
     }
-    if (denyUsers.some(p => globMatch(p, user))) return 'DenyUsers';
+    const address = ctx?.address ?? '';
+    if (denyUsers.some(p => userPatternMatches(p, user, address))) return 'DenyUsers';
+    if (allowUsers.length > 0 && !allowUsers.some(p => userPatternMatches(p, user, address))) return 'AllowUsers';
     if (denyGroups.some(p => groups.some(g => globMatch(p, g)))) return 'DenyGroups';
-    if (allowUsers.length > 0 && !allowUsers.some(p => globMatch(p, user))) {
-      if (allowGroups.length === 0 || !allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
-        return allowGroups.length === 0 ? 'AllowUsers' : 'AllowGroups';
-      }
-    } else if (allowGroups.length > 0 && !allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
-      if (allowUsers.length === 0) return 'AllowGroups';
-    }
+    if (allowGroups.length > 0 && !allowGroups.some(p => groups.some(g => globMatch(p, g)))) return 'AllowGroups';
     return null;
   }
 
@@ -484,6 +492,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       clientAliveIntervalSeconds: this.clientAliveIntervalSeconds,
       clientAliveCountMax: this.clientAliveCountMax,
       printMotd: this.printMotd,
+      authorizedKeysFile: this.authorizedKeysFile,
     };
     for (const block of this.matchBlocks) {
       if (!this.matchApplies(block.criteria, ctx)) continue;
@@ -519,7 +528,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     return requested === 'localhost' ? '127.0.0.1' : requested;
   }
 
-  private matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {
+  matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {
     for (const c of criteria) {
       switch (c.keyword) {
         case 'User':       if (!globMatch(c.value, ctx.user)) return false; break;
@@ -676,6 +685,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
       return cfg.withSubsystem(name, rest.join(' '));
     }
     case 'permitopen': return cfg.mutate({ permitOpen: Object.freeze(value.split(/\s+/).filter(Boolean)) });
+    case 'authorizedkeysfile': return cfg.mutate({ authorizedKeysFile: Object.freeze(value.split(/\s+/).filter(Boolean)) });
     default: return cfg;
   }
 }
@@ -705,6 +715,7 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'denyusers':   o.denyUsers  = Object.freeze(value.split(/\s+/)); break;
     case 'allowgroups': o.allowGroups = Object.freeze(value.split(/\s+/)); break;
     case 'denygroups':  o.denyGroups  = Object.freeze(value.split(/\s+/)); break;
+    case 'authorizedkeysfile': o.authorizedKeysFile = Object.freeze(value.split(/\s+/).filter(Boolean)); break;
   }
 }
 

@@ -892,6 +892,8 @@ export class BashInterpreter {
     if (cmdName === 'command') {
       // `command` runs its operand skipping function and alias lookup.
       yield* this.runCommandWord(args.slice(1), pipeInput);
+    } else if (cmdName === 'exec') {
+      if (args.length > 1) yield* this.runCommandWord(args.slice(1), pipeInput);
     } else if (fn) {
       yield* this.callFunction(fn, args.slice(1));
     } else if (isBuiltin(cmdName)) {

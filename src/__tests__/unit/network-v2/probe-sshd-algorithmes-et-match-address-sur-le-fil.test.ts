@@ -77,11 +77,11 @@ describe('sshd decide ses algorithmes depuis sshd_config', () => {
     expect((await first.executeCommand(ssh(LEGACY_CLIENT, 'whoami'))).trim()).toBe('alice');
   });
 
-  it('la cle d\'hote RSA est creee dans /etc/ssh quand ssh-rsa est autorise', async () => {
-    expect(await server.executeCommand('ls /etc/ssh')).not.toContain('ssh_host_rsa_key');
-    await reloadWith('HostKeyAlgorithms +ssh-rsa');
-    await first.executeCommand(ssh('-o HostKeyAlgorithms=ssh-rsa', 'true'));
+  it('la cle d\'hote RSA existe des l\'installation, mais ssh-rsa n\'est annoncee que lorsqu\'il est autorise', async () => {
     expect(await server.executeCommand('ls /etc/ssh')).toContain('ssh_host_rsa_key');
+    expect(await first.executeCommand(ssh('-o HostKeyAlgorithms=ssh-rsa', 'true'))).toMatch(/no matching host key type found/);
+    await reloadWith('HostKeyAlgorithms +ssh-rsa');
+    expect(await first.executeCommand(ssh('-o HostKeyAlgorithms=ssh-rsa', 'true'))).not.toMatch(/no matching host key type found/);
   });
 });
 

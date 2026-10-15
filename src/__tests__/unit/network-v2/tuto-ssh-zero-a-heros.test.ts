@@ -490,7 +490,7 @@ describe('TP 15 — auditer le parc depuis un seul poste', () => {
     await pc.executeCommand(`cat > /tmp/audit-ssh.sh <<'EOF'\n${script}\nEOF`);
     await pc.executeCommand('chmod +x /tmp/audit-ssh.sh');
     const report = await pc.executeCommand('/tmp/audit-ssh.sh');
-    expect(report).toMatch(/== lsrv\s+LISTEN[^\n]*:22/);
+    expect(report).toMatch(/== lsrv\s+(Warning: Permanently added[^\n]*\n)?LISTEN[^\n]*:22/);
     expect(report).toMatch(/== ior[\s\S]*SSH Enabled - version 2\.0/);
     expect(report).toMatch(/== vrr[\s\S]*Stelnet server\s+: Enable/);
     expect(report).toMatch(/== fgt[\s\S]*set allowaccess ping ssh/);

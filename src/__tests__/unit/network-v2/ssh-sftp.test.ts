@@ -41,7 +41,6 @@ import {
   runSshKeygenCommand,
   vfsKeygenHost,
 } from '@/network/protocols/ssh/SshKeygenCommand';
-import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs, parseScpEndpoint } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
@@ -380,39 +379,6 @@ describe('SSH-03 — ssh-keygen (key pair generation)', () => {
     expect(result.output).toContain('/home/alice/.ssh/id_rsa already exists.');
     expect(result.output).toContain('Overwrite (y/n)? ');
     expect(vfs.readFile('/home/alice/.ssh/id_rsa')).toBe('pre-existing');
-  });
-});
-
-describe('SSH-03 — ssh-copy-id (authorized_keys deployment)', () => {
-  it('appends the public key to remote ~/.ssh/authorized_keys', async () => {
-    const setup = makeServer({ username: 'alice', password: 'secret' });
-    const localVfs = new VirtualFileSystem();
-    const session = new SshSession({
-      tcpConnector: makeConnector(setup.handler),
-      vfs: localVfs,
-      localUser: 'root',
-      localUid: 0,
-      localGid: 0,
-      knownHostsPath: '/root/.ssh/known_hosts',
-      interactionHandler: new SilentSshInteractionHandler('secret'),
-    });
-    const opts = SshConnectOptionsBuilder.create()
-      .host(REMOTE_IP)
-      .user('alice')
-      .password('secret')
-      .strictHostKeyChecking('accept-new')
-      .build();
-    expect(isOk(await session.connect(opts))).toBe(true);
-
-    const result = await sshCopyId(
-      session,
-      'ssh-ed25519 AAAAabcXYZ alice@local',
-      '/home/alice',
-    );
-    expect('added' in result && result.added).toBe(1);
-    const stored = setup.vfs.readFile('/home/alice/.ssh/authorized_keys');
-    expect(stored).toContain('AAAAabcXYZ');
-    session.disconnect();
   });
 });
 

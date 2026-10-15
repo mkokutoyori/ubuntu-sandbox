@@ -119,7 +119,6 @@ import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols
 import { isOk } from '@/network/protocols/ssh/Result';
 import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
 import { splitShellWords } from '@/bash/runtime/ShellWords';
-import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import type { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
@@ -1727,12 +1726,9 @@ export class LinuxTerminalSession extends TerminalSession {
     // directly using the reactive QueuedTerminalIO approach.
     const sshCopyMeta = ctx.metadata.get('enter_ssh_copy_id') as string | undefined;
     if (sshCopyMeta) {
-      const meta = JSON.parse(sshCopyMeta) as {
-        userAtHost: string;
-        identityFile: string;
-      };
+      const meta = JSON.parse(sshCopyMeta) as { args: string[] };
       const password = ctx.values.get('ssh_copy_id_password') ?? '';
-      this.runSshCopyId(meta, password);
+      void this.runSshCopyId(meta, password);
       return;
     }
     const scpMeta = ctx.metadata.get('enter_scp') as string | undefined;
@@ -2567,29 +2563,8 @@ export class LinuxTerminalSession extends TerminalSession {
    * BRD SSH-03-R5.
    */
   private enterSshCopyId(args: string[]): void {
-    let identityFile = '';
-    let userAtHost = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-i' && i + 1 < args.length) identityFile = args[++i];
-      else if (!args[i].startsWith('-')) userAtHost = args[i];
-    }
-    if (!userAtHost) {
-      this.addLine('usage: ssh-copy-id [-i identity_file] [user@]host', 'error');
-      this.notify();
-      return;
-    }
-    const dev = this.device as unknown as {
-      executor?: {
-        userMgr?: { getUser(name: string): { home?: string } | undefined };
-      };
-    };
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const resolvedIdentity = identityFile || `${homeDir}/.ssh/id_ed25519`;
-    const displayTarget = userAtHost.includes('@')
-      ? userAtHost
-      : `${this.currentUser}@${userAtHost}`;
-
+    const target = [...args].reverse().find((word) => !word.startsWith('-')) ?? '';
+    const displayTarget = target.includes('@') ? target : `${this.currentUser}@${target}`;
     const steps: InteractiveStep[] = [
       {
         type: 'password',
@@ -2600,60 +2575,19 @@ export class LinuxTerminalSession extends TerminalSession {
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_ssh_copy_id',
-            JSON.stringify({
-              userAtHost: displayTarget,
-              identityFile: resolvedIdentity,
-            }),
-          );
+          ctx.metadata.set('enter_ssh_copy_id', JSON.stringify({ args }));
         },
       },
     ];
-    this.startFlowFromSteps(steps, `ssh-copy-id ${userAtHost}`);
+    this.startFlowFromSteps(steps, `ssh-copy-id ${target}`);
   }
 
-  private async runSshCopyId(
-    meta: { userAtHost: string; identityFile: string },
-    password: string,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-      };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+  private async runSshCopyId(meta: { args: string[] }, password: string): Promise<void> {
+    const machine = this.device as unknown as {
+      executor?: { runSshCopyIdAsync(args: string[], password: string): Promise<{ output: string; exitCode: number }> };
     };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
-      this.addLine('ssh-copy-id: no local filesystem', 'error');
-      this.notify();
-      return;
-    }
-    const pubPath = `${meta.identityFile}.pub`;
-    const publicKeyLine = localVfs.readFile(pubPath);
-    if (!publicKeyLine) {
-      this.addLine(
-        `/usr/bin/ssh-copy-id: ERROR: failed to open ID file '${pubPath}': No such file or directory`,
-        'error',
-      );
-      this.notify();
-      return;
-    }
-    const session = await this.connectSshForBatch(meta.userAtHost, password);
-    if (!session) return;
-    const user = meta.userAtHost.split('@')[0];
-    const remoteHome = `/home/${user}`;
-    const result = await sshCopyId(session, publicKeyLine.trim(), remoteHome);
-    session.disconnect();
-    if ('error' in result) {
-      this.addLine(`ssh-copy-id: ${result.error}`, 'error');
-    } else {
-      for (const line of result.output) {
-        this.addLine(
-          line.replace('<user>', user).replace('<host>', meta.userAtHost.split('@')[1] ?? ''),
-        );
-      }
-    }
+    const outcome = await machine.executor?.runSshCopyIdAsync(meta.args, password);
+    for (const line of (outcome?.output ?? '').split('\n')) this.addLine(line);
     this.notify();
   }
 

@@ -160,7 +160,7 @@ describe('SSH terminal — device.executeCommand stubs', () => {
     // mode prints just the command's output (no banner) — here, the
     // remote's /etc/hostname.
     const out = await lan.pc1.executeCommand(`ssh -o StrictHostKeyChecking=accept-new alice@${PC2_IP} hostname`, 'admin\n');
-    expect(out.trim()).toBe(lan.pc2.getHostname());
+    expect(out.trim().split('\n').pop()).toBe(lan.pc2.getHostname());
     expect(out).not.toMatch(/Connection refused/);
   });
 

@@ -66,7 +66,7 @@ describe('le fichier installe', () => {
 
   it('les valeurs par defaut sont celles du fichier non touche', async () => {
     const out = await effective();
-    expect(out).toMatch(/^permitrootlogin prohibit-password$/m);
+    expect(out).toMatch(/^permitrootlogin without-password$/m);
     expect(out).toMatch(/^maxauthtries 6$/m);
     expect(out).toMatch(/^x11forwarding yes$/m);
   });

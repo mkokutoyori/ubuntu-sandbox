@@ -194,6 +194,9 @@ import { SshdServerConfig } from '../../protocols/ssh/server/SshdServerConfig';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
+import { runSshCopyId } from '../../protocols/ssh/SshCopyId';
+import { sshPublicKeyFromBlob } from './network/SshKeygenMaterial';
+import { splitSshCommandLine } from '../../protocols/ssh/client/SshClientInvocation';
 import { parseScpArgs, parseScpEndpoint, parseSshAuthority, type SshAuthority } from '../../protocols/ssh/Scp';
 import { scpDownload, scpUpload } from '../../protocols/ssh/scp/ScpWireClient';
 import { SftpInteractiveSession } from '../../protocols/ssh/sftp/SftpInteractiveSession';
@@ -345,6 +348,21 @@ function parseSudoLead(args: readonly string[]): {
   return { flags, user, rest: args.slice(i) };
 }
 
+const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'sh', 'bash', 'dash', 'xargs']);
+
+const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
+  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl',
+]);
+
+const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
+
+function readsStandardInput(command: string, args: readonly string[]): boolean {
+  if (ALWAYS_READ_STDIN.has(command)) return true;
+  const operands = args.filter((argument) => !argument.startsWith('-') || argument === '-').length;
+  if (READ_STDIN_WITHOUT_OPERAND.has(command)) return operands === 0;
+  return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= (command === 'tr' ? 2 : 1);
+}
+
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
   'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'basenc', 'xxd',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
@@ -428,6 +446,8 @@ interface TransferWireOptions {
 
 type SshHostKeyProbe = (ip: string, port: number, hostKeyAlgorithms: readonly string[]) => HostKeyProbeResult | null;
 
+const HOST_KEY_ADDED_NOTICE = 'Warning: Permanently added';
+
 export class LinuxCommandExecutor {
   interactiveTerminal = false;
   interactiveOutput: ((line: string) => void) | null = null;
@@ -447,6 +467,18 @@ export class LinuxCommandExecutor {
   readonly mountTable: MountTable;
   readonly userMgr: LinuxUserManager;
   _scenarioStdin?: string;
+  private execInput: string | undefined;
+
+  setExecInput(input: string | undefined): void {
+    this.execInput = input;
+  }
+
+  private takeExecInput(cmd: string, args: readonly string[]): string | undefined {
+    if (this.execInput === undefined || !readsStandardInput(cmd.split('/').pop() ?? cmd, args)) return undefined;
+    const input = this.execInput;
+    this.execInput = undefined;
+    return input;
+  }
   /**
    * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
    * and surfaced to outgoing SSH connections that honour `ssh -A`.
@@ -1895,7 +1927,7 @@ export class LinuxCommandExecutor {
     if (!isOk(opened)) {
       const reason = opened.error.kind === 'CHANNEL_ERROR' ? opened.error.message : opened.error.kind;
       return {
-        output: `channel 0: open failed: ${reason}\nStdio forwarding request failed: Session open refused by peer\n`,
+        output: `channel 0: open failed: ${reason}\nstdio forwarding failed\n`,
         exitCode: 255,
       };
     }
@@ -1965,7 +1997,7 @@ export class LinuxCommandExecutor {
     if (target.forwardAgent) session.forwardAgent(this.agentPort());
     const joined = joinRemoteCommand(target.commandWords, remoteQuotingOf(session.serverIdentification));
     const command = /^(exit|logout)\s*$/i.test(joined) ? '' : joined;
-    const execOptions = execChannelOptionsFor(opts, args);
+    const execOptions = { ...execChannelOptionsFor(opts, args), ...(this.execStdinForSsh === undefined ? {} : { stdin: this.execStdinForSsh }) };
     const settled = command && !target.holdOnly
       ? await this.relayOverWire(session, command, execOptions)
       : null;
@@ -1996,7 +2028,7 @@ export class LinuxCommandExecutor {
         command,
         settled,
         shell: relayedShell,
-        notices: interactif ? wire.notices : [],
+        notices: interactif ? wire.notices : wire.notices.filter((notice) => !notice.startsWith(HOST_KEY_ADDED_NOTICE)),
       }), true);
     } finally {
       if (target.holdOnly || backgroundPid !== null) this.forwarding?.holdOpen(session);
@@ -2480,113 +2512,59 @@ export class LinuxCommandExecutor {
     return stamped.map((entry) => `${sshDirectory}/${entry.name}`);
   }
 
-  private runSshCopyId(args: string[]): { output: string; exitCode: number } {
-    let identity: string | null = null;
-    let target: string | null = null;
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-i' && args[i + 1]) { identity = args[++i]; continue; }
-      if (SSH_COPY_ID_VALUE_FLAGS.has(a) && args[i + 1]) { i++; continue; }
-      if (a.startsWith('-')) continue;
-      if (!target) target = a;
-    }
-    if (!target) {
-      return { output: 'usage: ssh-copy-id [-i [identity_file]] [-p port] [user@]hostname', exitCode: 1 };
-    }
-
-    // Resolve the public key to install (honour -i, else the default set).
+  async runSshCopyIdAsync(args: string[], offeredPassword: string): Promise<{ output: string; exitCode: number }> {
     const home = this.sshHomeDir();
-    const pubCandidates = identity
-      ? [identity.endsWith('.pub') ? identity : `${identity}.pub`]
-      : this.newestFirstPublicKeys(`${home}/.ssh`);
-    let pubKey: string | null = null;
-    let pubSource = pubCandidates[0];
-    for (const c of pubCandidates) {
-      const data = this.vfs.readFile(c);
-      if (data && data.trim()) { pubKey = data.trim(); pubSource = c; break; }
-    }
-    if (!pubKey) {
-      return {
-        output: '/usr/bin/ssh-copy-id: ERROR: No identities found',
-        exitCode: 1,
-      };
-    }
-
-    const parsed = /^(?:([\w.-]+)@)?([\w.-]+)$/.exec(target);
-    if (!parsed) {
-      return { output: `ssh-copy-id: Could not resolve hostname ${target}`, exitCode: 1 };
-    }
-    const remoteUser = parsed[1] ?? this.userMgr.currentUser;
-    const host = parsed[2];
-    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
-    if (!found || found.poweredOff || found.interfaceDown) {
-      return {
-        output: `/usr/bin/ssh-copy-id: ERROR: ssh: connect to host ${host} port 22: No route to host`,
-        exitCode: 255,
-      };
-    }
-    const remoteExec = (found.device as unknown as {
-      isServiceActive?: (n: string) => boolean;
-      executor?: {
-        vfs: VirtualFileSystem;
-        userMgr: { getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined };
-      };
+    const typedPassword = (this._scenarioStdin ?? '').split('\n')[0];
+    const password = offeredPassword !== '' ? offeredPassword : this.sshpassPassword ?? (typedPassword === '' ? undefined : typedPassword);
+    return runSshCopyId(args.map((word) => this.expandTilde(word)), {
+      home,
+      readable: (path) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
+      newestPublicKey: () => this.newestFirstPublicKeys(`${home}/.ssh`)[0] ?? null,
+      agentKeys: async () => {
+        const port = this.agentPort();
+        if (port === undefined) return [];
+        const held = await port.identities();
+        return held.map((entry) => `${sshPublicKeyFromBlob(entry.blob)?.algorithm ?? 'ssh-ed25519'} ${bytesToBase64(entry.blob)} ${entry.comment}`);
+      },
+      ssh: async (sshArgs, stdin) => {
+        this.execStdinForSsh = stdin;
+        try {
+          return await this.runSshExecAsync([...sshArgs], password);
+        } finally {
+          this.execStdinForSsh = undefined;
+        }
+      },
+      sftp: async (sftpArgs, keys) => this.installKeysOverSftp(sftpArgs, keys, password),
     });
-    if (typeof remoteExec.isServiceActive !== 'function' || !remoteExec.isServiceActive('ssh')) {
-      return {
-        output: `/usr/bin/ssh-copy-id: ERROR: ssh: connect to host ${host} port 22: Connection refused`,
-        exitCode: 255,
-      };
-    }
-    const rexec = remoteExec.executor;
-    const remoteUserEntry = rexec?.userMgr.getUser(remoteUser);
-    if (!rexec || !remoteUserEntry) {
-      return {
-        output: `/usr/bin/ssh-copy-id: ERROR: ${remoteUser}@${host}: Permission denied (publickey,password).`,
-        exitCode: 255,
-      };
-    }
-    const remoteHome = remoteUserEntry.home ?? `/home/${remoteUser}`;
-    const sshDir = `${remoteHome}/.ssh`;
-    const akPath = `${sshDir}/authorized_keys`;
-    // Real OpenSSH ssh-copy-id (the shell script in openssh-client) explicitly
-    // tightens ~/.ssh to 700 and ~/.ssh/authorized_keys to 600 before exiting:
-    //   mkdir -m 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
-    // Replicate that so the simulator's deployment matches what a real
-    // distro leaves behind.
-    if (!rexec.vfs.resolveInode(sshDir)) {
-      rexec.vfs.mkdirp(sshDir, 0o700, remoteUserEntry.uid, remoteUserEntry.gid);
-    } else {
-      rexec.vfs.chmod(sshDir, 0o700);
-    }
-    const existing = rexec.vfs.readFile(akPath) ?? '';
-    if (existing.split('\n').some((l) => l.trim() === pubKey)) {
-      return {
-        output: '/usr/bin/ssh-copy-id: WARNING: All keys were skipped because they already exist on the remote system.',
-        exitCode: 0,
-      };
-    }
-    const sep = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
-    rexec.vfs.writeFile(
-      akPath,
-      existing + sep + pubKey + '\n',
-      remoteUserEntry.uid,
-      remoteUserEntry.gid,
-      0o022,
-    );
-    rexec.vfs.chmod(akPath, 0o600);
-    return {
-      output: [
-        `/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "${pubSource}"`,
-        '/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed',
-        '',
-        'Number of key(s) added: 1',
-        '',
-        `Now try logging into the machine, with:   "ssh '${remoteUser}@${host}'"`,
-        'and check to make sure that only the key(s) you wanted were added.',
-      ].join('\n'),
-      exitCode: 0,
-    };
+  }
+
+  private execStdinForSsh: string | undefined;
+
+  private async installKeysOverSftp(
+    args: readonly string[], keys: string, password: string | undefined,
+  ): Promise<{ output: string; exitCode: number }> {
+    const flagged = splitSshCommandLine([...args]);
+    const target = flagged.positional[0] ?? '';
+    const authority = /^(?:([^@]+)@)?(.+)$/.exec(target);
+    const host = authority?.[2] ?? target;
+    const user = authority?.[1] ?? this.userMgr.currentUser;
+    const portIndex = args.indexOf('-p');
+    const options = this.transferWireOptions(portIndex < 0 ? [] : ['-P', args[portIndex + 1]]);
+    const resolution = await resolveSshTarget(this.localDevice as never, host, options.port, OPENSSH_SSH);
+    if (resolution.kind === 'failed') return { output: resolution.line, exitCode: 255 };
+    const opened = await this.tryOpenWireSftpFs(host, user, password ?? '', options, 'sftp', resolution.address);
+    if (opened.fs === null) return { output: opened.denial ?? `${user}@${host}: Permission denied (publickey,password).`, exitCode: 255 };
+    const fs = opened.fs;
+    const directory = '.ssh';
+    fs.mkdir(directory);
+    const existing = fs.readFile(`${directory}/authorized_keys`);
+    const previous = isOk(existing) ? existing.value : '';
+    const separator = previous === '' || previous.endsWith('\n') ? '' : '\n';
+    fs.writeFile(`${directory}/authorized_keys`, `${previous}${separator}${keys}`);
+    fs.setPermissions(directory, 0o700);
+    fs.setPermissions(`${directory}/authorized_keys`, 0o600);
+    opened.release?.();
+    return { output: '', exitCode: 0 };
   }
 
   /** All configured IPv4 addresses (for Host_Alias/CIDR matching in sudoers). */
@@ -5089,6 +5067,7 @@ export class LinuxCommandExecutor {
   }
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
+    stdin ??= this.takeExecInput(cmd, args);
     const c = this.ctx(outputPiped);
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
@@ -5647,6 +5626,7 @@ export class LinuxCommandExecutor {
           ? this.runBashStartupFiles(parsed.login, parsed.interactive)
           : { ...this.commandEnvironment() };
         if (parsed.cmdString !== null) {
+          this.execInput = stdin ?? this.execInput;
           return this.runScriptProcess(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
             runScriptContent(
               parsed.cmdString!, parsed.arg0, parsed.scriptArgv, bridge,
@@ -5987,7 +5967,6 @@ export class LinuxCommandExecutor {
         return runSshAgentCommand(args, { ...this.agentHost(), agent: new LocalAgentPort(this.sshAgent) });
       case 'ssh-keyscan': return this.runSshKeyscan(args, stdin);
       case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
-      case 'ssh-copy-id': return this.runSshCopyId(args);
       case 'xargs': {
         const r = runXargs(args, stdin, {
           run: (argv) => this.dispatch(argv[0], argv.slice(1), undefined, isSudo),

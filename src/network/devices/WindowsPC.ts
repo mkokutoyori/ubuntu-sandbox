@@ -53,13 +53,15 @@ import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/c
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, type ICMPType, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
-import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
+import { runSshd, type SshdDaemonRequest } from '../protocols/ssh/server/SshdCommand';
+import { WINDOWS_SSHD_PROFILE } from '../protocols/ssh/server/SshdDump';
+import { WindowsSshServerContext, windowsPathOf } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
 import {
   TelnetClientSession, type TelnetClientTransport,
 } from '../protocols/telnet/TelnetClientSession';
-import { DUAL_STACK } from '../tcp/TcpStack';
+import { DUAL_STACK, wildcardAddressOf } from '../tcp/TcpStack';
 import type { TcpSocket } from '../tcp/TcpStack';
 import type { ListenerIdentity } from '../tcp/ListenerSocketSink';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
@@ -532,6 +534,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     seedWindowsOpenSshFiles(this.fs);
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);
+    this.eventLog.newEventLog('OpenSSH/Operational', 'OpenSSH');
     this.userMgr = new WindowsUserManager();
     this.userMgr.attachPolicy(this.accountsPolicy);
     // Documents the real account roster (name/password/groups) next to the
@@ -815,14 +818,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.getTcpStack(), this.procMgr);
-    this.servicePortProjection.declare({
-      ports: [22],
+    this.servicePortProjection.declareEndpoint({
       owner: { service: 'sshd' },
       active: () => this.svcMgr.isStarted('sshd'),
-      accept: () => (socket) => {
-        this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
-      },
-      families: DUAL_STACK,
+      endpoint: { open: (identity) => this.openSshdListeners(identity), close: () => this.closeSshdListeners() },
     });
     this.servicePortProjection.declare({
       ports: [445],
@@ -1239,8 +1238,51 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
-  /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
+  private sshdRuntime: { readonly context: WindowsSshServerContext; readonly ports: Set<number> } | null = null;
+
+  private sshdPortsOf(context: WindowsSshServerContext): number[] {
+    const ports = [...context.rawConfig.matchAll(/^\s*port\s+(\d+)/gim)].map((match) => Number(match[1]));
+    return ports.length === 0 ? [22] : ports;
+  }
+
+  private openSshdListeners(identity: ListenerIdentity): void {
+    this.sshdRuntime ??= { context: this.buildSshServerContext(), ports: new Set() };
+    const runtime = this.sshdRuntime;
+    const stack = this.getTcpStack();
+    const desired = new Set(this.sshdPortsOf(runtime.context));
+    for (const port of [...runtime.ports]) {
+      if (desired.has(port)) continue;
+      for (const family of DUAL_STACK) stack.closeListener(port, wildcardAddressOf(family));
+      runtime.ports.delete(port);
+    }
+    for (const port of desired) {
+      if (runtime.ports.has(port)) continue;
+      for (const family of DUAL_STACK) {
+        stack.listen(port, {
+          identity,
+          onAccept: (socket) => {
+            this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+          },
+        }, wildcardAddressOf(family));
+      }
+      runtime.ports.add(port);
+    }
+  }
+
+  private closeSshdListeners(): void {
+    const runtime = this.sshdRuntime;
+    if (runtime === null) return;
+    const stack = this.getTcpStack();
+    for (const port of runtime.ports) for (const family of DUAL_STACK) stack.closeListener(port, wildcardAddressOf(family));
+    this.sshdRuntime = null;
+  }
+
   getSshServerContext(): WindowsSshServerContext {
+    return this.sshdRuntime?.context ?? this.buildSshServerContext();
+  }
+
+  /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
+  private buildSshServerContext(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
       getCwd: () => this.getCwd(),
@@ -1265,7 +1307,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         payload: { deviceId: this.id, account: user, logonType: 10 },
       });
     },
-    () => this.getSshBanner());
+    () => this.getSshBanner(),
+    (message) => { this.eventLog.writeEventLog('OpenSSH/Operational', 'OpenSSH', 4, 'Information', `sshd: ${message}`); });
   }
 
   private _sshHost: CrossVendorSshHost | null = null;
@@ -2563,6 +2606,68 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
+  private cmdSshd(args: string[]): string {
+    const read = (path: string): string | null => {
+      const result = this.fs.readFile(windowsPathOf(path));
+      return result.ok ? result.content ?? '' : null;
+    };
+    const wildcards = new Set(['0.0.0.0', '::']);
+    const familyOf = (address: string): 'v4' | 'v6' => (address.includes(':') ? 'v6' : 'v4');
+    const result = runSshd(args, {
+      invokedAs: 'sshd',
+      platform: 'windows',
+      profile: WINDOWS_SSHD_PROFILE,
+      defaultConfigPath: 'C:\\ProgramData\\ssh\\sshd_config',
+      includeBase: 'C:\\ProgramData\\ssh',
+      version: OPENSSH_WINDOWS_8_6.clientVersion,
+      source: { readFile: read },
+      resolvePath: (path) => this.fs.normalizePath(windowsPathOf(path), this.getCwd()),
+      isPrivileged: () => this.userMgr.isCurrentUserAdmin(),
+      canReadHostKey: (path) => this.fs.exists(windowsPathOf(path)),
+      portTaken: (address, port) => this.getTcpStack().listListeners().some((listener) => (
+        listener.localPort === port && familyOf(listener.localIp) === familyOf(address)
+        && (listener.localIp === address || wildcards.has(listener.localIp) || wildcards.has(address))
+      )),
+      separationDirectoryMissing: () => null,
+      logDaemon: (level, message) => { this.noteSshdOperational(level === 'fatal' ? 'Error' : 'Warning', message); },
+      startDaemon: (request) => { this.startExtraSshDaemon(request); },
+    });
+    this.commandExitStatus = result.exitCode;
+    return result.output;
+  }
+
+  private startExtraSshDaemon(request: SshdDaemonRequest): void {
+    const process = this.procMgr.spawnProcess('sshd.exe', 4, 'NT AUTHORITY\\SYSTEM', {
+      commandLine: request.commandLine, systemOwned: true,
+    });
+    const stack = this.getTcpStack();
+    const identity = this.procMgr.identityOfImage('sshd.exe');
+    const opened: Array<{ port: number; address: string }> = [];
+    for (const port of request.ports) {
+      for (const family of DUAL_STACK) {
+        const address = wildcardAddressOf(family);
+        try {
+          stack.listen(port, {
+            identity: { ...identity, pid: process.pid },
+            onAccept: (socket) => {
+              this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+            },
+          }, address);
+          opened.push({ port, address });
+        } catch { /* port already bound */ }
+      }
+    }
+    const off = this.getBus().subscribe('windows.process.stopped', (event) => {
+      if (event.payload.deviceId !== this.id || event.payload.pid !== process.pid) return;
+      for (const entry of opened) stack.closeListener(entry.port, entry.address);
+      off();
+    });
+  }
+
+  private noteSshdOperational(level: 'Error' | 'Warning' | 'Information', message: string): void {
+    this.eventLog.writeEventLog('OpenSSH/Operational', 'OpenSSH', 4, level, `sshd: ${message}`);
+  }
+
   private async cmdSsh(args: string[]): Promise<string> {
     this.commandExitStatus = null;
     const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_8_6);
@@ -2593,15 +2698,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const stdin = this._scenarioStdin ?? '';
     const strict = settings.strictHostKeyChecking ?? 'accept-new';
     const asks = strict === 'ask';
-    const scripted = asks ? new ScriptedTerminalIO(stdin.split('\n')) : null;
-    const password = asks ? undefined : stdin.split('\n')[0] || undefined;
+    const typedLines = stdin.split('\n');
+    const password = asks ? undefined : typedLines[0] || undefined;
+    const scripted = new ScriptedTerminalIO(asks ? typedLines : typedLines.slice(1));
     const outcome = await openWireSshConnection({
       device: this,
       localUser,
       user,
       host: target.address,
       port: port,
-      io: scripted ?? silentConnectIo(),
+      io: scripted,
       password,
       credentialless: !asks && password === undefined,
       strict,
@@ -2614,7 +2720,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       agent: this.sshAgentIfRunning(),
       algorithms: sshClientAlgorithms(settings.optionValues),
     });
-    const dialogue = scripted === null ? '' : scripted.transcript.map((line) => `${line}\n`).join('');
+    const dialogue = scripted.transcript
+      .filter((line) => asks || parsed.command === null || !line.startsWith('Warning: Permanently added'))
+      .map((line) => `${line}\n`).join('');
     if (outcome.kind === 'auth-failed') {
       return refused(`${dialogue}${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`);
     }
@@ -2636,7 +2744,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const channel = session.openShellChannel();
       if (!isOk(channel)) return '';
       const settled = await relayScriptedShell(
-        channel.value, stdin, scripted !== null ? scripted.consumed : password === undefined ? 0 : 1, !parsed.quiet);
+        channel.value, stdin, asks ? scripted.consumed : password === undefined ? 0 : 1 + scripted.consumed, !parsed.quiet);
       channel.value.close();
       return [dialogue.replace(/\n$/, ''), settled.output, ...(parsed.quiet ? [] : [`Connection to ${typedHost} closed.`])]
         .filter((part) => part.length > 0).join('\n');
@@ -3626,6 +3734,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nmap':
       case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
+      case 'sshd':     return Promise.resolve(this.cmdSshd(args));
       case 'ssh-add':
       case 'ssh-keygen':
       case 'ssh-agent':

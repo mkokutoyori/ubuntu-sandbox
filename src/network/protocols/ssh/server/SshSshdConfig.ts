@@ -15,7 +15,7 @@
 
 import type { SshServerConfig } from './ISshServerContext';
 import type { SshdPermitRootLogin } from './SshdServerConfig';
-import { SSHD_CONFIG_KEYWORDS } from './SshdConfigKeywords';
+import { diagnoseSshdConfig } from './SshdConfigValidator';
 
 export type SshLogLevel =
   | 'QUIET'
@@ -270,39 +270,8 @@ export function validateSshdConfig(
   content: string,
   path = '/etc/ssh/sshd_config',
 ): SshdConfigValidation {
-  const errors: string[] = [];
-  const lines = content.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line || line.startsWith('#')) continue;
-    const idx = line.search(/\s/);
-    if (idx === -1) continue;
-    const key = line.slice(0, idx).toLowerCase();
-    const value = line.slice(idx + 1).trim();
-    if (!SSHD_CONFIG_KEYWORDS.has(key)) {
-      errors.push(`${path}: line ${i + 1}: Bad configuration option: ${line.slice(0, idx)}`);
-      continue;
-    }
-    if (key === 'port') {
-      const n = Number(value);
-      if (!Number.isInteger(n) || n < 1 || n > 65535) {
-        errors.push(
-          `${path} line ${i + 1}: Bad configuration option: invalid port number "${value}" — out of range 1..65535.`,
-        );
-      }
-    } else if (key === 'maxauthtries' || key === 'maxsessions') {
-      const n = Number(value);
-      if (!Number.isInteger(n) || n < 0) {
-        errors.push(
-          `${path} line ${i + 1}: Bad configuration option: invalid ${key} value "${value}".`,
-        );
-      }
-    }
-  }
-  if (errors.length > 0) {
-    errors.push(`${path}: terminating, ${errors.length} bad configuration options`);
-  }
-  return { ok: errors.length === 0, errors };
+  const diagnosis = diagnoseSshdConfig({ readFile: (candidate) => (candidate === path ? content : null) }, path);
+  return { ok: !diagnosis.fatal, errors: [...diagnosis.lines] };
 }
 
 export function serializeSshdConfig(cfg: SshdConfig): string {

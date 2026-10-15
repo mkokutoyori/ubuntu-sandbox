@@ -142,14 +142,19 @@ export class SshTpLan {
 
   async editWindowsSshd(name: string, text: string, apply = true, drop: string[] = []): Promise<() => Promise<void>> {
     const config = 'C:\\ProgramData\\ssh\\sshd_config';
-    const backup = 'C:\\ProgramData\\ssh\\sshd_config.lab';
-    const commands = [`copy /y ${config} ${backup}`];
-    for (const keyword of drop) commands.push(`findstr /v /b /c:"${keyword}" ${config} > ${config}.tmp`, `move /y ${config}.tmp ${config}`);
-    if (text.length > 0) for (const line of text.split('\n')) commands.push(`echo ${line}>> ${config}`);
-    if (apply) commands.push('net stop sshd', 'net start sshd');
-    await this.asWindowsAdministrator(name, commands);
+    const files = (this.host(name) as unknown as {
+      fs: { readFile(path: string): { ok: boolean; content?: string }; createFile(path: string, content: string): unknown };
+    }).fs;
+    const original = files.readFile(config).content ?? '';
+    const kept = original.split('\n').filter((line) => !drop.some((keyword) => line.startsWith(keyword)));
+    const firstMatch = kept.findIndex((line) => /^\s*Match\s/i.test(line));
+    const insertion = text.length === 0 ? [] : text.split('\n');
+    const edited = firstMatch < 0 ? [...kept, ...insertion] : [...kept.slice(0, firstMatch), ...insertion, ...kept.slice(firstMatch)];
+    files.createFile(config, edited.join('\n'));
+    if (apply) await this.asWindowsAdministrator(name, ['net stop sshd', 'net start sshd']);
     return async () => {
-      await this.asWindowsAdministrator(name, [`copy /y ${backup} ${config}`, 'net stop sshd', 'net start sshd']);
+      files.createFile(config, original);
+      await this.asWindowsAdministrator(name, ['net stop sshd', 'net start sshd']);
     };
   }
 
@@ -166,6 +171,7 @@ export class SshTpLan {
       await this.run(name, 'sudo gpasswd -d dave sudo', 'user\n');
       await this.run(name, 'sudo usermod -s /usr/sbin/nologin carl', 'user\n');
       await this.run(name, 'sudo chmod 700 /home/dave', 'user\n');
+      await this.run(name, 'sudo systemctl disable --now fail2ban', 'user\n');
     }
     for (const name of this.names('windows')) {
       await this.asWindowsAdministrator(name, [
