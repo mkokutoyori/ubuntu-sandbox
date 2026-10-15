@@ -2721,7 +2721,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       algorithms: sshClientAlgorithms(settings.optionValues),
     });
     const dialogue = scripted.transcript
-      .filter((line) => parsed.command === null || !line.startsWith('Warning: Permanently added'))
+      .filter((line) => asks || parsed.command === null || !line.startsWith('Warning: Permanently added'))
       .map((line) => `${line}\n`).join('');
     if (outcome.kind === 'auth-failed') {
       return refused(`${dialogue}${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`);
