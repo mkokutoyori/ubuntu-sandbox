@@ -434,6 +434,8 @@ export class CiscoSecurityConfig {
   aaaSessionId?: string;
   /** `aaa local authentication attempts max-fail <n>` — per-account lockout threshold. */
   localAuthMaxFailAttempts?: number;
+  loginAttempts?: number;
+  effectiveLoginAttempts(): number | undefined { return this.aaaNewModel ? this.loginAttempts : undefined; }
   aaaLoginBanner?: string;
   aaaFailMessage?: string;
   aaaUsernamePrompt?: string;
@@ -482,7 +484,7 @@ export class CiscoSecurityConfig {
       pubkeyAuthentication: order.includes('publickey') && keyAlgorithms.includes('ssh-rsa'),
       kbdInteractiveAuthentication: order.includes('keyboard'),
       authMethodOrder: order,
-      maxAuthTries: this.ssh.authRetries,
+      maxAuthTries: Math.min(this.ssh.authRetries, this.effectiveLoginAttempts() ?? this.ssh.authRetries),
       loginGraceTime: this.ssh.timeoutSec,
       maxStartups: { start: this.ssh.maxStartups, rate: 100, full: this.ssh.maxStartups },
     };
@@ -705,6 +707,7 @@ export class CiscoSecurityConfig {
       lines.push(...this.accountingOptionLines());
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
+      if (this.loginAttempts !== undefined) lines.push(`aaa authentication attempts login ${this.loginAttempts}`);
     }
     if (this.aaaLoginBanner !== undefined) lines.push(`aaa authentication banner ^C\n${this.aaaLoginBanner}\n^C`);
     if (this.aaaFailMessage !== undefined) lines.push(`aaa authentication fail-message ^C\n${this.aaaFailMessage}\n^C`);

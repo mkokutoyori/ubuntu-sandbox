@@ -1169,7 +1169,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private resolveVtyLoginMode(): 'none' | 'local' | 'aaa' | 'password' {
-    return vtyLoginModeOf(this.blocVtyCourant());
+    const configured = vtyLoginModeOf(this.blocVtyCourant());
+    if (configured !== 'none') return configured;
+    const security = this.securityConfig();
+    const hasDefaultLoginList = security?.aaaNewModel === true
+      && security.aaaMethods.some((entry) => entry.phase === 'authentication' && entry.service === 'login' && entry.listName === 'default');
+    return hasDefaultLoginList ? 'aaa' : configured;
   }
 
   /** Header printed above the telnet credential prompts — IOS wording by default. */
@@ -1191,6 +1196,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         return { username: messages?.usernamePrompt ?? 'Username: ', password: messages?.passwordPrompt ?? 'Password: ' };
       },
       authFailureMessage: () => this.securityConfig()?.loginMessages().failMessage ?? '% Login invalid',
+      maxAuthAttempts: () => this.securityConfig()?.effectiveLoginAttempts() ?? 3,
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
       admit: (ip, localIp) => this.vtyAdmissionVerdict('telnet', ip, localIp),

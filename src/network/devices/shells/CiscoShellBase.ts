@@ -114,6 +114,7 @@ import { aaaServerSpecs, type AaaServerHost } from './cisco/aaaServerSpecs';
 import {
   usernameSpecs, type UsernameHost, type UsernameSettings,
 } from './cisco/usernameSpecs';
+import { enableSecretSpecs, type EnableHost } from './cisco/enableSecretSpecs';
 import { parserViewSpecs, type ParserViewHost } from './cisco/parserViewSpecs';
 import { aaaHeadSpecs, type AaaHeadHost } from './cisco/aaaHeadSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
@@ -942,24 +943,8 @@ function analyserTeteLigne(args: readonly string[]): TeteLigne {
 
 const IDENTITE_ET_AMORCAGE: ReadonlySet<string> = new Set([
   'boot system', 'boot enable-break', 'boot manual', 'config-register',
-  'hostname', 'enable secret', 'enable algorithm-type', 'enable password',
+  'hostname',
 ]);
-
-const ALGORITHM_TYPE_PLACES: readonly ArgumentSpec[] = [
-  {
-    name: 'algorithm', type: 'ENUM', description: 'Algorithm to hash the secret with',
-    values: [
-      { keyword: 'md5', description: 'Select MD5 as the hashing algorithm' },
-      { keyword: 'scrypt', description: 'Select scrypt as the hashing algorithm' },
-      { keyword: 'sha256', description: 'Select PBKDF2 with SHA256 as the hashing algorithm' },
-    ],
-  },
-  {
-    name: 'kind', type: 'ENUM', description: 'What to set',
-    values: [{ keyword: 'secret', description: 'Assign the privileged level secret' }],
-  },
-  { name: 'secret', type: 'LINE', description: 'The UNENCRYPTED (cleartext) enable secret' },
-];
 
 const IDENTITE_PLACES:
   Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
@@ -970,15 +955,6 @@ const IDENTITE_PLACES:
   'boot system': {
     name: 'image', type: 'REST', description: 'System image file', literal: 'WORD',
   },
-  'enable secret': {
-    name: 'reste', type: 'REST',
-    description: 'Assign the privileged level secret', literal: 'LINE',
-  },
-  'enable password': {
-    name: 'reste', type: 'REST',
-    description: 'Assign the privileged level password', literal: 'LINE',
-  },
-  'enable algorithm-type': ALGORITHM_TYPE_PLACES,
 };
 
 type HardeningEntry = readonly [
@@ -997,7 +973,6 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
     'Disable finger service', (sec, on) => { sec.ipFinger = on; }],
 ];
 
-export const ENABLE_LEVEL_RANGE: readonly [number, number] = [0, 15];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -2185,19 +2160,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       hasRsaKeys: () => getSecurityConfig(this.d()).cryptoKeys.length > 0,
       software: () => ciscoSoftwareOf(this.d()),
     };
-  }
-
-  private lireNiveauEnable(
-    mots: readonly string[],
-  ): { level: number; reste: readonly string[] } {
-    if (mots[0]?.toLowerCase() !== 'level') return { level: 15, reste: mots };
-    const brut = mots[1];
-    if (brut === undefined) throw new CliIncomplete();
-    const [min, max] = ENABLE_LEVEL_RANGE;
-    if (!/^\d+$/.test(brut) || Number(brut) < min || Number(brut) > max) {
-      throw new CliInvalidInput({ token: brut });
-    }
-    return { level: Number(brut), reste: mots.slice(2) };
   }
 
   protected privilegeRuleHost(): PrivilegeRuleHost {
@@ -6026,6 +5988,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
+  protected enableHost(): EnableHost {
+    const dev = () => this.d() as unknown as {
+      _setEnableSecretForLevel?: (level: number, s: string, algo: EnableSecretAlgorithm) => void;
+      _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;
+      _setEnableSecret?: (s: string, algo: 'plain') => void;
+      _setEnablePassword?: (p: string, algo: 'plain') => void;
+      getServiceFlags?: () => ReadonlyMap<string, boolean>;
+    };
+    return {
+      setSecret: (level, secret, algorithm) => { dev()._setEnableSecretForLevel?.(level, secret, algorithm); },
+      setPassword: (level, password, algorithm) => { dev()._setEnablePasswordForLevel?.(level, password, algorithm); },
+      clearSecret: (level) => {
+        if (level === 15) dev()._setEnableSecret?.('', 'plain');
+        else dev()._setEnableSecretForLevel?.(level, '', 'plain');
+      },
+      clearPassword: (level) => {
+        if (level === 15) dev()._setEnablePassword?.('', 'plain');
+        else dev()._setEnablePasswordForLevel?.(level, '', 'plain');
+      },
+      minPasswordLength: () => getSecurityConfig(this.d()).passwords.minLength,
+      passwordEncryptionEnabled: () => dev().getServiceFlags?.().get('password-encryption') === true,
+      encryptType7: (password) => _encryptType7(password, parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16)),
+    };
+  }
+
   protected usernameHost(): UsernameHost {
     const dev = () => this.d() as unknown as {
       _upsertCiscoUsername?: (n: string, kv: UsernameSettings) => void;
@@ -6083,6 +6070,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...globalHeadSpecs(() => this.globalHeadHost()),
       ...aaaServerSpecs(() => this.aaaServerHost()),
       ...usernameSpecs(() => this.usernameHost()),
+      ...enableSecretSpecs(() => this.enableHost()),
       ...aaaHeadSpecs(() => this.aaaHeadHost()),
       ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
@@ -7446,6 +7434,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       [['debug'], 'Enable debugging functions'],
       [['undebug'], 'Disable debugging functions'],
       [['show', 'ip', 'http'], 'HTTP information'],
+      [['enable', 'secret'], 'Assign the privileged level secret'],
+      [['enable', 'password'], 'Assign the privileged level password'],
+      [['enable', 'algorithm-type'], 'Algorithm to hash the secret with'],
       [['client-identifier'], 'Manual binding client identifier'],
       [['lease'], 'Set DHCP lease duration'],
       [['option'], 'Set a raw DHCP option'],
@@ -10198,117 +10189,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
     // pour une seule commande finiraient par se contredire sur la même
     // date.
-    trie.registerGreedy('enable secret', 'Set enable secret', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: EnableSecretAlgorithm) => void };
-      let algo: EnableSecretAlgorithm = 'md5';
-      let secret = '';
-      let level = 15;
-      // Cleartext forms (0, level N, or bare) are what `security passwords
-      // min-length` validates — a pasted hash (5/7/8/9) is exempt, same as
-      // `username ... secret` (CiscoSecurityCommands.ts).
-      let plaintextEntered: string | undefined;
-      // La grammaire d'IOS est `enable secret [level N] [{0|5|7|8|9}]
-      // <chaine>`, et les deux parties sont INDEPENDANTES. Elles etaient
-      // traitees comme exclusives : apres `level N`, le chiffre
-      // d'algorithme etait avale DANS le secret. La forme rendue par la
-      // machine — `enable secret level 12 5 $1$…` — n'etait donc pas
-      // relisible par elle-meme, et le coffre du palier disparaissait a
-      // l'import d'une topologie, sans rien dire.
-      const lu = this.lireNiveauEnable(args);
-      level = lu.level;
-      const reste = lu.reste;
-      const chiffres: Record<string, EnableSecretAlgorithm> = {
-        '0': 'plain', '4': 'type-4', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
-      };
-      const nomme = chiffres[reste[0] ?? ''];
-      // `enable secret 5` sans rien apres : le chiffre EST le type, donc
-      // il ne reste aucun secret — IOS repond incomplet plutot que de
-      // ranger « 5 » comme mot de passe en clair.
-      if (nomme !== undefined && reste.length === 1) return '% Incomplete command.';
-      if (nomme !== undefined && reste.length > 1) {
-        algo = nomme;
-        secret = reste.slice(1).join(' ');
-        if (!isWellFormedSecret(reste[0], secret)) return invalidEncryptedSecretMessage(reste[0]);
-        // Seul le clair est soumis a `security passwords min-length` : un
-        // condense colle est exempt, comme pour `username … secret`.
-        if (nomme === 'plain') plaintextEntered = secret;
-      } else {
-        secret = reste.join(' ');
-        plaintextEntered = secret;
-      }
-      if (secret === '') return '% Incomplete command.';
-      const minLength = getSecurityConfig(this.d()).passwords.minLength;
-      if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
-        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-      }
-      dev._setEnableSecretForLevel?.(level, secret, algo);
-      return algo === 'type-4' ? TYPE4_DEPRECATION_WARNING : '';
-    });
-    // `enable algorithm-type {md5|scrypt|sha256} secret [level N] <pwd>` —
-    // explicit-algorithm form of `enable secret` (IOS 15.3+), always takes
-    // a cleartext password and hashes it with the named algorithm.
-    trie.registerGreedy('enable algorithm-type', 'Set enable secret with an explicit hash algorithm', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: EnableSecretAlgorithm) => void };
-      const algoName = args[0]?.toLowerCase();
-      const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
-      const algo = algoMap[algoName ?? ''];
-      // Un mot ABSENT n'est pas un mot faux : `enable algorithm-type`
-      // seul reclame l'algorithme, il ne le nie pas.
-      if (algoName === undefined) return CISCO_ERRORS.INCOMPLETE;
-      if (!algo) return CISCO_ERRORS.INVALID_INPUT;
-      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
-      if (args[1].toLowerCase() !== 'secret') return CISCO_ERRORS.INVALID_INPUT;
-      const lu = this.lireNiveauEnable(args.slice(2));
-      const level = lu.level;
-      const secret = lu.reste.join(' ');
-      if (secret === '') return CISCO_ERRORS.INCOMPLETE;
-      const minLength = getSecurityConfig(this.d()).passwords.minLength;
-      if (minLength && secret.length < minLength) {
-        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-      }
-      dev._setEnableSecretForLevel?.(level, secret, algo);
-      return '';
-    });
-    trie.registerGreedy('enable password', 'Set enable password', (args) => {
-      const dev = this.d() as unknown as {
-        _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;
-        getServiceFlags?: () => ReadonlyMap<string, boolean>;
-      };
-      let algo: 'plain' | 'type-7' = 'plain';
-      let password = '';
-      let level = 15;
-      let plaintextEntered: string | undefined;
-      const lu = this.lireNiveauEnable(args);
-      level = lu.level;
-      const apres = lu.reste;
-      if (apres[0] === '0') {
-        algo = 'plain'; password = apres.slice(1).join(' '); plaintextEntered = password;
-      } else if (apres[0] === '7') {
-        algo = 'type-7'; password = apres.slice(1).join(' ');
-      } else { password = apres.join(' '); plaintextEntered = password; }
-      if (password === '') return '% Incomplete command.';
-      const minLength = getSecurityConfig(this.d()).passwords.minLength;
-      if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
-        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-      }
-      if (algo === 'plain' && dev.getServiceFlags?.().get('password-encryption') === true) {
-        const salt = parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16);
-        dev._setEnablePasswordForLevel?.(level, _encryptType7(password, salt), 'type-7');
-      } else {
-        dev._setEnablePasswordForLevel?.(level, password, algo);
-      }
-      return '';
-    });
-    trie.register('no enable secret', 'Remove enable secret', () => {
-      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain') => void };
-      dev._setEnableSecret?.('', 'plain');
-      return '';
-    });
-    trie.register('no enable password', 'Remove enable password', () => {
-      const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain') => void };
-      dev._setEnablePassword?.('', 'plain');
-      return '';
-    });
     // `username <name> [privilege N] [secret|password] <pwd>` — captures
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
