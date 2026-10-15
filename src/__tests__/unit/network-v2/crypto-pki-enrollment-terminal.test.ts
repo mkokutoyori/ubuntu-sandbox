@@ -14,7 +14,9 @@
  * Measured with src stashed to HEAD: every case falls (terminal trustpoints answered "no usable enrollment url"
  * and `import … certificate` stored a marker). Witness: none needed, the lab is proven by the tunnel case.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 30_000 });
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';

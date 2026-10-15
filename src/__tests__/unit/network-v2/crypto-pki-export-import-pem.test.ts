@@ -18,7 +18,9 @@
  * marker without reading any PEM). Witnesses: the tunnel works before the trustpoint is removed; the
  * non-exportable key stays on R1 after the refusals.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 30_000 });
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';

@@ -19,6 +19,8 @@ export interface PkiHost {
   removeTrustpoint(name: string): void;
   exportPem(name: string, cipher: 'des' | '3des', phrase: string, destination: string | null): string;
   importPem(name: string, source: string, phrase: string | null, exportable: boolean): string;
+  exportPkcs12(name: string, destination: string, phrase: string): string;
+  importPkcs12(name: string, source: string, phrase: string): string;
   selectServer(name: string | null): void;
   selectedServer(): string | null;
 }
@@ -302,6 +304,20 @@ export function pkiSpecs(host: () => PkiHost): CommandSpec[] {
       description: 'Export the trustpoint certificates and key as PEM to a URL',
       modes: CONFIG, minPrivilege: 15,
       run: (_s, args) => host().exportPem(args.trustpoint, args.cipher as 'des' | '3des', args.phrase, args.destination),
+    },
+    {
+      id: 'crypto-pki-export-pkcs12',
+      path: ['crypto', 'pki', 'export', TRUSTPOINT, 'pkcs12', { name: 'destination', type: 'WORD', description: 'Destination URL' }, 'password', PHRASE],
+      description: 'Export the router certificate, the CA certificate and the key as a PKCS12 file',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().exportPkcs12(args.trustpoint, args.destination, args.phrase),
+    },
+    {
+      id: 'crypto-pki-import-pkcs12',
+      path: ['crypto', 'pki', 'import', TRUSTPOINT, 'pkcs12', { name: 'source', type: 'WORD', description: 'Source URL' }, 'password', PHRASE],
+      description: 'Import the certificates and the key of a PKCS12 file',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => host().importPkcs12(args.trustpoint, args.source, args.phrase),
     },
     {
       id: 'crypto-pki-import-pem-url',

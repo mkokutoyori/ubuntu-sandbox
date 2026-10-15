@@ -76,9 +76,10 @@ import { PkiEnrollmentClient } from '../router/pki/PkiEnrollmentClient';
 import { mapRevocationCheck } from './cisco/CiscoSecurityCommands';
 import { renderCertificates, renderCertificatesPem } from '../router/pki/CertificateDisplay';
 import type { PkiTrustpoint } from '../router/security/CiscoSecurityConfig';
-import { exportTrustpointPem, parseTrustpointPem, installTrustpointPem, passphraseProblem } from '../router/pki/TrustpointPem';
+import { exportTrustpointPem, exportTrustpointPkcs12, parseTrustpointPem, parseTrustpointPkcs12, installTrustpointPem, passphraseProblem, type PemImport } from '../router/pki/TrustpointPem';
 import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 import type { TftpEndpoint } from '@/network/tftp/types';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
@@ -1700,6 +1701,26 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         this._pendingAsync = this.writeUrl(destination, exported.text);
         return '';
       },
+      exportPkcs12: (name, destination, phrase) => {
+        const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!trustpoint) return `% Trustpoint ${name} not configured`;
+        const exported = exportTrustpointPkcs12(trustpoint, phrase);
+        if ('error' in exported) return exported.error;
+        this._pendingAsync = this.writeUrl(destination, bytesToBinaryString(exported.bytes));
+        return '';
+      },
+      importPkcs12: (name, source, phrase) => {
+        const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
+        if (!trustpoint) return `% Trustpoint ${name} not configured`;
+        const problem = passphraseProblem(phrase);
+        if (problem) return problem;
+        this._pendingAsync = this.readUrl(source).then((read) => {
+          if ('error' in read) return read.error;
+          const imported = parseTrustpointPkcs12(binaryStringToBytes(read.text), phrase);
+          return this.installImported(router(), name, imported, false, '% PKCS12 import succeeded.');
+        });
+        return '';
+      },
       importPem: (name, source, phrase, exportable) => {
         const trustpoint = getSecurityConfig(router()).pkiTrustpoints.get(name);
         if (!trustpoint) return `% Trustpoint ${name} not configured`;
@@ -1778,9 +1799,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   }
 
   importPemText(device: CiscoRouter, name: string, text: string, phrase: string | null, exportable: boolean): string {
+    return this.installImported(device, name, parseTrustpointPem(text, phrase), exportable, '% PEM files import succeeded.');
+  }
+
+  private installImported(device: CiscoRouter, name: string, imported: PemImport, exportable: boolean, success: string): string {
     const trustpoint = getSecurityConfig(device).pkiTrustpoints.get(name);
     if (!trustpoint) return `% Trustpoint ${name} not configured`;
-    const imported = parseTrustpointPem(text, phrase);
     if (imported.error) return imported.error;
     installTrustpointPem(trustpoint, imported, exportable);
     if (trustpoint.caCert && trustpoint.localCert && trustpoint.localKey) {
@@ -1789,7 +1813,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         crls: trustpoint.crl ? [trustpoint.crl] : [],
         revocationCheck: mapRevocationCheck(trustpoint.revocationCheck),
       });
-      return '% PEM files import succeeded.';
+      return success;
     }
     return '% CA certificate imported.';
   }

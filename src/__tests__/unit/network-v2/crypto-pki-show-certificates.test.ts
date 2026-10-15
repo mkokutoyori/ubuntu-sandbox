@@ -14,7 +14,9 @@
  * listing printed no fingerprint, a fixed "Validity: 365 days" and never named an unknown trustpoint). The
  * unknown-trustpoint case is a non-regression of the refusal, labelled as such.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 30_000 });
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';

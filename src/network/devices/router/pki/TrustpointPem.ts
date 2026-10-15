@@ -5,6 +5,7 @@ import {
   isEncryptedPrivateKeyPem,
 } from '@/network/pki/pem';
 import { systemRandom } from '@/crypto/random';
+import { encodePkcs12, decodePkcs12 } from '@/network/pki/der/Pkcs12Der';
 import type { PkiTrustpoint } from '../security/CiscoSecurityConfig';
 
 export const MIN_PASSPHRASE_LENGTH = 8;
@@ -69,6 +70,27 @@ export function parseTrustpointPem(text: string, phrase: string | null): PemImpo
     if (key === null) return { error: '% Unable to decrypt the private key: wrong password phrase or damaged PEM' };
     localKey = key;
   }
+  return identityFrom(parsed, localKey);
+}
+
+export function exportTrustpointPkcs12(trustpoint: PkiTrustpoint, phrase: string): { readonly bytes: Uint8Array } | { readonly error: string } {
+  const problem = passphraseProblem(phrase);
+  if (problem) return { error: problem };
+  if (!trustpoint.localCert || !trustpoint.localKey) return { error: `% Trustpoint ${trustpoint.name} holds no router certificate and key to export` };
+  if (!trustpoint.keyExportable) return { error: `% Key of trustpoint ${trustpoint.name} is not exportable` };
+  const certificates = trustpoint.caCert ? [trustpoint.localCert, trustpoint.caCert] : [trustpoint.localCert];
+  return { bytes: encodePkcs12({ certificates, key: trustpoint.localKey, friendlyName: trustpoint.name }, phrase, systemRandom) };
+}
+
+export function parseTrustpointPkcs12(bytes: Uint8Array, phrase: string): PemImport {
+  const decoded = decodePkcs12(bytes, phrase);
+  if ('error' in decoded) {
+    return { error: decoded.error === 'bad-password' ? '% Unable to open the PKCS12 file: wrong password phrase' : '% The file is not a valid PKCS12 file' };
+  }
+  return identityFrom(decoded.contents.certificates, decoded.contents.key);
+}
+
+function identityFrom(parsed: readonly X509Certificate[], localKey: PkiPrivateKey | undefined): PemImport {
   if (parsed.length === 0) return { error: '% No certificate found in the PEM text' };
   if (localKey === undefined) {
     if (parsed.length > 1) return { error: '% Without a private key only the CA certificate can be imported' };
