@@ -1,4 +1,5 @@
 import { everySshOption, firstSshOption, sshFlag } from '../SshClientOptions';
+import { sshPathOfWindowsPath } from '../localFs/WindowsSshLocalFs';
 import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from '../SshConnectOptions';
 import type { ISshLocalFs } from '../ISshLocalFs';
 import { SshClientConfigFile, type ClientConfigInclude, type ClientConfigSource } from './SshClientConfigFile';
@@ -82,7 +83,8 @@ export class SshClientSettings {
   expand(value: string): string {
     const env = this.environment;
     const withHome = value === '~' ? env.home : value.startsWith('~/') ? `${env.home}${value.slice(1)}` : value;
-    return withHome.replace(/%([%dhnpruLli])/g, (_, token: string) => {
+    const posix = /^[A-Za-z]:[\\/]/.test(withHome) ? sshPathOfWindowsPath(withHome) : withHome;
+    return posix.replace(/%([%dhnpruLli])/g, (_, token: string) => {
       switch (token) {
         case '%': return '%';
         case 'd': return env.home;

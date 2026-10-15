@@ -53,14 +53,15 @@ export const EXT_INFO_CLIENT = 'ext-info-c';
 
 export const IMPLEMENTED_KEX_METHODS: readonly string[] = KEX_METHODS.map((m) => m.name);
 export const IMPLEMENTED_HOST_KEY_ALGORITHMS: readonly string[] = [
-  'ssh-ed25519', 'ecdsa-sha2-nistp256', 'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
+  'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
+  'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
 ];
 export const IMPLEMENTED_CIPHERS: readonly string[] = CIPHER_SPECS.map((c) => c.name);
 export const IMPLEMENTED_MACS: readonly string[] = MAC_SPECS.map((m) => m.name);
 export const IMPLEMENTED_COMPRESSION: readonly string[] = ['none'];
 
 export const SERVER_SIGNATURE_ALGORITHMS: readonly string[] = [
-  'ssh-ed25519', 'rsa-sha2-256', 'rsa-sha2-512', 'ecdsa-sha2-nistp256',
+  'ssh-ed25519', 'rsa-sha2-256', 'rsa-sha2-512', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
 ];
 
 export function implementedOnly(names: readonly string[], implemented: readonly string[]): string[] {

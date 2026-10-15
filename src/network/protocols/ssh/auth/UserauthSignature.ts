@@ -1,7 +1,8 @@
 import { ed25519Sign, ed25519Verify } from '@/crypto/ecc/ed25519';
-import { p256Sign, p256Verify, P256_FIELD_BYTES } from '@/crypto/ecc/p256';
 import { rsaSign, rsaVerify, type RsaSignatureHash } from '@/crypto/rsa/rsa';
 import {
+  ecdsaCurveOf,
+  isEcdsaKey,
   sshPublicKeyFromBlob,
   type SshPrivateKey,
   type SshPublicKey,
@@ -45,7 +46,7 @@ export function userauthSignedData(
 function rawSignature(key: SshPrivateKey, algorithm: string, data: Uint8Array): Uint8Array {
   if (key.algorithm === 'ssh-ed25519') return ed25519Sign(key.seed, data);
   if (key.algorithm === 'ssh-rsa') return rsaSign({ n: key.n, e: key.e, d: key.d }, data, RSA_SIGNATURE_HASHES[algorithm]);
-  const { r, s } = p256Sign(key.d, data);
+  const { r, s } = ecdsaCurveOf(key.algorithm).sign(key.d, data);
   return new SshWriter().writeMpint(r).writeMpint(s).toBytes();
 }
 
@@ -60,12 +61,6 @@ export function signWithAlgorithm(key: SshPrivateKey, algorithm: string, data: U
     .toBytes();
 }
 
-function bigIntFromBytes(bytes: Uint8Array): bigint {
-  let n = 0n;
-  for (const b of bytes) n = (n << 8n) | BigInt(b);
-  return n;
-}
-
 function verifyRaw(key: SshPublicKey, algorithm: string, data: Uint8Array, signature: Uint8Array): boolean {
   if (key.algorithm === 'ssh-ed25519') return ed25519Verify(key.publicKey, data, signature);
   if (key.algorithm === 'ssh-rsa') return rsaVerify({ n: key.n, e: key.e }, data, signature, RSA_SIGNATURE_HASHES[algorithm]);
@@ -73,11 +68,10 @@ function verifyRaw(key: SshPublicKey, algorithm: string, data: Uint8Array, signa
   const r = reader.readMpint();
   const s = reader.readMpint();
   if (reader.remaining !== 0) return false;
-  const q = {
-    x: bigIntFromBytes(key.q.subarray(1, 1 + P256_FIELD_BYTES)),
-    y: bigIntFromBytes(key.q.subarray(1 + P256_FIELD_BYTES)),
-  };
-  return p256Verify(q, data, { r, s });
+  if (!isEcdsaKey(key)) return false;
+  const curve = ecdsaCurveOf(key.algorithm);
+  const q = curve.decodePoint(key.q);
+  return q !== null && curve.verify(q, data, { r, s });
 }
 
 export function verifyUserauthSignature(

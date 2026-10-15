@@ -3609,9 +3609,7 @@ export abstract class LinuxMachine extends EndHost
   async executeCommand(command: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
     settleOrderedDeliveries();
-    if (stdin !== undefined) {
-      this.executor._scenarioStdin = stdin;
-    }
+    this.executor._scenarioStdin = stdin;
 
     const trimmed = command.trim();
     if (!trimmed) return '';

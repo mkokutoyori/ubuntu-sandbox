@@ -9,6 +9,7 @@
  *   - NTFS-style ACLs (owner + access control entries)
  */
 
+import { deferContent } from '@/network/core/DeferredContent';
 import { simulationNowMs } from '../../core/SystemClock';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { normalizeWindowsPath } from './windowsPath';
@@ -602,6 +603,13 @@ export class WindowsFileSystem {
     parent.children.set(key, entry);
     parent.mtime = this.now();
     return { ok: true };
+  }
+
+  createDeferredFile(absPath: string, produce: () => string, declaredSize: number): { ok: boolean; error?: string } {
+    const created = this.createFile(absPath, '');
+    const entry = this.resolve(absPath);
+    if (created.ok && entry) deferContent(entry, produce, declaredSize);
+    return created;
   }
 
   appendFile(absPath: string, content: string): { ok: boolean; error?: string } {

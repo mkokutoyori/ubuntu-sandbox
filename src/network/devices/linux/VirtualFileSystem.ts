@@ -1,3 +1,4 @@
+import { deferContent } from '@/network/core/DeferredContent';
 import { UBUNTU_2204_SSH_CONFIG } from '@/network/protocols/ssh/client/UbuntuSshClientConfigFile';
 import { bytesToFileText } from '@/crypto/encoding';
 /**
@@ -618,6 +619,14 @@ export class VirtualFileSystem {
   getType(path: string, followSymlinks = true): FileType | null {
     const inode = followSymlinks ? this.resolveInode(path) : this.resolveInode(path, false);
     return inode?.type ?? null;
+  }
+
+  createDeferredFileAt(
+    path: string, produce: () => string, permissions: number, uid: number, gid: number, declaredSize: number,
+  ): INode | null {
+    const inode = this.createFileAt(path, '', permissions, uid, gid);
+    if (inode !== null) deferContent(inode, produce, declaredSize);
+    return inode;
   }
 
   createFileAt(path: string, content: string, permissions: number, uid: number, gid: number): INode | null {

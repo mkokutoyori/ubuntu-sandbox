@@ -17,3 +17,4 @@ export { camelliaEncryptBlock, camelliaDecryptBlock, CAMELLIA_BLOCK_SIZE } from 
 export { ariaEncryptBlock, ariaDecryptBlock, ARIA_BLOCK_SIZE } from './aria';
 export { sm4EncryptBlock, sm4DecryptBlock, SM4_BLOCK_SIZE } from './sm4';
 export { aesSivEncrypt, aesSivDecrypt, AES_SIV_TAG_SIZE } from './aesSiv';
+export { Blowfish } from './blowfish';

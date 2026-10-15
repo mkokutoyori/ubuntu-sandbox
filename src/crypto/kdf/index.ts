@@ -4,3 +4,4 @@ export { prfPlus } from './prfPlus';
 export { nFold } from './nFold';
 export { scrypt, scryptHex } from './scrypt';
 export { evpBytesToKey } from './evpBytesToKey';
+export { bcryptPbkdf } from './bcryptPbkdf';
