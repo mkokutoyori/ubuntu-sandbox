@@ -16,7 +16,7 @@ export interface ImportedLab {
 }
 
 export type { ExportedDevice };
-export const LAB_FILES = ['SSH_TP_LAN.topology (7).json', 'lan_with_firewall_fortigate.topology (1).json'] as const;
+export const LAB_FILES = ['SSH_TP_LAN.topology (7).json', 'SSH_TP_LAN.topology (8).json', 'lan_with_firewall_fortigate.topology (1).json'] as const;
 
 export function importLab(file: string): ImportedLab {
   const raw = JSON.parse(readFileSync(join(__dirname, '../../new_firewall', file), 'utf8')) as {

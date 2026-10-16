@@ -63,14 +63,14 @@ describe('connection-line-logic', () => {
   describe('cables leaving one device by the same face', () => {
     const centres = (count: number) => [
       { x: 100, y: 100 },
-      ...Array.from({ length: count }, (_, i) => ({ x: 500, y: 60 + i * 40 })),
+      ...Array.from({ length: count }, (_, i) => ({ x: 500, y: 60 + i * 110 })),
     ];
     const face = (count: number) => Array.from({ length: count }, (_, i) => ({
       id: `c${i}`,
       sourceDeviceId: 'A',
       targetDeviceId: `B${i}`,
       source: { x: 100, y: 100 },
-      target: { x: 500, y: 60 + i * 40 },
+      target: { x: 500, y: 60 + i * 110 },
       sourceInterface: `Gi0/${i}`,
       targetInterface: 'eth0',
     }));

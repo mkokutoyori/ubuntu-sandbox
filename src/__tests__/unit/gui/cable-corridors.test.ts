@@ -43,9 +43,8 @@ describe('five machines above one switch', () => {
     expect(measure(lab, route(lab)).crossings).toBe(0);
   });
 
-  it('and keep their five elbows on five distinct levels', () => {
-    const levels = new Set([...route(lab).values()].map(r => Math.round(r.points[1].y)));
-    expect(levels.size).toBe(5);
+  it('and never run along one another', () => {
+    expect(measure(lab, route(lab)).overlapPixels).toBe(0);
   });
 });
 
@@ -56,6 +55,18 @@ describe('a device standing on the way', () => {
   );
 
   it('is crossed by the old layout and avoided by the new one', () => {
+    expect(measure(lab, route(lab, false)).throughDevices).toBe(1);
+    expect(measure(lab, route(lab)).throughDevices).toBe(0);
+  });
+});
+
+describe('a device exactly in line between the two ends', () => {
+  const lab = labOf(
+    [['A', 100, 300], ['B', 700, 300], ['X', 400, 300]],
+    [['A', 'B', 'Gi0/0', 'Gi0/1']],
+  );
+
+  it('is gone around by a U route instead of being crossed', () => {
     expect(measure(lab, route(lab, false)).throughDevices).toBe(1);
     expect(measure(lab, route(lab)).throughDevices).toBe(0);
   });

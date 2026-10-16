@@ -19,6 +19,7 @@ test.setTimeout(240_000);
 const SHOTS = 'e2e/__shots__';
 const LABS = [
   { file: 'SSH_TP_LAN.topology (7).json', slug: 'ssh-tp-lan' },
+  { file: 'SSH_TP_LAN.topology (8).json', slug: 'ssh-tp-lan-8' },
   { file: 'lan_with_firewall_fortigate.topology (1).json', slug: 'lan-firewall-fortigate' },
 ] as const;
 

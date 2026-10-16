@@ -1,8 +1,8 @@
 /**
  * LA DISPOSITION DES CABLES SUR LES DEUX LABOS EXPORTES DU DEPOT.
  *
- * Les exports `SSH_TP_LAN.topology (7).json` (22 equipements, 21 cables) et `lan_with_firewall_fortigate.topology
- * (1).json` (24 equipements, 23 cables) sont relus a leurs coordonnees d'origine, puis leurs routeurs, commutateurs
+ * Les exports `SSH_TP_LAN.topology (7).json` (22 equipements, 21 cables), `SSH_TP_LAN.topology (8).json` (22 equipements,
+ * 21 cables, disposition remaniee) et `lan_with_firewall_fortigate.topology (1).json` (24 equipements, 23 cables) sont relus a leurs coordonnees d'origine, puis leurs routeurs, commutateurs
  * et pare-feu sont DEPLACES un a un par une marche pseudo-aleatoire fixe (60 deplacements de plus ou moins 130
  * pixels), le trace precedent etant rendu a chaque pas comme le fait la toile. A chaque etat, le trace est mesure :
  * croisements de cables, tronçons paralleles superposes, cables qui traversent un equipement tiers, pastilles
@@ -16,6 +16,14 @@
  *   croisements 14.4 et 9.9, superpositions 140 px et 22 px, traversees d'equipements 9.7 et 7.3.
  * APRES : croisements 7 a 8 et 5.3, superpositions 6 px et 2 px, traversees 4.4 et 4.8. Le residu de traversees est
  * en grande partie de la marche elle-meme : elle depose parfois deux equipements l'un sur l'autre.
+ *
+ * Le deuxieme export a revele ce que les formes en Z ne savaient pas faire : un equipement pose EXACTEMENT entre
+ * deux autres (PC5, PC4, Serveur1 alignes), un cable trop court pour porter ses deux pastilles, une face de commutateur
+ * a quatre cables dont la voie la plus externe mordait le badge du voisin. Mesure sur cet export a ses positions :
+ * traversees d'equipements 8 -> 0, croisements 9 -> 2, superpositions 46 px -> 0, pastilles masquees 1 -> 0 ;
+ * les deux autres labos restent a 0 croisement et 0 traversee. Les cables peuvent desormais sortir par n'importe
+ * quelle face : en Z (faces opposees), en L (faces perpendiculaires) ou en U (meme face, couloir hors de l'espace
+ * entre les deux equipements).
  *
  * Ce que ce fichier garde : le trace n'est jamais PIRE que l'ancien sur aucune mesure, il est nettement meilleur
  * sur la moyenne, et il reste rapide (un etat en quelques millisecondes).
@@ -61,6 +69,7 @@ describe.each(LAB_FILES)('%s', (file) => {
     expect(after.overlapPixels).toBeLessThanOrEqual(before.overlapPixels);
     expect(after.crossings).toBeLessThanOrEqual(before.crossings);
     expect(after.throughDevices).toBeLessThanOrEqual(before.throughDevices);
+    expect(after.throughDevices).toBe(0);
     expect(after.tagOnTag).toBe(0);
     expect(after.tagOnDevice).toBe(0);
     expect(after.hiddenTags).toBe(0);
