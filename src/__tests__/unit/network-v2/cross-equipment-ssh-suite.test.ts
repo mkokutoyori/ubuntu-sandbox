@@ -2629,15 +2629,13 @@ describe('§39 — SFTP file movement', () => {
       contains: [/No such file/i],
     },
     {
-      name: 'mv alias works exactly like rename',
+      name: 'mv is not an sftp command in OpenSSH 8.9: it is refused and moves nothing',
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sh -c "echo alias > /tmp/with-mv && chown alice:alice /tmp/with-mv"');
-        await l.linux1.executeCommand(
-          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
-        );
       },
-      on: l => l.linux2, cmd: 'cat /tmp/moved',
-      contains: [/^alias$/m],
+      on: l => l.linux1,
+      cmd: "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
+      contains: ['Invalid command.'],
     },
   ];
 
