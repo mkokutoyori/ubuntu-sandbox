@@ -9,6 +9,7 @@ import { bcryptPbkdf } from '@/crypto/kdf/bcryptPbkdf';
 import { cipherSpec } from '@/network/protocols/ssh/transport/SshBinaryPacket';
 import { bitLength, generateRsaKeyPair, modInverse, type RandomBytes } from '@/crypto/rsa/rsa';
 import { SshReader, SshWriter } from '@/network/protocols/ssh/wire/SshDataTypes';
+import { pemLoadPrivate, pemPrivateSupports, pemSerializePrivate, type PemPrivateFormat } from './SshPrivateKeyPem';
 
 export type EcdsaAlgorithm = 'ecdsa-sha2-nistp256' | 'ecdsa-sha2-nistp384' | 'ecdsa-sha2-nistp521';
 
@@ -214,6 +215,7 @@ function privateSection(key: SshPrivateKey, checkint: number, blockSize: number)
 
 export interface PrivateKeyProtection {
   readonly passphrase: string;
+  readonly format?: PemPrivateFormat;
   readonly cipher?: string;
   readonly rounds?: number;
 }
@@ -233,6 +235,9 @@ function wrapArmour(body: Uint8Array): string {
 export function keygenSerializePrivate(
   key: SshPrivateKey, protection: PrivateKeyProtection | undefined, random: RandomBytes = randomBytes,
 ): string {
+  if (protection?.format !== undefined && pemPrivateSupports(key.algorithm)) {
+    return pemSerializePrivate(key, protection.format, protection.passphrase, random);
+  }
   const checkint = checkintFrom(random);
   const encrypted = protection !== undefined && protection.passphrase !== '';
   const cipherName = encrypted ? protection.cipher ?? DEFAULT_KEY_CIPHER : 'none';
@@ -311,6 +316,8 @@ export type PrivateKeyLoad =
   | { readonly kind: 'unsupported-cipher'; readonly cipher: string };
 
 export function keygenLoadPrivate(material: string, passphrase = ''): PrivateKeyLoad {
+  const pem = pemLoadPrivate(material, passphrase);
+  if (pem !== null) return pem;
   const body = material.replace(PRIVATE_HEADER, '').replace(PRIVATE_FOOTER, '').replace(/\s+/g, '');
   if (body === '') return { kind: 'invalid-format' };
   try {
@@ -369,6 +376,8 @@ export function keygenPublicOf(material: string, passphrase = ''): string | null
 }
 
 export function keygenPublicBlobOfFile(material: string): Uint8Array | null {
+  const pem = pemLoadPrivate(material, '');
+  if (pem !== null) return pem.kind === 'key' ? sshPublicKeyBlob(pem.key) : null;
   try {
     const outer = new SshReader(base64ToBytes(material.replace(PRIVATE_HEADER, '').replace(PRIVATE_FOOTER, '').replace(/\s+/g, '')));
     outer.readRaw(AUTH_MAGIC.length);

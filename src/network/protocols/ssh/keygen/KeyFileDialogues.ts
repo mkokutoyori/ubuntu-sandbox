@@ -192,8 +192,12 @@ export function* printPublicDialogue(request: KeygenRequest, host: SshKeygenHost
   return 0;
 }
 
+export function privateFormatOf(request: KeygenRequest): 'PEM' | 'PKCS8' | undefined {
+  return request.format === 'PEM' || request.format === 'PKCS8' ? request.format : undefined;
+}
+
 function protectionFor(request: KeygenRequest, passphrase: string) {
-  return { passphrase, cipher: request.keyCipher, rounds: request.rounds };
+  return { passphrase, cipher: request.keyCipher, rounds: request.rounds, format: privateFormatOf(request) };
 }
 
 export function* changePassphraseDialogue(request: KeygenRequest, host: SshKeygenHost): KeygenDialogue {
@@ -246,6 +250,10 @@ export function* changeCommentDialogue(request: KeygenRequest, host: SshKeygenHo
   const loaded = yield* loadPrivateKey(host, material, given, 'Enter passphrase: ');
   if (loaded.kind !== 'loaded') {
     yield print(`Cannot load private key "${file}": ${failureText(loaded)}`);
+    return 1;
+  }
+  if (loaded.value.key.algorithm !== 'ssh-ed25519' && privateFormatOf(request) !== undefined) {
+    yield print('Comments are only supported for keys stored in the new format (-o).');
     return 1;
   }
   let next = request.comment;
