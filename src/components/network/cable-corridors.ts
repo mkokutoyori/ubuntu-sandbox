@@ -19,13 +19,15 @@ export interface CorridorLink {
 }
 
 const CROSSING_COST = 1000;
-const DEVICE_COST = 1500;
+const DEVICE_COST = 3500;
 const OVERLAP_COST = 40;
 const OVERLAP_BAND = 8;
 const DEVIATION_COST = 0.3;
 const STEP = 12;
 const REACH = 6;
 const SWEEPS = 4;
+
+const EDGE_GAP = 14;
 
 const SEGMENTS = 3;
 const STRIDE = 8;
@@ -111,6 +113,27 @@ function pathCost(
   return cost;
 }
 
+function corridorCandidates(
+  link: CorridorLink, base: number, rects: ReadonlyArray<CorridorRect>, out: number[],
+): void {
+  out.length = 0;
+  if (link.high - link.low < 1) { out.push(base); return; }
+  const clamp = (value: number): number => (value < link.low ? link.low : value > link.high ? link.high : value);
+  for (let k = -REACH; k <= REACH; k++) out.push(clamp(base + k * STEP));
+  const horizontal = link.horizontal;
+  const spanLow = Math.min(horizontal ? link.points[0].y : link.points[0].x, horizontal ? link.points[3].y : link.points[3].x);
+  const spanHigh = Math.max(horizontal ? link.points[0].y : link.points[0].x, horizontal ? link.points[3].y : link.points[3].x);
+  for (let n = 0; n < rects.length; n++) {
+    const rect = rects[n];
+    if (isOwner(rect, link)) continue;
+    const across0 = horizontal ? rect.y0 : rect.x0, across1 = horizontal ? rect.y1 : rect.x1;
+    if (across1 <= spanLow || across0 >= spanHigh) continue;
+    const along0 = horizontal ? rect.x0 : rect.y0, along1 = horizontal ? rect.x1 : rect.y1;
+    if (along1 < link.low - EDGE_GAP || along0 > link.high + EDGE_GAP) continue;
+    out.push(clamp(along0 - EDGE_GAP), clamp(along1 + EDGE_GAP));
+  }
+}
+
 export interface CorridorOutcome {
   readonly chosen: Array<number | undefined>;
   readonly residual: Float64Array;
@@ -146,12 +169,9 @@ export function refineCorridors(
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
     }
-    const reach = REACH * STEP;
-    const lo = Math.max(link.low, base[i] - reach);
-    const hi = Math.min(link.high, base[i] + reach);
     if (link.high - link.low >= 1) {
-      if (link.horizontal) { minX = Math.min(minX, lo); maxX = Math.max(maxX, hi); }
-      else { minY = Math.min(minY, lo); maxY = Math.max(maxY, hi); }
+      if (link.horizontal) { minX = Math.min(minX, link.low); maxX = Math.max(maxX, link.high); }
+      else { minY = Math.min(minY, link.low); maxY = Math.max(maxY, link.high); }
     }
     envelope[4 * i] = minX - OVERLAP_BAND; envelope[4 * i + 1] = minY - OVERLAP_BAND;
     envelope[4 * i + 2] = maxX + OVERLAP_BAND; envelope[4 * i + 3] = maxY + OVERLAP_BAND;
@@ -209,6 +229,7 @@ export function refineCorridors(
   for (let i = 0; i < count; i++) refreshBounds(i);
   const chosen: Array<number | undefined> = new Array(count).fill(undefined);
   const candidate = new Float64Array(STRIDE);
+  const options: number[] = [];
   const costOf = (index: number, corridor: number, limit = Infinity): number => {
     withCorridor(links[index].horizontal, shapes, index * STRIDE, corridor, candidate);
     const deviation = DEVIATION_COST * Math.abs(corridor - base[index]);
@@ -227,8 +248,9 @@ export function refineCorridors(
       if (currentCost < DEVIATION_COST * Math.abs(current - base[i]) + 1e-9) continue;
       let best = current;
       let bestCost = currentCost;
-      for (let k = -REACH; k <= REACH; k++) {
-        const corridor = Math.min(link.high, Math.max(link.low, base[i] + k * STEP));
+      corridorCandidates(link, base[i], nearRects[i], options);
+      for (let k = 0; k < options.length; k++) {
+        const corridor = options[k];
         if (corridor === current) continue;
         const cost = costOf(i, corridor, bestCost + 0.5) - (link.preferred !== undefined && corridor === link.preferred ? 0.5 : 0);
         if (cost < bestCost - 1e-9) { best = corridor; bestCost = cost; }
@@ -289,10 +311,10 @@ export function trialCost(
   const base = link.horizontal ? link.points[1].x : link.points[1].y;
   const candidate = new Float64Array(STRIDE);
   let best = Infinity;
-  const usable = link.high - link.low >= 1;
-  for (let k = -REACH; k <= REACH; k++) {
-    if (!usable && k !== 0) continue;
-    const corridor = usable ? Math.min(link.high, Math.max(link.low, base + k * STEP)) : base;
+  const options: number[] = [];
+  corridorCandidates(link, base, own, options);
+  for (let k = 0; k < options.length; k++) {
+    const corridor = options[k];
     withCorridor(link.horizontal, shape, 0, corridor, candidate);
     const cost = pathCost(candidate, field.shapes, field.bounds, neighbours, own, best)
       + DEVIATION_COST * Math.abs(corridor - base);
