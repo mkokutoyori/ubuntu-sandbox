@@ -60,6 +60,7 @@ export type SshServerEvent =
       port?: number;
       keyType?: string;
       keyFingerprint?: string;
+      certificate?: { keyId: string; serial: string; caType: string; caFingerprint: string };
       fromHost?: string;
       timestamp?: number;
     }
@@ -117,6 +118,7 @@ export type SshServerEvent =
       port?: number;
       timestamp?: number;
     }
+  | { kind: 'auth_log'; level: 'error' | 'info' | 'verbose'; text: string }
   | { kind: 'channel_opened'; user: string; channelType: ChannelType }
   | { kind: 'session_fatal'; user: string; text: string }
   | { kind: 'sftp_log'; user: string; program: 'sftp-server' | 'internal-sftp'; pid: number; text: string }

@@ -103,6 +103,11 @@ export class SshSyslogger {
       this.append(`fatal: ${event.text} [postauth]`);
       return;
     }
+    if (event.kind === 'auth_log') {
+      if (event.level === 'verbose' && !VERBOSE_LEVELS.has(this.logLevel())) return;
+      this.append(event.level === 'error' ? `error: ${event.text}` : event.text);
+      return;
+    }
     if (event.kind === 'sftp_log') {
       this.append(event.text, event.program, event.pid);
       return;
@@ -129,6 +134,10 @@ export class SshSyslogger {
         return `Connection from ${event.ip} port ${event.port ?? this.port} on ${hostnameOf(this.hostnameSource)} port ${this.port} rdomain ""`;
 
       case 'auth_success': {
+        if (event.method === 'publickey' && event.keyType && event.keyFingerprint && event.certificate) {
+          const { keyId, serial, caType, caFingerprint } = event.certificate;
+          return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ${event.keyType} ${event.keyFingerprint} ID ${keyId} (serial ${serial}) CA ${caType} ${caFingerprint}`;
+        }
         if (event.method === 'publickey' && event.keyType && event.keyFingerprint) {
           return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ${event.keyType} ${event.keyFingerprint}`;
         }

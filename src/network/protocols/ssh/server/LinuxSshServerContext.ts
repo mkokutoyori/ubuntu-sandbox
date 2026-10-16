@@ -24,6 +24,12 @@ import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
 import type { SftpAccountNames } from '../sftp/SftpWireSession';
 import { ChrootedSftpFileSystem } from '../sftp/ChrootedSftpFileSystem';
 import { SshHostKey } from '../SshHostKey';
+import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
+import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, sshPublicKeyFromBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
+import type { SshCertificate } from '../certificate/SshCertificate';
+import { isRevokedKey } from '../keygen/AllowedSigners';
+import { admitUserCertificate, certificateOfMaterial, type TextFile } from './UserCertificateAdmission';
+import { expandPrincipalsPath } from './PrincipalsPath';
 import { SshUserContext } from '../SshUserContext';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
@@ -346,17 +352,54 @@ export class LinuxSshServerContext implements ISshServerContext {
     const violation = this.sshdConfig.strictModes
       ? this.firstStrictModesViolation(userEntry.uid, userEntry.home)
       : null;
-    if (violation !== null) {
-      if (source.ip !== '') {
-        this.events.emit({
-          kind: 'auth_strict_modes_refused', user, ip: source.ip, path: violation,
-          subject: violation === AUTHORIZED_KEYS_PATH(userEntry.home) ? 'file' : 'directory', port: this.clientPort(source.ip),
-        });
-      }
-      return null;
+    if (violation !== null && source.ip !== '') {
+      this.events.emit({
+        kind: 'auth_strict_modes_refused', user, ip: source.ip, path: violation,
+        subject: violation === AUTHORIZED_KEYS_PATH(userEntry.home) ? 'file' : 'directory', port: this.clientPort(source.ip),
+      });
     }
-    const content = this.vfs.readFile(AUTHORIZED_KEYS_PATH(userEntry.home));
+    const content = violation === null ? this.vfs.readFile(AUTHORIZED_KEYS_PATH(userEntry.home)) : null;
+    const certificate = certificateOfMaterial(publicKey);
+    if (certificate !== null) return this.admittedCertificate(user, userEntry, certificate, source, content);
+    const plain = sshPublicKeyFromBlob(base64ToBytes(publicKey));
+    if (plain !== null && this.revocationRefusal(plain, source) !== null) return null;
     return content ? findAdmittedKey(content, publicKey, source) : null;
+  }
+
+  private revocationRefusal(key: SshPublicKey, source: KeySource): string | null {
+    const path = this.effectiveSshdServerConfig().revokedKeys;
+    if (path === null) return null;
+    const text = this.vfs.readFile(path);
+    const label = `${sshKeyTypeLabel(key.algorithm)} ${keygenBlobDigest(bytesToBase64(sshPublicKeyBlob(key)), 'sha256') ?? '(null)'}`;
+    let message: string | null = null;
+    if (text === null) message = `Error checking authentication key ${label} in revoked keys file ${path}: No such file or directory`;
+    else if (isRevokedKey(text, key) !== false) message = `Authentication key ${label} revoked by file ${path}`;
+    if (message !== null && source.ip !== '') this.events.emit({ kind: 'auth_log', level: 'error', text: message });
+    return message;
+  }
+
+  private admittedCertificate(
+    user: string, userEntry: { uid: number; home: string }, certificate: SshCertificate, source: KeySource,
+    authorizedKeysText: string | null,
+  ): AuthorizedKey | null {
+    const config = this.effectiveSshdServerConfig();
+    const groups = this.userManager.getUserGroups(user).map((group) => group.name);
+    const view = config.effectiveFor({ user, groups, address: source.ip });
+    const textFile = (path: string | null): TextFile | null => (path === null ? null : { path, text: this.vfs.readFile(path) });
+    const expandedPrincipals = view.authorizedPrincipalsFile === null ? null : expandPrincipalsPath(
+      view.authorizedPrincipalsFile, { user, uid: userEntry.uid, home: userEntry.home },
+    );
+    const result = admitUserCertificate({
+      certificate, user, source,
+      nowSeconds: BigInt(Math.floor(simulationNowMs() / 1000)),
+      caSignatureAlgorithms: config.caSignatureAlgorithms,
+      trustedCaKeys: textFile(config.trustedUserCaKeys),
+      principalsFile: textFile(expandedPrincipals),
+      authorizedKeys: authorizedKeysText === null ? null : { path: AUTHORIZED_KEYS_PATH(userEntry.home), text: authorizedKeysText },
+      revokedBy: (key) => (this.revocationRefusal(key, source) === null ? null : (config.revokedKeys ?? '')),
+    });
+    if (source.ip !== '') for (const log of result.logs) this.events.emit({ kind: 'auth_log', level: log.level, text: log.text });
+    return result.key;
   }
 
   forcedCommand(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null {
