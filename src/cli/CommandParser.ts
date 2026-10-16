@@ -263,15 +263,15 @@ export function keywordMatches(
 ): TreeNode[] {
   const lowered = token.toLowerCase();
   const children = [...node.children.values()];
-  const reachable = children.filter(child => subtreeReachable(child, table, session));
+  const commencent = children
+    .filter(child => child.keyword?.toLowerCase().startsWith(lowered))
+    .filter(child => subtreeReachable(child, table, session));
 
-  const exact = reachable.find(child => child.keyword?.toLowerCase() === lowered);
+  const exact = commencent.find(child => child.keyword?.toLowerCase() === lowered);
   if (exact) return [exact];
 
   if (children.some(child => child.keyword?.toLowerCase() === lowered)) return [];
 
-  const commencent = reachable
-    .filter(child => child.keyword?.toLowerCase().startsWith(lowered));
   if (commencent.length <= 1) return commencent;
 
   const duMode = commencent.filter(

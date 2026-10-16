@@ -94,16 +94,16 @@ export class HuaweiSwitch extends Switch {
       getSviIp: (vlan: number) =>
         this.getSvis().find(s => s.vlan === vlan)?.ip?.toString() ?? null,
       getVlanIds: () => [...this.getVLANs().keys()],
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.pimSnoopingAgent = new PimSnoopingAgent({
       ...hostBase,
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.dot1xAgent = new Dot1xAgent({
       ...hostBase,
       onDot1xPortAuthorized: (p, authorized) => this.applyDot1xAuth(p, authorized),
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.agents.registerAll(
       this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent, this.pimSnoopingAgent,
       this.dot1xAgent,
