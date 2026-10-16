@@ -832,9 +832,15 @@ export class WindowsTerminalSession extends TerminalSession {
     const destination = parsed.line.destination;
     if (destination === null || parsed.line.batchFile !== null) return false;
     const user = destination.user ?? device.getUserManager().currentUser;
-    const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
-    const password = await broker.password(`${user}@${destination.host}'s password: `, { trim: false });
-    const opened = await device.openSftpClientSession(args, password);
+    let opened: Awaited<ReturnType<WindowsPC['openSftpClientSession']>>;
+    try {
+      opened = await device.openSftpClientSession(args, '', this.createSshTerminalIO());
+    } finally {
+      this.pendingSshIO = null;
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        this.inputMode = { type: 'normal' };
+      }
+    }
     if (opened.kind === 'ended') {
       for (const text of opened.outcome.output.split('\n')) this.addLine(text, opened.outcome.exitCode === 0 ? 'normal' : 'error');
       return true;

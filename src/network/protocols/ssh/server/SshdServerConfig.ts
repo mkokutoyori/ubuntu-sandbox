@@ -1,4 +1,4 @@
-import { permitOpenAllows } from '../SshPureUtils';
+import { addressListMatches, globMatch, permitOpenAllows } from '../SshPureUtils';
 export type SshdAddressFamily = 'any' | 'inet' | 'inet6';
 export type SshdPermitRootLogin = 'yes' | 'no' | 'prohibit-password' | 'forced-commands-only';
 export type SshdLogLevel = 'QUIET' | 'FATAL' | 'ERROR' | 'INFO' | 'VERBOSE' | 'DEBUG' | 'DEBUG1' | 'DEBUG2' | 'DEBUG3';
@@ -44,6 +44,7 @@ export interface SshdMatchOverrides {
   allowGroups?: readonly string[];
   denyGroups?: readonly string[];
   authorizedKeysFile?: readonly string[];
+  authorizedPrincipalsFile?: string | null;
 }
 
 export interface SshdMatchBlock {
@@ -72,7 +73,12 @@ export interface SshdEffectiveView {
   readonly clientAliveCountMax: number;
   readonly printMotd: boolean;
   readonly authorizedKeysFile: readonly string[];
+  readonly authorizedPrincipalsFile: string | null;
 }
+
+const DEFAULT_CA_SIGNATURE_ALGORITHMS = [
+  'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'rsa-sha2-512', 'rsa-sha2-256',
+];
 
 export interface SshdSubsystems {
   readonly sftp: string | null;
@@ -131,6 +137,11 @@ export interface SshdServerConfigSnapshot {
   readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
   readonly authorizedKeysFile: readonly string[];
+  readonly authorizedPrincipalsFile: string | null;
+  readonly trustedUserCaKeys: string | null;
+  readonly hostCertificates: readonly string[];
+  readonly revokedKeys: string | null;
+  readonly caSignatureAlgorithms: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 }
 
@@ -167,55 +178,6 @@ const YES_NO = (v: string | undefined, fallback: boolean): boolean => {
   if (lo === 'no'  || lo === 'false' || lo === '0') return false;
   return fallback;
 };
-
-function globMatch(pattern: string, value: string): boolean {
-  const reSrc = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-  return new RegExp(reSrc).test(value);
-}
-
-function ipv4ToUint32(ip: string): number | null {
-  const parts = ip.split('.');
-  if (parts.length !== 4) return null;
-  let acc = 0;
-  for (const p of parts) {
-    const n = Number.parseInt(p, 10);
-    if (!Number.isFinite(n) || n < 0 || n > 255 || String(n) !== p) return null;
-    acc = ((acc << 8) | n) >>> 0;
-  }
-  return acc;
-}
-
-function singleAddressMatches(pattern: string, ip: string): boolean {
-  if (pattern === '*' || pattern === 'any') return true;
-  if (pattern === ip) return true;
-  if (pattern.includes('/')) {
-    const [base, bitsStr] = pattern.split('/');
-    const bits = Number.parseInt(bitsStr, 10);
-    const a = ipv4ToUint32(base);
-    const b = ipv4ToUint32(ip);
-    if (a === null || b === null || !Number.isFinite(bits) || bits < 0 || bits > 32) return false;
-    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-    return (a & mask) === (b & mask);
-  }
-  if (pattern.includes('*') || pattern.includes('?')) return globMatch(pattern, ip);
-  return false;
-}
-
-function addressListMatches(patternList: string, ip: string): boolean {
-  const tokens = patternList.split(',').map(s => s.trim()).filter(Boolean);
-  if (tokens.length === 0) return false;
-  let anyPositive = false;
-  let matchedPositive = false;
-  for (const t of tokens) {
-    if (t.startsWith('!')) {
-      if (singleAddressMatches(t.slice(1), ip)) return false;
-    } else {
-      anyPositive = true;
-      if (singleAddressMatches(t, ip)) matchedPositive = true;
-    }
-  }
-  return anyPositive ? matchedPositive : true;
-}
 
 function userPatternMatches(pattern: string, user: string, address: string): boolean {
   const at = pattern.indexOf('@');
@@ -275,6 +237,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
   readonly authorizedKeysFile: readonly string[];
+  readonly authorizedPrincipalsFile: string | null;
+  readonly trustedUserCaKeys: string | null;
+  readonly hostCertificates: readonly string[];
+  readonly revokedKeys: string | null;
+  readonly caSignatureAlgorithms: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 
   private constructor(s: SshdServerConfigSnapshot) {
@@ -329,6 +296,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.chrootDirectory = s.chrootDirectory;
     this.permitOpen = s.permitOpen;
     this.authorizedKeysFile = s.authorizedKeysFile;
+    this.authorizedPrincipalsFile = s.authorizedPrincipalsFile;
+    this.trustedUserCaKeys = s.trustedUserCaKeys;
+    this.hostCertificates = s.hostCertificates;
+    this.revokedKeys = s.revokedKeys;
+    this.caSignatureAlgorithms = s.caSignatureAlgorithms;
     this.matchBlocks = s.matchBlocks;
   }
 
@@ -385,6 +357,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       chrootDirectory: null,
       permitOpen: Object.freeze(['any']),
       authorizedKeysFile: Object.freeze(['.ssh/authorized_keys', '.ssh/authorized_keys2']),
+      authorizedPrincipalsFile: null,
+      trustedUserCaKeys: null,
+      hostCertificates: Object.freeze([]),
+      revokedKeys: null,
+      caSignatureAlgorithms: Object.freeze([...DEFAULT_CA_SIGNATURE_ALGORITHMS]),
       matchBlocks: Object.freeze([]),
     });
   }
@@ -501,6 +478,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       clientAliveCountMax: this.clientAliveCountMax,
       printMotd: this.printMotd,
       authorizedKeysFile: this.authorizedKeysFile,
+      authorizedPrincipalsFile: this.authorizedPrincipalsFile,
     };
     for (const block of this.matchBlocks) {
       if (!this.matchApplies(block.criteria, ctx)) continue;
@@ -696,6 +674,11 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     }
     case 'permitopen': return cfg.mutate({ permitOpen: Object.freeze(value.split(/\s+/).filter(Boolean)) });
     case 'authorizedkeysfile': return cfg.mutate({ authorizedKeysFile: Object.freeze(value.split(/\s+/).filter(Boolean)) });
+    case 'authorizedprincipalsfile': return cfg.mutate({ authorizedPrincipalsFile: value === 'none' ? null : value });
+    case 'hostcertificate': return cfg.mutate({ hostCertificates: Object.freeze([...cfg.hostCertificates, value]) });
+    case 'trustedusercakeys': return cfg.mutate({ trustedUserCaKeys: value === 'none' ? null : value });
+    case 'revokedkeys': return cfg.mutate({ revokedKeys: value === 'none' ? null : value });
+    case 'casignaturealgorithms': return cfg.mutate({ caSignatureAlgorithms: Object.freeze(value.split(',').map((name) => name.trim()).filter(Boolean)) });
     default: return cfg;
   }
 }
@@ -727,6 +710,7 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'allowgroups': o.allowGroups = Object.freeze(value.split(/\s+/)); break;
     case 'denygroups':  o.denyGroups  = Object.freeze(value.split(/\s+/)); break;
     case 'authorizedkeysfile': o.authorizedKeysFile = Object.freeze(value.split(/\s+/).filter(Boolean)); break;
+    case 'authorizedprincipalsfile': o.authorizedPrincipalsFile = value === 'none' ? null : value; break;
   }
 }
 

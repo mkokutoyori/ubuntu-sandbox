@@ -33,6 +33,8 @@ export interface AuthorizedKeyOptions {
   readonly restrict?: boolean;
   readonly environment?: ReadonlyArray<readonly [string, string]>;
   readonly permitOpen?: readonly string[];
+  readonly certAuthority?: boolean;
+  readonly principals?: string;
   readonly unsupported?: readonly string[];
 }
 
@@ -199,7 +201,7 @@ function splitAuthorizedKeyLine(line: string): { optionsRaw: string | null; algo
   return { optionsRaw, algorithm, material, comment: commentParts.join(' ') };
 }
 
-function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
+export function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
   const opts: { -readonly [K in keyof AuthorizedKeyOptions]: AuthorizedKeyOptions[K] } = {};
   const env: Array<readonly [string, string]> = [];
   const permitOpen: string[] = [];
@@ -211,6 +213,8 @@ function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
     const val = valRaw.replace(/^"|"$/g, '');
     switch (key) {
       case 'command': opts.command = val; break;
+      case 'cert-authority': opts.certAuthority = true; break;
+      case 'principals': opts.principals = val; break;
       case 'from': opts.from = val; break;
       case 'no-pty': opts.noPty = true; break;
       case 'no-port-forwarding': opts.noPortForwarding = true; break;
@@ -365,6 +369,55 @@ export interface KeySource {
   readonly host?: string;
 }
 
+export function globMatch(pattern: string, value: string): boolean {
+  const reSrc = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+  return new RegExp(reSrc).test(value);
+}
+
+function ipv4ToUint32(ip: string): number | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let acc = 0;
+  for (const p of parts) {
+    const n = Number.parseInt(p, 10);
+    if (!Number.isFinite(n) || n < 0 || n > 255 || String(n) !== p) return null;
+    acc = ((acc << 8) | n) >>> 0;
+  }
+  return acc;
+}
+
+function singleAddressMatches(pattern: string, ip: string): boolean {
+  if (pattern === '*' || pattern === 'any') return true;
+  if (pattern === ip) return true;
+  if (pattern.includes('/')) {
+    const [base, bitsStr] = pattern.split('/');
+    const bits = Number.parseInt(bitsStr, 10);
+    const a = ipv4ToUint32(base);
+    const b = ipv4ToUint32(ip);
+    if (a === null || b === null || !Number.isFinite(bits) || bits < 0 || bits > 32) return false;
+    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+    return (a & mask) === (b & mask);
+  }
+  if (pattern.includes('*') || pattern.includes('?')) return globMatch(pattern, ip);
+  return false;
+}
+
+export function addressListMatches(patternList: string, ip: string): boolean {
+  const tokens = patternList.split(',').map(s => s.trim()).filter(Boolean);
+  if (tokens.length === 0) return false;
+  let anyPositive = false;
+  let matchedPositive = false;
+  for (const t of tokens) {
+    if (t.startsWith('!')) {
+      if (singleAddressMatches(t.slice(1), ip)) return false;
+    } else {
+      anyPositive = true;
+      if (singleAddressMatches(t, ip)) matchedPositive = true;
+    }
+  }
+  return anyPositive ? matchedPositive : true;
+}
+
 export function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, pattern: string): boolean {
   let allowed = false;
   for (const raw of pattern.split(',')) {
@@ -372,8 +425,7 @@ export function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, p
     if (!p) continue;
     const negate = p.startsWith('!');
     const body = negate ? p.slice(1) : p;
-    const re = new RegExp('^' + body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-    if (re.test(sourceIp) || re.test(sourceHost)) {
+    if (singleAddressMatches(body, sourceIp) || (sourceHost !== '' && globMatch(body, sourceHost))) {
       if (negate) return false;
       allowed = true;
     }
@@ -393,7 +445,7 @@ export function findAdmittedKey(
 ): AuthorizedKey | null {
   for (const line of authorizedKeys.split('\n')) {
     const key = parseAuthorizedKeysLine(line);
-    if (key && key.material === material && authorizedKeyAdmits(key, source)) return key;
+    if (key && key.material === material && key.options?.certAuthority !== true && authorizedKeyAdmits(key, source)) return key;
   }
   return null;
 }

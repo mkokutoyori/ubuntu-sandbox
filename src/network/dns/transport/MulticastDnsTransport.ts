@@ -213,6 +213,7 @@ export function queryMulticastDns(
   timeoutMs: number,
   options: { firstOnly?: boolean } = {},
 ): Promise<DnsMessage[]> {
+  if (host.isDisposed()) return Promise.resolve([]);
   let sourcePort: number;
   try { sourcePort = host.getSocketTable().allocateEphemeralPort(); }
   catch { return Promise.resolve([]); }
@@ -221,9 +222,11 @@ export function queryMulticastDns(
     const collected: DnsMessage[] = [];
     let timer: ReturnType<typeof setTimeout> | null = null;
     let settled = false;
+    const releaseDisposeHook = host.onDispose(() => finish());
     const finish = (): void => {
       if (settled) return;
       settled = true;
+      releaseDisposeHook();
       if (timer) clearTimeout(timer);
       host.udpClose(sourcePort);
       resolve(collected);

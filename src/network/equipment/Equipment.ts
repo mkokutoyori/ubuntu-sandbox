@@ -181,7 +181,23 @@ export abstract class Equipment {
     return this.getScheduler();
   }
 
+  private readonly disposeHooks = new Set<() => void>();
+  private disposed = false;
+
+  isDisposed(): boolean {
+    return this.disposed;
+  }
+
+  onDispose(hook: () => void): () => void {
+    this.disposeHooks.add(hook);
+    return () => { this.disposeHooks.delete(hook); };
+  }
+
   dispose(): void {
+    this.disposed = true;
+    const hooks = [...this.disposeHooks];
+    this.disposeHooks.clear();
+    for (const hook of hooks) hook();
     this.machineScheduler?.clearAll();
     EquipmentRegistry.getInstance().deregister(this.id);
   }

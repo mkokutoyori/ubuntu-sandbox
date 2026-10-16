@@ -11,6 +11,8 @@ import {
   recordDialogue,
 } from './keygen/KeyFileDialogues';
 import { allHostKeysDialogue, generationDialogue } from './keygen/GenerationDialogue';
+import { certifyDialogue, showCertificateDialogue } from './keygen/CertificateDialogues';
+import { signatureDialogue } from './keygen/SignatureDialogues';
 import {
   print,
   type KeygenDialogue,
@@ -30,6 +32,9 @@ function* keygenDialogue(args: readonly string[], host: SshKeygenHost): KeygenDi
     for (const line of request.output.split('\n')) yield print(line);
     return request.exitCode;
   }
+  if (request.signOperation !== undefined) return yield* signatureDialogue(request, host);
+  if (request.caKeyPath !== undefined) return yield* certifyDialogue(request, host);
+  if (request.showCertificate) return yield* showCertificateDialogue(request, host);
   if (request.deleteHost !== undefined || request.findHost !== undefined || request.hashHosts) return yield* knownHostsDialogue(request, host);
   if (request.all) return yield* allHostKeysDialogue(request, host);
   if (request.fingerprint || request.bubblebabble) return yield* fingerprintDialogue(request, host);
@@ -53,20 +58,33 @@ export function runSshKeygenCommand(
   args: readonly string[], host: SshKeygenHost, stdin?: string,
 ): SshKeygenOutcome {
   const typed = typedLines(stdin);
-  const dialogue = keygenDialogue(args, host);
+  const dialogue = keygenDialogue(args, stdin === undefined ? host : { ...host, stdin });
   let transcript = '';
+  let standardOutput = '';
+  let standardError = '';
   let answer: string | null | undefined;
+  const finish = (exitCode: number): SshKeygenOutcome => {
+    if (standardError === '') return { output: transcript.replace(/\n$/, ''), exitCode };
+    return {
+      output: standardOutput.replace(/\n$/, ''), exitCode,
+      stderr: standardError.replace(/\n$/, ''), interleaved: transcript.replace(/\n$/, ''),
+    };
+  };
   for (;;) {
     const step = dialogue.next(answer);
-    if (step.done === true) return { output: transcript.replace(/\n$/, ''), exitCode: step.value };
+    if (step.done === true) return finish(step.value);
     answer = undefined;
     if (step.value.kind === 'print') {
       transcript += `${step.value.line}\n`;
+      if (step.value.stream === 'stderr') standardError += `${step.value.line}\n`;
+      else standardOutput += `${step.value.line}\n`;
       continue;
     }
     transcript += step.value.prompt;
+    standardOutput += step.value.prompt;
     if (typed === null) {
       transcript += '\n';
+      standardOutput += '\n';
       answer = '';
       continue;
     }
@@ -101,6 +119,7 @@ export interface KeygenIdentity {
   readonly cwd: string;
   readonly hostKeyDir?: string;
   readonly release: OpenSshRelease;
+  readonly zoneOffsetMinutes?: (atMs: number) => number;
 }
 
 function writeFailureReason(vfs: KeygenVfs, target: string, identity: KeygenIdentity): string {
@@ -137,5 +156,6 @@ export function vfsKeygenHost(vfs: KeygenVfs, identity: KeygenIdentity): SshKeyg
     user: identity.user,
     hostname: identity.hostname,
     release: identity.release,
+    zoneOffsetMinutes: identity.zoneOffsetMinutes,
   };
 }

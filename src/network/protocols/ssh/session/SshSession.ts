@@ -37,7 +37,12 @@ import { SshKeyPair } from '../SshKeyPair';
 import type { AgentPort } from '../agent/AgentService';
 import { serveAgentChannel } from '../agent/AgentService';
 import { AGENT_CHANNEL_TYPE, agentSignatureFlags } from '../agent/AgentWire';
-import { signUserauth, userauthSignatureAlgorithm, userauthSignedData } from '../auth/UserauthSignature';
+import { signUserauth, signWithAlgorithm, userauthSignatureAlgorithm, userauthSignedData } from '../auth/UserauthSignature';
+import {
+  SSH_CERT_TYPE_USER, certificateAlgorithmOf, certificateAuthorityRefusal, parseCertificateBlob, parseCertificateLine,
+  type SshCertificate,
+} from '../certificate/SshCertificate';
+import { lineMatchesName, parseKnownHostsLines } from '../hostkey/KnownHostsLines';
 import {
   keygenBlobDigest, keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob, sshKeyTypeLabel,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
@@ -128,6 +133,7 @@ export class SshSession implements ISshSession {
   private connection: SshConnection | null = null;
   private sessionId: Uint8Array | null = null;
   private hostKeyBlob: Uint8Array | null = null;
+  private presentedHostCertificate: SshCertificate | null = null;
 
   private channelManager = new SshChannelManager();
   private knownHosts: SshKnownHosts;
@@ -171,6 +177,10 @@ export class SshSession implements ISshSession {
 
   get state(): SshSessionState {
     return this._state;
+  }
+
+  get serverHostCertificate(): SshCertificate | null {
+    return this.presentedHostCertificate;
   }
 
   get serverHostKeyBlob(): Uint8Array | null {
@@ -239,7 +249,10 @@ export class SshSession implements ISshSession {
       });
     }
     this.sessionId = established.sessionId;
-    this.hostKeyBlob = established.hostKeyBlob;
+    const presentedCertificate = parseCertificateBlob(established.hostKeyBlob);
+    const plainHostKeyBlob = presentedCertificate === null ? established.hostKeyBlob : sshPublicKeyBlob(presentedCertificate.subject);
+    this.hostKeyBlob = plainHostKeyBlob;
+    this.presentedHostCertificate = presentedCertificate;
     this.peerIdentificationLine = established.peerIdentification.line;
     this.negotiatedAlgorithms = established.algorithms;
     const conn = transportLink(transport, dialed);
@@ -248,12 +261,13 @@ export class SshSession implements ISshSession {
     this.acceptForwardedConnections(this.connection, conn);
 
     const hostKey = SshHostKey.fromFiles(
-      bytesToBase64(established.hostKeyBlob),
+      bytesToBase64(plainHostKeyBlob),
       '',
-      sshPublicKeyFromBlob(established.hostKeyBlob)!.algorithm,
+      sshPublicKeyFromBlob(plainHostKeyBlob)!.algorithm,
     );
 
-    const verifyResult = await this.doHostKeyCheck(opts.host, hostKey, opts);
+    const certificateTrusted = presentedCertificate !== null && this.hostCertificateTrusted(opts, presentedCertificate);
+    const verifyResult = certificateTrusted ? ok(undefined) : await this.doHostKeyCheck(opts.host, hostKey, opts);
     if (!verifyResult.ok) {
       this.transition(disconnected('host key rejected'));
       conn.close();
@@ -437,6 +451,27 @@ export class SshSession implements ISshSession {
     for (const listener of [...this.disconnectListeners]) listener();
   }
 
+  private hostCertificateTrusted(opts: SshConnectOptions, certificate: SshCertificate): boolean {
+    const authority = bytesToBase64(sshPublicKeyBlob(certificate.caKey));
+    const listed = this.knownHostsFor(opts).texts().some((text) => parseKnownHostsLines(text).some((line) => (
+      line.marker === 'ca' && line.keyBlob === authority && lineMatchesName(line, opts.host)
+    )));
+    if (!listed) return false;
+    const refusal = certificateAuthorityRefusal(certificate, {
+      wantHost: true, requirePrincipal: false, wildcardPattern: false,
+      verifyTime: BigInt(Math.floor(simulationNowMs() / 1000)), name: opts.host,
+    });
+    if (refusal !== null) {
+      this.deps.interactionHandler.showWarning(refusal);
+      return false;
+    }
+    if (certificate.critical.length > 0) {
+      this.deps.interactionHandler.showWarning(`Certificate for ${opts.host} contains unsupported critical options(s)`);
+      return false;
+    }
+    return true;
+  }
+
   private async doHostKeyCheck(
     host: string,
     key: SshHostKey,
@@ -601,6 +636,7 @@ export class SshSession implements ISshSession {
         },
       });
     }
+    for (const path of opts.identityFiles) identities.push(...this.certificateIdentities(path, user));
     for (const path of opts.identityFiles) {
       const pair = SshKeyPair.fromVfs(this.deps.vfs, path);
       if (!pair.ok) continue;
@@ -618,6 +654,40 @@ export class SshSession implements ISshSession {
       });
     }
     return identities;
+  }
+
+  private certificateIdentities(identityPath: string, user: string): UserauthIdentity[] {
+    const certificatePath = `${identityPath}-cert.pub`;
+    const text = this.deps.vfs.readFile(certificatePath);
+    const parsed = text === null ? null : parseCertificateLine(text.split('\n')[0] ?? '');
+    if (parsed === null || parsed.certificate.type !== SSH_CERT_TYPE_USER) return [];
+    const { certificate } = parsed;
+    const plainAlgorithm = userauthSignatureAlgorithm(certificate.subject);
+    const algorithm = certificateAlgorithmOf(plainAlgorithm);
+    const encoded = bytesToBase64(certificate.blob);
+    return [{
+      label: `${certificatePath} ${sshKeyTypeLabel(certificate.subject.algorithm)}-CERT ${keygenBlobDigest(encoded, 'sha256') ?? ''} explicit`,
+      algorithm,
+      publicKey: encoded,
+      sign: () => this.signCertificateRequest(identityPath, user, algorithm, plainAlgorithm, certificate.blob, sshPublicKeyBlob(certificate.subject)),
+    }];
+  }
+
+  private signCertificateRequest(
+    path: string, user: string, algorithm: string, plainAlgorithm: string, certificateBlob: Uint8Array, subjectBlob: Uint8Array,
+  ): string | null {
+    const handler = this.deps.interactionHandler;
+    const key = keygenPrivateKey(this.deps.vfs.readFile(path) ?? '');
+    if (key === null) {
+      handler.showWarning(`Load key "${path}": invalid format`);
+      return null;
+    }
+    if (bytesToBase64(sshPublicKeyBlob(key)) !== bytesToBase64(subjectBlob)) {
+      handler.showWarning(`identity_sign: private key ${path} contents do not match public`);
+      return null;
+    }
+    if (this.sessionId === null) return null;
+    return bytesToBase64(signWithAlgorithm(key, plainAlgorithm, userauthSignedData(this.sessionId, user, algorithm, certificateBlob)));
   }
 
   private signUserauthRequest(path: string, user: string, algorithm: string, blob: Uint8Array): string | null {

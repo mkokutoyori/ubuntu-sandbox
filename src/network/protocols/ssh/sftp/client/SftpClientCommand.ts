@@ -1,3 +1,4 @@
+import type { ITerminalIO } from '../../session/TerminalSshInteractionHandler';
 import { SftpClient, type SftpClientFlags, type SftpClientHost } from './SftpClient';
 import { parseSftpCommandLine, type SftpCommandLine } from './SftpCommandLine';
 import { SftpProtocolFailure, SftpWireClient, type SftpDiagnostics, type SftpPacketChannel } from './SftpWireClient';
@@ -9,6 +10,7 @@ export interface SftpConnectRequest {
   readonly verbose: boolean;
   readonly subsystem: string | null;
   readonly serverCommand: string | null;
+  readonly io: ITerminalIO | null;
 }
 
 export type SftpConnection =
@@ -58,7 +60,7 @@ export class SftpClientSession {
   ) {}
 
   static async open(
-    args: readonly string[], host: SftpCommandHost, password: string | undefined,
+    args: readonly string[], host: SftpCommandHost, password: string | undefined, io: ITerminalIO | null = null,
   ): Promise<{ readonly kind: 'opened'; readonly session: SftpClientSession } | { readonly kind: 'ended'; readonly outcome: SftpOutcome }> {
     const parsed = parseSftpCommandLine(args);
     if (parsed.kind === 'usage') {
@@ -96,6 +98,7 @@ export class SftpClientSession {
         verbose: line.verbosity > 0,
         subsystem: shell ? null : (line.subsystem ?? 'sftp'),
         serverCommand: shell ? line.subsystem : null,
+        io,
       });
       if (connection.kind === 'refused') {
         return {

@@ -25,6 +25,22 @@ export const OPENSSH_HOST_KEY_ALGORITHMS: readonly string[] = [
   'rsa-sha2-256',
 ];
 
+export const OPENSSH_HOST_KEY_CERTIFICATE_ALGORITHMS: readonly string[] = [
+  'ssh-ed25519-cert-v01@openssh.com',
+  'ecdsa-sha2-nistp256-cert-v01@openssh.com',
+  'ecdsa-sha2-nistp384-cert-v01@openssh.com',
+  'ecdsa-sha2-nistp521-cert-v01@openssh.com',
+  'sk-ssh-ed25519-cert-v01@openssh.com',
+  'sk-ecdsa-sha2-nistp256-cert-v01@openssh.com',
+  'rsa-sha2-512-cert-v01@openssh.com',
+  'rsa-sha2-256-cert-v01@openssh.com',
+];
+
+export const OPENSSH_DEFAULT_HOST_KEY_ALGORITHMS: readonly string[] = [
+  ...OPENSSH_HOST_KEY_CERTIFICATE_ALGORITHMS,
+  ...OPENSSH_HOST_KEY_ALGORITHMS,
+];
+
 export const OPENSSH_CIPHERS: readonly string[] = [
   'chacha20-poly1305@openssh.com',
   'aes128-ctr',
@@ -55,6 +71,9 @@ export const IMPLEMENTED_KEX_METHODS: readonly string[] = KEX_METHODS.map((m) =>
 export const IMPLEMENTED_HOST_KEY_ALGORITHMS: readonly string[] = [
   'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
   'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
+  'ssh-ed25519-cert-v01@openssh.com', 'ecdsa-sha2-nistp256-cert-v01@openssh.com',
+  'ecdsa-sha2-nistp384-cert-v01@openssh.com', 'ecdsa-sha2-nistp521-cert-v01@openssh.com',
+  'rsa-sha2-512-cert-v01@openssh.com', 'rsa-sha2-256-cert-v01@openssh.com',
 ];
 export const IMPLEMENTED_CIPHERS: readonly string[] = CIPHER_SPECS.map((c) => c.name);
 export const IMPLEMENTED_MACS: readonly string[] = MAC_SPECS.map((m) => m.name);
@@ -110,7 +129,7 @@ export interface SshAlgorithmDefaults {
 
 export const OPENSSH_ALGORITHM_DEFAULTS: SshAlgorithmDefaults = {
   kex: OPENSSH_KEX_ALGORITHMS,
-  hostKey: OPENSSH_HOST_KEY_ALGORITHMS,
+  hostKey: OPENSSH_DEFAULT_HOST_KEY_ALGORITHMS,
   ciphers: OPENSSH_CIPHERS,
   macs: OPENSSH_MACS,
 };
@@ -172,7 +191,7 @@ const DEFAULTS_BY_KEYWORD: Readonly<Record<AlgorithmKeyword, readonly string[]>>
   ciphers: OPENSSH_CIPHERS,
   macs: OPENSSH_MACS,
   kexalgorithms: OPENSSH_KEX_ALGORITHMS,
-  hostkeyalgorithms: OPENSSH_HOST_KEY_ALGORITHMS,
+  hostkeyalgorithms: OPENSSH_DEFAULT_HOST_KEY_ALGORITHMS,
 };
 
 export function algorithmKeyword(name: string): AlgorithmKeyword | null {

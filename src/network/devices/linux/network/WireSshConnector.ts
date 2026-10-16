@@ -1,5 +1,6 @@
 import { SshSession } from '../../../protocols/ssh/session/SshSession';
-import { SilentSshInteractionHandler } from '../../../protocols/ssh/session/ISshInteractionHandler';
+import { SilentSshInteractionHandler, type ISshInteractionHandler } from '../../../protocols/ssh/session/ISshInteractionHandler';
+import { TerminalSshInteractionHandler, type ITerminalIO } from '../../../protocols/ssh/session/TerminalSshInteractionHandler';
 import {
   OPENSSH_CLIENT_AUTHENTICATION,
   OPENSSH_DEFAULT_IDENTITY_FILES,
@@ -30,6 +31,7 @@ export interface WireSshTarget {
   readonly port: number;
   readonly password?: string;
   readonly passwordPrompt?: () => string;
+  readonly io?: ITerminalIO;
   readonly identities: readonly string[];
   readonly strict: StrictHostKeyChecking;
   readonly authentication?: SshClientAuthentication;
@@ -45,13 +47,15 @@ export interface WireSshOutcome {
   readonly notices: readonly string[];
   readonly warnings: readonly string[];
   readonly refusedSession?: SshSession;
+  readonly streamed: boolean;
 }
 
 export async function connectWireSsh(
   client: WireSshClient, target: WireSshTarget, connector: TcpConnector,
 ): Promise<WireSshOutcome> {
-  const interaction = new SilentSshInteractionHandler(
+  const silent = new SilentSshInteractionHandler(
     target.passwordPrompt ?? target.password ?? '', target.strict !== 'ask');
+  const interaction: ISshInteractionHandler = target.io === undefined ? silent : new TerminalSshInteractionHandler(target.io);
   const session = new SshSession({
     tcpConnector: connector,
     vfs: client.vfs,
@@ -59,7 +63,7 @@ export async function connectWireSsh(
     localUid: client.uid,
     localGid: client.gid,
     knownHostsPath: `${client.home}/.ssh/known_hosts`,
-    credentialless: target.password === undefined && target.passwordPrompt === undefined,
+    credentialless: target.io === undefined && target.password === undefined && target.passwordPrompt === undefined,
     interactionHandler: interaction,
     ...(client.agent === undefined || target.identitiesOnly === true ? {} : { agent: client.agent }),
   });
@@ -79,7 +83,7 @@ export async function connectWireSsh(
   const result = await session.connect(builder.build());
   if (!isOk(result)) {
     session.disconnect();
-    return { session: null, failure: result.error, notices: interaction.notices, warnings: interaction.warnings, refusedSession: session };
+    return { session: null, failure: result.error, notices: silent.notices, warnings: silent.warnings, refusedSession: session, streamed: target.io !== undefined };
   }
-  return { session, failure: null, notices: interaction.notices, warnings: interaction.warnings };
+  return { session, failure: null, notices: silent.notices, warnings: silent.warnings, streamed: target.io !== undefined };
 }
