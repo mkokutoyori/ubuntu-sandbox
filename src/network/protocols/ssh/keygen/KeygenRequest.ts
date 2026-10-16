@@ -11,20 +11,16 @@ const INT_MAX = 0x7fffffff;
 const UNSIMULATED_OPTIONS: Readonly<Record<string, string>> = {
   D: 'PKCS#11 tokens',
   h: 'host certificates',
-  I: 'certificates',
   K: 'FIDO authenticators',
   k: 'key revocation lists',
   L: 'certificates',
   M: 'DH moduli',
-  n: 'certificates',
   Q: 'key revocation lists',
-  s: 'certificates',
   U: 'certificates',
   u: 'key revocation lists',
   V: 'certificates',
   w: 'FIDO authenticators',
   X: 'DH moduli',
-  Y: 'signatures',
   z: 'certificates',
 };
 
@@ -45,16 +41,24 @@ function strtonum(text: string, max: number): { value: number } | { error: strin
 
 export function parseKeygenRequest(args: readonly string[], release: OpenSshRelease): KeygenRequest | SshKeygenOutcome {
   const usage = (lead: string): SshKeygenOutcome => ({ output: `${lead}\n${release.keygenUsage}`, exitCode: 1 });
+  const operands: string[] = [];
+  const signerOptions: string[] = [];
   const request: { -readonly [K in keyof KeygenRequest]: KeygenRequest[K] } = {
+    operands, signerOptions,
     all: false, bubblebabble: false, changeComment: false, changePassphrase: false, convertFrom: false,
     convertTo: false, genericRecord: false, hashHosts: false, fingerprint: false, hash: 'sha256',
     printPublic: false, quiet: false, verbose: false,
   };
+  const given = new Set<string>();
   for (const option of shortOptions(args, KEYGEN_OPTSTRING)) {
-    if (option.kind === 'operand') return usage('Too many arguments.');
+    if (option.kind === 'operand') {
+      operands.push(option.value);
+      continue;
+    }
     if (option.kind === 'invalid' || option.kind === 'missing-argument') return usage(bsdGetoptDiagnostic(option));
     if (option.kind !== 'option') continue;
     const value = option.argument ?? '';
+    given.add(option.letter);
     const unsimulated = UNSIMULATED_OPTIONS[option.letter];
     if (unsimulated !== undefined) {
       return { output: `ssh-keygen: -${option.letter}: ${unsimulated} are not simulated`, exitCode: 255 };
@@ -79,6 +83,11 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
         request.hash = value;
         break;
       case 'C': request.comment = value; break;
+      case 'I': request.identity = value; break;
+      case 'n': request.namespace = value; break;
+      case 'O': signerOptions.push(value); break;
+      case 's': request.signatureFile = value; break;
+      case 'Y': request.signOperation = value; break;
       case 'c': request.changeComment = true; break;
       case 'e': request.convertTo = true; break;
       case 'F': request.findHost = value; break;
@@ -107,6 +116,11 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
         request.keyCipher = value;
         break;
     }
+  }
+  if (request.signOperation === undefined) {
+    const certificateOption = ['I', 'n', 's'].find((letter) => given.has(letter));
+    if (certificateOption !== undefined) return { output: `ssh-keygen: -${certificateOption}: certificates are not simulated`, exitCode: 255 };
+    if (operands.length > 0) return usage('Too many arguments.');
   }
   if (request.fingerprint && request.deleteHost !== undefined) return usage('Cannot use -l with -H or -R.');
   return request;

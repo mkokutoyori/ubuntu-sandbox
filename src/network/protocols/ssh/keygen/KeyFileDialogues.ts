@@ -67,7 +67,7 @@ type LoadOutcome =
   | { readonly kind: 'failed'; readonly wrongPassphrase: boolean; readonly cipher?: string }
   | { readonly kind: 'format' };
 
-function* loadPrivateKey(
+export function* loadPrivateKey(
   host: SshKeygenHost, material: string, givenPassphrase: string | undefined, promptText: string,
 ): Generator<KeygenStep, LoadOutcome, string | null | undefined> {
   const first = keygenLoadPrivate(material, '');
@@ -80,7 +80,7 @@ function* loadPrivateKey(
   return { kind: 'failed', wrongPassphrase: true };
 }
 
-function failureText(outcome: Exclude<LoadOutcome, { kind: 'loaded' }>): string {
+export function failureText(outcome: Exclude<LoadOutcome, { kind: 'loaded' }>): string {
   if (outcome.kind === 'format') return 'invalid format';
   if (outcome.wrongPassphrase) return 'incorrect passphrase supplied to decrypt private key';
   return `unknown cipher: ${outcome.cipher ?? ''}`;
@@ -103,7 +103,7 @@ function parsePublicLine(line: string): { line: string; comment: string } | null
   return { line: `${match[1]} ${match[2]}`, comment: match[3] ?? '' };
 }
 
-function publicKeyOfFile(host: SshKeygenHost, path: string): { line: string; comment: string } | null {
+export function publicKeyOfFile(host: SshKeygenHost, path: string): { line: string; comment: string } | null {
   const text = host.store.read(path);
   if (text !== null) {
     const direct = parsePublicLine(text.split('\n')[0] ?? '');

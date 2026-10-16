@@ -4349,7 +4349,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   private runOpenSshTool(name: string, args: string[]): string {
     switch (name) {
-      case 'ssh-keygen': return runSshKeygenCommand(args, this.keygenHost(), this._scenarioStdin).output;
+      case 'ssh-keygen': {
+        const keygen = runSshKeygenCommand(args, this.keygenHost(), this._scenarioStdin);
+        return keygen.interleaved ?? keygen.output;
+      }
       default:
         return runSshKeyscanCommand(args, {
           resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,

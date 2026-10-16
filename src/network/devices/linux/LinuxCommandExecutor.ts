@@ -172,7 +172,7 @@ import { SshFingerprint } from '@/network/protocols/ssh/SshFingerprint';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
 import {
-  runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost,
+  runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost, type SshKeygenOutcome,
   type SshKeygenHost, type SshKeygenTerminal,
 } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
@@ -2480,10 +2480,11 @@ export class LinuxCommandExecutor {
       sshDir: `${this.sshHomeDir()}/.ssh`,
       cwd: this.cwd,
       release: OPENSSH_UBUNTU_22_04,
+      zoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
     });
   }
 
-  private runSshKeygen(args: string[], stdin?: string): { output: string; exitCode: number } {
+  private runSshKeygen(args: string[], stdin?: string): SshKeygenOutcome {
     return runSshKeygenCommand(args, this.keygenHost(), stdin ?? this._scenarioStdin);
   }
 
