@@ -115,3 +115,39 @@ for (const lab of LABS) {
     }
   });
 }
+
+test('ssh-tp-lan-8: moving the head office switch and zooming never reshapes the cables', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window as Record<string, unknown>).__networkStore, { timeout: 30_000 });
+  const exported = load('SSH_TP_LAN.topology (8).json');
+  const ids = await seed(page, exported);
+  await page.waitForTimeout(1500);
+  const headOffice = exported.devices.find(device => device.name === 'MAIN_SW_HO')!;
+  const cablePaths = () => page.evaluate(() =>
+    [...document.querySelectorAll('svg path[data-connection-id], svg g[data-connection-id] path')]
+      .map(node => node.getAttribute('d') ?? '').filter(Boolean).sort());
+
+  await drag(page, ids[headOffice.id], 70, 60);
+  await page.locator('#network-canvas').screenshot({ path: `${SHOTS}/zoom-0-moved-head-office.png` });
+  const reference = await cablePaths();
+  expect(reference.length).toBeGreaterThan(0);
+
+  const out = page.getByRole('button', { name: 'Zoom out' });
+  const zoomIn = page.getByRole('button', { name: 'Zoom in' });
+  for (let step = 1; step <= 4; step++) {
+    await out.click();
+    await page.waitForTimeout(250);
+    await page.locator('#network-canvas').screenshot({ path: `${SHOTS}/zoom-${step}-out.png` });
+  }
+  for (let step = 0; step < 4; step++) await zoomIn.click();
+  await page.waitForTimeout(250);
+  expect(await cablePaths()).toEqual(reference);
+  for (let step = 5; step <= 7; step++) {
+    await zoomIn.click();
+    await page.waitForTimeout(250);
+    await page.locator('#network-canvas').screenshot({ path: `${SHOTS}/zoom-${step}-in.png` });
+  }
+  for (let step = 0; step < 3; step++) await out.click();
+  await page.waitForTimeout(250);
+  expect(await cablePaths()).toEqual(reference);
+});
