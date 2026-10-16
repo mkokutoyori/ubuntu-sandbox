@@ -811,14 +811,12 @@ Total steps: 400
 
 [157/400] srvdc srvdc$ conntrack -L
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.10 sport=5355 dport=55887 src=10.3.3.10 dst=224.0.0.252 sport=55887 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=57050 src=10.3.3.11 dst=224.0.0.252 sport=57050 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  conntrack v1.4.7 (conntrack-tools): 8 flow entries have been shown.
+  conntrack v1.4.7 (conntrack-tools): 6 flow entries have been shown.
 
 [158/400] srvdc srvdc$ cat /proc/net/nf_conntrack
   cat: /proc/net/nf_conntrack: No such file or directory
@@ -1551,14 +1549,11 @@ Total steps: 400
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.2.2.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.2.2.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=49623 src=10.1.1.11 dst=224.0.0.251 sport=49623 dport=5353 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.1.1.10 sport=5355 dport=60741 src=10.1.1.10 dst=224.0.0.252 sport=60741 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.1.1.11 sport=5355 dport=63851 src=10.1.1.11 dst=224.0.0.252 sport=63851 dport=5355 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=52814 src=10.1.1.11 dst=224.0.0.251 sport=52814 dport=5353 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.1.1.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=5353 src=10.1.1.11 dst=224.0.0.251 sport=5353 dport=5353 mark=0 use=1
   icmp     1  300    ESTABLISHED src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    [UNREPLIED] src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
@@ -1567,7 +1562,10 @@ Total steps: 400
   icmp     1  300    [UNREPLIED] src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.1.1.1 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.1.1.1 sport=0 dport=0 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=5353 src=10.1.1.11 dst=224.0.0.251 sport=5353 dport=5353 mark=0 use=1
   icmp     1  300    ESTABLISHED src=203.0.113.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=203.0.113.10 sport=0 dport=0 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.1.1.10 sport=5355 dport=52285 src=10.1.1.10 dst=224.0.0.252 sport=52285 dport=5355 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.1.1.11 sport=5355 dport=49589 src=10.1.1.11 dst=224.0.0.252 sport=49589 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.1.1.1 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.1.1.1 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.2.2.1 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.2.2.1 sport=0 dport=0 mark=0 use=1
@@ -1590,14 +1588,14 @@ Total steps: 400
   iptables: Permission denied
 
 [315/400] lbr lbr$ conntrack -L
-  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=60510 src=10.2.2.10 dst=224.0.0.251 sport=60510 dport=5353 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.2.2.10 sport=5355 dport=63288 src=10.2.2.10 dst=224.0.0.252 sport=63288 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.2.2.11 sport=5355 dport=58918 src=10.2.2.11 dst=224.0.0.252 sport=58918 dport=5355 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=61372 src=10.2.2.10 dst=224.0.0.251 sport=61372 dport=5353 mark=0 use=1
   icmp     1  300    ESTABLISHED src=198.51.100.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=198.51.100.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=5353 src=10.2.2.10 dst=224.0.0.251 sport=5353 dport=5353 mark=0 use=1
   icmp     1  300    ESTABLISHED src=198.51.100.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=198.51.100.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.2.2.11 dst=10.2.2.1 sport=0 dport=0 src=10.2.2.1 dst=10.2.2.11 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=198.51.100.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=198.51.100.10 sport=0 dport=0 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=5353 src=10.2.2.10 dst=224.0.0.251 sport=5353 dport=5353 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.2.2.10 sport=5355 dport=61287 src=10.2.2.10 dst=224.0.0.252 sport=61287 dport=5355 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.2.2.11 sport=5355 dport=40292 src=10.2.2.11 dst=224.0.0.252 sport=40292 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.1.1.1 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.1.1.1 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.2.2.1 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.2.2.1 sport=0 dport=0 mark=0 use=1
@@ -1620,11 +1618,11 @@ Total steps: 400
   iptables: Permission denied
 
 [321/400] ldc ldc$ conntrack -L
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.10 sport=5355 dport=55887 src=10.3.3.10 dst=224.0.0.252 sport=55887 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=57050 src=10.3.3.11 dst=224.0.0.252 sport=57050 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.1.1.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.1.1.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.10 sport=5355 dport=50964 src=10.3.3.10 dst=224.0.0.252 sport=50964 dport=5355 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=39433 src=10.3.3.11 dst=224.0.0.252 sport=39433 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.1.1.1 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.1.1.1 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.2.2.1 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.2.2.1 sport=0 dport=0 mark=0 use=1
@@ -1681,13 +1679,13 @@ Total steps: 400
 
 [327/400] srvdc srvdc$ conntrack -L
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.10 sport=5355 dport=55887 src=10.3.3.10 dst=224.0.0.252 sport=55887 dport=5355 mark=0 use=1
-  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=57050 src=10.3.3.11 dst=224.0.0.252 sport=57050 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.10 sport=5355 dport=50964 src=10.3.3.10 dst=224.0.0.252 sport=50964 dport=5355 mark=0 use=1
+  udp      17 300    ESTABLISHED src=224.0.0.252 dst=10.3.3.11 sport=5355 dport=39433 src=10.3.3.11 dst=224.0.0.252 sport=39433 dport=5355 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.1.1.10 sport=0 dport=0 src=10.1.1.10 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.2.2.11 sport=0 dport=0 src=10.2.2.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
   icmp     1  300    ESTABLISHED src=10.3.3.10 dst=10.3.3.11 sport=0 dport=0 src=10.3.3.11 dst=10.3.3.10 sport=0 dport=0 mark=0 use=1
@@ -2127,12 +2125,12 @@ Total steps: 400
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.001: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.001: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.001: %SEC-6-IPACCESSLOGP: list INTERNET-IN denied icmp 203.0.113.10 -> 10.1.1.10, 1 packet
-  *Jun  6 08:00:00.001: %SEC-6-IPACCESSLOGP: list INTERNET-IN denied icmp 203.0.113.10 -> 10.1.1.10, 1 packet
-  *Jun  6 08:00:00.001: %SEC-6-IPACCESSLOGP: list INTERNET-IN denied icmp 203.0.113.10 -> 10.1.1.10, 1 packet
-  *Jun  6 08:00:00.001: %SEC-6-IPACCESSLOGP: list INTERNET-IN denied icmp 203.0.113.10 -> 10.1.1.10, 1 packet
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: %SEC-6-IPACCESSLOGP: list INTERNET-IN denied icmp 203.0.113.10 -> 10.1.1.10, 1 packet
+  *Jun  6 08:00:00.000: %SEC-6-IPACCESSLOGP: list INTERNET-IN denied icmp 203.0.113.10 -> 10.1.1.10, 1 packet
+  *Jun  6 08:00:00.000: %SEC-6-IPACCESSLOGP: list INTERNET-IN denied icmp 203.0.113.10 -> 10.1.1.10, 1 packet
+  *Jun  6 08:00:00.000: %SEC-6-IPACCESSLOGP: list INTERNET-IN denied icmp 203.0.113.10 -> 10.1.1.10, 1 packet
   *Jun  6 08:00:00.001: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.001: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.001: %SYS-5-CONFIG_I: Configured from console by console

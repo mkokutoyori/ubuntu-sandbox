@@ -1827,7 +1827,7 @@ Total steps: 301
 --- [254] § ICMP — compteurs & statistiques ---
 [254/301] rhq R-HQ# show ip traffic
   IP statistics:
-    Rcvd:  350 total, 350 local destination
+    Rcvd:  349 total, 349 local destination
            0 format errors, 0 checksum errors, 0 bad hop count
            0 unknown protocol, 0 not a gateway, 0 security failures
            0 bad options, 0 with options, 0 dropped
@@ -2307,14 +2307,14 @@ Total steps: 301
   *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.3.3.11
   *Jun  6 08:00:00.000: ICMP: echo received, src 10.3.3.10, dst 10.1.1.1
   *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.3.3.10
-  *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.11, dst 10.1.1.1
-  *Jun  6 08:00:00.001: ICMP: echo reply sent, src 10.1.1.1, dst 10.1.1.11
+  *Jun  6 08:00:00.000: ICMP: echo received, src 10.1.1.11, dst 10.1.1.1
+  *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.1.1.11
   *Jun  6 08:00:00.001: ICMP: echo received, src 10.2.2.10, dst 10.1.1.1
   *Jun  6 08:00:00.001: ICMP: echo reply sent, src 10.1.1.1, dst 10.2.2.10
   *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.12.1
   *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.12.1, dst 10.1.1.10
-  *Jun  6 08:00:00.002: ICMP: echo received, src 10.1.1.10, dst 172.16.12.1
-  *Jun  6 08:00:00.002: ICMP: echo reply sent, src 172.16.12.1, dst 10.1.1.10
+  *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.12.1
+  *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.12.1, dst 10.1.1.10
   *Jun  6 08:00:00.002: ICMP: echo received, src 10.1.1.10, dst 172.16.13.1
   *Jun  6 08:00:00.002: ICMP: echo reply sent, src 172.16.13.1, dst 10.1.1.10
   *Jun  6 08:00:00.002: ICMP: echo received, src 10.2.2.11, dst 172.16.12.1
