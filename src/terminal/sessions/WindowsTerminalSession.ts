@@ -18,6 +18,7 @@ import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommand
 import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
 import { splitCmdArgs } from '@/network/devices/windows/cmdline';
+import { parseSftpCommandLine } from '@/network/protocols/ssh/sftp/client/SftpCommandLine';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
   withTimeout, DeviceOfflineError,
@@ -762,6 +763,13 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
+    if (/^sftp(\.exe)?(\s|$)/i.test(trimmed) && !/[|&<>^%]/.test(trimmed) && this.device instanceof WindowsPC) {
+      if (await this.tryEnterSftpInteractive(trimmed, this.device)) {
+        this.notify();
+        return;
+      }
+    }
+
     // SSH interactive push: when the user types `ssh [user@]host` (no
     // remote command after the host), spawn an interactive remote
     // sub-shell against the resolved peer instead of falling through to
@@ -815,6 +823,40 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     this.notify();
+  }
+
+  private async tryEnterSftpInteractive(line: string, device: WindowsPC): Promise<boolean> {
+    const args = splitCmdArgs(line).slice(1);
+    const parsed = parseSftpCommandLine(args);
+    if (parsed.kind !== 'parsed') return false;
+    const destination = parsed.line.destination;
+    if (destination === null || parsed.line.batchFile !== null) return false;
+    const user = destination.user ?? device.getUserManager().currentUser;
+    let opened: Awaited<ReturnType<WindowsPC['openSftpClientSession']>>;
+    try {
+      opened = await device.openSftpClientSession(args, '', this.createSshTerminalIO());
+    } finally {
+      this.pendingSshIO = null;
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        this.inputMode = { type: 'normal' };
+      }
+    }
+    if (opened.kind === 'ended') {
+      for (const text of opened.outcome.output.split('\n')) this.addLine(text, opened.outcome.exitCode === 0 ? 'normal' : 'error');
+      return true;
+    }
+    const session = opened.session;
+    for (const text of session.drain().replace(/\n$/, '').split('\n')) if (text !== '') this.addLine(text);
+    if (session.finished) {
+      session.close();
+      return true;
+    }
+    installDefaultShells();
+    const shell = ShellFactory.create('sftp', { device, user: device.getUserManager().currentUser, extras: { sftpSession: session } });
+    this.activeSubShell = new ShellSubShellAdapter(shell);
+    shell.activate();
+    this._inputBuf = '';
+    return true;
   }
 
   // ── SSH interactive intercept ──────────────────────────────────

@@ -39,15 +39,17 @@ import {
 } from '../connection/ChannelPayloads';
 import { SSH_EXTENDED_DATA_STDERR, SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, SSH_OPEN_CONNECT_FAILED } from '../transport/SshMessageNumbers';
 import { signatureAlgorithmsFor, userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
+import { certificateAlgorithmOf, parseCertificateBlob, plainAlgorithmOf } from '../certificate/SshCertificate';
+import { certificateKeyEvidence, certificateOfMaterial } from './UserCertificateAdmission';
 import {
-  keygenBlobDigest, keygenKeyFacts, keygenPrivateKey, sshPublicKeyFromBlob,
+  keygenBlobDigest, keygenKeyFacts, keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import {
   SshTransport, transportLink, type SshServerHostKey, type SshTransportConfig,
 } from '../transport/SshTransport';
 import type { SshHostKey } from '../SshHostKey';
-import type { ISshServerContext, SshTransportPolicy } from './ISshServerContext';
+import type { HostCertificateBinding, ISshServerContext, SshTransportPolicy } from './ISshServerContext';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import { SshShellSession } from './SshShellSession';
 import {
@@ -234,7 +236,10 @@ export class SshServerHandler {
     const transport = new SshTransport(rawConn, {
       role: 'server',
       identification: this.ctx.serverIdentification?.() ?? SSH_SERVER_IDENTIFICATION,
-      hostKeys: [this.ctx.hostKey, ...(this.ctx.additionalHostKeys?.() ?? [])].flatMap(serverHostKeys),
+      hostKeys: [
+        ...(this.ctx.hostCertificates?.() ?? []).map(certificateHostKey),
+        ...[this.ctx.hostKey, ...(this.ctx.additionalHostKeys?.() ?? [])].flatMap(serverHostKeys),
+      ],
       ...transportPolicyConfig(this.ctx.transportPolicy?.()),
     });
     const conn = transportLink(transport, rawConn);
@@ -911,6 +916,14 @@ function signatureProvesKey(
   if (sessionId === null) return false;
   try {
     const blob = base64ToBytes(publicKey);
+    const certificate = parseCertificateBlob(blob);
+    if (certificate !== null) {
+      const signed = signatureAlgorithmsFor(certificate.subject).map(certificateAlgorithmOf);
+      const plain = plainAlgorithmOf(algorithm);
+      if (plain === null || !signatureAlgorithmsFor(certificate.subject).includes(plain) || !signed.includes(algorithm)) return false;
+      return verifyUserauthSignature(
+        sshPublicKeyBlob(certificate.subject), plain, base64ToBytes(signature), userauthSignedData(sessionId, user, algorithm, blob));
+    }
     const key = sshPublicKeyFromBlob(blob);
     if (key === null || !signatureAlgorithmsFor(key).includes(algorithm)) return false;
     return verifyUserauthSignature(
@@ -920,7 +933,9 @@ function signatureProvesKey(
   }
 }
 
-function keyEvidence(publicKey: string): { keyType: string; keyFingerprint: string } | Record<string, never> {
+function keyEvidence(publicKey: string): ReturnType<typeof certificateKeyEvidence> | { keyType: string; keyFingerprint: string } | Record<string, never> {
+  const certificate = certificateOfMaterial(publicKey);
+  if (certificate !== null) return certificateKeyEvidence(certificate);
   const algorithm = (() => {
     try { return sshPublicKeyFromBlob(base64ToBytes(publicKey))?.algorithm ?? null; } catch { return null; }
   })();
@@ -960,6 +975,17 @@ function endedLine(text: string): string {
 const HOST_KEY_SIGNATURES: Readonly<Record<string, readonly string[]>> = {
   'ssh-rsa': ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
 };
+
+function certificateHostKey(binding: HostCertificateBinding): SshServerHostKey {
+  const { certificate, hostKey } = binding;
+  return {
+    algorithms: signatureAlgorithmsFor(certificate.subject).map(certificateAlgorithmOf),
+    load: () => {
+      const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
+      return privateKey === null ? null : { publicKeyBlob: certificate.blob, privateKey };
+    },
+  };
+}
 
 function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {
   return [{

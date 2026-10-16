@@ -6,7 +6,7 @@ import {
   keygenRandomart,
   sshKeyTypeLabel,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
-import { askFile, askNewPassphrase } from './KeyFileDialogues';
+import { askFile, askNewPassphrase, privateFormatOf } from './KeyFileDialogues';
 import { directoryOf, print, type KeygenDialogue, type KeygenRequest, type SshKeygenHost } from './KeygenTypes';
 
 export const DEFAULT_KEYGEN_TYPE = 'rsa';
@@ -45,10 +45,6 @@ export function* generationDialogue(request: KeygenRequest, host: SshKeygenHost)
     yield print(problem);
     return 255;
   }
-  if (request.format !== undefined && request.format !== 'RFC4716') {
-    yield print(`ssh-keygen: -m ${request.format}: private keys in the ${request.format} format are not simulated`);
-    return 255;
-  }
   if (!request.quiet) yield print(`Generating public/private ${requested} key pair.`);
   const file = request.file ?? (yield* askFile(host, 'Enter file in which to save the key', type));
   if (file === null) return 1;
@@ -63,9 +59,10 @@ export function* generationDialogue(request: KeygenRequest, host: SshKeygenHost)
   }
   const passphrase = request.newPassphrase ?? (yield* askNewPassphrase());
   const comment = request.comment ?? `${host.user}@${host.hostname}`;
-  const pair = keygenPair(algorithm, comment, request.bits, passphrase === ''
+  const format = privateFormatOf(request);
+  const pair = keygenPair(algorithm, comment, request.bits, passphrase === '' && format === undefined
     ? undefined
-    : { passphrase, cipher: request.keyCipher, rounds: request.rounds });
+    : { passphrase, cipher: request.keyCipher, rounds: request.rounds, format });
   const privateFailure = host.store.write(file, pair.priv, true);
   if (privateFailure !== null) {
     yield print(`Saving key "${file}" failed: ${privateFailure}`);

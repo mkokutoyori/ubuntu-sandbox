@@ -24,7 +24,7 @@ import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH } from './linux/free
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
 import { SmtpServer, SMTP_PORT, SMTP_SUBMISSION_PORT, SMTP_SUBMISSION_TLS_PORT } from '../smtp/SmtpServer';
-import { selfSignedSmtpCert } from '../smtp/starttls';
+import { selfSignedSmtpCert, type TlsServerConfig } from '../smtp/starttls';
 
 /** Dedicated UDP port for the `radtest` probe client's replies — see `radtestClient`'s doc comment. */
 const RADTEST_SOURCE_PORT = 49999;
@@ -107,8 +107,15 @@ export class LinuxServer extends LinuxMachine {
       if (dgram.sourceIP instanceof IPAddress) this.radtestClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, 'radtest');
 
-    const smtpCert = selfSignedSmtpCert(`CN=${this.getHostname()}`);
-    const smtpTls = { serverCert: smtpCert.cert, serverPrivateKey: smtpCert.keyPair.privateKey };
+    const smtpSubject = `CN=${this.getHostname()}`;
+    let smtpTlsConfig: TlsServerConfig | null = null;
+    const smtpTls = (): TlsServerConfig => {
+      if (smtpTlsConfig === null) {
+        const smtpCert = selfSignedSmtpCert(smtpSubject);
+        smtpTlsConfig = { serverCert: smtpCert.cert, serverPrivateKey: smtpCert.keyPair.privateKey };
+      }
+      return smtpTlsConfig;
+    };
     const smtpConfig = { hostname: this.getHostname(), eventBus: this.getBus() };
     this.smtpServer = new SmtpServer(this.getTcpStack(), smtpConfig, SMTP_PORT, { tls: smtpTls });
     this.smtpSubmissionServer = new SmtpServer(this.getTcpStack(), smtpConfig, SMTP_SUBMISSION_PORT, { tls: smtpTls });

@@ -18,7 +18,7 @@ export type SmtpAcceptedMessage = NonNullable<SmtpServerSession['lastDelivered']
 export interface SmtpServerOptions {
   readonly limits?: SmtpProtocolLimits;
   readonly scheduler?: IScheduler;
-  readonly tls?: TlsServerConfig;
+  readonly tls?: TlsServerConfig | (() => TlsServerConfig);
   /** RFC 8314 — smtps (port 465): the connection is TLS from the very first byte, no STARTTLS negotiation. */
   readonly implicitTls?: boolean;
   /** Called once a message has been fully accepted (DATA terminated with a 2xx), so a consumer can perform real local delivery/relay — the engine itself never writes to a mailbox (§ FTP/HTTP-style separation of protocol from LDA, docs/PRD-Exchange.md § 3). */
@@ -33,11 +33,19 @@ export class SmtpServer {
   private listener: TcpListener | null = null;
   private readonly limits: SmtpProtocolLimits;
   private readonly scheduler: IScheduler;
-  private readonly tlsConfig?: TlsServerConfig;
+  private readonly tlsSource?: TlsServerConfig | (() => TlsServerConfig);
+  private resolvedTls?: TlsServerConfig;
   private readonly implicitTls: boolean;
   private readonly onMessageAccepted?: (delivered: SmtpAcceptedMessage) => void;
   private readonly remoteIpAllowed?: (ip: string) => boolean;
   private readonly beforeMessageAccepted?: (delivered: SmtpAcceptedMessage) => { reject?: string } | undefined;
+
+  private serverTlsConfig(): TlsServerConfig {
+    if (this.resolvedTls === undefined) {
+      this.resolvedTls = typeof this.tlsSource === 'function' ? this.tlsSource() : this.tlsSource!;
+    }
+    return this.resolvedTls;
+  }
 
   constructor(
     private readonly tcpStack: TcpStack,
@@ -47,7 +55,7 @@ export class SmtpServer {
   ) {
     this.limits = opts.limits ?? DEFAULT_PROTOCOL_LIMITS;
     this.scheduler = opts.scheduler ?? getDefaultScheduler();
-    this.tlsConfig = opts.tls;
+    this.tlsSource = opts.tls;
     this.implicitTls = opts.implicitTls ?? false;
     this.onMessageAccepted = opts.onMessageAccepted;
     this.remoteIpAllowed = opts.remoteIpAllowed;
@@ -72,7 +80,7 @@ export class SmtpServer {
     }
     const sessionConfig: SmtpServerConfig = {
       ...this.config,
-      tlsSupported: !!this.tlsConfig,
+      tlsSupported: this.tlsSource !== undefined,
       submissionMode: this.port === SMTP_SUBMISSION_PORT,
     };
     const session = new SmtpServerSession(sessionConfig, socket.remoteIp);
@@ -121,8 +129,8 @@ export class SmtpServer {
       writeReply(session.greeting());
     };
 
-    if (this.implicitTls && this.tlsConfig) {
-      tls = new TlsServerSession(this.tlsConfig);
+    if (this.implicitTls && this.tlsSource !== undefined) {
+      tls = new TlsServerSession(this.serverTlsConfig());
       wireState = 'tls-handshake';
     } else {
       sendGreeting();
@@ -210,8 +218,8 @@ export class SmtpServer {
           if (r.code === 354) awaitingDataBody = true;
         }
 
-        if (session.consumeTlsUpgradeSignal() && this.tlsConfig) {
-          tls = new TlsServerSession(this.tlsConfig);
+        if (session.consumeTlsUpgradeSignal() && this.tlsSource !== undefined) {
+          tls = new TlsServerSession(this.serverTlsConfig());
           wireState = 'tls-handshake';
           break;
         }

@@ -14,6 +14,7 @@ import { auditLoginHost, auditToolHost } from './audit/tools/LinuxAuditToolHost'
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
+import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { bytesToBase64 } from '@/crypto/encoding';
 import { sshUnreachableReason, relayScriptedShell } from '@/terminal/ssh/wireSshLogin';
@@ -171,7 +172,7 @@ import { SshFingerprint } from '@/network/protocols/ssh/SshFingerprint';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
 import {
-  runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost,
+  runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost, type SshKeygenOutcome,
   type SshKeygenHost, type SshKeygenTerminal,
 } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
@@ -198,6 +199,7 @@ import { SftpLocalPort } from '../../protocols/ssh/sftp/client/SftpLocalPort';
 import { runSftpCommand, SftpClientSession, type SftpCommandHost, type SftpConnection } from '../../protocols/ssh/sftp/client/SftpClientCommand';
 import type { SftpPacketChannel } from '../../protocols/ssh/sftp/client/SftpWireClient';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { describeHostCertificate } from '@/network/protocols/ssh/certificate/SshCertificate';
 import { attachSftpServer } from '../../protocols/ssh/sftp/server/LocalSftpServer';
 import { SftpWireSession } from '../../protocols/ssh/sftp/SftpWireSession';
 import { LinuxSftpFSAdapter } from '../../protocols/ssh/sftp/LinuxSftpFSAdapter';
@@ -649,6 +651,7 @@ export class LinuxCommandExecutor {
   private iamAuthLog: IamAuthLogProjection | null = null;
   private iamPolicyFiles: IamPolicyFilesProjection | null = null;
   /** Unsubscribe handle for the identity-file re-seed subscription. */
+  private readonly certificateZoneOffset = (atMs: number): number => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes();
   private identityFilesUnsub: (() => void) | null = null;
   /** TCP liveness probe over the wire — injected by the owning machine. */
   private wireProbe: ((ip: string, port: number) => TcpWireOutcome) | null = null;
@@ -1629,9 +1632,9 @@ export class LinuxCommandExecutor {
     return runSftpCommand(args.map((word) => this.expandTilde(word)), this.sftpCommandHost(), typed, standardInput);
   }
 
-  openSftpClientSession(args: string[], password: string): ReturnType<typeof SftpClientSession.open> {
+  openSftpClientSession(args: string[], password: string, io: ITerminalIO | null = null): ReturnType<typeof SftpClientSession.open> {
     const host: SftpCommandHost = { ...this.sftpCommandHost(), interactive: true, stderrIsTerminal: true };
-    return SftpClientSession.open(args.map((word) => this.expandTilde(word)), host, password === '' ? undefined : password);
+    return SftpClientSession.open(args.map((word) => this.expandTilde(word)), host, password === '' ? undefined : password, io);
   }
 
   private sftpCommandHost(): SftpCommandHost {
@@ -1671,6 +1674,7 @@ export class LinuxCommandExecutor {
           password: request.password,
           verbose: request.verbose,
           remoteCommand: request.serverCommand ?? subsystemName,
+          io: request.io,
         }, OPENSSH_UBUNTU_22_04.sftpUsage, false);
         if (connection.kind === 'refused') return connection;
         return this.openSftpChannel(connection, request.serverCommand);
@@ -1729,7 +1733,7 @@ export class LinuxCommandExecutor {
   }
 
   private async connectTransferSession(
-    request: { readonly sshArguments: readonly string[]; readonly password: string | undefined; readonly verbose: boolean; readonly remoteCommand: string },
+    request: { readonly sshArguments: readonly string[]; readonly password: string | undefined; readonly verbose: boolean; readonly remoteCommand: string; readonly io?: ITerminalIO | null },
     usage: string, announceProgram: boolean,
   ): Promise<
     | { kind: 'connected'; session: SshSession; release: () => void; lines: string[] }
@@ -1737,7 +1741,9 @@ export class LinuxCommandExecutor {
   > {
     const jump = proxyJumpRequest([...request.sshArguments]);
     const args = jump === null ? [...request.sshArguments] : jump.remaining;
-    const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir());
+    const target = wireExecTarget(
+      args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir(), 1000,
+      request.io ? 'ask' : 'accept-new');
     if (target === null) return { kind: 'refused', lines: [usage], exitCode: 1 };
     const executing = request.verbose && announceProgram ? [this.scpExecutingLine(target, request.remoteCommand)] : [];
     if (this.firstConfiguredIp() === null) {
@@ -1757,9 +1763,10 @@ export class LinuxCommandExecutor {
       return { kind: 'connected', session: connection.session, release: connection.release, lines: executing };
     }
     const opts = this.buildSshClientOpts(args, this._cmdEnv, request.password);
-    const dialed = await this.dialSshTarget(args, target, opts, request.password);
+    const dialed = await this.dialSshTarget(args, target, opts, request.password, undefined, request.io ?? undefined);
     if (dialed.kind === 'failed') {
-      return { kind: 'refused', lines: [dialed.result.output.replace(/\n+$/, '')], exitCode: dialed.result.exitCode };
+      const text = dialed.result.output.replace(/\n+$/, '');
+      return { kind: 'refused', lines: text === '' ? [] : [text], exitCode: dialed.result.exitCode };
     }
     const { session, wire, resolution } = dialed;
     const lines = [...wire.notices];
@@ -1767,7 +1774,7 @@ export class LinuxCommandExecutor {
       lines.unshift(...executing);
       lines.push(...sshVerboseTranscript({
         host: target.host, address: resolution.address, port: target.port,
-        method: session.authenticatedMethod ?? undefined, serverHostKey: serverHostKeyOf(session),
+        method: session.authenticatedMethod ?? undefined, serverHostKey: serverHostKeyOf(session, this.certificateZoneOffset),
         negotiated: session.negotiated, peerIdentification: session.serverIdentification,
         authTrace: session.authTrace, command: request.remoteCommand, settled: null, shell: null, notices: [],
       }).replace(/\n$/, '').split('\n'));
@@ -1792,9 +1799,9 @@ export class LinuxCommandExecutor {
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
     authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences, dialAddress?: string,
-    proxy?: TcpConnector, trust?: Pick<WireSshTarget, 'knownHosts' | 'hashKnownHosts' | 'identitiesOnly'>,
+    proxy?: TcpConnector, trust?: Pick<WireSshTarget, 'knownHosts' | 'hashKnownHosts' | 'identitiesOnly' | 'io'>,
   ): Promise<{
-    session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
+    session: SshSession | null; authRefused: boolean; streamed?: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
     hostKeyRefusal?: string; connectionFailure?: string; refusedSession?: SshSession;
   }> {
     if (!this.tcpConnector && proxy === undefined) return { session: null, authRefused: false, notices: [] };
@@ -1822,6 +1829,7 @@ export class LinuxCommandExecutor {
       ...(hostKeyRefusal !== undefined ? { hostKeyRefusal } : {}),
       ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
+      ...(outcome.streamed ? { streamed: true } : {}),
       ...(outcome.refusedSession === undefined ? {} : { refusedSession: outcome.refusedSession }),
     };
   }
@@ -1923,7 +1931,7 @@ export class LinuxCommandExecutor {
 
   private async dialSshTarget(
     args: string[], target: WireExecTarget, opts: SshClientOpts, stdinPwd: string | undefined,
-    proxy?: TcpConnector,
+    proxy?: TcpConnector, io?: ITerminalIO,
   ): Promise<
     | { kind: 'failed'; result: { output: string; exitCode: number } }
     | { kind: 'connected'; session: SshSession; wire: Awaited<ReturnType<LinuxCommandExecutor['connectWireSsh']>>; resolution: { address: string } }
@@ -1943,7 +1951,10 @@ export class LinuxCommandExecutor {
     const wire = await this.connectWireSsh(
       target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication,
       target.algorithms, resolution.address, proxy,
-      { knownHosts: target.knownHosts, hashKnownHosts: target.hashKnownHosts, identitiesOnly: target.identitiesOnly });
+      { knownHosts: target.knownHosts, hashKnownHosts: target.hashKnownHosts, identitiesOnly: target.identitiesOnly, ...(io === undefined ? {} : { io }) });
+    if (wire.session === null && wire.streamed === true && wire.authRefused) {
+      return { kind: 'failed', result: { output: '', exitCode: 255 } };
+    }
     if (wire.session === null) {
       return {
         kind: 'failed',
@@ -1970,7 +1981,7 @@ export class LinuxCommandExecutor {
   ): string[] {
     if (session === undefined || !splitSshFlags(args).some((flag) => /^-v+$/.test(flag))) return [];
     return sshVerboseTranscript({
-      host: target.host, address, port: target.port, method: undefined, serverHostKey: serverHostKeyOf(session),
+      host: target.host, address, port: target.port, method: undefined, serverHostKey: serverHostKeyOf(session, this.certificateZoneOffset),
       negotiated: session.negotiated, peerIdentification: session.serverIdentification,
       authTrace: session.authTrace, command: '', settled: null, shell: null, notices: [],
     }, false).replace(/\n$/, '').split('\n');
@@ -2079,7 +2090,7 @@ export class LinuxCommandExecutor {
         address: resolution.address,
         port: target.port,
         method: session.authenticatedMethod ?? undefined,
-        serverHostKey: serverHostKeyOf(session),
+        serverHostKey: serverHostKeyOf(session, this.certificateZoneOffset),
         negotiated: session.negotiated,
         peerIdentification: session.serverIdentification,
         authTrace: session.authTrace,
@@ -2471,10 +2482,11 @@ export class LinuxCommandExecutor {
       sshDir: `${this.sshHomeDir()}/.ssh`,
       cwd: this.cwd,
       release: OPENSSH_UBUNTU_22_04,
+      zoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
     });
   }
 
-  private runSshKeygen(args: string[], stdin?: string): { output: string; exitCode: number } {
+  private runSshKeygen(args: string[], stdin?: string): SshKeygenOutcome {
     return runSshKeygenCommand(args, this.keygenHost(), stdin ?? this._scenarioStdin);
   }
 
@@ -8484,12 +8496,16 @@ function parseRunPartsUmask(raw: string): number | null {
   return n;
 }
 
-function serverHostKeyOf(session: SshSession): { algorithm: string; fingerprint: string } | null {
+function serverHostKeyOf(
+  session: SshSession, zoneOffset: (atMs: number) => number,
+): { algorithm: string; fingerprint: string; certificate?: string } | null {
   const blob = session.serverHostKeyBlob;
   if (blob === null || blob.length < 4) return null;
   const length = (blob[0] << 24) | (blob[1] << 16) | (blob[2] << 8) | blob[3];
   const algorithm = String.fromCharCode(...blob.slice(4, 4 + length));
-  return { algorithm, fingerprint: SshFingerprint.fromPublicKey(bytesToBase64(blob)).toString() };
+  const certificate = session.serverHostCertificate;
+  const key = { algorithm, fingerprint: SshFingerprint.fromPublicKey(bytesToBase64(blob)).toString() };
+  return certificate === null ? key : { ...key, certificate: describeHostCertificate(certificate, zoneOffset) };
 }
 
 function agentDirectorySuffix(): string {

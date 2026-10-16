@@ -28,6 +28,10 @@ export class SshKnownHosts {
     return KnownHostsStore.parse(contents.join('\n'));
   }
 
+  texts(): string[] {
+    return this.readPaths.map((path) => this.vfs.readFile(path)).filter((text): text is string => text !== null);
+  }
+
   save(store: KnownHostsStore): void {
     if (this.path === '') return;
     this.vfs.writeFile(

@@ -14,11 +14,16 @@ export interface SshKeygenHost {
   readonly user: string;
   readonly hostname: string;
   readonly release: OpenSshRelease;
+  readonly stdin?: string;
+  readonly nowSeconds?: () => number;
+  readonly zoneOffsetMinutes?: (atMs: number) => number;
 }
 
 export interface SshKeygenOutcome {
   readonly output: string;
   readonly exitCode: number;
+  readonly stderr?: string;
+  readonly interleaved?: string;
 }
 
 export interface SshKeygenTerminal {
@@ -27,7 +32,7 @@ export interface SshKeygenTerminal {
 }
 
 export type KeygenStep =
-  | { readonly kind: 'print'; readonly line: string }
+  | { readonly kind: 'print'; readonly line: string; readonly stream?: 'stderr' }
   | { readonly kind: 'ask'; readonly prompt: string; readonly hidden: boolean };
 
 export type KeygenDialogue = Generator<KeygenStep, number, string | null | undefined>;
@@ -52,6 +57,18 @@ export interface KeygenRequest {
   readonly fingerprint: boolean;
   readonly hash: string;
   readonly keyCipher?: string;
+  readonly identity?: string;
+  readonly principals?: string;
+  readonly certificateKeyId?: string;
+  readonly hostCertificate: boolean;
+  readonly showCertificate: boolean;
+  readonly preferAgent: boolean;
+  readonly validity?: string;
+  readonly serial?: string;
+  readonly operands: readonly string[];
+  readonly caKeyPath?: string;
+  readonly signOperation?: string;
+  readonly signerOptions: readonly string[];
   readonly newPassphrase?: string;
   readonly oldPassphrase?: string;
   readonly printPublic: boolean;
@@ -64,6 +81,10 @@ export interface KeygenRequest {
 
 export function print(line: string): KeygenStep {
   return { kind: 'print', line };
+}
+
+export function printError(line: string): KeygenStep {
+  return { kind: 'print', line, stream: 'stderr' };
 }
 
 export function directoryOf(path: string): string {

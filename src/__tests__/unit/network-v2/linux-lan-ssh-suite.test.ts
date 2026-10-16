@@ -1811,65 +1811,50 @@ describe('§27 — ssh-agent and ssh-add', () => {
   let lan: Lan;
   beforeEach(() => { lan = buildLan(); });
 
+  const agent = 'eval $(ssh-agent -s) > /dev/null; ';
+  const keygen = (path: string): string => `ssh-keygen -t ed25519 -f ${path} -N "" -q; `;
+
   const rows: Row[] = [
+    {
+      name: 'ssh-add -l without a running agent cannot reach it (SSH_AUTH_SOCK is unset)',
+      on: l => l.pc1,
+      cmd: 'ssh-add -l',
+      contains: ['Could not open a connection to your authentication agent.'],
+    },
     {
       name: 'ssh-add -l reports "no identities" when agent is empty',
       on: l => l.pc1,
-      cmd: 'ssh-add -l',
-      contains: [/no identities|No identities/],
+      cmd: `${agent}ssh-add -l`,
+      contains: [/The agent has no identities\./],
     },
     {
       name: 'ssh-add of a key adds it and ssh-add -l lists it',
-      setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-add ~/.ssh/id_ed25519');
-      },
       on: l => l.pc1,
-      cmd: 'ssh-add -l',
+      cmd: `${agent}${keygen('~/.ssh/id_ed25519')}ssh-add ~/.ssh/id_ed25519; ssh-add -l`,
       contains: [/^256 SHA256:\S+ \S+ \(ED25519\)$/m],
     },
     {
       name: 'ssh-add -L prints the public key in authorized_keys form',
-      setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-add ~/.ssh/id_ed25519');
-      },
       on: l => l.pc1,
-      cmd: 'ssh-add -L',
+      cmd: `${agent}${keygen('~/.ssh/id_ed25519')}ssh-add ~/.ssh/id_ed25519; ssh-add -L`,
       contains: [/^ssh-ed25519 /m],
     },
     {
       name: 'ssh-add -d removes a specific identity',
-      setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-add ~/.ssh/id_ed25519');
-        await l.pc1.executeCommand('ssh-add -d ~/.ssh/id_ed25519');
-      },
       on: l => l.pc1,
-      cmd: 'ssh-add -l',
-      contains: [/no identities/i],
+      cmd: `${agent}${keygen('~/.ssh/id_ed25519')}ssh-add ~/.ssh/id_ed25519; ssh-add -d ~/.ssh/id_ed25519; ssh-add -l`,
+      contains: [/The agent has no identities\./],
     },
     {
       name: 'ssh-add -D removes all identities',
-      setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/k1 -N "" -q');
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/k2 -N "" -q');
-        await l.pc1.executeCommand('ssh-add ~/.ssh/k1');
-        await l.pc1.executeCommand('ssh-add ~/.ssh/k2');
-        await l.pc1.executeCommand('ssh-add -D');
-      },
       on: l => l.pc1,
-      cmd: 'ssh-add -l',
-      contains: [/no identities/i],
+      cmd: `${agent}${keygen('~/.ssh/k1')}${keygen('~/.ssh/k2')}ssh-add ~/.ssh/k1; ssh-add ~/.ssh/k2; ssh-add -D; ssh-add -l`,
+      contains: [/All identities removed\./, /The agent has no identities\./],
     },
     {
       name: 'ssh -A forwards the agent (remote ssh-add -l hits original agent)',
-      setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-add ~/.ssh/id_ed25519');
-      },
       on: l => l.pc1,
-      cmd: 'ssh -A alice@10.0.0.2 ssh-add -l',
+      cmd: `${agent}${keygen('~/.ssh/id_ed25519')}ssh-add ~/.ssh/id_ed25519; ssh -A alice@10.0.0.2 ssh-add -l`,
       contains: [/SHA256:\S+ \S+ \(ED25519\)/],
     },
   ];

@@ -3332,10 +3332,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mots.length === 0) return null;
 
     const candidats: string[][] = [];
-    for (const chemin of this.cheminsDuSocle(table, scope)) {
-      if (chemin.length > mots.length) continue;
-      if (!chemin.every((mot, rang) => mot.startsWith(mots[rang]))) continue;
-      candidats.push(chemin);
+    for (const [initiale, chemins] of this.cheminsDuSocleParInitiale(table, scope)) {
+      if (!initiale.startsWith(mots[0])) continue;
+      for (const chemin of chemins) {
+        if (chemin.length > mots.length) continue;
+        if (!chemin.every((mot, rang) => mot.startsWith(mots[rang]))) continue;
+        candidats.push(chemin);
+      }
     }
     /*
      * Un mot TAPE EN ENTIER l'emporte sur un mot dont il n'est que le
@@ -3372,6 +3375,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       keywords: meilleur.join(' '),
       full: [...meilleur, ...mots.slice(meilleur.length)].join(' '),
     };
+  }
+
+  private socleCheminsParInitiale?: Map<string, Map<string, string[][]>>;
+
+  private cheminsDuSocleParInitiale(table: CommandTable, scope: AuthScope): ReadonlyMap<string, string[][]> {
+    if (!this.socleCheminsParInitiale) this.socleCheminsParInitiale = new Map();
+    let index = this.socleCheminsParInitiale.get(scope);
+    if (index === undefined) {
+      index = new Map();
+      for (const chemin of this.cheminsDuSocle(table, scope)) {
+        const liste = index.get(chemin[0]) ?? [];
+        liste.push(chemin);
+        index.set(chemin[0], liste);
+      }
+      this.socleCheminsParInitiale.set(scope, index);
+    }
+    return index;
   }
 
   private cheminsDuSocle(table: CommandTable, scope: AuthScope): readonly string[][] {
