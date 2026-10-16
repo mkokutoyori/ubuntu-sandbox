@@ -46,6 +46,7 @@ export interface LabelPlacement {
 
 export interface CableRoute extends CableLanes, PathResult {
   horizontal: boolean;
+  sides: SidePair;
   sourceLabel: LabelPlacement;
   targetLabel: LabelPlacement;
 }
@@ -756,7 +757,7 @@ function endLabelOf(name: string, side: CardSide, zoom: number): EndLabel {
     abbreviations.set(name, text);
   }
   const halfLength = interfaceTagWidth(text) / (2 * zoom);
-  return { text, halfLength, need: endLabelNeed(halfLength, side) };
+  return { text, halfLength, need: endLabelNeed(interfaceTagWidth(text) / 2, side) };
 }
 
 function deviceRects(devices: ReadonlyArray<Point>): CorridorRect[] {
@@ -827,7 +828,6 @@ function refineDrawn(
   drawn: Map<string, Point[]>,
   devices: ReadonlyArray<Point>,
   previous: ReadonlyMap<string, CableRoute> | undefined,
-  deadline: number,
 ): CorridorOutcome | undefined {
   if (ordered.length < 1) return undefined;
   const rects = deviceRects(devices);
@@ -845,7 +845,7 @@ function refineDrawn(
       low: range.low, high: range.high, preferred: remembered,
     };
   });
-  const outcome = refineCorridors(links, rects, deadline);
+  const outcome = refineCorridors(links, rects);
   ordered.forEach((link, index) => {
     const corridor = outcome.chosen[index];
     if (corridor === undefined) return;
@@ -858,10 +858,11 @@ function refineDrawn(
 }
 
 const MAX_FORM_TRIALS = 12;
-export const REFINE_BUDGET_MS = 12;
-export const SETTLED_BUDGET_MS = 80;
+const FORM_WORK_BUDGET = 60000;
+const TRIAL_UNITS = 320;
 const FORM_TRIAL_MARGIN = 500;
 const MAX_DETOUR = 220;
+const FORM_KEEP_BONUS = 600;
 const LENGTH_COST = 3;
 
 export function computeCableRoutes(
@@ -870,7 +871,6 @@ export function computeCableRoutes(
   zoom = 1,
   previous?: ReadonlyMap<string, CableRoute>,
   refine = true,
-  budgetMs = REFINE_BUDGET_MS,
 ): Map<string, CableRoute> {
   const sides = new Map<string, SidePair>();
   for (const link of links) {
@@ -880,7 +880,7 @@ export function computeCableRoutes(
   const ordered = [...links].sort((a, b) =>
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-  const deadline = performance.now() + budgetMs;
+  let spent = 0;
   const solve = () => {
     const lanes = assignCableLanes(links, undefined, sides);
     const ends = new Map<string, { source: EndLabel; target: EndLabel }>();
@@ -896,7 +896,8 @@ export function computeCableRoutes(
         link.source, link.target, lanes.get(link.id),
         { source: labels.source.need, target: labels.target.need }, isHorizontalSide(pair.source), pair));
     }
-    const outcome = refine ? refineDrawn(ordered, sides, ends, drawn, devices, previous, deadline) : undefined;
+    const outcome = refine ? refineDrawn(ordered, sides, ends, drawn, devices, previous) : undefined;
+    spent += (outcome?.work ?? 0) + TRIAL_UNITS * links.length;
     return { lanes, ends, drawn, outcome };
   };
 
@@ -908,7 +909,7 @@ export function computeCableRoutes(
     const blocked = (candidate: typeof state, i: number): boolean => candidate.outcome!.residual[i] >= DEVICE_COST;
     const sum = (marks: Float64Array): number => marks.reduce((a, b) => a + b, 0);
     let best = { state, sides: new Map(sides), badness: sum(trouble(state)) };
-    for (let round = 0; round < MAX_FORM_TRIALS && performance.now() < deadline; round++) {
+    for (let round = 0; round < MAX_FORM_TRIALS && spent < FORM_WORK_BUDGET; round++) {
       const marks = trouble(state);
       const badness = sum(marks);
       if (badness <= 0) break;
@@ -922,6 +923,7 @@ export function computeCableRoutes(
       const link = ordered[index];
       const current = sides.get(link.id)!;
       const field = trialField(ordered.map(other => state.drawn.get(other.id)!));
+      const before = previous?.get(link.id)?.sides;
       const standingLength = polylineLength(state.drawn.get(link.id)!);
       const standing = marks[index] + LENGTH_COST * standingLength;
       let chosen: SidePair | undefined;
@@ -931,7 +933,9 @@ export function computeCableRoutes(
           if (source === current.source && target === current.target) continue;
           const alternative = alternativeLink(link, { source, target }, zoom);
           if (!alternative || polylineLength(alternative.points) > standingLength + MAX_DETOUR) continue;
-          const score = trialCost(alternative, index, field, rects) + LENGTH_COST * polylineLength(alternative.points);
+          const kept = before !== undefined && before.source === source && before.target === target;
+          const score = trialCost(alternative, index, field, rects) + LENGTH_COST * polylineLength(alternative.points)
+            - (kept ? FORM_KEEP_BONUS : 0);
           if (score < chosenScore) { chosenScore = score; chosen = { source, target }; }
         }
       }
@@ -981,6 +985,7 @@ export function computeCableRoutes(
     routes.set(link.id, {
       ...lanes.get(link.id)!,
       horizontal: isHorizontalSide(sides.get(link.id)!.source),
+      sides: sides.get(link.id)!,
       path,
       points,
       sourceLabel: place(pair.source, true, remembered?.sourceLabel),

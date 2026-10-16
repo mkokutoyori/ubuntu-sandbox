@@ -28,6 +28,9 @@ const REACH = 6;
 const SWEEPS = 4;
 
 const EDGE_GAP = 14;
+const WINDOW_REACH = 160;
+const WORK_LIMIT = 60000;
+const CANDIDATES_PER_LINK = 16;
 
 const SEGMENTS = 3;
 const STRIDE = 8;
@@ -118,7 +121,8 @@ function corridorCandidates(
 ): void {
   out.length = 0;
   if (link.high - link.low < 1) { out.push(base); return; }
-  const clamp = (value: number): number => (value < link.low ? link.low : value > link.high ? link.high : value);
+  const floor = Math.max(link.low, base - WINDOW_REACH), ceiling = Math.min(link.high, base + WINDOW_REACH);
+  const clamp = (value: number): number => (value < floor ? floor : value > ceiling ? ceiling : value);
   for (let k = -REACH; k <= REACH; k++) out.push(clamp(base + k * STEP));
   const horizontal = link.horizontal;
   const spanLow = Math.min(horizontal ? link.points[0].y : link.points[0].x, horizontal ? link.points[3].y : link.points[3].x);
@@ -129,7 +133,7 @@ function corridorCandidates(
     const across0 = horizontal ? rect.y0 : rect.x0, across1 = horizontal ? rect.y1 : rect.x1;
     if (across1 <= spanLow || across0 >= spanHigh) continue;
     const along0 = horizontal ? rect.x0 : rect.y0, along1 = horizontal ? rect.x1 : rect.y1;
-    if (along1 < link.low - EDGE_GAP || along0 > link.high + EDGE_GAP) continue;
+    if (along1 < floor - EDGE_GAP || along0 > ceiling + EDGE_GAP) continue;
     out.push(clamp(along0 - EDGE_GAP), clamp(along1 + EDGE_GAP));
   }
 }
@@ -138,6 +142,7 @@ export interface CorridorOutcome {
   readonly chosen: Array<number | undefined>;
   readonly residual: Float64Array;
   readonly total: number;
+  readonly work: number;
 }
 
 function isOwner(rect: CorridorRect, link: CorridorLink): boolean {
@@ -151,7 +156,7 @@ const SPAN = 4096;
 const cellOf = (value: number): number => Math.floor(value / CELL) + OFFSET;
 
 export function refineCorridors(
-  links: ReadonlyArray<CorridorLink>, rects: ReadonlyArray<CorridorRect>, deadline = Infinity,
+  links: ReadonlyArray<CorridorLink>, rects: ReadonlyArray<CorridorRect>,
 ): CorridorOutcome {
   const count = links.length;
   const shapes = new Float64Array(count * STRIDE);
@@ -170,8 +175,10 @@ export function refineCorridors(
       if (y > maxY) maxY = y;
     }
     if (link.high - link.low >= 1) {
-      if (link.horizontal) { minX = Math.min(minX, link.low); maxX = Math.max(maxX, link.high); }
-      else { minY = Math.min(minY, link.low); maxY = Math.max(maxY, link.high); }
+      const lo = Math.max(link.low, base[i] - WINDOW_REACH);
+      const hi = Math.min(link.high, base[i] + WINDOW_REACH);
+      if (link.horizontal) { minX = Math.min(minX, lo); maxX = Math.max(maxX, hi); }
+      else { minY = Math.min(minY, lo); maxY = Math.max(maxY, hi); }
     }
     envelope[4 * i] = minX - OVERLAP_BAND; envelope[4 * i + 1] = minY - OVERLAP_BAND;
     envelope[4 * i + 2] = maxX + OVERLAP_BAND; envelope[4 * i + 3] = maxY + OVERLAP_BAND;
@@ -236,11 +243,14 @@ export function refineCorridors(
     return pathCost(candidate, shapes, bounds, neighbours[index], nearRects[index], limit - deviation) + deviation;
   };
 
-  let expired = false;
-  for (let sweep = 0; sweep < SWEEPS && !expired; sweep++) {
+  let pairs = 0;
+  for (let i = 0; i < count; i++) pairs += (neighbours[i].length + nearRects[i].length) * CANDIDATES_PER_LINK;
+  const sweeps = pairs === 0 ? SWEEPS : Math.min(SWEEPS, Math.floor(WORK_LIMIT / pairs));
+  let work = pairs;
+  for (let sweep = 0; sweep < sweeps; sweep++) {
+    work += pairs;
     let moved = false;
     for (let i = 0; i < count; i++) {
-      if ((i & 7) === 7 && performance.now() > deadline) { expired = true; break; }
       const link = links[i];
       if (link.high - link.low < 1 || (neighbours[i].length === 0 && nearRects[i].length === 0)) continue;
       const current = chosen[i] ?? base[i];
@@ -273,7 +283,7 @@ export function refineCorridors(
     residual[i] = pathCost(candidate, shapes, bounds, neighbours[i], nearRects[i]);
     total += residual[i];
   }
-  return { chosen, residual, total };
+  return { chosen, residual, total, work };
 }
 
 export interface TrialField {

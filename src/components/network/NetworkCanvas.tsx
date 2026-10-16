@@ -7,9 +7,7 @@ import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine, ConnectionLabel } from './ConnectionLine';
-import {
-  computeCableRoutes, shouldShowPortLabels, REFINE_BUDGET_MS, SETTLED_BUDGET_MS, type CableRoute,
-} from './connection-line-logic';
+import { computeCableRoutes, shouldShowPortLabels, type CableRoute } from './connection-line-logic';
 import { NETWORK_CANVAS_ID, screenToWorld } from './canvas-geometry';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { useActivePackets } from '@/react/hooks/useActivePackets';
@@ -17,8 +15,6 @@ import { Equipment } from '@/network';
 import type { DeviceType } from '@/network';
 type BaseDevice = Equipment;
 import { cn } from '@/lib/utils';
-
-const SETTLE_DELAY_MS = 140;
 
 interface NetworkCanvasProps {
   onOpenTerminal?: (device: BaseDevice) => void;
@@ -61,12 +57,6 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   const [announcement, setAnnouncement] = useState('');
   const prevDeviceCount = useRef(devices.length);
   const previousRoutes = useRef<Map<string, CableRoute> | null>(null);
-  const [settledFor, setSettledFor] = useState<unknown>(null);
-  const settled = settledFor === devices && connections.length > 0;
-  useEffect(() => {
-    const timer = setTimeout(() => setSettledFor(devices), SETTLE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [devices, connections, zoom]);
   const cableRoutes = useMemo(() => computeCableRoutes(
     connections.flatMap(connection => {
       const source = devices.find(d => d.id === connection.sourceDeviceId);
@@ -85,9 +75,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     devices.map(device => ({ x: device.x, y: device.y })),
     zoom,
     previousRoutes.current ?? undefined,
-    true,
-    settled ? SETTLED_BUDGET_MS : REFINE_BUDGET_MS,
-  ), [connections, devices, zoom, settled]);
+  ), [connections, devices, zoom]);
   previousRoutes.current = cableRoutes;
 
   const prevConnectionCount = useRef(connections.length);

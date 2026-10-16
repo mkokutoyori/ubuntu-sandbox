@@ -89,3 +89,23 @@ describe.each(LAB_FILES)('%s', (file) => {
     expect(walk(file, true, 20).milliseconds).toBeLessThan(25);
   });
 });
+
+describe.each(LAB_FILES)('%s: the drawing does not depend on the zoom nor on the clock', (file) => {
+  const geometry = (lab: ImportedLab, zoom: number) =>
+    JSON.stringify([...routeLab(lab, zoom)].map(([id, route]) => [id, route.points]));
+
+  it('gives the same cables at every zoom, and the same cables when computed twice', () => {
+    const lab = importLab(file);
+    const reference = geometry(lab, 1);
+    for (const zoom of [0.3, 0.5, 0.7, 1.5, 2, 3]) expect(geometry(lab, zoom)).toBe(reference);
+    expect(geometry(lab, 1)).toBe(reference);
+  });
+
+  it('keeps that property after the head of the topology has been moved', () => {
+    const lab = importLab(file);
+    const mover = lab.devices.find(device => /switch|router|firewall/.test(device.type))!;
+    const moved = moveDevice(lab, mover.id, mover.x + 90, mover.y + 70);
+    const reference = geometry(moved, 1);
+    for (const zoom of [0.5, 2]) expect(geometry(moved, zoom)).toBe(reference);
+  });
+});
