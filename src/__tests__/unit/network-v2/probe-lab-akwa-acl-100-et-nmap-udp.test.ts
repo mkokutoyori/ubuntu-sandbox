@@ -17,9 +17,6 @@
  * delai d'inactivite l'adjacence tombe, la route d'Akwa disparait et PC7 n'atteint plus
  * WinServer3, jusqu'a `permit ospf any any`.
  *
- * Ecarts connus avec un vrai nmap, ecrits dans TODO.md et non figes ici : la decouverte par
- * defaut n'envoie pas la sonde ICMP timestamp (-PP), et un port UDP sans reponse n'est sonde
- * qu'une fois.
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -115,18 +112,18 @@ describe('MAIN_RT_AKWA, ACL 100 in on GigabitEthernet0/0.99, nmap -sU from PC7',
     const after = await pc7('nmap -sU 192.168.60.2');
     expect(after, 'nmap -sU after the ACL: same states').toContain('Not shown: 996 closed udp ports (port-unreach)');
     expect(after).toMatch(/123\/udp\s+open\|filtered\s+ntp/);
-    expect(await akwa('show access-lists'), 'one match per probed port').toMatch(/30 permit udp host 192\.168\.10\.4 host 192\.168\.60\.2 log \(1000 matches\)/);
-    expect(await akwa('show access-lists')).toMatch(/20 permit icmp any any \(\d+ match(es)?\)/);
+    expect(await akwa('show access-lists'), 'one match per probed port, two for the four silent ones').toMatch(/30 permit udp host 192\.168\.10\.4 host 192\.168\.60\.2 log \(1004 matches\)/);
+    expect(await akwa('show access-lists'), 'echo and timestamp of the discovery').toMatch(/20 permit icmp any any \(2 matches\)/);
     expect(await akwa('show logging'), 'IOS log format').toMatch(/%SEC-6-IPACCESSLOGP: list 100 permitted udp 192\.168\.10\.4\(\d+\) -> 192\.168\.60\.2\(\d+\), 1 packet/);
 
-    const ssh = await pc7('nmap -sS -p 22 --reason 192.168.60.2');
+    const ssh = await pc7('nmap -Pn -sS -p 22 --reason 192.168.60.2');
     expect(ssh, 'ssh denied').toMatch(/22\/tcp\s+filtered\s+ssh\s+admin-prohibited from 10\.0\.20\.2/);
-    expect(await akwa('show access-lists')).toMatch(/10 deny tcp host 192\.168\.10\.4 host 192\.168\.60\.2 eq 22 log \(1 match\)/);
+    expect(await akwa('show access-lists')).toMatch(/10 deny tcp host 192\.168\.10\.4 host 192\.168\.60\.2 eq 22 log \(2 matches\)/);
     expect(await akwa('show logging')).toMatch(/list 100 denied tcp 192\.168\.10\.4\(\d+\) -> 192\.168\.60\.2\(22\), 1 packet/);
 
     const other = await machine('PC4').executeCmdCommand('nmap -sU -p 9999 192.168.60.2');
     expect(other, 'another host is refused').toMatch(/9999\/udp\s+open\|filtered/);
-    expect(await akwa('show access-lists'), 'no counter moves for the refused host').toMatch(/30 permit udp host 192\.168\.10\.4 host 192\.168\.60\.2 log \(1000 matches\)/);
+    expect(await akwa('show access-lists'), 'no counter moves for the refused host').toMatch(/30 permit udp host 192\.168\.10\.4 host 192\.168\.60\.2 log \(1004 matches\)/);
 
     expect(await akwa('show ip ospf neighbor'), 'adjacency before the dead interval').toContain('FULL');
     await getSimulationClock()!.advance(120_000);

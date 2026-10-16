@@ -203,6 +203,12 @@ export interface LinuxNetKernel {
     options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
   ): boolean;
 
+  /** A single ICMP timestamp request (type 13), for `nmap -PP`. */
+  sendCraftedIcmpTimestamp(
+    target: IPAddress,
+    options?: { sourceIp?: IPAddress; ttl?: number },
+  ): boolean;
+
   openSnmpSession(processName: string): SnmpClientSession | null;
 
   /**

@@ -91,6 +91,7 @@ export interface CaptureFrame {
   icmpCode?: number;
   icmpId?: number;
   icmpSeq?: number;
+  icmpTimestamps?: { originate: number; receive: number; transmit: number };
   /** NDP target address: what an NS asks for and an NA answers with. */
   ndpTarget?: string;
   /** RFC 1191 §4 Next-Hop MTU, present on Fragmentation Needed (type 3, code 4). */
@@ -258,6 +259,9 @@ function u32(value: number): number[] {
 function synthIcmpBytes(icmp: ICMPPacket): number[] {
   const type = icmpTypeNumber(icmp.icmpType);
   const header = [type, icmp.code & 0xff, ...u16(0), ...u16(icmp.id & 0xffff), ...u16(icmp.sequence & 0xffff)];
+  if (icmp.timestamps) {
+    return [...header, ...u32(icmp.timestamps.originate), ...u32(icmp.timestamps.receive), ...u32(icmp.timestamps.transmit)];
+  }
   const data: number[] = [];
   for (let i = 0; i < (icmp.dataSize ?? 0); i++) data.push(i & 0xff);
   return [...header, ...data];
@@ -541,6 +545,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.icmpCode = icmp.code;
     base.icmpId = icmp.id;
     base.icmpSeq = icmp.sequence;
+    base.icmpTimestamps = icmp.timestamps;
     base.payloadLength = Math.max(0, ip.totalLength - (ip.ihl ?? 5) * 4);
     base.icmpNextHopMtu = icmp.mtu;
     if (icmp.originalPacket) base.icmpOrig = decodeIcmpOrig(icmp.originalPacket);

@@ -144,6 +144,12 @@ export interface HostIcmpEchoRedirectedPayload extends HostDeviceRef {
   seq: number;
 }
 
+export interface HostIcmpTimestampReplyPayload extends HostDeviceRef {
+  fromIp: string;
+  id: number;
+  seq: number;
+}
+
 export interface HostIcmpEchoFailedPayload extends HostDeviceRef {
   fromIp: string;   // sender of the ICMP error
   toIp: string;     // original echo-request destination
@@ -250,6 +256,7 @@ export type HostDomainEvent =
   | { topic: 'host.icmp.echo-timeout'; payload: HostIcmpEchoTimeoutPayload }
   | { topic: 'host.icmp.echo-failed'; payload: HostIcmpEchoFailedPayload }
   | { topic: 'host.icmp.echo-redirected'; payload: HostIcmpEchoRedirectedPayload }
+  | { topic: 'host.icmp.timestamp-reply'; payload: HostIcmpTimestampReplyPayload }
   | { topic: 'host.icmp.unreachable'; payload: HostIcmpUnreachablePayload }
   | { topic: 'host.tcp.listener-started'; payload: HostTcpListenerStartedPayload }
   | { topic: 'host.tcp.listener-stopped'; payload: HostTcpListenerStoppedPayload }
