@@ -53,7 +53,7 @@ async function framesOf(
 ): Promise<{ frames: number; output: string }> {
   await win.executeCommand(`echo ${verb} > C:\\lot.txt`);
   const before = winCable.getStats().framesTransmitted;
-  const output = await win.executeCommand('sftp -b C:\\lot.txt bob@10.93.0.20', password);
+  const output = await win.executeCommand('sftp -o BatchMode=no -b C:\\lot.txt bob@10.93.0.20', password);
   return { frames: winCable.getStats().framesTransmitted - before, output };
 }
 

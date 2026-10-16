@@ -113,6 +113,7 @@ export interface WireSshLoginRequest {
   readonly knownHosts?: { readonly user: readonly string[]; readonly global: readonly string[] };
   readonly hashKnownHosts?: boolean;
   readonly identitiesOnly?: boolean;
+  readonly connector?: TcpConnector;
 }
 
 export type WireSshLoginOutcome =
@@ -228,16 +229,17 @@ function unreachableMessage(req: WireSshLoginRequest): string {
 export async function openWireSshConnection(
   req: WireSshLoginRequest,
 ): Promise<WireSshConnectOutcome> {
-  const tcpConnector = tcpConnectorFor(req.device);
+  const tcpConnector = req.connector ?? tcpConnectorFor(req.device);
   if (!tcpConnector) {
     return { kind: 'unreachable', message: `ssh: connect to host ${req.host} port ${req.port}: Network is unreachable` };
   }
 
-  if (IPAddress.tryParse(req.host) && !peerLiveness(req.device, req.host)()) {
+  if (req.connector === undefined && IPAddress.tryParse(req.host) && !peerLiveness(req.device, req.host)()) {
     return { kind: 'unreachable', message: unreachableMessage(req) };
   }
 
   const profile = sshClientProfileOf(req.device);
+  const silentHandler = req.credentialless ? new SilentSshInteractionHandler('') : null;
   const hostKeyAuthority = (req.device as unknown as {
     sshHostKeyAuthority?: () => ((host: string, key: SshHostKey) => boolean) | undefined;
   }).sshHostKeyAuthority?.();
@@ -253,10 +255,13 @@ export async function openWireSshConnection(
     ...(hostKeyAuthority ? { hostKeyAuthority } : {}),
     clientIdentification: profile?.identification ?? opensshIdentificationFor(req.device.getOSType()),
     ...(profile ? { clientExtInfo: profile.extInfo } : {}),
-    interactionHandler: req.credentialless
-      ? new SilentSshInteractionHandler('')
-      : new TerminalSshInteractionHandler(req.io, req.quiet === true),
+    interactionHandler: silentHandler ?? new TerminalSshInteractionHandler(req.io, req.quiet === true),
   });
+  const relaySilentOutput = (): void => {
+    if (silentHandler === null || req.quiet === true) return;
+    for (const warning of silentHandler.warnings.splice(0)) for (const line of warning.split('\n')) req.io.writeLine(line, 'warning');
+    for (const notice of silentHandler.notices.splice(0)) req.io.writeLine(notice, 'info');
+  };
 
   const builder = SshConnectOptionsBuilder.create()
     .host(req.host)
@@ -282,6 +287,7 @@ export async function openWireSshConnection(
     session.disconnect();
     return { kind: 'cancelled' };
   }
+  relaySilentOutput();
 
   if (!result || !isOk(result)) {
     const failure = result && !isOk(result) ? result.error : null;

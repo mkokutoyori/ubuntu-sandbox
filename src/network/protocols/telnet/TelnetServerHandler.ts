@@ -178,7 +178,17 @@ class TelnetSession {
 
   private async dispatch(line: string): Promise<void> {
     if (this.phase === 'closed') return;
-    if (this.phase === 'username') { this.username = line.trim(); this.phase = 'password'; this.write(this.prompts().password); return; }
+    if (this.phase === 'username') {
+      this.username = line.trim();
+      if (this.username !== '' && await this.ctx.authenticateWithoutPassword?.(this.username)) {
+        this.ctx.recordLogin?.(this.username, this.clientIp);
+        this.beginExec(this.username);
+        return;
+      }
+      this.phase = 'password';
+      this.write(this.prompts().password);
+      return;
+    }
     if (this.phase === 'password') { await this.verifyPassword(line); return; }
     await this.runCommand(line);
   }

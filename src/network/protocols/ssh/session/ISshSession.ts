@@ -4,6 +4,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 6.
  */
 
+import type { SftpChannelLaunch } from '../channels/SshSftpChannel';
 import type {
   ExecChannelOptions,
   ISshExecChannel,
@@ -19,7 +20,7 @@ export interface ISshSession {
   connect(opts: SshConnectOptions): Promise<Result<SshConnectionInfo>>;
   openShellChannel(options?: { readonly forwardAgent?: boolean }): Result<ISshShellChannel>;
   openExecChannel(command: string, options?: ExecChannelOptions): Result<ISshExecChannel>;
-  openSftpChannel(): Result<ISshSftpChannel>;
+  openSftpChannel(launch?: SftpChannelLaunch): Result<ISshSftpChannel>;
   disconnect(): void;
   readonly state: SshSessionState;
   readonly isConnected: boolean;

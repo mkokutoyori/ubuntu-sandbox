@@ -1,10 +1,10 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
-import type { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import type { SftpClientSession } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
 
 export interface SftpShellOptions extends AbstractShellOptions {
-  readonly sftpSession: SftpSession;
+  readonly sftpSession: SftpClientSession;
 }
 
 export class SftpShell extends AbstractShell {
@@ -15,7 +15,7 @@ export class SftpShell extends AbstractShell {
   constructor(opts: SftpShellOptions) {
     super(opts);
     this.subShell = new SftpSubShell(opts.sftpSession);
-    this.exitWords = new Set(['exit', 'quit', 'bye', 'logout']);
+    this.exitWords = new Set(['exit', 'quit', 'bye']);
   }
 
   getPrompt(): string { return this.subShell.getPrompt(); }

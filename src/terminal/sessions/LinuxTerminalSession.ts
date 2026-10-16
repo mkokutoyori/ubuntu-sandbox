@@ -76,7 +76,6 @@ import {
 } from '@/shell/input';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
-import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { NsupdateSubShell } from '@/terminal/subshells/NsupdateSubShell';
 import { nsupdateNamesAFile } from '@/network/dns/update/NsupdateScript';
 import { parseNsupdateKeyOption } from '@/network/dns/update/NsupdateScript';
@@ -104,7 +103,8 @@ import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
 import { ShellContext } from '@/shell/ShellContext';
 import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
-import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import type { SftpClientSession } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
+import { parseSftpCommandLine } from '@/network/protocols/ssh/sftp/client/SftpCommandLine';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import {
   OPENSSH_DEFAULT_IDENTITY_FILES,
@@ -119,8 +119,8 @@ import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols
 import { isOk } from '@/network/protocols/ssh/Result';
 import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
 import { splitShellWords } from '@/bash/runtime/ShellWords';
-import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
-import { parseScpArgs } from '@/network/protocols/ssh/Scp';
+import { parseScpEndpoint } from '@/network/protocols/ssh/Scp';
+import { parseScpCommandLine } from '@/network/protocols/ssh/scp/ScpCommandLine';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import type { SshPortForward } from '@/network/devices/linux/network/SshPortForward';
 import type { SshClientHandle } from '@/network/devices/linux/network/SshClientProcess';
@@ -1708,12 +1708,9 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const sftpMeta = ctx.metadata.get('enter_sftp') as string | undefined;
     if (sftpMeta) {
-      const { userAtHost, batchFile } = JSON.parse(sftpMeta) as {
-        userAtHost: string;
-        batchFile?: string | null;
-      };
+      const { args } = JSON.parse(sftpMeta) as { args: string[] };
       const password = ctx.values.get('sftp_password') ?? '';
-      this.connectAndEnterSftp(userAtHost, password, batchFile ?? null);
+      void this.connectAndEnterSftp(args, password);
       return;
     }
     const ftpMeta = ctx.metadata.get('enter_ftp') as string | undefined;
@@ -1727,27 +1724,16 @@ export class LinuxTerminalSession extends TerminalSession {
     // directly using the reactive QueuedTerminalIO approach.
     const sshCopyMeta = ctx.metadata.get('enter_ssh_copy_id') as string | undefined;
     if (sshCopyMeta) {
-      const meta = JSON.parse(sshCopyMeta) as {
-        userAtHost: string;
-        identityFile: string;
-      };
+      const meta = JSON.parse(sshCopyMeta) as { args: string[] };
       const password = ctx.values.get('ssh_copy_id_password') ?? '';
-      this.runSshCopyId(meta, password);
+      void this.runSshCopyId(meta, password);
       return;
     }
     const scpMeta = ctx.metadata.get('enter_scp') as string | undefined;
     if (scpMeta) {
-      const meta = JSON.parse(scpMeta) as {
-        userAtHost: string;
-        port: number;
-        identityFiles: string[];
-        local: { path: string };
-        remote: { path: string };
-        direction: 'upload' | 'download';
-        recursive: boolean;
-      };
+      const meta = JSON.parse(scpMeta) as { args: string[] };
       const password = ctx.values.get('scp_password') ?? '';
-      this.runScp(meta, password);
+      void this.runScp(meta, password);
       return;
     }
     this.syncDeviceState();
@@ -1804,115 +1790,78 @@ export class LinuxTerminalSession extends TerminalSession {
     }
   }
 
-  /**
-   * Start an interactive sftp session.
-   * Parses args for `[user@]host`, prompts for a password, then connects.
-   * Non-interactive batch-mode transfers (sftp user@host:/path /local) are
-   * handled by the LinuxCommandExecutor fallback (returns a canned error for now).
-   */
   private enterSftp(args: string[]): void {
-    // Strip flags we care about and find the host argument.
-    let batchFile: string | null = null;
-    const positional: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-b' && i + 1 < args.length) {
-        batchFile = args[++i];
-      } else if (!a.startsWith('-')) {
-        positional.push(a);
-      }
-    }
-    const userAtHost = positional[0] ?? '';
-    if (!userAtHost) {
-      this.addLine('usage: sftp [options] [user@]host[:path]', 'error');
+    const parsed = parseSftpCommandLine(args);
+    if (parsed.kind !== 'parsed') {
+      const text = parsed.kind === 'usage'
+        ? `${parsed.diagnostic === null ? '' : `${parsed.diagnostic}\n`}${OPENSSH_UBUNTU_22_04.sftpUsage}`
+        : parsed.message;
+      for (const line of text.split('\n')) this.addLine(line, 'error');
       this.notify();
       return;
     }
-
-    // Derive display name for the password prompt ("user@host's password:")
-    const user = userAtHost.includes('@')
-      ? userAtHost.split('@')[0]
-      : this.currentUser;
-    const host = userAtHost.includes('@')
-      ? userAtHost.split('@')[1]
-      : userAtHost;
-    const displayTarget = `${user}@${host}`;
-
+    const destination = parsed.line.destination;
+    if (destination === null || parsed.line.batchFile !== null) {
+      void this.connectAndEnterSftp(args, '');
+      return;
+    }
+    const user = destination.user ?? this.currentUser;
     const steps: InteractiveStep[] = [
       {
         type: 'password',
-        prompt: `${displayTarget}'s password: `,
+        prompt: `${user}@${destination.host}'s password: `,
         mask: 'hidden',
         storeAs: 'sftp_password',
       },
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_sftp',
-            JSON.stringify({ userAtHost: displayTarget, batchFile }),
-          );
+          ctx.metadata.set('enter_sftp', JSON.stringify({ args }));
         },
       },
     ];
-    this.startFlowFromSteps(steps, `sftp ${userAtHost}`);
+    this.startFlowFromSteps(steps, `sftp ${args.join(' ')}`);
   }
 
-  private async connectAndEnterSftp(
-    userAtHost: string,
-    password: string,
-    batchFile: string | null = null,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
+  private async connectAndEnterSftp(args: string[], password: string): Promise<void> {
+    const machine = this.device as unknown as {
       executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+        openSftpClientSession(args: string[], password: string): Promise<
+          | { kind: 'opened'; session: SftpClientSession }
+          | { kind: 'ended'; outcome: { output: string; exitCode: number } }
+        >;
       };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
     };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
+    if (machine.executor === undefined) {
       this.addLine('sftp: this device does not support SFTP', 'error');
       this.notify();
       return;
     }
-
-    const tcpConnector: TcpConnector = dialConnector(this.device);
-
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const session = new SftpSession({
-      tcpConnector,
-      localVfs: localVfs as never,
-      localUser: this.currentUser,
-      localUid: userEntry?.uid ?? 1000,
-      localGid: userEntry?.gid ?? 1000,
-      localCwd: this.currentPath,
-      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
-      homeDirectory: homeDir,
-    });
-
-    const banner = await session.connect(userAtHost, { password });
-    if (!session.isConnected()) {
-      this.addLine(banner, 'error');
-      this.notify();
-      return;
-    }
-    this.addLine(banner);
-
-    // BRD SFTP-13 / analysis doc P5: `sftp -b <file>` runs the batch then
-    // exits without installing the interactive sub-shell. Each line of the
-    // batch is echoed with the prompt (mirroring OpenSSH), output captured,
-    // and the session is disconnected at EOF. A leading `-` on a command
-    // suppresses failure (parity with OpenSSH).
-    if (batchFile) {
-      await this.runSftpBatch(session, localVfs, batchFile);
+    const opened = await machine.executor.openSftpClientSession(args, password);
+    if (opened.kind === 'ended') {
+      for (const line of opened.outcome.output.split('\n')) this.addLine(line, opened.outcome.exitCode === 0 ? 'normal' : 'error');
       this._inputBuf = '';
       this.notify();
       return;
     }
-
+    const session = opened.session;
+    const announce = (text: string): void => {
+      for (const line of text.replace(/\n$/, '').split('\n')) if (line !== '') this.addLine(line);
+    };
+    announce(session.drain());
+    if (session.batchScript !== null) {
+      const outcome = await session.runScript(session.batchScript);
+      announce(outcome.output);
+      this._inputBuf = '';
+      this.notify();
+      return;
+    }
+    if (session.finished) {
+      session.close();
+      this._inputBuf = '';
+      this.notify();
+      return;
+    }
     installDefaultShells();
     const shell = ShellFactory.create('sftp', {
       device: this.device,
@@ -2060,35 +2009,6 @@ export class LinuxTerminalSession extends TerminalSession {
     this.activeSubShell = shell;
     this._inputBuf = '';
     this.notify();
-  }
-
-  private async runSftpBatch(
-    session: SftpSession,
-    vfs: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem,
-    batchPath: string,
-  ): Promise<void> {
-    const raw = vfs.readFile(batchPath);
-    if (raw === null) {
-      this.addLine(`Couldn't open batch file ${batchPath}`, 'error');
-      session.disconnect();
-      return;
-    }
-    const shell = new SftpSubShell(session);
-    const lines = raw.split('\n');
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
-      const ignoreErrors = line.startsWith('-');
-      const cmd = ignoreErrors ? line.slice(1).trim() : line;
-      this.addEchoLine(shell.getPrompt(), cmd);
-      const result = shell.processLine(cmd);
-      for (const out of result.output) {
-        if (out) this.addLine(out);
-      }
-      if (result.exit) break;
-      if (!ignoreErrors && hasSftpError(result.output)) break;
-    }
-    session.disconnect();
   }
 
   // ── ssh entry point ─────────────────────────────────────────────
@@ -2567,29 +2487,8 @@ export class LinuxTerminalSession extends TerminalSession {
    * BRD SSH-03-R5.
    */
   private enterSshCopyId(args: string[]): void {
-    let identityFile = '';
-    let userAtHost = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-i' && i + 1 < args.length) identityFile = args[++i];
-      else if (!args[i].startsWith('-')) userAtHost = args[i];
-    }
-    if (!userAtHost) {
-      this.addLine('usage: ssh-copy-id [-i identity_file] [user@]host', 'error');
-      this.notify();
-      return;
-    }
-    const dev = this.device as unknown as {
-      executor?: {
-        userMgr?: { getUser(name: string): { home?: string } | undefined };
-      };
-    };
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const resolvedIdentity = identityFile || `${homeDir}/.ssh/id_ed25519`;
-    const displayTarget = userAtHost.includes('@')
-      ? userAtHost
-      : `${this.currentUser}@${userAtHost}`;
-
+    const target = [...args].reverse().find((word) => !word.startsWith('-')) ?? '';
+    const displayTarget = target.includes('@') ? target : `${this.currentUser}@${target}`;
     const steps: InteractiveStep[] = [
       {
         type: 'password',
@@ -2600,181 +2499,60 @@ export class LinuxTerminalSession extends TerminalSession {
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_ssh_copy_id',
-            JSON.stringify({
-              userAtHost: displayTarget,
-              identityFile: resolvedIdentity,
-            }),
-          );
+          ctx.metadata.set('enter_ssh_copy_id', JSON.stringify({ args }));
         },
       },
     ];
-    this.startFlowFromSteps(steps, `ssh-copy-id ${userAtHost}`);
+    this.startFlowFromSteps(steps, `ssh-copy-id ${target}`);
   }
 
-  private async runSshCopyId(
-    meta: { userAtHost: string; identityFile: string },
-    password: string,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-      };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+  private async runSshCopyId(meta: { args: string[] }, password: string): Promise<void> {
+    const machine = this.device as unknown as {
+      executor?: { runSshCopyIdAsync(args: string[], password: string): Promise<{ output: string; exitCode: number }> };
     };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
-      this.addLine('ssh-copy-id: no local filesystem', 'error');
-      this.notify();
-      return;
-    }
-    const pubPath = `${meta.identityFile}.pub`;
-    const publicKeyLine = localVfs.readFile(pubPath);
-    if (!publicKeyLine) {
-      this.addLine(
-        `/usr/bin/ssh-copy-id: ERROR: failed to open ID file '${pubPath}': No such file or directory`,
-        'error',
-      );
-      this.notify();
-      return;
-    }
-    const session = await this.connectSshForBatch(meta.userAtHost, password);
-    if (!session) return;
-    const user = meta.userAtHost.split('@')[0];
-    const remoteHome = `/home/${user}`;
-    const result = await sshCopyId(session, publicKeyLine.trim(), remoteHome);
-    session.disconnect();
-    if ('error' in result) {
-      this.addLine(`ssh-copy-id: ${result.error}`, 'error');
-    } else {
-      for (const line of result.output) {
-        this.addLine(
-          line.replace('<user>', user).replace('<host>', meta.userAtHost.split('@')[1] ?? ''),
-        );
-      }
-    }
+    const outcome = await machine.executor?.runSshCopyIdAsync(meta.args, password);
+    for (const line of (outcome?.output ?? '').split('\n')) this.addLine(line);
     this.notify();
   }
 
   // ── scp ─────────────────────────────────────────────────────────
 
-  /** BRD SSH-08: parse scp args, collect password, defer transfer. */
   private enterScp(args: string[]): void {
-    const parsed = parseScpArgs(args);
-    if (!parsed) {
-      this.addLine('usage: scp [-r] [-P port] [-i identity_file] src dst', 'error');
+    const parsed = parseScpCommandLine(args);
+    if (parsed.kind === 'rejected') {
+      const lines = parsed.diagnostic === null ? [] : [parsed.diagnostic];
+      for (const line of [...lines, ...OPENSSH_UBUNTU_22_04.scpUsage.split('\n')]) this.addLine(line, 'error');
       this.notify();
       return;
     }
-    const remoteEndpoint = parsed.source.remote ? parsed.source : parsed.destination;
-    const localEndpoint = parsed.source.remote ? parsed.destination : parsed.source;
-    if (parsed.source.remote === parsed.destination.remote) {
-      this.addLine(
-        'scp: exactly one of source/destination must be remote',
-        'error',
-      );
-      this.notify();
+    const remote = parsed.line.operands.map(parseScpEndpoint).find((endpoint) => endpoint.remote);
+    if (remote === undefined) {
+      void this.runScp({ args }, '');
       return;
     }
-    const direction: 'upload' | 'download' = parsed.source.remote
-      ? 'download'
-      : 'upload';
-    const user = remoteEndpoint.user ?? this.currentUser;
-    const host = remoteEndpoint.host ?? '';
-    const displayTarget = `${user}@${host}`;
-
     const steps: InteractiveStep[] = [
       {
         type: 'password',
-        prompt: `${displayTarget}'s password: `,
+        prompt: `${remote.user ?? this.currentUser}@${remote.host}'s password: `,
         mask: 'hidden',
         storeAs: 'scp_password',
       },
       {
         type: 'execute',
         action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_scp',
-            JSON.stringify({
-              userAtHost: displayTarget,
-              port: parsed.port,
-              identityFiles: parsed.identityFiles,
-              local: { path: localEndpoint.path },
-              remote: { path: remoteEndpoint.path },
-              direction,
-              recursive: parsed.recursive,
-            }),
-          );
+          ctx.metadata.set('enter_scp', JSON.stringify({ args }));
         },
       },
     ];
     this.startFlowFromSteps(steps, `scp ${args.join(' ')}`);
   }
 
-  private async runScp(
-    meta: {
-      userAtHost: string;
-      port: number;
-      identityFiles: string[];
-      local: { path: string };
-      remote: { path: string };
-      direction: 'upload' | 'download';
-      recursive: boolean;
-    },
-    password: string,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
-      };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
+  private async runScp(meta: { args: string[] }, password: string): Promise<void> {
+    const machine = this.device as unknown as {
+      executor?: { runSshTransportAsync(command: 'scp', args: string[], password: string): Promise<{ output: string; exitCode: number }> };
     };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
-      this.addLine('scp: no local filesystem', 'error');
-      this.notify();
-      return;
-    }
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const tcpConnector: TcpConnector = dialConnector(this.device);
-
-    const sftp = new SftpSession({
-      tcpConnector,
-      localVfs,
-      localUser: this.currentUser,
-      localUid: userEntry?.uid ?? 1000,
-      localGid: userEntry?.gid ?? 1000,
-      localCwd: this.currentPath,
-      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
-      homeDirectory: homeDir,
-    });
-    const banner = await sftp.connect(meta.userAtHost, {
-      port: meta.port,
-      identityFiles: this.autoDiscoverIdentityFiles(meta.identityFiles),
-      password,
-    });
-    if (!sftp.isConnected()) {
-      this.addLine(banner, 'error');
-      this.notify();
-      return;
-    }
-
-    const transferOutput =
-      meta.direction === 'upload'
-        ? meta.recursive
-          ? sftp.putRecursive(meta.local.path, meta.remote.path)
-          : sftp.put(meta.local.path, meta.remote.path)
-        : meta.recursive
-        ? sftp.getRecursive(meta.remote.path, meta.local.path)
-        : sftp.get(meta.remote.path, meta.local.path);
-    for (const line of transferOutput.split('\n')) {
-      if (line) this.addLine(line);
-    }
-    sftp.disconnect();
+    const outcome = await machine.executor?.runSshTransportAsync('scp', meta.args, password);
+    for (const line of (outcome?.output ?? '').split('\n')) if (line) this.addLine(line, outcome?.exitCode === 0 ? undefined : 'error');
     this.notify();
   }
 
@@ -3260,14 +3038,6 @@ export function shouldExecuteSegment(
   if (connector === ';') return true;
   if (connector === '&&') return previousExitCode === 0;
   return previousExitCode !== 0;
-}
-
-function hasSftpError(output: readonly string[]): boolean {
-  return output.some((line) =>
-    /Couldn't|No such file|Permission denied|Failure|invalid|command not found/i.test(
-      line,
-    ),
-  );
 }
 
 function dialConnector(device: unknown): TcpConnector {

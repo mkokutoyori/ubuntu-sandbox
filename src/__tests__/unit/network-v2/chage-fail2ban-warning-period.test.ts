@@ -97,7 +97,7 @@ describe('Scénario 3 — période d\'avertissement chage -W et sensibilité Fai
       await server.executeCommand(
         "printf '[sshd]\\nenabled = true\\nmaxretry = 3\\nbantime = 300\\nfindtime = 60\\n' > /etc/fail2ban/jail.local",
       );
-      await server.executeCommand('systemctl restart ssh');
+      await server.executeCommand('systemctl restart fail2ban');
 
       for (let i = 0; i < 3; i++) {
         await client.executeCommand('sshpass -p WRONG ssh alice@10.0.0.2 whoami');

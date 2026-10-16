@@ -45,6 +45,7 @@ async function poste(): Promise<LinuxPC> {
   const pc = new LinuxPC('linux-pc', 'PC1');
   pc.powerOn();
   await pc.executeCommand(`ssh-keygen -t ed25519 -N "" -f ${CLE}`);
+  await pc.executeCommand('eval $(ssh-agent -s)');
   return pc;
 }
 

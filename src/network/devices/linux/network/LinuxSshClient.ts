@@ -51,7 +51,7 @@ import { fmtHumanDate } from '../LinuxLogManager';
 import type { LinuxMachine } from '../../LinuxMachine';
 import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
 import type { ISshLocalFs } from '../../../protocols/ssh/ISshLocalFs';
-import { linuxClientLayout, resolveClientInvocation, splitSshCommandLine, SSH_VALUE_FLAGS } from '../../../protocols/ssh/client/SshClientInvocation';
+import { linuxClientLayout, missingIdentityWarnings, resolveClientInvocation, splitSshCommandLine, SSH_VALUE_FLAGS } from '../../../protocols/ssh/client/SshClientInvocation';
 import type { SshAlgorithmPreferences } from '../../../protocols/ssh/transport/SshTransport';
 import type { NegotiatedAlgorithms } from '../../../protocols/ssh/transport/SshKexInit';
 import { OPENSSH_UBUNTU_CLIENT_VERSION, SSH_SERVER_IDENTIFICATION } from '../../../protocols/ssh/serverIdentification';
@@ -264,6 +264,7 @@ export interface WireExecTarget {
   knownHosts: { readonly user: readonly string[]; readonly global: readonly string[] };
   hashKnownHosts: boolean;
   identitiesOnly: boolean;
+  identityWarnings: string[];
 }
 
 export type StdioForwardSpec =
@@ -330,6 +331,7 @@ export function wireExecTarget(
     knownHosts: { user: settings.userKnownHostsFiles, global: settings.globalKnownHostsFiles },
     hashKnownHosts: settings.hashKnownHosts,
     identitiesOnly: settings.identitiesOnly,
+    identityWarnings: missingIdentityWarnings(settings.identityFiles, (file) => vfs.resolveInode(vfs.normalizePath(file, cwd)) !== null),
   };
 }
 
@@ -482,9 +484,16 @@ export interface WireSshFailure {
   readonly denial?: string;
   readonly authRefused?: boolean;
   readonly connectionLine?: string;
+  readonly notices?: readonly string[];
 }
 
 export function sshWireFailureResult(opts: SshClientOpts, failure: WireSshFailure): SshClientResult {
+  const result = sshWireFailureWithoutNotices(opts, failure);
+  const notices = (failure.notices ?? []).map((line) => `${line}\n`).join('');
+  return notices === '' ? result : { ...result, output: `${notices}${result.output}` };
+}
+
+function sshWireFailureWithoutNotices(opts: SshClientOpts, failure: WireSshFailure): SshClientResult {
   if (failure.unreachableLine !== undefined) return { output: `${failure.unreachableLine}\n`, exitCode: 255 };
   if (failure.reach !== undefined && failure.address !== null) {
     return wireFailure(opts, failure.host, failure.address, failure.port, failure.reach);
@@ -513,9 +522,10 @@ export interface WireSshSuccess {
   readonly settled: { readonly output: string; readonly exitCode: number } | null;
   readonly shell: { readonly output: string; readonly exitCode: number } | null;
   readonly notices: readonly string[];
+  readonly authTrace?: readonly string[];
 }
 
-function verboseTranscript(success: WireSshSuccess): string {
+export function verboseTranscript(success: WireSshSuccess, authenticated = true): string {
   const lines = [
     OPENSSH_UBUNTU_CLIENT_VERSION,
     'debug1: Reading configuration data /etc/ssh/ssh_config',
@@ -540,6 +550,9 @@ function verboseTranscript(success: WireSshSuccess): string {
   if (success.serverHostKey !== null) {
     lines.push(`debug1: Server host key: ${success.serverHostKey.algorithm} ${success.serverHostKey.fingerprint}`);
   }
+  lines.push(...(success.authTrace ?? []));
+  if (!authenticated) return `${lines.join('\n')}\n`;
+  lines.push(`debug1: Authentication succeeded (${success.method ?? 'password'}).`);
   lines.push(`Authenticated to ${success.host} ([${success.address}]:${success.port}) using "${success.method ?? 'password'}".`);
   return `${lines.join('\n')}\n`;
 }

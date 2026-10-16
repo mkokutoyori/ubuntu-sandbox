@@ -40,7 +40,11 @@ interface Lab {
 }
 
 function agentOf(machine: LinuxPC | LinuxServer): SshAgent {
-  return (machine as unknown as { executor: { sshAgent: SshAgent } }).executor.sshAgent;
+  const executor = (machine as unknown as { executor: {
+    commandEnvironment(): Record<string, string>;
+    agentProcesses: { atSocket(socket: string): { agent: SshAgent } | undefined };
+  } }).executor;
+  return executor.agentProcesses.atSocket(executor.commandEnvironment().SSH_AUTH_SOCK ?? '')?.agent ?? new SshAgent();
 }
 
 async function buildLab(): Promise<Lab> {
@@ -65,6 +69,7 @@ async function buildLab(): Promise<Lab> {
     users.useradd('alice', { m: true, s: '/bin/bash' });
     users.setPassword('alice', 'admin');
   }
+  await first.executeCommand('eval $(ssh-agent -s)');
   return { first, second, third, agentOf };
 }
 
@@ -96,7 +101,7 @@ describe('ssh -A: the agent is a protocol, not a copy', () => {
     await loadKeyIntoClientAgent(lab);
     await lab.first.executeCommand('ssh-add ~/.ssh/agent_key');
     const out = await lab.first.executeCommand('ssh alice@10.0.0.2 "ssh-add -l"', 'admin\n');
-    expect(out).toMatch(/The agent has no identities\./);
+    expect(out).toMatch(/Could not open a connection to your authentication agent\./);
   });
 
   it('the remote agent object never holds the client key', async () => {

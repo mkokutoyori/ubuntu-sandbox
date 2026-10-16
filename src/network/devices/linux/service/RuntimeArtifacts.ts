@@ -83,6 +83,7 @@ export function runtimeArtifactsFor(unit: string): readonly RuntimeArtifact[] {
  */
 export const UNIT_RUNTIME_DIRECTORY: Readonly<Record<string, string>> = {
   fail2ban: 'fail2ban',
+  ssh: 'sshd',
 };
 
 /** Absolute path of a unit's `RuntimeDirectory=`, or null when it has none. */

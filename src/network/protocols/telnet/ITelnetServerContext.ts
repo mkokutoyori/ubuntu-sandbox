@@ -55,6 +55,7 @@ export interface ITelnetServerContext {
   /** ACL / quiet-mode / free-line verdict, evaluated before any prompt. */
   admit(sourceIp: string, localIp?: string): TelnetAdmission;
   authenticate(username: string | null, password: string): boolean | Promise<boolean>;
+  authenticateWithoutPassword?(username: string): boolean | Promise<boolean>;
   /** Attempts allowed before the server drops the connection (IOS: 3). */
   maxAuthAttempts?(): number;
   authFailureMessage?(): string;

@@ -42,6 +42,7 @@ export interface UserauthPrompter {
 }
 
 export interface UserauthIdentity {
+  readonly label: string;
   readonly algorithm: string;
   readonly publicKey: string;
   sign(): string | null | Promise<string | null>;
@@ -51,6 +52,7 @@ export interface UserauthPlan {
   readonly authentication: SshClientAuthentication;
   readonly identities: readonly UserauthIdentity[];
   readonly interactive: boolean;
+  readonly trace?: (line: string) => void;
 }
 
 const isUserauthMethod = (name: string): name is AuthMethodType =>
@@ -62,6 +64,8 @@ export async function runUserauth(
   prompter: UserauthPrompter,
 ): Promise<UserauthOutcome> {
   const auth = plan.authentication;
+  const trace = plan.trace ?? ((): void => undefined);
+  let announcedKeys = false;
   const disabled = new Set<AuthMethodType>();
   const configured = (method: AuthMethodType): boolean => {
     if (method === 'publickey') return auth.publickey;
@@ -93,6 +97,11 @@ export async function runUserauth(
       remaining = remaining.slice(index + 1);
       if (isUserauthMethod(name) && enabled(name)) {
         current = name;
+        trace(`Next authentication method: ${name}`);
+        if (name === 'publickey' && !announcedKeys) {
+          announcedKeys = true;
+          for (const identity of plan.identities) trace(`Will attempt key: ${identity.label}`);
+        }
         return name;
       }
     }
@@ -107,8 +116,10 @@ export async function runUserauth(
       const identity = plan.identities[identitiesOffered++];
       if (identity === undefined) return null;
       const offered = { algorithm: identity.algorithm, publicKey: identity.publicKey };
+      trace(`Offering public key: ${identity.label}`);
       const query = await transport.request('publickey', offered);
       if (query.kind !== 'pk_ok') return query;
+      trace(`Server accepts key: ${identity.label}`);
       const signature = await identity.sign();
       if (signature === null) continue;
       const signed = await transport.request('publickey', { ...offered, signature });
@@ -142,6 +153,7 @@ export async function runUserauth(
     if (reply.kind === 'pk_ok') return { kind: 'closed' };
     if (reply.kind === 'success') return lastMethod === undefined ? reply : { kind: 'success', method: lastMethod };
     if (reply.kind !== 'failure') return reply;
+    trace(`Authentications that can continue: ${reply.methods}`);
     let sent: UserauthReply | null = null;
     while (sent === null) {
       const method = nextMethod(reply.methods);

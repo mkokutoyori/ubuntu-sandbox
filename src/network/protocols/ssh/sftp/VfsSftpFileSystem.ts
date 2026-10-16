@@ -30,6 +30,7 @@ interface VfsLike {
   rename?(src: string, dst: string): boolean;
   chmod?(path: string, mode: number): boolean;
   chown?(path: string, uid: number, gid?: number): boolean;
+  setTimes?(path: string, times: { atime?: number; mtime?: number }): boolean;
   listDirectory?(path: string): Array<{ name: string }>;
   checkAclAccess?(path: string, user: string, groups: readonly string[], need: number): boolean | null;
   hasAcl?(path: string): boolean;
@@ -169,6 +170,13 @@ export class VfsSftpFileSystem implements ISftpFileSystem {
   private isEmptyDir(path: string): boolean {
     const r = this.listDirectory(path);
     return r.ok && r.value.filter(e => e.name !== '.' && e.name !== '..').length === 0;
+  }
+
+  setTimes(path: string, times: { readonly atime: number; readonly mtime: number }): Result<void> {
+    if (!this.vfs.setTimes) return err({ kind: 'IO_ERROR', message: 'utimes not supported' } as SshError);
+    return this.vfs.setTimes(path, times)
+      ? ok(undefined)
+      : err({ kind: 'IO_ERROR', message: `${path}: No such file or directory` } as SshError);
   }
 
   setOwner(path: string, uid: number, gid: number): Result<void> {

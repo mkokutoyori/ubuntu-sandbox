@@ -55,6 +55,7 @@ export interface RadiusGlobalDefaults {
   deadCriteriaTries?: number;
   directedRequest?: { restricted: boolean };
   retryReorder?: boolean;
+  optionalPasswords?: boolean;
   transactionMaxTries?: number;
   loadBalance?: LoadBalanceSetting;
 }
@@ -434,6 +435,10 @@ export class CiscoSecurityConfig {
   aaaSessionId?: string;
   /** `aaa local authentication attempts max-fail <n>` — per-account lockout threshold. */
   localAuthMaxFailAttempts?: number;
+  loginAttempts?: number;
+  suppressNullUsername = false;
+  aaaMaxSessions?: number;
+  effectiveLoginAttempts(): number | undefined { return this.aaaNewModel ? this.loginAttempts : undefined; }
   aaaLoginBanner?: string;
   aaaFailMessage?: string;
   aaaUsernamePrompt?: string;
@@ -482,7 +487,7 @@ export class CiscoSecurityConfig {
       pubkeyAuthentication: order.includes('publickey') && keyAlgorithms.includes('ssh-rsa'),
       kbdInteractiveAuthentication: order.includes('keyboard'),
       authMethodOrder: order,
-      maxAuthTries: this.ssh.authRetries,
+      maxAuthTries: Math.min(this.ssh.authRetries, this.effectiveLoginAttempts() ?? this.ssh.authRetries),
       loginGraceTime: this.ssh.timeoutSec,
       maxStartups: { start: this.ssh.maxStartups, rate: 100, full: this.ssh.maxStartups },
     };
@@ -705,6 +710,9 @@ export class CiscoSecurityConfig {
       lines.push(...this.accountingOptionLines());
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
+      if (this.loginAttempts !== undefined) lines.push(`aaa authentication attempts login ${this.loginAttempts}`);
+      if (this.suppressNullUsername) lines.push('aaa authentication suppress null-username');
+      if (this.aaaMaxSessions !== undefined) lines.push(`aaa max-sessions ${this.aaaMaxSessions}`);
     }
     if (this.aaaLoginBanner !== undefined) lines.push(`aaa authentication banner ^C\n${this.aaaLoginBanner}\n^C`);
     if (this.aaaFailMessage !== undefined) lines.push(`aaa authentication fail-message ^C\n${this.aaaFailMessage}\n^C`);
@@ -817,6 +825,7 @@ export class CiscoSecurityConfig {
     }
     lines.push(...this.radiusStripping.render('radius-server domain-stripping'));
     if (this.radiusDefaults.retryReorder) lines.push('radius-server retry method reorder');
+    if (this.radiusDefaults.optionalPasswords) lines.push('radius-server optional-passwords');
     if (this.radiusDefaults.transactionMaxTries !== undefined) {
       lines.push(`radius-server transaction max-tries ${this.radiusDefaults.transactionMaxTries}`);
     }

@@ -1040,6 +1040,17 @@ export class WindowsFileSystem {
     return true;
   }
 
+  restrictToSystemAndAdministrators(absPath: string): boolean {
+    const entry = this.resolve(absPath);
+    if (!entry) return false;
+    entry.acl = [
+      { principal: 'NT AUTHORITY\\SYSTEM', type: 'allow', permissions: ['FullControl'] },
+      { principal: 'BUILTIN\\Administrators', type: 'allow', permissions: ['FullControl'] },
+    ];
+    entry.aclProtected = true;
+    return true;
+  }
+
   isAclProtected(absPath: string): boolean {
     const entry = this.resolve(absPath);
     return entry?.aclProtected === true;

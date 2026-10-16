@@ -1,34 +1,38 @@
-/**
- * WireSftpFileSystem — ISftpFileSystem adapter backed by a real
- * ISshSftpChannel (SSH_FXP_* wire protocol over an authenticated
- * TcpConnection), instead of a direct in-memory VirtualFileSystem
- * reference.
- *
- * Audit 03, constat MAJEUR §4 / Top-10 #3: `scp`/`sftp` shell commands
- * used to resolve the remote endpoint straight to the target device's
- * own ISftpFileSystem object (VFS-to-VFS copy — no byte ever crossed
- * TcpSocket.send()/Port/Cable). This adapter closes that gap: every
- * method translates to a real SshSftpChannel.sendRequest() call, which
- * itself round-trips a real SSH_FXP_* packet over `conn.write()`/
- * `onData` — the exact machinery already used by the native SFTP
- * channel (SshChannelManager.openSftp()).
- *
- * `SshSftpChannel.sendRequest()` is synchronous (Cable delivery in this
- * simulator resolves within the same call stack — see
- * `SshSftpChannel.roundTrip()`), so this adapter can implement the
- * synchronous `ISftpFileSystem` contract unchanged; `ScpTransfer`/
- * `SftpInteractiveSession` need no changes at all.
- */
-import type { ISshSftpChannel, SftpResponse } from '../channels/ISshChannel';
 import { ok, err, type Result, type SshError } from '../Result';
 import type { EntryType, ISftpFileSystem, SftpDirEntry, SftpFileAttrs } from './ISftpFileSystem';
+import { SSH_FX } from './SftpStatusCodes';
+import { entryTypeOfAttrs, type SftpWireAttrs } from './SftpWireCodec';
+import {
+  SFTP_OPEN, SftpWireClient, TRANSFER_CHUNK, statusText, type SftpDiagnostics, type SftpPacketChannel,
+} from './client/SftpWireClient';
 
-function toError(resp: SftpResponse): SshError {
-  return { kind: 'IO_ERROR', message: typeof resp.error === 'string' ? resp.error : 'Failure' };
+const PERMISSION_BITS = 0o7777;
+
+const silent: SftpDiagnostics = { error: () => undefined, notice: () => undefined };
+
+function failure(status: number): SshError {
+  return status === SSH_FX.PERMISSION_DENIED
+    ? { kind: 'PERMISSION_DENIED', path: '', operation: 'sftp' }
+    : { kind: 'IO_ERROR', message: statusText(status) };
+}
+
+function fileAttrs(attrs: SftpWireAttrs): SftpFileAttrs {
+  return {
+    type: entryTypeOfAttrs(attrs) as EntryType,
+    mode: (attrs.permissions ?? 0) & PERMISSION_BITS,
+    uid: attrs.uid ?? 0,
+    gid: attrs.gid ?? 0,
+    size: attrs.size ?? 0,
+    mtime: (attrs.mtime ?? 0) * 1000,
+  };
 }
 
 export class WireSftpFileSystem implements ISftpFileSystem {
-  constructor(private readonly channel: ISshSftpChannel) {}
+  private readonly client: SftpWireClient;
+
+  constructor(channel: SftpPacketChannel) {
+    this.client = new SftpWireClient(channel, silent);
+  }
 
   normalizePath(path: string, cwd: string): string {
     if (path === '' || path === '.') return cwd;
@@ -37,83 +41,81 @@ export class WireSftpFileSystem implements ISftpFileSystem {
   }
 
   initialCwd(): string | null {
-    const resp = this.channel.sendRequest({ op: 'pwd' });
-    return resp.ok && typeof resp.cwd === 'string' ? resp.cwd : null;
+    return this.client.realpath('.');
   }
 
   exists(path: string): boolean {
-    return this.channel.sendRequest({ op: 'stat', path }).ok;
+    return this.client.stat(path, true) !== null;
   }
 
   getEntryType(path: string): EntryType | null {
-    const resp = this.channel.sendRequest({ op: 'stat', path });
-    if (!resp.ok) return null;
-    return (resp.type as EntryType | undefined) ?? 'file';
+    const attrs = this.client.stat(path, true);
+    return attrs === null ? null : (entryTypeOfAttrs(attrs) as EntryType);
   }
 
   readFile(path: string): Result<string> {
-    const resp = this.channel.sendRequest({ op: 'get', path });
-    return resp.ok ? ok(String(resp.content ?? '')) : err(toError(resp));
+    const handle = this.client.open(path, SFTP_OPEN.READ, {}, 'remote');
+    if (handle === null) return err(failure(this.lastStatus(path)));
+    let content = '';
+    for (;;) {
+      const chunk = this.client.read(handle, content.length, TRANSFER_CHUNK);
+      if (chunk.kind === 'data') {
+        content += chunk.data;
+        continue;
+      }
+      this.client.close(handle);
+      return chunk.kind === 'eof' ? ok(content) : err(failure(chunk.status));
+    }
+  }
+
+  private lastStatus(path: string): number {
+    return this.client.stat(path, true) === null ? SSH_FX.NO_SUCH_FILE : SSH_FX.PERMISSION_DENIED;
   }
 
   listDirectory(path: string): Result<readonly SftpDirEntry[]> {
-    const resp = this.channel.sendRequest({ op: 'ls', path });
-    if (!resp.ok) return err(toError(resp));
-    const entries = (resp.entries as Array<{
-      name: string; type: string; mode: number; uid: number; gid: number; size: number; mtime: number;
-    }>) ?? [];
-    return ok(entries.map((e) => ({
-      name: e.name,
-      type: (e.type as EntryType) ?? 'file',
-      mode: e.mode, uid: e.uid, gid: e.gid, size: e.size, mtime: e.mtime,
-    })));
+    const entries = this.client.readDirectory(path);
+    if (entries === null) return err(failure(this.lastStatus(path)));
+    return ok(entries.map((entry) => ({ name: entry.filename, ...fileAttrs(entry.attrs) })));
   }
 
   stat(path: string): Result<SftpFileAttrs> {
-    const resp = this.channel.sendRequest({ op: 'stat', path });
-    if (!resp.ok) return err(toError(resp));
-    return ok({
-      type: (resp.type as EntryType) ?? 'file',
-      mode: Number(resp.mode ?? 0),
-      uid: Number(resp.uid ?? 0),
-      gid: Number(resp.gid ?? 0),
-      size: Number(resp.size ?? 0),
-      mtime: Number(resp.mtime ?? 0),
-    });
+    const attrs = this.client.stat(path, true);
+    return attrs === null ? err(failure(SSH_FX.NO_SUCH_FILE)) : ok(fileAttrs(attrs));
   }
 
   writeFile(path: string, content: string): Result<void> {
-    const resp = this.channel.sendRequest({ op: 'put', path, content });
-    return resp.ok ? ok(undefined) : err(toError(resp));
+    const handle = this.client.open(path, SFTP_OPEN.WRITE | SFTP_OPEN.CREAT | SFTP_OPEN.TRUNC, {}, 'dest');
+    if (handle === null) return err(failure(SSH_FX.PERMISSION_DENIED));
+    let status: number = SSH_FX.OK;
+    for (let offset = 0; offset < content.length && status === SSH_FX.OK; offset += TRANSFER_CHUNK) {
+      status = this.client.write(handle, offset, content.slice(offset, offset + TRANSFER_CHUNK));
+    }
+    const closed = this.client.close(handle);
+    if (status !== SSH_FX.OK) return err(failure(status));
+    return closed ? ok(undefined) : err(failure(SSH_FX.FAILURE));
   }
 
   mkdir(path: string): Result<void> {
-    const resp = this.channel.sendRequest({ op: 'mkdir', path });
-    return resp.ok ? ok(undefined) : err(toError(resp));
+    return this.client.makeDirectory(path, {}, false) ? ok(undefined) : err(failure(SSH_FX.FAILURE));
   }
 
   deleteFile(path: string): Result<void> {
-    const resp = this.channel.sendRequest({ op: 'rm', path });
-    return resp.ok ? ok(undefined) : err(toError(resp));
+    return this.client.remove(path) ? ok(undefined) : err(failure(SSH_FX.FAILURE));
   }
 
   rmdir(path: string): Result<void> {
-    const resp = this.channel.sendRequest({ op: 'rmdir', path });
-    return resp.ok ? ok(undefined) : err(toError(resp));
+    return this.client.removeDirectory(path) ? ok(undefined) : err(failure(SSH_FX.FAILURE));
   }
 
   rename(src: string, dst: string): Result<void> {
-    const resp = this.channel.sendRequest({ op: 'rename', src, dst });
-    return resp.ok ? ok(undefined) : err(toError(resp));
+    return this.client.rename(src, dst, true) ? ok(undefined) : err(failure(SSH_FX.FAILURE));
   }
 
   setPermissions(path: string, mode: number): Result<void> {
-    const resp = this.channel.sendRequest({ op: 'chmod', path, mode });
-    return resp.ok ? ok(undefined) : err(toError(resp));
+    return this.client.setAttributes(path, { permissions: mode }) ? ok(undefined) : err(failure(SSH_FX.FAILURE));
   }
 
   setOwner(path: string, uid: number, gid: number): Result<void> {
-    const resp = this.channel.sendRequest({ op: 'chown', path, uid, gid });
-    return resp.ok ? ok(undefined) : err(toError(resp));
+    return this.client.setAttributes(path, { uid, gid }) ? ok(undefined) : err(failure(SSH_FX.FAILURE));
   }
 }

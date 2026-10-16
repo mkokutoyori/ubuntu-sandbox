@@ -34,6 +34,7 @@ export interface SshdMatchOverrides {
   chrootDirectory?: string;
   acceptEnv?: readonly string[];
   allowAgentForwarding?: boolean;
+  permitTty?: boolean;
   gatewayPorts?: SshdGatewayPorts;
   clientAliveIntervalSeconds?: number;
   clientAliveCountMax?: number;
@@ -42,6 +43,7 @@ export interface SshdMatchOverrides {
   denyUsers?: readonly string[];
   allowGroups?: readonly string[];
   denyGroups?: readonly string[];
+  authorizedKeysFile?: readonly string[];
 }
 
 export interface SshdMatchBlock {
@@ -64,14 +66,16 @@ export interface SshdEffectiveView {
   readonly forceCommand: string | null;
   readonly acceptEnv: readonly string[];
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly gatewayPorts: SshdGatewayPorts;
   readonly clientAliveIntervalSeconds: number;
   readonly clientAliveCountMax: number;
   readonly printMotd: boolean;
+  readonly authorizedKeysFile: readonly string[];
 }
 
 export interface SshdSubsystems {
-  readonly sftp: string;
+  readonly sftp: string | null;
   readonly extras: ReadonlyMap<string, string>;
 }
 
@@ -93,6 +97,7 @@ export interface SshdServerConfigSnapshot {
   readonly permitEmptyPasswords: boolean;
   readonly allowTcpForwarding: SshdAllowTcpForwarding;
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly allowStreamLocalForwarding: boolean;
   readonly x11Forwarding: boolean;
   readonly x11DisplayOffset: number;
@@ -125,6 +130,7 @@ export interface SshdServerConfigSnapshot {
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
+  readonly authorizedKeysFile: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 }
 
@@ -211,6 +217,12 @@ function addressListMatches(patternList: string, ip: string): boolean {
   return anyPositive ? matchedPositive : true;
 }
 
+function userPatternMatches(pattern: string, user: string, address: string): boolean {
+  const at = pattern.indexOf('@');
+  if (at < 0) return globMatch(pattern, user);
+  return globMatch(pattern.slice(0, at), user) && address !== '' && addressListMatches(pattern.slice(at + 1), address);
+}
+
 export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly ports: readonly number[];
   readonly listenAddresses: readonly string[];
@@ -229,6 +241,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly permitEmptyPasswords: boolean;
   readonly allowTcpForwarding: SshdAllowTcpForwarding;
   readonly allowAgentForwarding: boolean;
+  readonly permitTty: boolean;
   readonly allowStreamLocalForwarding: boolean;
   readonly x11Forwarding: boolean;
   readonly x11DisplayOffset: number;
@@ -261,6 +274,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
+  readonly authorizedKeysFile: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 
   private constructor(s: SshdServerConfigSnapshot) {
@@ -281,6 +295,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.permitEmptyPasswords = s.permitEmptyPasswords;
     this.allowTcpForwarding = s.allowTcpForwarding;
     this.allowAgentForwarding = s.allowAgentForwarding;
+    this.permitTty = s.permitTty;
     this.allowStreamLocalForwarding = s.allowStreamLocalForwarding;
     this.x11Forwarding = s.x11Forwarding;
     this.x11DisplayOffset = s.x11DisplayOffset;
@@ -313,6 +328,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.forceCommand = s.forceCommand;
     this.chrootDirectory = s.chrootDirectory;
     this.permitOpen = s.permitOpen;
+    this.authorizedKeysFile = s.authorizedKeysFile;
     this.matchBlocks = s.matchBlocks;
   }
 
@@ -335,6 +351,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       permitEmptyPasswords: false,
       allowTcpForwarding: 'yes',
       allowAgentForwarding: true,
+      permitTty: true,
       allowStreamLocalForwarding: true,
       x11Forwarding: false,
       x11DisplayOffset: 10,
@@ -354,7 +371,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       syslogFacility: 'AUTH',
       bannerPath: null,
       motdPath: '/etc/motd',
-      subsystems: { sftp: '/usr/lib/openssh/sftp-server', extras: new Map() },
+      subsystems: { sftp: null, extras: new Map() },
       allowUsers: Object.freeze([]),
       denyUsers: Object.freeze([]),
       allowGroups: Object.freeze([]),
@@ -367,6 +384,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       forceCommand: null,
       chrootDirectory: null,
       permitOpen: Object.freeze(['any']),
+      authorizedKeysFile: Object.freeze(['.ssh/authorized_keys', '.ssh/authorized_keys2']),
       matchBlocks: Object.freeze([]),
     });
   }
@@ -399,6 +417,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   withPermitEmptyPasswords(v: boolean): SshdServerConfig { return this.mutate({ permitEmptyPasswords: v }); }
   withAllowTcpForwarding(v: SshdAllowTcpForwarding): SshdServerConfig { return this.mutate({ allowTcpForwarding: v }); }
   withAllowAgentForwarding(v: boolean): SshdServerConfig { return this.mutate({ allowAgentForwarding: v }); }
+  withPermitTty(v: boolean): SshdServerConfig { return this.mutate({ permitTty: v }); }
   withX11Forwarding(v: boolean): SshdServerConfig { return this.mutate({ x11Forwarding: v }); }
   withGatewayPorts(v: SshdGatewayPorts): SshdServerConfig { return this.mutate({ gatewayPorts: v }); }
   withClientAlive(intervalSeconds: number, countMax: number): SshdServerConfig {
@@ -452,15 +471,11 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       if (block.overrides.allowUsers)  allowUsers  = block.overrides.allowUsers;
       if (block.overrides.allowGroups) allowGroups = block.overrides.allowGroups;
     }
-    if (denyUsers.some(p => globMatch(p, user))) return 'DenyUsers';
+    const address = ctx?.address ?? '';
+    if (denyUsers.some(p => userPatternMatches(p, user, address))) return 'DenyUsers';
+    if (allowUsers.length > 0 && !allowUsers.some(p => userPatternMatches(p, user, address))) return 'AllowUsers';
     if (denyGroups.some(p => groups.some(g => globMatch(p, g)))) return 'DenyGroups';
-    if (allowUsers.length > 0 && !allowUsers.some(p => globMatch(p, user))) {
-      if (allowGroups.length === 0 || !allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
-        return allowGroups.length === 0 ? 'AllowUsers' : 'AllowGroups';
-      }
-    } else if (allowGroups.length > 0 && !allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
-      if (allowUsers.length === 0) return 'AllowGroups';
-    }
+    if (allowGroups.length > 0 && !allowGroups.some(p => groups.some(g => globMatch(p, g)))) return 'AllowGroups';
     return null;
   }
 
@@ -480,10 +495,12 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       forceCommand: this.forceCommand,
       acceptEnv: this.acceptEnv,
       allowAgentForwarding: this.allowAgentForwarding,
+      permitTty: this.permitTty,
       gatewayPorts: this.gatewayPorts,
       clientAliveIntervalSeconds: this.clientAliveIntervalSeconds,
       clientAliveCountMax: this.clientAliveCountMax,
       printMotd: this.printMotd,
+      authorizedKeysFile: this.authorizedKeysFile,
     };
     for (const block of this.matchBlocks) {
       if (!this.matchApplies(block.criteria, ctx)) continue;
@@ -519,7 +536,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     return requested === 'localhost' ? '127.0.0.1' : requested;
   }
 
-  private matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {
+  matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {
     for (const c of criteria) {
       switch (c.keyword) {
         case 'User':       if (!globMatch(c.value, ctx.user)) return false; break;
@@ -589,6 +606,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     lines.push(`PermitEmptyPasswords ${this.permitEmptyPasswords ? 'yes' : 'no'}`);
     lines.push(`AllowTcpForwarding ${this.allowTcpForwarding}`);
     lines.push(`AllowAgentForwarding ${this.allowAgentForwarding ? 'yes' : 'no'}`);
+    lines.push(`PermitTTY ${this.permitTty ? 'yes' : 'no'}`);
     lines.push(`X11Forwarding ${this.x11Forwarding ? 'yes' : 'no'}`);
     lines.push(`GatewayPorts ${this.gatewayPorts}`);
     lines.push(`ClientAliveInterval ${this.clientAliveIntervalSeconds}`);
@@ -606,7 +624,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     if (this.allowGroups.length) lines.push(`AllowGroups ${this.allowGroups.join(' ')}`);
     if (this.denyGroups.length)  lines.push(`DenyGroups ${this.denyGroups.join(' ')}`);
     if (this.acceptEnv.length)   lines.push(`AcceptEnv ${this.acceptEnv.join(' ')}`);
-    lines.push(`Subsystem sftp ${this.subsystems.sftp}`);
+    if (this.subsystems.sftp !== null) lines.push(`Subsystem sftp ${this.subsystems.sftp}`);
     for (const [name, cmd] of this.subsystems.extras) lines.push(`Subsystem ${name} ${cmd}`);
     for (const block of this.matchBlocks) {
       lines.push(`Match ${block.criteria.map(c => `${c.keyword} ${c.value}`).join(' ')}`);
@@ -641,6 +659,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'permitemptypasswords': return cfg.withPermitEmptyPasswords(YES_NO(value, false));
     case 'allowtcpforwarding': return cfg.withAllowTcpForwarding(value as SshdAllowTcpForwarding);
     case 'allowagentforwarding': return cfg.withAllowAgentForwarding(YES_NO(value, true));
+    case 'permittty': return cfg.withPermitTty(YES_NO(value, true));
     case 'allowstreamlocalforwarding': return cfg.mutate({ allowStreamLocalForwarding: YES_NO(value, true) });
     case 'x11forwarding': return cfg.withX11Forwarding(YES_NO(value, false));
     case 'x11displayoffset': return cfg.mutate({ x11DisplayOffset: parseInt(value, 10) || 10 });
@@ -676,6 +695,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
       return cfg.withSubsystem(name, rest.join(' '));
     }
     case 'permitopen': return cfg.mutate({ permitOpen: Object.freeze(value.split(/\s+/).filter(Boolean)) });
+    case 'authorizedkeysfile': return cfg.mutate({ authorizedKeysFile: Object.freeze(value.split(/\s+/).filter(Boolean)) });
     default: return cfg;
   }
 }
@@ -697,6 +717,7 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'chrootdirectory': o.chrootDirectory = value; break;
     case 'acceptenv': o.acceptEnv = Object.freeze(value.split(/\s+/)); break;
     case 'allowagentforwarding': o.allowAgentForwarding = YES_NO(value, true); break;
+    case 'permittty': o.permitTty = YES_NO(value, true); break;
     case 'gatewayports': o.gatewayPorts = value as SshdGatewayPorts; break;
     case 'clientaliveinterval': o.clientAliveIntervalSeconds = parseInt(value, 10) || 0; break;
     case 'clientalivecountmax': o.clientAliveCountMax = parseInt(value, 10) || 3; break;
@@ -705,6 +726,7 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'denyusers':   o.denyUsers  = Object.freeze(value.split(/\s+/)); break;
     case 'allowgroups': o.allowGroups = Object.freeze(value.split(/\s+/)); break;
     case 'denygroups':  o.denyGroups  = Object.freeze(value.split(/\s+/)); break;
+    case 'authorizedkeysfile': o.authorizedKeysFile = Object.freeze(value.split(/\s+/).filter(Boolean)); break;
   }
 }
 

@@ -753,8 +753,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.config.executableWhen('interface',
     (args) => !(args.length === 1 && estTypeSansNumero(args[0])));
   tries.config.requireArgs('ip dhcp pool', 1);
-  tries.config.requireArgs('enable secret', 1);
-  tries.config.requireArgs('enable password', 1);
   tries.config.requireArgs('access-list', 2);
   tries.config.requireArgs('ntp', 1);
   tries.config.requireArgs('ip nat', 1);

@@ -337,6 +337,49 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
       undo: (_s, args) => { sec().aaaGroups.delete(args.nom); return ''; },
     },
     {
+      id: 'aaa-authentication-attempts-login',
+      path: ['aaa', 'authentication', 'attempts', 'login', {
+        name: 'nombre', type: 'INT', range: [1, 25],
+        description: 'Number of login attempts before the line is closed',
+      }],
+      description: 'Set the maximum number of failed login attempts on a line',
+      undoDescription: 'Restore the default number of login attempts',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => {
+        if (!sec().aaaNewModel) return '% AAA is not enabled: "aaa new-model" must be configured first';
+        sec().loginAttempts = Number(args.nombre);
+        return '';
+      },
+      undo: () => { sec().loginAttempts = undefined; return ''; },
+    },
+    {
+      id: 'aaa-authentication-suppress-null-username',
+      path: ['aaa', 'authentication', 'suppress', 'null-username'],
+      description: 'Do not send an Access Request with a blank username to the RADIUS server',
+      undoDescription: 'Allow an Access Request with a blank username to be sent to the RADIUS server',
+      modes: MODES, minPrivilege: 15,
+      run: () => { sec().suppressNullUsername = true; return ''; },
+      undo: () => { sec().suppressNullUsername = false; return ''; },
+    },
+    {
+      id: 'aaa-max-sessions',
+      path: ['aaa', 'max-sessions', {
+        name: 'nombre', type: 'INT', range: [1024, 64000],
+        description: 'Estimated maximum number of AAA sessions',
+      }],
+      description: 'Set the maximum number of simultaneous AAA connections',
+      undoDescription: 'Restore the platform default',
+      modes: MODES, minPrivilege: 15,
+      undoOmitsArguments: true,
+      run: (_s, args) => {
+        if (!sec().aaaNewModel) return '% AAA is not enabled: "aaa new-model" must be configured first';
+        sec().aaaMaxSessions = Number(args.nombre);
+        return '';
+      },
+      undo: () => { sec().aaaMaxSessions = undefined; return ''; },
+    },
+    {
       id: 'aaa-local-max-fail',
       path: ['aaa', 'local', 'authentication', 'attempts', 'max-fail', {
         name: 'nombre', type: 'INT',

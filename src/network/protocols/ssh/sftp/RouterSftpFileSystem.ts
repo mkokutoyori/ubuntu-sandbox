@@ -32,13 +32,23 @@ export class RouterSftpFileSystem implements ISftpFileSystem {
     return path.replace(/^\/+/, '').replace(/\\/g, '/');
   }
 
-  normalizePath(path: string, _cwd: string): string {
-    return path;
+  normalizePath(path: string, cwd: string): string {
+    const segments: string[] = [];
+    for (const segment of (path.startsWith('/') ? path : `${cwd}/${path}`).split('/')) {
+      if (segment === '' || segment === '.') continue;
+      if (segment === '..') segments.pop();
+      else segments.push(segment);
+    }
+    return `/${segments.join('/')}`;
+  }
+  private isRoot(path: string): boolean {
+    return this.canonical(path) === '';
   }
   exists(path: string): boolean {
-    return this.source.read(this.canonical(path)) !== null;
+    return this.isRoot(path) || this.source.read(this.canonical(path)) !== null;
   }
   getEntryType(path: string): EntryType | null {
+    if (this.isRoot(path)) return 'directory';
     return this.source.read(this.canonical(path)) === null ? null : 'file';
   }
   readFile(path: string): Result<string> {
@@ -54,6 +64,7 @@ export class RouterSftpFileSystem implements ISftpFileSystem {
     })));
   }
   stat(path: string): Result<SftpFileAttrs> {
+    if (this.isRoot(path)) return ok({ type: 'directory', mode: 0o755, uid: 0, gid: 0, size: 0, mtime: simulationNowMs() });
     const data = this.source.read(this.canonical(path));
     if (data === null) return err({ kind: 'IO_ERROR', message: `${path}: not found` } as SshError);
     return ok({ type: 'file', mode: 0o644, uid: 0, gid: 0, size: data.length, mtime: simulationNowMs() });

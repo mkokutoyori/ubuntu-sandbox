@@ -13,8 +13,11 @@ import { SSH_WINDOWS_IDENTIFICATION } from '../serverIdentification';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
+import type { AgentPort } from '../agent/AgentService';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { WindowsSftpFSAdapter } from '../sftp/WindowsSftpFSAdapter';
+import { isInternalSftp, sftpProgramOf, type SftpLaunch, type SftpServicePlan } from './SftpServicePlan';
+import { parseSftpServerArguments, SFTP_SERVER_USAGE, splitCommandWords } from '../sftp/server/SftpServerOptions';
 import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
 import type { SshVtyShell } from './SshExecTarget';
@@ -27,6 +30,12 @@ import {
   type SshTransportPolicy,
 } from './ISshServerContext';
 import { sshdAlgorithmPreferences } from './SshdAlgorithmDirectives';
+import { SshdAccessPolicy } from './SshdAccessPolicy';
+import { SshSyslogger } from '../logging/SshSyslogger';
+import { SshServerEventBus, type ISshServerEventBus } from './SshServerEvent';
+import { readSshdConfig } from './SshdConfigText';
+import { findAdmittedKey, type AuthorizedKey, type KeySource } from '../SshPureUtils';
+import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import { configuredHostKeyPaths, hostKeyFromFile, provisionHostKeyFiles, type HostKeyFileAccess } from './SshdHostKeyFiles';
 import {
   DEFAULT_SSHD_CONFIG,
@@ -45,6 +54,11 @@ const SSHD_CONFIG_PATH = `${SSH_DIR}\\sshd_config`;
 const HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_ed25519_key`;
 const DEFAULT_HOST_KEY_PATHS = ['rsa', 'ecdsa', 'ed25519'].map((type) => `${SSH_DIR}\\ssh_host_${type}_key`);
 const HOST_KEY_PUB_PATH = `${SSH_DIR}\\ssh_host_ed25519_key.pub`;
+const PROGRAM_DATA = 'C:\\ProgramData';
+
+export function windowsPathOf(path: string): string {
+  return path.replace(/__PROGRAMDATA__/g, PROGRAM_DATA).replace(/\//g, '\\');
+}
 
 export interface WindowsShellExecutor {
   executeCmdCommand(line: string): Promise<string>;
@@ -58,6 +72,8 @@ export interface WindowsShellExecutor {
    */
   createVtyShell?(user: string): SshVtyShell | null;
   shellBanner?(): string;
+  runExecAs?(user: string, line: string, stdin?: string): Promise<{ output: string; exitCode: number }>;
+  bindForwardedAgent?(user: string, agent: AgentPort): { readonly path: string; release(): void };
 }
 
 /**
@@ -83,6 +99,11 @@ export class WindowsSshServerContext implements ISshServerContext {
   readonly auth: ISshAuthContext;
   readonly sshdConfig: SshdConfig;
   readonly maxAuthTriesDisconnect = SSHD_MAX_AUTH_TRIES_REASON;
+  readonly rawConfig: string;
+  private operationalSyslogger: SshSyslogger | null = null;
+  readonly events: ISshServerEventBus = new SshServerEventBus();
+  private readonly policy: SshdAccessPolicy;
+  private readonly keyLogons = new Set<string>();
 
   constructor(
     private readonly wfs: WindowsFileSystem,
@@ -93,10 +114,20 @@ export class WindowsSshServerContext implements ISshServerContext {
     private readonly reportLogon: WindowsSshLogonReporter | null = null,
     private readonly reportLogoff: WindowsSshLogoffReporter | null = null,
     private readonly legalNotice: (() => string) | null = null,
+    private readonly operationalLog: ((message: string) => void) | null = null,
   ) {
     this.ensureSshDir();
     this.hostKey = this.loadOrGenerateHostKey();
     this.sshdConfig = this.loadOrGenerateSshdConfig();
+    this.rawConfig = readSshdConfig({
+      readFile: (path) => {
+        const result = this.wfs.readFile(windowsPathOf(path));
+        return result.ok ? result.content ?? '' : null;
+      },
+    }, SSHD_CONFIG_PATH);
+    this.policy = SshdAccessPolicy.forText(
+      this.rawConfig, (user) => this.userManager.getGroupsForUser(user).map((group) => group.name), true,
+    );
     this.config = Object.freeze({
       ...DEFAULT_SSH_SERVER_CONFIG,
       ...this.sshdConfig,
@@ -104,10 +135,17 @@ export class WindowsSshServerContext implements ISshServerContext {
       ...config,
     });
     this.auth = this.buildAuthContext();
+    if (this.operationalLog !== null) {
+      const write = this.operationalLog;
+      this.operationalSyslogger = new SshSyslogger(null, this.events, {
+        hostname: this.hostname, port: this.sshdConfig.listenPort, logLevel: () => this.policy.config.logLevel,
+        sink: (message) => write(message),
+      });
+    }
   }
 
   reloadConfig(): WindowsSshServerContext {
-    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor, this.reportLogon, this.reportLogoff, this.legalNotice);
+    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor, this.reportLogon, this.reportLogoff, this.legalNotice, this.operationalLog);
   }
 
   recordLogout(user: string, _fromIp: string): void {
@@ -125,8 +163,108 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   getBanner(): string | null {
     if (!this.sshdConfig.banner) return this.legalNotice?.() || null;
-    const result = this.wfs.readFile(this.sshdConfig.banner);
+    const result = this.wfs.readFile(windowsPathOf(this.sshdConfig.banner));
     return result.ok ? result.content ?? null : null;
+  }
+
+  bannerFor(user: string, clientIp: string): string | null {
+    const path = this.policy.bannerPath(user, clientIp);
+    if (path === null) return this.legalNotice?.() || null;
+    const result = this.wfs.readFile(windowsPathOf(path));
+    return result.ok ? result.content ?? null : null;
+  }
+
+  userPolicyRefusal(user: string, address: string): string | null {
+    return this.policy.refusal(user, address);
+  }
+
+  maxAuthTriesFor(user: string, clientIp: string): number {
+    return this.policy.maxAuthTries(user, clientIp);
+  }
+
+  authMethodEnabled(user: string, clientIp: string, method: 'password' | 'publickey' | 'keyboard-interactive'): boolean {
+    return this.policy.methodEnabled(user, clientIp, method);
+  }
+
+  availableMethodsFor(user: string, clientIp: string): readonly AuthMethodType[] {
+    return this.policy.availableMethods(user, clientIp, {
+      publickey: this.config.pubkeyAuthentication, password: this.config.passwordAuthentication, keyboardInteractive: false,
+    });
+  }
+
+  originalCommandLine(forced: string, asked: string): string {
+    return asked === '' ? forced : `set "SSH_ORIGINAL_COMMAND=${asked}"&& ${forced}`;
+  }
+
+  forcedCommand(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null {
+    return this.policy.forceCommand(user.username, clientIp) ?? keyOptions?.command ?? null;
+  }
+
+  sftpService(
+    user: SshUserContext, clientIp: string, launch: SftpLaunch, keyOptions: AuthorizedKeyOptions | null,
+  ): SftpServicePlan {
+    const subsystems = this.policy.config.subsystems;
+    const forced = this.forcedCommand(user, clientIp, keyOptions);
+    let commandLine: string;
+    if (forced !== null) {
+      commandLine = forced;
+    } else if (launch.kind === 'command') {
+      commandLine = launch.command;
+    } else {
+      const configured = launch.name === 'sftp' ? subsystems.sftp : subsystems.extras.get(launch.name) ?? null;
+      if (configured === null || launch.name !== 'sftp') return { kind: 'unavailable' };
+      commandLine = configured;
+    }
+    const serve = (program: 'sftp-server' | 'internal-sftp'): SftpServicePlan => {
+      const parsed = parseSftpServerArguments(splitCommandWords(commandLine).slice(1));
+      if (parsed.kind === 'serve') return { kind: 'serve', program, options: parsed.options, diagnostics: parsed.diagnostics };
+      if (parsed.kind === 'fatal') return { kind: 'exits', stdout: '', stderr: `${parsed.message}\n`, exitCode: 255 };
+      return { kind: 'exits', stdout: '', stderr: `${SFTP_SERVER_USAGE}\n`, exitCode: 1 };
+    };
+    if (isInternalSftp(commandLine)) return serve('internal-sftp');
+    const program = commandLine.trim().split(/\s+/)[0] ?? '';
+    const bare = !/[\\/]/.test(program);
+    const candidate = bare
+      ? `C:\\Windows\\System32\\OpenSSH\\${/\.exe$/i.test(program) ? program : `${program}.exe`}`
+      : windowsPathOf(program);
+    if (!this.wfs.exists(candidate)) {
+      return launch.kind === 'subsystem'
+        ? { kind: 'unavailable' }
+        : { kind: 'exits', stdout: '', stderr: `'${program}' is not recognized as an internal or external command,\noperable program or batch file.\n`, exitCode: 1 };
+    }
+    if (sftpProgramOf(program) === 'sftp-server') return serve('sftp-server');
+    const exec = this.shellExecutor;
+    if (exec === null) return { kind: 'unavailable' };
+    return {
+      kind: 'runs',
+      run: async () => {
+        const output = await exec.executeCmdCommand(commandLine);
+        return { stdout: output, stderr: '', exitCode: 0 };
+      },
+    };
+  }
+
+  admittedKey(user: string, publicKey: string, source: KeySource): AuthorizedKey | null {
+    if (this.policy.refusal(user, source.ip) !== null) return null;
+    if (!this.config.pubkeyAuthentication || !this.policy.methodEnabled(user, source.ip, 'publickey')) return null;
+    if (!this.userManager.getUser(user)) return null;
+    const home = `C:\\Users\\${user}`;
+    for (const entry of this.policy.view(user, source.ip).authorizedKeysFile) {
+      const path = this.authorizedKeysPath(entry, user, home);
+      const result = this.wfs.readFile(path);
+      if (!result.ok || !result.content) continue;
+      const admitted = findAdmittedKey(result.content, publicKey, source);
+      if (admitted !== null) {
+        this.keyLogons.add(`${user}@${source.ip}`);
+        return admitted;
+      }
+    }
+    return null;
+  }
+
+  private authorizedKeysPath(entry: string, user: string, home: string): string {
+    const expanded = windowsPathOf(entry.replace(/%h/g, home).replace(/%u/g, user).replace(/%%/g, '%'));
+    return /^[A-Za-z]:\\/.test(expanded) ? expanded : `${home}\\${expanded}`;
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
@@ -134,8 +272,26 @@ export class WindowsSshServerContext implements ISshServerContext {
       guardedFileSystem(this.wfs, principalOf(this.userManager, userCtx.username)), userCtx.uid, userCtx.gid);
   }
 
-  getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
+  getShell(_userCtx: SshUserContext, _cwd: string, opts?: Parameters<ISshServerContext['getShell']>[2]): ILinuxShell {
     const exec = this.shellExecutor;
+    const forwardedAgent = opts?.agent === undefined ? null : exec?.bindForwardedAgent?.(_userCtx.username, opts.agent) ?? null;
+
+    if (opts?.exec !== undefined && exec?.runExecAs !== undefined) {
+      const runExecAs = exec.runExecAs.bind(exec);
+      return {
+        async execute(line: string, _onProgress?: (text: string) => void, stdin?: string) {
+          const result = await runExecAs(_userCtx.username, line, stdin);
+          return {
+            stdout: result.output === '' || result.output.endsWith('\n') ? result.output : `${result.output}\n`,
+            stderr: '',
+            exitCode: result.exitCode,
+          };
+        },
+        posixShell: false,
+        loginShellKind: 'cmd',
+        ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
+      };
+    }
 
     const vty = exec?.createVtyShell?.(_userCtx.username);
     if (vty) {
@@ -170,6 +326,7 @@ export class WindowsSshServerContext implements ISshServerContext {
         // cmd.exe ignores Ctrl+D and has no `clear` — it has `cls`.
         posixShell: false,
         loginShellKind: 'cmd',
+        ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
       };
     }
 
@@ -196,7 +353,18 @@ export class WindowsSshServerContext implements ISshServerContext {
         };
       },
       getPrompt: exec.getCwd ? () => `${exec.getCwd!()}>` : undefined,
+      ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
     };
+  }
+
+  agentForwardingPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noAgentForwarding === true) return false;
+    return this.policy.agentForwarding(user.username, clientIp);
+  }
+
+  ptyPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noPty === true) return false;
+    return this.policy.permitsTty(user.username, clientIp);
   }
 
   getMotd(): string {
@@ -210,9 +378,14 @@ export class WindowsSshServerContext implements ISshServerContext {
     return `Last login: ${entry.lastLogon.toUTCString()}`;
   }
 
-  recordLogin(user: string, _fromIp: string): void {
+  recordLogin(user: string, fromIp: string): void {
     const entry = this.userManager.getUser(user);
     if (entry) entry.lastLogon = simulationDate();
+    if (this.keyLogons.delete(`${user}@${fromIp}`)) this.reportLogon?.(user, true);
+  }
+
+  recordAuthFailure(user: string, _fromIp: string, reason: string): void {
+    if (reason === 'publickey' || reason === 'wrong_key') this.reportLogon?.(user, false);
   }
 
   /** Build a SshUserContext from the Windows user database. */
@@ -251,8 +424,14 @@ export class WindowsSshServerContext implements ISshServerContext {
         const result = this.wfs.readFile(path);
         return result.ok ? result.content ?? null : null;
       },
-      write: (path, content) => { this.wfs.createFile(path, content); },
-      writeDeferred: (path, produce, _secret, declaredSize) => { this.wfs.createDeferredFile(path, produce, declaredSize); },
+      write: (path, content, secret) => {
+        this.wfs.createFile(path, content);
+        if (secret) this.wfs.restrictToSystemAndAdministrators(path);
+      },
+      writeDeferred: (path, produce, secret, declaredSize) => {
+        this.wfs.createDeferredFile(path, produce, declaredSize);
+        if (secret) this.wfs.restrictToSystemAndAdministrators(path);
+      },
     };
   }
 
@@ -279,9 +458,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   private userAllowed(user: string): boolean {
-    const allow = this.sshdConfig.allowUsers;
-    if (allow.length === 0) return true;
-    return allow.some((pattern) => matchesUserPattern(pattern, user));
+    return this.policy.refusal(user) === null;
   }
 
   private buildAuthContext(): ISshAuthContext {
@@ -301,25 +478,7 @@ export class WindowsSshServerContext implements ISshServerContext {
       // authorized_keys per-user under C:\Users\<user>\.ssh\. Each line is
       // `<algorithm> <material> [<comment>]`. We accept a successful match
       // when both algorithm and material agree.
-      checkPublicKey: (user, publicKey) => {
-        const fail = () => { this.reportLogon?.(user, false); return false; };
-        if (!this.userAllowed(user)) return fail();
-        if (!this.config.pubkeyAuthentication) return fail();
-        if (!this.userManager.getUser(user)) return fail();
-        const path = `C:\\Users\\${user}\\.ssh\\authorized_keys`;
-        const result = this.wfs.readFile(path);
-        if (!result.ok || !result.content) return fail();
-        const ok = result.content
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line && !line.startsWith('#'))
-          .some((line) => {
-            const parts = line.split(/\s+/);
-            return parts.length >= 2 && parts[1] === publicKey;
-          });
-        this.reportLogon?.(user, ok);
-        return ok;
-      },
+      checkPublicKey: (user, publicKey) => this.admittedKey(user, publicKey, { ip: '' }) !== null,
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {
         const methods: AuthMethodType[] = [];

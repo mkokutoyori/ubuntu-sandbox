@@ -295,7 +295,7 @@ export function decryptUserPassword(cipherHex: string, secret: string, authentic
 }
 
 export function isPrintablePassword(s: string): boolean {
-  if (s.length === 0) return false;
+  if (s.length === 0) return true;
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
     if (c < 0x20 || c > 0x7e) return false;

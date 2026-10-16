@@ -86,7 +86,7 @@ describe('ssh -W and ProxyCommand', () => {
     await lab.jump.executeCommand('sudo systemctl reload ssh');
     const out = await lab.first.executeCommand('ssh -W 10.0.0.3:22 alice@10.0.0.2', 'admin\n');
     expect(out).toMatch(/channel 0: open failed: administratively prohibited/);
-    expect(out).toMatch(/Stdio forwarding request failed/);
+    expect(out).toMatch(/^stdio forwarding failed$/m);
   });
 
   it('a bad -W specification is refused', async () => {

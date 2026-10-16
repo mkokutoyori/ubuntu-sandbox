@@ -354,6 +354,15 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
       (n) => { ctx().security().radiusDefaults.deadtimeMinutes = n === 0 ? undefined : n; },
       () => { ctx().security().radiusDefaults.deadtimeMinutes = undefined; }),
     {
+      id: 'radius-server-optional-passwords',
+      path: ['radius-server', 'optional-passwords'],
+      description: 'Make the first RADIUS request without password verification',
+      undoDescription: 'Always ask for the password before the first RADIUS request',
+      modes: MODES, minPrivilege: 15,
+      run: () => { ctx().security().radiusDefaults.optionalPasswords = true; return ''; },
+      undo: () => { ctx().security().radiusDefaults.optionalPasswords = undefined; return ''; },
+    },
+    {
       id: 'radius-server-dead-criteria',
       path: ['radius-server', 'dead-criteria'],
       description: 'Set the criteria used to decide that a RADIUS server is dead',

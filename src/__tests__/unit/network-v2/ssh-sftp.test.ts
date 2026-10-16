@@ -30,9 +30,8 @@ import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import { LinuxSshServerContext } from '@/network/protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '@/network/protocols/ssh/server/SshServerHandler';
-import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SftpTestClient } from './sftpTestClient';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
-import { ParsedArgs } from '@/network/protocols/ssh/sftp/ParsedArgs';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
@@ -41,8 +40,7 @@ import {
   runSshKeygenCommand,
   vfsKeygenHost,
 } from '@/network/protocols/ssh/SshKeygenCommand';
-import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
-import { parseScpArgs, parseScpEndpoint } from '@/network/protocols/ssh/Scp';
+import { parseScpEndpoint } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
 import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 import {
@@ -83,6 +81,8 @@ function makeServer(opts: {
   userManager.useradd(username, { m: true, s: '/bin/bash' });
   userManager.setPassword(username, password);
 
+  vfs.mkdirp('/etc/ssh', 0o755, 0, 0);
+  vfs.writeFile('/etc/ssh/sshd_config', 'Subsystem sftp internal-sftp\n', 0, 0, 0o022);
   for (const dir of dirs) vfs.mkdirp(dir, 0o755, 1000, 1000);
   for (const [path, content] of Object.entries(files)) {
     vfs.writeFile(path, content, 1000, 1000, 0o022);
@@ -120,12 +120,12 @@ function makeClient(
   handler: SshServerHandler,
   password: string,
   localFiles: Record<string, string> = {},
-): { session: SftpSession; localVfs: VirtualFileSystem } {
+): { session: SftpTestClient; localVfs: VirtualFileSystem } {
   const localVfs = new VirtualFileSystem();
   for (const [p, c] of Object.entries(localFiles)) {
     localVfs.writeFile(p, c, 0, 0, 0o022);
   }
-  const session = new SftpSession({
+  const session = new SftpTestClient({
     tcpConnector: makeConnector(handler),
     localVfs,
     localUser: 'root',
@@ -158,7 +158,7 @@ describe('SSH server context — config persistence (BRD SSH-07)', () => {
   });
 });
 
-describe('SshSession + SftpSession — connect (BRD SSH-01..02, SFTP-01)', () => {
+describe('SshSession + SftpTestClient — connect (BRD SSH-01..02, SFTP-01)', () => {
   it('connects with correct credentials', async () => {
     const { handler } = makeServer({ username: 'alice', password: 'secret' });
     const { session } = makeClient(handler, 'secret');
@@ -187,7 +187,7 @@ describe('SshSession + SftpSession — connect (BRD SSH-01..02, SFTP-01)', () =>
   });
 });
 
-describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
+describe('SftpTestClient — operations (BRD SFTP-02..06,14..17)', () => {
   let setup: ServerSetup;
 
   beforeEach(() => {
@@ -230,7 +230,7 @@ describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
   it('SFTP-04: mkdir non-recursive fails when parent missing', async () => {
     const { session } = await connectedSession();
     const out = session.mkdir('/home/alice/a/b/c');
-    expect(out).toContain("Couldn't create directory");
+    expect(out).toBe('remote mkdir "/home/alice/a/b/c": No such file or directory');
   });
 
   it('SFTP-04: mkdir succeeds when parent exists', async () => {
@@ -239,11 +239,13 @@ describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
     expect(setup.vfs.exists('/home/alice/newdir')).toBe(true);
   });
 
-  it('SFTP-05: rename refuses when destination exists', async () => {
+  it('SFTP-05: rename overwrites through posix-rename@openssh.com, and rename -l refuses', async () => {
     setup.vfs.writeFile('/home/alice/dst.txt', 'existing', 1000, 1000, 0o022);
     const { session } = await connectedSession();
-    const out = session.rename('/home/alice/file.txt', '/home/alice/dst.txt');
-    expect(out).toContain("Couldn't rename file");
+    expect(session.run('rename -l /home/alice/file.txt /home/alice/dst.txt'))
+      .toBe('remote rename "/home/alice/file.txt" to "/home/alice/dst.txt": Failure');
+    expect(session.rename('/home/alice/file.txt', '/home/alice/dst.txt')).toBe('');
+    expect(setup.vfs.exists('/home/alice/file.txt')).toBe(false);
   });
 
   it('SFTP-03: put fails with explicit error on read-only destination', async () => {
@@ -259,12 +261,10 @@ describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
     expect(out).toContain('Changing mode on');
   });
 
-  it('SFTP-16: stat returns formatted attributes', async () => {
+  it('SFTP-16: ls -l returns the attributes of one entry', async () => {
     const { session } = await connectedSession();
-    const out = session.stat('/home/alice/file.txt');
-    expect(out).toContain('Size:');
-    expect(out).toContain('UID:');
-    expect(out).toContain('GID:');
+    const out = session.run('ls -l /home/alice/file.txt');
+    expect(out).toMatch(/^-rw[-rwx]+\s+\?\s+\d+\s+\d+\s+\d+ .*file\.txt$/);
   });
 
   it('SFTP-17: df returns capacity table', async () => {
@@ -275,7 +275,7 @@ describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
   });
 });
 
-describe('SftpSession — round-trip get/put (BRD SFTP-01,03,07,09,20)', () => {
+describe('SftpTestClient — round-trip get/put (BRD SFTP-01,03,07,09,20)', () => {
   it('downloads a remote file and writes the local copy', async () => {
     const setup = makeServer({
       username: 'alice',
@@ -383,39 +383,6 @@ describe('SSH-03 — ssh-keygen (key pair generation)', () => {
   });
 });
 
-describe('SSH-03 — ssh-copy-id (authorized_keys deployment)', () => {
-  it('appends the public key to remote ~/.ssh/authorized_keys', async () => {
-    const setup = makeServer({ username: 'alice', password: 'secret' });
-    const localVfs = new VirtualFileSystem();
-    const session = new SshSession({
-      tcpConnector: makeConnector(setup.handler),
-      vfs: localVfs,
-      localUser: 'root',
-      localUid: 0,
-      localGid: 0,
-      knownHostsPath: '/root/.ssh/known_hosts',
-      interactionHandler: new SilentSshInteractionHandler('secret'),
-    });
-    const opts = SshConnectOptionsBuilder.create()
-      .host(REMOTE_IP)
-      .user('alice')
-      .password('secret')
-      .strictHostKeyChecking('accept-new')
-      .build();
-    expect(isOk(await session.connect(opts))).toBe(true);
-
-    const result = await sshCopyId(
-      session,
-      'ssh-ed25519 AAAAabcXYZ alice@local',
-      '/home/alice',
-    );
-    expect('added' in result && result.added).toBe(1);
-    const stored = setup.vfs.readFile('/home/alice/.ssh/authorized_keys');
-    expect(stored).toContain('AAAAabcXYZ');
-    session.disconnect();
-  });
-});
-
 describe('SSH-08 — scp argument parsing', () => {
   it('parseScpEndpoint distinguishes local from remote forms', () => {
     expect(parseScpEndpoint('/etc/hosts')).toEqual({ remote: false, path: '/etc/hosts' });
@@ -432,25 +399,6 @@ describe('SSH-08 — scp argument parsing', () => {
     });
     // Local path with a colon AFTER a slash should stay local.
     expect(parseScpEndpoint('/tmp/file:notremote').remote).toBe(false);
-  });
-
-  it('parseScpArgs collects -r, -P, -i, source, destination', () => {
-    const args = parseScpArgs([
-      '-r',
-      '-P',
-      '2222',
-      '-i',
-      '~/.ssh/id_ed25519',
-      'docs/',
-      'alice@host:/home/alice/',
-    ]);
-    expect(args).not.toBeNull();
-    expect(args?.recursive).toBe(true);
-    expect(args?.port).toBe(2222);
-    expect(args?.identityFiles).toEqual(['~/.ssh/id_ed25519']);
-    expect(args?.source.remote).toBe(false);
-    expect(args?.destination.remote).toBe(true);
-    expect(args?.destination.host).toBe('host');
   });
 });
 
@@ -512,7 +460,7 @@ describe('SSH-08-R3 — scp -r (recursive directory copy)', () => {
     });
     const localVfs = new VirtualFileSystem();
     localVfs.mkdirp('/root', 0o755, 0, 0);
-    const sftp = new SftpSession({
+    const sftp = new SftpTestClient({
       tcpConnector: makeConnector(setup.handler),
       localVfs,
       localUser: 'root',
@@ -525,8 +473,7 @@ describe('SSH-08-R3 — scp -r (recursive directory copy)', () => {
     });
     expect((await sftp.connect(`alice@${REMOTE_IP}`)).startsWith('Connected')).toBe(true);
     const out = sftp.getRecursive('/home/alice/project', '/root/project');
-    expect(out).toContain('main.txt');
-    expect(out).toContain('inner.txt');
+    expect(out).toContain('Retrieving /home/alice/project/sub');
     expect(localVfs.readFile('/root/project/main.txt')).toBe('main');
     expect(localVfs.readFile('/root/project/sub/inner.txt')).toBe('inner');
     sftp.disconnect();
@@ -545,12 +492,5 @@ describe('Pure utilities (BRD SFTP-09/18, SSH-06)', () => {
     expect(expandTilde('~/file', '/home/alice')).toBe('/home/alice/file');
     expect(expandTilde('~', '/home/alice')).toBe('/home/alice');
     expect(expandTilde('/etc/passwd', '/home/alice')).toBe('/etc/passwd');
-  });
-
-  it('ParsedArgs splits flags and positionals', () => {
-    const a = ParsedArgs.parse(['-la', '/etc']);
-    expect(a.has('l')).toBe(true);
-    expect(a.has('a')).toBe(true);
-    expect(a.positional).toEqual(['/etc']);
   });
 });

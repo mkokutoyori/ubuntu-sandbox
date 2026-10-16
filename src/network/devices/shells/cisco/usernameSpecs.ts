@@ -1,4 +1,4 @@
-import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
 import {
@@ -38,18 +38,18 @@ export interface UsernameHost {
 const ligne = (nom: string, description: string): ArgumentSpec =>
   ({ name: nom, type: 'REST', literal: 'LINE', description });
 
-const CHIFFRES_SECRET: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: '0', description: 'Specifies an UNENCRYPTED secret will follow' },
-  { keyword: '4', description: 'Specifies a SHA-256 HASHED secret will follow (deprecated)' },
-  { keyword: '5', description: 'Specifies a MD5 HASHED secret will follow' },
-  { keyword: '8', description: 'Specifies a PBKDF2 HASHED secret will follow' },
-  { keyword: '9', description: 'Specifies a SCRYPT HASHED secret will follow' },
+const CHIFFRES_SECRET: readonly EnumValue[] = [
+  { keyword: '0', description: 'Specifies an UNENCRYPTED secret will follow', thenWord: 'The UNENCRYPTED (cleartext) user secret' },
+  { keyword: '4', description: 'Specifies a SHA-256 HASHED secret will follow (deprecated)', thenWord: 'The HASHED user secret' },
+  { keyword: '5', description: 'Specifies a MD5 HASHED secret will follow', thenWord: 'The HASHED user secret' },
+  { keyword: '8', description: 'Specifies a PBKDF2 HASHED secret will follow', thenWord: 'The HASHED user secret' },
+  { keyword: '9', description: 'Specifies a SCRYPT HASHED secret will follow', thenWord: 'The HASHED user secret' },
   { keyword: 'LINE', description: 'The UNENCRYPTED (cleartext) user secret' },
 ];
 
-const CHIFFRES_PASSWORD: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: '0', description: 'Specifies an UNENCRYPTED password will follow' },
-  { keyword: '7', description: 'Specifies a HIDDEN password will follow' },
+const CHIFFRES_PASSWORD: readonly EnumValue[] = [
+  { keyword: '0', description: 'Specifies an UNENCRYPTED password will follow', thenWord: 'The UNENCRYPTED (cleartext) user password' },
+  { keyword: '7', description: 'Specifies a HIDDEN password will follow', thenWord: 'The HIDDEN user password' },
   { keyword: 'LINE', description: 'The UNENCRYPTED (cleartext) user password' },
 ];
 

@@ -55,12 +55,16 @@ const bytes = (text: string): Uint8Array => Uint8Array.from([...text].map((c) =>
 describe('parseScpServerCommand', () => {
   it('reconnait le puits, la source et leurs options', () => {
     expect(parseScpServerCommand('scp -t -- /home/alice/up.txt')).toEqual({
-      role: 'sink', recursive: false, preserveTimes: false, targetMustBeDirectory: false, path: '/home/alice/up.txt',
+      role: 'sink', recursive: false, preserveTimes: false, targetMustBeDirectory: false,
+      words: [{ text: '/home/alice/up.txt', literal: false }],
     });
     expect(parseScpServerCommand('scp -r -p -d -t -- /home/alice')).toEqual({
-      role: 'sink', recursive: true, preserveTimes: true, targetMustBeDirectory: true, path: '/home/alice',
+      role: 'sink', recursive: true, preserveTimes: true, targetMustBeDirectory: true,
+      words: [{ text: '/home/alice', literal: false }],
     });
-    expect(parseScpServerCommand("scp -f -- '/home/alice/a b.txt'")).toMatchObject({ role: 'source', path: '/home/alice/a b.txt' });
+    expect(parseScpServerCommand("scp -f -- '/home/alice/a b.txt'")).toMatchObject({
+      role: 'source', words: [{ text: '/home/alice/a b.txt', literal: true }],
+    });
   });
 
   it('refuse ce qui n\'est pas un mode serveur de scp', () => {
@@ -108,11 +112,26 @@ describe('scp -t : le serveur est le puits', () => {
     expect(vfs.readFile('/home/alice/note.txt')).toBe('abc');
   });
 
-  it('-d vers une cible qui n\'est pas un repertoire : erreur fatale \\2 et code 1', async () => {
+  it('-d vers une cible absente : avertissement \\1 de verifydir et code 1', async () => {
     const { fs } = fileSystem();
     const { received, exit } = await serve('scp -d -t -- /home/alice/nope', fs);
     expect(await exit).toBe(1);
-    expect(received()).toBe('\x02scp: /home/alice/nope: Not a directory\n');
+    expect(received()).toBe('\x01scp: /home/alice/nope: No such file or directory\n');
+  });
+
+  it('-d vers un fichier : Not a directory', async () => {
+    const { vfs, fs } = fileSystem();
+    vfs.writeFile('/home/alice/plain.txt', 'x', 1000, 1000, 0o022);
+    const { received, exit } = await serve('scp -d -t -- /home/alice/plain.txt', fs);
+    expect(await exit).toBe(1);
+    expect(received()).toBe('\x01scp: /home/alice/plain.txt: Not a directory\n');
+  });
+
+  it('deux operandes apres -t : ambiguous target', async () => {
+    const { fs } = fileSystem();
+    const { received, exit } = await serve('scp -t -- /home/alice two', fs);
+    expect(await exit).toBe(1);
+    expect(received()).toBe('\x01scp: ambiguous target\n');
   });
 
   it('-r : D, C, E recreent l\'arbre', async () => {
@@ -133,13 +152,37 @@ describe('scp -t : le serveur est le puits', () => {
     expect(vfs.readFile('/home/alice/tree/leaf.txt')).toBe('hi');
   });
 
-  it('une ligne de controle inconnue : erreur fatale et code 1', async () => {
+  it('une premiere ligne inconnue est renvoyee telle quelle (le "No match." du shell) et le code est 1', async () => {
     const { fs } = fileSystem();
     const { channel, received, exit } = await serve('scp -t -- /home/alice/x', fs);
     await tick();
     channel.write(bytes('Zzz\n'));
     expect(await exit).toBe(1);
-    expect(received()).toBe('\x00\x02scp: protocol error: bad control record\n');
+    expect(received()).toBe('\x00\x01scp: Zzz\n');
+  });
+
+  it('un nom de fichier contenant / est refuse', async () => {
+    const { fs } = fileSystem();
+    const { channel, received, exit } = await serve('scp -d -t -- /home/alice', fs);
+    await tick();
+    channel.write(bytes('C0644 1 ../evil\n'));
+    expect(await exit).toBe(1);
+    expect(received()).toBe('\x00\x01scp: error: unexpected filename: ../evil\n');
+  });
+
+  it('une ligne T fixe la date de modification du fichier suivant', async () => {
+    const { vfs, fs } = fileSystem();
+    const { channel, exit } = await serve('scp -p -t -- /home/alice/dated.txt', fs);
+    await tick();
+    channel.write(bytes('T1577934245 0 1577934245 0\n'));
+    await tick();
+    channel.write(bytes('C0644 1 dated.txt\n'));
+    await tick();
+    channel.write(bytes('x\x00'));
+    await tick();
+    channel.eof();
+    await exit;
+    expect(vfs.lstat('/home/alice/dated.txt')!.mtime).toBe(1577934245000);
   });
 });
 

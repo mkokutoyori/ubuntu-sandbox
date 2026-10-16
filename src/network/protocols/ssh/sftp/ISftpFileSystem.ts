@@ -74,6 +74,8 @@ export interface ISftpFileSystem
   readSymlink?(path: string): Result<string>;
   /** Optional (v6, §3.3): creates a hard link at `newPath` pointing at the same inode as `existingPath`. */
   createHardLink?(newPath: string, existingPath: string): Result<void>;
+  /** Optional: sets the access and modification times (milliseconds since the epoch), as utimes(2) does. */
+  setTimes?(path: string, times: { readonly atime: number; readonly mtime: number }): Result<void>;
   /** Optional: where the remote places a fresh session, as a real sftp asks by REALPATH "." on connect. */
   initialCwd?(): string | null;
 }

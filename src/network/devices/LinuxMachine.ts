@@ -216,6 +216,7 @@ import {
   LinuxTelnetServerContext, type LinuxTelnetHost,
 } from '../protocols/telnet/LinuxTelnetServerContext';
 import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
+import type { SshDaemonPort } from '../protocols/ssh/server/SshDaemonPort';
 import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
 import {
   checkSshdCriticalFiles, checkCommandDependencies, canonicalBinPath,
@@ -583,10 +584,10 @@ export abstract class LinuxMachine extends EndHost
       if (unavailable) return unavailable;
       const { argv, input } = splitRegistryStdin(registered, args, stdin);
       if (registered.runWithStatusSync) {
-        return registered.runWithStatusSync(this.buildCommandContext(), argv, input);
+        return registered.runWithStatusSync(this.buildCommandContext(false, cmd), argv, input);
       }
       if (registered.opensWireSession === true) return null;
-      const result = registered.run(this.buildCommandContext(), argv, input);
+      const result = registered.run(this.buildCommandContext(false, cmd), argv, input);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
@@ -789,7 +790,7 @@ export abstract class LinuxMachine extends EndHost
         const denial = evaluatePrivilegeRequirement(cmd.privilege, argv[0], args, actor);
         if (denial) { restore(); return Promise.resolve(denial); }
       }
-      const ctx = this.buildCommandContext(outputPiped);
+      const ctx = this.buildCommandContext(outputPiped, argv[0]);
       if (cmd.runWithStatusSync) {
         try { return Promise.resolve(cmd.runWithStatusSync(ctx, args, input)); } finally { restore(); }
       }
@@ -1996,6 +1997,47 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.processMgr.list({ comm: 'sshd' })[0]?.pid ?? LinuxMachine.SSHD_PID;
   }
 
+  private sshDaemonPort(): SshDaemonPort {
+    const wildcards = new Set(['0.0.0.0', '::']);
+    const familyOf = (address: string): 'v4' | 'v6' => (address.includes(':') ? 'v6' : 'v4');
+    return {
+      portTaken: (address, port) => this.getTcpStack().listListeners().some((listener) => (
+        listener.localPort === port && familyOf(listener.localIp) === familyOf(address)
+        && (listener.localIp === address || wildcards.has(listener.localIp) || wildcards.has(address))
+      )),
+      start: (request) => {
+        const process = this.executor.processMgr.spawn({
+          command: request.commandLine, user: 'root', uid: 0, gid: 0, comm: 'sshd',
+        });
+        const stack = this.getTcpStack();
+        const opened: Array<{ port: number; address: string }> = [];
+        for (const port of request.ports) {
+          for (const address of request.listenAddresses) {
+            try {
+              stack.listen(port, {
+                backlog: SSHD_LISTEN_BACKLOG,
+                identity: { pid: process.pid, processName: 'sshd' },
+                onAccept: (socket) => {
+                  this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
+                  this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+                },
+              }, address);
+              opened.push({ port, address });
+            } catch { /* adresse déjà prise */ }
+          }
+        }
+        const off = this.onProcessExit(process.pid, () => {
+          for (const entry of opened) stack.closeListener(entry.port, entry.address);
+          off();
+        });
+        return process.pid;
+      },
+      logDaemon: (level, message) => {
+        this.executor.logMgr.logAuth('sshd', `${level}: ${message}`, this.sshdPid());
+      },
+    };
+  }
+
   private attachSshTcpListeners(): void {
     const stack = this.getTcpStack();
     const pid = this.sshdPid();
@@ -3035,10 +3077,12 @@ export abstract class LinuxMachine extends EndHost
       ({ payload }) => listener(payload.signal !== undefined && payload.signal in SIGNAL_NUMBERS ? payload.signal as Signal : null));
   }
 
-  protected buildCommandContext(outputPiped = false): LinuxCommandContext {
+  protected buildCommandContext(outputPiped = false, invokedAs?: string): LinuxCommandContext {
     const pid = this.executor.currentPid();
     return {
       outputPiped,
+      ...(invokedAs === undefined ? {} : { invokedAs }),
+      sshDaemon: this.sshDaemonPort(),
       whenKilled: (listener) => this.onProcessExit(pid, (signal) => { if (signal !== null) listener(signal); }),
       supervised: this.executor.isSupervised(pid),
       executor: this.executor,
@@ -3485,6 +3529,10 @@ export abstract class LinuxMachine extends EndHost
       this._sshContext = this._sshContext?.reloadConfig() ?? null;
       this.executor.logMgr.logSystemd('ssh', 'Received SIGHUP; restarting.');
     };
+    const isFail2ban = (p: { name: string }): boolean => p.name === 'fail2ban';
+    const rereadJail = (): void => { this._sshContext?.rereadFail2banJail(); };
+    const offJailRestart = bus.subscribeWhere('linux.service.restarted', isFail2ban, rereadJail);
+    const offJailStart = bus.subscribeWhere('linux.service.started', isFail2ban, rereadJail);
     const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
     const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
     // Ouvrir et refermer les écoutes suffit : elles s'inscrivent et se
@@ -3500,7 +3548,7 @@ export abstract class LinuxMachine extends EndHost
     const offStarted = bus.subscribeWhere('linux.service.started', isSsh, rebindPorts);
     const offReloadPorts = bus.subscribeWhere('linux.service.reloaded', isSsh, rebindPorts);
     const offRestartPorts = bus.subscribeWhere('linux.service.restarted', isSsh, rebindPorts);
-    this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
+    this._sshLifecycleOff = () => { offJailRestart(); offJailStart(); offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
     (this.executor as unknown as { sshContextForFail2ban?: (() => {
       bannedIps(): string[];
       totalAuthFailures(): number;
@@ -4574,7 +4622,7 @@ export abstract class LinuxMachine extends EndHost
   editorPathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo' {
     const type = this.executor.vfs.getType(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
     if (type === null) return 'missing';
-    return type === 'chardev' ? 'device' : type === 'symlink' ? 'file' : type;
+    return type === 'chardev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
   }
 
   editorPathIsReadOnly(path: string): boolean {
@@ -4610,7 +4658,7 @@ export abstract class LinuxMachine extends EndHost
     const cmd = this.commands.get(head);
     if (!hasShellSyntax && cmd && cmd.needsNetworkContext) {
       const args = LinuxMachine.tokenizeArgs(trimmed).slice(1);
-      const result = cmd.run(this.buildCommandContext(), args);
+      const result = cmd.run(this.buildCommandContext(false, head), args);
       if (typeof result === 'string') return result;
     }
 
@@ -5057,17 +5105,19 @@ export abstract class LinuxMachine extends EndHost
    * context (e.g. one-shot `ssh host cmd` exec, which has no pty and so
    * real coreutils auto-detect no-tty and disable color).
    */
-  executeCommandInSession(command: string, session: LinuxShellSession, opts?: { color?: boolean }): Promise<string> {
+  executeCommandInSession(command: string, session: LinuxShellSession, opts?: { color?: boolean; stdin?: string }): Promise<string> {
     // Chain on the per-device queue: subsequent commands wait their turn.
     return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
       return this.sessionSwap.within(session, async () => {
         this.executor.displayColor = opts?.color ?? true;
+        this.executor.setExecInput(opts?.stdin);
         try {
           return await this.executeCommand(command);
         } finally {
           this.executor.displayColor = false;
+          this.executor.setExecInput(undefined);
         }
       });
     });

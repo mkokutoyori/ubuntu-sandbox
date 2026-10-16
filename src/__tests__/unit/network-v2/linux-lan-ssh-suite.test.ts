@@ -740,7 +740,7 @@ describe('§10 — sshd Port directive (non-default)', () => {
       name: 'invalid Port value (-1) is rejected on reload',
       on: l => l.pc2,
       cmd: 'sudo sh -c \'echo "Port -1" > /etc/ssh/sshd_config && systemctl reload ssh\'',
-      contains: [/Bad configuration option|invalid|out of range/],
+      contains: [/Bad configuration option|invalid|out of range|Badly formatted port number/],
     },
     {
       name: 'two Port directives → both ports accept',
@@ -1762,7 +1762,7 @@ describe('§26 — SSH public-key authentication', () => {
       name: 'ssh-copy-id installs the public key on the remote',
       setup: async (l) => {
         await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
       },
       on: l => l.pc2,
       cmd: 'sudo cat /home/alice/.ssh/authorized_keys',
@@ -1772,7 +1772,7 @@ describe('§26 — SSH public-key authentication', () => {
       name: 'subsequent ssh uses public-key auth (Accepted publickey line)',
       setup: async (l) => {
         await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
         await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
       },
       on: l => l.pc2,
@@ -1783,7 +1783,7 @@ describe('§26 — SSH public-key authentication', () => {
       name: 'PubkeyAuthentication no in sshd_config blocks pubkey login',
       setup: async (l) => {
         await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2', 'admin\n');
         await l.pc2.executeCommand('printf "PubkeyAuthentication no\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },

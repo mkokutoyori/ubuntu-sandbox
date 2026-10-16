@@ -42,12 +42,15 @@ import { ldapsearchCommand } from './net/Ldapsearch';
 import { kdestroyCommand, kinitCommand, klistCommand } from './net/Kinit';
 import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
+import { sshCopyIdCommand } from './net/SshCopyId';
 import { rsyncCommand } from './net/Rsync';
 import { sshCommand } from './net/Ssh';
 import { telnetCommand } from './net/Telnet';
 import { sshpassCommand } from './net/Sshpass';
 import { sshAddCommand } from './net/SshAdd';
+import { sshAgentCommand } from './net/SshAgent';
 import { sftpCommand } from './net/Sftp';
+import { sftpServerCommand } from './net/SftpServer';
 import { opensslCommand } from './crypto/OpenSsl';
 import { updateCaCertificatesCommand } from './crypto/UpdateCaCertificates';
 import { nginxCommand } from './net/Nginx';
@@ -191,12 +194,15 @@ export {
   kdestroyCommand,
   curlCommand,
   scpCommand,
+  sshCopyIdCommand,
   rsyncCommand,
   sshCommand,
   telnetCommand,
   sshpassCommand,
   sshAddCommand,
+  sshAgentCommand,
   sftpCommand,
+  sftpServerCommand,
   opensslCommand,
   updateCaCertificatesCommand,
   nginxCommand,
@@ -360,12 +366,15 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   kdestroyCommand,
   curlCommand,
   scpCommand,
+  sshCopyIdCommand,
   rsyncCommand,
   sshCommand,
   telnetCommand,
   sshpassCommand,
   sshAddCommand,
+  sshAgentCommand,
   sftpCommand,
+  sftpServerCommand,
   opensslCommand,
   updateCaCertificatesCommand,
   nginxCommand,

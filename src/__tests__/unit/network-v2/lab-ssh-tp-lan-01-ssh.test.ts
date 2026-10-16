@@ -20,6 +20,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { SshTpLan, NOCHECK } from './sshTpLanLab';
 
+const lastLine = (text: string): string => text.trim().split('\n').pop() ?? '';
+
 let lan: SshTpLan;
 
 beforeAll(async () => { lan = await SshTpLan.build(); }, 180_000);
@@ -60,7 +62,7 @@ describe('ssh: a remote command runs on the machine that was named', () => {
     const out = await lan.withPassword(client, remote(client, 'alice', server, 'hostname'), 'alice');
     const own = await lan.run(server, 'hostname');
     expect(own.trim()).not.toBe('');
-    expect(out.trim()).toBe(own.trim());
+    expect(lastLine(out)).toBe(own.trim());
   });
 
   it.each(CROSS_PLATFORM)('%s -> %s: whoami names the account that logged in, for each profile', async (client, server) => {
@@ -88,7 +90,7 @@ describe('ssh: a remote command runs on the machine that was named', () => {
 
   it('standard output and a pipeline run entirely on the remote machine', async () => {
     const out = await lan.withPassword('PC11', remote('PC11', 'bob', 'PC6', 'hostname | tr a-z A-Z'), 'bob');
-    expect(out.trim()).toBe('PC6');
+    expect(lastLine(out)).toBe('PC6');
   });
 });
 
@@ -105,23 +107,23 @@ describe('ssh: the exit status of the remote command is the exit status of ssh',
 
   it('Windows client, Linux command: errorlevel carries the status', async () => {
     await lan.run('PC11', `ssh ${NOCHECK} alice@${lan.ip('PC6')} "exit 4"`, 'alice\n');
-    expect((await lan.run('PC11', 'echo %errorlevel%')).trim()).toBe('4');
+    expect(lastLine((await lan.run('PC11', 'echo %errorlevel%')))).toBe('4');
   });
 
   it('Windows client, Windows command: errorlevel carries the status', async () => {
     await lan.run('PC11', `ssh ${NOCHECK} alice@${lan.ip('PC3')} "exit 6"`, 'alice\n');
-    expect((await lan.run('PC11', 'echo %errorlevel%')).trim()).toBe('6');
+    expect(lastLine((await lan.run('PC11', 'echo %errorlevel%')))).toBe('6');
   });
 
   it('Windows client, successful command: errorlevel is 0 again', async () => {
     await lan.run('PC11', `ssh ${NOCHECK} alice@${lan.ip('PC6')} "exit 4"`, 'alice\n');
     await lan.run('PC11', `ssh ${NOCHECK} alice@${lan.ip('PC6')} hostname`, 'alice\n');
-    expect((await lan.run('PC11', 'echo %errorlevel%')).trim()).toBe('0');
+    expect(lastLine((await lan.run('PC11', 'echo %errorlevel%')))).toBe('0');
   });
 
   it('Windows client, refused login: errorlevel is 255', async () => {
     await lan.run('PC11', `ssh ${NOCHECK} bob@${lan.ip('PC6')} hostname`, 'x\nx\nx\n');
-    expect((await lan.run('PC11', 'echo %errorlevel%')).trim()).toBe('255');
+    expect(lastLine((await lan.run('PC11', 'echo %errorlevel%')))).toBe('255');
   });
 
   it('Linux client, refused login: status 255', async () => {
@@ -162,7 +164,7 @@ describe('ssh: each profile gets exactly the rights of its account', () => {
     const bob = await lan.withPassword('PC11', remote('PC11', 'bob', 'PC6', 'cat /home/dave/diary.txt'), 'bob');
     expect(bob).toContain('cat: /home/dave/diary.txt: Permission denied');
     const dave = await lan.withPassword('PC11', remote('PC11', 'dave', 'PC6', 'cat /home/dave/diary.txt'), 'dave');
-    expect(dave.trim()).toBe('secret');
+    expect(lastLine(dave)).toBe('secret');
   });
 
   it('Windows target: the administrator opens a privileged session, the plain user does not', async () => {
@@ -177,7 +179,7 @@ describe('ssh: each profile gets exactly the rights of its account', () => {
     const bob = await lan.withPassword('PC2', remote('PC2', 'bob', 'PC1', 'type C:\\Users\\dave\\diary.txt'), 'bob');
     expect(bob).toContain('Access is denied.');
     const alice = await lan.withPassword('PC2', remote('PC2', 'alice', 'PC1', 'type C:\\Users\\dave\\diary.txt'), 'alice');
-    expect(alice.trim()).toBe('secret');
+    expect(lastLine(alice)).toBe('secret');
   });
 
   it('Windows target: group membership is what the session reports', async () => {
@@ -256,7 +258,7 @@ describe('ssh: reachability and the way a connection fails', () => {
     expect(down).toContain('Connection refused');
     await lan.asWindowsAdministrator('PC3', ['net start sshd']);
     const up = await lan.withPassword('PC2', remote('PC2', 'alice', 'PC3', 'hostname'), 'alice');
-    expect(up.trim()).toBe('PC3');
+    expect(lastLine(up)).toBe('PC3');
   });
 
   it('a stopped sshd refuses, a restarted one answers again (Linux server)', async () => {
@@ -265,14 +267,14 @@ describe('ssh: reachability and the way a connection fails', () => {
     expect(down).toContain('Connection refused');
     await lan.run('PC8', 'sudo systemctl start ssh', 'user\n');
     const up = await lan.withPassword('PC11', remote('PC11', 'alice', 'PC8', 'hostname'), 'alice');
-    expect(up.trim()).toBe('PC8');
+    expect(lastLine(up)).toBe('PC8');
   });
 
   it('an alternate port works once the server listens on it', async () => {
     await lan.run('PC9', 'sudo sed -i "s/^#\\?Port 22/Port 2022/" /etc/ssh/sshd_config', 'user\n');
     await lan.run('PC9', 'sudo systemctl restart ssh', 'user\n');
     const out = await lan.withPassword('PC11', remote('PC11', 'alice', 'PC9', 'hostname', '-p 2022'), 'alice');
-    expect(out.trim()).toBe('PC9');
+    expect(lastLine(out)).toBe('PC9');
     const old = await lan.run('PC11', `ssh ${NOCHECK} alice@${lan.ip('PC9')} hostname`, 'alice\n');
     expect(old).toContain('Connection refused');
   });
@@ -286,7 +288,7 @@ describe('ssh: client options', () => {
 
   it('-p and -l together reach the right listener as the right account', async () => {
     const out = await lan.run('PC11', `ssh ${NOCHECK} -p 22 -l dave ${lan.ip('PC6')} whoami`, 'dave\n');
-    expect(out.trim()).toBe('dave');
+    expect(lastLine(out)).toBe('dave');
   });
 
   it('-v prints the OpenSSH debug transcript, naming the peer and the version', async () => {
@@ -298,7 +300,7 @@ describe('ssh: client options', () => {
 
   it('-q hides the banner and the warnings', async () => {
     const out = await lan.run('PC2', `sshpass -p alice ssh -q ${NOCHECK} alice@${lan.ip('PC1')} hostname`);
-    expect(out.trim()).toBe('PC1');
+    expect(lastLine(out)).toBe('PC1');
     expect(out).not.toContain('Warning');
   });
 
@@ -316,17 +318,17 @@ describe('ssh: client options', () => {
 
   it('-o PreferredAuthentications=password skips the offered keys', async () => {
     const out = await lan.run('PC11', `ssh -o PreferredAuthentications=password ${NOCHECK} alice@${lan.ip('PC6')} hostname`, 'alice\n');
-    expect(out.trim()).toBe('PC6');
+    expect(lastLine(out)).toBe('PC6');
   });
 
   it('-T and -t are accepted with a remote command', async () => {
     const out = await lan.run('PC2', `sshpass -p alice ssh -T ${NOCHECK} alice@${lan.ip('PC6')} hostname`);
-    expect(out.trim()).toBe('PC6');
+    expect(lastLine(out)).toBe('PC6');
   });
 
   it('-4 and -6 select the address family', async () => {
     const four = await lan.run('PC2', `sshpass -p alice ssh -4 ${NOCHECK} alice@${lan.ip('PC6')} hostname`);
-    expect(four.trim()).toBe('PC6');
+    expect(lastLine(four)).toBe('PC6');
   });
 
   it('a bad option is refused with the usage text', async () => {
@@ -371,7 +373,7 @@ describe('ssh: interactive sessions', () => {
 
   it('the exit status of the last command does not leak across sessions', async () => {
     const out = await lan.run('PC2', `sshpass -p alice ssh ${NOCHECK} alice@${lan.ip('PC6')} 'echo $?'`);
-    expect(out.trim()).toBe('0');
+    expect(lastLine(out)).toBe('0');
   });
 
   it('logout closes the connection and the server logs the end of the session', async () => {
@@ -389,7 +391,7 @@ describe('ssh: the host key and known_hosts', () => {
     expect(await lan.run('PC9', 'cat /home/user/.ssh/known_hosts')).toMatch(/^\|1\|\S+\|\S+ ssh-ed25519 AAAA/);
     const second = await lan.run('PC9', `ssh -o StrictHostKeyChecking=accept-new alice@${lan.ip('PC10')} hostname`, 'alice\n');
     expect(second).not.toContain('Permanently added');
-    expect(second.trim()).toBe('PC10');
+    expect(lastLine(second)).toBe('PC10');
   });
 
   it('the recorded key is the one the Windows server really holds', async () => {

@@ -4,7 +4,6 @@
  * Verifies that the SshServerEventBus drives all three subsystems wired
  * into LinuxSshServerContext:
  *   - SshSyslogger writes /var/log/auth.log entries
- *   - SshAuthThrottler blocks IPs after repeated failures
  *   - Extended sshd_config (DenyUsers, PermitEmptyPasswords, AllowGroups)
  *     is enforced inside the auth pipeline
  *
@@ -39,15 +38,11 @@ function makeServer(opts: {
   username?: string;
   password?: string;
   sshdConfig?: string;
-  throttlerThreshold?: number;
-  throttlerBlockMs?: number;
 } = {}): Server {
   const {
     username = 'alice',
     password = 'secret',
     sshdConfig,
-    throttlerThreshold,
-    throttlerBlockMs,
   } = opts;
 
   const vfs = new VirtualFileSystem();
@@ -68,11 +63,6 @@ function makeServer(opts: {
     {},
     null,
     null,
-    {
-      throttlerThreshold: throttlerThreshold ?? 3,
-      throttlerWindowMs: 60_000,
-      throttlerBlockMs: throttlerBlockMs ?? 300_000,
-    },
   );
   const handler = new SshServerHandler(ctx);
   return { vfs, ctx, handler };
@@ -153,57 +143,6 @@ describe('SSH reactive integration — auth.log production', () => {
   });
 });
 
-describe('SSH reactive integration — auth throttler', () => {
-  it('blocks the IP after the configured threshold of failures', async () => {
-    const { handler, ctx } = makeServer({
-      username: 'alice',
-      password: 'secret',
-      throttlerThreshold: 3,
-    });
-
-    expect(await attemptLogin(handler, 'alice', 'bad1')).toBe(false);
-    expect(await attemptLogin(handler, 'alice', 'bad2')).toBe(false);
-    expect(await attemptLogin(handler, 'alice', 'bad3')).toBe(false);
-
-    expect(ctx.isClientBlocked(LOCAL_IP)).toBe(true);
-
-    // Even the correct password is refused once throttled.
-    expect(await attemptLogin(handler, 'alice', 'secret')).toBe(false);
-  });
-
-  it('emits auth_throttled on the bus when blocking', async () => {
-    const { handler, ctx } = makeServer({
-      username: 'alice',
-      password: 'secret',
-      throttlerThreshold: 3,
-    });
-
-    const events: SshServerEvent[] = [];
-    ctx.events.on('auth_throttled', (e) => events.push(e));
-
-    for (let i = 0; i < 3; i++) await attemptLogin(handler, 'alice', 'wrong');
-
-    expect(events.length).toBe(1);
-    const e = events[0] as Extract<SshServerEvent, { kind: 'auth_throttled' }>;
-    expect(e.ip).toBe(LOCAL_IP);
-    expect(e.failuresInWindow).toBeGreaterThanOrEqual(3);
-  });
-
-  it('throttling is logged in auth.log', async () => {
-    const { vfs, handler } = makeServer({
-      username: 'alice',
-      password: 'secret',
-      throttlerThreshold: 3,
-    });
-
-    for (let i = 0; i < 3; i++) await attemptLogin(handler, 'alice', 'wrong');
-
-    const log = vfs.readFile('/var/log/auth.log') ?? '';
-    expect(log).toContain('Refusing connection from 10.0.0.1');
-    expect(log).toContain('authentication failures');
-  });
-});
-
 describe('SSH reactive integration — sshd_config enforcement', () => {
   it('rejects users in DenyUsers regardless of password', async () => {
     const cfg = serializeSshdConfig(parseSshdConfig('DenyUsers alice\nPermitRootLogin yes\n'));
@@ -220,8 +159,6 @@ describe('SSH reactive integration — sshd_config enforcement', () => {
     const { handler, vfs } = makeServer({
       username: 'alice',
       password: '',
-      // High threshold so the inner password-auth retries don't throttle.
-      throttlerThreshold: 100,
     });
     // sshd_config defaults to PermitEmptyPasswords=no
     expect(await attemptLogin(handler, 'alice', '')).toBe(false);

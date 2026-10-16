@@ -1,4 +1,4 @@
-import { bytesToUtf8 } from '@/crypto/encoding';
+import { bytesToUtf8, utf8ToBytes } from '@/crypto/encoding';
 import type { ConnectionChannel, SshConnection } from '../connection/SshConnection';
 import {
   decodeExitStatus, encodeEnvRequest, encodePtyRequest, encodeStringPayload,
@@ -20,6 +20,7 @@ export class SshExecChannel
   private result: ExecResult | null = null;
   private readonly stdoutChunks: Uint8Array[] = [];
   private readonly stderrChunks: Uint8Array[] = [];
+  private readonly clientNotices: string[] = [];
   private exitStatus: number | null = null;
   private readonly waiters: Array<(r: ExecResult) => void> = [];
 
@@ -64,7 +65,16 @@ export class SshExecChannel
       const agentRequested = this.options.forwardAgent === true
         ? ptyGranted.then(() => channel.request(AGENT_FORWARDING_REQUEST, undefined, true))
         : ptyGranted;
-      void agentRequested.then(() => channel.request('exec', encodeStringPayload(this.command), true)).then((accepted) => {
+      void ptyGranted.then((granted) => {
+        if (!granted) this.clientNotices.push(`PTY allocation request failed on channel ${channel.localId}\n`);
+      });
+      void agentRequested.then(() => {
+        if (this.options.stdin !== undefined) {
+          if (this.options.stdin !== '') channel.write(utf8ToBytes(this.options.stdin));
+          channel.eof();
+        }
+        return channel.request('exec', encodeStringPayload(this.command), true);
+      }).then((accepted) => {
         if (accepted) return;
         this.stderrChunks.push(new TextEncoder().encode('exec request failed\n'));
         this.exitStatus = EXIT_ON_SIGNAL;
@@ -85,7 +95,7 @@ export class SshExecChannel
       merged.set(chunk, all.length);
       return merged;
     }, new Uint8Array(0)));
-    this.result = { stdout: join(this.stdoutChunks), stderr: join(this.stderrChunks), exitCode: this.exitStatus ?? 0 };
+    this.result = { clientNotices: this.clientNotices.join(''), stdout: join(this.stdoutChunks), stderr: join(this.stderrChunks), exitCode: this.exitStatus ?? 0 };
     for (const waiter of this.waiters.splice(0)) waiter(this.result);
   }
 

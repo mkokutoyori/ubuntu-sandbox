@@ -89,6 +89,7 @@ describe('SSH LAN — in-memory ssh-agent + ssh-add', () => {
 
   // A5
   it('A5 — `ssh-add` with no args loads the user\'s default identities', async () => {
+    await pc.executeCommand('eval $(ssh-agent -s)');
     writeKey(pcVfs(pc), '/home/user/.ssh/id_ed25519', ED25519);
     const out = await pc.executeCommand('ssh-add');
     expect(out).toBe('Identity added: /home/user/.ssh/id_ed25519 (user@PC1)');
@@ -96,6 +97,7 @@ describe('SSH LAN — in-memory ssh-agent + ssh-add', () => {
 
   // A6
   it('A6 — `ssh-add -l` lists the loaded fingerprints', async () => {
+    await pc.executeCommand('eval $(ssh-agent -s)');
     writeKey(pcVfs(pc), '/home/user/.ssh/id_ed25519', ED25519);
     await pc.executeCommand('ssh-add');
     const out = await pc.executeCommand('ssh-add -l');
@@ -104,6 +106,7 @@ describe('SSH LAN — in-memory ssh-agent + ssh-add', () => {
 
   // A7
   it('A7 — `ssh-add -D` deletes all identities; subsequent -l prints "no identities"', async () => {
+    await pc.executeCommand('eval $(ssh-agent -s)');
     writeKey(pcVfs(pc), '/home/user/.ssh/id_ed25519', ED25519);
     await pc.executeCommand('ssh-add');
     await pc.executeCommand('ssh-add -D');
@@ -113,6 +116,7 @@ describe('SSH LAN — in-memory ssh-agent + ssh-add', () => {
 
   // A8
   it('A8 — `ssh-add -d <path>` deletes a single identity', async () => {
+    await pc.executeCommand('eval $(ssh-agent -s)');
     const vfs = pcVfs(pc);
     writeKey(vfs, '/home/user/.ssh/id_ed25519', ED25519);
     writeKey(vfs, '/home/user/.ssh/id_rsa', RSA);

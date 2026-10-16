@@ -65,10 +65,11 @@ async function lab() {
   const vfs = new VirtualFileSystem();
   vfs.mkdirp('/srv/tftp', 0o755, 1000, 1000);
   new TftpServer(server, { fs: new LinuxSftpFSAdapter(vfs, 1000, 1000), rootPath: '/srv/tftp' }).start();
-  new Cable('files').connect(l.r1.getPort('GigabitEthernet0/3')!, server.getPort('eth0')!);
+  const cable = new Cable('files');
+  cable.connect(l.r1.getPort('GigabitEthernet0/3')!, server.getPort('eth0')!);
   await run(l.r1, ['interface GigabitEthernet0/3', 'ip address 10.7.1.1 255.255.255.0', 'no shutdown', 'exit']);
   await run(l.r1, ['ping 10.7.1.2']);
-  return { ...l, rootX, subY, vfs, server };
+  return { ...l, rootX, subY, vfs, server, cable };
 }
 
 type Lab = Awaited<ReturnType<typeof lab>>;
@@ -85,7 +86,9 @@ async function resetTunnel(l: Lab): Promise<void> {
 
 async function trustEachOther(l: Lab): Promise<void> {
   l.vfs.writeFile('/srv/tftp/suby.pem', certToPem(l.subY.rootCertificate), 1000, 1000, 0o022);
+  const before = l.cable.getStats().framesTransmitted;
   expect(await last(l.r1, ['crypto pki trustpool import url tftp://10.7.1.2/suby.pem'])).toContain('import succeeded');
+  expect(l.cable.getStats().framesTransmitted).toBeGreaterThan(before);
   expect(await paste(l.r2, 'crypto pki trustpool import terminal', certToPem(l.rootX.rootCertificate))).toContain('import succeeded');
   await resetTunnel(l);
 }
@@ -137,7 +140,9 @@ describe('crypto pki trustpool', () => {
     await l.server.executeCommand('mkdir -p /var/www/html');
     await l.server.executeCommand(`sh -c 'printf "${certToPem(l.subY.rootCertificate).replace(/\n/g, '\\n')}" > /var/www/html/bundle.pem'`);
     await l.server.executeCommand('systemctl start nginx');
+    const before = l.cable.getStats().framesTransmitted;
     expect(await last(l.r1, ['crypto pki trustpool policy', 'cabundle url http://10.7.1.2/bundle.pem'])).toContain('import succeeded');
+    expect(l.cable.getStats().framesTransmitted).toBeGreaterThan(before);
     expect(await paste(l.r2, 'crypto pki trustpool import terminal', certToPem(l.rootX.rootCertificate))).toContain('import succeeded');
     await resetTunnel(l);
     expect(await ping(l)).toContain('2 received');
