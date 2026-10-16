@@ -19,7 +19,7 @@ export interface CorridorLink {
 }
 
 const CROSSING_COST = 1000;
-const DEVICE_COST = 3500;
+export const DEVICE_COST = 3500;
 const OVERLAP_COST = 40;
 const OVERLAP_BAND = 8;
 const DEVIATION_COST = 0.3;

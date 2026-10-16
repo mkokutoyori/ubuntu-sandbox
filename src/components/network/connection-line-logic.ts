@@ -6,7 +6,7 @@
 import type { ConnectionType } from '@/network';
 import { ClearanceField } from './cable-clearance';
 import {
-  refineCorridors, trialCost, trialField,
+  DEVICE_COST, refineCorridors, trialCost, trialField,
   type CorridorLink, type CorridorOutcome, type CorridorRect,
 } from './cable-corridors';
 
@@ -794,29 +794,30 @@ function corridorWindow(points: ReadonlyArray<Point>, sides: SidePair, needs: Ca
 
 const ALL_SIDES: ReadonlyArray<CardSide> = ['left', 'right', 'top', 'bottom'];
 
-interface Alternative {
-  readonly corridor: CorridorLink;
-  readonly shortfall: number;
-}
-
-function alternativeLink(link: RoutedLink, sides: SidePair, zoom: number, demand: number): Alternative | undefined {
+function alternativeLink(link: RoutedLink, sides: SidePair, zoom: number): CorridorLink | undefined {
   const needs = {
-    source: endLabelOf(link.sourceInterface, sides.source, zoom).need * demand,
-    target: endLabelOf(link.targetInterface, sides.target, zoom).need * demand,
+    source: endLabelOf(link.sourceInterface, sides.source, zoom).need,
+    target: endLabelOf(link.targetInterface, sides.target, zoom).need,
   };
   const points = formedPoints(link.source, link.target, undefined, needs, sides);
-  if (!points) return undefined;
+  if (!points || !clearsOwnCards(points, link.source, link.target)) return undefined;
   return {
-    corridor: {
-      source: link.source, target: link.target, horizontal: isHorizontalSide(sides.source), points,
-      ...corridorWindow(points, sides, needs),
-    },
-    shortfall: shortfallOf(points, needs),
+    source: link.source, target: link.target, horizontal: isHorizontalSide(sides.source), points,
+    ...corridorWindow(points, sides, needs),
   };
 }
 
-function shortfallOf(points: ReadonlyArray<Point>, needs: CableNeeds): number {
-  return SHORTFALL_COST * Math.max(0, needs.source + needs.target - polylineLength(points));
+function hitsCard(a: Point, b: Point, centre: Point): boolean {
+  const card = cardCenter(centre);
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+  return x0 < card.x + NODE_HALF_WIDTH - 1 && x1 > card.x - NODE_HALF_WIDTH + 1
+    && y0 < card.y + NODE_HALF_HEIGHT - 1 && y1 > card.y - NODE_HALF_HEIGHT + 1;
+}
+
+function clearsOwnCards(points: ReadonlyArray<Point>, source: Point, target: Point): boolean {
+  for (let i = 1; i < points.length; i++) if (hitsCard(points[i - 1], points[i], source) && i > 1) return false;
+  for (let i = 1; i < points.length - 1; i++) if (hitsCard(points[i - 1], points[i], target)) return false;
+  return true;
 }
 
 function refineDrawn(
@@ -860,13 +861,8 @@ const MAX_FORM_TRIALS = 12;
 export const REFINE_BUDGET_MS = 12;
 export const SETTLED_BUDGET_MS = 80;
 const FORM_TRIAL_MARGIN = 500;
-const FORM_TRIAL_SLACK = 4000;
+const MAX_DETOUR = 220;
 const LENGTH_COST = 3;
-const SHORTFALL_COST = 80;
-
-const CRAMPED_DEMAND = 1.8;
-
-const demanding = (end: EndLabel, demand: number): EndLabel => (demand === 1 ? end : { ...end, need: end.need * demand });
 
 export function computeCableRoutes(
   links: ReadonlyArray<RoutedLink>,
@@ -875,30 +871,6 @@ export function computeCableRoutes(
   previous?: ReadonlyMap<string, CableRoute>,
   refine = true,
   budgetMs = REFINE_BUDGET_MS,
-): Map<string, CableRoute> {
-  const started = performance.now();
-  const first = layoutCables(links, devices, zoom, previous, refine, new Set(), budgetMs);
-  if (!refine || performance.now() - started > budgetMs) return first;
-  const cramped = new Set<string>();
-  for (const [id, route] of first) if (!route.sourceLabel.shown || !route.targetLabel.shown) cramped.add(id);
-  if (cramped.size === 0) return first;
-  const second = layoutCables(links, devices, zoom, previous, refine, cramped, budgetMs);
-  const hidden = (routes: ReadonlyMap<string, CableRoute>): number => {
-    let count = 0;
-    for (const route of routes.values()) count += (route.sourceLabel.shown ? 0 : 1) + (route.targetLabel.shown ? 0 : 1);
-    return count;
-  };
-  return hidden(second) < hidden(first) ? second : first;
-}
-
-function layoutCables(
-  links: ReadonlyArray<RoutedLink>,
-  devices: ReadonlyArray<Point>,
-  zoom: number,
-  previous: ReadonlyMap<string, CableRoute> | undefined,
-  refine: boolean,
-  cramped: ReadonlySet<string>,
-  budgetMs: number,
 ): Map<string, CableRoute> {
   const sides = new Map<string, SidePair>();
   for (const link of links) {
@@ -915,10 +887,9 @@ function layoutCables(
     const drawn = new Map<string, Point[]>();
     for (const link of ordered) {
       const pair = sides.get(link.id)!;
-      const demand = cramped.has(link.id) ? CRAMPED_DEMAND : 1;
       const labels = {
-        source: demanding(endLabelOf(link.sourceInterface, pair.source, zoom), demand),
-        target: demanding(endLabelOf(link.targetInterface, pair.target, zoom), demand),
+        source: endLabelOf(link.sourceInterface, pair.source, zoom),
+        target: endLabelOf(link.targetInterface, pair.target, zoom),
       };
       ends.set(link.id, labels);
       drawn.set(link.id, computeOrthogonalPoints(
@@ -933,14 +904,8 @@ function layoutCables(
   if (state.outcome) {
     const rects = deviceRects(devices);
     const attempted = new Set<number>();
-    const trouble = (candidate: typeof state): Float64Array => {
-      const marks = Float64Array.from(candidate.outcome!.residual);
-      ordered.forEach((link, i) => {
-        const labels = candidate.ends.get(link.id)!;
-        marks[i] += shortfallOf(candidate.drawn.get(link.id)!, { source: labels.source.need, target: labels.target.need });
-      });
-      return marks;
-    };
+    const trouble = (candidate: typeof state): Float64Array => candidate.outcome!.residual;
+    const blocked = (candidate: typeof state, i: number): boolean => candidate.outcome!.residual[i] >= DEVICE_COST;
     const sum = (marks: Float64Array): number => marks.reduce((a, b) => a + b, 0);
     let best = { state, sides: new Map(sides), badness: sum(trouble(state)) };
     for (let round = 0; round < MAX_FORM_TRIALS && performance.now() < deadline; round++) {
@@ -949,23 +914,24 @@ function layoutCables(
       if (badness <= 0) break;
       let index = -1;
       for (let i = 0; i < ordered.length; i++) {
-        if (marks[i] > 0 && !attempted.has(i) && (index < 0 || marks[i] > marks[index])) index = i;
+        if (!blocked(state, i) || attempted.has(i)) continue;
+        if (index < 0 || marks[i] > marks[index]) index = i;
       }
       if (index < 0) break;
       attempted.add(index);
       const link = ordered[index];
       const current = sides.get(link.id)!;
       const field = trialField(ordered.map(other => state.drawn.get(other.id)!));
-      const standing = marks[index] + LENGTH_COST * polylineLength(state.drawn.get(link.id)!);
+      const standingLength = polylineLength(state.drawn.get(link.id)!);
+      const standing = marks[index] + LENGTH_COST * standingLength;
       let chosen: SidePair | undefined;
       let chosenScore = standing - FORM_TRIAL_MARGIN;
       for (const source of ALL_SIDES) {
         for (const target of ALL_SIDES) {
           if (source === current.source && target === current.target) continue;
-          const alternative = alternativeLink(link, { source, target }, zoom, cramped.has(link.id) ? CRAMPED_DEMAND : 1);
-          if (!alternative) continue;
-          const score = trialCost(alternative.corridor, index, field, rects) + alternative.shortfall
-            + LENGTH_COST * polylineLength(alternative.corridor.points);
+          const alternative = alternativeLink(link, { source, target }, zoom);
+          if (!alternative || polylineLength(alternative.points) > standingLength + MAX_DETOUR) continue;
+          const score = trialCost(alternative, index, field, rects) + LENGTH_COST * polylineLength(alternative.points);
           if (score < chosenScore) { chosenScore = score; chosen = { source, target }; }
         }
       }
@@ -973,7 +939,7 @@ function layoutCables(
       sides.set(link.id, chosen);
       const trial = solve();
       const after = trial.outcome ? trouble(trial) : undefined;
-      if (!after || sum(after) >= badness + FORM_TRIAL_SLACK) { sides.set(link.id, current); continue; }
+      if (!after || sum(after) >= badness - FORM_TRIAL_MARGIN || blocked(trial, index)) { sides.set(link.id, current); continue; }
       ordered.forEach((_, i) => { if (after[i] > marks[i]) attempted.delete(i); });
       attempted.add(index);
       state = trial;
