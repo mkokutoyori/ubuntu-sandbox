@@ -298,6 +298,7 @@ export function wireExecTarget(
   defaultUser: string,
   home = '/root',
   uid = 1000,
+  defaultStrict: StrictHostKeyChecking = 'accept-new',
 ): WireExecTarget | null {
   const { positional, flags } = splitSshCommandLine(args);
   const target = positional[0];
@@ -325,7 +326,7 @@ export function wireExecTarget(
     forwardAgent: settings.forwardAgent,
     stdioForward: stdioForwardOf(flags),
     proxyCommand: proxyCommandOf(optionValues),
-    strict: settings.strictHostKeyChecking ?? 'accept-new',
+    strict: settings.strictHostKeyChecking ?? defaultStrict,
     authentication: sshClientAuthentication(optionValues),
     algorithms: sshClientAlgorithms(optionValues),
     knownHosts: { user: settings.userKnownHostsFiles, global: settings.globalKnownHostsFiles },

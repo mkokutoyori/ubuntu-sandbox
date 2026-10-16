@@ -70,16 +70,24 @@ async function lab() {
 const promptOf = (term: WindowsTerminalSession): string | undefined =>
   (term.currentInputMode as { promptText?: string }).promptText;
 
+const HOST_KEY_QUESTION = 'Are you sure you want to continue connecting (yes/no/[fingerprint])? ';
+
+async function startSftp(term: WindowsTerminalSession, target: string): Promise<string[]> {
+  const shown = await typedInto(term, `sftp ${target}`);
+  if (promptOf(term) !== HOST_KEY_QUESTION) return shown;
+  return [...shown, ...(await typedInto(term, 'yes'))];
+}
+
 describe('sftp tape dans le terminal Windows', () => {
   it('demande le mot de passe du compte nomme quand le serveur le propose', async () => {
     const { term } = await lab();
-    await typedInto(term, 'sftp alice@10.94.0.20');
+    await startSftp(term, 'alice@10.94.0.20');
     expect(promptOf(term)).toBe("alice@10.94.0.20's password: ");
   }, 60_000);
 
   it('le bon mot de passe ouvre une session qui lit et liste le home distant', async () => {
     const { term } = await lab();
-    await typedInto(term, 'sftp alice@10.94.0.20');
+    await startSftp(term, 'alice@10.94.0.20');
     const opening = await typedInto(term, 'secret');
     expect(opening.join('\n')).toContain('Connected to 10.94.0.20.');
     expect(term.getPrompt()).toBe('sftp> ');
@@ -90,7 +98,7 @@ describe('sftp tape dans le terminal Windows', () => {
 
   it('un mot de passe faux redemande, puis le bon ouvre la session', async () => {
     const { term } = await lab();
-    await typedInto(term, 'sftp alice@10.94.0.20');
+    await startSftp(term, 'alice@10.94.0.20');
     const retry = await typedInto(term, 'faux');
     expect(retry).toContain('Permission denied, please try again.');
     expect(promptOf(term)).toBe("alice@10.94.0.20's password: ");
@@ -101,7 +109,7 @@ describe('sftp tape dans le terminal Windows', () => {
 
   it('trois mots de passe faux ferment la session avec un seul refus final', async () => {
     const { term } = await lab();
-    await typedInto(term, 'sftp alice@10.94.0.20');
+    await startSftp(term, 'alice@10.94.0.20');
     const first = await typedInto(term, 'un');
     const second = await typedInto(term, 'deux');
     const last = await typedInto(term, 'trois');
@@ -121,7 +129,7 @@ describe('sftp tape dans le terminal Windows', () => {
     await server.executeCommand(`sh -c 'echo "${publicKey}" > /home/alice/.ssh/authorized_keys'`);
     await server.executeCommand('chmod 700 /home/alice/.ssh && chmod 600 /home/alice/.ssh/authorized_keys');
     await server.executeCommand('chown -R alice:alice /home/alice/.ssh');
-    const shown = await typedInto(term, 'sftp alice@10.94.0.20');
+    const shown = await startSftp(term, 'alice@10.94.0.20');
     expect(promptOf(term) ?? '').not.toContain('password');
     expect(shown.join('\n')).toContain('Connected to 10.94.0.20.');
     expect(term.getPrompt()).toBe('sftp> ');
@@ -132,4 +140,28 @@ describe('sftp tape dans le terminal Windows', () => {
     const shown = await typedInto(term, 'sftp');
     expect(shown.join('\n')).toContain('usage: sftp');
   }, 60_000);
+  it('premiere connexion : pose la question de la cle d hote, puis memorise la reponse', async () => {
+    const { term } = await lab();
+    const asked = await typedInto(term, 'sftp alice@10.94.0.20');
+    expect(asked.join('\n')).toContain("The authenticity of host '10.94.0.20 (10.94.0.20)' can't be established.");
+    expect(asked.join('\n')).toContain('ED25519 key fingerprint is SHA256:');
+    expect(promptOf(term)).toBe(HOST_KEY_QUESTION);
+    const accepted = await typedInto(term, 'yes');
+    expect(accepted.join('\n')).toContain("Warning: Permanently added '10.94.0.20' (ED25519) to the list of known hosts.");
+    expect(promptOf(term)).toBe("alice@10.94.0.20's password: ");
+    await typedInto(term, 'secret');
+    await typedInto(term, 'bye');
+    await typedInto(term, 'sftp alice@10.94.0.20');
+    expect(promptOf(term)).toBe("alice@10.94.0.20's password: ");
+  }, 90_000);
+
+  it('repondre no refuse la cle : aucune session, aucun mot de passe demande', async () => {
+    const { term } = await lab();
+    await typedInto(term, 'sftp alice@10.94.0.20');
+    const refused = await typedInto(term, 'no');
+    expect(refused.join('\n')).toContain('Host key verification failed.');
+    expect(refused.join('\n')).not.toContain('Connected to');
+    expect(promptOf(term) ?? '').not.toContain('password');
+    expect(term.getPrompt()).not.toBe('sftp> ');
+  }, 90_000);
 });

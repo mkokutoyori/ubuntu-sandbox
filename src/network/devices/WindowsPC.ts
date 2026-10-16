@@ -2772,7 +2772,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       for (const session of [...hopSessions].reverse()) session.disconnect();
     };
     const stdin = this._scenarioStdin ?? '';
-    const strict = settings.strictHostKeyChecking ?? 'accept-new';
+    const strict = settings.strictHostKeyChecking ?? (live === undefined ? 'accept-new' : 'ask');
     const asks = strict === 'ask';
     const allLines = stdin.split('\n');
     const hopCount = jump?.hops.length ?? 0;

@@ -1739,7 +1739,9 @@ export class LinuxCommandExecutor {
   > {
     const jump = proxyJumpRequest([...request.sshArguments]);
     const args = jump === null ? [...request.sshArguments] : jump.remaining;
-    const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir());
+    const target = wireExecTarget(
+      args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir(), 1000,
+      request.io ? 'ask' : 'accept-new');
     if (target === null) return { kind: 'refused', lines: [usage], exitCode: 1 };
     const executing = request.verbose && announceProgram ? [this.scpExecutingLine(target, request.remoteCommand)] : [];
     if (this.firstConfiguredIp() === null) {
