@@ -24,6 +24,8 @@ import { getDefaultScheduler } from '@/events/Scheduler';
 import type { AccountLifecycleVerdict, KeyboardInteractiveChallenge, SshPeer } from '../auth/ISshAuthMethod';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';
 import { SftpWireSession } from '../sftp/SftpWireSession';
+import { DEFAULT_SFTP_SERVER_OPTIONS } from '../sftp/server/SftpServerOptions';
+import { sftpProgramOf, type SftpLaunch, type SftpServicePlan } from './SftpServicePlan';
 import { ScpServerSession, parseScpServerCommand, type ScpServerCommand } from '../scp/ScpServerSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
@@ -160,13 +162,48 @@ export class SshServerHandler {
     }).start();
   }
 
-  private serveSftp(channel: ConnectionChannel, user: SshUserContext): void {
+  private sftpPlanFor(
+    user: SshUserContext, clientIp: string, launch: SftpLaunch, keyOptions: AuthorizedKeyOptions | null,
+  ): SftpServicePlan {
+    if (this.ctx.sftpService !== undefined) return this.ctx.sftpService(user, clientIp, launch, keyOptions);
+    const named = launch.kind === 'subsystem' && launch.name === 'sftp';
+    if (!named || this.ctx.subsystemAdmitted?.('sftp', user) === false) return { kind: 'unavailable' };
+    return { kind: 'serve', program: 'sftp-server', options: DEFAULT_SFTP_SERVER_OPTIONS, diagnostics: [] };
+  }
+
+  private runSftpPlan(channel: ConnectionChannel, user: SshUserContext, clientIp: string, plan: SftpServicePlan): void {
+    if (plan.kind === 'serve') {
+      this.serveSftp(channel, user, clientIp, plan);
+      return;
+    }
+    if (plan.kind === 'exits') this.finishWith(channel, plan);
+    else if (plan.kind === 'runs') void plan.run().then((result) => this.finishWith(channel, result));
+  }
+
+  private finishWith(
+    channel: ConnectionChannel, result: { readonly stdout: string; readonly stderr: string; readonly exitCode: number },
+  ): void {
+    if (result.stderr !== '') channel.writeExtended(SSH_EXTENDED_DATA_STDERR, new TextEncoder().encode(result.stderr));
+    if (result.stdout !== '') channel.write(new TextEncoder().encode(result.stdout));
+    void channel.request('exit-status', encodeExitStatus(result.exitCode));
+    channel.eof();
+    channel.close();
+  }
+
+  private serveSftp(
+    channel: ConnectionChannel, user: SshUserContext, clientIp: string,
+    plan: Extract<SftpServicePlan, { kind: 'serve' }>,
+  ): void {
     const fs = new PermissionCheckingFSDecorator(this.ctx.getFilesystem(user), user);
+    const pid = 2000 + Math.floor(Math.random() * 8000);
     const sftp = new SftpWireSession({
-      vfs: fs, userCtx: user, rootPath: user.homeDirectory, accountNames: this.ctx.accountNames?.(),
+      vfs: fs, userCtx: user, rootPath: this.ctx.sftpSessionRoot?.(user) ?? user.homeDirectory,
+      accountNames: this.ctx.accountNames?.(), options: plan.options, clientAddress: clientIp,
+      log: (_level, text) => this.eventBus.emit({ kind: 'sftp_log', user: user.username, program: plan.program, pid, text }),
     });
     const openedAt = simulationNowMs();
     this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'sftp' });
+    sftp.begin();
     let pending = new Uint8Array(0);
     channel.onData((bytes) => {
       const merged = new Uint8Array(pending.length + bytes.length);
@@ -186,6 +223,7 @@ export class SshServerHandler {
     });
     channel.onEof(() => { channel.eof(); channel.close(); });
     channel.onClose(() => {
+      sftp.finish();
       this.eventBus.emit({
         kind: 'channel_closed', user: user.username, channelType: 'sftp', durationMs: simulationNowMs() - openedAt,
       });
@@ -420,8 +458,9 @@ export class SshServerHandler {
             }
             case 'pty-req': {
               const pty = decodePtyRequest(request.payload);
-              if (pty !== null) info.pty = pty;
-              request.reply(pty !== null);
+              const permitted = pty !== null && this.ctx.ptyPermitted?.(user, clientIp, keyOptions) !== false;
+              if (permitted) info.pty = pty;
+              request.reply(permitted);
               return;
             }
             case 'exec': {
@@ -447,6 +486,13 @@ export class SshServerHandler {
                 channel.eof();
                 channel.close();
                 return;
+              }
+              if (forced === null && sftpProgramOf(asked) === 'sftp-server') {
+                const plan = this.sftpPlanFor(user, clientIp, { kind: 'command', command: asked }, keyOptions);
+                if (plan.kind !== 'unavailable') {
+                  this.runSftpPlan(channel, user, clientIp, plan);
+                  return;
+                }
               }
               const scpCommand = forced === null ? parseScpServerCommand(asked, /windows/i.test(this.ctx.serverIdentification?.() ?? '')) : null;
               if (scpCommand !== null) {
@@ -482,15 +528,16 @@ export class SshServerHandler {
               return;
             }
             case 'subsystem': {
-              const subsystem = decodeStringPayload(request.payload);
-              if (info.started || subsystem !== 'sftp'
-                || this.ctx.subsystemAdmitted?.('sftp', user) === false) {
+              const name = decodeStringPayload(request.payload);
+              const plan = info.started ? { kind: 'unavailable' } as SftpServicePlan
+                : this.sftpPlanFor(user, clientIp, { kind: 'subsystem', name }, keyOptions);
+              if (plan.kind === 'unavailable') {
                 request.reply(false);
                 return;
               }
               info.started = true;
               request.reply(true);
-              this.serveSftp(channel, user);
+              this.runSftpPlan(channel, user, clientIp, plan);
               return;
             }
             case 'shell': {

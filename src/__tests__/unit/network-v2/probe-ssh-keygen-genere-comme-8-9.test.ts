@@ -294,11 +294,12 @@ describe('the answers', () => {
     expect(promptOf(term)).toBe('Enter passphrase (empty for no passphrase): ');
   });
 
-  it('a passphrase the simulator cannot apply is refused rather than dropped', async () => {
+  it('a passphrase given with -N is applied: the private key is stored encrypted', async () => {
     const pc = linux();
     const out = await pc.executeCommand("ssh-keygen -t ed25519 -N secret -f /tmp/k; echo rc=$?");
 
-    expect(out).toContain('rc=255');
-    expect(await pc.executeCommand('ls /tmp/k 2>&1')).toContain('No such file or directory');
+    expect(out).toContain('rc=0');
+    expect(await pc.executeCommand('ssh-keygen -y -P wrong -f /tmp/k; echo rc=$?')).toContain('incorrect passphrase');
+    expect(await pc.executeCommand('ssh-keygen -y -P secret -f /tmp/k')).toContain('ssh-ed25519');
   });
 });

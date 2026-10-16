@@ -20,9 +20,13 @@ import type { TcpConnector } from '@/network/tcp/types';
 import { proxyJumpRequest } from './linux/network/LinuxSshClient';
 import { tunnelThrough } from './linux/network/SshProxyJump';
 import { WindowsSftpFSAdapter } from '@/network/protocols/ssh/sftp/WindowsSftpFSAdapter';
+import { SftpWireSession } from '@/network/protocols/ssh/sftp/SftpWireSession';
+import { attachSftpServer } from '@/network/protocols/ssh/sftp/server/LocalSftpServer';
+import { sftpProgramOf } from '@/network/protocols/ssh/server/SftpServicePlan';
+import { SshUserContext } from '@/network/protocols/ssh/SshUserContext';
 import { guardedFileSystem, principalOf } from './windows/WindowsFsAccess';
 import { posixClientFlags, seedWindowsOpenSshFiles } from './windows/WindowsOpenSshFiles';
-import { resolveClientInvocation, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
+import { missingIdentityWarnings, resolveClientInvocation, typedIdentityFiles, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
 import { sshClientAlgorithms, sshClientAuthentication } from '@/network/protocols/ssh/SshConnectOptions';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { likeDate } from '@/powershell/runtime/dotnetDateTime';
@@ -87,12 +91,14 @@ import {
   runSshKeygenCommand, runSshKeygenInteractive, type SshKeygenHost, type SshKeygenTerminal,
 } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
-  runSshAddCommandNow, runSshAgentCommand, type SshAgentHost,
+  runSshAddCommand, runSshAgentCommand, type SshAgentHost,
 } from '@/network/protocols/ssh/SshAgentCommands';
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { findHostByAddress } from './linux/network/HostLookup';
-import { runWindowsSftpClient, type WindowsSftpRemote } from './windows/network/WindowsSftpClient';
+import { SftpLocalPort } from '@/network/protocols/ssh/sftp/client/SftpLocalPort';
+import { runSftpCommand, type SftpCommandHost } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
+import type { SftpPacketChannel } from '@/network/protocols/ssh/sftp/client/SftpWireClient';
 import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSshLocalFs';
 import { sshLocalFsFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { WireSftpFileSystem } from '@/network/protocols/ssh/sftp/WireSftpFileSystem';
@@ -105,6 +111,7 @@ import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy'
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
 import { PSInterpreter, PSRuntimeError, createClientCmdletOverlay } from '@/powershell/interpreter/PSInterpreter';
+import { NativeCommandNeedsAsync, translateNativeAnswer, nativeNotRecognized } from '@/powershell/nativeAsync';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
@@ -435,6 +442,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly cmdletOverlay = createClientCmdletOverlay();
 
   getWindowsEdition(): 'client' | 'server' { return 'client'; }
+
+  private async runPowerShellCode(code: string): Promise<string> {
+    const interpreter = this.getPowerShellInterpreter();
+    interpreter.beginInteractive(code);
+    for (;;) {
+      try {
+        return interpreter.resumeInteractive();
+      } catch (e) {
+        if (!(e instanceof NativeCommandNeedsAsync)) {
+          if (e instanceof PSRuntimeError) return e.message;
+          throw e;
+        }
+        const answer = await this.runProgram(e.commandLine, e.stdin ?? undefined);
+        interpreter.provideNativeResult({
+          output: translateNativeAnswer(e.command, answer.output),
+          exitCode: answer.exitCode,
+          notRecognized: nativeNotRecognized(e.command, answer.output),
+        });
+      }
+    }
+  }
 
   getPowerShellInterpreter(): PSInterpreter {
     if (!this.psInterpreter) {
@@ -1292,6 +1320,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
       getCwd: () => this.getCwd(),
       createVtyShell: (user: string) => this.createVtyShell(user),
+      runExecAs: (user: string, line: string, stdin?: string) => this.runExecAs(user, line, stdin),
+      bindForwardedAgent: (user: string, agent: AgentPort) => this.bindForwardedAgent(user, agent),
       shellBanner: () => this.getSshMotd(),
     },
     // Publish a `windows.account.logon` per inbound SSH auth attempt
@@ -2556,10 +2586,45 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
-  private readonly sshAgent: SshAgent = new SshAgent();
+  private readonly forwardedAgents = new Map<string, AgentPort>();
+  private nextForwardedAgent = 1;
+
+  bindForwardedAgent(_user: string, agent: AgentPort): { readonly path: string; release(): void } {
+    const path = `\\\\.\\pipe\\openssh-ssh-agent-forwarded-${this.nextForwardedAgent++}`;
+    this.forwardedAgents.set(path, agent);
+    this.setEnvVar('SSH_AUTH_SOCK', path);
+    return {
+      path,
+      release: () => {
+        this.forwardedAgents.delete(path);
+        if (this.getEnvVar('SSH_AUTH_SOCK') === path) this.env.delete('SSH_AUTH_SOCK');
+      },
+    };
+  }
+
+  private runningAgent: SshAgent | null = null;
+  private agentWatched = false;
+
+  private agentOfRunningService(): SshAgent | null {
+    if (!this.agentWatched) {
+      this.agentWatched = true;
+      this.svcMgr.registerInstanceWatcher('ssh-agent', (event) => {
+        if (event.newState !== 'Running') this.runningAgent = null;
+      });
+    }
+    if (this.svcMgr.getService('ssh-agent')?.state !== 'Running') {
+      this.runningAgent = null;
+      return null;
+    }
+    this.runningAgent ??= new SshAgent();
+    return this.runningAgent;
+  }
 
   sshAgentIfRunning(): AgentPort | undefined {
-    return this.svcMgr.getService('ssh-agent')?.state === 'Running' ? new LocalAgentPort(this.sshAgent) : undefined;
+    const forwarded = this.forwardedAgents.get(this.getEnvVar('SSH_AUTH_SOCK') ?? '');
+    if (forwarded !== undefined) return forwarded;
+    const agent = this.agentOfRunningService();
+    return agent === null ? undefined : new LocalAgentPort(agent);
   }
 
   private userProfileDir(): string {
@@ -2591,9 +2656,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
-  private agentHost(): SshAgentHost & { readonly agent: LocalAgentPort } {
+  private agentHost(typedLines: string[]): SshAgentHost {
+    const agent = this.sshAgentIfRunning();
+    const disabled = this.svcMgr.getService('ssh-agent')?.startType === 'Disabled';
     return {
-      agent: new LocalAgentPort(this.sshAgent),
+      agent,
+      agentUnavailable: disabled
+        ? 'unable to start ssh-agent service, error :1058'
+        : 'Error connecting to agent: No such file or directory',
       reader: {
         readFile: (path: string) => {
           const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
@@ -2601,13 +2671,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
       },
       homeDir: this.userProfileDir(),
-      authSocket: `${this.userProfileDir()}\\AppData\\Local\\Temp\\ssh-${this.userMgr.currentUser}\\agent.1`,
       release: OPENSSH_WINDOWS_8_6,
-      agentUnreachable: () => (this.svcMgr.getService('ssh-agent')?.state === 'Running'
-        ? null
-        : 'Error connecting to agent: No such file or directory'),
       privateKeyMode: () => null,
-      setEnvironment: (name: string, value: string) => { this.setEnvVar(name, value); },
+      typedLine: () => typedLines.shift() ?? null,
     };
   }
 
@@ -2679,7 +2745,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       readonly kind: 'connected'; readonly session: SshSession; readonly dialogue: string; readonly typedHost: string;
       readonly address: string; readonly user: string; readonly port: number;
       readonly scripted: ScriptedTerminalIO; readonly password: string | undefined; readonly asks: boolean;
-      readonly release: () => void; readonly skippedLines: number;
+      readonly release: () => void; readonly skippedLines: number; readonly forwardAgent: boolean;
     }
   > {
     const localUser = this.userMgr.currentUser;
@@ -2759,7 +2825,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       algorithms: sshClientAlgorithms(settings.optionValues),
       ...(connector === undefined ? {} : { connector }),
     });
-    const dialogue = scripted.transcript
+    const typedIdentities = typedIdentityFiles(commandLine.flags);
+    const local = sshLocalFsFor(this);
+    const identityNotices = missingIdentityWarnings(
+      settings.identityFiles, (file) => local.resolveInode(local.normalizePath(file, this.cwd)) !== null,
+      (file, index) => typedIdentities[index] ?? file);
+    const dialogue = [...identityNotices, ...scripted.transcript]
       .filter((line) => asks || parsed.command === null || !line.startsWith('Warning: Permanently added'))
       .map((line) => `${line}\n`).join('');
     if (outcome.kind !== 'connected') release();
@@ -2772,7 +2843,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     hopSessions.push(outcome.session);
     return {
       kind: 'connected', session: outcome.session, release, dialogue, typedHost, address: dialHost, user, port,
-      scripted, password, asks, skippedLines: hopCount,
+      scripted, password, asks, skippedLines: hopCount, forwardAgent: settings.forwardAgent,
     };
   }
 
@@ -2784,19 +2855,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (parsed === null) { this.commandExitStatus = 255; return OPENSSH_WINDOWS_8_6.sshUsage; }
     const opened = await this.openOutgoingSsh(args, parsed);
     if (opened.kind === 'refused') { this.commandExitStatus = 255; return opened.output; }
-    const { session, release, dialogue, typedHost, scripted, password, asks, skippedLines } = opened;
+    const { session, release, dialogue, typedHost, scripted, password, asks, skippedLines, forwardAgent } = opened;
+    const forwardedAgent = forwardAgent ? this.sshAgentIfRunning() : undefined;
+    if (forwardedAgent !== undefined) session.forwardAgent(forwardedAgent);
     const stdin = this._scenarioStdin ?? '';
     try {
       if (parsed.command !== null) {
-        const channel = session.openExecChannel(parsed.command);
+        const channel = session.openExecChannel(parsed.command, forwardedAgent === undefined ? undefined : { forwardAgent: true });
         if (!isOk(channel)) return '';
         const result = await channel.value.execute();
         channel.value.close();
         this.commandExitStatus = result?.exitCode ?? 0;
-        const body = result?.stdout ?? '';
+        const body = `${result?.clientNotices ?? ''}${result?.stdout ?? ''}`;
         return dialogue + (body && !body.endsWith('\n') ? `${body}\n` : body);
       }
-      const channel = session.openShellChannel();
+      const channel = session.openShellChannel({ forwardAgent: forwardedAgent !== undefined });
       if (!isOk(channel)) return '';
       const settled = await relayScriptedShell(
         channel.value, stdin, skippedLines + (asks ? scripted.consumed : password === undefined ? 0 : 1 + scripted.consumed), !parsed.quiet);
@@ -2822,61 +2895,59 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return lines.join('\n');
   }
 
-  private cmdSftp(args: string[]): Promise<string> {
+  private async cmdSftp(args: string[]): Promise<string> {
+    this.commandExitStatus = null;
     const user = this.userMgr.currentUser;
-    let stdin: string | undefined;
-    if (args.length > 0 && args[args.length - 1].includes('\n')) {
-      stdin = args.pop();
-    }
-    return runWindowsSftpClient({
-      args,
-      stdin,
-      sourceUser: user,
-      sourceHome: `C:\\Users\\${user}`,
-      localFs: this.fs,
-      openRemote: (target) => this.openWireSftp(target, (this._scenarioStdin ?? '').split('\n')[0] || undefined),
-    }).then(r => r.output);
+    const home = `C:\\Users\\${user}`;
+    const standardInput = args.length > 0 && args[args.length - 1].includes('\n') ? args.pop()! : '';
+    const host: SftpCommandHost = {
+      local: new SftpLocalPort(
+        new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000), home, 0, true, home),
+      usage: OPENSSH_WINDOWS_8_6.sftpUsage,
+      sshPrograms: ['ssh', 'ssh.exe', 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'],
+      interactive: false,
+      stderrIsTerminal: false,
+      timeZoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
+      listCommand: (rest) => (rest === '' ? 'dir' : `dir ${rest}`),
+      runShell: async (command) => {
+        const output = await this.executeCmdCommand(command ?? '');
+        return { output, exitCode: this.batchInterpreter().getErrorLevel() };
+      },
+      attachServer: (program) => this.attachLocalSftpServer(program),
+      readBatch: (path) => {
+        const body = this.fs.readFile(path);
+        return body.ok && body.content !== undefined ? { content: body.content } : { failure: 'No such file or directory' };
+      },
+      connect: async (request) => {
+        const sshArguments = [...request.sshArguments, request.destination];
+        const parsed = parseSshArgs(sshArguments);
+        if (parsed === null) return { kind: 'refused', lines: [OPENSSH_WINDOWS_8_6.sftpUsage], exitCode: 1 };
+        const opened = await this.openOutgoingSsh(sshArguments, parsed);
+        if (opened.kind === 'refused') return { kind: 'refused', lines: [opened.output], exitCode: 255 };
+        const lines = opened.dialogue.replace(/\n$/, '').split('\n').filter((line) => line !== '');
+        const channel = opened.session.openSftpChannel(
+          request.serverCommand === null ? undefined : { kind: 'command', command: request.serverCommand });
+        if (!isOk(channel) || !(await channel.value.accepted())) {
+          opened.release();
+          return { kind: 'refused', lines: [...lines, 'subsystem request failed on channel 0'], exitCode: 255 };
+        }
+        return { kind: 'connected', channel: channel.value, release: opened.release, lines };
+      },
+    };
+    const result = await runSftpCommand(args, host, undefined, standardInput);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
   }
 
-  private async openWireSftp(target: WinWireTarget, password: string | undefined): Promise<WindowsSftpRemote> {
-    const reach = await wireReachOutcomeRetransmitting(this, target.host, target.port);
-    if (reach !== 'open') {
-      return {
-        kind: 'refused',
-        message: `sftp: ${sshWireFailureLine(OPENSSH_SSH, reach, target.host, target.port).replace(/^ssh:\s*/, '')}`,
-      };
-    }
-    const outcome = await openWireSshConnection({
-      device: this,
-      localUser: this.userMgr.currentUser,
-      user: target.user,
-      host: target.host,
-      port: target.port,
-      io: silentConnectIo(),
-      password,
-      credentialless: password === undefined,
-      identityFiles: target.identities.map(sshPathOfWindowsPath),
-      algorithms: target.algorithms,
-    });
-    if (outcome.kind === 'auth-failed') {
-      return {
-        kind: 'refused',
-        message: `sftp: ${target.user}@${target.host}: Permission denied (${outcome.methods ?? 'publickey,password'}).`,
-      };
-    }
-    if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') {
-      return { kind: 'refused', message: outcome.message.replace(/^ssh:\s*/, 'sftp: ') };
-    }
-    if (outcome.kind !== 'connected') {
-      return { kind: 'refused', message: `sftp: ${target.host}: Connection closed` };
-    }
-    const { session } = outcome;
-    const channel = session.openSftpChannel();
-    if (!isOk(channel) || !(await channel.value.accepted())) {
-      session.disconnect();
-      return { kind: 'refused', message: 'subsystem request failed on channel 0\nConnection closed' };
-    }
-    return { kind: 'opened', fs: new WireSftpFileSystem(channel.value), release: () => session.disconnect() };
+  private attachLocalSftpServer(program: string): SftpPacketChannel | null {
+    const bare = !/[\\/]/.test(program);
+    const executable = /\.exe$/i.test(program) ? program : `${program}.exe`;
+    const candidate = bare ? `C:\\Windows\\System32\\OpenSSH\\${executable}` : this.fs.normalizePath(executable, this.cwd);
+    if (!this.fs.exists(candidate) || sftpProgramOf(program) !== 'sftp-server') return null;
+    const user = this.userMgr.currentUser;
+    const context = new SshUserContext(user, 1000, 1000, [1000], `/C:/Users/${user}`);
+    const files = new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000);
+    return attachSftpServer(new SftpWireSession({ vfs: files, userCtx: context, rootPath: `/C:/Users/${user}` }));
   }
 
   private async cmdScp(args: string[]): Promise<string> {
@@ -3539,14 +3610,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
-          runFullPs: (code) => {
-            try {
-              return this.getPowerShellInterpreter().execute(code);
-            } catch (e) {
-              if (e instanceof PSRuntimeError) return e.message;
-              throw e;
-            }
-          },
+          runFullPs: (code) => this.runPowerShellCode(code),
         }, args, splitCmdArgs(expanded, true).slice(1));
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
@@ -3804,9 +3868,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
       case 'sshd':     return Promise.resolve(this.cmdSshd(args));
-      case 'ssh-add':
-      case 'ssh-keygen':
       case 'ssh-agent':
+        return this.runSshAgentTool(args);
+      case 'ssh-add':
+        return runSshAddCommand(args, this.agentHost((this._scenarioStdin ?? '').split('\n'))).then((outcome) => outcome.output);
+      case 'ssh-keygen':
       case 'ssh-keyscan':
         return Promise.resolve(this.runOpenSshTool(cmd, args));
       case 'pathping': return this.runPathpingCommand(args);
@@ -4269,8 +4335,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private runOpenSshTool(name: string, args: string[]): string {
     switch (name) {
       case 'ssh-keygen': return runSshKeygenCommand(args, this.keygenHost(), this._scenarioStdin).output;
-      case 'ssh-agent':  return runSshAgentCommand(args, this.agentHost()).output;
-      case 'ssh-add':    return runSshAddCommandNow(args, this.agentHost()).output;
       default:
         return runSshKeyscanCommand(args, {
           resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
@@ -4280,6 +4344,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
+  private runSshAgentTool(args: string[]): Promise<string> {
+    const pipe = '\\\\.\\pipe\\openssh-ssh-agent';
+    return runSshAgentCommand(args, {
+      release: OPENSSH_WINDOWS_8_6,
+      environment: (name) => this.getEnvVar(name),
+      start: () => ({ pid: 1, socket: pipe }),
+      kill: () => false,
+      runWith: async (argv) => ({ output: await this.executeCommand(argv.join(' ')), exitCode: 0 }),
+    }).then((outcome) => outcome.output);
+  }
+
   lastNativeExitCode(output: string): number {
     return this.commandExitStatus ?? commandExitCode(output);
   }
@@ -4287,8 +4362,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     this.commandExitStatus = null;
-    if (lower === 'ssh-keygen' || lower === 'ssh-agent'
-      || lower === 'ssh-add' || lower === 'ssh-keyscan') {
+    if (lower === 'ssh-keygen' || lower === 'ssh-keyscan') {
       return this.runOpenSshTool(lower, args);
     }
     if (lower === 'systeminfo') return this.cmdSysteminfo();
@@ -4559,6 +4633,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * server side of the wire, so an SSH client only ever exchanges lines
    * and a prompt (docs/PRD-SSH-Unification.md §4bis B2).
    */
+  async runExecAs(user: string, line: string, stdin?: string): Promise<{ output: string; exitCode: number }> {
+    const sessionUser = this.userMgr.getUser(user)?.name ?? user;
+    const previous = this.userMgr.currentUser;
+    const batch = this.batchInterpreter();
+    const savedLevel = batch.getErrorLevel();
+    const savedCwd = this.cwd;
+    if (previous !== sessionUser) this.setCurrentUser(sessionUser);
+    batch.setErrorLevel(0);
+    this.buildFileContext().setCwd(`C:\\Users\\${sessionUser}`);
+    try {
+      const output = await this.executeCmdCommand(line, stdin);
+      const level = batch.getErrorLevel();
+      return { output, exitCode: level !== 0 ? level : this.lastNativeExitCode(output) };
+    } finally {
+      this.buildFileContext().setCwd(savedCwd);
+      batch.setErrorLevel(savedLevel);
+      if (previous !== sessionUser) this.setCurrentUser(previous);
+    }
+  }
+
   createVtyShell(user: string): {
     execute(rawInput: string): Promise<string>;
     getPrompt(): string;

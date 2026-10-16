@@ -36,7 +36,7 @@ export interface SudoAuthorization {
   logfile?: string;
 }
 import type { UserEntry } from './iam/LinuxUserAccount';
-import { SshAgent } from '../../protocols/ssh/SshAgent';
+import { AgentProcessTable } from '../../protocols/ssh/agent/AgentProcessTable';
 import { LocalAgentPort, type AgentPort } from '../../protocols/ssh/agent/AgentService';
 import { LinuxCronManager } from './LinuxCronManager';
 import { parseCrontab, validateCrontabContent } from './cron/CrontabParser';
@@ -194,8 +194,14 @@ import { splitSshCommandLine } from '../../protocols/ssh/client/SshClientInvocat
 import { parseScpEndpoint, parseSshAuthority, type SshAuthority } from '../../protocols/ssh/Scp';
 import { connectThroughProxyJump } from './network/SshProxyJump';
 import { runScpClient, type ScpClientHost } from '../../protocols/ssh/scp/ScpClientCommand';
-import { SftpInteractiveSession } from '../../protocols/ssh/sftp/SftpInteractiveSession';
-import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
+import { SftpLocalPort } from '../../protocols/ssh/sftp/client/SftpLocalPort';
+import { runSftpCommand, SftpClientSession, type SftpCommandHost, type SftpConnection } from '../../protocols/ssh/sftp/client/SftpClientCommand';
+import type { SftpPacketChannel } from '../../protocols/ssh/sftp/client/SftpWireClient';
+import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { attachSftpServer } from '../../protocols/ssh/sftp/server/LocalSftpServer';
+import { SftpWireSession } from '../../protocols/ssh/sftp/SftpWireSession';
+import { LinuxSftpFSAdapter } from '../../protocols/ssh/sftp/LinuxSftpFSAdapter';
+import { sftpProgramOf } from '../../protocols/ssh/server/SftpServicePlan';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
 import { SshSession } from '../../protocols/ssh/session/SshSession';
@@ -474,11 +480,7 @@ export class LinuxCommandExecutor {
     this.execInput = undefined;
     return input;
   }
-  /**
-   * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
-   * and surfaced to outgoing SSH connections that honour `ssh -A`.
-   */
-  readonly sshAgent: SshAgent = new SshAgent();
+  readonly agentProcesses = new AgentProcessTable();
   /**
    * Last-login registry — populated by the SSH server on successful auth
    * (and by the console-login flow in the future). Read by ssh client code
@@ -1516,6 +1518,10 @@ export class LinuxCommandExecutor {
     };
   }
 
+  private unreachableWithoutAddress(host: string, port: number): string {
+    return `ssh: connect to host ${host} port ${port}: Network is unreachable`;
+  }
+
   private async openTransferSession(
     host: string, user: string, password: string | undefined,
     options: TransferWireOptions,
@@ -1523,7 +1529,7 @@ export class LinuxCommandExecutor {
     { session: SshSession; output: ''; exitCode: 0 } | { session: null; output: string; exitCode: number }
   > {
     if (this.firstConfiguredIp() === null) {
-      return { session: null, output: `ssh: connect to host ${host} port ${options.port}: Network is unreachable`, exitCode: 255 };
+      return { session: null, output: this.unreachableWithoutAddress(host, options.port), exitCode: 255 };
     }
     const resolution = await resolveSshTarget(this.localDevice as never, host, options.port, OPENSSH_SSH);
     if (resolution.kind === 'failed') return { session: null, output: resolution.line, exitCode: 255 };
@@ -1613,46 +1619,90 @@ export class LinuxCommandExecutor {
     stdinArg?: string,
   ): Promise<{ output: string; exitCode: number }> {
     if (cmd === 'scp') return this.runScpClientCommand(args, offeredPassword);
-    const positional = args.filter(a => !a.startsWith('-'));
-    const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
-    if (!dest) return { output: 'usage: sftp [-options] [user@]host[:path]', exitCode: 1 };
-    let batchVerbs: string | null = null;
-    if (cmd === 'sftp') {
-      const bIdx = args.indexOf('-b');
-      if (bIdx >= 0) {
-        const batch = this.readSftpBatch(args[bIdx + 1], stdinArg ?? '');
-        if (typeof batch !== 'string') return batch;
-        batchVerbs = batch;
-      }
-    }
-    const authority = transferAuthority(cmd, positional, dest);
-    if (!authority) return { output: `${cmd}: ${dest}: no route to host`, exitCode: 1 };
-    const hostPart = authority.host;
-    const remoteUser = authority.user ?? this.userMgr.currentUser;
-    const options = this.transferWireOptions(args);
-    if (this.firstConfiguredIp() === null) {
-      return { output: `${cmd}: ssh: connect to host ${hostPart} port ${options.port}: Network is unreachable\n`, exitCode: 255 };
-    }
-    const resolution = await resolveSshTarget(this.localDevice as never, hostPart, options.port, OPENSSH_SSH);
-    if (resolution.kind === 'failed') return { output: `${cmd}: ${resolution.line}\n`, exitCode: 255 };
+    return this.runSftpClientCommand(args, offeredPassword, stdinArg ?? '');
+  }
 
-    const { fs: wireFs, denial, release } = await this.tryOpenWireSftpFs(
-      hostPart, remoteUser, offeredPassword, options, 'sftp', resolution.address);
-    if (!wireFs) {
-      return { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 };
-    }
+  private async runSftpClientCommand(
+    args: string[], offeredPassword: string, standardInput: string,
+  ): Promise<{ output: string; exitCode: number }> {
+    const typed = (offeredPassword !== '' ? offeredPassword : this._scenarioStdin ?? '').split('\n')[0] || undefined;
+    return runSftpCommand(args.map((word) => this.expandTilde(word)), this.sftpCommandHost(), typed, standardInput);
+  }
 
-    const session = new SftpInteractiveSession({
-      local: new VfsSftpFileSystem(this.vfs, {
-        uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
-      }),
-      remote: wireFs,
-      initialLocalCwd: this.cwd,
-      initialRemoteCwd: wireFs.initialCwd?.() ?? undefined,
-    });
-    session.run(SftpCommandScript.parse(batchVerbs ?? stdinArg ?? ''));
-    release?.();
-    return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
+  openSftpClientSession(args: string[], password: string): ReturnType<typeof SftpClientSession.open> {
+    const host: SftpCommandHost = { ...this.sftpCommandHost(), interactive: true, stderrIsTerminal: true };
+    return SftpClientSession.open(args.map((word) => this.expandTilde(word)), host, password === '' ? undefined : password);
+  }
+
+  private sftpCommandHost(): SftpCommandHost {
+    const user = new SshUserContext(
+      this.userMgr.currentUser, this.userMgr.currentUid, this.userMgr.currentGid,
+      this.userMgr.getUserGroups(this.userMgr.currentUser).map((group) => group.gid), this.sshHomeDir());
+    const local = new PermissionCheckingFSDecorator(
+      new VfsSftpFileSystem(this.vfs, { uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022 }), user);
+    const localPort = new SftpLocalPort(local, this.cwd, this.umask, false, this.sshHomeDir());
+    return {
+      local: localPort,
+      usage: OPENSSH_UBUNTU_22_04.sftpUsage,
+      sshPrograms: ['ssh', '/usr/bin/ssh'],
+      interactive: false,
+      stderrIsTerminal: false,
+      timeZoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
+      listCommand: (rest) => (rest === '' ? 'ls' : `ls ${rest}`),
+      runShell: async (command) => {
+        const callerDirectory = this.cwd;
+        this.cwd = localPort.cwd;
+        try {
+          const output = await this.executeAsync(command ?? '');
+          return { output, exitCode: this.lastExitCode };
+        } finally {
+          this.cwd = callerDirectory;
+        }
+      },
+      attachServer: (program) => this.attachLocalSftpServer(program),
+      readBatch: (path) => {
+        const body = this.vfs.readFile(this.vfs.normalizePath(path, this.cwd));
+        return body === null ? { failure: 'No such file or directory' } : { content: body };
+      },
+      connect: async (request) => {
+        const subsystemName = request.subsystem ?? 'sftp';
+        const connection = await this.connectTransferSession({
+          sshArguments: [...request.sshArguments, request.destination],
+          password: request.password,
+          verbose: request.verbose,
+          remoteCommand: request.serverCommand ?? subsystemName,
+        }, OPENSSH_UBUNTU_22_04.sftpUsage, false);
+        if (connection.kind === 'refused') return connection;
+        return this.openSftpChannel(connection, request.serverCommand);
+      },
+    };
+  }
+
+  private async openSftpChannel(
+    connection: { session: SshSession; release: () => void; lines: string[] }, serverCommand: string | null,
+  ): Promise<SftpConnection> {
+    const channel = connection.session.openSftpChannel(
+      serverCommand === null ? undefined : { kind: 'command', command: serverCommand });
+    if (!isOk(channel) || !(await channel.value.accepted())) {
+      connection.release();
+      return { kind: 'refused', lines: [...connection.lines, 'subsystem request failed on channel 0'], exitCode: 255 };
+    }
+    return { kind: 'connected', channel: channel.value, release: connection.release, lines: connection.lines };
+  }
+
+  private attachLocalSftpServer(program: string): SftpPacketChannel | null {
+    const bare = !program.includes('/');
+    const searched = bare
+      ? ['/usr/local/sbin', '/usr/local/bin', '/usr/sbin', '/usr/bin', '/sbin', '/bin'].map((dir) => `${dir}/${program}`)
+      : [this.vfs.normalizePath(program, this.cwd)];
+    const path = searched.find((candidate) => this.vfs.exists(candidate) && this.path(candidate).canExecute());
+    if (path === undefined || sftpProgramOf(path) !== 'sftp-server') return null;
+    const user = new SshUserContext(
+      this.userMgr.currentUser, this.userMgr.currentUid, this.userMgr.currentGid,
+      this.userMgr.getUserGroups(this.userMgr.currentUser).map((group) => group.gid), this.sshHomeDir());
+    const files = new PermissionCheckingFSDecorator(
+      new LinuxSftpFSAdapter(this.vfs, this.userMgr.currentUid, this.userMgr.currentGid), user);
+    return attachSftpServer(new SftpWireSession({ vfs: files, userCtx: user, rootPath: this.cwd }));
   }
 
   private async runScpClientCommand(
@@ -1674,44 +1724,55 @@ export class LinuxCommandExecutor {
       usage: OPENSSH_UBUNTU_22_04.scpUsage,
       umask: 0o022,
       sshPrograms: ['ssh', '/usr/bin/ssh'],
-      connect: async (request) => {
-        const jump = proxyJumpRequest([...request.sshArguments]);
-        const args = jump === null ? [...request.sshArguments] : jump.remaining;
-        const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir());
-        if (target === null) return { kind: 'refused', lines: [OPENSSH_UBUNTU_22_04.scpUsage], exitCode: 1 };
-        const executing = request.verbose ? [this.scpExecutingLine(target, request.remoteCommand)] : [];
-        if (jump !== null) {
-          if (this.tcpConnector === null) return { kind: 'refused', lines: [`ssh: connect to host ${target.host} port ${target.port}: Network is unreachable`], exitCode: 255 };
-          const connector = this.tcpConnector;
-          const connection = await connectThroughProxyJump({
-            client: this.wireSshClient(),
-            dial: ((host, port) => connector(IPAddress.isValid(host) ? host : this.resolveHostIpv4(host) ?? host, port)) as TcpConnector,
-            hops: jump.hops,
-            nextPassword: () => request.password ?? '',
-            target: { ...target, password: request.password },
-          });
-          if (connection.kind === 'failed') return { kind: 'refused', lines: [connection.output], exitCode: 255 };
-          return { kind: 'connected', session: connection.session, release: connection.release, lines: executing };
-        }
-        const opts = this.buildSshClientOpts(args, this._cmdEnv, request.password);
-        const dialed = await this.dialSshTarget(args, target, opts, request.password);
-        if (dialed.kind === 'failed') {
-          return { kind: 'refused', lines: [dialed.result.output.replace(/\n+$/, '')], exitCode: dialed.result.exitCode };
-        }
-        const { session, wire, resolution } = dialed;
-        const lines = [...wire.notices];
-        if (request.verbose) {
-          lines.unshift(...executing);
-          lines.push(...sshVerboseTranscript({
-            host: target.host, address: resolution.address, port: target.port,
-            method: session.authenticatedMethod ?? undefined, serverHostKey: serverHostKeyOf(session),
-            negotiated: session.negotiated, peerIdentification: session.serverIdentification,
-            command: request.remoteCommand, settled: null, shell: null, notices: [],
-          }).replace(/\n$/, '').split('\n'));
-        }
-        return { kind: 'connected', session, release: () => session.disconnect(), lines };
-      },
+      connect: (request) => this.connectTransferSession(request, OPENSSH_UBUNTU_22_04.scpUsage, true),
     };
+  }
+
+  private async connectTransferSession(
+    request: { readonly sshArguments: readonly string[]; readonly password: string | undefined; readonly verbose: boolean; readonly remoteCommand: string },
+    usage: string, announceProgram: boolean,
+  ): Promise<
+    | { kind: 'connected'; session: SshSession; release: () => void; lines: string[] }
+    | { kind: 'refused'; lines: string[]; exitCode: number }
+  > {
+    const jump = proxyJumpRequest([...request.sshArguments]);
+    const args = jump === null ? [...request.sshArguments] : jump.remaining;
+    const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser, this.sshHomeDir());
+    if (target === null) return { kind: 'refused', lines: [usage], exitCode: 1 };
+    const executing = request.verbose && announceProgram ? [this.scpExecutingLine(target, request.remoteCommand)] : [];
+    if (this.firstConfiguredIp() === null) {
+      return { kind: 'refused', lines: [this.unreachableWithoutAddress(target.host, target.port)], exitCode: 255 };
+    }
+    if (jump !== null) {
+      if (this.tcpConnector === null) return { kind: 'refused', lines: [this.unreachableWithoutAddress(target.host, target.port)], exitCode: 255 };
+      const connector = this.tcpConnector;
+      const connection = await connectThroughProxyJump({
+        client: this.wireSshClient(),
+        dial: ((host, port) => connector(IPAddress.isValid(host) ? host : this.resolveHostIpv4(host) ?? host, port)) as TcpConnector,
+        hops: jump.hops,
+        nextPassword: () => request.password ?? '',
+        target: { ...target, password: request.password },
+      });
+      if (connection.kind === 'failed') return { kind: 'refused', lines: [connection.output], exitCode: 255 };
+      return { kind: 'connected', session: connection.session, release: connection.release, lines: executing };
+    }
+    const opts = this.buildSshClientOpts(args, this._cmdEnv, request.password);
+    const dialed = await this.dialSshTarget(args, target, opts, request.password);
+    if (dialed.kind === 'failed') {
+      return { kind: 'refused', lines: [dialed.result.output.replace(/\n+$/, '')], exitCode: dialed.result.exitCode };
+    }
+    const { session, wire, resolution } = dialed;
+    const lines = [...wire.notices];
+    if (request.verbose) {
+      lines.unshift(...executing);
+      lines.push(...sshVerboseTranscript({
+        host: target.host, address: resolution.address, port: target.port,
+        method: session.authenticatedMethod ?? undefined, serverHostKey: serverHostKeyOf(session),
+        negotiated: session.negotiated, peerIdentification: session.serverIdentification,
+        authTrace: session.authTrace, command: request.remoteCommand, settled: null, shell: null, notices: [],
+      }).replace(/\n$/, '').split('\n'));
+    }
+    return { kind: 'connected', session, release: () => session.disconnect(), lines };
   }
 
   private scpExecutingLine(target: WireExecTarget, remoteCommand: string): string {
@@ -1727,18 +1788,6 @@ export class LinuxCommandExecutor {
    * doesn't match over the real pipeline), letting the caller fall
    * back to the direct in-memory resolution.
    */
-  private readSftpBatch(
-    batchPath: string | undefined, standardInput: string,
-  ): string | { output: string; exitCode: number } {
-    if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
-    if (batchPath === '-') return standardInput;
-    const body = this.vfs.readFile(this.vfs.normalizePath(batchPath, this.cwd));
-    if (body === null) {
-      return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
-    }
-    return body;
-  }
-
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
@@ -1746,7 +1795,7 @@ export class LinuxCommandExecutor {
     proxy?: TcpConnector, trust?: Pick<WireSshTarget, 'knownHosts' | 'hashKnownHosts' | 'identitiesOnly'>,
   ): Promise<{
     session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
-    hostKeyRefusal?: string; connectionFailure?: string;
+    hostKeyRefusal?: string; connectionFailure?: string; refusedSession?: SshSession;
   }> {
     if (!this.tcpConnector && proxy === undefined) return { session: null, authRefused: false, notices: [] };
     const connector = proxy ?? this.tcpConnector!;
@@ -1773,6 +1822,7 @@ export class LinuxCommandExecutor {
       ...(hostKeyRefusal !== undefined ? { hostKeyRefusal } : {}),
       ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
+      ...(outcome.refusedSession === undefined ? {} : { refusedSession: outcome.refusedSession }),
     };
   }
 
@@ -1828,7 +1878,7 @@ export class LinuxCommandExecutor {
     if (!isOk(channel)) return null;
     const result = await channel.value.execute();
     channel.value.close();
-    return { output: result.stdout, exitCode: result.exitCode };
+    return { output: `${result.clientNotices ?? ''}${result.stdout}`, exitCode: result.exitCode };
   }
 
   async runSshExecAsync(
@@ -1904,10 +1954,26 @@ export class LinuxCommandExecutor {
           ...(wire.denial !== undefined ? { denial: wire.denial } : {}),
           ...(wire.connectionFailure !== undefined ? { connectionLine: wire.connectionFailure } : {}),
           authRefused: wire.authRefused,
+          notices: [
+            ...target.identityWarnings, ...wire.notices,
+            ...this.refusedTranscript(args, target, resolution.address, wire.refusedSession),
+          ],
         }), wire.authRefused),
       };
     }
+    wire.notices.unshift(...target.identityWarnings);
     return { kind: 'connected', session: wire.session, wire, resolution };
+  }
+
+  private refusedTranscript(
+    args: string[], target: WireExecTarget, address: string, session: SshSession | undefined,
+  ): string[] {
+    if (session === undefined || !splitSshFlags(args).some((flag) => /^-v+$/.test(flag))) return [];
+    return sshVerboseTranscript({
+      host: target.host, address, port: target.port, method: undefined, serverHostKey: serverHostKeyOf(session),
+      negotiated: session.negotiated, peerIdentification: session.serverIdentification,
+      authTrace: session.authTrace, command: '', settled: null, shell: null, notices: [],
+    }, false).replace(/\n$/, '').split('\n');
   }
 
   private async relayStdioForward(
@@ -1984,7 +2050,8 @@ export class LinuxCommandExecutor {
     skipLines: number,
     backgroundPid: number | null,
   ): Promise<{ output: string; exitCode: number }> {
-    if (target.forwardAgent) session.forwardAgent(this.agentPort());
+    const forwardedAgent = target.forwardAgent ? this.agentPort() : undefined;
+    if (forwardedAgent !== undefined) session.forwardAgent(forwardedAgent);
     const joined = joinRemoteCommand(target.commandWords, remoteQuotingOf(session.serverIdentification));
     const command = /^(exit|logout)\s*$/i.test(joined) ? '' : joined;
     const execOptions = { ...execChannelOptionsFor(opts, args), ...(this.execStdinForSsh === undefined ? {} : { stdin: this.execStdinForSsh }) };
@@ -2015,6 +2082,7 @@ export class LinuxCommandExecutor {
         serverHostKey: serverHostKeyOf(session),
         negotiated: session.negotiated,
         peerIdentification: session.serverIdentification,
+        authTrace: session.authTrace,
         command,
         settled,
         shell: relayedShell,
@@ -2208,7 +2276,6 @@ export class LinuxCommandExecutor {
       sourceGid: this.userMgr.currentGid,
       callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
-      localAgent: this.sshAgent,
       offeredPassword: password,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
@@ -4823,6 +4890,7 @@ export class LinuxCommandExecutor {
       const path = canonicalBinPath(declared);
       if (!this.vfs.exists(path)) {
         this.vfs.writeFile(path, '#!/bin/sh\n', 0, 0, 0o022);
+        this.vfs.chmod(path, 0o755);
       }
     }
     for (const name of SETUID_ROOT_BINARIES) {
@@ -5880,8 +5948,6 @@ export class LinuxCommandExecutor {
       // lieu d'en servir une version infidèle.
       case 'telnet':
         return this.runTelnetClient(args);
-      case 'ssh-agent':
-        return runSshAgentCommand(args, { ...this.agentHost(), agent: new LocalAgentPort(this.sshAgent) });
       case 'ssh-keyscan': return this.runSshKeyscan(args, stdin);
       case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
       case 'xargs': {
@@ -6696,25 +6762,79 @@ export class LinuxCommandExecutor {
 
   // ─── su handler ──────────────────────────────────────────────────
 
-  private agentHost(): SshAgentHost {
+  private agentHost(typedLines: string[]): SshAgentHost {
     const absolute = (path: string) => this.vfs.normalizePath(path, this.cwd);
+    const socket = this.commandEnvironment().SSH_AUTH_SOCK;
     return {
       agent: this.agentPort(),
+      agentUnavailable: socket === undefined || socket === ''
+        ? 'Could not open a connection to your authentication agent.'
+        : 'Error connecting to agent: No such file or directory',
       reader: { readFile: (path: string) => this.vfs.readFile(absolute(path)) },
       homeDir: this.sshHomeDir(),
-      authSocket: `/tmp/ssh-${this.userMgr.currentUser}/agent.1`,
       release: OPENSSH_UBUNTU_22_04,
-      agentUnreachable: () => null,
       privateKeyMode: (path: string) => {
         const inode = this.vfs.resolveInode(absolute(path));
         return inode && inode.uid === this.userMgr.currentUid ? inode.permissions : null;
       },
-      setEnvironment: (name: string, value: string) => { this.env.set(name, value); },
+      typedLine: () => typedLines.shift() ?? null,
     };
   }
 
   runSshAddAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
-    return runSshAddCommand(args.map(word => this.expandTilde(word)), this.agentHost());
+    return runSshAddCommand(args.map(word => this.expandTilde(word)), this.agentHost((this._scenarioStdin ?? '').split('\n')));
+  }
+
+  runSshAgentAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
+    return runSshAgentCommand(args, {
+      release: OPENSSH_UBUNTU_22_04,
+      environment: (name) => this.commandEnvironment()[name],
+      start: ({ lifetime, socket }) => this.startSshAgent(lifetime, socket),
+      kill: (pid) => this.stopSshAgent(pid),
+      runWith: async (argv, agent) => {
+        const environment = { ...(this._cmdEnv ?? {}), SSH_AUTH_SOCK: agent.socket, SSH_AGENT_PID: String(agent.pid) };
+        const previous = this._cmdEnv;
+        this._cmdEnv = environment;
+        try {
+          const result = await this.dispatchMaybeNetwork(argv, environment, false, this._scenarioStdin, false);
+          return { output: result.output, exitCode: result.exitCode };
+        } finally {
+          this._cmdEnv = previous;
+        }
+      },
+    });
+  }
+
+  private startSshAgent(
+    lifetime: number | null, requestedSocket: string | null,
+  ): { pid: number; socket: string } | null {
+    const process = this.processMgr.spawn({
+      command: 'ssh-agent -s', comm: 'ssh-agent', user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, ppid: 1, tty: '?', cwd: '/',
+    });
+    const directory = `/tmp/ssh-${agentDirectorySuffix()}`;
+    const socket = requestedSocket !== null ? this.vfs.normalizePath(requestedSocket, this.cwd) : `${directory}/agent.${process.pid - 1}`;
+    if (requestedSocket === null) this.vfs.mkdirp(directory, 0o700, this.userMgr.currentUid, this.userMgr.currentGid);
+    if (!this.vfs.createSocket(socket, 0o600, this.userMgr.currentUid, this.userMgr.currentGid)) {
+      this.processMgr.exit(process.pid, 1);
+      this.processMgr.reap(process.pid);
+      return null;
+    }
+    this.agentProcesses.start(process.pid, socket, this.userMgr.currentUid, lifetime);
+    return { pid: process.pid, socket };
+  }
+
+  private stopSshAgent(pid: number): boolean {
+    const agent = this.agentProcesses.withPid(pid);
+    if (agent === undefined) return false;
+    this.agentProcesses.stop(pid);
+    this.vfs.deleteFile(agent.socket);
+    if (/^\/tmp\/ssh-[A-Za-z0-9]{10}\/agent\.\d+$/.test(agent.socket)) this.vfs.rmdir(agent.socket.replace(/\/agent\.\d+$/, ''));
+    if (this.processMgr.get(pid)) {
+      this.processMgr.exit(pid, 0);
+      this.processMgr.reap(pid);
+    }
+    return true;
   }
 
   private readonly forwardedAgents = new Map<string, AgentPort>();
@@ -6726,9 +6846,13 @@ export class LinuxCommandExecutor {
     return { path, release: () => { this.forwardedAgents.delete(path); } };
   }
 
-  agentPort(): AgentPort {
-    const socket = this.env.get('SSH_AUTH_SOCK');
-    return (socket === undefined ? undefined : this.forwardedAgents.get(socket)) ?? new LocalAgentPort(this.sshAgent);
+  agentPort(): AgentPort | undefined {
+    const socket = this.commandEnvironment().SSH_AUTH_SOCK;
+    if (socket === undefined || socket === '') return undefined;
+    const forwarded = this.forwardedAgents.get(socket);
+    if (forwarded !== undefined) return forwarded;
+    const running = this.agentProcesses.atSocket(socket);
+    return running === undefined ? undefined : new LocalAgentPort(running.agent);
   }
 
   private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null } {
@@ -8100,6 +8224,7 @@ export class LinuxCommandExecutor {
     }
     if (lstat.type === 'directory') return `${target}: directory`;
     if (lstat.type === 'chardev') return `${target}: character special`;
+    if (lstat.type === 'socket') return `${target}: socket`;
     const content = this.vfs.readFile(abs) ?? lstat.content;
     if (content.length === 0) return `${target}: empty`;
     const archive = describeArchiveContent(content);
@@ -8365,4 +8490,9 @@ function serverHostKeyOf(session: SshSession): { algorithm: string; fingerprint:
   const length = (blob[0] << 24) | (blob[1] << 16) | (blob[2] << 8) | blob[3];
   const algorithm = String.fromCharCode(...blob.slice(4, 4 + length));
   return { algorithm, fingerprint: SshFingerprint.fromPublicKey(bytesToBase64(blob)).toString() };
+}
+
+function agentDirectorySuffix(): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from({ length: 10 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
 }

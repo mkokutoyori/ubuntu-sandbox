@@ -110,7 +110,7 @@ describe('Scénario 1 — authentification par clé publique de bout en bout', (
     const out = await pc.executeCommand(
       'sftp -o PreferredAuthentications=publickey -o PasswordAuthentication=no -b /root/sftp.cmds alice@10.0.0.2',
     );
-    expect(out).toMatch(/Connected to 10\.0\.0\.2/);
+    expect(out).toContain('sftp> ls /home/alice');
     expect(out).not.toMatch(/Permission denied/i);
     expect(out).not.toMatch(/password/i);
     expect(srv).toBeDefined();

@@ -26,6 +26,15 @@ export interface SftpStatus {
   readonly message: string;
 }
 
+const STATUS_MESSAGES = [
+  'Success', 'End of file', 'No such file', 'Permission denied', 'Failure', 'Bad message',
+  'No connection', 'Connection lost', 'Operation unsupported', 'Unknown error',
+];
+
+export function statusMessage(code: number): string {
+  return STATUS_MESSAGES[Math.min(code, STATUS_MESSAGES.length - 1)];
+}
+
 export function okStatus(): SftpStatus {
   return { code: SSH_FX.OK, message: 'OK' };
 }

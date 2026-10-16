@@ -108,7 +108,7 @@ export class TestEvaluator {
       case '-b': return false;                              // no block devs in VFS
       case '-c': return !!lst && lst.type === 'chardev';
       case '-p': return !!lst && lst.type === 'fifo';
-      case '-S': return false;                              // no sockets in VFS
+      case '-S': return !!lst && lst.type === 'socket';
       case '-s': return !!lst && lst.size > 0;
       case '-r': return !!lst && this.permitted(lst, 'r');
       case '-w': return !!lst && this.permitted(lst, 'w');

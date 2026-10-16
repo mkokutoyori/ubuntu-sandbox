@@ -200,7 +200,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   'ssh-keygen': '/usr/bin/ssh-keygen', 'ssh-add': '/usr/bin/ssh-add',
   'ssh-agent': '/usr/bin/ssh-agent', 'ssh-copy-id': '/usr/bin/ssh-copy-id',
   'ssh-keyscan': '/usr/bin/ssh-keyscan',
-  sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
+  sftp: '/usr/bin/sftp', 'sftp-server': '/usr/lib/openssh/sftp-server', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
   netstat: '/bin/netstat', ss: '/usr/sbin/ss', iptables: '/usr/sbin/iptables',
   passwd: '/usr/bin/passwd', useradd: '/usr/sbin/useradd', userdel: '/usr/sbin/userdel',
   usermod: '/usr/sbin/usermod', groupadd: '/usr/sbin/groupadd',

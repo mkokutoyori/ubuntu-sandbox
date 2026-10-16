@@ -129,6 +129,24 @@ export function splitSshCommandLine(args: string[]): { positional: string[]; fla
   return { positional, flags };
 }
 
+export function missingIdentityWarnings(
+  identityFiles: readonly string[], exists: (file: string) => boolean,
+  shown: (file: string, index: number) => string = (file) => file,
+): string[] {
+  return identityFiles.flatMap((file, index) => (exists(file)
+    ? []
+    : [`Warning: Identity file ${shown(file, index)} not accessible: No such file or directory.`]));
+}
+
+export function typedIdentityFiles(flags: readonly string[]): string[] {
+  const typed: string[] = [];
+  flags.forEach((flag, index) => {
+    if (flag === '-i' && flags[index + 1] !== undefined) typed.push(flags[index + 1]);
+    else if (flag.startsWith('-i') && flag.length > 2) typed.push(flag.slice(2));
+  });
+  return typed;
+}
+
 export function resolveClientInvocation(invocation: ClientInvocation): SshClientSettings {
   const at = invocation.target.lastIndexOf('@');
   const typedHost = at >= 0 ? invocation.target.slice(at + 1) : invocation.target;

@@ -99,6 +99,14 @@ export class SshSyslogger {
       for (const line of this.disconnectLines(event)) this.append(line);
       return;
     }
+    if (event.kind === 'session_fatal') {
+      this.append(`fatal: ${event.text} [postauth]`);
+      return;
+    }
+    if (event.kind === 'sftp_log') {
+      this.append(event.text, event.program, event.pid);
+      return;
+    }
     const message = this.format(event);
     if (!message) return;
     this.append(message);
@@ -148,7 +156,7 @@ export class SshSyslogger {
         return `Invalid user ${event.user} from ${event.ip} port ${event.port ?? this.port}`;
 
       case 'auth_strict_modes_refused':
-        return `Authentication refused: bad ownership or modes for file ${event.path}`;
+        return `Authentication refused: bad ownership or modes for ${event.subject} ${event.path}`;
 
       case 'auth_policy_refused': {
         const r = event.reason;
@@ -214,7 +222,7 @@ export class SshSyslogger {
     return lines;
   }
 
-  private append(message: string): void {
+  private append(message: string, tag = 'sshd', pid = this.sshdPid): void {
     if (this.sink !== null) {
       this.sink(message);
       return;
@@ -230,11 +238,11 @@ export class SshSyslogger {
       // tag = 'sshd' (syslog identifier) but unit = 'ssh' (systemd
       // unit name on Ubuntu), so `journalctl -u ssh` returns these
       // and the file line still reads `… sshd[<pid>]: …`.
-      this.logMgr.logAuth('sshd', message, this.sshdPid, 'ssh');
+      this.logMgr.logAuth(tag, message, pid, 'ssh');
       return;
     }
     if (!this.vfs.exists(LOG_DIR)) this.vfs.mkdirp(LOG_DIR, 0o755, 0, 0);
-    const line = `${this.timestamp()} ${hostnameOf(this.hostnameSource)} sshd[${this.sshdPid}]: ${message}\n`;
+    const line = `${this.timestamp()} ${hostnameOf(this.hostnameSource)} ${tag}[${pid}]: ${message}\n`;
     const existing = this.vfs.readFile(AUTH_LOG_PATH) ?? '';
     this.vfs.writeFile(AUTH_LOG_PATH, existing + line, 0, 0, 0o022);
   }

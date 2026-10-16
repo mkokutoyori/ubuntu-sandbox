@@ -13,8 +13,11 @@ import { SSH_WINDOWS_IDENTIFICATION } from '../serverIdentification';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
+import type { AgentPort } from '../agent/AgentService';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { WindowsSftpFSAdapter } from '../sftp/WindowsSftpFSAdapter';
+import { isInternalSftp, sftpProgramOf, type SftpLaunch, type SftpServicePlan } from './SftpServicePlan';
+import { parseSftpServerArguments, SFTP_SERVER_USAGE, splitCommandWords } from '../sftp/server/SftpServerOptions';
 import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
 import type { SshVtyShell } from './SshExecTarget';
@@ -69,6 +72,8 @@ export interface WindowsShellExecutor {
    */
   createVtyShell?(user: string): SshVtyShell | null;
   shellBanner?(): string;
+  runExecAs?(user: string, line: string, stdin?: string): Promise<{ output: string; exitCode: number }>;
+  bindForwardedAgent?(user: string, agent: AgentPort): { readonly path: string; release(): void };
 }
 
 /**
@@ -195,6 +200,50 @@ export class WindowsSshServerContext implements ISshServerContext {
     return this.policy.forceCommand(user.username, clientIp) ?? keyOptions?.command ?? null;
   }
 
+  sftpService(
+    user: SshUserContext, clientIp: string, launch: SftpLaunch, keyOptions: AuthorizedKeyOptions | null,
+  ): SftpServicePlan {
+    const subsystems = this.policy.config.subsystems;
+    const forced = this.forcedCommand(user, clientIp, keyOptions);
+    let commandLine: string;
+    if (forced !== null) {
+      commandLine = forced;
+    } else if (launch.kind === 'command') {
+      commandLine = launch.command;
+    } else {
+      const configured = launch.name === 'sftp' ? subsystems.sftp : subsystems.extras.get(launch.name) ?? null;
+      if (configured === null || launch.name !== 'sftp') return { kind: 'unavailable' };
+      commandLine = configured;
+    }
+    const serve = (program: 'sftp-server' | 'internal-sftp'): SftpServicePlan => {
+      const parsed = parseSftpServerArguments(splitCommandWords(commandLine).slice(1));
+      if (parsed.kind === 'serve') return { kind: 'serve', program, options: parsed.options, diagnostics: parsed.diagnostics };
+      if (parsed.kind === 'fatal') return { kind: 'exits', stdout: '', stderr: `${parsed.message}\n`, exitCode: 255 };
+      return { kind: 'exits', stdout: '', stderr: `${SFTP_SERVER_USAGE}\n`, exitCode: 1 };
+    };
+    if (isInternalSftp(commandLine)) return serve('internal-sftp');
+    const program = commandLine.trim().split(/\s+/)[0] ?? '';
+    const bare = !/[\\/]/.test(program);
+    const candidate = bare
+      ? `C:\\Windows\\System32\\OpenSSH\\${/\.exe$/i.test(program) ? program : `${program}.exe`}`
+      : windowsPathOf(program);
+    if (!this.wfs.exists(candidate)) {
+      return launch.kind === 'subsystem'
+        ? { kind: 'unavailable' }
+        : { kind: 'exits', stdout: '', stderr: `'${program}' is not recognized as an internal or external command,\noperable program or batch file.\n`, exitCode: 1 };
+    }
+    if (sftpProgramOf(program) === 'sftp-server') return serve('sftp-server');
+    const exec = this.shellExecutor;
+    if (exec === null) return { kind: 'unavailable' };
+    return {
+      kind: 'runs',
+      run: async () => {
+        const output = await exec.executeCmdCommand(commandLine);
+        return { stdout: output, stderr: '', exitCode: 0 };
+      },
+    };
+  }
+
   admittedKey(user: string, publicKey: string, source: KeySource): AuthorizedKey | null {
     if (this.policy.refusal(user, source.ip) !== null) return null;
     if (!this.config.pubkeyAuthentication || !this.policy.methodEnabled(user, source.ip, 'publickey')) return null;
@@ -223,8 +272,26 @@ export class WindowsSshServerContext implements ISshServerContext {
       guardedFileSystem(this.wfs, principalOf(this.userManager, userCtx.username)), userCtx.uid, userCtx.gid);
   }
 
-  getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
+  getShell(_userCtx: SshUserContext, _cwd: string, opts?: Parameters<ISshServerContext['getShell']>[2]): ILinuxShell {
     const exec = this.shellExecutor;
+    const forwardedAgent = opts?.agent === undefined ? null : exec?.bindForwardedAgent?.(_userCtx.username, opts.agent) ?? null;
+
+    if (opts?.exec !== undefined && exec?.runExecAs !== undefined) {
+      const runExecAs = exec.runExecAs.bind(exec);
+      return {
+        async execute(line: string, _onProgress?: (text: string) => void, stdin?: string) {
+          const result = await runExecAs(_userCtx.username, line, stdin);
+          return {
+            stdout: result.output === '' || result.output.endsWith('\n') ? result.output : `${result.output}\n`,
+            stderr: '',
+            exitCode: result.exitCode,
+          };
+        },
+        posixShell: false,
+        loginShellKind: 'cmd',
+        ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
+      };
+    }
 
     const vty = exec?.createVtyShell?.(_userCtx.username);
     if (vty) {
@@ -259,6 +326,7 @@ export class WindowsSshServerContext implements ISshServerContext {
         // cmd.exe ignores Ctrl+D and has no `clear` — it has `cls`.
         posixShell: false,
         loginShellKind: 'cmd',
+        ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
       };
     }
 
@@ -285,7 +353,18 @@ export class WindowsSshServerContext implements ISshServerContext {
         };
       },
       getPrompt: exec.getCwd ? () => `${exec.getCwd!()}>` : undefined,
+      ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
     };
+  }
+
+  agentForwardingPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noAgentForwarding === true) return false;
+    return this.policy.agentForwarding(user.username, clientIp);
+  }
+
+  ptyPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noPty === true) return false;
+    return this.policy.permitsTty(user.username, clientIp);
   }
 
   getMotd(): string {

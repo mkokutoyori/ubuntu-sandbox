@@ -32,7 +32,8 @@ import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { isOk } from '@/network/protocols/ssh/Result';
-import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SftpTestClient, openSftpClientSession } from './sftpTestClient';
+import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 
 export interface SshLan {
   pc1: LinuxPC;
@@ -205,9 +206,9 @@ export async function openSftpSession(
   targetIp: string,
   user: string = 'user',
   password: string = 'admin',
-): Promise<{ sftp: SftpSession; localVfs: VirtualFileSystem }> {
+): Promise<{ sftp: SftpTestClient; localVfs: VirtualFileSystem }> {
   const localVfs = new VirtualFileSystem();
-  const sftp = new SftpSession({
+  const sftp = new SftpTestClient({
     tcpConnector: (host, port) =>
       (from as unknown as { tcpConnect: (h: string, p: number) => Promise<unknown> })
         .tcpConnect(host, port) as Promise<never>,
@@ -225,4 +226,27 @@ export async function openSftpSession(
     throw new Error(`SFTP connect failed: ${banner}`);
   }
   return { sftp, localVfs };
+}
+
+export async function openSftpShell(
+  from: LinuxPC,
+  targetIp: string,
+  user: string = 'user',
+  password: string = 'admin',
+): Promise<{ shell: SftpSubShell; localVfs: VirtualFileSystem }> {
+  const localVfs = new VirtualFileSystem();
+  const session = await openSftpClientSession({
+    tcpConnector: (host, port) =>
+      (from as unknown as { tcpConnect: (h: string, p: number) => Promise<unknown> })
+        .tcpConnect(host, port) as Promise<never>,
+    localVfs,
+    localUser: 'root',
+    localUid: 0,
+    localGid: 0,
+    localCwd: '/root',
+    knownHostsPath: '/root/.ssh/known_hosts',
+    interactionHandler: new SilentSshInteractionHandler(password),
+    homeDirectory: '/root',
+  }, `${user}@${targetIp}`, password);
+  return { shell: new SftpSubShell(session), localVfs };
 }

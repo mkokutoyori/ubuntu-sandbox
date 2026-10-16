@@ -37,7 +37,7 @@ export class LinuxCommandRegistry {
   }
 
   private static readonly BINARY_DIRECTORIES: ReadonlySet<string> = new Set([
-    '/usr/bin', '/usr/sbin', '/bin', '/sbin', '/usr/local/bin', '/usr/local/sbin',
+    '/usr/bin', '/usr/sbin', '/bin', '/sbin', '/usr/local/bin', '/usr/local/sbin', '/usr/lib/openssh',
   ]);
 
   private static binaryName(path: string): string {

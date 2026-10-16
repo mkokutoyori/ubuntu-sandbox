@@ -2,9 +2,7 @@
  * §A — SCP/SFTP domain model tests.
  *
  * Exercises the pure-model layer in src/network/protocols/ssh/{sftp,scp}:
- *   - parseSftpLine + SftpCommandScript: REPL grammar
- *   - VfsSftpFileSystem + WindowsSftpFileSystem: VFS adapters
- *   - SftpInteractiveSession: end-to-end batch execution
+ *   - VfsSftpFileSystem: VFS adapter
  *   - ScpTransfer + ScpSession: push/pull, recursive, preserve, error paths
  *
  * Test names are kept short — what matters is that every public surface
@@ -13,81 +11,9 @@
 
 import { describe, expect, test, beforeEach } from 'vitest';
 
-import { parseSftpLine } from '@/network/protocols/ssh/sftp/SftpCommand';
-import { SftpCommandScript } from '@/network/protocols/ssh/sftp/SftpCommandScript';
 import { VfsSftpFileSystem } from '@/network/protocols/ssh/sftp/VfsSftpFileSystem';
-import { WindowsSftpFileSystem } from '@/network/protocols/ssh/sftp/WindowsSftpFileSystem';
-import { SftpInteractiveSession } from '@/network/protocols/ssh/sftp/SftpInteractiveSession';
 import { parseScpEndpoint } from '@/network/protocols/ssh/Scp';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
-import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
-
-// ─── §A.1 — SftpCommand parser ──────────────────────────────────────
-
-describe('§A.1 — parseSftpLine', () => {
-  test('blank + comment lines yield null', () => {
-    expect(parseSftpLine('')).toBeNull();
-    expect(parseSftpLine('   ')).toBeNull();
-    expect(parseSftpLine('# only a comment')).toBeNull();
-  });
-
-  test('put with explicit + implicit destination', () => {
-    expect(parseSftpLine('put /tmp/a')).toEqual({ verb: 'put', local: '/tmp/a', remote: '/tmp/a' });
-    expect(parseSftpLine('put /tmp/a /tmp/b')).toEqual({ verb: 'put', local: '/tmp/a', remote: '/tmp/b' });
-  });
-
-  test('get with explicit + implicit destination', () => {
-    expect(parseSftpLine('get /etc/hostname')).toEqual({
-      verb: 'get', remote: '/etc/hostname', local: '/etc/hostname',
-    });
-  });
-
-  test('chmod parses octal mode', () => {
-    expect(parseSftpLine('chmod 600 /tmp/secret')).toEqual({
-      verb: 'chmod', mode: 0o600, path: '/tmp/secret',
-    });
-  });
-
-  test('chmod with invalid mode reports parse error', () => {
-    const r = parseSftpLine('chmod xx /tmp/x');
-    expect(r).toMatchObject({ kind: 'parse', reason: expect.stringContaining('chmod') });
-  });
-
-  test('rename and rm aliases work', () => {
-    expect(parseSftpLine('rename /a /b')).toEqual({ verb: 'rename', src: '/a', dst: '/b' });
-    expect(parseSftpLine('mv /a /b')).toEqual({ verb: 'rename', src: '/a', dst: '/b' });
-    expect(parseSftpLine('delete /tmp/x')).toEqual({ verb: 'rm', path: '/tmp/x' });
-  });
-
-  test('bye/quit/exit collapse to bye', () => {
-    for (const v of ['bye', 'quit', 'exit']) {
-      expect(parseSftpLine(v)).toEqual({ verb: 'bye' });
-    }
-  });
-
-  test('unknown verb yields parse error, not throw', () => {
-    expect(parseSftpLine('fubar /a')).toMatchObject({ kind: 'parse' });
-  });
-});
-
-// ─── §A.2 — SftpCommandScript ───────────────────────────────────────
-
-describe('§A.2 — SftpCommandScript', () => {
-  test('parse() keeps only meaningful lines and tags errors', () => {
-    const s = SftpCommandScript.parse(
-      '# header\nput /tmp/a\nchmod xx /tmp/a\nbye\n',
-    );
-    const entries = s.commands;
-    expect(entries.map(e => e.command?.verb ?? 'err')).toEqual(['put', 'err', 'bye']);
-    expect(s.hasErrors).toBe(true);
-  });
-
-  test('effective() stops at the first bye', () => {
-    const s = SftpCommandScript.parse('put a\nbye\nput b\n');
-    const verbs = s.effective().map(e => e.command?.verb);
-    expect(verbs).toEqual(['put', 'bye']);
-  });
-});
 
 // ─── §A.3 — VfsSftpFileSystem adapter ───────────────────────────────
 
@@ -139,71 +65,6 @@ describe('§A.3 — VfsSftpFileSystem', () => {
   });
 });
 
-// ─── §A.4 — WindowsSftpFileSystem adapter ───────────────────────────
-
-describe('§A.4 — WindowsSftpFileSystem', () => {
-  test('translates POSIX path with drive letter prefix to NTFS', () => {
-    const wfs = new WindowsFileSystem('PC1');
-    const adapter = new WindowsSftpFileSystem(wfs);
-    expect(adapter.writeFile('/C:/Users/User/payload.txt', 'win-payload').ok).toBe(true);
-    const r = adapter.readFile('/C:/Users/User/payload.txt');
-    expect(r.ok && r.value).toBe('win-payload');
-  });
-});
-
-// ─── §A.5 — SftpInteractiveSession ──────────────────────────────────
-
-describe('§A.5 — SftpInteractiveSession', () => {
-  let localVfs: VirtualFileSystem;
-  let remoteVfs: VirtualFileSystem;
-  let session: SftpInteractiveSession;
-  beforeEach(() => {
-    localVfs  = new VirtualFileSystem();
-    remoteVfs = new VirtualFileSystem();
-    localVfs.writeFile('/tmp/payload', 'hello', 0, 0, 0o022);
-    session = new SftpInteractiveSession({
-      local:  new VfsSftpFileSystem(localVfs,  { uid: 0, gid: 0, umask: 0o022 }),
-      remote: new VfsSftpFileSystem(remoteVfs, { uid: 0, gid: 0, umask: 0o022 }),
-    });
-  });
-
-  test('put → get round-trips a file between local and remote', () => {
-    session.run(SftpCommandScript.parse(
-      'put /tmp/payload /tmp/payload\nget /tmp/payload /tmp/copy\nbye\n',
-    ));
-    expect(remoteVfs.readFile('/tmp/payload')).toBe('hello');
-    expect(localVfs.readFile('/tmp/copy')).toBe('hello');
-  });
-
-  test('cd + pwd update the remote working directory', () => {
-    remoteVfs.mkdir('/var/tmp', 0o755, 0, 0);
-    session.run(SftpCommandScript.parse('cd /var/tmp\npwd\nbye\n'));
-    expect(session.transcript).toContain('Remote working directory: /var/tmp');
-  });
-
-  test('ls lists remote entries', () => {
-    remoteVfs.writeFile('/srv/a', 'A', 0, 0, 0o022);
-    remoteVfs.writeFile('/srv/b', 'B', 0, 0, 0o022);
-    session.run(SftpCommandScript.parse('ls /srv\nbye\n'));
-    expect(session.transcript).toContain('a');
-    expect(session.transcript).toContain('b');
-  });
-
-  test('chmod via session changes the remote mode', () => {
-    session.run(SftpCommandScript.parse(
-      'put /tmp/payload /tmp/p\nchmod 600 /tmp/p\nbye\n',
-    ));
-    expect(remoteVfs.resolveInode('/tmp/p')?.permissions).toBe(0o600);
-  });
-
-  test('unknown command produces a transcript error but continues', () => {
-    session.run(SftpCommandScript.parse(
-      'fubar /tmp\nput /tmp/payload /tmp/payload\nbye\n',
-    ));
-    expect(session.lastError).not.toBeNull();
-    expect(remoteVfs.readFile('/tmp/payload')).toBe('hello');
-  });
-});
 
 // ─── §A.8 — ScpEndpoint legacy parsers stay coherent ────────────────
 

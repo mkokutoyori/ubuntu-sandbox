@@ -4622,7 +4622,7 @@ export abstract class LinuxMachine extends EndHost
   editorPathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo' {
     const type = this.executor.vfs.getType(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
     if (type === null) return 'missing';
-    return type === 'chardev' ? 'device' : type === 'symlink' ? 'file' : type;
+    return type === 'chardev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
   }
 
   editorPathIsReadOnly(path: string): boolean {

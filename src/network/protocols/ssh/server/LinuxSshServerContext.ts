@@ -58,6 +58,8 @@ import { isDialFailure } from '@/network/tcp/types';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import { Fail2banAgent } from '../security/Fail2banAgent';
 import { SshdAccessPolicy } from './SshdAccessPolicy';
+import { isInternalSftp, sftpProgramOf, type SftpLaunch, type SftpServicePlan } from './SftpServicePlan';
+import { parseSftpServerArguments, SFTP_SERVER_USAGE, splitCommandWords } from '../sftp/server/SftpServerOptions';
 import { SshInteractiveShell } from './SshInteractiveShell';
 import { SubShellStack, type SubShellStackStep } from '@/shell/SubShellStack';
 import { NestedSshLogin, type NestedSshLaunch } from '@/shell/NestedSshLogin';
@@ -347,7 +349,8 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (violation !== null) {
       if (source.ip !== '') {
         this.events.emit({
-          kind: 'auth_strict_modes_refused', user, ip: source.ip, path: violation, port: this.clientPort(source.ip),
+          kind: 'auth_strict_modes_refused', user, ip: source.ip, path: violation,
+          subject: violation === AUTHORIZED_KEYS_PATH(userEntry.home) ? 'file' : 'directory', port: this.clientPort(source.ip),
         });
       }
       return null;
@@ -358,6 +361,81 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   forcedCommand(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null {
     return this.accessPolicy().forceCommand(user.username, clientIp) ?? keyOptions?.command ?? null;
+  }
+
+  sftpSessionRoot(user: SshUserContext): string {
+    const fs = this.getFilesystem(user);
+    return fs.getEntryType(user.homeDirectory) === 'directory' ? user.homeDirectory : '/';
+  }
+
+  sftpService(
+    user: SshUserContext, clientIp: string, launch: SftpLaunch, keyOptions: AuthorizedKeyOptions | null,
+  ): SftpServicePlan {
+    const subsystems = this.effectiveSshdServerConfig().subsystems;
+    const forced = this.forcedCommand(user, clientIp, keyOptions);
+    let commandLine: string;
+    if (forced !== null) {
+      commandLine = forced;
+    } else if (launch.kind === 'command') {
+      commandLine = launch.command;
+    } else {
+      const configured = launch.name === 'sftp' ? subsystems.sftp : subsystems.extras.get(launch.name) ?? null;
+      if (configured === null || launch.name !== 'sftp') return { kind: 'unavailable' };
+      commandLine = configured;
+    }
+    const chroot = this.chrootDirectoryFor(user.username);
+    if (chroot !== null) {
+      const violation = this.chrootViolation(chroot);
+      if (violation !== null) {
+        this.events.emit({ kind: 'session_fatal', user: user.username, text: violation });
+        return { kind: 'exits', stdout: '', stderr: '', exitCode: 255 };
+      }
+    }
+    if (isInternalSftp(commandLine)) return this.servePlan('internal-sftp', commandLine);
+    const refusal = this.loginShellRefusal(user);
+    if (refusal !== null) return { kind: 'exits', stdout: refusal.output, stderr: '', exitCode: refusal.exitCode };
+    const program = commandLine.trim().split(/\s+/)[0] ?? '';
+    const insideRoot = chroot === null ? program : `${chroot.replace(/\/$/, '')}${program}`;
+    const shell = (this.userManager.getUser(user.username)?.shell ?? '/bin/bash');
+    const shellName = shell.slice(shell.lastIndexOf('/') + 1);
+    const absent = this.vfs.resolveInode(insideRoot, true) === null;
+    if (absent || (this.vfs.resolveInode(insideRoot, true)!.permissions & 0o111) === 0) {
+      const reason = absent ? 'No such file or directory' : 'Permission denied';
+      const dash = shellName === 'sh' || shellName === 'dash';
+      const stderr = dash
+        ? `${shellName}: 1: ${program}: ${absent ? 'not found' : 'Permission denied'}\n`
+        : `${shellName}: line 1: ${program}: ${reason}\n`;
+      return { kind: 'exits', stdout: '', stderr, exitCode: absent ? 127 : 126 };
+    }
+    if (sftpProgramOf(program) === 'sftp-server') return this.servePlan('sftp-server', commandLine);
+    return {
+      kind: 'runs',
+      run: async () => {
+        const result = await this.getShell(user, user.homeDirectory).execute(commandLine);
+        return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+      },
+    };
+  }
+
+  private servePlan(program: 'sftp-server' | 'internal-sftp', commandLine: string): SftpServicePlan {
+    const parsed = parseSftpServerArguments(splitCommandWords(commandLine).slice(1));
+    if (parsed.kind === 'serve') return { kind: 'serve', program, options: parsed.options, diagnostics: parsed.diagnostics };
+    if (parsed.kind === 'fatal') return { kind: 'exits', stdout: '', stderr: `${parsed.message}\n`, exitCode: 255 };
+    return { kind: 'exits', stdout: '', stderr: `${SFTP_SERVER_USAGE}\n`, exitCode: 1 };
+  }
+
+  private chrootViolation(chroot: string): string | null {
+    const parts = chroot.split('/').filter((part) => part !== '');
+    let path = '';
+    for (const part of ['', ...parts]) {
+      path = part === '' ? '/' : `${path === '/' ? '' : path}/${part}`;
+      const inode = this.vfs.resolveInode(path, true);
+      if (inode === null) return `chroot directory "${chroot}" does not exist`;
+      if (inode.uid !== 0 || (inode.permissions & 0o022) !== 0) {
+        return `bad ownership or modes for chroot directory${path === chroot ? '' : ' component'} "${path}"`;
+      }
+    }
+    return null;
   }
 
   loginShellRefusal(user: SshUserContext): { readonly output: string; readonly exitCode: number } | null {
@@ -430,6 +508,11 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (this.device instanceof LinuxMachine) {
       this.device.scheduleSshLogout(user.username, clientIp, seconds, true, this.clientPort(clientIp));
     }
+  }
+
+  ptyPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {
+    if (keyOptions?.noPty === true) return false;
+    return this.accessPolicy().permitsTty(user.username, clientIp);
   }
 
   agentForwardingPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {

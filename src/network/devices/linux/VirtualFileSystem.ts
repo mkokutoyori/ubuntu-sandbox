@@ -15,7 +15,7 @@ import { AT_DENY_USINE } from './jobs/AtPermissions';
 import { SYSTEM_CONFIG_DEFAULTS, SYSTEM_CONFIG_DIRECTORY, SYSTEM_CONFIG_FILE } from '../../ldap/openldap/ldapOptions';
 import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from '../../ldap/openldap/sasl/saslFiles';
 
-export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
+export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'socket';
 
 export interface RemoteMountStat {
   readonly type: FileType;
@@ -1334,6 +1334,17 @@ export class VirtualFileSystem {
     return true;
   }
 
+  createSocket(path: string, permissions: number, uid: number, gid: number): boolean {
+    const parent = this.resolveParent(path);
+    if (!parent) return false;
+    const [parentInode, basename] = parent;
+    if (parentInode.children.has(basename)) return false;
+    const inode = this.allocInode('socket', permissions, uid, gid);
+    parentInode.children.set(basename, inode.id);
+    parentInode.mtime = this.nowMs();
+    return true;
+  }
+
   // ─── Search Operations ────────────────────────────────────────────
 
   /**
@@ -1465,7 +1476,7 @@ export class VirtualFileSystem {
    */
   formatPermissions(inode: INode): string {
     const typeChars: Record<FileType, string> = {
-      file: '-', directory: 'd', symlink: 'l', fifo: 'p', chardev: 'c'
+      file: '-', directory: 'd', symlink: 'l', fifo: 'p', chardev: 'c', socket: 's'
     };
     let s = typeChars[inode.type] || '-';
 

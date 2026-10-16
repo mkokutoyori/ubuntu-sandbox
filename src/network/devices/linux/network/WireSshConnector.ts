@@ -44,6 +44,7 @@ export interface WireSshOutcome {
   readonly failure: SshError | null;
   readonly notices: readonly string[];
   readonly warnings: readonly string[];
+  readonly refusedSession?: SshSession;
 }
 
 export async function connectWireSsh(
@@ -78,7 +79,7 @@ export async function connectWireSsh(
   const result = await session.connect(builder.build());
   if (!isOk(result)) {
     session.disconnect();
-    return { session: null, failure: result.error, notices: interaction.notices, warnings: interaction.warnings };
+    return { session: null, failure: result.error, notices: interaction.notices, warnings: interaction.warnings, refusedSession: session };
   }
   return { session, failure: null, notices: interaction.notices, warnings: interaction.warnings };
 }
