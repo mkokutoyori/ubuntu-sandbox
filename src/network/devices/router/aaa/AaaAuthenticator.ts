@@ -394,7 +394,8 @@ export class AaaAuthenticator {
           continue;
         }
         const exchange = dialled.client.asExchange(
-          principal.instance === undefined ? principal.user : [principal.user, principal.instance], password, principal.realm);
+          principal.instance === undefined ? principal.user : [principal.user, principal.instance], password, principal.realm, 'krbtgt',
+          { preauth: kerberos.effectivePreauth() });
         if (exchange.ok) return 'accept';
         if (exchange.errorCode !== undefined || exchange.passwordUnavailable) return 'reject';
         await simulatedWait(kerberos.effectiveTimeoutSeconds());

@@ -23,6 +23,11 @@ export class KerberosConfig {
   credentialsForward = false;
   clientsMandatory = false;
   readonly instanceMap = new Map<string, number>();
+
+  effectivePreauth(): 'encrypted-timestamp' | 'encrypted-unix-timestamp' | 'none' {
+    if (this.preauth === 'encrypted-kerberos-timestamp') return 'encrypted-timestamp';
+    return this.preauth ?? 'none';
+  }
   readonly srvtabs = new Map<string, string>();
 
   effectiveRetry(): number { return this.retry ?? KERBEROS_DEFAULT_RETRY; }
