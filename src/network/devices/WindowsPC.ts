@@ -97,7 +97,7 @@ import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand'
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { SftpLocalPort } from '@/network/protocols/ssh/sftp/client/SftpLocalPort';
-import { runSftpCommand, type SftpCommandHost } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
+import { runSftpCommand, SftpClientSession, type SftpCommandHost } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
 import type { SftpPacketChannel } from '@/network/protocols/ssh/sftp/client/SftpWireClient';
 import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSshLocalFs';
 import { sshLocalFsFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
@@ -2835,7 +2835,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       .map((line) => `${line}\n`).join('');
     if (outcome.kind !== 'connected') release();
     if (outcome.kind === 'auth-failed') {
-      return { kind: 'refused', output: `${dialogue}${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).` };
+      const denial = `${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`;
+      return { kind: 'refused', output: dialogue.split('\n').includes(denial) ? dialogue.replace(/\n$/, '') : `${dialogue}${denial}` };
     }
     if (outcome.kind === 'host-key-changed') return { kind: 'refused', output: `${dialogue}Host key verification failed.` };
     if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') return { kind: 'refused', output: `${dialogue}${outcome.message}` };
@@ -2897,10 +2898,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private async cmdSftp(args: string[]): Promise<string> {
     this.commandExitStatus = null;
+    const standardInput = args.length > 0 && args[args.length - 1].includes('\n') ? args.pop()! : '';
+    const result = await runSftpCommand(args, this.sftpCommandHost(), undefined, standardInput);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
+  }
+
+  async openSftpClientSession(args: string[], password: string): ReturnType<typeof SftpClientSession.open> {
+    const host: SftpCommandHost = { ...this.sftpCommandHost(), interactive: true, stderrIsTerminal: true };
+    this._scenarioStdin = password === '' ? undefined : password;
+    try {
+      return await SftpClientSession.open(args, host, password === '' ? undefined : password);
+    } finally {
+      this._scenarioStdin = undefined;
+    }
+  }
+
+  private sftpCommandHost(): SftpCommandHost {
     const user = this.userMgr.currentUser;
     const home = `C:\\Users\\${user}`;
-    const standardInput = args.length > 0 && args[args.length - 1].includes('\n') ? args.pop()! : '';
-    const host: SftpCommandHost = {
+    return {
       local: new SftpLocalPort(
         new WindowsSftpFSAdapter(guardedFileSystem(this.fs, principalOf(this.userMgr, user)), 1000, 1000), home, 0, true, home),
       usage: OPENSSH_WINDOWS_8_6.sftpUsage,
@@ -2934,9 +2951,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return { kind: 'connected', channel: channel.value, release: opened.release, lines };
       },
     };
-    const result = await runSftpCommand(args, host, undefined, standardInput);
-    this.commandExitStatus = result.exitCode;
-    return result.output;
   }
 
   private attachLocalSftpServer(program: string): SftpPacketChannel | null {
