@@ -157,10 +157,12 @@ export class KerberosClient {
 
   /** RFC 4120 §3.1 — the full AS exchange for `username`/`password` against `realm`, requesting a ticket for `serviceName` (defaults to the realm's own krbtgt, i.e. a plain TGT). */
   asExchange(
-    username: string, password: PasswordSource, realm: string, serviceName: string | readonly string[] = 'krbtgt',
+    username: string | readonly string[], password: PasswordSource, realm: string, serviceName: string | readonly string[] = 'krbtgt',
     options: AsRequestOptions = {},
   ): AsExchangeResult {
-    const cname = principalName(PrincipalNameType.NT_PRINCIPAL, username);
+    const cname = typeof username === 'string'
+      ? principalName(PrincipalNameType.NT_PRINCIPAL, username)
+      : principalName(PrincipalNameType.NT_PRINCIPAL, ...username);
     const sname = typeof serviceName === 'string'
       ? principalName(PrincipalNameType.NT_SRV_INST, serviceName, realm)
       : principalName(PrincipalNameType.NT_SRV_INST, ...serviceName);
@@ -299,8 +301,8 @@ export class KerberosClient {
 }
 
 /** Dial TCP/88 on `targetIp` and wrap the socket in a `KerberosClient`. */
-export function dialKdc(tcpStack: TcpStack, targetIp: string): KerberosConnectResult {
-  const socket = tcpStack.connect(targetIp, 88);
+export function dialKdc(tcpStack: TcpStack, targetIp: string, port = 88): KerberosConnectResult {
+  const socket = tcpStack.connect(targetIp, port);
   if (!socket || socket.state !== 'established') {
     return { ok: false, error: "A local error occurred (Can't contact KDC)" };
   }

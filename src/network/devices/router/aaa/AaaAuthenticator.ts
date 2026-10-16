@@ -18,6 +18,8 @@ import { splitDirected } from './UsernameRouting';
 import { DEFAULT_TRANSACTION_MAX_TRIES } from '../../../radius/ServerSelector';
 import { vrfStoreOf, type VrfHost } from '../../shells/cisco/ciscoVrfStore';
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { simulatedWait } from '@/network/core/SimulatedWait';
+import { dialKdc } from '../../../kerberos/KerberosClient';
 
 const RADIUS_CLIENT_DEFAULT_RETRANSMIT = 2;
 
@@ -151,6 +153,10 @@ export class AaaAuthenticator {
         // `local` ne designe pas de niveau ici : c'est l'appelant qui lit
         // le compte, et il le lisait deja. `if-authenticated` et `none`
         // accordent sans rien designer non plus.
+        if (token === 'krb5-instance') {
+          const instance = sec.kerberos.principalOf(username).instance;
+          return { allowed: true, privilegeLevel: sec.kerberos.privilegeOfInstance(instance) };
+        }
         if (token === 'local' || token === 'local-case'
           || token === 'if-authenticated' || token === 'none') {
           return { allowed: true, privilegeLevel: null };
@@ -363,11 +369,38 @@ export class AaaAuthenticator {
           method: 'line',
         };
       }
+      if (token === 'krb5') {
+        const verdict = await this.tryKerberos(sec, username, password);
+        if (verdict !== 'continue') return { accepted: verdict === 'accept', method: 'krb5' };
+        continue;
+      }
       if (token === 'none') {
         return { accepted: true, method: 'none' };
       }
     }
     return { accepted: false, method: 'exhausted' };
+  }
+
+  private async tryKerberos(sec: CiscoSecurityConfig, username: string, password: string): Promise<MethodVerdict> {
+    const kerberos = sec.kerberos;
+    const principal = kerberos.principalOf(username);
+    if (principal.realm === undefined || password.length === 0) return 'continue';
+    const servers = kerberos.servers.get(principal.realm) ?? [];
+    for (const server of servers) {
+      for (let attempt = 0; attempt < kerberos.effectiveRetry(); attempt++) {
+        const dialled = dialKdc(this.router.getTcpStack(), server.host, server.port);
+        if (!dialled.ok || !dialled.client) {
+          await simulatedWait(kerberos.effectiveTimeoutSeconds());
+          continue;
+        }
+        const exchange = dialled.client.asExchange(
+          principal.instance === undefined ? principal.user : [principal.user, principal.instance], password, principal.realm);
+        if (exchange.ok) return 'accept';
+        if (exchange.errorCode !== undefined || exchange.passwordUnavailable) return 'reject';
+        await simulatedWait(kerberos.effectiveTimeoutSeconds());
+      }
+    }
+    return 'continue';
   }
 
   private async tryGroup(sec: CiscoSecurityConfig, groupName: string | undefined, username: string, password: string): Promise<{ verdict: MethodVerdict; privLvl?: number | null }> {
