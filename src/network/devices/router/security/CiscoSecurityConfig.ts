@@ -55,6 +55,7 @@ export interface RadiusGlobalDefaults {
   deadCriteriaTries?: number;
   directedRequest?: { restricted: boolean };
   retryReorder?: boolean;
+  optionalPasswords?: boolean;
   transactionMaxTries?: number;
   loadBalance?: LoadBalanceSetting;
 }
@@ -824,6 +825,7 @@ export class CiscoSecurityConfig {
     }
     lines.push(...this.radiusStripping.render('radius-server domain-stripping'));
     if (this.radiusDefaults.retryReorder) lines.push('radius-server retry method reorder');
+    if (this.radiusDefaults.optionalPasswords) lines.push('radius-server optional-passwords');
     if (this.radiusDefaults.transactionMaxTries !== undefined) {
       lines.push(`radius-server transaction max-tries ${this.radiusDefaults.transactionMaxTries}`);
     }
