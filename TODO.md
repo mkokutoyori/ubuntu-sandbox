@@ -1924,6 +1924,29 @@ Windows (c'est la forme BIND du même besoin).
 est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
+## nmap
+
+### [nmap] la decouverte par defaut n'envoie pas la sonde ICMP timestamp
+`nmap.h` : sans option de decouverte, un nmap privilegie envoie `-PE -PA80
+-PS443 -PP`. Le simulateur envoie l'echo, le SYN 443 et l'ACK 80, jamais la
+requete ICMP timestamp (type 13), et aucun hote ne repond aux types 13/14.
+**Mesure** : lab `SSH_TP_LAN (8)`, ACL 100 `permit icmp any any` en entree
+sur MAIN_RT_AKWA, un `nmap -sU` de PC7 vers WinServer3 compte UNE
+correspondance ICMP ; un vrai nmap en compterait deux.
+**Ce qui manque** : le type 13/14 dans la pile ICMP des hotes, puis la sonde
+dans `discoveryPlanFor` et `NmapProbes`.
+
+### [nmap] un port UDP sans reponse n'est sonde qu'une fois
+Un vrai `nmap -sU` retransmet les ports UDP restes muets. Le simulateur ne
+les sonde qu'une fois.
+**Mesure** : meme lab, `permit udp host 192.168.10.4 host 192.168.60.2 log`
+affiche exactement `(1000 matches)` apres un `-sU` des 1000 ports par
+defaut, dont quatre `open|filtered` ; avec retransmissions le compteur serait
+superieur.
+**Pourquoi non ferme** : le nombre de retransmissions par defaut vient du
+code de nmap (`scan_engine.cc`), non joignable depuis cet environnement ; la
+regle « source inaccessible : ne pas deviner » s'applique.
+
 ## SSH
 
 ### [ssh] toutes les lignes du journal portent le PID de l'ECOUTEUR
