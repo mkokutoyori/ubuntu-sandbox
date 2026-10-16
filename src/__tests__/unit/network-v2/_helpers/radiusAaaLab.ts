@@ -27,7 +27,7 @@ function arrivals(device: CiscoRouter): Arrivals {
   return seen;
 }
 
-export interface Lab { nas: CiscoRouter; silent: CiscoRouter; live: CiscoRouter; toSilent: Arrivals; toLive: Arrivals }
+export interface Lab { sw: CiscoSwitch; nas: CiscoRouter; silent: CiscoRouter; live: CiscoRouter; toSilent: Arrivals; toLive: Arrivals }
 
 export interface LabOptions { group?: string; silentUp?: boolean; liveUp?: boolean }
 
@@ -59,7 +59,7 @@ export async function radiusLab(globalLines: string[], options: LabOptions = {})
     `aaa authentication login default group ${options.group ?? 'G'}`,
     ...globalLines, 'end',
   ]) await nas.executeCommand(c);
-  return { nas, silent, live, toSilent: arrivals(silent), toLive: arrivals(live) };
+  return { sw, nas, silent, live, toSilent: arrivals(silent), toLive: arrivals(live) };
 }
 
 export async function radiusLogin(clock: VirtualTimeScheduler, nas: CiscoRouter, username = 'alice'): Promise<boolean> {

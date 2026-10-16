@@ -1197,6 +1197,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       },
       authFailureMessage: () => this.securityConfig()?.loginMessages().failMessage ?? '% Login invalid',
       maxAuthAttempts: () => this.securityConfig()?.effectiveLoginAttempts() ?? 3,
+      authenticateWithoutPassword: (user) => (this.securityConfig()?.radiusDefaults.optionalPasswords === true
+        && this.resolveVtyLoginMode() === 'aaa' && this.accountAdmits(user, 'telnet')
+        ? this.authenticateViaAaa(user, '')
+        : Promise.resolve(false)),
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
       admit: (ip, localIp) => this.vtyAdmissionVerdict('telnet', ip, localIp),

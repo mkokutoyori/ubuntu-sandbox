@@ -26,6 +26,7 @@ export interface RouterTelnetServerDeps {
   credentialPrompts?(): { readonly username: string; readonly password: string };
   authFailureMessage?(): string;
   maxAuthAttempts?(): number;
+  authenticateWithoutPassword?(username: string): Promise<boolean>;
   loginBanner(): string | null;
   motd(): string | null;
   admit(sourceIp: string, localIp?: string): TelnetAdmission;
@@ -56,6 +57,10 @@ export class RouterTelnetServerContext implements ITelnetServerContext {
   }
 
   maxAuthAttempts(): number { return this.deps.maxAuthAttempts?.() ?? 3; }
+
+  authenticateWithoutPassword(username: string): Promise<boolean> {
+    return this.deps.authenticateWithoutPassword?.(username) ?? Promise.resolve(false);
+  }
 
   authFailureMessage(): string { return this.deps.authFailureMessage?.() ?? '% Login invalid'; }
 
