@@ -108,6 +108,35 @@ interface PortSlot {
   linkId: string;
   end: 'source' | 'target';
   towards: number;
+  ideal: number;
+}
+
+function straightening(raw: number, limit: number): number {
+  const weight = Math.min(1, Math.max(0, (2 * limit - Math.abs(raw)) / limit));
+  return raw * weight;
+}
+
+function separatedOffsets(ideals: ReadonlyArray<number>, gap: number, limit: number): number[] {
+  const count = ideals.length;
+  const floor = -limit;
+  const ceiling = limit - (count - 1) * gap;
+  const blocks: Array<{ sum: number; size: number }> = [];
+  for (let i = 0; i < count; i++) {
+    blocks.push({ sum: Math.min(ceiling, Math.max(floor, ideals[i] - i * gap)), size: 1 });
+    while (blocks.length > 1) {
+      const last = blocks[blocks.length - 1];
+      const before = blocks[blocks.length - 2];
+      if (before.sum / before.size <= last.sum / last.size) break;
+      blocks.pop();
+      before.sum += last.sum;
+      before.size += last.size;
+    }
+  }
+  const offsets: number[] = [];
+  for (const block of blocks) {
+    for (let k = 0; k < block.size; k++) offsets.push(block.sum / block.size + offsets.length * gap);
+  }
+  return offsets;
 }
 
 export function assignCableLanes(
@@ -119,7 +148,7 @@ export function assignCableLanes(
 
   const enrol = (
     deviceId: string, side: CardSide, linkId: string,
-    end: 'source' | 'target', far: Point,
+    end: 'source' | 'target', far: Point, near: Point, straight: boolean,
   ) => {
     const key = `${deviceId}|${side}`;
     let face = faces.get(key);
@@ -127,16 +156,19 @@ export function assignCableLanes(
       face = { side, slots: [] };
       faces.set(key, face);
     }
+    const alongX = sideSpreadsAlongX(side);
     face.slots.push({
       linkId, end,
-      towards: sideSpreadsAlongX(side) ? far.x : far.y,
+      towards: alongX ? far.x : far.y,
+      ideal: straight ? straightening((alongX ? far.x - near.x : far.y - near.y) / 2, sideHalfExtent(side) - LANE_INSET) : 0,
     });
   };
 
   for (const link of links) {
     const pair = sides?.get(link.id) ?? defaultSides(link.source, link.target, axes?.get(link.id));
-    enrol(link.sourceDeviceId, pair.source, link.id, 'source', link.target);
-    enrol(link.targetDeviceId, pair.target, link.id, 'target', link.source);
+    const straight = pair.source !== pair.target && isHorizontalSide(pair.source) === isHorizontalSide(pair.target);
+    enrol(link.sourceDeviceId, pair.source, link.id, 'source', link.target, link.source, straight);
+    enrol(link.targetDeviceId, pair.target, link.id, 'target', link.source, link.target, straight);
   }
 
   const lanes = new Map<string, CableLanes>();
@@ -146,8 +178,9 @@ export function assignCableLanes(
     const ordered = [...face.slots].sort((a, b) =>
       a.towards - b.towards || (a.linkId < b.linkId ? -1 : a.linkId > b.linkId ? 1 : 0));
     const spacing = laneSpacing(ordered.length, face.side);
+    const offsets = separatedOffsets(ordered.map(slot => slot.ideal), spacing, sideHalfExtent(face.side) - LANE_INSET);
     ordered.forEach((slot, index) => {
-      const offset = (index - (ordered.length - 1) / 2) * spacing;
+      const offset = offsets[index];
       const lane = lanes.get(slot.linkId)!;
       if (slot.end === 'source') lane.sourceLane = offset;
       else lane.targetLane = offset;
@@ -506,6 +539,7 @@ export const DEVICE_BADGE_BOTTOM = 51;
 export const DEVICE_BADGE_HALF_WIDTH = 40;
 export const LABEL_SAMPLES = 25;
 export const LABEL_CLEARANCE_MIN = 2;
+const BESIDE_GAP = 3;
 export const LABEL_MIN_ZOOM = 0.7;
 
 export function shouldShowPortLabels(zoom: number): boolean {
@@ -650,7 +684,8 @@ function keepPlacement(
   if (!rangeHolding(ranges, along)) return undefined;
   const box = boxAlong(
     pointAlongPolyline(points, along / total), before.vertical, halfLength, halfThickness);
-  if (field.clearance(box, owner).hard < LABEL_CLEARANCE_MIN) return undefined;
+  const room = field.clearance(box, owner);
+  if (room.hard < LABEL_CLEARANCE_MIN || room.soft < LABEL_CLEARANCE_MIN) return undefined;
   return { box, vertical: before.vertical, along: before.along, shown: true };
 }
 
@@ -661,6 +696,21 @@ interface OrientationTry {
   cleared: boolean;
 }
 
+function liftedPoint(points: ReadonlyArray<Point>, t: number, lift: number): Point {
+  const at = pointAlongPolyline(points, t);
+  if (lift === 0) return at;
+  const total = polylineLength(points);
+  let travelled = Math.max(0, Math.min(1, t)) * total;
+  for (let i = 1; i < points.length; i++) {
+    const length = segmentLength(points[i - 1], points[i]);
+    if (travelled <= length || i === points.length - 1) {
+      return segmentIsVertical(points[i - 1], points[i]) ? { x: at.x + lift, y: at.y } : { x: at.x, y: at.y + lift };
+    }
+    travelled -= length;
+  }
+  return at;
+}
+
 function tryOrientation(
   points: ReadonlyArray<Point>,
   rotated: boolean,
@@ -669,6 +719,7 @@ function tryOrientation(
   owner: number,
   halfLength: number,
   halfThickness: number,
+  lift = 0,
 ): OrientationTry {
   const total = polylineLength(points);
   const ranges = labelRanges(points, halfLength, halfThickness, rotated);
@@ -693,7 +744,7 @@ function tryOrientation(
       walk -= span;
     }
     const box = boxAlong(
-      pointAlongPolyline(points, total === 0 ? 0 : along / total),
+      liftedPoint(points, total === 0 ? 0 : along / total, lift),
       rotated, halfLength, halfThickness);
     const { hard, soft } = field.clearance(box, owner);
     const clearance = Math.min(hard, soft);
@@ -738,6 +789,11 @@ function placeEndLabel(
   }
   if (flat.cleared) return flat.best;
   if (upright.cleared) return upright.best;
+  const beside = (rotated: boolean): OrientationTry[] => [1, -1].map(sign => tryOrientation(
+    points, rotated, nearStart, field, owner, halfLength, halfThickness,
+    sign * (halfThickness + BESIDE_GAP)));
+  const lifted = [...beside(false), ...beside(true)].filter(attempt => attempt.cleared);
+  if (lifted.length > 0) return lifted.reduce((a, b) => (b.proximity > a.proximity ? b : a)).best;
   return flat.clearance >= upright.clearance ? flat.best : upright.best;
 }
 
@@ -760,10 +816,13 @@ function endLabelOf(name: string, side: CardSide, zoom: number): EndLabel {
   return { text, halfLength, need: endLabelNeed(interfaceTagWidth(text) / 2, side) };
 }
 
+const BADGE_WEIGHT = 0.3;
+
 function deviceRects(devices: ReadonlyArray<Point>): CorridorRect[] {
-  return devices.flatMap(device => deviceObstacles(device).map(box => ({
+  return devices.flatMap(device => deviceObstacles(device).map((box, part) => ({
     x0: box.at.x - box.halfWidth, y0: box.at.y - box.halfHeight,
     x1: box.at.x + box.halfWidth, y1: box.at.y + box.halfHeight, owner: device,
+    ...(part === 0 ? {} : { weight: BADGE_WEIGHT }),
   })));
 }
 
@@ -778,7 +837,13 @@ function corridorRange(
 
 const C_SLACK = 110;
 
-function corridorWindow(points: ReadonlyArray<Point>, sides: SidePair, needs: CableNeeds): { low: number; high: number } {
+const HARD_LEG = 16;
+
+function corridorWindow(points: ReadonlyArray<Point>, sides: SidePair): { low: number; high: number } {
+  const needs = {
+    source: exitObstruction(sides.source) + HARD_LEG,
+    target: exitObstruction(sides.target) + HARD_LEG,
+  };
   const flat = isHorizontalSide(sides.source);
   const along = (point: Point): number => (flat ? point.x : point.y);
   if (sides.source === sides.target) {
@@ -804,7 +869,7 @@ function alternativeLink(link: RoutedLink, sides: SidePair, zoom: number): Corri
   if (!points || !clearsOwnCards(points, link.source, link.target)) return undefined;
   return {
     source: link.source, target: link.target, horizontal: isHorizontalSide(sides.source), points,
-    ...corridorWindow(points, sides, needs),
+    ...corridorWindow(points, sides),
   };
 }
 
@@ -836,7 +901,7 @@ function refineDrawn(
     const horizontal = isHorizontalSide(pair.source);
     const points = drawn.get(link.id)!;
     const need = ends.get(link.id)!;
-    const range = corridorWindow(points, pair, { source: need.source.need, target: need.target.need });
+    const range = corridorWindow(points, pair);
     const before = previous?.get(link.id);
     const remembered = before && before.horizontal === horizontal && before.points.length === 4
       ? (horizontal ? before.points[1].x : before.points[1].y) : undefined;
@@ -858,12 +923,128 @@ function refineDrawn(
 }
 
 const MAX_FORM_TRIALS = 12;
-const FORM_WORK_BUDGET = 60000;
+const FORM_WORK_BUDGET = 250000;
 const TRIAL_UNITS = 320;
 const FORM_TRIAL_MARGIN = 500;
 const MAX_DETOUR = 220;
 const FORM_KEEP_BONUS = 600;
+const OUTSIDE_COST = 10;
+const HULL_MARGIN = 60;
+
+interface Hull { x0: number; y0: number; x1: number; y1: number }
+
+function hullOf(devices: ReadonlyArray<Point>): Hull {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const device of devices) {
+    x0 = Math.min(x0, device.x - NODE_HALF_WIDTH); x1 = Math.max(x1, device.x + NODE_HALF_WIDTH);
+    y0 = Math.min(y0, device.y - NODE_HALF_HEIGHT); y1 = Math.max(y1, device.y + NODE_HALF_HEIGHT);
+  }
+  return { x0: x0 - HULL_MARGIN, y0: y0 - HULL_MARGIN, x1: x1 + HULL_MARGIN, y1: y1 + HULL_MARGIN };
+}
+
+function overshoot(points: ReadonlyArray<Point>, hull: Hull): number {
+  let excess = 0;
+  for (const point of points) {
+    excess += Math.max(0, hull.x0 - point.x) + Math.max(0, point.x - hull.x1)
+      + Math.max(0, hull.y0 - point.y) + Math.max(0, point.y - hull.y1);
+  }
+  return excess;
+}
+
+function formTier(sides: SidePair): number {
+  if (sides.source === sides.target) return 2;
+  return isHorizontalSide(sides.source) === isHorizontalSide(sides.target) ? 0 : 1;
+}
 const LENGTH_COST = 3;
+
+const NUDGE_BAND = 8;
+const NUDGE_MIN_OVERLAP = 10;
+const NUDGE_STEPS = [12, -12, 20, -20];
+const NUDGE_LANE_GAP = 10;
+const NUDGE_MAX_CABLES = 300;
+
+function parallelOverlap(a0: Point, a1: Point, b0: Point, b1: Point): number {
+  const aFlat = a0.y === a1.y, bFlat = b0.y === b1.y;
+  const aPoint = a0.x === a1.x && a0.y === a1.y, bPoint = b0.x === b1.x && b0.y === b1.y;
+  if (aPoint || bPoint || aFlat !== bFlat || (!aFlat && a0.x !== a1.x) || (!bFlat && b0.x !== b1.x)) return 0;
+  const gap = aFlat ? Math.abs(a0.y - b0.y) : Math.abs(a0.x - b0.x);
+  if (gap >= NUDGE_BAND) return 0;
+  const lo = aFlat ? Math.max(Math.min(a0.x, a1.x), Math.min(b0.x, b1.x)) : Math.max(Math.min(a0.y, a1.y), Math.min(b0.y, b1.y));
+  const hi = aFlat ? Math.min(Math.max(a0.x, a1.x), Math.max(b0.x, b1.x)) : Math.min(Math.max(a0.y, a1.y), Math.max(b0.y, b1.y));
+  return hi - lo > NUDGE_MIN_OVERLAP ? hi - lo : 0;
+}
+
+function legCrossings(a0: Point, a1: Point, b0: Point, b1: Point): number {
+  const aFlat = a0.y === a1.y, bFlat = b0.y === b1.y;
+  if (aFlat === bFlat) return 0;
+  const [h0, h1, v0, v1] = aFlat ? [a0, a1, b0, b1] : [b0, b1, a0, a1];
+  return v0.x > Math.min(h0.x, h1.x) + 0.5 && v0.x < Math.max(h0.x, h1.x) - 0.5
+    && h0.y > Math.min(v0.y, v1.y) + 0.5 && h0.y < Math.max(v0.y, v1.y) - 0.5 ? 1 : 0;
+}
+
+function separateOverlaps(
+  ordered: ReadonlyArray<RoutedLink>,
+  drawn: Map<string, Point[]>,
+  lanes: Map<string, CableLanes>,
+  sides: ReadonlyMap<string, SidePair>,
+): void {
+  if (ordered.length < 2 || ordered.length > NUDGE_MAX_CABLES) return;
+  const faceKey = (link: RoutedLink, end: 'source' | 'target'): string =>
+    `${end === 'source' ? link.sourceDeviceId : link.targetDeviceId}|${sides.get(link.id)![end]}`;
+  const faceLanes = new Map<string, Array<{ id: string; end: 'source' | 'target'; lane: number }>>();
+  for (const link of ordered) {
+    for (const end of ['source', 'target'] as const) {
+      const key = faceKey(link, end);
+      const entry = { id: link.id, end, lane: end === 'source' ? lanes.get(link.id)!.sourceLane : lanes.get(link.id)!.targetLane };
+      const list = faceLanes.get(key);
+      if (list) list.push(entry); else faceLanes.set(key, [entry]);
+    }
+  }
+  const burden = (points: ReadonlyArray<Point>, leg: readonly [number, number], skip: string): { overlap: number; crossings: number } => {
+    let overlap = 0, crossings = 0;
+    for (const other of ordered) {
+      if (other.id === skip) continue;
+      const q = drawn.get(other.id)!;
+      for (let k = 1; k < q.length; k++) {
+        overlap += parallelOverlap(points[leg[0]], points[leg[1]], q[k - 1], q[k]);
+        crossings += legCrossings(points[leg[0]], points[leg[1]], q[k - 1], q[k]);
+      }
+    }
+    return { overlap, crossings };
+  };
+  for (const link of ordered) {
+    const pair = sides.get(link.id)!;
+    if (isHorizontalSide(pair.source) !== isHorizontalSide(pair.target)) continue;
+    for (const end of ['source', 'target'] as const) {
+      const points = drawn.get(link.id)!;
+      const leg: readonly [number, number] = end === 'source' ? [0, 1] : [3, 2];
+      const now = burden(points, leg, link.id);
+      if (now.overlap === 0) continue;
+      const side = pair[end];
+      const flat = isHorizontalSide(side);
+      const key = faceKey(link, end);
+      const members = faceLanes.get(key)!;
+      const mine = members.find(member => member.id === link.id && member.end === end)!;
+      const limit = sideHalfExtent(side) - LANE_INSET;
+      for (const step of NUDGE_STEPS) {
+        const lane = mine.lane + step;
+        if (Math.abs(lane) > limit) continue;
+        if (members.some(member => member !== mine && Math.abs(member.lane - lane) < NUDGE_LANE_GAP)) continue;
+        const moved = points.map(point => ({ ...point }));
+        for (const index of leg) {
+          if (flat) moved[index].y += step; else moved[index].x += step;
+        }
+        const after = burden(moved, leg, link.id);
+        if (after.overlap >= now.overlap || after.crossings > now.crossings) continue;
+        drawn.set(link.id, moved);
+        mine.lane = lane;
+        const record = lanes.get(link.id)!;
+        if (end === 'source') record.sourceLane = lane; else record.targetLane = lane;
+        break;
+      }
+    }
+  }
+}
 
 export function computeCableRoutes(
   links: ReadonlyArray<RoutedLink>,
@@ -904,6 +1085,7 @@ export function computeCableRoutes(
   let state = solve();
   if (state.outcome) {
     const rects = deviceRects(devices);
+    const hull = hullOf(devices);
     const attempted = new Set<number>();
     const trouble = (candidate: typeof state): Float64Array => candidate.outcome!.residual;
     const blocked = (candidate: typeof state, i: number): boolean => candidate.outcome!.residual[i] >= DEVICE_COST;
@@ -925,20 +1107,24 @@ export function computeCableRoutes(
       const field = trialField(ordered.map(other => state.drawn.get(other.id)!));
       const before = previous?.get(link.id)?.sides;
       const standingLength = polylineLength(state.drawn.get(link.id)!);
-      const standing = marks[index] + LENGTH_COST * standingLength;
-      let chosen: SidePair | undefined;
-      let chosenScore = standing - FORM_TRIAL_MARGIN;
+      const standing = marks[index] + LENGTH_COST * standingLength
+        + OUTSIDE_COST * overshoot(state.drawn.get(link.id)!, hull);
+      const tiers: Array<{ score: number; pair: SidePair } | undefined> = [undefined, undefined, undefined];
       for (const source of ALL_SIDES) {
         for (const target of ALL_SIDES) {
           if (source === current.source && target === current.target) continue;
           const alternative = alternativeLink(link, { source, target }, zoom);
           if (!alternative || polylineLength(alternative.points) > standingLength + MAX_DETOUR) continue;
+          const conflict = trialCost(alternative, index, field, rects);
+          if (conflict >= DEVICE_COST) continue;
           const kept = before !== undefined && before.source === source && before.target === target;
-          const score = trialCost(alternative, index, field, rects) + LENGTH_COST * polylineLength(alternative.points)
-            - (kept ? FORM_KEEP_BONUS : 0);
-          if (score < chosenScore) { chosenScore = score; chosen = { source, target }; }
+          const score = conflict + LENGTH_COST * polylineLength(alternative.points)
+            + OUTSIDE_COST * overshoot(alternative.points, hull) - (kept ? FORM_KEEP_BONUS : 0);
+          const tier = formTier({ source, target });
+          if (score < standing - FORM_TRIAL_MARGIN && (!tiers[tier] || score < tiers[tier]!.score)) tiers[tier] = { score, pair: { source, target } };
         }
       }
+      const chosen = (tiers[0] ?? tiers[1] ?? tiers[2])?.pair;
       if (!chosen) continue;
       sides.set(link.id, chosen);
       const trial = solve();
@@ -953,6 +1139,7 @@ export function computeCableRoutes(
     for (const [id, pair] of best.sides) sides.set(id, pair);
   }
   const { lanes, ends, drawn } = state;
+  if (refine) separateOverlaps(ordered, drawn, lanes, sides);
 
   const routes = new Map<string, CableRoute>();
   const field = new ClearanceField();

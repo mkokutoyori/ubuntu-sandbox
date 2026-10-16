@@ -107,9 +107,18 @@ for (const lab of LABS) {
     expect((await measureDom(page)).tagOverlaps).toBe(0);
 
     const movable = exported.devices.filter(device => /router|switch|firewall/.test(device.type)).slice(0, 5);
-    const moves: Array<[number, number]> = [[90, 70], [-80, 110], [60, -90], [-110, -60], [100, 40]];
+    const candidates: Array<[number, number]> = [
+      [90, 70], [-80, 110], [60, -90], [-110, -60], [100, 40], [150, 120], [-150, 130], [200, 0], [0, 180], [-200, 0], [0, -150],
+    ];
+    const standing = new Map(exported.devices.map(device => [device.id, { x: device.x, y: device.y }]));
+    const free = (id: string, x: number, y: number): boolean => [...standing].every(([other, at]) =>
+      other === id || Math.abs(at.x - x) >= 110 || Math.abs(at.y - y) >= 140);
     for (const [index, device] of movable.entries()) {
-      await drag(page, ids[device.id], ...moves[index % moves.length]);
+      const from = standing.get(device.id)!;
+      const [dx, dy] = candidates.slice(index).concat(candidates.slice(0, index))
+        .find(([cx, cy]) => from.x + cx > 40 && from.y + cy > 60 && free(device.id, from.x + cx, from.y + cy)) ?? [0, 0];
+      standing.set(device.id, { x: from.x + dx, y: from.y + dy });
+      await drag(page, ids[device.id], dx, dy);
       await page.locator('#network-canvas').screenshot({ path: `${SHOTS}/layout-${lab.slug}-${index + 1}-moved-${device.name}.png` });
       expect((await measureDom(page)).tagOverlaps, `after moving ${device.name}`).toBe(0);
     }

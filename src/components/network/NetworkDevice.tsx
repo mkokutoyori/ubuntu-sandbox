@@ -264,7 +264,7 @@ function NetworkDeviceImpl({ device, onOpenTerminal }: NetworkDeviceProps) {
         {/* Device Label */}
         <div className={cn(
           "px-2 py-0.5 rounded-md text-[10px] font-medium",
-          "bg-black/40 backdrop-blur-sm text-white/90",
+          "bg-slate-950/90 text-white/90",
           "max-w-[80px] truncate"
         )}>
           {device.name}

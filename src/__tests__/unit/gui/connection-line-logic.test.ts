@@ -75,10 +75,10 @@ describe('connection-line-logic', () => {
       targetInterface: 'eth0',
     }));
 
-    it('gives a lone cable no lane at all', () => {
+    it('straightens a lone cable towards its far end instead of leaving it a jog', () => {
       const routes = computeCableRoutes(face(1), centres(1));
-      expect(routes.get('c0')!.sourceLane).toBe(0);
-      expect(routes.get('c0')!.targetLane).toBe(0);
+      const { points } = routes.get('c0')!;
+      expect(points[0].y).toBeCloseTo(points[3].y, 6);
     });
 
     it('centres the fan on the direct route', () => {

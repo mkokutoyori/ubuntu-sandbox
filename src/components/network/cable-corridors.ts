@@ -6,6 +6,7 @@ export interface CorridorRect {
   readonly x1: number;
   readonly y1: number;
   readonly owner: Point;
+  readonly weight?: number;
 }
 
 export interface CorridorLink {
@@ -19,15 +20,18 @@ export interface CorridorLink {
 }
 
 const CROSSING_COST = 1000;
-export const DEVICE_COST = 3500;
+export const DEVICE_COST = 6000;
 const OVERLAP_COST = 40;
 const OVERLAP_BAND = 8;
+const OVERLAP_CAP = 2800;
 const DEVIATION_COST = 0.3;
 const STEP = 12;
 const REACH = 6;
 const SWEEPS = 4;
 
 const EDGE_GAP = 14;
+const MARGIN = 8;
+const MARGIN_COST = 150;
 const WINDOW_REACH = 160;
 const WORK_LIMIT = 60000;
 const CANDIDATES_PER_LINK = 16;
@@ -65,13 +69,13 @@ function segmentCost(
     if (gap >= OVERLAP_BAND) return 0;
     const lo = Math.max(Math.min(ax0, ax1), Math.min(bx0, bx1));
     const hi = Math.min(Math.max(ax0, ax1), Math.max(bx0, bx1));
-    return hi > lo ? (hi - lo) * (OVERLAP_BAND - gap) * OVERLAP_COST / OVERLAP_BAND : 0;
+    return hi > lo ? Math.min(OVERLAP_CAP, (hi - lo) * (OVERLAP_BAND - gap) * OVERLAP_COST / OVERLAP_BAND) : 0;
   }
   const gap = Math.abs(ax0 - bx0);
   if (gap >= OVERLAP_BAND) return 0;
   const lo = Math.max(Math.min(ay0, ay1), Math.min(by0, by1));
   const hi = Math.min(Math.max(ay0, ay1), Math.max(by0, by1));
-  return hi > lo ? (hi - lo) * (OVERLAP_BAND - gap) * OVERLAP_COST / OVERLAP_BAND : 0;
+  return hi > lo ? Math.min(OVERLAP_CAP, (hi - lo) * (OVERLAP_BAND - gap) * OVERLAP_COST / OVERLAP_BAND) : 0;
 }
 
 function pathCost(
@@ -105,13 +109,17 @@ function pathCost(
   }
   for (let n = 0; n < rects.length; n++) {
     const rect = rects[n];
-    if (maxX <= rect.x0 || minX >= rect.x1 || maxY <= rect.y0 || minY >= rect.y1) continue;
+    if (maxX <= rect.x0 - MARGIN || minX >= rect.x1 + MARGIN || maxY <= rect.y0 - MARGIN || minY >= rect.y1 + MARGIN) continue;
+    let graze = false;
+    let hit = false;
     for (let s = 0; s < SEGMENTS; s++) {
       const p = 2 * s;
       const x0 = Math.min(shape[p], shape[p + 2]), x1 = Math.max(shape[p], shape[p + 2]);
       const y0 = Math.min(shape[p + 1], shape[p + 3]), y1 = Math.max(shape[p + 1], shape[p + 3]);
-      if (x0 < rect.x1 && x1 > rect.x0 && y0 < rect.y1 && y1 > rect.y0) { cost += DEVICE_COST; break; }
+      if (x0 < rect.x1 && x1 > rect.x0 && y0 < rect.y1 && y1 > rect.y0) { hit = true; break; }
+      if (x0 < rect.x1 + MARGIN && x1 > rect.x0 - MARGIN && y0 < rect.y1 + MARGIN && y1 > rect.y0 - MARGIN) graze = true;
     }
+    cost += hit ? DEVICE_COST * (rect.weight ?? 1) : graze && rect.weight === undefined ? MARGIN_COST : 0;
   }
   return cost;
 }
@@ -217,8 +225,8 @@ export function refineCorridors(
     }
     neighbours[i] = list;
     nearRects[i] = rects.filter(rect => !isOwner(rect, links[i])
-      && rect.x0 < envelope[4 * i + 2] && rect.x1 > envelope[4 * i]
-      && rect.y0 < envelope[4 * i + 3] && rect.y1 > envelope[4 * i + 1]);
+      && rect.x0 - MARGIN < envelope[4 * i + 2] && rect.x1 + MARGIN > envelope[4 * i]
+      && rect.y0 - MARGIN < envelope[4 * i + 3] && rect.y1 + MARGIN > envelope[4 * i + 1]);
   }
 
   const bounds = new Float64Array(count * 4);
