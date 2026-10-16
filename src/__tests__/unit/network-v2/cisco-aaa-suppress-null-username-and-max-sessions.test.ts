@@ -12,7 +12,9 @@
  * the wire depends on it. That is a limit of the simulator, stated rather than hidden.
  *
  * Lab: radiusAaaLab (a NAS and two RADIUS server routers on one switch); the probe counts the Access-Requests that
- * reach the servers, by user name, through the taps of that lab.
+ * reach the servers, by user name, through the taps of that lab. Two cases drive the whole path from a LinuxPC over
+ * telnet (a user name typed as a single space, the scripted client drops empty lines); the others call the NAS
+ * authenticator directly, and only the NAS-to-server leg of those crosses the wire.
  *
  * Ours, not in the reference: the verdict of a suppressed request (the RADIUS method yields no verdict, so the
  * method list moves on and ends in a failure) and the refusal wording without aaa new-model.
@@ -28,7 +30,7 @@ import { Logger } from '@/network/core/Logger';
 import { installVirtualClock } from '@/__tests__/support/ntpTime';
 import type { VirtualTimeScheduler } from '@/events/Scheduler';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
-import { radiusLab, radiusLogin } from './_helpers/radiusAaaLab';
+import { radiusLab, radiusLogin, attachTelnetClient } from './_helpers/radiusAaaLab';
 
 let clock: VirtualTimeScheduler;
 
@@ -48,6 +50,22 @@ describe('aaa authentication suppress null-username', () => {
     const lab = await radiusLab(['aaa authentication suppress null-username']);
     expect(await radiusLogin(clock, lab.nas, '')).toBe(false);
     expect(lab.toLive.count + lab.toSilent.count).toBe(0);
+  });
+
+  it('end to end over telnet: a blank user name typed at the prompt sends nothing to the servers', async () => {
+    const lab = await radiusLab(['aaa authentication suppress null-username', 'line vty 0 4', 'transport input all', 'exit']);
+    const pc = await attachTelnetClient(clock, lab);
+    const out = await clock.advanceUntilSettled(pc.executeCommand('telnet 10.0.0.1', ' \nnope\nalice\npw\nshow clock\nexit\n'));
+    expect(out).toMatch(/UTC/);
+    expect(lab.toLive.usernames).not.toContain('');
+    expect(lab.toLive.usernames).toContain('alice');
+  });
+
+  it('end to end over telnet, without the command: the blank user name does reach the server', async () => {
+    const lab = await radiusLab(['line vty 0 4', 'transport input all', 'exit']);
+    const pc = await attachTelnetClient(clock, lab);
+    await clock.advanceUntilSettled(pc.executeCommand('telnet 10.0.0.1', ' \nnope\nalice\npw\nexit\n'));
+    expect(lab.toLive.usernames).toContain('');
   });
 
   it('witness (passes either way): a named user is still sent and accepted', async () => {

@@ -20,14 +20,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: 30_000 });
 
-import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
+import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { LinuxPC } from '@/network/devices/LinuxPC';
-import { Cable } from '@/network/hardware/Cable';
 import { installVirtualClock } from '@/__tests__/support/ntpTime';
 import type { VirtualTimeScheduler } from '@/events/Scheduler';
-import { radiusLab } from './_helpers/radiusAaaLab';
+import { radiusLab, attachTelnetClient } from './_helpers/radiusAaaLab';
 
 let clock: VirtualTimeScheduler;
 
@@ -39,11 +37,7 @@ beforeEach(() => {
 async function lab(optional: boolean) {
   const l = await radiusLab([...(optional ? ['radius-server optional-passwords'] : []), 'line vty 0 4', 'transport input all', 'exit']);
   for (const server of [l.silent, l.live]) server.getRadiusServer().addUser('bob', '');
-  const pc = new LinuxPC('linux-pc', 'P1');
-  pc.getPort('eth0')!.configureIP(new IPAddress('10.0.0.50'), new SubnetMask('255.255.255.0'));
-  const free = l.sw.getPorts().find((p) => !p.isConnected())!;
-  new Cable('pc').connect(pc.getPort('eth0')!, free);
-  await clock.advanceUntilSettled(pc.executeCommand('ping -c 1 10.0.0.1'));
+  const pc = await attachTelnetClient(clock, l);
   return { ...l, pc };
 }
 

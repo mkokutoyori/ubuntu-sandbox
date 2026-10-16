@@ -1,6 +1,7 @@
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
+import { LinuxPC } from '@/network/devices/LinuxPC';
 import { IPAddress, SubnetMask, type IPv4Packet, type UDPPacket } from '@/network/core/types';
 import { getAttr } from '@/network/radius/types';
 import type { RadiusPacket } from '@/network/radius/types';
@@ -67,3 +68,11 @@ export async function radiusLogin(clock: VirtualTimeScheduler, nas: CiscoRouter,
   return outcome.accepted;
 }
 
+
+export async function attachTelnetClient(clock: VirtualTimeScheduler, lab: Lab): Promise<LinuxPC> {
+  const pc = new LinuxPC('linux-pc', 'P1');
+  pc.getPort('eth0')!.configureIP(new IPAddress('10.0.0.50'), new SubnetMask('255.255.255.0'));
+  new Cable('pc').connect(pc.getPort('eth0')!, lab.sw.getPorts().find((p) => !p.isConnected())!);
+  await clock.advanceUntilSettled(pc.executeCommand('ping -c 1 10.0.0.1'));
+  return pc;
+}
