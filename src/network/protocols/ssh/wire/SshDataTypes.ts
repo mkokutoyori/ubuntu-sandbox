@@ -20,6 +20,10 @@ export class SshWriter {
     return this.writeUint32(hi).writeUint32(lo);
   }
 
+  writeBigUint64(n: bigint): this {
+    return this.writeUint32(Number((n >> 32n) & 0xffffffffn)).writeUint32(Number(n & 0xffffffffn));
+  }
+
   writeString(s: string): this {
     return this.writeBytes(encoder.encode(s));
   }
@@ -81,6 +85,11 @@ export class SshReader {
     const hi = this.readUint32();
     const lo = this.readUint32();
     return hi * 0x100000000 + lo;
+  }
+
+  readBigUint64(): bigint {
+    const high = BigInt(this.readUint32());
+    return (high << 32n) | BigInt(this.readUint32());
   }
 
   readString(): string {

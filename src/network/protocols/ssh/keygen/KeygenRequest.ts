@@ -10,18 +10,13 @@ const INT_MAX = 0x7fffffff;
 
 const UNSIMULATED_OPTIONS: Readonly<Record<string, string>> = {
   D: 'PKCS#11 tokens',
-  h: 'host certificates',
   K: 'FIDO authenticators',
   k: 'key revocation lists',
-  L: 'certificates',
   M: 'DH moduli',
   Q: 'key revocation lists',
-  U: 'certificates',
   u: 'key revocation lists',
-  V: 'certificates',
   w: 'FIDO authenticators',
   X: 'DH moduli',
-  z: 'certificates',
 };
 
 const FORMATS: Readonly<Record<string, ConversionFormat>> = {
@@ -47,7 +42,7 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
     operands, signerOptions,
     all: false, bubblebabble: false, changeComment: false, changePassphrase: false, convertFrom: false,
     convertTo: false, genericRecord: false, hashHosts: false, fingerprint: false, hash: 'sha256',
-    printPublic: false, quiet: false, verbose: false,
+    printPublic: false, quiet: false, verbose: false, hostCertificate: false, showCertificate: false, preferAgent: false,
   };
   const given = new Set<string>();
   for (const option of shortOptions(args, KEYGEN_OPTSTRING)) {
@@ -84,9 +79,14 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
         break;
       case 'C': request.comment = value; break;
       case 'I': request.identity = value; break;
-      case 'n': request.namespace = value; break;
+      case 'n': request.principals = value; break;
+      case 'h': request.hostCertificate = true; break;
+      case 'L': request.showCertificate = true; break;
+      case 'U': request.preferAgent = true; break;
+      case 'V': request.validity = value; break;
+      case 'z': request.serial = value; break;
       case 'O': signerOptions.push(value); break;
-      case 's': request.signatureFile = value; break;
+      case 's': request.caKeyPath = value; break;
       case 'Y': request.signOperation = value; break;
       case 'c': request.changeComment = true; break;
       case 'e': request.convertTo = true; break;
@@ -118,9 +118,8 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
     }
   }
   if (request.signOperation === undefined) {
-    const certificateOption = ['I', 'n', 's'].find((letter) => given.has(letter));
-    if (certificateOption !== undefined) return { output: `ssh-keygen: -${certificateOption}: certificates are not simulated`, exitCode: 255 };
-    if (operands.length > 0) return usage('Too many arguments.');
+    if (request.caKeyPath !== undefined && operands.length === 0 && !given.has('k')) return usage('Too few arguments.');
+    if (request.caKeyPath === undefined && operands.length > 0 && !given.has('k') && !given.has('Q')) return usage('Too many arguments.');
   }
   if (request.fingerprint && request.deleteHost !== undefined) return usage('Cannot use -l with -H or -R.');
   return request;

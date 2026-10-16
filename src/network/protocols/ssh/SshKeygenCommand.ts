@@ -11,6 +11,7 @@ import {
   recordDialogue,
 } from './keygen/KeyFileDialogues';
 import { allHostKeysDialogue, generationDialogue } from './keygen/GenerationDialogue';
+import { certifyDialogue, showCertificateDialogue } from './keygen/CertificateDialogues';
 import { signatureDialogue } from './keygen/SignatureDialogues';
 import {
   print,
@@ -32,6 +33,8 @@ function* keygenDialogue(args: readonly string[], host: SshKeygenHost): KeygenDi
     return request.exitCode;
   }
   if (request.signOperation !== undefined) return yield* signatureDialogue(request, host);
+  if (request.caKeyPath !== undefined) return yield* certifyDialogue(request, host);
+  if (request.showCertificate) return yield* showCertificateDialogue(request, host);
   if (request.deleteHost !== undefined || request.findHost !== undefined || request.hashHosts) return yield* knownHostsDialogue(request, host);
   if (request.all) return yield* allHostKeysDialogue(request, host);
   if (request.fingerprint || request.bubblebabble) return yield* fingerprintDialogue(request, host);

@@ -58,9 +58,15 @@ export interface KeygenRequest {
   readonly hash: string;
   readonly keyCipher?: string;
   readonly identity?: string;
-  readonly namespace?: string;
+  readonly principals?: string;
+  readonly certificateKeyId?: string;
+  readonly hostCertificate: boolean;
+  readonly showCertificate: boolean;
+  readonly preferAgent: boolean;
+  readonly validity?: string;
+  readonly serial?: string;
   readonly operands: readonly string[];
-  readonly signatureFile?: string;
+  readonly caKeyPath?: string;
   readonly signOperation?: string;
   readonly signerOptions: readonly string[];
   readonly newPassphrase?: string;

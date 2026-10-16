@@ -96,7 +96,7 @@ function* signDialogue(request: KeygenRequest, host: SshKeygenHost): KeygenDialo
     yield printError('Cannot sign mix of paths and standard input');
     return 255;
   }
-  if (request.namespace === undefined || request.namespace === '') return yield* missing('Too few arguments for sign: missing namespace');
+  if (request.principals === undefined || request.principals === '') return yield* missing('Too few arguments for sign: missing namespace');
   if (request.file === undefined) return yield* missing('Too few arguments for sign: missing key');
   const options = processOptions(request, host, { hashAlgorithm: true, verifyTime: false, printPublicKey: false });
   if (typeof options === 'string') {
@@ -139,7 +139,7 @@ function* signDialogue(request: KeygenRequest, host: SshKeygenHost): KeygenDialo
       message = encoder.encode(text);
     }
     if (!request.quiet) yield printError(fromStandardInput ? 'Signing data on standard input' : `Signing file ${target}`);
-    const signed = signMessage(signingKey, options.hashAlgorithm, request.namespace, message);
+    const signed = signMessage(signingKey, options.hashAlgorithm, request.principals, message);
     if (signed.ok === false) {
       yield* errors(signed.errors);
       yield printError(`Signing ${target} failed: signature algorithm not supported`);
@@ -150,14 +150,14 @@ function* signDialogue(request: KeygenRequest, host: SshKeygenHost): KeygenDialo
       for (const line of armored.replace(/\n$/, '').split('\n')) yield print(line);
       continue;
     }
-    const signatureFile = `${target}.sig`;
-    if (!(yield* confirmOverwrite(host, signatureFile))) continue;
-    const refusal = host.store.write(signatureFile, armored, false);
+    const caKeyPath = `${target}.sig`;
+    if (!(yield* confirmOverwrite(host, caKeyPath))) continue;
+    const refusal = host.store.write(caKeyPath, armored, false);
     if (refusal !== null) {
-      yield printError(`Cannot open ${signatureFile}: ${refusal}`);
+      yield printError(`Cannot open ${caKeyPath}: ${refusal}`);
       return 255;
     }
-    if (!request.quiet) yield printError(`Write signature to ${signatureFile}`);
+    if (!request.quiet) yield printError(`Write signature to ${caKeyPath}`);
   }
   return 0;
 }
@@ -168,8 +168,8 @@ function describeFailure(outcome: SignersOutcome<unknown>): readonly string[] {
 
 function* verifyDialogue(request: KeygenRequest, host: SshKeygenHost, validate: boolean): KeygenDialogue {
   const operation = validate ? 'verify' : 'check-novalidate';
-  if (request.namespace === undefined || request.namespace === '') return yield* missing(`Too few arguments for ${operation}: missing namespace`);
-  if (request.signatureFile === undefined) return yield* missing(`Too few arguments for ${operation}: missing signature file`);
+  if (request.principals === undefined || request.principals === '') return yield* missing(`Too few arguments for ${operation}: missing namespace`);
+  if (request.caKeyPath === undefined) return yield* missing(`Too few arguments for ${operation}: missing signature file`);
   if (validate && request.file === undefined) return yield* missing('Too few arguments for sign: missing allowed keys file');
   if (validate && request.identity === undefined) return yield* missing('Too few arguments for verify: missing principal identity');
   const options = processOptions(request, host, { hashAlgorithm: false, verifyTime: true, printPublicKey: true });
@@ -177,7 +177,7 @@ function* verifyDialogue(request: KeygenRequest, host: SshKeygenHost, validate: 
     yield printError(options);
     return 255;
   }
-  const namespace = request.namespace;
+  const namespace = request.principals;
   const principal = validate ? request.identity : undefined;
   let verdict: SshPublicKey | null = null;
   let signerBlob = new Uint8Array(0);
@@ -204,7 +204,7 @@ function* verifyDialogue(request: KeygenRequest, host: SshKeygenHost, validate: 
 function* checkSignature(
   request: KeygenRequest, host: SshKeygenHost, namespace: string, options: SignatureOptions, validate: boolean,
 ): Generator<KeygenStep, { key: SshPublicKey; blob: Uint8Array } | null, string | null | undefined> {
-  const armored = host.store.read(request.signatureFile ?? '');
+  const armored = host.store.read(request.caKeyPath ?? '');
   if (armored === null) {
     yield printError(`Couldn't read signature file: ${NO_SUCH_FILE}`);
     return null;
@@ -241,14 +241,14 @@ function signersContext(host: SshKeygenHost, path: string, text: string, verifyT
 }
 
 function* findPrincipalsDialogue(request: KeygenRequest, host: SshKeygenHost): KeygenDialogue {
-  if (request.signatureFile === undefined) return yield* missing('Too few arguments for find-principals:missing signature file');
+  if (request.caKeyPath === undefined) return yield* missing('Too few arguments for find-principals:missing signature file');
   if (request.file === undefined) return yield* missing('Too few arguments for find-principals:missing allowed keys file');
   const options = processOptions(request, host, { hashAlgorithm: false, verifyTime: true, printPublicKey: false });
   if (typeof options === 'string') {
     yield printError(options);
     return 255;
   }
-  const armored = host.store.read(request.signatureFile);
+  const armored = host.store.read(request.caKeyPath);
   if (armored === null) {
     yield printError(`Couldn't read signature file: ${NO_SUCH_FILE}`);
     yield printError('No principal matched.');
