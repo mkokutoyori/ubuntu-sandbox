@@ -103,6 +103,7 @@ import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
 import { ShellContext } from '@/shell/ShellContext';
 import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
+import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import type { SftpClientSession } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
 import { parseSftpCommandLine } from '@/network/protocols/ssh/sftp/client/SftpCommandLine';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
@@ -1706,13 +1707,6 @@ export class LinuxTerminalSession extends TerminalSession {
       this.enterSqlPlus(JSON.parse(sqlplusArgs));
       return;
     }
-    const sftpMeta = ctx.metadata.get('enter_sftp') as string | undefined;
-    if (sftpMeta) {
-      const { args } = JSON.parse(sftpMeta) as { args: string[] };
-      const password = ctx.values.get('sftp_password') ?? '';
-      void this.connectAndEnterSftp(args, password);
-      return;
-    }
     const ftpMeta = ctx.metadata.get('enter_ftp') as string | undefined;
     if (ftpMeta) {
       const { host, port, user } = JSON.parse(ftpMeta) as { host: string; port?: number; user: string };
@@ -1800,33 +1794,13 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
-    const destination = parsed.line.destination;
-    if (destination === null || parsed.line.batchFile !== null) {
-      void this.connectAndEnterSftp(args, '');
-      return;
-    }
-    const user = destination.user ?? this.currentUser;
-    const steps: InteractiveStep[] = [
-      {
-        type: 'password',
-        prompt: `${user}@${destination.host}'s password: `,
-        mask: 'hidden',
-        storeAs: 'sftp_password',
-      },
-      {
-        type: 'execute',
-        action: async (ctx: FlowContext) => {
-          ctx.metadata.set('enter_sftp', JSON.stringify({ args }));
-        },
-      },
-    ];
-    this.startFlowFromSteps(steps, `sftp ${args.join(' ')}`);
+    void this.connectAndEnterSftp(args);
   }
 
-  private async connectAndEnterSftp(args: string[], password: string): Promise<void> {
+  private async connectAndEnterSftp(args: string[]): Promise<void> {
     const machine = this.device as unknown as {
       executor?: {
-        openSftpClientSession(args: string[], password: string): Promise<
+        openSftpClientSession(args: string[], password: string, io: ITerminalIO): Promise<
           | { kind: 'opened'; session: SftpClientSession }
           | { kind: 'ended'; outcome: { output: string; exitCode: number } }
         >;
@@ -1837,7 +1811,15 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
-    const opened = await machine.executor.openSftpClientSession(args, password);
+    let opened: Awaited<ReturnType<NonNullable<typeof machine.executor>['openSftpClientSession']>>;
+    try {
+      opened = await machine.executor.openSftpClientSession(args, '', this.createSshTerminalIO());
+    } finally {
+      this.pendingSshIO = null;
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        this.inputMode = { type: 'normal' };
+      }
+    }
     if (opened.kind === 'ended') {
       for (const line of opened.outcome.output.split('\n')) this.addLine(line, opened.outcome.exitCode === 0 ? 'normal' : 'error');
       this._inputBuf = '';

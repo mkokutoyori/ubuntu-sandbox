@@ -97,6 +97,7 @@ import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand'
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { SftpLocalPort } from '@/network/protocols/ssh/sftp/client/SftpLocalPort';
+import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { runSftpCommand, SftpClientSession, type SftpCommandHost } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
 import type { SftpPacketChannel } from '@/network/protocols/ssh/sftp/client/SftpWireClient';
 import { sshPathOfWindowsPath } from '@/network/protocols/ssh/localFs/WindowsSshLocalFs';
@@ -2739,7 +2740,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.writeEventLog('OpenSSH/Operational', 'OpenSSH', 4, level, `sshd: ${message}`);
   }
 
-  private async openOutgoingSsh(args: string[], parsed: NonNullable<ReturnType<typeof parseSshArgs>>): Promise<
+  private async openOutgoingSsh(args: string[], parsed: NonNullable<ReturnType<typeof parseSshArgs>>, live?: ITerminalIO): Promise<
     | { readonly kind: 'refused'; readonly output: string }
     | {
       readonly kind: 'connected'; readonly session: SshSession; readonly dialogue: string; readonly typedHost: string;
@@ -2803,7 +2804,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       connector = dial;
     }
-    const password = asks ? undefined : typedLines[0] || undefined;
+    const password = asks || live !== undefined ? undefined : typedLines[0] || undefined;
     const scripted = new ScriptedTerminalIO(asks ? typedLines : typedLines.slice(1));
     const outcome = await openWireSshConnection({
       device: this,
@@ -2811,9 +2812,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       user,
       host: dialHost,
       port: port,
-      io: scripted,
+      io: live ?? scripted,
       password,
-      credentialless: !asks && password === undefined,
+      credentialless: live === undefined && !asks && password === undefined,
       strict,
       knownHosts: { user: settings.userKnownHostsFiles, global: settings.globalKnownHostsFiles },
       hashKnownHosts: settings.hashKnownHosts,
@@ -2836,7 +2837,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (outcome.kind !== 'connected') release();
     if (outcome.kind === 'auth-failed') {
       const denial = `${user}@${typedHost}: Permission denied (${outcome.methods ?? 'publickey,password'}).`;
-      return { kind: 'refused', output: dialogue.split('\n').includes(denial) ? dialogue.replace(/\n$/, '') : `${dialogue}${denial}` };
+      return { kind: 'refused', output: live !== undefined || dialogue.split('\n').includes(denial) ? dialogue.replace(/\n$/, '') : `${dialogue}${denial}` };
     }
     if (outcome.kind === 'host-key-changed') return { kind: 'refused', output: `${dialogue}Host key verification failed.` };
     if (outcome.kind === 'rejected' || outcome.kind === 'unreachable') return { kind: 'refused', output: `${dialogue}${outcome.message}` };
@@ -2904,11 +2905,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return result.output;
   }
 
-  async openSftpClientSession(args: string[], password: string): ReturnType<typeof SftpClientSession.open> {
+  async openSftpClientSession(args: string[], password: string, io: ITerminalIO | null = null): ReturnType<typeof SftpClientSession.open> {
     const host: SftpCommandHost = { ...this.sftpCommandHost(), interactive: true, stderrIsTerminal: true };
     this._scenarioStdin = password === '' ? undefined : password;
     try {
-      return await SftpClientSession.open(args, host, password === '' ? undefined : password);
+      return await SftpClientSession.open(args, host, password === '' ? undefined : password, io);
     } finally {
       this._scenarioStdin = undefined;
     }
@@ -2939,8 +2940,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const sshArguments = [...request.sshArguments, request.destination];
         const parsed = parseSshArgs(sshArguments);
         if (parsed === null) return { kind: 'refused', lines: [OPENSSH_WINDOWS_8_6.sftpUsage], exitCode: 1 };
-        const opened = await this.openOutgoingSsh(sshArguments, parsed);
-        if (opened.kind === 'refused') return { kind: 'refused', lines: [opened.output], exitCode: 255 };
+        const opened = await this.openOutgoingSsh(sshArguments, parsed, request.io ?? undefined);
+        if (opened.kind === 'refused') return { kind: 'refused', lines: opened.output === '' ? [] : [opened.output], exitCode: 255 };
         const lines = opened.dialogue.replace(/\n$/, '').split('\n').filter((line) => line !== '');
         const channel = opened.session.openSftpChannel(
           request.serverCommand === null ? undefined : { kind: 'command', command: request.serverCommand });

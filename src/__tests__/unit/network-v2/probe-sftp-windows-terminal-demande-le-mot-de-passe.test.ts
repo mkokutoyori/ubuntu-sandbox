@@ -1,14 +1,18 @@
 /*
  * `sftp alice@hote` tape dans l'invite Windows ouvre une session interactive comme sftp.exe de
- * Win32-OpenSSH : le client demande « alice@hote's password: », ouvre la session sur le fil, annonce
- * « Connected to hote. » et rend l'invite « sftp> ».
+ * Win32-OpenSSH : le client tente d'abord les cles, ne demande « alice@hote's password: » que si le
+ * serveur le propose, repond « Permission denied, please try again. » apres chaque mot de passe faux
+ * (trois essais, NumberOfPasswordPrompts), puis ecrit une seule fois
+ * « alice@hote: Permission denied (publickey,password). » avant « Connection closed ».
  *
- * Mesure de depart : la ligne partait vers cmdSftp sans mot de passe, le serveur refusait
- * (« Permission denied (publickey,password). » ecrit deux fois, aucun mot de passe demande, aucune
- * tentative dans le journal sshd).
+ * Mesure de depart : la ligne partait vers cmdSftp sans mot de passe (refus ecrit deux fois, aucune
+ * tentative dans le journal sshd). Une premiere correction posait l'invite AVANT toute connexion, donc
+ * meme pour un compte qui s'authentifie par cle, et abandonnait au premier mot de passe faux.
  *
- * Discrimine contre HEAD (git worktree) : 3 des 4 cas tombent ; « sans destination » passe dans les
- * deux etats (temoin : la ligne sans hote n'est pas interceptee et garde l'usage du client).
+ * Discrimine contre la premiere correction (git stash des sources, invite prealable) : 3 des 6 cas tombent
+ * (nouvel essai, trois essais, cle sans invite) ; les 3 autres passent dans les deux etats : l'invite et le
+ * bon mot de passe (temoins : la session s'ouvre dans les deux) et « sans destination » (la ligne sans hote
+ * n'est pas interceptee et garde l'usage du client).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
@@ -67,7 +71,7 @@ const promptOf = (term: WindowsTerminalSession): string | undefined =>
   (term.currentInputMode as { promptText?: string }).promptText;
 
 describe('sftp tape dans le terminal Windows', () => {
-  it('demande le mot de passe du compte nomme avant d ouvrir la session', async () => {
+  it('demande le mot de passe du compte nomme quand le serveur le propose', async () => {
     const { term } = await lab();
     await typedInto(term, 'sftp alice@10.94.0.20');
     expect(promptOf(term)).toBe("alice@10.94.0.20's password: ");
@@ -79,20 +83,48 @@ describe('sftp tape dans le terminal Windows', () => {
     const opening = await typedInto(term, 'secret');
     expect(opening.join('\n')).toContain('Connected to 10.94.0.20.');
     expect(term.getPrompt()).toBe('sftp> ');
-
     expect((await typedInto(term, 'pwd')).join('\n')).toContain('Remote working directory: /home/alice');
     expect((await typedInto(term, 'ls')).join('\n')).toContain('note.txt');
     await typedInto(term, 'bye');
   }, 90_000);
 
-  it('un mauvais mot de passe est refuse une seule fois, sans session', async () => {
+  it('un mot de passe faux redemande, puis le bon ouvre la session', async () => {
     const { term } = await lab();
     await typedInto(term, 'sftp alice@10.94.0.20');
-    const shown = await typedInto(term, 'faux');
-    const denials = shown.filter((line) => line.includes('Permission denied'));
-    expect(denials).toHaveLength(1);
-    expect(shown.join('\n')).not.toContain('Connected to');
+    const retry = await typedInto(term, 'faux');
+    expect(retry).toContain('Permission denied, please try again.');
+    expect(promptOf(term)).toBe("alice@10.94.0.20's password: ");
+    const opened = await typedInto(term, 'secret');
+    expect(opened.join('\n')).toContain('Connected to 10.94.0.20.');
+    expect(term.getPrompt()).toBe('sftp> ');
+  }, 90_000);
+
+  it('trois mots de passe faux ferment la session avec un seul refus final', async () => {
+    const { term } = await lab();
+    await typedInto(term, 'sftp alice@10.94.0.20');
+    const first = await typedInto(term, 'un');
+    const second = await typedInto(term, 'deux');
+    const last = await typedInto(term, 'trois');
+    const everything = [...first, ...second, ...last];
+    expect(everything.filter((line) => line === 'Permission denied, please try again.')).toHaveLength(2);
+    expect(everything.filter((line) => line === 'alice@10.94.0.20: Permission denied (publickey,password).')).toHaveLength(1);
+    expect(everything).toContain('Connection closed');
+    expect(everything.join('\n')).not.toContain('Connected to');
     expect(term.getPrompt()).not.toBe('sftp> ');
+  }, 90_000);
+
+  it('une cle autorisee ouvre la session sans jamais demander de mot de passe', async () => {
+    const { win, server, term } = await lab();
+    await win.executeCommand('ssh-keygen -t ed25519 -N "" -f C:\\Users\\User\\.ssh\\id_ed25519');
+    const publicKey = (await win.executeCommand('type C:\\Users\\User\\.ssh\\id_ed25519.pub')).trim();
+    await server.executeCommand('mkdir -p /home/alice/.ssh');
+    await server.executeCommand(`sh -c 'echo "${publicKey}" > /home/alice/.ssh/authorized_keys'`);
+    await server.executeCommand('chmod 700 /home/alice/.ssh && chmod 600 /home/alice/.ssh/authorized_keys');
+    await server.executeCommand('chown -R alice:alice /home/alice/.ssh');
+    const shown = await typedInto(term, 'sftp alice@10.94.0.20');
+    expect(promptOf(term) ?? '').not.toContain('password');
+    expect(shown.join('\n')).toContain('Connected to 10.94.0.20.');
+    expect(term.getPrompt()).toBe('sftp> ');
   }, 90_000);
 
   it('sans destination la ligne garde l usage du client', async () => {
