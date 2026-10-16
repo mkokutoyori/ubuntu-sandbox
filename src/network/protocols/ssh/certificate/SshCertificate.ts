@@ -1,5 +1,6 @@
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import {
+  keygenBlobDigest,
   sshPublicKeyBlob,
   sshPublicKeyFromBlob,
   type SshPrivateKey,
@@ -8,6 +9,7 @@ import {
 import { signWithAlgorithm, verifyUserauthSignature } from '../auth/UserauthSignature';
 import { SshReader, SshWriter } from '../wire/SshDataTypes';
 import { matchesPatternList } from '../client/SshClientConfigFile';
+import { formatAbsoluteTime, type ZoneOffset } from '../keygen/AbsoluteTime';
 
 export const SSH_CERT_TYPE_USER = 1;
 export const SSH_CERT_TYPE_HOST = 2;
@@ -237,4 +239,20 @@ export function certificateAuthorityRefusal(certificate: SshCertificate, query: 
 
 export function certificateOption(options: readonly CertificateOption[], name: string): CertificateOption | undefined {
   return options.find((option) => option.name === name);
+}
+
+export function formatCertificateValidity(certificate: SshCertificate, zoneOffset: ZoneOffset): string {
+  if (certificate.validAfter === 0n && certificate.validBefore === CERT_FOREVER) return 'forever';
+  const from = certificate.validAfter === 0n ? '' : formatAbsoluteTime(Number(certificate.validAfter), zoneOffset);
+  const to = certificate.validBefore === CERT_FOREVER ? '' : formatAbsoluteTime(Number(certificate.validBefore), zoneOffset);
+  if (certificate.validAfter === 0n) return `before ${to}`;
+  if (certificate.validBefore === CERT_FOREVER) return `after ${from}`;
+  return `from ${from} to ${to}`;
+}
+
+export function describeHostCertificate(certificate: SshCertificate, zoneOffset: ZoneOffset): string {
+  const fingerprint = keygenBlobDigest(bytesToBase64(certificate.blob), 'sha256');
+  const authority = keygenBlobDigest(bytesToBase64(sshPublicKeyBlob(certificate.caKey)), 'sha256');
+  return `${certificate.algorithm} ${fingerprint}, serial ${certificate.serial} ID "${certificate.keyId}" `
+    + `CA ${certificate.caKey.algorithm} ${authority} valid ${formatCertificateValidity(certificate, zoneOffset)}`;
 }

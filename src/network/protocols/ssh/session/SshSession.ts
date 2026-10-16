@@ -38,7 +38,11 @@ import type { AgentPort } from '../agent/AgentService';
 import { serveAgentChannel } from '../agent/AgentService';
 import { AGENT_CHANNEL_TYPE, agentSignatureFlags } from '../agent/AgentWire';
 import { signUserauth, signWithAlgorithm, userauthSignatureAlgorithm, userauthSignedData } from '../auth/UserauthSignature';
-import { SSH_CERT_TYPE_USER, certificateAlgorithmOf, parseCertificateLine } from '../certificate/SshCertificate';
+import {
+  SSH_CERT_TYPE_USER, certificateAlgorithmOf, certificateAuthorityRefusal, parseCertificateBlob, parseCertificateLine,
+  type SshCertificate,
+} from '../certificate/SshCertificate';
+import { lineMatchesName, parseKnownHostsLines } from '../hostkey/KnownHostsLines';
 import {
   keygenBlobDigest, keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob, sshKeyTypeLabel,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
@@ -129,6 +133,7 @@ export class SshSession implements ISshSession {
   private connection: SshConnection | null = null;
   private sessionId: Uint8Array | null = null;
   private hostKeyBlob: Uint8Array | null = null;
+  private presentedHostCertificate: SshCertificate | null = null;
 
   private channelManager = new SshChannelManager();
   private knownHosts: SshKnownHosts;
@@ -172,6 +177,10 @@ export class SshSession implements ISshSession {
 
   get state(): SshSessionState {
     return this._state;
+  }
+
+  get serverHostCertificate(): SshCertificate | null {
+    return this.presentedHostCertificate;
   }
 
   get serverHostKeyBlob(): Uint8Array | null {
@@ -240,7 +249,10 @@ export class SshSession implements ISshSession {
       });
     }
     this.sessionId = established.sessionId;
-    this.hostKeyBlob = established.hostKeyBlob;
+    const presentedCertificate = parseCertificateBlob(established.hostKeyBlob);
+    const plainHostKeyBlob = presentedCertificate === null ? established.hostKeyBlob : sshPublicKeyBlob(presentedCertificate.subject);
+    this.hostKeyBlob = plainHostKeyBlob;
+    this.presentedHostCertificate = presentedCertificate;
     this.peerIdentificationLine = established.peerIdentification.line;
     this.negotiatedAlgorithms = established.algorithms;
     const conn = transportLink(transport, dialed);
@@ -249,12 +261,13 @@ export class SshSession implements ISshSession {
     this.acceptForwardedConnections(this.connection, conn);
 
     const hostKey = SshHostKey.fromFiles(
-      bytesToBase64(established.hostKeyBlob),
+      bytesToBase64(plainHostKeyBlob),
       '',
-      sshPublicKeyFromBlob(established.hostKeyBlob)!.algorithm,
+      sshPublicKeyFromBlob(plainHostKeyBlob)!.algorithm,
     );
 
-    const verifyResult = await this.doHostKeyCheck(opts.host, hostKey, opts);
+    const certificateTrusted = presentedCertificate !== null && this.hostCertificateTrusted(opts, presentedCertificate);
+    const verifyResult = certificateTrusted ? ok(undefined) : await this.doHostKeyCheck(opts.host, hostKey, opts);
     if (!verifyResult.ok) {
       this.transition(disconnected('host key rejected'));
       conn.close();
@@ -436,6 +449,27 @@ export class SshSession implements ISshSession {
     this._state = next;
     if (next.kind !== 'disconnected' || wasDisconnected) return;
     for (const listener of [...this.disconnectListeners]) listener();
+  }
+
+  private hostCertificateTrusted(opts: SshConnectOptions, certificate: SshCertificate): boolean {
+    const authority = bytesToBase64(sshPublicKeyBlob(certificate.caKey));
+    const listed = this.knownHostsFor(opts).texts().some((text) => parseKnownHostsLines(text).some((line) => (
+      line.marker === 'ca' && line.keyBlob === authority && lineMatchesName(line, opts.host)
+    )));
+    if (!listed) return false;
+    const refusal = certificateAuthorityRefusal(certificate, {
+      wantHost: true, requirePrincipal: false, wildcardPattern: false,
+      verifyTime: BigInt(Math.floor(simulationNowMs() / 1000)), name: opts.host,
+    });
+    if (refusal !== null) {
+      this.deps.interactionHandler.showWarning(refusal);
+      return false;
+    }
+    if (certificate.critical.length > 0) {
+      this.deps.interactionHandler.showWarning(`Certificate for ${opts.host} contains unsupported critical options(s)`);
+      return false;
+    }
+    return true;
   }
 
   private async doHostKeyCheck(

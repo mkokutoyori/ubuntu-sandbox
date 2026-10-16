@@ -12,6 +12,7 @@ import type { AgentPort } from '../agent/AgentService';
 import type { ISshAuthContext, AuthMethodType } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
+import type { SshCertificate } from '../certificate/SshCertificate';
 import type { SshUserContext } from '../SshUserContext';
 import type { ISshServerEventBus } from './SshServerEvent';
 import type { SshInteractiveShell } from './SshInteractiveShell';
@@ -147,10 +148,16 @@ export interface SshTransportPolicy {
   readonly extInfo?: boolean;
 }
 
+export interface HostCertificateBinding {
+  readonly certificate: SshCertificate;
+  readonly hostKey: SshHostKey;
+}
+
 export interface ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly connectionLimitScope?: object;
   additionalHostKeys?(): SshHostKey[];
+  hostCertificates?(): HostCertificateBinding[];
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem;

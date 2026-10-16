@@ -26,7 +26,7 @@ import { ChrootedSftpFileSystem } from '../sftp/ChrootedSftpFileSystem';
 import { SshHostKey } from '../SshHostKey';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, sshPublicKeyFromBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
-import type { SshCertificate } from '../certificate/SshCertificate';
+import { SSH_CERT_TYPE_HOST, parseCertificateLine, type SshCertificate } from '../certificate/SshCertificate';
 import { isRevokedKey } from '../keygen/AllowedSigners';
 import { admitUserCertificate, certificateOfMaterial, type TextFile } from './UserCertificateAdmission';
 import { expandPrincipalsPath } from './PrincipalsPath';
@@ -50,7 +50,7 @@ import { SshSyslogger } from '../logging/SshSyslogger';
 import { SshdPam } from './SshdPam';
 import { SshdServerConfig } from './SshdServerConfig';
 import type {
-  DirectTcpipOutcome, DirectTcpipRequest, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
+  DirectTcpipOutcome, DirectTcpipRequest, HostCertificateBinding, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
 } from './ISshServerContext';
 import { parseRekeyLimit } from '../transport/RekeyLimit';
 import { sshdAlgorithmPreferences } from './SshdAlgorithmDirectives';
@@ -956,6 +956,19 @@ export class LinuxSshServerContext implements ISshServerContext {
     return paths
       .filter((path) => path !== HOST_KEY_PATH)
       .flatMap((path) => hostKeyFromFile(this.hostKeyFiles(), path) ?? []);
+  }
+
+  hostCertificates(): HostCertificateBinding[] {
+    const hostKeys = [this.hostKey, ...this.additionalHostKeys()];
+    const bindings: HostCertificateBinding[] = [];
+    for (const path of this.effectiveSshdServerConfig().hostCertificates) {
+      const parsed = parseCertificateLine((this.vfs.readFile(path) ?? '').split('\n')[0] ?? '');
+      if (parsed === null || parsed.certificate.type !== SSH_CERT_TYPE_HOST) continue;
+      const subject = bytesToBase64(sshPublicKeyBlob(parsed.certificate.subject));
+      const hostKey = hostKeys.find((candidate) => candidate.publicKey === subject);
+      if (hostKey !== undefined) bindings.push({ certificate: parsed.certificate, hostKey });
+    }
+    return bindings;
   }
 
   private loadOrGenerateHostKey(): SshHostKey {

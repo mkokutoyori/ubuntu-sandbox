@@ -515,7 +515,7 @@ export interface WireSshSuccess {
   readonly address: string;
   readonly port: number;
   readonly method: string | undefined;
-  readonly serverHostKey: { readonly algorithm: string; readonly fingerprint: string } | null;
+  readonly serverHostKey: { readonly algorithm: string; readonly fingerprint: string; readonly certificate?: string } | null;
   readonly negotiated?: NegotiatedAlgorithms | null;
   readonly peerIdentification?: string | null;
   readonly user?: string;
@@ -549,7 +549,9 @@ export function verboseTranscript(success: WireSshSuccess, authenticated = true)
     lines.push(`debug1: kex: client->server cipher: ${negotiated.encryptionClientToServer} MAC: ${negotiated.macClientToServer ?? '<implicit>'} compression: ${negotiated.compressionClientToServer}`);
   }
   if (success.serverHostKey !== null) {
-    lines.push(`debug1: Server host key: ${success.serverHostKey.algorithm} ${success.serverHostKey.fingerprint}`);
+    lines.push(success.serverHostKey.certificate === undefined
+      ? `debug1: Server host key: ${success.serverHostKey.algorithm} ${success.serverHostKey.fingerprint}`
+      : `debug1: Server host certificate: ${success.serverHostKey.certificate}`);
   }
   lines.push(...(success.authTrace ?? []));
   if (!authenticated) return `${lines.join('\n')}\n`;

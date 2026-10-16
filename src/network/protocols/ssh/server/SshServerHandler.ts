@@ -49,7 +49,7 @@ import {
   SshTransport, transportLink, type SshServerHostKey, type SshTransportConfig,
 } from '../transport/SshTransport';
 import type { SshHostKey } from '../SshHostKey';
-import type { ISshServerContext, SshTransportPolicy } from './ISshServerContext';
+import type { HostCertificateBinding, ISshServerContext, SshTransportPolicy } from './ISshServerContext';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import { SshShellSession } from './SshShellSession';
 import {
@@ -236,7 +236,10 @@ export class SshServerHandler {
     const transport = new SshTransport(rawConn, {
       role: 'server',
       identification: this.ctx.serverIdentification?.() ?? SSH_SERVER_IDENTIFICATION,
-      hostKeys: [this.ctx.hostKey, ...(this.ctx.additionalHostKeys?.() ?? [])].flatMap(serverHostKeys),
+      hostKeys: [
+        ...(this.ctx.hostCertificates?.() ?? []).map(certificateHostKey),
+        ...[this.ctx.hostKey, ...(this.ctx.additionalHostKeys?.() ?? [])].flatMap(serverHostKeys),
+      ],
       ...transportPolicyConfig(this.ctx.transportPolicy?.()),
     });
     const conn = transportLink(transport, rawConn);
@@ -972,6 +975,17 @@ function endedLine(text: string): string {
 const HOST_KEY_SIGNATURES: Readonly<Record<string, readonly string[]>> = {
   'ssh-rsa': ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
 };
+
+function certificateHostKey(binding: HostCertificateBinding): SshServerHostKey {
+  const { certificate, hostKey } = binding;
+  return {
+    algorithms: signatureAlgorithmsFor(certificate.subject).map(certificateAlgorithmOf),
+    load: () => {
+      const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
+      return privateKey === null ? null : { publicKeyBlob: certificate.blob, privateKey };
+    },
+  };
+}
 
 function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {
   return [{

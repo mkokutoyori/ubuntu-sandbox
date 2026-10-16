@@ -9,6 +9,7 @@ import {
   certificateLine,
   certificateTypeName,
   certify,
+  formatCertificateValidity,
   parseCertificateLine,
   type CertificateOption,
   type SshCertificate,
@@ -170,15 +171,6 @@ function algorithmMatches(requested: string, key: SshPublicKey): boolean {
     || (requested === 'ecdsa' && key.algorithm.startsWith('ecdsa-'));
 }
 
-function validityText(certificate: SshCertificate, zoneOffset: ZoneOffset): string {
-  if (certificate.validAfter === 0n && certificate.validBefore === CERT_FOREVER) return 'forever';
-  const from = certificate.validAfter === 0n ? '' : formatAbsoluteTime(Number(certificate.validAfter), zoneOffset);
-  const to = certificate.validBefore === CERT_FOREVER ? '' : formatAbsoluteTime(Number(certificate.validBefore), zoneOffset);
-  if (certificate.validAfter === 0n) return `before ${to}`;
-  if (certificate.validBefore === CERT_FOREVER) return `after ${from}`;
-  return `from ${from} to ${to}`;
-}
-
 function* fatal(message: string): KeygenDialogue {
   yield printError(message);
   return 255;
@@ -241,7 +233,7 @@ export function* certifyDialogue(request: KeygenRequest, host: SshKeygenHost): K
     if (failure !== null) return yield* fatal(`Unable to save public key to ${output}: ${failure}`);
     if (!request.quiet) {
       const forText = request.principals === undefined ? '' : ` for ${request.principals}`;
-      yield printError(`Signed ${certificateTypeName(certificate)} key ${output}: id "${certificate.keyId}" serial ${certificate.serial}${forText} valid ${validityText(certificate, zoneOffset)}`);
+      yield printError(`Signed ${certificateTypeName(certificate)} key ${output}: id "${certificate.keyId}" serial ${certificate.serial}${forText} valid ${formatCertificateValidity(certificate, zoneOffset)}`);
     }
     if (serial.increment) serial = { serial: serial.serial + 1n, increment: true };
   }
@@ -277,7 +269,7 @@ function describeCertificate(certificate: SshCertificate, request: KeygenRequest
     `        Signing CA: ${sshKeyTypeLabel(certificate.caKey.algorithm)} ${certificateFingerprint(sshPublicKeyBlob(certificate.caKey), request.hash)} (using ${certificate.signatureType})`,
     `        Key ID: "${certificate.keyId}"`,
     `        Serial: ${certificate.serial}`,
-    `        Valid: ${validityText(certificate, zoneOffset)}`,
+    `        Valid: ${formatCertificateValidity(certificate, zoneOffset)}`,
   ];
   lines.push('        Principals: ' + (certificate.principals.length === 0 ? '(none)' : ''));
   for (const principal of certificate.principals) lines.push(`                ${principal}`);

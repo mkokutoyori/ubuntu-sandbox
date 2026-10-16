@@ -139,6 +139,7 @@ export interface SshdServerConfigSnapshot {
   readonly authorizedKeysFile: readonly string[];
   readonly authorizedPrincipalsFile: string | null;
   readonly trustedUserCaKeys: string | null;
+  readonly hostCertificates: readonly string[];
   readonly revokedKeys: string | null;
   readonly caSignatureAlgorithms: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
@@ -238,6 +239,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly authorizedKeysFile: readonly string[];
   readonly authorizedPrincipalsFile: string | null;
   readonly trustedUserCaKeys: string | null;
+  readonly hostCertificates: readonly string[];
   readonly revokedKeys: string | null;
   readonly caSignatureAlgorithms: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
@@ -296,6 +298,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.authorizedKeysFile = s.authorizedKeysFile;
     this.authorizedPrincipalsFile = s.authorizedPrincipalsFile;
     this.trustedUserCaKeys = s.trustedUserCaKeys;
+    this.hostCertificates = s.hostCertificates;
     this.revokedKeys = s.revokedKeys;
     this.caSignatureAlgorithms = s.caSignatureAlgorithms;
     this.matchBlocks = s.matchBlocks;
@@ -356,6 +359,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       authorizedKeysFile: Object.freeze(['.ssh/authorized_keys', '.ssh/authorized_keys2']),
       authorizedPrincipalsFile: null,
       trustedUserCaKeys: null,
+      hostCertificates: Object.freeze([]),
       revokedKeys: null,
       caSignatureAlgorithms: Object.freeze([...DEFAULT_CA_SIGNATURE_ALGORITHMS]),
       matchBlocks: Object.freeze([]),
@@ -671,6 +675,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'permitopen': return cfg.mutate({ permitOpen: Object.freeze(value.split(/\s+/).filter(Boolean)) });
     case 'authorizedkeysfile': return cfg.mutate({ authorizedKeysFile: Object.freeze(value.split(/\s+/).filter(Boolean)) });
     case 'authorizedprincipalsfile': return cfg.mutate({ authorizedPrincipalsFile: value === 'none' ? null : value });
+    case 'hostcertificate': return cfg.mutate({ hostCertificates: Object.freeze([...cfg.hostCertificates, value]) });
     case 'trustedusercakeys': return cfg.mutate({ trustedUserCaKeys: value === 'none' ? null : value });
     case 'revokedkeys': return cfg.mutate({ revokedKeys: value === 'none' ? null : value });
     case 'casignaturealgorithms': return cfg.mutate({ caSignatureAlgorithms: Object.freeze(value.split(',').map((name) => name.trim()).filter(Boolean)) });

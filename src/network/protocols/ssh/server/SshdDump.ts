@@ -1,5 +1,5 @@
 import {
-  OPENSSH_CIPHERS, OPENSSH_HOST_KEY_ALGORITHMS, OPENSSH_KEX_ALGORITHMS, OPENSSH_MACS, assembleAlgorithmList,
+  OPENSSH_CIPHERS, OPENSSH_DEFAULT_HOST_KEY_ALGORITHMS, OPENSSH_KEX_ALGORITHMS, OPENSSH_MACS, assembleAlgorithmList,
 } from '../transport/SshAlgorithms';
 import { SshdServerConfig } from './SshdServerConfig';
 
@@ -52,13 +52,6 @@ const ACCUMULATING: ReadonlySet<string> = new Set([
 const REPLACED_BY_MATCH: ReadonlySet<string> = new Set([
   'allowusers', 'denyusers', 'allowgroups', 'denygroups', 'permitopen', 'permitlisten',
 ]);
-
-const CERT_TYPES = [
-  'ssh-ed25519-cert-v01@openssh.com', 'ecdsa-sha2-nistp256-cert-v01@openssh.com',
-  'ecdsa-sha2-nistp384-cert-v01@openssh.com', 'ecdsa-sha2-nistp521-cert-v01@openssh.com',
-  'sk-ssh-ed25519-cert-v01@openssh.com', 'sk-ecdsa-sha2-nistp256-cert-v01@openssh.com',
-  'rsa-sha2-512-cert-v01@openssh.com', 'rsa-sha2-256-cert-v01@openssh.com',
-];
 
 const FLAGS: ReadonlyArray<readonly [string, boolean]> = [
   ['ignorerhosts', true], ['ignoreuserknownhosts', false], ['hostbasedauthentication', false],
@@ -186,7 +179,7 @@ export function dumpSshdConfig(
   for (const keyword of NONE_KEYWORDS_AFTER) out.push(`${keyword} ${one(keyword) ?? 'none'}`);
   const kexDefaults = profile.hybridKex ? OPENSSH_KEX_ALGORITHMS : OPENSSH_KEX_ALGORITHMS.filter((name) => !name.startsWith('sntrup'));
   out.push(`kexalgorithms ${algorithm('kexalgorithms', kexDefaults)}`);
-  const keyTypes = [...CERT_TYPES, ...OPENSSH_HOST_KEY_ALGORITHMS];
+  const keyTypes = OPENSSH_DEFAULT_HOST_KEY_ALGORITHMS;
   out.push(`hostbasedacceptedalgorithms ${algorithm('hostbasedacceptedalgorithms', keyTypes)}`);
   out.push(`hostkeyalgorithms ${algorithm('hostkeyalgorithms', keyTypes)}`);
   out.push(`pubkeyacceptedalgorithms ${algorithm('pubkeyacceptedalgorithms', keyTypes)}`);

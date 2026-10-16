@@ -199,6 +199,7 @@ import { SftpLocalPort } from '../../protocols/ssh/sftp/client/SftpLocalPort';
 import { runSftpCommand, SftpClientSession, type SftpCommandHost, type SftpConnection } from '../../protocols/ssh/sftp/client/SftpClientCommand';
 import type { SftpPacketChannel } from '../../protocols/ssh/sftp/client/SftpWireClient';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
+import { describeHostCertificate } from '@/network/protocols/ssh/certificate/SshCertificate';
 import { attachSftpServer } from '../../protocols/ssh/sftp/server/LocalSftpServer';
 import { SftpWireSession } from '../../protocols/ssh/sftp/SftpWireSession';
 import { LinuxSftpFSAdapter } from '../../protocols/ssh/sftp/LinuxSftpFSAdapter';
@@ -650,6 +651,7 @@ export class LinuxCommandExecutor {
   private iamAuthLog: IamAuthLogProjection | null = null;
   private iamPolicyFiles: IamPolicyFilesProjection | null = null;
   /** Unsubscribe handle for the identity-file re-seed subscription. */
+  private readonly certificateZoneOffset = (atMs: number): number => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes();
   private identityFilesUnsub: (() => void) | null = null;
   /** TCP liveness probe over the wire — injected by the owning machine. */
   private wireProbe: ((ip: string, port: number) => TcpWireOutcome) | null = null;
@@ -1772,7 +1774,7 @@ export class LinuxCommandExecutor {
       lines.unshift(...executing);
       lines.push(...sshVerboseTranscript({
         host: target.host, address: resolution.address, port: target.port,
-        method: session.authenticatedMethod ?? undefined, serverHostKey: serverHostKeyOf(session),
+        method: session.authenticatedMethod ?? undefined, serverHostKey: serverHostKeyOf(session, this.certificateZoneOffset),
         negotiated: session.negotiated, peerIdentification: session.serverIdentification,
         authTrace: session.authTrace, command: request.remoteCommand, settled: null, shell: null, notices: [],
       }).replace(/\n$/, '').split('\n'));
@@ -1979,7 +1981,7 @@ export class LinuxCommandExecutor {
   ): string[] {
     if (session === undefined || !splitSshFlags(args).some((flag) => /^-v+$/.test(flag))) return [];
     return sshVerboseTranscript({
-      host: target.host, address, port: target.port, method: undefined, serverHostKey: serverHostKeyOf(session),
+      host: target.host, address, port: target.port, method: undefined, serverHostKey: serverHostKeyOf(session, this.certificateZoneOffset),
       negotiated: session.negotiated, peerIdentification: session.serverIdentification,
       authTrace: session.authTrace, command: '', settled: null, shell: null, notices: [],
     }, false).replace(/\n$/, '').split('\n');
@@ -2088,7 +2090,7 @@ export class LinuxCommandExecutor {
         address: resolution.address,
         port: target.port,
         method: session.authenticatedMethod ?? undefined,
-        serverHostKey: serverHostKeyOf(session),
+        serverHostKey: serverHostKeyOf(session, this.certificateZoneOffset),
         negotiated: session.negotiated,
         peerIdentification: session.serverIdentification,
         authTrace: session.authTrace,
@@ -8494,12 +8496,16 @@ function parseRunPartsUmask(raw: string): number | null {
   return n;
 }
 
-function serverHostKeyOf(session: SshSession): { algorithm: string; fingerprint: string } | null {
+function serverHostKeyOf(
+  session: SshSession, zoneOffset: (atMs: number) => number,
+): { algorithm: string; fingerprint: string; certificate?: string } | null {
   const blob = session.serverHostKeyBlob;
   if (blob === null || blob.length < 4) return null;
   const length = (blob[0] << 24) | (blob[1] << 16) | (blob[2] << 8) | blob[3];
   const algorithm = String.fromCharCode(...blob.slice(4, 4 + length));
-  return { algorithm, fingerprint: SshFingerprint.fromPublicKey(bytesToBase64(blob)).toString() };
+  const certificate = session.serverHostCertificate;
+  const key = { algorithm, fingerprint: SshFingerprint.fromPublicKey(bytesToBase64(blob)).toString() };
+  return certificate === null ? key : { ...key, certificate: describeHostCertificate(certificate, zoneOffset) };
 }
 
 function agentDirectorySuffix(): string {
