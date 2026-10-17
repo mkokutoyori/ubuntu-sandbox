@@ -121,7 +121,7 @@ export class WindowsSecurityAuditProjection {
       if (!this.gated('Logon', 'success')) return;
       const logonId = nextLogonId();
       this.openSessions.set(p.account.toLowerCase(), logonId);
-      this.audit.logonSuccess(p.account, p.logonType, undefined, logonId);
+      this.audit.logonSuccess(p.account, p.logonType, logonId, p.details);
       // 4672 — un compte privilégié reçoit ses privilèges à l'ouverture
       // de session, et Windows le journalise séparément du 4624. C'est
       // l'événement qu'on surveille pour repérer une session à pouvoirs.
@@ -130,7 +130,7 @@ export class WindowsSecurityAuditProjection {
       }
     } else {
       if (!this.gated('Logon', 'failure')) return;
-      this.audit.logonFailure(p.account);
+      this.audit.logonFailure(p.account, p.logonType, p.failure ?? 'bad-password', p.details);
     }
   }
 

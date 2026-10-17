@@ -138,6 +138,7 @@ import {
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
+import { createAuditIdentity } from './windows/eventlog/AuditIdentity';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
@@ -587,6 +588,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // celle qui horodate le journal, sans quoi un filtre temporel écarte
     // les événements que la machine vient d'écrire.
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
+    this.eventLog.attachClearedHook((logName, backupPath) => this.auditLogCleared(logName, backupPath));
     this.initDefaultSockets();
     this.wireReactiveProjections();
     this.winrm.onChange(() => this.startWinRmService());
@@ -638,7 +640,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   private auditRegistryChange(change: RegistryValueChange): void {
     if (!this.auditPolicy.isEnabled('Registry', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).registryValueModified(
+    this.securityAudit().registryValueModified(
       `${change.path}\\${change.name}`,
       change.previous === undefined ? '' : String(change.previous),
       String(change.next),
@@ -646,10 +648,29 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     );
   }
 
+  private securityAuditInstance: WindowsSecurityAudit | null = null;
+
+  /**
+   * Le journal d'audit de CETTE machine : un seul exemplaire, donc une
+   * seule identité (SID de machine, nom NetBIOS, sessions ouvertes) pour
+   * tous les événements qu'elle écrit.
+   */
+  securityAudit(): WindowsSecurityAudit {
+    this.securityAuditInstance ??= new WindowsSecurityAudit(
+      this.eventLog,
+      createAuditIdentity(
+        this.hostname.toUpperCase(),
+        (account) => this.userMgr.getUser(account)?.sid,
+        (group) => this.userMgr.getGroup(group)?.sid,
+      ),
+    );
+    return this.securityAuditInstance;
+  }
+
   /** 4698 — `Register-ScheduledTask` laisse désormais une trace. */
   auditScheduledTaskCreated(taskName: string, command: string): void {
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).scheduledTaskCreated(
+    this.securityAudit().scheduledTaskCreated(
       taskName, command, this.userMgr.currentUser || 'Administrator');
   }
 
@@ -658,9 +679,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * *après* le vidage. Sans cela, effacer ses traces ne laisserait
    * aucune trace, ce que Windows refuse par construction.
    */
-  auditLogCleared(logName: string): void {
-    new WindowsSecurityAudit(this.eventLog).auditLogCleared(
-      logName, this.userMgr.currentUser || 'Administrator');
+  auditLogCleared(logName: string, backupPath: string | null = null): void {
+    this.securityAudit().auditLogCleared(
+      logName, this.userMgr.currentUser || 'Administrator', backupPath);
   }
 
   /**
@@ -676,7 +697,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!this.auditPolicy.isEnabled('File System', 'success')) return;
     const who = this.userMgr.currentUser || 'Administrator';
     if (!this.fs.isAudited(absPath, who, access)) return;
-    new WindowsSecurityAudit(this.eventLog).objectAccessed(
+    this.securityAudit().objectAccessed(
       absPath, access, accessMask, who);
   }
 
@@ -690,21 +711,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   auditShareAdded(shareName: string, path: string): void {
     if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).shareAdded(
+    this.securityAudit().shareAdded(
       shareName, path, this.userMgr.currentUser || 'Administrator');
   }
 
   /** 5140 — un client a atteint un partage. */
   auditShareAccessed(shareName: string, path: string, user: string, sourceAddress: string): void {
     if (!this.auditPolicy.isEnabled('File Share', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).shareAccessed(
+    this.securityAudit().shareAccessed(
       shareName, path, user, sourceAddress);
   }
 
   /** 4670 — les permissions d'un objet du système de fichiers ont changé. */
   auditPermissionChange(absPath: string, identity: string, permissions: string): void {
     if (!this.auditPolicy.isEnabled('File System', 'success')) return;
-    new WindowsSecurityAudit(this.eventLog).permissionChanged(
+    this.securityAudit().permissionChanged(
       absPath, identity, permissions, this.userMgr.currentUser || 'Administrator');
   }
 
@@ -844,7 +865,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.procMgr.attachBus(bus, this.id);
     this.securityAuditProjection?.dispose();
     this.securityAuditProjection = new WindowsSecurityAuditProjection(
-      bus, new WindowsSecurityAudit(this.eventLog), this.id, this.auditPolicy,
+      bus, this.securityAudit(), this.id, this.auditPolicy,
       () => this.isCommandLineAuditEnabled(),
     );
     this.eventLogProjection?.dispose();

@@ -78,12 +78,16 @@ export interface WinCommandContext {
     getLogStatus?: (logName: string) => {
       logName: string; enabled: boolean; maxSizeKB: number;
       overflow: 'OverwriteOlder' | 'DoNotOverwrite' | 'OverwriteAsNeeded';
+      autoBackup: boolean; isolation: string; channelAccess: string; fileName: string;
+      levelFilter: string | null; keywordsFilter: string | null;
       numberOfLogRecords: number; oldestRecordNumber: number;
-      fileSize: number; lastWriteTime: Date | null;
+      fileSize: number; created: Date; lastWriteTime: Date | null;
     } | null;
     /** `wevtutil sl` — rend `null` en cas de succès, le refus sinon. */
     setLogConfig?: (logName: string, cfg: {
-      enabled?: boolean; maxSizeKB?: number; retention?: boolean;
+      enabled?: boolean; maxSizeKB?: number; retention?: boolean; autoBackup?: boolean;
+      isolation?: string; channelAccess?: string; fileName?: string;
+      levelFilter?: string; keywordsFilter?: string;
     }) => string | null;
     /** `wevtutil epl` — rend `null` en cas de succès, le refus sinon. */
     exportLog?: (logName: string, destination: string, overwrite: boolean) => string | null;
@@ -92,7 +96,9 @@ export interface WinCommandContext {
     /** `wevtutil al` — rend `null` en cas de succès, le refus sinon. */
     archiveExportedLog?: (path: string) => string | null;
     /** `wevtutil cl` — vide réellement le journal. */
-    clearEventLog?: (logName: string) => string;
+    clearEventLog?: (logName: string, backupPath?: string | null) => string;
+    /** `wevtutil qe /sbm:` — écrit un petit fichier texte. */
+    writeTextFile?: (path: string, content: string) => string | null;
     /** L'horloge de l'hôte, pour les filtres `timediff`. */
     now?: () => number;
   };

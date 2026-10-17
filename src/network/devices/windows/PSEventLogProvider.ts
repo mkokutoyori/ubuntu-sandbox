@@ -35,6 +35,18 @@ export interface EventLogMetadata {
   entries: EventLogEntry[];
   /** `wevtutil sl /e:false` — absent vaut activé. */
   enabled?: boolean;
+  /** `wevtutil sl /ab:true` — sauvegarde le journal plein sous `Archive-<journal>-<horodatage>.evtx`, puis le vide. */
+  autoBackup?: boolean;
+  /** `wevtutil sl /i:` — `system`, `application` ou `custom`. */
+  isolation?: string;
+  /** `wevtutil sl /ca:` — descripteur de sécurité SDDL du canal. */
+  channelAccess?: string;
+  /** `wevtutil sl /lfn:` — chemin du fichier `.evtx`. */
+  fileName?: string;
+  /** `wevtutil sl /l:` et `/k:` — filtres de niveau et de mots-clés d'un canal à session dédiée. */
+  levelFilter?: string;
+  keywordsFilter?: string;
+  created?: Date;
 }
 
 // ─── Seed helpers ─────────────────────────────────────────────────────────────
@@ -52,6 +64,26 @@ function makeDate(daysAgo: number, hoursAgo = 0): Date {
  *  breaking pc/server transcript coherence. Each provider now numbers
  *  its own entries from a fixed base. */
 const RECORD_ID_BASE = 1000;
+
+export const MIN_LOG_BYTES = 1_048_576;
+export const LOG_SIZE_STEP_BYTES = 65_536;
+
+const DEFAULT_CHANNEL_ACCESS: Record<string, string> = {
+  security: 'O:BAG:SYD:(A;;0xf0005;;;SY)(A;;0x5;;;BA)(A;;0x1;;;S-1-5-32-573)',
+  application: 'O:BAG:SYD:(A;;0xf0007;;;SY)(A;;0x7;;;BA)(A;;0x3;;;BO)(A;;0x5;;;SO)(A;;0x1;;;IU)(A;;0x3;;;SU)(A;;0x1;;;S-1-5-3)(A;;0x2;;;S-1-5-33)(A;;0x1;;;S-1-5-32-573)',
+  system: 'O:BAG:SYD:(A;;0xf0007;;;SY)(A;;0x7;;;BA)(A;;0x3;;;BO)(A;;0x5;;;SO)(A;;0x1;;;IU)(A;;0x3;;;SU)(A;;0x1;;;S-1-5-3)(A;;0x2;;;S-1-5-33)(A;;0x1;;;S-1-5-32-573)',
+};
+
+export function evtxFileName(logName: string): string {
+  return `${logName.replace(/\//g, '%4')}.evtx`;
+}
+
+export function archiveStamp(date: Date): string {
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${two(date.getUTCMonth() + 1)}-${two(date.getUTCDate())}`
+    + `-${two(date.getUTCHours())}-${two(date.getUTCMinutes())}-${two(date.getUTCSeconds())}`
+    + `-${String(date.getUTCMilliseconds()).padStart(3, '0')}`;
+}
 
 function entry(
   next: () => number,
@@ -269,8 +301,10 @@ export class PSEventLogProvider {
   getLogStatus(logName: string): {
     logName: string; enabled: boolean; maxSizeKB: number;
     overflow: EventLogMetadata['overflow'];
+    autoBackup: boolean; isolation: string; channelAccess: string; fileName: string;
+    levelFilter: string | null; keywordsFilter: string | null;
     numberOfLogRecords: number; oldestRecordNumber: number;
-    fileSize: number; lastWriteTime: Date | null;
+    fileSize: number; created: Date; lastWriteTime: Date | null;
   } | null {
     const meta = this.logs.get(logName.toLowerCase());
     if (!meta) return null;
@@ -280,9 +314,16 @@ export class PSEventLogProvider {
       enabled: meta.enabled !== false,
       maxSizeKB: meta.maxSizeKB,
       overflow: meta.overflow,
+      autoBackup: meta.autoBackup === true,
+      isolation: meta.isolation ?? 'Application',
+      channelAccess: meta.channelAccess ?? DEFAULT_CHANNEL_ACCESS[meta.logName.toLowerCase()] ?? '',
+      fileName: meta.fileName ?? `%SystemRoot%\\System32\\Winevt\\Logs\\${evtxFileName(meta.logName)}`,
+      levelFilter: meta.levelFilter ?? null,
+      keywordsFilter: meta.keywordsFilter ?? null,
       numberOfLogRecords: meta.entries.length,
       oldestRecordNumber: indexes.length ? Math.min(...indexes) : 0,
       fileSize: renderEvtx(meta).length,
+      created: meta.created ?? new Date(this.now()),
       lastWriteTime: meta.entries.length
         ? meta.entries[meta.entries.length - 1].timeGenerated
         : null,
@@ -297,19 +338,30 @@ export class PSEventLogProvider {
    * n'accepte pas.
    */
   setLogConfig(logName: string, cfg: {
-    enabled?: boolean; maxSizeKB?: number; retention?: boolean;
+    enabled?: boolean; maxSizeKB?: number; retention?: boolean; autoBackup?: boolean;
+    isolation?: string; channelAccess?: string; fileName?: string;
+    levelFilter?: string; keywordsFilter?: string;
   }): string | null {
     const meta = this.logs.get(logName.toLowerCase());
     if (!meta) return `Failed to read configuration for log ${logName}. The specified channel could not be found.`;
+    const retention = cfg.retention ?? (meta.overflow === 'DoNotOverwrite');
+    const autoBackup = cfg.autoBackup ?? (meta.autoBackup === true);
+    if (autoBackup && !retention) {
+      return `Failed to modify configuration for log ${meta.logName}. The parameter is incorrect.`;
+    }
     if (cfg.enabled !== undefined) meta.enabled = cfg.enabled;
     if (cfg.maxSizeKB !== undefined) meta.maxSizeKB = cfg.maxSizeKB;
-    // La rétention a un effet réel : `DoNotOverwrite` est ce que lit
-    // `isLogFull`, donc ce qui décide si un journal saturé refuse
-    // d'écraser. `autoBackup` n'a rien derrière — rien n'archive un
-    // journal plein ici — et n'est donc pas modifiable : voir le refus
-    // de `/ab:` côté commande.
     if (cfg.retention === true) meta.overflow = 'DoNotOverwrite';
-    else if (cfg.retention === false) meta.overflow = 'OverwriteAsNeeded';
+    else if (cfg.retention === false) {
+      meta.overflow = 'OverwriteAsNeeded';
+      meta.autoBackup = false;
+    }
+    if (cfg.autoBackup !== undefined) meta.autoBackup = cfg.autoBackup;
+    if (cfg.isolation !== undefined) meta.isolation = cfg.isolation;
+    if (cfg.channelAccess !== undefined) meta.channelAccess = cfg.channelAccess;
+    if (cfg.fileName !== undefined) meta.fileName = cfg.fileName;
+    if (cfg.levelFilter !== undefined) meta.levelFilter = cfg.levelFilter === '0' ? undefined : cfg.levelFilter;
+    if (cfg.keywordsFilter !== undefined) meta.keywordsFilter = cfg.keywordsFilter;
     return null;
   }
 
@@ -388,6 +440,14 @@ export class PSEventLogProvider {
     return null;
   }
 
+  writeTextFile(path: string, content: string): string | null {
+    if (!this.fs) return `Failed to save bookmark ${path}. The system cannot find the path specified.`;
+    const parent = path.replace(/\\[^\\]*$/, '');
+    if (parent && parent !== path) this.fs.mkdirp(parent);
+    this.fs.createFile(path, content);
+    return null;
+  }
+
   /**
    * Relit un fichier produit par `exportLog` — la moitié manquante de
    * l'aller-retour : exporter puis relire doit dire la même chose.
@@ -415,11 +475,16 @@ export class PSEventLogProvider {
     return null;
   }
 
+  private evtxPathOf(meta: EventLogMetadata): string {
+    if (meta.fileName === undefined) return `${EVTX_DIR}\\${evtxFileName(meta.logName)}`;
+    return meta.fileName.replace(/%SystemRoot%/gi, 'C:\\Windows');
+  }
+
   /** Re-render every event log to its `.evtx` file (no-op when unwired). */
   private materialize(): void {
     if (!this.fs) return;
     for (const meta of this.logs.values()) {
-      this.fs.createFile(`${EVTX_DIR}\\${meta.logName}.evtx`, renderEvtx(meta));
+      this.fs.createFile(this.evtxPathOf(meta), renderEvtx(meta));
     }
   }
 
@@ -464,6 +529,7 @@ export class PSEventLogProvider {
     // pas lieu. C'est ce qui rend `sl /e:false` observable.
     if (meta.enabled === false) return '';
     const ts = new Date(this.now());
+    if (!this.makeRoom(meta, ts)) return '';
     const entry: EventLogEntry = {
       index: this.nextIndex(),
       timeGenerated: ts,
@@ -499,11 +565,59 @@ export class PSEventLogProvider {
     return '';
   }
 
-  clearEventLog(logName: string): string {
+  private capacityOf(meta: EventLogMetadata): number {
+    return Math.max(1, Math.floor((meta.maxSizeKB * 1024) / AVG_ENTRY_BYTES));
+  }
+
+  /**
+   * Fait la place d'une entrée de plus, comme le service EventLog.
+   *
+   * Journal plein et rétention vraie : les événements entrants sont
+   * perdus, sauf si `autoBackup` archive d'abord le journal sous
+   * `Archive-<journal>-<horodatage>.evtx` et le vide. Rétention fausse :
+   * l'entrée la plus ancienne cède la place. Rend faux quand l'entrée
+   * doit être abandonnée.
+   */
+  private makeRoom(meta: EventLogMetadata, now: Date): boolean {
+    const capacity = this.capacityOf(meta);
+    if (meta.entries.length < capacity) return true;
+    if (meta.overflow !== 'DoNotOverwrite') {
+      meta.entries.splice(0, meta.entries.length - capacity + 1);
+      return true;
+    }
+    if (meta.autoBackup !== true) return false;
+    this.archiveFullLog(meta, now);
+    return true;
+  }
+
+  private archiveFullLog(meta: EventLogMetadata, now: Date): void {
+    if (this.fs !== null) {
+      const directory = this.evtxPathOf(meta).replace(/\\[^\\]*$/, '');
+      const name = `Archive-${evtxFileName(meta.logName).replace(/\.evtx$/, '')}-${archiveStamp(now)}.evtx`;
+      this.fs.createFile(`${directory}\\${name}`, renderEvtx(meta));
+    }
+    meta.entries = [];
+  }
+
+  private clearedHook: ((logName: string, backupPath: string | null) => void) | null = null;
+
+  /**
+   * Le service EventLog consigne lui-même l'effacement d'un journal
+   * (1102 dans Security, 104 dans System) : quel que soit l'outil qui
+   * efface — `wevtutil cl`, `Clear-EventLog`, l'observateur — la trace
+   * naît ici, une seule fois.
+   */
+  attachClearedHook(hook: (logName: string, backupPath: string | null) => void): void {
+    this.clearedHook = hook;
+  }
+
+  clearEventLog(logName: string, backupPath: string | null = null): string {
     const key = logName.toLowerCase();
-    if (!this.logs.has(key)) return `Clear-EventLog : No log with name "${logName}" was found.`;
-    this.logs.get(key)!.entries = [];
+    const meta = this.logs.get(key);
+    if (!meta) return `Clear-EventLog : No log with name "${logName}" was found.`;
+    meta.entries = [];
     this.materialize();
+    this.clearedHook?.(meta.logName, backupPath);
     return '';
   }
 
@@ -541,8 +655,7 @@ export class PSEventLogProvider {
     const meta = this.logs.get(logName.toLowerCase());
     if (!meta) return false;
     if (meta.overflow !== 'DoNotOverwrite') return false;
-    const maxEntries = Math.max(1, Math.floor((meta.maxSizeKB * 1024) / AVG_ENTRY_BYTES));
-    return meta.entries.length >= maxEntries;
+    return meta.entries.length >= this.capacityOf(meta);
   }
 
   // ─── Get-WinEvent ─────────────────────────────────────────────────

@@ -1676,11 +1676,7 @@ class WindowsRegistryAdapter implements IRegistryProvider {
 // ── Event-log adapter (minimal — returns parsed shape where possible) ──────
 
 class WindowsEventLogAdapter implements IEventLogProvider {
-  constructor(
-    private readonly log: PSEventLogProvider,
-    /** L'appareil, pour l'audit 1102 — absent sur un hôte non-Windows. */
-    private readonly pc?: { auditLogCleared?(logName: string): void },
-  ) {}
+  constructor(private readonly log: PSEventLogProvider) {}
 
   listLogs() {
     return this.log.getAllLogsStructured();
@@ -1703,11 +1699,7 @@ class WindowsEventLogAdapter implements IEventLogProvider {
     return this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
   }
   clearLog(logName: string): string {
-    const out = this.log.clearEventLog(logName);
-    // 1102 s'écrit *après* le vidage : c'est la première entrée du
-    // journal neuf, et souvent la seule trace qu'un effacement a eu lieu.
-    if (!out) this.pc?.auditLogCleared?.(logName);
-    return out;
+    return this.log.clearEventLog(logName);
   }
   newLog(logName: string, source: string): string { return this.log.newEventLog(logName, source); }
   limitLog(logName: string): void { this.log.limitEventLog(logName); }
@@ -3837,7 +3829,7 @@ export function createWindowsPSProviders(
     }),
     users:          new WindowsUserAdapter(pc),
     registry:       new WindowsRegistryAdapter(reg, () => pc.getUserManager().isCurrentUserAdmin()),
-    eventLog:       new WindowsEventLogAdapter(log, pc),
+    eventLog:       new WindowsEventLogAdapter(log),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(pc, vpn),
     // Le fuseau vit sur l'identite de la machine, la meme que
