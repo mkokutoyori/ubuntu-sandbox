@@ -251,6 +251,8 @@ export interface WireExecTarget {
   user: string;
   port: number;
   identities: string[];
+  certificateFiles: string[];
+  revokedHostKeys?: string;
   command: string;
   commandWords: string[];
   holdOnly: boolean;
@@ -319,6 +321,8 @@ export function wireExecTarget(
     user: settings.user,
     port: settings.port,
     identities,
+    certificateFiles: settings.certificateFiles.map((file) => vfs.normalizePath(file, cwd)),
+    ...(settings.revokedHostKeys === undefined ? {} : { revokedHostKeys: vfs.normalizePath(settings.revokedHostKeys, cwd) }),
     command: joinRemoteCommand(positional.slice(1)),
     commandWords: positional.slice(1),
     holdOnly: flags.includes('-N'),

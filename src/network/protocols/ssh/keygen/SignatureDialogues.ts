@@ -1,21 +1,20 @@
-import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
+import { base64ToBytes, bytesToBase64, fileTextToBytes } from '@/crypto/encoding';
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, sshPublicKeyFromBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
 import {
   checkAllowedSigner,
   findPrincipals,
-  isRevokedKey,
   matchPrincipals,
   type SignersContext,
   type SignersOutcome,
 } from './AllowedSigners';
+import { checkRevocation } from '../certificate/RevocationFile';
 import { parseAbsoluteTime, type ZoneOffset } from './AbsoluteTime';
 import { failureText, loadPrivateKey, publicKeyOfFile } from './KeyFileDialogues';
 import { print, printError, type KeygenDialogue, type KeygenRequest, type KeygenStep, type SshKeygenHost } from './KeygenTypes';
 import { armorSignature, dearmorSignature, signerOfSignature, signMessage, verifyMessage } from './SshSignatureFormat';
 
 const NO_SUCH_FILE = 'No such file or directory';
-const encoder = new TextEncoder();
 
 interface SignatureOptions {
   readonly hashAlgorithm?: string;
@@ -80,7 +79,7 @@ function sameBlob(first: Uint8Array, second: Uint8Array): boolean {
 }
 
 function stdinBytes(host: SshKeygenHost): Uint8Array {
-  return encoder.encode(host.stdin ?? '');
+  return fileTextToBytes(host.stdin ?? '');
 }
 
 function* confirmOverwrite(host: SshKeygenHost, path: string): Generator<KeygenStep, boolean, string | null | undefined> {
@@ -136,7 +135,7 @@ function* signDialogue(request: KeygenRequest, host: SshKeygenHost): KeygenDialo
         yield printError(`Cannot open ${target} for signing: ${NO_SUCH_FILE}`);
         return 255;
       }
-      message = encoder.encode(text);
+      message = fileTextToBytes(text);
     }
     if (!request.quiet) yield printError(fromStandardInput ? 'Signing data on standard input' : `Signing file ${target}`);
     const signed = signMessage(signingKey, options.hashAlgorithm, request.principals, message);
@@ -222,7 +221,7 @@ function* checkSignature(
   const signer = verified.value;
   if (request.recordHost !== undefined && validate) {
     const revoked = host.store.read(request.recordHost);
-    if (revoked === null || isRevokedKey(revoked, signer.key) !== false) return null;
+    if (checkRevocation(revoked, signer.key).kind !== 'ok') return null;
   }
   if (!validate) return signer;
   const allowedPath = request.file ?? '';

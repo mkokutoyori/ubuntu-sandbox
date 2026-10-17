@@ -19,11 +19,15 @@ import { WindowsSftpFSAdapter } from '../sftp/WindowsSftpFSAdapter';
 import { isInternalSftp, sftpProgramOf, type SftpLaunch, type SftpServicePlan } from './SftpServicePlan';
 import { parseSftpServerArguments, SFTP_SERVER_USAGE, splitCommandWords } from '../sftp/server/SftpServerOptions';
 import { SshHostKey } from '../SshHostKey';
+import type { SshCertificate } from '../certificate/SshCertificate';
+import { SshdCertificateService } from './SshdCertificateService';
+import { certificateOfMaterial, plainKeyOfMaterial } from './UserCertificateAdmission';
 import { SshUserContext } from '../SshUserContext';
 import type { SshVtyShell } from './SshExecTarget';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
   SSHD_MAX_AUTH_TRIES_REASON,
+  type HostCertificateBinding,
   type ILinuxShell,
   type ISshServerContext,
   type SshServerConfig,
@@ -249,6 +253,10 @@ export class WindowsSshServerContext implements ISshServerContext {
     if (!this.config.pubkeyAuthentication || !this.policy.methodEnabled(user, source.ip, 'publickey')) return null;
     if (!this.userManager.getUser(user)) return null;
     const home = `C:\\Users\\${user}`;
+    const certificate = certificateOfMaterial(publicKey);
+    if (certificate !== null) return this.admittedCertificate(user, home, certificate, source);
+    const plain = plainKeyOfMaterial(publicKey);
+    if (plain !== null && this.certificates().revocationRefusal(user, plain, source) !== null) return null;
     for (const entry of this.policy.view(user, source.ip).authorizedKeysFile) {
       const path = this.authorizedKeysPath(entry, user, home);
       const result = this.wfs.readFile(path);
@@ -260,6 +268,37 @@ export class WindowsSshServerContext implements ISshServerContext {
       }
     }
     return null;
+  }
+
+  private certificateService: SshdCertificateService | null = null;
+
+  private certificates(): SshdCertificateService {
+    this.certificateService ??= new SshdCertificateService({
+      config: () => this.policy.config,
+      groupsOf: (user) => this.userManager.getGroupsForUser(user).map((group) => group.name),
+      readFile: (path) => {
+        const result = this.wfs.readFile(windowsPathOf(path));
+        return result.ok ? result.content ?? '' : null;
+      },
+      emit: (event) => this.events.emit(event),
+    });
+    return this.certificateService;
+  }
+
+  private admittedCertificate(user: string, home: string, certificate: SshCertificate, source: KeySource): AuthorizedKey | null {
+    let authorizedKeys: { path: string; text: string } | null = null;
+    for (const entry of this.policy.view(user, source.ip).authorizedKeysFile) {
+      const path = this.authorizedKeysPath(entry, user, home);
+      const result = this.wfs.readFile(path);
+      if (result.ok && result.content) { authorizedKeys = { path, text: result.content }; break; }
+    }
+    const admitted = this.certificates().admit(user, { uid: 0, home }, certificate, source, authorizedKeys);
+    if (admitted !== null) this.keyLogons.add(`${user}@${source.ip}`);
+    return admitted;
+  }
+
+  hostCertificates(): HostCertificateBinding[] {
+    return this.certificates().hostCertificates([this.hostKey, ...this.additionalHostKeys()]);
   }
 
   private authorizedKeysPath(entry: string, user: string, home: string): string {

@@ -126,3 +126,15 @@ export const SSHD_CONFIG_KEYWORDS: ReadonlySet<string> = new Set([
   'x11uselocalhost',
   'xauthlocation',
 ]);
+
+export const SSHD_GLOBAL_ONLY_KEYWORDS: ReadonlySet<string> = new Set([
+  'addressfamily', 'afstokenpassing', 'checkmail', 'ciphers', 'compression', 'dsaauthentication',
+  'fingerprinthash', 'gssapicleanupcredentials', 'gssapistrictacceptorcheck', 'hostbasedacceptedalgorithms',
+  'hostcertificate', 'hostdsakey', 'hostkey', 'hostkeyagent', 'hostkeyalgorithms', 'ignoreuserknownhosts',
+  'kerberosgetafstoken', 'kerberosorlocalpasswd', 'kerberostgtpassing', 'kerberosticketcleanup', 'kexalgorithms',
+  'keepalive', 'keyregenerationinterval', 'listenaddress', 'logingracetime', 'macs', 'maxstartups', 'modulifile',
+  'pamauthenticationviakbdint', 'permituserenvironment', 'persourcemaxstartups', 'persourcenetblocksize', 'pidfile',
+  'port', 'printlastlog', 'printmotd', 'protocol', 'reversemappingcheck', 'securitykeyprovider', 'serverkeybits',
+  'strictmodes', 'subsystem', 'syslogfacility', 'tcpkeepalive', 'usedns', 'uselogin', 'usepam',
+  'useprivilegeseparation', 'verifyreversemapping', 'versionaddendum', 'xauthlocation',
+]);

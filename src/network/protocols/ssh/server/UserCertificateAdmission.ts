@@ -1,5 +1,5 @@
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
-import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
+import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, sshPublicKeyFromBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
 import {
   certificateAuthorityRefusal,
   parseCertificateBlob,
@@ -28,7 +28,7 @@ export interface CertificateAdmissionRequest {
   readonly trustedCaKeys: TextFile | null;
   readonly principalsFile: TextFile | null;
   readonly authorizedKeys: TextFile | null;
-  readonly revokedBy: (key: SshPublicKey) => string | null;
+  readonly revokedBy: (key: SshPublicKey | SshCertificate) => string | null;
 }
 
 export interface CertificateAdmission {
@@ -261,13 +261,7 @@ export function admitUserCertificate(request: CertificateAdmissionRequest): Cert
     logs.push({ level: 'error', text: 'userauth_pubkey: parse key: incorrect signature' });
     return { key: null, logs };
   }
-  for (const key of [certificate.subject, certificate.caKey]) {
-    const file = request.revokedBy(key);
-    if (file !== null) {
-      logs.push({ level: 'error', text: `Authentication key ${sshKeyTypeLabel(key.algorithm)} ${fingerprint(key)} revoked by file ${file}` });
-      return { key: null, logs };
-    }
-  }
+  if (request.revokedBy(certificate) !== null) return { key: null, logs };
   const trusted = viaTrustedCa(request, logs);
   if (trusted !== null) return { key: trusted, logs };
   return { key: viaAuthorizedKeys(request, logs), logs };
@@ -291,6 +285,14 @@ export function certificateKeyEvidence(certificate: SshCertificate): {
 export function certificateOfMaterial(material: string): SshCertificate | null {
   try {
     return parseCertificateBlob(base64ToBytes(material));
+  } catch {
+    return null;
+  }
+}
+
+export function plainKeyOfMaterial(material: string): SshPublicKey | null {
+  try {
+    return sshPublicKeyFromBlob(base64ToBytes(material));
   } catch {
     return null;
   }

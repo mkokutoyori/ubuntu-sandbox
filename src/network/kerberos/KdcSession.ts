@@ -156,6 +156,10 @@ export class KdcSessionHandler {
       return;
     }
     const cnameStr = cname.nameString.join('/');
+    if (cname.nameString.length !== 1) {
+      this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
+      return;
+    }
     const sam = cname.nameString[0];
     /**
      * A computer account (sam ending in `$`) is as much a Kerberos

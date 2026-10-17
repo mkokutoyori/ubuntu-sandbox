@@ -45,6 +45,9 @@ export interface SshdMatchOverrides {
   denyGroups?: readonly string[];
   authorizedKeysFile?: readonly string[];
   authorizedPrincipalsFile?: string | null;
+  trustedUserCaKeys?: string | null;
+  revokedKeys?: string | null;
+  caSignatureAlgorithms?: readonly string[];
 }
 
 export interface SshdMatchBlock {
@@ -74,6 +77,9 @@ export interface SshdEffectiveView {
   readonly printMotd: boolean;
   readonly authorizedKeysFile: readonly string[];
   readonly authorizedPrincipalsFile: string | null;
+  readonly trustedUserCaKeys: string | null;
+  readonly revokedKeys: string | null;
+  readonly caSignatureAlgorithms: readonly string[];
 }
 
 const DEFAULT_CA_SIGNATURE_ALGORITHMS = [
@@ -479,6 +485,9 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       printMotd: this.printMotd,
       authorizedKeysFile: this.authorizedKeysFile,
       authorizedPrincipalsFile: this.authorizedPrincipalsFile,
+      trustedUserCaKeys: this.trustedUserCaKeys,
+      revokedKeys: this.revokedKeys,
+      caSignatureAlgorithms: this.caSignatureAlgorithms,
     };
     for (const block of this.matchBlocks) {
       if (!this.matchApplies(block.criteria, ctx)) continue;
@@ -678,9 +687,13 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'hostcertificate': return cfg.mutate({ hostCertificates: Object.freeze([...cfg.hostCertificates, value]) });
     case 'trustedusercakeys': return cfg.mutate({ trustedUserCaKeys: value === 'none' ? null : value });
     case 'revokedkeys': return cfg.mutate({ revokedKeys: value === 'none' ? null : value });
-    case 'casignaturealgorithms': return cfg.mutate({ caSignatureAlgorithms: Object.freeze(value.split(',').map((name) => name.trim()).filter(Boolean)) });
+    case 'casignaturealgorithms': return cfg.mutate({ caSignatureAlgorithms: parseCaSignatureAlgorithms(value) });
     default: return cfg;
   }
+}
+
+function parseCaSignatureAlgorithms(value: string): readonly string[] {
+  return Object.freeze(value.split(',').map((name) => name.trim()).filter(Boolean));
 }
 
 function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string): void {
@@ -711,6 +724,9 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'denygroups':  o.denyGroups  = Object.freeze(value.split(/\s+/)); break;
     case 'authorizedkeysfile': o.authorizedKeysFile = Object.freeze(value.split(/\s+/).filter(Boolean)); break;
     case 'authorizedprincipalsfile': o.authorizedPrincipalsFile = value === 'none' ? null : value; break;
+    case 'trustedusercakeys': o.trustedUserCaKeys = value === 'none' ? null : value; break;
+    case 'revokedkeys': o.revokedKeys = value === 'none' ? null : value; break;
+    case 'casignaturealgorithms': o.caSignatureAlgorithms = parseCaSignatureAlgorithms(value); break;
   }
 }
 

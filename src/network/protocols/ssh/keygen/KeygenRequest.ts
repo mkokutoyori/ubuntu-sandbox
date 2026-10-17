@@ -11,10 +11,7 @@ const INT_MAX = 0x7fffffff;
 const UNSIMULATED_OPTIONS: Readonly<Record<string, string>> = {
   D: 'PKCS#11 tokens',
   K: 'FIDO authenticators',
-  k: 'key revocation lists',
   M: 'DH moduli',
-  Q: 'key revocation lists',
-  u: 'key revocation lists',
   w: 'FIDO authenticators',
   X: 'DH moduli',
 };
@@ -43,6 +40,7 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
     all: false, bubblebabble: false, changeComment: false, changePassphrase: false, convertFrom: false,
     convertTo: false, genericRecord: false, hashHosts: false, fingerprint: false, hash: 'sha256',
     printPublic: false, quiet: false, verbose: false, hostCertificate: false, showCertificate: false, preferAgent: false,
+    generateRevocationList: false, updateRevocationList: false, checkRevocationList: false,
   };
   const given = new Set<string>();
   for (const option of shortOptions(args, KEYGEN_OPTSTRING)) {
@@ -81,6 +79,9 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
       case 'I': request.identity = value; break;
       case 'n': request.principals = value; break;
       case 'h': request.hostCertificate = true; break;
+      case 'k': request.generateRevocationList = true; break;
+      case 'u': request.updateRevocationList = true; break;
+      case 'Q': request.checkRevocationList = true; break;
       case 'L': request.showCertificate = true; break;
       case 'U': request.preferAgent = true; break;
       case 'V': request.validity = value; break;
@@ -118,8 +119,8 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
     }
   }
   if (request.signOperation === undefined) {
-    if (request.caKeyPath !== undefined && operands.length === 0 && !given.has('k')) return usage('Too few arguments.');
-    if (request.caKeyPath === undefined && operands.length > 0 && !given.has('k') && !given.has('Q')) return usage('Too many arguments.');
+    if (request.caKeyPath !== undefined && operands.length === 0 && !request.generateRevocationList) return usage('Too few arguments.');
+    if (request.caKeyPath === undefined && operands.length > 0 && !request.generateRevocationList && !request.checkRevocationList) return usage('Too many arguments.');
   }
   if (request.fingerprint && request.deleteHost !== undefined) return usage('Cannot use -l with -H or -R.');
   return request;

@@ -1,4 +1,4 @@
-import { SSHD_CONFIG_KEYWORDS } from './SshdConfigKeywords';
+import { SSHD_CONFIG_KEYWORDS, SSHD_GLOBAL_ONLY_KEYWORDS } from './SshdConfigKeywords';
 import type { SshdConfigSource } from './SshdConfigText';
 
 export interface SshdConfigDiagnosis {
@@ -44,6 +44,7 @@ export function diagnoseSshdConfig(
   const lines: string[] = [];
   let bad = 0;
   let fatal: string | null = null;
+  let insideMatch = false;
 
   const visit = (file: string, depth: number): void => {
     if (depth > INCLUDE_DEPTH_LIMIT || fatal !== null) return;
@@ -66,13 +67,20 @@ export function diagnoseSshdConfig(
       if (keyword === 'include') {
         for (const word of argument.split(/\s+/).filter((entry) => entry !== '')) {
           const pattern = word.startsWith('/') ? word : `${includeBase}/${word}`;
+          const outer = insideMatch;
           for (const target of source.globExpand?.(pattern, '/') ?? []) visit(target, depth + 1);
+          insideMatch = outer;
         }
         continue;
       }
       if (keyword === 'match') {
         const failure = diagnoseMatch(argument);
         if (failure !== null) fatal = `${where}: ${failure}`;
+        insideMatch = argument.toLowerCase() !== 'all';
+        continue;
+      }
+      if (insideMatch && SSHD_GLOBAL_ONLY_KEYWORDS.has(keyword)) {
+        fatal = `${where}: Directive '${split[1]}' is not allowed within a Match block`;
         continue;
       }
       const failure = diagnoseArgument(keyword, argument);

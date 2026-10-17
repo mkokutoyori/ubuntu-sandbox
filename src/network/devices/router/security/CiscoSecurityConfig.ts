@@ -15,6 +15,7 @@ import { CbacFirewall, DEFAULT_INSPECT_SETTINGS, type InspectRule, type InspectS
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
 import { type PolicyMapAction, policyMapActionLine } from './policyMapActions';
+import { KerberosConfig } from './KerberosConfig';
 
 export type AaaMethodList = 'default' | string;
 export type AaaServiceKind = 'login' | 'enable' | 'ppp' | 'exec' | 'commands' | 'network';
@@ -438,6 +439,7 @@ export class CiscoSecurityConfig {
   loginAttempts?: number;
   suppressNullUsername = false;
   aaaMaxSessions?: number;
+  readonly kerberos = new KerberosConfig();
   effectiveLoginAttempts(): number | undefined { return this.aaaNewModel ? this.loginAttempts : undefined; }
   aaaLoginBanner?: string;
   aaaFailMessage?: string;
@@ -714,6 +716,7 @@ export class CiscoSecurityConfig {
       if (this.suppressNullUsername) lines.push('aaa authentication suppress null-username');
       if (this.aaaMaxSessions !== undefined) lines.push(`aaa max-sessions ${this.aaaMaxSessions}`);
     }
+    lines.push(...this.kerberos.asRunningConfigLines());
     if (this.aaaLoginBanner !== undefined) lines.push(`aaa authentication banner ^C\n${this.aaaLoginBanner}\n^C`);
     if (this.aaaFailMessage !== undefined) lines.push(`aaa authentication fail-message ^C\n${this.aaaFailMessage}\n^C`);
     if (this.aaaUsernamePrompt !== undefined) lines.push(`aaa authentication username-prompt "${this.aaaUsernamePrompt}"`);

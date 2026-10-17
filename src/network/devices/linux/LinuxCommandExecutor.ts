@@ -212,7 +212,7 @@ import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient, type Wi
 import {
   parseStrictHostKeyChecking, sshClientAlgorithms, sshClientAuthentication, type SshClientAuthentication,
 } from '../../protocols/ssh/SshConnectOptions';
-import { firstSshOption } from '../../protocols/ssh/SshClientOptions';
+import { everySshOption, firstSshOption } from '../../protocols/ssh/SshClientOptions';
 import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
 import { sshOptionValues, sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
 import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
@@ -442,6 +442,8 @@ function transferAuthority(
 interface TransferWireOptions {
   readonly port: number;
   readonly identities: string[];
+  readonly certificateFiles: string[];
+  readonly revokedHostKeys?: string;
   readonly strict: StrictHostKeyChecking;
   readonly authentication: SshClientAuthentication;
   readonly algorithms: SshAlgorithmPreferences;
@@ -1515,6 +1517,8 @@ export class LinuxCommandExecutor {
     return {
       port,
       identities,
+      certificateFiles: everySshOption(values, 'certificatefile').map((file) => this.vfs.normalizePath(file, this.cwd)),
+      ...(firstSshOption(values, 'revokedhostkeys') === undefined ? {} : { revokedHostKeys: this.vfs.normalizePath(firstSshOption(values, 'revokedhostkeys')!, this.cwd) }),
       strict: parseStrictHostKeyChecking((firstSshOption(values, 'stricthostkeychecking') ?? '').split(/\s+/)[0]?.toLowerCase() || null) ?? 'accept-new',
       authentication: sshClientAuthentication(values),
       algorithms: sshClientAlgorithms(values),
@@ -1538,7 +1542,7 @@ export class LinuxCommandExecutor {
     if (resolution.kind === 'failed') return { session: null, output: resolution.line, exitCode: 255 };
     const wire = await this.connectWireSsh(
       host, user, password || undefined, options.port, options.identities, options.strict, options.authentication,
-      options.algorithms, resolution.address);
+      options.algorithms, resolution.address, undefined, { certificateFiles: options.certificateFiles, ...(options.revokedHostKeys === undefined ? {} : { revokedHostKeys: options.revokedHostKeys }) });
     if (wire.session) return { session: wire.session, output: '', exitCode: 0 };
     const reason = wire.keyExchangeFailure ?? wire.hostKeyRefusal ?? wire.connectionFailure ?? wire.denial
       ?? `${user}@${host}: Permission denied (publickey,password).`;
@@ -1799,7 +1803,7 @@ export class LinuxCommandExecutor {
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
     authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences, dialAddress?: string,
-    proxy?: TcpConnector, trust?: Pick<WireSshTarget, 'knownHosts' | 'hashKnownHosts' | 'identitiesOnly' | 'io'>,
+    proxy?: TcpConnector, trust?: Pick<WireSshTarget, 'knownHosts' | 'hashKnownHosts' | 'identitiesOnly' | 'certificateFiles' | 'revokedHostKeys' | 'io'>,
   ): Promise<{
     session: SshSession | null; authRefused: boolean; streamed?: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
     hostKeyRefusal?: string; connectionFailure?: string; refusedSession?: SshSession;
@@ -1810,7 +1814,7 @@ export class LinuxCommandExecutor {
       this.wireSshClient(), { host, user, port, password, identities, strict, authentication, algorithms, ...trust },
       ((h, p) => connector(dialAddress !== undefined && h === host ? dialAddress : h, p)) as unknown as TcpConnector);
     const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
-    const denial = authRefused ? outcome.warnings.at(-1) : undefined;
+    const denial = authRefused && outcome.warnings.length > 0 ? outcome.warnings.join('\n') : undefined;
     const keyExchangeFailure = outcome.failure?.kind === 'KEX_FAILED' ? outcome.failure.message : undefined;
     const hostKeyRefusal = outcome.failure?.kind === 'HOST_KEY_REJECTED' || outcome.failure?.kind === 'HOST_KEY_CHANGED'
       ? [...outcome.warnings, 'Host key verification failed.'].join('\n')
@@ -1851,7 +1855,7 @@ export class LinuxCommandExecutor {
   ): Promise<{ fs: ISftpFileSystem | null; denial?: string; release?: () => void }> {
     const wire = await this.connectWireSsh(
       host, user, password, options.port, options.identities, options.strict, options.authentication,
-      options.algorithms, dialAddress);
+      options.algorithms, dialAddress, undefined, { certificateFiles: options.certificateFiles, ...(options.revokedHostKeys === undefined ? {} : { revokedHostKeys: options.revokedHostKeys }) });
     const { session } = wire;
     const denial = wire.denial ?? wire.keyExchangeFailure ?? wire.hostKeyRefusal ?? wire.connectionFailure;
     if (!session) return { fs: null, denial };
@@ -1951,7 +1955,7 @@ export class LinuxCommandExecutor {
     const wire = await this.connectWireSsh(
       target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication,
       target.algorithms, resolution.address, proxy,
-      { knownHosts: target.knownHosts, hashKnownHosts: target.hashKnownHosts, identitiesOnly: target.identitiesOnly, ...(io === undefined ? {} : { io }) });
+      { knownHosts: target.knownHosts, hashKnownHosts: target.hashKnownHosts, identitiesOnly: target.identitiesOnly, certificateFiles: target.certificateFiles, ...(target.revokedHostKeys === undefined ? {} : { revokedHostKeys: target.revokedHostKeys }), ...(io === undefined ? {} : { io }) });
     if (wire.session === null && wire.streamed === true && wire.authRefused) {
       return { kind: 'failed', result: { output: '', exitCode: 255 } };
     }

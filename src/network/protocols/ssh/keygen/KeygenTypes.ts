@@ -61,6 +61,9 @@ export interface KeygenRequest {
   readonly principals?: string;
   readonly certificateKeyId?: string;
   readonly hostCertificate: boolean;
+  readonly generateRevocationList: boolean;
+  readonly updateRevocationList: boolean;
+  readonly checkRevocationList: boolean;
   readonly showCertificate: boolean;
   readonly preferAgent: boolean;
   readonly validity?: string;

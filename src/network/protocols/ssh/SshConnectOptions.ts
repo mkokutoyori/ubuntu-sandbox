@@ -81,6 +81,8 @@ export interface SshConnectOptions {
   readonly port: number;
   readonly user: string;
   readonly identityFiles: readonly string[];
+  readonly certificateFiles: readonly string[];
+  readonly revokedHostKeys?: string;
   readonly strictHostKeyChecking: StrictHostKeyChecking;
   readonly timeoutMs: number;
   readonly password?: string;
@@ -103,6 +105,8 @@ export class SshConnectOptionsBuilder {
   private _user?: string;
   private _port = 22;
   private _identityFiles: string[] = [];
+  private _certificateFiles: string[] = [];
+  private _revokedHostKeys?: string;
   private _strict: StrictHostKeyChecking = 'ask';
   private _timeoutMs = 30_000;
   private _password?: string;
@@ -133,6 +137,16 @@ export class SshConnectOptionsBuilder {
 
   addIdentityFile(path: string): this {
     this._identityFiles.push(path);
+    return this;
+  }
+
+  revokedHostKeys(path: string): this {
+    this._revokedHostKeys = path;
+    return this;
+  }
+
+  addCertificateFile(path: string): this {
+    this._certificateFiles.push(path);
     return this;
   }
 
@@ -184,6 +198,8 @@ export class SshConnectOptionsBuilder {
       port: this._port,
       user: this._user,
       identityFiles: Object.freeze([...this._identityFiles]),
+      certificateFiles: Object.freeze([...this._certificateFiles]),
+      ...(this._revokedHostKeys === undefined ? {} : { revokedHostKeys: this._revokedHostKeys }),
       strictHostKeyChecking: this._strict,
       timeoutMs: this._timeoutMs,
       password: this._password,

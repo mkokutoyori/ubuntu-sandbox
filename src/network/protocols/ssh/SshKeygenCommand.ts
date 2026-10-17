@@ -13,6 +13,7 @@ import {
 import { allHostKeysDialogue, generationDialogue } from './keygen/GenerationDialogue';
 import { certifyDialogue, showCertificateDialogue } from './keygen/CertificateDialogues';
 import { signatureDialogue } from './keygen/SignatureDialogues';
+import { checkRevocationListDialogue, generateRevocationListDialogue } from './keygen/RevocationDialogues';
 import {
   print,
   type KeygenDialogue,
@@ -33,6 +34,8 @@ function* keygenDialogue(args: readonly string[], host: SshKeygenHost): KeygenDi
     return request.exitCode;
   }
   if (request.signOperation !== undefined) return yield* signatureDialogue(request, host);
+  if (request.generateRevocationList) return yield* generateRevocationListDialogue(request, host);
+  if (request.checkRevocationList) return yield* checkRevocationListDialogue(request, host);
   if (request.caKeyPath !== undefined) return yield* certifyDialogue(request, host);
   if (request.showCertificate) return yield* showCertificateDialogue(request, host);
   if (request.deleteHost !== undefined || request.findHost !== undefined || request.hashHosts) return yield* knownHostsDialogue(request, host);

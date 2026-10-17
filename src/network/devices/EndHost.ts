@@ -478,6 +478,9 @@ export interface Dhcpv6InformationState {
   reconfigureKey: string | null;
 }
 
+const ICMP_TIMESTAMP_BYTES = 12;
+const MS_PER_DAY = 86_400_000;
+
 export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
   /** Per-device socket table — tracks listening and established sockets */
@@ -3211,6 +3214,13 @@ export abstract class EndHost extends Equipment {
         tos: ipPkt.tos,
         ipLen: ipPkt.totalLength,
       });
+    } else if (icmp.icmpType === 'timestamp-request') {
+      if (this.answersIcmpTimestamp()) this.sendTimestampReply(portName, ipPkt, icmp);
+    } else if (icmp.icmpType === 'timestamp-reply') {
+      this.getBus().publish({
+        topic: 'host.icmp.timestamp-reply',
+        payload: { ...this.hostRef(), fromIp: ipPkt.sourceIP.toString(), id: icmp.id, seq: icmp.sequence },
+      });
     } else if (icmp.icmpType === 'time-exceeded' || icmp.icmpType === 'destination-unreachable') {
       const reason = icmp.icmpType === 'time-exceeded'
         ? `Time to live exceeded (from ${ipPkt.sourceIP})`
@@ -3275,6 +3285,37 @@ export abstract class EndHost extends Equipment {
 
   protected echoReplyFlags(request: IPv4Packet): number {
     return request.flags;
+  }
+
+  protected answersIcmpTimestamp(): boolean {
+    return false;
+  }
+
+  private millisecondsSinceMidnight(): number {
+    return Math.floor(this.getSystemClockMs()) % MS_PER_DAY;
+  }
+
+  private sendTimestampReply(portName: string, requestIP: IPv4Packet, request: ICMPPacket): void {
+    const myIP = requestIP.destinationIP;
+    if (!this.ports.has(portName) || !this.getPortOwningIP(myIP)) return;
+    const reply: ICMPPacket = {
+      type: 'icmp', icmpType: 'timestamp-reply', code: 0,
+      id: request.id, sequence: request.sequence, dataSize: request.dataSize,
+      timestamps: {
+        originate: request.timestamps?.originate ?? 0,
+        receive: this.millisecondsSinceMidnight(),
+        transmit: this.millisecondsSinceMidnight(),
+      },
+    };
+    const replyIP = createIPv4Packet(
+      myIP, requestIP.sourceIP, IP_PROTO_ICMP, this.defaultTTL, reply, 8 + request.dataSize,
+    );
+    const route = this.resolveRoute(replyIP.destinationIP);
+    if (!route) return;
+    const outPortName = route.port.getName();
+    const verdict = this.firewallFilter(outPortName, replyIP, 'out');
+    if (verdict === 'drop' || verdict === 'reject') return;
+    this.sendIpv4FrameArpAware(outPortName, replyIP, route.nextHopIP);
   }
 
   private sendEchoReply(portName: string, requestIP: IPv4Packet, requestICMP: ICMPPacket): void {
@@ -4036,15 +4077,33 @@ export abstract class EndHost extends Equipment {
     destinationIP: IPAddress,
     options: { sourceIp?: IPAddress; ttl?: number; id?: number; sequence?: number; dataSize?: number } = {},
   ): boolean {
+    return this.sendCraftedIcmp(destinationIP, 'echo-request', options.dataSize ?? 0, options);
+  }
+
+  public sendCraftedIcmpTimestamp(
+    destinationIP: IPAddress,
+    options: { sourceIp?: IPAddress; ttl?: number; id?: number; sequence?: number } = {},
+  ): boolean {
+    return this.sendCraftedIcmp(destinationIP, 'timestamp-request', ICMP_TIMESTAMP_BYTES, options);
+  }
+
+  private sendCraftedIcmp(
+    destinationIP: IPAddress,
+    icmpType: 'echo-request' | 'timestamp-request',
+    dataSize: number,
+    options: { sourceIp?: IPAddress; ttl?: number; id?: number; sequence?: number },
+  ): boolean {
     const route = this.resolveRoute(destinationIP);
     if (!route) return false;
     const srcIP = options.sourceIp ?? route.port.getIPAddress();
     if (!srcIP) return false;
 
-    const dataSize = options.dataSize ?? 0;
     const icmp: ICMPPacket = {
-      type: 'icmp', icmpType: 'echo-request', code: 0,
+      type: 'icmp', icmpType, code: 0,
       id: options.id ?? ((++this.pingIdCounter) & 0xffff), sequence: options.sequence ?? 0, dataSize,
+      ...(icmpType === 'timestamp-request'
+        ? { timestamps: { originate: this.millisecondsSinceMidnight(), receive: 0, transmit: 0 } }
+        : {}),
     };
     const ipPkt = createIPv4Packet(
       srcIP, destinationIP, IP_PROTO_ICMP, options.ttl ?? this.defaultTTL, icmp, 8 + dataSize,

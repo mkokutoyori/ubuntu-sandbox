@@ -966,6 +966,10 @@ export abstract class LinuxMachine extends EndHost
     return outcome === 'timeout' && this.neighbourUnresolved(target) ? 'host-unreachable' : outcome;
   }
 
+  protected override answersIcmpTimestamp(): boolean {
+    return true;
+  }
+
   protected override echoReplyFlags(): number {
     return 0;
   }
@@ -4300,6 +4304,10 @@ export abstract class LinuxMachine extends EndHost
         target: IPAddress,
         options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
       ): boolean => this.sendCraftedIcmpEcho(target, options ?? {}),
+      sendCraftedIcmpTimestamp: (
+        target: IPAddress,
+        options?: { sourceIp?: IPAddress; ttl?: number },
+      ): boolean => this.sendCraftedIcmpTimestamp(target, options ?? {}),
       sendRawIpPacket: (
         target: IPAddress, protocol: number,
         options: { sourceIp?: IPAddress; ttl?: number; dataSize?: number } = {},

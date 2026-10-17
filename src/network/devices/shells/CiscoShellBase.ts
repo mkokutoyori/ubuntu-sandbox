@@ -117,6 +117,7 @@ import {
 import { enableSecretSpecs, type EnableHost } from './cisco/enableSecretSpecs';
 import { parserViewSpecs, type ParserViewHost } from './cisco/parserViewSpecs';
 import { aaaHeadSpecs, type AaaHeadHost } from './cisco/aaaHeadSpecs';
+import { kerberosSpecs } from './cisco/kerberosSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
 import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
@@ -6092,6 +6093,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...usernameSpecs(() => this.usernameHost()),
       ...enableSecretSpecs(() => this.enableHost()),
       ...aaaHeadSpecs(() => this.aaaHeadHost()),
+      ...kerberosSpecs(() => ({ security: () => getSecurityConfig(this.d()) })),
       ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
