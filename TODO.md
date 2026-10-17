@@ -1818,23 +1818,6 @@ distribution de clé ne l'est pas.
 
 ## SSH
 
-### [ssh] toutes les lignes du journal portent le PID de l'ECOUTEUR
-Depuis que `pam_unix(sshd:session)` a un seul producteur — le
-syslogger —, les quatre lignes d'une connexion partagent le meme
-`sshd[<pid>]`, celui du processus qui ECOUTE. C'est deja plus juste
-qu'avant, ou `Accepted` portait le PID de l'ecouteur et la ligne pam
-celui de l'enfant : un vrai sshd ecrit les deux depuis le MEME
-processus, l'enfant qui sert la connexion. Ce qui reste faux est
-lequel : il devrait s'agir d'un PID par CONNEXION, pas de celui de
-l'ecouteur.
-**Mesure** : quatre clients, `sshd[22]` partout, alors que le tableau
-des processus porte bien un `sshd: alice [priv]` par session.
-**Report** : le syslogger est construit une fois par machine avec un
-`sshdPid` fixe ; lui faire porter un PID par connexion demande de lui
-passer l'enfant a l'emission, donc de faire voyager cette identite dans
-les evenements du bus — un changement de la forme des evenements, pas
-du format des messages.
-
 ## Couche lien
 
 ### [vlan] la vue trunk et la vue sous-interface ne portent pas le meme segment
