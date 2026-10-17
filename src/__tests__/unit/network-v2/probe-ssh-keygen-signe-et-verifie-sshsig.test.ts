@@ -28,7 +28,7 @@
  *
  * Ecrite contre ces sources, avant l'implantation. 24 des 25 cas tombent
  * avant elle (« signatures are not simulated »). Passe des deux cotes le
- * TEMOIN `-k` : il garde le refus des listes de revocation.
+ * TEMOIN `-D` : il garde le refus des jetons PKCS#11.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
@@ -59,9 +59,9 @@ const SIGN = 'ssh-keygen -Y sign -f ~/k -n file ~/data';
 const VERIFY = 'ssh-keygen -Y verify -f ~/allowed -I alice@lab -n file -s ~/data.sig < ~/data';
 
 describe('ssh-keygen -Y sign', () => {
-  it('TEMOIN: -k garde le refus des listes de revocation', async () => {
+  it('TEMOIN: -D garde le refus des jetons PKCS#11', async () => {
     const pc = await lab();
-    expect(await pc.executeCommand('ssh-keygen -k -f ~/krl')).toContain('key revocation lists are not simulated');
+    expect(await pc.executeCommand('ssh-keygen -D /usr/lib/libpkcs11.so')).toContain('PKCS#11 tokens are not simulated');
   }, 60_000);
 
   it('ecrit <fichier>.sig armoure et l\'annonce sur la sortie d\'erreur', async () => {

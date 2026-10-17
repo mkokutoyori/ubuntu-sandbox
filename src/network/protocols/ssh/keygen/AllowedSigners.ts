@@ -97,7 +97,7 @@ function splitOptionsFromKey(rest: string): { options: string; key: string } | n
   return { options: rest.slice(0, at), key: rest.slice(at).replace(/^[ \t]+/, '') };
 }
 
-function parseKey(text: string): SshPublicKey | null {
+export function parsePublicKeyText(text: string): SshPublicKey | null {
   const [type, body] = text.trim().split(/\s+/);
   if (type === undefined || body === undefined || !KEY_TYPE_WORD.test(type)) return null;
   const key = sshPublicKeyFromBlob(base64ToBytes(body));
@@ -114,13 +114,13 @@ function parseLine(context: SignersContext, line: string, number: number, requir
   if (requiredPrincipal !== undefined && !matchesPatternList(principals, requiredPrincipal, false)) return { kind: 'skip' };
   const rest = trimmed.slice(separator).replace(/^[ \t]+/, '');
   const firstWord = rest.split(/[ \t]/)[0];
-  let key = KEY_TYPE_WORD.test(firstWord) ? parseKey(rest) : null;
+  let key = KEY_TYPE_WORD.test(firstWord) ? parsePublicKeyText(rest) : null;
   let optionText = '';
   if (key === null) {
     const split = splitOptionsFromKey(rest);
     if (split === null) return { kind: 'invalid', error: `${where}: invalid options` };
     optionText = split.options;
-    key = parseKey(split.key);
+    key = parsePublicKeyText(split.key);
     if (key === null) return { kind: 'invalid', error: `${where}: invalid key` };
   }
   const options = parseOptions(optionText, context.zoneOffset);
@@ -200,15 +200,4 @@ export function matchPrincipals(context: SignersContext, principal: string): Sig
     matched.push(parsed.principals);
   }
   return matched.length === 0 ? { kind: 'not-found', logged: [] } : { kind: 'found', value: matched, logged: [] };
-}
-
-export function isRevokedKey(text: string, signer: SshPublicKey): boolean | null {
-  for (const raw of eachLine(text)) {
-    const line = raw.trim();
-    if (line === '' || line.startsWith('#')) continue;
-    const key = parseKey(line);
-    if (key === null) return null;
-    if (sameKey(key, signer)) return true;
-  }
-  return false;
 }

@@ -27,7 +27,7 @@ import { SshHostKey } from '../SshHostKey';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, sshPublicKeyFromBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { SSH_CERT_TYPE_HOST, parseCertificateLine, type SshCertificate } from '../certificate/SshCertificate';
-import { isRevokedKey } from '../keygen/AllowedSigners';
+import { checkRevocation } from '../certificate/RevocationFile';
 import { admitUserCertificate, certificateOfMaterial, type TextFile } from './UserCertificateAdmission';
 import { expandPrincipalsPath } from './PrincipalsPath';
 import { SshUserContext } from '../SshUserContext';
@@ -366,15 +366,20 @@ export class LinuxSshServerContext implements ISshServerContext {
     return content ? findAdmittedKey(content, publicKey, source) : null;
   }
 
-  private revocationRefusal(key: SshPublicKey, source: KeySource): string | null {
+  private revocationRefusal(key: SshPublicKey | SshCertificate, source: KeySource): string | null {
     const path = this.effectiveSshdServerConfig().revokedKeys;
     if (path === null) return null;
-    const text = this.vfs.readFile(path);
-    const label = `${sshKeyTypeLabel(key.algorithm)} ${keygenBlobDigest(bytesToBase64(sshPublicKeyBlob(key)), 'sha256') ?? '(null)'}`;
-    let message: string | null = null;
-    if (text === null) message = `Error checking authentication key ${label} in revoked keys file ${path}: No such file or directory`;
-    else if (isRevokedKey(text, key) !== false) message = `Authentication key ${label} revoked by file ${path}`;
-    if (message !== null && source.ip !== '') this.events.emit({ kind: 'auth_log', level: 'error', text: message });
+    const verdict = checkRevocation(this.vfs.readFile(path), key);
+    if (verdict.kind === 'ok') return null;
+    const certificate = 'subject' in key ? key : null;
+    const blob = bytesToBase64(certificate === null ? sshPublicKeyBlob(key as SshPublicKey) : certificate.blob);
+    const label = certificate === null
+      ? `${sshKeyTypeLabel((key as SshPublicKey).algorithm)} ${keygenBlobDigest(blob, 'sha256') ?? '(null)'}`
+      : `${sshKeyTypeLabel(certificate.subject.algorithm)}-CERT ${keygenBlobDigest(blob, 'sha256') ?? '(null)'}`;
+    const message = verdict.kind === 'revoked'
+      ? `Authentication key ${label} revoked by file ${path}`
+      : `Error checking authentication key ${label} in revoked keys file ${path}: ${verdict.message}`;
+    if (source.ip !== '') this.events.emit({ kind: 'auth_log', level: 'error', text: message });
     return message;
   }
 

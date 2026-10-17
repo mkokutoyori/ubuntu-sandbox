@@ -4,11 +4,11 @@ import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, sshPublicKeyFromBl
 import {
   checkAllowedSigner,
   findPrincipals,
-  isRevokedKey,
   matchPrincipals,
   type SignersContext,
   type SignersOutcome,
 } from './AllowedSigners';
+import { checkRevocation } from '../certificate/RevocationFile';
 import { parseAbsoluteTime, type ZoneOffset } from './AbsoluteTime';
 import { failureText, loadPrivateKey, publicKeyOfFile } from './KeyFileDialogues';
 import { print, printError, type KeygenDialogue, type KeygenRequest, type KeygenStep, type SshKeygenHost } from './KeygenTypes';
@@ -222,7 +222,7 @@ function* checkSignature(
   const signer = verified.value;
   if (request.recordHost !== undefined && validate) {
     const revoked = host.store.read(request.recordHost);
-    if (revoked === null || isRevokedKey(revoked, signer.key) !== false) return null;
+    if (checkRevocation(revoked, signer.key).kind !== 'ok') return null;
   }
   if (!validate) return signer;
   const allowedPath = request.file ?? '';
