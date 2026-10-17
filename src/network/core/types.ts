@@ -1328,6 +1328,11 @@ export interface IPv6Packet extends NetworkPdu {
 /**
  * Create an IPv6 packet with default fields.
  */
+export interface IPv6HeaderOptions {
+  trafficClass?: number;
+  flowLabel?: number;
+}
+
 export function createIPv6Packet(
   sourceIP: IPv6Address,
   destinationIP: IPv6Address,
@@ -1335,12 +1340,13 @@ export function createIPv6Packet(
   hopLimit: number,
   payload: ICMPv6Packet | UDPPacket | unknown,
   payloadLength: number,
+  options: IPv6HeaderOptions = {},
 ): IPv6Packet {
   return {
     type: 'ipv6',
     version: 6,
-    trafficClass: 0,
-    flowLabel: 0,
+    trafficClass: options.trafficClass ?? 0,
+    flowLabel: options.flowLabel ?? 0,
     payloadLength,
     nextHeader,
     hopLimit,
