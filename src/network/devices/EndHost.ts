@@ -35,7 +35,7 @@ import {
 } from '../layers/internet/ProtocolCounters';
 import { ipv6HeaderProblem, ipv6PacketBytes } from '../layers/internet/Ipv6Ingress';
 import {
-  fragmentIPv6, IPv6Reassembler, ipv6FragmentOf, IPV6_REASSEMBLY_TIMEOUT_MS,
+  fragmentIPv6, IPv6Reassembler, ipv6FragmentOf, ipv6SendRefusal, IPV6_REASSEMBLY_TIMEOUT_MS,
   IPV6_REASSEMBLY_HIGH_THRESHOLD_BYTES,
 } from '../layers/internet/Ipv6Fragmentation';
 import { Port } from '../hardware/Port';
@@ -105,7 +105,7 @@ import {
 import type { HostIcmpEchoFailedPayload, HostIcmpEchoReplyPayload, HostIcmpUnreachablePayload } from './host/events';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
 import { Logger } from '../core/Logger';
-import type { Errno } from '../core/Errno';
+import { strerror, type Errno } from '../core/Errno';
 import { MTU } from '../core/constants';
 import { PacketQueue } from '../core/PacketQueue';
 import {
@@ -222,6 +222,7 @@ export interface PingResult {
   /** ICMP error message (e.g. "Time to live exceeded", "Destination unreachable") */
   error?: string;
   icmp6?: Icmp6ErrorReport;
+  localError?: LocalSocketError;
   seq: number;
   bytes: number;
   fromIP: string;
@@ -277,6 +278,12 @@ class IcmpErrorReply extends Error {
   }
 }
 
+class LocalSendError extends Error {
+  constructor(readonly failure: LocalSocketError) {
+    super(strerror(failure.errno));
+  }
+}
+
 export interface EchoOptions {
   dataSize?: number;
   tos?: number;
@@ -289,6 +296,7 @@ export interface EchoOptions {
 
 export interface Echo6Options {
   dataSize?: number;
+  neverFragment?: boolean;
   hopLimit?: number;
   trafficClass?: number;
   flowLabel?: number;
@@ -305,8 +313,10 @@ export interface TraceSocketOptions {
   direct?: boolean;
 }
 
+export type LocalSocketError = { readonly origin: 'local'; readonly errno: Errno; readonly mtu?: number };
+
 export type UdpErrorReport =
-  | { readonly origin: 'local'; readonly errno: Errno; readonly mtu?: number }
+  | LocalSocketError
   | {
     readonly origin: 'icmp'; readonly from: string; readonly errno: Errno;
     readonly timeExceeded: boolean; readonly mtu?: number; readonly replyTtl?: number; readonly rttMs: number;
@@ -4712,7 +4722,7 @@ export abstract class EndHost extends Equipment {
 
     const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
     if (!packets) {
-      throw new Error(`local error: message too long, mtu=${this.pathMtuTo(targetIP, port.getMTU())}`);
+      throw new LocalSendError({ origin: 'local', errno: 'EMSGSIZE', mtu: this.pathMtuTo(targetIP, port.getMTU()) });
     }
     for (const packet of packets) {
       this.sendFrame(portName, {
@@ -4986,19 +4996,8 @@ export abstract class EndHost extends Equipment {
       try {
         const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts);
         results.push(redirects.attachTo(result));
-      } catch (err: any) {
-        const errorMsg = typeof err === 'string'
-          ? err
-          : (err instanceof Error ? err.message : String(err));
-        results.push(redirects.attachTo({
-          success: false,
-          rttMs: 0,
-          ttl: 0,
-          seq,
-          bytes: 0,
-          fromIP: '',
-          error: errorMsg,
-        }));
+      } catch (err: unknown) {
+        results.push(redirects.attachTo(this.failedProbe(seq, err)));
         if (err instanceof IcmpErrorReply && opts?.pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
           await this.getScheduler().delay(opts.pauseAfterErrorReplyMs);
         }
@@ -6527,6 +6526,12 @@ export abstract class EndHost extends Equipment {
       throw new Error(`Destination unreachable from ${srcIP}`);
     }
 
+    const dataSize = opts?.dataSize ?? ECHO_DATA_BYTES;
+    const refusal = ipv6SendRefusal(
+      ICMP_ECHO_HEADER_BYTES + dataSize, this.pathMtuTo(targetIP, port.getIPv6MTU()), opts?.neverFragment === true,
+    );
+    if (refusal !== null) throw new LocalSendError(refusal);
+
     const id = opts?.ident ?? this.allocateEchoIdent();
 
     const targetIpStr = targetIP.toString();
@@ -6534,7 +6539,6 @@ export abstract class EndHost extends Equipment {
 
     const outcome = this.armEchoWait({ id, seq, target: targetIpStr, anySource: false }, timeoutMs);
 
-    const dataSize = opts?.dataSize ?? ECHO_DATA_BYTES;
     const icmpv6 = createICMPv6EchoRequest(id, seq, dataSize);
     const ipPkt = createIPv6Packet(
       srcIP, targetIP, IP_PROTO_ICMPV6, opts?.hopLimit ?? this.defaultHopLimit, icmpv6, ICMP_ECHO_HEADER_BYTES + dataSize,
@@ -6571,6 +6575,22 @@ export abstract class EndHost extends Equipment {
 
   // ─── High-level Ping6 (used by terminal commands) ───────────────
 
+  private failedProbe(seq: number, err: unknown): PingResult {
+    const report = err instanceof IcmpErrorReply ? err.report : undefined;
+    const localError = err instanceof LocalSendError ? err.failure : undefined;
+    return {
+      success: false,
+      rttMs: 0,
+      ttl: 0,
+      seq,
+      bytes: 0,
+      fromIP: report?.from ?? '',
+      error: typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err)),
+      ...(report === undefined ? {} : { icmp6: report }),
+      ...(localError === undefined ? {} : { localError }),
+    };
+  }
+
   private unreachableResults6(source: IPv6Address | null, count: number, firstSeq: number): PingResult[] {
     const from = source === null ? '' : source.toString();
     const results: PingResult[] = [];
@@ -6587,9 +6607,10 @@ export abstract class EndHost extends Equipment {
   private localEchoResults6(target: IPv6Address, count: number, opts?: Echo6Options): PingResult[] {
     const firstSeq = opts?.firstSeq ?? 1;
     const bytes = ICMP_ECHO_HEADER_BYTES + (opts?.dataSize ?? ECHO_DATA_BYTES);
+    const refusal = ipv6SendRefusal(bytes, LOOPBACK_ECHO_MTU, opts?.neverFragment === true);
     const results: PingResult[] = [];
     for (let seq = firstSeq; seq < firstSeq + count; seq++) {
-      results.push({
+      results.push(refusal !== null ? this.failedProbe(seq, new LocalSendError(refusal)) : {
         success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes, fromIP: target.toString(),
       });
     }
@@ -6624,20 +6645,7 @@ export abstract class EndHost extends Equipment {
       try {
         results.push(await this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs, opts));
       } catch (err: unknown) {
-        const errorMsg = typeof err === 'string'
-          ? err
-          : (err instanceof Error ? err.message : String(err));
-        const report = err instanceof IcmpErrorReply ? err.report : undefined;
-        results.push({
-          success: false,
-          rttMs: 0,
-          ttl: 0,
-          seq,
-          bytes: 0,
-          fromIP: report?.from ?? '',
-          error: errorMsg,
-          ...(report === undefined ? {} : { icmp6: report }),
-        });
+        results.push(this.failedProbe(seq, err));
         if (err instanceof IcmpErrorReply && opts?.pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
           await this.getScheduler().delay(opts.pauseAfterErrorReplyMs);
         }

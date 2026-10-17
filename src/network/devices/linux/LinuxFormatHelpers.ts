@@ -77,8 +77,8 @@ export function formatPingHeader(
 }
 
 export function isIcmpErrorResult(r: PingResult): boolean {
-  return !r.success && (r.icmp6 !== undefined
-    || (!!r.error && /unreachable|Time to live exceeded|local error/i.test(r.error)));
+  return !r.success && (r.icmp6 !== undefined || r.localError !== undefined
+    || (!!r.error && /unreachable|Time to live exceeded/i.test(r.error)));
 }
 
 export function pingErrorCount(results: readonly PingResult[]): number {
