@@ -18,7 +18,11 @@ Cisco command references used as the authority when a Cisco command, attribute o
 | ios-management/ios-embedded-packet-capture-command-reference.pdf | Cisco IOS Embedded Packet Capture Command Reference | undated | 48 | epc-cr-book.pdf |
 | ios-management/ios-embedded-syslog-manager-command-reference.pdf | Cisco IOS Embedded Syslog Manager Command Reference | undated | 82 | esm-cr-book.pdf |
 | ios-xe-catalyst-9600/ios-xe-17.15-catalyst-9600-command-reference.pdf | Command Reference, Cisco IOS XE 17.15.x (Catalyst 9600 Switches) | 2024-08-14 | 2400 | b_1715_9600_cr.pdf |
+| asa/cisco-secure-firewall-asa-command-reference-a-to-h.pdf | Cisco Secure Firewall ASA Series Command Reference, A-H Commands | 2005-05-31 / 2026-10-06 | 1822 | asa-command-ref-A-H.pdf |
+| asa/cisco-secure-firewall-asa-command-reference-i-to-r.pdf | Cisco Secure Firewall ASA Series Command Reference, I - R Commands | 2005-05-31 / 2026-09-21 | 1574 | asa-command-ref-I-R.pdf |
+| asa/cisco-secure-firewall-asa-command-reference-s.pdf | Cisco Secure Firewall ASA Series Command Reference, S Commands | 2005-05-31 / 2026-10-05 | 1678 | asa-command-ref-S.pdf |
+| asa/cisco-secure-firewall-asa-command-reference-t-to-z.pdf | Cisco Secure Firewall ASA Series Command Reference, T - Z Commands and IOS Commands for ASASM | 2005-05-31 / 2026-09-21 | 458 | asa-command-ref-T-Z.pdf |
 
-Layout: `ios-ip-routing/` per-protocol routing books, `ios-security/` the four alphabetical security books, `ios-management/` EEM, EPC and ESM, `ios-xe-catalyst-9600/` the IOS XE switch book.
+Layout: `ios-ip-routing/` per-protocol routing books, `ios-security/` the four alphabetical security books, `ios-management/` EEM, EPC and ESM, `ios-xe-catalyst-9600/` the IOS XE switch book, `asa/` the four alphabetical books of the Cisco Secure Firewall ASA command reference (`AsaFirewall`).
 
 Titles, dates and page counts are read from the first pages of each PDF.
