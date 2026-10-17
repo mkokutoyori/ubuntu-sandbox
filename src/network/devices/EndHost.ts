@@ -102,7 +102,7 @@ import { RFC6724_POLICY, type DestinationPolicy } from '../layers/internet/Desti
 import {
   UDP_OVER_IPV4_HEADER_BYTES, udpPayloadLength, type UdpEmissionOptions, type UdpSendRequest,
 } from '../layers/transport/UdpEgress';
-import type { HostIcmpUnreachablePayload } from './host/events';
+import type { HostIcmpEchoFailedPayload, HostIcmpEchoReplyPayload, HostIcmpUnreachablePayload } from './host/events';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
 import { Logger } from '../core/Logger';
 import type { Errno } from '../core/Errno';
@@ -4601,6 +4601,32 @@ export abstract class EndHost extends Equipment {
     }
   }
 
+  private armEchoWait(
+    probe: { id: number; seq: number; target: string; anySource: boolean }, timeoutMs: number,
+  ): () => Promise<
+    | { kind: 'reply'; r: HostIcmpEchoReplyPayload }
+    | { kind: 'failed'; r: HostIcmpEchoFailedPayload }
+  > {
+    const replied = waitForEvent(
+      this.getBus(),
+      'host.icmp.echo-reply',
+      (p) => p.deviceId === this.id && p.id === probe.id && p.seq === probe.seq
+        && (probe.anySource || p.fromIp === probe.target),
+      { timeoutMs, scheduler: this.getScheduler() },
+    ).then((r) => ({ kind: 'reply' as const, r }));
+    const failed = waitForEvent(
+      this.getBus(),
+      'host.icmp.echo-failed',
+      (p) => p.deviceId === this.id
+        && (p.id === -1 || (p.id === probe.id && p.seq === probe.seq))
+        && (p.toIp === probe.target || p.toIp === ''),
+      { timeoutMs, scheduler: this.getScheduler() },
+    ).then((r) => ({ kind: 'failed' as const, r }));
+    replied.catch(() => {});
+    failed.catch(() => {});
+    return () => Promise.race([replied, failed]);
+  }
+
   // ─── Send Ping (ICMP Echo Request via IPv4) ───────────────────
 
   /**
@@ -4636,28 +4662,8 @@ export abstract class EndHost extends Equipment {
     const sentAt = PathClock.now();
     const useTtl = ttl ?? this.defaultTTL;
 
-    // Phase 5.6: settle through the bus instead of a pendingPings Map.
     const toBroadcast = linkDestinationFor(targetIP, this.connectedIpv4Prefixes()) !== null;
-    const replyPromise = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-reply',
-      (p) => p.deviceId === this.id && p.id === id && p.seq === seq
-        && (toBroadcast || p.fromIp === targetIpStr),
-      { timeoutMs, scheduler: this.getScheduler() },
-    );
-    const failedPromise = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-failed',
-      (p) => p.deviceId === this.id
-        && (p.id === -1 || (p.id === id && p.seq === seq))
-        && (p.toIp === targetIpStr || p.toIp === ''),
-      { timeoutMs, scheduler: this.getScheduler() },
-    );
-    // The ping can abort before both waiters settle (firewall verdict below,
-    // race loser timing out later); observe rejections so abandoned waiters
-    // never surface as unhandled errors.
-    replyPromise.catch(() => {});
-    failedPromise.catch(() => {});
+    const outcome = this.armEchoWait({ id, seq, target: targetIpStr, anySource: toBroadcast }, timeoutMs);
 
     const dataSize = opts?.dataSize ?? 56;
     const icmp: ICMPPacket = {
@@ -4691,15 +4697,8 @@ export abstract class EndHost extends Equipment {
       });
     }
 
-    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
-    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
-    // The race loser keeps waiting until its own timeout fires; observe its
-    // rejection so it never surfaces as an unhandled error.
-    replyOutcome.catch(() => {});
-    failedOutcome.catch(() => {});
-
     try {
-      const winner = await Promise.race([replyOutcome, failedOutcome]);
+      const winner = await outcome();
       if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason);
       const rtt = PathClock.now() - sentAt;
       if (rtt > timeoutMs) throw new Error('timeout');
@@ -6514,20 +6513,7 @@ export abstract class EndHost extends Equipment {
     const targetIpStr = targetIP.toString();
     const sentAt = PathClock.now();
 
-    const replyPromise = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-reply',
-      (p) => p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq,
-      { timeoutMs, scheduler: this.getScheduler() },
-    );
-    const failedPromise = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-failed',
-      (p) => p.deviceId === this.id
-        && (p.id === -1 || (p.id === id && p.seq === seq))
-        && (p.toIp === targetIpStr || p.toIp === ''),
-      { timeoutMs, scheduler: this.getScheduler() },
-    );
+    const outcome = this.armEchoWait({ id, seq, target: targetIpStr, anySource: false }, timeoutMs);
 
     const icmpv6 = createICMPv6EchoRequest(id, seq, 56);
     const ipPkt = createIPv6Packet(
@@ -6539,15 +6525,8 @@ export abstract class EndHost extends Equipment {
       etherType: ETHERTYPE_IPV6, payload: ipPkt,
     });
 
-    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
-    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
-    // The race loser keeps waiting until its own timeout fires; observe its
-    // rejection so it never surfaces as an unhandled error.
-    replyOutcome.catch(() => {});
-    failedOutcome.catch(() => {});
-
     try {
-      const winner = await Promise.race([replyOutcome, failedOutcome]);
+      const winner = await outcome();
       if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason);
       const rtt = PathClock.now() - sentAt;
       if (rtt > timeoutMs) throw new Error('timeout');
