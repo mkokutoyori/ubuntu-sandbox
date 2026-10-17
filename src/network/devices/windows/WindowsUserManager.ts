@@ -13,7 +13,7 @@
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
-import type { WindowsAccountChange } from './events';
+import type { WindowsAccountChange, WindowsLogonDetails, WindowsLogonFailureCause } from './events';
 import type { WindowsAccountsPolicy } from './security/WindowsAccountsPolicy';
 
 export interface WindowsUser {
@@ -148,10 +148,13 @@ export class WindowsUserManager {
   }
 
   /** Publish an account-change event on the central bus. */
-  private publishAccount(account: string, change: WindowsAccountChange): void {
+  private publishAccount(
+    account: string, change: WindowsAccountChange, changed?: Record<string, string>,
+  ): void {
+    const actor = change === 'locked-out' ? 'SYSTEM' : this.currentUser;
     this.bus?.publish({
       topic: 'windows.account.changed',
-      payload: { deviceId: this.deviceId, account, change },
+      payload: { deviceId: this.deviceId, account, change, actor, ...(changed === undefined ? {} : { changed }) },
     });
   }
 
@@ -159,7 +162,7 @@ export class WindowsUserManager {
   private publishMembership(group: string, member: string, added: boolean): void {
     this.bus?.publish({
       topic: 'windows.group.membership-changed',
-      payload: { deviceId: this.deviceId, group, member, added },
+      payload: { deviceId: this.deviceId, group, member, added, actor: this.currentUser },
     });
   }
 
@@ -413,6 +416,31 @@ export class WindowsUserManager {
     return '';
   }
 
+  private storePassword(user: WindowsUser, value: string): string {
+    const current = this.passwords.get(user.name.toLowerCase()) ?? '';
+    const failure = this.validatePasswordComplexity(value, [current, ...user.passwordHistory]);
+    if (failure) return failure;
+    const historyLength = this.policy?.snapshot().passwordHistoryLength ?? 0;
+    if (current) {
+      user.passwordHistory = [current, ...user.passwordHistory].slice(0, historyLength);
+    }
+    this.passwords.set(user.name.toLowerCase(), value);
+    user.passwordLastSet = simulationDate();
+    return '';
+  }
+
+  changePassword(name: string, oldPassword: string, newPassword: string): string {
+    const user = this.users.get(name.toLowerCase());
+    if (!user) return 'The user name could not be found.';
+    if (this.passwords.get(name.toLowerCase()) !== oldPassword) {
+      return 'The specified network password is not correct.';
+    }
+    const failure = this.storePassword(user, newPassword);
+    if (failure) return failure;
+    this.publishAccount(user.name, 'password-changed');
+    return '';
+  }
+
   setUserProperty(name: string, property: string, value: string): string {
     if (!this.isCurrentUserAdmin()) return 'Access is denied.';
     const user = this.users.get(name.toLowerCase());
@@ -421,7 +449,7 @@ export class WindowsUserManager {
     switch (property.toLowerCase()) {
       case 'fullname':
         user.fullName = value;
-        this.publishAccount(user.name, 'modified');
+        this.publishAccount(user.name, 'modified', { DisplayName: value });
         break;
       case 'description':
       case 'comment':
@@ -429,15 +457,8 @@ export class WindowsUserManager {
         this.publishAccount(user.name, 'modified');
         break;
       case 'password': {
-        const current = this.passwords.get(name.toLowerCase()) ?? '';
-        const pwErr = this.validatePasswordComplexity(value, [current, ...user.passwordHistory]);
-        if (pwErr) return pwErr;
-        const historyLength = this.policy?.snapshot().passwordHistoryLength ?? 0;
-        if (current) {
-          user.passwordHistory = [current, ...user.passwordHistory].slice(0, historyLength);
-        }
-        this.passwords.set(name.toLowerCase(), value);
-        user.passwordLastSet = simulationDate();
+        const failure = this.storePassword(user, value);
+        if (failure) return failure;
         this.publishAccount(user.name, 'password-reset');
         break;
       }
@@ -445,8 +466,10 @@ export class WindowsUserManager {
         const enabled = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
         user.enabled = enabled;
         if (enabled) {
+          const wasLocked = this.isLockedOut(user.name);
           user.lockedUntil = null;
           user.failedLogonCount = 0;
+          if (wasLocked) this.publishAccount(user.name, 'unlocked');
           this.publishAccount(user.name, 'enabled');
         } else {
           this.publishAccount(user.name, 'disabled');
@@ -457,7 +480,9 @@ export class WindowsUserManager {
         const parsed = parseAccountExpiry(value);
         if (parsed === undefined) return 'The command syntax is invalid: the /EXPIRES date is not valid.';
         user.accountExpires = parsed;
-        this.publishAccount(user.name, 'modified');
+        this.publishAccount(user.name, 'modified', {
+          AccountExpires: parsed === null ? '%%1794' : `${parsed.getUTCMonth() + 1}/${parsed.getUTCDate()}/${parsed.getUTCFullYear()}`,
+        });
         break;
       }
       default:
@@ -573,13 +598,20 @@ export class WindowsUserManager {
    * out of the way entirely rather than double-publishing the failure
    * half like the success half would.
    */
-  checkPassword(name: string, password: string, logonType = 2, publishOnSuccess = true, publishOnFailure = true): boolean {
+  checkPassword(
+    name: string, password: string, logonType = 2, publishOnSuccess = true, publishOnFailure = true,
+    details?: WindowsLogonDetails,
+  ): boolean {
     const user = this.users.get(name.toLowerCase());
-    if (user && (this.logonRefusal(name) !== null || this.isPasswordExpired(name))) {
+    const refusal = user === undefined ? null : this.logonRefusal(name);
+    const blocked: WindowsLogonFailureCause | null =
+      refusal !== null ? refusal
+        : user !== undefined && this.isPasswordExpired(name) ? 'password-expired' : null;
+    if (blocked !== null) {
       if (publishOnFailure) {
         this.bus?.publish({
           topic: 'windows.account.logon',
-          payload: { deviceId: this.deviceId, account: name, success: false, logonType },
+          payload: { deviceId: this.deviceId, account: name, success: false, logonType, failure: blocked, details },
         });
       }
       return false;
@@ -604,7 +636,10 @@ export class WindowsUserManager {
     if (!ok && !publishOnFailure) return false;
     this.bus?.publish({
       topic: 'windows.account.logon',
-      payload: { deviceId: this.deviceId, account: name, success: ok, logonType },
+      payload: {
+        deviceId: this.deviceId, account: name, success: ok, logonType, details,
+        ...(ok ? {} : { failure: user === undefined ? 'unknown-user' as const : 'bad-password' as const }),
+      },
     });
     return ok;
   }
@@ -643,7 +678,7 @@ export class WindowsUserManager {
     }
     const sid = `S-1-5-32-${1000 + this.nextRid++}`;
     this.addGroup({ name, description, sid, members: [], builtIn: false });
-    this.bus?.publish({ topic: 'windows.group.created', payload: { deviceId: this.deviceId, group: name } });
+    this.bus?.publish({ topic: 'windows.group.created', payload: { deviceId: this.deviceId, group: name, actor: this.currentUser } });
     return '';
   }
 
@@ -653,7 +688,7 @@ export class WindowsUserManager {
     if (!group) return `The specified group could not be found.`;
     if (group.builtIn) return `Cannot delete built-in group '${group.name}'.`;
     this.groups.delete(name.toLowerCase());
-    this.bus?.publish({ topic: 'windows.group.deleted', payload: { deviceId: this.deviceId, group: group.name } });
+    this.bus?.publish({ topic: 'windows.group.deleted', payload: { deviceId: this.deviceId, group: group.name, actor: this.currentUser } });
     return '';
   }
 

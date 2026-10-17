@@ -65,7 +65,7 @@ import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, type ICMPType, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { runSshd, type SshdDaemonRequest } from '../protocols/ssh/server/SshdCommand';
 import { WINDOWS_SSHD_PROFILE } from '../protocols/ssh/server/SshdDump';
-import { WindowsSshServerContext, windowsPathOf } from '../protocols/ssh/server/WindowsSshServerContext';
+import { WindowsSshServerContext, windowsPathOf, SSHD_EXECUTABLE } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
 import {
@@ -139,6 +139,7 @@ import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
 import { createAuditIdentity } from './windows/eventlog/AuditIdentity';
+import type { WindowsLogonDetails } from './windows/events';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
@@ -317,6 +318,9 @@ import { snmpSnapshot } from '../layers/internet/SnmpSnapshot';
  */
 /** Le pas du planificateur de tâches — la minute, comme sous Windows. */
 const TASK_TICK_MS = 60_000;
+const S4U_LOGON: WindowsLogonDetails = {
+  processName: SSHD_EXECUTABLE, logonProcess: 'sshd', authenticationPackage: 'MICROSOFT_AUTHENTICATION_PACKAGE_V1_0',
+};
 const DNS_CLIENT_SERVICE = 'Dnscache';
 
 /**
@@ -591,7 +595,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // celle qui horodate le journal, sans quoi un filtre temporel écarte
     // les événements que la machine vient d'écrire.
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
+    this.eventLog.describeBootEvents(this.hostname.toUpperCase());
     this.eventLog.attachClearedHook((logName, backupPath) => this.auditLogCleared(logName, backupPath));
+    this.auditPolicy.attachChangeListener((subcategory, changes) => {
+      if (!this.auditPolicy.isEnabled('Audit Policy Change', 'success')) return;
+      this.securityAudit().auditPolicyChanged(subcategory, changes, this.userMgr.currentUser || 'Administrator');
+    });
     this.initDefaultSockets();
     this.wireReactiveProjections();
     this.winrm.onChange(() => this.startWinRmService());
@@ -875,6 +884,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.securityAuditProjection = new WindowsSecurityAuditProjection(
       bus, this.securityAudit(), this.id, this.auditPolicy,
       () => this.isCommandLineAuditEnabled(),
+      (account) => this.userMgr.isAdmin(account),
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
@@ -1309,6 +1319,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return ports.length === 0 ? [22] : ports;
   }
 
+  private readonly sshPeerPorts = new Map<string, number>();
+
   private openSshdListeners(identity: ListenerIdentity): void {
     this.sshdRuntime ??= { context: this.buildSshServerContext(), ports: new Set() };
     const runtime = this.sshdRuntime;
@@ -1325,6 +1337,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         stack.listen(port, {
           identity,
           onAccept: (socket) => {
+            this.sshPeerPorts.set(socket.remoteIp, socket.remotePort);
             this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
           },
         }, wildcardAddressOf(family));
@@ -1354,15 +1367,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       runExecAs: (user: string, line: string, stdin?: string) => this.runExecAs(user, line, stdin),
       bindForwardedAgent: (user: string, agent: AgentPort) => this.bindForwardedAgent(user, agent),
       shellBanner: () => this.getSshMotd(),
+      clientPort: (fromIp: string) => this.sshPeerPorts.get(fromIp),
     },
     // Publish a `windows.account.logon` per inbound SSH auth attempt
     // — the SecurityAuditProjection turns each into a 4624 / 4625 in
     // the Security event log, matching what OpenSSH-for-Windows logs.
-    // Logon type 10 = RemoteInteractive, what sshd uses on real Windows.
-    (user, success) => {
+    // Win32-OpenSSH: S4U (LsaLogonUser, Network = type 3) for a key, LogonUserExExW
+    // (NETWORK_CLEARTEXT = type 8) for a password -- never type 10, which is RDP.
+    ({ user, success, method, failure }) => {
       this.getBus().publish({
         topic: 'windows.account.logon',
-        payload: { deviceId: this.id, account: user, success, logonType: 10 },
+        payload: {
+          deviceId: this.id, account: user, success, logonType: method === 'password' ? 8 : 3,
+          details: S4U_LOGON, ...(failure === undefined ? {} : { failure }),
+        },
       });
     },
     // Paired logoff hook — turns into 4634 (Logoff) in the Security

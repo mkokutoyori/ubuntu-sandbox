@@ -56,7 +56,7 @@ describe('Scénario 2 (Windows) — audit des connexions et sessions : 4624/4625
       expect(entries[0].message).toContain('Logon Type:\t\t2');
     });
 
-    it('une connexion SSH réussie journalise 4624 avec Logon Type 10 (Interactif distant / RemoteInteractive)', async () => {
+    it('une connexion SSH par mot de passe journalise 4624 avec Logon Type 8 (NetworkCleartext, LogonUserExExW de Win32-OpenSSH)', async () => {
       const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
       const ctx = pc.getSshServerContext();
       ctx.auth.checkPassword('user', 'user');
@@ -64,7 +64,7 @@ describe('Scénario 2 (Windows) — audit des connexions et sessions : 4624/4625
       const entries = (pc.eventLog.getEntriesStructured('Security', { newest: 50 }) ?? [])
         .filter(e => e.eventId === 4624);
       expect(entries.length).toBeGreaterThan(0);
-      expect(entries[0].message).toContain('Logon Type:\t\t10');
+      expect(entries[0].message).toContain('Logon Type:\t\t8');
     });
 
     it('gap confirmé : le champ structuré LogonType est absent de l\'EventData XML — seul le texte libre du message le mentionne', async () => {

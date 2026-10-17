@@ -4,6 +4,7 @@ import {
   findSubcategory,
   findCategory,
   subcategoriesForCategory,
+  type AuditSubcategoryDef,
 } from './WindowsAuditCategoryCatalog';
 
 export interface AuditSetting {
@@ -55,6 +56,7 @@ const CLIENT_SERVER_BASELINE: ReadonlyArray<readonly [string, AuditSetting]> = [
   ['Logoff', { success: true, failure: false }],
   ['Account Lockout', { success: true, failure: false }],
   ['Special Logon', { success: true, failure: false }],
+  ['Audit Policy Change', { success: true, failure: false }],
   ['Process Creation', { success: true, failure: false }],
   ['Process Termination', { success: true, failure: false }],
   ['User Account Management', { success: true, failure: false }],
@@ -144,12 +146,29 @@ export class WindowsAuditPolicy {
     return this.subcategories.get(subcategory.toLowerCase())?.[kind] ?? false;
   }
 
+  private changeListener: ((subcategory: AuditSubcategoryDef, changes: string) => void) | null = null;
+  private seeding = false;
+
+  /**
+   * Windows consigne chaque changement de stratégie d'audit (4719) ; la
+   * stratégie, qui connaît l'ancien et le nouvel état, est la seule à
+   * pouvoir dire « Success Added » ou « Failure Removed ».
+   */
+  attachChangeListener(listener: (subcategory: AuditSubcategoryDef, changes: string) => void): void {
+    this.changeListener = listener;
+  }
+
   set(subcategory: string, opts: { success?: boolean; failure?: boolean }): boolean {
     const key = subcategory.toLowerCase();
     const entry = this.subcategories.get(key);
     if (!entry) return false;
+    const changes: string[] = [];
+    if (opts.success !== undefined && opts.success !== entry.success) changes.push(`Success ${opts.success ? 'Added' : 'Removed'}`);
+    if (opts.failure !== undefined && opts.failure !== entry.failure) changes.push(`Failure ${opts.failure ? 'Added' : 'Removed'}`);
     if (opts.success !== undefined) entry.success = opts.success;
     if (opts.failure !== undefined) entry.failure = opts.failure;
+    const definition = findSubcategory(subcategory);
+    if (changes.length > 0 && !this.seeding && definition !== undefined) this.changeListener?.(definition, changes.join(', '));
     return true;
   }
 
@@ -174,6 +193,7 @@ export class WindowsAuditPolicy {
 
   seedDefaults(profile: AuditBaselineProfile): void {
     this.baselineProfile = profile;
+    this.seeding = true;
     for (const entry of this.subcategories.values()) {
       entry.success = false;
       entry.failure = false;
@@ -182,6 +202,7 @@ export class WindowsAuditPolicy {
     if (profile === 'domain-controller') {
       for (const [name, setting] of DOMAIN_CONTROLLER_BASELINE) this.set(name, setting);
     }
+    this.seeding = false;
   }
 
   clear(): void {

@@ -77,11 +77,15 @@ export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
 
 /** The kind of change applied to a local account. */
 export type WindowsAccountChange =
-  | 'created' | 'deleted' | 'password-reset' | 'enabled' | 'disabled' | 'modified' | 'locked-out';
+  | 'created' | 'deleted' | 'password-reset' | 'password-changed' | 'enabled' | 'disabled' | 'modified' | 'locked-out' | 'unlocked';
 
 export interface WindowsAccountChangedPayload extends WindowsDeviceRef {
   account: string;
   change: WindowsAccountChange;
+  /** Le compte qui a exécuté la commande (SYSTEM pour un verrouillage). */
+  actor?: string;
+  /** Les attributs modifiés, pour le 4738. */
+  changed?: Record<string, string>;
 }
 
 export interface WindowsLogonDetails {
@@ -137,6 +141,7 @@ export interface WindowsSessionLinkEventPayload extends WindowsDeviceRef {
 
 export interface WindowsGroupEventPayload extends WindowsDeviceRef {
   group: string;
+  actor?: string;
 }
 
 export interface WindowsGroupMemberEventPayload extends WindowsGroupEventPayload {

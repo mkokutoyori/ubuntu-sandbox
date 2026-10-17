@@ -13,6 +13,7 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { bootSecurityEvents } from './eventlog/BootEvents';
 
 export type EntryType = 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit';
 
@@ -563,6 +564,24 @@ export class PSEventLogProvider {
       });
     }
     return '';
+  }
+
+  /**
+   * Les entrées de démarrage de Security sont construites avant que la
+   * machine ait un nom : une fois le nom connu, elles reçoivent leur
+   * EventData et leur message complets, comme tout événement écrit ensuite.
+   */
+  describeBootEvents(machine: string): void {
+    const meta = this.logs.get('security');
+    if (meta === undefined) return;
+    const pending = bootSecurityEvents(machine);
+    for (const entry of meta.entries) {
+      const index = pending.findIndex((boot) => boot.eventId === entry.eventId);
+      if (index < 0) continue;
+      const [boot] = pending.splice(index, 1);
+      entry.message = boot.message;
+      entry.data = boot.data;
+    }
   }
 
   private capacityOf(meta: EventLogMetadata): number {
