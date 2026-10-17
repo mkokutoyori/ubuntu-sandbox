@@ -71,7 +71,12 @@ describe('la table d\'adresses MAC est VISIBLE', () => {
   it('les colonnes sont celles d\'IOS', async () => {
     await pc.executeCommand('ping -c 1 10.0.0.1');
     const vue = await sw.executeCommand('show mac address-table');
-    expect(vue).toContain('Vlan    Mac Address       Type        Ports');
+    const lines = vue.split('\n');
+    const header = lines.find(l => l.startsWith('Vlan'))!;
+    const rule = lines[lines.indexOf(header) + 1];
+    expect(header).toMatch(/^Vlan {4}Mac Address +Type +Ports$/);
+    expect(rule).toMatch(/^-{4} {4}-{17} {4}-+ {4}-+$/);
+    expect(vue).toMatch(/\n +\d+ {4}\S{17} {4}DYNAMIC +\S+/);
     expect(vue).toContain('DYNAMIC');
     expect(vue).toContain('Total Mac Addresses for this criterion:');
   });

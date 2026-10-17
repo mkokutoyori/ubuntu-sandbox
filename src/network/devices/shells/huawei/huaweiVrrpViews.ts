@@ -255,7 +255,7 @@ export function rendreDisplayVrrp(groupes: readonly VrrpGroupRuntime[]): string 
 const COLONNES_BRIEF: ReadonlyArray<TableColumn<VrrpGroupRuntime>> = [
   { header: 'VRID', width: 6, value: (g) => String(g.vrid) },
   { header: 'State', width: 12, value: (g) => etatDe(g) },
-  { header: 'Interface', value: (g) => huaweiDisplayInterfaceName(g.iface) },
+  { header: 'Interface', minWidth: 22, value: (g) => huaweiDisplayInterfaceName(g.iface) },
   { header: 'Type', width: 8, value: () => 'Normal' },
   { header: 'Virtual IP', value: (g) => g.vip ?? 'unassigned' },
 ];
