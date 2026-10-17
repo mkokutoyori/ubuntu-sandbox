@@ -216,6 +216,10 @@ describe('a Linux machine orders by the file it holds in /etc/gai.conf', () => {
   it('a Windows machine has the table of RFC 6724 and does not read the file of Linux', () => {
     const windows = new WindowsPC('windows-pc', 'WIN', 100, 0);
     windows.powerOn();
-    expect(windows.destinationPolicy()).toBe(RFC6724_POLICY);
+    for (const text of ['::1', '2001:db8::1', '2002::1', 'fc00::1', '10.0.0.1']) {
+      const address = text.includes(':') ? v6(text) : v4(text);
+      expect(labelOf(address, windows.destinationPolicy())).toBe(labelOf(address, RFC6724_POLICY));
+      expect(precedenceOf(address, windows.destinationPolicy())).toBe(precedenceOf(address, RFC6724_POLICY));
+    }
   });
 });

@@ -143,6 +143,8 @@ import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
+import { PrefixPolicyStore } from './windows/PrefixPolicyStore';
+import type { DestinationPolicy } from '../layers/internet/DestinationSelection';
 import { PortProxyEndpoint } from './windows/PortProxyEndpoint';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
@@ -486,6 +488,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private tcpSocketProjection: TcpSocketStateProjection | null = null;
   /** `netsh interface portproxy` rules — port-forwarding entries. */
   readonly portProxyTable: PortProxyTable = new PortProxyTable();
+  readonly prefixPolicies: PrefixPolicyStore = new PrefixPolicyStore();
   /** Reactive consumer: port-proxy events → socket-table listeners. */
   private readonly portProxyEndpoint = new PortProxyEndpoint(() => this.portProxyTable.list(), this.getTcpStack());
   /** Service manager (service lifecycle, dependencies) */
@@ -784,8 +787,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return false;
   }
 
+  override destinationPolicy(): DestinationPolicy {
+    return this.prefixPolicies.policy();
+  }
+
   override powerOn(): void {
     super.powerOn();
+    this.prefixPolicies.boot();
     this.reconcileListeners();
     this.startScheduledTaskTicker();
   }
@@ -4255,6 +4263,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
 
       portProxy: this.portProxyTable,
+      prefixPolicies: this.prefixPolicies,
+      isElevated: () => this.userMgr.isCurrentUserAdmin(),
       firewallRules: this.firewallRules,
       firewallProfiles: this.firewallProfiles,
       currentFirewallProfile: () =>

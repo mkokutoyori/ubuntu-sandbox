@@ -219,8 +219,14 @@ export interface WinCommandContext {
   // Service state query (for netsh dhcpclient show state, etc.)
   isServiceRunning(name: string): boolean;
 
+  // True when the current user runs with administrator rights (the elevation netsh asks for when it changes a table)
+  isElevated(): boolean;
+
   // Port-proxy rules (netsh interface portproxy)
   portProxy: import('./PortProxyTable').PortProxyTable;
+
+  // Prefix policy table (netsh interface ipv6 ... prefixpolicy, Get-NetPrefixPolicy)
+  prefixPolicies: import('./PrefixPolicyStore').PrefixPolicyStore;
 
   dnsCache: import('@/network/dns/resolver/DnsCache').DnsCache;
 
