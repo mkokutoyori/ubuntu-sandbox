@@ -1,3 +1,5 @@
+import type { DateOrder } from './WindowsRegionalSettings';
+
 const MONTHS = [
   'january', 'february', 'march', 'april', 'may', 'june',
   'july', 'august', 'september', 'october', 'november', 'december',
@@ -26,18 +28,32 @@ function validDate(year: number, month: number, day: number): Date | null {
   return date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date : null;
 }
 
-export function parseAccountExpiry(value: string, nowMs: number): Date | null | undefined {
+export function parseAccountExpiry(value: string, nowMs: number, order: DateOrder = 'MDY'): Date | null | undefined {
   const text = value.trim();
   if (text.toLowerCase() === 'never') return null;
   const parts = text.split(/[/,]/);
   if (parts.length < 2 || parts.length > 3 || parts.some((part) => part === '')) return undefined;
-  const dayFirst = /^\d+$/.test(parts[0]) && Number(parts[0]) > 12 && /^\d+$/.test(parts[1]);
-  const month = monthNumber(dayFirst ? parts[1] : parts[0]);
-  const dayToken = dayFirst ? parts[0] : parts[1];
+  const nameFirst = /^[a-z]/i.test(parts[0]);
+  const nameSecond = /^[a-z]/i.test(parts[1]);
+  let monthToken: string;
+  let dayToken: string;
+  let yearToken: string | undefined;
+  if (nameFirst) {
+    [monthToken, dayToken, yearToken] = parts;
+  } else if (nameSecond) {
+    [dayToken, monthToken, yearToken] = parts;
+  } else if (order === 'DMY') {
+    [dayToken, monthToken, yearToken] = parts;
+  } else if (order === 'YMD' && parts.length === 3) {
+    [yearToken, monthToken, dayToken] = parts;
+  } else {
+    [monthToken, dayToken, yearToken] = parts;
+  }
+  const month = monthNumber(monthToken);
   if (month === null || !/^\d{1,2}$/.test(dayToken)) return undefined;
   const day = Number(dayToken);
-  if (parts.length === 3) {
-    const year = expandYear(parts[2]);
+  if (yearToken !== undefined) {
+    const year = expandYear(yearToken);
     return year === null ? undefined : validDate(year, month, day) ?? undefined;
   }
   const now = new Date(nowMs);

@@ -35,7 +35,7 @@ import {
 } from './ConversionCmdlets';
 import {
   GetDateCmdlet, SetDateCmdlet, NewTimespanCmdlet, StartSleepCmdlet,
-  GetTimeZoneCmdlet, SetTimeZoneCmdlet,
+  GetTimeZoneCmdlet, SetTimeZoneCmdlet, GetCultureCmdlet, SetCultureCmdlet,
   MeasureCommandCmdlet,
 } from './DateTimeCmdlets';
 import {
@@ -320,6 +320,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetDateCmdlet());
   registry.register(new GetTimeZoneCmdlet());
   registry.register(new SetTimeZoneCmdlet());
+  registry.register(new GetCultureCmdlet());
+  registry.register(new SetCultureCmdlet());
   registry.register(new SetDateCmdlet());
   registry.register(new NewTimespanCmdlet());
   registry.register(new StartSleepCmdlet());

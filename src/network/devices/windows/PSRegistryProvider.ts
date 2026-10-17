@@ -7,6 +7,8 @@
  *   - Test-Path, Get-PSDrive
  */
 
+import { WINDOWS_CULTURES, cultureRegistryValues } from './WindowsRegionalSettings';
+
 // ─── Data Structures ─────────────────────────────────────────────────────────
 
 export interface RegistryValue {
@@ -264,6 +266,9 @@ function buildHKCU(): RegistryKey {
   // HKCU:\Control Panel
   const controlPanel = makeKey('Control Panel');
   root.subkeys.set('control panel', controlPanel);
+  const international = makeKey('International');
+  controlPanel.subkeys.set('international', international);
+  for (const [name, value] of Object.entries(cultureRegistryValues(WINDOWS_CULTURES[0]))) seedValue(international, name, value);
 
   // HKCU:\Console
   root.subkeys.set('console', makeKey('Console'));

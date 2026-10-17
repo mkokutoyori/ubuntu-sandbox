@@ -14,6 +14,7 @@ import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import { parseAccountExpiry } from './WindowsAccountExpiry';
+import { dateOrderOf, DEFAULT_REGIONAL_FORMATS, type RegionalFormats } from './WindowsRegionalSettings';
 import { logonHoursAllow, parseLogonHours, type LogonHours } from './WindowsLogonHours';
 import type { WindowsAccountChange, WindowsLogonDetails, WindowsLogonFailureCause } from './events';
 import type { WindowsAccountsPolicy } from './security/WindowsAccountsPolicy';
@@ -52,6 +53,7 @@ export interface WindowsUserMachine {
   hostname(): string;
   timezone(): string | undefined;
   directoryExists(path: string): boolean;
+  regionalFormats(): RegionalFormats;
 }
 
 export type WindowsLogonRefusal = 'disabled' | 'expired' | 'locked' | 'logon-hours' | 'workstation';
@@ -495,7 +497,7 @@ export class WindowsUserManager {
   validateUserOption(property: string, value: string): string {
     switch (property.toLowerCase()) {
       case 'times': return parseLogonHours(value).ok ? '' : SYNTAX_INVALID;
-      case 'expires': return parseAccountExpiry(value, simulationNowMs()) === undefined ? SYNTAX_INVALID : '';
+      case 'expires': return parseAccountExpiry(value, simulationNowMs(), this.dateOrder()) === undefined ? SYNTAX_INVALID : '';
       case 'workstations': {
         const names = value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
         return names.length > MAX_WORKSTATIONS && !names.includes('*') ? SYNTAX_INVALID : '';
@@ -558,8 +560,8 @@ export class WindowsUserManager {
         break;
       }
       case 'expires': {
-        const parsed = parseAccountExpiry(value, simulationNowMs());
-        if (parsed === undefined) return 'The command syntax is invalid: the /EXPIRES date is not valid.';
+        const parsed = parseAccountExpiry(value, simulationNowMs(), this.dateOrder());
+        if (parsed === undefined) return SYNTAX_INVALID;
         user.accountExpires = parsed;
         this.publishAccount(user.name, 'modified', {
           AccountExpires: parsed === null ? '%%1794' : `${parsed.getUTCMonth() + 1}/${parsed.getUTCDate()}/${parsed.getUTCFullYear()}`,
@@ -694,6 +696,14 @@ export class WindowsUserManager {
       if (!user.workstations.some((entry) => entry.toLowerCase() === origin)) return 'workstation';
     }
     return null;
+  }
+
+  regionalFormats(): RegionalFormats {
+    return this.machine?.regionalFormats() ?? DEFAULT_REGIONAL_FORMATS;
+  }
+
+  private dateOrder() {
+    return dateOrderOf(this.regionalFormats().shortDate);
   }
 
   passwordMinimumAgeDays(): number {

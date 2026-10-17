@@ -3017,6 +3017,8 @@ export class PSRuntime {
         return { __pattern__: String(val), IsMatch: (s: PSValue) => new RegExp(String(val)).test(String(s)) } as unknown as PSValue;
       case 'security.principal.windowsprincipal': case 'system.security.principal.windowsprincipal':
         return this.windowsPrincipalOf(val) as unknown as PSValue;
+      case 'adsi': case 'system.directoryservices.directoryentry':
+        return this.winNtEntry(psValueToString(val));
       case 'guid': case 'system.guid':
         return String(val) as PSValue;
       case 'datetime': case 'system.datetime':
@@ -3043,6 +3045,41 @@ export class PSRuntime {
       }
       default:        return val;
     }
+  }
+
+  private winNtEntry(path: string): PSValue {
+    const match = /^WinNT:\/\/(?:[^/,]+\/)?([^/,]+)(?:,(\w+))?$/i.exec(path.trim());
+    const users = this.providers.users;
+    if (match === null || users === undefined || (match[2] !== undefined && match[2].toLowerCase() !== 'user')) {
+      throw new PSRuntimeError('The WinNT path is not valid or does not name a user.');
+    }
+    const account = users.getUser(match[1]);
+    if (account === null) throw new PSRuntimeError('The user name could not be found.');
+    const failing = (method: string, argumentCount: number, message: string): never => {
+      throw new PSRuntimeError(`Exception calling "${method}" with "${argumentCount}" argument(s): "${message}"`);
+    };
+    const changePassword = (oldPassword: PSValue, newPassword: PSValue): null => {
+      const message = users.changePassword(account.name, psValueToString(oldPassword), psValueToString(newPassword));
+      return message ? failing('ChangePassword', 2, message) : null;
+    };
+    const setPassword = (newPassword: PSValue): null => {
+      const message = users.setUser(account.name, { password: psValueToString(newPassword) });
+      return message ? failing('SetPassword', 1, message) : null;
+    };
+    return {
+      Name: account.name,
+      FullName: account.fullName,
+      Description: account.description,
+      ChangePassword: changePassword,
+      SetPassword: setPassword,
+      SetInfo: () => null,
+      Invoke: (method: PSValue, ...args: PSValue[]) => {
+        const name = psValueToString(method).toLowerCase();
+        if (name === 'changepassword') return changePassword(args[0], args[1]);
+        if (name === 'setpassword') return setPassword(args[0]);
+        return failing('Invoke', args.length + 1, `The directory property cannot be found in the cache: ${psValueToString(method)}`);
+      },
+    } as unknown as PSValue;
   }
 
   isTruthy(val: PSValue): boolean {

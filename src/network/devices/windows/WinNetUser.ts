@@ -22,6 +22,7 @@ import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { describeCountryCode, type WindowsUserManager } from './WindowsUserManager';
 import { describeLogonHours } from './WindowsLogonHours';
+import type { RegionalFormats } from './WindowsRegionalSettings';
 import type { DirectoryStore } from './server/ad/DirectoryStore';
 
 const ACCESS_DENIED = 'System error 5 has occurred.\n\nAccess is denied.';
@@ -233,8 +234,8 @@ function formatUserList(ctx: NetUserContext): string {
   return lines.join('\n');
 }
 
-function userDate(d: Date, zone?: string): string {
-  return formatDotNetDate(ZonedDate.in(d.getTime(), zone), 'M/d/yyyy h:mm:ss tt');
+function userDate(d: Date, formats: RegionalFormats, zone?: string): string {
+  return formatDotNetDate(ZonedDate.in(d.getTime(), zone), `${formats.shortDate} ${formats.timeFormat}`);
 }
 
 const DETAIL_INDENT = ' '.repeat(29);
@@ -252,6 +253,7 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   const expiresAt = ctx.userManager.passwordExpiresAt(user.name);
   const minAge = ctx.userManager.passwordMinimumAgeDays();
   const hours = describeLogonHours(user.logonHours);
+  const formats = ctx.userManager.regionalFormats();
 
   const lines: string[] = [];
   lines.push(detail('User name', user.name));
@@ -260,11 +262,11 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   lines.push(detail("User's comment", user.userComment ?? ''));
   lines.push(detail('Country/region code', describeCountryCode(user.countryCode ?? 0)));
   lines.push(detail('Account active', user.enabled ? 'Yes' : 'No'));
-  lines.push(detail('Account expires', user.accountExpires ? userDate(user.accountExpires, 'UTC') : 'Never'));
+  lines.push(detail('Account expires', user.accountExpires ? userDate(user.accountExpires, formats, 'UTC') : 'Never'));
   lines.push('');
-  lines.push(detail('Password last set', userDate(user.passwordLastSet, ctx.timezone)));
-  lines.push(detail('Password expires', expiresAt === null ? 'Never' : userDate(new Date(expiresAt), ctx.timezone)));
-  lines.push(detail('Password changeable', userDate(new Date(user.passwordLastSet.getTime() + minAge * 86_400_000), ctx.timezone)));
+  lines.push(detail('Password last set', userDate(user.passwordLastSet, formats, ctx.timezone)));
+  lines.push(detail('Password expires', expiresAt === null ? 'Never' : userDate(new Date(expiresAt), formats, ctx.timezone)));
+  lines.push(detail('Password changeable', userDate(new Date(user.passwordLastSet.getTime() + minAge * 86_400_000), formats, ctx.timezone)));
   lines.push(detail('Password required', user.passwordRequired ? 'Yes' : 'No'));
   lines.push(detail('User may change password', user.userMayChangePassword ? 'Yes' : 'No'));
   lines.push('');
@@ -272,7 +274,7 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   lines.push(detail('Logon script', user.scriptPath ?? ''));
   lines.push(detail('User profile', user.profilePath ?? ''));
   lines.push(detail('Home directory', user.homeDirectory ?? ''));
-  lines.push(detail('Last logon', user.lastLogon ? userDate(user.lastLogon, ctx.timezone) : 'Never'));
+  lines.push(detail('Last logon', user.lastLogon ? userDate(user.lastLogon, formats, ctx.timezone) : 'Never'));
   lines.push('');
   lines.push(detail('Logon hours allowed', hours[0]));
   for (const extra of hours.slice(1)) lines.push(`${DETAIL_INDENT}${extra}`);
