@@ -15,6 +15,7 @@ import {
   type CertificateOption,
   type SshCertificate,
 } from '../certificate/SshCertificate';
+import { pkcs11Problem } from './TokenDialogues';
 import { signWithAlgorithm } from '../auth/UserauthSignature';
 import { agentSignatureFlags } from '../agent/AgentWire';
 import { formatAbsoluteTime, parseAbsoluteTime, type ZoneOffset } from './AbsoluteTime';
@@ -223,6 +224,12 @@ export function* certifyDialogue(request: KeygenRequest, host: SshKeygenHost): K
   const options = certificateOptions(request.signerOptions, request.hostCertificate);
   if (typeof options === 'string') return yield* fatal(options);
   const caPath = request.caKeyPath ?? '';
+  if (request.pkcs11Provider !== undefined) {
+    const publicCa = publicKeyOfFile(host, caPath);
+    if (publicCa === null) return yield* fatal(`Couldn't load CA public key "${caPath}": ${host.store.read(caPath) === null && host.store.read(`${caPath}.pub`) === null ? NO_SUCH_FILE : 'invalid format'}`);
+    yield* pkcs11Problem(host, request.pkcs11Provider);
+    return yield* fatal('cannot read public key from pkcs11');
+  }
   let caKey: SshPublicKey;
   let signWith: CertificateSigner;
   if (request.preferAgent) {

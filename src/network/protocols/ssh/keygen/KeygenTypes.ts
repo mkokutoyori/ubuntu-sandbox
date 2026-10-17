@@ -86,6 +86,9 @@ export interface KeygenRequest {
   readonly rounds?: number;
   readonly type?: string;
   readonly verbose: boolean;
+  readonly securityKeyProvider?: string;
+  readonly pkcs11Provider?: string;
+  readonly downloadSecurityKeys: boolean;
 }
 
 export function print(line: string): KeygenStep {

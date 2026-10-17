@@ -59,9 +59,9 @@ const SIGN = 'ssh-keygen -Y sign -f ~/k -n file ~/data';
 const VERIFY = 'ssh-keygen -Y verify -f ~/allowed -I alice@lab -n file -s ~/data.sig < ~/data';
 
 describe('ssh-keygen -Y sign', () => {
-  it('TEMOIN: -D garde le refus des jetons PKCS#11', async () => {
+  it('TEMOIN: -D sans module PKCS#11 installe echoue comme par OpenSSH', async () => {
     const pc = await lab();
-    expect(await pc.executeCommand('ssh-keygen -D /usr/lib/libpkcs11.so')).toContain('PKCS#11 tokens are not simulated');
+    expect(await pc.executeCommand('ssh-keygen -D /usr/lib/libpkcs11.so')).toContain('cannot read public key from pkcs11');
   }, 60_000);
 
   it('ecrit <fichier>.sig armoure et l\'annonce sur la sortie d\'erreur', async () => {

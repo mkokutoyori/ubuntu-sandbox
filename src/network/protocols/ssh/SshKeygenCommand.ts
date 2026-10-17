@@ -13,6 +13,7 @@ import {
 import { allHostKeysDialogue, generationDialogue } from './keygen/GenerationDialogue';
 import { certifyDialogue, showCertificateDialogue } from './keygen/CertificateDialogues';
 import { signatureDialogue } from './keygen/SignatureDialogues';
+import { downloadPkcs11Dialogue, downloadSecurityKeysDialogue } from './keygen/TokenDialogues';
 import { checkRevocationListDialogue, generateRevocationListDialogue } from './keygen/RevocationDialogues';
 import {
   print,
@@ -40,6 +41,8 @@ function* keygenDialogue(args: readonly string[], host: SshKeygenHost): KeygenDi
   if (request.caKeyPath !== undefined) return yield* certifyDialogue(request, host);
   if (request.showCertificate) return yield* showCertificateDialogue(request, host);
   if (request.deleteHost !== undefined || request.findHost !== undefined || request.hashHosts) return yield* knownHostsDialogue(request, host);
+  if (request.pkcs11Provider !== undefined) return yield* downloadPkcs11Dialogue(request, host);
+  if (request.downloadSecurityKeys) return yield* downloadSecurityKeysDialogue(request, host);
   if (request.all) return yield* allHostKeysDialogue(request, host);
   if (request.fingerprint || request.bubblebabble) return yield* fingerprintDialogue(request, host);
   if (request.changePassphrase) return yield* changePassphraseDialogue(request, host);

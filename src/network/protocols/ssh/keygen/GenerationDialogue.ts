@@ -6,6 +6,7 @@ import {
   keygenRandomart,
   sshKeyTypeLabel,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
+import { enrollSecurityKeyDialogue, isSecurityKeyType } from './TokenDialogues';
 import { askFile, askNewPassphrase, privateFormatOf } from './KeyFileDialogues';
 import { directoryOf, print, type KeygenDialogue, type KeygenRequest, type SshKeygenHost } from './KeygenTypes';
 
@@ -35,6 +36,10 @@ function samePath(left: string, right: string): boolean {
 export function* generationDialogue(request: KeygenRequest, host: SshKeygenHost): KeygenDialogue {
   const requested = request.type ?? DEFAULT_KEYGEN_TYPE;
   const type = requested.toLowerCase();
+  if (isSecurityKeyType(type)) {
+    if (!request.quiet) yield print(`Generating public/private ${requested} key pair.`);
+    return yield* enrollSecurityKeyDialogue(request, host);
+  }
   const algorithm = keygenAlgorithmFor(type, request.bits);
   if (KEYGEN_ALGORITHMS[type] === undefined || algorithm === undefined) {
     yield print(`unknown key type ${requested}`);
