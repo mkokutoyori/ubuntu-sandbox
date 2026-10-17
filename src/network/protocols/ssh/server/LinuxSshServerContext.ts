@@ -23,9 +23,7 @@ import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
 import type { SftpAccountNames } from '../sftp/SftpWireSession';
 import { ChrootedSftpFileSystem } from '../sftp/ChrootedSftpFileSystem';
 import { SshHostKey } from '../SshHostKey';
-import { base64ToBytes } from '@/crypto/encoding';
-import { sshPublicKeyFromBlob } from '@/network/devices/linux/network/SshKeygenMaterial';
-import { certificateOfMaterial } from './UserCertificateAdmission';
+import { certificateOfMaterial, plainKeyOfMaterial } from './UserCertificateAdmission';
 import { SshdCertificateService } from './SshdCertificateService';
 import { SshUserContext } from '../SshUserContext';
 import {
@@ -361,7 +359,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       return this.certificates().admit(user, userEntry, certificate, source,
         content === null ? null : { path: AUTHORIZED_KEYS_PATH(userEntry.home), text: content });
     }
-    const plain = sshPublicKeyFromBlob(base64ToBytes(publicKey));
+    const plain = plainKeyOfMaterial(publicKey);
     if (plain !== null && this.certificates().revocationRefusal(user, plain, source) !== null) return null;
     return content ? findAdmittedKey(content, publicKey, source) : null;
   }

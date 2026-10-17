@@ -19,11 +19,9 @@ import { WindowsSftpFSAdapter } from '../sftp/WindowsSftpFSAdapter';
 import { isInternalSftp, sftpProgramOf, type SftpLaunch, type SftpServicePlan } from './SftpServicePlan';
 import { parseSftpServerArguments, SFTP_SERVER_USAGE, splitCommandWords } from '../sftp/server/SftpServerOptions';
 import { SshHostKey } from '../SshHostKey';
-import { base64ToBytes } from '@/crypto/encoding';
-import { sshPublicKeyFromBlob } from '@/network/devices/linux/network/SshKeygenMaterial';
 import type { SshCertificate } from '../certificate/SshCertificate';
 import { SshdCertificateService } from './SshdCertificateService';
-import { certificateOfMaterial } from './UserCertificateAdmission';
+import { certificateOfMaterial, plainKeyOfMaterial } from './UserCertificateAdmission';
 import { SshUserContext } from '../SshUserContext';
 import type { SshVtyShell } from './SshExecTarget';
 import {
@@ -257,7 +255,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     const home = `C:\\Users\\${user}`;
     const certificate = certificateOfMaterial(publicKey);
     if (certificate !== null) return this.admittedCertificate(user, home, certificate, source);
-    const plain = sshPublicKeyFromBlob(base64ToBytes(publicKey));
+    const plain = plainKeyOfMaterial(publicKey);
     if (plain !== null && this.certificates().revocationRefusal(user, plain, source) !== null) return null;
     for (const entry of this.policy.view(user, source.ip).authorizedKeysFile) {
       const path = this.authorizedKeysPath(entry, user, home);

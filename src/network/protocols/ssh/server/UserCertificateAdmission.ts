@@ -1,5 +1,5 @@
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
-import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
+import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, sshPublicKeyFromBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
 import {
   certificateAuthorityRefusal,
   parseCertificateBlob,
@@ -285,6 +285,14 @@ export function certificateKeyEvidence(certificate: SshCertificate): {
 export function certificateOfMaterial(material: string): SshCertificate | null {
   try {
     return parseCertificateBlob(base64ToBytes(material));
+  } catch {
+    return null;
+  }
+}
+
+export function plainKeyOfMaterial(material: string): SshPublicKey | null {
+  try {
+    return sshPublicKeyFromBlob(base64ToBytes(material));
   } catch {
     return null;
   }
