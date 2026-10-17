@@ -92,12 +92,20 @@ export class LocalAgentPort implements AgentPort {
     }
   }
 
-  async identities(): Promise<readonly AgentIdentityEntry[]> {
+  identitiesNow(): AgentIdentityEntry[] {
     return this.callNow({ op: 'identities' }) as AgentIdentityEntry[];
   }
 
-  async sign(blob: Uint8Array, data: Uint8Array, flags: number): Promise<Uint8Array | null> {
+  signNow(blob: Uint8Array, data: Uint8Array, flags: number): Uint8Array | null {
     return this.agent.sign(blob, data, flags);
+  }
+
+  async identities(): Promise<readonly AgentIdentityEntry[]> {
+    return this.identitiesNow();
+  }
+
+  async sign(blob: Uint8Array, data: Uint8Array, flags: number): Promise<Uint8Array | null> {
+    return this.signNow(blob, data, flags);
   }
 
   async add(key: AgentKey, lifetime?: number): Promise<boolean> {

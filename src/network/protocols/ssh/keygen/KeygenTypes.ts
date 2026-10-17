@@ -7,6 +7,11 @@ export interface SshKeygenStore {
   makePrivateDirectory(path: string): void;
 }
 
+export interface KeygenAgent {
+  readonly identities: () => readonly { readonly blob: Uint8Array; readonly comment: string }[];
+  readonly sign: (blob: Uint8Array, data: Uint8Array, flags: number) => Uint8Array | null;
+}
+
 export interface SshKeygenHost {
   readonly store: SshKeygenStore;
   readonly sshDir: string;
@@ -15,6 +20,7 @@ export interface SshKeygenHost {
   readonly hostname: string;
   readonly release: OpenSshRelease;
   readonly stdin?: string;
+  readonly agent?: KeygenAgent;
   readonly nowSeconds?: () => number;
   readonly zoneOffsetMinutes?: (atMs: number) => number;
 }

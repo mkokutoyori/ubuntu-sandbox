@@ -125,12 +125,24 @@ function body(request: CertificateRequest, nonce: Uint8Array, caKey: SshPublicKe
   return writer.toBytes();
 }
 
+export type CertificateSigner = (data: Uint8Array, algorithm: string) => Uint8Array | null;
+
 export function certify(
   request: CertificateRequest, caKey: SshPrivateKey, signatureAlgorithm: string | undefined, random: (count: number) => Uint8Array,
 ): SshCertificate {
+  const certificate = certifyWith(request, caKey, signatureAlgorithm, random, (data, algorithm) => signWithAlgorithm(caKey, algorithm, data));
+  if (certificate === null) throw new RangeError('certificate signing failed');
+  return certificate;
+}
+
+export function certifyWith(
+  request: CertificateRequest, caKey: SshPublicKey, signatureAlgorithm: string | undefined, random: (count: number) => Uint8Array,
+  sign: CertificateSigner,
+): SshCertificate | null {
   const nonce = random(NONCE_BYTES);
   const signed = body(request, nonce, caKey);
-  const signature = signWithAlgorithm(caKey, certificateSignatureAlgorithm(caKey, signatureAlgorithm), signed);
+  const signature = sign(signed, certificateSignatureAlgorithm(caKey, signatureAlgorithm));
+  if (signature === null) return null;
   const blob = new SshWriter().writeRaw(signed).writeBytes(signature).toBytes();
   const parsed = parseCertificateBlob(blob);
   if (parsed === null) throw new RangeError('certificate encoding failed');

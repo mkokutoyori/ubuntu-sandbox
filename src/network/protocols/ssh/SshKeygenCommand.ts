@@ -16,6 +16,7 @@ import { signatureDialogue } from './keygen/SignatureDialogues';
 import { checkRevocationListDialogue, generateRevocationListDialogue } from './keygen/RevocationDialogues';
 import {
   print,
+  type KeygenAgent,
   type KeygenDialogue,
   type SshKeygenHost,
   type SshKeygenOutcome,
@@ -123,6 +124,7 @@ export interface KeygenIdentity {
   readonly hostKeyDir?: string;
   readonly release: OpenSshRelease;
   readonly zoneOffsetMinutes?: (atMs: number) => number;
+  readonly agent?: KeygenAgent;
 }
 
 function writeFailureReason(vfs: KeygenVfs, target: string, identity: KeygenIdentity): string {
@@ -160,5 +162,6 @@ export function vfsKeygenHost(vfs: KeygenVfs, identity: KeygenIdentity): SshKeyg
     hostname: identity.hostname,
     release: identity.release,
     zoneOffsetMinutes: identity.zoneOffsetMinutes,
+    ...(identity.agent === undefined ? {} : { agent: identity.agent }),
   };
 }

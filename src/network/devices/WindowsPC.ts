@@ -26,6 +26,7 @@ import { sftpProgramOf } from '@/network/protocols/ssh/server/SftpServicePlan';
 import { SshUserContext } from '@/network/protocols/ssh/SshUserContext';
 import { guardedFileSystem, principalOf } from './windows/WindowsFsAccess';
 import { posixClientFlags, seedWindowsOpenSshFiles } from './windows/WindowsOpenSshFiles';
+import { keygenAgentOf } from '@/network/protocols/ssh/keygen/KeygenAgentPort';
 import { missingIdentityWarnings, resolveClientInvocation, typedIdentityFiles, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
 import { sshClientAlgorithms, sshClientAuthentication } from '@/network/protocols/ssh/SshConnectOptions';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
@@ -2654,6 +2655,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       user: this.userMgr.currentUser,
       hostname: this.hostname,
       release: OPENSSH_WINDOWS_8_6,
+      agent: keygenAgentOf(this.sshAgentIfRunning()),
     };
   }
 
