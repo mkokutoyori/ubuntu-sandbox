@@ -98,6 +98,7 @@ import {
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
+import { RFC6724_POLICY, type DestinationPolicy } from '../layers/internet/DestinationSelection';
 import {
   UDP_OVER_IPV4_HEADER_BYTES, udpPayloadLength, type UdpEmissionOptions, type UdpSendRequest,
 } from '../layers/transport/UdpEgress';
@@ -5024,6 +5025,10 @@ export abstract class EndHost extends Equipment {
   isBroadcastDestination(targetIP: IPAddress): boolean {
     return targetIP.toString() === '255.255.255.255'
       || isDirectedBroadcast(targetIP, this.connectedIpv4Prefixes());
+  }
+
+  destinationPolicy(): DestinationPolicy {
+    return RFC6724_POLICY;
   }
 
   canReach6(targetIP: IPv6Address): boolean {
