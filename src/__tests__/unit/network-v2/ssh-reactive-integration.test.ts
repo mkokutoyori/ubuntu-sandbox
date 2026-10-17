@@ -22,7 +22,7 @@ import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { isOk } from '@/network/protocols/ssh/Result';
-import { parseSshdConfig, serializeSshdConfig } from '@/network/protocols/ssh/server/SshSshdConfig';
+import { SshdServerConfig } from '@/network/protocols/ssh/server/SshdServerConfig';
 import type { SshServerEvent } from '@/network/protocols/ssh/server/SshServerEvent';
 
 const REMOTE_IP = '10.0.0.2';
@@ -145,7 +145,7 @@ describe('SSH reactive integration — auth.log production', () => {
 
 describe('SSH reactive integration — sshd_config enforcement', () => {
   it('rejects users in DenyUsers regardless of password', async () => {
-    const cfg = serializeSshdConfig(parseSshdConfig('DenyUsers alice\nPermitRootLogin yes\n'));
+    const cfg = SshdServerConfig.parse('DenyUsers alice\nPermitRootLogin yes\n').serialize();
     const { handler, vfs } = makeServer({
       username: 'alice',
       password: 'secret',
@@ -167,9 +167,7 @@ describe('SSH reactive integration — sshd_config enforcement', () => {
   });
 
   it('accepts empty passwords when PermitEmptyPasswords yes is set', async () => {
-    const cfg = serializeSshdConfig(
-      parseSshdConfig('PermitEmptyPasswords yes\nPermitRootLogin yes\n'),
-    );
+    const cfg = SshdServerConfig.parse('PermitEmptyPasswords yes\nPermitRootLogin yes\n').serialize();
     const { handler } = makeServer({
       username: 'alice',
       password: '',
@@ -179,9 +177,7 @@ describe('SSH reactive integration — sshd_config enforcement', () => {
   });
 
   it('AllowUsers restricts to listed principals only', async () => {
-    const cfg = serializeSshdConfig(
-      parseSshdConfig('AllowUsers bob\nPermitRootLogin yes\n'),
-    );
+    const cfg = SshdServerConfig.parse('AllowUsers bob\nPermitRootLogin yes\n').serialize();
     const { handler } = makeServer({
       username: 'alice',
       password: 'secret',

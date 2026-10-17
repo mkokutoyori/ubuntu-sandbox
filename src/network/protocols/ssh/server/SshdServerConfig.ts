@@ -1,3 +1,4 @@
+import type { SshServerConfig } from './ISshServerContext';
 import { addressListMatches, globMatch, permitOpenAllows } from '../SshPureUtils';
 export type SshdAddressFamily = 'any' | 'inet' | 'inet6';
 export type SshdPermitRootLogin = 'yes' | 'no' | 'prohibit-password' | 'forced-commands-only';
@@ -106,6 +107,7 @@ export interface SshdServerConfigSnapshot {
   readonly maxSessions: number;
   readonly maxStartups: SshdMaxStartups;
   readonly loginGraceTimeSeconds: number;
+  readonly rekeyLimit: string;
   readonly permitEmptyPasswords: boolean;
   readonly allowTcpForwarding: SshdAllowTcpForwarding;
   readonly allowAgentForwarding: boolean;
@@ -191,6 +193,22 @@ function userPatternMatches(pattern: string, user: string, address: string): boo
   return globMatch(pattern.slice(0, at), user) && address !== '' && addressListMatches(pattern.slice(at + 1), address);
 }
 
+export function handlerConfigOf(cfg: SshdServerConfig): SshServerConfig {
+  return {
+    listenPort: cfg.ports[0] ?? 22,
+    maxAuthTries: cfg.maxAuthTries,
+    maxSessions: cfg.maxSessions,
+    permitRootLogin: cfg.permitRootLogin !== 'no',
+    passwordAuthentication: cfg.passwordAuthentication,
+    pubkeyAuthentication: cfg.pubkeyAuthentication,
+    kbdInteractiveAuthentication: cfg.kbdInteractiveAuthentication,
+    clientAliveInterval: cfg.clientAliveIntervalSeconds,
+    clientAliveCountMax: cfg.clientAliveCountMax,
+    loginGraceTime: cfg.loginGraceTimeSeconds,
+    maxStartups: cfg.maxStartups,
+  };
+}
+
 export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly ports: readonly number[];
   readonly listenAddresses: readonly string[];
@@ -206,6 +224,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly maxSessions: number;
   readonly maxStartups: SshdMaxStartups;
   readonly loginGraceTimeSeconds: number;
+  readonly rekeyLimit: string;
   readonly permitEmptyPasswords: boolean;
   readonly allowTcpForwarding: SshdAllowTcpForwarding;
   readonly allowAgentForwarding: boolean;
@@ -265,6 +284,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.maxSessions = s.maxSessions;
     this.maxStartups = s.maxStartups;
     this.loginGraceTimeSeconds = s.loginGraceTimeSeconds;
+    this.rekeyLimit = s.rekeyLimit;
     this.permitEmptyPasswords = s.permitEmptyPasswords;
     this.allowTcpForwarding = s.allowTcpForwarding;
     this.allowAgentForwarding = s.allowAgentForwarding;
@@ -326,6 +346,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       maxSessions: 10,
       maxStartups: { start: 10, rate: 30, full: 100 },
       loginGraceTimeSeconds: 120,
+      rekeyLimit: 'default none',
       permitEmptyPasswords: false,
       allowTcpForwarding: 'yes',
       allowAgentForwarding: true,
@@ -590,6 +611,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     lines.push(`MaxSessions ${this.maxSessions}`);
     lines.push(`MaxStartups ${this.maxStartups.start}:${this.maxStartups.rate}:${this.maxStartups.full}`);
     lines.push(`LoginGraceTime ${this.loginGraceTimeSeconds}`);
+    if (this.rekeyLimit !== 'default none') lines.push(`RekeyLimit ${this.rekeyLimit}`);
     lines.push(`PermitEmptyPasswords ${this.permitEmptyPasswords ? 'yes' : 'no'}`);
     lines.push(`AllowTcpForwarding ${this.allowTcpForwarding}`);
     lines.push(`AllowAgentForwarding ${this.allowAgentForwarding ? 'yes' : 'no'}`);
@@ -632,8 +654,11 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'permitrootlogin': return cfg.withPermitRootLogin(value as SshdPermitRootLogin);
     case 'passwordauthentication': return cfg.withPasswordAuth(YES_NO(value, true));
     case 'pubkeyauthentication': return cfg.withPubkeyAuth(YES_NO(value, true));
-    case 'kbdinteractiveauthentication': return cfg.withKbdInteractive(YES_NO(value, false));
-    case 'challengeresponseauthentication': return cfg.mutate({ challengeResponseAuthentication: YES_NO(value, false) });
+    case 'kbdinteractiveauthentication':
+    case 'challengeresponseauthentication': {
+      const enabled = YES_NO(value, false);
+      return cfg.mutate({ kbdInteractiveAuthentication: enabled, challengeResponseAuthentication: enabled });
+    }
     case 'gssapiauthentication': return cfg.mutate({ gssapiAuthentication: YES_NO(value, false) });
     case 'hostbasedauthentication': return cfg.mutate({ hostbasedAuthentication: YES_NO(value, false) });
     case 'maxauthtries': return cfg.withMaxAuthTries(parseInt(value, 10) || 6);
@@ -655,6 +680,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'clientaliveinterval': return cfg.withClientAlive(parseInt(value, 10) || 0, cfg.clientAliveCountMax);
     case 'clientalivecountmax': return cfg.withClientAlive(cfg.clientAliveIntervalSeconds, parseInt(value, 10) || 3);
     case 'printmotd': return cfg.withPrintMotd(YES_NO(value, true));
+    case 'rekeylimit': return cfg.mutate({ rekeyLimit: value.trim() });
     case 'printlastlog': return cfg.mutate({ printLastLog: YES_NO(value, true) });
     case 'usedns': return cfg.withUseDns(YES_NO(value, false));
     case 'uselogin': return cfg.mutate({ useLogin: YES_NO(value, false) });
@@ -701,8 +727,8 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'permitrootlogin': o.permitRootLogin = value as SshdPermitRootLogin; break;
     case 'passwordauthentication': o.passwordAuthentication = YES_NO(value, true); break;
     case 'pubkeyauthentication': o.pubkeyAuthentication = YES_NO(value, true); break;
-    case 'kbdinteractiveauthentication': o.kbdInteractiveAuthentication = YES_NO(value, false); break;
-    case 'challengeresponseauthentication': o.challengeResponseAuthentication = YES_NO(value, false); break;
+    case 'kbdinteractiveauthentication': o.kbdInteractiveAuthentication = YES_NO(value, false); o.challengeResponseAuthentication = o.kbdInteractiveAuthentication; break;
+    case 'challengeresponseauthentication': o.kbdInteractiveAuthentication = YES_NO(value, false); o.challengeResponseAuthentication = o.kbdInteractiveAuthentication; break;
     case 'maxauthtries': o.maxAuthTries = parseInt(value, 10) || 6; break;
     case 'maxsessions': o.maxSessions = parseInt(value, 10) || 10; break;
     case 'allowtcpforwarding': o.allowTcpForwarding = value as SshdAllowTcpForwarding; break;

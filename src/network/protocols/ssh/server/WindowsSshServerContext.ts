@@ -41,11 +41,7 @@ import { readSshdConfig } from './SshdConfigText';
 import { findAdmittedKey, type AuthorizedKey, type KeySource } from '../SshPureUtils';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import { configuredHostKeyPaths, hostKeyFromFile, provisionHostKeyFiles, type HostKeyFileAccess } from './SshdHostKeyFiles';
-import {
-  DEFAULT_SSHD_CONFIG,
-  parseSshdConfig,
-  type SshdConfig,
-} from './SshSshdConfig';
+import { handlerConfigOf, type SshdServerConfig } from './SshdServerConfig';
 
 const DEFAULT_USER_UID = 1000;
 const DEFAULT_USER_GID = 1000;
@@ -101,7 +97,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
-  readonly sshdConfig: SshdConfig;
+  readonly sshdConfig: SshdServerConfig;
   readonly maxAuthTriesDisconnect = SSHD_MAX_AUTH_TRIES_REASON;
   readonly rawConfig: string;
   private operationalSyslogger: SshSyslogger | null = null;
@@ -122,7 +118,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   ) {
     this.ensureSshDir();
     this.hostKey = this.loadOrGenerateHostKey();
-    this.sshdConfig = this.loadOrGenerateSshdConfig();
+    this.ensureSshdConfigFile();
     this.rawConfig = readSshdConfig({
       readFile: (path) => {
         const result = this.wfs.readFile(windowsPathOf(path));
@@ -132,17 +128,17 @@ export class WindowsSshServerContext implements ISshServerContext {
     this.policy = SshdAccessPolicy.forText(
       this.rawConfig, (user) => this.userManager.getGroupsForUser(user).map((group) => group.name), true,
     );
+    this.sshdConfig = this.policy.config;
     this.config = Object.freeze({
       ...DEFAULT_SSH_SERVER_CONFIG,
-      ...this.sshdConfig,
-      permitRootLogin: this.sshdConfig.permitRootLogin !== 'no',
+      ...handlerConfigOf(this.sshdConfig),
       ...config,
     });
     this.auth = this.buildAuthContext();
     if (this.operationalLog !== null) {
       const write = this.operationalLog;
       this.operationalSyslogger = new SshSyslogger(null, this.events, {
-        hostname: this.hostname, port: this.sshdConfig.listenPort, logLevel: () => this.policy.config.logLevel,
+        hostname: this.hostname, port: this.sshdConfig.ports[0] ?? 22, logLevel: () => this.policy.config.logLevel,
         sink: (message) => write(message),
       });
     }
@@ -166,8 +162,8 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   getBanner(): string | null {
-    if (!this.sshdConfig.banner) return this.legalNotice?.() || null;
-    const result = this.wfs.readFile(windowsPathOf(this.sshdConfig.banner));
+    if (!this.sshdConfig.bannerPath) return this.legalNotice?.() || null;
+    const result = this.wfs.readFile(windowsPathOf(this.sshdConfig.bannerPath));
     return result.ok ? result.content ?? null : null;
   }
 
@@ -489,11 +485,9 @@ export class WindowsSshServerContext implements ISshServerContext {
     return SshHostKey.fromFiles(pub.trim().split(/\s+/)[1] ?? pub.trim(), priv.trim(), 'ssh-ed25519');
   }
 
-  private loadOrGenerateSshdConfig(): SshdConfig {
+  private ensureSshdConfigFile(): void {
     const result = this.wfs.readFile(SSHD_CONFIG_PATH);
-    if (result.ok && result.content) return parseSshdConfig(result.content);
-    this.wfs.createFile(SSHD_CONFIG_PATH, WINDOWS_OPENSSH_SSHD_CONFIG);
-    return parseSshdConfig(WINDOWS_OPENSSH_SSHD_CONFIG);
+    if (!(result.ok && result.content)) this.wfs.createFile(SSHD_CONFIG_PATH, WINDOWS_OPENSSH_SSHD_CONFIG);
   }
 
   private userAllowed(user: string): boolean {

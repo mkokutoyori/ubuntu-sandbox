@@ -14,18 +14,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  DEFAULT_SSHD_CONFIG,
-  parseSshdConfig,
-  serializeSshdConfig,
-} from '@/network/protocols/ssh/server/SshSshdConfig';
+import { SshdServerConfig } from '@/network/protocols/ssh/server/SshdServerConfig';
 
-describe('parseSshdConfig — extended directives', () => {
+describe('SshdServerConfig.parse — extended directives', () => {
   it('keeps secure defaults when nothing is specified', () => {
-    const cfg = parseSshdConfig('');
+    const cfg = SshdServerConfig.parse('');
     expect(cfg.permitEmptyPasswords).toBe(false);
-    expect(cfg.loginGraceTime).toBe(120);
-    expect(cfg.clientAliveInterval).toBe(0);
+    expect(cfg.loginGraceTimeSeconds).toBe(120);
+    expect(cfg.clientAliveIntervalSeconds).toBe(0);
     expect(cfg.clientAliveCountMax).toBe(3);
     expect(cfg.maxSessions).toBe(10);
     expect(cfg.logLevel).toBe('INFO');
@@ -39,12 +35,12 @@ describe('parseSshdConfig — extended directives', () => {
   });
 
   it('parses PermitEmptyPasswords', () => {
-    expect(parseSshdConfig('PermitEmptyPasswords yes\n').permitEmptyPasswords).toBe(true);
-    expect(parseSshdConfig('PermitEmptyPasswords no\n').permitEmptyPasswords).toBe(false);
+    expect(SshdServerConfig.parse('PermitEmptyPasswords yes\n').permitEmptyPasswords).toBe(true);
+    expect(SshdServerConfig.parse('PermitEmptyPasswords no\n').permitEmptyPasswords).toBe(false);
   });
 
   it('parses numeric directives', () => {
-    const cfg = parseSshdConfig(
+    const cfg = SshdServerConfig.parse(
       [
         'LoginGraceTime 30',
         'ClientAliveInterval 120',
@@ -52,20 +48,20 @@ describe('parseSshdConfig — extended directives', () => {
         'MaxSessions 25',
       ].join('\n'),
     );
-    expect(cfg.loginGraceTime).toBe(30);
-    expect(cfg.clientAliveInterval).toBe(120);
+    expect(cfg.loginGraceTimeSeconds).toBe(30);
+    expect(cfg.clientAliveIntervalSeconds).toBe(120);
     expect(cfg.clientAliveCountMax).toBe(5);
     expect(cfg.maxSessions).toBe(25);
   });
 
   it('parses LogLevel and SyslogFacility', () => {
-    const cfg = parseSshdConfig('LogLevel VERBOSE\nSyslogFacility AUTHPRIV\n');
+    const cfg = SshdServerConfig.parse('LogLevel VERBOSE\nSyslogFacility AUTHPRIV\n');
     expect(cfg.logLevel).toBe('VERBOSE');
     expect(cfg.syslogFacility).toBe('AUTHPRIV');
   });
 
   it('parses DenyUsers / AllowGroups / DenyGroups (space-separated lists)', () => {
-    const cfg = parseSshdConfig(
+    const cfg = SshdServerConfig.parse(
       'DenyUsers root mallory\nAllowGroups sshusers admins\nDenyGroups nope\n',
     );
     expect(cfg.denyUsers).toEqual(['root', 'mallory']);
@@ -74,7 +70,7 @@ describe('parseSshdConfig — extended directives', () => {
   });
 
   it('parses X11Forwarding and KbdInteractiveAuthentication', () => {
-    const cfg = parseSshdConfig(
+    const cfg = SshdServerConfig.parse(
       'X11Forwarding yes\nKbdInteractiveAuthentication yes\n',
     );
     expect(cfg.x11Forwarding).toBe(true);
@@ -82,39 +78,28 @@ describe('parseSshdConfig — extended directives', () => {
   });
 
   it('parses AllowTcpForwarding with the four real values', () => {
-    expect(parseSshdConfig('AllowTcpForwarding no\n').allowTcpForwarding).toBe('no');
-    expect(parseSshdConfig('AllowTcpForwarding local\n').allowTcpForwarding).toBe('local');
-    expect(parseSshdConfig('AllowTcpForwarding remote\n').allowTcpForwarding).toBe('remote');
-    expect(parseSshdConfig('AllowTcpForwarding all\n').allowTcpForwarding).toBe('all');
+    expect(SshdServerConfig.parse('AllowTcpForwarding no\n').allowTcpForwarding).toBe('no');
+    expect(SshdServerConfig.parse('AllowTcpForwarding local\n').allowTcpForwarding).toBe('local');
+    expect(SshdServerConfig.parse('AllowTcpForwarding remote\n').allowTcpForwarding).toBe('remote');
+    expect(SshdServerConfig.parse('AllowTcpForwarding all\n').allowTcpForwarding).toBe('all');
   });
 
   it('is case-insensitive on directive names', () => {
-    const cfg = parseSshdConfig('PERMITemptypasswords YES\nloginGRACEtime 5\n');
+    const cfg = SshdServerConfig.parse('PERMITemptypasswords YES\nloginGRACEtime 5\n');
     expect(cfg.permitEmptyPasswords).toBe(true);
-    expect(cfg.loginGraceTime).toBe(5);
+    expect(cfg.loginGraceTimeSeconds).toBe(5);
   });
 
   it('survives a serialize → parse round-trip', () => {
-    const original = {
-      ...DEFAULT_SSHD_CONFIG,
-      permitEmptyPasswords: true,
-      loginGraceTime: 45,
-      clientAliveInterval: 60,
-      clientAliveCountMax: 2,
-      maxSessions: 4,
-      logLevel: 'VERBOSE' as const,
-      syslogFacility: 'AUTHPRIV',
-      kbdInteractiveAuthentication: true,
-      x11Forwarding: true,
-      allowTcpForwarding: 'local' as const,
-      denyUsers: ['root'],
-      allowGroups: ['sshusers'],
-      denyGroups: ['locked'],
-    };
-    const reparsed = parseSshdConfig(serializeSshdConfig(original));
+    const original = SshdServerConfig.parse([
+      'PermitEmptyPasswords yes', 'LoginGraceTime 45', 'ClientAliveInterval 60', 'ClientAliveCountMax 2',
+      'MaxSessions 4', 'LogLevel VERBOSE', 'SyslogFacility AUTHPRIV', 'KbdInteractiveAuthentication yes',
+      'X11Forwarding yes', 'AllowTcpForwarding local', 'DenyUsers root', 'AllowGroups sshusers', 'DenyGroups locked',
+    ].join('\n'));
+    const reparsed = SshdServerConfig.parse(original.serialize());
     expect(reparsed.permitEmptyPasswords).toBe(true);
-    expect(reparsed.loginGraceTime).toBe(45);
-    expect(reparsed.clientAliveInterval).toBe(60);
+    expect(reparsed.loginGraceTimeSeconds).toBe(45);
+    expect(reparsed.clientAliveIntervalSeconds).toBe(60);
     expect(reparsed.maxSessions).toBe(4);
     expect(reparsed.logLevel).toBe('VERBOSE');
     expect(reparsed.syslogFacility).toBe('AUTHPRIV');

@@ -217,7 +217,7 @@ import {
 } from '../protocols/telnet/LinuxTelnetServerContext';
 import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
 import type { SshDaemonPort } from '../protocols/ssh/server/SshDaemonPort';
-import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
+import { validateSshdConfig } from '../protocols/ssh/server/SshdConfigValidator';
 import {
   checkSshdCriticalFiles, checkCommandDependencies, canonicalBinPath,
   commandNotFoundMessage,

@@ -34,16 +34,12 @@ import {
   type SshServerConfig,
 } from './ISshServerContext';
 import {
-  parseSshdConfig,
-  type SshdConfig,
-} from './SshSshdConfig';
-import {
   SshServerEventBus,
   type ISshServerEventBus,
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
 import { SshdPam } from './SshdPam';
-import { SshdServerConfig } from './SshdServerConfig';
+import { SshdServerConfig, handlerConfigOf } from './SshdServerConfig';
 import type {
   DirectTcpipOutcome, DirectTcpipRequest, HostCertificateBinding, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
 } from './ISshServerContext';
@@ -116,7 +112,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
-  readonly sshdConfig: SshdConfig;
+  readonly sshdConfig: SshdServerConfig;
   readonly events: ISshServerEventBus;
   readonly fail2ban: Fail2banAgent | null;
   private readonly syslogger: SshSyslogger | null;
@@ -149,8 +145,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.sshdConfig = this.loadOrGenerateSshdConfig();
     this.config = Object.freeze({
       ...DEFAULT_SSH_SERVER_CONFIG,
-      ...this.sshdConfig,
-      permitRootLogin: this.sshdConfig.permitRootLogin !== 'no',
+      ...handlerConfigOf(this.sshdConfig),
       ...config,
     });
     this.auth = this.buildAuthContext();
@@ -162,7 +157,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.syslogger = (opts.enableSyslog ?? true)
       ? new SshSyslogger(this.vfs, this.events, {
           hostname: this.hostnameSource,
-          port: this.sshdConfig.listenPort,
+          port: this.sshdConfig.ports[0] ?? 22,
           // The pid of the REAL sshd in this machine's process table, not
           // a fresh random one: `ps`, `sshd[<pid>]` in auth.log and
           // `journalctl -u ssh` describe one daemon and must name it the
@@ -479,8 +474,8 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   /** Banner text shown before authentication (SSH-07-R8). */
   getBanner(): string | null {
-    if (!this.sshdConfig.banner) return null;
-    return this.vfs.readFile(this.sshdConfig.banner);
+    if (!this.sshdConfig.bannerPath) return null;
+    return this.vfs.readFile(this.sshdConfig.bannerPath);
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
@@ -943,11 +938,11 @@ export class LinuxSshServerContext implements ISshServerContext {
     return SshHostKey.fromFiles(pub.trim().split(/\s+/)[1] ?? pub.trim(), priv.trim(), 'ssh-ed25519');
   }
 
-  private loadOrGenerateSshdConfig(): SshdConfig {
-    if (this.vfs.readFile(SSHD_CONFIG_PATH)) return parseSshdConfig(readSshdConfig(this.vfs));
+  private loadOrGenerateSshdConfig(): SshdServerConfig {
+    if (this.vfs.readFile(SSHD_CONFIG_PATH)) return SshdServerConfig.parse(readSshdConfig(this.vfs));
     this.vfs.writeFile(SSHD_CONFIG_PATH, UBUNTU_2204_SSHD_CONFIG, 0, 0, 0o022);
     this.vfs.chmod(SSHD_CONFIG_PATH, 0o644);
-    return parseSshdConfig(readSshdConfig(this.vfs));
+    return SshdServerConfig.parse(readSshdConfig(this.vfs));
   }
 
   private pamAuth: SshdPam | null = null;
