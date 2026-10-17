@@ -19,6 +19,8 @@ const factoryRows = (): PolicyEntry[] => [
 const sameKey = (row: PolicyEntry, other: PolicyEntry): boolean =>
   row.length === other.length && row.prefix.equals(other.prefix);
 
+export const policyPrefixText = (row: PolicyEntry): string => `${row.prefix}/${row.length}`;
+
 export class PrefixPolicyStore {
   private active: readonly PolicyEntry[] = factoryRows();
   private persistent: readonly PolicyEntry[] = factoryRows();

@@ -32,6 +32,7 @@ import {
 } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { NO_MATCHING_INTERFACE } from '@/network/devices/windows/netIpAddress';
 import { type DnsAnswerRow, type DnsCacheRow, dnsAnswerRowOf, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
+import { type NetPrefixPolicyRow, prefixPolicyRowsOf } from '@/network/devices/windows/netPrefixPolicy';
 import { resolveAdapter, resolveAdapterPortName } from '@/network/devices/windows/netAdapter';
 import {
   memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
@@ -2354,6 +2355,9 @@ class WindowsNetworkAdapter implements INetworkProvider {
   resolveDnsRecords(name: string, type: string, server?: string): DnsAnswerRow[] | null {
     const records = this.pc.lookupDnsRecordsSync(name, type, server);
     return records === null ? null : records.map(dnsAnswerRowOf);
+  }
+  getPrefixPolicies(): NetPrefixPolicyRow[] {
+    return prefixPolicyRowsOf(this.pc.prefixPolicies.listed('active'), 'Active');
   }
   getDnsClientCache(): DnsCacheRow[] {
     return dnsCacheRowsOf(this.pc.dnsCache.entries());

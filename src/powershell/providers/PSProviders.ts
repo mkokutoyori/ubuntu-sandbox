@@ -27,6 +27,7 @@ import type {
 } from '@/network/devices/windows/netFirewallProfile';
 import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
 import type { NetNeighborPlan, NetNeighborRow } from '@/network/devices/windows/netNeighbor';
+import type { NetPrefixPolicyRow } from '@/network/devices/windows/netPrefixPolicy';
 import type { DnsAnswerRow, DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
@@ -1411,6 +1412,7 @@ export interface INetworkProvider {
   resolveNetInterface(spec: { alias?: string; index?: number }): { alias: string; ifIndex: number } | null;
   setDhcpEnabled(ifAlias: string, enabled: boolean): void;
   getRoutes(ifAlias?: string): RouteInfo[];
+  getPrefixPolicies?(): NetPrefixPolicyRow[];
   getNeighbors(): NeighborInfo[];
   addNeighbor(plan: NetNeighborPlan): string;
   removeNeighbors(rows: readonly NeighborInfo[]): number;
