@@ -173,6 +173,9 @@ export class PSLexer {
   private isHexDigit(ch: string): boolean { return /[0-9A-Fa-f]/.test(ch); }
   private isAlpha(ch: string): boolean { return /[A-Za-z_]/.test(ch); }
   private isAlNum(ch: string): boolean { return /[A-Za-z0-9_]/.test(ch); }
+  private followsExpression(): boolean {
+    return this.pos > 0 && /[\])A-Za-z0-9_]/.test(this.input[this.pos - 1]);
+  }
   private isWordChar(ch: string): boolean {
     // PowerShell word chars: letters, digits, _, -, ., \ (for paths), :, /
     return /[A-Za-z0-9_.\\/:-]/.test(ch);
@@ -597,6 +600,11 @@ export class PSLexer {
 
   private scanColon(): PSToken {
     const start = this.pos_();
+    if (this.peek1() === ':' && !this.followsExpression()) {
+      let word = '';
+      while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
+      return psToken(PSTokenType.WORD, word, start);
+    }
     this.advance(); // skip first :
     if (!this.eof() && this.ch() === ':') {
       this.advance();
