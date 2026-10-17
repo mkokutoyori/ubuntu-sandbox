@@ -91,6 +91,7 @@ export interface UserInfo {
   passwordRequired: boolean;
   lastLogon: Date | null;
   passwordLastSet?: Date | null;
+  accountExpires?: Date | null;
 }
 
 export interface GroupInfo {
@@ -1523,7 +1524,7 @@ export interface IUserProvider {
   getUser(name: string): UserInfo | null;
   createUser(name: string, opts: { password?: string; fullName?: string; description?: string }): string;
   removeUser(name: string): string;
-  setUser(name: string, opts: { enabled?: boolean; fullName?: string; description?: string; password?: string }): string;
+  setUser(name: string, opts: { enabled?: boolean; fullName?: string; description?: string; password?: string; accountExpires?: Date | null }): string;
   enableUser(name: string): string;
   disableUser(name: string): string;
   renameUser(oldName: string, newName: string): string;

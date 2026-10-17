@@ -34,6 +34,21 @@ export interface WindowsUser {
   failedLogonCount: number;
   /** Set once failedLogonCount reaches the lockout threshold; cleared when it elapses. */
   lockedUntil: Date | null;
+  /** `net user /expires` / `Set-LocalUser -AccountExpires`; null means Never. */
+  accountExpires: Date | null;
+}
+
+function parseAccountExpiry(value: string): Date | null | undefined {
+  const text = value.trim();
+  if (text.toLowerCase() === 'never') return null;
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(text);
+  if (match === null) return undefined;
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const year = match[3].length === 2 ? 2000 + Number(match[3]) : Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return undefined;
+  return date;
 }
 
 export interface WindowsGroup {
@@ -155,7 +170,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['Administrator'], enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
       passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     this.passwords.set('administrator', 'admin');
 
@@ -164,7 +179,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['Guest'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
       passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
 
     this.addUser({
@@ -172,7 +187,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['DefaultAccount'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
       passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
 
     this.addUser({
@@ -180,7 +195,7 @@ export class WindowsUserManager {
       sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
       passwordLastSet: simulationDate(), lastLogon: simulationDate(), builtIn: false,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     this.passwords.set('user', 'user');
 
@@ -192,7 +207,7 @@ export class WindowsUserManager {
         sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
         passwordRequired: true, userMayChangePassword: true,
         passwordLastSet: simulationDate(), lastLogon: null, builtIn: false,
-        passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+        passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
       });
       this.passwords.set(u.toLowerCase(), u);
     }
@@ -356,7 +371,7 @@ export class WindowsUserManager {
       sid, enabled: true, password: opts.noPassword ? '' : 'x',
       passwordRequired: !opts.noPassword, userMayChangePassword: true,
       passwordLastSet: simulationDate(), lastLogon: null, builtIn: false,
-      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     if (!opts.noPassword) {
       this.passwords.set(name.toLowerCase(), password);
@@ -438,6 +453,13 @@ export class WindowsUserManager {
         }
         break;
       }
+      case 'expires': {
+        const parsed = parseAccountExpiry(value);
+        if (parsed === undefined) return 'The command syntax is invalid: the /EXPIRES date is not valid.';
+        user.accountExpires = parsed;
+        this.publishAccount(user.name, 'modified');
+        break;
+      }
       default:
         return `Invalid property: ${property}`;
     }
@@ -470,6 +492,26 @@ export class WindowsUserManager {
     user.lockedUntil = null;
     user.failedLogonCount = 0;
     return false;
+  }
+
+  isAccountExpired(name: string): boolean {
+    const expires = this.users.get(name.toLowerCase())?.accountExpires;
+    return expires != null && expires.getTime() <= simulationNowMs();
+  }
+
+  /**
+   * Why a logon that needs no password (the S4U logon Win32-OpenSSH performs
+   * for public-key authentication, win32_usertoken_utils.c) is refused for
+   * this account, or null when it may proceed. A password that is merely
+   * expired does not appear here: S4U never presents one.
+   */
+  logonRefusal(name: string): 'disabled' | 'expired' | 'locked' | null {
+    const user = this.users.get(name.toLowerCase());
+    if (!user) return null;
+    if (!user.enabled) return 'disabled';
+    if (this.isAccountExpired(name)) return 'expired';
+    if (this.isLockedOut(name)) return 'locked';
+    return null;
   }
 
   /** The instant this account's password stops being valid, or null if `net accounts /maxpwage` is Never/unset. */
@@ -533,7 +575,7 @@ export class WindowsUserManager {
    */
   checkPassword(name: string, password: string, logonType = 2, publishOnSuccess = true, publishOnFailure = true): boolean {
     const user = this.users.get(name.toLowerCase());
-    if (user && (user.enabled === false || this.isLockedOut(name) || this.isPasswordExpired(name))) {
+    if (user && (this.logonRefusal(name) !== null || this.isPasswordExpired(name))) {
       if (publishOnFailure) {
         this.bus?.publish({
           topic: 'windows.account.logon',
@@ -698,7 +740,7 @@ export class WindowsUserManager {
         builtIn: false,
         passwordHistory: [],
         failedLogonCount: 0,
-        lockedUntil: null,
+        lockedUntil: null, accountExpires: null,
       };
       this.users.set(name.toLowerCase(), user);
       const usersGroup = this.groups.get('users');

@@ -1553,12 +1553,17 @@ class WindowsUserAdapter implements IUserProvider {
   removeUser(name: string): string {
     return this.mgr().deleteUser(name);
   }
-  setUser(name: string, opts: { enabled?: boolean; fullName?: string; description?: string; password?: string }): string {
+  setUser(name: string, opts: { enabled?: boolean; fullName?: string; description?: string; password?: string; accountExpires?: Date | null }): string {
     const m = this.mgr();
     const msgs: string[] = [];
     if (opts.fullName !== undefined)     msgs.push(m.setUserProperty(name, 'fullName',    opts.fullName));
     if (opts.description !== undefined)  msgs.push(m.setUserProperty(name, 'description', opts.description));
     if (opts.password !== undefined)     msgs.push(m.setUserProperty(name, 'password',    opts.password));
+    if (opts.accountExpires !== undefined) {
+      msgs.push(m.setUserProperty(name, 'expires', opts.accountExpires === null
+        ? 'never'
+        : `${opts.accountExpires.getUTCMonth() + 1}/${opts.accountExpires.getUTCDate()}/${opts.accountExpires.getUTCFullYear()}`));
+    }
     if (opts.enabled === true)           msgs.push(m.enableUser(name));
     if (opts.enabled === false)          msgs.push(m.disableUser(name));
     return msgs.filter(Boolean).join('\n');
@@ -1620,6 +1625,7 @@ function toUserInfo(u: import('@/network/devices/windows/WindowsUserManager').Wi
     passwordRequired: u.passwordRequired,
     lastLogon: u.lastLogon,
     passwordLastSet: u.passwordLastSet ?? null,
+    accountExpires: u.accountExpires,
   };
 }
 function toGroupInfo(g: import('@/network/devices/windows/WindowsUserManager').WindowsGroup): GroupInfo {

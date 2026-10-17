@@ -419,8 +419,9 @@ export class WindowsSshServerContext implements ISshServerContext {
     if (this.keyLogons.delete(`${user}@${fromIp}`)) this.reportLogon?.(user, true);
   }
 
-  recordAuthFailure(user: string, _fromIp: string, reason: string): void {
-    if (reason === 'publickey' || reason === 'wrong_key') this.reportLogon?.(user, false);
+  recordAuthFailure(user: string, fromIp: string, reason: string): void {
+    if (reason === 'account-expired' || reason === 'pam-denied') this.keyLogons.delete(`${user}@${fromIp}`);
+    if (reason === 'publickey' || reason === 'wrong_key' || reason === 'account-expired' || reason === 'pam-denied') this.reportLogon?.(user, false);
   }
 
   /** Build a SshUserContext from the Windows user database. */
@@ -512,6 +513,11 @@ export class WindowsSshServerContext implements ISshServerContext {
       // `<algorithm> <material> [<comment>]`. We accept a successful match
       // when both algorithm and material agree.
       checkPublicKey: (user, publicKey) => this.admittedKey(user, publicKey, { ip: '' }) !== null,
+      checkAccountLifecycle: (user) => {
+        const refusal = this.userManager.logonRefusal(user);
+        if (refusal === null) return { ok: true };
+        return { ok: false, kind: refusal === 'expired' ? 'account-expired' : 'pam-denied', detail: `LsaLogonUser refused the S4U logon: account ${refusal}` };
+      },
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {
         const methods: AuthMethodType[] = [];

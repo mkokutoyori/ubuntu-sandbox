@@ -32,6 +32,7 @@ function userToPSObject(u: UserInfo): Record<string, PSValue> {
     PasswordRequired: u.passwordRequired,
     LastLogon:        u.lastLogon,
     PasswordLastSet:  u.passwordLastSet ?? null,
+    AccountExpires:   u.accountExpires ?? null,
   };
 }
 
@@ -126,7 +127,7 @@ export class SetLocalUserCmdlet implements ICmdlet {
   readonly name = 'set-localuser';
   readonly displayName = 'Set-LocalUser';
   readonly aliases = [] as const;
-  readonly parameters = ['Description', 'Enabled', 'FullName', 'Name', 'Password'] as const;
+  readonly parameters = ['AccountExpires', 'AccountNeverExpires', 'Description', 'Enabled', 'FullName', 'Name', 'Password'] as const;
   readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -134,11 +135,14 @@ export class SetLocalUserCmdlet implements ICmdlet {
     const name  = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
     if (!name) { ctx.emitError('Set-LocalUser requires -Name'); return null; }
 
-    const opts: { enabled?: boolean; fullName?: string; description?: string; password?: string } = {};
+    const opts: { enabled?: boolean; fullName?: string; description?: string; password?: string; accountExpires?: Date | null } = {};
     if (ctx.named['fullname']    !== undefined) opts.fullName    = psValueToString(ctx.named['fullname']);
     if (ctx.named['description'] !== undefined) opts.description = psValueToString(ctx.named['description']);
     if (ctx.named['password']    !== undefined) opts.password    = securePasswordOf(ctx, 'password');
     if (ctx.named['enabled']     !== undefined) opts.enabled     = ctx.named['enabled'] === true;
+    if (ctx.named['accountneverexpires'] === true) opts.accountExpires = null;
+    const expires = ctx.named['accountexpires'];
+    if (expires instanceof Date) opts.accountExpires = expires;
 
     const msg = users.setUser(name, opts);
     if (msg && /error|denied|not found/i.test(msg)) ctx.emitError(msg);

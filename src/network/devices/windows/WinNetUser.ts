@@ -61,6 +61,8 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
       domain = true;
     } else if (arg.toLowerCase().startsWith('/active:')) {
       flags.set('active', arg.substring(8));
+    } else if (arg.toLowerCase().startsWith('/expires:')) {
+      flags.set('expires', arg.substring(9));
     } else if (arg.toLowerCase().startsWith('/fullname:')) {
       flags.set('fullname', stripQuotes(arg.substring(10)));
     } else if (arg.toLowerCase().startsWith('/comment:')) {
@@ -90,7 +92,7 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
     const err = ctx.userManager.createUser(username, password);
     if (err) return netError(err);
     ctx.userManager.addGroupMember('Users', username);
-    for (const propKey of ['fullname', 'comment', 'active'] as const) {
+    for (const propKey of ['fullname', 'comment', 'active', 'expires'] as const) {
       if (flags.has(propKey)) {
         const e = ctx.userManager.setUserProperty(username, propKey, flags.get(propKey)!);
         if (e) return `System error.\n\n${e}`;
@@ -110,6 +112,12 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
   // net user <name> /active:yes|no
   if (flags.has('active')) {
     const err = ctx.userManager.setUserProperty(username, 'active', flags.get('active')!);
+    if (err) return netError(err);
+    return 'The command completed successfully.';
+  }
+
+  if (flags.has('expires')) {
+    const err = ctx.userManager.setUserProperty(username, 'expires', flags.get('expires')!);
     if (err) return netError(err);
     return 'The command completed successfully.';
   }
@@ -242,7 +250,7 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   lines.push(`User's comment`);
   lines.push(`Country/region code          000 (System Default)`);
   lines.push(`Account active               ${user.enabled ? 'Yes' : 'No'}`);
-  lines.push(`Account expires              Never`);
+  lines.push(`Account expires              ${user.accountExpires ? userDate(user.accountExpires, 'UTC') : 'Never'}`);
   lines.push(``);
   lines.push(`Password last set            ${userDate(user.passwordLastSet, ctx.timezone)}`);
   lines.push(`Password expires             Never`);

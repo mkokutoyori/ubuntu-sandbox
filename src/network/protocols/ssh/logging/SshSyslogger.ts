@@ -194,6 +194,9 @@ export class SshSyslogger {
         if (/DenyGroups/i.test(r)) {
           return `User ${event.user} from ${event.ip} not allowed because a group is listed in DenyGroups`;
         }
+        if (/account locked/i.test(r)) {
+          return `User ${event.user} not allowed because account is locked`;
+        }
         return null;
       }
 
