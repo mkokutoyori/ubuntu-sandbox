@@ -229,6 +229,27 @@ const ICMPV6_ERROR_TYPES: ReadonlySet<ICMPv6Type> = new Set<ICMPv6Type>([
   'destination-unreachable', 'packet-too-big', 'time-exceeded', 'parameter-problem',
 ]);
 
+export type Icmp6ErrorKind = 'destination-unreachable' | 'packet-too-big' | 'time-exceeded' | 'parameter-problem';
+
+export interface Icmp6ErrorReport {
+  readonly from: string;
+  readonly type: Icmp6ErrorKind;
+  readonly code: number;
+  readonly mtu?: number;
+  readonly pointer?: number;
+}
+
+export function icmp6ReportOf(icmpv6: ICMPv6Packet, from: string): Icmp6ErrorReport | null {
+  if (!ICMPV6_ERROR_TYPES.has(icmpv6.icmpType)) return null;
+  return {
+    from,
+    type: icmpv6.icmpType as Icmp6ErrorKind,
+    code: icmpv6.code,
+    ...(icmpv6.mtu === undefined ? {} : { mtu: icmpv6.mtu }),
+    ...(icmpv6.pointer === undefined ? {} : { pointer: icmpv6.pointer }),
+  };
+}
+
 export function isICMPv6ErrorMessage(pkt: IPv6Packet): boolean {
   if (pkt.nextHeader !== IP_PROTO_ICMPV6) return false;
   const icmp = pkt.payload as ICMPv6Packet | undefined;
