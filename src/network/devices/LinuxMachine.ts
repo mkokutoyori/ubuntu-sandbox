@@ -51,7 +51,7 @@ import { journalctlHost } from './linux/journal/LinuxJournalctlHost';
 import { runJournalctl } from './linux/journal/JournalctlTool';
 import { cursorOf } from './linux/journal/JournalRecord';
 import { SyslogStreamFraming } from './linux/syslog/SyslogStreamFraming';
-import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
+import { RSYSLOG_SEEDED_FILES, RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
@@ -1559,6 +1559,10 @@ export abstract class LinuxMachine extends EndHost
   private installerRsyslog(vfs: typeof this.executor.vfs): void {
     for (const [chemin, contenu] of RSYSLOG_SEEDED_FILES) {
       if (!vfs.exists(chemin)) vfs.writeFile(chemin, contenu, 0, 0, 0o022, true);
+    }
+    if (!vfs.exists(RSYSLOG_ROTATE_PATH)) {
+      vfs.writeFile(RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN, 0, 0, 0o022, true);
+      vfs.chmod(RSYSLOG_ROTATE_PATH, 0o755);
     }
     this.rsyslogService = new LinuxRsyslogService({
       lireFichier: (p) => vfs.readFile(p) ?? null,

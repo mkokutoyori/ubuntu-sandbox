@@ -86,6 +86,13 @@ export const RSYSLOG_LOGROTATE_DEBIAN = `/var/log/syslog
 }
 `;
 
+export const RSYSLOG_ROTATE_PATH = '/usr/lib/rsyslog/rsyslog-rotate';
+
+export const RSYSLOG_ROTATE_DEBIAN = `#!/bin/sh
+
+/bin/systemctl kill -s HUP rsyslog.service
+`;
+
 export const RSYSLOG_SEEDED_FILES: ReadonlyArray<readonly [string, string]> = [
   [RSYSLOG_CONF_PATH, RSYSLOG_CONF_DEBIAN],
   [`${RSYSLOG_D_DIR}/50-default.conf`, RSYSLOG_50_DEFAULT],
