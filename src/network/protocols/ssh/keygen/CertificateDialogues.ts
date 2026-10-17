@@ -18,7 +18,7 @@ import {
 import { pkcs11Problem } from './TokenDialogues';
 import { signWithAlgorithm } from '../auth/UserauthSignature';
 import { agentSignatureFlags } from '../agent/AgentWire';
-import { formatAbsoluteTime, parseAbsoluteTime, type ZoneOffset } from './AbsoluteTime';
+import { parseAbsoluteTime, type ZoneOffset } from './AbsoluteTime';
 import { failureText, loadPrivateKey, publicKeyOfFile } from './KeyFileDialogues';
 import { print, printError, type KeygenDialogue, type KeygenRequest, type KeygenStep, type SshKeygenHost } from './KeygenTypes';
 

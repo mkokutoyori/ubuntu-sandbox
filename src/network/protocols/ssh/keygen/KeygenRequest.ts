@@ -16,7 +16,7 @@ const FORMATS: Readonly<Record<string, ConversionFormat>> = {
   pem: 'PEM',
 };
 
-function strtonum(text: string, max: number): { value: number } | { error: string } {
+export function strtonum(text: string, max: number): { value: number } | { error: string } {
   if (!/^\s*[-+]?\d+$/.test(text)) return { error: 'invalid' };
   const value = Number.parseInt(text, 10);
   if (value < 1) return { error: 'too small' };
@@ -74,6 +74,10 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
       case 'L': request.showCertificate = true; break;
       case 'U': request.preferAgent = true; break;
       case 'K': request.downloadSecurityKeys = true; break;
+      case 'M':
+        if (value !== 'generate' && value !== 'screen') return { output: `Unsupported moduli option ${value}`, exitCode: 255 };
+        request.moduliOperation = value;
+        break;
       case 'D': request.pkcs11Provider = value; break;
       case 'w': request.securityKeyProvider = value; break;
       case 'V': request.validity = value; break;
@@ -113,7 +117,7 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
   }
   if (request.signOperation === undefined) {
     if (request.caKeyPath !== undefined && operands.length === 0 && !request.generateRevocationList) return usage('Too few arguments.');
-    if (request.caKeyPath === undefined && operands.length > 0 && !request.generateRevocationList && !request.checkRevocationList) return usage('Too many arguments.');
+    if (request.caKeyPath === undefined && operands.length > 0 && !request.generateRevocationList && !request.checkRevocationList && request.moduliOperation === undefined) return usage('Too many arguments.');
   }
   if (request.fingerprint && request.deleteHost !== undefined) return usage('Cannot use -l with -H or -R.');
   return request;

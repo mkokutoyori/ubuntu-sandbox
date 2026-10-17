@@ -13,6 +13,7 @@ import {
 import { allHostKeysDialogue, generationDialogue } from './keygen/GenerationDialogue';
 import { certifyDialogue, showCertificateDialogue } from './keygen/CertificateDialogues';
 import { signatureDialogue } from './keygen/SignatureDialogues';
+import { moduliDialogue } from './keygen/ModuliDialogues';
 import { downloadPkcs11Dialogue, downloadSecurityKeysDialogue } from './keygen/TokenDialogues';
 import { checkRevocationListDialogue, generateRevocationListDialogue } from './keygen/RevocationDialogues';
 import {
@@ -41,6 +42,7 @@ function* keygenDialogue(args: readonly string[], host: SshKeygenHost): KeygenDi
   if (request.caKeyPath !== undefined) return yield* certifyDialogue(request, host);
   if (request.showCertificate) return yield* showCertificateDialogue(request, host);
   if (request.deleteHost !== undefined || request.findHost !== undefined || request.hashHosts) return yield* knownHostsDialogue(request, host);
+  if (request.moduliOperation !== undefined) return yield* moduliDialogue(request, host);
   if (request.pkcs11Provider !== undefined) return yield* downloadPkcs11Dialogue(request, host);
   if (request.downloadSecurityKeys) return yield* downloadSecurityKeysDialogue(request, host);
   if (request.all) return yield* allHostKeysDialogue(request, host);
@@ -114,7 +116,7 @@ export async function runSshKeygenInteractive(
 }
 
 export type KeygenVfs = Pick<
-  VirtualFileSystem, 'readFile' | 'writeFile' | 'resolveInode' | 'mkdirp' | 'normalizePath' | 'checkAccess'
+  VirtualFileSystem, 'readFile' | 'writeFile' | 'resolveInode' | 'mkdirp' | 'normalizePath' | 'checkAccess' | 'deleteFile'
 >;
 
 export interface KeygenIdentity {
@@ -155,6 +157,7 @@ export function vfsKeygenHost(vfs: KeygenVfs, identity: KeygenIdentity): SshKeyg
         return writeFailureReason(vfs, target, identity);
       },
       isDirectory: (path: string) => vfs.resolveInode(absolute(path))?.type === 'directory',
+      remove: (path: string) => { vfs.deleteFile(absolute(path)); },
       makePrivateDirectory: (path: string) => {
         vfs.mkdirp(absolute(path), 0o700, identity.uid, identity.gid);
       },

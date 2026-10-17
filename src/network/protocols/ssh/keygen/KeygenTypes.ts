@@ -5,6 +5,7 @@ export interface SshKeygenStore {
   write(path: string, content: string, secret: boolean): string | null;
   isDirectory(path: string): boolean;
   makePrivateDirectory(path: string): void;
+  remove?(path: string): void;
 }
 
 export interface KeygenAgent {
@@ -89,6 +90,7 @@ export interface KeygenRequest {
   readonly securityKeyProvider?: string;
   readonly pkcs11Provider?: string;
   readonly downloadSecurityKeys: boolean;
+  readonly moduliOperation?: 'generate' | 'screen';
 }
 
 export function print(line: string): KeygenStep {

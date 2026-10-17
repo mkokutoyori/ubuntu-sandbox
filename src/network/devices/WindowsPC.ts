@@ -2649,6 +2649,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
         isDirectory: (path: string) => this.fs.isDirectory(this.fs.normalizePath(path, this.cwd)),
         makePrivateDirectory: (path: string) => { this.fs.mkdirp(this.fs.normalizePath(path, this.cwd)); },
+        remove: (path: string) => { this.fs.deleteFile(this.fs.normalizePath(path, this.cwd)); },
       },
       sshDir: `${this.userProfileDir()}/.ssh`,
       hostKeyDir: 'C:\\ProgramData\\ssh',
