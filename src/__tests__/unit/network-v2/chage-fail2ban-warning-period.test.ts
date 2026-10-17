@@ -63,7 +63,11 @@ describe('Scénario 3 — période d\'avertissement chage -W et sensibilité Fai
       const { client, server } = buildLab();
       await server.executeCommand(`chage -W 7 -M 30 -d ${daysAgo(27)} alice`);
 
-      const out = await client.executeCommand('sshpass -p wonderland ssh alice@10.0.0.2 whoami');
+      const exec = await client.executeCommand('sshpass -p wonderland ssh alice@10.0.0.2 whoami');
+      expect(exec).not.toMatch(/Warning: your password will expire/);
+      expect(exec).toMatch(/^alice\s*$/m);
+
+      const out = await client.executeCommand('ssh alice@10.0.0.2', 'wonderland\nwhoami\nexit\n');
       expect(out).toMatch(/Warning: your password will expire in 3 days\./);
       expect(out).toMatch(/^alice\s*$/m);
 

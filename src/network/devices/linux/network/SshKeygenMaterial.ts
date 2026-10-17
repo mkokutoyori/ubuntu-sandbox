@@ -275,11 +275,18 @@ function pairFor(key: SshPrivateKey, random: RandomBytes, protection?: PrivateKe
   return { pub: publicLine(key), priv: keygenSerializePrivate(key, protection, random) };
 }
 
+const deterministicPairs = new Map<string, KeygenPair>();
+
 export function keygenDeterministicPair(
   algorithm: string, seed: string, comment: string, bits?: number,
 ): KeygenPair {
+  const cacheKey = JSON.stringify([algorithm, seed, comment, bits]);
+  const known = deterministicPairs.get(cacheKey);
+  if (known !== undefined) return known;
   const random = deterministicBytes(seed);
-  return pairFor(generateKey(algorithm, comment, keygenBits(algorithm, bits), random), random);
+  const pair = pairFor(generateKey(algorithm, comment, keygenBits(algorithm, bits), random), random);
+  deterministicPairs.set(cacheKey, pair);
+  return pair;
 }
 
 export function keygenPair(

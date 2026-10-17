@@ -88,7 +88,10 @@ export class SshdPam {
     const results = connection.transaction.handle.moduleResults;
     const messages = connection.takeLoginMessages();
     if (peer === undefined) connection.end();
-    if (code === PamReturn.SUCCESS) return { ok: true, messages };
+    if (code === PamReturn.SUCCESS) {
+      connection.accountMessages = messages;
+      return { ok: true, messages };
+    }
     if (code === PamReturn.NEW_AUTHTOK_REQD) return { ok: false, kind: 'password-expired', messages };
     const expired = results.some((result) => result.code === PamReturn.ACCT_EXPIRED);
     return { ok: false, kind: expired ? 'account-expired' : 'pam-denied', messages, detail: pamStrError(code) };
@@ -101,7 +104,8 @@ export class SshdPam {
   }
 
   sessionMessages(peer: SshPeer): readonly string[] {
-    return this.connections.get(this.key(peer))?.sessionMessages ?? [];
+    const connection = this.connections.get(this.key(peer));
+    return connection === undefined ? [] : [...connection.accountMessages, ...connection.sessionMessages];
   }
 
   closeSession(peer: SshPeer): void {
