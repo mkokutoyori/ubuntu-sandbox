@@ -2821,6 +2821,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       identitiesOnly: settings.identitiesOnly,
       quiet: parsed.quiet,
       identityFiles: settings.identityFiles,
+      certificateFiles: settings.certificateFiles,
       authentication: sshClientAuthentication(settings.optionValues),
       agent: this.sshAgentIfRunning(),
       algorithms: sshClientAlgorithms(settings.optionValues),

@@ -52,6 +52,10 @@ export class SshClientSettings {
     return everySshOption(this.options, 'identityfile').map((value) => this.expand(value));
   }
 
+  get certificateFiles(): string[] {
+    return everySshOption(this.options, 'certificatefile').map((value) => this.expand(value));
+  }
+
   get identitiesOnly(): boolean {
     return sshFlag(firstSshOption(this.options, 'identitiesonly') ?? '') === true;
   }
