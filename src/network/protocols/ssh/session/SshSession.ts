@@ -91,6 +91,8 @@ import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 import type { NegotiatedAlgorithms } from '../transport/SshKexInit';
 import { hostKeyChangedWarning } from '../hostkey/HostKeyChangedWarning';
 import { knownHostsLineOf } from '../hostkey/KnownHostsText';
+import { knownHostsRevocation, type PresentedHostKey } from '../hostkey/HostKeyRevocation';
+import { checkRevocation, revocationFailureText } from '../certificate/RevocationFile';
 
 export interface SshSessionDeps {
   readonly tcpConnector: TcpConnector;
@@ -265,6 +267,15 @@ export class SshSession implements ISshSession {
       '',
       sshPublicKeyFromBlob(plainHostKeyBlob)!.algorithm,
     );
+
+    const revocation = this.hostKeyRevocationLines(opts, { plainBlob: plainHostKeyBlob, certificate: presentedCertificate });
+    for (const line of revocation.lines) this.deps.interactionHandler.showWarning(line);
+    if (revocation.fatal) {
+      this.transition(disconnected('host key revoked'));
+      conn.close();
+      this.conn = null;
+      return err({ kind: 'HOST_KEY_REJECTED', host: opts.host, fingerprint: hostKey.fingerprint.toString() });
+    }
 
     const certificateTrusted = presentedCertificate !== null && this.hostCertificateTrusted(opts, presentedCertificate);
     const verifyResult = certificateTrusted ? ok(undefined) : await this.doHostKeyCheck(opts.host, hostKey, opts);
@@ -449,6 +460,22 @@ export class SshSession implements ISshSession {
     this._state = next;
     if (next.kind !== 'disconnected' || wasDisconnected) return;
     for (const listener of [...this.disconnectListeners]) listener();
+  }
+
+  private hostKeyRevocationLines(
+    opts: SshConnectOptions, presented: PresentedHostKey,
+  ): { readonly lines: string[]; readonly fatal: boolean } {
+    if (opts.revokedHostKeys !== undefined) {
+      const key = presented.certificate ?? sshPublicKeyFromBlob(presented.plainBlob);
+      const verdict = key === null ? { kind: 'ok' as const } : checkRevocation(this.deps.vfs.readFile(opts.revokedHostKeys), key);
+      if (key !== null && verdict.kind !== 'ok') {
+        return { lines: [revocationFailureText('Host key', opts.revokedHostKeys, key, verdict)], fatal: true };
+      }
+    }
+    const strict = opts.strictHostKeyChecking !== 'no';
+    const marked = knownHostsRevocation(this.knownHostsFor(opts).texts(), opts.host, presented, strict);
+    if (marked === null) return { lines: [], fatal: false };
+    return { lines: marked, fatal: strict };
   }
 
   private hostCertificateTrusted(opts: SshConnectOptions, certificate: SshCertificate): boolean {

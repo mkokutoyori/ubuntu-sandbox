@@ -1,6 +1,6 @@
 import { bytesToBase64 } from '@/crypto/encoding';
-import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
-import { checkRevocation } from '../certificate/RevocationFile';
+import { sshPublicKeyBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
+import { checkRevocation, revocationFailureText } from '../certificate/RevocationFile';
 import { SSH_CERT_TYPE_HOST, parseCertificateLine, type SshCertificate } from '../certificate/SshCertificate';
 import type { SshHostKey } from '../SshHostKey';
 import type { AuthorizedKey, KeySource } from '../SshPureUtils';
@@ -31,15 +31,7 @@ export class SshdCertificateService {
     if (path === null) return null;
     const verdict = checkRevocation(this.host.readFile(path), key);
     if (verdict.kind === 'ok') return null;
-    const certificate = 'subject' in key ? key : null;
-    const blob = bytesToBase64(certificate === null ? sshPublicKeyBlob(key as SshPublicKey) : certificate.blob);
-    const fingerprint = keygenBlobDigest(blob, 'sha256') ?? '(null)';
-    const label = certificate === null
-      ? `${sshKeyTypeLabel((key as SshPublicKey).algorithm)} ${fingerprint}`
-      : `${sshKeyTypeLabel(certificate.subject.algorithm)}-CERT ${fingerprint}`;
-    const message = verdict.kind === 'revoked'
-      ? `Authentication key ${label} revoked by file ${path}`
-      : `Error checking authentication key ${label} in revoked keys file ${path}: ${verdict.message}`;
+    const message = revocationFailureText('Authentication key', path, key, verdict);
     if (source.ip !== '') this.host.emit({ kind: 'auth_log', level: 'error', text: message });
     return message;
   }

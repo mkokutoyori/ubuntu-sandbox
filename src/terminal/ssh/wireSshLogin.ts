@@ -106,6 +106,7 @@ export interface WireSshLoginRequest {
   readonly strict?: StrictHostKeyChecking;
   readonly identityFiles?: readonly string[];
   readonly certificateFiles?: readonly string[];
+  readonly revokedHostKeys?: string;
   readonly credentialless?: boolean;
   readonly quiet?: boolean;
   readonly authentication?: SshClientAuthentication;
@@ -280,6 +281,7 @@ export async function openWireSshConnection(
     : req.identitiesOnly === true ? [] : defaultIdentityFilesFor(req.device, req.localUser);
   for (const id of identities) builder.addIdentityFile(id);
   for (const file of req.certificateFiles ?? []) builder.addCertificateFile(file);
+  if (req.revokedHostKeys !== undefined) builder.revokedHostKeys(req.revokedHostKeys);
 
   let result: Awaited<ReturnType<typeof session.connect>> | null = null;
   try {

@@ -2822,6 +2822,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       quiet: parsed.quiet,
       identityFiles: settings.identityFiles,
       certificateFiles: settings.certificateFiles,
+      ...(settings.revokedHostKeys === undefined ? {} : { revokedHostKeys: settings.revokedHostKeys }),
       authentication: sshClientAuthentication(settings.optionValues),
       agent: this.sshAgentIfRunning(),
       algorithms: sshClientAlgorithms(settings.optionValues),

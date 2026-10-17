@@ -56,6 +56,11 @@ export class SshClientSettings {
     return everySshOption(this.options, 'certificatefile').map((value) => this.expand(value));
   }
 
+  get revokedHostKeys(): string | undefined {
+    const value = firstSshOption(this.options, 'revokedhostkeys');
+    return value === undefined || value.toLowerCase() === 'none' ? undefined : this.expand(value);
+  }
+
   get identitiesOnly(): boolean {
     return sshFlag(firstSshOption(this.options, 'identitiesonly') ?? '') === true;
   }

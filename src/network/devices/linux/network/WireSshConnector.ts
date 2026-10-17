@@ -34,6 +34,7 @@ export interface WireSshTarget {
   readonly io?: ITerminalIO;
   readonly identities: readonly string[];
   readonly certificateFiles?: readonly string[];
+  readonly revokedHostKeys?: string;
   readonly strict: StrictHostKeyChecking;
   readonly authentication?: SshClientAuthentication;
   readonly algorithms?: SshAlgorithmPreferences;
@@ -76,6 +77,7 @@ export async function connectWireSsh(
   if (target.hashKnownHosts !== undefined) builder.hashKnownHosts(target.hashKnownHosts);
   for (const path of target.identities) builder.addIdentityFile(path);
   for (const path of target.certificateFiles ?? []) builder.addCertificateFile(path);
+  if (target.revokedHostKeys !== undefined) builder.revokedHostKeys(target.revokedHostKeys);
   if (target.identities.length === 0 && target.identitiesOnly !== true) {
     for (const candidate of OPENSSH_DEFAULT_IDENTITY_FILES) {
       const path = `${client.home}/.ssh/${candidate}`;

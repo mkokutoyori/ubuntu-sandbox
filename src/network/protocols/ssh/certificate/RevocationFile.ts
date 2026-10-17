@@ -1,5 +1,5 @@
-import { fileTextToBytes } from '@/crypto/encoding';
-import { sshPublicKeyBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
+import { bytesToBase64, fileTextToBytes } from '@/crypto/encoding';
+import { keygenBlobDigest, sshKeyTypeLabel, sshPublicKeyBlob, type SshPublicKey } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { parsePublicKeyText } from '../keygen/AllowedSigners';
 import { KeyRevocationList } from './KeyRevocationList';
 import type { SshCertificate } from './SshCertificate';
@@ -44,4 +44,18 @@ export function checkRevocation(text: string | null, key: SshPublicKey | SshCert
   const listed = listedKeys(text);
   const candidates = 'subject' in key ? [key.subject, key.caKey] : [key];
   return candidates.some((candidate) => listed.some((entry) => sameKey(entry, candidate))) ? { kind: 'revoked' } : { kind: 'ok' };
+}
+
+export function revocationFailureText(
+  subject: 'Authentication key' | 'Host key', path: string, key: SshPublicKey | SshCertificate,
+  verdict: Exclude<RevocationVerdict, { readonly kind: 'ok' }>,
+): string {
+  const certificate = 'subject' in key ? key : null;
+  const blob = bytesToBase64(certificate === null ? sshPublicKeyBlob(key as SshPublicKey) : certificate.blob);
+  const fingerprint = keygenBlobDigest(blob, 'sha256') ?? '(null)';
+  const label = certificate === null
+    ? `${sshKeyTypeLabel((key as SshPublicKey).algorithm)} ${fingerprint}`
+    : `${sshKeyTypeLabel(certificate.subject.algorithm)}-CERT ${fingerprint}`;
+  if (verdict.kind === 'revoked') return `${subject} ${label} revoked by file ${path}`;
+  return `Error checking ${subject.toLowerCase()} ${label} in revoked keys file ${path}: ${verdict.message}`;
 }
