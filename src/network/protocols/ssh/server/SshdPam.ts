@@ -14,7 +14,7 @@ export class SshdPam {
 
   constructor(
     private readonly pam: LinuxPam,
-    private readonly identity: () => PamSyslogIdentity,
+    private readonly identity: (peer: SshPeer) => PamSyslogIdentity,
     private readonly permitEmptyPasswords: () => boolean,
     private readonly userExists: (user: string) => boolean,
     private readonly rootMayLogIn: () => boolean,
@@ -24,8 +24,8 @@ export class SshdPam {
     return `${peer.ip}:${peer.port ?? 0}`;
   }
 
-  private openConnection(user: string, ip: string): PamServiceSession {
-    return new PamServiceSession(this.pam, SSHD_SERVICE, { caller: ROOT_CALLER, identity: this.identity() }, { user, rhost: ip, tty: SSHD_TTY });
+  private openConnection(user: string, peer: SshPeer): PamServiceSession {
+    return new PamServiceSession(this.pam, SSHD_SERVICE, { caller: ROOT_CALLER, identity: this.identity(peer) }, { user, rhost: peer.ip, tty: SSHD_TTY });
   }
 
   private connectionFor(user: string, peer: SshPeer): PamServiceSession {
@@ -33,7 +33,7 @@ export class SshdPam {
     let connection = this.connections.get(key);
     if (connection === undefined || connection.user !== user) {
       connection?.end();
-      connection = this.openConnection(user, peer.ip);
+      connection = this.openConnection(user, peer);
       this.connections.set(key, connection);
     }
     return connection;
@@ -42,7 +42,7 @@ export class SshdPam {
   private authenticateAs(user: string, answers: () => string | null, peer: SshPeer | undefined): boolean {
     const effectivePeer: SshPeer = peer ?? { ip: '', port: undefined };
     const connection = peer === undefined
-      ? this.openConnection(user, '')
+      ? this.openConnection(user, effectivePeer)
       : this.connectionFor(user, effectivePeer);
     if (connection.maxTriesReached) return false;
     const valid = this.userExists(user);
@@ -82,7 +82,7 @@ export class SshdPam {
   account(user: string, peer: SshPeer | undefined): AccountLifecycleVerdict {
     const effectivePeer: SshPeer = peer ?? { ip: '', port: undefined };
     const connection = peer === undefined
-      ? this.openConnection(user, '')
+      ? this.openConnection(user, effectivePeer)
       : this.connectionFor(user, effectivePeer);
     const code = connection.account();
     const results = connection.transaction.handle.moduleResults;

@@ -150,6 +150,11 @@ export class LinuxSshServerContext implements ISshServerContext {
     });
     this.auth = this.buildAuthContext();
     this.events = opts.bus ?? new SshServerEventBus();
+    this.events.on('auth_success', (event) => {
+      if (event.kind === 'auth_success' && this.device instanceof LinuxMachine) {
+        this.device.sshConnectionAuthenticated(event.ip, event.port, event.user);
+      }
+    });
     this.device = opts.device ?? null;
     this.rootLoginOverride = config.permitRootLogin;
 
@@ -168,6 +173,7 @@ export class LinuxSshServerContext implements ISshServerContext {
           // `journalctl -u sshd`, not just in /var/log/auth.log.
           logMgr: this.executor?.logMgr,
           logLevel: () => this.effectiveSshdServerConfig().logLevel,
+          pidFor: (ip, port) => this.connectionPid(ip, port),
         })
       : null;
 
@@ -951,7 +957,11 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (this.executor === null || !this.effectiveSshdServerConfig().usePam) return null;
     this.pamAuth ??= new SshdPam(
       this.executor.pam,
-      () => ({ tag: 'sshd', pid: (this.device as { sshdPid?: () => number } | null)?.sshdPid?.(), unit: 'ssh' }),
+      (peer) => ({
+        tag: 'sshd',
+        pid: this.connectionPid(peer.ip, peer.port) ?? (this.device as { sshdPid?: () => number } | null)?.sshdPid?.(),
+        unit: 'ssh',
+      }),
       () => this.permitEmptyPasswords(),
       (user) => this.userManager.getUser(user) !== undefined,
       () => this.rootMayLogIn('password'),
@@ -967,6 +977,11 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   connectionEnded(fromIp: string, port: number | undefined): void {
     this.pamAuth?.end({ ip: fromIp, port });
+    if (this.device instanceof LinuxMachine) this.device.endSshConnectionProcess(fromIp, port);
+  }
+
+  private connectionPid(ip: string, port: number | undefined): number | undefined {
+    return this.device instanceof LinuxMachine ? this.device.sshConnectionPid(ip, port) : undefined;
   }
 
   private buildAuthContext(): ISshAuthContext {
