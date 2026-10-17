@@ -4927,6 +4927,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
       scanProbe: (ip, port, flags, shape) =>
         this.getTcpStack().scanProbeDetail(ip, port, flags, shape),
+      pause: simulatedWait,
+      sendIcmpTimestamp: (ip) => this.sendCraftedIcmpTimestamp(new IPAddress(ip)),
       linkNeighbour: (ip) => linkNeighbourOf(this, ip),
       reverseName: (ip) => this.resolveAddressNameAsync(ip),
       resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,

@@ -316,6 +316,13 @@ function tcpOptionsToken(frame: CaptureFrame): string {
   return parts.length > 0 ? `, options [${parts.join(',')}]` : '';
 }
 
+function clockOfDay(milliseconds: number): string {
+  const pad = (value: number, width: number): string => String(value).padStart(width, '0');
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  return `${pad(Math.floor(minutes / 60), 2)}:${pad(minutes % 60, 2)}:${pad(seconds % 60, 2)}.${pad(milliseconds % 1000, 3)}`;
+}
+
 function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   if (frame.l4 === 'icmp') {
     let phrase: string;
@@ -325,6 +332,13 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
       phrase = icmpTimeExceededText(frame);
     } else {
       phrase = ICMP_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
+    }
+    if (frame.icmpType === 'timestamp-request') {
+      return `ICMP time stamp query id ${frame.icmpId ?? 0} seq ${frame.icmpSeq ?? 0}, length ${frame.payloadLength ?? 0}`;
+    }
+    if (frame.icmpType === 'timestamp-reply') {
+      const t = frame.icmpTimestamps ?? { originate: 0, receive: 0, transmit: 0 };
+      return `ICMP time stamp reply id ${frame.icmpId ?? 0} seq ${frame.icmpSeq ?? 0}: org ${clockOfDay(t.originate)}, recv ${clockOfDay(t.receive)}, xmit ${clockOfDay(t.transmit)}, length ${frame.payloadLength ?? 0}`;
     }
     if (opt.quiet) return `ICMP ${phrase}, length ${frame.payloadLength ?? 0}`;
     if (frame.icmpType === 'echo-request' || frame.icmpType === 'echo-reply') {

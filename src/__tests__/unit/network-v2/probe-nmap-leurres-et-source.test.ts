@@ -198,7 +198,7 @@ describe('-S forge la source, et la reponse ne revient plus', () => {
       'nmap -Pn -sS -S 10.0.0.99 -p 22 10.0.0.2');
 
     expect(rapport).not.toContain('not implemented');
-    expect(sources).toEqual(['10.0.0.99']);
+    expect(sources).toEqual(['10.0.0.99', '10.0.0.99']);
     expect(etatDuPort(rapport, 22)).toBe('filtered');
   });
 

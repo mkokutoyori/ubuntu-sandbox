@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-10-14T19:56:56.396Z
+Generated: 2026-10-16T19:11:23.712Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -948,43 +948,47 @@ Total steps: 388
   %No SSHv1 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 19:56:57 UTC Oct 14 2026
+  % Key pair was generated at: 19:11:24 UTC Oct 16 2026
   Key name: R1.lab.local
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   7821570DE7EC6B11C76C485F243F8ADF63D5839C97E8AC4C077AD418F9F27168
-    B2695D0DE5E803A1EF30879B993667C3BB2A7EDC7FA720D495DFE494D6AD9A4C
-    7696458DFFCF0BD946C3E157837F8E9FB5B74C9C7DB9AAE499DBFF90BEF77A88
-    2DA7F08DDE5C0D1977F0359327F96EF342EFCCDC0969F0EC876D050CEF397AEC
-    29063E0DA53FDB71CB569A6FD71F446F3E896BBC25AEDC6C01FDD728C9FA1A58
-    3F58A62DC0CB0001D389D1CBF9C7ADF344BF151CFFAA4F74D4E86BC46DEAAB1C
-    A22908CD112B3F991BBDBBA78F58090F394EA8FC91F44F645554A2E08338D958
-    2AE945EDA1F8C6D9EE8E3803946B87637EDE075C48D7AB6CCCB0C8BCDE0DA67C
+    30820122 300D0609 2A864886 F70D0101 01050003 82010F00 3082010A 02820101
+    00B4C6AD 1F0EAD74 4195CC6D 3C7ED004 C0B533A9 265DF89B 54A3BA7C 6695F509
+    E46F448D 6F6BE711 6EDE9CD4 51E06C03 C86C7DB0 742ECA67 9A3F1F63 77B586BF
+    DB6CF66A D5A8B020 26B6CD76 05108965 6F186531 18514D78 157E4417 7B2FA31B
+    15170383 7AA70D77 D8372208 3B295EF9 E40B4888 5E00A335 1DA934FC BDB44816
+    FC2322DE EA870458 45350D26 98626911 5DB5B5B9 394E6275 03C97397 F60D1701
+    321AFD6F C89299B6 F6F54909 303BF468 77630EFC 6F1C4E4B 675D3EB1 2D8EB5B4
+    523350D7 6225E747 6E6945D0 CC9ABF69 8F68F742 8757B448 43646495 F1914B91
+    E206B1F5 68BA5871 0082BF89 AFF019C1 8AF75AD4 C08F83B2 D659628C 401ADB47
+    F5020301 0001
   
-  % Key pair was generated at: 19:56:57 UTC Oct 14 2026
+  % Key pair was generated at: 19:11:24 UTC Oct 16 2026
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   9EE27A3BD4DC97D7569A72693380A7A9E1A3354AD732A752BDCBB8EE60A763AE
-    48BEED7BFF8201D7B61D486D81DDFF95BC3F2B4AD5C902DA0A4D1AA239D7331A
-    D5A7433BBF2972DF74EE9DE147486EA9FAE4C8CA1D01962AF19E66E6512AD5BE
-    13A73B7B0485AFFF9DDD68E50C013635C2F223CA3ED298227C32D3BA88F90DFA
-    E8ED2C3BB366F517F0A9E9596B09B1997FA4462A6F3B08B24119DEDEA656523E
-    64CDFD5B8EFEEA5700B0873D48CEE1C5DFF64E0AB2760E1A26107C720DA8A30A
-    E13198FB3518A2DFDAE40C91B8B17659FF3FE56A5D214C4ACEFC6C968CC91CAE
-    87B1BF1B230292FFF5416F7563B23CE5DBAD224A17A199E288BEE54AB084BDCA
-    1A6931FB009965179EEA080901CE9A892AB17F0AC5DBE65220B7ACCE2D5CEF4E
-    A036A17B39101C97A905864D6F1635F5C620094ADC9CB21AA0A3CEC256A48FFA
-    FC8C237BDC25229F6DFCB401CAB50E091DE66B0AE55973AA0E1F0B4650E8189E
-    EDD977FB7A637EFF71C28745E6F9F0951D46BA4A9A4E7CA20840985A482FF3DA
-    05B0F4FBE5407317383B3FF943A1F839428394AA53C2A932A02A6F3E366DE41E
-    712FF99B2E79C4575959659DC6C3F465CB62A48AA6DBAA9A7D4A0112FB47C22A
-    64F521BB48D5BDDF7B092331CC404DF91606F3EAD15041CAFB08BCF6878178CE
-    8BE37B5B913E003F164E0DD5549DAE85B9D138CA4D8432A2AF07516AAF320B6A
+    30820222 300D0609 2A864886 F70D0101 01050003 82020F00 3082020A 02820201
+    00AFECBE E1303906 CE0B6C91 443507A9 C0F4F08C F75F0EF5 7E97390A 28AC294C
+    143EEBDE 7C2E6875 1F512299 486A57D3 476DEBA0 290F918C 89A96C15 E8CB6041
+    E57DBECC 2FC0CA06 B15ABCD6 F99F2A54 7390E8A6 7A977BAE 7D886CAB D5FF40E8
+    2DE5385B D4361F32 216E1CC3 4115BA33 D525F70C D8297F87 357CFE49 943C742A
+    F154BF44 14E6ACFB 79132B75 E4C2E2BD ABD086FB CE4AB55D 1082A174 276C2C30
+    068843BB 2F207E85 B554EDC0 132EE25A A44C16BE 7011B0F8 5B5F3326 377782C6
+    D448F4E9 762E2D2B 49F8D2CC E9687107 B6FCECB2 1D613088 D8E7F1E7 F12FBA10
+    D33152E7 E5F7B648 D5C9BB16 D74D0C7A 3B400ED9 7659F168 4AEA9B6F 294AD9B1
+    29791DC0 1F2BB08B 25664B5E 0C9525B6 6920ED93 7A7D6198 4C3BFB08 242587AE
+    79AB3851 9C25322C 152C442F 0026E1BF 68C1BF78 5716CEA1 FFE8ED22 48DDCCD8
+    7764A2FE E8A4EE16 E9A1E3CA A4FDC2AA 737D303E DB86EA6D 0EFD096E BEB5F924
+    277EA2ED 2A8DAF84 7ED1118A 864446F0 215B79B3 44DAD72C 41C2E21C E5B70783
+    63CF3818 F55FB656 E8245103 95F2A3F1 FECA7221 9AC21611 E23A2DDE 9B83921F
+    08E629B7 0A981014 2805183E 413D4366 BC04A950 304DA356 714C8EB5 BB0D6F80
+    647FC981 FEE1AD99 ED29C9D4 DCF8876D 1C2A6664 67B8512A 5580F7AC 52F3AC5E
+    9CB0DDB9 6C5E7046 8E257EBE ADFE502A 5680E0D9 64A4010D BA642984 D72B9C1D
+    39020301 0001
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1152,8 +1156,7 @@ Total steps: 388
 <empty>
 
 [262/388] r1 R1(config-pmap-c)# drop log
-                    ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [263/388] r1 R1(config-pmap-c)# exit
 <empty>
@@ -1192,22 +1195,44 @@ Total steps: 388
 <empty>
 
 [275/388] r1 R1# show zone security
-  Zone: INSIDE
-    Description: INSIDE security zone
+  zone self
+    Description: System defined zone
+  
+  zone INSIDE
     Member Interfaces:
       GigabitEthernet0/0
-  Zone: OUTSIDE
-    Description: OUTSIDE security zone
+  
+  zone OUTSIDE
     Member Interfaces:
       GigabitEthernet0/1
 
 [276/388] r1 R1# show zone-pair security
-  Zone-pair name: IN-OUT
-    Source-Zone: INSIDE  Destination-Zone: OUTSIDE
-    service-policy PM-IN-OUT
+  Zone-pair name IN-OUT
+      Source-Zone INSIDE  Destination-Zone OUTSIDE 
+      service-policy PM-IN-OUT
 
 [277/388] r1 R1# show policy-map type inspect zone-pair
-  policy exists on zp IN-OUT
+  Zone-pair: IN-OUT
+  
+    Service-policy inspect : PM-IN-OUT
+  
+      Class-map: CM-INSPECT (match-any)
+        Match: protocol tcp
+        Match: protocol udp
+        Match: protocol icmp
+        Inspect
+          Session creations since subsystem startup or last reset 0
+          Current session counts (estab/half-open/terminating) [0:0:0]
+          Maxever session counts (estab/half-open/terminating) [0:0:0]
+          Last session created never
+          Last statistic reset never
+          Last session creation rate 0
+          half-open session total 0
+  
+      Class-map: class-default (match-any)
+        Match: any
+        Drop
+          0 packets, 0 bytes
 
 [278/388] r1 R1# show parameter-map type inspect
   parameter-map type inspect default
@@ -1242,7 +1267,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1412RP17
+  Processor board ID FTX511164ZX
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1252,9 +1277,9 @@ Total steps: 388
 [281/388] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 6946 bytes
+  Current configuration : 6957 bytes
   !
-  ! Last configuration change at 19:56:58 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 19:11:29 UTC Fri Oct 16 2026 by console
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -1453,6 +1478,7 @@ Total steps: 388
    class type inspect CM-INSPECT
     inspect
    class class-default
+    drop log
   !
   control-plane
    service-policy input PM-COPP
@@ -1914,21 +1940,21 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:56:56.388: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:56:56.389: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:56:56.391: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:56:56.391: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:56:56.562: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:56.771: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.110: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.338: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.437: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.554: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.651: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.865: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:58.177: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:58.329: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:58.442: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.704: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 16 19:11:23.705: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 16 19:11:23.707: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 16 19:11:23.707: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 16 19:11:23.771: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.829: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.915: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.970: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.997: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:24.017: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:24.030: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:24.084: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:24.149: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:29.882: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:29.912: %SYS-5-CONFIG_I: Configured from console by console
 
 [315/388] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1939,8 +1965,8 @@ Total steps: 388
 [316/388] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 200 (1/100 of seconds), resolution is 4001
-  reference time is EE7A5D0A.D3B645A1 (19:56:58.827 UTC Wed Oct 14 2026)
+  ntp uptime is 600 (1/100 of seconds), resolution is 4001
+  reference time is EE7CF562.05E353F7 (19:11:30.023 UTC Fri Oct 16 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1951,14 +1977,14 @@ Total steps: 388
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [318/388] r1 R1# show clock
-  *19:56:58.000 UTC Wed Oct 14 2026
+  *19:11:30.000 UTC Fri Oct 16 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           174        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -2092,6 +2118,9 @@ Total steps: 388
     ICMP mask replies are never sent
     IP fast switching is enabled
     IP CEF switching is enabled
+    IP verify source reachable-via RX
+     0 verification drops
+     0 suppressed verification drops
 
 [330/388] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -2133,7 +2162,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1412RP17
+  Processor board ID FTX511164ZX
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2143,9 +2172,9 @@ Total steps: 388
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 6946 bytes
+  Current configuration : 6957 bytes
   !
-  ! Last configuration change at 19:56:58 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 19:11:29 UTC Fri Oct 16 2026 by console
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -2344,6 +2373,7 @@ Total steps: 388
    class type inspect CM-INSPECT
     inspect
    class class-default
+    drop log
   !
   control-plane
    service-policy input PM-COPP
@@ -2546,25 +2576,25 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:56:56.388: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:56:56.389: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:56:56.391: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:56:56.391: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:56:56.562: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:56.771: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.110: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.338: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.437: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.554: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.651: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:57.865: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:58.177: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:58.329: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:56:58.442: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.704: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 16 19:11:23.705: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 16 19:11:23.707: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 16 19:11:23.707: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 16 19:11:23.771: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.829: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.915: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.970: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:23.997: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:24.017: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:24.030: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:24.084: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:24.149: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:29.882: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 16 19:11:29.912: %SYS-5-CONFIG_I: Configured from console by console
 
 [332/388] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1412RP17
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX511164ZX
 
 [333/388] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2846,6 +2876,7 @@ Total steps: 388
    class type inspect CM-INSPECT
     inspect
    class class-default
+    drop log
   !
   control-plane
    service-policy input PM-COPP
@@ -2873,7 +2904,7 @@ Total steps: 388
 [345/388] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 6946 bytes
+  Current configuration : 6957 bytes
   service password-encryption
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -3042,6 +3073,7 @@ Total steps: 388
    class type inspect CM-INSPECT
     inspect
    class class-default
+    drop log
   control-plane
    service-policy input PM-COPP
   zone security INSIDE
@@ -3216,7 +3248,8 @@ Total steps: 388
     host               Add a host to the host table
     http               Enable HTTP server
     icmp               ICMP options
-    local              Apply local PBR
+    inspect            Limit the established sessions of an inspection rule
+    local              IP local address pool
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
     nat                Wipe NAT configuration
@@ -3230,6 +3263,7 @@ Total steps: 388
     source-route       Accept source-routed packets
     ssh                SSH protocol version to accept
     subnet-zero        Enable use of subnet zero
+    tcp                Enable TCP intercept for the connections an access list matches
     vrf                Define a VRF instance
 
 [383/388] r1 R1(config)# router ?
@@ -3239,18 +3273,20 @@ Total steps: 388
     rip    Enter RIP routing protocol configuration
 
 [384/388] r1 R1(config)# crypto ?
+    ca           Get the CA certificate and authenticate it
     dynamic-map  Define a dynamic crypto map
     gdoi         Define a GDOI GET-VPN group
+    identity     Identity of the peers allowed to use a crypto map
     ikev2        Define IKEv2 proposal
     ipsec        Configure IPSec policy
-    isakmp       Enable ISAKMP
+    isakmp       Enable the default IKE policies
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
-    map          Define a crypto map entry
-    pki          Declare a PKI trustpoint
+    map          Remove a crypto map or one of its entries
+    pki          Get the CA certificate and authenticate it
 
 [385/388] r1 R1(config)# no ?
-    aaa            Enable NEW access control commands and functions
+    aaa            Disable accounting update records
     access-list    Remove an access list
     alias          Remove a command alias
     arp            Add static ARP entry
@@ -3259,8 +3295,8 @@ Total steps: 388
     cdp            Enable CDP globally
     class-map      Remove a class map
     clock          Remove hardware calendar is a valid time source
-    crypto         Restore the default DF bit handling
-    enable         Set enable secret
+    crypto         Remove every configured peer public key
+    enable         Remove the privileged level secret
     event          Register an EEM applet
     hostname       Set system hostname
     interface      Remove a virtual interface
@@ -3291,6 +3327,8 @@ Total steps: 388
     track          Remove a tracked object
     username       Remove a local user
     vrf            Remove configure a vrf
+    zone           Define security zone
+    zone-pair      Define zone-pair
 
 [386/388] r1 R1(config)# end
 <empty>

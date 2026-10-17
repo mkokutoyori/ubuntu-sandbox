@@ -124,7 +124,7 @@ export type ScanType =
   'tcp' | 'syn' | 'udp' | 'ack' | 'fin' | 'null' | 'xmas' | 'maimon' | 'window';
 
 export type DiscoveryProbeKind =
-  'icmp-echo' | 'tcp-syn' | 'tcp-ack' | 'tcp-connect' | 'udp' | 'ip-proto';
+  'icmp-echo' | 'icmp-timestamp' | 'tcp-syn' | 'tcp-ack' | 'tcp-connect' | 'udp' | 'ip-proto';
 
 export interface DiscoveryProbe {
   kind: DiscoveryProbeKind;
@@ -284,7 +284,7 @@ function acceptedWithoutEffect(arg: string): boolean {
 
 const PING_TYPE_NAMES: Readonly<Record<string, DiscoveryProbeKind>> = {
   E: 'icmp-echo', I: 'icmp-echo', S: 'tcp-syn', A: 'tcp-ack', T: 'tcp-ack',
-  U: 'udp', O: 'ip-proto',
+  U: 'udp', O: 'ip-proto', P: 'icmp-timestamp',
 };
 
 const SINGLE_USE_MESSAGE: Readonly<Record<string, string>> = {
@@ -299,7 +299,6 @@ const DEPRECATED_PING_FORMS: Readonly<Record<string, string>> = {
 
 const UNBUILDABLE_PING_FORMS: Readonly<Record<string, string>> = {
   M: 'an ICMP address-mask request (type 17)',
-  P: 'an ICMP timestamp request (type 13)',
   Y: 'an SCTP INIT chunk',
 };
 
@@ -357,7 +356,7 @@ function applyDiscoveryOption(
     throw new NmapOptionError([single]);
   }
 
-  if (kind === 'icmp-echo') {
+  if (kind === 'icmp-echo' || kind === 'icmp-timestamp') {
     if (rest !== '') throw new NmapOptionError([`Unknown -P option -P${suffix}.`]);
     plan.push({ kind });
     return;
@@ -439,15 +438,16 @@ function discoveryPlanFor(
         { kind: 'icmp-echo' },
         { kind: 'tcp-syn', ports: [DEFAULT_PING_SYN_PORT] },
         { kind: 'tcp-ack', ports: [DEFAULT_PING_ACK_PORT] },
+        { kind: 'icmp-timestamp' },
       ]
       : [{ kind: 'tcp-connect', ports: DEFAULT_PING_CONNECT_PORTS }];
   }
   if (privileged) return [...explicit];
   const synOf = (plan: readonly DiscoveryProbe[]) => plan.find((probe) => probe.kind === 'tcp-syn');
   let plan = [...explicit];
-  if (plan.some((probe) => probe.kind === 'icmp-echo')) {
+  if (plan.some((probe) => probe.kind === 'icmp-echo' || probe.kind === 'icmp-timestamp')) {
     warnings.push(NOT_ROOT_ICMP_WARNING);
-    plan = plan.filter((probe) => probe.kind !== 'icmp-echo');
+    plan = plan.filter((probe) => probe.kind !== 'icmp-echo' && probe.kind !== 'icmp-timestamp');
     if (synOf(plan) === undefined) plan.push({ kind: 'tcp-syn', ports: [DEFAULT_TCP_PROBE_PORT] });
   }
   const ack = plan.find((probe) => probe.kind === 'tcp-ack');

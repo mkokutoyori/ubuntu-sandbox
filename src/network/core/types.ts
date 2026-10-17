@@ -1074,7 +1074,9 @@ export type ICMPType =
   | 'echo-reply'              // Type 0
   | 'destination-unreachable'  // Type 3
   | 'redirect'                 // Type 5
-  | 'time-exceeded';           // Type 11
+  | 'time-exceeded'            // Type 11
+  | 'timestamp-request'        // Type 13
+  | 'timestamp-reply';         // Type 14
 
 const ICMP_TYPE_NUMBER: Readonly<Record<ICMPType, number>> = {
   'echo-reply': 0,
@@ -1082,6 +1084,8 @@ const ICMP_TYPE_NUMBER: Readonly<Record<ICMPType, number>> = {
   redirect: 5,
   'echo-request': 8,
   'time-exceeded': 11,
+  'timestamp-request': 13,
+  'timestamp-reply': 14,
 };
 
 /** The number the type carries on the wire (RFC 792). */
@@ -1118,6 +1122,8 @@ export interface ICMPPacket extends NetworkPdu {
    * and Don't Fragment was Set) per RFC 1191 §4.
    */
   mtu?: number;
+  /** Originate, receive and transmit times of types 13/14, in ms since midnight UTC (RFC 792). */
+  timestamps?: { originate: number; receive: number; transmit: number };
   /**
    * Reference to the offending packet that triggered this ICMP error.
    * Used by the simulator so that receivers (e.g. IPsec PMTU) can inspect

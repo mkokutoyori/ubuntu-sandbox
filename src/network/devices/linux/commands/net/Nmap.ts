@@ -1,5 +1,6 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { simulatedWait } from '@/network/core/SimulatedWait';
 import { IPAddress, IPv6Address } from '../../../../core/types';
 import { localDeviceOf } from '../../network/HostLookup';
 import { forwardAddressOfAsync, reverseNameOfAsync } from '../../network/ReverseName';
@@ -34,6 +35,8 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
       ctx.net.getTcpStack().scanProbeDetail(ip, port, flags, shape),
     sendRawIpProbe: (ip, protocol) =>
       ctx.net.sendRawIpPacket(new IPAddress(ip), protocol),
+    pause: simulatedWait,
+    sendIcmpTimestamp: (ip) => ctx.net.sendCraftedIcmpTimestamp(new IPAddress(ip)),
     linkNeighbour: (ip) => linkNeighbourOf(localDeviceOf(ctx), ip),
     reverseName: (ip) => reverseNameOfAsync(ctx.executor.nss, ip),
     resolveName: (name) => forwardAddressOfAsync(ctx.executor.nss, name),

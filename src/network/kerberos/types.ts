@@ -80,6 +80,7 @@ export interface EtypeInfo2Entry {
 // RFC 4120 §7.5.2 — the only padata-type values this simulator produces/reads.
 export const PA_TGS_REQ = 1;
 export const PA_ENC_TIMESTAMP = 2;
+export const PA_ENC_UNIX_TIME = 5;
 export const PA_ETYPE_INFO2 = 19;
 export const PA_REQ_ENC_PA_REP = 149;
 export const PA_AS_FRESHNESS = 150;

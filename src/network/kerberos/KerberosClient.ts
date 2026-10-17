@@ -21,7 +21,7 @@ import {
   encodeAuthenticator, encodeApReq,
 } from './codec';
 import {
-  principalName, PrincipalNameType, PA_ENC_TIMESTAMP, PA_ETYPE_INFO2, PA_TGS_REQ, KrbErrorCode,
+  principalName, PrincipalNameType, PA_ENC_TIMESTAMP, PA_ENC_UNIX_TIME, PA_ETYPE_INFO2, PA_TGS_REQ, KrbErrorCode,
   KDC_OPT_FORWARDABLE, KDC_OPT_PROXIABLE, KDC_OPT_RENEWABLE, KDC_OPT_RENEWABLE_OK, KDC_OPT_RENEW,
   type KdcReq, type PaData, type Ticket, type EncKdcRepPart, type PrincipalName,
 } from './types';
@@ -91,6 +91,7 @@ const SUBKEY_BYTES = 32;
 export interface AsRequestOptions {
   readonly etypes?: readonly number[];
   readonly padata?: readonly PaData[];
+  readonly preauth?: 'encrypted-timestamp' | 'encrypted-unix-timestamp' | 'none';
   readonly forwardable?: boolean;
   readonly proxiable?: boolean;
   readonly renewable?: boolean;
@@ -157,10 +158,12 @@ export class KerberosClient {
 
   /** RFC 4120 §3.1 — the full AS exchange for `username`/`password` against `realm`, requesting a ticket for `serviceName` (defaults to the realm's own krbtgt, i.e. a plain TGT). */
   asExchange(
-    username: string, password: PasswordSource, realm: string, serviceName: string | readonly string[] = 'krbtgt',
+    username: string | readonly string[], password: PasswordSource, realm: string, serviceName: string | readonly string[] = 'krbtgt',
     options: AsRequestOptions = {},
   ): AsExchangeResult {
-    const cname = principalName(PrincipalNameType.NT_PRINCIPAL, username);
+    const cname = typeof username === 'string'
+      ? principalName(PrincipalNameType.NT_PRINCIPAL, username)
+      : principalName(PrincipalNameType.NT_PRINCIPAL, ...username);
     const sname = typeof serviceName === 'string'
       ? principalName(PrincipalNameType.NT_SRV_INST, serviceName, realm)
       : principalName(PrincipalNameType.NT_SRV_INST, ...serviceName);
@@ -176,13 +179,16 @@ export class KerberosClient {
       return { ok: false, errorCode: firstErr.errorCode, eText: firstErr.eText };
     }
 
+    if (options.preauth === 'none') {
+      return { ok: false, errorCode: firstErr.errorCode, eText: firstErr.eText };
+    }
     const secret = typeof password === 'string' ? password : password();
     if (secret === null) return { ok: false, passwordUnavailable: true };
     const salt = saltAnnouncedBy(firstErr.eData === undefined ? [] : decodePaDataSeq(parseTLV(firstErr.eData, 0))) ?? defaultSalt;
     const clientKey = stringToKey(secret, salt);
     const tsCipher = encryptWithUsage(clientKey, KU_PA_ENC_TIMESTAMP, encodePaEncTsEnc(Math.floor(this.clockMs() / 1000)));
     const paValue = encodeEncryptedData({ etype: AES256_CTS_HMAC_SHA1_96, cipher: tsCipher });
-    const reqWithPa: KdcReq = { ...baseReq, padata: [{ type: PA_ENC_TIMESTAMP, value: paValue }] };
+    const reqWithPa: KdcReq = { ...baseReq, padata: [{ type: options.preauth === 'encrypted-unix-timestamp' ? PA_ENC_UNIX_TIME : PA_ENC_TIMESTAMP, value: paValue }] };
 
     const secondReply = this.roundTrip(encodeKdcReq(reqWithPa));
     if (!secondReply) return { ok: false, eText: 'no reply from KDC' };
@@ -299,8 +305,8 @@ export class KerberosClient {
 }
 
 /** Dial TCP/88 on `targetIp` and wrap the socket in a `KerberosClient`. */
-export function dialKdc(tcpStack: TcpStack, targetIp: string): KerberosConnectResult {
-  const socket = tcpStack.connect(targetIp, 88);
+export function dialKdc(tcpStack: TcpStack, targetIp: string, port = 88): KerberosConnectResult {
+  const socket = tcpStack.connect(targetIp, port);
   if (!socket || socket.state !== 'established') {
     return { ok: false, error: "A local error occurred (Can't contact KDC)" };
   }
