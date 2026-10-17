@@ -40,6 +40,8 @@ import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
+import { GAI_CONF_PATH, parseGaiConf } from './linux/network/GaiConf';
+import { GLIBC_POLICY, type DestinationPolicy } from '../layers/internet/DestinationSelection';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
 import { LinuxVsftpdService } from './linux/ftp/LinuxVsftpdService';
 import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/LinuxNfsService';
@@ -2949,6 +2951,11 @@ export abstract class LinuxMachine extends EndHost
     this.publishDhcpTimeSources(iface, []);
     this.executor.vfs.writeFile('/etc/resolv.conf', '', 0, 0, 0o022);
     this.dnsResolverIP = '';
+  }
+
+  override destinationPolicy(): DestinationPolicy {
+    const text = this.executor.vfs.readFile(GAI_CONF_PATH);
+    return typeof text === 'string' ? parseGaiConf(text) : GLIBC_POLICY;
   }
 
   private syncHostnameFiles(hostname: string): void {
