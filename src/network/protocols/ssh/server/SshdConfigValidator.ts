@@ -67,7 +67,9 @@ export function diagnoseSshdConfig(
       if (keyword === 'include') {
         for (const word of argument.split(/\s+/).filter((entry) => entry !== '')) {
           const pattern = word.startsWith('/') ? word : `${includeBase}/${word}`;
+          const outer = insideMatch;
           for (const target of source.globExpand?.(pattern, '/') ?? []) visit(target, depth + 1);
+          insideMatch = outer;
         }
         continue;
       }
