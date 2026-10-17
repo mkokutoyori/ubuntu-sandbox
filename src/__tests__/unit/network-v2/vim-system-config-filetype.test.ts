@@ -220,12 +220,11 @@ describe('Scénario 9 — /etc/ssh/sshd_config : filetype, substitutions, valida
     exCommand(vim, 'w');
 
     exCommand(vim, '!sshd -t -f %');
-    expect(vim.shellOutput).toContain('Bad configuration option');
-    expect(vim.shellOutput).toContain('out of range 1..65535');
+    expect(vim.shellOutput).toContain('/etc/ssh/sshd_config line 13: Badly formatted port number.');
 
     exCommand(vim, 'q');
 
     const validated = await pc.executeCommandInSession('sshd -t -f /etc/ssh/sshd_config; echo EXIT=$?', rootSession);
-    expect(validated.trim().endsWith('EXIT=1')).toBe(true);
+    expect(validated.trim().endsWith('EXIT=255')).toBe(true);
   });
 });

@@ -47,7 +47,7 @@ const sshWith = (mode: string): Promise<string> =>
 describe('executeCommand : un hote inconnu', () => {
   it('TEMOIN -- accept-new connecte et enregistre la cle', async () => {
     expect(await sshWith('accept-new')).toBe('');
-    expect(await lan.pc1.executeCommand('cat ~/.ssh/known_hosts')).toContain(PC2_IP);
+    expect(await lan.pc1.executeCommand(`ssh-keygen -F ${PC2_IP}`)).toContain(`Host ${PC2_IP} found`);
   });
 
   it('TEMOIN -- no connecte', async () => {

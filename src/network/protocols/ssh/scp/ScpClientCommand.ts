@@ -84,6 +84,7 @@ class ScpClientRun {
     });
     this.lines.push(...connection.lines);
     if (connection.kind === 'refused') {
+      this.lines.push('lost connection');
       this.exitCode = connection.exitCode;
       return null;
     }
@@ -169,6 +170,7 @@ class ScpClientRun {
     });
     this.lines.push(...connection.lines);
     if (connection.kind === 'refused') {
+      this.lines.push('lost connection');
       this.exitCode = connection.exitCode;
       return;
     }

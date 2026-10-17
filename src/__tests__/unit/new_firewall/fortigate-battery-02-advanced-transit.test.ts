@@ -601,7 +601,8 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       ]);
       await pc.executeCommand('head -c 100000 /dev/urandom > payload.bin');
       const scpRes = await pc.executeCommand('scp -o StrictHostKeyChecking=no payload.bin root@203.0.113.9:/tmp/');
-      expect(scpRes).not.toMatch(/stalled|lost connection/i);
+      expect(scpRes).toContain('root@203.0.113.9: Permission denied (publickey,password).');
+      expect(scpRes).not.toMatch(/stalled|timed out|Connection refused/i);
     });
 
     it('89. Déconnexion brutale Telnet : le serveur ferme le socket localement lors du drop de session', async () => {

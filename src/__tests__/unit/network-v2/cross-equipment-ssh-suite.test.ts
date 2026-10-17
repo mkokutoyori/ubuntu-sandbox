@@ -891,7 +891,7 @@ describe('§11 — known_hosts coherence across platforms', () => {
         for (const type of ['rsa', 'ed25519', 'ecdsa']) {
           await l.linux2.executeCommand(`sudo rm -f /etc/ssh/ssh_host_${type}_key /etc/ssh/ssh_host_${type}_key.pub`);
         }
-        await l.linux2.executeCommand('sudo ssh-keygen -A -f /etc/ssh');
+        await l.linux2.executeCommand('sudo ssh-keygen -A');
         await l.linux2.executeCommand('sudo systemctl restart ssh');
       },
       on: l => l.linux1,
@@ -2297,7 +2297,7 @@ describe('§34 — SCP error paths', () => {
       name: 'unknown remote host yields "Network is unreachable"',
       setup: async (l) => { await l.linux1.executeCommand('echo data > /tmp/lonely'); },
       on: l => l.linux1, cmd: 'scp /tmp/lonely alice@192.0.2.250:/tmp/lonely',
-      contains: [/^scp:/m, /Network is unreachable/],
+      contains: [/^lost connection$/m, /Network is unreachable/],
     },
     {
       name: 'usage line printed when only one argv positional is given',
@@ -2502,7 +2502,7 @@ describe('§37 — SCP/SFTP cross-vendor Linux ↔ Windows', () => {
     {
       name: 'unreachable Windows host yields "no route" without crashing',
       on: l => l.linux1, cmd: 'scp /tmp/x User@192.0.2.10:/C:/x',
-      contains: [/^scp:/m],
+      contains: [/^lost connection$/m],
     },
   ];
 
