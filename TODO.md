@@ -361,6 +361,33 @@ Aucune sonde n'epingle cette limite comme un contrat : ce serait fermer
 la porte au correctif du jour ou la documentation FortiOS sera
 atteignable.
 
+### [ipv6] la table de politique de la RFC 6724 n'a ni lecteur ni ecriture
+**Mesure** : `layers/internet/DestinationSelection.ts` recoit la table en parametre
+(`orderDestinations(..., table)`) et `DEFAULT_POLICY_TABLE` est celle de la RFC 6724
+§2.1. Un vrai Linux lit `/etc/gai.conf` (une ligne `precedence ::ffff:0:0/96 100`
+prefere l'IPv4) et Windows `netsh interface ipv6 show|add|set prefixpolicy` ; ici
+ni l'un ni l'autre n'existe, personne ne fournit de table, et la sonde
+`probe-rfc6724-ordonne-les-destinations` ne prouve la lecture de la table que par
+des tables fabriquees dans le test.
+**Pourquoi ce n'est pas ferme** : la syntaxe de `gai.conf` (man gai.conf de glibc :
+`label`, `precedence`, `reload`, `scopev4`) et le texte de `netsh ... prefixpolicy`
+sont a sourcer avant d'ecrire un lecteur, et la table doit vivre sur l'hote (un
+seul magasin lu par `ping`, `getent ahosts` et `Resolve-DnsName`), pas dans chaque
+commande.
+
+### [ipv6] les regles 3, 4 et 7 de l'ordre des destinations (RFC 6724 §6) n'ont pas de lecteur
+**Mesure** : `DestinationSelection.ts` ecrit les regles 1, 2, 5, 6, 8, 9 et 10. La
+regle 3 (eviter une adresse source depreciee), la regle 4 (adresse mere / adresse de
+passage de Mobile IPv6) et la regle 7 (transport natif contre mecanisme de
+transition) lisent des faits que le modele n'a pas : l'entree d'adresse d'un port
+(`IPv6AddressEntry` : adresse, longueur de prefixe, origine) ne porte ni duree de vie
+preferee ni etat deprecie, aucune adresse n'est « home address », et aucune interface
+d'hote n'encapsule de l'IPv6 dans de l'IPv4.
+**Pourquoi ce n'est pas ferme** : chaque regle attend son fait sur le port
+`DestinationSelectionPort` (une adresse source porte sa duree de vie preferee ; une
+interface dit si elle encapsule) ; les exemples de §10.2 qui les exercent (deux des
+neuf) ne sont pas dans la sonde pour cette raison.
+
 ## Routeur Cisco (IOS)
 
 ## Moteur L2 partagé (`Switch.ts`)
