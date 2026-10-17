@@ -30,7 +30,7 @@ import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
@@ -96,6 +96,7 @@ import {
   MACAddress,
   type DeviceType,
   type IPv4Packet,
+  type IPv6Packet,
   type EthernetFrame,
   type ICMPType,
   type ICMPv6Type,
@@ -974,6 +975,14 @@ export abstract class LinuxMachine extends EndHost
 
   protected override echoReplyFlags(): number {
     return 0;
+  }
+
+  protected override echoReplyTos(request: IPv4Packet): number {
+    return request.tos;
+  }
+
+  protected override echoReplyTrafficClass(request: IPv6Packet): number {
+    return request.trafficClass;
   }
 
   protected override icmpErrorQuote(): IcmpErrorQuote {
@@ -4321,8 +4330,9 @@ export abstract class LinuxMachine extends EndHost
         target: IPv6Address,
         count: number,
         timeoutMs = 2000,
+        opts?: Echo6Options,
       ): Promise<PingResult[]> => {
-        return this.executePing6Sequence(target, count, timeoutMs);
+        return this.executePing6Sequence(target, count, timeoutMs, opts);
       },
       traceroute: async (
         target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number,

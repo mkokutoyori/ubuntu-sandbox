@@ -211,10 +211,11 @@ export function formatPingStats(
 }
 
 export function formatPing6Header(
-  target: IPv6Address, size: number = 56, hostname?: string,
+  target: IPv6Address, size: number = 56, hostname?: string, flowLabel: number = 0,
 ): string {
   const displayName = hostname ?? target.toString();
-  return `PING ${displayName}(${target}) ${size} data bytes`;
+  const flow = flowLabel === 0 ? '' : `, flow 0x${flowLabel.toString(16).padStart(5, '0')}, `;
+  return `PING ${displayName}(${target}) ${flow}${size} data bytes`;
 }
 
 /** Default singleton — no state, safe to share across machines. */
