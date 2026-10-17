@@ -148,6 +148,12 @@ function divisibleBySievePrime(residues: readonly number[], delta: number): bool
   return false;
 }
 
+function millerRabinRounds(bits: number): number {
+  if (bits >= 1536) return 4;
+  if (bits >= 1024) return 5;
+  return 20;
+}
+
 function generatePrime(bits: number, random: RandomBytes): bigint {
   for (;;) {
     const start = randomOddCandidate(bits, random);
@@ -158,7 +164,7 @@ function generatePrime(bits: number, random: RandomBytes): bigint {
       if (bitLength(candidate) !== bits) break;
       if (candidate % PUBLIC_EXPONENT === 0n) continue;
       if ((candidate - 1n) % PUBLIC_EXPONENT === 0n) continue; // e doit être inversible mod (p-1)
-      if (isProbablePrime(candidate, 20, random)) return candidate;
+      if (isProbablePrime(candidate, millerRabinRounds(bits), random)) return candidate;
     }
   }
 }

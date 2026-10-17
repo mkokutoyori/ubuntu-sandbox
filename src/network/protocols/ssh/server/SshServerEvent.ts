@@ -50,6 +50,11 @@ export type AuthFailureReason =
   | 'pam_account_denied'
   | 'unknown';
 
+export interface SshEventPeer {
+  readonly ip: string;
+  readonly port?: number;
+}
+
 export type SshServerEvent =
   | { kind: 'client_connected'; ip: string; port?: number; timestamp: number }
   | {
@@ -118,9 +123,9 @@ export type SshServerEvent =
       port?: number;
       timestamp?: number;
     }
-  | { kind: 'auth_log'; level: 'error' | 'info' | 'verbose'; text: string }
-  | { kind: 'channel_opened'; user: string; channelType: ChannelType }
-  | { kind: 'session_fatal'; user: string; text: string }
+  | { kind: 'auth_log'; level: 'error' | 'info' | 'verbose'; text: string; peer?: SshEventPeer }
+  | { kind: 'channel_opened'; user: string; channelType: ChannelType; peer?: SshEventPeer }
+  | { kind: 'session_fatal'; user: string; text: string; peer?: SshEventPeer }
   | { kind: 'sftp_log'; user: string; program: 'sftp-server' | 'internal-sftp'; pid: number; text: string }
   | {
       kind: 'channel_closed';

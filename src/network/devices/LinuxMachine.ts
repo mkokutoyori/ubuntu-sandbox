@@ -51,7 +51,7 @@ import { journalctlHost } from './linux/journal/LinuxJournalctlHost';
 import { runJournalctl } from './linux/journal/JournalctlTool';
 import { cursorOf } from './linux/journal/JournalRecord';
 import { SyslogStreamFraming } from './linux/syslog/SyslogStreamFraming';
-import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
+import { RSYSLOG_SEEDED_FILES, RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
@@ -217,7 +217,7 @@ import {
 } from '../protocols/telnet/LinuxTelnetServerContext';
 import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
 import type { SshDaemonPort } from '../protocols/ssh/server/SshDaemonPort';
-import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
+import { validateSshdConfig } from '../protocols/ssh/server/SshdConfigValidator';
 import {
   checkSshdCriticalFiles, checkCommandDependencies, canonicalBinPath,
   commandNotFoundMessage,
@@ -1560,6 +1560,10 @@ export abstract class LinuxMachine extends EndHost
     for (const [chemin, contenu] of RSYSLOG_SEEDED_FILES) {
       if (!vfs.exists(chemin)) vfs.writeFile(chemin, contenu, 0, 0, 0o022, true);
     }
+    if (!vfs.exists(RSYSLOG_ROTATE_PATH)) {
+      vfs.writeFile(RSYSLOG_ROTATE_PATH, RSYSLOG_ROTATE_DEBIAN, 0, 0, 0o022, true);
+      vfs.chmod(RSYSLOG_ROTATE_PATH, 0o755);
+    }
     this.rsyslogService = new LinuxRsyslogService({
       lireFichier: (p) => vfs.readFile(p) ?? null,
       ecrireLigne: (p, l) => this.executor.logMgr.appendLine(p, l),
@@ -2023,6 +2027,7 @@ export abstract class LinuxMachine extends EndHost
                 identity: { pid: process.pid, processName: 'sshd' },
                 onAccept: (socket) => {
                   this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
+                  this.openSshConnectionProcess(socket.remoteIp, socket.remotePort);
                   this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
                 },
               }, address);
@@ -2061,6 +2066,7 @@ export abstract class LinuxMachine extends EndHost
             identity: { pid, processName: 'sshd' },
             onAccept: (socket) => {
               this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
+              this.openSshConnectionProcess(socket.remoteIp, socket.remotePort);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
           }, addr);
@@ -2283,6 +2289,37 @@ export abstract class LinuxMachine extends EndHost
     this.sshWirePeers.add(fromIp);
   }
 
+  private readonly sshConnectionPids = new Map<string, number>();
+
+  private sshConnectionKey(ip: string, port: number): string {
+    return `${ip}:${port}`;
+  }
+
+  private openSshConnectionProcess(ip: string, port: number): void {
+    const master = this.executor.processMgr.list({ comm: 'sshd' }).find((p) => p.ppid === 1)?.pid ?? 1;
+    const process = this.executor.processMgr.spawn({
+      command: 'sshd: [accepted]', comm: 'sshd', user: 'root', uid: 0, gid: 0, ppid: master, tty: '?',
+    });
+    this.sshConnectionPids.set(this.sshConnectionKey(ip, port), process.pid);
+  }
+
+  sshConnectionPid(ip: string, port: number | undefined): number | undefined {
+    return port === undefined ? undefined : this.sshConnectionPids.get(this.sshConnectionKey(ip, port));
+  }
+
+  sshConnectionAuthenticated(ip: string, port: number | undefined, user: string): void {
+    const pid = this.sshConnectionPid(ip, port);
+    const process = pid === undefined ? undefined : this.executor.processMgr.get(pid);
+    if (process !== undefined) process.command = `sshd: ${user} [priv]`;
+  }
+
+  endSshConnectionProcess(ip: string, port: number | undefined): void {
+    const pid = this.sshConnectionPid(ip, port);
+    if (pid === undefined || port === undefined) return;
+    this.sshConnectionPids.delete(this.sshConnectionKey(ip, port));
+    if (!this.sshSessionsByPid.has(pid)) this.executor.processMgr.exit(pid, 0);
+  }
+
   sshArrivedOverWire(fromIp: string): boolean {
     return this.sshWirePeers.has(fromIp);
   }
@@ -2367,7 +2404,10 @@ export abstract class LinuxMachine extends EndHost
       this.executor.lastlog.record(user, fromIp, session.tty);
       const sshdMasterPid = this.executor.processMgr.list({ comm: 'sshd' })
         .find((p) => p.ppid === 1)?.pid ?? 1;
-      const sshdChild = this.executor.processMgr.spawn({
+      const adoptedPid = this.sshConnectionPid(fromIp, peerPort);
+      const adopted = adoptedPid === undefined ? undefined : this.executor.processMgr.get(adoptedPid);
+      if (adopted !== undefined) adopted.command = `sshd: ${user} [priv]`;
+      const sshdChild = adopted ?? this.executor.processMgr.spawn({
         command: `sshd: ${user} [priv]`,
         comm: 'sshd',
         user: 'root', uid: 0, gid: 0,

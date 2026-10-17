@@ -50,6 +50,14 @@ describe('Scénario 1 — chage expiration + cascade Fail2ban', () => {
       const { client, server } = buildLab();
       await server.executeCommand('chage -M 1 -d 2000-01-01 alice');
       const out = await client.executeCommand('sshpass -p wonderland ssh alice@10.0.0.2 whoami');
+      expect(out).toMatch(/You are required to change your password immediately \(password expired\)/);
+      expect(out).not.toMatch(/^alice\s*$/m);
+    });
+
+    it('un compte expiré (chage -E) donne le message de compte de pam_unix, pas celui du mot de passe', async () => {
+      const { client, server } = buildLab();
+      await server.executeCommand('chage -E 2000-01-02 alice');
+      const out = await client.executeCommand('sshpass -p wonderland ssh alice@10.0.0.2 whoami');
       expect(out).toMatch(/Your account has expired; please contact your system administrator/);
       expect(out).not.toMatch(/^alice\s*$/m);
     });

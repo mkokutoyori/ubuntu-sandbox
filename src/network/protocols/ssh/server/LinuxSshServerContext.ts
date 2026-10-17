@@ -34,16 +34,12 @@ import {
   type SshServerConfig,
 } from './ISshServerContext';
 import {
-  parseSshdConfig,
-  type SshdConfig,
-} from './SshSshdConfig';
-import {
   SshServerEventBus,
   type ISshServerEventBus,
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
 import { SshdPam } from './SshdPam';
-import { SshdServerConfig } from './SshdServerConfig';
+import { SshdServerConfig, handlerConfigOf } from './SshdServerConfig';
 import type {
   DirectTcpipOutcome, DirectTcpipRequest, HostCertificateBinding, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
 } from './ISshServerContext';
@@ -116,7 +112,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
-  readonly sshdConfig: SshdConfig;
+  readonly sshdConfig: SshdServerConfig;
   readonly events: ISshServerEventBus;
   readonly fail2ban: Fail2banAgent | null;
   private readonly syslogger: SshSyslogger | null;
@@ -149,12 +145,16 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.sshdConfig = this.loadOrGenerateSshdConfig();
     this.config = Object.freeze({
       ...DEFAULT_SSH_SERVER_CONFIG,
-      ...this.sshdConfig,
-      permitRootLogin: this.sshdConfig.permitRootLogin !== 'no',
+      ...handlerConfigOf(this.sshdConfig),
       ...config,
     });
     this.auth = this.buildAuthContext();
     this.events = opts.bus ?? new SshServerEventBus();
+    this.events.on('auth_success', (event) => {
+      if (event.kind === 'auth_success' && this.device instanceof LinuxMachine) {
+        this.device.sshConnectionAuthenticated(event.ip, event.port, event.user);
+      }
+    });
     this.device = opts.device ?? null;
     this.rootLoginOverride = config.permitRootLogin;
 
@@ -162,7 +162,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.syslogger = (opts.enableSyslog ?? true)
       ? new SshSyslogger(this.vfs, this.events, {
           hostname: this.hostnameSource,
-          port: this.sshdConfig.listenPort,
+          port: this.sshdConfig.ports[0] ?? 22,
           // The pid of the REAL sshd in this machine's process table, not
           // a fresh random one: `ps`, `sshd[<pid>]` in auth.log and
           // `journalctl -u ssh` describe one daemon and must name it the
@@ -173,6 +173,7 @@ export class LinuxSshServerContext implements ISshServerContext {
           // `journalctl -u sshd`, not just in /var/log/auth.log.
           logMgr: this.executor?.logMgr,
           logLevel: () => this.effectiveSshdServerConfig().logLevel,
+          pidFor: (ip, port) => this.connectionPid(ip, port),
         })
       : null;
 
@@ -479,8 +480,8 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   /** Banner text shown before authentication (SSH-07-R8). */
   getBanner(): string | null {
-    if (!this.sshdConfig.banner) return null;
-    return this.vfs.readFile(this.sshdConfig.banner);
+    if (!this.sshdConfig.bannerPath) return null;
+    return this.vfs.readFile(this.sshdConfig.bannerPath);
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
@@ -943,11 +944,11 @@ export class LinuxSshServerContext implements ISshServerContext {
     return SshHostKey.fromFiles(pub.trim().split(/\s+/)[1] ?? pub.trim(), priv.trim(), 'ssh-ed25519');
   }
 
-  private loadOrGenerateSshdConfig(): SshdConfig {
-    if (this.vfs.readFile(SSHD_CONFIG_PATH)) return parseSshdConfig(readSshdConfig(this.vfs));
+  private loadOrGenerateSshdConfig(): SshdServerConfig {
+    if (this.vfs.readFile(SSHD_CONFIG_PATH)) return SshdServerConfig.parse(readSshdConfig(this.vfs));
     this.vfs.writeFile(SSHD_CONFIG_PATH, UBUNTU_2204_SSHD_CONFIG, 0, 0, 0o022);
     this.vfs.chmod(SSHD_CONFIG_PATH, 0o644);
-    return parseSshdConfig(readSshdConfig(this.vfs));
+    return SshdServerConfig.parse(readSshdConfig(this.vfs));
   }
 
   private pamAuth: SshdPam | null = null;
@@ -956,7 +957,11 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (this.executor === null || !this.effectiveSshdServerConfig().usePam) return null;
     this.pamAuth ??= new SshdPam(
       this.executor.pam,
-      () => ({ tag: 'sshd', pid: (this.device as { sshdPid?: () => number } | null)?.sshdPid?.(), unit: 'ssh' }),
+      (peer) => ({
+        tag: 'sshd',
+        pid: this.connectionPid(peer.ip, peer.port) ?? (this.device as { sshdPid?: () => number } | null)?.sshdPid?.(),
+        unit: 'ssh',
+      }),
       () => this.permitEmptyPasswords(),
       (user) => this.userManager.getUser(user) !== undefined,
       () => this.rootMayLogIn('password'),
@@ -972,6 +977,11 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   connectionEnded(fromIp: string, port: number | undefined): void {
     this.pamAuth?.end({ ip: fromIp, port });
+    if (this.device instanceof LinuxMachine) this.device.endSshConnectionProcess(fromIp, port);
+  }
+
+  private connectionPid(ip: string, port: number | undefined): number | undefined {
+    return this.device instanceof LinuxMachine ? this.device.sshConnectionPid(ip, port) : undefined;
   }
 
   private buildAuthContext(): ISshAuthContext {

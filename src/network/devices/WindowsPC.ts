@@ -26,6 +26,7 @@ import { sftpProgramOf } from '@/network/protocols/ssh/server/SftpServicePlan';
 import { SshUserContext } from '@/network/protocols/ssh/SshUserContext';
 import { guardedFileSystem, principalOf } from './windows/WindowsFsAccess';
 import { posixClientFlags, seedWindowsOpenSshFiles } from './windows/WindowsOpenSshFiles';
+import { keygenAgentOf } from '@/network/protocols/ssh/keygen/KeygenAgentPort';
 import { missingIdentityWarnings, resolveClientInvocation, typedIdentityFiles, splitSshCommandLine, windowsClientLayout } from '@/network/protocols/ssh/client/SshClientInvocation';
 import { sshClientAlgorithms, sshClientAuthentication } from '@/network/protocols/ssh/SshConnectOptions';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
@@ -2648,12 +2649,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
         isDirectory: (path: string) => this.fs.isDirectory(this.fs.normalizePath(path, this.cwd)),
         makePrivateDirectory: (path: string) => { this.fs.mkdirp(this.fs.normalizePath(path, this.cwd)); },
+        remove: (path: string) => { this.fs.deleteFile(this.fs.normalizePath(path, this.cwd)); },
       },
       sshDir: `${this.userProfileDir()}/.ssh`,
       hostKeyDir: 'C:\\ProgramData\\ssh',
       user: this.userMgr.currentUser,
       hostname: this.hostname,
       release: OPENSSH_WINDOWS_8_6,
+      agent: keygenAgentOf(this.sshAgentIfRunning()),
     };
   }
 

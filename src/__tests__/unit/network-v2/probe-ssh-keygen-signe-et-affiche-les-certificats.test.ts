@@ -51,9 +51,9 @@ async function lab(caType = 'ed25519', userType = 'ed25519'): Promise<LinuxPC> {
 const SIGN = 'ssh-keygen -s ~/ca -I alice-key -n alice,deploy ~/user.pub';
 
 describe('ssh-keygen -s', () => {
-  it('TEMOIN: -U sans agent est refuse', async () => {
+  it('TEMOIN: -U sans agent est refuse comme par OpenSSH', async () => {
     const pc = await lab();
-    expect(await pc.executeCommand('ssh-keygen -U -s ~/ca -I id ~/user.pub')).toContain('not simulated');
+    expect(await pc.executeCommand('ssh-keygen -U -s ~/ca -I id ~/user.pub')).toContain('Cannot use public key for CA signature: agent not present');
   }, 60_000);
 
   it('ecrit <cle>-cert.pub et l\'annonce', async () => {

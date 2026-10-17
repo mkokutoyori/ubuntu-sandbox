@@ -586,16 +586,6 @@ pare-feu simule a bien `drop-overlapped-fragment` (defaut disable, non
 active par ce test) et `Ipv4Fragmentation.overlaps`, mais aucune detection
 d'anomalie de fragments par defaut. Le test reste rouge.
 
-### [ssh] deux modeles de `sshd_config` coexistent encore
-`SshSshdConfig` (celui du contexte serveur, de Windows et de la
-validation `sshd -t`) et `SshdServerConfig` (valeurs OpenSSH, blocs
-`Match`, `sshd -T`, politique de connexion) lisent le meme fichier.
-`PermitRootLogin` est desormais une seule valeur OpenSSH dans les deux
-(defaut `prohibit-password`, ecrit tel quel dans l'image) ; les autres
-directives restent lues deux fois. Fermer le doublon demande de faire
-porter au contexte serveur le seul `SshdServerConfig` et de migrer ses
-lecteurs (`config.*` du gestionnaire, WindowsSshServerContext, validation).
-
 ### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
 `echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
 le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
@@ -1372,85 +1362,6 @@ client n'est enregistre aupres d'une session) et `Uptime: 00:00:03`
 ici). Les ecrire avec des zeros annoncerait une mesure qui n'a pas lieu.
 
 
-### [ssh] `ssh` entre deux hotes ne traverse PAS le fil
-**Constat.** `ssh alice@10.0.2.10 whoami` lance par `executeCommand`
-rend `alice` sans qu'AUCUNE trame n'atteigne le serveur. Mesure, par le
-compteur du cable : entre deux hotes separes par un routeur, le meme
-`ssh` ne fait franchir au routeur ni plus ni moins de trames que rien
-du tout.
-
-**Ce qui a ete FERME (lot « le verdict de transit vient du fil »).** Le
-client ne rejoue plus les listes de transit. Il demandait a
-`transitTcpAclVerdict` (`HostLookup.ts`) si un SYN passerait — une
-SECONDE implantation de « ce paquet passerait-il ? », a cote de
-`evaluateForDataPlane`. Il emet desormais un vrai SYN sans connexion
-(`TcpStack.scanProbe`, celui des balayages `nmap`) et lit ce qui
-revient. `transitTcpAclVerdict` et `transitAckAclVerdict` sont
-supprimes ; il ne reste du parcours que `transitUdpAclVerdict`, lu par
-`traceroute` seul, dont la sonde UDP n'a pas encore d'equivalent sans
-connexion. La sonde `probe-ssh-verdict-de-transit-sur-le-fil` tient le
-resultat, et le note : les quatre verdicts etaient DEJA justes — ce qui
-manquait, c'est qu'ils soient subis.
-
-**Puis (lot « le client entend l'ICMP du fil ») la DERNIERE porte
-re-derivee cote client est tombee.** `inboundFirewallVerdict` atteignait
-l'`iptables` de la machine distante et tranchait AVANT la sonde du fil :
-un `ssh` bloque par une liste de ROUTEUR se faisait donc juger par un
-pare-feu qu'il n'avait pas atteint, et la consultation INCREMENTAIT ses
-compteurs pour une trame jamais recue. La cause etait en amont — la
-sonde apatride etait SOURDE a l'ICMP (`onIcmpUnreachable` ne parcourait
-que `sockets`, or `scanProbe` n'en ouvre aucun), si bien que tout refus
-se presentait comme un silence. La sonde entend maintenant les deux
-classes de code, et le verdict du client vient du fil seul. Restent les
-gates sshd re-derivees (`Match Address`, forced-command, banner…) et la
-commande distante executee en memoire, ci-dessous.
-
-**La note qui declarait ce rejeu « porteur » etait PERIMEE.** Elle
-affirmait que le chemin `tcpConnectOutcome`/`TcpStack` n'atteignait pas
-`evaluateForDataPlane` du routeur de transit. Remesure, en neutralisant
-`transitTcpAclVerdict` a `permit` : `connectOutcome` rend TOUJOURS
-`prohibited` a travers un routeur `deny ip any any`, alors que `ssh`
-rendait `alice`. Le plan de donnees savait deja refuser ; seul le client
-ne le lui demandait pas.
-
-**Le client reel canonique existe deja : `SshSession` (session/SshSession.ts).**
-Le serveur `SshServerHandler` est un vrai sshd sur TCP (ops JSON
-hello/auth/open_channel/exec sur la socket :22 acceptee) ; `SshSession` en est
-le CLIENT — banniere + host key (`known_hosts`, `strictHostKeyChecking`), auth
-negociee, puis `openExecChannel(cmd).execute()`, `openShellChannel()`,
-`openSftpChannel()`. Le lanceur `sshLauncher` (via `openWireSshConnection`)
-fait DEJA passer `ssh user@host cmd` par `SshSession.openExecChannel().execute()`
-— mesure `ssh-exec-runs-on-the-wire` : la commande coute ses propres trames et
-`whoami` rend l'utilisateur SSH, pas le root du peripherique. `runSshTransportAsync`
-fait DEJA passer scp/sftp avec mot de passe par `SshSession` + `SshSftpChannel`
-(`tryOpenWireSftpFs`). Les fixtures `ssh-lan-fixtures` (`openSshSession`,
-`sshExec`, `openSftpSession`) sont le point d'entree partage ; les gardes
-`ssh-wire-exec` / `ssh-journalctl-tcpdump-coherence` / `sftp-scp-wire-coherence`
-prouvent la coherence trois-vues (ssh/journalctl/tcpdump) et la subissance ACL
-de transit sur ce client.
-
-**Ce qui reste : migrer `LinuxSshClient.runSshClient` (~1555 lignes) sur
-`SshSession`.** C'est le chemin god-mode SYNCHRONE encore appele par la commande
-bash `ssh` (`LinuxCommandExecutor`) et par les shells Cisco/Huawei : il retrouve
-le peripherique pair par `findHostByAddress` puis appelle ses methodes en memoire
-(`machine.executor.execute`, gates sshd re-derivees cote client). Mesure : 274
-fichiers de tests EPINGLENT ce comportement client (lignes `auth.log`,
-forced-command, port/env forwarding, banner, motd, `.bashrc`). Les faire passer
-par `SshServerHandler` deplace ces effets du client vers le serveur et doit
-reproduire chaque sortie a l'octet ; migration incrementale, famille par famille,
-validee lot par lot contre ces 274 fichiers — pas un remplacement d'un bloc.
-
-**La barriere, localisee.** `LinuxCommandExecutor.dispatch` est synchrone
-(`case 'ssh':`), mais la porte asynchrone EXISTE deja et sert `scp`/`sftp` :
-`executeCoreAsync` -> `runScriptContentAsync` -> `dispatchMaybeNetwork` ->
-`networkRunner`, qui sert toute commande declaree `needsNetworkContext`
-dans `commands/net/` (voir `Scp.ts`, dont le `runWithStatus` attend
-`runSshTransportAsync`). Declarer un `ssh` la-bas est donc le chemin, et
-le point de couture dans `runSshClient` est UNIQUE : le bloc
-`execMod.executeWithEnv(effectiveCmd, forwarded)` / `execMod.execute(effectiveCmd)`
-qui suit le calcul de `forwarded` et de `effectiveCmd`. Tout ce qui est
-au-dessus (auth, politique, forwarding, `.bashrc` sous `-t`) reste client.
-
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
 BGP, DHCP et IPsec, et laisse GRE dehors.
@@ -1584,25 +1495,6 @@ de repondre. C'est le comportement d'un vrai FortiGate, mais c'est un
 changement du plan de GESTION et non de la relation interface/port que
 le lot courant referme, et il demande de reprendre les laboratoires qui
 joignent l'administration par une interface WAN.
-
-### [ssh] un mot de passe VIDE ne traverse pas le terminal interactif
-**Constat.** Le compte `admin` d'usine a un mot de passe vide et le
-pare-feu l'accepte — `authenticateAdmin('admin', '')` rend `true`, et
-`ManagementPlane.requiresPasswordChange` existe justement pour ce cas.
-Mais `ssh admin@192.168.1.99` depuis un terminal, en validant une saisie
-vide a l'invite, rend `Permission denied, please try again.`
-
-**Mesure.** Meme laboratoire, deux cas : mot de passe vide → refus ;
-`set password "Secret123"` puis ce mot de passe → la session s'ouvre sur
-l'invite `FGT #`. Le serveur n'est donc pas en cause, son
-`checkPassword` delegue directement a `authenticateAdmin`.
-
-**Report.** Le refus vient du chemin CLIENT (la saisie vide n'est pas
-soumise), qui est commun a toutes les plateformes et non propre au
-pare-feu ; le trancher demande de mesurer d'abord ce que fait la meme
-saisie vers un hote Linux dont le compte n'a pas de mot de passe, sans
-quoi on corrigerait un symptome sur une seule cible.
-
 
 ### [vdom] `set vdom-mode split-vdom` est accepte et se comporte comme multi-vdom
 **Constat.** `vdom-mode` accepte trois valeurs. `no-vdom` et `multi-vdom`
@@ -1925,23 +1817,6 @@ est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
 ## SSH
-
-### [ssh] toutes les lignes du journal portent le PID de l'ECOUTEUR
-Depuis que `pam_unix(sshd:session)` a un seul producteur — le
-syslogger —, les quatre lignes d'une connexion partagent le meme
-`sshd[<pid>]`, celui du processus qui ECOUTE. C'est deja plus juste
-qu'avant, ou `Accepted` portait le PID de l'ecouteur et la ligne pam
-celui de l'enfant : un vrai sshd ecrit les deux depuis le MEME
-processus, l'enfant qui sert la connexion. Ce qui reste faux est
-lequel : il devrait s'agir d'un PID par CONNEXION, pas de celui de
-l'ecouteur.
-**Mesure** : quatre clients, `sshd[22]` partout, alors que le tableau
-des processus porte bien un `sshd: alice [priv]` par session.
-**Report** : le syslogger est construit une fois par machine avec un
-`sshdPid` fixe ; lui faire porter un PID par connexion demande de lui
-passer l'enfant a l'emission, donc de faire voyager cette identite dans
-les evenements du bus — un changement de la forme des evenements, pas
-du format des messages.
 
 ## Couche lien
 

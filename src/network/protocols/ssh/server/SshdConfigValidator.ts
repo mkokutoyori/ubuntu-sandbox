@@ -129,3 +129,13 @@ function diagnoseMatch(argument: string): string | null {
   }
   return null;
 }
+
+export interface SshdConfigValidation {
+  readonly ok: boolean;
+  readonly errors: readonly string[];
+}
+
+export function validateSshdConfig(content: string, path = '/etc/ssh/sshd_config'): SshdConfigValidation {
+  const diagnosis = diagnoseSshdConfig({ readFile: (candidate) => (candidate === path ? content : null) }, path);
+  return { ok: !diagnosis.fatal, errors: [...diagnosis.lines] };
+}

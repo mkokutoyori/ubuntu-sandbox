@@ -39,6 +39,7 @@ export interface SudoAuthorization {
 import type { UserEntry } from './iam/LinuxUserAccount';
 import { AgentProcessTable } from '../../protocols/ssh/agent/AgentProcessTable';
 import { LocalAgentPort, type AgentPort } from '../../protocols/ssh/agent/AgentService';
+import { keygenAgentOf } from '../../protocols/ssh/keygen/KeygenAgentPort';
 import { LinuxCronManager } from './LinuxCronManager';
 import { parseCrontab, validateCrontabContent } from './cron/CrontabParser';
 import { cronAllowed, cronDenialMessage } from './cron/CronPermissions';
@@ -2487,6 +2488,7 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
       release: OPENSSH_UBUNTU_22_04,
       zoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
+      agent: keygenAgentOf(this.agentPort()),
     });
   }
 

@@ -8,13 +8,17 @@ import {
   SSH_CERT_TYPE_USER,
   certificateLine,
   certificateTypeName,
-  certify,
+  certifyWith,
+  type CertificateSigner,
   formatCertificateValidity,
   parseCertificateLine,
   type CertificateOption,
   type SshCertificate,
 } from '../certificate/SshCertificate';
-import { formatAbsoluteTime, parseAbsoluteTime, type ZoneOffset } from './AbsoluteTime';
+import { pkcs11Problem } from './TokenDialogues';
+import { signWithAlgorithm } from '../auth/UserauthSignature';
+import { agentSignatureFlags } from '../agent/AgentWire';
+import { parseAbsoluteTime, type ZoneOffset } from './AbsoluteTime';
 import { failureText, loadPrivateKey, publicKeyOfFile } from './KeyFileDialogues';
 import { print, printError, type KeygenDialogue, type KeygenRequest, type KeygenStep, type SshKeygenHost } from './KeygenTypes';
 
@@ -171,6 +175,24 @@ function algorithmMatches(requested: string, key: SshPublicKey): boolean {
     || (requested === 'ecdsa' && key.algorithm.startsWith('ecdsa-'));
 }
 
+function loadAgentAuthority(
+  host: SshKeygenHost, caPath: string,
+): { readonly key: SshPublicKey; readonly sign: CertificateSigner } | string {
+  const found = publicKeyOfFile(host, caPath);
+  if (found === null) {
+    return `Cannot load CA public key ${caPath}: ${host.store.read(caPath) === null && host.store.read(`${caPath}.pub`) === null ? NO_SUCH_FILE : 'invalid format'}`;
+  }
+  const key = sshPublicKeyFromBlob(base64ToBytes(found.line.split(/\s+/)[1]));
+  if (key === null) return `Cannot load CA public key ${caPath}: invalid format`;
+  const agent = host.agent;
+  if (agent === undefined) return 'Cannot use public key for CA signature: agent not present';
+  const blob = bytesToBase64(sshPublicKeyBlob(key));
+  const held = agent.identities().find((entry) => bytesToBase64(entry.blob) === blob);
+  if (held === undefined) return `CA key ${caPath} not found in agent`;
+  const sign: CertificateSigner = (data, algorithm) => agent.sign(held.blob, data, agentSignatureFlags(algorithm));
+  return { key, sign };
+}
+
 function* fatal(message: string): KeygenDialogue {
   yield printError(message);
   return 255;
@@ -201,13 +223,29 @@ export function* certifyDialogue(request: KeygenRequest, host: SshKeygenHost): K
   if (request.identity === undefined) return yield* fatal('Must specify key id (-I) when certifying');
   const options = certificateOptions(request.signerOptions, request.hostCertificate);
   if (typeof options === 'string') return yield* fatal(options);
-  if (request.preferAgent) return yield* fatal('ssh-keygen: -U: certificates signed by the agent are not simulated');
   const caPath = request.caKeyPath ?? '';
-  const material = host.store.read(caPath);
-  if (material === null) return yield* fatal(`Load key "${caPath}": ${NO_SUCH_FILE}`);
-  const loaded = yield* loadPrivateKey(host, material, request.oldPassphrase, 'Enter passphrase: ');
-  if (loaded.kind !== 'loaded') return yield* fatal(`Load key "${caPath}": ${failureText(loaded)}`);
-  const caKey = loaded.value.key;
+  if (request.pkcs11Provider !== undefined) {
+    const publicCa = publicKeyOfFile(host, caPath);
+    if (publicCa === null) return yield* fatal(`Couldn't load CA public key "${caPath}": ${host.store.read(caPath) === null && host.store.read(`${caPath}.pub`) === null ? NO_SUCH_FILE : 'invalid format'}`);
+    yield* pkcs11Problem(host, request.pkcs11Provider);
+    return yield* fatal('cannot read public key from pkcs11');
+  }
+  let caKey: SshPublicKey;
+  let signWith: CertificateSigner;
+  if (request.preferAgent) {
+    const agentCa = loadAgentAuthority(host, caPath);
+    if (typeof agentCa === 'string') return yield* fatal(agentCa);
+    caKey = agentCa.key;
+    signWith = agentCa.sign;
+  } else {
+    const material = host.store.read(caPath);
+    if (material === null) return yield* fatal(`Load key "${caPath}": ${NO_SUCH_FILE}`);
+    const loaded = yield* loadPrivateKey(host, material, request.oldPassphrase, 'Enter passphrase: ');
+    if (loaded.kind !== 'loaded') return yield* fatal(`Load key "${caPath}": ${failureText(loaded)}`);
+    const privateKey = loaded.value.key;
+    caKey = privateKey;
+    signWith = (data, algorithm) => signWithAlgorithm(privateKey, algorithm, data);
+  }
   if (request.type !== undefined && !algorithmMatches(request.type, caKey)) {
     return yield* fatal(`CA key type ${caKey.algorithm} doesn't match specified ${request.type}`);
   }
@@ -223,11 +261,12 @@ export function* certifyDialogue(request: KeygenRequest, host: SshKeygenHost): K
     if (found === null) return yield* fatal(`load pubkey "${target}": ${host.store.read(target) === null && host.store.read(`${target}.pub`) === null ? NO_SUCH_FILE : 'invalid format'}`);
     const subject = sshPublicKeyFromBlob(base64ToBytes(found.line.split(/\s+/)[1]));
     if (subject === null) return yield* fatal(`load pubkey "${target}": invalid format`);
-    const certificate = certify({
+    const certificate = certifyWith({
       subject, serial: serial.serial, type: request.hostCertificate ? SSH_CERT_TYPE_HOST : SSH_CERT_TYPE_USER,
       keyId: request.identity, principals, validAfter: validity.from, validBefore: validity.to,
       critical: options.critical, extensions: options.extensions,
-    }, caKey, request.type, systemRandom);
+    }, caKey, request.type, systemRandom, signWith);
+    if (certificate === null) return yield* fatal(`Couldn't certify ${target} via agent: agent refused operation`);
     const output = `${target.endsWith('.pub') ? target.slice(0, -'.pub'.length) : target}-cert.pub`;
     const failure = host.store.write(output, `${certificateLine(certificate, found.comment)}\n`, false);
     if (failure !== null) return yield* fatal(`Unable to save public key to ${output}: ${failure}`);

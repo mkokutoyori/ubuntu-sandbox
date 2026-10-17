@@ -8,13 +8,6 @@ const KEYGEN_OPTSTRING = '+ABHKLQUXceghiklopquvyC:D:E:F:I:M:N:O:P:R:V:Y:Z:a:b:f:
 const UINT32_MAX = 0xffffffff;
 const INT_MAX = 0x7fffffff;
 
-const UNSIMULATED_OPTIONS: Readonly<Record<string, string>> = {
-  D: 'PKCS#11 tokens',
-  K: 'FIDO authenticators',
-  M: 'DH moduli',
-  w: 'FIDO authenticators',
-  X: 'DH moduli',
-};
 
 const FORMATS: Readonly<Record<string, ConversionFormat>> = {
   rfc4716: 'RFC4716',
@@ -23,7 +16,7 @@ const FORMATS: Readonly<Record<string, ConversionFormat>> = {
   pem: 'PEM',
 };
 
-function strtonum(text: string, max: number): { value: number } | { error: string } {
+export function strtonum(text: string, max: number): { value: number } | { error: string } {
   if (!/^\s*[-+]?\d+$/.test(text)) return { error: 'invalid' };
   const value = Number.parseInt(text, 10);
   if (value < 1) return { error: 'too small' };
@@ -39,7 +32,7 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
     operands, signerOptions,
     all: false, bubblebabble: false, changeComment: false, changePassphrase: false, convertFrom: false,
     convertTo: false, genericRecord: false, hashHosts: false, fingerprint: false, hash: 'sha256',
-    printPublic: false, quiet: false, verbose: false, hostCertificate: false, showCertificate: false, preferAgent: false,
+    printPublic: false, quiet: false, verbose: false, hostCertificate: false, showCertificate: false, preferAgent: false, downloadSecurityKeys: false,
     generateRevocationList: false, updateRevocationList: false, checkRevocationList: false,
   };
   const given = new Set<string>();
@@ -52,10 +45,6 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
     if (option.kind !== 'option') continue;
     const value = option.argument ?? '';
     given.add(option.letter);
-    const unsimulated = UNSIMULATED_OPTIONS[option.letter];
-    if (unsimulated !== undefined) {
-      return { output: `ssh-keygen: -${option.letter}: ${unsimulated} are not simulated`, exitCode: 255 };
-    }
     switch (option.letter) {
       case 'A': request.all = true; break;
       case 'B': request.bubblebabble = true; break;
@@ -84,6 +73,13 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
       case 'Q': request.checkRevocationList = true; break;
       case 'L': request.showCertificate = true; break;
       case 'U': request.preferAgent = true; break;
+      case 'K': request.downloadSecurityKeys = true; break;
+      case 'M':
+        if (value !== 'generate' && value !== 'screen') return { output: `Unsupported moduli option ${value}`, exitCode: 255 };
+        request.moduliOperation = value;
+        break;
+      case 'D': request.pkcs11Provider = value; break;
+      case 'w': request.securityKeyProvider = value; break;
       case 'V': request.validity = value; break;
       case 'z': request.serial = value; break;
       case 'O': signerOptions.push(value); break;
@@ -95,7 +91,8 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
       case 'f': request.file = value; break;
       case 'g': request.genericRecord = true; break;
       case 'H': request.hashHosts = true; break;
-      case 'i': request.convertFrom = true; break;
+      case 'i':
+      case 'X': request.convertFrom = true; break;
       case 'l': request.fingerprint = true; break;
       case 'm': {
         const format = FORMATS[value.toLowerCase()];
@@ -120,7 +117,7 @@ export function parseKeygenRequest(args: readonly string[], release: OpenSshRele
   }
   if (request.signOperation === undefined) {
     if (request.caKeyPath !== undefined && operands.length === 0 && !request.generateRevocationList) return usage('Too few arguments.');
-    if (request.caKeyPath === undefined && operands.length > 0 && !request.generateRevocationList && !request.checkRevocationList) return usage('Too many arguments.');
+    if (request.caKeyPath === undefined && operands.length > 0 && !request.generateRevocationList && !request.checkRevocationList && request.moduliOperation === undefined) return usage('Too many arguments.');
   }
   if (request.fingerprint && request.deleteHost !== undefined) return usage('Cannot use -l with -H or -R.');
   return request;

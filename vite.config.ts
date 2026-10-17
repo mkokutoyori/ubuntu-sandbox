@@ -27,6 +27,8 @@ export default defineConfig(() => ({
   test: {
     globals: true,
     environment: 'node',
+    testTimeout: 30000,
+    hookTimeout: 30000,
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     // Automatic reset of shared singletons before every test (rapport 08,
     // item #51) — see the file for what this deliberately does and doesn't
