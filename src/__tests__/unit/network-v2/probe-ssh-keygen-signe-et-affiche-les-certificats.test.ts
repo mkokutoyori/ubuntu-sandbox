@@ -189,3 +189,15 @@ describe('ssh-keygen -s', () => {
     expect(await pc.executeCommand('ssh-keygen -L -f ~/user.pub; echo "rc=$?"')).toContain('/home/user/user.pub:1 is not a certificate\nrc=1');
   }, 60_000);
 });
+
+describe('ssh-keygen -l sur un certificat', () => {
+  it('ecrit l\'empreinte du certificat, pas celle de la cle, avec (TYPE-CERT)', async () => {
+    const pc = await lab();
+    await pc.executeCommand(SIGN);
+    const line = (await pc.executeCommand('ssh-keygen -l -f ~/user-cert.pub')).trim();
+    const plain = (await pc.executeCommand('ssh-keygen -l -f ~/user.pub')).trim();
+
+    expect(line).toMatch(/^256 SHA256:[A-Za-z0-9+/]{43} alice@lab \(ED25519-CERT\)$/);
+    expect(line.split(' ')[1]).not.toBe(plain.split(' ')[1]);
+  }, 60_000);
+});

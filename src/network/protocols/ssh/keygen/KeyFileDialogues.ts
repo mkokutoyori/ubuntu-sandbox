@@ -16,6 +16,7 @@ import {
   type SshPublicKey,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { sshfpRecords } from '../SshfpRecord';
+import { parseCertificateLine } from '../certificate/SshCertificate';
 import { publicKeyFromPkcs1, publicKeyFromSpki, pemArmour, pemBody, publicKeySpki, rsaPublicKeyPkcs1 } from './SshPublicKeyDer';
 import { print, type KeygenDialogue, type KeygenRequest, type KeygenStep, type SshKeygenHost } from './KeygenTypes';
 
@@ -149,6 +150,15 @@ export function* fingerprintDialogue(request: KeygenRequest, host: SshKeygenHost
   if (text === null && sibling === null) {
     yield print(`ssh-keygen: ${target}: No such file or directory`);
     return 255;
+  }
+  const presented = text === null ? null : parseCertificateLine(text.split('\n')[0] ?? '');
+  if (presented !== null) {
+    const { certificate, comment } = presented;
+    const subjectLine = `${certificate.subject.algorithm} ${bytesToBase64(sshPublicKeyBlob(certificate.subject))}`;
+    const digest = request.bubblebabble ? null : keygenBlobDigest(bytesToBase64(certificate.blob), request.hash);
+    if (digest === null) return 255;
+    yield print(`${keygenKeyFacts(subjectLine).bits} ${digest} ${comment === '' ? 'no comment' : comment} (${KEY_TYPE_LABEL(certificate.subject.algorithm)}-CERT)`);
+    return 0;
   }
   const single = publicKeyOfFile(host, target);
   if (single !== null) return yield* printFingerprint(single.line, single.comment, request);
