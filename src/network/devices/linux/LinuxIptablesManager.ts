@@ -22,6 +22,7 @@ import {
   IPAddress, IPv6Address, SubnetMask,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE,
 } from '../../core/types';
+import { rejectTypeOf } from '../../core/IcmpErrors';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -1137,10 +1138,35 @@ export class LinuxIptablesManager {
     if (r.target && !VALID_TARGETS.has(r.target) && !table.chains.has(r.target)) {
       return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     }
-    const natErr = this.natTargetChainError(table, cn, r.target, 'RULE_APPEND');
+    const natErr = this.natTargetChainError(table, cn, r.target, 'RULE_APPEND')
+      ?? this.tcpResetError(r, cn, 'RULE_APPEND');
     if (natErr) return { output: natErr, exitCode: 4 };
     ch.rules.push(r);
     return { output: '', exitCode: 0 };
+  }
+
+  private get banner(): string {
+    return `${this.family === 6 ? 'ip6tables' : 'iptables'} v1.8.7 (nf_tables)`;
+  }
+
+  private rejectWithError(rule: IptablesRule): string | null {
+    if (rule.target !== 'REJECT') return null;
+    const argument = rule.targetOptions['--reject-with'];
+    if (argument === undefined) return null;
+    if (argument === '') return `${this.banner}: option "--reject-with" requires an argument`;
+    const type = rejectTypeOf(this.family, argument);
+    if (type === null) return `${this.banner}: unknown reject type "${argument}"`;
+    rule.targetOptions['--reject-with'] = type.name;
+    return null;
+  }
+
+  private tcpResetError(
+    rule: IptablesRule, chainName: string, op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
+  ): string | null {
+    const argument = rule.target === 'REJECT' ? rule.targetOptions['--reject-with'] : undefined;
+    if (argument === undefined || rejectTypeOf(this.family, argument)?.code !== null) return null;
+    const onlyTcp = !rule.negProtocol && protocolNumberOf(rule.protocol) === IP_PROTO_TCP;
+    return onlyTcp ? null : `${this.banner}:  ${op} failed (Invalid argument): rule in chain ${chainName}`;
   }
 
   /**
@@ -1207,7 +1233,8 @@ export class LinuxIptablesManager {
 
     const r = this.parseRule(ruleArgs);
     if (typeof r === 'string') return { output: r, exitCode: 1 };
-    const natErrI = this.natTargetChainError(table, cn, r.target, 'RULE_INSERT');
+    const natErrI = this.natTargetChainError(table, cn, r.target, 'RULE_INSERT')
+      ?? this.tcpResetError(r, cn, 'RULE_INSERT');
     if (natErrI) return { output: natErrI, exitCode: 4 };
     ch.rules.splice(Math.min(pos - 1, ch.rules.length), 0, r);
     return { output: '', exitCode: 0 };
@@ -1224,7 +1251,8 @@ export class LinuxIptablesManager {
     if (isNaN(num) || num < 1 || num > ch.rules.length) return { output: 'iptables: Index of replacement too big.', exitCode: 1 };
     const r = this.parseRule(args.slice(2));
     if (typeof r === 'string') return { output: r, exitCode: 1 };
-    const natErrR = this.natTargetChainError(table, cn, r.target, 'RULE_REPLACE');
+    const natErrR = this.natTargetChainError(table, cn, r.target, 'RULE_REPLACE')
+      ?? this.tcpResetError(r, cn, 'RULE_REPLACE');
     if (natErrR) return { output: natErrR, exitCode: 4 };
     ch.rules[num - 1] = r;
     return { output: '', exitCode: 0 };
@@ -1573,6 +1601,8 @@ export class LinuxIptablesManager {
               return `iptables v1.8.7: Bad IP address "${v}"`;
             }
           }
+          const rejectError = this.rejectWithError(rule);
+          if (rejectError !== null) return rejectError;
           continue;
         }
 

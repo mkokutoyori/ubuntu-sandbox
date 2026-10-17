@@ -59,6 +59,39 @@ export const ICMPV6_UNREACH_PORT = 4;
 export const ICMPV6_UNREACH_POLICY_FAILED = 5;
 export const ICMPV6_UNREACH_REJECT_ROUTE = 6;
 
+export interface RejectType {
+  readonly name: string;
+  readonly alias: string;
+  readonly code: number | null;
+}
+
+export const IPTABLES_REJECT_TYPES: readonly RejectType[] = [
+  { name: 'icmp-net-unreachable', alias: 'net-unreach', code: ICMP_UNREACH_NET },
+  { name: 'icmp-host-unreachable', alias: 'host-unreach', code: ICMP_UNREACH_HOST },
+  { name: 'icmp-proto-unreachable', alias: 'proto-unreach', code: ICMP_UNREACH_PROTO },
+  { name: 'icmp-port-unreachable', alias: 'port-unreach', code: ICMP_UNREACH_PORT },
+  { name: 'icmp-net-prohibited', alias: 'net-prohib', code: ICMP_UNREACH_NET_PROHIBITED },
+  { name: 'icmp-host-prohibited', alias: 'host-prohib', code: ICMP_UNREACH_HOST_PROHIBITED },
+  { name: 'tcp-reset', alias: 'tcp-rst', code: null },
+  { name: 'icmp-admin-prohibited', alias: 'admin-prohib', code: ICMP_UNREACH_ADMIN_PROHIBITED },
+];
+
+export const IP6TABLES_REJECT_TYPES: readonly RejectType[] = [
+  { name: 'icmp6-no-route', alias: 'no-route', code: ICMPV6_UNREACH_NO_ROUTE },
+  { name: 'icmp6-adm-prohibited', alias: 'adm-prohibited', code: ICMPV6_UNREACH_ADMIN_PROHIBITED },
+  { name: 'icmp6-addr-unreachable', alias: 'addr-unreach', code: ICMPV6_UNREACH_ADDRESS },
+  { name: 'icmp6-port-unreachable', alias: 'port-unreach', code: ICMPV6_UNREACH_PORT },
+  { name: 'tcp-reset', alias: 'tcp-reset', code: null },
+  { name: 'icmp6-policy-fail', alias: 'policy-fail', code: ICMPV6_UNREACH_POLICY_FAILED },
+  { name: 'icmp6-reject-route', alias: 'reject-route', code: ICMPV6_UNREACH_REJECT_ROUTE },
+];
+
+export function rejectTypeOf(family: 4 | 6, argument: string): RejectType | null {
+  const lowered = argument.toLowerCase();
+  const table = family === 6 ? IP6TABLES_REJECT_TYPES : IPTABLES_REJECT_TYPES;
+  return table.find((type) => type.name.startsWith(lowered) || type.alias.startsWith(lowered)) ?? null;
+}
+
 export const ICMPV6_EXCEEDED_HOP_LIMIT = 0;
 export const ICMPV6_EXCEEDED_REASSEMBLY = 1;
 

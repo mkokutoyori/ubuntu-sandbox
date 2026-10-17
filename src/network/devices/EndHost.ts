@@ -114,20 +114,16 @@ import {
   mayGenerateICMPv6Error,
   ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
   ICMP_UNREACH_NET,
-  ICMP_UNREACH_HOST,
   ICMP_UNREACH_PROTO,
   ICMP_UNREACH_PORT,
-  ICMP_UNREACH_NET_PROHIBITED,
-  ICMP_UNREACH_HOST_PROHIBITED,
-  ICMP_UNREACH_ADMIN_PROHIBITED,
   ICMP_UNREACH_FRAG_NEEDED,
   ICMPV6_UNREACH_ADDRESS,
-  ICMPV6_UNREACH_ADMIN_PROHIBITED,
   ICMPV6_UNREACH_PORT,
   ICMPV6_EXCEEDED_REASSEMBLY,
   icmp6ReportOf,
   ICMPV6_PARAMPROB_HEADER_FIELD,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
+  rejectTypeOf,
   udpSocketErrorFor,
   udpSocketErrorForV6,
   type Icmp6ErrorReport,
@@ -3410,23 +3406,24 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', this.resolveRejectCode(rejectWith));
+    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', this.rejectCode(4, rejectWith));
   }
 
-  /** Map `--reject-with` to the ICMP Destination Unreachable code it selects. */
-  private resolveRejectCode(rejectWith: string | null): number {
-    switch (rejectWith) {
-      case 'icmp-net-unreachable': return ICMP_UNREACH_NET;
-      case 'icmp-host-unreachable': return ICMP_UNREACH_HOST;
-      case 'icmp-port-unreachable': return ICMP_UNREACH_PORT;
-      case 'icmp-proto-unreachable': return ICMP_UNREACH_PROTO;
-      case 'icmp-net-prohibited': return ICMP_UNREACH_NET_PROHIBITED;
-      case 'icmp-host-prohibited': return ICMP_UNREACH_HOST_PROHIBITED;
-      case 'icmp-admin-prohibited': return ICMP_UNREACH_ADMIN_PROHIBITED;
-      // Real iptables: a bare `-j REJECT` with no `--reject-with` defaults
-      // to icmp-port-unreachable, not admin-prohibited.
-      default: return ICMP_UNREACH_PORT;
+  private rejectCode(family: 4 | 6, rejectWith: string | null): number {
+    const code = rejectWith === null ? null : rejectTypeOf(family, rejectWith)?.code ?? null;
+    return code ?? (family === 6 ? ICMPV6_UNREACH_PORT : ICMP_UNREACH_PORT);
+  }
+
+  private sendIpv6Reject(portName: string, offendingPkt: IPv6Packet): void {
+    const rejectWith = this.lastRejectWith;
+    this.lastRejectWith = null;
+    if (rejectWith !== null && offendingPkt.nextHeader === IP_PROTO_TCP && rejectTypeOf(6, rejectWith)?.code === null) {
+      this.tcpv2.sendResetForSegment(
+        offendingPkt.destinationIP.toString(), offendingPkt.sourceIP.toString(), offendingPkt.payload as TcpSegment,
+      );
+      return;
     }
+    this.sendICMPv6Unreachable(portName, offendingPkt, this.rejectCode(6, rejectWith));
   }
 
   /**
@@ -5994,7 +5991,7 @@ export abstract class EndHost extends Equipment {
           const icmpVerdict = this.firewallFilter6(portName, ipv6, 'in');
           if (icmpVerdict === 'drop') return;
           if (icmpVerdict === 'reject') {
-            this.sendICMPv6Unreachable(portName, ipv6, ICMPV6_UNREACH_ADMIN_PROHIBITED);
+            this.sendIpv6Reject(portName, ipv6);
             return;
           }
         }
@@ -6011,13 +6008,7 @@ export abstract class EndHost extends Equipment {
       const verdict = this.firewallFilter6(portName, ipv6, 'in');
       if (verdict === 'drop') return;
       if (verdict === 'reject') {
-        if (ipv6.nextHeader === IP_PROTO_TCP) {
-          this.tcpv2.sendResetForSegment(
-            ipv6.destinationIP.toString(), ipv6.sourceIP.toString(), ipv6.payload as TcpSegment,
-          );
-        } else {
-          this.sendICMPv6Unreachable(portName, ipv6);
-        }
+        this.sendIpv6Reject(portName, ipv6);
         return;
       }
 
