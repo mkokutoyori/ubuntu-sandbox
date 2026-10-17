@@ -239,7 +239,7 @@ class FirewallSshServerContext implements ISshServerContext {
 
   isClientBlocked(ip: string): boolean { return this.deps.refuseSource(ip); }
 
-  permitEmptyPasswords(): boolean { return false; }
+  permitEmptyPasswords(): boolean { return true; }
 
   private buildAuthContext(): ISshAuthContext {
     let attemptsLeft = this.config.maxAuthTries;
