@@ -445,7 +445,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     if (reason !== 'account-expired' && reason !== 'pam-denied') return;
     this.keyLogons.delete(`${user}@${fromIp}`);
     const refusal = this.userManager.logonRefusal(user);
-    const failure: WindowsLogonFailureCause = refusal === 'expired' ? 'expired' : refusal === 'locked' ? 'locked' : 'disabled';
+    const failure: WindowsLogonFailureCause = refusal ?? 'disabled';
     this.reportLogon?.({ user, success: false, method: 'publickey', failure });
   }
 

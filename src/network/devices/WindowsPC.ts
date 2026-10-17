@@ -580,6 +580,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.newEventLog('OpenSSH/Operational', 'OpenSSH');
     this.userMgr = new WindowsUserManager();
     this.userMgr.attachPolicy(this.accountsPolicy);
+    this.userMgr.attachMachine({
+      hostname: () => this.hostname,
+      timezone: () => this.identity.timezone,
+      directoryExists: (path) => this.fs.isDirectory(this.fs.normalizePath(path, 'C:\\')),
+    });
     // Documents the real account roster (name/password/groups) next to the
     // other sample data files (numbers.txt) — driven entirely by userMgr so
     // it can never drift from the accounts that actually exist.

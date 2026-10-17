@@ -98,7 +98,7 @@ import type {
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
-  DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
+  DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo, LocalUserChanges,
   NetAdapterEntry, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo, PartitionInfo, IWmiProvider,
@@ -1539,11 +1539,11 @@ class WindowsUserAdapter implements IUserProvider {
   private mgr() { return this.pc.getUserManager(); }
 
   listUsers(): UserInfo[] {
-    return this.mgr().getAllUsers().map(toUserInfo);
+    return this.mgr().getAllUsers().map((user) => toUserInfo(user, this.mgr()));
   }
   getUser(name: string): UserInfo | null {
     const u = this.mgr().getUser(name);
-    return u ? toUserInfo(u) : null;
+    return u ? toUserInfo(u, this.mgr()) : null;
   }
   createUser(name: string, opts: { password?: string; fullName?: string; description?: string }): string {
     return this.mgr().createUser(name, opts.password ?? '', {
@@ -1554,7 +1554,7 @@ class WindowsUserAdapter implements IUserProvider {
   removeUser(name: string): string {
     return this.mgr().deleteUser(name);
   }
-  setUser(name: string, opts: { enabled?: boolean; fullName?: string; description?: string; password?: string; accountExpires?: Date | null }): string {
+  setUser(name: string, opts: LocalUserChanges): string {
     const m = this.mgr();
     const msgs: string[] = [];
     if (opts.fullName !== undefined)     msgs.push(m.setUserProperty(name, 'fullName',    opts.fullName));
@@ -1565,6 +1565,8 @@ class WindowsUserAdapter implements IUserProvider {
         ? 'never'
         : `${opts.accountExpires.getUTCMonth() + 1}/${opts.accountExpires.getUTCDate()}/${opts.accountExpires.getUTCFullYear()}`));
     }
+    if (opts.userMayChangePassword !== undefined) msgs.push(m.setUserProperty(name, 'passwordchg', opts.userMayChangePassword ? 'yes' : 'no'));
+    if (opts.passwordNeverExpires !== undefined) msgs.push(m.setUserProperty(name, 'passwordneverexpires', opts.passwordNeverExpires ? 'yes' : 'no'));
     if (opts.enabled === true)           msgs.push(m.enableUser(name));
     if (opts.enabled === false)          msgs.push(m.disableUser(name));
     return msgs.filter(Boolean).join('\n');
@@ -1607,7 +1609,7 @@ class WindowsUserAdapter implements IUserProvider {
     const out: UserInfo[] = [];
     for (const memberName of g.members) {
       const u = this.mgr().getUser(memberName);
-      if (u) out.push(toUserInfo(u));
+      if (u) out.push(toUserInfo(u, this.mgr()));
     }
     return out;
   }
@@ -1616,7 +1618,11 @@ class WindowsUserAdapter implements IUserProvider {
   }
 }
 
-function toUserInfo(u: import('@/network/devices/windows/WindowsUserManager').WindowsUser): UserInfo {
+function toUserInfo(
+  u: import('@/network/devices/windows/WindowsUserManager').WindowsUser,
+  manager: import('@/network/devices/windows/WindowsUserManager').WindowsUserManager,
+): UserInfo {
+  const expiresAt = manager.passwordExpiresAt(u.name);
   return {
     name: u.name,
     fullName: u.fullName,
@@ -1627,6 +1633,9 @@ function toUserInfo(u: import('@/network/devices/windows/WindowsUserManager').Wi
     lastLogon: u.lastLogon,
     passwordLastSet: u.passwordLastSet ?? null,
     accountExpires: u.accountExpires,
+    userMayChangePassword: u.userMayChangePassword,
+    passwordExpires: expiresAt === null ? null : new Date(expiresAt),
+    passwordChangeableDate: new Date(u.passwordLastSet.getTime() + manager.passwordMinimumAgeDays() * 86_400_000),
   };
 }
 function toGroupInfo(g: import('@/network/devices/windows/WindowsUserManager').WindowsGroup): GroupInfo {

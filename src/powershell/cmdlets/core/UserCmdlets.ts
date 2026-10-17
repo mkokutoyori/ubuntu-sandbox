@@ -11,7 +11,7 @@ import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { UserInfo, GroupInfo, IUserProvider } from '@/powershell/providers/PSProviders';
+import type { UserInfo, GroupInfo, IUserProvider, LocalUserChanges } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { securePasswordOf } from './SecurePassword';
 
@@ -33,6 +33,11 @@ function userToPSObject(u: UserInfo): Record<string, PSValue> {
     LastLogon:        u.lastLogon,
     PasswordLastSet:  u.passwordLastSet ?? null,
     AccountExpires:   u.accountExpires ?? null,
+    UserMayChangePassword: u.userMayChangePassword ?? true,
+    PasswordExpires:  u.passwordExpires ?? null,
+    PasswordChangeableDate: u.passwordChangeableDate ?? null,
+    PrincipalSource:  'Local',
+    ObjectClass:      'User',
   };
 }
 
@@ -127,7 +132,7 @@ export class SetLocalUserCmdlet implements ICmdlet {
   readonly name = 'set-localuser';
   readonly displayName = 'Set-LocalUser';
   readonly aliases = [] as const;
-  readonly parameters = ['AccountExpires', 'AccountNeverExpires', 'Description', 'Enabled', 'FullName', 'Name', 'Password'] as const;
+  readonly parameters = ['AccountExpires', 'AccountNeverExpires', 'Description', 'Enabled', 'FullName', 'Name', 'Password', 'PasswordNeverExpires', 'UserMayChangePassword'] as const;
   readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -135,12 +140,14 @@ export class SetLocalUserCmdlet implements ICmdlet {
     const name  = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
     if (!name) { ctx.emitError('Set-LocalUser requires -Name'); return null; }
 
-    const opts: { enabled?: boolean; fullName?: string; description?: string; password?: string; accountExpires?: Date | null } = {};
+    const opts: LocalUserChanges = {};
     if (ctx.named['fullname']    !== undefined) opts.fullName    = psValueToString(ctx.named['fullname']);
     if (ctx.named['description'] !== undefined) opts.description = psValueToString(ctx.named['description']);
     if (ctx.named['password']    !== undefined) opts.password    = securePasswordOf(ctx, 'password');
     if (ctx.named['enabled']     !== undefined) opts.enabled     = ctx.named['enabled'] === true;
     if (ctx.named['accountneverexpires'] === true) opts.accountExpires = null;
+    if (ctx.named['usermaychangepassword'] !== undefined) opts.userMayChangePassword = ctx.named['usermaychangepassword'] === true;
+    if (ctx.named['passwordneverexpires'] !== undefined) opts.passwordNeverExpires = ctx.named['passwordneverexpires'] === true;
     const expires = ctx.named['accountexpires'];
     if (expires instanceof Date) opts.accountExpires = expires;
 

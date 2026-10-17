@@ -93,6 +93,19 @@ export interface UserInfo {
   lastLogon: Date | null;
   passwordLastSet?: Date | null;
   accountExpires?: Date | null;
+  userMayChangePassword?: boolean;
+  passwordExpires?: Date | null;
+  passwordChangeableDate?: Date | null;
+}
+
+export interface LocalUserChanges {
+  enabled?: boolean;
+  fullName?: string;
+  description?: string;
+  password?: string;
+  accountExpires?: Date | null;
+  userMayChangePassword?: boolean;
+  passwordNeverExpires?: boolean;
 }
 
 export interface GroupInfo {
@@ -1526,7 +1539,7 @@ export interface IUserProvider {
   getUser(name: string): UserInfo | null;
   createUser(name: string, opts: { password?: string; fullName?: string; description?: string }): string;
   removeUser(name: string): string;
-  setUser(name: string, opts: { enabled?: boolean; fullName?: string; description?: string; password?: string; accountExpires?: Date | null }): string;
+  setUser(name: string, opts: LocalUserChanges): string;
   enableUser(name: string): string;
   disableUser(name: string): string;
   renameUser(oldName: string, newName: string): string;
