@@ -15,6 +15,7 @@
  *   formatter) converts back to a display string.
  */
 
+import { renderTable, type TableColumn } from '../shells/cli/TextTable';
 import { registeredDisplay } from '@/powershell/runtime/PSExpansion';
 import { formatDouble } from '@/powershell/runtime/dotnetNumber';
 import { formatTimeSpan, isTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
@@ -623,6 +624,7 @@ export function formatTable(objects: PSObject[], args: string): string {
 
   const tokens = tokenizeArgs(args);
   let properties: string[] | null = null;
+  let hideHeaders = false;
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i].toLowerCase();
@@ -636,6 +638,8 @@ export function formatTable(objects: PSObject[], args: string): string {
       i--;
     } else if (t === '-autosize') {
       // AutoSize is the default behavior
+    } else if (t === '-hidetableheaders') {
+      hideHeaders = true;
     } else if (!t.startsWith('-')) {
       // Bare property names accumulate across multiple tokens
       // (e.g. `Format-Table Name, Description` → ["Name,", "Description"]).
@@ -660,38 +664,21 @@ export function formatTable(objects: PSObject[], args: string): string {
     return { raw, text: renderPSCellValue(raw) };
   };
 
-  // Calculate column widths
-  const widths: Record<string, number> = {};
-  for (const col of columns) {
-    widths[col] = col.length;
-  }
-  for (const obj of objects) {
-    for (const col of columns) {
-      const { text } = cellValue(obj, col);
-      widths[col] = Math.max(widths[col], text.length);
-    }
-  }
-
-  // Build table
-  const lines: string[] = [];
-  const headerLine = columns.map(c => c.padEnd(widths[c])).join('  ');
-  const sepLine = columns.map(c => '-'.repeat(widths[c])).join('  ');
-  lines.push('');
-  lines.push(headerLine);
-  lines.push(sepLine);
-
-  for (const obj of objects) {
-    const row = columns.map(col => {
-      const { raw, text } = cellValue(obj, col);
-      // Right-align numbers and Date values (PS convention)
-      if (typeof raw === 'number' || raw instanceof Date) return text.padStart(widths[col]);
-      return text.padEnd(widths[col]);
-    }).join('  ');
-    lines.push(row);
-  }
-  lines.push('');
-
-  return lines.join('\n');
+  const cells = objects.map(obj => columns.map(col => cellValue(obj, col)));
+  const numeric = columns.map((_, index) => {
+    const raws = cells.map(row => row[index].raw).filter(raw => raw !== null && raw !== undefined && raw !== '');
+    return raws.length > 0 && raws.every(raw => typeof raw === 'number' || raw instanceof Date);
+  });
+  const tableColumns: Array<TableColumn<number>> = columns.map((col, index) => ({
+    header: col,
+    align: numeric[index] ? 'right' : 'left',
+    value: (rowIndex) => cells[rowIndex][index].text,
+  }));
+  const body = renderTable(
+    objects.map((_, rowIndex) => rowIndex), tableColumns,
+    hideHeaders ? { gap: 2, rule: false, header: false, padTrailing: true } : { gap: 2, rule: true, padTrailing: true },
+  );
+  return ['', ...body, ''].join('\n');
 }
 
 /**

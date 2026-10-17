@@ -844,11 +844,8 @@ export class FormatTableCmdlet implements ICmdlet {
             ? it as Record<string, PSValue>
             : { Value: it } as Record<string, PSValue>);
     const autoSize = ctx.named['autosize'] === true || ctx.named['autosize'] === 'true';
-    const rendered = renderTable(objects as unknown as PSObject[], autoSize ? '-AutoSize' : '');
-    if (ctx.named['hidetableheaders'] === true) {
-      return rendered.split('\n').slice(2).join('\n');
-    }
-    return rendered;
+    const hide = ctx.named['hidetableheaders'] === true;
+    return renderTable(objects as unknown as PSObject[], [autoSize ? '-AutoSize' : '', hide ? '-HideTableHeaders' : ''].join(' ').trim());
   }
 }
 

@@ -23,6 +23,7 @@ import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { describeCountryCode, type WindowsUserManager } from './WindowsUserManager';
 import { describeLogonHours } from './WindowsLogonHours';
 import type { RegionalFormats } from './WindowsRegionalSettings';
+import { renderGrid, renderKeyValue } from '../shells/cli/TextTable';
 import type { DirectoryStore } from './server/ad/DirectoryStore';
 
 const ACCESS_DENIED = 'System error 5 has occurred.\n\nAccess is denied.';
@@ -214,35 +215,34 @@ export function cmdNetLocalgroup(ctx: NetUserContext, args: string[]): string {
 
 // ─── Formatting ────────────────────────────────────────────────────
 
+const NET_RULE = '-'.repeat(79);
+const LIST_COLUMNS = 3;
+const LIST_CELL_WIDTH = 25;
+
+function byName(left: string, right: string): number {
+  return left.toLowerCase().localeCompare(right.toLowerCase());
+}
+
+function formatNetList(title: string, names: readonly string[]): string {
+  return [
+    '',
+    title,
+    '',
+    NET_RULE,
+    ...renderGrid([...names].sort(byName), { columns: LIST_COLUMNS, cellWidth: LIST_CELL_WIDTH }),
+    'The command completed successfully.',
+  ].join('\n');
+}
+
 function formatUserList(ctx: NetUserContext): string {
-  const users = ctx.userManager.getAllUsers();
-  const lines: string[] = [];
-  lines.push('');
-  lines.push(`User accounts for \\\\${ctx.hostname}`);
-  lines.push('');
-  lines.push('-'.repeat(60));
-
-  // Display in 3-column format like real Windows
-  const names = users.map(u => u.name);
-  for (let i = 0; i < names.length; i += 3) {
-    const cols = names.slice(i, i + 3).map(n => n.padEnd(24));
-    lines.push(cols.join(''));
-  }
-
-  lines.push('-'.repeat(60));
-  lines.push('The command completed successfully.');
-  return lines.join('\n');
+  return formatNetList(`User accounts for \\\\${ctx.hostname}`, ctx.userManager.getAllUsers().map(u => u.name));
 }
 
 function userDate(d: Date, formats: RegionalFormats, zone?: string): string {
   return formatDotNetDate(ZonedDate.in(d.getTime(), zone), `${formats.shortDate} ${formats.timeFormat}`);
 }
 
-const DETAIL_INDENT = ' '.repeat(29);
-
-function detail(label: string, value: string): string {
-  return `${label.padEnd(29)}${value}`.trimEnd();
-}
+const DETAIL_LABEL_WIDTH = 29;
 
 function formatUserDetails(ctx: NetUserContext, username: string): string {
   const user = ctx.userManager.getUser(username);
@@ -255,49 +255,40 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   const hours = describeLogonHours(user.logonHours);
   const formats = ctx.userManager.regionalFormats();
 
-  const lines: string[] = [];
-  lines.push(detail('User name', user.name));
-  lines.push(detail('Full Name', user.fullName));
-  lines.push(detail('Comment', user.description));
-  lines.push(detail("User's comment", user.userComment ?? ''));
-  lines.push(detail('Country/region code', describeCountryCode(user.countryCode ?? 0)));
-  lines.push(detail('Account active', user.enabled ? 'Yes' : 'No'));
-  lines.push(detail('Account expires', user.accountExpires ? userDate(user.accountExpires, formats, 'UTC') : 'Never'));
-  lines.push('');
-  lines.push(detail('Password last set', userDate(user.passwordLastSet, formats, ctx.timezone)));
-  lines.push(detail('Password expires', expiresAt === null ? 'Never' : userDate(new Date(expiresAt), formats, ctx.timezone)));
-  lines.push(detail('Password changeable', userDate(new Date(user.passwordLastSet.getTime() + minAge * 86_400_000), formats, ctx.timezone)));
-  lines.push(detail('Password required', user.passwordRequired ? 'Yes' : 'No'));
-  lines.push(detail('User may change password', user.userMayChangePassword ? 'Yes' : 'No'));
-  lines.push('');
-  lines.push(detail('Workstations allowed', user.workstations === undefined ? 'All' : user.workstations.join(',')));
-  lines.push(detail('Logon script', user.scriptPath ?? ''));
-  lines.push(detail('User profile', user.profilePath ?? ''));
-  lines.push(detail('Home directory', user.homeDirectory ?? ''));
-  lines.push(detail('Last logon', user.lastLogon ? userDate(user.lastLogon, formats, ctx.timezone) : 'Never'));
-  lines.push('');
-  lines.push(detail('Logon hours allowed', hours[0]));
-  for (const extra of hours.slice(1)) lines.push(`${DETAIL_INDENT}${extra}`);
-  lines.push('');
-  lines.push(detail('Local Group Memberships', localGroups || ''));
-  lines.push(detail('Global Group memberships', '*None'));
-  lines.push('The command completed successfully.');
-  return lines.join('\n');
+  const entries: Array<readonly [string, string]> = [
+    ['User name', user.name],
+    ['Full Name', user.fullName],
+    ['Comment', user.description],
+    ["User's comment", user.userComment ?? ''],
+    ['Country/region code', describeCountryCode(user.countryCode ?? 0)],
+    ['Account active', user.enabled ? 'Yes' : 'No'],
+    ['Account expires', user.accountExpires ? userDate(user.accountExpires, formats, 'UTC') : 'Never'],
+    ['', ''],
+    ['Password last set', userDate(user.passwordLastSet, formats, ctx.timezone)],
+    ['Password expires', expiresAt === null ? 'Never' : userDate(new Date(expiresAt), formats, ctx.timezone)],
+    ['Password changeable', userDate(new Date(user.passwordLastSet.getTime() + minAge * 86_400_000), formats, ctx.timezone)],
+    ['Password required', user.passwordRequired ? 'Yes' : 'No'],
+    ['User may change password', user.userMayChangePassword ? 'Yes' : 'No'],
+    ['', ''],
+    ['Workstations allowed', user.workstations === undefined ? 'All' : user.workstations.join(',')],
+    ['Logon script', user.scriptPath ?? ''],
+    ['User profile', user.profilePath ?? ''],
+    ['Home directory', user.homeDirectory ?? ''],
+    ['Last logon', user.lastLogon ? userDate(user.lastLogon, formats, ctx.timezone) : 'Never'],
+    ['', ''],
+    ['Logon hours allowed', hours.join('\n')],
+    ['', ''],
+    ['Local Group Memberships', localGroups],
+    ['Global Group memberships', '*None'],
+  ];
+  return [
+    ...renderKeyValue(entries, { labelWidth: DETAIL_LABEL_WIDTH, separator: '' }),
+    'The command completed successfully.',
+  ].join('\n');
 }
 
 function formatDomainUserList(store: DirectoryStore, hostname: string): string {
-  const names = store.listUsers().map(u => u.sam);
-  const lines: string[] = [];
-  lines.push('');
-  lines.push(`User accounts for \\\\${hostname}`);
-  lines.push('');
-  lines.push('-'.repeat(60));
-  for (let i = 0; i < names.length; i += 3) {
-    lines.push(names.slice(i, i + 3).map(n => n.padEnd(24)).join(''));
-  }
-  lines.push('-'.repeat(60));
-  lines.push('The command completed successfully.');
-  return lines.join('\n');
+  return formatNetList(`User accounts for \\\\${hostname}`, store.listUsers().map(u => u.sam));
 }
 
 function formatDomainUserDetails(store: DirectoryStore, username: string): string {
@@ -331,18 +322,15 @@ function formatDomainUserDetails(store: DirectoryStore, username: string): strin
 }
 
 function formatGroupList(ctx: NetUserContext): string {
-  const groups = ctx.userManager.getAllGroups();
-  const lines: string[] = [];
-  lines.push('');
-  lines.push(`Aliases for \\\\${ctx.hostname}`);
-  lines.push('');
-  lines.push('-'.repeat(60));
-  for (const g of groups) {
-    lines.push(`*${g.name}`);
-  }
-  lines.push('-'.repeat(60));
-  lines.push('The command completed successfully.');
-  return lines.join('\n');
+  const names = ctx.userManager.getAllGroups().map(g => `*${g.name}`);
+  return [
+    '',
+    `Aliases for \\\\${ctx.hostname}`,
+    '',
+    NET_RULE,
+    ...[...names].sort(byName),
+    'The command completed successfully.',
+  ].join('\n');
 }
 
 function formatGroupMembers(ctx: NetUserContext, groupName: string): string {
@@ -352,17 +340,16 @@ function formatGroupMembers(ctx: NetUserContext, groupName: string): string {
   }
   const group = ctx.userManager.getGroup(groupName)!;
 
-  const lines: string[] = [];
-  lines.push(`Alias name     ${group.name}`);
-  lines.push(`Comment        ${group.description}`);
-  lines.push('');
+  const lines: string[] = [
+    ...renderKeyValue([['Alias name', group.name], ['Comment', group.description]], { labelWidth: 14 }),
+    '',
+  ];
   lines.push('Members');
   lines.push('');
-  lines.push('-'.repeat(60));
+  lines.push(NET_RULE);
   for (const member of members) {
     lines.push(member);
   }
-  lines.push('-'.repeat(60));
   lines.push('The command completed successfully.');
   return lines.join('\n');
 }

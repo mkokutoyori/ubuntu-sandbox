@@ -1,5 +1,6 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
+import { renderTable, type TableColumn, type TableStyle } from '../../shells/cli/TextTable';
 import type { NhrpService } from './NhrpService';
 import { hms } from '@/lib/format';
 
@@ -29,6 +30,17 @@ export interface DmvpnTunnelProfile {
   nbmaAddress?: string;
   tunnelAddress?: string;
 }
+
+const DMVPN_SESSION_COLUMNS: ReadonlyArray<TableColumn<{ index: string; nbma: string; tunnel: string; state: string; upTime: string; attribute: string }>> = [
+  { header: '# Ent', align: 'right', value: (r) => r.index },
+  { header: 'Peer NBMA Addr', value: (r) => r.nbma },
+  { header: 'Peer Tunnel Add', value: (r) => r.tunnel },
+  { header: 'State', value: (r) => r.state },
+  { header: 'UpDn Tm', value: (r) => r.upTime },
+  { header: 'Attrb', value: (r) => r.attribute },
+];
+
+const DMVPN_SESSION_STYLE: TableStyle = { gap: 1, rule: true, indent: ' ' };
 
 export class DmvpnService {
   private readonly profiles: Map<string, DmvpnTunnelProfile> = new Map();
@@ -92,13 +104,14 @@ export class DmvpnService {
       lines.push(`Interface: ${profile.ifName}, IPv4 NHRP Details`);
       lines.push(`Type: ${profile.role === 'hub' ? 'Hub' : 'Spoke'}, NHRP Peers: ${this.sessions.filter(s => s.ifName === profile.ifName).length}, Phase: ${profile.phase}`);
       lines.push(``);
-      lines.push(` # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb`);
-      lines.push(` ----- --------------- --------------- ----- -------- -----`);
       const sessions = this.sessions.filter(s => s.ifName === profile.ifName);
+      const rows = sessions.map((s, i) => ({
+        index: String(i + 1), nbma: s.peerNbmaAddress, tunnel: s.peerTunnelAddress, state: s.state,
+        upTime: hms(simulationNowMs() - s.createdAtMs), attribute: s.attribute,
+      }));
+      lines.push(...renderTable(rows, DMVPN_SESSION_COLUMNS, DMVPN_SESSION_STYLE));
       for (let i = 0; i < sessions.length; i++) {
         const s = sessions[i];
-        const upTime = hms(simulationNowMs() - s.createdAtMs);
-        lines.push(`     ${(i + 1).toString().padStart(2, ' ')} ${s.peerNbmaAddress.padEnd(15)} ${s.peerTunnelAddress.padEnd(15)} ${s.state.padEnd(5)} ${upTime}  ${s.attribute}`);
         if (detail) {
           lines.push(`   Type: ${profile.role === 'hub' ? 'Hub' : 'Spoke'}, NHS Status: E --> 1`);
           lines.push(`   IKE: ${s.state === 'IKE' ? 'pending' : 'established'}`);
