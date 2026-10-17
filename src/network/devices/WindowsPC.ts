@@ -3889,7 +3889,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return runSshAddCommand(args, this.agentHost((this._scenarioStdin ?? '').split('\n'))).then((outcome) => outcome.output);
       case 'ssh-keygen':
       case 'ssh-keyscan':
-        return Promise.resolve(this.runOpenSshTool(cmd, args));
+        return Promise.resolve(this.runOpenSshTool(cmd, args, stdin ?? this._scenarioStdin));
       case 'pathping': return this.runPathpingCommand(args);
       case 'sftp':     return this.cmdSftp(args);
       case 'scp':      return this.cmdScp(args);
@@ -4347,10 +4347,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Returns null when the command is async (ping / tracert) or unknown —
    * callers fall back to executeCmdCommand() in that case.
    */
-  private runOpenSshTool(name: string, args: string[]): string {
+  private runOpenSshTool(name: string, args: string[], stdin: string | undefined = this._scenarioStdin): string {
     switch (name) {
       case 'ssh-keygen': {
-        const keygen = runSshKeygenCommand(args, this.keygenHost(), this._scenarioStdin);
+        const keygen = runSshKeygenCommand(args, this.keygenHost(), stdin);
+        this.commandExitStatus = keygen.exitCode;
         return keygen.interleaved ?? keygen.output;
       }
       default:
